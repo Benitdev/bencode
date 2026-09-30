@@ -32,6 +32,8 @@ pub enum PermissionMode {
     ReadOnly,
 }
 
+use ely_gpui_component::terminal::{Launch, Terminal};
+
 pub struct BenCodeApp {
     pub sessions: Vec<SessionRow>,
     pub selected_session_id: Option<String>,
@@ -44,6 +46,9 @@ pub struct BenCodeApp {
     pub selected_diff_path: Option<String>,
     pub search_query: String,
     pub selected_model: String,
+    pub is_model_picker_open: bool,
+    pub is_branch_picker_open: bool,
+    pub terminal: Option<Entity<Terminal>>,
     pub prompt_input: Entity<TextInput>,
     pub search_input: Entity<TextInput>,
     pub db: Arc<MonoCodeDb>,
@@ -102,6 +107,21 @@ impl BenCodeApp {
             "Claude 3.7 Sonnet".to_string()
         };
 
+        let default_cwd = std::env::current_dir().ok();
+        let terminal = cx.new(|cx| {
+            Terminal::spawn(
+                Launch {
+                    program: None,
+                    cwd: default_cwd,
+                    env: vec![
+                        ("TERM".into(), "xterm-256color".into()),
+                        ("COLORTERM".into(), "truecolor".into()),
+                    ],
+                },
+                cx,
+            ).unwrap_or_else(|_| Terminal::replay(b"Terminal ready\r\n", 80, 24, cx))
+        });
+
         Self {
             sessions,
             selected_session_id,
@@ -114,11 +134,36 @@ impl BenCodeApp {
             selected_diff_path: None,
             search_query: String::new(),
             selected_model: default_model,
+            is_model_picker_open: false,
+            is_branch_picker_open: false,
+            terminal: Some(terminal),
             prompt_input,
             search_input,
             db: Arc::new(db),
             _subscriptions: subscriptions,
         }
+    }
+
+    pub fn set_session_model(&mut self, model: String, harness: String, cx: &mut Context<Self>) {
+        self.selected_model = model.clone();
+        if let Some(session_id) = &self.selected_session_id {
+            if let Some(s) = self.sessions.iter_mut().find(|s| &s.id == session_id) {
+                s.model = model;
+                s.harness = harness;
+            }
+        }
+        self.is_model_picker_open = false;
+        cx.notify();
+    }
+
+    pub fn set_session_branch(&mut self, branch: String, cx: &mut Context<Self>) {
+        if let Some(session_id) = &self.selected_session_id {
+            if let Some(s) = self.sessions.iter_mut().find(|s| &s.id == session_id) {
+                s.branch = Some(branch);
+            }
+        }
+        self.is_branch_picker_open = false;
+        cx.notify();
     }
 
     pub fn select_session(&mut self, id: String, cx: &mut Context<Self>) {

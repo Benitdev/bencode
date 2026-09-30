@@ -1,6 +1,7 @@
 use ely_gpui_component::theme::{ActiveTheme, Radius, TextSize};
 use gpui::{
-    Context, FontWeight, IntoElement, ParentElement, Styled, div, px,
+    Context, FontWeight, InteractiveElement, IntoElement, ParentElement, Styled, div,
+    px,
 };
 
 use crate::app::BenCodeApp;
@@ -17,6 +18,9 @@ impl BenCodeApp {
         let cwd = session
             .map(|s| s.cwd.as_str())
             .unwrap_or("~");
+        let branch = session
+            .and_then(|s| s.branch.as_deref())
+            .unwrap_or("main");
 
         div()
             .flex()
@@ -55,71 +59,84 @@ impl BenCodeApp {
                     )
                     .child(
                         div()
-                            .px_2()
-                            .py_0p5()
-                            .rounded(theme.radius(Radius::Sm))
-                            .bg(MonoTheme::bg_hover())
-                            .text_size(theme.text_size(TextSize::Xs))
-                            .text_color(MonoTheme::accent())
-                            .child("zsh"),
-                    ),
-            )
-            // Terminal Canvas Body
-            .child(
-                div()
-                    .flex_1()
-                    .p_4()
-                    .font_family(theme.mono_family.clone())
-                    .text_size(theme.text_size(TextSize::Xs))
-                    .bg(MonoTheme::bg_base())
-                    .child(
-                        div()
                             .flex()
-                            .flex_col()
-                            .gap_1p5()
+                            .items_center()
+                            .gap_2()
+                            // Branch Pill
                             .child(
                                 div()
+                                    .px_2()
+                                    .py_0p5()
+                                    .rounded(theme.radius(Radius::Sm))
+                                    .bg(MonoTheme::bg_base())
+                                    .border_1()
+                                    .border_color(MonoTheme::border_stroke())
+                                    .text_size(theme.text_size(TextSize::Xs))
                                     .text_color(MonoTheme::fg_subtle())
-                                    .child("BenCode Native Terminal Session [PTY / Apple Metal accelerated]"),
+                                    .child(format!("⎇ {}", branch)),
                             )
+                            // Shell badge
                             .child(
                                 div()
-                                    .flex()
-                                    .gap_2()
-                                    .child(
-                                        div()
-                                            .text_color(MonoTheme::accent())
-                                            .child(format!("{}$", cwd)),
-                                    )
-                                    .child(
-                                        div()
-                                            .text_color(MonoTheme::fg_primary())
-                                            .child("git status"),
-                                    ),
-                            )
-                            .child(
-                                div()
-                                    .text_color(MonoTheme::fg_muted())
-                                    .child("On branch main\nYour branch is up to date with 'origin/main'.\n\nChanges not staged for commit:\n  modified: src/main.rs\n  modified: Cargo.toml"),
-                            )
-                            .child(
-                                div()
-                                    .flex()
-                                    .gap_2()
-                                    .pt_2()
-                                    .child(
-                                        div()
-                                            .text_color(MonoTheme::accent())
-                                            .child(format!("{}$", cwd)),
-                                    )
-                                    .child(
-                                        div()
-                                            .w(px(8.0))
-                                            .h(px(14.0))
-                                            .bg(MonoTheme::accent()),
-                                    ),
+                                    .px_2()
+                                    .py_0p5()
+                                    .rounded(theme.radius(Radius::Sm))
+                                    .bg(MonoTheme::bg_hover())
+                                    .text_size(theme.text_size(TextSize::Xs))
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .text_color(MonoTheme::accent())
+                                    .child("zsh (PTY)"),
                             ),
                     ),
+            )
+            // Interactive Native PTY Terminal Body
+            .child(
+                if let Some(term) = &self.terminal {
+                    div()
+                        .flex_1()
+                        .bg(MonoTheme::bg_base())
+                        .child(term.clone())
+                        .into_any_element()
+                } else {
+                    div()
+                        .flex_1()
+                        .p_4()
+                        .font_family(theme.mono_family.clone())
+                        .text_size(theme.text_size(TextSize::Xs))
+                        .bg(MonoTheme::bg_base())
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap_1p5()
+                                .child(
+                                    div()
+                                        .text_color(MonoTheme::fg_subtle())
+                                        .child("BenCode Native Terminal Session [Apple Metal accelerated]"),
+                                )
+                                .child(
+                                    div()
+                                        .flex()
+                                        .gap_2()
+                                        .child(
+                                            div()
+                                                .text_color(MonoTheme::accent())
+                                                .child(format!("{}$", cwd)),
+                                        )
+                                        .child(
+                                            div()
+                                                .text_color(MonoTheme::fg_primary())
+                                                .child("git status"),
+                                        ),
+                                )
+                                .child(
+                                    div()
+                                        .text_color(MonoTheme::fg_muted())
+                                        .child("On branch main\nYour branch is up to date with 'origin/main'."),
+                                ),
+                        )
+                        .into_any_element()
+                }
             )
     }
 }

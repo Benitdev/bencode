@@ -38,6 +38,29 @@ pub enum DiffLineKind {
     Context(String),
 }
 
+/// Retrieves list of local git branches for a workspace path
+pub fn get_branches(cwd: &str) -> Vec<String> {
+    let output = match Command::new("git")
+        .args(["-C", cwd, "branch", "--format=%(refname:short)"])
+        .output()
+    {
+        Ok(out) if out.status.success() => out,
+        _ => return vec!["main".to_string()],
+    };
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut branches: Vec<String> = stdout
+        .lines()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty())
+        .collect();
+
+    if branches.is_empty() {
+        branches.push("main".to_string());
+    }
+    branches
+}
+
 /// Retrieves list of modified, added, or untracked files for a workspace path
 pub fn get_workspace_changes(cwd: &str) -> Vec<GitFileChange> {
     let p = Path::new(cwd);

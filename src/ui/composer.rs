@@ -1,11 +1,15 @@
-use ely_gpui_component::theme::{ActiveTheme, Radius, TextSize};
+use ely_gpui_component::{
+    layout::on_axis,
+    theme::{ActiveTheme, Radius, TextSize},
+};
 use gpui::{
-    Context, FontWeight, InteractiveElement, IntoElement, ParentElement, Styled, div,
-    prelude::*, px,
+    Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString,
+    Styled, div, prelude::*, px,
 };
 
 use crate::app::{BenCodeApp, PermissionMode};
 use crate::db::SessionRow;
+use crate::git::get_branches;
 use crate::ui::theme::MonoTheme;
 
 impl BenCodeApp {
@@ -16,15 +20,22 @@ impl BenCodeApp {
     ) -> impl IntoElement {
         let theme = cx.theme();
         let is_running = self.is_agent_running;
+        let is_model_open = self.is_model_picker_open;
+        let is_branch_open = self.is_branch_picker_open;
+
+        let cwd = session.map(|s| s.cwd.as_str()).unwrap_or(".");
+        let branches = get_branches(cwd);
+
         let model_name = session
             .map(|s| {
                 if s.model.is_empty() {
-                    self.selected_model.as_str()
+                    "Claude 3.7 Sonnet"
                 } else {
                     s.model.as_str()
                 }
             })
-            .unwrap_or(self.selected_model.as_str());
+            .unwrap_or(&self.selected_model);
+
         let branch_name = session
             .and_then(|s| s.branch.as_deref())
             .unwrap_or("main");
@@ -34,11 +45,10 @@ impl BenCodeApp {
             "claude" => MonoTheme::claude_orange(),
             "antigravity" => MonoTheme::antigravity_blue(),
             "codex" => MonoTheme::codex_green(),
-            "cursor" => MonoTheme::accent(),
             _ => MonoTheme::accent(),
         };
 
-        let context_label = match (session.and_then(|s| s.context_used), session.and_then(|s| s.context_window)) {
+        let (context_label, pct) = match (session.and_then(|s| s.context_used), session.and_then(|s| s.context_window)) {
             (Some(used), Some(window)) if window > 0 => {
                 let used_str = if used >= 1_000_000 {
                     format!("{:.1}M", used as f64 / 1_000_000.0)
@@ -54,10 +64,10 @@ impl BenCodeApp {
                 } else {
                     format!("{}", window)
                 };
-                let pct = (used as f64 / window as f64 * 100.0).round() as u64;
-                format!("{} / {} tokens ({}%)", used_str, win_str, pct)
+                let p = ((used as f64 / window as f64) * 100.0).round() as u64;
+                (format!("{} / {} tokens ({}%)", used_str, win_str, p), p)
             }
-            _ => "0 / 200k tokens".to_string(),
+            _ => ("0 / 200k tokens (0%)".to_string(), 0),
         };
 
         let perm_mode = self.permission_mode;
@@ -68,6 +78,7 @@ impl BenCodeApp {
         };
 
         div()
+            .relative()
             .px_6()
             .pb_5()
             .pt_2()
@@ -75,6 +86,7 @@ impl BenCodeApp {
             .child(
                 // Floating Composer Card
                 div()
+                    .relative()
                     .max_w(px(840.0))
                     .mx_auto()
                     .rounded(theme.radius(Radius::Lg))
@@ -85,6 +97,126 @@ impl BenCodeApp {
                         MonoTheme::border_stroke()
                     })
                     .bg(MonoTheme::bg_surface())
+                    // Popover: Model Picker Menu
+                    .when(is_model_open, |el| {
+                        el.child(
+                            div()
+                                .absolute()
+                                .left(px(12.0))
+                                .bottom(px(110.0))
+                                .w(px(260.0))
+                                .rounded(theme.radius(Radius::Md))
+                                .border_1()
+                                .border_color(MonoTheme::border_stroke())
+                                .bg(MonoTheme::bg_surface())
+                                .p_2()
+                                .gap_1()
+                                .flex()
+                                .flex_col()
+                                // Header: Anthropic
+                                .child(
+                                    div()
+                                        .px_2()
+                                        .py_1()
+                                        .text_size(theme.text_size(TextSize::Xs))
+                                        .font_weight(FontWeight::BOLD)
+                                        .text_color(MonoTheme::fg_subtle())
+                                        .child("ANTHROPIC"),
+                                )
+                                .child(self.render_model_option("Claude 3.7 Sonnet", "claude", MonoTheme::claude_orange(), cx))
+                                .child(self.render_model_option("Claude 3.5 Sonnet", "claude", MonoTheme::claude_orange(), cx))
+                                .child(self.render_model_option("Claude 3.5 Haiku", "claude", MonoTheme::claude_orange(), cx))
+                                // Header: Google Antigravity
+                                .child(
+                                    div()
+                                        .pt_2()
+                                        .px_2()
+                                        .py_1()
+                                        .text_size(theme.text_size(TextSize::Xs))
+                                        .font_weight(FontWeight::BOLD)
+                                        .text_color(MonoTheme::fg_subtle())
+                                        .child("GOOGLE ANTIGRAVITY"),
+                                )
+                                .child(self.render_model_option("Gemini 3.8 Flash (High)", "antigravity", MonoTheme::antigravity_blue(), cx))
+                                .child(self.render_model_option("Gemini 2.5 Flash", "antigravity", MonoTheme::antigravity_blue(), cx))
+                                .child(self.render_model_option("Gemini 2.5 Pro", "antigravity", MonoTheme::antigravity_blue(), cx))
+                                // Header: OpenAI
+                                .child(
+                                    div()
+                                        .pt_2()
+                                        .px_2()
+                                        .py_1()
+                                        .text_size(theme.text_size(TextSize::Xs))
+                                        .font_weight(FontWeight::BOLD)
+                                        .text_color(MonoTheme::fg_subtle())
+                                        .child("OPENAI"),
+                                )
+                                .child(self.render_model_option("GPT-4o", "codex", MonoTheme::codex_green(), cx))
+                                .child(self.render_model_option("o3-mini", "codex", MonoTheme::codex_green(), cx))
+                        )
+                    })
+                    // Popover: Branch Picker Menu
+                    .when(is_branch_open, |el| {
+                        el.child(
+                            on_axis(div().id("composer-branch-scroll"))
+                                .absolute()
+                                .left(px(160.0))
+                                .bottom(px(110.0))
+                                .w(px(240.0))
+                                .max_h(px(220.0))
+                                .overflow_y_scroll()
+                                .rounded(theme.radius(Radius::Md))
+                                .border_1()
+                                .border_color(MonoTheme::border_stroke())
+                                .bg(MonoTheme::bg_surface())
+                                .p_2()
+                                .flex()
+                                .flex_col()
+                                .gap_1()
+                                .child(
+                                    div()
+                                        .px_2()
+                                        .py_1()
+                                        .text_size(theme.text_size(TextSize::Xs))
+                                        .font_weight(FontWeight::BOLD)
+                                        .text_color(MonoTheme::fg_subtle())
+                                        .child("SWITCH GIT BRANCH"),
+                                )
+                                .children(branches.into_iter().map(|b| {
+                                    let is_cur = b == branch_name;
+                                    let b_clone = b.clone();
+                                    div()
+                                        .id(SharedString::from(format!("branch-opt-{}", b)))
+                                        .flex()
+                                        .items_center()
+                                        .justify_between()
+                                        .px_2p5()
+                                        .py_1p5()
+                                        .rounded(theme.radius(Radius::Sm))
+                                        .cursor_pointer()
+                                        .when(is_cur, |el| el.bg(MonoTheme::bg_active()))
+                                        .when(!is_cur, |el| el.hover(|s| s.bg(MonoTheme::bg_hover())))
+                                        .on_click(cx.listener(move |this, _, _, cx| {
+                                            this.set_session_branch(b_clone.clone(), cx);
+                                        }))
+                                        .child(
+                                            div()
+                                                .text_size(theme.text_size(TextSize::Xs))
+                                                .font_weight(if is_cur { FontWeight::BOLD } else { FontWeight::NORMAL })
+                                                .text_color(if is_cur { MonoTheme::fg_primary() } else { MonoTheme::fg_muted() })
+                                                .child(format!("⎇ {}", b)),
+                                        )
+                                        .when(is_cur, |el| {
+                                            el.child(
+                                                div()
+                                                    .text_size(theme.text_size(TextSize::Xs))
+                                                    .text_color(MonoTheme::accent())
+                                                    .child("✓"),
+                                            )
+                                        })
+                                })),
+                        )
+                    })
                     .child(
                         // 1. Controls Top Bar (Model Picker, Permission Mode, Branch, Context Meter)
                         div()
@@ -115,6 +247,11 @@ impl BenCodeApp {
                                             .border_color(MonoTheme::border_stroke())
                                             .cursor_pointer()
                                             .hover(|s| s.bg(MonoTheme::bg_hover()))
+                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                this.is_model_picker_open = !this.is_model_picker_open;
+                                                this.is_branch_picker_open = false;
+                                                cx.notify();
+                                            }))
                                             .child(
                                                 div()
                                                     .size(px(6.0))
@@ -132,13 +269,13 @@ impl BenCodeApp {
                                                 div()
                                                     .text_size(theme.text_size(TextSize::Xs))
                                                     .text_color(MonoTheme::fg_subtle())
-                                                    .child("▾"),
+                                                    .child(if is_model_open { "▴" } else { "▾" }),
                                             ),
                                     )
                                     // Permission Mode Chip (⚡ Auto / 🛡 Confirm / 🔒 Read-Only)
                                     .child(
                                         div()
-                                            .id("composer-perm-mode-picker")
+                                            .id("composer-perm-chip")
                                             .flex()
                                             .items_center()
                                             .gap_1()
@@ -150,9 +287,6 @@ impl BenCodeApp {
                                             .border_color(MonoTheme::border_stroke())
                                             .cursor_pointer()
                                             .hover(|s| s.bg(MonoTheme::bg_hover()))
-                                            .text_size(theme.text_size(TextSize::Xs))
-                                            .text_color(MonoTheme::fg_muted())
-                                            .child(format!("{} {}", perm_icon, perm_label))
                                             .on_click(cx.listener(|this, _, _, cx| {
                                                 this.permission_mode = match this.permission_mode {
                                                     PermissionMode::Auto => PermissionMode::Confirm,
@@ -160,11 +294,24 @@ impl BenCodeApp {
                                                     PermissionMode::ReadOnly => PermissionMode::Auto,
                                                 };
                                                 cx.notify();
-                                            })),
+                                            }))
+                                            .child(
+                                                div()
+                                                    .text_size(theme.text_size(TextSize::Xs))
+                                                    .child(perm_icon),
+                                            )
+                                            .child(
+                                                div()
+                                                    .text_size(theme.text_size(TextSize::Xs))
+                                                    .font_weight(FontWeight::MEDIUM)
+                                                    .text_color(MonoTheme::fg_muted())
+                                                    .child(perm_label),
+                                            ),
                                     )
                                     // Branch Pill
                                     .child(
                                         div()
+                                            .id("composer-branch-pill")
                                             .flex()
                                             .items_center()
                                             .gap_1()
@@ -174,12 +321,19 @@ impl BenCodeApp {
                                             .bg(MonoTheme::bg_base())
                                             .border_1()
                                             .border_color(MonoTheme::border_stroke())
+                                            .cursor_pointer()
+                                            .hover(|s| s.bg(MonoTheme::bg_hover()))
+                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                this.is_branch_picker_open = !this.is_branch_picker_open;
+                                                this.is_model_picker_open = false;
+                                                cx.notify();
+                                            }))
                                             .text_size(theme.text_size(TextSize::Xs))
                                             .text_color(MonoTheme::fg_muted())
                                             .child(format!("⎇ {}", branch_name)),
                                     ),
                             )
-                            // Right Side: Context Meter
+                            // Right Side: Context Meter with Mini Progress Bar
                             .child(
                                 div()
                                     .flex()
@@ -188,85 +342,54 @@ impl BenCodeApp {
                                     .px_2()
                                     .py_1()
                                     .rounded(theme.radius(Radius::Sm))
-                                    .text_size(theme.text_size(TextSize::Xs))
-                                    .text_color(MonoTheme::fg_subtle())
-                                    .child(context_label),
+                                    .child(
+                                        div()
+                                            .w(px(32.0))
+                                            .h(px(4.0))
+                                            .rounded_full()
+                                            .bg(MonoTheme::bg_hover())
+                                            .child(
+                                                div()
+                                                    .w(px(32.0 * (pct as f32 / 100.0).clamp(0.05, 1.0)))
+                                                    .h_full()
+                                                    .rounded_full()
+                                                    .bg(if pct > 80 {
+                                                        MonoTheme::danger()
+                                                    } else if pct > 50 {
+                                                        MonoTheme::warning()
+                                                    } else {
+                                                        MonoTheme::accent()
+                                                    }),
+                                            ),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_size(theme.text_size(TextSize::Xs))
+                                            .text_color(MonoTheme::fg_subtle())
+                                            .child(context_label),
+                                    ),
                             ),
                     )
                     .child(
-                        // 2. Interactive Input Prompt Text Area
+                        // 2. Interactive Input Prompt Text Area + Send Action
                         div()
+                            .flex()
+                            .items_end()
+                            .justify_between()
                             .p_3()
                             .child(
                                 div()
+                                    .flex_1()
                                     .min_h(px(46.0))
-                                    .px_1()
+                                    .px_2()
+                                    .py_1()
                                     .child(self.prompt_input.clone()),
-                            ),
-                    )
-                    .child(
-                        // 3. Bottom Action Bar: Skills / Files / Attachments / Send
-                        div()
-                            .flex()
-                            .items_center()
-                            .justify_between()
-                            .px_3()
-                            .pb_3()
+                            )
                             .child(
                                 div()
                                     .flex()
                                     .items_center()
-                                    .gap_1p5()
-                                    // Skill Picker Pill
-                                    .child(
-                                        div()
-                                            .id("composer-skills-chip")
-                                            .flex()
-                                            .items_center()
-                                            .gap_1()
-                                            .px_2()
-                                            .py_1()
-                                            .rounded(theme.radius(Radius::Sm))
-                                            .border_1()
-                                            .border_color(MonoTheme::border_stroke())
-                                            .bg(MonoTheme::bg_base())
-                                            .cursor_pointer()
-                                            .hover(|s| s.bg(MonoTheme::bg_hover()))
-                                            .text_size(theme.text_size(TextSize::Xs))
-                                            .text_color(MonoTheme::skill_gold())
-                                            .child("/ Skills")
-                                            .on_click(cx.listener(|this, _, _, cx| {
-                                                this.prompt_input.update(cx, |input, cx| {
-                                                    let current = input.text().to_string();
-                                                    input.set_text(format!("{}/", current), cx);
-                                                });
-                                            })),
-                                    )
-                                    // File Mention Pill
-                                    .child(
-                                        div()
-                                            .id("composer-mention-chip")
-                                            .flex()
-                                            .items_center()
-                                            .gap_1()
-                                            .px_2()
-                                            .py_1()
-                                            .rounded(theme.radius(Radius::Sm))
-                                            .border_1()
-                                            .border_color(MonoTheme::border_stroke())
-                                            .bg(MonoTheme::bg_base())
-                                            .cursor_pointer()
-                                            .hover(|s| s.bg(MonoTheme::bg_hover()))
-                                            .text_size(theme.text_size(TextSize::Xs))
-                                            .text_color(MonoTheme::mention_cyan())
-                                            .child("@ Files")
-                                            .on_click(cx.listener(|this, _, _, cx| {
-                                                this.prompt_input.update(cx, |input, cx| {
-                                                    let current = input.text().to_string();
-                                                    input.set_text(format!("{}@", current), cx);
-                                                });
-                                            })),
-                                    )
+                                    .gap_2()
                                     // Attachment button (+)
                                     .child(
                                         div()
@@ -274,29 +397,16 @@ impl BenCodeApp {
                                             .flex()
                                             .items_center()
                                             .justify_center()
-                                            .size(px(26.0))
-                                            .rounded(theme.radius(Radius::Sm))
+                                            .size(px(32.0))
+                                            .rounded(theme.radius(Radius::Md))
                                             .border_1()
                                             .border_color(MonoTheme::border_stroke())
                                             .bg(MonoTheme::bg_base())
                                             .cursor_pointer()
                                             .hover(|s| s.bg(MonoTheme::bg_hover()))
                                             .text_color(MonoTheme::fg_muted())
-                                            .text_size(theme.text_size(TextSize::Xs))
+                                            .text_size(theme.text_size(TextSize::Sm))
                                             .child("+"),
-                                    ),
-                            )
-                            .child(
-                                div()
-                                    .flex()
-                                    .items_center()
-                                    .gap_3()
-                                    // Keyboard hints
-                                    .child(
-                                        div()
-                                            .text_size(theme.text_size(TextSize::Xs))
-                                            .text_color(MonoTheme::fg_subtle())
-                                            .child("↵ to send · ⇧↵ for newline"),
                                     )
                                     // Send / Stop action button
                                     .child(
@@ -323,7 +433,72 @@ impl BenCodeApp {
                                             })),
                                     ),
                             ),
+                    )
+                    // 3. Bottom Keyboard Hints
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .justify_end()
+                            .px_3()
+                            .pb_2()
+                            .text_size(theme.text_size(TextSize::Xs))
+                            .text_color(MonoTheme::fg_subtle())
+                            .child("↵ to send · ⇧↵ for new line"),
                     ),
             )
+    }
+
+    fn render_model_option(
+        &self,
+        name: &'static str,
+        harness: &'static str,
+        color: gpui::Rgba,
+        cx: &Context<Self>,
+    ) -> impl IntoElement {
+        let theme = cx.theme();
+        let is_sel = self.selected_model == name;
+
+        div()
+            .id(SharedString::from(format!("model-option-{}", name)))
+            .flex()
+            .items_center()
+            .justify_between()
+            .px_2p5()
+            .py_1p5()
+            .rounded(theme.radius(Radius::Sm))
+            .cursor_pointer()
+            .when(is_sel, |el| el.bg(MonoTheme::bg_active()))
+            .when(!is_sel, |el| el.hover(|s| s.bg(MonoTheme::bg_hover())))
+            .on_click(cx.listener(move |this, _, _, cx| {
+                this.set_session_model(name.to_string(), harness.to_string(), cx);
+            }))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .child(
+                        div()
+                            .size(px(6.0))
+                            .rounded_full()
+                            .bg(color),
+                    )
+                    .child(
+                        div()
+                            .text_size(theme.text_size(TextSize::Xs))
+                            .font_weight(if is_sel { FontWeight::BOLD } else { FontWeight::NORMAL })
+                            .text_color(if is_sel { MonoTheme::fg_primary() } else { MonoTheme::fg_muted() })
+                            .child(name),
+                    ),
+            )
+            .when(is_sel, |el| {
+                el.child(
+                    div()
+                        .text_size(theme.text_size(TextSize::Xs))
+                        .text_color(MonoTheme::accent())
+                        .child("✓"),
+                )
+            })
     }
 }
