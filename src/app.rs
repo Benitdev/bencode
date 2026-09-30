@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
 use ely_gpui_component::forms::{InputEvent, TextInput};
-use gpui::{AppContext, Context, Entity, IntoElement, ParentElement, Render, Styled, Subscription, Window, div};
+use gpui::{AppContext, Context, Entity, IntoElement, ParentElement, Render, Styled, Subscription, Window, div, prelude::*};
 
 use crate::db::{Block, MonoCodeDb, SessionRow, TurnModel};
 use crate::harness::HarnessResolver;
+use crate::ui::settings_modal::SettingsTab;
 use crate::ui::theme::MonoTheme;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -49,6 +50,8 @@ pub struct BenCodeApp {
     pub is_model_picker_open: bool,
     pub is_branch_picker_open: bool,
     pub terminal: Option<Entity<Terminal>>,
+    pub is_settings_open: bool,
+    pub settings_tab: SettingsTab,
     pub prompt_input: Entity<TextInput>,
     pub search_input: Entity<TextInput>,
     pub db: Arc<MonoCodeDb>,
@@ -137,6 +140,8 @@ impl BenCodeApp {
             is_model_picker_open: false,
             is_branch_picker_open: false,
             terminal: Some(terminal),
+            is_settings_open: false,
+            settings_tab: SettingsTab::Providers,
             prompt_input,
             search_input,
             db: Arc::new(db),
@@ -353,5 +358,7 @@ impl Render for BenCodeApp {
             )
             // 3. Bottom Usage Footer
             .child(self.render_usage_footer(cx))
+            // 4. Modal Overlays (Settings)
+            .when(self.is_settings_open, |el| el.child(self.render_settings_modal(cx)))
     }
 }

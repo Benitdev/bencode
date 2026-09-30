@@ -1,7 +1,7 @@
 use ely_gpui_component::theme::{ActiveTheme, Radius, TextSize};
 use gpui::{
     Context, FontWeight, InteractiveElement, IntoElement, ParentElement, Styled, div,
-    px,
+    prelude::*, px,
 };
 
 use crate::app::BenCodeApp;
@@ -107,7 +107,11 @@ impl BenCodeApp {
                             .cursor_pointer()
                             .hover(|s| s.bg(MonoTheme::bg_hover()))
                             .text_color(MonoTheme::fg_muted())
-                            .child("⚙️"),
+                            .child("⚙️")
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.is_settings_open = true;
+                                cx.notify();
+                            })),
                     ),
             )
     }
