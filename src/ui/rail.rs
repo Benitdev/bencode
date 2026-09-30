@@ -5,7 +5,7 @@ use gpui::{
     prelude::*, px,
 };
 
-use crate::app::BenCodeApp;
+use crate::app::{BenCodeApp, SidebarMode};
 use crate::ui::theme::MonoTheme;
 
 impl BenCodeApp {
@@ -83,9 +83,21 @@ impl BenCodeApp {
                             .size(px(36.0))
                             .rounded(theme.radius(Radius::Md))
                             .cursor_pointer()
+                            .bg(if self.is_automations_open {
+                                MonoTheme::bg_active()
+                            } else {
+                                gpui::rgba(0x00000000)
+                            })
                             .hover(|s| s.bg(MonoTheme::bg_hover()))
-                            .text_color(MonoTheme::fg_muted())
-                            .child(Icon::new(IconName::Zap).size(IconSize::Sm)),
+                            .text_color(if self.is_automations_open {
+                                MonoTheme::skill_gold()
+                            } else {
+                                MonoTheme::fg_muted()
+                            })
+                            .child(Icon::new(IconName::Zap).size(IconSize::Sm))
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.open_automations(cx);
+                            })),
                     )
                     // Inbox / Reminders
                     .child(
@@ -101,7 +113,7 @@ impl BenCodeApp {
                             .text_color(MonoTheme::fg_subtle())
                             .child(Icon::new(IconName::Inbox).size(IconSize::Sm)),
                     )
-                    // Folder / Projects
+                    // Folder / Files Tree
                     .child(
                         div()
                             .id("rail-folder-btn")
@@ -111,9 +123,25 @@ impl BenCodeApp {
                             .size(px(36.0))
                             .rounded(theme.radius(Radius::Md))
                             .cursor_pointer()
+                            .bg(if self.sidebar_mode == SidebarMode::Files {
+                                MonoTheme::bg_active()
+                            } else {
+                                gpui::rgba(0x00000000)
+                            })
                             .hover(|s| s.bg(MonoTheme::bg_hover()))
-                            .text_color(MonoTheme::fg_muted())
-                            .child(Icon::new(IconName::Folder).size(IconSize::Sm)),
+                            .text_color(if self.sidebar_mode == SidebarMode::Files {
+                                MonoTheme::accent()
+                            } else {
+                                MonoTheme::fg_muted()
+                            })
+                            .child(Icon::new(IconName::Folder).size(IconSize::Sm))
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.sidebar_mode = match this.sidebar_mode {
+                                    SidebarMode::Sessions => SidebarMode::Files,
+                                    SidebarMode::Files => SidebarMode::Sessions,
+                                };
+                                cx.notify();
+                            })),
                     ),
             )
             // Bottom Rail Icons (Settings / Help)

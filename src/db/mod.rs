@@ -28,6 +28,42 @@ pub struct NoteUpsert {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutomationRow {
+    pub id: String,
+    pub name: String,
+    pub prompt: String,
+    pub harness: String,
+    pub model: String,
+    pub cwd: String,
+    pub schedule_kind: String,
+    pub time: String,
+    pub minute: i64,
+    pub day_of_week: i64,
+    pub enabled: bool,
+    pub next_run_at: i64,
+    pub last_run_at: Option<i64>,
+    pub last_run_status: Option<String>,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutomationRunRow {
+    pub id: String,
+    pub automation_id: String,
+    pub trigger: String,
+    pub scheduled_for: i64,
+    pub created_at: i64,
+    pub started_at: Option<i64>,
+    pub completed_at: Option<i64>,
+    pub status: String,
+    pub session_id: Option<String>,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionRow {
     pub id: String,
     pub title: String,
@@ -144,7 +180,22 @@ impl MonoCodeDb {
                  created_at INTEGER NOT NULL,
                  updated_at INTEGER NOT NULL
              );
-             CREATE INDEX IF NOT EXISTS notes_updated_idx ON notes (updated_at DESC, id);"
+             CREATE INDEX IF NOT EXISTS notes_updated_idx ON notes (updated_at DESC, id);
+             CREATE TABLE IF NOT EXISTS automations (
+                 id TEXT PRIMARY KEY,
+                 definition_json TEXT NOT NULL,
+                 enabled INTEGER NOT NULL,
+                 next_run_at INTEGER NOT NULL,
+                 updated_at INTEGER NOT NULL
+             );
+             CREATE INDEX IF NOT EXISTS automations_due_idx ON automations (enabled, next_run_at);
+             CREATE TABLE IF NOT EXISTS automation_runs (
+                 id TEXT PRIMARY KEY,
+                 automation_id TEXT NOT NULL REFERENCES automations(id) ON DELETE CASCADE,
+                 created_at INTEGER NOT NULL,
+                 run_json TEXT NOT NULL
+             );
+             CREATE INDEX IF NOT EXISTS automation_runs_history_idx ON automation_runs (automation_id, created_at DESC);"
         )?;
 
         Ok(Self { conn })
@@ -410,6 +461,90 @@ impl MonoCodeDb {
 
     pub fn delete_note(&self, id: &str) -> Result<()> {
         self.conn.execute("DELETE FROM notes WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    pub fn list_automations(&self) -> Result<Vec<AutomationRow>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, definition_json FROM automations ORDER BY updated_at DESC"
+        )?;
+        let rows = stmt.query_map([], |row| {
+            let id: String = row.get(0)?;
+            let json: String = row.get(1)?;
+            Ok((id, json))
+        })?;
+
+        let mut automations = Vec::new();
+        for row in rows {
+            let (_id, raw) = row?;
+            if let Ok(auto) = serde_json::from_str::<AutomationRow>(&raw) {
+                automations.push(auto);
+            }
+        }
+        Ok(automations)
+    }
+
+    pub fn save_automation(&self, auto: &AutomationRow) -> Result<()> {
+        let json = serde_json::to_string(auto)?;
+        self.conn.execute(
+            "INSERT INTO automations (id, definition_json, enabled, next_run_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(id) DO UPDATE SET
+                 definition_json = excluded.definition_json,
+                 enabled = excluded.enabled,
+                 next_run_at = excluded.next_run_at,
+                 updated_at = excluded.updated_at",
+            params![
+                auto.id,
+                json,
+                if auto.enabled { 1 } else { 0 },
+                auto.next_run_at,
+                auto.updated_at
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_automation(&self, id: &str) -> Result<()> {
+        self.conn.execute("DELETE FROM automations WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    pub fn toggle_automation(&self, id: &str, enabled: bool) -> Result<()> {
+        let enabled_int = if enabled { 1 } else { 0 };
+        self.conn.execute(
+            "UPDATE automations SET enabled = ?1, updated_at = ?2 WHERE id = ?3",
+            params![enabled_int, now_millis(), id],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_automation_runs(&self, automation_id: &str) -> Result<Vec<AutomationRunRow>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT run_json FROM automation_runs WHERE automation_id = ?1 ORDER BY created_at DESC LIMIT 50"
+        )?;
+        let rows = stmt.query_map(params![automation_id], |row| {
+            let json: String = row.get(0)?;
+            Ok(json)
+        })?;
+
+        let mut runs = Vec::new();
+        for row in rows {
+            let raw = row?;
+            if let Ok(run) = serde_json::from_str::<AutomationRunRow>(&raw) {
+                runs.push(run);
+            }
+        }
+        Ok(runs)
+    }
+
+    pub fn create_automation_run(&self, run: &AutomationRunRow) -> Result<()> {
+        let json = serde_json::to_string(run)?;
+        self.conn.execute(
+            "INSERT INTO automation_runs (id, automation_id, created_at, run_json)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![run.id, run.automation_id, run.created_at, json],
+        )?;
         Ok(())
     }
 }

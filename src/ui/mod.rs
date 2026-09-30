@@ -1,6 +1,8 @@
+pub mod automations_view;
 pub mod components;
 pub mod composer;
 pub mod diff_viewer;
+pub mod file_tree;
 pub mod footer;
 pub mod notes_view;
 pub mod rail;

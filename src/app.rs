@@ -33,6 +33,13 @@ pub enum PermissionMode {
     ReadOnly,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum SidebarMode {
+    #[default]
+    Sessions,
+    Files,
+}
+
 use ely_gpui_component::terminal::{Launch, Terminal};
 
 pub struct BenCodeApp {
@@ -43,6 +50,8 @@ pub struct BenCodeApp {
     pub active_view_mode: ViewMode,
     pub filter_mode: FilterMode,
     pub permission_mode: PermissionMode,
+    pub sidebar_mode: SidebarMode,
+    pub expanded_folders: std::collections::HashSet<String>,
     pub is_agent_running: bool,
     pub selected_diff_path: Option<String>,
     pub search_query: String,
@@ -63,6 +72,13 @@ pub struct BenCodeApp {
     pub note_filter_input: Entity<TextInput>,
     pub note_title_input: Entity<TextInput>,
     pub note_body_input: Entity<TextInput>,
+    pub is_automations_open: bool,
+    pub automations: Vec<crate::db::AutomationRow>,
+    pub selected_automation_id: Option<String>,
+    pub automation_runs: Vec<crate::db::AutomationRunRow>,
+    pub automation_name_input: Entity<TextInput>,
+    pub automation_prompt_input: Entity<TextInput>,
+    pub automation_time_input: Entity<TextInput>,
     pub prompt_input: Entity<TextInput>,
     pub search_input: Entity<TextInput>,
     pub db: Arc<MonoCodeDb>,
@@ -108,6 +124,22 @@ impl BenCodeApp {
             TextInput::new(window, cx)
                 .multi_line(5, 25)
                 .placeholder("Write note or scratchpad in markdown...")
+        });
+
+        let automation_name_input = cx.new(|cx| {
+            TextInput::new(window, cx)
+                .placeholder("Automation name...")
+        });
+
+        let automation_prompt_input = cx.new(|cx| {
+            TextInput::new(window, cx)
+                .multi_line(3, 10)
+                .placeholder("Automation prompt...")
+        });
+
+        let automation_time_input = cx.new(|cx| {
+            TextInput::new(window, cx)
+                .placeholder("09:00")
         });
 
         let mut subscriptions = Vec::new();
@@ -165,6 +197,9 @@ impl BenCodeApp {
         let notes = db.list_notes().unwrap_or_default();
         let selected_note_id = notes.first().map(|n| n.id.clone());
 
+        let automations = db.list_automations().unwrap_or_default();
+        let selected_automation_id = automations.first().map(|a| a.id.clone());
+
         Self {
             sessions,
             selected_session_id,
@@ -173,6 +208,8 @@ impl BenCodeApp {
             active_view_mode: ViewMode::Chat,
             filter_mode: FilterMode::All,
             permission_mode: PermissionMode::Auto,
+            sidebar_mode: SidebarMode::Sessions,
+            expanded_folders: std::collections::HashSet::new(),
             is_agent_running: false,
             selected_diff_path: None,
             search_query: String::new(),
@@ -193,6 +230,13 @@ impl BenCodeApp {
             note_filter_input,
             note_title_input,
             note_body_input,
+            is_automations_open: false,
+            automations,
+            selected_automation_id,
+            automation_runs: Vec::new(),
+            automation_name_input,
+            automation_prompt_input,
+            automation_time_input,
             prompt_input,
             search_input,
             db: Arc::new(db),
@@ -456,7 +500,12 @@ impl Render for BenCodeApp {
                     .flex_1()
                     .overflow_hidden()
                     .child(self.render_project_rail(cx))
-                    .child(self.render_sidebar(cx))
+                    .child(
+                        match self.sidebar_mode {
+                            SidebarMode::Sessions => self.render_sidebar(cx).into_any_element(),
+                            SidebarMode::Files => self.render_file_tree(cx).into_any_element(),
+                        }
+                    )
                     .child(
                         match self.active_view_mode {
                             ViewMode::Chat => self.render_transcript_panel(selected_session.as_ref(), cx).into_any_element(),
@@ -467,8 +516,9 @@ impl Render for BenCodeApp {
             )
             // 3. Bottom Usage Footer
             .child(self.render_usage_footer(cx))
-            // 4. Modal Overlays (Settings & Notes)
+            // 4. Modal Overlays (Settings, Notes, Automations)
             .when(self.is_settings_open, |el| el.child(self.render_settings_modal(cx)))
             .when(self.is_notes_open, |el| el.child(self.render_notes_modal(cx)))
+            .when(self.is_automations_open, |el| el.child(self.render_automations_modal(cx)))
     }
 }
