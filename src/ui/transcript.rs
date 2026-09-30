@@ -65,7 +65,7 @@ impl BenCodeApp {
                                                     .text_color(MonoTheme::fg_muted())
                                                     .child(format!("Harness: {} • Path: {}", s.harness, s.cwd)),
                                             )
-                                            // Suggestion Chips
+                                            // Suggestion Chips (Clicking fills the composer prompt!)
                                             .child(
                                                 div()
                                                     .flex()
@@ -74,6 +74,7 @@ impl BenCodeApp {
                                                     .pt_6()
                                                     .child(
                                                         div()
+                                                            .id("chip-review-changes")
                                                             .px_3()
                                                             .py_1p5()
                                                             .rounded(theme.radius(Radius::Md))
@@ -84,10 +85,16 @@ impl BenCodeApp {
                                                             .text_color(MonoTheme::fg_muted())
                                                             .cursor_pointer()
                                                             .hover(|s| s.bg(MonoTheme::bg_hover()).text_color(MonoTheme::fg_primary()))
-                                                            .child("🔍 Review recent git changes"),
+                                                            .child("🔍 Review recent git changes")
+                                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                                this.prompt_input.update(cx, |input, cx| {
+                                                                    input.set_text("Review recent git changes in the workspace and explain differences", cx);
+                                                                });
+                                                            })),
                                                     )
                                                     .child(
                                                         div()
+                                                            .id("chip-run-tests")
                                                             .px_3()
                                                             .py_1p5()
                                                             .rounded(theme.radius(Radius::Md))
@@ -98,10 +105,16 @@ impl BenCodeApp {
                                                             .text_color(MonoTheme::fg_muted())
                                                             .cursor_pointer()
                                                             .hover(|s| s.bg(MonoTheme::bg_hover()).text_color(MonoTheme::fg_primary()))
-                                                            .child("⚡ Run tests & fix failures"),
+                                                            .child("⚡ Run tests & fix failures")
+                                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                                this.prompt_input.update(cx, |input, cx| {
+                                                                    input.set_text("Run the test suite and investigate any failures", cx);
+                                                                });
+                                                            })),
                                                     )
                                                     .child(
                                                         div()
+                                                            .id("chip-explain-arch")
                                                             .px_3()
                                                             .py_1p5()
                                                             .rounded(theme.radius(Radius::Md))
@@ -112,7 +125,12 @@ impl BenCodeApp {
                                                             .text_color(MonoTheme::fg_muted())
                                                             .cursor_pointer()
                                                             .hover(|s| s.bg(MonoTheme::bg_hover()).text_color(MonoTheme::fg_primary()))
-                                                            .child("📦 Explain project architecture"),
+                                                            .child("📦 Explain project architecture")
+                                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                                this.prompt_input.update(cx, |input, cx| {
+                                                                    input.set_text("Explain project architecture, database models, and main entry points", cx);
+                                                                });
+                                                            })),
                                                     ),
                                             )
                                             .into_any_element()
@@ -121,13 +139,61 @@ impl BenCodeApp {
                                     s.blocks.iter().map(|block| {
                                         let is_user = block.role == "user";
                                         let text = block.text.as_deref().unwrap_or("");
-                                        let harness_label = s.harness.to_uppercase();
+                                        let harness_label = block.turn_model
+                                            .as_ref()
+                                            .and_then(|tm| tm.name.as_deref())
+                                            .unwrap_or(s.harness.as_str())
+                                            .to_uppercase();
+
+                                        let second_opinion = block.second_opinion.as_ref();
 
                                         if is_user {
                                             div()
                                                 .flex()
-                                                .justify_end()
+                                                .flex_col()
+                                                .items_end()
                                                 .w_full()
+                                                // Optional Handoff Mini-Card
+                                                .when(second_opinion.is_some(), |parent| {
+                                                    let so = second_opinion.unwrap();
+                                                    let from = so.get("from").and_then(|v| v.as_str()).unwrap_or("agent");
+                                                    let to = so.get("to").and_then(|v| v.as_str()).unwrap_or("agent");
+                                                    let files = so.get("files").and_then(|v| v.as_u64()).unwrap_or(0);
+                                                    let req = so.get("request").and_then(|v| v.as_str()).unwrap_or("");
+
+                                                    parent.child(
+                                                        div()
+                                                            .max_w(px(680.0))
+                                                            .mb_2()
+                                                            .p_2p5()
+                                                            .rounded(theme.radius(Radius::Md))
+                                                            .bg(MonoTheme::bg_surface())
+                                                            .border_1()
+                                                            .border_color(MonoTheme::mention_cyan())
+                                                            .child(
+                                                                div()
+                                                                    .flex()
+                                                                    .items_center()
+                                                                    .gap_2()
+                                                                    .child(
+                                                                        div()
+                                                                            .text_size(theme.text_size(TextSize::Xs))
+                                                                            .font_weight(FontWeight::BOLD)
+                                                                            .text_color(MonoTheme::mention_cyan())
+                                                                            .child(format!("HANDOFF: {} ➔ {} ({} files)", from.to_uppercase(), to.to_uppercase(), files)),
+                                                                    )
+                                                            )
+                                                            .when(!req.is_empty(), |el| {
+                                                                el.child(
+                                                                    div()
+                                                                        .pt_1()
+                                                                        .text_size(theme.text_size(TextSize::Xs))
+                                                                        .text_color(MonoTheme::fg_muted())
+                                                                        .child(req.to_string()),
+                                                                )
+                                                            })
+                                                    )
+                                                })
                                                 .child(
                                                     div()
                                                         .max_w(px(680.0))
@@ -153,7 +219,7 @@ impl BenCodeApp {
                                                                     div()
                                                                         .text_size(theme.text_size(TextSize::Xs))
                                                                         .text_color(MonoTheme::fg_subtle())
-                                                                        .child("just now"),
+                                                                        .child("prompt"),
                                                                 ),
                                                         )
                                                         .child(
@@ -165,6 +231,15 @@ impl BenCodeApp {
                                                 )
                                                 .into_any_element()
                                         } else if block.role == "tool" {
+                                            let tool_title = block.tool
+                                                .as_ref()
+                                                .and_then(|t| t.get("title").and_then(|v| v.as_str()))
+                                                .unwrap_or(text);
+                                            let tool_status = block.tool
+                                                .as_ref()
+                                                .and_then(|t| t.get("status").and_then(|v| v.as_str()))
+                                                .unwrap_or("completed");
+
                                             div()
                                                 .flex()
                                                 .items_center()
@@ -179,7 +254,11 @@ impl BenCodeApp {
                                                     div()
                                                         .size(px(6.0))
                                                         .rounded_full()
-                                                        .bg(MonoTheme::success()),
+                                                        .bg(if tool_status == "completed" {
+                                                            MonoTheme::success()
+                                                        } else {
+                                                            MonoTheme::accent()
+                                                        }),
                                                 )
                                                 .child(
                                                     div()
@@ -192,8 +271,8 @@ impl BenCodeApp {
                                                     div()
                                                         .text_size(theme.text_size(TextSize::Xs))
                                                         .font_family(theme.mono_family.clone())
-                                                        .text_color(MonoTheme::fg_muted())
-                                                        .child(text.to_string()),
+                                                        .text_color(MonoTheme::fg_primary())
+                                                        .child(tool_title.to_string()),
                                                 )
                                                 .into_any_element()
                                         } else {

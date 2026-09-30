@@ -1,5 +1,6 @@
 mod app;
 mod db;
+mod git;
 mod harness;
 mod ui;
 

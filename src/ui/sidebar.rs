@@ -65,17 +65,9 @@ impl BenCodeApp {
                             )
                             .child(
                                 div()
-                                    .text_size(theme.text_size(TextSize::Sm))
-                                    .text_color(if self.search_query.is_empty() {
-                                        MonoTheme::fg_subtle()
-                                    } else {
-                                        MonoTheme::fg_primary()
-                                    })
-                                    .child(if self.search_query.is_empty() {
-                                        "Search threads...".to_string()
-                                    } else {
-                                        self.search_query.clone()
-                                    }),
+                                    .flex_1()
+                                    .min_w_0()
+                                    .child(self.search_input.clone()),
                             ),
                     ),
             )
@@ -185,21 +177,37 @@ impl BenCodeApp {
                                     div()
                                 },
                             )
-                            // Title
+                            // Title Row (with pinned badge if applicable)
                             .child(
                                 div()
-                                    .text_size(theme.text_size(TextSize::Sm))
-                                    .font_weight(if is_active {
-                                        FontWeight::SEMIBOLD
-                                    } else {
-                                        FontWeight::NORMAL
-                                    })
-                                    .text_color(if is_active {
-                                        MonoTheme::fg_primary()
-                                    } else {
-                                        MonoTheme::fg_muted()
-                                    })
-                                    .child(title.to_string()),
+                                    .flex()
+                                    .items_center()
+                                    .gap_1p5()
+                                    .child(
+                                        div()
+                                            .flex_1()
+                                            .overflow_hidden()
+                                            .text_size(theme.text_size(TextSize::Sm))
+                                            .font_weight(if is_active {
+                                                FontWeight::SEMIBOLD
+                                            } else {
+                                                FontWeight::NORMAL
+                                            })
+                                            .text_color(if is_active {
+                                                MonoTheme::fg_primary()
+                                            } else {
+                                                MonoTheme::fg_muted()
+                                            })
+                                            .child(title.to_string()),
+                                    )
+                                    .when(session.pinned, |el| {
+                                        el.child(
+                                            div()
+                                                .text_size(theme.text_size(TextSize::Xs))
+                                                .text_color(MonoTheme::skill_gold())
+                                                .child("📌"),
+                                        )
+                                    }),
                             )
                             // Meta Row: Harness Badge + Branch Pill
                             .child(

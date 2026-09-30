@@ -29,6 +29,36 @@ impl BenCodeApp {
             .and_then(|s| s.branch.as_deref())
             .unwrap_or("main");
 
+        let harness = session.map(|s| s.harness.as_str()).unwrap_or("claude");
+        let harness_dot_color = match harness {
+            "claude" => MonoTheme::claude_orange(),
+            "antigravity" => MonoTheme::antigravity_blue(),
+            "codex" => MonoTheme::codex_green(),
+            _ => MonoTheme::accent(),
+        };
+
+        let context_label = match (session.and_then(|s| s.context_used), session.and_then(|s| s.context_window)) {
+            (Some(used), Some(window)) if window > 0 => {
+                let used_str = if used >= 1_000_000 {
+                    format!("{:.1}M", used as f64 / 1_000_000.0)
+                } else if used >= 1000 {
+                    format!("{:.1}k", used as f64 / 1000.0)
+                } else {
+                    format!("{}", used)
+                };
+                let win_str = if window >= 1_000_000 {
+                    format!("{:.1}M", window as f64 / 1_000_000.0)
+                } else if window >= 1000 {
+                    format!("{:.1}k", window as f64 / 1000.0)
+                } else {
+                    format!("{}", window)
+                };
+                let pct = (used as f64 / window as f64 * 100.0).round() as u64;
+                format!("{} / {} tokens ({}%)", used_str, win_str, pct)
+            }
+            _ => "0 / 200k tokens".to_string(),
+        };
+
         div()
             .px_6()
             .pb_5()
@@ -81,7 +111,7 @@ impl BenCodeApp {
                                                 div()
                                                     .size(px(6.0))
                                                     .rounded_full()
-                                                    .bg(MonoTheme::claude_orange()),
+                                                    .bg(harness_dot_color),
                                             )
                                             .child(
                                                 div()
@@ -125,11 +155,11 @@ impl BenCodeApp {
                                     .rounded(theme.radius(Radius::Sm))
                                     .text_size(theme.text_size(TextSize::Xs))
                                     .text_color(MonoTheme::fg_subtle())
-                                    .child("14.2k / 200k tokens"),
+                                    .child(context_label),
                             ),
                     )
                     .child(
-                        // 2. Input Prompt Text Area + Send Action
+                        // 2. Interactive Input Prompt Text Area + Send Action
                         div()
                             .flex()
                             .items_end()
@@ -139,23 +169,9 @@ impl BenCodeApp {
                                 div()
                                     .flex_1()
                                     .min_h(px(46.0))
-                                    .px_1()
-                                    .flex()
-                                    .items_center()
-                                    .child(
-                                        div()
-                                            .text_size(theme.text_size(TextSize::Sm))
-                                            .text_color(if is_running {
-                                                MonoTheme::accent()
-                                            } else {
-                                                MonoTheme::fg_subtle()
-                                            })
-                                            .child(if is_running {
-                                                "⚡ Claude Code is executing task in background..."
-                                            } else {
-                                                "Ask Claude Code or type / for skills, @ for files..."
-                                            }),
-                                    ),
+                                    .px_2()
+                                    .py_1()
+                                    .child(self.prompt_input.clone()),
                             )
                             .child(
                                 div()
@@ -180,7 +196,7 @@ impl BenCodeApp {
                                             .text_size(theme.text_size(TextSize::Sm))
                                             .child("+"),
                                     )
-                                    // Send / Stop button
+                                    // Send / Stop action button
                                     .child(
                                         div()
                                             .id("composer-send-action-btn")
@@ -205,6 +221,18 @@ impl BenCodeApp {
                                             })),
                                     ),
                             ),
+                    )
+                    // 3. Subtle bottom hint
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .justify_end()
+                            .px_3()
+                            .pb_2()
+                            .text_size(theme.text_size(TextSize::Xs))
+                            .text_color(MonoTheme::fg_subtle())
+                            .child("↵ to send · ⇧↵ for new line"),
                     ),
             )
     }

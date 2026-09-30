@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
-use gpui::{Context, IntoElement, ParentElement, Render, Styled, Window, div};
+use ely_gpui_component::forms::{InputEvent, TextInput};
+use gpui::{AppContext, Context, Entity, IntoElement, ParentElement, Render, Styled, Subscription, Window, div};
 
-use crate::db::{Block, MonoCodeDb, SessionRow};
+use crate::db::{Block, MonoCodeDb, SessionRow, TurnModel};
 use crate::ui::theme::MonoTheme;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -20,13 +21,16 @@ pub struct BenCodeApp {
     pub active_tab_id: Option<String>,
     pub active_view_mode: ViewMode,
     pub is_agent_running: bool,
-    pub active_prompt: String,
+    pub selected_diff_path: Option<String>,
     pub search_query: String,
+    pub prompt_input: Entity<TextInput>,
+    pub search_input: Entity<TextInput>,
     pub db: Arc<MonoCodeDb>,
+    _subscriptions: Vec<Subscription>,
 }
 
 impl BenCodeApp {
-    pub fn new(_window: &mut Window, _cx: &mut Context<Self>) -> Self {
+    pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let db = MonoCodeDb::open_default().unwrap_or_else(|e| {
             log::warn!("Could not open MonoCode DB: {e}");
             panic!("Could not open MonoCode DB at ~/Library/Application Support/com.monocode.desktop/monocode.db: {e}");
@@ -39,6 +43,34 @@ impl BenCodeApp {
         let open_tabs: Vec<String> = sessions.iter().take(3).map(|s| s.id.clone()).collect();
         let active_tab_id = selected_session_id.clone();
 
+        let prompt_input = cx.new(|cx| {
+            TextInput::new(window, cx)
+                .multi_line(1, 6)
+                .placeholder("Ask Claude Code or type / for skills, @ for files...")
+        });
+
+        let search_input = cx.new(|cx| {
+            TextInput::new(window, cx)
+                .placeholder("Search threads...")
+        });
+
+        let mut subscriptions = Vec::new();
+
+        let prompt_sub = cx.subscribe(&prompt_input, |this: &mut BenCodeApp, _, event: &InputEvent, cx| {
+            if *event == InputEvent::Submit {
+                this.submit_prompt(cx);
+            }
+        });
+        subscriptions.push(prompt_sub);
+
+        let search_sub = cx.subscribe(&search_input, |this: &mut BenCodeApp, input, event: &InputEvent, cx| {
+            if *event == InputEvent::Changed {
+                this.search_query = input.read(cx).text().to_string();
+                cx.notify();
+            }
+        });
+        subscriptions.push(search_sub);
+
         Self {
             sessions,
             selected_session_id,
@@ -46,9 +78,12 @@ impl BenCodeApp {
             active_tab_id,
             active_view_mode: ViewMode::Chat,
             is_agent_running: false,
-            active_prompt: String::new(),
+            selected_diff_path: None,
             search_query: String::new(),
+            prompt_input,
+            search_input,
             db: Arc::new(db),
+            _subscriptions: subscriptions,
         }
     }
 
@@ -58,12 +93,14 @@ impl BenCodeApp {
         }
         self.selected_session_id = Some(id.clone());
         self.active_tab_id = Some(id);
+        self.selected_diff_path = None;
         cx.notify();
     }
 
     pub fn switch_tab(&mut self, id: String, cx: &mut Context<Self>) {
         self.selected_session_id = Some(id.clone());
         self.active_tab_id = Some(id);
+        self.selected_diff_path = None;
         cx.notify();
     }
 
@@ -91,13 +128,19 @@ impl BenCodeApp {
             created_at: jiff::Timestamp::now().as_millisecond(),
             updated_at: jiff::Timestamp::now().as_millisecond(),
             branch: Some("main".to_string()),
+            context_used: Some(0),
+            context_window: Some(200_000),
+            pinned: false,
+            archived: false,
             blocks: vec![Block {
                 id: "b1".to_string(),
                 role: "assistant".to_string(),
                 text: Some("Ready for your instructions. I can edit files, run bash commands, and inspect git diffs.".to_string()),
                 turn_model: None,
                 tool: None,
+                second_opinion: None,
                 started_at: Some(jiff::Timestamp::now().as_millisecond()),
+                duration_ms: None,
             }],
         };
 
@@ -105,37 +148,74 @@ impl BenCodeApp {
         self.open_tabs.push(new_id.clone());
         self.selected_session_id = Some(new_id.clone());
         self.active_tab_id = Some(new_id);
+        self.selected_diff_path = None;
+        cx.notify();
+    }
+
+    pub fn submit_prompt(&mut self, cx: &mut Context<Self>) {
+        let prompt_text = self.prompt_input.read(cx).text().trim().to_string();
+        if prompt_text.is_empty() {
+            return;
+        }
+
+        // Clear prompt input field
+        self.prompt_input.update(cx, |input, cx| {
+            input.set_text("", cx);
+        });
+
+        let now = jiff::Timestamp::now().as_millisecond();
+        let user_block = Block {
+            id: format!("usr-{}", now),
+            role: "user".to_string(),
+            text: Some(prompt_text.clone()),
+            turn_model: None,
+            tool: None,
+            second_opinion: None,
+            started_at: Some(now),
+            duration_ms: None,
+        };
+
+        if let Some(session_id) = &self.selected_session_id {
+            if let Some(s) = self.sessions.iter_mut().find(|s| &s.id == session_id) {
+                s.blocks.push(user_block);
+                s.updated_at = now;
+
+                if s.title == "New AI Thread" || s.title.is_empty() {
+                    let preview: String = prompt_text.chars().take(36).collect();
+                    s.title = format!("{}...", preview);
+                }
+
+                // Append assistant response block
+                let assistant_block = Block {
+                    id: format!("ast-{}", now + 1),
+                    role: "assistant".to_string(),
+                    text: Some(format!(
+                        "⚡ BenCode executing task: \"{}\"\nInspecting workspace context and running tools natively via Apple Metal.",
+                        prompt_text
+                    )),
+                    turn_model: Some(TurnModel {
+                        harness: Some(s.harness.clone()),
+                        id: Some(s.model.clone()),
+                        name: Some(s.model.clone()),
+                    }),
+                    tool: None,
+                    second_opinion: None,
+                    started_at: Some(now + 1),
+                    duration_ms: None,
+                };
+                s.blocks.push(assistant_block);
+            }
+        }
         cx.notify();
     }
 
     pub fn handle_send_or_stop(&mut self, cx: &mut Context<Self>) {
         if self.is_agent_running {
             self.is_agent_running = false;
+            cx.notify();
         } else {
-            self.is_agent_running = true;
-            if let Some(session_id) = &self.selected_session_id {
-                if let Some(s) = self.sessions.iter_mut().find(|s| &s.id == session_id) {
-                    s.blocks.push(Block {
-                        id: format!("usr-{}", jiff::Timestamp::now().as_millisecond()),
-                        role: "user".to_string(),
-                        text: Some("Inspect codebase architecture and optimize performance".to_string()),
-                        turn_model: None,
-                        tool: None,
-                        started_at: Some(jiff::Timestamp::now().as_millisecond()),
-                    });
-                    s.blocks.push(Block {
-                        id: format!("ast-{}", jiff::Timestamp::now().as_millisecond()),
-                        role: "assistant".to_string(),
-                        text: Some("Running full system audit via BenCode GPUI core. All tabs, git diffs, and terminal sessions are running natively.".to_string()),
-                        turn_model: None,
-                        tool: None,
-                        started_at: Some(jiff::Timestamp::now().as_millisecond()),
-                    });
-                }
-            }
-            self.is_agent_running = false;
+            self.submit_prompt(cx);
         }
-        cx.notify();
     }
 }
 

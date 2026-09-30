@@ -13,6 +13,10 @@ pub struct SessionRow {
     pub created_at: i64,
     pub updated_at: i64,
     pub branch: Option<String>,
+    pub context_used: Option<i64>,
+    pub context_window: Option<i64>,
+    pub pinned: bool,
+    pub archived: bool,
     #[serde(default)]
     pub blocks: Vec<Block>,
 }
@@ -32,8 +36,12 @@ pub struct Block {
     #[serde(rename = "turnModel")]
     pub turn_model: Option<TurnModel>,
     pub tool: Option<serde_json::Value>,
+    #[serde(rename = "secondOpinion")]
+    pub second_opinion: Option<serde_json::Value>,
     #[serde(rename = "startedAt")]
     pub started_at: Option<i64>,
+    #[serde(rename = "durationMs")]
+    pub duration_ms: Option<i64>,
 }
 
 pub struct MonoCodeDb {
@@ -55,7 +63,8 @@ impl MonoCodeDb {
 
     pub fn list_recent_sessions(&self, limit: usize) -> Result<Vec<SessionRow>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, title, cwd, harness, model, created_at, updated_at, branch, blocks_json 
+            "SELECT id, title, cwd, harness, model, created_at, updated_at, branch, blocks_json,
+                    context_used, context_window, pinned, archived 
              FROM sessions 
              ORDER BY updated_at DESC 
              LIMIT ?1",
@@ -64,6 +73,8 @@ impl MonoCodeDb {
         let session_iter = stmt.query_map([limit], |row| {
             let blocks_json: String = row.get(8)?;
             let blocks: Vec<Block> = serde_json::from_str(&blocks_json).unwrap_or_default();
+            let pinned_int: i32 = row.get(11).unwrap_or(0);
+            let archived_int: i32 = row.get(12).unwrap_or(0);
 
             Ok(SessionRow {
                 id: row.get(0)?,
@@ -74,6 +85,10 @@ impl MonoCodeDb {
                 created_at: row.get(5)?,
                 updated_at: row.get(6)?,
                 branch: row.get(7)?,
+                context_used: row.get(9)?,
+                context_window: row.get(10)?,
+                pinned: pinned_int != 0,
+                archived: archived_int != 0,
                 blocks,
             })
         })?;
@@ -87,7 +102,8 @@ impl MonoCodeDb {
 
     pub fn get_session(&self, session_id: &str) -> Result<Option<SessionRow>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, title, cwd, harness, model, created_at, updated_at, branch, blocks_json 
+            "SELECT id, title, cwd, harness, model, created_at, updated_at, branch, blocks_json,
+                    context_used, context_window, pinned, archived 
              FROM sessions 
              WHERE id = ?1",
         )?;
@@ -96,6 +112,8 @@ impl MonoCodeDb {
         if let Some(row) = rows.next()? {
             let blocks_json: String = row.get(8)?;
             let blocks: Vec<Block> = serde_json::from_str(&blocks_json).unwrap_or_default();
+            let pinned_int: i32 = row.get(11).unwrap_or(0);
+            let archived_int: i32 = row.get(12).unwrap_or(0);
 
             Ok(Some(SessionRow {
                 id: row.get(0)?,
@@ -106,6 +124,10 @@ impl MonoCodeDb {
                 created_at: row.get(5)?,
                 updated_at: row.get(6)?,
                 branch: row.get(7)?,
+                context_used: row.get(9)?,
+                context_window: row.get(10)?,
+                pinned: pinned_int != 0,
+                archived: archived_int != 0,
                 blocks,
             }))
         } else {
