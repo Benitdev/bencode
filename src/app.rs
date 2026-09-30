@@ -4,6 +4,7 @@ use ely_gpui_component::forms::{InputEvent, TextInput};
 use gpui::{AppContext, Context, Entity, IntoElement, ParentElement, Render, Styled, Subscription, Window, div};
 
 use crate::db::{Block, MonoCodeDb, SessionRow, TurnModel};
+use crate::harness::HarnessResolver;
 use crate::ui::theme::MonoTheme;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -14,15 +15,35 @@ pub enum ViewMode {
     Terminal,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum FilterMode {
+    #[default]
+    All,
+    Active,
+    Pinned,
+    Archived,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum PermissionMode {
+    #[default]
+    Auto,
+    Confirm,
+    ReadOnly,
+}
+
 pub struct BenCodeApp {
     pub sessions: Vec<SessionRow>,
     pub selected_session_id: Option<String>,
     pub open_tabs: Vec<String>,
     pub active_tab_id: Option<String>,
     pub active_view_mode: ViewMode,
+    pub filter_mode: FilterMode,
+    pub permission_mode: PermissionMode,
     pub is_agent_running: bool,
     pub selected_diff_path: Option<String>,
     pub search_query: String,
+    pub selected_model: String,
     pub prompt_input: Entity<TextInput>,
     pub search_input: Entity<TextInput>,
     pub db: Arc<MonoCodeDb>,
@@ -33,7 +54,7 @@ impl BenCodeApp {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let db = MonoCodeDb::open_default().unwrap_or_else(|e| {
             log::warn!("Could not open MonoCode DB: {e}");
-            panic!("Could not open MonoCode DB at ~/Library/Application Support/com.monocode.desktop/monocode.db: {e}");
+            panic!("Could not open DB: {e}");
         });
 
         let sessions = db.list_recent_sessions(50).unwrap_or_default();
@@ -51,7 +72,7 @@ impl BenCodeApp {
 
         let search_input = cx.new(|cx| {
             TextInput::new(window, cx)
-                .placeholder("Search threads...")
+                .placeholder("Search threads... (⌘K)")
         });
 
         let mut subscriptions = Vec::new();
@@ -71,15 +92,28 @@ impl BenCodeApp {
         });
         subscriptions.push(search_sub);
 
+        // Detect available harnesses
+        let harnesses = HarnessResolver::discover();
+        let default_model = if harnesses.iter().any(|h| h.id == "claude" && h.available) {
+            "Claude 3.7 Sonnet".to_string()
+        } else if harnesses.iter().any(|h| h.id == "antigravity" && h.available) {
+            "Gemini 3.8 Flash".to_string()
+        } else {
+            "Claude 3.7 Sonnet".to_string()
+        };
+
         Self {
             sessions,
             selected_session_id,
             open_tabs,
             active_tab_id,
             active_view_mode: ViewMode::Chat,
+            filter_mode: FilterMode::All,
+            permission_mode: PermissionMode::Auto,
             is_agent_running: false,
             selected_diff_path: None,
             search_query: String::new(),
+            selected_model: default_model,
             prompt_input,
             search_input,
             db: Arc::new(db),
@@ -115,16 +149,33 @@ impl BenCodeApp {
         }
     }
 
+    pub fn toggle_pin_session(&mut self, id: &str, cx: &mut Context<Self>) {
+        if let Some(s) = self.sessions.iter_mut().find(|s| s.id == id) {
+            s.pinned = !s.pinned;
+            let _ = self.db.toggle_pinned(id, !s.pinned);
+            cx.notify();
+        }
+    }
+
+    pub fn delete_session(&mut self, id: &str, cx: &mut Context<Self>) {
+        let _ = self.db.delete_session(id);
+        self.sessions.retain(|s| s.id != id);
+        self.close_tab(id, cx);
+        cx.notify();
+    }
+
     pub fn create_new_session(&mut self, cx: &mut Context<Self>) {
         let new_id = format!("bencode-{}", jiff::Timestamp::now().as_millisecond());
+        let cwd = std::env::current_dir()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|_| "~".to_string());
+
         let new_session = SessionRow {
             id: new_id.clone(),
             title: "New AI Thread".to_string(),
-            cwd: std::env::current_dir()
-                .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_else(|_| "~".to_string()),
+            cwd,
             harness: "claude".to_string(),
-            model: "claude-3-7-sonnet".to_string(),
+            model: self.selected_model.clone(),
             created_at: jiff::Timestamp::now().as_millisecond(),
             updated_at: jiff::Timestamp::now().as_millisecond(),
             branch: Some("main".to_string()),
@@ -143,6 +194,8 @@ impl BenCodeApp {
                 duration_ms: None,
             }],
         };
+
+        let _ = self.db.upsert_session(&new_session);
 
         self.sessions.insert(0, new_session);
         self.open_tabs.push(new_id.clone());
@@ -204,6 +257,9 @@ impl BenCodeApp {
                     duration_ms: None,
                 };
                 s.blocks.push(assistant_block);
+
+                // Persist updated session to SQLite
+                let _ = self.db.upsert_session(s);
             }
         }
         cx.notify();

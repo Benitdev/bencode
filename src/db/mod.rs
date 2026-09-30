@@ -1,5 +1,5 @@
 use anyhow::Result;
-use rusqlite::Connection;
+use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -29,6 +29,25 @@ pub struct TurnModel {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolCall {
+    #[serde(rename = "callId")]
+    pub call_id: Option<String>,
+    pub kind: Option<String>,
+    pub title: Option<String>,
+    pub status: Option<String>,
+    pub input: Option<serde_json::Value>,
+    pub output: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SecondOpinion {
+    pub from: Option<String>,
+    pub to: Option<String>,
+    pub files: Option<u64>,
+    pub request: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Block {
     pub id: String,
     pub role: String,
@@ -51,13 +70,47 @@ pub struct MonoCodeDb {
 impl MonoCodeDb {
     pub fn open_default() -> Result<Self> {
         let home = std::env::var("HOME")?;
-        let db_path = PathBuf::from(home)
+        let monocode_db_path = PathBuf::from(&home)
             .join("Library/Application Support/com.monocode.desktop/monocode.db");
 
+        let db_path = if monocode_db_path.exists() {
+            monocode_db_path
+        } else {
+            let bencode_dir = PathBuf::from(&home).join(".bencode");
+            let _ = std::fs::create_dir_all(&bencode_dir);
+            bencode_dir.join("bencode.db")
+        };
+
         let conn = Connection::open_with_flags(
-            db_path,
-            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI,
+            &db_path,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE
+                | rusqlite::OpenFlags::SQLITE_OPEN_CREATE
+                | rusqlite::OpenFlags::SQLITE_OPEN_URI,
         )?;
+
+        conn.execute_batch(
+            "PRAGMA journal_mode = WAL;
+             PRAGMA foreign_keys = ON;
+             CREATE TABLE IF NOT EXISTS sessions (
+                 id TEXT PRIMARY KEY,
+                 cwd TEXT NOT NULL,
+                 harness TEXT NOT NULL,
+                 model TEXT NOT NULL,
+                 model_settings TEXT NOT NULL DEFAULT '{}',
+                 runtime_mode TEXT NOT NULL DEFAULT 'auto',
+                 title TEXT NOT NULL,
+                 provider_session_id TEXT,
+                 blocks_json TEXT NOT NULL DEFAULT '[]',
+                 created_at INTEGER NOT NULL,
+                 updated_at INTEGER NOT NULL,
+                 branch TEXT,
+                 context_used INTEGER,
+                 context_window INTEGER,
+                 archived INTEGER NOT NULL DEFAULT 0,
+                 pinned INTEGER NOT NULL DEFAULT 0
+             );"
+        )?;
+
         Ok(Self { conn })
     }
 
@@ -133,5 +186,73 @@ impl MonoCodeDb {
         } else {
             Ok(None)
         }
+    }
+
+    pub fn upsert_session(&self, session: &SessionRow) -> Result<()> {
+        let blocks_json = serde_json::to_string(&session.blocks).unwrap_or_else(|_| "[]".into());
+        let pinned_int = if session.pinned { 1 } else { 0 };
+        let archived_int = if session.archived { 1 } else { 0 };
+
+        self.conn.execute(
+            "INSERT INTO sessions (
+                id, cwd, harness, model, title, blocks_json, created_at, updated_at,
+                branch, context_used, context_window, pinned, archived
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+             ON CONFLICT(id) DO UPDATE SET
+                title = excluded.title,
+                cwd = excluded.cwd,
+                harness = excluded.harness,
+                model = excluded.model,
+                blocks_json = excluded.blocks_json,
+                updated_at = excluded.updated_at,
+                branch = excluded.branch,
+                context_used = excluded.context_used,
+                context_window = excluded.context_window,
+                pinned = excluded.pinned,
+                archived = excluded.archived",
+            params![
+                session.id,
+                session.cwd,
+                session.harness,
+                session.model,
+                session.title,
+                blocks_json,
+                session.created_at,
+                session.updated_at,
+                session.branch,
+                session.context_used,
+                session.context_window,
+                pinned_int,
+                archived_int,
+            ],
+        )?;
+
+        Ok(())
+    }
+
+    pub fn toggle_pinned(&self, session_id: &str, current: bool) -> Result<()> {
+        let new_val = if current { 0 } else { 1 };
+        self.conn.execute(
+            "UPDATE sessions SET pinned = ?1 WHERE id = ?2",
+            params![new_val, session_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn toggle_archived(&self, session_id: &str, current: bool) -> Result<()> {
+        let new_val = if current { 0 } else { 1 };
+        self.conn.execute(
+            "UPDATE sessions SET archived = ?1 WHERE id = ?2",
+            params![new_val, session_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_session(&self, session_id: &str) -> Result<()> {
+        self.conn.execute(
+            "DELETE FROM sessions WHERE id = ?1",
+            params![session_id],
+        )?;
+        Ok(())
     }
 }

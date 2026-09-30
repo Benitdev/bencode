@@ -104,7 +104,7 @@ impl BenCodeApp {
                                         .gap_2()
                                         .text_size(theme.text_size(TextSize::Sm))
                                         .text_color(MonoTheme::fg_muted())
-                                        .child("✨ No changes in workspace")
+                                        .child("✨ Workspace is clean (no diffs)")
                                         .into_any_element()
                                 ]
                             } else {
@@ -139,7 +139,6 @@ impl BenCodeApp {
                                                 .flex()
                                                 .items_center()
                                                 .gap_2()
-                                                .overflow_hidden()
                                                 .child(
                                                     div()
                                                         .size(px(16.0))
@@ -170,42 +169,38 @@ impl BenCodeApp {
                                                 .items_center()
                                                 .gap_1p5()
                                                 .text_size(theme.text_size(TextSize::Xs))
-                                                .font_family(theme.mono_family.clone())
-                                                .when(f.additions > 0, |el| {
-                                                    el.child(
-                                                        div()
-                                                            .text_color(MonoTheme::success())
-                                                            .child(format!("+{}", f.additions)),
-                                                    )
-                                                })
-                                                .when(f.deletions > 0, |el| {
-                                                    el.child(
-                                                        div()
-                                                            .text_color(MonoTheme::danger())
-                                                            .child(format!("-{}", f.deletions)),
-                                                    )
-                                                }),
+                                                .child(
+                                                    div()
+                                                        .text_color(MonoTheme::success())
+                                                        .child(format!("+{}", f.additions)),
+                                                )
+                                                .child(
+                                                    div()
+                                                        .text_color(MonoTheme::danger())
+                                                        .child(format!("-{}", f.deletions)),
+                                                ),
                                         )
                                         .into_any_element()
                                 }).collect()
                             }),
                     ),
             )
-            // Right Pane: Unified Diff Content
+            // Right Pane: Diff Content
             .child(
                 div()
-                    .flex_1()
+                    .flex()
                     .flex_col()
+                    .flex_1()
                     .h_full()
                     .bg(MonoTheme::bg_base())
-                    // Diff File Header Bar
+                    // File Header Bar
                     .child(
                         div()
                             .flex()
                             .items_center()
                             .justify_between()
-                            .h(px(40.0))
                             .px_4()
+                            .py_2p5()
                             .border_b_1()
                             .border_color(MonoTheme::border_stroke())
                             .bg(MonoTheme::bg_surface())
@@ -216,9 +211,9 @@ impl BenCodeApp {
                                     .gap_2()
                                     .child(
                                         div()
-                                            .font_family(theme.mono_family.clone())
                                             .text_size(theme.text_size(TextSize::Sm))
-                                            .font_weight(FontWeight::SEMIBOLD)
+                                            .font_family(theme.mono_family.clone())
+                                            .font_weight(FontWeight::BOLD)
                                             .text_color(MonoTheme::fg_primary())
                                             .child(if selected_path.is_empty() {
                                                 "No file selected".to_string()
@@ -226,114 +221,180 @@ impl BenCodeApp {
                                                 selected_path.clone()
                                             }),
                                     )
-                                    .when(active_file.is_some(), |el| {
-                                        let f = active_file.as_ref().unwrap();
-                                        el.child(
+                                    .when(active_file.is_some(), |parent| {
+                                        let f = active_file.unwrap();
+                                        parent.child(
                                             div()
                                                 .flex()
                                                 .items_center()
                                                 .gap_1()
                                                 .text_size(theme.text_size(TextSize::Xs))
-                                                .font_family(theme.mono_family.clone())
-                                                .child(div().text_color(MonoTheme::success()).child(format!("+{}", f.additions)))
-                                                .child(div().text_color(MonoTheme::danger()).child(format!("-{}", f.deletions))),
+                                                .child(
+                                                    div()
+                                                        .text_color(MonoTheme::success())
+                                                        .child(format!("+{}", f.additions)),
+                                                )
+                                                .child(
+                                                    div()
+                                                        .text_color(MonoTheme::danger())
+                                                        .child(format!("-{}", f.deletions)),
+                                                )
                                         )
                                     }),
                             )
                             .child(
                                 div()
-                                    .px_2()
-                                    .py_0p5()
-                                    .rounded(theme.radius(Radius::Sm))
-                                    .bg(MonoTheme::bg_base())
-                                    .border_1()
-                                    .border_color(MonoTheme::border_stroke())
-                                    .text_size(theme.text_size(TextSize::Xs))
-                                    .text_color(MonoTheme::fg_muted())
-                                    .child("Unified Diff"),
+                                    .flex()
+                                    .items_center()
+                                    .gap_2()
+                                    .child(
+                                        div()
+                                            .px_2()
+                                            .py_1()
+                                            .rounded(theme.radius(Radius::Sm))
+                                            .bg(MonoTheme::bg_base())
+                                            .border_1()
+                                            .border_color(MonoTheme::border_stroke())
+                                            .text_size(theme.text_size(TextSize::Xs))
+                                            .text_color(MonoTheme::fg_muted())
+                                            .cursor_pointer()
+                                            .hover(|s| s.bg(MonoTheme::bg_hover()).text_color(MonoTheme::fg_primary()))
+                                            .child("📋 Copy Diff"),
+                                    )
+                                    .child(
+                                        div()
+                                            .px_2()
+                                            .py_1()
+                                            .rounded(theme.radius(Radius::Sm))
+                                            .bg(MonoTheme::bg_base())
+                                            .border_1()
+                                            .border_color(MonoTheme::border_stroke())
+                                            .text_size(theme.text_size(TextSize::Xs))
+                                            .text_color(MonoTheme::danger())
+                                            .cursor_pointer()
+                                            .hover(|s| s.bg(MonoTheme::danger_bg()))
+                                            .child("↺ Discard"),
+                                    ),
                             ),
                     )
-                    // Scrollable Diff Hunks
+                    // Diff Lines List
                     .child(
-                        on_axis(div().id("unified-diff-body-scroll"))
+                        on_axis(div().id("diff-lines-scroll"))
                             .flex_1()
                             .overflow_y_scroll()
                             .p_4()
                             .child(
-                                if diff_lines.is_empty() {
-                                    div()
-                                        .flex()
-                                        .items_center()
-                                        .justify_center()
-                                        .h(px(240.0))
-                                        .text_size(theme.text_size(TextSize::Sm))
-                                        .text_color(MonoTheme::fg_muted())
-                                        .child("No diff lines to display for this file.")
-                                        .into_any_element()
-                                } else {
-                                    div()
-                                        .rounded(theme.radius(Radius::Md))
-                                        .border_1()
-                                        .border_color(MonoTheme::border_stroke())
-                                        .bg(MonoTheme::bg_surface())
-                                        .overflow_hidden()
-                                        .children(diff_lines.iter().map(|line| {
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .font_family(theme.mono_family.clone())
+                                    .text_size(theme.text_size(TextSize::Xs))
+                                    .children(if diff_lines.is_empty() {
+                                        vec![
+                                            div()
+                                                .p_8()
+                                                .text_color(MonoTheme::fg_subtle())
+                                                .child("No diff lines for this file")
+                                                .into_any_element()
+                                        ]
+                                    } else {
+                                        diff_lines.into_iter().enumerate().map(|(idx, line)| {
                                             match line {
                                                 DiffLineKind::Header(hdr) => {
                                                     div()
-                                                        .px_4()
                                                         .py_1()
-                                                        .bg(MonoTheme::bg_base())
-                                                        .border_b_1()
-                                                        .border_color(MonoTheme::border_stroke())
-                                                        .font_family(theme.mono_family.clone())
-                                                        .text_size(theme.text_size(TextSize::Xs))
-                                                        .text_color(MonoTheme::fg_subtle())
-                                                        .child(hdr.clone())
+                                                        .px_2()
+                                                        .my_1()
+                                                        .rounded(theme.radius(Radius::Sm))
+                                                        .bg(MonoTheme::bg_hover())
+                                                        .text_color(MonoTheme::mention_cyan())
+                                                        .font_weight(FontWeight::BOLD)
+                                                        .child(hdr)
                                                         .into_any_element()
                                                 }
                                                 DiffLineKind::Addition(txt) => {
                                                     div()
                                                         .flex()
                                                         .items_center()
-                                                        .px_4()
+                                                        .gap_3()
                                                         .py_0p5()
+                                                        .px_2()
                                                         .bg(MonoTheme::success_bg())
-                                                        .font_family(theme.mono_family.clone())
-                                                        .text_size(theme.text_size(TextSize::Xs))
                                                         .text_color(MonoTheme::success())
-                                                        .child(format!("+ {}", txt))
+                                                        .child(
+                                                            div()
+                                                                .w(px(24.0))
+                                                                .text_color(MonoTheme::fg_subtle())
+                                                                .child(format!("{}", idx + 1)),
+                                                        )
+                                                        .child(
+                                                            div()
+                                                                .w(px(12.0))
+                                                                .child("+"),
+                                                        )
+                                                        .child(
+                                                            div()
+                                                                .flex_1()
+                                                                .child(txt),
+                                                        )
                                                         .into_any_element()
                                                 }
                                                 DiffLineKind::Deletion(txt) => {
                                                     div()
                                                         .flex()
                                                         .items_center()
-                                                        .px_4()
+                                                        .gap_3()
                                                         .py_0p5()
+                                                        .px_2()
                                                         .bg(MonoTheme::danger_bg())
-                                                        .font_family(theme.mono_family.clone())
-                                                        .text_size(theme.text_size(TextSize::Xs))
                                                         .text_color(MonoTheme::danger())
-                                                        .child(format!("- {}", txt))
+                                                        .child(
+                                                            div()
+                                                                .w(px(24.0))
+                                                                .text_color(MonoTheme::fg_subtle())
+                                                                .child(format!("{}", idx + 1)),
+                                                        )
+                                                        .child(
+                                                            div()
+                                                                .w(px(12.0))
+                                                                .child("-"),
+                                                        )
+                                                        .child(
+                                                            div()
+                                                                .flex_1()
+                                                                .child(txt),
+                                                        )
                                                         .into_any_element()
                                                 }
                                                 DiffLineKind::Context(txt) => {
                                                     div()
                                                         .flex()
                                                         .items_center()
-                                                        .px_4()
+                                                        .gap_3()
                                                         .py_0p5()
-                                                        .font_family(theme.mono_family.clone())
-                                                        .text_size(theme.text_size(TextSize::Xs))
-                                                        .text_color(MonoTheme::fg_primary())
-                                                        .child(format!("  {}", txt))
+                                                        .px_2()
+                                                        .text_color(MonoTheme::fg_muted())
+                                                        .child(
+                                                            div()
+                                                                .w(px(24.0))
+                                                                .text_color(MonoTheme::fg_subtle())
+                                                                .child(format!("{}", idx + 1)),
+                                                        )
+                                                        .child(
+                                                            div()
+                                                                .w(px(12.0))
+                                                                .child(" "),
+                                                        )
+                                                        .child(
+                                                            div()
+                                                                .flex_1()
+                                                                .child(txt),
+                                                        )
                                                         .into_any_element()
                                                 }
                                             }
-                                        }))
-                                        .into_any_element()
-                                }
+                                        }).collect()
+                                    }),
                             ),
                     ),
             )

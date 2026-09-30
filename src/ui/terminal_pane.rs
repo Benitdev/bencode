@@ -5,6 +5,7 @@ use gpui::{
 
 use crate::app::BenCodeApp;
 use crate::db::SessionRow;
+use crate::ui::theme::MonoTheme;
 
 impl BenCodeApp {
     pub fn render_terminal_pane(
@@ -13,7 +14,6 @@ impl BenCodeApp {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let theme = cx.theme();
-        let colors = &theme.colors;
         let cwd = session
             .map(|s| s.cwd.as_str())
             .unwrap_or("~");
@@ -23,7 +23,7 @@ impl BenCodeApp {
             .flex_col()
             .flex_1()
             .h_full()
-            .bg(colors.bg)
+            .bg(MonoTheme::bg_base())
             // Terminal Header Bar
             .child(
                 div()
@@ -33,8 +33,8 @@ impl BenCodeApp {
                     .h(px(36.0))
                     .px_4()
                     .border_b_1()
-                    .border_color(colors.border)
-                    .bg(colors.surface)
+                    .border_color(MonoTheme::border_stroke())
+                    .bg(MonoTheme::bg_surface())
                     .child(
                         div()
                             .flex()
@@ -44,12 +44,12 @@ impl BenCodeApp {
                             .child(
                                 div()
                                     .font_weight(FontWeight::BOLD)
-                                    .text_color(colors.fg)
+                                    .text_color(MonoTheme::fg_primary())
                                     .child("TERMINAL:"),
                             )
                             .child(
                                 div()
-                                    .text_color(colors.fg_muted)
+                                    .text_color(MonoTheme::fg_muted())
                                     .child(cwd.to_string()),
                             ),
                     )
@@ -58,9 +58,9 @@ impl BenCodeApp {
                             .px_2()
                             .py_0p5()
                             .rounded(theme.radius(Radius::Sm))
-                            .bg(colors.hover)
+                            .bg(MonoTheme::bg_hover())
                             .text_size(theme.text_size(TextSize::Xs))
-                            .text_color(colors.accent)
+                            .text_color(MonoTheme::accent())
                             .child("zsh"),
                     ),
             )
@@ -71,7 +71,7 @@ impl BenCodeApp {
                     .p_4()
                     .font_family(theme.mono_family.clone())
                     .text_size(theme.text_size(TextSize::Xs))
-                    .bg(colors.bg)
+                    .bg(MonoTheme::bg_base())
                     .child(
                         div()
                             .flex()
@@ -79,7 +79,7 @@ impl BenCodeApp {
                             .gap_1p5()
                             .child(
                                 div()
-                                    .text_color(colors.fg_subtle)
+                                    .text_color(MonoTheme::fg_subtle())
                                     .child("BenCode Native Terminal Session [PTY / Apple Metal accelerated]"),
                             )
                             .child(
@@ -88,18 +88,18 @@ impl BenCodeApp {
                                     .gap_2()
                                     .child(
                                         div()
-                                            .text_color(colors.accent)
+                                            .text_color(MonoTheme::accent())
                                             .child(format!("{}$", cwd)),
                                     )
                                     .child(
                                         div()
-                                            .text_color(colors.fg)
+                                            .text_color(MonoTheme::fg_primary())
                                             .child("git status"),
                                     ),
                             )
                             .child(
                                 div()
-                                    .text_color(colors.fg_muted)
+                                    .text_color(MonoTheme::fg_muted())
                                     .child("On branch main\nYour branch is up to date with 'origin/main'.\n\nChanges not staged for commit:\n  modified: src/main.rs\n  modified: Cargo.toml"),
                             )
                             .child(
@@ -109,14 +109,14 @@ impl BenCodeApp {
                                     .pt_2()
                                     .child(
                                         div()
-                                            .text_color(colors.accent)
+                                            .text_color(MonoTheme::accent())
                                             .child(format!("{}$", cwd)),
                                     )
                                     .child(
                                         div()
                                             .w(px(8.0))
                                             .h(px(14.0))
-                                            .bg(colors.accent),
+                                            .bg(MonoTheme::accent()),
                                     ),
                             ),
                     ),

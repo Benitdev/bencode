@@ -5,6 +5,7 @@ use gpui::{
 };
 
 use crate::app::{BenCodeApp, ViewMode};
+use crate::git::get_workspace_changes;
 use crate::ui::theme::MonoTheme;
 
 impl BenCodeApp {
@@ -12,6 +13,17 @@ impl BenCodeApp {
         let theme = cx.theme();
         let active_tab_id = self.active_tab_id.clone();
         let current_mode = self.active_view_mode;
+
+        // Calculate count of changed files in active workspace
+        let changed_files_count = if let Some(session_id) = &active_tab_id {
+            if let Some(session) = self.sessions.iter().find(|s| &s.id == session_id) {
+                get_workspace_changes(&session.cwd).len()
+            } else {
+                0
+            }
+        } else {
+            0
+        };
 
         div()
             .flex()
@@ -142,89 +154,138 @@ impl BenCodeApp {
                             })),
                     ),
             )
-            // Right Mode Switcher (Pill Group)
+            // Right View Mode Switcher (Pill Group matching MonoCode)
             .child(
                 div()
                     .flex()
                     .items_center()
-                    .gap_1()
-                    .p_1()
+                    .gap_2()
                     .mr_3()
-                    .rounded(theme.radius(Radius::Md))
-                    .bg(MonoTheme::bg_base())
-                    .border_1()
-                    .border_color(MonoTheme::border_stroke())
                     .child(
                         div()
-                            .id("toggle-mode-chat")
                             .flex()
                             .items_center()
-                            .gap_1p5()
-                            .h(px(24.0))
-                            .px_2p5()
-                            .rounded(theme.radius(Radius::Sm))
-                            .cursor_pointer()
-                            .when(current_mode == ViewMode::Chat, |el| {
-                                el.bg(MonoTheme::bg_active()).text_color(MonoTheme::fg_primary())
-                            })
-                            .when(current_mode != ViewMode::Chat, |el| {
-                                el.text_color(MonoTheme::fg_muted()).hover(|s| s.text_color(MonoTheme::fg_primary()))
-                            })
-                            .text_size(theme.text_size(TextSize::Xs))
-                            .font_weight(FontWeight::MEDIUM)
-                            .child("💬 Chat")
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.active_view_mode = ViewMode::Chat;
-                                cx.notify();
-                            })),
+                            .gap_1()
+                            .p_1()
+                            .rounded(theme.radius(Radius::Md))
+                            .bg(MonoTheme::bg_base())
+                            .border_1()
+                            .border_color(MonoTheme::border_stroke())
+                            // Chat Mode Tab
+                            .child(
+                                div()
+                                    .id("toggle-mode-chat")
+                                    .flex()
+                                    .items_center()
+                                    .gap_1p5()
+                                    .h(px(24.0))
+                                    .px_2p5()
+                                    .rounded(theme.radius(Radius::Sm))
+                                    .cursor_pointer()
+                                    .when(current_mode == ViewMode::Chat, |el| {
+                                        el.bg(MonoTheme::bg_active()).text_color(MonoTheme::fg_primary())
+                                    })
+                                    .when(current_mode != ViewMode::Chat, |el| {
+                                        el.text_color(MonoTheme::fg_muted()).hover(|s| s.text_color(MonoTheme::fg_primary()))
+                                    })
+                                    .text_size(theme.text_size(TextSize::Xs))
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .child("💬 Chat")
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.active_view_mode = ViewMode::Chat;
+                                        cx.notify();
+                                    })),
+                            )
+                            // Changes Mode Tab (with real changed files count)
+                            .child(
+                                div()
+                                    .id("toggle-mode-changes")
+                                    .flex()
+                                    .items_center()
+                                    .gap_1p5()
+                                    .h(px(24.0))
+                                    .px_2p5()
+                                    .rounded(theme.radius(Radius::Sm))
+                                    .cursor_pointer()
+                                    .when(current_mode == ViewMode::Changes, |el| {
+                                        el.bg(MonoTheme::bg_active()).text_color(MonoTheme::fg_primary())
+                                    })
+                                    .when(current_mode != ViewMode::Changes, |el| {
+                                        el.text_color(MonoTheme::fg_muted()).hover(|s| s.text_color(MonoTheme::fg_primary()))
+                                    })
+                                    .text_size(theme.text_size(TextSize::Xs))
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .child(if changed_files_count > 0 {
+                                        format!("Δ Changes ({})", changed_files_count)
+                                    } else {
+                                        "Δ Changes".to_string()
+                                    })
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.active_view_mode = ViewMode::Changes;
+                                        cx.notify();
+                                    })),
+                            )
+                            // Terminal Mode Tab
+                            .child(
+                                div()
+                                    .id("toggle-mode-terminal")
+                                    .flex()
+                                    .items_center()
+                                    .gap_1p5()
+                                    .h(px(24.0))
+                                    .px_2p5()
+                                    .rounded(theme.radius(Radius::Sm))
+                                    .cursor_pointer()
+                                    .when(current_mode == ViewMode::Terminal, |el| {
+                                        el.bg(MonoTheme::bg_active()).text_color(MonoTheme::fg_primary())
+                                    })
+                                    .when(current_mode != ViewMode::Terminal, |el| {
+                                        el.text_color(MonoTheme::fg_muted()).hover(|s| s.text_color(MonoTheme::fg_primary()))
+                                    })
+                                    .text_size(theme.text_size(TextSize::Xs))
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .child("⌨ Terminal")
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.active_view_mode = ViewMode::Terminal;
+                                        cx.notify();
+                                    })),
+                            ),
                     )
+                    // Split Pane Action Button
                     .child(
                         div()
-                            .id("toggle-mode-changes")
+                            .id("titlebar-split-pane-btn")
                             .flex()
                             .items_center()
-                            .gap_1p5()
-                            .h(px(24.0))
-                            .px_2p5()
+                            .justify_center()
+                            .size(px(28.0))
                             .rounded(theme.radius(Radius::Sm))
+                            .border_1()
+                            .border_color(MonoTheme::border_stroke())
+                            .bg(MonoTheme::bg_base())
                             .cursor_pointer()
-                            .when(current_mode == ViewMode::Changes, |el| {
-                                el.bg(MonoTheme::bg_active()).text_color(MonoTheme::fg_primary())
-                            })
-                            .when(current_mode != ViewMode::Changes, |el| {
-                                el.text_color(MonoTheme::fg_muted()).hover(|s| s.text_color(MonoTheme::fg_primary()))
-                            })
+                            .hover(|s| s.bg(MonoTheme::bg_hover()))
+                            .text_color(MonoTheme::fg_muted())
                             .text_size(theme.text_size(TextSize::Xs))
-                            .font_weight(FontWeight::MEDIUM)
-                            .child("Δ Changes")
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.active_view_mode = ViewMode::Changes;
-                                cx.notify();
-                            })),
+                            .child("◫"),
                     )
+                    // Settings Button
                     .child(
                         div()
-                            .id("toggle-mode-terminal")
+                            .id("titlebar-settings-btn")
                             .flex()
                             .items_center()
-                            .gap_1p5()
-                            .h(px(24.0))
-                            .px_2p5()
+                            .justify_center()
+                            .size(px(28.0))
                             .rounded(theme.radius(Radius::Sm))
+                            .border_1()
+                            .border_color(MonoTheme::border_stroke())
+                            .bg(MonoTheme::bg_base())
                             .cursor_pointer()
-                            .when(current_mode == ViewMode::Terminal, |el| {
-                                el.bg(MonoTheme::bg_active()).text_color(MonoTheme::fg_primary())
-                            })
-                            .when(current_mode != ViewMode::Terminal, |el| {
-                                el.text_color(MonoTheme::fg_muted()).hover(|s| s.text_color(MonoTheme::fg_primary()))
-                            })
+                            .hover(|s| s.bg(MonoTheme::bg_hover()))
+                            .text_color(MonoTheme::fg_muted())
                             .text_size(theme.text_size(TextSize::Xs))
-                            .font_weight(FontWeight::MEDIUM)
-                            .child("⌨ Terminal")
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.active_view_mode = ViewMode::Terminal;
-                                cx.notify();
-                            })),
+                            .child("⚙"),
                     ),
             )
     }

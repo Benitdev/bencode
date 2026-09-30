@@ -131,6 +131,26 @@ impl BenCodeApp {
                                                                     input.set_text("Explain project architecture, database models, and main entry points", cx);
                                                                 });
                                                             })),
+                                                    )
+                                                    .child(
+                                                        div()
+                                                            .id("chip-add-feature")
+                                                            .px_3()
+                                                            .py_1p5()
+                                                            .rounded(theme.radius(Radius::Md))
+                                                            .border_1()
+                                                            .border_color(MonoTheme::border_stroke())
+                                                            .bg(MonoTheme::bg_surface())
+                                                            .text_size(theme.text_size(TextSize::Xs))
+                                                            .text_color(MonoTheme::fg_muted())
+                                                            .cursor_pointer()
+                                                            .hover(|s| s.bg(MonoTheme::bg_hover()).text_color(MonoTheme::fg_primary()))
+                                                            .child("🛠 Add a new feature / refactor")
+                                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                                this.prompt_input.update(cx, |input, cx| {
+                                                                    input.set_text("Plan and implement the next feature step", cx);
+                                                                });
+                                                            })),
                                                     ),
                                             )
                                             .into_any_element()
@@ -235,15 +255,28 @@ impl BenCodeApp {
                                                 .as_ref()
                                                 .and_then(|t| t.get("title").and_then(|v| v.as_str()))
                                                 .unwrap_or(text);
+                                            let tool_kind = block.tool
+                                                .as_ref()
+                                                .and_then(|t| t.get("kind").and_then(|v| v.as_str()))
+                                                .unwrap_or("execute");
                                             let tool_status = block.tool
                                                 .as_ref()
                                                 .and_then(|t| t.get("status").and_then(|v| v.as_str()))
                                                 .unwrap_or("completed");
 
+                                            let (kind_icon, kind_label) = match tool_kind {
+                                                "execute" | "shell" | "bash" => (">_", "EXEC"),
+                                                "edit" | "write" => ("✍", "EDIT"),
+                                                "read" => ("📖", "READ"),
+                                                "search" => ("🔍", "SEARCH"),
+                                                "agent" | "subagent" => ("🤖", "AGENT"),
+                                                "skill" => ("⚡", "SKILL"),
+                                                _ => ("🛠", "TOOL"),
+                                            };
+
                                             div()
                                                 .flex()
-                                                .items_center()
-                                                .gap_2()
+                                                .flex_col()
                                                 .px_3()
                                                 .py_2()
                                                 .rounded(theme.radius(Radius::Md))
@@ -252,60 +285,102 @@ impl BenCodeApp {
                                                 .border_color(MonoTheme::border_stroke())
                                                 .child(
                                                     div()
-                                                        .size(px(6.0))
-                                                        .rounded_full()
-                                                        .bg(if tool_status == "completed" {
-                                                            MonoTheme::success()
-                                                        } else {
-                                                            MonoTheme::accent()
-                                                        }),
-                                                )
-                                                .child(
-                                                    div()
-                                                        .text_size(theme.text_size(TextSize::Xs))
-                                                        .font_weight(FontWeight::BOLD)
-                                                        .text_color(MonoTheme::skill_gold())
-                                                        .child("TOOL:"),
-                                                )
-                                                .child(
-                                                    div()
-                                                        .text_size(theme.text_size(TextSize::Xs))
-                                                        .font_family(theme.mono_family.clone())
-                                                        .text_color(MonoTheme::fg_primary())
-                                                        .child(tool_title.to_string()),
+                                                        .flex()
+                                                        .items_center()
+                                                        .justify_between()
+                                                        .child(
+                                                            div()
+                                                                .flex()
+                                                                .items_center()
+                                                                .gap_2()
+                                                                .child(
+                                                                    div()
+                                                                        .size(px(6.0))
+                                                                        .rounded_full()
+                                                                        .bg(if tool_status == "completed" {
+                                                                            MonoTheme::success()
+                                                                        } else {
+                                                                            MonoTheme::accent()
+                                                                        }),
+                                                                )
+                                                                .child(
+                                                                    div()
+                                                                        .text_size(theme.text_size(TextSize::Xs))
+                                                                        .font_weight(FontWeight::BOLD)
+                                                                        .text_color(MonoTheme::skill_gold())
+                                                                        .child(format!("{} {}:", kind_icon, kind_label)),
+                                                                )
+                                                                .child(
+                                                                    div()
+                                                                        .text_size(theme.text_size(TextSize::Xs))
+                                                                        .font_family(theme.mono_family.clone())
+                                                                        .text_color(MonoTheme::fg_primary())
+                                                                        .child(tool_title.to_string()),
+                                                                ),
+                                                        )
+                                                        .child(
+                                                            div()
+                                                                .text_size(theme.text_size(TextSize::Xs))
+                                                                .text_color(if tool_status == "completed" {
+                                                                    MonoTheme::success()
+                                                                } else {
+                                                                    MonoTheme::accent()
+                                                                })
+                                                                .child(tool_status.to_string()),
+                                                        ),
                                                 )
                                                 .into_any_element()
                                         } else {
                                             // Assistant Turn Card
+                                            let duration_text = block.duration_ms
+                                                .map(|d| format!("{:.1}s", d as f64 / 1000.0))
+                                                .unwrap_or_else(|| "1.4s".to_string());
+
                                             div()
                                                 .p_4()
                                                 .rounded(theme.radius(Radius::Lg))
                                                 .bg(MonoTheme::bg_surface())
                                                 .border_1()
                                                 .border_color(MonoTheme::border_stroke())
+                                                // Header
                                                 .child(
                                                     div()
                                                         .flex()
                                                         .items_center()
-                                                        .gap_2()
+                                                        .justify_between()
                                                         .pb_2()
+                                                        .border_b_1()
+                                                        .border_color(MonoTheme::border_stroke())
                                                         .child(
                                                             div()
-                                                                .size(px(7.0))
-                                                                .rounded_full()
-                                                                .bg(MonoTheme::accent()),
+                                                                .flex()
+                                                                .items_center()
+                                                                .gap_2()
+                                                                .child(
+                                                                    div()
+                                                                        .size(px(7.0))
+                                                                        .rounded_full()
+                                                                        .bg(MonoTheme::accent()),
+                                                                )
+                                                                .child(
+                                                                    div()
+                                                                        .text_size(theme.text_size(TextSize::Xs))
+                                                                        .font_weight(FontWeight::BOLD)
+                                                                        .text_color(MonoTheme::accent())
+                                                                        .child(harness_label),
+                                                                ),
                                                         )
                                                         .child(
                                                             div()
                                                                 .text_size(theme.text_size(TextSize::Xs))
-                                                                .font_weight(FontWeight::BOLD)
-                                                                .text_color(MonoTheme::accent())
-                                                                .child(harness_label),
+                                                                .text_color(MonoTheme::fg_subtle())
+                                                                .child(duration_text),
                                                         ),
                                                 )
                                                 // Assistant Response Text
                                                 .child(
                                                     div()
+                                                        .pt_2p5()
                                                         .text_size(theme.text_size(TextSize::Sm))
                                                         .text_color(MonoTheme::fg_primary())
                                                         .child(text.to_string()),
@@ -336,6 +411,17 @@ impl BenCodeApp {
     fn render_header(&self, session: Option<&SessionRow>, cx: &Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
 
+        let branch = session.and_then(|s| s.branch.as_deref()).unwrap_or("main");
+        let model = session.map(|s| s.model.as_str()).unwrap_or("Claude 3.7 Sonnet");
+
+        let context_pct = match (session.and_then(|s| s.context_used), session.and_then(|s| s.context_window)) {
+            (Some(used), Some(window)) if window > 0 => {
+                let pct = (used as f64 / window as f64 * 100.0).round() as u64;
+                format!("{}%", pct)
+            }
+            _ => "0%".to_string(),
+        };
+
         div()
             .flex()
             .items_center()
@@ -345,7 +431,7 @@ impl BenCodeApp {
             .border_b_1()
             .border_color(MonoTheme::border_stroke())
             .bg(MonoTheme::bg_surface())
-            // Left Title & Cwd
+            // Left Title & Cwd Breadcrumbs
             .child(
                 div()
                     .flex()
@@ -371,8 +457,12 @@ impl BenCodeApp {
                     )
                     .child(
                         div()
+                            .flex()
+                            .items_center()
+                            .gap_1()
                             .text_size(theme.text_size(TextSize::Xs))
                             .text_color(MonoTheme::fg_muted())
+                            .child("📁")
                             .child(
                                 session
                                     .map(|s| s.cwd.as_str())
@@ -381,7 +471,7 @@ impl BenCodeApp {
                             ),
                     ),
             )
-            // Right Status Badge
+            // Right Status Badge: Branch + Model + Context
             .child(
                 div()
                     .flex()
@@ -397,12 +487,31 @@ impl BenCodeApp {
                             .border_color(MonoTheme::border_stroke())
                             .text_size(theme.text_size(TextSize::Xs))
                             .text_color(MonoTheme::fg_muted())
-                            .child(
-                                session
-                                    .map(|s| s.model.as_str())
-                                    .unwrap_or("Claude 3.7 Sonnet")
-                                    .to_string(),
-                            ),
+                            .child(format!("⎇ {}", branch)),
+                    )
+                    .child(
+                        div()
+                            .px_2()
+                            .py_0p5()
+                            .rounded(theme.radius(Radius::Sm))
+                            .bg(MonoTheme::bg_base())
+                            .border_1()
+                            .border_color(MonoTheme::border_stroke())
+                            .text_size(theme.text_size(TextSize::Xs))
+                            .text_color(MonoTheme::accent())
+                            .child(model.to_string()),
+                    )
+                    .child(
+                        div()
+                            .px_2()
+                            .py_0p5()
+                            .rounded(theme.radius(Radius::Sm))
+                            .bg(MonoTheme::bg_base())
+                            .border_1()
+                            .border_color(MonoTheme::border_stroke())
+                            .text_size(theme.text_size(TextSize::Xs))
+                            .text_color(MonoTheme::fg_subtle())
+                            .child(format!("context: {}", context_pct)),
                     ),
             )
     }
