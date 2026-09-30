@@ -4,5 +4,6 @@ pub mod footer;
 pub mod rail;
 pub mod sidebar;
 pub mod terminal_pane;
+pub mod theme;
 pub mod titlebar;
 pub mod transcript;

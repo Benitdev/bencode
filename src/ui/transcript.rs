@@ -9,6 +9,7 @@ use gpui::{
 
 use crate::app::BenCodeApp;
 use crate::db::SessionRow;
+use crate::ui::theme::MonoTheme;
 
 impl BenCodeApp {
     pub fn render_transcript_panel(
@@ -17,61 +18,102 @@ impl BenCodeApp {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let theme = cx.theme();
-        let colors = &theme.colors;
 
         div()
             .flex()
             .flex_col()
             .flex_1()
             .h_full()
-            .pt(px(48.0))
-            .bg(colors.bg)
-            // Header bar
+            .bg(MonoTheme::bg_base())
+            // 1. Session Sub-Header Bar
             .child(self.render_header(session, cx))
-            // Scrollable Messages Timeline
+            // 2. Scrollable Messages Timeline
             .child(
                 on_axis(div().id("transcript-scroll-area"))
                     .flex_1()
-                    .p_6()
+                    .px_6()
+                    .py_4()
                     .overflow_y_scroll()
                     .child(
                         div()
                             .flex()
                             .flex_col()
-                            .gap_4()
-                            .max_w(px(800.0))
+                            .gap_5()
+                            .max_w(px(840.0))
                             .mx_auto()
                             .children(if let Some(s) = session {
                                 if s.blocks.is_empty() {
                                     vec![
+                                        // Empty Session Welcome Screen matching MonoCode
                                         div()
-                                            .p_6()
-                                            .rounded(theme.radius(Radius::Lg))
-                                            .bg(colors.surface)
-                                            .border_1()
-                                            .border_color(colors.border)
                                             .flex()
                                             .flex_col()
-                                            .gap_2()
+                                            .items_center()
+                                            .justify_center()
+                                            .py_12()
                                             .child(
                                                 div()
-                                                    .text_size(theme.text_size(TextSize::Base))
-                                                    .font_weight(FontWeight::SEMIBOLD)
-                                                    .text_color(colors.fg)
+                                                    .text_size(theme.text_size(TextSize::Lg))
+                                                    .font_weight(FontWeight::BOLD)
+                                                    .text_color(MonoTheme::fg_primary())
                                                     .child(format!("Thread: {}", s.title)),
                                             )
                                             .child(
                                                 div()
+                                                    .pt_2()
                                                     .text_size(theme.text_size(TextSize::Sm))
-                                                    .text_color(colors.fg_muted)
-                                                    .child(format!("Harness: {} • Working dir: {}", s.harness, s.cwd)),
+                                                    .text_color(MonoTheme::fg_muted())
+                                                    .child(format!("Harness: {} • Path: {}", s.harness, s.cwd)),
                                             )
+                                            // Suggestion Chips
                                             .child(
                                                 div()
-                                                    .pt_2()
-                                                    .text_size(theme.text_size(TextSize::Xs))
-                                                    .text_color(colors.accent)
-                                                    .child("⚡ Ready to take instructions. Type a prompt below to start."),
+                                                    .flex()
+                                                    .flex_wrap()
+                                                    .gap_2()
+                                                    .pt_6()
+                                                    .child(
+                                                        div()
+                                                            .px_3()
+                                                            .py_1p5()
+                                                            .rounded(theme.radius(Radius::Md))
+                                                            .border_1()
+                                                            .border_color(MonoTheme::border_stroke())
+                                                            .bg(MonoTheme::bg_surface())
+                                                            .text_size(theme.text_size(TextSize::Xs))
+                                                            .text_color(MonoTheme::fg_muted())
+                                                            .cursor_pointer()
+                                                            .hover(|s| s.bg(MonoTheme::bg_hover()).text_color(MonoTheme::fg_primary()))
+                                                            .child("🔍 Review recent git changes"),
+                                                    )
+                                                    .child(
+                                                        div()
+                                                            .px_3()
+                                                            .py_1p5()
+                                                            .rounded(theme.radius(Radius::Md))
+                                                            .border_1()
+                                                            .border_color(MonoTheme::border_stroke())
+                                                            .bg(MonoTheme::bg_surface())
+                                                            .text_size(theme.text_size(TextSize::Xs))
+                                                            .text_color(MonoTheme::fg_muted())
+                                                            .cursor_pointer()
+                                                            .hover(|s| s.bg(MonoTheme::bg_hover()).text_color(MonoTheme::fg_primary()))
+                                                            .child("⚡ Run tests & fix failures"),
+                                                    )
+                                                    .child(
+                                                        div()
+                                                            .px_3()
+                                                            .py_1p5()
+                                                            .rounded(theme.radius(Radius::Md))
+                                                            .border_1()
+                                                            .border_color(MonoTheme::border_stroke())
+                                                            .bg(MonoTheme::bg_surface())
+                                                            .text_size(theme.text_size(TextSize::Xs))
+                                                            .text_color(MonoTheme::fg_muted())
+                                                            .cursor_pointer()
+                                                            .hover(|s| s.bg(MonoTheme::bg_hover()).text_color(MonoTheme::fg_primary()))
+                                                            .child("📦 Explain project architecture"),
+                                                    ),
                                             )
                                             .into_any_element()
                                     ]
@@ -79,6 +121,7 @@ impl BenCodeApp {
                                     s.blocks.iter().map(|block| {
                                         let is_user = block.role == "user";
                                         let text = block.text.as_deref().unwrap_or("");
+                                        let harness_label = s.harness.to_uppercase();
 
                                         if is_user {
                                             div()
@@ -87,24 +130,36 @@ impl BenCodeApp {
                                                 .w_full()
                                                 .child(
                                                     div()
-                                                        .max_w(px(640.0))
+                                                        .max_w(px(680.0))
                                                         .p_4()
                                                         .rounded(theme.radius(Radius::Lg))
-                                                        .bg(colors.hover)
+                                                        .bg(MonoTheme::bg_surface())
                                                         .border_1()
-                                                        .border_color(colors.border)
+                                                        .border_color(MonoTheme::border_stroke())
                                                         .child(
                                                             div()
-                                                                .text_size(theme.text_size(TextSize::Xs))
-                                                                .font_weight(FontWeight::BOLD)
-                                                                .text_color(colors.accent)
-                                                                .child("YOU"),
+                                                                .flex()
+                                                                .items_center()
+                                                                .justify_between()
+                                                                .pb_1()
+                                                                .child(
+                                                                    div()
+                                                                        .text_size(theme.text_size(TextSize::Xs))
+                                                                        .font_weight(FontWeight::BOLD)
+                                                                        .text_color(MonoTheme::accent())
+                                                                        .child("YOU"),
+                                                                )
+                                                                .child(
+                                                                    div()
+                                                                        .text_size(theme.text_size(TextSize::Xs))
+                                                                        .text_color(MonoTheme::fg_subtle())
+                                                                        .child("just now"),
+                                                                ),
                                                         )
                                                         .child(
                                                             div()
-                                                                .pt_1()
                                                                 .text_size(theme.text_size(TextSize::Sm))
-                                                                .text_color(colors.fg)
+                                                                .text_color(MonoTheme::fg_primary())
                                                                 .child(text.to_string()),
                                                         ),
                                                 )
@@ -115,43 +170,65 @@ impl BenCodeApp {
                                                 .items_center()
                                                 .gap_2()
                                                 .px_3()
-                                                .py_1p5()
+                                                .py_2()
                                                 .rounded(theme.radius(Radius::Md))
-                                                .bg(colors.surface)
+                                                .bg(MonoTheme::bg_surface())
                                                 .border_1()
-                                                .border_color(colors.border)
-                                                .text_size(theme.text_size(TextSize::Xs))
+                                                .border_color(MonoTheme::border_stroke())
                                                 .child(
                                                     div()
-                                                        .font_weight(FontWeight::SEMIBOLD)
-                                                        .text_color(colors.accent)
-                                                        .child("TOOL:"),
+                                                        .size(px(6.0))
+                                                        .rounded_full()
+                                                        .bg(MonoTheme::success()),
                                                 )
-                                                .child(
-                                                    div()
-                                                        .text_color(colors.fg_muted)
-                                                        .child(text.to_string()),
-                                                )
-                                                .into_any_element()
-                                        } else {
-                                            div()
-                                                .p_4()
-                                                .rounded(theme.radius(Radius::Lg))
-                                                .bg(colors.surface)
-                                                .border_1()
-                                                .border_color(colors.border)
                                                 .child(
                                                     div()
                                                         .text_size(theme.text_size(TextSize::Xs))
                                                         .font_weight(FontWeight::BOLD)
-                                                        .text_color(colors.fg_subtle)
-                                                        .child(format!("AGENT ({})", s.harness.to_uppercase())),
+                                                        .text_color(MonoTheme::skill_gold())
+                                                        .child("TOOL:"),
                                                 )
                                                 .child(
                                                     div()
-                                                        .pt_2()
+                                                        .text_size(theme.text_size(TextSize::Xs))
+                                                        .font_family(theme.mono_family.clone())
+                                                        .text_color(MonoTheme::fg_muted())
+                                                        .child(text.to_string()),
+                                                )
+                                                .into_any_element()
+                                        } else {
+                                            // Assistant Turn Card
+                                            div()
+                                                .p_4()
+                                                .rounded(theme.radius(Radius::Lg))
+                                                .bg(MonoTheme::bg_surface())
+                                                .border_1()
+                                                .border_color(MonoTheme::border_stroke())
+                                                .child(
+                                                    div()
+                                                        .flex()
+                                                        .items_center()
+                                                        .gap_2()
+                                                        .pb_2()
+                                                        .child(
+                                                            div()
+                                                                .size(px(7.0))
+                                                                .rounded_full()
+                                                                .bg(MonoTheme::accent()),
+                                                        )
+                                                        .child(
+                                                            div()
+                                                                .text_size(theme.text_size(TextSize::Xs))
+                                                                .font_weight(FontWeight::BOLD)
+                                                                .text_color(MonoTheme::accent())
+                                                                .child(harness_label),
+                                                        ),
+                                                )
+                                                // Assistant Response Text
+                                                .child(
+                                                    div()
                                                         .text_size(theme.text_size(TextSize::Sm))
-                                                        .text_color(colors.fg)
+                                                        .text_color(MonoTheme::fg_primary())
                                                         .child(text.to_string()),
                                                 )
                                                 .into_any_element()
@@ -164,40 +241,42 @@ impl BenCodeApp {
                                         .flex()
                                         .items_center()
                                         .justify_center()
-                                        .h(px(300.0))
-                                        .text_size(theme.text_size(TextSize::Base))
-                                        .text_color(colors.fg_muted)
+                                        .h(px(320.0))
+                                        .text_size(theme.text_size(TextSize::Sm))
+                                        .text_color(MonoTheme::fg_muted())
                                         .child("Select a thread from the sidebar or click + New Session")
                                         .into_any_element()
                                 ]
                             }),
                     ),
             )
-            // Composer Dock at bottom
+            // 3. Composer Dock
             .child(self.render_composer(session, cx))
     }
 
     fn render_header(&self, session: Option<&SessionRow>, cx: &Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
-        let colors = &theme.colors;
 
         div()
             .flex()
             .items_center()
             .justify_between()
-            .h(px(54.0))
+            .h(px(46.0))
             .px_6()
             .border_b_1()
-            .border_color(colors.border)
+            .border_color(MonoTheme::border_stroke())
+            .bg(MonoTheme::bg_surface())
+            // Left Title & Cwd
             .child(
                 div()
                     .flex()
-                    .flex_col()
+                    .items_center()
+                    .gap_3()
                     .child(
                         div()
-                            .text_size(theme.text_size(TextSize::Base))
+                            .text_size(theme.text_size(TextSize::Sm))
                             .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(colors.fg)
+                            .text_color(MonoTheme::fg_primary())
                             .child(
                                 session
                                     .map(|s| s.title.as_str())
@@ -208,15 +287,22 @@ impl BenCodeApp {
                     .child(
                         div()
                             .text_size(theme.text_size(TextSize::Xs))
-                            .text_color(colors.fg_subtle)
+                            .text_color(MonoTheme::fg_subtle())
+                            .child("•"),
+                    )
+                    .child(
+                        div()
+                            .text_size(theme.text_size(TextSize::Xs))
+                            .text_color(MonoTheme::fg_muted())
                             .child(
                                 session
                                     .map(|s| s.cwd.as_str())
-                                    .unwrap_or("No project open")
+                                    .unwrap_or("No workspace open")
                                     .to_string(),
                             ),
                     ),
             )
+            // Right Status Badge
             .child(
                 div()
                     .flex()
@@ -225,13 +311,13 @@ impl BenCodeApp {
                     .child(
                         div()
                             .px_2()
-                            .py_1()
+                            .py_0p5()
                             .rounded(theme.radius(Radius::Sm))
-                            .bg(colors.surface)
+                            .bg(MonoTheme::bg_base())
                             .border_1()
-                            .border_color(colors.border)
+                            .border_color(MonoTheme::border_stroke())
                             .text_size(theme.text_size(TextSize::Xs))
-                            .text_color(colors.fg_muted)
+                            .text_color(MonoTheme::fg_muted())
                             .child(
                                 session
                                     .map(|s| s.model.as_str())

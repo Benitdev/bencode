@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-use ely_gpui_component::theme::ActiveTheme;
 use gpui::{Context, IntoElement, ParentElement, Render, Styled, Window, div};
 
 use crate::db::{Block, MonoCodeDb, SessionRow};
+use crate::ui::theme::MonoTheme;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum ViewMode {
@@ -21,6 +21,7 @@ pub struct BenCodeApp {
     pub active_view_mode: ViewMode,
     pub is_agent_running: bool,
     pub active_prompt: String,
+    pub search_query: String,
     pub db: Arc<MonoCodeDb>,
 }
 
@@ -46,6 +47,7 @@ impl BenCodeApp {
             active_view_mode: ViewMode::Chat,
             is_agent_running: false,
             active_prompt: String::new(),
+            search_query: String::new(),
             db: Arc::new(db),
         }
     }
@@ -139,9 +141,6 @@ impl BenCodeApp {
 
 impl Render for BenCodeApp {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.theme();
-        let colors = &theme.colors;
-
         let selected_session = self.sessions
             .iter()
             .find(|s| self.selected_session_id.as_deref() == Some(&s.id))
@@ -151,8 +150,8 @@ impl Render for BenCodeApp {
             .flex()
             .flex_col()
             .size_full()
-            .bg(colors.bg)
-            .text_color(colors.fg)
+            .bg(MonoTheme::bg_base())
+            .text_color(MonoTheme::fg_primary())
             // 1. Top Titlebar with tabs and mode toggles
             .child(self.render_titlebar(cx))
             // 2. Middle Body: Project Rail + Sidebar + Main View

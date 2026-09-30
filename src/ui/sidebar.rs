@@ -8,182 +8,229 @@ use gpui::{
 };
 
 use crate::app::BenCodeApp;
+use crate::ui::theme::MonoTheme;
 
 impl BenCodeApp {
     pub fn render_sidebar(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
-        let colors = &theme.colors;
+        let selected_id = self.selected_session_id.clone();
+        let search_query = self.search_query.to_lowercase();
+
+        // Filter sessions by search query
+        let filtered_sessions: Vec<_> = self.sessions
+            .iter()
+            .filter(|s| {
+                if search_query.is_empty() {
+                    true
+                } else {
+                    s.title.to_lowercase().contains(&search_query)
+                        || s.cwd.to_lowercase().contains(&search_query)
+                        || s.branch.as_deref().unwrap_or("").to_lowercase().contains(&search_query)
+                }
+            })
+            .cloned()
+            .collect();
 
         div()
             .flex()
             .flex_col()
             .flex_none()
-            .w(px(290.0))
+            .w(px(270.0))
             .h_full()
-            .pt(px(48.0))
-            .px_3()
-            .pb_4()
             .border_r_1()
-            .border_color(colors.border)
-            .bg(colors.surface)
-            // App Header Branding
+            .border_color(MonoTheme::border_stroke())
+            .bg(MonoTheme::bg_surface())
+            // 1. Search Bar
+            .child(
+                div()
+                    .p_3()
+                    .border_b_1()
+                    .border_color(MonoTheme::border_stroke())
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .h(px(32.0))
+                            .px_3()
+                            .rounded(theme.radius(Radius::Md))
+                            .bg(MonoTheme::bg_base())
+                            .border_1()
+                            .border_color(MonoTheme::border_stroke())
+                            .child(
+                                div()
+                                    .text_size(theme.text_size(TextSize::Xs))
+                                    .text_color(MonoTheme::fg_muted())
+                                    .child("🔍"),
+                            )
+                            .child(
+                                div()
+                                    .text_size(theme.text_size(TextSize::Sm))
+                                    .text_color(if self.search_query.is_empty() {
+                                        MonoTheme::fg_subtle()
+                                    } else {
+                                        MonoTheme::fg_primary()
+                                    })
+                                    .child(if self.search_query.is_empty() {
+                                        "Search threads...".to_string()
+                                    } else {
+                                        self.search_query.clone()
+                                    }),
+                            ),
+                    ),
+            )
+            // 2. Action Bar (New Session & Workspace Info)
             .child(
                 div()
                     .flex()
                     .items_center()
                     .justify_between()
-                    .px_2()
-                    .pb_4()
+                    .px_3()
+                    .py_2p5()
                     .child(
                         div()
                             .flex()
-                            .flex_col()
-                            .child(
-                                div()
-                                    .flex()
-                                    .items_center()
-                                    .gap_2()
-                                    .child(
-                                        div()
-                                            .text_size(theme.text_size(TextSize::Lg))
-                                            .font_weight(FontWeight::BOLD)
-                                            .text_color(colors.fg)
-                                            .child("BenCode"),
-                                    )
-                                    .child(
-                                        div()
-                                            .px_1p5()
-                                            .py_0p5()
-                                            .rounded(theme.radius(Radius::Sm))
-                                            .bg(colors.accent)
-                                            .text_size(theme.text_size(TextSize::Xs))
-                                            .font_weight(FontWeight::BOLD)
-                                            .text_color(colors.on_accent)
-                                            .child("GPU"),
-                                    ),
-                            )
+                            .items_center()
+                            .gap_1p5()
                             .child(
                                 div()
                                     .text_size(theme.text_size(TextSize::Xs))
-                                    .text_color(colors.fg_subtle)
-                                    .child("100% Native Rust • 120 FPS"),
+                                    .font_weight(FontWeight::BOLD)
+                                    .text_color(MonoTheme::fg_muted())
+                                    .child("RECENT THREADS"),
+                            )
+                            .child(
+                                div()
+                                    .px_1p5()
+                                    .py_0p5()
+                                    .rounded(theme.radius(Radius::Sm))
+                                    .bg(MonoTheme::bg_hover())
+                                    .text_size(theme.text_size(TextSize::Xs))
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .text_color(MonoTheme::fg_subtle())
+                                    .child(SharedString::from(format!("{}", filtered_sessions.len()))),
                             ),
-                    ),
-            )
-            // New Session Action Button
-            .child(
-                div()
-                    .px_2()
-                    .pb_3()
+                    )
                     .child(
                         div()
-                            .id("btn-new-session")
+                            .id("sidebar-new-session-pill")
                             .flex()
                             .items_center()
-                            .justify_center()
-                            .gap_2()
-                            .h(px(32.0))
-                            .rounded(theme.radius(Radius::Md))
-                            .border_1()
-                            .border_color(colors.border)
-                            .bg(colors.bg)
+                            .gap_1()
+                            .px_2()
+                            .py_1()
+                            .rounded(theme.radius(Radius::Sm))
+                            .bg(MonoTheme::accent())
+                            .text_color(MonoTheme::on_accent())
                             .cursor_pointer()
-                            .hover(|s| s.bg(colors.hover).border_color(colors.border_strong))
-                            .text_size(theme.text_size(TextSize::Sm))
-                            .font_weight(FontWeight::MEDIUM)
-                            .text_color(colors.fg)
-                            .child("+ New Session")
+                            .hover(|s| s.opacity(0.9))
+                            .text_size(theme.text_size(TextSize::Xs))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .child("+ New")
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.create_new_session(cx);
                             })),
                     ),
             )
-            // Section Divider
+            // 3. Thread List Items
             .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .px_2()
-                    .py_2()
-                    .child(
-                        div()
-                            .text_size(theme.text_size(TextSize::Xs))
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(colors.fg_muted)
-                            .child("RECENT THREADS"),
-                    )
-                    .child(
-                        div()
-                            .text_size(theme.text_size(TextSize::Xs))
-                            .text_color(colors.fg_subtle)
-                            .child(SharedString::from(format!("{}", self.sessions.len()))),
-                    ),
-            )
-            // Session List
-            .child(
-                on_axis(div().id("sidebar-sessions-list"))
-                    .flex()
-                    .flex_col()
-                    .gap_1()
+                on_axis(div().id("sidebar-threads-scroll"))
                     .flex_1()
                     .overflow_y_scroll()
-                    .children(self.sessions.iter().map(|session| {
-                        let is_selected = self.selected_session_id.as_deref() == Some(&session.id);
+                    .children(filtered_sessions.into_iter().map(|session| {
+                        let is_active = selected_id.as_deref() == Some(&session.id);
                         let id = session.id.clone();
                         let title = if session.title.trim().is_empty() {
-                            "Untitled Thread"
+                            "Untitled Session"
                         } else {
                             &session.title
                         };
-                        let harness = session.harness.to_uppercase();
+                        let harness = session.harness.to_lowercase();
                         let branch = session.branch.clone().unwrap_or_else(|| "main".into());
+                        let (harness_color, harness_label) = match harness.as_str() {
+                            "claude" => (MonoTheme::claude_orange(), "Claude"),
+                            "antigravity" => (MonoTheme::antigravity_blue(), "Agy"),
+                            "codex" => (MonoTheme::codex_green(), "Codex"),
+                            _ => (MonoTheme::accent(), "Agent"),
+                        };
 
                         div()
-                            .id(SharedString::from(format!("session-item-{}", session.id)))
+                            .id(SharedString::from(format!("session-row-{}", session.id)))
+                            .relative()
                             .flex()
                             .flex_col()
                             .px_3()
-                            .py_2()
+                            .py_2p5()
+                            .mx_1p5()
+                            .my_0p5()
                             .rounded(theme.radius(Radius::Md))
                             .cursor_pointer()
-                            .when(is_selected, |el| el.bg(colors.hover))
-                            .hover(|style| style.bg(colors.hover))
+                            .when(is_active, |el| el.bg(MonoTheme::bg_active()))
+                            .when(!is_active, |el| el.hover(|s| s.bg(MonoTheme::bg_hover())))
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 this.select_session(id.clone(), cx);
                             }))
+                            // Left vertical bar on active
+                            .child(
+                                if is_active {
+                                    div()
+                                        .absolute()
+                                        .left(px(0.0))
+                                        .top(px(6.0))
+                                        .bottom(px(6.0))
+                                        .w(px(3.0))
+                                        .rounded(theme.radius(Radius::Sm))
+                                        .bg(MonoTheme::accent())
+                                } else {
+                                    div()
+                                },
+                            )
+                            // Title
                             .child(
                                 div()
                                     .text_size(theme.text_size(TextSize::Sm))
-                                    .font_weight(if is_selected {
+                                    .font_weight(if is_active {
                                         FontWeight::SEMIBOLD
                                     } else {
                                         FontWeight::NORMAL
                                     })
-                                    .text_color(if is_selected {
-                                        colors.fg
+                                    .text_color(if is_active {
+                                        MonoTheme::fg_primary()
                                     } else {
-                                        colors.fg_muted
+                                        MonoTheme::fg_muted()
                                     })
                                     .child(title.to_string()),
                             )
+                            // Meta Row: Harness Badge + Branch Pill
                             .child(
                                 div()
                                     .flex()
                                     .items_center()
-                                    .justify_between()
-                                    .pt_1()
+                                    .gap_2()
+                                    .pt_1p5()
                                     .child(
                                         div()
-                                            .text_size(theme.text_size(TextSize::Xs))
-                                            .font_weight(FontWeight::MEDIUM)
-                                            .text_color(colors.accent)
-                                            .child(harness),
+                                            .flex()
+                                            .items_center()
+                                            .gap_1()
+                                            .child(
+                                                div()
+                                                    .size(px(6.0))
+                                                    .rounded_full()
+                                                    .bg(harness_color),
+                                            )
+                                            .child(
+                                                div()
+                                                    .text_size(theme.text_size(TextSize::Xs))
+                                                    .font_weight(FontWeight::MEDIUM)
+                                                    .text_color(harness_color)
+                                                    .child(harness_label),
+                                            ),
                                     )
                                     .child(
                                         div()
                                             .text_size(theme.text_size(TextSize::Xs))
-                                            .text_color(colors.fg_subtle)
+                                            .text_color(MonoTheme::fg_subtle())
                                             .child(format!("⎇ {}", branch)),
                                     ),
                             )
