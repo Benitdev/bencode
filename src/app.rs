@@ -1,7 +1,12 @@
 use std::sync::Arc;
 
 use ely_gpui_component::forms::{InputEvent, TextInput};
-use gpui::{AppContext, Context, Entity, IntoElement, ParentElement, Render, Styled, Subscription, Window, div, prelude::*};
+use ely_gpui_component::primitives::{Icon, IconName};
+use ely_gpui_component::theme::{ActiveTheme, IconSize, Radius, TextSize};
+use gpui::{
+    AppContext, Context, Entity, FontWeight, InteractiveElement, IntoElement, ParentElement,
+    Render, Styled, Subscription, Window, div, prelude::*, px,
+};
 
 use crate::db::{Block, MonoCodeDb, SessionRow, TurnModel};
 use crate::harness::HarnessResolver;
@@ -38,6 +43,7 @@ pub enum SidebarMode {
     #[default]
     Sessions,
     Files,
+    Changes,
 }
 
 use ely_gpui_component::terminal::{Launch, Terminal};
@@ -79,6 +85,24 @@ pub struct BenCodeApp {
     pub automation_name_input: Entity<TextInput>,
     pub automation_prompt_input: Entity<TextInput>,
     pub automation_time_input: Entity<TextInput>,
+    // Workspace & Projects
+    pub current_cwd: String,
+    pub recent_projects: Vec<String>,
+    // Git & Source Control
+    pub git_status: crate::git::GitDetailedStatus,
+    pub git_commits: Vec<crate::git::GitCommitInfo>,
+    pub git_commit_input: Entity<TextInput>,
+    pub git_staged_collapsed: bool,
+    pub git_unstaged_collapsed: bool,
+    pub git_history_collapsed: bool,
+    // Universal Search
+    pub is_search_open: bool,
+    pub search_modal_input: Entity<TextInput>,
+    pub search_scope: crate::ui::search_view::SearchScope,
+    pub search_hits: Vec<crate::ui::search_view::SearchHit>,
+    pub search_active_index: usize,
+    // Inbox
+    pub is_inbox_open: bool,
     pub prompt_input: Entity<TextInput>,
     pub search_input: Entity<TextInput>,
     pub db: Arc<MonoCodeDb>,
@@ -169,6 +193,43 @@ impl BenCodeApp {
         });
         subscriptions.push(note_filter_sub);
 
+        let current_cwd = std::env::current_dir()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|_| ".".to_string());
+
+        let recent_projects = vec![
+            current_cwd.clone(),
+            "/Users/benit/Documents/sources/monocode".to_string(),
+            "/Users/benit/Documents/sources/bencode".to_string(),
+        ];
+
+        let git_status = crate::git::get_detailed_status(&current_cwd);
+        let git_commits = crate::git::get_recent_commits(&current_cwd, 8);
+
+        let git_commit_input = cx.new(|cx| {
+            TextInput::new(window, cx)
+                .placeholder("Message (⌘↩ to commit)...")
+        });
+
+        let git_commit_sub = cx.subscribe(&git_commit_input, |this: &mut BenCodeApp, _, event: &InputEvent, cx| {
+            if *event == InputEvent::Submit {
+                this.commit_staged_changes(cx);
+            }
+        });
+        subscriptions.push(git_commit_sub);
+
+        let search_modal_input = cx.new(|cx| {
+            TextInput::new(window, cx)
+                .placeholder("Search conversations, files, projects... (⌘K)")
+        });
+
+        let search_modal_sub = cx.subscribe(&search_modal_input, |this: &mut BenCodeApp, _, event: &InputEvent, cx| {
+            if *event == InputEvent::Changed {
+                this.update_search_hits(cx);
+            }
+        });
+        subscriptions.push(search_modal_sub);
+
         // Detect available harnesses
         let harnesses = HarnessResolver::discover();
         let default_model = if harnesses.iter().any(|h| h.id == "claude" && h.available) {
@@ -237,6 +298,20 @@ impl BenCodeApp {
             automation_name_input,
             automation_prompt_input,
             automation_time_input,
+            current_cwd,
+            recent_projects,
+            git_status,
+            git_commits,
+            git_commit_input,
+            git_staged_collapsed: false,
+            git_unstaged_collapsed: false,
+            git_history_collapsed: false,
+            is_search_open: false,
+            search_modal_input,
+            search_scope: crate::ui::search_view::SearchScope::All,
+            search_hits: Vec::new(),
+            search_active_index: 0,
+            is_inbox_open: false,
             prompt_input,
             search_input,
             db: Arc::new(db),
@@ -476,6 +551,181 @@ impl BenCodeApp {
             self.submit_prompt(cx);
         }
     }
+
+    pub fn render_sidebar_mode_tabs(&self, cx: &Context<Self>) -> impl IntoElement {
+        let theme = cx.theme();
+        let current_mode = self.sidebar_mode;
+
+        let total_changes = self.git_status.staged.len() + self.git_status.unstaged.len();
+        let adds: usize = self.git_status.staged.iter().map(|f| f.additions).sum::<usize>()
+            + self.git_status.unstaged.iter().map(|f| f.additions).sum::<usize>();
+        let dels: usize = self.git_status.staged.iter().map(|f| f.deletions).sum::<usize>()
+            + self.git_status.unstaged.iter().map(|f| f.deletions).sum::<usize>();
+
+        div()
+            .flex()
+            .items_center()
+            .justify_between()
+            .p_1p5()
+            .border_b_1()
+            .border_color(MonoTheme::border_stroke())
+            .bg(MonoTheme::bg_surface())
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_1()
+                    .flex_1()
+                    .p_0p5()
+                    .rounded(theme.radius(Radius::Sm))
+                    .bg(MonoTheme::bg_base())
+                    // Tab 1: Sessions
+                    .child(
+                        div()
+                            .id("sidebar-tab-sessions")
+                            .flex_1()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .gap_1()
+                            .h(px(24.0))
+                            .rounded(theme.radius(Radius::Sm))
+                            .bg(if current_mode == SidebarMode::Sessions {
+                                MonoTheme::bg_active()
+                            } else {
+                                gpui::rgba(0x00000000)
+                            })
+                            .text_color(if current_mode == SidebarMode::Sessions {
+                                MonoTheme::fg_primary()
+                            } else {
+                                MonoTheme::fg_muted()
+                            })
+                            .text_size(theme.text_size(TextSize::Xs))
+                            .font_weight(if current_mode == SidebarMode::Sessions {
+                                FontWeight::SEMIBOLD
+                            } else {
+                                FontWeight::NORMAL
+                            })
+                            .cursor_pointer()
+                            .hover(|s| s.bg(MonoTheme::bg_hover()))
+                            .child(Icon::new(IconName::MessageSquare).size(IconSize::Xs))
+                            .child("Sessions")
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.sidebar_mode = SidebarMode::Sessions;
+                                cx.notify();
+                            })),
+                    )
+                    // Tab 2: Files
+                    .child(
+                        div()
+                            .id("sidebar-tab-files")
+                            .flex_1()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .gap_1()
+                            .h(px(24.0))
+                            .rounded(theme.radius(Radius::Sm))
+                            .bg(if current_mode == SidebarMode::Files {
+                                MonoTheme::bg_active()
+                            } else {
+                                gpui::rgba(0x00000000)
+                            })
+                            .text_color(if current_mode == SidebarMode::Files {
+                                MonoTheme::fg_primary()
+                            } else {
+                                MonoTheme::fg_muted()
+                            })
+                            .text_size(theme.text_size(TextSize::Xs))
+                            .font_weight(if current_mode == SidebarMode::Files {
+                                FontWeight::SEMIBOLD
+                            } else {
+                                FontWeight::NORMAL
+                            })
+                            .cursor_pointer()
+                            .hover(|s| s.bg(MonoTheme::bg_hover()))
+                            .child(Icon::new(IconName::Folder).size(IconSize::Xs))
+                            .child("Files")
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.sidebar_mode = SidebarMode::Files;
+                                cx.notify();
+                            })),
+                    )
+                    // Tab 3: Changes
+                    .child(
+                        div()
+                            .id("sidebar-tab-changes")
+                            .flex_1()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .gap_1()
+                            .h(px(24.0))
+                            .rounded(theme.radius(Radius::Sm))
+                            .bg(if current_mode == SidebarMode::Changes {
+                                MonoTheme::bg_active()
+                            } else {
+                                gpui::rgba(0x00000000)
+                            })
+                            .text_color(if current_mode == SidebarMode::Changes {
+                                MonoTheme::fg_primary()
+                            } else {
+                                MonoTheme::fg_muted()
+                            })
+                            .text_size(theme.text_size(TextSize::Xs))
+                            .font_weight(if current_mode == SidebarMode::Changes {
+                                FontWeight::SEMIBOLD
+                            } else {
+                                FontWeight::NORMAL
+                            })
+                            .cursor_pointer()
+                            .hover(|s| s.bg(MonoTheme::bg_hover()))
+                            .child(Icon::new(IconName::GitBranch).size(IconSize::Xs))
+                            .child("Changes")
+                            .when(adds > 0 || dels > 0, |el| {
+                                el.child(
+                                    div()
+                                        .flex()
+                                        .items_center()
+                                        .gap_0p5()
+                                        .text_size(theme.text_size(TextSize::Xs))
+                                        .font_weight(FontWeight::BOLD)
+                                        .when(adds > 0, |el| {
+                                            el.child(
+                                                div()
+                                                    .text_color(MonoTheme::success())
+                                                    .child(format!("+{}", adds)),
+                                            )
+                                        })
+                                        .when(dels > 0, |el| {
+                                            el.child(
+                                                div()
+                                                    .text_color(MonoTheme::status_error())
+                                                    .child(format!("-{}", dels)),
+                                            )
+                                        }),
+                                )
+                            })
+                            .when(total_changes > 0 && adds == 0 && dels == 0, |el| {
+                                el.child(
+                                    div()
+                                        .px_1()
+                                        .py_0p5()
+                                        .rounded(theme.radius(Radius::Sm))
+                                        .bg(MonoTheme::accent())
+                                        .text_color(MonoTheme::on_accent())
+                                        .text_size(theme.text_size(TextSize::Xs))
+                                        .font_weight(FontWeight::BOLD)
+                                        .child(total_changes.to_string()),
+                                )
+                            })
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.sidebar_mode = SidebarMode::Changes;
+                                this.refresh_git_status(cx);
+                            })),
+                    ),
+            )
+    }
 }
 
 impl Render for BenCodeApp {
@@ -504,6 +754,7 @@ impl Render for BenCodeApp {
                         match self.sidebar_mode {
                             SidebarMode::Sessions => self.render_sidebar(cx).into_any_element(),
                             SidebarMode::Files => self.render_file_tree(cx).into_any_element(),
+                            SidebarMode::Changes => self.render_git_changes_panel(cx).into_any_element(),
                         }
                     )
                     .child(
@@ -516,9 +767,11 @@ impl Render for BenCodeApp {
             )
             // 3. Bottom Usage Footer
             .child(self.render_usage_footer(cx))
-            // 4. Modal Overlays (Settings, Notes, Automations)
+            // 4. Modal Overlays (Settings, Notes, Automations, Search, Inbox)
             .when(self.is_settings_open, |el| el.child(self.render_settings_modal(cx)))
             .when(self.is_notes_open, |el| el.child(self.render_notes_modal(cx)))
             .when(self.is_automations_open, |el| el.child(self.render_automations_modal(cx)))
+            .when(self.is_search_open, |el| el.child(self.render_search_modal(cx)))
+            .when(self.is_inbox_open, |el| el.child(self.render_inbox_modal(cx)))
     }
 }

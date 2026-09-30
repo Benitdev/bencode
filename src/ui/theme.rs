@@ -39,6 +39,7 @@ impl MonoTheme {
     #[inline] pub fn fg_subtle() -> Rgba { rgb(0x565f6d) }
 
     #[inline] pub fn status_error() -> Rgba { rgb(0xf85149) }
+    #[inline] pub fn status_error_bg() -> Rgba { rgba(0xf8514918) }
 
     // Agent Harness Branding
     #[inline] pub fn claude_orange() -> Rgba { rgb(0xd97706) }

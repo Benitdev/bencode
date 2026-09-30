@@ -54,6 +54,8 @@ impl BenCodeApp {
             .border_r_1()
             .border_color(MonoTheme::border_stroke())
             .bg(MonoTheme::bg_surface())
+            // 0. Top Segmented Mode Switcher (Sessions | Files | Changes)
+            .child(self.render_sidebar_mode_tabs(cx))
             // 1. Header Toolbar
             .child(
                 div()

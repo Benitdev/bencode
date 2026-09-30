@@ -47,6 +47,32 @@ impl BenCodeApp {
                             .cursor_pointer()
                             .child("BC"),
                     )
+                    // Global Search (Cmd+K / Cmd+Shift+F)
+                    .child(
+                        div()
+                            .id("rail-search-btn")
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .size(px(36.0))
+                            .rounded(theme.radius(Radius::Md))
+                            .cursor_pointer()
+                            .bg(if self.is_search_open {
+                                MonoTheme::bg_active()
+                            } else {
+                                gpui::rgba(0x00000000)
+                            })
+                            .hover(|s| s.bg(MonoTheme::bg_hover()))
+                            .text_color(if self.is_search_open {
+                                MonoTheme::accent()
+                            } else {
+                                MonoTheme::fg_muted()
+                            })
+                            .child(Icon::new(IconName::Search).size(IconSize::Sm))
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.open_search_modal(cx);
+                            })),
+                    )
                     // Notes & Scratchpad
                     .child(
                         div()
@@ -99,7 +125,7 @@ impl BenCodeApp {
                                 this.open_automations(cx);
                             })),
                     )
-                    // Inbox / Reminders
+                    // Inbox / PR Reviews
                     .child(
                         div()
                             .id("rail-inbox-btn")
@@ -109,9 +135,21 @@ impl BenCodeApp {
                             .size(px(36.0))
                             .rounded(theme.radius(Radius::Md))
                             .cursor_pointer()
+                            .bg(if self.is_inbox_open {
+                                MonoTheme::bg_active()
+                            } else {
+                                gpui::rgba(0x00000000)
+                            })
                             .hover(|s| s.bg(MonoTheme::bg_hover()))
-                            .text_color(MonoTheme::fg_subtle())
-                            .child(Icon::new(IconName::Inbox).size(IconSize::Sm)),
+                            .text_color(if self.is_inbox_open {
+                                MonoTheme::accent()
+                            } else {
+                                MonoTheme::fg_muted()
+                            })
+                            .child(Icon::new(IconName::Inbox).size(IconSize::Sm))
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.open_inbox_modal(cx);
+                            })),
                     )
                     // Folder / Files Tree
                     .child(
@@ -136,11 +174,43 @@ impl BenCodeApp {
                             })
                             .child(Icon::new(IconName::Folder).size(IconSize::Sm))
                             .on_click(cx.listener(|this, _, _, cx| {
-                                this.sidebar_mode = match this.sidebar_mode {
-                                    SidebarMode::Sessions => SidebarMode::Files,
-                                    SidebarMode::Files => SidebarMode::Sessions,
+                                this.sidebar_mode = if this.sidebar_mode == SidebarMode::Files {
+                                    SidebarMode::Sessions
+                                } else {
+                                    SidebarMode::Files
                                 };
                                 cx.notify();
+                            })),
+                    )
+                    // Git / Source Control
+                    .child(
+                        div()
+                            .id("rail-git-btn")
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .size(px(36.0))
+                            .rounded(theme.radius(Radius::Md))
+                            .cursor_pointer()
+                            .bg(if self.sidebar_mode == SidebarMode::Changes {
+                                MonoTheme::bg_active()
+                            } else {
+                                gpui::rgba(0x00000000)
+                            })
+                            .hover(|s| s.bg(MonoTheme::bg_hover()))
+                            .text_color(if self.sidebar_mode == SidebarMode::Changes {
+                                MonoTheme::accent()
+                            } else {
+                                MonoTheme::fg_muted()
+                            })
+                            .child(Icon::new(IconName::GitBranch).size(IconSize::Sm))
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.sidebar_mode = if this.sidebar_mode == SidebarMode::Changes {
+                                    SidebarMode::Sessions
+                                } else {
+                                    SidebarMode::Changes
+                                };
+                                this.refresh_git_status(cx);
                             })),
                     ),
             )
