@@ -1,6 +1,7 @@
 pub mod composer;
 pub mod diff_viewer;
 pub mod footer;
+pub mod notes_view;
 pub mod rail;
 pub mod settings_modal;
 pub mod sidebar;

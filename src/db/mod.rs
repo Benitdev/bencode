@@ -1,7 +1,31 @@
 use anyhow::Result;
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Note {
+    pub id: String,
+    pub slug: String,
+    pub title: String,
+    pub body: String,
+    pub tags: Vec<String>,
+    pub source_session_id: Option<String>,
+    pub source_cwd: Option<String>,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NoteUpsert {
+    pub id: String,
+    pub title: String,
+    pub body: String,
+    pub tags: Vec<String>,
+    pub source_session_id: Option<String>,
+    pub source_cwd: Option<String>,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionRow {
@@ -108,7 +132,19 @@ impl MonoCodeDb {
                  context_window INTEGER,
                  archived INTEGER NOT NULL DEFAULT 0,
                  pinned INTEGER NOT NULL DEFAULT 0
-             );"
+             );
+             CREATE TABLE IF NOT EXISTS notes (
+                 id TEXT PRIMARY KEY,
+                 slug TEXT NOT NULL UNIQUE,
+                 title TEXT NOT NULL,
+                 body TEXT NOT NULL DEFAULT '',
+                 tags_json TEXT NOT NULL DEFAULT '[]',
+                 source_session_id TEXT,
+                 source_cwd TEXT,
+                 created_at INTEGER NOT NULL,
+                 updated_at INTEGER NOT NULL
+             );
+             CREATE INDEX IF NOT EXISTS notes_updated_idx ON notes (updated_at DESC, id);"
         )?;
 
         Ok(Self { conn })
@@ -254,5 +290,175 @@ impl MonoCodeDb {
             params![session_id],
         )?;
         Ok(())
+    }
+
+    pub fn list_notes(&self) -> Result<Vec<Note>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, slug, title, body, tags_json, source_session_id, source_cwd, created_at, updated_at
+             FROM notes
+             ORDER BY updated_at DESC, id ASC",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            let tags_json: String = row.get(4)?;
+            let tags: Vec<String> = serde_json::from_str(&tags_json).unwrap_or_default();
+            Ok(Note {
+                id: row.get(0)?,
+                slug: row.get(1)?,
+                title: row.get(2)?,
+                body: row.get(3)?,
+                tags,
+                source_session_id: row.get(5)?,
+                source_cwd: row.get(6)?,
+                created_at: row.get(7)?,
+                updated_at: row.get(8)?,
+            })
+        })?;
+        let mut list = Vec::new();
+        for r in rows {
+            list.push(r?);
+        }
+        Ok(list)
+    }
+
+    pub fn get_note(&self, id: &str) -> Result<Option<Note>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, slug, title, body, tags_json, source_session_id, source_cwd, created_at, updated_at
+             FROM notes
+             WHERE id = ?1",
+        )?;
+        let mut rows = stmt.query_map(params![id], |row| {
+            let tags_json: String = row.get(4)?;
+            let tags: Vec<String> = serde_json::from_str(&tags_json).unwrap_or_default();
+            Ok(Note {
+                id: row.get(0)?,
+                slug: row.get(1)?,
+                title: row.get(2)?,
+                body: row.get(3)?,
+                tags,
+                source_session_id: row.get(5)?,
+                source_cwd: row.get(6)?,
+                created_at: row.get(7)?,
+                updated_at: row.get(8)?,
+            })
+        })?;
+        if let Some(r) = rows.next() {
+            Ok(Some(r?))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn upsert_note(&self, note: &NoteUpsert) -> Result<Note> {
+        let now = now_millis();
+        let tags_json = serde_json::to_string(&note.tags)?;
+        let existing = self.get_note(&note.id)?;
+        if let Some(existing) = existing {
+            let updated_at = if note.title == existing.title && note.body == existing.body && note.tags == existing.tags {
+                existing.updated_at
+            } else {
+                now
+            };
+            let project_cwd = note.source_cwd.as_deref().or(existing.source_cwd.as_deref());
+            self.conn.execute(
+                "UPDATE notes
+                 SET title = ?1, body = ?2, tags_json = ?3, updated_at = ?4, source_cwd = ?5
+                 WHERE id = ?6",
+                params![note.title, note.body, tags_json, updated_at, project_cwd, note.id],
+            )?;
+            Ok(Note {
+                id: note.id.clone(),
+                slug: existing.slug,
+                title: note.title.clone(),
+                body: note.body.clone(),
+                tags: note.tags.clone(),
+                source_session_id: existing.source_session_id,
+                source_cwd: project_cwd.map(str::to_string),
+                created_at: existing.created_at,
+                updated_at,
+            })
+        } else {
+            let slug = unique_slug(&self.conn, &note.title)?;
+            self.conn.execute(
+                "INSERT INTO notes (
+                     id, slug, title, body, tags_json, source_session_id, source_cwd, created_at, updated_at
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                params![
+                    note.id,
+                    slug,
+                    note.title,
+                    note.body,
+                    tags_json,
+                    note.source_session_id,
+                    note.source_cwd,
+                    now,
+                    now,
+                ],
+            )?;
+            Ok(Note {
+                id: note.id.clone(),
+                slug,
+                title: note.title.clone(),
+                body: note.body.clone(),
+                tags: note.tags.clone(),
+                source_session_id: note.source_session_id.clone(),
+                source_cwd: note.source_cwd.clone(),
+                created_at: now,
+                updated_at: now,
+            })
+        }
+    }
+
+    pub fn delete_note(&self, id: &str) -> Result<()> {
+        self.conn.execute("DELETE FROM notes WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+}
+
+fn now_millis() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64
+}
+
+fn slugify(title: &str) -> String {
+    let mut out = String::new();
+    let mut dash = false;
+    for ch in title.chars() {
+        let c = ch.to_ascii_lowercase();
+        if c.is_ascii_alphanumeric() {
+            out.push(c);
+            dash = false;
+        } else if !out.is_empty() && !dash {
+            out.push('-');
+            dash = true;
+        }
+        if out.len() >= 48 {
+            break;
+        }
+    }
+    let slug = out.trim_end_matches('-').to_string();
+    if slug.is_empty() {
+        "note".into()
+    } else {
+        slug
+    }
+}
+
+fn unique_slug(conn: &Connection, title: &str) -> Result<String> {
+    let base = slugify(title);
+    let mut candidate = base.clone();
+    let mut counter = 2;
+    loop {
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM notes WHERE slug = ?1",
+            params![candidate],
+            |row| row.get(0),
+        )?;
+        if count == 0 {
+            return Ok(candidate);
+        }
+        candidate = format!("{}-{}", base, counter);
+        counter += 1;
     }
 }

@@ -5,6 +5,7 @@ mod db;
 mod git;
 mod harness;
 mod ui;
+mod workspace;
 
 use app::BenCodeApp;
 use ely_gpui_component::{

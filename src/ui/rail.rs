@@ -46,19 +46,31 @@ impl BenCodeApp {
                             .cursor_pointer()
                             .child("BC"),
                     )
-                    // Folder / Projects
+                    // Notes & Scratchpad
                     .child(
                         div()
-                            .id("rail-folder-btn")
+                            .id("rail-notes-btn")
                             .flex()
                             .items_center()
                             .justify_center()
                             .size(px(36.0))
                             .rounded(theme.radius(Radius::Md))
                             .cursor_pointer()
+                            .bg(if self.is_notes_open {
+                                MonoTheme::bg_active()
+                            } else {
+                                gpui::rgba(0x00000000)
+                            })
                             .hover(|s| s.bg(MonoTheme::bg_hover()))
-                            .text_color(MonoTheme::fg_muted())
-                            .child("📁"),
+                            .text_color(if self.is_notes_open {
+                                MonoTheme::accent()
+                            } else {
+                                MonoTheme::fg_muted()
+                            })
+                            .child("📝")
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.open_notes(cx);
+                            })),
                     )
                     // Automations / Zap
                     .child(
@@ -87,6 +99,20 @@ impl BenCodeApp {
                             .hover(|s| s.bg(MonoTheme::bg_hover()))
                             .text_color(MonoTheme::fg_subtle())
                             .child("📥"),
+                    )
+                    // Folder / Projects
+                    .child(
+                        div()
+                            .id("rail-folder-btn")
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .size(px(36.0))
+                            .rounded(theme.radius(Radius::Md))
+                            .cursor_pointer()
+                            .hover(|s| s.bg(MonoTheme::bg_hover()))
+                            .text_color(MonoTheme::fg_muted())
+                            .child("📁"),
                     ),
             )
             // Bottom Rail Icons (Settings / Help)

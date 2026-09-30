@@ -49,9 +49,20 @@ pub struct BenCodeApp {
     pub selected_model: String,
     pub is_model_picker_open: bool,
     pub is_branch_picker_open: bool,
+    pub is_skill_picker_open: bool,
+    pub skill_query: String,
+    pub is_mention_picker_open: bool,
+    pub mention_query: String,
     pub terminal: Option<Entity<Terminal>>,
     pub is_settings_open: bool,
     pub settings_tab: SettingsTab,
+    pub is_notes_open: bool,
+    pub notes: Vec<crate::db::Note>,
+    pub selected_note_id: Option<String>,
+    pub note_filter_query: String,
+    pub note_filter_input: Entity<TextInput>,
+    pub note_title_input: Entity<TextInput>,
+    pub note_body_input: Entity<TextInput>,
     pub prompt_input: Entity<TextInput>,
     pub search_input: Entity<TextInput>,
     pub db: Arc<MonoCodeDb>,
@@ -83,11 +94,29 @@ impl BenCodeApp {
                 .placeholder("Search threads... (⌘K)")
         });
 
+        let note_filter_input = cx.new(|cx| {
+            TextInput::new(window, cx)
+                .placeholder("Filter notes...")
+        });
+
+        let note_title_input = cx.new(|cx| {
+            TextInput::new(window, cx)
+                .placeholder("Note title...")
+        });
+
+        let note_body_input = cx.new(|cx| {
+            TextInput::new(window, cx)
+                .multi_line(5, 25)
+                .placeholder("Write note or scratchpad in markdown...")
+        });
+
         let mut subscriptions = Vec::new();
 
         let prompt_sub = cx.subscribe(&prompt_input, |this: &mut BenCodeApp, _, event: &InputEvent, cx| {
             if *event == InputEvent::Submit {
                 this.submit_prompt(cx);
+            } else if *event == InputEvent::Changed {
+                this.on_prompt_changed(cx);
             }
         });
         subscriptions.push(prompt_sub);
@@ -99,6 +128,14 @@ impl BenCodeApp {
             }
         });
         subscriptions.push(search_sub);
+
+        let note_filter_sub = cx.subscribe(&note_filter_input, |this: &mut BenCodeApp, input, event: &InputEvent, cx| {
+            if *event == InputEvent::Changed {
+                this.note_filter_query = input.read(cx).text().to_string();
+                cx.notify();
+            }
+        });
+        subscriptions.push(note_filter_sub);
 
         // Detect available harnesses
         let harnesses = HarnessResolver::discover();
@@ -125,6 +162,9 @@ impl BenCodeApp {
             ).unwrap_or_else(|_| Terminal::replay(b"Terminal ready\r\n", 80, 24, cx))
         });
 
+        let notes = db.list_notes().unwrap_or_default();
+        let selected_note_id = notes.first().map(|n| n.id.clone());
+
         Self {
             sessions,
             selected_session_id,
@@ -139,9 +179,20 @@ impl BenCodeApp {
             selected_model: default_model,
             is_model_picker_open: false,
             is_branch_picker_open: false,
+            is_skill_picker_open: false,
+            skill_query: String::new(),
+            is_mention_picker_open: false,
+            mention_query: String::new(),
             terminal: Some(terminal),
             is_settings_open: false,
             settings_tab: SettingsTab::Providers,
+            is_notes_open: false,
+            notes,
+            selected_note_id,
+            note_filter_query: String::new(),
+            note_filter_input,
+            note_title_input,
+            note_body_input,
             prompt_input,
             search_input,
             db: Arc::new(db),
@@ -168,6 +219,64 @@ impl BenCodeApp {
             }
         }
         self.is_branch_picker_open = false;
+        cx.notify();
+    }
+
+    pub fn on_prompt_changed(&mut self, cx: &mut Context<Self>) {
+        let text = self.prompt_input.read(cx).text().to_string();
+
+        // Slash command check
+        if let Some(idx) = text.rfind('/') {
+            let after = &text[idx + 1..];
+            if !after.contains(' ') && (idx == 0 || text[..idx].ends_with(' ') || text[..idx].ends_with('\n')) {
+                self.is_skill_picker_open = true;
+                self.skill_query = after.to_lowercase();
+                self.is_mention_picker_open = false;
+                cx.notify();
+                return;
+            }
+        }
+        self.is_skill_picker_open = false;
+
+        // Mention check
+        if let Some(idx) = text.rfind('@') {
+            let after = &text[idx + 1..];
+            if !after.contains(' ') && (idx == 0 || text[..idx].ends_with(' ') || text[..idx].ends_with('\n')) {
+                self.is_mention_picker_open = true;
+                self.mention_query = after.to_lowercase();
+                cx.notify();
+                return;
+            }
+        }
+        self.is_mention_picker_open = false;
+        cx.notify();
+    }
+
+    pub fn insert_skill(&mut self, skill_name: &str, cx: &mut Context<Self>) {
+        self.prompt_input.update(cx, |this, cx| {
+            let text = this.text().to_string();
+            if let Some(idx) = text.rfind('/') {
+                let prefix = &text[..idx];
+                this.set_text(format!("{}{}{} ", prefix, skill_name, if prefix.is_empty() { "" } else { "" }), cx);
+            } else {
+                this.set_text(format!("{} ", skill_name), cx);
+            }
+        });
+        self.is_skill_picker_open = false;
+        cx.notify();
+    }
+
+    pub fn insert_mention(&mut self, mention: &str, cx: &mut Context<Self>) {
+        self.prompt_input.update(cx, |this, cx| {
+            let text = this.text().to_string();
+            if let Some(idx) = text.rfind('@') {
+                let prefix = &text[..idx];
+                this.set_text(format!("{}@{} ", prefix, mention), cx);
+            } else {
+                this.set_text(format!("@{} ", mention), cx);
+            }
+        });
+        self.is_mention_picker_open = false;
         cx.notify();
     }
 
@@ -358,7 +467,8 @@ impl Render for BenCodeApp {
             )
             // 3. Bottom Usage Footer
             .child(self.render_usage_footer(cx))
-            // 4. Modal Overlays (Settings)
+            // 4. Modal Overlays (Settings & Notes)
             .when(self.is_settings_open, |el| el.child(self.render_settings_modal(cx)))
+            .when(self.is_notes_open, |el| el.child(self.render_notes_modal(cx)))
     }
 }

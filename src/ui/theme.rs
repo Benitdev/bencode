@@ -34,8 +34,11 @@ impl MonoTheme {
 
     // Foregrounds / Text
     #[inline] pub fn fg_primary() -> Rgba { rgb(0xf1f3f7) }
+    #[inline] pub fn fg_base() -> Rgba { rgb(0xf1f3f7) }
     #[inline] pub fn fg_muted() -> Rgba { rgb(0x8b949e) }
     #[inline] pub fn fg_subtle() -> Rgba { rgb(0x565f6d) }
+
+    #[inline] pub fn status_error() -> Rgba { rgb(0xf85149) }
 
     // Agent Harness Branding
     #[inline] pub fn claude_orange() -> Rgba { rgb(0xd97706) }

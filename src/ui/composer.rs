@@ -11,6 +11,7 @@ use crate::app::{BenCodeApp, PermissionMode};
 use crate::db::SessionRow;
 use crate::git::get_branches;
 use crate::ui::theme::MonoTheme;
+use crate::workspace::{list_workspace_files, BUILTIN_SKILLS};
 
 impl BenCodeApp {
     pub fn render_composer(
@@ -22,6 +23,10 @@ impl BenCodeApp {
         let is_running = self.is_agent_running;
         let is_model_open = self.is_model_picker_open;
         let is_branch_open = self.is_branch_picker_open;
+        let is_skill_open = self.is_skill_picker_open;
+        let is_mention_open = self.is_mention_picker_open;
+        let skill_q = self.skill_query.clone();
+        let mention_q = self.mention_query.clone();
 
         let cwd = session.map(|s| s.cwd.as_str()).unwrap_or(".");
         let branches = get_branches(cwd);
@@ -76,6 +81,35 @@ impl BenCodeApp {
             PermissionMode::Confirm => ("🛡", "Confirm"),
             PermissionMode::ReadOnly => ("🔒", "Read-Only"),
         };
+
+        let filtered_skills: Vec<_> = BUILTIN_SKILLS
+            .iter()
+            .filter(|s| {
+                skill_q.is_empty()
+                    || s.name.contains(&skill_q)
+                    || s.description.to_lowercase().contains(&skill_q)
+            })
+            .collect();
+
+        let workspace_path = std::path::Path::new(cwd);
+        let workspace_files = list_workspace_files(workspace_path, 40);
+        let filtered_files: Vec<_> = workspace_files
+            .into_iter()
+            .filter(|f| mention_q.is_empty() || f.to_lowercase().contains(&mention_q))
+            .take(8)
+            .collect();
+
+        let filtered_notes: Vec<_> = self
+            .notes
+            .iter()
+            .filter(|n| {
+                mention_q.is_empty()
+                    || n.title.to_lowercase().contains(&mention_q)
+                    || n.slug.contains(&mention_q)
+            })
+            .take(5)
+            .cloned()
+            .collect();
 
         div()
             .relative()
@@ -215,6 +249,239 @@ impl BenCodeApp {
                                             )
                                         })
                                 })),
+                        )
+                    })
+                    // Popover: Slash Skills Autocomplete
+                    .when(is_skill_open, |el| {
+                        el.child(
+                            div()
+                                .absolute()
+                                .left(px(12.0))
+                                .bottom(px(100.0))
+                                .w(px(380.0))
+                                .max_h(px(260.0))
+                                .rounded(theme.radius(Radius::Md))
+                                .border_1()
+                                .border_color(MonoTheme::border_stroke())
+                                .bg(MonoTheme::bg_surface())
+                                .p_2()
+                                .flex()
+                                .flex_col()
+                                .gap_1()
+                                .child(
+                                    div()
+                                        .flex()
+                                        .items_center()
+                                        .justify_between()
+                                        .px_2()
+                                        .py_1()
+                                        .border_b_1()
+                                        .border_color(MonoTheme::border_stroke())
+                                        .child(
+                                            div()
+                                                .flex()
+                                                .items_center()
+                                                .gap_1()
+                                                .text_size(theme.text_size(TextSize::Xs))
+                                                .font_weight(FontWeight::BOLD)
+                                                .text_color(MonoTheme::skill_gold())
+                                                .child("⚡ Slash Skills"),
+                                        )
+                                        .child(
+                                            div()
+                                                .text_size(theme.text_size(TextSize::Xs))
+                                                .text_color(MonoTheme::fg_subtle())
+                                                .child("Click or ↵ to select"),
+                                        ),
+                                )
+                                .child(
+                                    div()
+                                        .id("skill-popover-list")
+                                        .flex_1()
+                                        .overflow_y_scroll()
+                                        .flex()
+                                        .flex_col()
+                                        .gap_1()
+                                        .children(filtered_skills.into_iter().map(|skill| {
+                                            let skill_name = skill.name;
+                                            div()
+                                                .id(SharedString::from(format!("skill-item-{}", skill.name.replace('/', ""))))
+                                                .p_2()
+                                                .rounded(theme.radius(Radius::Sm))
+                                                .cursor_pointer()
+                                                .hover(|s| s.bg(MonoTheme::bg_hover()))
+                                                .flex()
+                                                .flex_col()
+                                                .gap_0p5()
+                                                .child(
+                                                    div()
+                                                        .flex()
+                                                        .items_center()
+                                                        .justify_between()
+                                                        .child(
+                                                            div()
+                                                                .font_weight(FontWeight::SEMIBOLD)
+                                                                .text_size(theme.text_size(TextSize::Sm))
+                                                                .text_color(MonoTheme::skill_gold())
+                                                                .child(skill.name),
+                                                        )
+                                                        .child(
+                                                            div()
+                                                                .text_size(theme.text_size(TextSize::Xs))
+                                                                .text_color(MonoTheme::fg_subtle())
+                                                                .child(skill.example),
+                                                        ),
+                                                )
+                                                .child(
+                                                    div()
+                                                        .text_size(theme.text_size(TextSize::Xs))
+                                                        .text_color(MonoTheme::fg_muted())
+                                                        .child(skill.description),
+                                                )
+                                                .on_click(cx.listener(move |this, _, _, cx| {
+                                                    this.insert_skill(skill_name, cx);
+                                                }))
+                                        })),
+                                ),
+                        )
+                    })
+                    // Popover: Mention Files & Notes Autocomplete
+                    .when(is_mention_open, |el| {
+                        el.child(
+                            div()
+                                .absolute()
+                                .left(px(12.0))
+                                .bottom(px(100.0))
+                                .w(px(400.0))
+                                .max_h(px(280.0))
+                                .rounded(theme.radius(Radius::Md))
+                                .border_1()
+                                .border_color(MonoTheme::border_stroke())
+                                .bg(MonoTheme::bg_surface())
+                                .p_2()
+                                .flex()
+                                .flex_col()
+                                .gap_1()
+                                .child(
+                                    div()
+                                        .flex()
+                                        .items_center()
+                                        .justify_between()
+                                        .px_2()
+                                        .py_1()
+                                        .border_b_1()
+                                        .border_color(MonoTheme::border_stroke())
+                                        .child(
+                                            div()
+                                                .flex()
+                                                .items_center()
+                                                .gap_1()
+                                                .text_size(theme.text_size(TextSize::Xs))
+                                                .font_weight(FontWeight::BOLD)
+                                                .text_color(MonoTheme::mention_cyan())
+                                                .child("@ Mention Context"),
+                                        )
+                                        .child(
+                                            div()
+                                                .text_size(theme.text_size(TextSize::Xs))
+                                                .text_color(MonoTheme::fg_subtle())
+                                                .child("Files & Notes"),
+                                        ),
+                                )
+                                .child(
+                                    div()
+                                        .id("mention-popover-list")
+                                        .flex_1()
+                                        .overflow_y_scroll()
+                                        .flex()
+                                        .flex_col()
+                                        .gap_1()
+                                        .children(filtered_files.into_iter().map(|file_path| {
+                                            let fp = file_path.clone();
+                                            div()
+                                                .id(SharedString::from(format!("mention-file-{}", file_path.replace('/', "-").replace('.', "_"))))
+                                                .px_2()
+                                                .py_1p5()
+                                                .rounded(theme.radius(Radius::Sm))
+                                                .cursor_pointer()
+                                                .hover(|s| s.bg(MonoTheme::bg_hover()))
+                                                .flex()
+                                                .items_center()
+                                                .justify_between()
+                                                .child(
+                                                    div()
+                                                        .flex()
+                                                        .items_center()
+                                                        .gap_2()
+                                                        .child(
+                                                            div()
+                                                                .text_size(theme.text_size(TextSize::Xs))
+                                                                .text_color(MonoTheme::mention_cyan())
+                                                                .child("📄"),
+                                                        )
+                                                        .child(
+                                                            div()
+                                                                .font_weight(FontWeight::MEDIUM)
+                                                                .text_size(theme.text_size(TextSize::Xs))
+                                                                .text_color(MonoTheme::fg_primary())
+                                                                .truncate()
+                                                                .child(file_path),
+                                                        ),
+                                                )
+                                                .child(
+                                                    div()
+                                                        .text_size(theme.text_size(TextSize::Xs))
+                                                        .text_color(MonoTheme::fg_subtle())
+                                                        .child("file"),
+                                                )
+                                                .on_click(cx.listener(move |this, _, _, cx| {
+                                                    this.insert_mention(&fp, cx);
+                                                }))
+                                        }))
+                                        .children(filtered_notes.into_iter().map(|note| {
+                                            let slug = format!("note/{}", note.slug);
+                                            let title = note.title.clone();
+                                            div()
+                                                .id(SharedString::from(format!("mention-note-{}", note.id)))
+                                                .px_2()
+                                                .py_1p5()
+                                                .rounded(theme.radius(Radius::Sm))
+                                                .cursor_pointer()
+                                                .hover(|s| s.bg(MonoTheme::bg_hover()))
+                                                .flex()
+                                                .items_center()
+                                                .justify_between()
+                                                .child(
+                                                    div()
+                                                        .flex()
+                                                        .items_center()
+                                                        .gap_2()
+                                                        .child(
+                                                            div()
+                                                                .text_size(theme.text_size(TextSize::Xs))
+                                                                .text_color(MonoTheme::accent())
+                                                                .child("📝"),
+                                                        )
+                                                        .child(
+                                                            div()
+                                                                .font_weight(FontWeight::MEDIUM)
+                                                                .text_size(theme.text_size(TextSize::Xs))
+                                                                .text_color(MonoTheme::fg_primary())
+                                                                .truncate()
+                                                                .child(format!("@note/{} ({})", note.slug, title)),
+                                                        ),
+                                                )
+                                                .child(
+                                                    div()
+                                                        .text_size(theme.text_size(TextSize::Xs))
+                                                        .text_color(MonoTheme::fg_subtle())
+                                                        .child("note"),
+                                                )
+                                                .on_click(cx.listener(move |this, _, _, cx| {
+                                                    this.insert_mention(&slug, cx);
+                                                }))
+                                        })),
+                                ),
                         )
                     })
                     .child(
