@@ -1,4 +1,5 @@
-use ely_gpui_component::theme::{ActiveTheme, Radius, TextSize};
+use ely_gpui_component::primitives::{Icon, IconName};
+use ely_gpui_component::theme::{ActiveTheme, IconSize, Radius, TextSize};
 use gpui::{
     Context, FontWeight, InteractiveElement, IntoElement, ParentElement, Styled, div,
     prelude::*, px,
@@ -67,7 +68,7 @@ impl BenCodeApp {
                             } else {
                                 MonoTheme::fg_muted()
                             })
-                            .child("📝")
+                            .child(Icon::new(IconName::FileText).size(IconSize::Sm))
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.open_notes(cx);
                             })),
@@ -84,7 +85,7 @@ impl BenCodeApp {
                             .cursor_pointer()
                             .hover(|s| s.bg(MonoTheme::bg_hover()))
                             .text_color(MonoTheme::fg_muted())
-                            .child("⚡"),
+                            .child(Icon::new(IconName::Zap).size(IconSize::Sm)),
                     )
                     // Inbox / Reminders
                     .child(
@@ -98,7 +99,7 @@ impl BenCodeApp {
                             .cursor_pointer()
                             .hover(|s| s.bg(MonoTheme::bg_hover()))
                             .text_color(MonoTheme::fg_subtle())
-                            .child("📥"),
+                            .child(Icon::new(IconName::Inbox).size(IconSize::Sm)),
                     )
                     // Folder / Projects
                     .child(
@@ -112,7 +113,7 @@ impl BenCodeApp {
                             .cursor_pointer()
                             .hover(|s| s.bg(MonoTheme::bg_hover()))
                             .text_color(MonoTheme::fg_muted())
-                            .child("📁"),
+                            .child(Icon::new(IconName::Folder).size(IconSize::Sm)),
                     ),
             )
             // Bottom Rail Icons (Settings / Help)
@@ -132,8 +133,17 @@ impl BenCodeApp {
                             .rounded(theme.radius(Radius::Md))
                             .cursor_pointer()
                             .hover(|s| s.bg(MonoTheme::bg_hover()))
-                            .text_color(MonoTheme::fg_muted())
-                            .child("⚙️")
+                            .text_color(if self.is_settings_open {
+                                MonoTheme::accent()
+                            } else {
+                                MonoTheme::fg_muted()
+                            })
+                            .bg(if self.is_settings_open {
+                                MonoTheme::bg_active()
+                            } else {
+                                gpui::rgba(0x00000000)
+                            })
+                            .child(Icon::new(IconName::Settings).size(IconSize::Sm))
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.is_settings_open = true;
                                 cx.notify();

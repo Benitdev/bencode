@@ -1,4 +1,5 @@
-use ely_gpui_component::theme::{ActiveTheme, Radius, TextSize};
+use ely_gpui_component::primitives::{Icon, IconName};
+use ely_gpui_component::theme::{ActiveTheme, IconSize, Radius, TextSize};
 use gpui::{
     Context, FontWeight, InteractiveElement, IntoElement, ParentElement, Styled, div,
     prelude::*, px,
@@ -38,9 +39,17 @@ impl BenCodeApp {
                             .flex()
                             .items_center()
                             .gap_1p5()
-                            .text_size(theme.text_size(TextSize::Xs))
-                            .text_color(MonoTheme::fg_muted())
-                            .child("⚡ BenCode Native Engine"),
+                            .child(
+                                Icon::new(IconName::Zap)
+                                    .size(IconSize::Xs)
+                                    .color(MonoTheme::accent()),
+                            )
+                            .child(
+                                div()
+                                    .text_size(theme.text_size(TextSize::Xs))
+                                    .text_color(MonoTheme::fg_muted())
+                                    .child("BenCode Native Engine"),
+                            ),
                     )
                     .child(
                         div()
@@ -167,9 +176,11 @@ impl BenCodeApp {
                             .rounded(theme.radius(Radius::Sm))
                             .cursor_pointer()
                             .hover(|s| s.bg(MonoTheme::bg_hover()))
-                            .text_color(MonoTheme::fg_muted())
-                            .text_size(theme.text_size(TextSize::Xs))
-                            .child("↻")
+                            .child(
+                                Icon::new(IconName::RotateCw)
+                                    .size(IconSize::Xs)
+                                    .color(MonoTheme::fg_muted()),
+                            )
                             .on_click(cx.listener(|this, _, _, cx| {
                                 if let Ok(sessions) = this.db.list_recent_sessions(50) {
                                     this.sessions = sessions;

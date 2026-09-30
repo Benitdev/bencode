@@ -1,6 +1,7 @@
 use ely_gpui_component::{
     layout::on_axis,
-    theme::{ActiveTheme, Radius, TextSize},
+    primitives::{Icon, IconName},
+    theme::{ActiveTheme, IconSize, Radius, TextSize},
 };
 use gpui::{
     Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString,
@@ -96,10 +97,10 @@ impl BenCodeApp {
                                     .border_r_1()
                                     .border_color(MonoTheme::border_stroke())
                                     .bg(MonoTheme::bg_base())
-                                    .child(self.render_settings_tab_btn("🔑 Providers & Keys", SettingsTab::Providers, current_tab, cx))
-                                    .child(self.render_settings_tab_btn("🔌 MCP Servers", SettingsTab::Mcp, current_tab, cx))
-                                    .child(self.render_settings_tab_btn("🎨 Appearance", SettingsTab::Appearance, current_tab, cx))
-                                    .child(self.render_settings_tab_btn("ℹ️ About BenCode", SettingsTab::About, current_tab, cx)),
+                                    .child(self.render_settings_tab_btn(IconName::Key, "Providers & Keys", SettingsTab::Providers, current_tab, cx))
+                                    .child(self.render_settings_tab_btn(IconName::SlidersHorizontal, "MCP Servers", SettingsTab::Mcp, current_tab, cx))
+                                    .child(self.render_settings_tab_btn(IconName::Palette, "Appearance", SettingsTab::Appearance, current_tab, cx))
+                                    .child(self.render_settings_tab_btn(IconName::Info, "About BenCode", SettingsTab::About, current_tab, cx)),
                             )
                             // Right Content Area
                             .child(
@@ -121,6 +122,7 @@ impl BenCodeApp {
 
     fn render_settings_tab_btn(
         &self,
+        icon: IconName,
         label: &'static str,
         tab: SettingsTab,
         active_tab: SettingsTab,
@@ -133,15 +135,24 @@ impl BenCodeApp {
             .id(SharedString::from(format!("tab-btn-{:?}", tab)))
             .flex()
             .items_center()
+            .gap_2()
             .px_3()
             .py_2()
             .rounded(theme.radius(Radius::Md))
             .cursor_pointer()
             .when(is_active, |el| el.bg(MonoTheme::bg_active()).text_color(MonoTheme::fg_primary()))
             .when(!is_active, |el| el.text_color(MonoTheme::fg_muted()).hover(|s| s.bg(MonoTheme::bg_hover())))
-            .text_size(theme.text_size(TextSize::Xs))
-            .font_weight(if is_active { FontWeight::BOLD } else { FontWeight::NORMAL })
-            .child(label)
+            .child(
+                Icon::new(icon)
+                    .size(IconSize::Xs)
+                    .color(if is_active { MonoTheme::accent() } else { MonoTheme::fg_muted() }),
+            )
+            .child(
+                div()
+                    .text_size(theme.text_size(TextSize::Xs))
+                    .font_weight(if is_active { FontWeight::BOLD } else { FontWeight::NORMAL })
+                    .child(label),
+            )
             .on_click(cx.listener(move |this, _, _, cx| {
                 this.settings_tab = tab;
                 cx.notify();
@@ -339,10 +350,21 @@ impl BenCodeApp {
             .gap_3()
             .child(
                 div()
-                    .text_size(theme.text_size(TextSize::Md))
-                    .font_weight(FontWeight::BOLD)
-                    .text_color(MonoTheme::accent())
-                    .child("⚡ BenCode Native Control Plane"),
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .child(
+                        Icon::new(IconName::Zap)
+                            .size(IconSize::Sm)
+                            .color(MonoTheme::accent()),
+                    )
+                    .child(
+                        div()
+                            .text_size(theme.text_size(TextSize::Md))
+                            .font_weight(FontWeight::BOLD)
+                            .text_color(MonoTheme::accent())
+                            .child("BenCode Native Control Plane"),
+                    ),
             )
             .child(
                 div()

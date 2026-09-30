@@ -1,6 +1,7 @@
 use ely_gpui_component::{
     layout::on_axis,
-    theme::{ActiveTheme, Radius, TextSize},
+    primitives::{Icon, IconName},
+    theme::{ActiveTheme, IconSize, Radius, TextSize},
 };
 use gpui::{
     Context, FontWeight, InteractiveElement, IntoElement, ParentElement,
@@ -75,6 +76,9 @@ impl BenCodeApp {
                                                     .child(
                                                         div()
                                                             .id("chip-review-changes")
+                                                            .flex()
+                                                            .items_center()
+                                                            .gap_1p5()
                                                             .px_3()
                                                             .py_1p5()
                                                             .rounded(theme.radius(Radius::Md))
@@ -85,7 +89,8 @@ impl BenCodeApp {
                                                             .text_color(MonoTheme::fg_muted())
                                                             .cursor_pointer()
                                                             .hover(|s| s.bg(MonoTheme::bg_hover()).text_color(MonoTheme::fg_primary()))
-                                                            .child("🔍 Review recent git changes")
+                                                            .child(Icon::new(IconName::Search).size(IconSize::Xs))
+                                                            .child("Review recent git changes")
                                                             .on_click(cx.listener(|this, _, _, cx| {
                                                                 this.prompt_input.update(cx, |input, cx| {
                                                                     input.set_text("Review recent git changes in the workspace and explain differences", cx);
@@ -95,6 +100,9 @@ impl BenCodeApp {
                                                     .child(
                                                         div()
                                                             .id("chip-run-tests")
+                                                            .flex()
+                                                            .items_center()
+                                                            .gap_1p5()
                                                             .px_3()
                                                             .py_1p5()
                                                             .rounded(theme.radius(Radius::Md))
@@ -105,7 +113,8 @@ impl BenCodeApp {
                                                             .text_color(MonoTheme::fg_muted())
                                                             .cursor_pointer()
                                                             .hover(|s| s.bg(MonoTheme::bg_hover()).text_color(MonoTheme::fg_primary()))
-                                                            .child("⚡ Run tests & fix failures")
+                                                            .child(Icon::new(IconName::Zap).size(IconSize::Xs))
+                                                            .child("Run tests & fix failures")
                                                             .on_click(cx.listener(|this, _, _, cx| {
                                                                 this.prompt_input.update(cx, |input, cx| {
                                                                     input.set_text("Run the test suite and investigate any failures", cx);
@@ -115,6 +124,9 @@ impl BenCodeApp {
                                                     .child(
                                                         div()
                                                             .id("chip-explain-arch")
+                                                            .flex()
+                                                            .items_center()
+                                                            .gap_1p5()
                                                             .px_3()
                                                             .py_1p5()
                                                             .rounded(theme.radius(Radius::Md))
@@ -125,7 +137,8 @@ impl BenCodeApp {
                                                             .text_color(MonoTheme::fg_muted())
                                                             .cursor_pointer()
                                                             .hover(|s| s.bg(MonoTheme::bg_hover()).text_color(MonoTheme::fg_primary()))
-                                                            .child("📦 Explain project architecture")
+                                                            .child(Icon::new(IconName::Folder).size(IconSize::Xs))
+                                                            .child("Explain project architecture")
                                                             .on_click(cx.listener(|this, _, _, cx| {
                                                                 this.prompt_input.update(cx, |input, cx| {
                                                                     input.set_text("Explain project architecture, database models, and main entry points", cx);
@@ -135,6 +148,9 @@ impl BenCodeApp {
                                                     .child(
                                                         div()
                                                             .id("chip-add-feature")
+                                                            .flex()
+                                                            .items_center()
+                                                            .gap_1p5()
                                                             .px_3()
                                                             .py_1p5()
                                                             .rounded(theme.radius(Radius::Md))
@@ -145,7 +161,8 @@ impl BenCodeApp {
                                                             .text_color(MonoTheme::fg_muted())
                                                             .cursor_pointer()
                                                             .hover(|s| s.bg(MonoTheme::bg_hover()).text_color(MonoTheme::fg_primary()))
-                                                            .child("🛠 Add a new feature / refactor")
+                                                            .child(Icon::new(IconName::FileText).size(IconSize::Xs))
+                                                            .child("Add a new feature / refactor")
                                                             .on_click(cx.listener(|this, _, _, cx| {
                                                                 this.prompt_input.update(cx, |input, cx| {
                                                                     input.set_text("Plan and implement the next feature step", cx);
@@ -265,13 +282,13 @@ impl BenCodeApp {
                                                 .unwrap_or("completed");
 
                                             let (kind_icon, kind_label) = match tool_kind {
-                                                "execute" | "shell" | "bash" => (">_", "EXEC"),
-                                                "edit" | "write" => ("✍", "EDIT"),
-                                                "read" => ("📖", "READ"),
-                                                "search" => ("🔍", "SEARCH"),
-                                                "agent" | "subagent" => ("🤖", "AGENT"),
-                                                "skill" => ("⚡", "SKILL"),
-                                                _ => ("🛠", "TOOL"),
+                                                "execute" | "shell" | "bash" => (IconName::Terminal, "EXEC"),
+                                                "edit" | "write" => (IconName::FileText, "EDIT"),
+                                                "read" => (IconName::FileText, "READ"),
+                                                "search" => (IconName::Search, "SEARCH"),
+                                                "agent" | "subagent" => (IconName::Zap, "AGENT"),
+                                                "skill" => (IconName::Zap, "SKILL"),
+                                                _ => (IconName::Settings, "TOOL"),
                                             };
 
                                             div()
@@ -305,10 +322,21 @@ impl BenCodeApp {
                                                                 )
                                                                 .child(
                                                                     div()
-                                                                        .text_size(theme.text_size(TextSize::Xs))
-                                                                        .font_weight(FontWeight::BOLD)
-                                                                        .text_color(MonoTheme::skill_gold())
-                                                                        .child(format!("{} {}:", kind_icon, kind_label)),
+                                                                        .flex()
+                                                                        .items_center()
+                                                                        .gap_1()
+                                                                        .child(
+                                                                            Icon::new(kind_icon)
+                                                                                .size(IconSize::Xs)
+                                                                                .color(MonoTheme::skill_gold()),
+                                                                        )
+                                                                        .child(
+                                                                            div()
+                                                                                .text_size(theme.text_size(TextSize::Xs))
+                                                                                .font_weight(FontWeight::BOLD)
+                                                                                .text_color(MonoTheme::skill_gold())
+                                                                                .child(format!("{}:", kind_label)),
+                                                                        ),
                                                                 )
                                                                 .child(
                                                                     div()
@@ -462,7 +490,11 @@ impl BenCodeApp {
                             .gap_1()
                             .text_size(theme.text_size(TextSize::Xs))
                             .text_color(MonoTheme::fg_muted())
-                            .child("📁")
+                            .child(
+                                Icon::new(IconName::Folder)
+                                    .size(IconSize::Xs)
+                                    .color(MonoTheme::fg_muted()),
+                            )
                             .child(
                                 session
                                     .map(|s| s.cwd.as_str())

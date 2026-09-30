@@ -1,6 +1,7 @@
 use ely_gpui_component::{
     layout::on_axis,
-    theme::{ActiveTheme, Radius, TextSize},
+    primitives::{Icon, IconName},
+    theme::{ActiveTheme, IconSize, Radius, TextSize},
 };
 use gpui::{
     Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString,
@@ -74,9 +75,8 @@ impl BenCodeApp {
                             .border_color(MonoTheme::border_stroke())
                             .child(
                                 div()
-                                    .text_size(theme.text_size(TextSize::Xs))
                                     .text_color(MonoTheme::fg_muted())
-                                    .child("🔍"),
+                                    .child(Icon::new(IconName::Search).size(IconSize::Xs)),
                             )
                             .child(
                                 div()
@@ -166,7 +166,8 @@ impl BenCodeApp {
                             .hover(|s| s.opacity(0.9))
                             .text_size(theme.text_size(TextSize::Xs))
                             .font_weight(FontWeight::SEMIBOLD)
-                            .child("+ New")
+                            .child(Icon::new(IconName::Plus).size(IconSize::Xs))
+                            .child("New")
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.create_new_session(cx);
                             })),
@@ -262,16 +263,16 @@ impl BenCodeApp {
                                             .child(
                                                 div()
                                                     .id(SharedString::from(format!("pin-btn-{}", session.id)))
-                                                    .px_1()
-                                                    .text_size(theme.text_size(TextSize::Xs))
+                                                    .p_1()
+                                                    .rounded(theme.radius(Radius::Sm))
                                                     .cursor_pointer()
                                                     .text_color(if session.pinned {
                                                         MonoTheme::skill_gold()
                                                     } else {
                                                         MonoTheme::fg_subtle()
                                                     })
-                                                    .hover(|s| s.text_color(MonoTheme::skill_gold()))
-                                                    .child(if session.pinned { "📌" } else { "◦" })
+                                                    .hover(|s| s.bg(MonoTheme::bg_hover()).text_color(MonoTheme::skill_gold()))
+                                                    .child(Icon::new(IconName::Pin).size(IconSize::Xs))
                                                     .on_click(cx.listener(move |this, _, _, cx| {
                                                         this.toggle_pin_session(&pin_id, cx);
                                                     })),
@@ -280,11 +281,11 @@ impl BenCodeApp {
                                             .child(
                                                 div()
                                                     .id(SharedString::from(format!("del-btn-{}", session.id)))
-                                                    .px_1()
-                                                    .text_size(theme.text_size(TextSize::Xs))
+                                                    .p_1()
+                                                    .rounded(theme.radius(Radius::Sm))
                                                     .text_color(MonoTheme::fg_subtle())
-                                                    .hover(|s| s.text_color(MonoTheme::danger()))
-                                                    .child("×")
+                                                    .hover(|s| s.bg(MonoTheme::bg_hover()).text_color(MonoTheme::danger()))
+                                                    .child(Icon::new(IconName::Trash2).size(IconSize::Xs))
                                                     .on_click(cx.listener(move |this, _, _, cx| {
                                                         this.delete_session(&del_id, cx);
                                                     })),
@@ -324,9 +325,13 @@ impl BenCodeApp {
                                             )
                                             .child(
                                                 div()
+                                                    .flex()
+                                                    .items_center()
+                                                    .gap_1()
                                                     .text_size(theme.text_size(TextSize::Xs))
                                                     .text_color(MonoTheme::fg_subtle())
-                                                    .child(format!("⎇ {}", branch)),
+                                                    .child(Icon::new(IconName::GitBranch).size(IconSize::Xs))
+                                                    .child(branch),
                                             ),
                                     )
                                     .child(

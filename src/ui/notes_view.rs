@@ -1,5 +1,6 @@
 use ely_gpui_component::forms::TextInput;
-use ely_gpui_component::theme::{ActiveTheme, Radius, TextSize};
+use ely_gpui_component::primitives::{Icon, IconName};
+use ely_gpui_component::theme::{ActiveTheme, IconSize, Radius, TextSize};
 use gpui::{
     Context, FontWeight, InteractiveElement, IntoElement, ParentElement, Render, Styled, Window,
     div, prelude::*, px,
@@ -220,9 +221,9 @@ impl BenCodeApp {
                                     .items_center()
                                     .gap_2()
                                     .child(
-                                        div()
-                                            .text_size(theme.text_size(TextSize::Sm))
-                                            .child("📝"),
+                                        Icon::new(IconName::FileText)
+                                            .size(IconSize::Sm)
+                                            .color(MonoTheme::accent()),
                                     )
                                     .child(
                                         div()
@@ -246,6 +247,9 @@ impl BenCodeApp {
                                     .child(
                                         div()
                                             .id("new-note-btn")
+                                            .flex()
+                                            .items_center()
+                                            .gap_1()
                                             .px_2()
                                             .py_1()
                                             .rounded(theme.radius(Radius::Sm))
@@ -255,7 +259,8 @@ impl BenCodeApp {
                                             .font_weight(FontWeight::MEDIUM)
                                             .cursor_pointer()
                                             .hover(|s| s.bg(MonoTheme::accent()).text_color(MonoTheme::on_accent()))
-                                            .child("+ New Note")
+                                            .child(Icon::new(IconName::Plus).size(IconSize::Xs))
+                                            .child("New Note")
                                             .on_click(cx.listener(|this, _, _, cx| {
                                                 this.create_new_note(cx);
                                             })),
@@ -270,8 +275,11 @@ impl BenCodeApp {
                                             .rounded(theme.radius(Radius::Sm))
                                             .cursor_pointer()
                                             .hover(|s| s.bg(MonoTheme::bg_hover()))
-                                            .text_color(MonoTheme::fg_subtle())
-                                            .child("✕")
+                                            .child(
+                                                Icon::new(IconName::X)
+                                                    .size(IconSize::Xs)
+                                                    .color(MonoTheme::fg_subtle()),
+                                            )
                                             .on_click(cx.listener(|this, _, _, cx| {
                                                 this.close_notes(cx);
                                             })),
@@ -418,6 +426,9 @@ impl BenCodeApp {
                                                     .child(
                                                         div()
                                                             .id("save-note-btn")
+                                                            .flex()
+                                                            .items_center()
+                                                            .gap_1()
                                                             .px_2()
                                                             .py_1()
                                                             .rounded(theme.radius(Radius::Sm))
@@ -426,7 +437,8 @@ impl BenCodeApp {
                                                             .text_size(theme.text_size(TextSize::Xs))
                                                             .cursor_pointer()
                                                             .hover(|s| s.bg(MonoTheme::bg_active()))
-                                                            .child("💾 Save")
+                                                            .child(Icon::new(IconName::Save).size(IconSize::Xs))
+                                                            .child("Save")
                                                             .on_click(cx.listener(|this, _, _, cx| {
                                                                 this.save_selected_note(cx);
                                                             })),
@@ -434,6 +446,9 @@ impl BenCodeApp {
                                                     .child(
                                                         div()
                                                             .id("delete-note-btn")
+                                                            .flex()
+                                                            .items_center()
+                                                            .gap_1()
                                                             .px_2()
                                                             .py_1()
                                                             .rounded(theme.radius(Radius::Sm))
@@ -442,7 +457,12 @@ impl BenCodeApp {
                                                             .text_size(theme.text_size(TextSize::Xs))
                                                             .cursor_pointer()
                                                             .hover(|s| s.bg(MonoTheme::status_error()).text_color(MonoTheme::on_accent()))
-                                                            .child("🗑 Delete")
+                                                            .child(
+                                                                Icon::new(IconName::Trash2)
+                                                                    .size(IconSize::Xs)
+                                                                    .color(MonoTheme::status_error()),
+                                                            )
+                                                            .child("Delete")
                                                             .on_click(cx.listener(|this, _, _, cx| {
                                                                 this.delete_selected_note(cx);
                                                             })),

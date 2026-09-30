@@ -1,6 +1,7 @@
 use ely_gpui_component::{
     layout::on_axis,
-    theme::{ActiveTheme, Radius, TextSize},
+    primitives::{Icon, IconName},
+    theme::{ActiveTheme, IconSize, Radius, TextSize},
 };
 use gpui::{
     Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString,
@@ -76,10 +77,10 @@ impl BenCodeApp {
         };
 
         let perm_mode = self.permission_mode;
-        let (perm_icon, perm_label) = match perm_mode {
-            PermissionMode::Auto => ("⚡", "Auto"),
-            PermissionMode::Confirm => ("🛡", "Confirm"),
-            PermissionMode::ReadOnly => ("🔒", "Read-Only"),
+        let (perm_icon_name, perm_label) = match perm_mode {
+            PermissionMode::Auto => (IconName::Zap, "Auto"),
+            PermissionMode::Confirm => (IconName::Shield, "Confirm"),
+            PermissionMode::ReadOnly => (IconName::Square, "Read-Only"),
         };
 
         let filtered_skills: Vec<_> = BUILTIN_SKILLS
@@ -235,17 +236,20 @@ impl BenCodeApp {
                                         }))
                                         .child(
                                             div()
+                                                .flex()
+                                                .items_center()
+                                                .gap_1p5()
                                                 .text_size(theme.text_size(TextSize::Xs))
                                                 .font_weight(if is_cur { FontWeight::BOLD } else { FontWeight::NORMAL })
                                                 .text_color(if is_cur { MonoTheme::fg_primary() } else { MonoTheme::fg_muted() })
-                                                .child(format!("⎇ {}", b)),
+                                                .child(Icon::new(IconName::GitBranch).size(IconSize::Xs))
+                                                .child(b),
                                         )
                                         .when(is_cur, |el| {
                                             el.child(
                                                 div()
-                                                    .text_size(theme.text_size(TextSize::Xs))
                                                     .text_color(MonoTheme::accent())
-                                                    .child("✓"),
+                                                    .child(Icon::new(IconName::Check).size(IconSize::Xs)),
                                             )
                                         })
                                 })),
@@ -282,10 +286,18 @@ impl BenCodeApp {
                                                 .flex()
                                                 .items_center()
                                                 .gap_1()
-                                                .text_size(theme.text_size(TextSize::Xs))
-                                                .font_weight(FontWeight::BOLD)
-                                                .text_color(MonoTheme::skill_gold())
-                                                .child("⚡ Slash Skills"),
+                                                .child(
+                                                    Icon::new(IconName::Zap)
+                                                        .size(IconSize::Xs)
+                                                        .color(MonoTheme::skill_gold()),
+                                                )
+                                                .child(
+                                                    div()
+                                                        .text_size(theme.text_size(TextSize::Xs))
+                                                        .font_weight(FontWeight::BOLD)
+                                                        .text_color(MonoTheme::skill_gold())
+                                                        .child("Slash Skills"),
+                                                ),
                                         )
                                         .child(
                                             div()
@@ -414,10 +426,9 @@ impl BenCodeApp {
                                                         .items_center()
                                                         .gap_2()
                                                         .child(
-                                                            div()
-                                                                .text_size(theme.text_size(TextSize::Xs))
-                                                                .text_color(MonoTheme::mention_cyan())
-                                                                .child("📄"),
+                                                            Icon::new(IconName::FileText)
+                                                                .size(IconSize::Xs)
+                                                                .color(MonoTheme::mention_cyan()),
                                                         )
                                                         .child(
                                                             div()
@@ -457,10 +468,9 @@ impl BenCodeApp {
                                                         .items_center()
                                                         .gap_2()
                                                         .child(
-                                                            div()
-                                                                .text_size(theme.text_size(TextSize::Xs))
-                                                                .text_color(MonoTheme::accent())
-                                                                .child("📝"),
+                                                            Icon::new(IconName::FileText)
+                                                                .size(IconSize::Xs)
+                                                                .color(MonoTheme::accent()),
                                                         )
                                                         .child(
                                                             div()
@@ -533,13 +543,12 @@ impl BenCodeApp {
                                                     .child(model_name.to_string()),
                                             )
                                             .child(
-                                                div()
-                                                    .text_size(theme.text_size(TextSize::Xs))
-                                                    .text_color(MonoTheme::fg_subtle())
-                                                    .child(if is_model_open { "▴" } else { "▾" }),
+                                                Icon::new(if is_model_open { IconName::ChevronUp } else { IconName::ChevronDown })
+                                                    .size(IconSize::Xs)
+                                                    .color(MonoTheme::fg_subtle()),
                                             ),
                                     )
-                                    // Permission Mode Chip (⚡ Auto / 🛡 Confirm / 🔒 Read-Only)
+                                    // Permission Mode Chip (Auto / Confirm / Read-Only)
                                     .child(
                                         div()
                                             .id("composer-perm-chip")
@@ -563,9 +572,9 @@ impl BenCodeApp {
                                                 cx.notify();
                                             }))
                                             .child(
-                                                div()
-                                                    .text_size(theme.text_size(TextSize::Xs))
-                                                    .child(perm_icon),
+                                                Icon::new(perm_icon_name)
+                                                    .size(IconSize::Xs)
+                                                    .color(MonoTheme::fg_muted()),
                                             )
                                             .child(
                                                 div()
@@ -595,9 +604,17 @@ impl BenCodeApp {
                                                 this.is_model_picker_open = false;
                                                 cx.notify();
                                             }))
-                                            .text_size(theme.text_size(TextSize::Xs))
-                                            .text_color(MonoTheme::fg_muted())
-                                            .child(format!("⎇ {}", branch_name)),
+                                            .child(
+                                                Icon::new(IconName::GitBranch)
+                                                    .size(IconSize::Xs)
+                                                    .color(MonoTheme::fg_muted()),
+                                            )
+                                            .child(
+                                                div()
+                                                    .text_size(theme.text_size(TextSize::Xs))
+                                                    .text_color(MonoTheme::fg_muted())
+                                                    .child(branch_name.to_string()),
+                                            ),
                                     ),
                             )
                             // Right Side: Context Meter with Mini Progress Bar
@@ -671,9 +688,11 @@ impl BenCodeApp {
                                             .bg(MonoTheme::bg_base())
                                             .cursor_pointer()
                                             .hover(|s| s.bg(MonoTheme::bg_hover()))
-                                            .text_color(MonoTheme::fg_muted())
-                                            .text_size(theme.text_size(TextSize::Sm))
-                                            .child("+"),
+                                            .child(
+                                                Icon::new(IconName::Plus)
+                                                    .size(IconSize::Sm)
+                                                    .color(MonoTheme::fg_muted()),
+                                            ),
                                     )
                                     // Send / Stop action button
                                     .child(
@@ -689,12 +708,13 @@ impl BenCodeApp {
                                             } else {
                                                 MonoTheme::accent()
                                             })
-                                            .text_color(MonoTheme::on_accent())
                                             .cursor_pointer()
                                             .hover(|s| s.opacity(0.9))
-                                            .text_size(theme.text_size(TextSize::Sm))
-                                            .font_weight(FontWeight::BOLD)
-                                            .child(if is_running { "■" } else { "↑" })
+                                            .child(
+                                                Icon::new(if is_running { IconName::Square } else { IconName::ArrowUp })
+                                                    .size(IconSize::Xs)
+                                                    .color(MonoTheme::on_accent()),
+                                            )
                                             .on_click(cx.listener(|this, _, _, cx| {
                                                 this.handle_send_or_stop(cx);
                                             })),
@@ -761,10 +781,9 @@ impl BenCodeApp {
             )
             .when(is_sel, |el| {
                 el.child(
-                    div()
-                        .text_size(theme.text_size(TextSize::Xs))
-                        .text_color(MonoTheme::accent())
-                        .child("✓"),
+                    Icon::new(IconName::Check)
+                        .size(IconSize::Xs)
+                        .color(MonoTheme::accent()),
                 )
             })
     }

@@ -1,3 +1,4 @@
+pub mod components;
 pub mod composer;
 pub mod diff_viewer;
 pub mod footer;

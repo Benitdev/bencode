@@ -1,6 +1,7 @@
 use ely_gpui_component::{
     layout::on_axis,
-    theme::{ActiveTheme, Radius, TextSize},
+    primitives::{Icon, IconName},
+    theme::{ActiveTheme, IconSize, Radius, TextSize},
 };
 use gpui::{
     Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString,
@@ -102,9 +103,17 @@ impl BenCodeApp {
                                         .items_center()
                                         .justify_center()
                                         .gap_2()
-                                        .text_size(theme.text_size(TextSize::Sm))
-                                        .text_color(MonoTheme::fg_muted())
-                                        .child("✨ Workspace is clean (no diffs)")
+                                        .child(
+                                            Icon::new(IconName::Sparkles)
+                                                .size(IconSize::Md)
+                                                .color(MonoTheme::accent()),
+                                        )
+                                        .child(
+                                            div()
+                                                .text_size(theme.text_size(TextSize::Sm))
+                                                .text_color(MonoTheme::fg_muted())
+                                                .child("Workspace is clean (no diffs)"),
+                                        )
                                         .into_any_element()
                                 ]
                             } else {
@@ -249,6 +258,9 @@ impl BenCodeApp {
                                     .gap_2()
                                     .child(
                                         div()
+                                            .flex()
+                                            .items_center()
+                                            .gap_1()
                                             .px_2()
                                             .py_1()
                                             .rounded(theme.radius(Radius::Sm))
@@ -259,10 +271,14 @@ impl BenCodeApp {
                                             .text_color(MonoTheme::fg_muted())
                                             .cursor_pointer()
                                             .hover(|s| s.bg(MonoTheme::bg_hover()).text_color(MonoTheme::fg_primary()))
-                                            .child("📋 Copy Diff"),
+                                            .child(Icon::new(IconName::Copy).size(IconSize::Xs))
+                                            .child("Copy Diff"),
                                     )
                                     .child(
                                         div()
+                                            .flex()
+                                            .items_center()
+                                            .gap_1()
                                             .px_2()
                                             .py_1()
                                             .rounded(theme.radius(Radius::Sm))
@@ -273,7 +289,12 @@ impl BenCodeApp {
                                             .text_color(MonoTheme::danger())
                                             .cursor_pointer()
                                             .hover(|s| s.bg(MonoTheme::danger_bg()))
-                                            .child("↺ Discard"),
+                                            .child(
+                                                Icon::new(IconName::RotateCcw)
+                                                    .size(IconSize::Xs)
+                                                    .color(MonoTheme::danger()),
+                                            )
+                                            .child("Discard"),
                                     ),
                             ),
                     )
