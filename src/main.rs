@@ -1,4 +1,4 @@
-#![allow(unused_imports, dead_code)]
+
 
 mod app;
 mod db;
@@ -10,7 +10,7 @@ mod workspace;
 use app::BenCodeApp;
 use ely_gpui_component::{
     Assets,
-    theme::{Mode, Theme},
+    theme::Mode,
 };
 use gpui::{
     App, AppContext, Bounds, TitlebarOptions, WindowBounds, WindowOptions, point, px, size,
@@ -23,7 +23,7 @@ fn main() {
         .with_assets(Assets)
         .run(|cx: &mut App| {
             ely_gpui_component::init(cx);
-            Theme::set_mode(Mode::Dark, cx);
+            ui::theme::install(Mode::Dark, cx);
 
             let bounds = Bounds::centered(None, size(px(1200.0), px(780.0)), cx);
             let options = WindowOptions {

@@ -12,6 +12,7 @@ pub mod search_view;
 pub mod settings_modal;
 pub mod sidebar;
 pub mod terminal_pane;
+pub mod legacy_theme;
 pub mod theme;
 pub mod titlebar;
 pub mod transcript;

@@ -1,48 +1,77 @@
-use gpui::{Rgba, rgb, rgba};
+//! MonoCode's look expressed as Ely palettes. Views read colours from
+//! `cx.theme().colors` like every Ely component, so light/dark and Ely's
+//! own widgets stay consistent.
 
-/// MonoCode's exact design tokens and color palette
-pub struct MonoTheme;
+use ely_gpui_component::theme::{Mode, Palette, Theme};
+use gpui::{App, Hsla, rgb, rgba};
 
-impl MonoTheme {
-    // Backgrounds
-    #[inline] pub fn bg_base() -> Rgba { rgb(0x0e1015) }       // hsl(220, 20%, 7%)
-    #[inline] pub fn bg_surface() -> Rgba { rgb(0x13161c) }    // hsl(220, 18%, 9%)
-    #[inline] pub fn bg_hover() -> Rgba { rgb(0x1c202a) }      // hsl(220, 16%, 14%)
-    #[inline] pub fn bg_active() -> Rgba { rgb(0x222734) }     // hsl(220, 16%, 17%)
-    #[inline] pub fn bg_card() -> Rgba { rgb(0x161922) }
+/// Temporary: views not yet migrated to `cx.theme().colors`.
+pub use crate::ui::legacy_theme::MonoTheme;
 
-    // Separators & Borders
-    #[inline] pub fn border_stroke() -> Rgba { rgba(0xffffff10) }   // white 6%
-    #[inline] pub fn border_strong() -> Rgba { rgba(0xffffff20) }   // white 12%
-    #[inline] pub fn border_accent() -> Rgba { rgba(0x388bfd40) }
+fn c(hex: u32) -> Hsla {
+    rgb(hex).into()
+}
 
-    // Accent Colors
-    #[inline] pub fn accent() -> Rgba { rgb(0x388bfd) }        // MonoCode Electric Blue hsl(211, 92%, 62%)
-    #[inline] pub fn accent_hover() -> Rgba { rgb(0x4f9aff) }
-    #[inline] pub fn on_accent() -> Rgba { rgb(0xffffff) }
+fn a(hex_rgba: u32) -> Hsla {
+    rgba(hex_rgba).into()
+}
 
-    #[inline] pub fn skill_gold() -> Rgba { rgb(0xe8c547) }
-    #[inline] pub fn mention_cyan() -> Rgba { rgb(0x38bdf8) }
+/// MonoCode electric blue, the accent in dark mode.
+const ACCENT: u32 = 0x388bfd;
 
-    // Status Colors
-    #[inline] pub fn success() -> Rgba { rgb(0x2ea043) }
-    #[inline] pub fn success_bg() -> Rgba { rgba(0x2ea04318) }
-    #[inline] pub fn warning() -> Rgba { rgb(0xd29922) }
-    #[inline] pub fn warning_bg() -> Rgba { rgba(0xd2992218) }
-    #[inline] pub fn danger() -> Rgba { rgb(0xf85149) }
-    #[inline] pub fn danger_bg() -> Rgba { rgba(0xf8514918) }
+/// Registers MonoCode's palettes and applies the starting mode.
+pub fn install(mode: Mode, cx: &mut App) {
+    Theme::set_palette(Mode::Dark, Some(monocode_dark()), cx);
+    Theme::set_palette(Mode::Light, Some(monocode_light()), cx);
+    Theme::set_mode_now(mode, cx);
+}
 
-    // Foregrounds / Text
-    #[inline] pub fn fg_primary() -> Rgba { rgb(0xf1f3f7) }
-    #[inline] pub fn fg_base() -> Rgba { rgb(0xf1f3f7) }
-    #[inline] pub fn fg_muted() -> Rgba { rgb(0x8b949e) }
-    #[inline] pub fn fg_subtle() -> Rgba { rgb(0x565f6d) }
+fn monocode_dark() -> Palette {
+    let mut p = Palette::dark(false);
+    p.bg = c(0x0e1015);
+    p.surface = c(0x13161c);
+    p.sunken = c(0x0b0d11);
+    p.overlay = c(0x161922);
+    p.hover = c(0x1c202a);
+    p.active = c(0x222734);
+    p.border = a(0xffffff14);
+    p.border_strong = a(0xffffff26);
+    p.fg = c(0xf1f3f7);
+    p.fg_muted = c(0x8b949e);
+    p.fg_subtle = c(0x6e7681);
+    p.accent = c(ACCENT);
+    p.accent_hover = c(0x4f9aff);
+    p.on_accent = c(0xffffff);
+    p.focus = c(ACCENT);
+    p.link = c(0x58a6ff);
+    p.selection = a(0x388bfd4d);
+    p.success = c(0x3fb950);
+    p.warning = c(0xd29922);
+    p.danger = c(0xf85149);
+    p.info = c(0x38bdf8);
+    p.success_subtle = a(0x2ea04326);
+    p.warning_subtle = a(0xd2992226);
+    p.danger_subtle = a(0xf8514926);
+    p.info_subtle = a(0x38bdf826);
+    p
+}
 
-    #[inline] pub fn status_error() -> Rgba { rgb(0xf85149) }
-    #[inline] pub fn status_error_bg() -> Rgba { rgba(0xf8514918) }
+fn monocode_light() -> Palette {
+    let mut p = Palette::light(false);
+    p.accent = c(0x0969da);
+    p.accent_hover = c(0x0550ae);
+    p.on_accent = c(0xffffff);
+    p.focus = c(0x0969da);
+    p
+}
 
-    // Agent Harness Branding
-    #[inline] pub fn claude_orange() -> Rgba { rgb(0xd97706) }
-    #[inline] pub fn codex_green() -> Rgba { rgb(0x10b981) }
-    #[inline] pub fn antigravity_blue() -> Rgba { rgb(0x3b82f6) }
+/// Brand dot colour for a `sessions.harness` id.
+pub fn harness_color(id: &str, colors: &Palette) -> Hsla {
+    match id {
+        "claude" => c(0xd97706),
+        "antigravity" => c(0x3b82f6),
+        "codex" => c(0x10b981),
+        "opencode" => colors.chart[4],
+        _ => colors.accent,
+    }
 }

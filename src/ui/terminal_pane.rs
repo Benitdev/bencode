@@ -1,20 +1,18 @@
-use ely_gpui_component::theme::{ActiveTheme, Radius, TextSize};
+//! Embedded native terminal pane: PTY integration with branch and cwd status pills.
+
+use ely_gpui_component::data_display::{Badge, Tone};
+use ely_gpui_component::theme::{ActiveTheme, TextSize};
 use gpui::{
-    Context, FontWeight, InteractiveElement, IntoElement, ParentElement, Styled, div,
+    Context, FontWeight, IntoElement, ParentElement, Styled, div,
     px,
 };
 
 use crate::app::BenCodeApp;
-use crate::db::SessionRow;
-use crate::ui::theme::MonoTheme;
 
 impl BenCodeApp {
-    pub fn render_terminal_pane(
-        &mut self,
-        session: Option<&SessionRow>,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
-        let theme = cx.theme();
+    pub fn render_terminal_pane(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+        let session = self.selected_session();
+        let colors = cx.theme().colors.clone();
         let cwd = session
             .map(|s| s.cwd.as_str())
             .unwrap_or("~");
@@ -27,7 +25,7 @@ impl BenCodeApp {
             .flex_col()
             .flex_1()
             .h_full()
-            .bg(MonoTheme::bg_base())
+            .bg(colors.bg)
             // Terminal Header Bar
             .child(
                 div()
@@ -37,23 +35,23 @@ impl BenCodeApp {
                     .h(px(36.0))
                     .px_4()
                     .border_b_1()
-                    .border_color(MonoTheme::border_stroke())
-                    .bg(MonoTheme::bg_surface())
+                    .border_color(colors.border)
+                    .bg(colors.surface)
                     .child(
                         div()
                             .flex()
                             .items_center()
                             .gap_2()
-                            .text_size(theme.text_size(TextSize::Xs))
+                            .text_size(cx.theme().text_size(TextSize::Xs))
                             .child(
                                 div()
                                     .font_weight(FontWeight::BOLD)
-                                    .text_color(MonoTheme::fg_primary())
+                                    .text_color(colors.fg)
                                     .child("TERMINAL:"),
                             )
                             .child(
                                 div()
-                                    .text_color(MonoTheme::fg_muted())
+                                    .text_color(colors.fg_muted)
                                     .child(cwd.to_string()),
                             ),
                     )
@@ -63,30 +61,9 @@ impl BenCodeApp {
                             .items_center()
                             .gap_2()
                             // Branch Pill
-                            .child(
-                                div()
-                                    .px_2()
-                                    .py_0p5()
-                                    .rounded(theme.radius(Radius::Sm))
-                                    .bg(MonoTheme::bg_base())
-                                    .border_1()
-                                    .border_color(MonoTheme::border_stroke())
-                                    .text_size(theme.text_size(TextSize::Xs))
-                                    .text_color(MonoTheme::fg_subtle())
-                                    .child(format!("⎇ {}", branch)),
-                            )
+                            .child(Badge::new(format!("⎇ {branch}")).tone(Tone::Neutral))
                             // Shell badge
-                            .child(
-                                div()
-                                    .px_2()
-                                    .py_0p5()
-                                    .rounded(theme.radius(Radius::Sm))
-                                    .bg(MonoTheme::bg_hover())
-                                    .text_size(theme.text_size(TextSize::Xs))
-                                    .font_weight(FontWeight::MEDIUM)
-                                    .text_color(MonoTheme::accent())
-                                    .child("zsh (PTY)"),
-                            ),
+                            .child(Badge::new("zsh (PTY)").tone(Tone::Info)),
                     ),
             )
             // Interactive Native PTY Terminal Body
@@ -94,16 +71,16 @@ impl BenCodeApp {
                 if let Some(term) = &self.terminal {
                     div()
                         .flex_1()
-                        .bg(MonoTheme::bg_base())
+                        .bg(colors.bg)
                         .child(term.clone())
                         .into_any_element()
                 } else {
                     div()
                         .flex_1()
                         .p_4()
-                        .font_family(theme.mono_family.clone())
-                        .text_size(theme.text_size(TextSize::Xs))
-                        .bg(MonoTheme::bg_base())
+                        .font_family(cx.theme().mono_family.clone())
+                        .text_size(cx.theme().text_size(TextSize::Xs))
+                        .bg(colors.bg)
                         .child(
                             div()
                                 .flex()
@@ -111,7 +88,7 @@ impl BenCodeApp {
                                 .gap_1p5()
                                 .child(
                                     div()
-                                        .text_color(MonoTheme::fg_subtle())
+                                        .text_color(colors.fg_subtle)
                                         .child("BenCode Native Terminal Session [Apple Metal accelerated]"),
                                 )
                                 .child(
@@ -120,18 +97,18 @@ impl BenCodeApp {
                                         .gap_2()
                                         .child(
                                             div()
-                                                .text_color(MonoTheme::accent())
-                                                .child(format!("{}$", cwd)),
+                                                .text_color(colors.accent)
+                                                .child(format!("{cwd}$")),
                                         )
                                         .child(
                                             div()
-                                                .text_color(MonoTheme::fg_primary())
+                                                .text_color(colors.fg)
                                                 .child("git status"),
                                         ),
                                 )
                                 .child(
                                     div()
-                                        .text_color(MonoTheme::fg_muted())
+                                        .text_color(colors.fg_muted)
                                         .child("On branch main\nYour branch is up to date with 'origin/main'."),
                                 ),
                         )

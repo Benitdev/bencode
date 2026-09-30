@@ -1,44 +1,104 @@
-use ely_gpui_component::{
-    layout::on_axis,
-    primitives::{Icon, IconName},
-    theme::{ActiveTheme, IconSize, Radius, TextSize},
-};
+//! Git changes panel: staged and unstaged working tree changes, commit form,
+//! sync status (ahead/behind), and recent commit history.
+
+use ely_gpui_component::buttons::{Button, ButtonVariant, IconButton};
+use ely_gpui_component::data_display::{Badge, Tone};
+use ely_gpui_component::feedback::Alert;
+use ely_gpui_component::git::{ChangeAction, Changed, ChangesList, Commit, CommitItem, DiffStat};
+use ely_gpui_component::layout::on_axis;
+use ely_gpui_component::lists::GitStatus;
+use ely_gpui_component::primitives::{Icon, IconName, Severity};
+use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize};
 use gpui::{
-    Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString,
-    Styled, div, prelude::*, px,
+    Context, FontWeight, InteractiveElement, IntoElement, ParentElement, Styled,
+    div, prelude::*, px,
 };
 
-use crate::app::{BenCodeApp, SidebarMode, ViewMode};
+use crate::app::{BenCodeApp, ViewMode};
 use crate::git::{
-    GitCommitInfo, GitDetailedStatus, GitFileChange, GitFileStatus, commit, discard_all,
-    discard_file, get_detailed_status, get_recent_commits, stage_all, stage_file,
+    GitFileChange, GitFileStatus, commit, discard_all, discard_file, stage_all, stage_file,
     unstage_all, unstage_file,
 };
-use crate::ui::theme::MonoTheme;
+
+fn to_ely_status(status: &GitFileStatus) -> GitStatus {
+    match status {
+        GitFileStatus::Modified => GitStatus::Modified,
+        GitFileStatus::Added => GitStatus::Added,
+        GitFileStatus::Deleted => GitStatus::Deleted,
+        GitFileStatus::Untracked => GitStatus::Untracked,
+        GitFileStatus::Renamed => GitStatus::Renamed,
+    }
+}
+
+fn to_changed(files: &[GitFileChange]) -> Vec<Changed> {
+    files
+        .iter()
+        .map(|f| Changed {
+            path: f.path.clone().into(),
+            status: to_ely_status(&f.status),
+            added: f.additions,
+            removed: f.deletions,
+        })
+        .collect()
+}
 
 impl BenCodeApp {
-    pub fn refresh_git_status(&mut self, cx: &mut Context<Self>) {
-        let cwd = self.current_cwd.clone();
-        self.git_status = get_detailed_status(&cwd);
-        self.git_commits = get_recent_commits(&cwd, 8);
-        cx.notify();
-    }
-
     pub fn render_git_changes_panel(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.theme();
+        let colors = cx.theme().colors.clone();
+        let entity = cx.entity().clone();
         let branch_name = self.git_status.branch.clone();
         let ahead = self.git_status.ahead;
         let behind = self.git_status.behind;
         let staged_count = self.git_status.staged.len();
-        let unstaged_count = self.git_status.unstaged.len();
-        let staged_collapsed = self.git_staged_collapsed;
-        let unstaged_collapsed = self.git_unstaged_collapsed;
         let history_collapsed = self.git_history_collapsed;
 
         let total_additions: usize = self.git_status.staged.iter().map(|f| f.additions).sum::<usize>()
             + self.git_status.unstaged.iter().map(|f| f.additions).sum::<usize>();
         let total_deletions: usize = self.git_status.staged.iter().map(|f| f.deletions).sum::<usize>()
             + self.git_status.unstaged.iter().map(|f| f.deletions).sum::<usize>();
+
+        let staged_changed = to_changed(&self.git_status.staged);
+        let unstaged_changed = to_changed(&self.git_status.unstaged);
+
+        let e_action = entity.clone();
+        let e_all = entity.clone();
+
+        let changes_list = ChangesList::new("git-worktree-changes", staged_changed, unstaged_changed)
+            .on_action(move |path, action, _, cx| {
+                let p = path.to_string();
+                e_action.update(cx, |this, cx| {
+                    let cwd = this.workspace_cwd();
+                    match action {
+                        ChangeAction::Open => {
+                            this.active_view_mode = ViewMode::Changes;
+                            this.select_diff_path(p, cx);
+                        }
+                        ChangeAction::Stage => {
+                            let _ = stage_file(&cwd, &p);
+                            this.refresh_git_status(cx);
+                        }
+                        ChangeAction::Unstage => {
+                            let _ = unstage_file(&cwd, &p);
+                            this.refresh_git_status(cx);
+                        }
+                        ChangeAction::Discard => {
+                            let _ = discard_file(&cwd, &p);
+                            this.refresh_git_status(cx);
+                        }
+                    }
+                });
+            })
+            .on_all(move |stage_all_files, _, cx| {
+                e_all.update(cx, |this, cx| {
+                    let cwd = this.workspace_cwd();
+                    if stage_all_files {
+                        let _ = stage_all(&cwd);
+                    } else {
+                        let _ = unstage_all(&cwd);
+                    }
+                    this.refresh_git_status(cx);
+                });
+            });
 
         div()
             .flex()
@@ -47,10 +107,21 @@ impl BenCodeApp {
             .w(px(280.0))
             .h_full()
             .border_r_1()
-            .border_color(MonoTheme::border_stroke())
-            .bg(MonoTheme::bg_surface())
+            .border_color(colors.border)
+            .bg(colors.surface)
             // 1. Sidebar Top Segmented Switcher (Sessions | Files | Changes)
             .child(self.render_sidebar_mode_tabs(cx))
+            // Last failed git action dismissible alert
+            .when_some(self.workspace.git_error.clone(), |el, error| {
+                el.child(
+                    div()
+                        .p_2()
+                        .child(
+                            Alert::new("git-error-banner", Severity::Danger, "Git Error")
+                                .body(error),
+                        ),
+                )
+            })
             // 2. Branch & Sync Status Row
             .child(
                 div()
@@ -60,31 +131,27 @@ impl BenCodeApp {
                     .px_3()
                     .py_2()
                     .border_b_1()
-                    .border_color(MonoTheme::border_stroke())
-                    .bg(MonoTheme::bg_base())
+                    .border_color(colors.border)
+                    .bg(colors.bg)
                     .child(
                         div()
                             .flex()
                             .items_center()
                             .gap_1p5()
-                            .child(
-                                Icon::new(IconName::GitBranch)
-                                    .size(IconSize::Xs)
-                                    .color(MonoTheme::accent()),
-                            )
+                            .child(Icon::new(IconName::GitBranch).size(IconSize::Xs).color(colors.accent))
                             .child(
                                 div()
                                     .font_weight(FontWeight::SEMIBOLD)
-                                    .text_size(theme.text_size(TextSize::Xs))
-                                    .text_color(MonoTheme::fg_primary())
+                                    .text_size(cx.theme().text_size(TextSize::Xs))
+                                    .text_color(colors.fg)
                                     .child(branch_name),
                             )
                             .when(ahead > 0 || behind > 0, |el| {
                                 el.child(
                                     div()
-                                        .text_size(theme.text_size(TextSize::Xs))
-                                        .text_color(MonoTheme::fg_muted())
-                                        .child(format!("↑{} ↓{}", ahead, behind)),
+                                        .text_size(cx.theme().text_size(TextSize::Xs))
+                                        .text_color(colors.fg_muted)
+                                        .child(format!("↑{ahead} ↓{behind}")),
                                 )
                             }),
                     )
@@ -92,150 +159,76 @@ impl BenCodeApp {
                         div()
                             .flex()
                             .items_center()
-                            .gap_1()
+                            .gap_2()
+                            .when(total_additions > 0 || total_deletions > 0, |el| {
+                                el.child(DiffStat::new(total_additions, total_deletions))
+                            })
                             .child(
-                                div()
-                                    .id("git-refresh-status-btn")
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .size(px(22.0))
-                                    .rounded(theme.radius(Radius::Sm))
-                                    .cursor_pointer()
-                                    .hover(|s| s.bg(MonoTheme::bg_hover()))
-                                    .child(
-                                        Icon::new(IconName::RefreshCw)
-                                            .size(IconSize::Xs)
-                                            .color(MonoTheme::fg_muted()),
-                                    )
+                                IconButton::new("git-sync-btn", IconName::RotateCw)
+                                    .size(ControlSize::Sm)
+                                    .variant(ButtonVariant::Ghost)
+                                    .tooltip("Refresh git status")
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         this.refresh_git_status(cx);
                                     })),
-                            )
-                            .when(total_additions > 0 || total_deletions > 0, |el| {
-                                el.child(
-                                    div()
-                                        .flex()
-                                        .items_center()
-                                        .gap_1()
-                                        .text_size(theme.text_size(TextSize::Xs))
-                                        .font_weight(FontWeight::MEDIUM)
-                                        .child(
-                                            div()
-                                                .text_color(MonoTheme::success())
-                                                .child(format!("+{}", total_additions)),
-                                        )
-                                        .child(
-                                            div()
-                                                .text_color(MonoTheme::status_error())
-                                                .child(format!("-{}", total_deletions)),
-                                        ),
-                                )
-                            }),
+                            ),
                     ),
             )
-            // 3. Commit Composer Box
+            // 3. Commit Box Area
             .child(
                 div()
-                    .p_2p5()
+                    .p_3()
                     .border_b_1()
-                    .border_color(MonoTheme::border_stroke())
-                    .bg(MonoTheme::bg_surface())
+                    .border_color(colors.border)
+                    .bg(colors.bg)
                     .flex()
                     .flex_col()
                     .gap_2()
                     .child(
                         div()
-                            .relative()
                             .w_full()
-                            .rounded(theme.radius(Radius::Sm))
+                            .min_h(px(48.0))
+                            .p_1p5()
+                            .rounded(cx.theme().radius(Radius::Sm))
                             .border_1()
-                            .border_color(MonoTheme::border_stroke())
-                            .bg(MonoTheme::bg_base())
-                            .p_2()
-                            .child(self.git_commit_input.clone())
-                            .child(
-                                div()
-                                    .id("git-ai-wand-btn")
-                                    .absolute()
-                                    .top(px(4.0))
-                                    .right(px(4.0))
-                                    .size(px(20.0))
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .rounded(theme.radius(Radius::Sm))
-                                    .cursor_pointer()
-                                    .hover(|s| s.bg(MonoTheme::bg_hover()))
-                                    .child(
-                                        Icon::new(IconName::WandSparkles)
-                                            .size(IconSize::Xs)
-                                            .color(MonoTheme::accent()),
-                                    )
-                                    .on_click(cx.listener(|this, _, _, cx| {
-                                        this.generate_ai_commit_message(cx);
-                                    })),
-                            ),
+                            .border_color(colors.border)
+                            .bg(colors.surface)
+                            .child(self.git_commit_input.clone()),
                     )
-                    // Commit Button Row
                     .child(
                         div()
                             .flex()
                             .items_center()
-                            .gap_1()
+                            .gap_2()
                             .child(
-                                div()
-                                    .id("git-commit-btn")
-                                    .flex_1()
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .gap_1p5()
-                                    .h(px(26.0))
-                                    .rounded(theme.radius(Radius::Sm))
-                                    .bg(if staged_count > 0 {
-                                        MonoTheme::accent()
+                                Button::new(
+                                    "git-commit-btn",
+                                    if staged_count > 0 {
+                                        format!("Commit ({staged_count})")
                                     } else {
-                                        MonoTheme::bg_hover()
-                                    })
-                                    .text_color(if staged_count > 0 {
-                                        MonoTheme::on_accent()
-                                    } else {
-                                        MonoTheme::fg_subtle()
-                                    })
-                                    .text_size(theme.text_size(TextSize::Xs))
-                                    .font_weight(FontWeight::MEDIUM)
-                                    .cursor_pointer()
-                                    .hover(|s| s.opacity(0.9))
-                                    .child(Icon::new(IconName::Check).size(IconSize::Xs))
-                                    .child("Commit")
-                                    .on_click(cx.listener(|this, _, _, cx| {
-                                        this.commit_staged_changes(cx);
-                                    })),
+                                        "Commit".to_string()
+                                    },
+                                )
+                                .variant(if staged_count > 0 { ButtonVariant::Primary } else { ButtonVariant::Secondary })
+                                .size(ControlSize::Sm)
+                                .full_width()
+                                .icon(IconName::Check)
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.commit_staged_changes(cx);
+                                })),
                             )
                             .child(
-                                div()
-                                    .id("git-stage-all-btn")
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .size(px(26.0))
-                                    .rounded(theme.radius(Radius::Sm))
-                                    .bg(MonoTheme::bg_hover())
-                                    .hover(|s| s.bg(MonoTheme::bg_active()))
-                                    .cursor_pointer()
-                                    .child(
-                                        Icon::new(IconName::Plus)
-                                            .size(IconSize::Xs)
-                                            .color(MonoTheme::fg_primary()),
-                                    )
+                                IconButton::new("git-stage-all-btn", IconName::Plus)
+                                    .size(ControlSize::Sm)
+                                    .variant(ButtonVariant::Secondary)
+                                    .tooltip("Stage all changes")
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         this.stage_all_workspace_changes(cx);
                                     })),
                             ),
                     ),
             )
-            // 4. Scrollable Changes Lists: Staged Changes + Working Tree Changes + Commits
+            // 4. Scrollable Changes Lists: Staged & Working Tree Changes via ChangesList + Commit History
             .child(
                 on_axis(div().id("git-changes-scroll"))
                     .flex_1()
@@ -243,28 +236,20 @@ impl BenCodeApp {
                     .flex()
                     .flex_col()
                     .py_1()
-                    // Section 1: Staged Changes
-                    .child(
-                        self.render_staged_section(staged_count, staged_collapsed, cx),
-                    )
-                    // Section 2: Changes (Unstaged)
-                    .child(
-                        self.render_unstaged_section(unstaged_count, unstaged_collapsed, cx),
-                    )
+                    .child(changes_list)
                     // Section 3: Commit History
-                    .child(
-                        self.render_history_section(history_collapsed, cx),
-                    ),
+                    .child(self.render_history_section(history_collapsed, cx)),
             )
     }
 
-    fn render_staged_section(
+    fn render_history_section(
         &self,
-        count: usize,
         collapsed: bool,
         cx: &Context<Self>,
     ) -> impl IntoElement {
-        let theme = cx.theme();
+        let colors = &cx.theme().colors;
+        let commits = &self.git_commits;
+        let count = commits.len();
 
         div()
             .flex()
@@ -276,577 +261,98 @@ impl BenCodeApp {
                     .justify_between()
                     .px_3()
                     .py_1p5()
-                    .bg(MonoTheme::bg_surface())
-                    .hover(|s| s.bg(MonoTheme::bg_hover()))
+                    .bg(colors.surface)
+                    .hover(|s| s.bg(colors.hover))
                     .child(
                         div()
-                            .id("toggle-staged-collapsed-btn")
+                            .id("toggle-history-collapsed-btn")
                             .flex()
                             .items_center()
                             .gap_1p5()
                             .cursor_pointer()
                             .child(
-                                Icon::new(if collapsed {
-                                    IconName::ChevronRight
-                                } else {
-                                    IconName::ChevronDown
-                                })
-                                .size(IconSize::Xs)
-                                .color(MonoTheme::fg_muted()),
+                                Icon::new(if collapsed { IconName::ChevronRight } else { IconName::ChevronDown })
+                                    .size(IconSize::Xs)
+                                    .color(colors.fg_muted),
                             )
                             .child(
                                 div()
                                     .font_weight(FontWeight::BOLD)
-                                    .text_size(theme.text_size(TextSize::Xs))
-                                    .text_color(MonoTheme::fg_muted())
-                                    .child("STAGED CHANGES"),
+                                    .text_size(cx.theme().text_size(TextSize::Xs))
+                                    .text_color(colors.fg_muted)
+                                    .child("RECENT COMMITS"),
                             )
-                            .child(
-                                div()
-                                    .px_1p5()
-                                    .py_0p5()
-                                    .rounded(theme.radius(Radius::Sm))
-                                    .bg(if count > 0 {
-                                        MonoTheme::accent()
-                                    } else {
-                                        MonoTheme::bg_hover()
-                                    })
-                                    .text_color(if count > 0 {
-                                        MonoTheme::on_accent()
-                                    } else {
-                                        MonoTheme::fg_subtle()
-                                    })
-                                    .text_size(theme.text_size(TextSize::Xs))
-                                    .font_weight(FontWeight::BOLD)
-                                    .child(count.to_string()),
-                            )
+                            .child(Badge::new(count.to_string()).tone(Tone::Neutral))
                             .on_click(cx.listener(|this, _, _, cx| {
-                                this.git_staged_collapsed = !this.git_staged_collapsed;
+                                this.git_history_collapsed = !this.git_history_collapsed;
                                 cx.notify();
                             })),
-                    )
-                    .when(count > 0, |el| {
-                        el.child(
-                            div()
-                                .id("unstage-all-btn")
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .size(px(18.0))
-                                .rounded(theme.radius(Radius::Sm))
-                                .cursor_pointer()
-                                .hover(|s| s.bg(MonoTheme::bg_active()))
-                                .child(
-                                    Icon::new(IconName::Minus)
-                                        .size(IconSize::Xs)
-                                        .color(MonoTheme::fg_muted()),
-                                )
-                                .on_click(cx.listener(|this, _, _, cx| {
-                                    this.unstage_all_workspace_changes(cx);
-                                })),
-                        )
-                    }),
-            )
-            .when(!collapsed, |el| {
-                if count == 0 {
-                    el.child(
-                        div()
-                            .px_6()
-                            .py_2()
-                            .text_size(theme.text_size(TextSize::Xs))
-                            .text_color(MonoTheme::fg_subtle())
-                            .child("No staged changes"),
-                    )
-                } else {
-                    let mut list = div().flex().flex_col();
-                    for file in &self.git_status.staged {
-                        list = list.child(self.render_git_file_row(file, true, cx));
-                    }
-                    el.child(list)
-                }
-            })
-    }
-
-    fn render_unstaged_section(
-        &self,
-        count: usize,
-        collapsed: bool,
-        cx: &Context<Self>,
-    ) -> impl IntoElement {
-        let theme = cx.theme();
-
-        div()
-            .flex()
-            .flex_col()
-            .mt_1()
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .px_3()
-                    .py_1p5()
-                    .bg(MonoTheme::bg_surface())
-                    .hover(|s| s.bg(MonoTheme::bg_hover()))
-                    .child(
-                        div()
-                            .id("toggle-unstaged-collapsed-btn")
-                            .flex()
-                            .items_center()
-                            .gap_1p5()
-                            .cursor_pointer()
-                            .child(
-                                Icon::new(if collapsed {
-                                    IconName::ChevronRight
-                                } else {
-                                    IconName::ChevronDown
-                                })
-                                .size(IconSize::Xs)
-                                .color(MonoTheme::fg_muted()),
-                            )
-                            .child(
-                                div()
-                                    .font_weight(FontWeight::BOLD)
-                                    .text_size(theme.text_size(TextSize::Xs))
-                                    .text_color(MonoTheme::fg_muted())
-                                    .child("CHANGES"),
-                            )
-                            .child(
-                                div()
-                                    .px_1p5()
-                                    .py_0p5()
-                                    .rounded(theme.radius(Radius::Sm))
-                                    .bg(MonoTheme::bg_hover())
-                                    .text_color(MonoTheme::fg_muted())
-                                    .text_size(theme.text_size(TextSize::Xs))
-                                    .font_weight(FontWeight::BOLD)
-                                    .child(count.to_string()),
-                            )
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.git_unstaged_collapsed = !this.git_unstaged_collapsed;
-                                cx.notify();
-                            })),
-                    )
-                    .when(count > 0, |el| {
-                        el.child(
-                            div()
-                                .flex()
-                                .items_center()
-                                .gap_1()
-                                .child(
-                                    div()
-                                        .id("discard-all-unstaged-btn")
-                                        .flex()
-                                        .items_center()
-                                        .justify_center()
-                                        .size(px(18.0))
-                                        .rounded(theme.radius(Radius::Sm))
-                                        .cursor_pointer()
-                                        .hover(|s| s.bg(MonoTheme::bg_active()))
-                                        .child(
-                                            Icon::new(IconName::Undo2)
-                                                .size(IconSize::Xs)
-                                                .color(MonoTheme::status_error()),
-                                        )
-                                        .on_click(cx.listener(|this, _, _, cx| {
-                                            this.discard_all_workspace_changes(cx);
-                                        })),
-                                )
-                                .child(
-                                    div()
-                                        .id("stage-all-unstaged-btn")
-                                        .flex()
-                                        .items_center()
-                                        .justify_center()
-                                        .size(px(18.0))
-                                        .rounded(theme.radius(Radius::Sm))
-                                        .cursor_pointer()
-                                        .hover(|s| s.bg(MonoTheme::bg_active()))
-                                        .child(
-                                            Icon::new(IconName::Plus)
-                                                .size(IconSize::Xs)
-                                                .color(MonoTheme::fg_muted()),
-                                        )
-                                        .on_click(cx.listener(|this, _, _, cx| {
-                                            this.stage_all_workspace_changes(cx);
-                                        })),
-                                ),
-                        )
-                    }),
-            )
-            .when(!collapsed, |el| {
-                if count == 0 {
-                    el.child(
-                        div()
-                            .px_6()
-                            .py_2()
-                            .text_size(theme.text_size(TextSize::Xs))
-                            .text_color(MonoTheme::fg_subtle())
-                            .child("Working tree clean"),
-                    )
-                } else {
-                    let mut list = div().flex().flex_col();
-                    for file in &self.git_status.unstaged {
-                        list = list.child(self.render_git_file_row(file, false, cx));
-                    }
-                    el.child(list)
-                }
-            })
-    }
-
-    fn render_history_section(&self, collapsed: bool, cx: &Context<Self>) -> impl IntoElement {
-        let theme = cx.theme();
-        let commits_count = self.git_commits.len();
-
-        div()
-            .flex()
-            .flex_col()
-            .mt_2()
-            .border_t_1()
-            .border_color(MonoTheme::border_stroke())
-            .child(
-                div()
-                    .id("toggle-history-collapsed-btn")
-                    .flex()
-                    .items_center()
-                    .gap_1p5()
-                    .px_3()
-                    .py_2()
-                    .bg(MonoTheme::bg_surface())
-                    .hover(|s| s.bg(MonoTheme::bg_hover()))
-                    .cursor_pointer()
-                    .child(
-                        Icon::new(if collapsed {
-                            IconName::ChevronRight
-                        } else {
-                            IconName::ChevronDown
-                        })
-                        .size(IconSize::Xs)
-                        .color(MonoTheme::fg_muted()),
-                    )
-                    .child(
-                        div()
-                            .font_weight(FontWeight::BOLD)
-                            .text_size(theme.text_size(TextSize::Xs))
-                            .text_color(MonoTheme::fg_muted())
-                            .child("COMMIT HISTORY"),
-                    )
-                    .child(
-                        div()
-                            .px_1p5()
-                            .py_0p5()
-                            .rounded(theme.radius(Radius::Sm))
-                            .bg(MonoTheme::bg_hover())
-                            .text_color(MonoTheme::fg_muted())
-                            .text_size(theme.text_size(TextSize::Xs))
-                            .child(commits_count.to_string()),
-                    )
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.git_history_collapsed = !this.git_history_collapsed;
-                        cx.notify();
-                    })),
-            )
-            .when(!collapsed, |el| {
-                let mut list = div().flex().flex_col();
-                for commit in &self.git_commits {
-                    list = list.child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .px_3()
-                            .py_1p5()
-                            .hover(|s| s.bg(MonoTheme::bg_hover()))
-                            .child(
-                                div()
-                                    .flex()
-                                    .items_center()
-                                    .justify_between()
-                                    .child(
-                                        div()
-                                            .font_weight(FontWeight::MEDIUM)
-                                            .text_size(theme.text_size(TextSize::Xs))
-                                            .text_color(MonoTheme::fg_primary())
-                                            .overflow_hidden()
-                                            .child(commit.message.clone()),
-                                    )
-                                    .child(
-                                        div()
-                                            .px_1()
-                                            .py_0p5()
-                                            .rounded(theme.radius(Radius::Sm))
-                                            .bg(MonoTheme::bg_hover())
-                                            .text_size(theme.text_size(TextSize::Xs))
-                                            .text_color(MonoTheme::accent())
-                                            .child(commit.short_hash.clone()),
-                                    ),
-                            )
-                            .child(
-                                div()
-                                    .flex()
-                                    .items_center()
-                                    .gap_2()
-                                    .text_size(theme.text_size(TextSize::Xs))
-                                    .text_color(MonoTheme::fg_subtle())
-                                    .child(commit.author.clone())
-                                    .child("•")
-                                    .child(commit.relative_time.clone()),
-                            ),
-                    );
-                }
-                el.child(list)
-            })
-    }
-
-    fn render_git_file_row(
-        &self,
-        file: &GitFileChange,
-        is_staged: bool,
-        cx: &Context<Self>,
-    ) -> impl IntoElement {
-        let theme = cx.theme();
-        let file_path = file.path.clone();
-        let file_name = std::path::Path::new(&file_path)
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or(&file_path)
-            .to_string();
-        let parent_dir = std::path::Path::new(&file_path)
-            .parent()
-            .and_then(|p| p.to_str())
-            .unwrap_or("")
-            .to_string();
-
-        let is_selected = self.selected_diff_path.as_deref() == Some(&file_path);
-
-        let (badge_text, badge_color, badge_bg) = match file.status {
-            GitFileStatus::Modified => ("M", MonoTheme::warning(), MonoTheme::warning_bg()),
-            GitFileStatus::Added => ("A", MonoTheme::success(), MonoTheme::success_bg()),
-            GitFileStatus::Deleted => ("D", MonoTheme::status_error(), MonoTheme::status_error_bg()),
-            GitFileStatus::Untracked => ("U", MonoTheme::fg_muted(), MonoTheme::bg_hover()),
-            GitFileStatus::Renamed => ("R", MonoTheme::accent(), MonoTheme::bg_hover()),
-        };
-
-        let file_path_clone = file_path.clone();
-        let file_path_stage = file_path.clone();
-        let file_path_discard = file_path.clone();
-
-        div()
-            .id(SharedString::from(format!("git-file-row-{}", file_path)))
-            .flex()
-            .items_center()
-            .justify_between()
-            .px_3()
-            .py_1p5()
-            .bg(if is_selected {
-                MonoTheme::bg_active()
-            } else {
-                gpui::rgba(0x00000000)
-            })
-            .hover(|s| s.bg(MonoTheme::bg_hover()))
-            .cursor_pointer()
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .flex_1()
-                    .min_w_0()
-                    .child(
-                        Icon::new(IconName::FileText)
-                            .size(IconSize::Xs)
-                            .color(MonoTheme::fg_muted()),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .items_baseline()
-                            .gap_1p5()
-                            .min_w_0()
-                            .child(
-                                div()
-                                    .text_size(theme.text_size(TextSize::Xs))
-                                    .font_weight(FontWeight::MEDIUM)
-                                    .text_color(if is_selected {
-                                        MonoTheme::accent()
-                                    } else {
-                                        MonoTheme::fg_primary()
-                                    })
-                                    .child(file_name),
-                            )
-                            .when(!parent_dir.is_empty(), |el| {
-                                el.child(
-                                    div()
-                                        .text_size(theme.text_size(TextSize::Xs))
-                                        .text_color(MonoTheme::fg_subtle())
-                                        .overflow_hidden()
-                                        .child(parent_dir),
-                                )
-                            }),
                     ),
             )
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_1p5()
-                    // Additions / Deletions
-                    .when(file.additions > 0 || file.deletions > 0, |el| {
-                        el.child(
-                            div()
-                                .flex()
-                                .items_center()
-                                .gap_1()
-                                .text_size(theme.text_size(TextSize::Xs))
-                                .child(
-                                    div()
-                                        .text_color(MonoTheme::success())
-                                        .child(format!("+{}", file.additions)),
-                                )
-                                .child(
-                                    div()
-                                        .text_color(MonoTheme::status_error())
-                                        .child(format!("-{}", file.deletions)),
-                                ),
-                        )
-                    })
-                    // Status Badge (M, A, D, U)
-                    .child(
+            .when(!collapsed, |el| {
+                if commits.is_empty() {
+                    el.child(
                         div()
-                            .px_1p5()
-                            .py_0p5()
-                            .rounded(theme.radius(Radius::Sm))
-                            .bg(badge_bg)
-                            .text_color(badge_color)
-                            .font_weight(FontWeight::BOLD)
-                            .text_size(theme.text_size(TextSize::Xs))
-                            .child(badge_text),
+                            .px_6()
+                            .py_2()
+                            .text_size(cx.theme().text_size(TextSize::Xs))
+                            .text_color(colors.fg_subtle)
+                            .child("No recent commits"),
                     )
-                    // Stage / Unstage Action Button
-                    .child(
-                        div()
-                            .id(SharedString::from(format!("git-action-btn-{}", file_path)))
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .size(px(18.0))
-                            .rounded(theme.radius(Radius::Sm))
-                            .hover(|s| s.bg(MonoTheme::bg_active()))
-                            .child(
-                                Icon::new(if is_staged {
-                                    IconName::Minus
-                                } else {
-                                    IconName::Plus
-                                })
-                                .size(IconSize::Xs)
-                                .color(MonoTheme::fg_muted()),
-                            )
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                if is_staged {
-                                    this.unstage_workspace_file(&file_path_stage, cx);
-                                } else {
-                                    this.stage_workspace_file(&file_path_stage, cx);
-                                }
-                            })),
-                    )
-                    // Discard button for unstaged
-                    .when(!is_staged, |el| {
-                        el.child(
-                            div()
-                                .id(SharedString::from(format!("git-discard-btn-{}", file_path_discard)))
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .size(px(18.0))
-                                .rounded(theme.radius(Radius::Sm))
-                                .hover(|s| s.bg(MonoTheme::bg_active()))
-                                .child(
-                                    Icon::new(IconName::Undo2)
-                                        .size(IconSize::Xs)
-                                        .color(MonoTheme::status_error()),
-                                )
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    this.discard_workspace_file(&file_path_discard, cx);
-                                })),
+                } else {
+                    el.children(commits.iter().map(|c| {
+                        CommitItem::new(
+                            format!("commit-{}", c.hash),
+                            Commit {
+                                id: c.hash.clone().into(),
+                                parents: vec![],
+                                subject: c.message.clone().into(),
+                                author: c.author.clone().into(),
+                                when: c.relative_time.clone().into(),
+                                refs: vec![],
+                            },
                         )
-                    }),
-            )
-            .on_click(cx.listener(move |this, _, _, cx| {
-                this.selected_diff_path = Some(file_path_clone.clone());
-                this.active_view_mode = ViewMode::Changes;
+                    }))
+                }
+            })
+    }
+
+    pub fn commit_staged_changes(&mut self, cx: &mut Context<Self>) {
+        let msg = self.git_commit_input.read(cx).text().trim().to_string();
+        if msg.is_empty() {
+            return;
+        }
+        let cwd = self.workspace_cwd();
+        match commit(&cwd, &msg) {
+            Ok(_) => {
+                self.git_commit_input.update(cx, |input, cx| input.set_text("", cx));
+                self.workspace.git_error = None;
+                self.refresh_git_status(cx);
+            }
+            Err(e) => {
+                self.workspace.git_error = Some(e.to_string());
                 cx.notify();
-            }))
-    }
-
-    // Git Action Handlers
-    pub fn stage_workspace_file(&mut self, file: &str, cx: &mut Context<Self>) {
-        let _ = stage_file(&self.current_cwd, file);
-        self.refresh_git_status(cx);
-    }
-
-    pub fn unstage_workspace_file(&mut self, file: &str, cx: &mut Context<Self>) {
-        let _ = unstage_file(&self.current_cwd, file);
-        self.refresh_git_status(cx);
-    }
-
-    pub fn discard_workspace_file(&mut self, file: &str, cx: &mut Context<Self>) {
-        let _ = discard_file(&self.current_cwd, file);
-        self.refresh_git_status(cx);
+            }
+        }
     }
 
     pub fn stage_all_workspace_changes(&mut self, cx: &mut Context<Self>) {
-        let _ = stage_all(&self.current_cwd);
-        self.refresh_git_status(cx);
-    }
-
-    pub fn unstage_all_workspace_changes(&mut self, cx: &mut Context<Self>) {
-        let _ = unstage_all(&self.current_cwd);
+        let cwd = self.workspace_cwd();
+        if let Err(e) = stage_all(&cwd) {
+            self.workspace.git_error = Some(e.to_string());
+        } else {
+            self.workspace.git_error = None;
+        }
         self.refresh_git_status(cx);
     }
 
     pub fn discard_all_workspace_changes(&mut self, cx: &mut Context<Self>) {
-        let _ = discard_all(&self.current_cwd);
-        self.refresh_git_status(cx);
-    }
-
-    pub fn commit_staged_changes(&mut self, cx: &mut Context<Self>) {
-        let message = self.git_commit_input.read(cx).text().trim().to_string();
-        if message.is_empty() {
-            return;
-        }
-
-        let _ = commit(&self.current_cwd, &message);
-        self.git_commit_input.update(cx, |input, cx| {
-            input.set_text("", cx);
-        });
-        self.refresh_git_status(cx);
-    }
-
-    pub fn generate_ai_commit_message(&mut self, cx: &mut Context<Self>) {
-        // Auto-synthesize conventional commit message from changed file list
-        let changed_files = if !self.git_status.staged.is_empty() {
-            &self.git_status.staged
+        let cwd = self.workspace_cwd();
+        if let Err(e) = discard_all(&cwd) {
+            self.workspace.git_error = Some(e.to_string());
         } else {
-            &self.git_status.unstaged
-        };
-
-        if changed_files.is_empty() {
-            return;
+            self.workspace.git_error = None;
         }
-
-        let first = &changed_files[0].path;
-        let summary = if first.ends_with(".rs") {
-            format!("refactor(core): update {} logic", first)
-        } else if first.contains("ui") {
-            format!("feat(ui): update components in {}", first)
-        } else if first.ends_with(".toml") || first.ends_with(".json") {
-            format!("chore: update configuration in {}", first)
-        } else {
-            format!("feat: update {}", first)
-        };
-
-        self.git_commit_input.update(cx, |input, cx| {
-            input.set_text(&summary, cx);
-        });
-        cx.notify();
+        self.refresh_git_status(cx);
     }
 }

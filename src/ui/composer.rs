@@ -1,27 +1,31 @@
-use ely_gpui_component::{
-    layout::on_axis,
-    primitives::{Icon, IconName},
-    theme::{ActiveTheme, IconSize, Radius, TextSize},
-};
+//! Bottom prompt composer: multi-line input, model/branch/permission selectors,
+//! mention (@) & slash-skill (/) autocomplete popovers, context token meter, and send/stop button.
+
+use ely_gpui_component::buttons::{ButtonVariant, IconButton};
+use ely_gpui_component::data_display::{Badge, Tone};
+use ely_gpui_component::layout::on_axis;
+use ely_gpui_component::primitives::{Icon, IconName};
+use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize};
 use gpui::{
-    Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString,
-    Styled, div, prelude::*, px,
+    Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString, Styled,
+    div, prelude::*, px,
 };
 
 use crate::app::{BenCodeApp, PermissionMode};
 use crate::db::SessionRow;
-use crate::git::get_branches;
-use crate::ui::theme::MonoTheme;
-use crate::workspace::{list_workspace_files, BUILTIN_SKILLS};
+use crate::harness::HarnessKind;
+use crate::harness::catalog::{self, ModelOption};
+use crate::ui::theme;
+use crate::workspace::BUILTIN_SKILLS;
 
 impl BenCodeApp {
     pub fn render_composer(
-        &mut self,
+        &self,
         session: Option<&SessionRow>,
-        cx: &mut Context<Self>,
+        cx: &Context<Self>,
     ) -> impl IntoElement {
-        let theme = cx.theme();
-        let is_running = self.is_agent_running;
+        let colors = cx.theme().colors.clone();
+        let is_running = self.is_agent_running();
         let is_model_open = self.is_model_picker_open;
         let is_branch_open = self.is_branch_picker_open;
         let is_skill_open = self.is_skill_picker_open;
@@ -29,30 +33,16 @@ impl BenCodeApp {
         let skill_q = self.skill_query.clone();
         let mention_q = self.mention_query.clone();
 
-        let cwd = session.map(|s| s.cwd.as_str()).unwrap_or(".");
-        let branches = get_branches(cwd);
+        let branches = self.workspace.branches.clone();
 
-        let model_name = session
-            .map(|s| {
-                if s.model.is_empty() {
-                    "Claude 3.7 Sonnet"
-                } else {
-                    s.model.as_str()
-                }
-            })
-            .unwrap_or(&self.selected_model);
+        let model_name = catalog::label_for(session.map_or(self.selected_model.as_str(), |s| s.model.as_str()));
 
         let branch_name = session
             .and_then(|s| s.branch.as_deref())
             .unwrap_or("main");
 
         let harness = session.map(|s| s.harness.as_str()).unwrap_or("claude");
-        let harness_dot_color = match harness {
-            "claude" => MonoTheme::claude_orange(),
-            "antigravity" => MonoTheme::antigravity_blue(),
-            "codex" => MonoTheme::codex_green(),
-            _ => MonoTheme::accent(),
-        };
+        let harness_dot_color = theme::harness_color(harness, &colors);
 
         let (context_label, pct) = match (session.and_then(|s| s.context_used), session.and_then(|s| s.context_window)) {
             (Some(used), Some(window)) if window > 0 => {
@@ -61,17 +51,17 @@ impl BenCodeApp {
                 } else if used >= 1000 {
                     format!("{:.1}k", used as f64 / 1000.0)
                 } else {
-                    format!("{}", used)
+                    format!("{used}")
                 };
                 let win_str = if window >= 1_000_000 {
                     format!("{:.1}M", window as f64 / 1_000_000.0)
                 } else if window >= 1000 {
                     format!("{:.1}k", window as f64 / 1000.0)
                 } else {
-                    format!("{}", window)
+                    format!("{window}")
                 };
                 let p = ((used as f64 / window as f64) * 100.0).round() as u64;
-                (format!("{} / {} tokens ({}%)", used_str, win_str, p), p)
+                (format!("{used_str} / {win_str} tokens ({p}%)"), p)
             }
             _ => ("0 / 200k tokens (0%)".to_string(), 0),
         };
@@ -92,12 +82,13 @@ impl BenCodeApp {
             })
             .collect();
 
-        let workspace_path = std::path::Path::new(cwd);
-        let workspace_files = list_workspace_files(workspace_path, 40);
-        let filtered_files: Vec<_> = workspace_files
-            .into_iter()
-            .filter(|f| mention_q.is_empty() || f.to_lowercase().contains(&mention_q))
+        let filtered_files: Vec<_> = self
+            .workspace
+            .files
+            .iter()
+            .filter(|&f| mention_q.is_empty() || f.to_lowercase().contains(&mention_q))
             .take(8)
+            .cloned()
             .collect();
 
         let filtered_notes: Vec<_> = self
@@ -117,21 +108,17 @@ impl BenCodeApp {
             .px_6()
             .pb_5()
             .pt_2()
-            .bg(MonoTheme::bg_base())
+            .bg(colors.bg)
             .child(
                 // Floating Composer Card
                 div()
                     .relative()
                     .max_w(px(840.0))
                     .mx_auto()
-                    .rounded(theme.radius(Radius::Lg))
+                    .rounded(cx.theme().radius(Radius::Lg))
                     .border_1()
-                    .border_color(if is_running {
-                        MonoTheme::accent()
-                    } else {
-                        MonoTheme::border_stroke()
-                    })
-                    .bg(MonoTheme::bg_surface())
+                    .border_color(if is_running { colors.accent } else { colors.border })
+                    .bg(colors.surface)
                     // Popover: Model Picker Menu
                     .when(is_model_open, |el| {
                         el.child(
@@ -140,58 +127,28 @@ impl BenCodeApp {
                                 .left(px(12.0))
                                 .bottom(px(110.0))
                                 .w(px(260.0))
-                                .rounded(theme.radius(Radius::Md))
+                                .rounded(cx.theme().radius(Radius::Md))
                                 .border_1()
-                                .border_color(MonoTheme::border_stroke())
-                                .bg(MonoTheme::bg_surface())
+                                .border_color(colors.border)
+                                .bg(colors.surface)
                                 .p_2()
                                 .gap_1()
                                 .flex()
                                 .flex_col()
-                                // Header: Anthropic
-                                .child(
-                                    div()
-                                        .px_2()
-                                        .py_1()
-                                        .text_size(theme.text_size(TextSize::Xs))
-                                        .font_weight(FontWeight::BOLD)
-                                        .text_color(MonoTheme::fg_subtle())
-                                        .child("ANTHROPIC"),
-                                )
-                                .child(self.render_model_option("Claude 3.7 Sonnet", "claude", MonoTheme::claude_orange(), cx))
-                                .child(self.render_model_option("Claude 3.5 Sonnet", "claude", MonoTheme::claude_orange(), cx))
-                                .child(self.render_model_option("Claude 3.5 Haiku", "claude", MonoTheme::claude_orange(), cx))
-                                // Header: Google Antigravity
-                                .child(
-                                    div()
-                                        .pt_2()
-                                        .px_2()
-                                        .py_1()
-                                        .text_size(theme.text_size(TextSize::Xs))
-                                        .font_weight(FontWeight::BOLD)
-                                        .text_color(MonoTheme::fg_subtle())
-                                        .child("GOOGLE ANTIGRAVITY"),
-                                )
-                                .child(self.render_model_option("Gemini 3.8 Flash (High)", "antigravity", MonoTheme::antigravity_blue(), cx))
-                                .child(self.render_model_option("Gemini 2.5 Flash", "antigravity", MonoTheme::antigravity_blue(), cx))
-                                .child(self.render_model_option("Gemini 2.5 Pro", "antigravity", MonoTheme::antigravity_blue(), cx))
-                                // Header: OpenAI
-                                .child(
-                                    div()
-                                        .pt_2()
-                                        .px_2()
-                                        .py_1()
-                                        .text_size(theme.text_size(TextSize::Xs))
-                                        .font_weight(FontWeight::BOLD)
-                                        .text_color(MonoTheme::fg_subtle())
-                                        .child("OPENAI"),
-                                )
-                                .child(self.render_model_option("GPT-4o", "codex", MonoTheme::codex_green(), cx))
-                                .child(self.render_model_option("o3-mini", "codex", MonoTheme::codex_green(), cx))
+                                .children(self.render_model_groups(cx))
                         )
                     })
                     // Popover: Branch Picker Menu
                     .when(is_branch_open, |el| {
+                        let c_border = colors.border;
+                        let c_surf = colors.surface;
+                        let c_fg = colors.fg;
+                        let c_muted = colors.fg_muted;
+                        let c_subtle = colors.fg_subtle;
+                        let c_active = colors.active;
+                        let c_hover = colors.hover;
+                        let c_accent = colors.accent;
+
                         el.child(
                             on_axis(div().id("composer-branch-scroll"))
                                 .absolute()
@@ -200,10 +157,10 @@ impl BenCodeApp {
                                 .w(px(240.0))
                                 .max_h(px(220.0))
                                 .overflow_y_scroll()
-                                .rounded(theme.radius(Radius::Md))
+                                .rounded(cx.theme().radius(Radius::Md))
                                 .border_1()
-                                .border_color(MonoTheme::border_stroke())
-                                .bg(MonoTheme::bg_surface())
+                                .border_color(c_border)
+                                .bg(c_surf)
                                 .p_2()
                                 .flex()
                                 .flex_col()
@@ -212,25 +169,25 @@ impl BenCodeApp {
                                     div()
                                         .px_2()
                                         .py_1()
-                                        .text_size(theme.text_size(TextSize::Xs))
+                                        .text_size(cx.theme().text_size(TextSize::Xs))
                                         .font_weight(FontWeight::BOLD)
-                                        .text_color(MonoTheme::fg_subtle())
+                                        .text_color(c_subtle)
                                         .child("SWITCH GIT BRANCH"),
                                 )
                                 .children(branches.into_iter().map(|b| {
                                     let is_cur = b == branch_name;
                                     let b_clone = b.clone();
                                     div()
-                                        .id(SharedString::from(format!("branch-opt-{}", b)))
+                                        .id(SharedString::from(format!("branch-opt-{b}")))
                                         .flex()
                                         .items_center()
                                         .justify_between()
                                         .px_2p5()
                                         .py_1p5()
-                                        .rounded(theme.radius(Radius::Sm))
+                                        .rounded(cx.theme().radius(Radius::Sm))
                                         .cursor_pointer()
-                                        .when(is_cur, |el| el.bg(MonoTheme::bg_active()))
-                                        .when(!is_cur, |el| el.hover(|s| s.bg(MonoTheme::bg_hover())))
+                                        .when(is_cur, |el| el.bg(c_active))
+                                        .when(!is_cur, |el| el.hover(|s| s.bg(c_hover)))
                                         .on_click(cx.listener(move |this, _, _, cx| {
                                             this.set_session_branch(b_clone.clone(), cx);
                                         }))
@@ -239,16 +196,16 @@ impl BenCodeApp {
                                                 .flex()
                                                 .items_center()
                                                 .gap_1p5()
-                                                .text_size(theme.text_size(TextSize::Xs))
+                                                .text_size(cx.theme().text_size(TextSize::Xs))
                                                 .font_weight(if is_cur { FontWeight::BOLD } else { FontWeight::NORMAL })
-                                                .text_color(if is_cur { MonoTheme::fg_primary() } else { MonoTheme::fg_muted() })
+                                                .text_color(if is_cur { c_fg } else { c_muted })
                                                 .child(Icon::new(IconName::GitBranch).size(IconSize::Xs))
                                                 .child(b),
                                         )
                                         .when(is_cur, |el| {
                                             el.child(
                                                 div()
-                                                    .text_color(MonoTheme::accent())
+                                                    .text_color(c_accent)
                                                     .child(Icon::new(IconName::Check).size(IconSize::Xs)),
                                             )
                                         })
@@ -257,6 +214,14 @@ impl BenCodeApp {
                     })
                     // Popover: Slash Skills Autocomplete
                     .when(is_skill_open, |el| {
+                        let c_border = colors.border;
+                        let c_surf = colors.surface;
+                        let c_fg = colors.fg;
+                        let c_muted = colors.fg_muted;
+                        let c_subtle = colors.fg_subtle;
+                        let c_hover = colors.hover;
+                        let c_accent = colors.accent;
+
                         el.child(
                             div()
                                 .absolute()
@@ -264,10 +229,10 @@ impl BenCodeApp {
                                 .bottom(px(100.0))
                                 .w(px(380.0))
                                 .max_h(px(260.0))
-                                .rounded(theme.radius(Radius::Md))
+                                .rounded(cx.theme().radius(Radius::Md))
                                 .border_1()
-                                .border_color(MonoTheme::border_stroke())
-                                .bg(MonoTheme::bg_surface())
+                                .border_color(c_border)
+                                .bg(c_surf)
                                 .p_2()
                                 .flex()
                                 .flex_col()
@@ -280,7 +245,7 @@ impl BenCodeApp {
                                         .px_2()
                                         .py_1()
                                         .border_b_1()
-                                        .border_color(MonoTheme::border_stroke())
+                                        .border_color(c_border)
                                         .child(
                                             div()
                                                 .flex()
@@ -289,21 +254,21 @@ impl BenCodeApp {
                                                 .child(
                                                     Icon::new(IconName::Zap)
                                                         .size(IconSize::Xs)
-                                                        .color(MonoTheme::skill_gold()),
+                                                        .color(c_accent),
                                                 )
                                                 .child(
                                                     div()
-                                                        .text_size(theme.text_size(TextSize::Xs))
+                                                        .text_size(cx.theme().text_size(TextSize::Xs))
                                                         .font_weight(FontWeight::BOLD)
-                                                        .text_color(MonoTheme::skill_gold())
+                                                        .text_color(c_accent)
                                                         .child("Slash Skills"),
                                                 ),
                                         )
                                         .child(
                                             div()
-                                                .text_size(theme.text_size(TextSize::Xs))
-                                                .text_color(MonoTheme::fg_subtle())
-                                                .child("Click or ↵ to select"),
+                                                .text_size(cx.theme().text_size(TextSize::Xs))
+                                                .text_color(c_subtle)
+                                                .child(format!("{} available", filtered_skills.len())),
                                         ),
                                 )
                                 .child(
@@ -315,16 +280,14 @@ impl BenCodeApp {
                                         .flex_col()
                                         .gap_1()
                                         .children(filtered_skills.into_iter().map(|skill| {
-                                            let skill_name = skill.name;
+                                            let name = skill.name.to_string();
                                             div()
-                                                .id(SharedString::from(format!("skill-item-{}", skill.name.replace('/', ""))))
-                                                .p_2()
-                                                .rounded(theme.radius(Radius::Sm))
+                                                .id(SharedString::from(format!("skill-opt-{}", skill.name)))
+                                                .px_2()
+                                                .py_1p5()
+                                                .rounded(cx.theme().radius(Radius::Sm))
                                                 .cursor_pointer()
-                                                .hover(|s| s.bg(MonoTheme::bg_hover()))
-                                                .flex()
-                                                .flex_col()
-                                                .gap_0p5()
+                                                .hover(|s| s.bg(c_hover))
                                                 .child(
                                                     div()
                                                         .flex()
@@ -332,26 +295,24 @@ impl BenCodeApp {
                                                         .justify_between()
                                                         .child(
                                                             div()
-                                                                .font_weight(FontWeight::SEMIBOLD)
-                                                                .text_size(theme.text_size(TextSize::Sm))
-                                                                .text_color(MonoTheme::skill_gold())
-                                                                .child(skill.name),
+                                                                .font_weight(FontWeight::BOLD)
+                                                                .text_size(cx.theme().text_size(TextSize::Xs))
+                                                                .text_color(c_fg)
+                                                                .child(format!("/{}", skill.name)),
                                                         )
                                                         .child(
-                                                            div()
-                                                                .text_size(theme.text_size(TextSize::Xs))
-                                                                .text_color(MonoTheme::fg_subtle())
-                                                                .child(skill.example),
+                                                            Badge::new("skill").tone(Tone::Neutral),
                                                         ),
                                                 )
                                                 .child(
                                                     div()
-                                                        .text_size(theme.text_size(TextSize::Xs))
-                                                        .text_color(MonoTheme::fg_muted())
+                                                        .text_size(cx.theme().text_size(TextSize::Xs))
+                                                        .text_color(c_muted)
+                                                        .truncate()
                                                         .child(skill.description),
                                                 )
                                                 .on_click(cx.listener(move |this, _, _, cx| {
-                                                    this.insert_skill(skill_name, cx);
+                                                    this.insert_skill(&name, cx);
                                                 }))
                                         })),
                                 ),
@@ -359,17 +320,24 @@ impl BenCodeApp {
                     })
                     // Popover: Mention Files & Notes Autocomplete
                     .when(is_mention_open, |el| {
+                        let c_border = colors.border;
+                        let c_surf = colors.surface;
+                        let c_fg = colors.fg;
+                        let c_subtle = colors.fg_subtle;
+                        let c_hover = colors.hover;
+                        let c_accent = colors.accent;
+
                         el.child(
                             div()
                                 .absolute()
                                 .left(px(12.0))
                                 .bottom(px(100.0))
-                                .w(px(400.0))
-                                .max_h(px(280.0))
-                                .rounded(theme.radius(Radius::Md))
+                                .w(px(380.0))
+                                .max_h(px(260.0))
+                                .rounded(cx.theme().radius(Radius::Md))
                                 .border_1()
-                                .border_color(MonoTheme::border_stroke())
-                                .bg(MonoTheme::bg_surface())
+                                .border_color(c_border)
+                                .bg(c_surf)
                                 .p_2()
                                 .flex()
                                 .flex_col()
@@ -382,21 +350,29 @@ impl BenCodeApp {
                                         .px_2()
                                         .py_1()
                                         .border_b_1()
-                                        .border_color(MonoTheme::border_stroke())
+                                        .border_color(c_border)
                                         .child(
                                             div()
                                                 .flex()
                                                 .items_center()
                                                 .gap_1()
-                                                .text_size(theme.text_size(TextSize::Xs))
-                                                .font_weight(FontWeight::BOLD)
-                                                .text_color(MonoTheme::mention_cyan())
-                                                .child("@ Mention Context"),
+                                                .child(
+                                                    Icon::new(IconName::AtSign)
+                                                        .size(IconSize::Xs)
+                                                        .color(c_accent),
+                                                )
+                                                .child(
+                                                    div()
+                                                        .text_size(cx.theme().text_size(TextSize::Xs))
+                                                        .font_weight(FontWeight::BOLD)
+                                                        .text_color(c_accent)
+                                                        .child("Mention Context"),
+                                                ),
                                         )
                                         .child(
                                             div()
-                                                .text_size(theme.text_size(TextSize::Xs))
-                                                .text_color(MonoTheme::fg_subtle())
+                                                .text_size(cx.theme().text_size(TextSize::Xs))
+                                                .text_color(c_subtle)
                                                 .child("Files & Notes"),
                                         ),
                                 )
@@ -414,9 +390,9 @@ impl BenCodeApp {
                                                 .id(SharedString::from(format!("mention-file-{}", file_path.replace('/', "-").replace('.', "_"))))
                                                 .px_2()
                                                 .py_1p5()
-                                                .rounded(theme.radius(Radius::Sm))
+                                                .rounded(cx.theme().radius(Radius::Sm))
                                                 .cursor_pointer()
-                                                .hover(|s| s.bg(MonoTheme::bg_hover()))
+                                                .hover(|s| s.bg(c_hover))
                                                 .flex()
                                                 .items_center()
                                                 .justify_between()
@@ -428,23 +404,18 @@ impl BenCodeApp {
                                                         .child(
                                                             Icon::new(IconName::FileText)
                                                                 .size(IconSize::Xs)
-                                                                .color(MonoTheme::mention_cyan()),
+                                                                .color(c_accent),
                                                         )
                                                         .child(
                                                             div()
                                                                 .font_weight(FontWeight::MEDIUM)
-                                                                .text_size(theme.text_size(TextSize::Xs))
-                                                                .text_color(MonoTheme::fg_primary())
+                                                                .text_size(cx.theme().text_size(TextSize::Xs))
+                                                                .text_color(c_fg)
                                                                 .truncate()
                                                                 .child(file_path),
                                                         ),
                                                 )
-                                                .child(
-                                                    div()
-                                                        .text_size(theme.text_size(TextSize::Xs))
-                                                        .text_color(MonoTheme::fg_subtle())
-                                                        .child("file"),
-                                                )
+                                                .child(Badge::new("file").tone(Tone::Neutral))
                                                 .on_click(cx.listener(move |this, _, _, cx| {
                                                     this.insert_mention(&fp, cx);
                                                 }))
@@ -456,9 +427,9 @@ impl BenCodeApp {
                                                 .id(SharedString::from(format!("mention-note-{}", note.id)))
                                                 .px_2()
                                                 .py_1p5()
-                                                .rounded(theme.radius(Radius::Sm))
+                                                .rounded(cx.theme().radius(Radius::Sm))
                                                 .cursor_pointer()
-                                                .hover(|s| s.bg(MonoTheme::bg_hover()))
+                                                .hover(|s| s.bg(c_hover))
                                                 .flex()
                                                 .items_center()
                                                 .justify_between()
@@ -470,23 +441,18 @@ impl BenCodeApp {
                                                         .child(
                                                             Icon::new(IconName::FileText)
                                                                 .size(IconSize::Xs)
-                                                                .color(MonoTheme::accent()),
+                                                                .color(c_accent),
                                                         )
                                                         .child(
                                                             div()
                                                                 .font_weight(FontWeight::MEDIUM)
-                                                                .text_size(theme.text_size(TextSize::Xs))
-                                                                .text_color(MonoTheme::fg_primary())
+                                                                .text_size(cx.theme().text_size(TextSize::Xs))
+                                                                .text_color(c_fg)
                                                                 .truncate()
-                                                                .child(format!("@note/{} ({})", note.slug, title)),
+                                                                .child(format!("@note/{} ({title})", note.slug)),
                                                         ),
                                                 )
-                                                .child(
-                                                    div()
-                                                        .text_size(theme.text_size(TextSize::Xs))
-                                                        .text_color(MonoTheme::fg_subtle())
-                                                        .child("note"),
-                                                )
+                                                .child(Badge::new("note").tone(Tone::Info))
                                                 .on_click(cx.listener(move |this, _, _, cx| {
                                                     this.insert_mention(&slug, cx);
                                                 }))
@@ -503,7 +469,7 @@ impl BenCodeApp {
                             .px_3()
                             .py_2()
                             .border_b_1()
-                            .border_color(MonoTheme::border_stroke())
+                            .border_color(colors.border)
                             .child(
                                 div()
                                     .flex()
@@ -518,34 +484,29 @@ impl BenCodeApp {
                                             .gap_1p5()
                                             .px_2()
                                             .py_1()
-                                            .rounded(theme.radius(Radius::Sm))
-                                            .bg(MonoTheme::bg_base())
+                                            .rounded(cx.theme().radius(Radius::Sm))
+                                            .bg(colors.bg)
                                             .border_1()
-                                            .border_color(MonoTheme::border_stroke())
+                                            .border_color(colors.border)
                                             .cursor_pointer()
-                                            .hover(|s| s.bg(MonoTheme::bg_hover()))
+                                            .hover(|s| s.bg(colors.hover))
                                             .on_click(cx.listener(|this, _, _, cx| {
                                                 this.is_model_picker_open = !this.is_model_picker_open;
                                                 this.is_branch_picker_open = false;
                                                 cx.notify();
                                             }))
+                                            .child(div().size(px(6.0)).rounded_full().bg(harness_dot_color))
                                             .child(
                                                 div()
-                                                    .size(px(6.0))
-                                                    .rounded_full()
-                                                    .bg(harness_dot_color),
-                                            )
-                                            .child(
-                                                div()
-                                                    .text_size(theme.text_size(TextSize::Xs))
+                                                    .text_size(cx.theme().text_size(TextSize::Xs))
                                                     .font_weight(FontWeight::MEDIUM)
-                                                    .text_color(MonoTheme::fg_primary())
+                                                    .text_color(colors.fg)
                                                     .child(model_name.to_string()),
                                             )
                                             .child(
                                                 Icon::new(if is_model_open { IconName::ChevronUp } else { IconName::ChevronDown })
                                                     .size(IconSize::Xs)
-                                                    .color(MonoTheme::fg_subtle()),
+                                                    .color(colors.fg_subtle),
                                             ),
                                     )
                                     // Permission Mode Chip (Auto / Confirm / Read-Only)
@@ -557,12 +518,12 @@ impl BenCodeApp {
                                             .gap_1()
                                             .px_2()
                                             .py_1()
-                                            .rounded(theme.radius(Radius::Sm))
-                                            .bg(MonoTheme::bg_base())
+                                            .rounded(cx.theme().radius(Radius::Sm))
+                                            .bg(colors.bg)
                                             .border_1()
-                                            .border_color(MonoTheme::border_stroke())
+                                            .border_color(colors.border)
                                             .cursor_pointer()
-                                            .hover(|s| s.bg(MonoTheme::bg_hover()))
+                                            .hover(|s| s.bg(colors.hover))
                                             .on_click(cx.listener(|this, _, _, cx| {
                                                 this.permission_mode = match this.permission_mode {
                                                     PermissionMode::Auto => PermissionMode::Confirm,
@@ -574,13 +535,13 @@ impl BenCodeApp {
                                             .child(
                                                 Icon::new(perm_icon_name)
                                                     .size(IconSize::Xs)
-                                                    .color(MonoTheme::fg_muted()),
+                                                    .color(colors.fg_muted),
                                             )
                                             .child(
                                                 div()
-                                                    .text_size(theme.text_size(TextSize::Xs))
+                                                    .text_size(cx.theme().text_size(TextSize::Xs))
                                                     .font_weight(FontWeight::MEDIUM)
-                                                    .text_color(MonoTheme::fg_muted())
+                                                    .text_color(colors.fg_muted)
                                                     .child(perm_label),
                                             ),
                                     )
@@ -593,12 +554,12 @@ impl BenCodeApp {
                                             .gap_1()
                                             .px_2()
                                             .py_1()
-                                            .rounded(theme.radius(Radius::Sm))
-                                            .bg(MonoTheme::bg_base())
+                                            .rounded(cx.theme().radius(Radius::Sm))
+                                            .bg(colors.bg)
                                             .border_1()
-                                            .border_color(MonoTheme::border_stroke())
+                                            .border_color(colors.border)
                                             .cursor_pointer()
-                                            .hover(|s| s.bg(MonoTheme::bg_hover()))
+                                            .hover(|s| s.bg(colors.hover))
                                             .on_click(cx.listener(|this, _, _, cx| {
                                                 this.is_branch_picker_open = !this.is_branch_picker_open;
                                                 this.is_model_picker_open = false;
@@ -607,12 +568,12 @@ impl BenCodeApp {
                                             .child(
                                                 Icon::new(IconName::GitBranch)
                                                     .size(IconSize::Xs)
-                                                    .color(MonoTheme::fg_muted()),
+                                                    .color(colors.fg_muted),
                                             )
                                             .child(
                                                 div()
-                                                    .text_size(theme.text_size(TextSize::Xs))
-                                                    .text_color(MonoTheme::fg_muted())
+                                                    .text_size(cx.theme().text_size(TextSize::Xs))
+                                                    .text_color(colors.fg_muted)
                                                     .child(branch_name.to_string()),
                                             ),
                                     ),
@@ -625,31 +586,31 @@ impl BenCodeApp {
                                     .gap_2()
                                     .px_2()
                                     .py_1()
-                                    .rounded(theme.radius(Radius::Sm))
+                                    .rounded(cx.theme().radius(Radius::Sm))
                                     .child(
                                         div()
                                             .w(px(32.0))
                                             .h(px(4.0))
                                             .rounded_full()
-                                            .bg(MonoTheme::bg_hover())
+                                            .bg(colors.hover)
                                             .child(
                                                 div()
                                                     .w(px(32.0 * (pct as f32 / 100.0).clamp(0.05, 1.0)))
                                                     .h_full()
                                                     .rounded_full()
                                                     .bg(if pct > 80 {
-                                                        MonoTheme::danger()
+                                                        colors.danger
                                                     } else if pct > 50 {
-                                                        MonoTheme::warning()
+                                                        colors.warning
                                                     } else {
-                                                        MonoTheme::accent()
+                                                        colors.accent
                                                     }),
                                             ),
                                     )
                                     .child(
                                         div()
-                                            .text_size(theme.text_size(TextSize::Xs))
-                                            .text_color(MonoTheme::fg_subtle())
+                                            .text_size(cx.theme().text_size(TextSize::Xs))
+                                            .text_color(colors.fg_subtle)
                                             .child(context_label),
                                     ),
                             ),
@@ -676,48 +637,23 @@ impl BenCodeApp {
                                     .gap_2()
                                     // Attachment button (+)
                                     .child(
-                                        div()
-                                            .id("composer-attach-btn")
-                                            .flex()
-                                            .items_center()
-                                            .justify_center()
-                                            .size(px(32.0))
-                                            .rounded(theme.radius(Radius::Md))
-                                            .border_1()
-                                            .border_color(MonoTheme::border_stroke())
-                                            .bg(MonoTheme::bg_base())
-                                            .cursor_pointer()
-                                            .hover(|s| s.bg(MonoTheme::bg_hover()))
-                                            .child(
-                                                Icon::new(IconName::Plus)
-                                                    .size(IconSize::Sm)
-                                                    .color(MonoTheme::fg_muted()),
-                                            ),
+                                        IconButton::new("composer-attach-btn", IconName::Plus)
+                                            .size(ControlSize::Md)
+                                            .variant(ButtonVariant::Secondary)
+                                            .tooltip("Attach file or image"),
                                     )
                                     // Send / Stop action button
                                     .child(
-                                        div()
-                                            .id("composer-send-action-btn")
-                                            .flex()
-                                            .items_center()
-                                            .justify_center()
-                                            .size(px(32.0))
-                                            .rounded(theme.radius(Radius::Md))
-                                            .bg(if is_running {
-                                                MonoTheme::danger()
-                                            } else {
-                                                MonoTheme::accent()
-                                            })
-                                            .cursor_pointer()
-                                            .hover(|s| s.opacity(0.9))
-                                            .child(
-                                                Icon::new(if is_running { IconName::Square } else { IconName::ArrowUp })
-                                                    .size(IconSize::Xs)
-                                                    .color(MonoTheme::on_accent()),
-                                            )
-                                            .on_click(cx.listener(|this, _, _, cx| {
-                                                this.handle_send_or_stop(cx);
-                                            })),
+                                        IconButton::new(
+                                            "composer-send-action-btn",
+                                            if is_running { IconName::Square } else { IconName::ArrowUp },
+                                        )
+                                        .size(ControlSize::Md)
+                                        .variant(if is_running { ButtonVariant::Danger } else { ButtonVariant::Primary })
+                                        .tooltip(if is_running { "Stop agent (SIGINT)" } else { "Send prompt (⏎)" })
+                                        .on_click(cx.listener(|this, _, _, cx| {
+                                            this.handle_send_or_stop(cx);
+                                        })),
                                     ),
                             ),
                     )
@@ -729,62 +665,74 @@ impl BenCodeApp {
                             .justify_end()
                             .px_3()
                             .pb_2()
-                            .text_size(theme.text_size(TextSize::Xs))
-                            .text_color(MonoTheme::fg_subtle())
-                            .child("↵ to send · ⇧↵ for new line"),
+                            .text_size(cx.theme().text_size(TextSize::Xs))
+                            .text_color(colors.fg_subtle)
+                            .child("⏎ to send · ⇧⏎ for new line"),
                     ),
             )
     }
 
-    fn render_model_option(
-        &self,
-        name: &'static str,
-        harness: &'static str,
-        color: gpui::Rgba,
-        cx: &Context<Self>,
-    ) -> impl IntoElement {
-        let theme = cx.theme();
-        let is_sel = self.selected_model == name;
+    /// One header + option list per harness, in catalog order.
+    fn render_model_groups(&self, cx: &Context<Self>) -> Vec<gpui::AnyElement> {
+        let colors = &cx.theme().colors;
+        let text_xs = cx.theme().text_size(TextSize::Xs);
+        [HarnessKind::Claude, HarnessKind::Antigravity, HarnessKind::Codex, HarnessKind::OpenCode]
+            .into_iter()
+            .flat_map(|kind| {
+                let installed = self.harnesses.iter().any(|h| h.id == kind.id() && h.available);
+                let header = div()
+                    .pt_1()
+                    .px_2()
+                    .py_1()
+                    .flex()
+                    .justify_between()
+                    .text_size(text_xs)
+                    .font_weight(FontWeight::BOLD)
+                    .text_color(colors.fg_subtle)
+                    .child(kind.label().to_uppercase())
+                    .when(!installed, |el| el.child("not installed"))
+                    .into_any_element();
+                std::iter::once(header).chain(
+                    catalog::models_for(kind).map(move |option| self.render_model_option(option, installed, cx).into_any_element()),
+                )
+            })
+            .collect()
+    }
+
+    fn render_model_option(&self, option: &'static ModelOption, installed: bool, cx: &Context<Self>) -> impl IntoElement {
+        let colors = &cx.theme().colors;
+        let is_sel = self.selected_model == option.key;
+        let harness_dot = theme::harness_color(option.harness.id(), colors);
 
         div()
-            .id(SharedString::from(format!("model-option-{}", name)))
+            .id(SharedString::from(format!("model-option-{}", option.key)))
             .flex()
             .items_center()
             .justify_between()
             .px_2p5()
             .py_1p5()
-            .rounded(theme.radius(Radius::Sm))
-            .cursor_pointer()
-            .when(is_sel, |el| el.bg(MonoTheme::bg_active()))
-            .when(!is_sel, |el| el.hover(|s| s.bg(MonoTheme::bg_hover())))
-            .on_click(cx.listener(move |this, _, _, cx| {
-                this.set_session_model(name.to_string(), harness.to_string(), cx);
-            }))
+            .rounded(cx.theme().radius(Radius::Sm))
+            .when(!installed, |el| el.opacity(0.45))
+            .when(is_sel, |el| el.bg(colors.active))
+            .when(installed, |el| {
+                el.cursor_pointer()
+                    .when(!is_sel, |el| el.hover(|s| s.bg(colors.hover)))
+                    .on_click(cx.listener(move |this, _, _, cx| this.set_session_model(option.key, cx)))
+            })
             .child(
                 div()
                     .flex()
                     .items_center()
                     .gap_2()
+                    .child(div().size(px(6.0)).rounded_full().bg(harness_dot))
                     .child(
                         div()
-                            .size(px(6.0))
-                            .rounded_full()
-                            .bg(color),
-                    )
-                    .child(
-                        div()
-                            .text_size(theme.text_size(TextSize::Xs))
+                            .text_size(cx.theme().text_size(TextSize::Xs))
                             .font_weight(if is_sel { FontWeight::BOLD } else { FontWeight::NORMAL })
-                            .text_color(if is_sel { MonoTheme::fg_primary() } else { MonoTheme::fg_muted() })
-                            .child(name),
+                            .text_color(if is_sel { colors.fg } else { colors.fg_muted })
+                            .child(option.label),
                     ),
             )
-            .when(is_sel, |el| {
-                el.child(
-                    Icon::new(IconName::Check)
-                        .size(IconSize::Xs)
-                        .color(MonoTheme::accent()),
-                )
-            })
+            .when(is_sel, |el| el.child(Icon::new(IconName::Check).size(IconSize::Xs).color(colors.accent)))
     }
 }

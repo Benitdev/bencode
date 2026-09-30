@@ -1,54 +1,53 @@
-use ely_gpui_component::primitives::{Icon, IconName};
-use ely_gpui_component::theme::{ActiveTheme, IconSize, Radius, TextSize};
+//! Top titlebar: window drag area, open thread tabs, view mode segmented switcher, and settings trigger.
+
+use ely_gpui_component::buttons::{ButtonVariant, IconButton, SegmentedControl};
+use ely_gpui_component::primitives::IconName;
+use ely_gpui_component::theme::{ActiveTheme, ControlSize, Radius, TextSize};
 use gpui::{
-    Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString,
-    Styled, div, prelude::*, px,
+    Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString, Styled,
+    WindowControlArea, div, prelude::*, px,
 };
 
 use crate::app::{BenCodeApp, ViewMode};
-use crate::git::get_workspace_changes;
-use crate::ui::theme::MonoTheme;
+use crate::ui::theme;
+
+fn view_mode_key(mode: ViewMode) -> &'static str {
+    match mode {
+        ViewMode::Chat => "chat",
+        ViewMode::Changes => "changes",
+        ViewMode::Terminal => "terminal",
+    }
+}
 
 impl BenCodeApp {
     pub fn render_titlebar(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.theme();
+        let colors = cx.theme().colors.clone();
         let active_tab_id = self.active_tab_id.clone();
-        let current_mode = self.active_view_mode;
-
-        // Calculate count of changed files in active workspace
-        let changed_files_count = if let Some(session_id) = &active_tab_id {
-            if let Some(session) = self.sessions.iter().find(|s| &s.id == session_id) {
-                get_workspace_changes(&session.cwd).len()
-            } else {
-                0
-            }
+        let changed_files = self.workspace.changes.len();
+        let changes_label = if changed_files > 0 {
+            format!("Changes ({changed_files})")
         } else {
-            0
+            "Changes".to_string()
         };
 
         div()
+            .window_control_area(WindowControlArea::Drag)
             .flex()
             .items_center()
             .justify_between()
             .h(px(40.0))
             .w_full()
             .border_b_1()
-            .border_color(MonoTheme::border_stroke())
-            .bg(MonoTheme::bg_surface())
-            // Left offset for macOS window controls
+            .border_color(colors.border)
+            .bg(colors.surface)
+            // macOS traffic lights spacer
+            .child(div().w(px(78.0)).h_full())
+            // Middle Tab Strip
             .child(
                 div()
                     .flex()
                     .items_center()
-                    .w(px(78.0))
-                    .h_full(),
-            )
-            // Middle Tab Bar
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_1p5()
+                    .gap_1()
                     .flex_1()
                     .h_full()
                     .px_2()
@@ -59,239 +58,100 @@ impl BenCodeApp {
                         let title = session
                             .map(|s| {
                                 if s.title.trim().is_empty() {
-                                    "Untitled Thread"
+                                    "Untitled thread"
                                 } else {
                                     s.title.as_str()
                                 }
                             })
-                            .unwrap_or("New Session");
+                            .unwrap_or("New session");
                         let harness = session.map(|s| s.harness.as_str()).unwrap_or("claude");
+                        let dot_color = theme::harness_color(harness, &colors);
                         let id = tab_id.clone();
                         let close_id = tab_id.clone();
-                        let harness_dot_color = match harness {
-                            "claude" => MonoTheme::claude_orange(),
-                            "antigravity" => MonoTheme::antigravity_blue(),
-                            "codex" => MonoTheme::codex_green(),
-                            _ => MonoTheme::accent(),
-                        };
 
                         div()
-                            .id(SharedString::from(format!("tab-bar-item-{}", tab_id)))
+                            .id(SharedString::from(format!("tab-bar-item-{tab_id}")))
                             .flex()
                             .items_center()
                             .gap_2()
-                            .h(px(30.0))
+                            .h(px(28.0))
                             .max_w(px(200.0))
-                            .px_3()
-                            .rounded(theme.radius(Radius::Sm))
+                            .px_2p5()
+                            .rounded(cx.theme().radius(Radius::Sm))
                             .cursor_pointer()
                             .when(is_active, |el| {
-                                el.bg(MonoTheme::bg_base())
+                                el.bg(colors.bg)
                                     .border_1()
-                                    .border_color(MonoTheme::border_stroke())
+                                    .border_color(colors.border)
                             })
-                            .when(!is_active, |el| {
-                                el.hover(|s| s.bg(MonoTheme::bg_hover()))
-                            })
+                            .when(!is_active, |el| el.hover(|s| s.bg(colors.hover)))
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 this.switch_tab(id.clone(), cx);
                             }))
-                            // Status / Harness Indicator Dot
-                            .child(
-                                div()
-                                    .size(px(6.0))
-                                    .rounded_full()
-                                    .bg(harness_dot_color),
-                            )
-                            // Title
+                            .child(div().size(px(6.0)).rounded_full().bg(dot_color))
                             .child(
                                 div()
                                     .flex_1()
-                                    .text_size(theme.text_size(TextSize::Xs))
+                                    .overflow_hidden()
+                                    .text_size(cx.theme().text_size(TextSize::Xs))
                                     .font_weight(if is_active {
                                         FontWeight::SEMIBOLD
                                     } else {
                                         FontWeight::NORMAL
                                     })
-                                    .text_color(if is_active {
-                                        MonoTheme::fg_primary()
-                                    } else {
-                                        MonoTheme::fg_muted()
-                                    })
-                                    .overflow_hidden()
+                                    .text_color(if is_active { colors.fg } else { colors.fg_muted })
                                     .child(title.to_string()),
                             )
-                            // Close Button
                             .child(
-                                div()
-                                    .id(SharedString::from(format!("tab-close-btn-{}", tab_id)))
-                                    .p_0p5()
-                                    .rounded(theme.radius(Radius::Sm))
-                                    .text_color(MonoTheme::fg_subtle())
-                                    .hover(|s| s.bg(MonoTheme::bg_hover()).text_color(MonoTheme::fg_primary()))
-                                    .child(Icon::new(IconName::X).size(IconSize::Xs))
+                                IconButton::new(SharedString::from(format!("close-tab-{close_id}")), IconName::X)
+                                    .size(ControlSize::Sm)
+                                    .variant(ButtonVariant::Ghost)
                                     .on_click(cx.listener(move |this, _, _, cx| {
                                         this.close_tab(&close_id, cx);
                                     })),
                             )
                     }))
-                    // Add Tab (+)
                     .child(
-                        div()
-                            .id("titlebar-new-tab-plus-btn")
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .size(px(24.0))
-                            .rounded(theme.radius(Radius::Sm))
-                            .cursor_pointer()
-                            .hover(|s| s.bg(MonoTheme::bg_hover()))
-                            .text_color(MonoTheme::fg_muted())
-                            .child(Icon::new(IconName::Plus).size(IconSize::Xs))
+                        IconButton::new("titlebar-new-tab", IconName::Plus)
+                            .size(ControlSize::Sm)
+                            .variant(ButtonVariant::Ghost)
+                            .tooltip("New thread")
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.create_new_session(cx);
                             })),
                     ),
             )
-            // Right View Mode Switcher (Pill Group matching MonoCode)
+            // Right Controls: ViewMode SegmentedControl & Settings
             .child(
                 div()
                     .flex()
                     .items_center()
                     .gap_2()
-                    .mr_3()
+                    .pr_3()
                     .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap_1()
-                            .p_1()
-                            .rounded(theme.radius(Radius::Md))
-                            .bg(MonoTheme::bg_base())
-                            .border_1()
-                            .border_color(MonoTheme::border_stroke())
-                            // Chat Mode Tab
-                            .child(
-                                div()
-                                    .id("toggle-mode-chat")
-                                    .flex()
-                                    .items_center()
-                                    .gap_1p5()
-                                    .h(px(24.0))
-                                    .px_2p5()
-                                    .rounded(theme.radius(Radius::Sm))
-                                    .cursor_pointer()
-                                    .when(current_mode == ViewMode::Chat, |el| {
-                                        el.bg(MonoTheme::bg_active()).text_color(MonoTheme::fg_primary())
-                                    })
-                                    .when(current_mode != ViewMode::Chat, |el| {
-                                        el.text_color(MonoTheme::fg_muted()).hover(|s| s.text_color(MonoTheme::fg_primary()))
-                                    })
-                                    .text_size(theme.text_size(TextSize::Xs))
-                                    .font_weight(FontWeight::MEDIUM)
-                                    .child(Icon::new(IconName::MessageSquare).size(IconSize::Xs))
-                                    .child("Chat")
-                                    .on_click(cx.listener(|this, _, _, cx| {
-                                        this.active_view_mode = ViewMode::Chat;
-                                        cx.notify();
-                                    })),
-                            )
-                            // Changes Mode Tab (with real changed files count)
-                            .child(
-                                div()
-                                    .id("toggle-mode-changes")
-                                    .flex()
-                                    .items_center()
-                                    .gap_1p5()
-                                    .h(px(24.0))
-                                    .px_2p5()
-                                    .rounded(theme.radius(Radius::Sm))
-                                    .cursor_pointer()
-                                    .when(current_mode == ViewMode::Changes, |el| {
-                                        el.bg(MonoTheme::bg_active()).text_color(MonoTheme::fg_primary())
-                                    })
-                                    .when(current_mode != ViewMode::Changes, |el| {
-                                        el.text_color(MonoTheme::fg_muted()).hover(|s| s.text_color(MonoTheme::fg_primary()))
-                                    })
-                                    .text_size(theme.text_size(TextSize::Xs))
-                                    .font_weight(FontWeight::MEDIUM)
-                                    .child(Icon::new(IconName::GitPullRequest).size(IconSize::Xs))
-                                    .child(if changed_files_count > 0 {
-                                        format!("Changes ({})", changed_files_count)
-                                    } else {
-                                        "Changes".to_string()
-                                    })
-                                    .on_click(cx.listener(|this, _, _, cx| {
-                                        this.active_view_mode = ViewMode::Changes;
-                                        cx.notify();
-                                    })),
-                            )
-                            // Terminal Mode Tab
-                            .child(
-                                div()
-                                    .id("toggle-mode-terminal")
-                                    .flex()
-                                    .items_center()
-                                    .gap_1p5()
-                                    .h(px(24.0))
-                                    .px_2p5()
-                                    .rounded(theme.radius(Radius::Sm))
-                                    .cursor_pointer()
-                                    .when(current_mode == ViewMode::Terminal, |el| {
-                                        el.bg(MonoTheme::bg_active()).text_color(MonoTheme::fg_primary())
-                                    })
-                                    .when(current_mode != ViewMode::Terminal, |el| {
-                                        el.text_color(MonoTheme::fg_muted()).hover(|s| s.text_color(MonoTheme::fg_primary()))
-                                    })
-                                    .text_size(theme.text_size(TextSize::Xs))
-                                    .font_weight(FontWeight::MEDIUM)
-                                    .child(Icon::new(IconName::Terminal).size(IconSize::Xs))
-                                    .child("Terminal")
-                                    .on_click(cx.listener(|this, _, _, cx| {
-                                        this.active_view_mode = ViewMode::Terminal;
-                                        cx.notify();
-                                    })),
-                            ),
+                        SegmentedControl::new("view-mode-switcher", view_mode_key(self.active_view_mode))
+                            .size(ControlSize::Sm)
+                            .segment("chat", "Chat", Some(IconName::MessageSquare))
+                            .segment("changes", changes_label, Some(IconName::GitPullRequest))
+                            .segment("terminal", "Terminal", Some(IconName::Terminal))
+                            .on_change(cx.listener(|this, key: &SharedString, _, cx| {
+                                this.active_view_mode = match key.as_ref() {
+                                    "changes" => ViewMode::Changes,
+                                    "terminal" => ViewMode::Terminal,
+                                    _ => ViewMode::Chat,
+                                };
+                                cx.notify();
+                            })),
                     )
-                    // Split Pane Action Button
                     .child(
-                        div()
-                            .id("titlebar-split-pane-btn")
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .size(px(28.0))
-                            .rounded(theme.radius(Radius::Sm))
-                            .border_1()
-                            .border_color(MonoTheme::border_stroke())
-                            .bg(MonoTheme::bg_base())
-                            .cursor_pointer()
-                            .hover(|s| s.bg(MonoTheme::bg_hover()))
-                            .child(
-                                Icon::new(IconName::Columns2)
-                                    .size(IconSize::Xs)
-                                    .color(MonoTheme::fg_muted()),
-                            ),
-                    )
-                    // Settings Button
-                    .child(
-                        div()
-                            .id("titlebar-settings-btn")
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .size(px(28.0))
-                            .rounded(theme.radius(Radius::Sm))
-                            .border_1()
-                            .border_color(MonoTheme::border_stroke())
-                            .bg(MonoTheme::bg_base())
-                            .cursor_pointer()
-                            .hover(|s| s.bg(MonoTheme::bg_hover()))
-                            .child(
-                                Icon::new(IconName::Settings)
-                                    .size(IconSize::Xs)
-                                    .color(MonoTheme::fg_muted()),
-                            ),
+                        IconButton::new("titlebar-settings-btn", IconName::Settings)
+                            .size(ControlSize::Sm)
+                            .variant(ButtonVariant::Ghost)
+                            .tooltip("Settings (⌘,)")
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.is_settings_open = true;
+                                cx.notify();
+                            })),
                     ),
             )
     }

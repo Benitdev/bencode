@@ -1,8 +1,7 @@
-use ely_gpui_component::forms::TextInput;
 use ely_gpui_component::primitives::{Icon, IconName};
 use ely_gpui_component::theme::{ActiveTheme, IconSize, Radius, TextSize};
 use gpui::{
-    Context, FontWeight, InteractiveElement, IntoElement, ParentElement, Render, Styled, Window,
+    Context, FontWeight, InteractiveElement, IntoElement, ParentElement, Styled,
     div, prelude::*, px,
 };
 
@@ -111,18 +110,19 @@ impl BenCodeApp {
                 source_cwd,
             };
 
-            if let Ok(saved) = self.db.upsert_note(&upsert) {
-                if let Some(pos) = self.notes.iter().position(|n| &n.id == id) {
+            if let Ok(saved) = self.db.upsert_note(&upsert)
+                && let Some(pos) = self.notes.iter().position(|n| &n.id == id) {
                     self.notes[pos] = saved;
                 }
-            }
         }
         cx.notify();
     }
 
     pub fn delete_selected_note(&mut self, cx: &mut Context<Self>) {
         if let Some(id) = self.selected_note_id.take() {
-            let _ = self.db.delete_note(&id);
+            if let Err(err) = self.db.delete_note(&id) {
+            log::error!("delete_note failed: {err:#}");
+        }
             self.notes.retain(|n| n.id != id);
             if let Some(first) = self.notes.first() {
                 let next_id = first.id.clone();
@@ -140,8 +140,8 @@ impl BenCodeApp {
     }
 
     pub fn add_selected_note_to_chat(&mut self, cx: &mut Context<Self>) {
-        if let Some(id) = &self.selected_note_id {
-            if let Some(note) = self.notes.iter().find(|n| &n.id == id) {
+        if let Some(id) = &self.selected_note_id
+            && let Some(note) = self.notes.iter().find(|n| &n.id == id) {
                 let note_content = format!(
                     "--- Note: {} (@note/{}) ---\n{}\n--- End Note ---",
                     note.title, note.slug, note.body
@@ -157,7 +157,6 @@ impl BenCodeApp {
                 });
                 self.is_notes_open = false;
             }
-        }
         cx.notify();
     }
 

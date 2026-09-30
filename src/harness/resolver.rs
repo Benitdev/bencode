@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct HarnessInfo {
@@ -8,168 +8,120 @@ pub struct HarnessInfo {
     pub available: bool,
 }
 
+/// Where to look for one CLI: its binary name plus install locations relative
+/// to `$HOME` that are commonly missing from a Finder-launched app's PATH.
+struct BinarySpec {
+    id: &'static str,
+    name: &'static str,
+    binary: &'static str,
+    home_dirs: &'static [&'static str],
+}
+
+const SYSTEM_DIRS: &[&str] = &["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"];
+
+const CLAUDE: BinarySpec = BinarySpec {
+    id: "claude",
+    name: "Claude Code",
+    binary: "claude",
+    home_dirs: &[".local/bin", ".claude/local", ".local/share/claude", ".npm-global/bin"],
+};
+const ANTIGRAVITY: BinarySpec = BinarySpec {
+    id: "antigravity",
+    name: "Antigravity",
+    binary: "agy",
+    home_dirs: &[".local/bin", ".antigravity/antigravity/bin"],
+};
+const CODEX: BinarySpec = BinarySpec {
+    id: "codex",
+    name: "Codex",
+    binary: "codex",
+    home_dirs: &[".local/bin", ".cargo/bin", ".npm-global/bin"],
+};
+const CURSOR: BinarySpec = BinarySpec {
+    id: "cursor",
+    name: "Cursor Agent",
+    binary: "cursor-agent",
+    home_dirs: &[".local/bin"],
+};
+const OPENCODE: BinarySpec = BinarySpec {
+    id: "opencode",
+    name: "OpenCode",
+    binary: "opencode",
+    home_dirs: &[".local/bin", ".cargo/bin", ".opencode/bin"],
+};
+
+const ALL: [&BinarySpec; 5] = [&CLAUDE, &ANTIGRAVITY, &CODEX, &CURSOR, &OPENCODE];
+
 pub struct HarnessResolver;
 
 impl HarnessResolver {
-    /// Discovers all available coding agent harnesses on the local machine
+    /// Probes the filesystem for every known harness. Does disk IO, so call it
+    /// once (or on explicit refresh) and cache the result; never from render.
     pub fn discover() -> Vec<HarnessInfo> {
-        vec![
-            HarnessInfo {
-                id: "claude",
-                name: "Claude Code",
-                binary_path: Self::resolve_claude(),
-                available: Self::resolve_claude().is_some(),
-            },
-            HarnessInfo {
-                id: "antigravity",
-                name: "Antigravity",
-                binary_path: Self::resolve_antigravity(),
-                available: Self::resolve_antigravity().is_some(),
-            },
-            HarnessInfo {
-                id: "codex",
-                name: "Codex",
-                binary_path: Self::resolve_codex(),
-                available: Self::resolve_codex().is_some(),
-            },
-            HarnessInfo {
-                id: "cursor",
-                name: "Cursor Agent",
-                binary_path: Self::resolve_cursor(),
-                available: Self::resolve_cursor().is_some(),
-            },
-            HarnessInfo {
-                id: "opencode",
-                name: "OpenCode",
-                binary_path: Self::resolve_opencode(),
-                available: Self::resolve_opencode().is_some(),
-            },
-        ]
+        ALL.iter()
+            .map(|spec| {
+                let binary_path = resolve(spec);
+                HarnessInfo {
+                    id: spec.id,
+                    name: spec.name,
+                    available: binary_path.is_some(),
+                    binary_path,
+                }
+            })
+            .collect()
     }
 
-    /// Resolve Claude Code CLI binary path
     pub fn resolve_claude() -> Option<PathBuf> {
-        let home = std::env::var("HOME").ok().map(PathBuf::from);
-        let mut candidates = Vec::new();
-
-        if let Some(shell_path) = which("claude") {
-            candidates.push(shell_path);
-        }
-
-        if let Some(home) = &home {
-            candidates.push(home.join(".local/bin/claude"));
-            candidates.push(home.join(".claude/local/claude"));
-            candidates.push(home.join(".local/share/claude/claude"));
-            candidates.push(home.join(".npm-global/bin/claude"));
-            candidates.push(home.join(".cargo/bin/claude"));
-        }
-
-        candidates.push(PathBuf::from("/opt/homebrew/bin/claude"));
-        candidates.push(PathBuf::from("/usr/local/bin/claude"));
-        candidates.push(PathBuf::from("/usr/bin/claude"));
-
-        first_existing_binary(candidates)
+        resolve(&CLAUDE)
     }
 
-    /// Resolve Antigravity binary path
-    pub fn resolve_antigravity() -> Option<PathBuf> {
-        let home = std::env::var("HOME").ok().map(PathBuf::from);
-        let mut candidates = Vec::new();
-
-        if let Some(shell_path) = which("agy") {
-            candidates.push(shell_path);
-        }
-
-        if let Some(home) = &home {
-            candidates.push(home.join(".local/bin/agy_acp_server.par"));
-            candidates.push(home.join(".local/share/agy-acp/agy_acp_server.par"));
-            candidates.push(home.join(".local/bin/agy"));
-        }
-
-        candidates.push(PathBuf::from("/opt/homebrew/bin/agy"));
-        candidates.push(PathBuf::from("/usr/local/bin/agy"));
-
-        first_existing_binary(candidates)
+    /// The `agy` CLI. MonoCode talks to `agy_acp_server.par` over ACP instead;
+    /// that binary does not accept the print-mode flags used here.
+    pub fn resolve_antigravity_cli() -> Option<PathBuf> {
+        resolve(&ANTIGRAVITY)
     }
 
-    /// Resolve Codex CLI binary path
     pub fn resolve_codex() -> Option<PathBuf> {
-        let home = std::env::var("HOME").ok().map(PathBuf::from);
-        let mut candidates = Vec::new();
-
-        if let Some(shell_path) = which("codex") {
-            candidates.push(shell_path);
-        }
-
-        if let Some(home) = &home {
-            candidates.push(home.join(".local/bin/codex"));
-            candidates.push(home.join(".cargo/bin/codex"));
-            candidates.push(home.join(".npm-global/bin/codex"));
-        }
-
-        candidates.push(PathBuf::from("/opt/homebrew/bin/codex"));
-        candidates.push(PathBuf::from("/usr/local/bin/codex"));
-
-        first_existing_binary(candidates)
+        resolve(&CODEX)
     }
 
-    /// Resolve Cursor Agent binary path
-    pub fn resolve_cursor() -> Option<PathBuf> {
-        let home = std::env::var("HOME").ok().map(PathBuf::from);
-        let mut candidates = Vec::new();
-
-        if let Some(shell_path) = which("cursor-agent") {
-            candidates.push(shell_path);
-        }
-
-        if let Some(home) = &home {
-            candidates.push(home.join(".local/bin/cursor-agent"));
-        }
-
-        candidates.push(PathBuf::from("/opt/homebrew/bin/cursor-agent"));
-        candidates.push(PathBuf::from("/usr/local/bin/cursor-agent"));
-
-        first_existing_binary(candidates)
-    }
-
-    /// Resolve OpenCode binary path
     pub fn resolve_opencode() -> Option<PathBuf> {
-        let home = std::env::var("HOME").ok().map(PathBuf::from);
-        let mut candidates = Vec::new();
-
-        if let Some(shell_path) = which("opencode") {
-            candidates.push(shell_path);
-        }
-
-        if let Some(home) = &home {
-            candidates.push(home.join(".local/bin/opencode"));
-            candidates.push(home.join(".cargo/bin/opencode"));
-        }
-
-        candidates.push(PathBuf::from("/opt/homebrew/bin/opencode"));
-        candidates.push(PathBuf::from("/usr/local/bin/opencode"));
-
-        first_existing_binary(candidates)
+        resolve(&OPENCODE)
     }
 }
 
-fn which(binary_name: &str) -> Option<PathBuf> {
-    if let Ok(path) = std::env::var("PATH") {
-        for dir in std::env::split_paths(&path) {
-            let candidate = dir.join(binary_name);
-            if candidate.is_file() {
-                return Some(candidate);
-            }
-        }
-    }
-    None
+fn resolve(spec: &BinarySpec) -> Option<PathBuf> {
+    let from_path = std::env::var_os("PATH")
+        .into_iter()
+        .flat_map(|path| std::env::split_paths(&path).collect::<Vec<_>>());
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    let from_home = spec
+        .home_dirs
+        .iter()
+        .filter_map(|dir| home.as_ref().map(|home| home.join(dir)));
+    let from_system = SYSTEM_DIRS.iter().map(PathBuf::from);
+
+    from_path
+        .chain(from_home)
+        .chain(from_system)
+        .map(|dir| dir.join(spec.binary))
+        .find(|candidate| candidate.is_file())
 }
 
-fn first_existing_binary(candidates: Vec<PathBuf>) -> Option<PathBuf> {
-    for p in candidates {
-        if p.is_file() {
-            return Some(p);
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn discover_lists_every_known_harness_once() {
+        let ids: Vec<_> = HarnessResolver::discover().iter().map(|h| h.id).collect();
+        assert_eq!(ids, ["claude", "antigravity", "codex", "cursor", "opencode"]);
+    }
+
+    #[test]
+    fn availability_matches_binary_path() {
+        for info in HarnessResolver::discover() {
+            assert_eq!(info.available, info.binary_path.is_some(), "{}", info.id);
         }
     }
-    None
 }

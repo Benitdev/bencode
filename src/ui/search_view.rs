@@ -1,5 +1,4 @@
 use ely_gpui_component::{
-    forms::TextInput,
     layout::on_axis,
     primitives::{Icon, IconName},
     theme::{ActiveTheme, IconSize, Radius, TextSize},
@@ -11,6 +10,8 @@ use gpui::{
 
 use crate::app::{BenCodeApp, ViewMode};
 use crate::ui::theme::MonoTheme;
+
+const SEARCH_FILE_HIT_LIMIT: usize = 30;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SearchScope {
@@ -84,27 +85,24 @@ impl BenCodeApp {
 
         // 2. Search Workspace Files
         if scope == SearchScope::All || scope == SearchScope::Files {
-            let cwd = self.current_cwd.clone();
-            // Fast scan workspace directory
-            if let Ok(entries) = std::fs::read_dir(&cwd) {
-                for entry in entries.flatten().take(60) {
-                    let path = entry.path();
-                    let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                    if file_name.starts_with('.') || file_name == "target" || file_name == "node_modules" {
-                        continue;
-                    }
-                    if file_name.to_lowercase().contains(&query) {
-                        let is_dir = path.is_dir();
-                        hits.push(SearchHit {
-                            id: format!("file-{}", file_name),
-                            title: file_name.to_string(),
-                            subtitle: path.to_string_lossy().to_string(),
-                            scope: SearchScope::Files,
-                            icon: if is_dir { IconName::Folder } else { IconName::FileText },
-                            target_id: file_name.to_string(),
-                        });
-                    }
-                }
+            // Cached, recursive index from `workspace_sync`; no disk IO per keystroke.
+            let root = self.workspace.cwd.clone();
+            let matches = self
+                .workspace
+                .files
+                .iter()
+                .filter(|path| path.to_lowercase().contains(&query))
+                .take(SEARCH_FILE_HIT_LIMIT);
+            for path in matches {
+                let file_name = path.rsplit('/').next().unwrap_or(path);
+                hits.push(SearchHit {
+                    id: format!("file-{path}"),
+                    title: file_name.to_string(),
+                    subtitle: format!("{root}/{path}"),
+                    scope: SearchScope::Files,
+                    icon: IconName::FileText,
+                    target_id: path.clone(),
+                });
             }
         }
 
@@ -137,13 +135,13 @@ impl BenCodeApp {
     pub fn execute_search_hit(&mut self, hit: SearchHit, cx: &mut Context<Self>) {
         match hit.scope {
             SearchScope::Conversations => {
-                self.selected_session_id = Some(hit.target_id);
                 self.active_view_mode = ViewMode::Chat;
+                self.select_session(hit.target_id, cx);
                 self.close_search_modal(cx);
             }
             SearchScope::Files => {
-                self.selected_diff_path = Some(hit.target_id);
                 self.active_view_mode = ViewMode::Changes;
+                self.select_diff_path(hit.target_id, cx);
                 self.close_search_modal(cx);
             }
             SearchScope::Projects => {

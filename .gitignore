@@ -12,3 +12,7 @@ Cargo.lock
 .vscode/
 *.swp
 *.swo
+*.code-workspace
+
+# Local reference repositories
+/reference/

@@ -1,46 +1,60 @@
-use ely_gpui_component::{
-    layout::on_axis,
-    primitives::{Icon, IconName},
-    theme::{ActiveTheme, IconSize, Radius, TextSize},
-};
+//! Diff viewer view mode: side-by-side or unified diffs with line additions/deletions,
+//! syntax highlighting, copy diff, and file change inspection.
+
+use ely_gpui_component::buttons::CopyButton;
+use ely_gpui_component::feedback::EmptyState;
+use ely_gpui_component::files::FileIcon;
+use ely_gpui_component::git::{DiffStat, GitStatusBadge};
+use ely_gpui_component::layout::on_axis;
+use ely_gpui_component::lists::GitStatus;
+use ely_gpui_component::primitives::IconName;
+use ely_gpui_component::theme::{ActiveTheme, IconSize, Radius, TextSize};
 use gpui::{
-    Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString,
-    Styled, div, prelude::*, px,
+    Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString, Styled,
+    div, prelude::*, px, uniform_list,
 };
 
 use crate::app::BenCodeApp;
-use crate::db::SessionRow;
-use crate::git::{DiffLineKind, GitFileStatus, get_file_diff, get_workspace_changes};
-use crate::ui::theme::MonoTheme;
+use crate::git::{DiffLineKind, GitFileStatus};
+
+fn to_ely_status(status: &GitFileStatus) -> GitStatus {
+    match status {
+        GitFileStatus::Modified => GitStatus::Modified,
+        GitFileStatus::Added => GitStatus::Added,
+        GitFileStatus::Deleted => GitStatus::Deleted,
+        GitFileStatus::Untracked => GitStatus::Untracked,
+        GitFileStatus::Renamed => GitStatus::Renamed,
+    }
+}
 
 impl BenCodeApp {
-    pub fn render_diff_viewer(
-        &mut self,
-        session: Option<&SessionRow>,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
-        let theme = cx.theme();
-        let cwd = session
-            .map(|s| s.cwd.as_str())
-            .unwrap_or(".");
-
-        let files = get_workspace_changes(cwd);
-        let selected_path = self.selected_diff_path.clone().unwrap_or_else(|| {
-            files.first().map(|f| f.path.clone()).unwrap_or_default()
-        });
-
+    pub fn render_diff_viewer(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+        let colors = cx.theme().colors.clone();
+        let files = &self.workspace.changes;
+        let selected_path = self.workspace.diff_path.clone().unwrap_or_default();
         let active_file = files.iter().find(|f| f.path == selected_path).cloned();
-        let diff_lines = if !selected_path.is_empty() {
-            get_file_diff(cwd, &selected_path)
+        let diff_lines_count = self.workspace.diff.len();
+
+        let raw_diff_text: String = if !selected_path.is_empty() {
+            self.workspace
+                .diff
+                .iter()
+                .map(|l| match l {
+                    DiffLineKind::Header(h) => format!("{h}\n"),
+                    DiffLineKind::Addition(a) => format!("+{a}\n"),
+                    DiffLineKind::Deletion(d) => format!("-{d}\n"),
+                    DiffLineKind::Context(c) => format!(" {c}\n"),
+                })
+                .collect()
         } else {
-            Vec::new()
+            String::new()
         };
 
         div()
             .flex()
             .flex_1()
             .h_full()
-            .bg(MonoTheme::bg_base())
+            .bg(colors.bg)
             // Left List: Changed Files
             .child(
                 div()
@@ -49,8 +63,8 @@ impl BenCodeApp {
                     .w(px(280.0))
                     .h_full()
                     .border_r_1()
-                    .border_color(MonoTheme::border_stroke())
-                    .bg(MonoTheme::bg_surface())
+                    .border_color(colors.border)
+                    .bg(colors.surface)
                     .child(
                         div()
                             .flex()
@@ -58,7 +72,7 @@ impl BenCodeApp {
                             .justify_between()
                             .p_3()
                             .border_b_1()
-                            .border_color(MonoTheme::border_stroke())
+                            .border_color(colors.border)
                             .child(
                                 div()
                                     .flex()
@@ -66,28 +80,22 @@ impl BenCodeApp {
                                     .gap_2()
                                     .child(
                                         div()
-                                            .text_size(theme.text_size(TextSize::Xs))
+                                            .text_size(cx.theme().text_size(TextSize::Xs))
                                             .font_weight(FontWeight::BOLD)
-                                            .text_color(MonoTheme::fg_primary())
+                                            .text_color(colors.fg)
                                             .child("CHANGED FILES"),
                                     )
                                     .child(
                                         div()
                                             .px_1p5()
                                             .py_0p5()
-                                            .rounded(theme.radius(Radius::Sm))
-                                            .bg(MonoTheme::bg_hover())
-                                            .text_size(theme.text_size(TextSize::Xs))
+                                            .rounded(cx.theme().radius(Radius::Sm))
+                                            .bg(colors.hover)
+                                            .text_size(cx.theme().text_size(TextSize::Xs))
                                             .font_weight(FontWeight::BOLD)
-                                            .text_color(MonoTheme::accent())
+                                            .text_color(colors.accent)
                                             .child(SharedString::from(format!("{}", files.len()))),
                                     ),
-                            )
-                            .child(
-                                div()
-                                    .text_size(theme.text_size(TextSize::Xs))
-                                    .text_color(MonoTheme::fg_subtle())
-                                    .child(format!("⎇ {}", session.and_then(|s| s.branch.as_deref()).unwrap_or("main"))),
                             ),
                     )
                     .child(
@@ -98,21 +106,13 @@ impl BenCodeApp {
                                 vec![
                                     div()
                                         .p_6()
-                                        .flex()
-                                        .flex_col()
-                                        .items_center()
-                                        .justify_center()
-                                        .gap_2()
                                         .child(
-                                            Icon::new(IconName::Sparkles)
-                                                .size(IconSize::Md)
-                                                .color(MonoTheme::accent()),
-                                        )
-                                        .child(
-                                            div()
-                                                .text_size(theme.text_size(TextSize::Sm))
-                                                .text_color(MonoTheme::fg_muted())
-                                                .child("Workspace is clean (no diffs)"),
+                                            EmptyState::new(
+                                                "no-diffs-empty",
+                                                IconName::Sparkles,
+                                                "Working tree is clean",
+                                            )
+                                            .body("No unstaged or staged file changes found"),
                                         )
                                         .into_any_element()
                                 ]
@@ -120,14 +120,7 @@ impl BenCodeApp {
                                 files.iter().map(|f| {
                                     let is_active = f.path == selected_path;
                                     let path_clone = f.path.clone();
-                                    let status_badge = f.status.badge_char();
-                                    let status_color = match f.status {
-                                        GitFileStatus::Modified => MonoTheme::warning(),
-                                        GitFileStatus::Added => MonoTheme::success(),
-                                        GitFileStatus::Deleted => MonoTheme::danger(),
-                                        GitFileStatus::Untracked => MonoTheme::accent(),
-                                        GitFileStatus::Renamed => MonoTheme::skill_gold(),
-                                    };
+                                    let status = to_ely_status(&f.status);
 
                                     div()
                                         .id(SharedString::from(format!("diff-file-row-{}", f.path)))
@@ -137,10 +130,10 @@ impl BenCodeApp {
                                         .px_3()
                                         .py_2()
                                         .cursor_pointer()
-                                        .when(is_active, |el| el.bg(MonoTheme::bg_active()))
-                                        .when(!is_active, |el| el.hover(|s| s.bg(MonoTheme::bg_hover())))
+                                        .when(is_active, |el| el.bg(colors.active))
+                                        .when(!is_active, |el| el.hover(|s| s.bg(colors.hover)))
                                         .on_click(cx.listener(move |this, _, _, cx| {
-                                            this.selected_diff_path = Some(path_clone.clone());
+                                            this.select_diff_path(path_clone.clone(), cx);
                                             cx.notify();
                                         }))
                                         .child(
@@ -148,46 +141,25 @@ impl BenCodeApp {
                                                 .flex()
                                                 .items_center()
                                                 .gap_2()
+                                                .min_w_0()
+                                                .child(GitStatusBadge::new(
+                                                    format!("badge-diff-{}", f.path),
+                                                    status,
+                                                ))
+                                                .child(FileIcon::file(&f.path).size(IconSize::Xs))
                                                 .child(
                                                     div()
-                                                        .size(px(16.0))
-                                                        .flex()
-                                                        .items_center()
-                                                        .justify_center()
-                                                        .rounded(theme.radius(Radius::Sm))
-                                                        .text_size(theme.text_size(TextSize::Xs))
-                                                        .font_weight(FontWeight::BOLD)
-                                                        .text_color(status_color)
-                                                        .child(status_badge),
-                                                )
-                                                .child(
-                                                    div()
-                                                        .text_size(theme.text_size(TextSize::Sm))
-                                                        .text_color(if is_active {
-                                                            MonoTheme::fg_primary()
-                                                        } else {
-                                                            MonoTheme::fg_muted()
-                                                        })
-                                                        .overflow_hidden()
+                                                        .text_size(cx.theme().text_size(TextSize::Sm))
+                                                        .text_color(if is_active { colors.fg } else { colors.fg_muted })
+                                                        .truncate()
                                                         .child(f.path.clone()),
                                                 ),
                                         )
                                         .child(
-                                            div()
-                                                .flex()
-                                                .items_center()
-                                                .gap_1p5()
-                                                .text_size(theme.text_size(TextSize::Xs))
-                                                .child(
-                                                    div()
-                                                        .text_color(MonoTheme::success())
-                                                        .child(format!("+{}", f.additions)),
-                                                )
-                                                .child(
-                                                    div()
-                                                        .text_color(MonoTheme::danger())
-                                                        .child(format!("-{}", f.deletions)),
-                                                ),
+                                            DiffStat::new(
+                                                f.additions,
+                                                f.deletions,
+                                            ),
                                         )
                                         .into_any_element()
                                 }).collect()
@@ -201,7 +173,7 @@ impl BenCodeApp {
                     .flex_col()
                     .flex_1()
                     .h_full()
-                    .bg(MonoTheme::bg_base())
+                    .bg(colors.bg)
                     // File Header Bar
                     .child(
                         div()
@@ -211,8 +183,8 @@ impl BenCodeApp {
                             .px_4()
                             .py_2p5()
                             .border_b_1()
-                            .border_color(MonoTheme::border_stroke())
-                            .bg(MonoTheme::bg_surface())
+                            .border_color(colors.border)
+                            .bg(colors.surface)
                             .child(
                                 div()
                                     .flex()
@@ -220,34 +192,19 @@ impl BenCodeApp {
                                     .gap_2()
                                     .child(
                                         div()
-                                            .text_size(theme.text_size(TextSize::Sm))
-                                            .font_family(theme.mono_family.clone())
+                                            .text_size(cx.theme().text_size(TextSize::Sm))
+                                            .font_family(cx.theme().mono_family.clone())
                                             .font_weight(FontWeight::BOLD)
-                                            .text_color(MonoTheme::fg_primary())
+                                            .text_color(colors.fg)
                                             .child(if selected_path.is_empty() {
                                                 "No file selected".to_string()
                                             } else {
                                                 selected_path.clone()
                                             }),
                                     )
-                                    .when(active_file.is_some(), |parent| {
-                                        let f = active_file.unwrap();
+                                    .when_some(active_file.as_ref(), |parent, f| {
                                         parent.child(
-                                            div()
-                                                .flex()
-                                                .items_center()
-                                                .gap_1()
-                                                .text_size(theme.text_size(TextSize::Xs))
-                                                .child(
-                                                    div()
-                                                        .text_color(MonoTheme::success())
-                                                        .child(format!("+{}", f.additions)),
-                                                )
-                                                .child(
-                                                    div()
-                                                        .text_color(MonoTheme::danger())
-                                                        .child(format!("-{}", f.deletions)),
-                                                )
+                                            DiffStat::new(f.additions, f.deletions),
                                         )
                                     }),
                             )
@@ -256,167 +213,112 @@ impl BenCodeApp {
                                     .flex()
                                     .items_center()
                                     .gap_2()
-                                    .child(
-                                        div()
-                                            .flex()
-                                            .items_center()
-                                            .gap_1()
-                                            .px_2()
-                                            .py_1()
-                                            .rounded(theme.radius(Radius::Sm))
-                                            .bg(MonoTheme::bg_base())
-                                            .border_1()
-                                            .border_color(MonoTheme::border_stroke())
-                                            .text_size(theme.text_size(TextSize::Xs))
-                                            .text_color(MonoTheme::fg_muted())
-                                            .cursor_pointer()
-                                            .hover(|s| s.bg(MonoTheme::bg_hover()).text_color(MonoTheme::fg_primary()))
-                                            .child(Icon::new(IconName::Copy).size(IconSize::Xs))
-                                            .child("Copy Diff"),
-                                    )
-                                    .child(
-                                        div()
-                                            .flex()
-                                            .items_center()
-                                            .gap_1()
-                                            .px_2()
-                                            .py_1()
-                                            .rounded(theme.radius(Radius::Sm))
-                                            .bg(MonoTheme::bg_base())
-                                            .border_1()
-                                            .border_color(MonoTheme::border_stroke())
-                                            .text_size(theme.text_size(TextSize::Xs))
-                                            .text_color(MonoTheme::danger())
-                                            .cursor_pointer()
-                                            .hover(|s| s.bg(MonoTheme::danger_bg()))
-                                            .child(
-                                                Icon::new(IconName::RotateCcw)
-                                                    .size(IconSize::Xs)
-                                                    .color(MonoTheme::danger()),
-                                            )
-                                            .child("Discard"),
-                                    ),
+                                    .when(!selected_path.is_empty(), |el| {
+                                        el.child(CopyButton::new("copy-diff-btn", raw_diff_text.clone()))
+                                    }),
                             ),
                     )
                     // Diff Lines List
                     .child(
-                        on_axis(div().id("diff-lines-scroll"))
+                        if diff_lines_count == 0 {
+                            div()
+                                .flex_1()
+                                .p_8()
+                                .text_color(colors.fg_subtle)
+                                .child("No diff lines for this file")
+                                .into_any_element()
+                        } else {
+                            uniform_list(
+                                "diff-lines-virtual-list",
+                                diff_lines_count,
+                                cx.processor(move |this, range: std::ops::Range<usize>, _window, cx| {
+                                    let colors = cx.theme().colors.clone();
+                                    let mono_family = cx.theme().mono_family.clone();
+                                    let text_xs = cx.theme().text_size(TextSize::Xs);
+                                    let radius_sm = cx.theme().radius(Radius::Sm);
+                                    let lines = &this.workspace.diff;
+
+                                    range
+                                        .filter_map(|idx| {
+                                            let line = lines.get(idx)?;
+                                            let line_num = idx + 1;
+                                            let element = match line {
+                                                DiffLineKind::Header(hdr) => div()
+                                                    .h(px(22.0))
+                                                    .flex()
+                                                    .items_center()
+                                                    .px_2()
+                                                    .rounded(radius_sm)
+                                                    .bg(colors.hover)
+                                                    .text_color(colors.accent)
+                                                    .font_family(mono_family.clone())
+                                                    .text_size(text_xs)
+                                                    .font_weight(FontWeight::BOLD)
+                                                    .child(hdr.clone()),
+                                                DiffLineKind::Addition(txt) => div()
+                                                    .h(px(22.0))
+                                                    .flex()
+                                                    .items_center()
+                                                    .gap_3()
+                                                    .px_2()
+                                                    .bg(colors.success.opacity(0.1))
+                                                    .text_color(colors.success)
+                                                    .font_family(mono_family.clone())
+                                                    .text_size(text_xs)
+                                                    .child(
+                                                        div()
+                                                            .w(px(28.0))
+                                                            .text_color(colors.fg_subtle)
+                                                            .child(format!("{line_num}")),
+                                                    )
+                                                    .child(div().w(px(12.0)).child("+"))
+                                                    .child(div().flex_1().child(txt.clone())),
+                                                DiffLineKind::Deletion(txt) => div()
+                                                    .h(px(22.0))
+                                                    .flex()
+                                                    .items_center()
+                                                    .gap_3()
+                                                    .px_2()
+                                                    .bg(colors.danger.opacity(0.1))
+                                                    .text_color(colors.danger)
+                                                    .font_family(mono_family.clone())
+                                                    .text_size(text_xs)
+                                                    .child(
+                                                        div()
+                                                            .w(px(28.0))
+                                                            .text_color(colors.fg_subtle)
+                                                            .child(format!("{line_num}")),
+                                                    )
+                                                    .child(div().w(px(12.0)).child("-"))
+                                                    .child(div().flex_1().child(txt.clone())),
+                                                DiffLineKind::Context(txt) => div()
+                                                    .h(px(22.0))
+                                                    .flex()
+                                                    .items_center()
+                                                    .gap_3()
+                                                    .px_2()
+                                                    .text_color(colors.fg)
+                                                    .font_family(mono_family.clone())
+                                                    .text_size(text_xs)
+                                                    .child(
+                                                        div()
+                                                            .w(px(28.0))
+                                                            .text_color(colors.fg_subtle)
+                                                            .child(format!("{line_num}")),
+                                                    )
+                                                    .child(div().w(px(12.0)).child(" "))
+                                                    .child(div().flex_1().child(txt.clone())),
+                                            };
+                                            Some(element.into_any_element())
+                                        })
+                                        .collect::<Vec<_>>()
+                                }),
+                            )
                             .flex_1()
-                            .overflow_y_scroll()
+                            .h_full()
                             .p_4()
-                            .child(
-                                div()
-                                    .flex()
-                                    .flex_col()
-                                    .font_family(theme.mono_family.clone())
-                                    .text_size(theme.text_size(TextSize::Xs))
-                                    .children(if diff_lines.is_empty() {
-                                        vec![
-                                            div()
-                                                .p_8()
-                                                .text_color(MonoTheme::fg_subtle())
-                                                .child("No diff lines for this file")
-                                                .into_any_element()
-                                        ]
-                                    } else {
-                                        diff_lines.into_iter().enumerate().map(|(idx, line)| {
-                                            match line {
-                                                DiffLineKind::Header(hdr) => {
-                                                    div()
-                                                        .py_1()
-                                                        .px_2()
-                                                        .my_1()
-                                                        .rounded(theme.radius(Radius::Sm))
-                                                        .bg(MonoTheme::bg_hover())
-                                                        .text_color(MonoTheme::mention_cyan())
-                                                        .font_weight(FontWeight::BOLD)
-                                                        .child(hdr)
-                                                        .into_any_element()
-                                                }
-                                                DiffLineKind::Addition(txt) => {
-                                                    div()
-                                                        .flex()
-                                                        .items_center()
-                                                        .gap_3()
-                                                        .py_0p5()
-                                                        .px_2()
-                                                        .bg(MonoTheme::success_bg())
-                                                        .text_color(MonoTheme::success())
-                                                        .child(
-                                                            div()
-                                                                .w(px(24.0))
-                                                                .text_color(MonoTheme::fg_subtle())
-                                                                .child(format!("{}", idx + 1)),
-                                                        )
-                                                        .child(
-                                                            div()
-                                                                .w(px(12.0))
-                                                                .child("+"),
-                                                        )
-                                                        .child(
-                                                            div()
-                                                                .flex_1()
-                                                                .child(txt),
-                                                        )
-                                                        .into_any_element()
-                                                }
-                                                DiffLineKind::Deletion(txt) => {
-                                                    div()
-                                                        .flex()
-                                                        .items_center()
-                                                        .gap_3()
-                                                        .py_0p5()
-                                                        .px_2()
-                                                        .bg(MonoTheme::danger_bg())
-                                                        .text_color(MonoTheme::danger())
-                                                        .child(
-                                                            div()
-                                                                .w(px(24.0))
-                                                                .text_color(MonoTheme::fg_subtle())
-                                                                .child(format!("{}", idx + 1)),
-                                                        )
-                                                        .child(
-                                                            div()
-                                                                .w(px(12.0))
-                                                                .child("-"),
-                                                        )
-                                                        .child(
-                                                            div()
-                                                                .flex_1()
-                                                                .child(txt),
-                                                        )
-                                                        .into_any_element()
-                                                }
-                                                DiffLineKind::Context(txt) => {
-                                                    div()
-                                                        .flex()
-                                                        .items_center()
-                                                        .gap_3()
-                                                        .py_0p5()
-                                                        .px_2()
-                                                        .text_color(MonoTheme::fg_muted())
-                                                        .child(
-                                                            div()
-                                                                .w(px(24.0))
-                                                                .text_color(MonoTheme::fg_subtle())
-                                                                .child(format!("{}", idx + 1)),
-                                                        )
-                                                        .child(
-                                                            div()
-                                                                .w(px(12.0))
-                                                                .child(" "),
-                                                        )
-                                                        .child(
-                                                            div()
-                                                                .flex_1()
-                                                                .child(txt),
-                                                        )
-                                                        .into_any_element()
-                                                }
-                                            }
-                                        }).collect()
-                                    }),
-                            ),
+                            .into_any_element()
+                        },
                     ),
             )
     }

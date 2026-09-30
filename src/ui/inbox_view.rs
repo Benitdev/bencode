@@ -9,7 +9,6 @@ use gpui::{
 };
 
 use crate::app::{BenCodeApp, ViewMode};
-use crate::db::{Block, SessionRow};
 use crate::ui::theme::MonoTheme;
 
 #[derive(Clone, Debug)]
@@ -47,44 +46,20 @@ impl BenCodeApp {
     }
 
     pub fn trigger_ci_repair(&mut self, pr_title: &str, test_name: &str, cx: &mut Context<Self>) {
-        let now = jiff::Timestamp::now().as_millisecond();
-        let repair_session_id = format!("ses-repair-{}", now);
         let repair_prompt = format!(
             "Inspect and repair failing CI check \"{}\" on PR \"{}\". Analyze test failure, run reproduction script, and apply code fix.",
             test_name, pr_title
         );
 
-        let user_block = Block {
-            id: format!("usr-{}", now),
-            role: "user".to_string(),
-            text: Some(repair_prompt.clone()),
-            turn_model: None,
-            tool: None,
-            second_opinion: None,
-            started_at: Some(now),
-            duration_ms: None,
-        };
-
-        let new_session = SessionRow {
-            id: repair_session_id.clone(),
-            harness: "claude".to_string(),
-            model: "claude-3-7-sonnet".to_string(),
-            title: format!("Repair CI: {}", test_name),
-            cwd: self.current_cwd.clone(),
-            branch: Some(self.git_status.branch.clone()),
-            context_used: None,
-            context_window: None,
-            pinned: true,
-            archived: false,
-            created_at: now,
-            updated_at: now,
-            blocks: vec![user_block],
-        };
-
-        let _ = self.db.upsert_session(&new_session);
-        self.sessions.insert(0, new_session);
-        self.selected_session_id = Some(repair_session_id);
+        // Open a fresh thread and actually run the repair prompt through the agent.
+        self.create_new_session(cx);
+        if let Some(session) = self.selected_session_mut() {
+            session.title = format!("Repair CI: {test_name}");
+            session.pinned = true;
+        }
         self.active_view_mode = ViewMode::Chat;
+        self.prompt_input.update(cx, |input, cx| input.set_text(repair_prompt, cx));
+        self.submit_prompt(cx);
         self.close_inbox_modal(cx);
     }
 

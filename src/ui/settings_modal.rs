@@ -1,15 +1,20 @@
-use ely_gpui_component::{
-    layout::on_axis,
-    primitives::{Icon, IconName},
-    theme::{ActiveTheme, IconSize, Radius, TextSize},
-};
+//! Settings & configuration modal: provider auth (Claude, Antigravity, OpenAI),
+//! MCP server configurations, skills catalog, appearance, and system status.
+
+use ely_gpui_component::buttons::{ButtonVariant, IconButton};
+use ely_gpui_component::data_display::{Badge, Tone};
+use ely_gpui_component::layout::on_axis;
+use ely_gpui_component::primitives::{Icon, IconName};
+use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize};
 use gpui::{
     Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString,
     Styled, div, prelude::*, px,
 };
 
 use crate::app::BenCodeApp;
-use crate::ui::theme::MonoTheme;
+use crate::harness::HarnessKind;
+use crate::ui::theme;
+use crate::workspace::BUILTIN_SKILLS;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum SettingsTab {
@@ -24,7 +29,7 @@ pub enum SettingsTab {
 
 impl BenCodeApp {
     pub fn render_settings_modal(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.theme();
+        let colors = cx.theme().colors.clone();
         let current_tab = self.settings_tab;
 
         div()
@@ -37,12 +42,12 @@ impl BenCodeApp {
             .child(
                 // Modal Card
                 div()
-                    .w(px(680.0))
-                    .h(px(480.0))
-                    .rounded(theme.radius(Radius::Lg))
+                    .w(px(720.0))
+                    .h(px(520.0))
+                    .rounded(cx.theme().radius(Radius::Lg))
                     .border_1()
-                    .border_color(MonoTheme::border_stroke())
-                    .bg(MonoTheme::bg_surface())
+                    .border_color(colors.border)
+                    .bg(colors.surface)
                     .flex()
                     .flex_col()
                     .overflow_hidden()
@@ -52,29 +57,22 @@ impl BenCodeApp {
                             .flex()
                             .items_center()
                             .justify_between()
-                            .h(px(44.0))
+                            .h(px(46.0))
                             .px_4()
                             .border_b_1()
-                            .border_color(MonoTheme::border_stroke())
+                            .border_color(colors.border)
                             .child(
                                 div()
-                                    .text_size(theme.text_size(TextSize::Sm))
+                                    .text_size(cx.theme().text_size(TextSize::Sm))
                                     .font_weight(FontWeight::BOLD)
-                                    .text_color(MonoTheme::fg_primary())
+                                    .text_color(colors.fg)
                                     .child("Settings & Configuration"),
                             )
                             .child(
-                                div()
-                                    .id("settings-close-x-btn")
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .size(px(24.0))
-                                    .rounded(theme.radius(Radius::Sm))
-                                    .cursor_pointer()
-                                    .hover(|s| s.bg(MonoTheme::bg_hover()))
-                                    .text_color(MonoTheme::fg_muted())
-                                    .child("×")
+                                IconButton::new("settings-close-x-btn", IconName::X)
+                                    .size(ControlSize::Sm)
+                                    .variant(ButtonVariant::Ghost)
+                                    .tooltip("Close (Esc)")
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         this.is_settings_open = false;
                                         cx.notify();
@@ -92,13 +90,13 @@ impl BenCodeApp {
                                 div()
                                     .flex()
                                     .flex_col()
-                                    .w(px(180.0))
+                                    .w(px(190.0))
                                     .h_full()
                                     .p_2()
                                     .gap_1()
                                     .border_r_1()
-                                    .border_color(MonoTheme::border_stroke())
-                                    .bg(MonoTheme::bg_base())
+                                    .border_color(colors.border)
+                                    .bg(colors.bg)
                                     .child(self.render_settings_tab_btn(IconName::Settings, "General", SettingsTab::General, current_tab, cx))
                                     .child(self.render_settings_tab_btn(IconName::Key, "Providers & Keys", SettingsTab::Providers, current_tab, cx))
                                     .child(self.render_settings_tab_btn(IconName::SlidersHorizontal, "MCP Servers", SettingsTab::Mcp, current_tab, cx))
@@ -112,7 +110,7 @@ impl BenCodeApp {
                                     .flex_1()
                                     .p_5()
                                     .overflow_y_scroll()
-                                    .bg(MonoTheme::bg_surface())
+                                    .bg(colors.surface)
                                     .child(match current_tab {
                                         SettingsTab::General => self.render_settings_general(cx).into_any_element(),
                                         SettingsTab::Providers => self.render_settings_providers(cx).into_any_element(),
@@ -134,7 +132,7 @@ impl BenCodeApp {
         active_tab: SettingsTab,
         cx: &Context<Self>,
     ) -> impl IntoElement {
-        let theme = cx.theme();
+        let colors = &cx.theme().colors;
         let is_active = tab == active_tab;
 
         div()
@@ -144,18 +142,18 @@ impl BenCodeApp {
             .gap_2()
             .px_3()
             .py_2()
-            .rounded(theme.radius(Radius::Md))
+            .rounded(cx.theme().radius(Radius::Md))
             .cursor_pointer()
-            .when(is_active, |el| el.bg(MonoTheme::bg_active()).text_color(MonoTheme::fg_primary()))
-            .when(!is_active, |el| el.text_color(MonoTheme::fg_muted()).hover(|s| s.bg(MonoTheme::bg_hover())))
+            .when(is_active, |el| el.bg(colors.active).text_color(colors.fg))
+            .when(!is_active, |el| el.text_color(colors.fg_muted).hover(|s| s.bg(colors.hover)))
             .child(
                 Icon::new(icon)
                     .size(IconSize::Xs)
-                    .color(if is_active { MonoTheme::accent() } else { MonoTheme::fg_muted() }),
+                    .color(if is_active { colors.accent } else { colors.fg_muted }),
             )
             .child(
                 div()
-                    .text_size(theme.text_size(TextSize::Xs))
+                    .text_size(cx.theme().text_size(TextSize::Xs))
                     .font_weight(if is_active { FontWeight::BOLD } else { FontWeight::NORMAL })
                     .child(label),
             )
@@ -166,7 +164,7 @@ impl BenCodeApp {
     }
 
     fn render_settings_providers(&self, cx: &Context<Self>) -> impl IntoElement {
-        let theme = cx.theme();
+        let colors = &cx.theme().colors;
 
         div()
             .flex()
@@ -174,25 +172,26 @@ impl BenCodeApp {
             .gap_4()
             .child(
                 div()
-                    .text_size(theme.text_size(TextSize::Sm))
+                    .text_size(cx.theme().text_size(TextSize::Sm))
                     .font_weight(FontWeight::BOLD)
-                    .text_color(MonoTheme::fg_primary())
+                    .text_color(colors.fg)
                     .child("Model Provider Authentication"),
             )
             .child(
                 div()
-                    .text_size(theme.text_size(TextSize::Xs))
-                    .text_color(MonoTheme::fg_muted())
-                    .child("BenCode connects directly to Anthropic, Google Antigravity, and OpenAI CLI/APIs."),
+                    .text_size(cx.theme().text_size(TextSize::Xs))
+                    .text_color(colors.fg_muted)
+                    .child("BenCode connects directly to Anthropic, Google Antigravity, OpenAI Codex, and OpenCode harnesses."),
             )
-            // Claude Row
-            .child(
+            .children([HarnessKind::Claude, HarnessKind::Antigravity, HarnessKind::Codex, HarnessKind::OpenCode].into_iter().map(|kind| {
+                let dot_color = theme::harness_color(kind.id(), colors);
+                let available = self.harnesses.iter().any(|h| h.id == kind.id() && h.available);
                 div()
                     .p_3()
-                    .rounded(theme.radius(Radius::Md))
+                    .rounded(cx.theme().radius(Radius::Md))
                     .border_1()
-                    .border_color(MonoTheme::border_stroke())
-                    .bg(MonoTheme::bg_base())
+                    .border_color(colors.border)
+                    .bg(colors.bg)
                     .flex()
                     .items_center()
                     .justify_between()
@@ -201,54 +200,27 @@ impl BenCodeApp {
                             .flex()
                             .items_center()
                             .gap_2()
-                            .child(div().size(px(8.0)).rounded_full().bg(MonoTheme::claude_orange()))
-                            .child(div().text_size(theme.text_size(TextSize::Xs)).font_weight(FontWeight::BOLD).text_color(MonoTheme::fg_primary()).child("Anthropic (Claude Code)"))
+                            .child(div().size(px(8.0)).rounded_full().bg(dot_color))
+                            .child(
+                                div()
+                                    .text_size(cx.theme().text_size(TextSize::Xs))
+                                    .font_weight(FontWeight::BOLD)
+                                    .text_color(colors.fg)
+                                    .child(kind.label()),
+                            ),
                     )
                     .child(
-                        div()
-                            .px_2()
-                            .py_0p5()
-                            .rounded(theme.radius(Radius::Sm))
-                            .bg(MonoTheme::success_bg())
-                            .text_size(theme.text_size(TextSize::Xs))
-                            .text_color(MonoTheme::success())
-                            .child("Connected (CLI)"),
-                    ),
-            )
-            // Antigravity Row
-            .child(
-                div()
-                    .p_3()
-                    .rounded(theme.radius(Radius::Md))
-                    .border_1()
-                    .border_color(MonoTheme::border_stroke())
-                    .bg(MonoTheme::bg_base())
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap_2()
-                            .child(div().size(px(8.0)).rounded_full().bg(MonoTheme::antigravity_blue()))
-                            .child(div().text_size(theme.text_size(TextSize::Xs)).font_weight(FontWeight::BOLD).text_color(MonoTheme::fg_primary()).child("Google Antigravity"))
+                        if available {
+                            Badge::new("Available (CLI)").tone(Tone::Success)
+                        } else {
+                            Badge::new("Not Installed").tone(Tone::Neutral)
+                        }
                     )
-                    .child(
-                        div()
-                            .px_2()
-                            .py_0p5()
-                            .rounded(theme.radius(Radius::Sm))
-                            .bg(MonoTheme::success_bg())
-                            .text_size(theme.text_size(TextSize::Xs))
-                            .text_color(MonoTheme::success())
-                            .child("Active (ACP Socket)"),
-                    ),
-            )
+            }))
     }
 
     fn render_settings_mcp(&self, cx: &Context<Self>) -> impl IntoElement {
-        let theme = cx.theme();
+        let colors = &cx.theme().colors;
 
         div()
             .flex()
@@ -256,15 +228,15 @@ impl BenCodeApp {
             .gap_4()
             .child(
                 div()
-                    .text_size(theme.text_size(TextSize::Sm))
+                    .text_size(cx.theme().text_size(TextSize::Sm))
                     .font_weight(FontWeight::BOLD)
-                    .text_color(MonoTheme::fg_primary())
+                    .text_color(colors.fg)
                     .child("Model Context Protocol (MCP) Servers"),
             )
             .child(
                 div()
-                    .text_size(theme.text_size(TextSize::Xs))
-                    .text_color(MonoTheme::fg_muted())
+                    .text_size(cx.theme().text_size(TextSize::Xs))
+                    .text_color(colors.fg_muted)
                     .child("Configured tool servers providing extended capabilities to all agent harnesses:"),
             )
             .child(
@@ -272,20 +244,20 @@ impl BenCodeApp {
                     .flex()
                     .flex_col()
                     .gap_2()
-                    .child(self.render_mcp_item("sqlite", "Query and inspect project databases", "Running", cx))
-                    .child(self.render_mcp_item("chrome-devtools", "DOM inspection, console logs & web auditing", "Running", cx))
-                    .child(self.render_mcp_item("github", "Fetch PRs, issues and repo metadata", "Connected", cx)),
+                    .child(self.render_mcp_item("sqlite", "Query and inspect project databases", "Running", Tone::Success, cx))
+                    .child(self.render_mcp_item("chrome-devtools", "DOM inspection, console logs & web auditing", "Running", Tone::Success, cx))
+                    .child(self.render_mcp_item("github", "Fetch PRs, issues and repo metadata", "Connected", Tone::Info, cx)),
             )
     }
 
-    fn render_mcp_item(&self, name: &'static str, desc: &'static str, status: &'static str, cx: &Context<Self>) -> impl IntoElement {
-        let theme = cx.theme();
+    fn render_mcp_item(&self, name: &'static str, desc: &'static str, status: &'static str, tone: Tone, cx: &Context<Self>) -> impl IntoElement {
+        let colors = &cx.theme().colors;
         div()
             .p_3()
-            .rounded(theme.radius(Radius::Md))
+            .rounded(cx.theme().radius(Radius::Md))
             .border_1()
-            .border_color(MonoTheme::border_stroke())
-            .bg(MonoTheme::bg_base())
+            .border_color(colors.border)
+            .bg(colors.bg)
             .flex()
             .items_center()
             .justify_between()
@@ -294,23 +266,26 @@ impl BenCodeApp {
                     .flex()
                     .flex_col()
                     .gap_0p5()
-                    .child(div().font_family(theme.mono_family.clone()).text_size(theme.text_size(TextSize::Xs)).font_weight(FontWeight::BOLD).text_color(MonoTheme::fg_primary()).child(name))
-                    .child(div().text_size(theme.text_size(TextSize::Xs)).text_color(MonoTheme::fg_subtle()).child(desc)),
+                    .child(
+                        div()
+                            .font_family(cx.theme().mono_family.clone())
+                            .text_size(cx.theme().text_size(TextSize::Xs))
+                            .font_weight(FontWeight::BOLD)
+                            .text_color(colors.fg)
+                            .child(name),
+                    )
+                    .child(
+                        div()
+                            .text_size(cx.theme().text_size(TextSize::Xs))
+                            .text_color(colors.fg_subtle)
+                            .child(desc),
+                    ),
             )
-            .child(
-                div()
-                    .px_2()
-                    .py_0p5()
-                    .rounded(theme.radius(Radius::Sm))
-                    .bg(MonoTheme::success_bg())
-                    .text_size(theme.text_size(TextSize::Xs))
-                    .text_color(MonoTheme::success())
-                    .child(status),
-            )
+            .child(Badge::new(status).tone(tone))
     }
 
-    fn render_settings_appearance(&self, cx: &Context<Self>) -> impl IntoElement {
-        let theme = cx.theme();
+    fn render_settings_skills(&self, cx: &Context<Self>) -> impl IntoElement {
+        let colors = &cx.theme().colors;
 
         div()
             .flex()
@@ -318,9 +293,68 @@ impl BenCodeApp {
             .gap_4()
             .child(
                 div()
-                    .text_size(theme.text_size(TextSize::Sm))
+                    .text_size(cx.theme().text_size(TextSize::Sm))
                     .font_weight(FontWeight::BOLD)
-                    .text_color(MonoTheme::fg_primary())
+                    .text_color(colors.fg)
+                    .child("Built-in Agent Skills"),
+            )
+            .child(
+                div()
+                    .text_size(cx.theme().text_size(TextSize::Xs))
+                    .text_color(colors.fg_muted)
+                    .child("Reusable skills available in the composer via '/' prompt command:"),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .children(BUILTIN_SKILLS.iter().map(|skill| {
+                        div()
+                            .p_3()
+                            .rounded(cx.theme().radius(Radius::Md))
+                            .border_1()
+                            .border_color(colors.border)
+                            .bg(colors.bg)
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .gap_0p5()
+                                    .child(
+                                        div()
+                                            .font_weight(FontWeight::BOLD)
+                                            .text_size(cx.theme().text_size(TextSize::Xs))
+                                            .text_color(colors.accent)
+                                            .child(format!("/{}", skill.name)),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_size(cx.theme().text_size(TextSize::Xs))
+                                            .text_color(colors.fg_muted)
+                                            .child(skill.description),
+                                    ),
+                            )
+                            .child(Badge::new("built-in").tone(Tone::Neutral))
+                    })),
+            )
+    }
+
+    fn render_settings_appearance(&self, cx: &Context<Self>) -> impl IntoElement {
+        let colors = &cx.theme().colors;
+
+        div()
+            .flex()
+            .flex_col()
+            .gap_4()
+            .child(
+                div()
+                    .text_size(cx.theme().text_size(TextSize::Sm))
+                    .font_weight(FontWeight::BOLD)
+                    .text_color(colors.fg)
                     .child("Appearance & Display"),
             )
             .child(
@@ -329,10 +363,17 @@ impl BenCodeApp {
                     .items_center()
                     .justify_between()
                     .p_3()
-                    .rounded(theme.radius(Radius::Md))
-                    .bg(MonoTheme::bg_base())
-                    .child(div().text_size(theme.text_size(TextSize::Xs)).text_color(MonoTheme::fg_primary()).child("Color Theme"))
-                    .child(div().text_size(theme.text_size(TextSize::Xs)).text_color(MonoTheme::accent()).child("Dark Slate (MonoCode)")),
+                    .rounded(cx.theme().radius(Radius::Md))
+                    .border_1()
+                    .border_color(colors.border)
+                    .bg(colors.bg)
+                    .child(
+                        div()
+                            .text_size(cx.theme().text_size(TextSize::Xs))
+                            .text_color(colors.fg)
+                            .child("Active Color Theme"),
+                    )
+                    .child(Badge::new(self.theme_name.as_str()).tone(Tone::Info)),
             )
             .child(
                 div()
@@ -340,15 +381,22 @@ impl BenCodeApp {
                     .items_center()
                     .justify_between()
                     .p_3()
-                    .rounded(theme.radius(Radius::Md))
-                    .bg(MonoTheme::bg_base())
-                    .child(div().text_size(theme.text_size(TextSize::Xs)).text_color(MonoTheme::fg_primary()).child("Hardware Acceleration"))
-                    .child(div().text_size(theme.text_size(TextSize::Xs)).text_color(MonoTheme::success()).child("Apple Metal GPU (Active)")),
+                    .rounded(cx.theme().radius(Radius::Md))
+                    .border_1()
+                    .border_color(colors.border)
+                    .bg(colors.bg)
+                    .child(
+                        div()
+                            .text_size(cx.theme().text_size(TextSize::Xs))
+                            .text_color(colors.fg)
+                            .child("Hardware Acceleration"),
+                    )
+                    .child(Badge::new("Apple Metal GPU (120 FPS)").tone(Tone::Success)),
             )
     }
 
     fn render_settings_about(&self, cx: &Context<Self>) -> impl IntoElement {
-        let theme = cx.theme();
+        let colors = &cx.theme().colors;
 
         div()
             .flex()
@@ -362,33 +410,33 @@ impl BenCodeApp {
                     .child(
                         Icon::new(IconName::Zap)
                             .size(IconSize::Sm)
-                            .color(MonoTheme::accent()),
+                            .color(colors.accent),
                     )
                     .child(
                         div()
-                            .text_size(theme.text_size(TextSize::Md))
+                            .text_size(cx.theme().text_size(TextSize::Md))
                             .font_weight(FontWeight::BOLD)
-                            .text_color(MonoTheme::accent())
+                            .text_color(colors.accent)
                             .child("BenCode Native Control Plane"),
                     ),
             )
             .child(
                 div()
-                    .text_size(theme.text_size(TextSize::Xs))
-                    .text_color(MonoTheme::fg_muted())
-                    .child("Comprehensive 100% Rust + GPUI migration of MonoCode.\nBuilt with high UI/UX parity, instant Apple Metal rendering, and embedded PTY terminal."),
+                    .text_size(cx.theme().text_size(TextSize::Xs))
+                    .text_color(colors.fg_muted)
+                    .child("Comprehensive 100% Rust + GPUI + Ely migration of MonoCode.\nBuilt with high UI/UX parity, instant Apple Metal rendering, and embedded PTY terminal."),
             )
             .child(
                 div()
                     .pt_2()
-                    .text_size(theme.text_size(TextSize::Xs))
-                    .text_color(MonoTheme::fg_subtle())
+                    .text_size(cx.theme().text_size(TextSize::Xs))
+                    .text_color(colors.fg_subtle)
                     .child("Repository: https://github.com/Kozocom-ThienPV/bencode\nVersion: 0.1.0-alpha"),
             )
     }
 
     fn render_settings_general(&self, cx: &Context<Self>) -> impl IntoElement {
-        let theme = cx.theme();
+        let colors = &cx.theme().colors;
 
         div()
             .flex()
@@ -397,8 +445,8 @@ impl BenCodeApp {
             .child(
                 div()
                     .font_weight(FontWeight::BOLD)
-                    .text_size(theme.text_size(TextSize::Sm))
-                    .text_color(MonoTheme::fg_primary())
+                    .text_size(cx.theme().text_size(TextSize::Sm))
+                    .text_color(colors.fg)
                     .child("General Settings"),
             )
             // Default Model Setting Row
@@ -408,10 +456,10 @@ impl BenCodeApp {
                     .items_center()
                     .justify_between()
                     .p_3()
-                    .rounded(theme.radius(Radius::Md))
-                    .bg(MonoTheme::bg_base())
+                    .rounded(cx.theme().radius(Radius::Md))
+                    .bg(colors.bg)
                     .border_1()
-                    .border_color(MonoTheme::border_stroke())
+                    .border_color(colors.border)
                     .child(
                         div()
                             .flex()
@@ -420,211 +468,18 @@ impl BenCodeApp {
                             .child(
                                 div()
                                     .font_weight(FontWeight::MEDIUM)
-                                    .text_size(theme.text_size(TextSize::Xs))
-                                    .text_color(MonoTheme::fg_primary())
+                                    .text_size(cx.theme().text_size(TextSize::Xs))
+                                    .text_color(colors.fg)
                                     .child("Default Agent Model"),
                             )
                             .child(
                                 div()
-                                    .text_size(theme.text_size(TextSize::Xs))
-                                    .text_color(MonoTheme::fg_muted())
+                                    .text_size(cx.theme().text_size(TextSize::Xs))
+                                    .text_color(colors.fg_muted)
                                     .child("Model used when initiating new workspace threads"),
                             ),
                     )
-                    .child(
-                        div()
-                            .px_3()
-                            .py_1()
-                            .rounded(theme.radius(Radius::Sm))
-                            .bg(MonoTheme::bg_hover())
-                            .text_size(theme.text_size(TextSize::Xs))
-                            .text_color(MonoTheme::fg_primary())
-                            .child(self.selected_model.clone()),
-                    ),
-            )
-            // Sounds & Notifications Row
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .p_3()
-                    .rounded(theme.radius(Radius::Md))
-                    .bg(MonoTheme::bg_base())
-                    .border_1()
-                    .border_color(MonoTheme::border_stroke())
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .gap_0p5()
-                            .child(
-                                div()
-                                    .font_weight(FontWeight::MEDIUM)
-                                    .text_size(theme.text_size(TextSize::Xs))
-                                    .text_color(MonoTheme::fg_primary())
-                                    .child("Audio & Notification Chimes"),
-                            )
-                            .child(
-                                div()
-                                    .text_size(theme.text_size(TextSize::Xs))
-                                    .text_color(MonoTheme::fg_muted())
-                                    .child("Play sound effect when agent completes task or requests approval"),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .px_2p5()
-                            .py_1()
-                            .rounded(theme.radius(Radius::Sm))
-                            .bg(MonoTheme::success_bg())
-                            .text_color(MonoTheme::success())
-                            .text_size(theme.text_size(TextSize::Xs))
-                            .font_weight(FontWeight::MEDIUM)
-                            .child("Enabled"),
-                    ),
-            )
-            // Active Workspace Path
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .p_3()
-                    .rounded(theme.radius(Radius::Md))
-                    .bg(MonoTheme::bg_base())
-                    .border_1()
-                    .border_color(MonoTheme::border_stroke())
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .gap_0p5()
-                            .child(
-                                div()
-                                    .font_weight(FontWeight::MEDIUM)
-                                    .text_size(theme.text_size(TextSize::Xs))
-                                    .text_color(MonoTheme::fg_primary())
-                                    .child("Active Project CWD"),
-                            )
-                            .child(
-                                div()
-                                    .text_size(theme.text_size(TextSize::Xs))
-                                    .text_color(MonoTheme::fg_muted())
-                                    .child(self.current_cwd.clone()),
-                            ),
-                    ),
-            )
-    }
-
-    fn render_settings_skills(&self, cx: &Context<Self>) -> impl IntoElement {
-        let theme = cx.theme();
-
-        let skills = vec![
-            ("git-automations", "Git branch, worktree, and PR lifecycle management", "~/.claude/skills", true),
-            ("rust-analyzer", "Deep Rust codebase intelligence and AST refactoring", "workspace/.skills", true),
-            ("web-search", "Search documentation, APIs, and online repositories", "~/.claude/skills", true),
-            ("test-runner", "Automated cargo test runner with regression analysis", "workspace/.skills", true),
-            ("database-inspector", "SQLite and SQL schema inspection and migration tools", "~/.codex/skills", true),
-        ];
-
-        div()
-            .flex()
-            .flex_col()
-            .gap_3()
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .child(
-                        div()
-                            .font_weight(FontWeight::BOLD)
-                            .text_size(theme.text_size(TextSize::Sm))
-                            .text_color(MonoTheme::fg_primary())
-                            .child("Discovered Skills Catalog"),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap_1()
-                            .px_2p5()
-                            .py_1()
-                            .rounded(theme.radius(Radius::Sm))
-                            .bg(MonoTheme::accent())
-                            .text_color(MonoTheme::on_accent())
-                            .text_size(theme.text_size(TextSize::Xs))
-                            .font_weight(FontWeight::MEDIUM)
-                            .cursor_pointer()
-                            .child(Icon::new(IconName::Plus).size(IconSize::Xs))
-                            .child("Add Skill"),
-                    ),
-            )
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_2()
-                    .children(skills.into_iter().map(|(name, desc, path, enabled)| {
-                        div()
-                            .id(SharedString::from(format!("skill-card-{}", name)))
-                            .flex()
-                            .items_center()
-                            .justify_between()
-                            .p_3()
-                            .rounded(theme.radius(Radius::Md))
-                            .bg(MonoTheme::bg_base())
-                            .border_1()
-                            .border_color(MonoTheme::border_stroke())
-                            .child(
-                                div()
-                                    .flex()
-                                    .items_start()
-                                    .gap_2p5()
-                                    .child(
-                                        Icon::new(IconName::Sparkles)
-                                            .size(IconSize::Sm)
-                                            .color(MonoTheme::skill_gold()),
-                                    )
-                                    .child(
-                                        div()
-                                            .flex()
-                                            .flex_col()
-                                            .gap_0p5()
-                                            .child(
-                                                div()
-                                                    .font_weight(FontWeight::SEMIBOLD)
-                                                    .text_size(theme.text_size(TextSize::Xs))
-                                                    .text_color(MonoTheme::fg_primary())
-                                                    .child(name),
-                                            )
-                                            .child(
-                                                div()
-                                                    .text_size(theme.text_size(TextSize::Xs))
-                                                    .text_color(MonoTheme::fg_muted())
-                                                    .child(desc),
-                                            )
-                                            .child(
-                                                div()
-                                                    .text_size(theme.text_size(TextSize::Xs))
-                                                    .text_color(MonoTheme::fg_subtle())
-                                                    .child(format!("Path: {}", path)),
-                                            ),
-                                    ),
-                            )
-                            .child(
-                                div()
-                                    .px_2()
-                                    .py_1()
-                                    .rounded(theme.radius(Radius::Sm))
-                                    .bg(if enabled { MonoTheme::success_bg() } else { MonoTheme::bg_hover() })
-                                    .text_color(if enabled { MonoTheme::success() } else { MonoTheme::fg_muted() })
-                                    .text_size(theme.text_size(TextSize::Xs))
-                                    .font_weight(FontWeight::MEDIUM)
-                                    .child(if enabled { "Active" } else { "Disabled" }),
-                            )
-                    })),
+                    .child(Badge::new(self.selected_model.clone()).tone(Tone::Neutral)),
             )
     }
 }

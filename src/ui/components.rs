@@ -1,7 +1,12 @@
+//! MonoCode design-system primitives. `MonoButton`, `MonoIconButton` and
+//! `MonoBadge` are not adopted by the views yet (they still hand-roll
+//! buttons); keep them as the migration target instead of deleting them.
+#![allow(dead_code)]
+
 use ely_gpui_component::primitives::{Icon, IconName};
 use ely_gpui_component::theme::{ActiveTheme, IconSize, Radius, TextSize};
 use gpui::{
-    App, ClickEvent, ElementId, FontWeight, InteractiveElement, IntoElement, MouseButton,
+    App, ClickEvent, ElementId, FontWeight, InteractiveElement, IntoElement,
     ParentElement, RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window, div,
     prelude::*, px,
 };
@@ -331,5 +336,81 @@ impl RenderOnce for MonoBadge {
                 )
             })
             .child(self.label)
+    }
+}
+
+/// One segment of a segmented control (sidebar mode switcher, filter pills…).
+#[derive(IntoElement)]
+pub struct MonoSegmentTab {
+    id: ElementId,
+    label: SharedString,
+    icon: Option<IconName>,
+    active: bool,
+    trailing: Option<gpui::AnyElement>,
+    on_click: Option<Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>>,
+}
+
+impl MonoSegmentTab {
+    pub fn new(id: impl Into<ElementId>, label: impl Into<SharedString>) -> Self {
+        Self {
+            id: id.into(),
+            label: label.into(),
+            icon: None,
+            active: false,
+            trailing: None,
+            on_click: None,
+        }
+    }
+
+    pub fn icon(mut self, icon: IconName) -> Self {
+        self.icon = Some(icon);
+        self
+    }
+
+    pub fn active(mut self, active: bool) -> Self {
+        self.active = active;
+        self
+    }
+
+    /// Extra content after the label, e.g. a count badge.
+    pub fn trailing(mut self, element: impl IntoElement) -> Self {
+        self.trailing = Some(element.into_any_element());
+        self
+    }
+
+    pub fn on_click(mut self, handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static) -> Self {
+        self.on_click = Some(Box::new(handler));
+        self
+    }
+}
+
+impl RenderOnce for MonoSegmentTab {
+    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
+        let theme = cx.theme();
+        let (bg, fg, weight) = if self.active {
+            (MonoTheme::bg_active(), MonoTheme::fg_primary(), FontWeight::SEMIBOLD)
+        } else {
+            (gpui::rgba(0x00000000), MonoTheme::fg_muted(), FontWeight::NORMAL)
+        };
+
+        div()
+            .id(self.id)
+            .flex_1()
+            .flex()
+            .items_center()
+            .justify_center()
+            .gap_1()
+            .h(px(24.0))
+            .rounded(theme.radius(Radius::Sm))
+            .bg(bg)
+            .text_color(fg)
+            .text_size(theme.text_size(TextSize::Xs))
+            .font_weight(weight)
+            .cursor_pointer()
+            .hover(|s| s.bg(MonoTheme::bg_hover()))
+            .when_some(self.icon, |el, icon| el.child(Icon::new(icon).size(IconSize::Xs)))
+            .child(self.label)
+            .when_some(self.trailing, |el, trailing| el.child(trailing))
+            .when_some(self.on_click, |el, handler| el.on_click(handler))
     }
 }

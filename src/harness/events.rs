@@ -1,7 +1,28 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// A tool-permission prompt raised by a running harness. Carries everything the
+/// harness needs to build its reply, so the UI never has to know the protocol.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PermissionRequest {
+    pub request_id: String,
+    pub tool: String,
+    pub description: String,
+    pub input: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DoneStatus {
+    Completed,
+    Cancelled,
+    Failed,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum AgentEvent {
+    /// Provider-side conversation id; persisted so the next turn can resume.
+    SessionStarted {
+        provider_session_id: String,
+    },
     TextDelta(String),
     ThinkingDelta(String),
     ToolCallStart {
@@ -14,13 +35,12 @@ pub enum AgentEvent {
         output: String,
         success: bool,
     },
-    PermissionRequest {
-        id: String,
-        tool: String,
-        description: String,
+    PermissionRequest(PermissionRequest),
+    Usage {
+        input_tokens: u64,
+        output_tokens: u64,
+        total_tokens: u64,
     },
-    Done {
-        status: String,
-    },
+    Done(DoneStatus),
     Error(String),
 }

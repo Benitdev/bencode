@@ -1,0 +1,14 @@
+# BenCode Migration & Architecture Rules ⚡
+
+## Overview
+BenCode is the 100% native Rust + GPUI port of MonoCode (located at `../monocode` or `reference/monocode`).
+We are using Zed's GPUI and the `ely-gpui-component` library (https://ely-gpui.zacharyzhang.com/).
+
+## Core Principles
+1. 100% Native Rust. No WebViews, no Chromium, no Electron.
+2. Apple Metal GPU shader rendering via GPUI.
+3. Database compatibility: read and write to MonoCode's SQLite database (`Library/Application Support/com.monocode.desktop/monocode.db`).
+4. Asynchronous IO: Never block the UI render thread. Use `cx.spawn(...)` and Tokio tasks.
+5. Reference `reference/monocode` whenever migrating features, business logic, or schemas.
+
+For detailed architecture, component matrices, and Ely GPUI component recipes, see `AGENTS.md` and `docs/migration/`.

@@ -1,16 +1,17 @@
-use ely_gpui_component::forms::TextInput;
 use ely_gpui_component::layout::on_axis;
 use ely_gpui_component::primitives::{Icon, IconName};
 use ely_gpui_component::theme::{ActiveTheme, IconSize, Radius, TextSize};
 use gpui::{
-    Context, FontWeight, InteractiveElement, IntoElement, ParentElement, Render, SharedString,
-    Styled, Window, div, prelude::*, px,
+    Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString,
+    Styled, div, prelude::*, px,
 };
 
 use crate::app::BenCodeApp;
 use crate::db::{AutomationRow, AutomationRunRow};
-use crate::ui::components::{MonoBadge, MonoBadgeTone, MonoButton};
 use crate::ui::theme::MonoTheme;
+
+/// MonoCode `harness:model` key used for newly created automations.
+const DEFAULT_AUTOMATION_MODEL: &str = "claude:sonnet";
 
 pub struct AutomationTemplate {
     pub id: &'static str,
@@ -133,7 +134,7 @@ impl BenCodeApp {
             name: template.name.to_string(),
             prompt: template.prompt.to_string(),
             harness: "claude".to_string(),
-            model: "claude-3-7-sonnet".to_string(),
+            model: DEFAULT_AUTOMATION_MODEL.to_string(),
             cwd: session_cwd,
             schedule_kind: template.schedule.to_lowercase(),
             time: template.time.to_string(),
@@ -145,9 +146,12 @@ impl BenCodeApp {
             last_run_status: None,
             created_at: now,
             updated_at: now,
+            ..Default::default()
         };
 
-        let _ = self.db.save_automation(&auto);
+        if let Err(err) = self.db.save_automation(&auto) {
+            log::error!("save_automation failed: {err:#}");
+        }
         self.refresh_automations(cx);
         self.select_automation(&new_id, cx);
     }
@@ -168,7 +172,7 @@ impl BenCodeApp {
             name: "New Automation Routine".to_string(),
             prompt: "Summarize changes and run checks...".to_string(),
             harness: "claude".to_string(),
-            model: "claude-3-7-sonnet".to_string(),
+            model: DEFAULT_AUTOMATION_MODEL.to_string(),
             cwd: session_cwd,
             schedule_kind: "daily".to_string(),
             time: "09:00".to_string(),
@@ -180,9 +184,12 @@ impl BenCodeApp {
             last_run_status: None,
             created_at: now,
             updated_at: now,
+            ..Default::default()
         };
 
-        let _ = self.db.save_automation(&auto);
+        if let Err(err) = self.db.save_automation(&auto) {
+            log::error!("save_automation failed: {err:#}");
+        }
         self.refresh_automations(cx);
         self.select_automation(&new_id, cx);
     }
@@ -216,9 +223,12 @@ impl BenCodeApp {
                     last_run_status: auto.last_run_status.clone(),
                     created_at: auto.created_at,
                     updated_at: now,
+                    extra: auto.extra.clone(),
                 };
 
-                let _ = self.db.save_automation(&updated);
+                if let Err(err) = self.db.save_automation(&updated) {
+            log::error!("save_automation failed: {err:#}");
+        }
                 self.refresh_automations(cx);
             }
         }
@@ -226,7 +236,9 @@ impl BenCodeApp {
 
     pub fn delete_selected_automation(&mut self, cx: &mut Context<Self>) {
         if let Some(id) = self.selected_automation_id.take() {
-            let _ = self.db.delete_automation(&id);
+            if let Err(err) = self.db.delete_automation(&id) {
+            log::error!("delete_automation failed: {err:#}");
+        }
             self.refresh_automations(cx);
             self.selected_automation_id = self.automations.first().map(|a| a.id.clone());
             if let Some(first_id) = self.selected_automation_id.clone() {
@@ -237,7 +249,9 @@ impl BenCodeApp {
     }
 
     pub fn toggle_automation_enabled(&mut self, id: &str, current_enabled: bool, cx: &mut Context<Self>) {
-        let _ = self.db.toggle_automation(id, !current_enabled);
+        if let Err(err) = self.db.toggle_automation(id, !current_enabled) {
+            log::error!("toggle_automation failed: {err:#}");
+        }
         self.refresh_automations(cx);
         cx.notify();
     }
@@ -262,7 +276,9 @@ impl BenCodeApp {
                 error: None,
             };
 
-            let _ = self.db.create_automation_run(&run);
+            if let Err(err) = self.db.create_automation_run(&run) {
+            log::error!("create_automation_run failed: {err:#}");
+        }
             if let Ok(runs) = self.db.list_automation_runs(&id) {
                 self.automation_runs = runs;
             }
