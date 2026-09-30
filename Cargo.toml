@@ -1,0 +1,29 @@
+[package]
+name = "monocode-gpui"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "A native GPU-accelerated control plane for MonoCode using Rust and Ely GPUI"
+
+[dependencies]
+# Ely GPUI Component Library
+ely-gpui-component = { git = "https://github.com/ZacharyZhang-NY/Ely-GPUI-Components" }
+
+# GPUI Core from Zed (same commit pinned by Ely)
+gpui = { git = "https://github.com/zed-industries/zed", rev = "1a28cff4b409169bac058bca40dfbfeb7621d19b", default-features = false, features = ["stacker"] }
+gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "1a28cff4b409169bac058bca40dfbfeb7621d19b", features = ["font-kit"] }
+
+# Async runtime & Utilities
+tokio = { version = "1", features = ["full"] }
+anyhow = "1"
+log = "0.4"
+env_logger = "0.11"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# SQLite reader for MonoCode's database
+rusqlite = { version = "0.33", features = ["bundled"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+cocoa = "0.26"
+objc = "0.2"
