@@ -50,7 +50,6 @@ impl BenCodeApp {
         cx: &Context<Self>,
     ) -> impl IntoElement {
         let (toggle_id, delete_id) = (auto.id.clone(), auto.id.clone());
-        let busy = self.is_agent_running();
         let toggle = cx.listener(move |this, on: &bool, _, cx| {
             this.set_automation_enabled(&toggle_id, *on, cx)
         });
@@ -66,14 +65,10 @@ impl BenCodeApp {
             )
             .child(div().flex_1())
             .child(
-                Button::new(
-                    "automation-run",
-                    if busy { "Agent busy" } else { "Run now" },
-                )
-                .primary()
-                .icon(IconName::Play)
-                .disabled(busy)
-                .on_click(cx.listener(|this, _, _, cx| this.run_selected_automation_now(cx))),
+                Button::new("automation-run", "Run now")
+                    .primary()
+                    .icon(IconName::Play)
+                    .on_click(cx.listener(|this, _, _, cx| this.run_selected_automation_now(cx))),
             )
             .child(
                 Button::new("automation-save", "Save")

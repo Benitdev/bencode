@@ -269,19 +269,13 @@ impl BenCodeApp {
         self.close_automations(cx);
     }
 
-    /// Opens a new thread and submits `request.prompt` to its agent. `None` while another agent runs.
+    /// Opens a new thread and starts `request.prompt` in it, alongside any
+    /// other running threads. `None` if the thread could not be created.
     pub fn run_in_new_thread(
         &mut self,
         request: ThreadRequest,
         cx: &mut Context<Self>,
     ) -> Option<String> {
-        if self.is_agent_running() {
-            log::warn!(
-                "not starting \"{}\": an agent is already running",
-                request.title
-            );
-            return None;
-        }
         self.create_new_session(cx);
         if let Some(model) = &request.model {
             self.set_session_model(model, cx);
@@ -296,9 +290,7 @@ impl BenCodeApp {
         self.selected_diff_path = None;
         self.refresh_workspace_if_moved(cx);
         self.active_view_mode = ViewMode::Chat;
-        self.prompt_input
-            .update(cx, |input, cx| input.set_text(request.prompt, cx));
-        self.submit_prompt(cx);
+        self.send_prompt(&id, &request.prompt, cx);
         Some(id)
     }
 

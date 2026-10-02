@@ -127,8 +127,11 @@ impl BenCodeApp {
     /// The row after the last block: a permission prompt, or a working indicator.
     pub fn render_trailer(&self, session: &SessionRow, cx: &Context<Self>) -> AnyElement {
         if let Some(request) = self.pending_permission_for(&session.id) {
-            let approve = cx.listener(|this, _: &(), _, cx| this.approve_permission(cx));
-            let deny = cx.listener(|this, _: &(), _, cx| this.deny_permission(cx));
+            let (allow_id, deny_id) = (session.id.clone(), session.id.clone());
+            let approve =
+                cx.listener(move |this, _: &(), _, cx| this.answer_permission(&allow_id, true, cx));
+            let deny =
+                cx.listener(move |this, _: &(), _, cx| this.answer_permission(&deny_id, false, cx));
             return ConfirmationCard::new("permission-request", format!("Allow {}?", request.tool))
                 .body(request.description.clone())
                 .confirm("Allow")

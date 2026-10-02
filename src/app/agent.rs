@@ -19,11 +19,10 @@ const MAX_TOOL_OUTPUT_CHARS: usize = 4_000;
 const STOPPED_NOTICE: &str = "Agent execution stopped by user.";
 pub const NEW_SESSION_TITLE: &str = "New AI Thread";
 
-/// The single in-flight agent turn. `id` guards against late events from a
-/// run that was already stopped or superseded.
+/// One in-flight agent turn; each thread runs its own. `id` guards against
+/// late events from a run that was already stopped or superseded.
 pub struct AgentRun {
     pub id: u64,
-    pub session_id: String,
     pub handle: HarnessProcessHandle,
     pub pending_permission: Option<PermissionRequest>,
     /// How the turn ended, once the harness reports `Done`.
@@ -52,39 +51,55 @@ impl PermissionMode {
 }
 
 impl BenCodeApp {
+    /// Whether any thread has an agent running.
     pub fn is_agent_running(&self) -> bool {
-        self.active_run.is_some()
+        !self.runs.is_empty()
     }
 
     /// Whether the agent is running in this particular thread.
     pub fn is_agent_running_in(&self, session_id: &str) -> bool {
-        self.active_run
-            .as_ref()
-            .is_some_and(|run| run.session_id == session_id)
+        self.runs.contains_key(session_id)
     }
 
     /// The permission prompt owned by this thread's run, if any. Scoped so an
     /// Approve click in one tab can never answer another thread's agent.
     pub fn pending_permission_for(&self, session_id: &str) -> Option<&PermissionRequest> {
-        let run = self
-            .active_run
-            .as_ref()
-            .filter(|run| run.session_id == session_id)?;
-        run.pending_permission.as_ref()
+        self.runs.get(session_id)?.pending_permission.as_ref()
     }
 
+    /// Prompts waiting for this thread's current turn to end.
+    pub fn queued_prompts(&self, session_id: &str) -> &[String] {
+        self.prompt_queues
+            .get(session_id)
+            .map_or(&[], |queue| queue.as_slice())
+    }
+
+    pub fn remove_queued_prompt(&mut self, session_id: &str, ix: usize, cx: &mut Context<Self>) {
+        if let Some(queue) = self.prompt_queues.get_mut(session_id)
+            && ix < queue.len()
+        {
+            queue.remove(ix);
+            if queue.is_empty() {
+                self.prompt_queues.remove(session_id);
+            }
+            cx.notify();
+        }
+    }
+
+    /// The composer's button: Stop when the focused thread is running and
+    /// nothing is typed; otherwise Send (which queues while running).
     pub fn handle_send_or_stop(&mut self, cx: &mut Context<Self>) {
-        if self.is_agent_running() {
-            self.stop_agent(cx);
-        } else {
-            self.submit_prompt(cx);
+        let typed = !self.prompt_input.read(cx).text().trim().is_empty();
+        match self.selected_session_id.clone() {
+            Some(id) if self.is_agent_running_in(&id) && !typed => self.stop_agent(&id, cx),
+            _ => self.submit_prompt(cx),
         }
     }
 
+    /// Sends the composer text to the focused thread. While that thread's
+    /// agent is busy the message is queued, as MonoCode's Queue follow-up
+    /// behaviour does.
     pub fn submit_prompt(&mut self, cx: &mut Context<Self>) {
-        if self.is_agent_running() {
-            return;
-        }
         let prompt = self.prompt_input.read(cx).text().trim().to_string();
         if prompt.is_empty() {
             return;
@@ -95,36 +110,47 @@ impl BenCodeApp {
         let Some(session_id) = self.selected_session_id.clone() else {
             return;
         };
-        let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id) else {
-            return;
-        };
-
-        let now = now_ms();
-        start_turn(session, &prompt, now);
-        let request = match spawn_request(session, &prompt, self.permission_mode) {
-            Ok(request) => request,
-            Err(message) => {
-                push_notice(session, &message, now);
-                self.persist_session(&session_id);
-                cx.notify();
-                return;
-            }
-        };
-
         self.prompt_input
             .update(cx, |input, cx| input.set_text("", cx));
         self.drafts.remove(&session_id);
-        self.persist_session(&session_id);
+        if self.is_agent_running_in(&session_id) {
+            self.prompt_queues
+                .entry(session_id)
+                .or_default()
+                .push(prompt);
+            cx.notify();
+            return;
+        }
+        self.send_prompt(&session_id, &prompt, cx);
+    }
 
-        match harness::spawn(&request) {
-            Ok((handle, events)) => self.track_run(session_id, handle, events, cx),
-            Err(err) => {
-                let message = format!("Failed to start {}: {err:#}", request.harness.label());
+    /// Starts a turn of `prompt` in `session_id`.
+    pub fn send_prompt(&mut self, session_id: &str, prompt: &str, cx: &mut Context<Self>) {
+        let mode = self.permission_mode;
+        let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id) else {
+            return;
+        };
+        let now = now_ms();
+        start_turn(session, prompt, now);
+        let request = spawn_request(session, prompt, mode);
+        self.persist_session(session_id);
+        let started = request
+            .map_err(|message| (message, now))
+            .and_then(|request| {
+                harness::spawn(&request).map_err(|err| {
+                    let message = format!("Failed to start {}: {err:#}", request.harness.label());
+                    (message, now_ms())
+                })
+            });
+        match started {
+            Ok((handle, events)) => self.track_run(session_id.to_string(), handle, events, cx),
+            Err((message, at)) => {
                 log::error!("{message}");
                 if let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id) {
-                    push_notice(session, &message, now_ms());
+                    push_notice(session, &message, at);
+                    finish_turn(session, at);
                 }
-                self.persist_session(&session_id);
+                self.persist_session(session_id);
             }
         }
         cx.notify();
@@ -139,14 +165,16 @@ impl BenCodeApp {
     ) {
         self.next_run_id += 1;
         let run_id = self.next_run_id;
-        self.active_run = Some(AgentRun {
-            id: run_id,
-            session_id,
-            handle,
-            pending_permission: None,
-            outcome: None,
-            automation_run_id: None,
-        });
+        self.runs.insert(
+            session_id.clone(),
+            AgentRun {
+                id: run_id,
+                handle,
+                pending_permission: None,
+                outcome: None,
+                automation_run_id: None,
+            },
+        );
 
         cx.spawn(async move |this, cx| {
             while let Some(first) = events.recv().await {
@@ -157,7 +185,7 @@ impl BenCodeApp {
                 }
                 let applied = this.update(cx, |app, cx| {
                     for event in batch {
-                        app.on_agent_event(run_id, event);
+                        app.on_agent_event(&session_id, run_id, event);
                     }
                     cx.notify();
                 });
@@ -165,16 +193,22 @@ impl BenCodeApp {
                     return;
                 }
             }
-            let _ = this.update(cx, |app, cx| app.finish_run(run_id, cx));
+            if let Err(err) = this.update(cx, |app, cx| app.finish_run(&session_id, run_id, cx)) {
+                log::debug!("agent run ended after app drop: {err:#}");
+            }
         })
         .detach();
     }
 
-    fn on_agent_event(&mut self, run_id: u64, event: AgentEvent) {
-        let Some(run) = self.active_run.as_mut().filter(|run| run.id == run_id) else {
+    /// The live run of `session_id`, if it is still `run_id`.
+    fn current_run(&mut self, session_id: &str, run_id: u64) -> Option<&mut AgentRun> {
+        self.runs.get_mut(session_id).filter(|run| run.id == run_id)
+    }
+
+    fn on_agent_event(&mut self, session_id: &str, run_id: u64, event: AgentEvent) {
+        let Some(run) = self.current_run(session_id, run_id) else {
             return;
         };
-        let session_id = run.session_id.clone();
         if let AgentEvent::PermissionRequest(request) = event {
             run.pending_permission = Some(request);
             return;
@@ -187,44 +221,58 @@ impl BenCodeApp {
             apply_event(session, event, now_ms());
         }
         if is_done {
-            self.persist_session(&session_id);
+            self.persist_session(session_id);
         }
     }
 
-    fn finish_run(&mut self, run_id: u64, cx: &mut Context<Self>) {
-        if self.active_run.as_ref().is_some_and(|run| run.id == run_id) {
-            let run = self.active_run.take().expect("checked above");
-            self.persist_session(&run.session_id);
-            self.close_automation_run(&run, automation_status(run.outcome));
-            // The agent has most likely edited files.
-            self.refresh_workspace(cx);
-            cx.notify();
+    fn finish_run(&mut self, session_id: &str, run_id: u64, cx: &mut Context<Self>) {
+        if self.current_run(session_id, run_id).is_none() {
+            return;
         }
+        let Some(run) = self.runs.remove(session_id) else {
+            return;
+        };
+        self.persist_session(session_id);
+        self.close_automation_run(&run, automation_status(run.outcome));
+        // The agent has most likely edited files.
+        self.refresh_workspace(cx);
+        self.send_next_queued(session_id, cx);
+        cx.notify();
     }
 
-    fn stop_agent(&mut self, cx: &mut Context<Self>) {
-        let Some(run) = self.active_run.take() else {
+    /// Starts the oldest queued prompt of a thread whose turn just ended.
+    fn send_next_queued(&mut self, session_id: &str, cx: &mut Context<Self>) {
+        let Some(queue) = self.prompt_queues.get_mut(session_id) else {
+            return;
+        };
+        let next = queue.remove(0);
+        if queue.is_empty() {
+            self.prompt_queues.remove(session_id);
+        }
+        self.send_prompt(session_id, &next, cx);
+    }
+
+    /// Stops a thread's agent. Its queue is kept, but nothing is sent until
+    /// the user sends again (MonoCode pauses the queue on interrupt).
+    pub fn stop_agent(&mut self, session_id: &str, cx: &mut Context<Self>) {
+        let Some(run) = self.runs.remove(session_id) else {
             return;
         };
         run.handle.cancel();
         self.close_automation_run(&run, "cancelled");
-        if let Some(session) = self.sessions.iter_mut().find(|s| s.id == run.session_id) {
+        if let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id) {
             let now = now_ms();
             push_notice(session, STOPPED_NOTICE, now);
             finish_turn(session, now);
         }
-        self.persist_session(&run.session_id);
+        self.persist_session(session_id);
         self.refresh_workspace(cx);
         cx.notify();
     }
 
     /// Links the running turn of `session_id` to an automation run row.
     pub fn attach_automation_run(&mut self, session_id: &str, run_id: String) {
-        if let Some(run) = self
-            .active_run
-            .as_mut()
-            .filter(|run| run.session_id == session_id)
-        {
+        if let Some(run) = self.runs.get_mut(session_id) {
             run.automation_run_id = Some(run_id);
         }
     }
@@ -239,16 +287,9 @@ impl BenCodeApp {
         }
     }
 
-    pub fn approve_permission(&mut self, cx: &mut Context<Self>) {
-        self.answer_permission(true, cx);
-    }
-
-    pub fn deny_permission(&mut self, cx: &mut Context<Self>) {
-        self.answer_permission(false, cx);
-    }
-
-    fn answer_permission(&mut self, allow: bool, cx: &mut Context<Self>) {
-        let Some(run) = self.active_run.as_mut() else {
+    /// Answers the permission prompt of `session_id`'s run.
+    pub fn answer_permission(&mut self, session_id: &str, allow: bool, cx: &mut Context<Self>) {
+        let Some(run) = self.runs.get_mut(session_id) else {
             return;
         };
         let Some(request) = run.pending_permission.take() else {

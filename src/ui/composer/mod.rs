@@ -11,8 +11,8 @@ use ely_gpui_component::menus::{Menu, MenuItem, SearchableMenu};
 use ely_gpui_component::primitives::{Icon, IconName};
 use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
-    Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString, Styled, div,
-    prelude::*, px, rgb,
+    AnyElement, Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString,
+    Styled, div, prelude::*, px, rgb,
 };
 
 use crate::app::{BenCodeApp, PermissionMode};
@@ -84,232 +84,287 @@ impl BenCodeApp {
             .unwrap_or("claude");
         let (perm_label, perm_icon) = permission_entry(self.permission_mode);
 
-        div().flex_none().px_6().pb_4().pt_2().child(
-            div()
-                .relative()
-                .max_w(COMPOSER_MAX_WIDTH)
-                .mx_auto()
-                .rounded(px(10.0))
-                .border_1()
-                .border_color(if running_here {
-                    colors.accent
-                } else {
-                    colors.border
-                })
-                .bg(rgb(0x161420))
-                .children(self.render_suggestions(cx))
-                // 1. Top row inside card: Folder "Current checkout" + Git branch
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap_3()
-                        .px_3()
-                        .pt_2p5()
-                        .pb_1()
-                        .child(
-                            div()
-                                .flex()
-                                .items_center()
-                                .gap_1p5()
-                                .text_size(px(12.0))
-                                .text_color(rgb(0x8e8a9d))
-                                .child(
-                                    Icon::new(IconName::Folder)
-                                        .size(IconSize::Xs)
-                                        .color(rgb(0x8e8a9d)),
-                                )
-                                .child("Current checkout"),
-                        )
-                        .child(self.branch_menu(session, cx))
-                        .when_some(
-                            usage.filter(|(_, limit)| *limit > 0),
-                            |el, (used, limit)| {
-                                el.child(
-                                    div()
-                                        .ml_auto()
-                                        .text_size(px(11.0))
-                                        .child(TokenCounter::new(used).limit(limit)),
-                                )
-                            },
-                        ),
-                )
-                // 2. Middle row: Text input area
-                .child(
-                    div()
-                        .px_2()
-                        .py_1()
-                        .text_size(px(13.5))
-                        .line_height(px(20.0))
-                        .child(self.prompt_input.clone()),
-                )
-                // 3. Floating Popovers when open
-                .when(self.is_plus_menu_open, |el| {
-                    el.child(self.render_plus_menu_popover(cx))
-                })
-                .when(self.is_model_picker_open, |el| {
-                    el.child(self.render_model_picker_popover(current_model_key, cx))
-                })
-                .when(self.is_permission_picker_open, |el| {
-                    el.child(self.render_permission_picker_popover(cx))
-                })
-                // 4. Bottom toolbar: [+] [Model chip ∨] [Permission chip ∨] ... [^ Send / Stop]
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .justify_between()
-                        .px_2()
-                        .pb_2()
-                        .pt_1()
-                        // Left group: + button, Model chip, Permission chip
-                        .child(
-                            div()
-                                .flex()
-                                .items_center()
-                                .gap_1p5()
-                                // [+] Button
-                                .child(
-                                    div()
-                                        .id("composer-plus")
-                                        .size(px(26.0))
-                                        .rounded(px(6.0))
-                                        .bg(rgb(0x232030))
-                                        .border_1()
-                                        .border_color(gpui::rgba(0xffffff10))
-                                        .flex()
-                                        .items_center()
-                                        .justify_center()
-                                        .cursor_pointer()
-                                        .hover(|s| s.bg(rgb(0x2c293c)))
-                                        .on_click(cx.listener(|this, _, _, cx| {
-                                            this.is_plus_menu_open = !this.is_plus_menu_open;
-                                            this.is_model_picker_open = false;
-                                            this.is_permission_picker_open = false;
-                                            cx.notify();
-                                        }))
-                                        .child(
-                                            Icon::new(IconName::Plus)
-                                                .size(IconSize::Xs)
-                                                .color(rgb(0x8e8a9d)),
-                                        ),
-                                )
-                                // Model Chip
-                                .child(
-                                    div()
-                                        .id("composer-model-chip")
-                                        .h(px(26.0))
-                                        .max_w(px(220.0))
-                                        .min_w_0()
-                                        .px_2()
-                                        .rounded(px(6.0))
-                                        .bg(rgb(0x232030))
-                                        .border_1()
-                                        .border_color(gpui::rgba(0xffffff10))
-                                        .flex()
-                                        .items_center()
-                                        .gap_1p5()
-                                        .cursor_pointer()
-                                        .hover(|s| s.bg(rgb(0x2c293c)))
-                                        .on_click(cx.listener(|this, _, _, cx| {
-                                            this.is_model_picker_open = !this.is_model_picker_open;
-                                            this.is_permission_picker_open = false;
-                                            this.is_plus_menu_open = false;
-                                            cx.notify();
-                                        }))
-                                        .child(HarnessIcon::new(current_harness).size(px(14.0)))
-                                        .child(
-                                            div()
-                                                .flex_1()
-                                                .min_w_0()
-                                                .text_size(px(11.0))
-                                                .text_color(rgb(0xe2e0ea))
-                                                .truncate()
-                                                .child(current_model_label),
-                                        )
-                                        .child(
-                                            Icon::new(IconName::ChevronDown)
-                                                .size(IconSize::Xs)
-                                                .color(gpui::rgba(0xffffff66)),
-                                        ),
-                                )
-                                // Permission Chip
-                                .child(
-                                    div()
-                                        .id("composer-permission-chip")
-                                        .h(px(26.0))
-                                        .max_w(px(200.0))
-                                        .min_w_0()
-                                        .px_2()
-                                        .rounded(px(6.0))
-                                        .bg(rgb(0x232030))
-                                        .border_1()
-                                        .border_color(gpui::rgba(0xffffff10))
-                                        .flex()
-                                        .items_center()
-                                        .gap_1p5()
-                                        .cursor_pointer()
-                                        .hover(|s| s.bg(rgb(0x2c293c)))
-                                        .on_click(cx.listener(|this, _, _, cx| {
-                                            this.is_permission_picker_open =
-                                                !this.is_permission_picker_open;
-                                            this.is_model_picker_open = false;
-                                            this.is_plus_menu_open = false;
-                                            cx.notify();
-                                        }))
-                                        .child(
-                                            Icon::new(perm_icon)
-                                                .size(IconSize::Xs)
-                                                .color(rgb(0xf59e0b)),
-                                        )
-                                        .child(
-                                            div()
-                                                .flex_1()
-                                                .min_w_0()
-                                                .text_size(px(11.0))
-                                                .text_color(rgb(0xe2e0ea))
-                                                .truncate()
-                                                .child(perm_label),
-                                        )
-                                        .child(
-                                            Icon::new(IconName::ChevronDown)
-                                                .size(IconSize::Xs)
-                                                .color(gpui::rgba(0xffffff66)),
-                                        ),
-                                ),
-                        )
-                        // Right group: Send / Stop button
-                        .child(self.render_send_button(running_here, cx)),
-                ),
-        )
+        let queue = session.and_then(|s| self.render_message_queue(&s.id, cx));
+        div()
+            .flex_none()
+            .px_6()
+            .pb_4()
+            .pt_2()
+            .children(queue.map(|q| div().max_w(COMPOSER_MAX_WIDTH).mx_auto().child(q)))
+            .child(
+                div()
+                    .relative()
+                    .max_w(COMPOSER_MAX_WIDTH)
+                    .mx_auto()
+                    .rounded(px(10.0))
+                    .border_1()
+                    .border_color(colors.border)
+                    .bg(rgb(0x161420))
+                    .children(self.render_suggestions(cx))
+                    // 1. Top row inside card: Folder "Current checkout" + Git branch
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_3()
+                            .px_3()
+                            .pt_2p5()
+                            .pb_1()
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap_1p5()
+                                    .text_size(px(12.0))
+                                    .text_color(rgb(0x8e8a9d))
+                                    .child(
+                                        Icon::new(IconName::Folder)
+                                            .size(IconSize::Xs)
+                                            .color(rgb(0x8e8a9d)),
+                                    )
+                                    .child("Current checkout"),
+                            )
+                            .child(self.branch_menu(session, cx))
+                            .when_some(
+                                usage.filter(|(_, limit)| *limit > 0),
+                                |el, (used, limit)| {
+                                    el.child(
+                                        div()
+                                            .ml_auto()
+                                            .text_size(px(11.0))
+                                            .child(TokenCounter::new(used).limit(limit)),
+                                    )
+                                },
+                            ),
+                    )
+                    // 2. Middle row: Text input area
+                    .child(
+                        div()
+                            .px_2()
+                            .py_1()
+                            .text_size(px(13.5))
+                            .line_height(px(20.0))
+                            .child(self.prompt_input.clone()),
+                    )
+                    // 3. Floating Popovers when open
+                    .when(self.is_plus_menu_open, |el| {
+                        el.child(self.render_plus_menu_popover(cx))
+                    })
+                    .when(self.is_model_picker_open, |el| {
+                        el.child(self.render_model_picker_popover(current_model_key, cx))
+                    })
+                    .when(self.is_permission_picker_open, |el| {
+                        el.child(self.render_permission_picker_popover(cx))
+                    })
+                    // 4. Bottom toolbar: [+] [Model chip ∨] [Permission chip ∨] ... [^ Send / Stop]
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            .px_2()
+                            .pb_2()
+                            .pt_1()
+                            // Left group: + button, Model chip, Permission chip
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap_1p5()
+                                    // [+] Button
+                                    .child(
+                                        div()
+                                            .id("composer-plus")
+                                            .size(px(26.0))
+                                            .rounded(px(6.0))
+                                            .bg(rgb(0x232030))
+                                            .border_1()
+                                            .border_color(gpui::rgba(0xffffff10))
+                                            .flex()
+                                            .items_center()
+                                            .justify_center()
+                                            .cursor_pointer()
+                                            .hover(|s| s.bg(rgb(0x2c293c)))
+                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                this.is_plus_menu_open = !this.is_plus_menu_open;
+                                                this.is_model_picker_open = false;
+                                                this.is_permission_picker_open = false;
+                                                cx.notify();
+                                            }))
+                                            .child(
+                                                Icon::new(IconName::Plus)
+                                                    .size(IconSize::Xs)
+                                                    .color(rgb(0x8e8a9d)),
+                                            ),
+                                    )
+                                    // Model Chip
+                                    .child(
+                                        div()
+                                            .id("composer-model-chip")
+                                            .h(px(26.0))
+                                            .max_w(px(220.0))
+                                            .min_w_0()
+                                            .px_2()
+                                            .rounded(px(6.0))
+                                            .bg(rgb(0x232030))
+                                            .border_1()
+                                            .border_color(gpui::rgba(0xffffff10))
+                                            .flex()
+                                            .items_center()
+                                            .gap_1p5()
+                                            .cursor_pointer()
+                                            .hover(|s| s.bg(rgb(0x2c293c)))
+                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                this.is_model_picker_open =
+                                                    !this.is_model_picker_open;
+                                                this.is_permission_picker_open = false;
+                                                this.is_plus_menu_open = false;
+                                                cx.notify();
+                                            }))
+                                            .child(HarnessIcon::new(current_harness).size(px(14.0)))
+                                            .child(
+                                                div()
+                                                    .flex_1()
+                                                    .min_w_0()
+                                                    .text_size(px(11.0))
+                                                    .text_color(rgb(0xe2e0ea))
+                                                    .truncate()
+                                                    .child(current_model_label),
+                                            )
+                                            .child(
+                                                Icon::new(IconName::ChevronDown)
+                                                    .size(IconSize::Xs)
+                                                    .color(gpui::rgba(0xffffff66)),
+                                            ),
+                                    )
+                                    // Permission Chip
+                                    .child(
+                                        div()
+                                            .id("composer-permission-chip")
+                                            .h(px(26.0))
+                                            .max_w(px(200.0))
+                                            .min_w_0()
+                                            .px_2()
+                                            .rounded(px(6.0))
+                                            .bg(rgb(0x232030))
+                                            .border_1()
+                                            .border_color(gpui::rgba(0xffffff10))
+                                            .flex()
+                                            .items_center()
+                                            .gap_1p5()
+                                            .cursor_pointer()
+                                            .hover(|s| s.bg(rgb(0x2c293c)))
+                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                this.is_permission_picker_open =
+                                                    !this.is_permission_picker_open;
+                                                this.is_model_picker_open = false;
+                                                this.is_plus_menu_open = false;
+                                                cx.notify();
+                                            }))
+                                            .child(
+                                                Icon::new(perm_icon)
+                                                    .size(IconSize::Xs)
+                                                    .color(rgb(0xf59e0b)),
+                                            )
+                                            .child(
+                                                div()
+                                                    .flex_1()
+                                                    .min_w_0()
+                                                    .text_size(px(11.0))
+                                                    .text_color(rgb(0xe2e0ea))
+                                                    .truncate()
+                                                    .child(perm_label),
+                                            )
+                                            .child(
+                                                Icon::new(IconName::ChevronDown)
+                                                    .size(IconSize::Xs)
+                                                    .color(gpui::rgba(0xffffff66)),
+                                            ),
+                                    ),
+                            )
+                            // Right group: Send / Stop button
+                            .child(self.render_send_button(running_here, cx)),
+                    ),
+            )
     }
 
-    /// Send / Stop. While another thread's agent runs, sending here would be
-    /// dropped by the global run lock, so the button is disabled and says why.
+    /// Send / Stop, as MonoCode's `ComposerAction`: while this thread runs,
+    /// an empty composer offers Stop; typing turns it back into Send, which
+    /// queues the message.
     fn render_send_button(&self, running_here: bool, cx: &Context<Self>) -> IconButton {
-        let blocked = !running_here && self.is_agent_running();
-        let (icon, variant, tooltip) = if running_here {
-            (IconName::Square, ButtonVariant::Secondary, "Stop the agent")
-        } else if blocked {
-            (
+        let typed = !self.prompt_input.read(cx).text().trim().is_empty();
+        let (icon, variant, tooltip) = match (running_here, typed) {
+            (true, false) => (IconName::Square, ButtonVariant::Secondary, "Stop"),
+            (true, true) => (
                 IconName::ArrowUp,
                 ButtonVariant::Primary,
-                "Another thread's agent is running. Wait for it or stop it first.",
-            )
-        } else {
-            (IconName::ArrowUp, ButtonVariant::Primary, "Send (↩)")
+                "Queue message (↩)",
+            ),
+            (false, _) => (IconName::ArrowUp, ButtonVariant::Primary, "Send (↩)"),
         };
         IconButton::new("composer-send-btn", icon)
             .size(ControlSize::Sm)
             .variant(variant)
-            .disabled(blocked)
+            .disabled(!running_here && !typed)
             .tooltip(tooltip)
-            .on_click(cx.listener(move |this, _, _, cx| {
-                // Never let a click here stop another thread's run.
-                if !blocked {
-                    this.handle_send_or_stop(cx);
-                }
-            }))
+            .on_click(cx.listener(|this, _, _, cx| this.handle_send_or_stop(cx)))
+    }
+
+    /// Messages waiting for the running turn (MonoCode `MessageQueue`).
+    fn render_message_queue(&self, session_id: &str, cx: &Context<Self>) -> Option<AnyElement> {
+        let queued = self.queued_prompts(session_id);
+        if queued.is_empty() {
+            return None;
+        }
+        let colors = &cx.theme().colors;
+        let rows = queued.iter().enumerate().map(|(ix, text)| {
+            let session = session_id.to_string();
+            div()
+                .flex()
+                .items_center()
+                .gap_1p5()
+                .min_h(px(28.0))
+                .when(ix > 0, |el| el.border_t_1().border_color(colors.border))
+                .child(
+                    Icon::new(IconName::CornerDownRight)
+                        .size(IconSize::Sm)
+                        .color(colors.fg_muted),
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .truncate()
+                        .text_size(px(12.0))
+                        .text_color(colors.fg_muted)
+                        .child(text.clone()),
+                )
+                .child(
+                    IconButton::new(
+                        SharedString::from(format!("queue-remove-{ix}")),
+                        IconName::Trash2,
+                    )
+                    .size(ControlSize::Sm)
+                    .variant(ButtonVariant::Ghost)
+                    .tooltip("Remove from queue")
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.remove_queued_prompt(&session, ix, cx)
+                    })),
+                )
+        });
+        Some(
+            div()
+                .mx_2()
+                .px_2()
+                .py_1()
+                .rounded_t(px(10.0))
+                .border_1()
+                .border_b_0()
+                .border_color(colors.border)
+                .bg(colors.surface)
+                .children(rows)
+                .into_any_element(),
+        )
     }
 
     fn render_model_picker_popover(

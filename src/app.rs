@@ -156,7 +156,10 @@ pub struct BenCodeApp {
     /// Root focus scope; Ely overlays hand focus back to it.
     pub focus_handle: gpui::FocusHandle,
     // Agent execution
-    pub active_run: Option<AgentRun>,
+    /// The running turn of each thread that has one, keyed by session id.
+    pub runs: HashMap<String, AgentRun>,
+    /// Prompts sent while a thread was busy, oldest first.
+    pub prompt_queues: HashMap<String, Vec<String>>,
     next_run_id: u64,
     pub prompt_input: Entity<TextInput>,
     pub search_input: Entity<TextInput>,
@@ -467,7 +470,8 @@ impl BenCodeApp {
             session_dialog: None,
             rename_input: text_input(window, cx, "Thread title"),
             focus_handle: cx.focus_handle(),
-            active_run: None,
+            runs: HashMap::new(),
+            prompt_queues: HashMap::new(),
             next_run_id: 0,
             prompt_input,
             search_input,
@@ -676,9 +680,9 @@ impl BenCodeApp {
         cx.notify();
     }
 
-    /// Retries generation for the latest user prompt in the active session.
+    /// Sends the thread's latest user prompt again as a new turn.
     pub fn retry_turn(&mut self, session_id: &str, cx: &mut Context<Self>) {
-        if self.is_agent_running() {
+        if self.is_agent_running_in(session_id) {
             return;
         }
         let Some(session) = self.sessions.iter().find(|s| s.id == session_id) else {
@@ -691,10 +695,7 @@ impl BenCodeApp {
             .find(|b| b.role == "user")
             .and_then(|b| b.text.clone());
         if let Some(prompt) = last_prompt {
-            self.prompt_input.update(cx, |input, cx| {
-                input.set_text(prompt, cx);
-            });
-            self.submit_prompt(cx);
+            self.send_prompt(session_id, &prompt, cx);
         }
     }
 

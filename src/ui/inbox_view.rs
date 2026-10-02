@@ -138,7 +138,6 @@ impl BenCodeApp {
                         .variant(ButtonVariant::Primary)
                         .size(ControlSize::Sm)
                         .icon(IconName::WandSparkles)
-                        .disabled(self.is_agent_running())
                         .on_click(cx.listener(move |this, _, _, cx| {
                             this.trigger_ci_repair(pull.title, test, cx)
                         })),
