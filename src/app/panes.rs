@@ -407,6 +407,7 @@ impl BenCodeApp {
             context_used: Some(0),
             context_window: Some(DEFAULT_CONTEXT_WINDOW),
             blocks: vec![welcome],
+            runtime_mode: Some(self.permission_mode.id().to_string()),
             worktree_cwd,
             ..Default::default()
         };

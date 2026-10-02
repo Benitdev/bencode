@@ -33,8 +33,10 @@ fn build_args(req: &SpawnRequest) -> Vec<String> {
         PermissionPolicy::AutoApprove => {
             args.push("--dangerously-bypass-approvals-and-sandbox".into())
         }
-        PermissionPolicy::Ask => args.push("--full-auto".into()),
-        PermissionPolicy::ReadOnly => args.extend(["--sandbox".into(), "read-only".into()]),
+        // `codex exec` cannot ask mid-turn, so supervised stays read-only
+        // (MonoCode's supervised sandbox) and the edit modes write the workspace.
+        PermissionPolicy::AcceptEdits | PermissionPolicy::Auto => args.push("--full-auto".into()),
+        PermissionPolicy::Ask => args.extend(["--sandbox".into(), "read-only".into()]),
     }
     if let Some(model) = &req.model {
         args.extend(["--model".into(), model.clone()]);
@@ -287,7 +289,7 @@ mod tests {
             cwd: "/tmp".into(),
             prompt: "-fix it".into(),
             model: Some("gpt-5-codex".into()),
-            permission: PermissionPolicy::ReadOnly,
+            permission: PermissionPolicy::Ask,
             resume_id: Some("th_1".into()),
         };
         let args = build_args(&req);

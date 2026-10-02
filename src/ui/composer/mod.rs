@@ -30,24 +30,31 @@ const HARNESS_ORDER: [HarnessKind; 4] = [
 /// A row of the composer "+" menu.
 type PlusAction = fn(&mut BenCodeApp, &mut Context<BenCodeApp>);
 
-const PERMISSION_MODES: [(PermissionMode, &str, &str, IconName); 3] = [
+/// MonoCode `AccessPicker` rows: mode, label, hint, icon.
+const PERMISSION_MODES: [(PermissionMode, &str, &str, IconName); 4] = [
     (
-        PermissionMode::Auto,
-        "Full access",
-        "Allow commands, edits, and confirmations without prompts.",
-        IconName::Shield,
-    ),
-    (
-        PermissionMode::Confirm,
+        PermissionMode::Supervised,
         "Supervised",
         "Ask before commands and file changes.",
         IconName::Lock,
     ),
     (
-        PermissionMode::ReadOnly,
-        "Read-only",
-        "Read-only inspection without file changes.",
-        IconName::Eye,
+        PermissionMode::AutoAcceptEdits,
+        "Auto-accept edits",
+        "Auto-approve edits, ask before other actions.",
+        IconName::Pencil,
+    ),
+    (
+        PermissionMode::Auto,
+        "Auto",
+        "An AI reviewer can approve or deny actions.",
+        IconName::Sparkles,
+    ),
+    (
+        PermissionMode::FullAccess,
+        "Full access",
+        "Allow commands, edits, and supported MCP confirmations without prompts.",
+        IconName::Shield,
     ),
 ];
 
@@ -55,7 +62,7 @@ fn permission_entry(mode: PermissionMode) -> (&'static str, IconName) {
     PERMISSION_MODES
         .iter()
         .find(|(m, ..)| *m == mode)
-        .map_or(("Full access", IconName::Shield), |(_, label, _, icon)| {
+        .map_or(("Supervised", IconName::Lock), |(_, label, _, icon)| {
             (*label, *icon)
         })
 }
@@ -81,7 +88,7 @@ impl BenCodeApp {
             .map(|s| s.harness.as_str())
             .or_else(|| current_model_key.split_once(':').map(|(h, _)| h))
             .unwrap_or("claude");
-        let (perm_label, perm_icon) = permission_entry(self.permission_mode);
+        let (perm_label, perm_icon) = permission_entry(self.session_permission_mode(session));
 
         let queue = session.and_then(|s| self.render_message_queue(&s.id, cx));
         div()
@@ -539,95 +546,70 @@ impl BenCodeApp {
     }
 
     fn render_permission_picker_popover(&self, cx: &Context<Self>) -> impl IntoElement {
-        let current_mode = self.permission_mode;
-
+        let colors = &cx.theme().colors;
+        let session = self.selected_session();
+        let current_mode = self.session_permission_mode(session);
+        let busy = session.is_some_and(|s| self.is_agent_running_in(&s.id));
         div()
             .id("composer-permission-popover")
             .absolute()
             .bottom(px(36.0))
             .left(px(140.0))
-            .w(px(280.0))
-            .p_1p5()
+            .w(px(288.0))
+            .p_1()
             .rounded(px(8.0))
-            .bg(rgb(0x1a1824))
+            .bg(colors.surface)
             .border_1()
-            .border_color(gpui::rgba(0xffffff18))
+            .border_color(colors.border)
             .shadow_lg()
             .flex()
             .flex_col()
-            .gap_1()
-            .child(
-                div()
-                    .px_2()
-                    .pt_1()
-                    .pb_0p5()
-                    .text_size(px(10.0))
-                    .font_weight(FontWeight::BOLD)
-                    .text_color(rgb(0x8e8a9d))
-                    .child("EXECUTION ACCESS"),
-            )
             .children(PERMISSION_MODES.iter().map(|&(mode, label, hint, icon)| {
-                let is_active = mode == current_mode;
+                let icon_color = if mode == PermissionMode::FullAccess {
+                    colors.warning
+                } else {
+                    colors.fg_muted
+                };
                 div()
-                    .id(SharedString::from(format!("perm-opt-{mode:?}")))
+                    .id(SharedString::from(format!("perm-opt-{}", mode.id())))
                     .flex()
                     .items_start()
-                    .justify_between()
+                    .gap_2()
                     .px_2()
                     .py_2()
-                    .rounded(px(6.0))
+                    .rounded(px(8.0))
                     .cursor_pointer()
-                    .when(is_active, |el| el.bg(rgb(0x2c293c)))
-                    .hover(|s| s.bg(rgb(0x252233)))
+                    .when(mode == current_mode, |el| el.bg(colors.active))
+                    .hover(|s| s.bg(colors.hover))
                     .on_click(cx.listener(move |this, _, _, cx| {
                         this.is_permission_picker_open = false;
                         this.set_permission_mode(mode, cx);
                     }))
+                    .child(Icon::new(icon).size(IconSize::Sm).color(icon_color))
                     .child(
                         div()
-                            .flex()
-                            .items_start()
-                            .gap_2p5()
                             .flex_1()
                             .min_w_0()
-                            .child(Icon::new(icon).size(IconSize::Xs).color(
-                                if mode == PermissionMode::Auto {
-                                    rgb(0xf59e0b)
-                                } else {
-                                    rgb(0x8e8a9d)
-                                },
-                            ))
                             .child(
                                 div()
-                                    .flex_1()
-                                    .min_w_0()
-                                    .child(
-                                        div()
-                                            .text_size(px(12.5))
-                                            .font_weight(FontWeight::MEDIUM)
-                                            .text_color(if is_active {
-                                                rgb(0xffffff)
-                                            } else {
-                                                rgb(0xdedce6)
-                                            })
-                                            .child(label),
-                                    )
-                                    .child(
-                                        div()
-                                            .text_size(px(11.0))
-                                            .text_color(rgb(0x8e8a9d))
-                                            .child(hint),
-                                    ),
-                            ),
+                                    .text_size(px(13.0))
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .text_color(colors.fg)
+                                    .child(label),
+                            )
+                            .child(div().text_size(px(11.0)).text_color(colors.fg_muted).child(hint)),
                     )
-                    .when(is_active, |el| {
-                        el.child(
-                            Icon::new(IconName::Check)
-                                .size(IconSize::Xs)
-                                .color(rgb(0x388bfd)),
-                        )
-                    })
             }))
+            .when(busy, |el| {
+                el.child(
+                    div()
+                        .px_2()
+                        .py_1p5()
+                        .text_size(px(11.0))
+                        .text_color(colors.fg_muted)
+                        .child("Access changes apply to the next turn. Stop and resend to apply them now."),
+                )
+            })
     }
 
     fn branch_menu(&self, session: Option<&SessionRow>, cx: &Context<Self>) -> impl IntoElement {
@@ -663,13 +645,12 @@ mod tests {
 
     #[test]
     fn every_permission_mode_has_a_menu_entry() {
-        for mode in [
-            PermissionMode::Auto,
-            PermissionMode::Confirm,
-            PermissionMode::ReadOnly,
-        ] {
+        for mode in PermissionMode::ALL {
             assert!(PERMISSION_MODES.iter().any(|(m, ..)| *m == mode));
         }
-        assert_eq!(permission_entry(PermissionMode::ReadOnly).0, "Read-only");
+        assert_eq!(
+            permission_entry(PermissionMode::FullAccess).0,
+            "Full access"
+        );
     }
 }

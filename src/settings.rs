@@ -18,13 +18,17 @@ pub enum ThemePreference {
     Light,
 }
 
+/// Access mode for new threads, in MonoCode's `RuntimeMode` ids. Older
+/// BenCode files said `confirm` / `read-only`; both now mean Supervised.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum PermissionPreference {
     #[default]
+    #[serde(alias = "confirm", alias = "read-only")]
+    Supervised,
+    AutoAcceptEdits,
     Auto,
-    Confirm,
-    ReadOnly,
+    FullAccess,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -95,7 +99,7 @@ mod tests {
         let settings = AppSettings {
             theme: ThemePreference::Light,
             default_model: Some("claude:opus".into()),
-            permission_mode: PermissionPreference::ReadOnly,
+            permission_mode: PermissionPreference::AutoAcceptEdits,
             terminal_open: true,
             extra: Map::new(),
         };
@@ -118,5 +122,17 @@ mod tests {
         let text = std::fs::read_to_string(dir.join(FILE_NAME)).unwrap();
         assert!(text.contains("futureKey"), "{text}");
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn legacy_permission_values_read_as_supervised() {
+        for legacy in ["confirm", "read-only", "supervised"] {
+            let parsed: PermissionPreference =
+                serde_json::from_value(Value::String(legacy.into())).unwrap();
+            assert_eq!(parsed, PermissionPreference::Supervised, "{legacy}");
+        }
+        let full: PermissionPreference =
+            serde_json::from_value(Value::String("full-access".into())).unwrap();
+        assert_eq!(full, PermissionPreference::FullAccess);
     }
 }

@@ -43,9 +43,10 @@ fn automation_status(outcome: Option<DoneStatus>) -> &'static str {
 impl PermissionMode {
     pub fn policy(self) -> PermissionPolicy {
         match self {
-            Self::Auto => PermissionPolicy::AutoApprove,
-            Self::Confirm => PermissionPolicy::Ask,
-            Self::ReadOnly => PermissionPolicy::ReadOnly,
+            Self::Supervised => PermissionPolicy::Ask,
+            Self::AutoAcceptEdits => PermissionPolicy::AcceptEdits,
+            Self::Auto => PermissionPolicy::Auto,
+            Self::FullAccess => PermissionPolicy::AutoApprove,
         }
     }
 }
@@ -126,7 +127,7 @@ impl BenCodeApp {
 
     /// Starts a turn of `prompt` in `session_id`.
     pub fn send_prompt(&mut self, session_id: &str, prompt: &str, cx: &mut Context<Self>) {
-        let mode = self.permission_mode;
+        let mode = self.session_permission_mode(self.sessions.iter().find(|s| s.id == session_id));
         let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id) else {
             return;
         };
@@ -638,14 +639,14 @@ mod tests {
     fn spawn_request_maps_model_policy_and_resume() {
         let mut s = session();
         s.provider_session_id = Some("resume-me".into());
-        let req = spawn_request(&s, "go", PermissionMode::Confirm).unwrap();
+        let req = spawn_request(&s, "go", PermissionMode::Supervised).unwrap();
         assert_eq!(req.harness, HarnessKind::Claude);
         assert_eq!(req.model.as_deref(), Some("opus"));
         assert_eq!(req.permission, PermissionPolicy::Ask);
         assert_eq!(req.resume_id.as_deref(), Some("resume-me"));
 
         s.harness = "pi".into();
-        assert!(spawn_request(&s, "go", PermissionMode::Auto).is_err());
+        assert!(spawn_request(&s, "go", PermissionMode::FullAccess).is_err());
     }
 
     #[test]

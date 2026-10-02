@@ -51,12 +51,37 @@ pub enum FilterMode {
     Archived,
 }
 
+/// MonoCode's per-session access modes (`RuntimeMode`, `session.ts:368-390`),
+/// stored in `sessions.runtime_mode` by their MonoCode ids.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum PermissionMode {
     #[default]
+    Supervised,
+    AutoAcceptEdits,
     Auto,
-    Confirm,
-    ReadOnly,
+    FullAccess,
+}
+
+impl PermissionMode {
+    pub const ALL: [Self; 4] = [
+        Self::Supervised,
+        Self::AutoAcceptEdits,
+        Self::Auto,
+        Self::FullAccess,
+    ];
+
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::Supervised => "supervised",
+            Self::AutoAcceptEdits => "auto-accept-edits",
+            Self::Auto => "auto",
+            Self::FullAccess => "full-access",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|mode| mode.id() == id)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -411,7 +436,7 @@ impl BenCodeApp {
             tabs,
             active_view_mode: ViewMode::Chat,
             filter_mode: FilterMode::All,
-            permission_mode: PermissionMode::Auto,
+            permission_mode: PermissionMode::default(),
             sidebar_mode: SidebarMode::Sessions,
             selected_diff_path: None,
             search_query: String::new(),

@@ -65,13 +65,16 @@ impl HarnessKind {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PermissionPolicy {
-    /// Run every tool without asking.
+    /// Run every tool without asking (MonoCode full-access).
     AutoApprove,
     /// Ask the user through `AgentEvent::PermissionRequest` where the harness
-    /// supports it; otherwise fall back to the harness' sandboxed default.
+    /// supports it; otherwise fall back to the harness' sandboxed default
+    /// (MonoCode supervised).
     Ask,
-    /// Plan / read-only sandbox.
-    ReadOnly,
+    /// Apply file edits without asking; ask for anything else.
+    AcceptEdits,
+    /// Let the harness' own reviewer approve or deny actions.
+    Auto,
 }
 
 #[derive(Debug, Clone)]

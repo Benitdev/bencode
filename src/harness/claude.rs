@@ -44,10 +44,22 @@ fn build_args(req: &SpawnRequest) -> Vec<String> {
     .map(String::from)
     .to_vec();
 
-    match req.permission {
-        PermissionPolicy::AutoApprove => args.push("--dangerously-skip-permissions".into()),
-        PermissionPolicy::Ask => args.extend(["--permission-prompt-tool".into(), "stdio".into()]),
-        PermissionPolicy::ReadOnly => args.extend(["--permission-mode".into(), "plan".into()]),
+    // MonoCode `runtimeModeToPermission`: always pass a mode, so the user's
+    // `permissions.defaultMode` cannot silently change what the picker says.
+    let asked_mode = match req.permission {
+        PermissionPolicy::AutoApprove => None,
+        PermissionPolicy::Ask => Some("default"),
+        PermissionPolicy::AcceptEdits => Some("acceptEdits"),
+        PermissionPolicy::Auto => Some("auto"),
+    };
+    match asked_mode {
+        None => args.push("--dangerously-skip-permissions".into()),
+        Some(mode) => args.extend([
+            "--permission-mode".into(),
+            mode.into(),
+            "--permission-prompt-tool".into(),
+            "stdio".into(),
+        ]),
     }
     if let Some(model) = &req.model {
         args.extend(["--model".into(), model.clone()]);
@@ -332,12 +344,15 @@ mod tests {
 
         let auto = build_args(&request(PermissionPolicy::AutoApprove));
         assert!(auto.contains(&"--dangerously-skip-permissions".to_string()));
-
-        let read_only = build_args(&request(PermissionPolicy::ReadOnly));
         assert!(
-            read_only
+            ask.windows(2)
+                .any(|w| w == ["--permission-mode", "default"])
+        );
+        let edits = build_args(&request(PermissionPolicy::AcceptEdits));
+        assert!(
+            edits
                 .windows(2)
-                .any(|w| w == ["--permission-mode", "plan"])
+                .any(|w| w == ["--permission-mode", "acceptEdits"])
         );
     }
 

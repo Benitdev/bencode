@@ -33,8 +33,7 @@ fn build_args(req: &SpawnRequest) -> Vec<String> {
     ];
     match req.permission {
         PermissionPolicy::AutoApprove => args.push("--dangerously-skip-permissions".into()),
-        PermissionPolicy::Ask => {}
-        PermissionPolicy::ReadOnly => args.extend(["--mode".into(), "plan".into()]),
+        PermissionPolicy::Ask | PermissionPolicy::AcceptEdits | PermissionPolicy::Auto => {}
     }
     if let Some(model) = &req.model {
         args.extend(["--model".into(), model.clone()]);

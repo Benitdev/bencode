@@ -11,9 +11,10 @@ use crate::settings::{self, AppSettings, PermissionPreference, ThemePreference};
 impl From<PermissionPreference> for PermissionMode {
     fn from(pref: PermissionPreference) -> Self {
         match pref {
+            PermissionPreference::Supervised => Self::Supervised,
+            PermissionPreference::AutoAcceptEdits => Self::AutoAcceptEdits,
             PermissionPreference::Auto => Self::Auto,
-            PermissionPreference::Confirm => Self::Confirm,
-            PermissionPreference::ReadOnly => Self::ReadOnly,
+            PermissionPreference::FullAccess => Self::FullAccess,
         }
     }
 }
@@ -21,9 +22,10 @@ impl From<PermissionPreference> for PermissionMode {
 impl From<PermissionMode> for PermissionPreference {
     fn from(mode: PermissionMode) -> Self {
         match mode {
+            PermissionMode::Supervised => Self::Supervised,
+            PermissionMode::AutoAcceptEdits => Self::AutoAcceptEdits,
             PermissionMode::Auto => Self::Auto,
-            PermissionMode::Confirm => Self::Confirm,
-            PermissionMode::ReadOnly => Self::ReadOnly,
+            PermissionMode::FullAccess => Self::FullAccess,
         }
     }
 }
@@ -83,10 +85,30 @@ impl BenCodeApp {
             .detach();
     }
 
+    /// Sets the focused thread's access mode and remembers it for new
+    /// threads. Applies from the next turn, as in MonoCode.
     pub fn set_permission_mode(&mut self, mode: PermissionMode, cx: &mut Context<Self>) {
         self.permission_mode = mode;
+        if let Some(id) = self.selected_session_id.clone()
+            && let Some(session) = self.sessions.iter_mut().find(|s| s.id == id)
+        {
+            session.runtime_mode = Some(mode.id().to_string());
+            self.persist_session(&id);
+        }
         self.save_settings(cx);
         cx.notify();
+    }
+
+    /// Access mode of a thread: its stored mode, else the default for new
+    /// threads.
+    pub fn session_permission_mode(
+        &self,
+        session: Option<&crate::db::SessionRow>,
+    ) -> PermissionMode {
+        session
+            .and_then(|s| s.runtime_mode.as_deref())
+            .and_then(PermissionMode::from_id)
+            .unwrap_or(self.permission_mode)
     }
 
     pub fn set_terminal_open(&mut self, open: bool, cx: &mut Context<Self>) {
@@ -108,11 +130,7 @@ mod tests {
 
     #[test]
     fn permission_modes_round_trip_through_preferences() {
-        for mode in [
-            PermissionMode::Auto,
-            PermissionMode::Confirm,
-            PermissionMode::ReadOnly,
-        ] {
+        for mode in PermissionMode::ALL {
             let pref: PermissionPreference = mode.into();
             assert_eq!(PermissionMode::from(pref), mode);
         }
