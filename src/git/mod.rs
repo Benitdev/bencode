@@ -7,7 +7,13 @@ use anyhow::{Context as _, Result, bail};
 mod rows;
 pub use rows::{DiffRow, number_rows, unified_text};
 
-#[allow(dead_code)]
+// Only `list_worktrees` feeds the sidebar switcher so far; create/remove/prune
+// are tracked in docs/migration/TODO-100-PERCENT-COVERAGE.md (2.1). `expect`
+// (not `allow`) so the attribute errors out once the rest becomes live.
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "worktree create/remove/prune are not wired yet")
+)]
 pub mod worktrees;
 pub use worktrees::Worktree;
 

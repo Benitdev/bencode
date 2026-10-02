@@ -286,7 +286,7 @@ fn spawn_request(
     })?;
     Ok(SpawnRequest {
         harness,
-        cwd: session.cwd.clone(),
+        cwd: session.work_dir().to_string(),
         prompt: prompt.to_string(),
         model: catalog::cli_model_id(&session.model),
         permission: mode.policy(),

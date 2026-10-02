@@ -117,10 +117,23 @@ pub struct SessionRow {
     /// uses `DEFAULT_SESSION_RUNTIME_MODE` on insert.
     #[serde(default)]
     pub runtime_mode: Option<String>,
+    /// Git worktree the thread runs in; `cwd` stays the project folder.
+    #[serde(default)]
+    pub worktree_cwd: Option<String>,
     /// Set when `blocks_json` could not be parsed. Such rows carry an empty
     /// `blocks` vector and `upsert_session` refuses to write them back.
     #[serde(skip)]
     pub blocks_parse_failed: bool,
+}
+
+impl SessionRow {
+    /// Directory the thread's agent runs in: its worktree, else `cwd`.
+    pub fn work_dir(&self) -> &str {
+        self.worktree_cwd
+            .as_deref()
+            .filter(|path| !path.is_empty())
+            .unwrap_or(&self.cwd)
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -259,7 +272,7 @@ const LATE_SESSION_COLUMNS: &[(&str, &str)] = &[
 const SESSION_SELECT: &str =
     "SELECT id, title, cwd, harness, model, created_at, updated_at, branch,
         blocks_json, context_used, context_window, pinned, archived, provider_session_id,
-        runtime_mode
+        runtime_mode, worktree_cwd
      FROM sessions";
 
 pub struct MonoCodeDb {
@@ -371,9 +384,9 @@ impl MonoCodeDb {
             "INSERT INTO sessions (
                 id, cwd, harness, model, title, blocks_json, created_at, updated_at,
                 branch, context_used, context_window, pinned, archived,
-                provider_session_id, runtime_mode, has_user_message, is_draft
+                provider_session_id, runtime_mode, has_user_message, is_draft, worktree_cwd
              ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14,
-                       COALESCE(?15, ?16), ?17, ?18)
+                       COALESCE(?15, ?16), ?17, ?18, ?19)
              ON CONFLICT(id) DO UPDATE SET
                 title = excluded.title,
                 cwd = excluded.cwd,
@@ -389,7 +402,8 @@ impl MonoCodeDb {
                 provider_session_id = excluded.provider_session_id,
                 runtime_mode = COALESCE(?15, sessions.runtime_mode),
                 has_user_message = excluded.has_user_message,
-                is_draft = excluded.is_draft",
+                is_draft = excluded.is_draft,
+                worktree_cwd = excluded.worktree_cwd",
             params![
                 session.id,
                 session.cwd,
@@ -409,6 +423,7 @@ impl MonoCodeDb {
                 DEFAULT_SESSION_RUNTIME_MODE,
                 i64::from(has_user_message),
                 i64::from(is_draft),
+                session.worktree_cwd,
             ],
         )?;
         Ok(())
@@ -797,6 +812,7 @@ fn session_from_row(row: &Row<'_>) -> rusqlite::Result<SessionRow> {
         blocks,
         provider_session_id: row.get(13)?,
         runtime_mode: row.get(14)?,
+        worktree_cwd: row.get(15)?,
         blocks_parse_failed,
     })
 }
@@ -1314,6 +1330,22 @@ mod tests {
             .collect();
         assert_eq!(ids, vec!["normal".to_string()]);
         assert!(db.get_session("ask").unwrap().is_none());
+    }
+
+    #[test]
+    fn worktree_cwd_round_trips_and_sets_work_dir() {
+        let db = monocode_db();
+        let mut row = session("wt");
+        row.cwd = "/projects/app".to_string();
+        row.worktree_cwd = Some("/projects/app-worktrees/feature".to_string());
+        db.upsert_session(&row).unwrap();
+
+        let loaded = db.get_session("wt").unwrap().unwrap();
+        assert_eq!(loaded.cwd, "/projects/app");
+        assert_eq!(loaded.work_dir(), "/projects/app-worktrees/feature");
+
+        row.worktree_cwd = Some(String::new());
+        assert_eq!(row.work_dir(), "/projects/app", "empty worktree falls back");
     }
 
     #[test]

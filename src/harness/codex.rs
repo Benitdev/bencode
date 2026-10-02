@@ -156,89 +156,77 @@ const PARSED_COMMAND_KEYS: &[&str] = &[
 ];
 const PARSED_COMMAND_FIELDS: &[&str] = &["command", "cmd"];
 
+/// A POSIX shell's command flag: `-c`, `-lc`, `-ic`, ...
 fn is_posix_c_flag(part: &str) -> bool {
-    if let Some(rest) = part.strip_prefix('-') {
+    part.strip_prefix('-').is_some_and(|rest| {
         !rest.is_empty() && rest.chars().all(|c| c.is_ascii_alphabetic()) && rest.contains('c')
-    } else {
-        false
-    }
+    })
 }
 
-pub fn codex_command_text(item: &Value) -> Option<String> {
-    if let Some(cmd) = str_field(item, "command") {
-        let trimmed = cmd.trim();
-        if !trimmed.is_empty() {
-            return Some(trimmed.to_string());
-        }
-    }
-    if let Some(arr) = item.get("command").and_then(Value::as_array) {
-        let parts: Vec<&str> = arr
-            .iter()
-            .filter_map(Value::as_str)
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .collect();
-        if !parts.is_empty() {
-            let raw_launcher = parts[0].trim_matches(|c| c == '\'' || c == '"');
-            let launcher = raw_launcher.replace('\\', "/");
-            let launcher_name = launcher
-                .rsplit('/')
-                .next()
-                .unwrap_or("")
-                .to_ascii_lowercase();
-            let is_posix = matches!(
-                launcher_name.as_str(),
-                "sh" | "bash" | "zsh" | "dash" | "ksh"
-            );
-            let is_powershell = matches!(
-                launcher_name.as_str(),
-                "pwsh" | "pwsh.exe" | "powershell" | "powershell.exe"
-            );
-            let is_cmd = matches!(launcher_name.as_str(), "cmd" | "cmd.exe");
+/// The script of a shell launcher argv (`["/bin/zsh", "-lc", "rg --files"]`),
+/// else the argv joined. Mirrors MonoCode's `codexCommandText`.
+fn argv_command_text(parts: &[&str]) -> String {
+    let launcher = parts[0]
+        .trim_matches(|c| c == '\'' || c == '"')
+        .replace('\\', "/");
+    let launcher = launcher
+        .rsplit('/')
+        .next()
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    let posix = matches!(launcher.as_str(), "sh" | "bash" | "zsh" | "dash" | "ksh");
+    let powershell = matches!(
+        launcher.as_str(),
+        "pwsh" | "pwsh.exe" | "powershell" | "powershell.exe"
+    );
+    let cmd = matches!(launcher.as_str(), "cmd" | "cmd.exe");
 
-            let mut flag = None;
-            let check_len = parts.len().saturating_sub(1);
-            for (index, &part) in parts.iter().enumerate().take(check_len).skip(1) {
-                if is_powershell
-                    && (part.eq_ignore_ascii_case("-file") || part.eq_ignore_ascii_case("-f"))
-                {
-                    break;
-                }
-                let is_match = (is_posix
-                    && (part.eq_ignore_ascii_case("--command") || is_posix_c_flag(part)))
-                    || (is_powershell
-                        && (part.eq_ignore_ascii_case("-command")
-                            || part.eq_ignore_ascii_case("-c")))
-                    || (is_cmd && part.eq_ignore_ascii_case("/c"));
-                if is_match {
-                    flag = Some(index);
-                    break;
-                }
-            }
+    let last = parts.len().saturating_sub(1);
+    for (index, part) in parts.iter().enumerate().take(last).skip(1) {
+        if powershell && (part.eq_ignore_ascii_case("-file") || part.eq_ignore_ascii_case("-f")) {
+            break;
+        }
+        let is_flag = (posix && (part.eq_ignore_ascii_case("--command") || is_posix_c_flag(part)))
+            || (powershell
+                && (part.eq_ignore_ascii_case("-command") || part.eq_ignore_ascii_case("-c")))
+            || (cmd && part.eq_ignore_ascii_case("/c"));
+        if is_flag {
+            return parts[index + 1].to_string();
+        }
+    }
+    parts.join(" ")
+}
 
-            if let Some(flag_idx) = flag
-                && parts.len() > flag_idx + 1
-            {
-                return Some(parts[flag_idx + 1].trim().to_string());
-            }
-            return Some(parts.join(" "));
-        }
-    }
-    for key in PARSED_COMMAND_KEYS {
-        if let Some(actions) = item.get(*key).and_then(Value::as_array) {
-            for action in actions {
-                for field in PARSED_COMMAND_FIELDS {
-                    if let Some(cmd) = action.get(*field).and_then(Value::as_str) {
-                        let trimmed = cmd.trim();
-                        if !trimmed.is_empty() {
-                            return Some(trimmed.to_string());
-                        }
-                    }
-                }
+/// The command a Codex command item ran: a plain string, a launcher argv, or
+/// (last resort) the parsed command actions.
+fn codex_command_text(item: &Value) -> Option<String> {
+    match item.get("command") {
+        Some(Value::String(cmd)) if !cmd.trim().is_empty() => return Some(cmd.trim().to_string()),
+        Some(Value::Array(argv)) => {
+            let parts: Vec<&str> = argv
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .collect();
+            if !parts.is_empty() {
+                return Some(argv_command_text(&parts));
             }
         }
+        _ => {}
     }
-    None
+    PARSED_COMMAND_KEYS
+        .iter()
+        .filter_map(|key| item.get(*key).and_then(Value::as_array))
+        .flatten()
+        .flat_map(|action| {
+            PARSED_COMMAND_FIELDS
+                .iter()
+                .filter_map(move |field| action.get(*field).and_then(Value::as_str))
+        })
+        .map(str::trim)
+        .find(|cmd| !cmd.is_empty())
+        .map(str::to_string)
 }
 
 fn tool_start(item: &Value) -> Option<AgentEvent> {

@@ -279,20 +279,19 @@ impl BenCodeApp {
         let filter = self.filter_mode;
         let now = crate::app::now_ms();
         let current_cwd = &self.current_cwd;
-        let (pinned, rest): (Vec<&SessionRow>, Vec<&SessionRow>) = self
-            .sessions
-            .iter()
-            .filter(|s| {
-                let matches_worktree = if let Some(focus) = &self.worktree_focus {
-                    crate::app::is_path_in_project(&s.cwd, &focus.path)
-                } else {
-                    current_cwd.is_empty()
+        let (pinned, rest): (Vec<&SessionRow>, Vec<&SessionRow>) =
+            self.sessions
+                .iter()
+                .filter(|s| {
+                    let in_project = current_cwd.is_empty()
                         || current_cwd == "~"
-                        || crate::app::is_path_in_project(&s.cwd, current_cwd)
-                };
-                matches_worktree && keeps(filter, s) && matches_query(s, &query)
-            })
-            .partition(|s| s.pinned);
+                        || crate::app::is_path_in_project(&s.cwd, current_cwd);
+                    let in_worktree = self.worktree_focus.as_ref().is_none_or(|focus| {
+                        crate::app::same_project_path(s.work_dir(), &focus.path)
+                    });
+                    in_project && in_worktree && keeps(filter, s) && matches_query(s, &query)
+                })
+                .partition(|s| s.pinned);
 
         div()
             .flex()

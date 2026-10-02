@@ -231,6 +231,13 @@ impl BenCodeApp {
         let mut welcome = Block::new("b1", "assistant", WELCOME_TEXT);
         welcome.started_at = Some(now);
 
+        // MonoCode keeps `cwd` on the project and records the worktree apart.
+        let worktree_cwd = self
+            .worktree_focus
+            .as_ref()
+            .filter(|_| crate::app::same_project_path(cwd, &self.current_cwd))
+            .map(|focus| focus.path.clone());
+
         let session = SessionRow {
             id: id.clone(),
             title: NEW_SESSION_TITLE.to_string(),
@@ -243,6 +250,7 @@ impl BenCodeApp {
             context_used: Some(0),
             context_window: Some(DEFAULT_CONTEXT_WINDOW),
             blocks: vec![welcome],
+            worktree_cwd,
             ..Default::default()
         };
 
@@ -251,9 +259,10 @@ impl BenCodeApp {
         id
     }
 
-    /// Creates a session in the current project (or focused worktree) and opens it in a new tab.
+    /// Creates a session in the current project (and focused worktree) and
+    /// opens it in a new tab.
     pub fn create_new_session(&mut self, cx: &mut Context<Self>) {
-        let cwd = self.workspace_cwd();
+        let cwd = self.current_cwd.clone();
         let id = self.create_session_row(&cwd);
         self.tabs.open(&id);
         self.sync_selection(cx);

@@ -10,7 +10,7 @@ use std::collections::HashSet;
 
 use gpui::Context;
 
-use crate::app::BenCodeApp;
+use crate::app::{BenCodeApp, WorktreeFocus};
 use crate::db::SessionRow;
 
 const RECENT_PROJECT_LIMIT: usize = 8;
@@ -89,16 +89,45 @@ impl BenCodeApp {
         else {
             return;
         };
-        if is_path_in_project(&cwd, &self.current_cwd) {
+        if !is_path_in_project(&cwd, &self.current_cwd) {
+            let project = self
+                .recent_projects
+                .iter()
+                .find(|p| is_path_in_project(&cwd, p))
+                .cloned()
+                .unwrap_or(cwd);
+            self.set_current_project(project);
+        }
+        self.follow_focused_session_worktree();
+    }
+
+    /// Narrows the workspace to the focused thread's worktree (or back to the
+    /// project folder), so the sidebar, explorer and agent agree.
+    fn follow_focused_session_worktree(&mut self) {
+        let Some(session) = self.selected_session() else {
+            return;
+        };
+        let worktree = session.worktree_cwd.as_deref().filter(|p| !p.is_empty());
+        let focused = self.worktree_focus.as_ref().map(|f| f.path.as_str());
+        let unchanged = match (worktree, focused) {
+            (Some(a), Some(b)) => same_project_path(a, b),
+            (None, None) => true,
+            _ => false,
+        };
+        if unchanged {
             return;
         }
-        let project = self
-            .recent_projects
-            .iter()
-            .find(|p| is_path_in_project(&cwd, p))
-            .cloned()
-            .unwrap_or(cwd);
-        self.set_current_project(project);
+        let focus = worktree.map(|path| WorktreeFocus {
+            path: path.to_string(),
+            branch: self
+                .workspace
+                .worktrees
+                .iter()
+                .find(|w| same_project_path(&w.path, path))
+                .and_then(|w| w.branch.clone())
+                .or_else(|| session.branch.clone()),
+        });
+        self.worktree_focus = focus;
     }
 
     fn set_current_project(&mut self, cwd: String) {
@@ -169,6 +198,7 @@ impl BenCodeApp {
         let id = match blank {
             Some(session) => {
                 session.cwd = cwd.to_string();
+                session.worktree_cwd = None;
                 let id = session.id.clone();
                 self.persist_session(&id);
                 id

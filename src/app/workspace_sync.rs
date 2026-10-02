@@ -56,7 +56,11 @@ fn load_snapshot(cwd: &str) -> Snapshot {
             .into_iter()
             .map(SharedString::from)
             .collect(),
-        worktrees: crate::git::worktrees::list_worktrees(cwd).unwrap_or_default(),
+        worktrees: crate::git::worktrees::list_worktrees(cwd).unwrap_or_else(|err| {
+            // Expected for folders that are not git repositories.
+            log::debug!("no worktrees for {cwd}: {err:#}");
+            Vec::new()
+        }),
     }
 }
 
@@ -74,7 +78,7 @@ impl BenCodeApp {
             && !session.cwd.is_empty()
             && crate::app::is_path_in_project(&session.cwd, &self.current_cwd)
         {
-            return session.cwd.clone();
+            return session.work_dir().to_string();
         }
         self.current_cwd.clone()
     }
