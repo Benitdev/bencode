@@ -15,8 +15,18 @@ use crate::workspace::BUILTIN_SKILLS;
 
 const MAX_FILES: usize = 8;
 const MAX_NOTES: usize = 5;
-const POPOVER_WIDTH: gpui::Pixels = px(420.0);
-const POPOVER_MAX_HEIGHT: gpui::Pixels = px(280.0);
+/// MonoCode `FileMentionPicker`: `max-h-[min(240px,40vh)]`, 32px rows.
+const POPOVER_MAX_HEIGHT: gpui::Pixels = px(240.0);
+const ROW_HEIGHT: gpui::Pixels = px(32.0);
+
+/// `current` moved by `delta`, wrapping around a list of `len` rows.
+fn wrap_index(current: usize, delta: isize, len: usize) -> usize {
+    if len == 0 {
+        return 0;
+    }
+    let len = len as isize;
+    (current as isize + delta).rem_euclid(len) as usize
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SuggestionKind {
@@ -78,6 +88,28 @@ pub fn mention_suggestions(query: &str, files: &[SharedString], notes: &[Note]) 
 }
 
 impl BenCodeApp {
+    /// Moves the picker highlight; true when a picker is open.
+    pub fn move_picker(&mut self, delta: isize, cx: &mut Context<Self>) -> bool {
+        let len = self.current_suggestions().len();
+        self.picker_index = wrap_index(self.picker_index, delta, len);
+        cx.notify();
+        true
+    }
+
+    /// Inserts the highlighted suggestion; false when nothing matches.
+    pub fn accept_picker(&mut self, cx: &mut Context<Self>) -> bool {
+        let items = self.current_suggestions();
+        let Some(item) = items.get(self.picker_index).or(items.first()) else {
+            return false;
+        };
+        let insert = item.insert.clone();
+        match item.kind {
+            SuggestionKind::Skill => self.insert_skill(&insert, cx),
+            SuggestionKind::File | SuggestionKind::Note => self.insert_mention(&insert, cx),
+        }
+        true
+    }
+
     fn current_suggestions(&self) -> Vec<Suggestion> {
         if self.is_skill_picker_open {
             skill_suggestions(&self.skill_query)
@@ -90,19 +122,24 @@ impl BenCodeApp {
 
     /// The popover above the composer, while a trigger token is open.
     pub(super) fn render_suggestions(&self, cx: &Context<Self>) -> Option<AnyElement> {
-        let items = self.current_suggestions();
-        if items.is_empty() {
+        if !self.is_skill_picker_open && !self.is_mention_picker_open {
             return None;
         }
+        let items = self.current_suggestions();
         let theme = cx.theme();
+        let empty = if self.is_skill_picker_open {
+            "No matching skills"
+        } else {
+            "No matching files or notes"
+        };
         Some(
             div()
                 .id("composer-suggestions")
                 .absolute()
                 .bottom_full()
                 .left_0()
-                .mb_2()
-                .w(POPOVER_WIDTH)
+                .right_0()
+                .mb_1()
                 .max_h(POPOVER_MAX_HEIGHT)
                 .overflow_y_scroll()
                 .p_1()
@@ -110,6 +147,16 @@ impl BenCodeApp {
                 .border_1()
                 .border_color(theme.colors.border)
                 .bg(theme.colors.overlay)
+                .when(items.is_empty(), |el| {
+                    el.child(
+                        div()
+                            .px_3()
+                            .py_2p5()
+                            .text_size(px(12.0))
+                            .text_color(theme.colors.fg_muted)
+                            .child(empty),
+                    )
+                })
                 .children(
                     items
                         .into_iter()
@@ -142,10 +189,16 @@ impl BenCodeApp {
             .overflow_hidden()
             .gap_2()
             .px_2()
-            .py_1p5()
+            .h(ROW_HEIGHT)
             .rounded(theme.radius(Radius::Sm))
             .cursor_pointer()
-            .hover(|s| s.bg(theme.colors.hover))
+            .when(ix == self.picker_index, |el| el.bg(theme.colors.active))
+            .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
+                if *hovered && this.picker_index != ix {
+                    this.picker_index = ix;
+                    cx.notify();
+                }
+            }))
             .on_click(cx.listener(move |this, _, _, cx| match kind {
                 SuggestionKind::Skill => this.insert_skill(&insert, cx),
                 SuggestionKind::File | SuggestionKind::Note => this.insert_mention(&insert, cx),
@@ -191,6 +244,14 @@ impl BenCodeApp {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn picker_index_wraps_both_ways() {
+        assert_eq!(wrap_index(0, -1, 3), 2);
+        assert_eq!(wrap_index(2, 1, 3), 0);
+        assert_eq!(wrap_index(1, 1, 3), 2);
+        assert_eq!(wrap_index(4, 1, 0), 0);
+    }
 
     #[test]
     fn skills_filter_by_name_or_description() {

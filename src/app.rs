@@ -103,6 +103,8 @@ pub struct BenCodeApp {
     pub skill_query: String,
     pub is_mention_picker_open: bool,
     pub mention_query: String,
+    /// Highlighted row of the open `/` or `@` picker.
+    pub picker_index: usize,
     pub drafts: HashMap<String, String>,
     pub expanded_reasoning: std::collections::HashSet<String>,
     pub terminal: Entity<Terminal>,
@@ -320,37 +322,24 @@ impl BenCodeApp {
         ];
 
         subscriptions.push(cx.intercept_keystrokes(move |event, window, cx| {
-            let is_enter = event.keystroke.key == "enter" && !event.keystroke.modifiers.modified();
-            let is_escape =
-                event.keystroke.key == "escape" && !event.keystroke.modifiers.modified();
-            if !is_enter && !is_escape {
+            // The text input binds these keys itself, deeper than any action
+            // context, so the composer's Enter and the picker keys
+            // (MonoCode `Composer.tsx:1742-1830`) are taken here first.
+            if event.keystroke.modifiers.modified() {
                 return;
             }
-
-            let is_focused = composer_input.read(cx).focus_handle(cx).is_focused(window);
-            if !is_focused {
+            let key = event.keystroke.key.as_str();
+            if !matches!(key, "enter" | "escape" | "up" | "down" | "tab") {
                 return;
             }
-
-            if is_enter {
-                cx.stop_propagation();
-                let _ = weak_app.update(cx, |this, cx| {
-                    this.handle_composer_enter(cx);
-                });
-            } else if is_escape {
-                let handled = weak_app.update(cx, |this, cx| {
-                    if this.is_skill_picker_open || this.is_mention_picker_open {
-                        this.is_skill_picker_open = false;
-                        this.is_mention_picker_open = false;
-                        cx.notify();
-                        true
-                    } else {
-                        false
-                    }
-                });
-                if matches!(handled, Ok(true)) {
-                    cx.stop_propagation();
-                }
+            if !composer_input.read(cx).focus_handle(cx).is_focused(window) {
+                return;
+            }
+            let handled = weak_app.update(cx, |this, cx| this.handle_composer_key(key, cx));
+            match handled {
+                Ok(true) => cx.stop_propagation(),
+                Ok(false) => {}
+                Err(err) => log::debug!("composer key after app drop: {err:#}"),
             }
         }));
 
@@ -429,6 +418,7 @@ impl BenCodeApp {
             skill_query: String::new(),
             is_mention_picker_open: false,
             mention_query: String::new(),
+            picker_index: 0,
             drafts: HashMap::new(),
             expanded_reasoning: std::collections::HashSet::new(),
             terminal,
@@ -580,6 +570,7 @@ impl BenCodeApp {
         let text = self.prompt_input.read(cx).text().to_string();
         self.is_skill_picker_open = false;
         self.is_mention_picker_open = false;
+        self.picker_index = 0;
 
         if let Some(query) = trigger_query(&text, '/') {
             self.is_skill_picker_open = true;
@@ -591,36 +582,38 @@ impl BenCodeApp {
         cx.notify();
     }
 
-    pub fn handle_composer_enter(&mut self, cx: &mut Context<Self>) {
-        if self.is_skill_picker_open {
-            let suggestions = crate::ui::composer::skill_suggestions(&self.skill_query);
-            if let Some(item) = suggestions.first() {
-                let insert = item.insert.clone();
-                self.insert_skill(&insert, cx);
-                return;
+    /// Enter sends; with a picker open, ↑/↓ move, Tab/Enter pick and Esc
+    /// closes it. Returns whether the key was used.
+    fn handle_composer_key(&mut self, key: &str, cx: &mut Context<Self>) -> bool {
+        let picker_open = self.is_skill_picker_open || self.is_mention_picker_open;
+        match (key, picker_open) {
+            ("enter", false) => {
+                self.submit_prompt(cx);
+                true
             }
-            self.is_skill_picker_open = false;
-            cx.notify();
-            return;
-        }
-
-        if self.is_mention_picker_open {
-            let suggestions = crate::ui::composer::mention_suggestions(
-                &self.mention_query,
-                &self.workspace.files,
-                &self.notes,
-            );
-            if let Some(item) = suggestions.first() {
-                let insert = item.insert.clone();
-                self.insert_mention(&insert, cx);
-                return;
+            ("up", true) => self.move_picker(-1, cx),
+            ("down", true) => self.move_picker(1, cx),
+            ("tab", true) => self.accept_picker(cx),
+            ("enter", true) => {
+                if !self.accept_picker(cx) {
+                    // Nothing matches: close the picker and send.
+                    self.close_pickers(cx);
+                    self.submit_prompt(cx);
+                }
+                true
             }
-            self.is_mention_picker_open = false;
-            cx.notify();
-            return;
+            ("escape", true) => {
+                self.close_pickers(cx);
+                true
+            }
+            _ => false,
         }
+    }
 
-        self.submit_prompt(cx);
+    pub fn close_pickers(&mut self, cx: &mut Context<Self>) {
+        self.is_skill_picker_open = false;
+        self.is_mention_picker_open = false;
+        cx.notify();
     }
 
     pub fn insert_skill(&mut self, skill_name: &str, cx: &mut Context<Self>) {

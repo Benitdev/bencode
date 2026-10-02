@@ -3,7 +3,6 @@
 //! 100% faithful to MonoCode Composer layout.
 
 mod suggestions;
-pub use suggestions::{mention_suggestions, skill_suggestions};
 
 use ely_gpui_component::buttons::{ButtonVariant, IconButton};
 use ely_gpui_component::chat::TokenCounter;
