@@ -2,17 +2,17 @@
 //! sync status (ahead/behind), and recent commit history.
 
 use ely_gpui_component::buttons::{Button, ButtonVariant, IconButton};
-use ely_gpui_component::data_display::{Badge, Tone};
+use ely_gpui_component::data_display::{Avatar, Badge, Tone};
 use ely_gpui_component::feedback::Alert;
-use ely_gpui_component::git::{ChangeAction, Changed, ChangesList, Commit, CommitItem, DiffStat};
+use ely_gpui_component::git::{ChangeAction, Changed, ChangesList, DiffStat};
 use ely_gpui_component::layout::on_axis;
 use ely_gpui_component::lists::GitStatus;
 use ely_gpui_component::overlays::ConfirmDialog;
-use ely_gpui_component::primitives::{Icon, IconName, Severity};
-use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize};
+use ely_gpui_component::primitives::{Icon, IconName, Severity, Tooltip};
+use ely_gpui_component::theme::{ActiveTheme, AvatarSize, ControlSize, IconSize, Radius, TextSize};
 use gpui::{
-    Context, FontWeight, InteractiveElement, IntoElement, ParentElement, Styled, div, prelude::*,
-    px,
+    Context, ElementId, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString,
+    Styled, div, prelude::*, px,
 };
 
 use crate::app::{BenCodeApp, ViewMode};
@@ -117,12 +117,17 @@ impl BenCodeApp {
                     .justify_between()
                     .px_3()
                     .py_2()
+                    .w_full()
+                    .min_w_0()
+                    .overflow_hidden()
                     .border_b_1()
                     .border_color(colors.border)
                     .bg(colors.bg)
                     .child(
                         div()
                             .flex()
+                            .flex_1()
+                            .min_w_0()
                             .items_center()
                             .gap_1p5()
                             .child(
@@ -132,14 +137,20 @@ impl BenCodeApp {
                             )
                             .child(
                                 div()
+                                    .id("git-active-branch-name")
+                                    .flex_1()
+                                    .min_w_0()
+                                    .truncate()
                                     .font_weight(FontWeight::SEMIBOLD)
                                     .text_size(cx.theme().text_size(TextSize::Xs))
                                     .text_color(colors.fg)
+                                    .tooltip(Tooltip::text(branch_name.clone()))
                                     .child(branch_name),
                             )
                             .when(ahead > 0 || behind > 0, |el| {
                                 el.child(
                                     div()
+                                        .flex_none()
                                         .text_size(cx.theme().text_size(TextSize::Xs))
                                         .text_color(colors.fg_muted)
                                         .child(format!("↑{ahead} ↓{behind}")),
@@ -148,6 +159,7 @@ impl BenCodeApp {
                     )
                     .child(
                         div()
+                            .flex_none()
                             .flex()
                             .items_center()
                             .gap_2()
@@ -240,7 +252,10 @@ impl BenCodeApp {
             .child(
                 on_axis(div().id("git-changes-scroll"))
                     .flex_1()
+                    .w_full()
+                    .min_w_0()
                     .overflow_y_scroll()
+                    .overflow_x_hidden()
                     .flex()
                     .flex_col()
                     .py_1()
@@ -258,6 +273,9 @@ impl BenCodeApp {
         div()
             .flex()
             .flex_col()
+            .w_full()
+            .min_w_0()
+            .overflow_hidden()
             .child(
                 div()
                     .flex()
@@ -308,21 +326,95 @@ impl BenCodeApp {
                             .child("No recent commits"),
                     )
                 } else {
-                    el.children(commits.iter().map(|c| {
-                        CommitItem::new(
-                            format!("commit-{}", c.hash),
-                            Commit {
-                                id: c.short_hash.clone().into(),
-                                parents: vec![],
-                                subject: c.message.clone().into(),
-                                author: c.author.clone().into(),
-                                when: c.relative_time.clone().into(),
-                                refs: vec![],
-                            },
-                        )
-                    }))
+                    el.children(commits.iter().map(|c| self.render_commit_row(c, cx)))
                 }
             })
+    }
+
+    fn render_commit_row(
+        &self,
+        c: &crate::git::GitCommitInfo,
+        cx: &Context<Self>,
+    ) -> impl IntoElement {
+        let theme = cx.theme();
+        let colors = &theme.colors;
+        let compact_time = format_compact_time(&c.relative_time);
+        let commit_hash = c.hash.clone();
+        let tooltip_text = if c.message.is_empty() {
+            format!("{} ({}) - {}", c.short_hash, c.author, c.relative_time)
+        } else {
+            format!(
+                "{}: {}\nAuthor: {}\nDate: {}",
+                c.short_hash, c.message, c.author, c.relative_time
+            )
+        };
+
+        div()
+            .id(ElementId::from(SharedString::from(format!(
+                "commit-{}",
+                c.hash
+            ))))
+            .flex()
+            .items_center()
+            .justify_between()
+            .gap_1p5()
+            .px_3()
+            .py_1()
+            .w_full()
+            .min_w_0()
+            .overflow_hidden()
+            .rounded(theme.radius(Radius::Sm))
+            .cursor_pointer()
+            .hover(|s| s.bg(colors.hover))
+            .tooltip(Tooltip::text(tooltip_text))
+            .on_click(cx.listener(move |this, _, _, cx| {
+                this.active_view_mode = ViewMode::Changes;
+                this.select_diff_path(format!("commit:{}", commit_hash), cx);
+            }))
+            .child(
+                div()
+                    .flex()
+                    .flex_1()
+                    .min_w_0()
+                    .items_center()
+                    .gap_1p5()
+                    .child(
+                        Avatar::new(
+                            SharedString::from(format!("avatar-{}", c.hash)),
+                            c.author.clone(),
+                        )
+                        .size(AvatarSize::Xs),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .truncate()
+                            .text_size(cx.theme().text_size(TextSize::Xs))
+                            .text_color(colors.fg)
+                            .child(c.author.clone()),
+                    ),
+            )
+            .child(
+                div()
+                    .flex_none()
+                    .flex()
+                    .items_center()
+                    .gap_1p5()
+                    .child(
+                        div()
+                            .font_family(theme.mono_family.clone())
+                            .text_size(px(11.0))
+                            .text_color(colors.fg_muted)
+                            .child(c.short_hash.clone()),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(11.0))
+                            .text_color(colors.fg_subtle)
+                            .child(compact_time),
+                    ),
+            )
     }
 
     fn on_change_action(&mut self, path: String, action: ChangeAction, cx: &mut Context<Self>) {
@@ -417,4 +509,48 @@ impl BenCodeApp {
 pub enum GitConfirm {
     DiscardFile(String),
     DiscardAll,
+}
+
+/// Converts relative git timestamp like "86 seconds ago" or "2 hours ago" to compact form ("86s", "2h").
+pub fn format_compact_time(raw: &str) -> String {
+    let s = raw.trim();
+    let s = s.strip_suffix(" ago").unwrap_or(s);
+    let parts: Vec<&str> = s.split_whitespace().collect();
+    if parts.len() == 2 {
+        let num = parts[0];
+        let unit = parts[1];
+        if unit.starts_with("second") || unit.starts_with("sec") {
+            return format!("{num}s");
+        } else if unit.starts_with("minute") || unit.starts_with("min") {
+            return format!("{num}m");
+        } else if unit.starts_with("hour") || unit.starts_with("hr") {
+            return format!("{num}h");
+        } else if unit.starts_with("day") {
+            return format!("{num}d");
+        } else if unit.starts_with("week") || unit.starts_with("wk") {
+            return format!("{num}w");
+        } else if unit.starts_with("month") || unit.starts_with("mo") {
+            return format!("{num}mo");
+        } else if unit.starts_with("year") || unit.starts_with("yr") {
+            return format!("{num}y");
+        }
+    }
+    s.to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format_compact_time() {
+        assert_eq!(format_compact_time("86 seconds ago"), "86s");
+        assert_eq!(format_compact_time("20 minutes ago"), "20m");
+        assert_eq!(format_compact_time("2 hours ago"), "2h");
+        assert_eq!(format_compact_time("24 hours ago"), "24h");
+        assert_eq!(format_compact_time("3 days ago"), "3d");
+        assert_eq!(format_compact_time("2 weeks ago"), "2w");
+        assert_eq!(format_compact_time("1 month ago"), "1mo");
+        assert_eq!(format_compact_time("just now"), "just now");
+    }
 }

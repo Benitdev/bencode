@@ -137,6 +137,9 @@ impl BenCodeApp {
             .id(("suggestion", ix))
             .flex()
             .items_center()
+            .w_full()
+            .min_w_0()
+            .overflow_hidden()
             .gap_2()
             .px_2()
             .py_1p5()
@@ -148,9 +151,11 @@ impl BenCodeApp {
                 SuggestionKind::File | SuggestionKind::Note => this.insert_mention(&insert, cx),
             }))
             .child(
-                Icon::new(icon)
-                    .size(IconSize::Xs)
-                    .color(theme.colors.fg_muted),
+                div().flex_none().child(
+                    Icon::new(icon)
+                        .size(IconSize::Xs)
+                        .color(theme.colors.fg_muted),
+                ),
             )
             .child(
                 div()
@@ -161,6 +166,8 @@ impl BenCodeApp {
                     .text_size(theme.text_size(TextSize::Xs))
                     .child(
                         div()
+                            .w_full()
+                            .min_w_0()
                             .font_weight(FontWeight::MEDIUM)
                             .text_color(theme.colors.fg)
                             .truncate()
@@ -169,13 +176,15 @@ impl BenCodeApp {
                     .when_some(item.detail, |el, detail| {
                         el.child(
                             div()
+                                .w_full()
+                                .min_w_0()
                                 .text_color(theme.colors.fg_muted)
                                 .truncate()
                                 .child(detail),
                         )
                     }),
             )
-            .child(Badge::new(tag).tone(tone))
+            .child(div().flex_none().child(Badge::new(tag).tone(tone)))
     }
 }
 

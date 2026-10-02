@@ -138,6 +138,8 @@ impl BenCodeApp {
             .justify_between()
             .h(theme.control_height(ControlSize::Lg))
             .w_full()
+            .min_w_0()
+            .overflow_hidden()
             .px_3()
             .border_b_1()
             .border_color(colors.border)
@@ -145,14 +147,21 @@ impl BenCodeApp {
             .child(
                 div()
                     .flex()
+                    .flex_1()
                     .items_center()
                     .gap_1p5()
                     .min_w_0()
                     .text_size(theme.text_size(TextSize::Xs))
                     .text_color(colors.fg_muted)
-                    .child(Icon::new(IconName::FileCode).size(IconSize::Xs))
                     .child(
                         div()
+                            .flex_none()
+                            .child(Icon::new(IconName::FileCode).size(IconSize::Xs)),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
                             .truncate()
                             .child(active_path.clone().unwrap_or_else(|| "No file".into())),
                     ),
@@ -160,6 +169,7 @@ impl BenCodeApp {
             .when_some(active_path.zip(cursor), |el, (path, (line, col, lines))| {
                 el.child(
                     div()
+                        .flex_none()
                         .flex()
                         .items_center()
                         .gap_2()

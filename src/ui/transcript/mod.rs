@@ -175,10 +175,17 @@ impl BenCodeApp {
             .flex_col()
             .items_center()
             .justify_center()
+            .w_full()
+            .min_w_0()
+            .px_4()
             .py_12()
             .gap_2p5()
             .child(
                 div()
+                    .w_full()
+                    .min_w_0()
+                    .truncate()
+                    .text_align(gpui::TextAlign::Center)
                     .text_size(px(16.0))
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(theme.colors.fg)
@@ -186,6 +193,10 @@ impl BenCodeApp {
             )
             .child(
                 div()
+                    .w_full()
+                    .min_w_0()
+                    .truncate()
+                    .text_align(gpui::TextAlign::Center)
                     .text_size(px(12.0))
                     .text_color(theme.colors.fg_muted)
                     .child(subtitle),

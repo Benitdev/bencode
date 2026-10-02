@@ -27,6 +27,7 @@ impl Render for DraggedFile {
         div()
             .flex()
             .items_center()
+            .min_w_0()
             .gap_1p5()
             .px_3()
             .py_1p5()
@@ -38,12 +39,15 @@ impl Render for DraggedFile {
             .text_size(theme.text_size(TextSize::Xs))
             .text_color(colors.fg)
             .child(
-                Icon::new(IconName::FileText)
-                    .size(IconSize::Xs)
-                    .color(colors.accent),
+                div().flex_none().child(
+                    Icon::new(IconName::FileText)
+                        .size(IconSize::Xs)
+                        .color(colors.accent),
+                ),
             )
             .child(
                 div()
+                    .min_w_0()
                     .truncate()
                     .max_w(theme.menu_width())
                     .child(self.name.clone()),

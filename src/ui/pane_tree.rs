@@ -385,9 +385,10 @@ impl BenCodeApp {
             )
             .child(
                 div()
+                    .min_w_0()
+                    .truncate()
                     .text_size(theme.text_size(TextSize::Sm))
                     .font_weight(weight)
-                    .truncate()
                     .child(title.to_string()),
             )
             .when(!session.cwd.is_empty(), |el| {
@@ -402,6 +403,7 @@ impl BenCodeApp {
                         .child(Icon::new(IconName::Folder).size(IconSize::Xs))
                         .child(
                             div()
+                                .min_w_0()
                                 .truncate()
                                 .max_w(theme.label_width())
                                 .child(session.cwd.clone()),

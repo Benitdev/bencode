@@ -286,6 +286,9 @@ impl BenCodeApp {
                                         .items_center()
                                         .justify_between()
                                         .h(px(32.0))
+                                        .w_full()
+                                        .min_w_0()
+                                        .gap_2()
                                         .px_2()
                                         .rounded_md()
                                         .cursor_pointer()
@@ -301,6 +304,7 @@ impl BenCodeApp {
                                         .child(
                                             div()
                                                 .flex()
+                                                .flex_1()
                                                 .items_center()
                                                 .gap_2()
                                                 .min_w_0()
@@ -311,6 +315,7 @@ impl BenCodeApp {
                                                         .into_any_element()
                                                 } else {
                                                     div()
+                                                        .flex_none()
                                                         .size(px(8.0))
                                                         .rounded_full()
                                                         .bg(dot_color)
@@ -318,6 +323,8 @@ impl BenCodeApp {
                                                 })
                                                 .child(
                                                     div()
+                                                        .flex_1()
+                                                        .min_w_0()
                                                         .truncate()
                                                         .text_size(px(13.0))
                                                         .font_weight(if is_selected {
@@ -336,6 +343,7 @@ impl BenCodeApp {
                                         .when(has_diff, |el| {
                                             el.child(
                                                 div()
+                                                    .flex_none()
                                                     .flex()
                                                     .items_center()
                                                     .gap_1()

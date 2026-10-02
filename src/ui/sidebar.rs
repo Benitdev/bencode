@@ -265,8 +265,11 @@ impl BenCodeApp {
                     .flex()
                     .flex_col()
                     .flex_1()
+                    .w_full()
                     .min_h_0()
+                    .min_w_0()
                     .overflow_y_scroll()
+                    .overflow_x_hidden()
                     .px_2()
                     .py_1()
                     .gap_1()
@@ -349,6 +352,9 @@ impl BenCodeApp {
             .id(SharedString::from(format!("session-card-{}", session.id)))
             .flex()
             .flex_col()
+            .w_full()
+            .min_w_0()
+            .overflow_hidden()
             .gap_0p5()
             .px_2p5()
             .py_2()
@@ -362,22 +368,32 @@ impl BenCodeApp {
                     .flex()
                     .items_center()
                     .justify_between()
+                    .w_full()
+                    .min_w_0()
                     .gap_1p5()
                     .text_size(xs)
                     .text_color(colors.fg_muted)
                     .child(
                         div()
                             .flex()
+                            .flex_1()
                             .items_center()
                             .gap_1p5()
                             .min_w_0()
                             .child(
                                 div()
+                                    .flex_none()
                                     .font_weight(FontWeight::BOLD)
                                     .text_color(harness_color(&session.harness, colors))
                                     .child(harness_glyph(&session.harness)),
                             )
-                            .child(div().truncate().child(catalog::label_for(&session.model))),
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .truncate()
+                                    .child(catalog::label_for(&session.model)),
+                            ),
                     )
                     .child(
                         div()
@@ -397,6 +413,8 @@ impl BenCodeApp {
             )
             .child(
                 div()
+                    .w_full()
+                    .min_w_0()
                     .truncate()
                     .text_size(theme.text_size(TextSize::Sm))
                     .font_weight(FontWeight::SEMIBOLD)
@@ -407,15 +425,25 @@ impl BenCodeApp {
                 div()
                     .flex()
                     .items_center()
+                    .w_full()
+                    .min_w_0()
                     .gap_1()
                     .text_size(xs)
                     .text_color(colors.fg_muted)
                     .child(
-                        Icon::new(IconName::GitBranch)
-                            .size(IconSize::Xs)
-                            .color(colors.fg_muted),
+                        div().flex_none().child(
+                            Icon::new(IconName::GitBranch)
+                                .size(IconSize::Xs)
+                                .color(colors.fg_muted),
+                        ),
                     )
-                    .child(div().truncate().child(format!("{project}/{branch}"))),
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .truncate()
+                            .child(format!("{project}/{branch}")),
+                    ),
             );
 
         ContextMenu::new(

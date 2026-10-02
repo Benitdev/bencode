@@ -312,6 +312,8 @@ impl BenCodeApp {
             .flex()
             .h(px(32.0))
             .w_full()
+            .min_w_0()
+            .overflow_hidden()
             .items_center()
             .gap(px(4.0))
             .pl(px(8.0))
@@ -324,6 +326,7 @@ impl BenCodeApp {
             }))
             .child(
                 div()
+                    .flex_none()
                     .size(px(16.0))
                     .flex()
                     .items_center()
@@ -340,6 +343,8 @@ impl BenCodeApp {
             )
             .child(
                 div()
+                    .flex_1()
+                    .min_w_0()
                     .truncate()
                     .text_size(px(11.0))
                     .font_weight(FontWeight::SEMIBOLD)
@@ -358,8 +363,11 @@ impl BenCodeApp {
             .flex()
             .flex_col()
             .flex_1()
+            .w_full()
             .min_h_0()
+            .min_w_0()
             .overflow_y_scroll()
+            .overflow_x_hidden()
             .children(rows);
 
         div()
@@ -429,6 +437,8 @@ impl BenCodeApp {
             .flex()
             .h(px(28.0))
             .w_full()
+            .min_w_0()
+            .overflow_hidden()
             .items_center()
             .gap(px(6.0))
             .pl(px(pad_left))
@@ -449,6 +459,7 @@ impl BenCodeApp {
             }))
             .child(
                 div()
+                    .flex_none()
                     .size(px(16.0))
                     .flex()
                     .items_center()
@@ -467,6 +478,7 @@ impl BenCodeApp {
             )
             .child(
                 div()
+                    .flex_none()
                     .size(px(16.0))
                     .flex()
                     .items_center()
@@ -475,6 +487,8 @@ impl BenCodeApp {
             )
             .child(
                 div()
+                    .flex_1()
+                    .min_w_0()
                     .truncate()
                     .text_size(px(13.0))
                     .text_color(name_color)

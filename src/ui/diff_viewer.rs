@@ -138,6 +138,9 @@ impl BenCodeApp {
             .flex()
             .items_center()
             .justify_between()
+            .w_full()
+            .min_w_0()
+            .overflow_hidden()
             .gap_2()
             .px_3()
             .py_1p5()
@@ -148,23 +151,34 @@ impl BenCodeApp {
             .child(
                 div()
                     .flex()
+                    .flex_1()
                     .items_center()
                     .gap_2()
                     .min_w_0()
-                    .child(GitStatusBadge::new(
+                    .child(div().flex_none().child(GitStatusBadge::new(
                         SharedString::from(format!("status-{}", file.path)),
                         to_ely_status(&file.status),
-                    ))
-                    .child(FileIcon::file(&file.path).size(IconSize::Xs))
+                    )))
                     .child(
                         div()
+                            .flex_none()
+                            .child(FileIcon::file(&file.path).size(IconSize::Xs)),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
                             .truncate()
                             .text_size(cx.theme().text_size(TextSize::Sm))
                             .text_color(if active { colors.fg } else { colors.fg_muted })
                             .child(file.path.clone()),
                     ),
             )
-            .child(DiffStat::new(file.additions, file.deletions))
+            .child(
+                div()
+                    .flex_none()
+                    .child(DiffStat::new(file.additions, file.deletions)),
+            )
     }
 
     fn render_diff_pane(&self, cx: &Context<Self>) -> AnyElement {
@@ -199,6 +213,8 @@ impl BenCodeApp {
                     .flex()
                     .items_center()
                     .justify_between()
+                    .w_full()
+                    .min_w_0()
                     .px_4()
                     .py_2()
                     .border_b_1()
@@ -206,18 +222,20 @@ impl BenCodeApp {
                     .child(
                         div()
                             .flex()
+                            .flex_1()
                             .items_center()
                             .gap_2()
                             .min_w_0()
                             .font_family(theme.mono_family.clone())
                             .text_size(theme.text_size(TextSize::Sm))
-                            .child(div().truncate().child(path.clone()))
+                            .child(div().flex_1().min_w_0().truncate().child(path.clone()))
                             .when_some(stat, |el, (added, removed)| {
-                                el.child(DiffStat::new(added, removed))
+                                el.child(div().flex_none().child(DiffStat::new(added, removed)))
                             }),
                     )
                     .child(
                         div()
+                            .flex_none()
                             .flex()
                             .items_center()
                             .gap_1()

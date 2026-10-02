@@ -196,11 +196,12 @@ fn assistant(
                 .flex()
                 .items_center()
                 .gap_2()
+                .min_w_0()
                 .text_size(theme.text_size(TextSize::Xs))
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_color(theme.colors.fg_subtle)
-                .child(div().size_1p5().rounded_full().bg(dot))
-                .child(model),
+                .child(div().flex_none().size_1p5().rounded_full().bg(dot))
+                .child(div().min_w_0().truncate().child(model)),
         )
         .child(
             div()

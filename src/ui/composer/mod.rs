@@ -168,6 +168,7 @@ impl BenCodeApp {
                                         .id("composer-model-chip")
                                         .h(px(26.0))
                                         .max_w(px(220.0))
+                                        .min_w_0()
                                         .px_2()
                                         .rounded(px(6.0))
                                         .bg(rgb(0x232030))
@@ -190,6 +191,8 @@ impl BenCodeApp {
                                         )
                                         .child(
                                             div()
+                                                .flex_1()
+                                                .min_w_0()
                                                 .text_size(px(11.0))
                                                 .text_color(rgb(0xe2e0ea))
                                                 .truncate()
@@ -207,6 +210,7 @@ impl BenCodeApp {
                                         .id("composer-permission-chip")
                                         .h(px(26.0))
                                         .max_w(px(200.0))
+                                        .min_w_0()
                                         .px_2()
                                         .rounded(px(6.0))
                                         .bg(rgb(0x232030))
@@ -230,6 +234,8 @@ impl BenCodeApp {
                                         )
                                         .child(
                                             div()
+                                                .flex_1()
+                                                .min_w_0()
                                                 .text_size(px(11.0))
                                                 .text_color(rgb(0xe2e0ea))
                                                 .truncate()
