@@ -331,9 +331,11 @@ impl MonoCodeDb {
 
     pub fn list_sessions_for_cwd(&self, cwd: &str, limit: usize) -> Result<Vec<SessionRow>> {
         let sql = format!(
-            "{SESSION_SELECT} WHERE (cwd = ?1 OR cwd LIKE ?2) AND inbox_ask IS NULL ORDER BY updated_at DESC LIMIT ?3"
+            "{SESSION_SELECT} WHERE (cwd = ?1 OR substr(cwd, 1, length(?2)) = ?2) \
+             AND inbox_ask IS NULL ORDER BY updated_at DESC LIMIT ?3"
         );
-        let prefix = format!("{}/%", cwd.trim_end_matches('/'));
+        // A prefix comparison, not LIKE: `_` and `%` are common in folder names.
+        let prefix = format!("{}/", cwd.trim_end_matches('/'));
         let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt.query_map(
             rusqlite::params![cwd, prefix, limit as i64],
@@ -1323,10 +1325,13 @@ mod tests {
         s2.cwd = "/projects/app/backend".to_string();
         let mut s3 = session("s3");
         s3.cwd = "/projects/other".to_string();
+        let mut s4 = session("s4");
+        s4.cwd = "/projects/apps".to_string();
 
         db.upsert_session(&s1).unwrap();
         db.upsert_session(&s2).unwrap();
         db.upsert_session(&s3).unwrap();
+        db.upsert_session(&s4).unwrap();
 
         let app_sessions = db.list_sessions_for_cwd("/projects/app", 10).unwrap();
         let ids: Vec<String> = app_sessions.into_iter().map(|s| s.id).collect();

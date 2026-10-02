@@ -39,6 +39,7 @@ impl BenCodeApp {
             self.selected_model = model;
         }
         self.selected_session_id = focused;
+        self.follow_focused_session_project();
         self.refresh_workspace_if_moved(cx);
         cx.notify();
     }

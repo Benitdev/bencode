@@ -3,9 +3,8 @@ pub mod commands;
 mod integrations;
 mod panes;
 mod preferences;
+mod projects;
 mod workspace_sync;
-
-use std::collections::HashSet;
 
 use ely_gpui_component::forms::{InputEvent, TextInput};
 use ely_gpui_component::primitives::FocusScope;
@@ -18,6 +17,7 @@ use gpui::{
 
 pub use agent::{AgentRun, NEW_SESSION_TITLE, now_ms};
 pub use preferences::theme_mode;
+pub use projects::{is_path_in_project, same_project_path};
 pub use workspace_sync::WorkspaceCache;
 
 use crate::db::{MonoCodeDb, SessionRow};
@@ -27,7 +27,6 @@ use crate::ui::settings_modal::SettingsTab;
 const RECENT_SESSION_LIMIT: usize = 50;
 const INITIAL_OPEN_TABS: usize = 3;
 const DEFAULT_CONTEXT_WINDOW: i64 = 200_000;
-const RECENT_PROJECT_LIMIT: usize = 8;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum ViewMode {
@@ -186,52 +185,6 @@ fn multiline_input(
     })
 }
 
-/// Trims trailing slashes and whitespace for stable project path comparison.
-pub fn normalize_project_path(path: &str) -> String {
-    let trimmed = path.trim();
-    if trimmed.is_empty() || trimmed == "/" {
-        return trimmed.to_string();
-    }
-    trimmed.trim_end_matches('/').to_string()
-}
-
-/// Checks if two paths refer to the same project directory.
-pub fn same_project_path(a: &str, b: &str) -> bool {
-    let na = normalize_project_path(a);
-    let nb = normalize_project_path(b);
-    if na == nb {
-        return true;
-    }
-    if let (Ok(ca), Ok(cb)) = (std::fs::canonicalize(&na), std::fs::canonicalize(&nb))
-        && ca == cb
-    {
-        return true;
-    }
-    false
-}
-
-/// Checks if a path is within a project directory (same or sub-directory).
-pub fn is_path_in_project(path: &str, project_cwd: &str) -> bool {
-    if same_project_path(path, project_cwd) {
-        return true;
-    }
-    let npath = normalize_project_path(path);
-    let nproj = normalize_project_path(project_cwd);
-    let prefix = format!("{nproj}/");
-    npath.starts_with(&prefix)
-}
-
-/// Distinct session working directories, most recent first, current one on top.
-fn recent_projects(current_cwd: &str, sessions: &[SessionRow]) -> Vec<String> {
-    let mut seen = HashSet::new();
-    let norm_cwd = normalize_project_path(current_cwd);
-    std::iter::once(norm_cwd)
-        .chain(sessions.iter().map(|s| normalize_project_path(&s.cwd)))
-        .filter(|cwd| !cwd.is_empty() && cwd != "~" && seen.insert(cwd.clone()))
-        .take(RECENT_PROJECT_LIMIT)
-        .collect()
-}
-
 impl BenCodeApp {
     pub fn new(
         window: &mut Window,
@@ -364,7 +317,7 @@ impl BenCodeApp {
         let current_cwd = std::env::current_dir()
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_else(|_| ".".to_string());
-        let recent_projects = recent_projects(&current_cwd, &sessions);
+        let recent_projects = projects::recent_projects(&current_cwd, &sessions);
 
         let harnesses = HarnessResolver::discover();
         let selected_model = catalog::default_model(&harnesses).key.to_string();
@@ -613,114 +566,6 @@ impl BenCodeApp {
         });
     }
 
-    pub fn switch_project(&mut self, new_cwd: String, cx: &mut Context<Self>) {
-        let normalized_cwd = normalize_project_path(&new_cwd);
-        if same_project_path(&self.current_cwd, &normalized_cwd) {
-            return;
-        }
-        self.current_cwd = normalized_cwd.clone();
-        self.workspace.cwd = normalized_cwd.clone();
-
-        // 1. Maintain recent projects list
-        if !self
-            .recent_projects
-            .iter()
-            .any(|p| same_project_path(p, &normalized_cwd))
-        {
-            self.recent_projects.insert(0, normalized_cwd.clone());
-        } else {
-            self.recent_projects
-                .retain(|p| !same_project_path(p, &normalized_cwd));
-            self.recent_projects.insert(0, normalized_cwd.clone());
-        }
-
-        // 2. Reset file explorer tree state and diff view so it cleanly reloads for new project
-        self.file_tree.dir_cache.clear();
-        self.file_tree.expanded_paths.clear();
-        self.file_tree.selected_path = None;
-        self.selected_diff_path = None;
-
-        // 3. Fetch recent sessions for this project from SQLite
-        if let Ok(db_sessions) = self.db.list_sessions_for_cwd(&normalized_cwd, 50) {
-            for row in db_sessions {
-                if !self.sessions.iter().any(|s| s.id == row.id) {
-                    self.sessions.push(row);
-                }
-            }
-        }
-
-        // 4. Activate or create a session in the target project
-        let mut activated = false;
-        // a) Check active tab
-        if let Some(active_tab) = self.tabs.active() {
-            for pane_id in active_tab.leaf_ids() {
-                if let Some(s) = self.sessions.iter().find(|s| s.id == pane_id)
-                    && is_path_in_project(&s.cwd, &normalized_cwd)
-                {
-                    self.focus_pane(pane_id, cx);
-                    activated = true;
-                    break;
-                }
-            }
-        }
-
-        // b) Check other open tabs
-        if !activated {
-            for tab in self.tabs.tabs().to_vec() {
-                for pane_id in tab.leaf_ids() {
-                    if let Some(s) = self.sessions.iter().find(|s| s.id == pane_id)
-                        && is_path_in_project(&s.cwd, &normalized_cwd)
-                    {
-                        let tab_id = tab.id.clone();
-                        self.switch_tab(&tab_id, cx);
-                        self.focus_pane(pane_id, cx);
-                        activated = true;
-                        break;
-                    }
-                }
-                if activated {
-                    break;
-                }
-            }
-        }
-
-        // c) Check existing in-memory/DB sessions
-        if !activated
-            && let Some(s) = self
-                .sessions
-                .iter()
-                .find(|s| is_path_in_project(&s.cwd, &normalized_cwd))
-        {
-            let sid = s.id.clone();
-            self.tabs.open(&sid);
-            self.select_session(sid, cx);
-            activated = true;
-        }
-
-        // d) Reuse blank session or create a new session
-        if !activated {
-            let is_blank = self
-                .selected_session()
-                .is_some_and(|s| s.blocks.iter().all(|b| b.role != "user"));
-            if is_blank {
-                if let Some(s) = self.selected_session_mut() {
-                    s.cwd = normalized_cwd.clone();
-                    let sid = s.id.clone();
-                    self.persist_session(&sid);
-                    self.select_session(sid, cx);
-                }
-            } else {
-                let new_id = self.create_session_row(&normalized_cwd);
-                self.tabs.open(&new_id);
-                self.select_session(new_id, cx);
-            }
-        }
-
-        // 5. Refresh workspace (git status, changes, file tree) for new cwd
-        self.refresh_workspace(cx);
-        cx.notify();
-    }
-
     /// Attaches a file to the composer prompt input.
     pub fn attach_file_to_composer(
         &mut self,
@@ -894,18 +739,5 @@ mod tests {
             "token already finished"
         );
         assert_eq!(trigger_query("xin chào /ski", '/').as_deref(), Some("ski"));
-    }
-
-    #[test]
-    fn recent_projects_are_unique_and_current_first() {
-        let session = |cwd: &str| SessionRow {
-            cwd: cwd.into(),
-            ..Default::default()
-        };
-        let projects = recent_projects(
-            "/here",
-            &[session("/a"), session("/here"), session("/a"), session("")],
-        );
-        assert_eq!(projects, ["/here", "/a"]);
     }
 }
