@@ -180,19 +180,7 @@ impl BenCodeApp {
     /// Opens the latest thread in `cwd`, or starts one there.
     fn open_project(&mut self, cwd: String, cx: &mut Context<Self>) {
         self.active_view_mode = ViewMode::Chat;
-        let latest = self
-            .sessions
-            .iter()
-            .filter(|s| s.cwd == cwd)
-            .max_by_key(|s| s.updated_at)
-            .map(|s| s.id.clone());
-        match latest {
-            Some(id) => self.select_session(id, cx),
-            None => {
-                self.current_cwd = cwd;
-                self.create_new_session(cx);
-            }
-        }
+        self.switch_project(cwd, cx);
     }
 
     fn open_search_hit(&mut self, ix: usize, cx: &mut Context<Self>) {

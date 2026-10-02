@@ -128,6 +128,13 @@ pub fn first_leaf_id(node: &LayoutNode) -> String {
     }
 }
 
+pub fn leaf_ids(node: &LayoutNode) -> Vec<String> {
+    match node {
+        LayoutNode::Leaf { id } => vec![id.clone()],
+        LayoutNode::Split { children, .. } => children.iter().flat_map(leaf_ids).collect(),
+    }
+}
+
 /// Rebuilds `node` with each child passed through `map`; leaves are cloned.
 pub(crate) fn map_children(
     node: &LayoutNode,

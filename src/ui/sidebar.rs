@@ -203,10 +203,17 @@ impl BenCodeApp {
         let query = self.search_query.to_lowercase();
         let filter = self.filter_mode;
         let now = crate::app::now_ms();
+        let current_cwd = &self.current_cwd;
         let (pinned, rest): (Vec<&SessionRow>, Vec<&SessionRow>) = self
             .sessions
             .iter()
-            .filter(|s| keeps(filter, s) && matches_query(s, &query))
+            .filter(|s| {
+                (current_cwd.is_empty()
+                    || current_cwd == "~"
+                    || crate::app::is_path_in_project(&s.cwd, current_cwd))
+                    && keeps(filter, s)
+                    && matches_query(s, &query)
+            })
             .partition(|s| s.pinned);
 
         div()
@@ -265,6 +272,25 @@ impl BenCodeApp {
                     .px_2()
                     .py_1()
                     .gap_1()
+                    .when(pinned.is_empty() && rest.is_empty(), |el| {
+                        el.child(
+                            div()
+                                .px_3()
+                                .py_6()
+                                .flex()
+                                .flex_col()
+                                .items_center()
+                                .justify_center()
+                                .gap_1()
+                                .text_size(px(12.0))
+                                .text_color(theme.colors.fg_muted)
+                                .child(if !query.is_empty() {
+                                    "No matching sessions"
+                                } else {
+                                    "Sessions you start will show up here"
+                                }),
+                        )
+                    })
                     .children(
                         pinned
                             .into_iter()

@@ -22,6 +22,10 @@ impl WorkspaceTab {
     pub fn contains(&self, session_id: &str) -> bool {
         contains_leaf(&self.layout, session_id)
     }
+
+    pub fn leaf_ids(&self) -> Vec<String> {
+        super::leaf_ids(&self.layout)
+    }
 }
 
 #[derive(Debug, Default)]

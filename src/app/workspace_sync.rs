@@ -61,12 +61,16 @@ impl BenCodeApp {
     /// The directory the workspace views describe: the open thread's cwd,
     /// falling back to the directory BenCode was launched in.
     pub fn workspace_cwd(&self) -> String {
-        self.selected_session_id
+        if let Some(session) = self
+            .selected_session_id
             .as_deref()
             .and_then(|id| self.sessions.iter().find(|s| s.id == id))
-            .map(|s| s.cwd.clone())
-            .filter(|cwd| !cwd.is_empty())
-            .unwrap_or_else(|| self.current_cwd.clone())
+            && !session.cwd.is_empty()
+            && crate::app::is_path_in_project(&session.cwd, &self.current_cwd)
+        {
+            return session.cwd.clone();
+        }
+        self.current_cwd.clone()
     }
 
     /// Kept for existing call sites; reloads the whole workspace snapshot.

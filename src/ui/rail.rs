@@ -274,7 +274,8 @@ impl BenCodeApp {
                                         .and_then(|n| n.to_str())
                                         .unwrap_or(path)
                                         .to_string();
-                                    let is_selected = path == &current_cwd;
+                                    let is_selected =
+                                        crate::app::same_project_path(path, &current_cwd);
                                     let dot_color = rgb(PROJECT_COLORS[ix % PROJECT_COLORS.len()]);
                                     let path_clone = path.clone();
 
