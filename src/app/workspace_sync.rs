@@ -101,6 +101,7 @@ impl BenCodeApp {
                     .clone()
                     .or_else(|| app.workspace.changes.first().map(|c| c.path.clone()));
                 app.load_diff(diff_path, cx);
+                app.refresh_file_tree(cx);
                 cx.notify();
             });
         })

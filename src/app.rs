@@ -110,6 +110,8 @@ pub struct BenCodeApp {
     pub git_history_collapsed: bool,
     /// Git/filesystem snapshot for the active workspace; see `workspace_sync`.
     pub workspace: WorkspaceCache,
+    pub file_tree: crate::ui::file_tree::FileTreeState,
+    pub file_dialog_input: Entity<TextInput>,
     // Universal Search
     pub is_search_open: bool,
     pub search_modal_input: Entity<TextInput>,
@@ -412,6 +414,8 @@ impl BenCodeApp {
             git_commit_input,
             git_history_collapsed: false,
             workspace: WorkspaceCache::default(),
+            file_tree: Default::default(),
+            file_dialog_input: text_input(window, cx, "Name"),
             is_search_open: false,
             search_modal_input,
             search_scope: crate::ui::search_view::SearchScope::All,
@@ -732,7 +736,8 @@ impl Render for BenCodeApp {
                     el.child(self.render_inbox_modal(cx))
                 })
                 .children(self.render_session_dialog(cx))
-                .children(self.render_git_confirm(cx)),
+                .children(self.render_git_confirm(cx))
+                .children(self.render_file_tree_dialog(cx)),
         )
     }
 }
