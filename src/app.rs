@@ -31,6 +31,7 @@ use crate::ui::settings_modal::SettingsTab;
 const RECENT_SESSION_LIMIT: usize = 50;
 const INITIAL_OPEN_TABS: usize = 3;
 const DEFAULT_CONTEXT_WINDOW: i64 = 200_000;
+const NOTE_TITLE_CHARS: usize = 80;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum ViewMode {
@@ -97,10 +98,13 @@ pub struct BenCodeApp {
     pub harnesses: Vec<HarnessInfo>,
     pub is_model_picker_open: bool,
     pub is_permission_picker_open: bool,
+    pub is_plus_menu_open: bool,
     pub is_skill_picker_open: bool,
     pub skill_query: String,
     pub is_mention_picker_open: bool,
     pub mention_query: String,
+    pub drafts: HashMap<String, String>,
+    pub expanded_reasoning: std::collections::HashSet<String>,
     pub terminal: Entity<Terminal>,
     pub is_settings_open: bool,
     pub settings_tab: SettingsTab,
@@ -411,10 +415,13 @@ impl BenCodeApp {
             harnesses,
             is_model_picker_open: false,
             is_permission_picker_open: false,
+            is_plus_menu_open: false,
             is_skill_picker_open: false,
             skill_query: String::new(),
             is_mention_picker_open: false,
             mention_query: String::new(),
+            drafts: HashMap::new(),
+            expanded_reasoning: std::collections::HashSet::new(),
             terminal,
             is_settings_open: false,
             settings_tab: SettingsTab::Providers,
@@ -636,6 +643,86 @@ impl BenCodeApp {
         });
     }
 
+    /// Recalls the last user prompt into the composer prompt input.
+    pub fn recall_last_turn(&mut self, cx: &mut Context<Self>) {
+        let last_prompt = self
+            .selected_session()
+            .and_then(|session| session.blocks.iter().rev().find(|b| b.role == "user"))
+            .and_then(|block| block.text.clone());
+        if let Some(prompt) = last_prompt {
+            self.prompt_input.update(cx, |input, cx| {
+                input.set_text(prompt, cx);
+            });
+            cx.notify();
+        }
+    }
+
+    /// Sets the prompt text directly into the composer (e.g. for editing last turn).
+    pub fn edit_turn(&mut self, text: &str, cx: &mut Context<Self>) {
+        let text_owned = text.to_string();
+        self.prompt_input.update(cx, |input, cx| {
+            input.set_text(text_owned, cx);
+        });
+        cx.notify();
+    }
+
+    /// Retries generation for the latest user prompt in the active session.
+    pub fn retry_turn(&mut self, session_id: &str, cx: &mut Context<Self>) {
+        if self.is_agent_running() {
+            return;
+        }
+        let Some(session) = self.sessions.iter().find(|s| s.id == session_id) else {
+            return;
+        };
+        let last_prompt = session
+            .blocks
+            .iter()
+            .rev()
+            .find(|b| b.role == "user")
+            .and_then(|b| b.text.clone());
+        if let Some(prompt) = last_prompt {
+            self.prompt_input.update(cx, |input, cx| {
+                input.set_text(prompt, cx);
+            });
+            self.submit_prompt(cx);
+        }
+    }
+
+    /// Saves a turn as a note titled after its thread (or the text's first
+    /// line), linked to that thread and project, then opens it (MonoCode
+    /// `SessionPane` "Save as note").
+    pub fn save_turn_to_note(&mut self, text: &str, cx: &mut Context<Self>) {
+        let session = self.selected_session();
+        let title = session
+            .map(|s| s.title.clone())
+            .filter(|t| !t.is_empty() && t != NEW_SESSION_TITLE)
+            .or_else(|| {
+                text.lines()
+                    .map(str::trim)
+                    .find(|l| !l.is_empty())
+                    .map(str::to_string)
+            })
+            .unwrap_or_else(|| "Untitled".to_string());
+        let upsert = crate::db::NoteUpsert {
+            id: format!("note-{}", now_ms()),
+            title: title.chars().take(NOTE_TITLE_CHARS).collect(),
+            body: text.to_string(),
+            tags: Vec::new(),
+            source_session_id: session.map(|s| s.id.clone()),
+            source_cwd: session.map(|s| s.cwd.clone()).filter(|cwd| !cwd.is_empty()),
+        };
+        match self.db.upsert_note(&upsert) {
+            Ok(note) => {
+                let id = note.id.clone();
+                self.notes.insert(0, note);
+                self.open_notes(cx);
+                self.select_note(id, cx);
+            }
+            Err(err) => log::error!("failed to save turn as note: {err:#}"),
+        }
+        cx.notify();
+    }
+
     /// Attaches a file to the composer prompt input.
     pub fn attach_file_to_composer(
         &mut self,
@@ -700,6 +787,19 @@ impl BenCodeApp {
             return;
         }
         session.pinned = !was_pinned;
+        cx.notify();
+    }
+
+    pub fn toggle_archive_session(&mut self, id: &str, cx: &mut Context<Self>) {
+        let Some(session) = self.sessions.iter_mut().find(|s| s.id == id) else {
+            return;
+        };
+        let was_archived = session.archived;
+        if let Err(err) = self.db.toggle_archived(id, was_archived) {
+            log::error!("failed to toggle archive for {id}: {err:#}");
+            return;
+        }
+        session.archived = !was_archived;
         cx.notify();
     }
 }

@@ -2,10 +2,9 @@
 //! Changes switcher, thread search with filters, and the thread cards.
 
 use ely_gpui_component::buttons::{ButtonVariant, IconButton};
-use ely_gpui_component::git::DiffStat;
 use ely_gpui_component::menus::{ContextMenu, DropdownMenu, Menu, MenuItem, OverflowMenu};
 use ely_gpui_component::overlays::{ConfirmDialog, PromptDialog};
-use ely_gpui_component::primitives::{Icon, IconName};
+use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize};
 use gpui::{
     AnyElement, App, Context, FontWeight, InteractiveElement, IntoElement, ParentElement,
@@ -16,6 +15,7 @@ use crate::app::{BenCodeApp, FilterMode, SidebarMode, WorktreeFocus};
 use crate::db::SessionRow;
 use crate::harness::catalog;
 use crate::ui::app_callback::app_callback;
+use crate::ui::diff_counts::diff_counts;
 use crate::ui::provider_icon::HarnessIcon;
 
 const SIDEBAR_WIDTH: gpui::Pixels = px(260.0);
@@ -36,9 +36,9 @@ const FILTERS: [(FilterMode, &str); 4] = [
 
 fn keeps(mode: FilterMode, session: &SessionRow) -> bool {
     match mode {
-        FilterMode::All => true,
-        FilterMode::Active => !session.archived,
-        FilterMode::Pinned => session.pinned,
+        // MonoCode hides archived threads unless they are asked for.
+        FilterMode::All | FilterMode::Active => !session.archived,
+        FilterMode::Pinned => session.pinned && !session.archived,
         FilterMode::Archived => session.archived,
     }
 }
@@ -96,7 +96,7 @@ impl BenCodeApp {
                 self.mode_tab("tab-changes", mode == SidebarMode::Changes, cx)
                     .map(|tab| {
                         if added + removed > 0 {
-                            tab.child(DiffStat::new(added, removed))
+                            tab.child(diff_counts(added, removed, colors))
                         } else {
                             tab.child("Changes")
                         }
@@ -391,8 +391,49 @@ impl BenCodeApp {
             .tooltip("Filter threads")
     }
 
+    /// Top-right of a session card: "Need approval", "Working...", or the
+    /// pin and relative time (MonoCode `Sidebar.tsx` session status).
+    fn session_status(&self, session: &SessionRow, now: i64, cx: &Context<Self>) -> AnyElement {
+        let colors = &cx.theme().colors;
+        let status = |icon: IconName, color: gpui::Hsla, label: &'static str| {
+            div()
+                .flex()
+                .items_center()
+                .gap_1()
+                .text_size(px(11.0))
+                .text_color(color)
+                .child(Icon::new(icon).size(IconSize::Xs).color(color))
+                .child(label)
+                .into_any_element()
+        };
+        if self.pending_permission_for(&session.id).is_some() {
+            return status(IconName::CircleAlert, colors.warning, "Need approval");
+        }
+        if self.is_agent_running_in(&session.id) {
+            return status(IconName::LoaderCircle, colors.accent, "Working...");
+        }
+        div()
+            .flex()
+            .items_center()
+            .gap_1()
+            .when(session.pinned, |el| {
+                el.child(
+                    Icon::new(IconName::Pin)
+                        .size(IconSize::Xs)
+                        .color(colors.fg_muted),
+                )
+            })
+            .child(relative_time(session.updated_at, now))
+            .into_any_element()
+    }
+
     fn session_menu(&self, session: &SessionRow, cx: &Context<Self>) -> Menu {
-        let (rename, pin, delete) = (session.id.clone(), session.id.clone(), session.id.clone());
+        let (rename, pin, archive, delete) = (
+            session.id.clone(),
+            session.id.clone(),
+            session.id.clone(),
+            session.id.clone(),
+        );
         Menu::new()
             .item(
                 MenuItem::new("Rename…")
@@ -407,6 +448,17 @@ impl BenCodeApp {
                     .on_click(app_callback(cx, move |this, cx| {
                         this.toggle_pin_session(&pin, cx)
                     })),
+            )
+            .item(
+                MenuItem::new(if session.archived {
+                    "Unarchive"
+                } else {
+                    "Archive"
+                })
+                .icon(IconName::Archive)
+                .on_click(app_callback(cx, move |this, cx| {
+                    this.toggle_archive_session(&archive, cx)
+                })),
             )
             .separator()
             .item(
@@ -440,8 +492,10 @@ impl BenCodeApp {
         let id = session.id.clone();
         let xs = theme.text_size(TextSize::Xs);
 
+        let open_id = id.clone();
         let card = div()
             .id(SharedString::from(format!("session-card-{}", session.id)))
+            .group("session-card")
             .flex()
             .flex_col()
             .w_full()
@@ -454,7 +508,7 @@ impl BenCodeApp {
             .cursor_pointer()
             .when(selected, |el| el.bg(colors.active))
             .hover(|s| s.bg(colors.hover))
-            .on_click(cx.listener(move |this, _, _, cx| this.open_session(id.clone(), cx)))
+            .on_click(cx.listener(move |this, _, _, cx| this.open_session(open_id.clone(), cx)))
             .child(
                 div()
                     .flex()
@@ -487,14 +541,7 @@ impl BenCodeApp {
                             .flex_none()
                             .items_center()
                             .gap_1()
-                            .when(session.pinned, |el| {
-                                el.child(
-                                    Icon::new(IconName::Pin)
-                                        .size(IconSize::Xs)
-                                        .color(colors.fg_muted),
-                                )
-                            })
-                            .child(relative_time(session.updated_at, now)),
+                            .child(self.session_status(session, now, cx)),
                     ),
             )
             .child(
@@ -511,24 +558,63 @@ impl BenCodeApp {
                 div()
                     .flex()
                     .items_center()
+                    .justify_between()
                     .w_full()
                     .min_w_0()
                     .gap_1()
                     .text_size(xs)
                     .text_color(colors.fg_muted)
                     .child(
-                        div().flex_none().child(
-                            Icon::new(IconName::GitBranch)
-                                .size(IconSize::Xs)
-                                .color(colors.fg_muted),
-                        ),
+                        div()
+                            .flex()
+                            .flex_1()
+                            .min_w_0()
+                            .items_center()
+                            .gap_1()
+                            .child(
+                                div().flex_none().child(
+                                    Icon::new(IconName::GitBranch)
+                                        .size(IconSize::Xs)
+                                        .color(colors.fg_muted),
+                                ),
+                            )
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .truncate()
+                                    .child(format!("{project}/{branch}")),
+                            ),
                     )
                     .child(
                         div()
-                            .flex_1()
-                            .min_w_0()
-                            .truncate()
-                            .child(format!("{project}/{branch}")),
+                            .id(SharedString::from(format!("quick-archive-{}", session.id)))
+                            // Hover-only, like MonoCode's archive button.
+                            .opacity(0.0)
+                            .group_hover("session-card", |s| s.opacity(1.0))
+                            .size(px(18.0))
+                            .rounded(px(3.0))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .cursor_pointer()
+                            .hover(|s| s.bg(colors.hover).text_color(colors.fg))
+                            .tooltip(Tooltip::text(if session.archived {
+                                "Unarchive"
+                            } else {
+                                "Archive"
+                            }))
+                            .on_click(cx.listener({
+                                let archive_id = id.clone();
+                                move |this, _, _, cx| {
+                                    this.toggle_archive_session(&archive_id, cx);
+                                }
+                            }))
+                            .child(
+                                Icon::new(IconName::Archive)
+                                    .size(IconSize::Xs)
+                                    .color(colors.fg_muted),
+                            ),
                     ),
             );
 
@@ -626,7 +712,10 @@ mod tests {
         };
         assert!(keeps(FilterMode::Pinned, &pinned) && !keeps(FilterMode::Pinned, &archived));
         assert!(keeps(FilterMode::Archived, &archived) && !keeps(FilterMode::Active, &archived));
-        assert!(keeps(FilterMode::All, &archived));
+        assert!(
+            !keeps(FilterMode::All, &archived),
+            "archived threads only show under the Archived filter"
+        );
     }
 
     #[test]

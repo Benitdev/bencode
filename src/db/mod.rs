@@ -438,6 +438,15 @@ impl MonoCodeDb {
         Ok(())
     }
 
+    pub fn toggle_archived(&self, session_id: &str, current: bool) -> Result<()> {
+        let new_val = if current { 0 } else { 1 };
+        self.conn.execute(
+            "UPDATE sessions SET archived = ?1 WHERE id = ?2",
+            params![new_val, session_id],
+        )?;
+        Ok(())
+    }
+
     pub fn delete_session(&self, session_id: &str) -> Result<()> {
         self.conn
             .execute("DELETE FROM sessions WHERE id = ?1", params![session_id])?;

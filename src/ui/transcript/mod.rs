@@ -103,7 +103,7 @@ impl BenCodeApp {
         let content = match session.blocks.get(ix) {
             Some(block) => {
                 let live = running && ix + 1 == session.blocks.len() && block.role == "assistant";
-                render_block(session, ix, live, cx)
+                render_block(self, session, ix, live, cx)
             }
             None => self.render_trailer(session, cx),
         };

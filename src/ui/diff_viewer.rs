@@ -4,7 +4,7 @@
 use ely_gpui_component::buttons::{ButtonVariant, CopyButton, IconButton};
 use ely_gpui_component::feedback::EmptyState;
 use ely_gpui_component::files::FileIcon;
-use ely_gpui_component::git::{DiffStat, GitStatusBadge};
+use ely_gpui_component::git::GitStatusBadge;
 use ely_gpui_component::primitives::IconName;
 use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize, Palette, TextSize};
 use gpui::{
@@ -14,10 +14,12 @@ use gpui::{
 
 use crate::app::BenCodeApp;
 use crate::git::{DiffLineKind, DiffRow, GitFileChange};
+use crate::ui::diff_counts::diff_counts;
 use crate::ui::git_changes_panel::to_ely_status;
 
 const FILE_LIST_WIDTH: gpui::Pixels = px(280.0);
 const ROW_HEIGHT: gpui::Pixels = px(22.0);
+
 const LINE_NUMBER_WIDTH: gpui::Pixels = px(40.0);
 
 /// Sign, text colour and background tint for one diff row.
@@ -177,7 +179,7 @@ impl BenCodeApp {
             .child(
                 div()
                     .flex_none()
-                    .child(DiffStat::new(file.additions, file.deletions)),
+                    .child(diff_counts(file.additions, file.deletions, colors)),
             )
     }
 
@@ -230,7 +232,11 @@ impl BenCodeApp {
                             .text_size(theme.text_size(TextSize::Sm))
                             .child(div().flex_1().min_w_0().truncate().child(path.clone()))
                             .when_some(stat, |el, (added, removed)| {
-                                el.child(div().flex_none().child(DiffStat::new(added, removed)))
+                                el.child(div().flex_none().child(diff_counts(
+                                    added,
+                                    removed,
+                                    &theme.colors,
+                                )))
                             }),
                     )
                     .child(

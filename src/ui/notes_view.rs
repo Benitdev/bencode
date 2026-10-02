@@ -107,7 +107,7 @@ impl BenCodeApp {
         cx.notify();
     }
 
-    fn select_note(&mut self, id: String, cx: &mut Context<Self>) {
+    pub(crate) fn select_note(&mut self, id: String, cx: &mut Context<Self>) {
         if self.selected_note_id.as_ref() != Some(&id) {
             self.save_note_if_dirty(cx);
         }

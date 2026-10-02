@@ -4,7 +4,7 @@
 use ely_gpui_component::buttons::{Button, ButtonVariant, IconButton};
 use ely_gpui_component::data_display::{Avatar, Badge, Tone};
 use ely_gpui_component::feedback::Alert;
-use ely_gpui_component::git::{ChangeAction, Changed, ChangesList, DiffStat};
+use ely_gpui_component::git::{ChangeAction, Changed, ChangesList};
 use ely_gpui_component::layout::on_axis;
 use ely_gpui_component::lists::GitStatus;
 use ely_gpui_component::overlays::ConfirmDialog;
@@ -51,31 +51,6 @@ impl BenCodeApp {
         let behind = self.git_status.behind;
         let staged_count = self.git_status.staged.len();
         let history_collapsed = self.git_history_collapsed;
-
-        let total_additions: usize = self
-            .git_status
-            .staged
-            .iter()
-            .map(|f| f.additions)
-            .sum::<usize>()
-            + self
-                .git_status
-                .unstaged
-                .iter()
-                .map(|f| f.additions)
-                .sum::<usize>();
-        let total_deletions: usize = self
-            .git_status
-            .staged
-            .iter()
-            .map(|f| f.deletions)
-            .sum::<usize>()
-            + self
-                .git_status
-                .unstaged
-                .iter()
-                .map(|f| f.deletions)
-                .sum::<usize>();
 
         let staged_changed = to_changed(&self.git_status.staged);
         let unstaged_changed = to_changed(&self.git_status.unstaged);
@@ -158,23 +133,15 @@ impl BenCodeApp {
                             }),
                     )
                     .child(
-                        div()
-                            .flex_none()
-                            .flex()
-                            .items_center()
-                            .gap_2()
-                            .when(total_additions > 0 || total_deletions > 0, |el| {
-                                el.child(DiffStat::new(total_additions, total_deletions))
-                            })
-                            .child(
-                                IconButton::new("git-sync-btn", IconName::RotateCw)
-                                    .size(ControlSize::Sm)
-                                    .variant(ButtonVariant::Ghost)
-                                    .tooltip("Refresh git status")
-                                    .on_click(cx.listener(|this, _, _, cx| {
-                                        this.refresh_git_status(cx);
-                                    })),
-                            ),
+                        div().flex_none().flex().items_center().gap_2().child(
+                            IconButton::new("git-sync-btn", IconName::RotateCw)
+                                .size(ControlSize::Sm)
+                                .variant(ButtonVariant::Ghost)
+                                .tooltip("Refresh git status")
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.refresh_git_status(cx);
+                                })),
+                        ),
                     ),
             )
             // 3. Commit Box Area
@@ -376,23 +343,44 @@ impl BenCodeApp {
                     .flex()
                     .flex_1()
                     .min_w_0()
-                    .items_center()
-                    .gap_1p5()
-                    .child(
-                        Avatar::new(
-                            SharedString::from(format!("avatar-{}", c.hash)),
-                            c.author.clone(),
-                        )
-                        .size(AvatarSize::Xs),
-                    )
+                    .flex_col()
+                    .gap_0p5()
                     .child(
                         div()
-                            .flex_1()
+                            .w_full()
                             .min_w_0()
                             .truncate()
                             .text_size(cx.theme().text_size(TextSize::Xs))
+                            .font_weight(FontWeight::SEMIBOLD)
                             .text_color(colors.fg)
-                            .child(c.author.clone()),
+                            .child(if c.message.is_empty() {
+                                "Commit".to_string()
+                            } else {
+                                c.message.clone()
+                            }),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_1p5()
+                            .min_w_0()
+                            .child(
+                                Avatar::new(
+                                    SharedString::from(format!("avatar-{}", c.hash)),
+                                    c.author.clone(),
+                                )
+                                .size(AvatarSize::Xs),
+                            )
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .truncate()
+                                    .text_size(px(11.0))
+                                    .text_color(colors.fg_muted)
+                                    .child(c.author.clone()),
+                            ),
                     ),
             )
             .child(

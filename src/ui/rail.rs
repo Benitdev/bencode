@@ -63,9 +63,18 @@ impl BenCodeApp {
                             .window_control_area(WindowControlArea::Drag)
                             .flex()
                             .items_center()
+                            .justify_between()
                             .h(px(40.0))
-                            .px_2()
-                            .child(div().w(px(78.0)).h_full())
+                            .pr_2()
+                            .child(
+                                div()
+                                    .w(if cfg!(target_os = "macos") {
+                                        px(72.0)
+                                    } else {
+                                        px(8.0)
+                                    })
+                                    .h_full(),
+                            )
                             .child(
                                 div()
                                     .flex()
@@ -381,7 +390,6 @@ impl BenCodeApp {
                 div()
                     .flex()
                     .items_center()
-                    .justify_between()
                     .h(px(40.0))
                     .px_2()
                     .border_t_1()
@@ -391,7 +399,8 @@ impl BenCodeApp {
                             .id("rail-settings-btn")
                             .flex()
                             .items_center()
-                            .gap_2()
+                            .justify_between()
+                            .w_full()
                             .h(px(32.0))
                             .px_2()
                             .rounded_md()
@@ -401,27 +410,26 @@ impl BenCodeApp {
                                 this.open_settings(cx);
                             }))
                             .child(
-                                Icon::new(IconName::Settings)
-                                    .size(IconSize::Sm)
-                                    .color(colors.fg_muted),
-                            )
-                            .child(
                                 div()
+                                    .flex()
+                                    .items_center()
+                                    .gap_2()
                                     .text_size(px(13.0))
                                     .font_weight(FontWeight::MEDIUM)
                                     .text_color(colors.fg_muted)
+                                    .child(
+                                        Icon::new(IconName::Settings)
+                                            .size(IconSize::Sm)
+                                            .color(colors.fg_muted),
+                                    )
                                     .child("Settings"),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(11.0))
+                                    .text_color(colors.fg_subtle)
+                                    .child("⌘,"),
                             ),
-                    )
-                    .child(
-                        IconButton::new("rail-collapse", IconName::PanelLeft)
-                            .size(ControlSize::Sm)
-                            .variant(ButtonVariant::Ghost)
-                            .tooltip("Collapse Sidebar")
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.is_sidebar_open = !this.is_sidebar_open;
-                                cx.notify();
-                            })),
                     ),
             )
     }

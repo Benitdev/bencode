@@ -28,17 +28,35 @@ const HARNESS_ORDER: [HarnessKind; 4] = [
     HarnessKind::Codex,
     HarnessKind::OpenCode,
 ];
-const PERMISSION_MODES: [(PermissionMode, &str, IconName); 3] = [
-    (PermissionMode::Auto, "Full access", IconName::Shield),
-    (PermissionMode::Confirm, "Ask first", IconName::Shield),
-    (PermissionMode::ReadOnly, "Read-only", IconName::Eye),
+/// A row of the composer "+" menu.
+type PlusAction = fn(&mut BenCodeApp, &mut Context<BenCodeApp>);
+
+const PERMISSION_MODES: [(PermissionMode, &str, &str, IconName); 3] = [
+    (
+        PermissionMode::Auto,
+        "Full access",
+        "Allow commands, edits, and confirmations without prompts.",
+        IconName::Shield,
+    ),
+    (
+        PermissionMode::Confirm,
+        "Supervised",
+        "Ask before commands and file changes.",
+        IconName::Lock,
+    ),
+    (
+        PermissionMode::ReadOnly,
+        "Read-only",
+        "Read-only inspection without file changes.",
+        IconName::Eye,
+    ),
 ];
 
 fn permission_entry(mode: PermissionMode) -> (&'static str, IconName) {
     PERMISSION_MODES
         .iter()
         .find(|(m, ..)| *m == mode)
-        .map_or(("Full access", IconName::Shield), |(_, label, icon)| {
+        .map_or(("Full access", IconName::Shield), |(_, label, _, icon)| {
             (*label, *icon)
         })
 }
@@ -126,6 +144,9 @@ impl BenCodeApp {
                         .child(self.prompt_input.clone()),
                 )
                 // 3. Floating Popovers when open
+                .when(self.is_plus_menu_open, |el| {
+                    el.child(self.render_plus_menu_popover(cx))
+                })
                 .when(self.is_model_picker_open, |el| {
                     el.child(self.render_model_picker_popover(current_model_key, cx))
                 })
@@ -161,6 +182,12 @@ impl BenCodeApp {
                                         .justify_center()
                                         .cursor_pointer()
                                         .hover(|s| s.bg(rgb(0x2c293c)))
+                                        .on_click(cx.listener(|this, _, _, cx| {
+                                            this.is_plus_menu_open = !this.is_plus_menu_open;
+                                            this.is_model_picker_open = false;
+                                            this.is_permission_picker_open = false;
+                                            cx.notify();
+                                        }))
                                         .child(
                                             Icon::new(IconName::Plus)
                                                 .size(IconSize::Xs)
@@ -187,6 +214,7 @@ impl BenCodeApp {
                                         .on_click(cx.listener(|this, _, _, cx| {
                                             this.is_model_picker_open = !this.is_model_picker_open;
                                             this.is_permission_picker_open = false;
+                                            this.is_plus_menu_open = false;
                                             cx.notify();
                                         }))
                                         .child(HarnessIcon::new(current_harness).size(px(14.0)))
@@ -226,6 +254,7 @@ impl BenCodeApp {
                                             this.is_permission_picker_open =
                                                 !this.is_permission_picker_open;
                                             this.is_model_picker_open = false;
+                                            this.is_plus_menu_open = false;
                                             cx.notify();
                                         }))
                                         .child(
@@ -372,6 +401,89 @@ impl BenCodeApp {
             }))
     }
 
+    /// MonoCode's "ADD TO MESSAGE" menu. Only actions BenCode can honour are
+    /// listed; Plan mode and Draft need harness/DB support first.
+    fn render_plus_menu_popover(&self, cx: &Context<Self>) -> impl IntoElement {
+        let colors = &cx.theme().colors;
+        let reference: PlusAction = |this, cx| {
+            this.append_to_prompt("@", cx);
+            this.is_mention_picker_open = true;
+            this.mention_query = String::new();
+        };
+        let recall: PlusAction = |this, cx| this.recall_last_turn(cx);
+        let items = [
+            (
+                "plus-reference",
+                IconName::FilePlus,
+                "Reference a file",
+                "Add an @file to the message",
+                reference,
+            ),
+            (
+                "plus-recall",
+                IconName::RotateCcw,
+                "Recall last prompt",
+                "Put your previous message back",
+                recall,
+            ),
+        ];
+        div()
+            .id("composer-plus-popover")
+            .absolute()
+            .bottom(px(36.0))
+            .left(px(8.0))
+            .w(px(250.0))
+            .p_1p5()
+            .rounded(px(8.0))
+            .bg(colors.surface)
+            .border_1()
+            .border_color(colors.border)
+            .shadow_lg()
+            .flex()
+            .flex_col()
+            .gap_0p5()
+            .child(
+                div()
+                    .px_2()
+                    .pt_1()
+                    .pb_0p5()
+                    .text_size(px(10.0))
+                    .text_color(colors.fg_subtle)
+                    .child("ADD TO MESSAGE"),
+            )
+            .children(items.into_iter().map(|(id, icon, title, hint, action)| {
+                div()
+                    .id(id)
+                    .flex()
+                    .items_center()
+                    .gap_2p5()
+                    .px_2()
+                    .py_2()
+                    .rounded(px(6.0))
+                    .cursor_pointer()
+                    .hover(|s| s.bg(colors.hover))
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.is_plus_menu_open = false;
+                        action(this, cx);
+                        cx.notify();
+                    }))
+                    .child(Icon::new(icon).size(IconSize::Sm).color(colors.fg_muted))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .child(div().text_size(px(13.0)).text_color(colors.fg).child(title))
+                            .child(
+                                div()
+                                    .text_size(px(11.0))
+                                    .text_color(colors.fg_muted)
+                                    .truncate()
+                                    .child(hint),
+                            ),
+                    )
+            }))
+    }
+
     fn render_permission_picker_popover(&self, cx: &Context<Self>) -> impl IntoElement {
         let current_mode = self.permission_mode;
 
@@ -380,23 +492,36 @@ impl BenCodeApp {
             .absolute()
             .bottom(px(36.0))
             .left(px(140.0))
-            .w(px(180.0))
+            .w(px(280.0))
             .p_1p5()
             .rounded(px(8.0))
             .bg(rgb(0x1a1824))
             .border_1()
             .border_color(gpui::rgba(0xffffff18))
             .shadow_lg()
-            .children(PERMISSION_MODES.iter().map(|&(mode, label, icon)| {
+            .flex()
+            .flex_col()
+            .gap_1()
+            .child(
+                div()
+                    .px_2()
+                    .pt_1()
+                    .pb_0p5()
+                    .text_size(px(10.0))
+                    .font_weight(FontWeight::BOLD)
+                    .text_color(rgb(0x8e8a9d))
+                    .child("EXECUTION ACCESS"),
+            )
+            .children(PERMISSION_MODES.iter().map(|&(mode, label, hint, icon)| {
                 let is_active = mode == current_mode;
                 div()
                     .id(SharedString::from(format!("perm-opt-{mode:?}")))
                     .flex()
-                    .items_center()
+                    .items_start()
                     .justify_between()
                     .px_2()
-                    .py_1p5()
-                    .rounded(px(5.0))
+                    .py_2()
+                    .rounded(px(6.0))
                     .cursor_pointer()
                     .when(is_active, |el| el.bg(rgb(0x2c293c)))
                     .hover(|s| s.bg(rgb(0x252233)))
@@ -407,8 +532,10 @@ impl BenCodeApp {
                     .child(
                         div()
                             .flex()
-                            .items_center()
-                            .gap_2()
+                            .items_start()
+                            .gap_2p5()
+                            .flex_1()
+                            .min_w_0()
                             .child(Icon::new(icon).size(IconSize::Xs).color(
                                 if mode == PermissionMode::Auto {
                                     rgb(0xf59e0b)
@@ -418,13 +545,25 @@ impl BenCodeApp {
                             ))
                             .child(
                                 div()
-                                    .text_size(px(12.0))
-                                    .text_color(if is_active {
-                                        rgb(0xffffff)
-                                    } else {
-                                        rgb(0xdedce6)
-                                    })
-                                    .child(label),
+                                    .flex_1()
+                                    .min_w_0()
+                                    .child(
+                                        div()
+                                            .text_size(px(12.5))
+                                            .font_weight(FontWeight::MEDIUM)
+                                            .text_color(if is_active {
+                                                rgb(0xffffff)
+                                            } else {
+                                                rgb(0xdedce6)
+                                            })
+                                            .child(label),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_size(px(11.0))
+                                            .text_color(rgb(0x8e8a9d))
+                                            .child(hint),
+                                    ),
                             ),
                     )
                     .when(is_active, |el| {

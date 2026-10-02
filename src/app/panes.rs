@@ -30,7 +30,23 @@ impl BenCodeApp {
     pub(super) fn sync_selection(&mut self, cx: &mut Context<Self>) {
         let focused = self.tabs.focused_session().map(str::to_string);
         if focused != self.selected_session_id {
+            if let Some(old_id) = &self.selected_session_id {
+                let current_prompt = self.prompt_input.read(cx).text().to_string();
+                if current_prompt.is_empty() {
+                    self.drafts.remove(old_id);
+                } else {
+                    self.drafts.insert(old_id.clone(), current_prompt);
+                }
+            }
             self.selected_diff_path = None;
+            let restored = focused
+                .as_ref()
+                .and_then(|id| self.drafts.get(id))
+                .cloned()
+                .unwrap_or_default();
+            self.prompt_input.update(cx, |input, cx| {
+                input.set_text(restored, cx);
+            });
         }
         let model = focused
             .as_deref()

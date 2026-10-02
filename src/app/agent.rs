@@ -113,6 +113,7 @@ impl BenCodeApp {
 
         self.prompt_input
             .update(cx, |input, cx| input.set_text("", cx));
+        self.drafts.remove(&session_id);
         self.persist_session(&session_id);
 
         match harness::spawn(&request) {
