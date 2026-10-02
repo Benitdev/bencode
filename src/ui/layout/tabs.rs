@@ -7,8 +7,8 @@
 //! - `active` names an existing tab, and is `None` only when there are no tabs.
 
 use super::{
-    LayoutNode, PaneEdge, SplitDir, close_leaf, contains_leaf, leaf, place_pane, set_split_sizes,
-    split_pane,
+    LayoutNode, PaneEdge, SplitDir, close_leaf, contains_leaf, leaf, place_pane, replace_leaf,
+    set_split_sizes, split_pane,
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -114,10 +114,26 @@ impl TabSet {
     }
 
     /// Focuses `session_id` if it is open, otherwise opens it in a new tab.
+    #[cfg(test)]
     pub fn select(&mut self, session_id: &str) {
         if !self.focus(session_id) {
             self.open(session_id);
         }
+    }
+
+    /// Shows `new_id` in place of pane `old_id`, focusing it and activating
+    /// its tab. `false` when no tab holds `old_id` or `new_id` is open.
+    pub fn replace_pane(&mut self, old_id: &str, new_id: &str) -> bool {
+        if self.tab_of(new_id).is_some() {
+            return false;
+        }
+        let Some(tab) = self.tabs.iter_mut().find(|t| t.contains(old_id)) else {
+            return false;
+        };
+        tab.layout = replace_leaf(&tab.layout, old_id, new_id);
+        tab.focused = new_id.to_string();
+        self.active = Some(tab.id.clone());
+        true
     }
 
     pub fn close_tab(&mut self, tab_id: &str) -> bool {

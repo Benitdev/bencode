@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use gpui::Context;
 
-use super::tab_scope::{TabClosePlan, deck_tabs, plan_tab_close};
+use super::tab_scope::{TabClosePlan, deck_tabs, is_blank_session, plan_tab_close};
 use super::{BenCodeApp, DEFAULT_CONTEXT_WINDOW, NEW_SESSION_TITLE, now_ms};
 use crate::db::{Block, SessionRow};
 use crate::harness::{HarnessKind, catalog};
@@ -46,13 +46,6 @@ impl BenCodeApp {
         self.remember_focused_tab();
         self.refresh_workspace_if_moved(cx);
         cx.notify();
-    }
-
-    /// Shows a session: focuses its pane if it is already open (switching
-    /// tab if needed), otherwise opens it in a new tab.
-    pub fn select_session(&mut self, id: String, cx: &mut Context<Self>) {
-        self.tabs.select(&id);
-        self.sync_selection(cx);
     }
 
     pub fn switch_tab(&mut self, tab_id: &str, cx: &mut Context<Self>) {
@@ -254,10 +247,84 @@ impl BenCodeApp {
             log::error!("failed to delete session {id}: {err:#}");
             return;
         }
+        self.vacate_pane(id);
         self.sessions.retain(|s| s.id != id);
-        self.tabs.remove_session(id);
         self.transcripts.remove(id);
         self.sync_selection(cx);
+    }
+
+    /// Takes `id` out of the tabs without leaving its project: a tab it fills
+    /// alone moves focus like closing it would, and the project's last tab
+    /// gets a fresh thread instead of closing.
+    fn vacate_pane(&mut self, id: &str) {
+        let alone_in = self
+            .tabs
+            .tab_of(id)
+            .filter(|tab| tab.layout == leaf(id))
+            .map(|tab| tab.id.clone());
+        let Some(tab_id) = alone_in else {
+            self.tabs.remove_session(id);
+            return;
+        };
+        match plan_tab_close(self.tabs.tabs(), &self.sessions, &tab_id) {
+            TabClosePlan::Close { next_active } => {
+                self.tabs.close_tab(&tab_id);
+                self.tabs.activate(&next_active);
+            }
+            TabClosePlan::Keep => {
+                let cwd = self
+                    .sessions
+                    .iter()
+                    .find(|s| s.id == id)
+                    .map_or_else(|| self.current_cwd.clone(), |s| s.cwd.clone());
+                let fresh = self.create_session_row(&cwd);
+                self.tabs.replace_pane(id, &fresh);
+            }
+        }
+    }
+
+    /// Opens a thread from history (sidebar, search): focuses it where it is
+    /// open, else shows it in place of an empty pane of the active tab, else
+    /// in a new tab. MonoCode `onSelectHistorySession`.
+    pub fn open_session(&mut self, id: String, cx: &mut Context<Self>) {
+        if !self.tabs.focus(&id) {
+            match self.blank_pane_in_active_tab().filter(|blank| *blank != id) {
+                Some(blank) if self.tabs.replace_pane(&blank, &id) => {
+                    self.discard_blank_session(&blank);
+                }
+                _ => {
+                    self.tabs.open(&id);
+                }
+            }
+        }
+        self.sync_selection(cx);
+    }
+
+    /// The active tab's focused pane if it is an empty thread, else its
+    /// first empty one.
+    fn blank_pane_in_active_tab(&self) -> Option<String> {
+        let tab = self.tabs.active()?;
+        let is_blank = |id: &str| {
+            self.sessions
+                .iter()
+                .find(|s| s.id == id)
+                .is_some_and(|s| is_blank_session(s, self.is_agent_running_in(id)))
+        };
+        if is_blank(&tab.focused) {
+            return Some(tab.focused.clone());
+        }
+        tab.leaf_ids().into_iter().find(|id| is_blank(id))
+    }
+
+    /// Drops a replaced thread that never received a prompt; MonoCode does
+    /// not keep those either.
+    fn discard_blank_session(&mut self, id: &str) {
+        if let Err(err) = self.db.delete_session(id) {
+            log::error!("failed to drop empty session {id}: {err:#}");
+            return;
+        }
+        self.sessions.retain(|s| s.id != id);
+        self.transcripts.remove(id);
     }
 
     /// Creates and persists a new session row with the welcome block.

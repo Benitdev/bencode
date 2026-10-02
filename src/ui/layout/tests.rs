@@ -299,3 +299,13 @@ fn reorder_and_resize_tabs() {
     tabs.resize(&id, &[1.0, 3.0]);
     assert_eq!(sizes(&tabs.active().unwrap().layout), vec![0.25, 0.75]);
 }
+
+#[test]
+fn replace_pane_keeps_the_split_and_focuses_the_new_session() {
+    let mut tabs = TabSet::with_sessions(["a"]);
+    tabs.split("a", SplitDir::Right, "b");
+    assert!(tabs.replace_pane("b", "c"));
+    assert_eq!(leaf_ids(&tabs.tabs()[0].layout), vec!["a", "c"]);
+    assert_eq!(tabs.focused_session(), Some("c"));
+    assert!(!tabs.replace_pane("a", "c"), "c is already open");
+}

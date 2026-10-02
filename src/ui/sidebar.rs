@@ -454,7 +454,7 @@ impl BenCodeApp {
             .cursor_pointer()
             .when(selected, |el| el.bg(colors.active))
             .hover(|s| s.bg(colors.hover))
-            .on_click(cx.listener(move |this, _, _, cx| this.select_session(id.clone(), cx)))
+            .on_click(cx.listener(move |this, _, _, cx| this.open_session(id.clone(), cx)))
             .child(
                 div()
                     .flex()

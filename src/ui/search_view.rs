@@ -190,7 +190,7 @@ impl BenCodeApp {
         match hit.scope {
             SearchScope::Conversations => {
                 self.active_view_mode = ViewMode::Chat;
-                self.select_session(hit.target_id, cx);
+                self.open_session(hit.target_id, cx);
             }
             SearchScope::Files
                 if self

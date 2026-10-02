@@ -144,3 +144,12 @@ pub fn set_split_sizes(node: &LayoutNode, split_id: &str, shares: &[f32]) -> Lay
         _ => map_children(node, |c| set_split_sizes(c, split_id, shares)),
     }
 }
+
+/// `node` with leaf `old_id` renamed to `new_id`; sizes and splits are kept.
+pub fn replace_leaf(node: &LayoutNode, old_id: &str, new_id: &str) -> LayoutNode {
+    match node {
+        LayoutNode::Leaf { id } if id == old_id => leaf(new_id),
+        LayoutNode::Leaf { .. } => node.clone(),
+        LayoutNode::Split { .. } => map_children(node, |child| replace_leaf(child, old_id, new_id)),
+    }
+}
