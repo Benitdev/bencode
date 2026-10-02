@@ -4,7 +4,9 @@ use std::process::{Command, Output};
 
 use anyhow::{Context as _, Result, bail};
 
+mod diffs;
 mod rows;
+pub use diffs::{DiffSource, commit_files, diff_for};
 pub use rows::{DiffRow, number_rows, unified_text};
 
 // Only `list_worktrees` feeds the sidebar switcher so far; create/remove/prune
@@ -221,6 +223,19 @@ fn parse_porcelain_z(raw: &[u8]) -> Vec<StatusEntry> {
         });
     }
     entries
+}
+
+/// Cheap summary of the repository state: HEAD, branch, upstream counts,
+/// index and work-tree status, and changed-line totals. Equal fingerprints
+/// mean a refresh would show nothing new. `None` outside a repository.
+pub fn state_fingerprint(cwd: &str) -> Option<u64> {
+    use std::hash::{Hash, Hasher};
+    let status = run_git(cwd, &["status", "--porcelain=v2", "-b", "-z", "-uall"]).ok()?;
+    let lines = run_git(cwd, &["diff", "--no-ext-diff", "--shortstat"]).unwrap_or_default();
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    status.hash(&mut hasher);
+    lines.hash(&mut hasher);
+    Some(hasher.finish())
 }
 
 fn read_status(cwd: &str) -> Result<Vec<StatusEntry>> {
@@ -1117,5 +1132,51 @@ mod tests {
         discard_all(repo.cwd()).expect("discard all empty repo");
 
         assert!(!repo.exists("u.txt"));
+    }
+
+    #[test]
+    fn staged_and_unstaged_sides_differ() {
+        let repo = TempRepo::new();
+        repo.write("a.txt", "one\n");
+        repo.git(&["add", "a.txt"]);
+        repo.git(&["commit", "-q", "-m", "init"]);
+        repo.write("a.txt", "two\n");
+        repo.git(&["add", "a.txt"]);
+        repo.write("a.txt", "three\n");
+
+        let added = |rows: Vec<DiffLineKind>| -> Vec<String> {
+            rows.into_iter()
+                .filter_map(|r| match r {
+                    DiffLineKind::Addition(t) => Some(t),
+                    _ => None,
+                })
+                .collect()
+        };
+        assert_eq!(
+            added(diff_for(repo.cwd(), "a.txt", &DiffSource::Staged)),
+            ["two"]
+        );
+        assert_eq!(
+            added(diff_for(repo.cwd(), "a.txt", &DiffSource::Unstaged)),
+            ["three"]
+        );
+    }
+
+    #[test]
+    fn commit_files_and_diff_describe_a_past_commit() {
+        let repo = TempRepo::new();
+        repo.write("a.txt", "one\n");
+        repo.git(&["add", "a.txt"]);
+        repo.git(&["commit", "-q", "-m", "init"]);
+        let sha = repo.git(&["rev-parse", "HEAD"]).trim().to_string();
+        repo.write("a.txt", "dirty\n");
+
+        let files = commit_files(repo.cwd(), &sha).unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].path, "a.txt");
+        assert_eq!(files[0].additions, 1);
+        let rows = diff_for(repo.cwd(), "a.txt", &DiffSource::Commit(sha));
+        assert!(rows.contains(&DiffLineKind::Addition("one".into())));
+        assert!(!rows.contains(&DiffLineKind::Addition("dirty".into())));
     }
 }

@@ -495,6 +495,7 @@ impl BenCodeApp {
             _subscriptions: subscriptions,
         };
         app.apply_settings(saved);
+        app.start_git_poll(cx);
         app
     }
 

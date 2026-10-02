@@ -13,6 +13,7 @@ use gpui::{
 };
 
 use crate::app::BenCodeApp;
+use crate::git::DiffSource;
 use crate::git::{DiffLineKind, DiffRow, GitFileChange};
 use crate::ui::diff_counts::diff_counts;
 use crate::ui::git_changes_panel::to_ely_status;
@@ -93,9 +94,48 @@ impl BenCodeApp {
             .child(self.render_diff_pane(cx))
     }
 
+    /// Files the diff list offers: an open commit's, else the work tree's.
+    fn listed_files(&self) -> &[GitFileChange] {
+        match &self.workspace.commit_view {
+            Some(commit) => &commit.files,
+            None => &self.workspace.changes,
+        }
+    }
+
+    fn render_list_header(&self, count: usize, cx: &Context<Self>) -> AnyElement {
+        let theme = cx.theme();
+        let label = div()
+            .flex_1()
+            .min_w_0()
+            .truncate()
+            .text_size(theme.text_size(TextSize::Xs))
+            .font_weight(FontWeight::SEMIBOLD)
+            .text_color(theme.colors.fg_muted);
+        let Some(commit) = &self.workspace.commit_view else {
+            return div()
+                .p_3()
+                .child(label.child(format!("CHANGED FILES · {count}")))
+                .into_any_element();
+        };
+        div()
+            .flex()
+            .items_center()
+            .gap_1()
+            .p_3()
+            .child(label.child(format!("{} · {}", commit.short_hash, commit.subject)))
+            .child(
+                IconButton::new("close-commit", IconName::X)
+                    .size(ControlSize::Sm)
+                    .variant(ButtonVariant::Ghost)
+                    .tooltip("Back to changes")
+                    .on_click(cx.listener(|this, _, _, cx| this.close_commit(cx))),
+            )
+            .into_any_element()
+    }
+
     fn render_changed_files(&self, cx: &Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
-        let files = &self.workspace.changes;
+        let files = self.listed_files();
         let selected = self.workspace.diff_path.as_deref();
         div()
             .id("changed-files")
@@ -108,20 +148,16 @@ impl BenCodeApp {
             .border_r_1()
             .border_color(theme.colors.border)
             .bg(theme.colors.surface)
-            .child(
-                div()
-                    .p_3()
-                    .text_size(theme.text_size(TextSize::Xs))
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_color(theme.colors.fg_muted)
-                    .child(format!("CHANGED FILES · {}", files.len())),
+            .child(self.render_list_header(files.len(), cx))
+            .when(
+                files.is_empty() && self.workspace.commit_view.is_none(),
+                |el| {
+                    el.child(
+                        EmptyState::new("clean-tree", IconName::Sparkles, "Working tree is clean")
+                            .body("No staged or unstaged changes."),
+                    )
+                },
             )
-            .when(files.is_empty(), |el| {
-                el.child(
-                    EmptyState::new("clean-tree", IconName::Sparkles, "Working tree is clean")
-                        .body("No staged or unstaged changes."),
-                )
-            })
             .children(files.iter().map(|file| {
                 self.render_changed_file(file, selected == Some(file.path.as_str()), cx)
             }))
@@ -149,7 +185,13 @@ impl BenCodeApp {
             .cursor_pointer()
             .when(active, |el| el.bg(colors.active))
             .hover(|s| s.bg(colors.hover))
-            .on_click(cx.listener(move |this, _, _, cx| this.select_diff_path(path.clone(), cx)))
+            .on_click(cx.listener(move |this, _, _, cx| {
+                let source = match &this.workspace.commit_view {
+                    Some(commit) => DiffSource::Commit(commit.sha.clone()),
+                    None => DiffSource::WorkingTree,
+                };
+                this.select_diff(path.clone(), source, cx);
+            }))
             .child(
                 div()
                     .flex()
@@ -198,8 +240,7 @@ impl BenCodeApp {
                 .into_any_element();
         };
         let stat = self
-            .workspace
-            .changes
+            .listed_files()
             .iter()
             .find(|f| f.path == path)
             .map(|f| (f.additions, f.deletions));

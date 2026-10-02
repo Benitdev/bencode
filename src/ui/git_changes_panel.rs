@@ -17,8 +17,8 @@ use gpui::{
 
 use crate::app::{BenCodeApp, ViewMode};
 use crate::git::{
-    GitFileChange, GitFileStatus, commit, discard_all, discard_file, stage_all, stage_file,
-    unstage_all, unstage_file,
+    DiffSource, GitFileChange, GitFileStatus, commit, discard_all, discard_file, stage_all,
+    stage_file, unstage_all, unstage_file,
 };
 
 pub fn to_ely_status(status: &GitFileStatus) -> GitStatus {
@@ -306,7 +306,7 @@ impl BenCodeApp {
         let theme = cx.theme();
         let colors = &theme.colors;
         let compact_time = format_compact_time(&c.relative_time);
-        let commit_hash = c.hash.clone();
+        let commit = c.clone();
         let tooltip_text = if c.message.is_empty() {
             format!("{} ({}) - {}", c.short_hash, c.author, c.relative_time)
         } else {
@@ -336,7 +336,7 @@ impl BenCodeApp {
             .tooltip(Tooltip::text(tooltip_text))
             .on_click(cx.listener(move |this, _, _, cx| {
                 this.active_view_mode = ViewMode::Changes;
-                this.select_diff_path(format!("commit:{}", commit_hash), cx);
+                this.open_commit(&commit, cx);
             }))
             .child(
                 div()
@@ -408,8 +408,16 @@ impl BenCodeApp {
     fn on_change_action(&mut self, path: String, action: ChangeAction, cx: &mut Context<Self>) {
         match action {
             ChangeAction::Open => {
+                // Ely's list does not say which section was clicked; a file
+                // only in the staged section shows its staged side.
+                let unstaged = self.git_status.unstaged.iter().any(|f| f.path == path);
+                let source = if unstaged {
+                    DiffSource::Unstaged
+                } else {
+                    DiffSource::Staged
+                };
                 self.active_view_mode = ViewMode::Changes;
-                self.select_diff_path(path, cx);
+                self.select_diff(path, source, cx);
             }
             ChangeAction::Stage => {
                 self.run_git_action("Stage", move |cwd| stage_file(cwd, &path), cx)
