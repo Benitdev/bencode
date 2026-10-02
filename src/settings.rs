@@ -16,6 +16,8 @@ pub enum ThemePreference {
     #[default]
     Dark,
     Light,
+    /// Follow the OS appearance (MonoCode "System").
+    System,
 }
 
 /// Access mode for new threads, in MonoCode's `RuntimeMode` ids. Older
@@ -39,6 +41,9 @@ pub struct AppSettings {
     pub default_model: Option<String>,
     pub permission_mode: PermissionPreference,
     pub terminal_open: bool,
+    /// MonoCode "Claude Code hooks" switched off: Claude runs with
+    /// `disableAllHooks`. Hooks are on by default.
+    pub claude_hooks_disabled: bool,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
@@ -101,6 +106,7 @@ mod tests {
             default_model: Some("claude:opus".into()),
             permission_mode: PermissionPreference::AutoAcceptEdits,
             terminal_open: true,
+            claude_hooks_disabled: true,
             extra: Map::new(),
         };
         save_to(&dir, &settings).unwrap();

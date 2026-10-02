@@ -6,12 +6,14 @@ use ely_gpui_component::feedback::EmptyState;
 use ely_gpui_component::forms::Switch;
 use ely_gpui_component::overlays::Dialog;
 use ely_gpui_component::primitives::IconName;
-use ely_gpui_component::settings::{SettingsLayout, SettingsRow, SettingsSection};
-use ely_gpui_component::theme::{ActiveTheme, Mode};
+use ely_gpui_component::settings::{
+    Appearance, SettingsLayout, SettingsRow, SettingsSection, ThemeSelector,
+};
 use gpui::{AnyElement, App, Context, IntoElement, ParentElement, SharedString, Styled, div, px};
 
 use crate::app::BenCodeApp;
 use crate::harness::HarnessInfo;
+use crate::settings::ThemePreference;
 use crate::ui::HarnessIcon;
 use crate::ui::app_callback::app_callback;
 
@@ -132,7 +134,7 @@ impl BenCodeApp {
             SettingsTab::Providers => self.render_settings_providers(cx).into_any_element(),
             SettingsTab::Mcp => self.render_settings_mcp().into_any_element(),
             SettingsTab::Skills => self.render_settings_skills(cx).into_any_element(),
-            SettingsTab::Appearance => render_settings_appearance(cx).into_any_element(),
+            SettingsTab::Appearance => render_settings_appearance(self, cx).into_any_element(),
             SettingsTab::About => render_settings_about().into_any_element(),
         }
     }
@@ -168,15 +170,42 @@ impl BenCodeApp {
             )
     }
 
-    fn render_settings_providers(&self, cx: &App) -> impl IntoElement {
+    fn render_settings_providers(&self, cx: &Context<Self>) -> impl IntoElement {
         let section = SettingsSection::new("Providers")
             .description("Agent CLIs found when BenCode started. Sign in through each CLI.");
-        if self.harnesses.is_empty() {
-            return section.row(SettingsRow::new("No harness CLIs detected"));
-        }
-        self.harnesses
-            .iter()
-            .fold(section, |section, info| section.row(provider_row(info, cx)))
+        let providers = if self.harnesses.is_empty() {
+            section.row(SettingsRow::new("No harness CLIs detected"))
+        } else {
+            self.harnesses
+                .iter()
+                .fold(section, |section, info| section.row(provider_row(info, cx)))
+        };
+        div()
+            .flex()
+            .flex_col()
+            .gap_6()
+            .child(providers)
+            .child(self.render_settings_advanced(cx))
+    }
+
+    /// MonoCode Providers › Advanced.
+    fn render_settings_advanced(&self, cx: &Context<Self>) -> impl IntoElement {
+        let entity = cx.entity().downgrade();
+        SettingsSection::new("Advanced").row(
+            SettingsRow::new("Claude Code hooks")
+                .description("Run hooks from your Claude settings. Applies from the next turn.")
+                .control(
+                    Switch::new("claude-hooks", !self.claude_hooks_disabled).on_change(
+                        move |on, _, cx| {
+                            if let Err(err) =
+                                entity.update(cx, |this, cx| this.set_claude_hooks(on, cx))
+                            {
+                                log::debug!("hooks toggle after app drop: {err:#}");
+                            }
+                        },
+                    ),
+                ),
+        )
     }
 
     fn render_settings_mcp(&self) -> impl IntoElement {
@@ -244,16 +273,29 @@ fn provider_row(info: &HarnessInfo, _cx: &App) -> SettingsRow {
     )
 }
 
-fn render_settings_appearance(cx: &Context<BenCodeApp>) -> impl IntoElement {
-    let app = cx.entity().downgrade();
-    SettingsSection::new("Appearance").row(
-        SettingsRow::new("Dark mode")
-            .description("Use MonoCode's dark palette; turn off for light")
+fn render_settings_appearance(app: &BenCodeApp, cx: &Context<BenCodeApp>) -> impl IntoElement {
+    let appearance = match app.theme_preference {
+        ThemePreference::Dark => Appearance::Dark,
+        ThemePreference::Light => Appearance::Light,
+        ThemePreference::System => Appearance::System,
+    };
+    let entity = cx.entity().downgrade();
+    SettingsSection::new("Theme").row(
+        SettingsRow::new("Theme")
+            .description("System follows the OS appearance.")
             .control(
-                Switch::new("appearance-dark-mode", cx.theme().is_dark()).on_change(
-                    move |dark, _, cx| {
-                        let mode = if dark { Mode::Dark } else { Mode::Light };
-                        let _ = app.update(cx, |this, cx| this.set_theme_mode(mode, cx));
+                ThemeSelector::new("appearance-theme", appearance).on_change(
+                    move |picked, _, cx| {
+                        let pref = match picked {
+                            Appearance::Dark => ThemePreference::Dark,
+                            Appearance::Light => ThemePreference::Light,
+                            Appearance::System => ThemePreference::System,
+                        };
+                        if let Err(err) =
+                            entity.update(cx, |this, cx| this.set_theme_preference(pref, cx))
+                        {
+                            log::debug!("theme change after app drop: {err:#}");
+                        }
                     },
                 ),
             ),

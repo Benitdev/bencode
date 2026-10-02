@@ -21,7 +21,7 @@ use gpui::{
 };
 
 pub use agent::{AgentRun, NEW_SESSION_TITLE, now_ms};
-pub use preferences::theme_mode;
+pub use preferences::{is_dark_appearance, theme_mode};
 pub use projects::{is_path_in_project, normalize_project_path, same_project_path};
 pub use workspace_sync::WorkspaceCache;
 
@@ -225,6 +225,9 @@ pub struct BenCodeApp {
     pub is_sidebar_open: bool,
     /// The project rail (⌘B); the session sidebar is `is_sidebar_open` (⇧⌘B).
     pub is_rail_open: bool,
+    pub theme_preference: crate::settings::ThemePreference,
+    /// Run Claude with `disableAllHooks` (MonoCode "Claude Code hooks" off).
+    pub claude_hooks_disabled: bool,
     pub tab_history: tab_history::TabHistory,
     /// Set while Back/Forward switches tabs, so the move is not recorded.
     navigating_history: bool,
@@ -323,6 +326,9 @@ impl BenCodeApp {
                     }
                 },
             ),
+            cx.observe_window_appearance(window, |this, window, cx| {
+                this.on_system_appearance_changed(window.appearance(), cx)
+            }),
             cx.subscribe(&note_title_input, Self::on_note_input_event),
             cx.subscribe(&note_body_input, Self::on_note_input_event),
             cx.subscribe(
@@ -516,6 +522,8 @@ impl BenCodeApp {
             editor: Default::default(),
             is_sidebar_open: true,
             is_rail_open: true,
+            theme_preference: Default::default(),
+            claude_hooks_disabled: false,
             tab_history: Default::default(),
             navigating_history: false,
             is_terminal_open: true,

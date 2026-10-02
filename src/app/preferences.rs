@@ -1,8 +1,8 @@
 //! Applies `settings.json` at startup and writes it back, off the UI thread,
 //! whenever a persisted preference changes.
 
-use ely_gpui_component::theme::{ActiveTheme, Mode, Theme};
-use gpui::{App, Context};
+use ely_gpui_component::theme::{Mode, Theme};
+use gpui::{Context, WindowAppearance};
 
 use crate::app::{BenCodeApp, PermissionMode};
 use crate::harness::catalog;
@@ -30,11 +30,21 @@ impl From<PermissionMode> for PermissionPreference {
     }
 }
 
-pub fn theme_mode(pref: ThemePreference) -> Mode {
+/// The palette for `pref`; `system_dark` is what the OS currently shows.
+pub fn theme_mode(pref: ThemePreference, system_dark: bool) -> Mode {
     match pref {
         ThemePreference::Dark => Mode::Dark,
         ThemePreference::Light => Mode::Light,
+        ThemePreference::System if system_dark => Mode::Dark,
+        ThemePreference::System => Mode::Light,
     }
+}
+
+pub fn is_dark_appearance(appearance: WindowAppearance) -> bool {
+    matches!(
+        appearance,
+        WindowAppearance::Dark | WindowAppearance::VibrantDark
+    )
 }
 
 impl BenCodeApp {
@@ -49,26 +59,25 @@ impl BenCodeApp {
         }
         self.permission_mode = saved.permission_mode.into();
         self.is_terminal_open = saved.terminal_open;
+        self.theme_preference = saved.theme;
+        self.claude_hooks_disabled = saved.claude_hooks_disabled;
         self.settings = saved;
     }
 
-    fn current_settings(&self, cx: &App) -> AppSettings {
+    fn current_settings(&self) -> AppSettings {
         AppSettings {
-            theme: if cx.theme().is_dark() {
-                ThemePreference::Dark
-            } else {
-                ThemePreference::Light
-            },
+            theme: self.theme_preference,
             default_model: Some(self.selected_model.clone()),
             permission_mode: self.permission_mode.into(),
             terminal_open: self.is_terminal_open,
+            claude_hooks_disabled: self.claude_hooks_disabled,
             extra: self.settings.extra.clone(),
         }
     }
 
     /// Persists preferences if they differ from what was last saved.
     pub fn save_settings(&mut self, cx: &mut Context<Self>) {
-        let next = self.current_settings(cx);
+        let next = self.current_settings();
         if next == self.settings {
             return;
         }
@@ -117,8 +126,33 @@ impl BenCodeApp {
         cx.notify();
     }
 
-    pub fn set_theme_mode(&mut self, mode: Mode, cx: &mut Context<Self>) {
-        Theme::set_mode(mode, cx);
+    /// Light, Dark or System (MonoCode Appearance › Theme).
+    pub fn set_theme_preference(&mut self, pref: ThemePreference, cx: &mut Context<Self>) {
+        self.theme_preference = pref;
+        let system_dark = is_dark_appearance(cx.window_appearance());
+        Theme::set_mode(theme_mode(pref, system_dark), cx);
+        self.save_settings(cx);
+        cx.notify();
+    }
+
+    /// Re-applies the palette when the OS appearance changes under System.
+    pub fn on_system_appearance_changed(
+        &mut self,
+        appearance: WindowAppearance,
+        cx: &mut Context<Self>,
+    ) {
+        if self.theme_preference == ThemePreference::System {
+            Theme::set_mode(
+                theme_mode(ThemePreference::System, is_dark_appearance(appearance)),
+                cx,
+            );
+            cx.notify();
+        }
+    }
+
+    /// MonoCode Advanced › "Claude Code hooks"; applies from the next turn.
+    pub fn set_claude_hooks(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        self.claude_hooks_disabled = !enabled;
         self.save_settings(cx);
         cx.notify();
     }
@@ -134,6 +168,8 @@ mod tests {
             let pref: PermissionPreference = mode.into();
             assert_eq!(PermissionMode::from(pref), mode);
         }
-        assert_eq!(theme_mode(ThemePreference::Light), Mode::Light);
+        assert_eq!(theme_mode(ThemePreference::Light, true), Mode::Light);
+        assert_eq!(theme_mode(ThemePreference::System, true), Mode::Dark);
+        assert_eq!(theme_mode(ThemePreference::System, false), Mode::Light);
     }
 }

@@ -180,7 +180,7 @@ impl BenCodeApp {
                                                     .color(colors.fg_muted),
                                             )
                                             .child("Inbox"),
-                                    )
+                                    ),
                             )
                             // Notes
                             .child(

@@ -27,7 +27,8 @@ fn main() {
             let saved = settings::settings_dir()
                 .map(|dir| settings::load_from(&dir))
                 .unwrap_or_default();
-            ui::theme::install(app::theme_mode(saved.theme), cx);
+            let system_dark = app::is_dark_appearance(cx.window_appearance());
+            ui::theme::install(app::theme_mode(saved.theme, system_dark), cx);
 
             let bounds = Bounds::centered(None, size(px(1200.0), px(780.0)), cx);
             let options = WindowOptions {

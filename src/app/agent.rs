@@ -139,7 +139,7 @@ impl BenCodeApp {
         let Some(session) = self.sessions.iter().find(|s| s.id == session_id) else {
             return;
         };
-        let request = spawn_request(session, &agent_prompt, mode);
+        let request = spawn_request(session, &agent_prompt, mode, self.claude_hooks_disabled);
         self.persist_session(session_id);
         let started = request
             .map_err(|message| (message, now))
@@ -326,6 +326,7 @@ fn spawn_request(
     session: &SessionRow,
     prompt: &str,
     mode: PermissionMode,
+    disable_hooks: bool,
 ) -> Result<SpawnRequest, String> {
     let harness = HarnessKind::from_id(&session.harness).ok_or_else(|| {
         format!(
@@ -343,6 +344,7 @@ fn spawn_request(
             .provider_session_id
             .clone()
             .filter(|id| !id.is_empty()),
+        disable_hooks,
     })
 }
 
@@ -645,14 +647,14 @@ mod tests {
     fn spawn_request_maps_model_policy_and_resume() {
         let mut s = session();
         s.provider_session_id = Some("resume-me".into());
-        let req = spawn_request(&s, "go", PermissionMode::Supervised).unwrap();
+        let req = spawn_request(&s, "go", PermissionMode::Supervised, false).unwrap();
         assert_eq!(req.harness, HarnessKind::Claude);
         assert_eq!(req.model.as_deref(), Some("opus"));
         assert_eq!(req.permission, PermissionPolicy::Ask);
         assert_eq!(req.resume_id.as_deref(), Some("resume-me"));
 
         s.harness = "pi".into();
-        assert!(spawn_request(&s, "go", PermissionMode::FullAccess).is_err());
+        assert!(spawn_request(&s, "go", PermissionMode::FullAccess, false).is_err());
     }
 
     #[test]

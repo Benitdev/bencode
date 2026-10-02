@@ -291,6 +291,7 @@ mod tests {
             model: Some("gpt-5-codex".into()),
             permission: PermissionPolicy::Ask,
             resume_id: Some("th_1".into()),
+            disable_hooks: false,
         };
         let args = build_args(&req);
         assert_eq!(&args[..3], ["exec", "--json", "--skip-git-repo-check"]);

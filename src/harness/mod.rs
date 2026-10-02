@@ -87,6 +87,8 @@ pub struct SpawnRequest {
     pub permission: PermissionPolicy,
     /// Provider session to continue, from a previous `SessionStarted`.
     pub resume_id: Option<String>,
+    /// Claude only: run with `disableAllHooks` (MonoCode "Claude Code hooks" off).
+    pub disable_hooks: bool,
 }
 
 /// Starts one agent turn. Non-blocking apart from a fork/exec; safe to call
@@ -182,6 +184,7 @@ mod tests {
             model: None,
             permission: PermissionPolicy::Ask,
             resume_id: None,
+            disable_hooks: false,
         };
         assert!(spawn(&req).is_err());
     }

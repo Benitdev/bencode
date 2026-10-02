@@ -61,6 +61,9 @@ fn build_args(req: &SpawnRequest) -> Vec<String> {
             "stdio".into(),
         ]),
     }
+    if req.disable_hooks {
+        args.extend(["--settings".into(), r#"{"disableAllHooks":true}"#.into()]);
+    }
     if let Some(model) = &req.model {
         args.extend(["--model".into(), model.clone()]);
     }
@@ -321,6 +324,7 @@ mod tests {
             model: Some("opus".into()),
             permission: policy,
             resume_id: Some("sess-1".into()),
+            disable_hooks: false,
         }
     }
 
@@ -341,6 +345,16 @@ mod tests {
             !ask.contains(&"hi".to_string()),
             "prompt must go over stdin, not argv"
         );
+
+        let mut no_hooks = request(PermissionPolicy::Ask);
+        no_hooks.disable_hooks = true;
+        let no_hooks = build_args(&no_hooks);
+        assert!(
+            no_hooks
+                .windows(2)
+                .any(|w| w == ["--settings", r#"{"disableAllHooks":true}"#])
+        );
+        assert!(!ask.contains(&"--settings".to_string()));
 
         let auto = build_args(&request(PermissionPolicy::AutoApprove));
         assert!(auto.contains(&"--dangerously-skip-permissions".to_string()));
@@ -478,6 +492,7 @@ mod tests {
             model: Some("haiku".into()),
             permission: PermissionPolicy::Ask,
             resume_id: None,
+            disable_hooks: false,
         };
         let (handle, mut rx) = crate::harness::spawn(&req).unwrap();
         let events = crate::harness::runtime::runtime().block_on(async move {
