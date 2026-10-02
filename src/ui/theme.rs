@@ -62,13 +62,18 @@ fn monocode_light() -> Palette {
     p
 }
 
-/// Brand dot colour for a `sessions.harness` id.
+/// Brand color for a `sessions.harness` id matching MonoCode.
 pub fn harness_color(id: &str, colors: &Palette) -> Hsla {
-    match id {
-        "claude" => c(0xd97706),
-        "antigravity" => c(0x3b82f6),
-        "codex" => c(0x10b981),
-        "opencode" => colors.chart[4],
-        _ => colors.accent,
+    let key = id.split(':').next().unwrap_or(id).trim();
+    if key.eq_ignore_ascii_case("claude") {
+        c(0xd97757)
+    } else if key.eq_ignore_ascii_case("codex") {
+        c(0x10a37f)
+    } else if key.eq_ignore_ascii_case("antigravity") {
+        c(0x3186ff)
+    } else if key.eq_ignore_ascii_case("omp") {
+        c(0xa855f7)
+    } else {
+        colors.fg
     }
 }

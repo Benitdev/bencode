@@ -10,17 +10,17 @@ use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize, Radius, Text
 use gpui::prelude::*;
 use gpui::{
     AnyElement, Axis, Context, DragMoveEvent, FollowMode, FontWeight, IntoElement, ListState,
-    ParentElement, SharedString, Stateful, Styled, div, list,
+    ParentElement, SharedString, Stateful, Styled, div, list, px,
 };
 
 use crate::app::BenCodeApp;
 use crate::db::SessionRow;
 use crate::harness::catalog;
+use crate::ui::HarnessIcon;
 use crate::ui::drag_drop::{
     DraggedFile, DraggedPane, render_file_drop_hint, render_pane_drop_hint,
 };
 use crate::ui::layout::{LayoutNode, SplitDir, leaf_count, pane_edge_from_point, split_shares};
-use crate::ui::theme;
 use crate::ui::transcript::context_percent;
 
 const UNTITLED: &str = "Untitled thread";
@@ -376,13 +376,7 @@ impl BenCodeApp {
                             .color(colors.fg_muted),
                     ),
             )
-            .child(
-                div()
-                    .flex_none()
-                    .size(theme.status_dot())
-                    .rounded_full()
-                    .bg(theme::harness_color(&session.harness, colors)),
-            )
+            .child(HarnessIcon::new(&session.harness).size(px(14.0)))
             .child(
                 div()
                     .min_w_0()

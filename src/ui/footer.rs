@@ -4,11 +4,11 @@
 use ely_gpui_component::buttons::{Button, ButtonVariant};
 use ely_gpui_component::primitives::IconName;
 use ely_gpui_component::theme::{ActiveTheme, ControlSize, TextSize};
-use gpui::{Context, FontWeight, IntoElement, ParentElement, Styled, div, prelude::*};
+use gpui::{Context, FontWeight, IntoElement, ParentElement, Styled, div, prelude::*, px};
 
 use crate::app::BenCodeApp;
 use crate::harness::HarnessKind;
-use crate::ui::theme::harness_color;
+use crate::ui::HarnessIcon;
 
 impl BenCodeApp {
     pub fn render_usage_footer(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -37,13 +37,7 @@ impl BenCodeApp {
                     .when_some(harness, |el, id| {
                         let label = HarnessKind::from_id(&id)
                             .map_or(id.clone(), |kind| kind.label().to_string());
-                        el.child(
-                            div()
-                                .size_1p5()
-                                .rounded_full()
-                                .bg(harness_color(&id, colors)),
-                        )
-                        .child(label)
+                        el.child(HarnessIcon::new(&id).size(px(13.0))).child(label)
                     })
                     .when(running, |el| {
                         el.child(

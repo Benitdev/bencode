@@ -8,12 +8,12 @@ use ely_gpui_component::primitives::IconName;
 use ely_gpui_component::settings::{SettingsLayout, SettingsRow, SettingsSection};
 use ely_gpui_component::theme::{ActiveTheme, Mode};
 use ely_gpui_component::typography::Code;
-use gpui::{AnyElement, App, Context, IntoElement, ParentElement, SharedString, Styled, div};
+use gpui::{AnyElement, App, Context, IntoElement, ParentElement, SharedString, Styled, div, px};
 
 use crate::app::BenCodeApp;
 use crate::harness::HarnessInfo;
+use crate::ui::HarnessIcon;
 use crate::ui::app_callback::app_callback;
-use crate::ui::theme::harness_color;
 use crate::workspace::BUILTIN_SKILLS;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -190,13 +190,13 @@ fn mcp_row(server: &crate::mcp::McpConnection) -> SettingsRow {
                 .flex()
                 .items_center()
                 .gap_2()
+                .child(HarnessIcon::new(&server.provider).size(px(14.0)))
                 .child(Badge::new(server.transport.clone()).tone(Tone::Neutral))
                 .child(Badge::new(status).tone(tone).dot()),
         )
 }
 
-fn provider_row(info: &HarnessInfo, cx: &App) -> SettingsRow {
-    let theme = cx.theme();
+fn provider_row(info: &HarnessInfo, _cx: &App) -> SettingsRow {
     let location = info.binary_path.as_ref().map_or_else(
         || "Not found on PATH".to_string(),
         |path| path.display().to_string(),
@@ -210,13 +210,8 @@ fn provider_row(info: &HarnessInfo, cx: &App) -> SettingsRow {
         div()
             .flex()
             .items_center()
-            .gap_2()
-            .child(
-                div()
-                    .size(theme.status_dot())
-                    .rounded_full()
-                    .bg(harness_color(info.id, &theme.colors)),
-            )
+            .gap_2p5()
+            .child(HarnessIcon::new(info.id).size(px(16.0)))
             .child(status),
     )
 }

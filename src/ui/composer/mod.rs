@@ -18,6 +18,7 @@ use gpui::{
 use crate::app::{BenCodeApp, PermissionMode};
 use crate::db::SessionRow;
 use crate::harness::{HarnessKind, catalog};
+use crate::ui::HarnessIcon;
 use crate::ui::app_callback::app_callback;
 
 const COMPOSER_MAX_WIDTH: gpui::Pixels = px(840.0);
@@ -59,6 +60,10 @@ impl BenCodeApp {
 
         let current_model_key = session.map_or(self.selected_model.as_str(), |s| s.model.as_str());
         let current_model_label = catalog::label_for(current_model_key);
+        let current_harness = session
+            .map(|s| s.harness.as_str())
+            .or_else(|| current_model_key.split_once(':').map(|(h, _)| h))
+            .unwrap_or("claude");
         let (perm_label, perm_icon) = permission_entry(self.permission_mode);
 
         div().flex_none().px_6().pb_4().pt_2().child(
@@ -184,11 +189,7 @@ impl BenCodeApp {
                                             this.is_permission_picker_open = false;
                                             cx.notify();
                                         }))
-                                        .child(
-                                            Icon::new(IconName::Sparkles)
-                                                .size(IconSize::Xs)
-                                                .color(rgb(0x388bfd)),
-                                        )
+                                        .child(HarnessIcon::new(current_harness).size(px(14.0)))
                                         .child(
                                             div()
                                                 .flex_1()
@@ -313,10 +314,14 @@ impl BenCodeApp {
                     .py_1()
                     .child(
                         div()
+                            .flex()
+                            .items_center()
+                            .gap_1p5()
                             .px_2()
                             .text_size(px(10.0))
                             .font_weight(FontWeight::BOLD)
                             .text_color(rgb(0x8e8a9d))
+                            .child(HarnessIcon::new(kind.id()).size(px(12.0)))
                             .child(label),
                     )
                     .children(models.into_iter().map(|option| {
@@ -341,13 +346,20 @@ impl BenCodeApp {
                             }))
                             .child(
                                 div()
-                                    .text_size(px(12.0))
-                                    .text_color(if is_active {
-                                        rgb(0xffffff)
-                                    } else {
-                                        rgb(0xdedce6)
-                                    })
-                                    .child(opt_label),
+                                    .flex()
+                                    .items_center()
+                                    .gap_2()
+                                    .child(HarnessIcon::new(kind.id()).size(px(13.0)))
+                                    .child(
+                                        div()
+                                            .text_size(px(12.0))
+                                            .text_color(if is_active {
+                                                rgb(0xffffff)
+                                            } else {
+                                                rgb(0xdedce6)
+                                            })
+                                            .child(opt_label),
+                                    ),
                             )
                             .when(is_active, |el| {
                                 el.child(

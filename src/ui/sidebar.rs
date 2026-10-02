@@ -16,7 +16,7 @@ use crate::app::{BenCodeApp, FilterMode, SidebarMode};
 use crate::db::SessionRow;
 use crate::harness::catalog;
 use crate::ui::app_callback::app_callback;
-use crate::ui::theme::harness_color;
+use crate::ui::provider_icon::HarnessIcon;
 
 const SIDEBAR_WIDTH: gpui::Pixels = px(260.0);
 
@@ -55,14 +55,6 @@ fn relative_time(updated_at: i64, now: i64) -> String {
         d if d < 3_600_000 => format!("{}m", d / 60_000),
         d if d < 86_400_000 => format!("{}h", d / 3_600_000),
         d => format!("{}d", d / 86_400_000),
-    }
-}
-
-fn harness_glyph(harness: &str) -> &'static str {
-    match harness {
-        "claude" => "✴",
-        "codex" => "●",
-        _ => "▲",
     }
 }
 
@@ -380,13 +372,7 @@ impl BenCodeApp {
                             .items_center()
                             .gap_1p5()
                             .min_w_0()
-                            .child(
-                                div()
-                                    .flex_none()
-                                    .font_weight(FontWeight::BOLD)
-                                    .text_color(harness_color(&session.harness, colors))
-                                    .child(harness_glyph(&session.harness)),
-                            )
+                            .child(HarnessIcon::new(&session.harness).size(px(14.0)))
                             .child(
                                 div()
                                     .flex_1()

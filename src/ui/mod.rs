@@ -11,6 +11,7 @@ pub mod inbox_view;
 pub mod layout;
 pub mod notes_view;
 pub mod pane_tree;
+pub mod provider_icon;
 pub mod rail;
 pub mod search_view;
 pub mod settings_modal;
@@ -19,3 +20,5 @@ pub mod terminal_pane;
 pub mod theme;
 pub mod titlebar;
 pub mod transcript;
+
+pub use provider_icon::HarnessIcon;

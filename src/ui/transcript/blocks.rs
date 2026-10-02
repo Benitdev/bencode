@@ -14,6 +14,7 @@ use serde_json::Value;
 
 use crate::db::{Block, SessionRow};
 use crate::harness::catalog;
+use crate::ui::HarnessIcon;
 
 /// Readable column width for message content, aligned with composer card.
 pub const MESSAGE_MAX_WIDTH: gpui::Pixels = gpui::px(840.0);
@@ -186,7 +187,6 @@ fn assistant(
         .as_ref()
         .and_then(|m| m.name.clone())
         .unwrap_or_else(|| catalog::label_for(&session.model));
-    let dot = crate::ui::theme::harness_color(&session.harness, &theme.colors);
     div()
         .flex()
         .flex_col()
@@ -200,7 +200,7 @@ fn assistant(
                 .text_size(theme.text_size(TextSize::Xs))
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_color(theme.colors.fg_subtle)
-                .child(div().flex_none().size_1p5().rounded_full().bg(dot))
+                .child(HarnessIcon::new(&session.harness).size(px(14.0)))
                 .child(div().min_w_0().truncate().child(model)),
         )
         .child(
