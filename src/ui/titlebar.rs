@@ -7,7 +7,7 @@ use ely_gpui_component::shell::{TabBar, WindowTab};
 use ely_gpui_component::theme::{ActiveTheme, ControlSize};
 use gpui::{
     Context, InteractiveElement, IntoElement, ParentElement, SharedString, Styled,
-    WindowControlArea, div,
+    WindowControlArea, div, prelude::*,
 };
 
 use crate::app::BenCodeApp;
@@ -17,6 +17,9 @@ use crate::ui::layout::{SplitDir, WorkspaceTab, leaf_count};
 
 const NEW_TAB_TITLE: &str = "New session";
 const UNTITLED: &str = "Untitled thread";
+
+/// Room for the macOS window buttons when nothing else on the left holds it.
+const TRAFFIC_LIGHT_SPACE: gpui::Pixels = gpui::px(72.0);
 
 impl BenCodeApp {
     /// A tab is labelled by its focused thread, plus how many other panes it holds.
@@ -87,6 +90,7 @@ impl BenCodeApp {
             .border_color(colors.border)
             .bg(colors.bg)
             .px_2()
+            .child(self.render_titlebar_leading(cx))
             .child(
                 div()
                     .id("titlebar-tab-drop")
@@ -111,5 +115,47 @@ impl BenCodeApp {
                         this.split_active_pane(SplitDir::Right, cx);
                     })),
             )
+    }
+
+    /// With the rail hidden the title bar takes over its traffic-light space
+    /// and controls; with the sidebar hidden it offers to bring it back
+    /// (MonoCode `TitleBar.tsx:856-941`).
+    fn render_titlebar_leading(&self, cx: &Context<Self>) -> impl IntoElement {
+        let rail_hidden = !self.is_rail_open;
+        let sidebar_hidden = !self.is_sidebar_open;
+        div()
+            .flex()
+            .flex_none()
+            .items_center()
+            .gap_0p5()
+            .when(
+                rail_hidden && sidebar_hidden && cfg!(target_os = "macos"),
+                |el| el.child(div().w(TRAFFIC_LIGHT_SPACE)),
+            )
+            .when(rail_hidden, |el| {
+                el.child(
+                    IconButton::new("titlebar-toggle-projects", IconName::PanelLeft)
+                        .size(ControlSize::Sm)
+                        .variant(ButtonVariant::Ghost)
+                        .tooltip("Toggle Projects (⌘B)")
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.is_rail_open = true;
+                            cx.notify();
+                        })),
+                )
+                .children(self.history_buttons("titlebar", cx))
+            })
+            .when(sidebar_hidden, |el| {
+                el.child(
+                    IconButton::new("titlebar-toggle-sidebar", IconName::LayoutDashboard)
+                        .size(ControlSize::Sm)
+                        .variant(ButtonVariant::Ghost)
+                        .tooltip("Toggle Session Sidebar (⌘⇧B)")
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.is_sidebar_open = true;
+                            cx.notify();
+                        })),
+                )
+            })
     }
 }

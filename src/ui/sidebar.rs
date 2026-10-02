@@ -171,14 +171,21 @@ impl BenCodeApp {
             .collect();
         let has_worktrees = valid_worktrees.iter().any(|w| !w.is_main);
 
+        // MonoCode: the header is 40px like the title bar, and takes the
+        // traffic-light space when the project rail is hidden.
         div()
+            .window_control_area(gpui::WindowControlArea::Drag)
             .flex()
             .items_center()
             .justify_between()
-            .px_3()
-            .py_1p5()
+            .h(theme.titlebar_height())
+            .pl_3()
+            .pr_1p5()
             .border_b_1()
             .border_color(theme.colors.border)
+            .when(!self.is_rail_open && cfg!(target_os = "macos"), |el| {
+                el.child(div().flex_none().w(px(72.0)))
+            })
             .child(if has_worktrees {
                 self.render_worktree_switcher(&valid_worktrees, cx)
                     .into_any_element()

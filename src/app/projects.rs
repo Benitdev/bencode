@@ -8,7 +8,7 @@
 
 use std::collections::HashSet;
 
-use gpui::Context;
+use gpui::{Context, PathPromptOptions};
 
 use crate::app::BenCodeApp;
 use crate::app::tab_scope::{ProjectReturn, plan_project_return};
@@ -84,6 +84,36 @@ impl BenCodeApp {
         self.navigate_workspace(&cwd, focus, WorkspaceRequest::Project);
         // Refreshes git/files for the new directory and records the landing.
         self.sync_selection(cx);
+    }
+
+    /// "Open folder…" (⌘O): picks one or more folders and opens each as a
+    /// project; the last one chosen ends up focused.
+    pub fn open_project_dialog(&mut self, cx: &mut Context<Self>) {
+        let picked = cx.prompt_for_paths(PathPromptOptions {
+            files: false,
+            directories: true,
+            multiple: true,
+            prompt: Some("Open Project".into()),
+        });
+        cx.spawn(async move |this, cx| {
+            let paths = match picked.await {
+                Ok(Ok(Some(paths))) => paths,
+                Ok(Ok(None)) | Err(_) => return, // dismissed
+                Ok(Err(err)) => {
+                    log::error!("folder picker failed: {err:#}");
+                    return;
+                }
+            };
+            let opened = this.update(cx, |app, cx| {
+                for path in paths {
+                    app.switch_project(path.to_string_lossy().into_owned(), cx);
+                }
+            });
+            if let Err(err) = opened {
+                log::debug!("project picked after app drop: {err:#}");
+            }
+        })
+        .detach();
     }
 
     /// Opening a project leaves the full-screen views, as in MonoCode.

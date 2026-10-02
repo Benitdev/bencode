@@ -2,6 +2,7 @@
 //! and project list with git diff stats. 100% faithful to MonoCode's ProjectRail.
 
 use ely_gpui_component::buttons::{ButtonVariant, IconButton};
+use ely_gpui_component::menus::{DropdownMenu, Menu, MenuItem};
 use ely_gpui_component::primitives::{Icon, IconName};
 use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
@@ -10,6 +11,7 @@ use gpui::{
 };
 
 use crate::app::BenCodeApp;
+use crate::ui::app_callback::app_callback;
 
 fn format_diff_number(n: usize) -> String {
     if n >= 1000 {
@@ -80,27 +82,21 @@ impl BenCodeApp {
                                     .flex()
                                     .items_center()
                                     .gap_0p5()
+                                    .children(self.history_buttons("rail", cx))
                                     .child(
-                                        IconButton::new("rail-nav-back", IconName::ChevronLeft)
-                                            .size(ControlSize::Sm)
-                                            .variant(ButtonVariant::Ghost)
-                                            .tooltip("Back"),
-                                    )
-                                    .child(
-                                        IconButton::new("rail-nav-forward", IconName::ChevronRight)
-                                            .size(ControlSize::Sm)
-                                            .variant(ButtonVariant::Ghost)
-                                            .tooltip("Forward"),
-                                    )
-                                    .child(
-                                        IconButton::new("rail-toggle-sidebar", IconName::PanelLeft)
-                                            .size(ControlSize::Sm)
-                                            .variant(ButtonVariant::Ghost)
-                                            .tooltip("Toggle Sidebar (⌘B)")
-                                            .on_click(cx.listener(|this, _, _, cx| {
-                                                this.is_sidebar_open = !this.is_sidebar_open;
+                                        IconButton::new(
+                                            "rail-toggle-projects",
+                                            IconName::PanelLeft,
+                                        )
+                                        .size(ControlSize::Sm)
+                                        .variant(ButtonVariant::Ghost)
+                                        .tooltip("Toggle Projects (⌘B)")
+                                        .on_click(
+                                            cx.listener(|this, _, _, cx| {
+                                                this.is_rail_open = false;
                                                 cx.notify();
-                                            })),
+                                            }),
+                                        ),
                                     ),
                             ),
                     )
@@ -270,10 +266,20 @@ impl BenCodeApp {
                                             .child("Projects"),
                                     )
                                     .child(
-                                        IconButton::new("rail-add-project", IconName::Plus)
-                                            .size(ControlSize::Sm)
-                                            .variant(ButtonVariant::Ghost)
-                                            .tooltip("Open Project"),
+                                        DropdownMenu::new(
+                                            "rail-add-project",
+                                            "",
+                                            Menu::new().item(
+                                                MenuItem::new("Open folder…")
+                                                    .icon(IconName::FolderPlus)
+                                                    .keys("⌘O")
+                                                    .on_click(app_callback(cx, |this, cx| {
+                                                        this.open_project_dialog(cx)
+                                                    })),
+                                            ),
+                                        )
+                                        .variant(ButtonVariant::Ghost)
+                                        .icon(IconName::Plus),
                                     ),
                             )
                             .child(div().flex().flex_col().gap_0p5().children(
@@ -432,5 +438,29 @@ impl BenCodeApp {
                             ),
                     ),
             )
+    }
+
+    /// Back / Forward over visited tabs (MonoCode `TabVisitNav`), disabled
+    /// when there is nowhere to go.
+    pub fn history_buttons(&self, prefix: &str, cx: &Context<Self>) -> [IconButton; 2] {
+        let back = IconButton::new(
+            SharedString::from(format!("{prefix}-nav-back")),
+            IconName::ChevronLeft,
+        )
+        .size(ControlSize::Sm)
+        .variant(ButtonVariant::Ghost)
+        .tooltip("Back (⌘[)")
+        .disabled(!self.tab_history.can_go_back())
+        .on_click(cx.listener(|this, _, _, cx| this.go_back(cx)));
+        let forward = IconButton::new(
+            SharedString::from(format!("{prefix}-nav-forward")),
+            IconName::ChevronRight,
+        )
+        .size(ControlSize::Sm)
+        .variant(ButtonVariant::Ghost)
+        .tooltip("Forward (⌘])")
+        .disabled(!self.tab_history.can_go_forward())
+        .on_click(cx.listener(|this, _, _, cx| this.go_forward(cx)));
+        [back, forward]
     }
 }

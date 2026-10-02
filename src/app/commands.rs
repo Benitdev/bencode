@@ -27,6 +27,10 @@ actions!(
         PreviousTab,
         OpenNotes,
         OpenInbox,
+        OpenProject,
+        ToggleSessionSidebar,
+        GoBack,
+        GoForward,
     ]
 );
 
@@ -39,7 +43,11 @@ fn keymap() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-t", NewThread, None),
         KeyBinding::new("cmd-w", CloseActive, None),
         KeyBinding::new("cmd-s", Save, None),
+        KeyBinding::new("cmd-o", OpenProject, None),
         KeyBinding::new("cmd-b", ToggleSidebar, None),
+        KeyBinding::new("cmd-shift-b", ToggleSessionSidebar, None),
+        KeyBinding::new("cmd-[", GoBack, None),
+        KeyBinding::new("cmd-]", GoForward, None),
         KeyBinding::new("cmd-j", ToggleTerminal, None),
         KeyBinding::new("cmd-`", ToggleTerminal, None),
         KeyBinding::new("cmd-d", SplitRight, None),
@@ -69,13 +77,15 @@ fn menus() -> Vec<Menu> {
         ]),
         Menu::new("File").items([
             MenuItem::action("New Thread", NewThread),
+            MenuItem::action("Open Project…", OpenProject),
             MenuItem::action("Search…", Search),
             MenuItem::separator(),
             MenuItem::action("Save", Save),
             MenuItem::action("Close", CloseActive),
         ]),
         Menu::new("View").items([
-            MenuItem::action("Toggle Sidebar", ToggleSidebar),
+            MenuItem::action("Toggle Projects", ToggleSidebar),
+            MenuItem::action("Toggle Session Sidebar", ToggleSessionSidebar),
             MenuItem::action("Toggle Terminal", ToggleTerminal),
             MenuItem::separator(),
             MenuItem::action("Split Pane Right", SplitRight),
@@ -85,6 +95,9 @@ fn menus() -> Vec<Menu> {
             MenuItem::action("Inbox", OpenInbox),
         ]),
         Menu::new("Go").items([
+            MenuItem::action("Back", GoBack),
+            MenuItem::action("Forward", GoForward),
+            MenuItem::separator(),
             MenuItem::action("Next Tab", NextTab),
             MenuItem::action("Previous Tab", PreviousTab),
             MenuItem::separator(),
@@ -162,10 +175,18 @@ impl BenCodeApp {
                 this.save_current_editor_file(cx);
             }
         }))
+        // MonoCode: ⌘B toggles the project rail, ⇧⌘B the session sidebar.
         .on_action(cx.listener(|this, _: &ToggleSidebar, _, cx| {
+            this.is_rail_open = !this.is_rail_open;
+            cx.notify();
+        }))
+        .on_action(cx.listener(|this, _: &ToggleSessionSidebar, _, cx| {
             this.is_sidebar_open = !this.is_sidebar_open;
             cx.notify();
         }))
+        .on_action(cx.listener(|this, _: &OpenProject, _, cx| this.open_project_dialog(cx)))
+        .on_action(cx.listener(|this, _: &GoBack, _, cx| this.go_back(cx)))
+        .on_action(cx.listener(|this, _: &GoForward, _, cx| this.go_forward(cx)))
         .on_action(cx.listener(|this, _: &ToggleTerminal, _, cx| {
             this.set_terminal_open(!this.is_terminal_open, cx)
         }))
@@ -211,7 +232,7 @@ mod tests {
 
     #[test]
     fn keymap_chords_are_unique_per_action() {
-        assert_eq!(keymap().len(), 17);
+        assert_eq!(keymap().len(), 21);
         assert_eq!(menus().len(), 4);
     }
 }

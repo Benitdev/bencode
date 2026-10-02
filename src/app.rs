@@ -4,6 +4,7 @@ mod integrations;
 mod panes;
 mod preferences;
 mod projects;
+mod tab_history;
 mod tab_scope;
 mod workspace_nav;
 mod workspace_sync;
@@ -197,6 +198,11 @@ pub struct BenCodeApp {
     // [editor-pane fields]
     pub editor: crate::ui::editor_pane::EditorState,
     pub is_sidebar_open: bool,
+    /// The project rail (⌘B); the session sidebar is `is_sidebar_open` (⇧⌘B).
+    pub is_rail_open: bool,
+    pub tab_history: tab_history::TabHistory,
+    /// Set while Back/Forward switches tabs, so the move is not recorded.
+    navigating_history: bool,
     pub is_terminal_open: bool,
     pub db: MonoCodeDb,
     _subscriptions: Vec<Subscription>,
@@ -484,6 +490,9 @@ impl BenCodeApp {
             // [editor-pane init]
             editor: Default::default(),
             is_sidebar_open: true,
+            is_rail_open: true,
+            tab_history: Default::default(),
+            navigating_history: false,
             is_terminal_open: true,
             db,
             _subscriptions: subscriptions,
@@ -840,7 +849,9 @@ impl Render for BenCodeApp {
                         .min_h_0()
                         .overflow_hidden()
                         // Column 1: Leftmost Project Rail
-                        .child(self.render_project_rail(cx))
+                        .when(self.is_rail_open, |el| {
+                            el.child(self.render_project_rail(cx))
+                        })
                         // Column 2: Workspace Sidebar (when open)
                         .when(self.is_sidebar_open, |el| el.child(self.render_sidebar(cx)))
                         // Column 3: Main Area (TitleBar + Views + Terminal Drawer + UsageFooter)

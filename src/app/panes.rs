@@ -5,6 +5,7 @@
 //! invariants; these methods persist rows, sync `selected_session_id` from
 //! the active tab and notify GPUI.
 
+use std::collections::HashSet;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use gpui::Context;
@@ -60,8 +61,40 @@ impl BenCodeApp {
         self.selected_session_id = focused;
         self.follow_focused_session_project();
         self.remember_focused_tab();
+        self.record_tab_visit();
         self.refresh_workspace_if_moved(cx);
         cx.notify();
+    }
+
+    fn record_tab_visit(&mut self) {
+        let open: HashSet<&str> = self.tabs.tabs().iter().map(|t| t.id.as_str()).collect();
+        let active = self.tabs.active_id();
+        self.tab_history.prune(&open, active);
+        if let Some(active) = active
+            && !self.navigating_history
+        {
+            self.tab_history.record(active);
+        }
+    }
+
+    /// MonoCode's Back (⌘[): the previously visited tab.
+    pub fn go_back(&mut self, cx: &mut Context<Self>) {
+        if let Some(id) = self.tab_history.back() {
+            self.visit_from_history(&id, cx);
+        }
+    }
+
+    /// MonoCode's Forward (⌘]).
+    pub fn go_forward(&mut self, cx: &mut Context<Self>) {
+        if let Some(id) = self.tab_history.forward() {
+            self.visit_from_history(&id, cx);
+        }
+    }
+
+    fn visit_from_history(&mut self, tab_id: &str, cx: &mut Context<Self>) {
+        self.navigating_history = true;
+        self.switch_tab(tab_id, cx);
+        self.navigating_history = false;
     }
 
     pub fn switch_tab(&mut self, tab_id: &str, cx: &mut Context<Self>) {
