@@ -12,7 +12,7 @@ use gpui::{
     SharedString, Styled, Window, div, prelude::*, px,
 };
 
-use crate::app::{BenCodeApp, FilterMode, SidebarMode, ViewMode};
+use crate::app::{BenCodeApp, FilterMode, SidebarMode};
 use crate::db::SessionRow;
 use crate::harness::catalog;
 use crate::ui::app_callback::app_callback;
@@ -89,16 +89,16 @@ impl BenCodeApp {
             .child(
                 self.mode_tab("tab-sessions", mode == SidebarMode::Sessions, cx)
                     .child("Sessions")
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.show_sidebar(SidebarMode::Sessions, ViewMode::Chat, cx)
-                    })),
+                    .on_click(
+                        cx.listener(|this, _, _, cx| this.show_sidebar(SidebarMode::Sessions, cx)),
+                    ),
             )
             .child(
                 self.mode_tab("tab-files", mode == SidebarMode::Files, cx)
                     .child("Explorer")
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.show_sidebar(SidebarMode::Files, ViewMode::Editor, cx)
-                    })),
+                    .on_click(
+                        cx.listener(|this, _, _, cx| this.show_sidebar(SidebarMode::Files, cx)),
+                    ),
             )
             .child(
                 self.mode_tab("tab-changes", mode == SidebarMode::Changes, cx)
@@ -110,7 +110,7 @@ impl BenCodeApp {
                         }
                     })
                     .on_click(cx.listener(|this, _, _, cx| {
-                        this.show_sidebar(SidebarMode::Changes, ViewMode::Changes, cx);
+                        this.show_sidebar(SidebarMode::Changes, cx);
                         this.refresh_workspace(cx);
                     })),
             )
@@ -144,9 +144,8 @@ impl BenCodeApp {
             .hover(|s| s.bg(colors.hover))
     }
 
-    fn show_sidebar(&mut self, mode: SidebarMode, view: ViewMode, cx: &mut Context<Self>) {
+    fn show_sidebar(&mut self, mode: SidebarMode, cx: &mut Context<Self>) {
         self.sidebar_mode = mode;
-        self.active_view_mode = view;
         cx.notify();
     }
 
