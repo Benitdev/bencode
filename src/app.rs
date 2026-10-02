@@ -183,6 +183,10 @@ pub struct BenCodeApp {
     pub search_submit: Option<Subscription>,
     /// Note id awaiting delete confirmation.
     pub note_pending_delete: Option<String>,
+    /// Bumped on every note edit; a pending autosave only runs if it still matches.
+    pub note_autosave_generation: u64,
+    /// Last failed note save, shown with a Retry action.
+    pub note_save_error: Option<String>,
     /// Automation id awaiting delete confirmation.
     pub automation_pending_delete: Option<String>,
     // [editor-pane fields]
@@ -283,6 +287,8 @@ impl BenCodeApp {
                     }
                 },
             ),
+            cx.subscribe(&note_title_input, Self::on_note_input_event),
+            cx.subscribe(&note_body_input, Self::on_note_input_event),
             cx.subscribe(
                 &note_filter_input,
                 |this: &mut Self, input, event: &InputEvent, cx| {
@@ -478,6 +484,8 @@ impl BenCodeApp {
             search_focus_pending: false,
             search_submit: None,
             note_pending_delete: None,
+            note_autosave_generation: 0,
+            note_save_error: None,
             automation_pending_delete: None,
             // [editor-pane init]
             editor: Default::default(),
@@ -499,6 +507,7 @@ impl BenCodeApp {
                 notes: self.is_notes_open,
                 automations: self.is_automations_open,
             });
+            self.save_note_if_dirty(cx);
             self.is_search_open = false;
             self.is_inbox_open = false;
             self.is_notes_open = false;

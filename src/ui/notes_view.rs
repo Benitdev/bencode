@@ -1,23 +1,30 @@
 //! Notes: a markdown scratchpad stored in MonoCode's notes table.
 
 use std::rc::Rc;
+use std::time::Duration;
 
 use ely_gpui_component::buttons::{Button, ButtonVariant, IconButton};
 use ely_gpui_component::feedback::EmptyState;
 use ely_gpui_component::forms::{Input, SearchInput};
+use ely_gpui_component::forms::{InputEvent, TextInput};
 use ely_gpui_component::layout::MasterDetail;
 use ely_gpui_component::lists::ListItem;
 use ely_gpui_component::overlays::{ConfirmDialog, Dialog};
 use ely_gpui_component::primitives::IconName;
 use ely_gpui_component::theme::{ActiveTheme, ControlSize};
 use ely_gpui_component::typography::Caption;
-use gpui::{AnyElement, Context, IntoElement, ParentElement, Styled, div, uniform_list};
+use gpui::{
+    AnyElement, Context, Entity, IntoElement, ParentElement, Styled, div, prelude::*, px,
+    uniform_list,
+};
 
 use crate::app::{BenCodeApp, now_ms};
 use crate::db::{Note, NoteUpsert};
 use crate::ui::app_callback::app_callback;
 
-const UNTITLED_NOTE: &str = "Untitled Note";
+const UNTITLED_NOTE: &str = "Untitled";
+/// MonoCode saves this long after the last keystroke (`NotesView.tsx`).
+const AUTOSAVE_DELAY: Duration = Duration::from_millis(400);
 
 /// "just now", "5m ago", "3h ago" or "2d ago" for a millisecond timestamp.
 fn relative_time(now: i64, millis: i64) -> String {
@@ -129,9 +136,42 @@ impl BenCodeApp {
             .update(cx, |input, cx| input.set_text("", cx));
     }
 
+    /// Title/body edits save themselves `AUTOSAVE_DELAY` after typing stops,
+    /// and right away when the title loses focus.
+    pub(crate) fn on_note_input_event(
+        &mut self,
+        _: Entity<TextInput>,
+        event: &InputEvent,
+        cx: &mut Context<Self>,
+    ) {
+        match event {
+            InputEvent::Changed => self.schedule_note_autosave(cx),
+            InputEvent::Blur | InputEvent::Submit => self.save_note_if_dirty(cx),
+            _ => {}
+        }
+    }
+
+    fn schedule_note_autosave(&mut self, cx: &mut Context<Self>) {
+        self.note_autosave_generation += 1;
+        let generation = self.note_autosave_generation;
+        let timer = cx.background_executor().timer(AUTOSAVE_DELAY);
+        cx.spawn(async move |this, cx| {
+            timer.await;
+            let saved = this.update(cx, |this, cx| {
+                if this.note_autosave_generation == generation {
+                    this.save_note_if_dirty(cx);
+                }
+            });
+            if let Err(err) = saved {
+                log::debug!("note autosave after app drop: {err:#}");
+            }
+        })
+        .detach();
+    }
+
     /// Saves the open note when its fields differ from what is stored, so
     /// switching, creating or closing never drops edits.
-    fn save_note_if_dirty(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn save_note_if_dirty(&mut self, cx: &mut Context<Self>) {
         let Some(note) = self
             .selected_note_id
             .as_ref()
@@ -168,8 +208,14 @@ impl BenCodeApp {
             source_cwd: existing.source_cwd.clone(),
         };
         match self.db.upsert_note(&upsert) {
-            Ok(saved) => self.notes[pos] = saved,
-            Err(err) => log::error!("upsert_note failed: {err:#}"),
+            Ok(saved) => {
+                self.notes[pos] = saved;
+                self.note_save_error = None;
+            }
+            Err(err) => {
+                log::error!("upsert_note failed: {err:#}");
+                self.note_save_error = Some(format!("Could not save note: {err}"));
+            }
         }
         cx.notify();
     }
@@ -316,12 +362,6 @@ impl BenCodeApp {
                     .on_click(cx.listener(|this, _, _, cx| this.add_selected_note_to_chat(cx))),
             )
             .child(
-                Button::new("note-save", "Save")
-                    .primary()
-                    .icon(IconName::Save)
-                    .on_click(cx.listener(|this, _, _, cx| this.save_selected_note(cx))),
-            )
-            .child(
                 IconButton::new("note-delete", IconName::Trash2)
                     .variant(ButtonVariant::Ghost)
                     .tooltip("Delete note")
@@ -336,6 +376,24 @@ impl BenCodeApp {
             .gap_3()
             .pl_4()
             .child(toolbar)
+            .when_some(self.note_save_error.clone(), |el, error| {
+                el.child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap_2()
+                        .text_size(px(12.0))
+                        .text_color(cx.theme().colors.danger)
+                        .child(error)
+                        .child(
+                            Button::new("note-save-retry", "Retry")
+                                .variant(ButtonVariant::Ghost)
+                                .on_click(
+                                    cx.listener(|this, _, _, cx| this.save_selected_note(cx)),
+                                ),
+                        ),
+                )
+            })
             .child(Input::new(&self.note_body_input))
             .into_any_element()
     }

@@ -127,8 +127,8 @@ impl BenCodeApp {
             return;
         }
         if self.is_notes_open {
-            self.is_notes_open = false;
-            cx.notify();
+            // Through close_notes so unsaved edits are written first.
+            self.close_notes(cx);
             return;
         }
         if self.is_automations_open {
