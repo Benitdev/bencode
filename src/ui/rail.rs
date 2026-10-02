@@ -181,7 +181,6 @@ impl BenCodeApp {
                                             )
                                             .child("Inbox"),
                                     )
-                                    .child(div().size(px(8.0)).rounded_full().bg(rgb(0x388bfd))),
                             )
                             // Notes
                             .child(
