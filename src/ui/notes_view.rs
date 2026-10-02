@@ -1,30 +1,51 @@
-use ely_gpui_component::primitives::{Icon, IconName};
-use ely_gpui_component::theme::{ActiveTheme, IconSize, Radius, TextSize};
-use gpui::{
-    Context, FontWeight, InteractiveElement, IntoElement, ParentElement, Styled,
-    div, prelude::*, px,
-};
+//! Notes: a markdown scratchpad stored in MonoCode's notes table.
 
-use crate::app::BenCodeApp;
+use std::rc::Rc;
+
+use ely_gpui_component::buttons::{Button, ButtonVariant, IconButton};
+use ely_gpui_component::feedback::EmptyState;
+use ely_gpui_component::forms::{Input, SearchInput};
+use ely_gpui_component::layout::MasterDetail;
+use ely_gpui_component::lists::ListItem;
+use ely_gpui_component::overlays::{ConfirmDialog, Dialog};
+use ely_gpui_component::primitives::IconName;
+use ely_gpui_component::theme::{ActiveTheme, ControlSize};
+use ely_gpui_component::typography::Caption;
+use gpui::{AnyElement, Context, IntoElement, ParentElement, Styled, div, uniform_list};
+
+use crate::app::{BenCodeApp, now_ms};
 use crate::db::{Note, NoteUpsert};
-use crate::ui::theme::MonoTheme;
+use crate::ui::app_callback::app_callback;
 
-pub fn format_relative_time(millis: i64) -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as i64;
-    let diff_secs = (now - millis).max(0) / 1000;
-    if diff_secs < 60 {
-        "just now".to_string()
-    } else if diff_secs < 3600 {
-        format!("{}m ago", diff_secs / 60)
-    } else if diff_secs < 86400 {
-        format!("{}h ago", diff_secs / 3600)
-    } else {
-        format!("{}d ago", diff_secs / 86400)
+const UNTITLED_NOTE: &str = "Untitled Note";
+
+/// "just now", "5m ago", "3h ago" or "2d ago" for a millisecond timestamp.
+fn relative_time(now: i64, millis: i64) -> String {
+    let secs = (now - millis).max(0) / 1000;
+    match secs {
+        0..60 => "just now".to_string(),
+        60..3600 => format!("{}m ago", secs / 60),
+        3600..86400 => format!("{}h ago", secs / 3600),
+        _ => format!("{}d ago", secs / 86400),
     }
+}
+
+/// `query` must already be lower-case.
+fn note_matches(note: &Note, query: &str) -> bool {
+    query.is_empty()
+        || note.title.to_lowercase().contains(query)
+        || note.body.to_lowercase().contains(query)
+        || note.tags.iter().any(|t| t.to_lowercase().contains(query))
+}
+
+/// Whether the editor's fields differ from the stored note.
+fn note_is_dirty(note: &Note, title: &str, body: &str) -> bool {
+    let title = if title.is_empty() { UNTITLED_NOTE } else { title };
+    note.title != title || note.body != body
+}
+
+fn note_preview(body: &str) -> &str {
+    body.lines().find(|line| !line.trim().is_empty()).unwrap_or("Empty note")
 }
 
 impl BenCodeApp {
@@ -35,450 +56,293 @@ impl BenCodeApp {
     }
 
     pub fn close_notes(&mut self, cx: &mut Context<Self>) {
+        self.save_note_if_dirty(cx);
         self.is_notes_open = false;
+        self.note_pending_delete = None;
         cx.notify();
     }
 
-    pub fn refresh_notes(&mut self, cx: &mut Context<Self>) {
-        if let Ok(notes) = self.db.list_notes() {
-            self.notes = notes;
-            if self.selected_note_id.is_none() && !self.notes.is_empty() {
-                let first_id = self.notes[0].id.clone();
-                self.select_note(first_id, cx);
+    fn refresh_notes(&mut self, cx: &mut Context<Self>) {
+        match self.db.list_notes() {
+            Ok(notes) => self.notes = notes,
+            Err(err) => log::error!("list_notes failed: {err:#}"),
+        }
+        let selection_exists = self.selected_note_id.as_ref().is_some_and(|id| self.notes.iter().any(|n| &n.id == id));
+        if !selection_exists {
+            self.selected_note_id = None;
+            match self.notes.first().map(|n| n.id.clone()) {
+                Some(id) => self.select_note(id, cx),
+                None => self.clear_note_inputs(cx),
             }
         }
     }
 
-    pub fn create_new_note(&mut self, cx: &mut Context<Self>) {
-        use std::time::{SystemTime, UNIX_EPOCH};
-        let stamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis();
-        let new_id = format!("note-{}", stamp);
+    fn create_new_note(&mut self, cx: &mut Context<Self>) {
+        self.save_note_if_dirty(cx);
         let upsert = NoteUpsert {
-            id: new_id.clone(),
-            title: "Untitled Note".to_string(),
-            body: "".to_string(),
-            tags: vec![],
+            id: format!("note-{}", now_ms()),
+            title: UNTITLED_NOTE.to_string(),
+            body: String::new(),
+            tags: Vec::new(),
             source_session_id: self.selected_session_id.clone(),
-            source_cwd: std::env::current_dir()
-                .ok()
-                .map(|p| p.to_string_lossy().to_string()),
+            source_cwd: Some(self.current_cwd.clone()),
         };
-
-        if let Ok(note) = self.db.upsert_note(&upsert) {
-            self.notes.insert(0, note);
-            self.select_note(new_id, cx);
+        match self.db.upsert_note(&upsert) {
+            Ok(note) => {
+                let id = note.id.clone();
+                self.notes.insert(0, note);
+                self.select_note(id, cx);
+            }
+            Err(err) => log::error!("upsert_note failed: {err:#}"),
         }
         cx.notify();
     }
 
-    pub fn select_note(&mut self, id: String, cx: &mut Context<Self>) {
-        self.selected_note_id = Some(id.clone());
+    fn select_note(&mut self, id: String, cx: &mut Context<Self>) {
+        if self.selected_note_id.as_ref() != Some(&id) {
+            self.save_note_if_dirty(cx);
+        }
         if let Some(note) = self.notes.iter().find(|n| n.id == id) {
-            let title = note.title.clone();
-            let body = note.body.clone();
-            self.note_title_input.update(cx, |this, cx| {
-                this.set_text(title, cx);
-            });
-            self.note_body_input.update(cx, |this, cx| {
-                this.set_text(body, cx);
-            });
+            let (title, body) = (note.title.clone(), note.body.clone());
+            self.note_title_input.update(cx, |input, cx| input.set_text(title, cx));
+            self.note_body_input.update(cx, |input, cx| input.set_text(body, cx));
+        }
+        self.selected_note_id = Some(id);
+        cx.notify();
+    }
+
+    fn clear_note_inputs(&mut self, cx: &mut Context<Self>) {
+        self.note_title_input.update(cx, |input, cx| input.set_text("", cx));
+        self.note_body_input.update(cx, |input, cx| input.set_text("", cx));
+    }
+
+    /// Saves the open note when its fields differ from what is stored, so
+    /// switching, creating or closing never drops edits.
+    fn save_note_if_dirty(&mut self, cx: &mut Context<Self>) {
+        let Some(note) = self.selected_note_id.as_ref().and_then(|id| self.notes.iter().find(|n| &n.id == id)) else {
+            return;
+        };
+        let title = self.note_title_input.read(cx).text().trim().to_string();
+        let body = self.note_body_input.read(cx).text().to_string();
+        if note_is_dirty(note, &title, &body) {
+            self.save_selected_note(cx);
+        }
+    }
+
+    fn save_selected_note(&mut self, cx: &mut Context<Self>) {
+        let Some(id) = self.selected_note_id.clone() else { return };
+        let Some(pos) = self.notes.iter().position(|n| n.id == id) else { return };
+        let title = self.note_title_input.read(cx).text().trim().to_string();
+        let existing = &self.notes[pos];
+        let upsert = NoteUpsert {
+            id,
+            title: if title.is_empty() { UNTITLED_NOTE.to_string() } else { title },
+            body: self.note_body_input.read(cx).text().to_string(),
+            tags: existing.tags.clone(),
+            source_session_id: existing.source_session_id.clone(),
+            source_cwd: existing.source_cwd.clone(),
+        };
+        match self.db.upsert_note(&upsert) {
+            Ok(saved) => self.notes[pos] = saved,
+            Err(err) => log::error!("upsert_note failed: {err:#}"),
         }
         cx.notify();
     }
 
-    pub fn save_selected_note(&mut self, cx: &mut Context<Self>) {
-        if let Some(id) = &self.selected_note_id {
-            let title = self.note_title_input.read(cx).text().to_string();
-            let body = self.note_body_input.read(cx).text().to_string();
-            let existing = self.notes.iter().find(|n| &n.id == id);
-            let tags = existing.map(|n| n.tags.clone()).unwrap_or_default();
-            let source_cwd = existing.and_then(|n| n.source_cwd.clone());
-
-            let upsert = NoteUpsert {
-                id: id.clone(),
-                title: if title.trim().is_empty() {
-                    "Untitled Note".to_string()
-                } else {
-                    title
-                },
-                body,
-                tags,
-                source_session_id: self.selected_session_id.clone(),
-                source_cwd,
-            };
-
-            if let Ok(saved) = self.db.upsert_note(&upsert)
-                && let Some(pos) = self.notes.iter().position(|n| &n.id == id) {
-                    self.notes[pos] = saved;
-                }
-        }
-        cx.notify();
-    }
-
-    pub fn delete_selected_note(&mut self, cx: &mut Context<Self>) {
-        if let Some(id) = self.selected_note_id.take() {
-            if let Err(err) = self.db.delete_note(&id) {
+    fn delete_note(&mut self, id: &str, cx: &mut Context<Self>) {
+        if let Err(err) = self.db.delete_note(id) {
             log::error!("delete_note failed: {err:#}");
+            return;
         }
-            self.notes.retain(|n| n.id != id);
-            if let Some(first) = self.notes.first() {
-                let next_id = first.id.clone();
-                self.select_note(next_id, cx);
-            } else {
-                self.note_title_input.update(cx, |this, cx| {
-                    this.set_text("", cx);
-                });
-                self.note_body_input.update(cx, |this, cx| {
-                    this.set_text("", cx);
-                });
+        self.notes.retain(|n| n.id != id);
+        if self.selected_note_id.as_deref() == Some(id) {
+            self.selected_note_id = None;
+            match self.notes.first().map(|n| n.id.clone()) {
+                Some(next) => self.select_note(next, cx),
+                None => self.clear_note_inputs(cx),
             }
         }
         cx.notify();
     }
 
-    pub fn add_selected_note_to_chat(&mut self, cx: &mut Context<Self>) {
-        if let Some(id) = &self.selected_note_id
-            && let Some(note) = self.notes.iter().find(|n| &n.id == id) {
-                let note_content = format!(
-                    "--- Note: {} (@note/{}) ---\n{}\n--- End Note ---",
-                    note.title, note.slug, note.body
-                );
-                self.prompt_input.update(cx, |this, cx| {
-                    let current = this.text().to_string();
-                    let new_text = if current.is_empty() {
-                        note_content
-                    } else {
-                        format!("{}\n\n{}", current, note_content)
-                    };
-                    this.set_text(new_text, cx);
-                });
-                self.is_notes_open = false;
-            }
-        cx.notify();
+    fn add_selected_note_to_chat(&mut self, cx: &mut Context<Self>) {
+        let Some(note) = self.notes.iter().find(|n| Some(&n.id) == self.selected_note_id.as_ref()) else { return };
+        let block = format!("--- Note: {} (@note/{}) ---\n{}\n--- End Note ---", note.title, note.slug, note.body);
+        self.prompt_input.update(cx, |input, cx| {
+            let current = input.text().to_string();
+            let text = if current.is_empty() { block } else { format!("{current}\n\n{block}") };
+            input.set_text(text, cx);
+        });
+        self.close_notes(cx);
     }
 
     pub fn render_notes_modal(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+        let close = app_callback(cx, |this, cx| this.close_notes(cx));
         let theme = cx.theme();
-        let query = self.note_filter_query.to_lowercase();
-        let filtered_notes: Vec<Note> = self
-            .notes
-            .iter()
-            .filter(|n| {
-                if query.is_empty() {
-                    true
-                } else {
-                    n.title.to_lowercase().contains(&query)
-                        || n.body.to_lowercase().contains(&query)
-                        || n.tags.iter().any(|t| t.to_lowercase().contains(&query))
+        let min = theme.pane_min().to_pixels(theme.base_rem());
+        Dialog::new("notes", "Notes", close)
+            .detail(format!("{} notes", self.notes.len()))
+            .fullscreen()
+            .child(div().h_full().child(MasterDetail::new(
+                "notes-split",
+                self.render_notes_master(cx),
+                self.render_note_detail(cx),
+                min,
+            )))
+            .children(self.render_note_delete_confirm(cx))
+    }
+
+    fn render_notes_master(&self, cx: &Context<Self>) -> impl IntoElement {
+        let query = self.note_filter_query.trim().to_lowercase();
+        let shown: Rc<[usize]> = (0..self.notes.len()).filter(|&ix| note_matches(&self.notes[ix], &query)).collect();
+        let list = if shown.is_empty() {
+            EmptyState::new("notes-empty", IconName::FileText, "No notes")
+                .body(if query.is_empty() { "Create one to start a scratchpad." } else { "Nothing matches the filter." })
+                .into_any_element()
+        } else {
+            let now = now_ms();
+            let rows = cx.processor({
+                let shown = shown.clone();
+                move |this, range: std::ops::Range<usize>, _, cx| {
+                    range.map(|row| this.render_note_row(shown[row], now, cx)).collect::<Vec<_>>()
                 }
-            })
-            .cloned()
-            .collect();
-
-        let selected_id = self.selected_note_id.clone();
-
+            });
+            uniform_list("notes-list", shown.len(), rows).size_full().into_any_element()
+        };
         div()
-            .id("notes-overlay-backdrop")
-            .absolute()
-            .inset_0()
-            .bg(gpui::rgba(0x000000aa))
             .flex()
-            .items_center()
-            .justify_center()
+            .flex_col()
+            .gap_2()
+            .size_full()
+            .pr_4()
             .child(
                 div()
-                    .id("notes-modal-card")
-                    .w(px(900.0))
-                    .h(px(600.0))
-                    .max_w_full()
-                    .max_h_full()
-                    .bg(MonoTheme::bg_surface())
-                    .border_1()
-                    .border_color(MonoTheme::border_stroke())
-                    .rounded(theme.radius(Radius::Lg))
-                    .shadow_lg()
                     .flex()
-                    .flex_col()
-                    .overflow_hidden()
-                    // Modal Header
+                    .items_center()
+                    .gap_2()
+                    .child(div().flex_1().child(SearchInput::new("notes-filter", &self.note_filter_input).size(ControlSize::Sm)))
                     .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .justify_between()
-                            .h(px(44.0))
-                            .px_4()
-                            .border_b_1()
-                            .border_color(MonoTheme::border_stroke())
-                            .bg(MonoTheme::bg_base())
-                            .child(
-                                div()
-                                    .flex()
-                                    .items_center()
-                                    .gap_2()
-                                    .child(
-                                        Icon::new(IconName::FileText)
-                                            .size(IconSize::Sm)
-                                            .color(MonoTheme::accent()),
-                                    )
-                                    .child(
-                                        div()
-                                            .font_weight(FontWeight::SEMIBOLD)
-                                            .text_color(MonoTheme::fg_base())
-                                            .text_size(theme.text_size(TextSize::Sm))
-                                            .child("Notes & Scratchpad"),
-                                    )
-                                    .child(
-                                        div()
-                                            .text_size(theme.text_size(TextSize::Xs))
-                                            .text_color(MonoTheme::fg_subtle())
-                                            .child(format!("({} notes)", self.notes.len())),
-                                    ),
-                            )
-                            .child(
-                                div()
-                                    .flex()
-                                    .items_center()
-                                    .gap_2()
-                                    .child(
-                                        div()
-                                            .id("new-note-btn")
-                                            .flex()
-                                            .items_center()
-                                            .gap_1()
-                                            .px_2()
-                                            .py_1()
-                                            .rounded(theme.radius(Radius::Sm))
-                                            .bg(MonoTheme::bg_hover())
-                                            .text_color(MonoTheme::fg_base())
-                                            .text_size(theme.text_size(TextSize::Xs))
-                                            .font_weight(FontWeight::MEDIUM)
-                                            .cursor_pointer()
-                                            .hover(|s| s.bg(MonoTheme::accent()).text_color(MonoTheme::on_accent()))
-                                            .child(Icon::new(IconName::Plus).size(IconSize::Xs))
-                                            .child("New Note")
-                                            .on_click(cx.listener(|this, _, _, cx| {
-                                                this.create_new_note(cx);
-                                            })),
-                                    )
-                                    .child(
-                                        div()
-                                            .id("close-notes-btn")
-                                            .size(px(24.0))
-                                            .flex()
-                                            .items_center()
-                                            .justify_center()
-                                            .rounded(theme.radius(Radius::Sm))
-                                            .cursor_pointer()
-                                            .hover(|s| s.bg(MonoTheme::bg_hover()))
-                                            .child(
-                                                Icon::new(IconName::X)
-                                                    .size(IconSize::Xs)
-                                                    .color(MonoTheme::fg_subtle()),
-                                            )
-                                            .on_click(cx.listener(|this, _, _, cx| {
-                                                this.close_notes(cx);
-                                            })),
-                                    ),
-                            ),
-                    )
-                    // Two-Pane Content
-                    .child(
-                        div()
-                            .flex()
-                            .flex_1()
-                            .min_h_0()
-                            // Left Pane: Notes List (w=280px)
-                            .child(
-                                div()
-                                    .w(px(280.0))
-                                    .border_r_1()
-                                    .border_color(MonoTheme::border_stroke())
-                                    .bg(MonoTheme::bg_base())
-                                    .flex()
-                                    .flex_col()
-                                    .child(
-                                        // Search Bar
-                                        div()
-                                            .p_2()
-                                            .border_b_1()
-                                            .border_color(MonoTheme::border_stroke())
-                                            .child(self.note_filter_input.clone()),
-                                    )
-                                    // List
-                                    .child(
-                                        div()
-                                            .id("notes-list-scroll")
-                                            .flex_1()
-                                            .overflow_y_scroll()
-                                            .p_1()
-                                            .flex()
-                                            .flex_col()
-                                            .gap_1()
-                                            .children(filtered_notes.into_iter().map(|note| {
-                                                let is_selected = selected_id.as_deref() == Some(&note.id);
-                                                let note_id = note.id.clone();
-                                                let time_label = format_relative_time(note.updated_at);
-                                                let preview = if note.body.trim().is_empty() {
-                                                    "Empty note".to_string()
-                                                } else {
-                                                    note.body.lines().next().unwrap_or("").to_string()
-                                                };
-
-                                                div()
-                                                    .id(format!("note-item-{}", note.id))
-                                                    .p_2()
-                                                    .rounded(theme.radius(Radius::Sm))
-                                                    .cursor_pointer()
-                                                    .bg(if is_selected {
-                                                        MonoTheme::bg_active()
-                                                    } else {
-                                                        gpui::rgba(0x00000000)
-                                                    })
-                                                    .hover(|s| s.bg(MonoTheme::bg_hover()))
-                                                    .child(
-                                                        div()
-                                                            .flex()
-                                                            .items_center()
-                                                            .justify_between()
-                                                            .child(
-                                                                div()
-                                                                    .font_weight(FontWeight::MEDIUM)
-                                                                    .text_size(theme.text_size(TextSize::Sm))
-                                                                    .text_color(if is_selected {
-                                                                        MonoTheme::fg_base()
-                                                                    } else {
-                                                                        MonoTheme::fg_muted()
-                                                                    })
-                                                                    .truncate()
-                                                                    .child(note.title.clone()),
-                                                            )
-                                                            .child(
-                                                                div()
-                                                                    .text_size(theme.text_size(TextSize::Xs))
-                                                                    .text_color(MonoTheme::fg_subtle())
-                                                                    .child(time_label),
-                                                            ),
-                                                    )
-                                                    .child(
-                                                        div()
-                                                            .mt_1()
-                                                            .text_size(theme.text_size(TextSize::Xs))
-                                                            .text_color(MonoTheme::fg_subtle())
-                                                            .truncate()
-                                                            .child(preview),
-                                                    )
-                                                    .on_click(cx.listener(move |this, _, _, cx| {
-                                                        this.select_note(note_id.clone(), cx);
-                                                    }))
-                                            })),
-                                    ),
-                            )
-                            // Right Pane: Note Editor
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .flex()
-                                    .flex_col()
-                                    .bg(MonoTheme::bg_surface())
-                                    .p_4()
-                                    // Top Action Bar
-                                    .child(
-                                        div()
-                                            .flex()
-                                            .items_center()
-                                            .justify_between()
-                                            .pb_3()
-                                            .border_b_1()
-                                            .border_color(MonoTheme::border_stroke())
-                                            .child(
-                                                div()
-                                                    .flex_1()
-                                                    .mr_4()
-                                                    .child(self.note_title_input.clone()),
-                                            )
-                                            .child(
-                                                div()
-                                                    .flex()
-                                                    .items_center()
-                                                    .gap_2()
-                                                    .child(
-                                                        div()
-                                                            .id("add-note-to-chat-btn")
-                                                            .px_2()
-                                                            .py_1()
-                                                            .rounded(theme.radius(Radius::Sm))
-                                                            .bg(MonoTheme::bg_active())
-                                                            .text_color(MonoTheme::accent())
-                                                            .text_size(theme.text_size(TextSize::Xs))
-                                                            .font_weight(FontWeight::MEDIUM)
-                                                            .cursor_pointer()
-                                                            .hover(|s| s.bg(MonoTheme::accent()).text_color(MonoTheme::on_accent()))
-                                                            .child("↵ Add to Chat")
-                                                            .on_click(cx.listener(|this, _, _, cx| {
-                                                                this.add_selected_note_to_chat(cx);
-                                                            })),
-                                                    )
-                                                    .child(
-                                                        div()
-                                                            .id("save-note-btn")
-                                                            .flex()
-                                                            .items_center()
-                                                            .gap_1()
-                                                            .px_2()
-                                                            .py_1()
-                                                            .rounded(theme.radius(Radius::Sm))
-                                                            .bg(MonoTheme::bg_hover())
-                                                            .text_color(MonoTheme::fg_base())
-                                                            .text_size(theme.text_size(TextSize::Xs))
-                                                            .cursor_pointer()
-                                                            .hover(|s| s.bg(MonoTheme::bg_active()))
-                                                            .child(Icon::new(IconName::Save).size(IconSize::Xs))
-                                                            .child("Save")
-                                                            .on_click(cx.listener(|this, _, _, cx| {
-                                                                this.save_selected_note(cx);
-                                                            })),
-                                                    )
-                                                    .child(
-                                                        div()
-                                                            .id("delete-note-btn")
-                                                            .flex()
-                                                            .items_center()
-                                                            .gap_1()
-                                                            .px_2()
-                                                            .py_1()
-                                                            .rounded(theme.radius(Radius::Sm))
-                                                            .bg(MonoTheme::bg_hover())
-                                                            .text_color(MonoTheme::status_error())
-                                                            .text_size(theme.text_size(TextSize::Xs))
-                                                            .cursor_pointer()
-                                                            .hover(|s| s.bg(MonoTheme::status_error()).text_color(MonoTheme::on_accent()))
-                                                            .child(
-                                                                Icon::new(IconName::Trash2)
-                                                                    .size(IconSize::Xs)
-                                                                    .color(MonoTheme::status_error()),
-                                                            )
-                                                            .child("Delete")
-                                                            .on_click(cx.listener(|this, _, _, cx| {
-                                                                this.delete_selected_note(cx);
-                                                            })),
-                                                    ),
-                                            ),
-                                    )
-                                    // Body Editor Area
-                                    .child(
-                                        div()
-                                            .flex_1()
-                                            .pt_3()
-                                            .flex()
-                                            .flex_col()
-                                            .child(self.note_body_input.clone()),
-                                    ),
-                            ),
+                        IconButton::new("notes-new", IconName::Plus)
+                            .size(ControlSize::Sm)
+                            .tooltip("New note")
+                            .on_click(cx.listener(|this, _, _, cx| this.create_new_note(cx))),
                     ),
             )
+            .child(div().flex_1().min_h_0().child(list))
+    }
+
+    fn render_note_row(&self, ix: usize, now: i64, cx: &Context<Self>) -> ListItem {
+        let note = &self.notes[ix];
+        let id = note.id.clone();
+        ListItem::new(("note-row", ix), note.title.clone())
+            .description(note_preview(&note.body).to_string())
+            .trailing(Caption::new(relative_time(now, note.updated_at)))
+            .selected(self.selected_note_id.as_deref() == Some(note.id.as_str()))
+            .on_click(cx.listener(move |this, _, _, cx| this.select_note(id.clone(), cx)))
+    }
+
+    fn render_note_detail(&self, cx: &Context<Self>) -> AnyElement {
+        let Some(id) = self.selected_note_id.clone() else {
+            return EmptyState::new("note-none", IconName::FileText, "No note selected")
+                .action(Button::new("note-none-new", "New note").primary().on_click(cx.listener(|this, _, _, cx| this.create_new_note(cx))))
+                .into_any_element();
+        };
+        let toolbar = div()
+            .flex()
+            .items_center()
+            .gap_2()
+            .child(div().flex_1().child(Input::new(&self.note_title_input)))
+            .child(
+                Button::new("note-to-chat", "Add to chat")
+                    .variant(ButtonVariant::Secondary)
+                    .icon(IconName::MessageSquare)
+                    .on_click(cx.listener(|this, _, _, cx| this.add_selected_note_to_chat(cx))),
+            )
+            .child(Button::new("note-save", "Save").primary().icon(IconName::Save).on_click(cx.listener(|this, _, _, cx| this.save_selected_note(cx))))
+            .child(
+                IconButton::new("note-delete", IconName::Trash2)
+                    .variant(ButtonVariant::Ghost)
+                    .tooltip("Delete note")
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.note_pending_delete = Some(id.clone());
+                        cx.notify();
+                    })),
+            );
+        div()
+            .flex()
+            .flex_col()
+            .gap_3()
+            .pl_4()
+            .child(toolbar)
+            .child(Input::new(&self.note_body_input))
+            .into_any_element()
+    }
+
+    fn render_note_delete_confirm(&self, cx: &Context<Self>) -> Option<impl IntoElement> {
+        let id = self.note_pending_delete.clone()?;
+        let title = self.notes.iter().find(|n| n.id == id).map_or(UNTITLED_NOTE, |n| n.title.as_str());
+        let close = app_callback(cx, |this, cx| {
+            this.note_pending_delete = None;
+            cx.notify();
+        });
+        let delete = app_callback(cx, move |this, cx| this.delete_note(&id, cx));
+        Some(
+            ConfirmDialog::new("note-delete-confirm", "Delete note?", format!("“{title}” will be removed."), close)
+                .confirm("Delete")
+                .destructive()
+                .on_confirm(delete),
+        )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn note(title: &str, body: &str, tags: &[&str]) -> Note {
+        Note {
+            id: "n".into(),
+            slug: "n".into(),
+            title: title.into(),
+            body: body.into(),
+            tags: tags.iter().map(|t| t.to_string()).collect(),
+            source_session_id: None,
+            source_cwd: None,
+            created_at: 0,
+            updated_at: 0,
+        }
+    }
+
+    #[test]
+    fn relative_time_buckets() {
+        let now = 10 * 86_400_000;
+        assert_eq!(relative_time(now, now + 5_000), "just now");
+        assert_eq!(relative_time(now, now - 30_000), "just now");
+        assert_eq!(relative_time(now, now - 5 * 60_000), "5m ago");
+        assert_eq!(relative_time(now, now - 3 * 3_600_000), "3h ago");
+        assert_eq!(relative_time(now, now - 2 * 86_400_000), "2d ago");
+    }
+
+    #[test]
+    fn filter_checks_title_body_and_tags() {
+        let n = note("Plan", "Ship the Parser", &["Rust"]);
+        assert!(note_matches(&n, ""));
+        assert!(note_matches(&n, "parser"));
+        assert!(note_matches(&n, "rust"));
+        assert!(!note_matches(&n, "go"));
+    }
+
+    #[test]
+    fn preview_skips_blank_lines() {
+        assert_eq!(note_preview("\n  \nfirst\nsecond"), "first");
+        assert_eq!(note_preview("   "), "Empty note");
+    }
+
+    #[test]
+    fn dirty_check_treats_blank_title_as_untitled() {
+        let note = Note { title: UNTITLED_NOTE.into(), body: "x".into(), ..Default::default() };
+        assert!(!note_is_dirty(&note, "", "x"));
+        assert!(note_is_dirty(&note, "", "y"));
+        assert!(note_is_dirty(&note, "Plan", "x"));
     }
 }

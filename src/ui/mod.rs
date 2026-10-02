@@ -1,5 +1,5 @@
-pub mod automations_view;
-pub mod components;
+pub mod app_callback;
+pub mod automations;
 pub mod composer;
 pub mod diff_viewer;
 pub mod file_tree;
@@ -12,7 +12,6 @@ pub mod search_view;
 pub mod settings_modal;
 pub mod sidebar;
 pub mod terminal_pane;
-pub mod legacy_theme;
 pub mod theme;
 pub mod titlebar;
 pub mod transcript;

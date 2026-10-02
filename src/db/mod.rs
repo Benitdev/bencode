@@ -20,7 +20,7 @@ const MONOCODE_DB_RELATIVE_PATH: &str = "Library/Application Support/com.monocod
 /// Maximum automation runs returned by `list_automation_runs`.
 const AUTOMATION_RUN_HISTORY_LIMIT: i64 = 50;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Note {
     pub id: String,
     pub slug: String,
@@ -130,25 +130,6 @@ pub struct TurnModel {
     pub id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ToolCall {
-    #[serde(rename = "callId")]
-    pub call_id: Option<String>,
-    pub kind: Option<String>,
-    pub title: Option<String>,
-    pub status: Option<String>,
-    pub input: Option<serde_json::Value>,
-    pub output: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SecondOpinion {
-    pub from: Option<String>,
-    pub to: Option<String>,
-    pub files: Option<u64>,
-    pub request: Option<String>,
 }
 
 /// One transcript block, mirroring MonoCode's `Block` type
@@ -337,6 +318,7 @@ impl MonoCodeDb {
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
+    #[cfg(test)]
     pub fn get_session(&self, session_id: &str) -> Result<Option<SessionRow>> {
         let sql = format!("{SESSION_SELECT} WHERE id = ?1 AND inbox_ask IS NULL");
         Ok(self
@@ -410,15 +392,6 @@ impl MonoCodeDb {
         let new_val = if current { 0 } else { 1 };
         self.conn.execute(
             "UPDATE sessions SET pinned = ?1 WHERE id = ?2",
-            params![new_val, session_id],
-        )?;
-        Ok(())
-    }
-
-    pub fn toggle_archived(&self, session_id: &str, current: bool) -> Result<()> {
-        let new_val = if current { 0 } else { 1 };
-        self.conn.execute(
-            "UPDATE sessions SET archived = ?1 WHERE id = ?2",
             params![new_val, session_id],
         )?;
         Ok(())
@@ -648,6 +621,30 @@ impl MonoCodeDb {
             "INSERT INTO automation_runs (id, automation_id, created_at, run_json)
              VALUES (?1, ?2, ?3, ?4)",
             params![run.id, run.automation_id, run.created_at, json],
+        )?;
+        Ok(())
+    }
+
+    /// Marks a run terminal (`succeeded`, `failed` or `cancelled`), patching
+    /// `run_json` in place so fields BenCode does not model survive.
+    pub fn finish_automation_run(&self, run_id: &str, status: &str, error: Option<&str>) -> Result<()> {
+        let json: String = self.conn.query_row(
+            "SELECT run_json FROM automation_runs WHERE id = ?1",
+            params![run_id],
+            |row| row.get(0),
+        )?;
+        let mut run: Value =
+            serde_json::from_str(&json).map_err(|err| anyhow!("automation run {run_id} has invalid run_json: {err}"))?;
+        let Some(fields) = run.as_object_mut() else { bail!("automation run {run_id} is not a JSON object") };
+        fields.insert("status".into(), Value::from(status));
+        fields.insert("completedAt".into(), Value::from(now_millis()));
+        match error {
+            Some(message) => fields.insert("error".into(), Value::from(message)),
+            None => fields.remove("error"),
+        };
+        self.conn.execute(
+            "UPDATE automation_runs SET run_json = ?1 WHERE id = ?2",
+            params![run.to_string(), run_id],
         )?;
         Ok(())
     }
@@ -1205,5 +1202,24 @@ mod tests {
         let db = MonoCodeDb::from_connection(conn).unwrap();
         db.upsert_session(&session("s1")).unwrap();
         assert_eq!(db.list_recent_sessions(5).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn finish_automation_run_patches_status_and_keeps_unknown_fields() {
+        let db = MonoCodeDb::open_in_memory().unwrap();
+        db.save_automation(&AutomationRow { id: "a1".into(), name: "A".into(), ..Default::default() }).unwrap();
+        db.conn
+            .execute(
+                "INSERT INTO automation_runs (id, automation_id, created_at, run_json) VALUES ('r1', 'a1', 1, ?1)",
+                params![r#"{"id":"r1","automationId":"a1","trigger":"manual","scheduledFor":1,"createdAt":1,"status":"running","futureField":7}"#],
+            )
+            .unwrap();
+        db.finish_automation_run("r1", "failed", Some("boom")).unwrap();
+        let json: String = db.conn.query_row("SELECT run_json FROM automation_runs WHERE id = 'r1'", [], |r| r.get(0)).unwrap();
+        let run: Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(run["status"], "failed");
+        assert_eq!(run["error"], "boom");
+        assert_eq!(run["futureField"], 7);
+        assert!(run["completedAt"].as_i64().is_some());
     }
 }

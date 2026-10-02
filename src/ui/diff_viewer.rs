@@ -1,325 +1,216 @@
-//! Diff viewer view mode: side-by-side or unified diffs with line additions/deletions,
-//! syntax highlighting, copy diff, and file change inspection.
+//! Changes view: changed files on the left, the selected file's diff on the right.
+//! Diff rows are numbered and virtualized; nothing here touches git.
 
 use ely_gpui_component::buttons::CopyButton;
 use ely_gpui_component::feedback::EmptyState;
 use ely_gpui_component::files::FileIcon;
 use ely_gpui_component::git::{DiffStat, GitStatusBadge};
-use ely_gpui_component::layout::on_axis;
-use ely_gpui_component::lists::GitStatus;
 use ely_gpui_component::primitives::IconName;
-use ely_gpui_component::theme::{ActiveTheme, IconSize, Radius, TextSize};
+use ely_gpui_component::theme::{ActiveTheme, IconSize, Palette, TextSize};
 use gpui::{
-    Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString, Styled,
-    div, prelude::*, px, uniform_list,
+    AnyElement, App, Context, FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement,
+    SharedString, Styled, div, prelude::*, px, uniform_list,
 };
 
 use crate::app::BenCodeApp;
-use crate::git::{DiffLineKind, GitFileStatus};
+use crate::git::{DiffLineKind, DiffRow, GitFileChange};
+use crate::ui::git_changes_panel::to_ely_status;
 
-fn to_ely_status(status: &GitFileStatus) -> GitStatus {
-    match status {
-        GitFileStatus::Modified => GitStatus::Modified,
-        GitFileStatus::Added => GitStatus::Added,
-        GitFileStatus::Deleted => GitStatus::Deleted,
-        GitFileStatus::Untracked => GitStatus::Untracked,
-        GitFileStatus::Renamed => GitStatus::Renamed,
+const FILE_LIST_WIDTH: gpui::Pixels = px(280.0);
+const ROW_HEIGHT: gpui::Pixels = px(22.0);
+const LINE_NUMBER_WIDTH: gpui::Pixels = px(40.0);
+
+/// Sign, text colour and background tint for one diff row.
+fn row_style(kind: &DiffLineKind, colors: &Palette) -> (&'static str, Hsla, Option<Hsla>) {
+    match kind {
+        DiffLineKind::Header(_) => ("", colors.accent, Some(colors.hover)),
+        DiffLineKind::Addition(_) => ("+", colors.success, Some(colors.success.opacity(0.1))),
+        DiffLineKind::Deletion(_) => ("-", colors.danger, Some(colors.danger.opacity(0.1))),
+        DiffLineKind::Context(_) => (" ", colors.fg, None),
     }
+}
+
+fn row_text(kind: &DiffLineKind) -> &str {
+    match kind {
+        DiffLineKind::Header(text)
+        | DiffLineKind::Addition(text)
+        | DiffLineKind::Deletion(text)
+        | DiffLineKind::Context(text) => text,
+    }
+}
+
+fn line_number(number: Option<u32>) -> String {
+    number.map(|n| n.to_string()).unwrap_or_default()
+}
+
+fn diff_row(row: &DiffRow, cx: &App) -> AnyElement {
+    let theme = cx.theme();
+    let (sign, fg, bg) = row_style(&row.kind, &theme.colors);
+    let subtle = theme.colors.fg_subtle;
+    let gutter = |number: Option<u32>| div().w(LINE_NUMBER_WIDTH).flex_none().text_color(subtle).child(line_number(number));
+    div()
+        .h(ROW_HEIGHT)
+        .flex()
+        .items_center()
+        .gap_2()
+        .px_2()
+        .when_some(bg, |el, bg| el.bg(bg))
+        .text_color(fg)
+        .font_family(theme.mono_family.clone())
+        .text_size(theme.text_size(TextSize::Xs))
+        .when(matches!(row.kind, DiffLineKind::Header(_)), |el| el.font_weight(FontWeight::SEMIBOLD))
+        .child(gutter(row.old))
+        .child(gutter(row.new))
+        .child(div().w_3().flex_none().child(sign))
+        .child(div().flex_1().whitespace_nowrap().child(row_text(&row.kind).to_string()))
+        .into_any_element()
 }
 
 impl BenCodeApp {
     pub fn render_diff_viewer(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
-        let colors = cx.theme().colors.clone();
-        let files = &self.workspace.changes;
-        let selected_path = self.workspace.diff_path.clone().unwrap_or_default();
-        let active_file = files.iter().find(|f| f.path == selected_path).cloned();
-        let diff_lines_count = self.workspace.diff.len();
-
-        let raw_diff_text: String = if !selected_path.is_empty() {
-            self.workspace
-                .diff
-                .iter()
-                .map(|l| match l {
-                    DiffLineKind::Header(h) => format!("{h}\n"),
-                    DiffLineKind::Addition(a) => format!("+{a}\n"),
-                    DiffLineKind::Deletion(d) => format!("-{d}\n"),
-                    DiffLineKind::Context(c) => format!(" {c}\n"),
-                })
-                .collect()
-        } else {
-            String::new()
-        };
-
         div()
             .flex()
             .flex_1()
+            .min_w_0()
             .h_full()
-            .bg(colors.bg)
-            // Left List: Changed Files
+            .bg(cx.theme().colors.bg)
+            .child(self.render_changed_files(cx))
+            .child(self.render_diff_pane(cx))
+    }
+
+    fn render_changed_files(&self, cx: &Context<Self>) -> impl IntoElement {
+        let theme = cx.theme();
+        let files = &self.workspace.changes;
+        let selected = self.workspace.diff_path.as_deref();
+        div()
+            .id("changed-files")
+            .flex()
+            .flex_col()
+            .flex_none()
+            .w(FILE_LIST_WIDTH)
+            .h_full()
+            .overflow_y_scroll()
+            .border_r_1()
+            .border_color(theme.colors.border)
+            .bg(theme.colors.surface)
+            .child(
+                div()
+                    .p_3()
+                    .text_size(theme.text_size(TextSize::Xs))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(theme.colors.fg_muted)
+                    .child(format!("CHANGED FILES · {}", files.len())),
+            )
+            .when(files.is_empty(), |el| {
+                el.child(
+                    EmptyState::new("clean-tree", IconName::Sparkles, "Working tree is clean")
+                        .body("No staged or unstaged changes."),
+                )
+            })
+            .children(files.iter().map(|file| self.render_changed_file(file, selected == Some(file.path.as_str()), cx)))
+    }
+
+    fn render_changed_file(&self, file: &GitFileChange, active: bool, cx: &Context<Self>) -> impl IntoElement {
+        let colors = &cx.theme().colors;
+        let path = file.path.clone();
+        div()
+            .id(SharedString::from(format!("changed-{}", file.path)))
+            .flex()
+            .items_center()
+            .justify_between()
+            .gap_2()
+            .px_3()
+            .py_1p5()
+            .cursor_pointer()
+            .when(active, |el| el.bg(colors.active))
+            .hover(|s| s.bg(colors.hover))
+            .on_click(cx.listener(move |this, _, _, cx| this.select_diff_path(path.clone(), cx)))
             .child(
                 div()
                     .flex()
-                    .flex_col()
-                    .w(px(280.0))
-                    .h_full()
-                    .border_r_1()
-                    .border_color(colors.border)
-                    .bg(colors.surface)
+                    .items_center()
+                    .gap_2()
+                    .min_w_0()
+                    .child(GitStatusBadge::new(SharedString::from(format!("status-{}", file.path)), to_ely_status(&file.status)))
+                    .child(FileIcon::file(&file.path).size(IconSize::Xs))
+                    .child(
+                        div()
+                            .truncate()
+                            .text_size(cx.theme().text_size(TextSize::Sm))
+                            .text_color(if active { colors.fg } else { colors.fg_muted })
+                            .child(file.path.clone()),
+                    ),
+            )
+            .child(DiffStat::new(file.additions, file.deletions))
+    }
+
+    fn render_diff_pane(&self, cx: &Context<Self>) -> AnyElement {
+        let theme = cx.theme();
+        let Some(path) = self.workspace.diff_path.clone() else {
+            return div()
+                .flex()
+                .flex_1()
+                .items_center()
+                .justify_center()
+                .child(EmptyState::new("no-diff", IconName::GitPullRequest, "No file selected").body("Pick a changed file to see its diff."))
+                .into_any_element();
+        };
+        let stat = self.workspace.changes.iter().find(|f| f.path == path).map(|f| (f.additions, f.deletions));
+        let rows = self.workspace.diff.len();
+
+        div()
+            .flex()
+            .flex_col()
+            .flex_1()
+            .min_w_0()
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .px_4()
+                    .py_2()
+                    .border_b_1()
+                    .border_color(theme.colors.border)
                     .child(
                         div()
                             .flex()
                             .items_center()
-                            .justify_between()
-                            .p_3()
-                            .border_b_1()
-                            .border_color(colors.border)
-                            .child(
-                                div()
-                                    .flex()
-                                    .items_center()
-                                    .gap_2()
-                                    .child(
-                                        div()
-                                            .text_size(cx.theme().text_size(TextSize::Xs))
-                                            .font_weight(FontWeight::BOLD)
-                                            .text_color(colors.fg)
-                                            .child("CHANGED FILES"),
-                                    )
-                                    .child(
-                                        div()
-                                            .px_1p5()
-                                            .py_0p5()
-                                            .rounded(cx.theme().radius(Radius::Sm))
-                                            .bg(colors.hover)
-                                            .text_size(cx.theme().text_size(TextSize::Xs))
-                                            .font_weight(FontWeight::BOLD)
-                                            .text_color(colors.accent)
-                                            .child(SharedString::from(format!("{}", files.len()))),
-                                    ),
-                            ),
+                            .gap_2()
+                            .min_w_0()
+                            .font_family(theme.mono_family.clone())
+                            .text_size(theme.text_size(TextSize::Sm))
+                            .child(div().truncate().child(path))
+                            .when_some(stat, |el, (added, removed)| el.child(DiffStat::new(added, removed))),
                     )
-                    .child(
-                        on_axis(div().id("diff-files-scroll"))
-                            .flex_1()
-                            .overflow_y_scroll()
-                            .children(if files.is_empty() {
-                                vec![
-                                    div()
-                                        .p_6()
-                                        .child(
-                                            EmptyState::new(
-                                                "no-diffs-empty",
-                                                IconName::Sparkles,
-                                                "Working tree is clean",
-                                            )
-                                            .body("No unstaged or staged file changes found"),
-                                        )
-                                        .into_any_element()
-                                ]
-                            } else {
-                                files.iter().map(|f| {
-                                    let is_active = f.path == selected_path;
-                                    let path_clone = f.path.clone();
-                                    let status = to_ely_status(&f.status);
-
-                                    div()
-                                        .id(SharedString::from(format!("diff-file-row-{}", f.path)))
-                                        .flex()
-                                        .items_center()
-                                        .justify_between()
-                                        .px_3()
-                                        .py_2()
-                                        .cursor_pointer()
-                                        .when(is_active, |el| el.bg(colors.active))
-                                        .when(!is_active, |el| el.hover(|s| s.bg(colors.hover)))
-                                        .on_click(cx.listener(move |this, _, _, cx| {
-                                            this.select_diff_path(path_clone.clone(), cx);
-                                            cx.notify();
-                                        }))
-                                        .child(
-                                            div()
-                                                .flex()
-                                                .items_center()
-                                                .gap_2()
-                                                .min_w_0()
-                                                .child(GitStatusBadge::new(
-                                                    format!("badge-diff-{}", f.path),
-                                                    status,
-                                                ))
-                                                .child(FileIcon::file(&f.path).size(IconSize::Xs))
-                                                .child(
-                                                    div()
-                                                        .text_size(cx.theme().text_size(TextSize::Sm))
-                                                        .text_color(if is_active { colors.fg } else { colors.fg_muted })
-                                                        .truncate()
-                                                        .child(f.path.clone()),
-                                                ),
-                                        )
-                                        .child(
-                                            DiffStat::new(
-                                                f.additions,
-                                                f.deletions,
-                                            ),
-                                        )
-                                        .into_any_element()
-                                }).collect()
-                            }),
-                    ),
+                    .child(CopyButton::new("copy-diff", self.workspace.diff_text.clone())),
             )
-            // Right Pane: Diff Content
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .flex_1()
-                    .h_full()
-                    .bg(colors.bg)
-                    // File Header Bar
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .justify_between()
-                            .px_4()
-                            .py_2p5()
-                            .border_b_1()
-                            .border_color(colors.border)
-                            .bg(colors.surface)
-                            .child(
-                                div()
-                                    .flex()
-                                    .items_center()
-                                    .gap_2()
-                                    .child(
-                                        div()
-                                            .text_size(cx.theme().text_size(TextSize::Sm))
-                                            .font_family(cx.theme().mono_family.clone())
-                                            .font_weight(FontWeight::BOLD)
-                                            .text_color(colors.fg)
-                                            .child(if selected_path.is_empty() {
-                                                "No file selected".to_string()
-                                            } else {
-                                                selected_path.clone()
-                                            }),
-                                    )
-                                    .when_some(active_file.as_ref(), |parent, f| {
-                                        parent.child(
-                                            DiffStat::new(f.additions, f.deletions),
-                                        )
-                                    }),
-                            )
-                            .child(
-                                div()
-                                    .flex()
-                                    .items_center()
-                                    .gap_2()
-                                    .when(!selected_path.is_empty(), |el| {
-                                        el.child(CopyButton::new("copy-diff-btn", raw_diff_text.clone()))
-                                    }),
-                            ),
-                    )
-                    // Diff Lines List
-                    .child(
-                        if diff_lines_count == 0 {
-                            div()
-                                .flex_1()
-                                .p_8()
-                                .text_color(colors.fg_subtle)
-                                .child("No diff lines for this file")
-                                .into_any_element()
-                        } else {
-                            uniform_list(
-                                "diff-lines-virtual-list",
-                                diff_lines_count,
-                                cx.processor(move |this, range: std::ops::Range<usize>, _window, cx| {
-                                    let colors = cx.theme().colors.clone();
-                                    let mono_family = cx.theme().mono_family.clone();
-                                    let text_xs = cx.theme().text_size(TextSize::Xs);
-                                    let radius_sm = cx.theme().radius(Radius::Sm);
-                                    let lines = &this.workspace.diff;
+            .child(if rows == 0 {
+                div().p_6().text_color(theme.colors.fg_subtle).child("No textual changes.").into_any_element()
+            } else {
+                uniform_list(
+                    "diff-rows",
+                    rows,
+                    cx.processor(|this, range: std::ops::Range<usize>, _, cx| {
+                        this.workspace.diff[range].iter().map(|row| diff_row(row, cx)).collect::<Vec<_>>()
+                    }),
+                )
+                .flex_1()
+                .py_2()
+                .into_any_element()
+            })
+            .into_any_element()
+    }
+}
 
-                                    range
-                                        .filter_map(|idx| {
-                                            let line = lines.get(idx)?;
-                                            let line_num = idx + 1;
-                                            let element = match line {
-                                                DiffLineKind::Header(hdr) => div()
-                                                    .h(px(22.0))
-                                                    .flex()
-                                                    .items_center()
-                                                    .px_2()
-                                                    .rounded(radius_sm)
-                                                    .bg(colors.hover)
-                                                    .text_color(colors.accent)
-                                                    .font_family(mono_family.clone())
-                                                    .text_size(text_xs)
-                                                    .font_weight(FontWeight::BOLD)
-                                                    .child(hdr.clone()),
-                                                DiffLineKind::Addition(txt) => div()
-                                                    .h(px(22.0))
-                                                    .flex()
-                                                    .items_center()
-                                                    .gap_3()
-                                                    .px_2()
-                                                    .bg(colors.success.opacity(0.1))
-                                                    .text_color(colors.success)
-                                                    .font_family(mono_family.clone())
-                                                    .text_size(text_xs)
-                                                    .child(
-                                                        div()
-                                                            .w(px(28.0))
-                                                            .text_color(colors.fg_subtle)
-                                                            .child(format!("{line_num}")),
-                                                    )
-                                                    .child(div().w(px(12.0)).child("+"))
-                                                    .child(div().flex_1().child(txt.clone())),
-                                                DiffLineKind::Deletion(txt) => div()
-                                                    .h(px(22.0))
-                                                    .flex()
-                                                    .items_center()
-                                                    .gap_3()
-                                                    .px_2()
-                                                    .bg(colors.danger.opacity(0.1))
-                                                    .text_color(colors.danger)
-                                                    .font_family(mono_family.clone())
-                                                    .text_size(text_xs)
-                                                    .child(
-                                                        div()
-                                                            .w(px(28.0))
-                                                            .text_color(colors.fg_subtle)
-                                                            .child(format!("{line_num}")),
-                                                    )
-                                                    .child(div().w(px(12.0)).child("-"))
-                                                    .child(div().flex_1().child(txt.clone())),
-                                                DiffLineKind::Context(txt) => div()
-                                                    .h(px(22.0))
-                                                    .flex()
-                                                    .items_center()
-                                                    .gap_3()
-                                                    .px_2()
-                                                    .text_color(colors.fg)
-                                                    .font_family(mono_family.clone())
-                                                    .text_size(text_xs)
-                                                    .child(
-                                                        div()
-                                                            .w(px(28.0))
-                                                            .text_color(colors.fg_subtle)
-                                                            .child(format!("{line_num}")),
-                                                    )
-                                                    .child(div().w(px(12.0)).child(" "))
-                                                    .child(div().flex_1().child(txt.clone())),
-                                            };
-                                            Some(element.into_any_element())
-                                        })
-                                        .collect::<Vec<_>>()
-                                }),
-                            )
-                            .flex_1()
-                            .h_full()
-                            .p_4()
-                            .into_any_element()
-                        },
-                    ),
-            )
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn row_text_and_line_numbers() {
+        assert_eq!(row_text(&DiffLineKind::Addition("x".into())), "x");
+        assert_eq!(line_number(None), "");
+        assert_eq!(line_number(Some(7)), "7");
     }
 }

@@ -4,6 +4,9 @@ use std::process::{Command, Output};
 
 use anyhow::{Context as _, Result, bail};
 
+mod rows;
+pub use rows::{DiffRow, number_rows, unified_text};
+
 /// Fallback branch name shown when git cannot tell us anything better.
 const DEFAULT_BRANCH: &str = "main";
 /// Well-known SHA-1 empty tree; used only if `git hash-object` fails.
@@ -23,18 +26,6 @@ pub enum GitFileStatus {
     Renamed,
 }
 
-impl GitFileStatus {
-    pub fn badge_char(&self) -> &'static str {
-        match self {
-            Self::Modified => "M",
-            Self::Added => "A",
-            Self::Deleted => "D",
-            Self::Untracked => "U",
-            Self::Renamed => "R",
-        }
-    }
-}
-
 #[derive(Clone, Debug)]
 pub struct GitFileChange {
     pub path: String,
@@ -43,7 +34,7 @@ pub struct GitFileChange {
     pub deletions: usize,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DiffLineKind {
     Header(String),
     Addition(String),

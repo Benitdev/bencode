@@ -6,6 +6,7 @@ use ely_gpui_component::data_display::{Badge, Tone};
 use ely_gpui_component::feedback::Alert;
 use ely_gpui_component::git::{ChangeAction, Changed, ChangesList, Commit, CommitItem, DiffStat};
 use ely_gpui_component::layout::on_axis;
+use ely_gpui_component::overlays::ConfirmDialog;
 use ely_gpui_component::lists::GitStatus;
 use ely_gpui_component::primitives::{Icon, IconName, Severity};
 use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize};
@@ -20,7 +21,7 @@ use crate::git::{
     unstage_all, unstage_file,
 };
 
-fn to_ely_status(status: &GitFileStatus) -> GitStatus {
+pub fn to_ely_status(status: &GitFileStatus) -> GitStatus {
     match status {
         GitFileStatus::Modified => GitStatus::Modified,
         GitFileStatus::Added => GitStatus::Added,
@@ -45,7 +46,6 @@ fn to_changed(files: &[GitFileChange]) -> Vec<Changed> {
 impl BenCodeApp {
     pub fn render_git_changes_panel(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         let colors = cx.theme().colors.clone();
-        let entity = cx.entity().clone();
         let branch_name = self.git_status.branch.clone();
         let ahead = self.git_status.ahead;
         let behind = self.git_status.behind;
@@ -60,43 +60,19 @@ impl BenCodeApp {
         let staged_changed = to_changed(&self.git_status.staged);
         let unstaged_changed = to_changed(&self.git_status.unstaged);
 
-        let e_action = entity.clone();
-        let e_all = entity.clone();
-
+        let (on_action, on_all) = (cx.entity().downgrade(), cx.entity().downgrade());
         let changes_list = ChangesList::new("git-worktree-changes", staged_changed, unstaged_changed)
             .on_action(move |path, action, _, cx| {
-                let p = path.to_string();
-                e_action.update(cx, |this, cx| {
-                    let cwd = this.workspace_cwd();
-                    match action {
-                        ChangeAction::Open => {
-                            this.active_view_mode = ViewMode::Changes;
-                            this.select_diff_path(p, cx);
-                        }
-                        ChangeAction::Stage => {
-                            let _ = stage_file(&cwd, &p);
-                            this.refresh_git_status(cx);
-                        }
-                        ChangeAction::Unstage => {
-                            let _ = unstage_file(&cwd, &p);
-                            this.refresh_git_status(cx);
-                        }
-                        ChangeAction::Discard => {
-                            let _ = discard_file(&cwd, &p);
-                            this.refresh_git_status(cx);
-                        }
-                    }
-                });
+                let path = path.to_string();
+                let _ = on_action.update(cx, |this, cx| this.on_change_action(path, action, cx));
             })
-            .on_all(move |stage_all_files, _, cx| {
-                e_all.update(cx, |this, cx| {
-                    let cwd = this.workspace_cwd();
-                    if stage_all_files {
-                        let _ = stage_all(&cwd);
+            .on_all(move |stage, _, cx| {
+                let _ = on_all.update(cx, |this, cx| {
+                    if stage {
+                        this.run_git_action("Stage all", stage_all, cx);
                     } else {
-                        let _ = unstage_all(&cwd);
+                        this.run_git_action("Unstage all", unstage_all, cx);
                     }
-                    this.refresh_git_status(cx);
                 });
             });
 
@@ -218,12 +194,22 @@ impl BenCodeApp {
                                 })),
                             )
                             .child(
+                                IconButton::new("git-discard-all-btn", IconName::Undo2)
+                                    .size(ControlSize::Sm)
+                                    .variant(ButtonVariant::Ghost)
+                                    .tooltip("Discard all unstaged changes")
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.git_confirm = Some(GitConfirm::DiscardAll);
+                                        cx.notify();
+                                    })),
+                            )
+                            .child(
                                 IconButton::new("git-stage-all-btn", IconName::Plus)
                                     .size(ControlSize::Sm)
                                     .variant(ButtonVariant::Secondary)
                                     .tooltip("Stage all changes")
                                     .on_click(cx.listener(|this, _, _, cx| {
-                                        this.stage_all_workspace_changes(cx);
+                                        this.run_git_action("Stage all", stage_all, cx);
                                     })),
                             ),
                     ),
@@ -304,7 +290,7 @@ impl BenCodeApp {
                         CommitItem::new(
                             format!("commit-{}", c.hash),
                             Commit {
-                                id: c.hash.clone().into(),
+                                id: c.short_hash.clone().into(),
                                 parents: vec![],
                                 subject: c.message.clone().into(),
                                 author: c.author.clone().into(),
@@ -317,42 +303,81 @@ impl BenCodeApp {
             })
     }
 
-    pub fn commit_staged_changes(&mut self, cx: &mut Context<Self>) {
-        let msg = self.git_commit_input.read(cx).text().trim().to_string();
-        if msg.is_empty() {
-            return;
-        }
-        let cwd = self.workspace_cwd();
-        match commit(&cwd, &msg) {
-            Ok(_) => {
-                self.git_commit_input.update(cx, |input, cx| input.set_text("", cx));
-                self.workspace.git_error = None;
-                self.refresh_git_status(cx);
+    fn on_change_action(&mut self, path: String, action: ChangeAction, cx: &mut Context<Self>) {
+        match action {
+            ChangeAction::Open => {
+                self.active_view_mode = ViewMode::Changes;
+                self.select_diff_path(path, cx);
             }
-            Err(e) => {
-                self.workspace.git_error = Some(e.to_string());
+            ChangeAction::Stage => self.run_git_action("Stage", move |cwd| stage_file(cwd, &path), cx),
+            ChangeAction::Unstage => self.run_git_action("Unstage", move |cwd| unstage_file(cwd, &path), cx),
+            ChangeAction::Discard => {
+                self.git_confirm = Some(GitConfirm::DiscardFile(path));
                 cx.notify();
             }
         }
     }
 
-    pub fn stage_all_workspace_changes(&mut self, cx: &mut Context<Self>) {
-        let cwd = self.workspace_cwd();
-        if let Err(e) = stage_all(&cwd) {
-            self.workspace.git_error = Some(e.to_string());
-        } else {
-            self.workspace.git_error = None;
+    pub fn commit_staged_changes(&mut self, cx: &mut Context<Self>) {
+        let message = self.git_commit_input.read(cx).text().trim().to_string();
+        if message.is_empty() {
+            return;
         }
-        self.refresh_git_status(cx);
+        self.git_commit_input.update(cx, |input, cx| input.set_text("", cx));
+        let input = self.git_commit_input.clone();
+        let cwd = self.workspace_cwd();
+        let restore = message.clone();
+        let task = cx.background_executor().spawn(async move { commit(&cwd, &message) });
+        cx.spawn(async move |this, cx| {
+            let result = task.await;
+            let _ = this.update(cx, |app, cx| {
+                if let Err(err) = &result {
+                    log::error!("git commit failed: {err:#}");
+                    // Give the message back unless a new draft was started meanwhile.
+                    input.update(cx, |input, cx| {
+                        if input.text().trim().is_empty() {
+                            input.set_text(restore, cx);
+                        }
+                    });
+                }
+                app.workspace.git_error = result.err().map(|err| format!("Commit failed: {err:#}"));
+                app.refresh_workspace(cx);
+            });
+        })
+        .detach();
     }
 
-    pub fn discard_all_workspace_changes(&mut self, cx: &mut Context<Self>) {
-        let cwd = self.workspace_cwd();
-        if let Err(e) = discard_all(&cwd) {
-            self.workspace.git_error = Some(e.to_string());
-        } else {
-            self.workspace.git_error = None;
-        }
-        self.refresh_git_status(cx);
+    /// The discard confirmation, when one is pending.
+    pub fn render_git_confirm(&self, cx: &Context<Self>) -> Option<gpui::AnyElement> {
+        let pending = self.git_confirm.clone()?;
+        let close = cx.listener(|this, _: &(), _, cx| {
+            this.git_confirm = None;
+            cx.notify();
+        });
+        let confirm = cx.listener(move |this, _: &(), _, cx| match &pending {
+            GitConfirm::DiscardFile(path) => {
+                let path = path.clone();
+                this.run_git_action("Discard", move |cwd| discard_file(cwd, &path), cx);
+            }
+            GitConfirm::DiscardAll => this.run_git_action("Discard all", discard_all, cx),
+        });
+        let (title, message) = match self.git_confirm.as_ref()? {
+            GitConfirm::DiscardFile(path) => ("Discard changes?", format!("Unstaged changes to {path} will be lost.")),
+            GitConfirm::DiscardAll => ("Discard all changes?", "Every unstaged change in the working tree will be lost.".to_string()),
+        };
+        Some(
+            ConfirmDialog::new("git-discard", title, message, move |window, cx| close(&(), window, cx))
+                .confirm("Discard")
+                .destructive()
+                .on_confirm(move |window, cx| confirm(&(), window, cx))
+                .into_any_element(),
+        )
     }
+}
+
+/// A destructive git action waiting for confirmation.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum GitConfirm {
+    DiscardFile(String),
+    DiscardAll,
 }

@@ -5,8 +5,6 @@
 use ely_gpui_component::theme::{Mode, Palette, Theme};
 use gpui::{App, Hsla, rgb, rgba};
 
-/// Temporary: views not yet migrated to `cx.theme().colors`.
-pub use crate::ui::legacy_theme::MonoTheme;
 
 fn c(hex: u32) -> Hsla {
     rgb(hex).into()

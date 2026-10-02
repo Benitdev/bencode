@@ -33,7 +33,7 @@ When migrating features, always inspect the source TypeScript/React and Rust bac
 | **Language** | Rust (2024 Edition) | TypeScript (React 19) + Rust (Tauri) |
 | **UI Framework** | [Zed GPUI](https://www.gpui.rs/) | React 19 + Vite |
 | **Component Library** | [Ely GPUI Components](https://github.com/ZacharyZhang-NY/Ely-GPUI-Components) | Custom Tailwind + CodeMirror + Xterm |
-| **Styling & Theme** | GPU Shaders + `MonoTheme` + Ely Tokens | Tailwind CSS + CSS Variables |
+| **Styling & Theme** | Ely theme tokens (`cx.theme().colors`), MonoCode palettes in `ui/theme.rs` | Tailwind CSS + CSS Variables |
 | **Async Runtime** | Tokio (`features = ["full"]`) | Tokio (Tauri backend) + Browser Event Loop |
 | **Database** | SQLite via `rusqlite` (bundled) | SQLite via `rusqlite` in `src-tauri` |
 | **Terminal** | `ely_gpui_component::terminal::Terminal` | `@xterm/xterm` in WebView + PTY in Rust |
@@ -57,40 +57,36 @@ Every feature in MonoCode has a designated counterpart in BenCode:
 | `features/inbox/` | `ui/inbox_view.rs` | Cross-session review queue and approvals |
 | `features/search/` | `ui/search_view.rs` | Universal file & session search |
 | `features/settings/` | `ui/settings_modal.rs` | Settings modal, providers (Claude, Codex, Antigravity), models |
-| `shared/ui/` (Buttons, Dialogs, Rail) | `ui/components.rs`, `ui/rail.rs` | Built on Ely GPUI primitives & components |
+| `shared/ui/` (Buttons, Dialogs, Rail) | Ely components directly; `ui/app_callback.rs` adapts callbacks | No local component library — use Ely |
 | `integrations/harness/` | `harness/` (`claude.rs`, `resolver.rs`) | Stdio CLI execution and JSON event parser |
 | `src-tauri/src/` | `db/mod.rs`, `git/mod.rs`, `workspace.rs` | Replaced by direct in-process Rust calls (no IPC overhead) |
 
 ---
 
-## 🎨 5. Ely GPUI Component Library Reference
+## 🎨 5. Ely GPUI Components: How BenCode Uses Them
 
-Ely GPUI (`ely-gpui-component`) provides a rich suite of developer-focused components:
+Source of truth: `~/.cargo/git/checkouts/ely-gpui-components-*/*/src/<chapter>/` and the gallery pages in `examples/gallery/pages/<chapter>.rs`. Read the library's own `AGENTS.md` "Rules" before adding UI.
 
-### Available Modules:
-- `ely_gpui_component::primitives`: `Icon`, `IconName`, `Badge`, `Avatar`, `Spinner`, `Checkbox`, `Radio`.
-- `ely_gpui_component::buttons`: High-performance button variants (Primary, Secondary, Ghost, Outline).
-- `ely_gpui_component::forms`: `TextInput`, `InputEvent`, text areas, validation.
-- `ely_gpui_component::overlays`: `Modal`, `Popover`, `Tooltip`, dropdown menus.
-- `ely_gpui_component::shell`: `Titlebar`, `Rail`, panels, split views.
-- `ely_gpui_component::terminal`: Native terminal widget (`Terminal`, `Launch`).
-- `ely_gpui_component::theme`: Theme management (`Theme`, `Mode`, `ActiveTheme`, colors, spacing, radius).
+### Rules
+- **Use an Ely component whenever one fits.** Hand-roll only small layout `div`s. BenCode keeps no local button, modal or tab widgets.
+- **Colours come from `cx.theme().colors`** (`bg`, `surface`, `hover`, `active`, `border`, `fg`, `fg_muted`, `accent`, `success`, `danger`, …). Sizes come from `theme.text_size(..)`, `theme.radius(..)` and `IconSize`. MonoCode's dark and light palettes are registered in `ui/theme.rs::install`, and `harness_color` gives each harness its brand dot. Do not clone `colors` per frame; borrow it.
+- **Ely callbacks:**
+  - `Fn(&T, &mut Window, &mut App)` fits `cx.listener(...)` directly.
+  - `Fn(&mut Window, &mut App)` (menus, dialogs) goes through `ui::app_callback::app_callback(cx, |this, cx| ...)`.
+  - Other shapes (e.g. `ChangesList::on_action`) use `cx.entity().downgrade()`.
+- **Dialogs are stateless:** render them while an `is_*_open` or `Option<...>` flag is set and clear the flag in `on_close`. Destructive actions always go through `ConfirmDialog`.
+- **Long lists are virtualized:** `gpui::list` + `ListState` for the transcript (`FollowMode::Tail`, only the streaming tail is re-measured), and `uniform_list` for diffs, notes and search hits.
 
-### Initializing Ely in GPUI:
-```rust
-use ely_gpui_component::{Assets, theme::{Mode, Theme}};
-use gpui::App;
-
-fn main() {
-    gpui_platform::application()
-        .with_assets(Assets)
-        .run(|cx: &mut App| {
-            ely_gpui_component::init(cx);
-            Theme::set_mode(Mode::Dark, cx);
-            // Window initialization...
-        });
-}
-```
+### Map
+| Area | Ely components |
+| :--- | :--- |
+| Shell | `primitives::FocusScope` root, `shell::{ActivityBar, StatusBar}`, `buttons::SegmentedControl`, `IconButton` |
+| Threads sidebar | `layout::Sidebar`, `forms::SearchInput`, `chat::ConversationList`, `overlays::{PromptDialog, ConfirmDialog}` |
+| Transcript | `gpui::list`, `chat::{StreamingMarkdown, CodeBlock, StreamingCursor}`, `documents::MarkdownRenderer`, `agent::ToolCallCard`, `feedback::{ConfirmationCard, Alert, EmptyState}` |
+| Composer | `menus::{DropdownMenu, SearchableMenu, Menu, MenuItem}`, `chat::TokenCounter`, `buttons::IconButton` |
+| Source control | `git::{ChangesList, CommitItem, DiffStat, GitStatusBadge}`, `buttons::CopyButton`, `overlays::ConfirmDialog` |
+| Files | `lists::FileTree` |
+| Settings / Search / Notes / Automations / Inbox | `overlays::Dialog`, `settings::*`, `layout::{MasterDetail, Section, ScrollArea}`, `forms::{Switch, Input}`, `lists::ListItem`, `git::PullRequestCard` |
 
 ---
 
@@ -110,10 +106,10 @@ div()
     .flex()
     .flex_col()
     .size_full()
-    .bg(theme.surface)
-    .text_color(theme.text_primary)
-    .p(px(16.0))
-    .gap(px(8.0))
+    .bg(cx.theme().colors.surface)
+    .text_color(cx.theme().colors.fg)
+    .p_4()
+    .gap_2()
     .child("Hello BenCode")
 ```
 

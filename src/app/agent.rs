@@ -26,6 +26,19 @@ pub struct AgentRun {
     pub session_id: String,
     pub handle: HarnessProcessHandle,
     pub pending_permission: Option<PermissionRequest>,
+    /// How the turn ended, once the harness reports `Done`.
+    pub outcome: Option<DoneStatus>,
+    /// Automation run row to close when this turn ends.
+    pub automation_run_id: Option<String>,
+}
+
+/// MonoCode's terminal automation-run status for a turn outcome.
+fn automation_status(outcome: Option<DoneStatus>) -> &'static str {
+    match outcome {
+        Some(DoneStatus::Completed) => "succeeded",
+        Some(DoneStatus::Cancelled) => "cancelled",
+        Some(DoneStatus::Failed) | None => "failed",
+    }
 }
 
 impl PermissionMode {
@@ -115,7 +128,14 @@ impl BenCodeApp {
     ) {
         self.next_run_id += 1;
         let run_id = self.next_run_id;
-        self.active_run = Some(AgentRun { id: run_id, session_id, handle, pending_permission: None });
+        self.active_run = Some(AgentRun {
+            id: run_id,
+            session_id,
+            handle,
+            pending_permission: None,
+            outcome: None,
+            automation_run_id: None,
+        });
 
         cx.spawn(async move |this, cx| {
             while let Some(first) = events.recv().await {
@@ -149,6 +169,9 @@ impl BenCodeApp {
             return;
         }
         let is_done = matches!(event, AgentEvent::Done(_));
+        if let AgentEvent::Done(status) = event {
+            run.outcome = Some(status);
+        }
         if let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id) {
             apply_event(session, event, now_ms());
         }
@@ -161,6 +184,7 @@ impl BenCodeApp {
         if self.active_run.as_ref().is_some_and(|run| run.id == run_id) {
             let run = self.active_run.take().expect("checked above");
             self.persist_session(&run.session_id);
+            self.close_automation_run(&run, automation_status(run.outcome));
             // The agent has most likely edited files.
             self.refresh_workspace(cx);
             cx.notify();
@@ -170,6 +194,7 @@ impl BenCodeApp {
     fn stop_agent(&mut self, cx: &mut Context<Self>) {
         let Some(run) = self.active_run.take() else { return };
         run.handle.cancel();
+        self.close_automation_run(&run, "cancelled");
         if let Some(session) = self.sessions.iter_mut().find(|s| s.id == run.session_id) {
             let now = now_ms();
             push_notice(session, STOPPED_NOTICE, now);
@@ -178,6 +203,21 @@ impl BenCodeApp {
         self.persist_session(&run.session_id);
         self.refresh_workspace(cx);
         cx.notify();
+    }
+
+    /// Links the running turn of `session_id` to an automation run row.
+    pub fn attach_automation_run(&mut self, session_id: &str, run_id: String) {
+        if let Some(run) = self.active_run.as_mut().filter(|run| run.session_id == session_id) {
+            run.automation_run_id = Some(run_id);
+        }
+    }
+
+    fn close_automation_run(&self, run: &AgentRun, status: &str) {
+        let Some(run_id) = &run.automation_run_id else { return };
+        let error = (status == "failed").then_some("The agent turn failed.");
+        if let Err(err) = self.db.finish_automation_run(run_id, status, error) {
+            log::error!("failed to close automation run {run_id}: {err:#}");
+        }
     }
 
     pub fn approve_permission(&mut self, cx: &mut Context<Self>) {
@@ -459,6 +499,13 @@ mod tests {
 
         s.harness = "pi".into();
         assert!(spawn_request(&s, "go", PermissionMode::Auto).is_err());
+    }
+
+    #[test]
+    fn automation_status_maps_turn_outcomes() {
+        assert_eq!(automation_status(Some(DoneStatus::Completed)), "succeeded");
+        assert_eq!(automation_status(Some(DoneStatus::Cancelled)), "cancelled");
+        assert_eq!(automation_status(None), "failed");
     }
 
     #[test]

@@ -4,6 +4,7 @@ mod app;
 mod db;
 mod git;
 mod harness;
+mod schedule;
 mod ui;
 mod workspace;
 

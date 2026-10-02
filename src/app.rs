@@ -66,20 +66,17 @@ pub struct BenCodeApp {
     pub filter_mode: FilterMode,
     pub permission_mode: PermissionMode,
     pub sidebar_mode: SidebarMode,
-    pub expanded_folders: HashSet<String>,
     pub selected_diff_path: Option<String>,
     pub search_query: String,
     /// Model key in MonoCode's `harness:model` form, e.g. `claude:opus`.
     pub selected_model: String,
     /// Installed harness CLIs, probed once at startup (never from render).
     pub harnesses: Vec<HarnessInfo>,
-    pub is_model_picker_open: bool,
-    pub is_branch_picker_open: bool,
     pub is_skill_picker_open: bool,
     pub skill_query: String,
     pub is_mention_picker_open: bool,
     pub mention_query: String,
-    pub terminal: Option<Entity<Terminal>>,
+    pub terminal: Entity<Terminal>,
     pub is_settings_open: bool,
     pub settings_tab: SettingsTab,
     pub is_notes_open: bool,
@@ -103,8 +100,6 @@ pub struct BenCodeApp {
     pub git_status: crate::git::GitDetailedStatus,
     pub git_commits: Vec<crate::git::GitCommitInfo>,
     pub git_commit_input: Entity<TextInput>,
-    pub git_staged_collapsed: bool,
-    pub git_unstaged_collapsed: bool,
     pub git_history_collapsed: bool,
     /// Git/filesystem snapshot for the active workspace; see `workspace_sync`.
     pub workspace: WorkspaceCache,
@@ -116,7 +111,6 @@ pub struct BenCodeApp {
     pub search_active_index: usize,
     // Inbox
     pub is_inbox_open: bool,
-    pub theme_name: String,
     /// Rename/delete dialog opened from the thread list.
     pub session_dialog: Option<crate::ui::sidebar::SessionDialog>,
     pub rename_input: Entity<TextInput>,
@@ -128,8 +122,22 @@ pub struct BenCodeApp {
     pub prompt_input: Entity<TextInput>,
     pub search_input: Entity<TextInput>,
     // [ui-agent-flow fields]
+    /// Virtualized transcript list state.
+    pub transcript: crate::ui::transcript::TranscriptView,
     // [ui-git-files fields]
+    /// Destructive git action awaiting confirmation.
+    pub git_confirm: Option<crate::ui::git_changes_panel::GitConfirm>,
     // [ui-panels fields]
+    /// Validation message for the automation time field.
+    pub automation_time_error: Option<String>,
+    /// Set on open; the search dialog focuses its query field once drawn.
+    pub search_focus_pending: bool,
+    /// Enter in the search field opens the top hit; subscribed on first open.
+    pub search_submit: Option<Subscription>,
+    /// Note id awaiting delete confirmation.
+    pub note_pending_delete: Option<String>,
+    /// Automation id awaiting delete confirmation.
+    pub automation_pending_delete: Option<String>,
     pub db: MonoCodeDb,
     _subscriptions: Vec<Subscription>,
 }
@@ -267,18 +275,15 @@ impl BenCodeApp {
             filter_mode: FilterMode::All,
             permission_mode: PermissionMode::Auto,
             sidebar_mode: SidebarMode::Sessions,
-            expanded_folders: HashSet::new(),
             selected_diff_path: None,
             search_query: String::new(),
             selected_model,
             harnesses,
-            is_model_picker_open: false,
-            is_branch_picker_open: false,
             is_skill_picker_open: false,
             skill_query: String::new(),
             is_mention_picker_open: false,
             mention_query: String::new(),
-            terminal: Some(terminal),
+            terminal,
             is_settings_open: false,
             settings_tab: SettingsTab::Providers,
             is_notes_open: false,
@@ -300,8 +305,6 @@ impl BenCodeApp {
             git_status: Default::default(),
             git_commits: Vec::new(),
             git_commit_input,
-            git_staged_collapsed: false,
-            git_unstaged_collapsed: false,
             git_history_collapsed: false,
             workspace: WorkspaceCache::default(),
             is_search_open: false,
@@ -310,7 +313,6 @@ impl BenCodeApp {
             search_hits: Vec::new(),
             search_active_index: 0,
             is_inbox_open: false,
-            theme_name: "MonoCode Dark".to_string(),
             session_dialog: None,
             rename_input: text_input(window, cx, "Thread title"),
             focus_handle: cx.focus_handle(),
@@ -319,8 +321,15 @@ impl BenCodeApp {
             prompt_input,
             search_input,
             // [ui-agent-flow init]
+            transcript: Default::default(),
             // [ui-git-files init]
+            git_confirm: None,
             // [ui-panels init]
+            automation_time_error: None,
+            search_focus_pending: false,
+            search_submit: None,
+            note_pending_delete: None,
+            automation_pending_delete: None,
             db,
             _subscriptions: subscriptions,
         }
@@ -343,7 +352,6 @@ impl BenCodeApp {
             return;
         };
         self.selected_model = option.key.to_string();
-        self.is_model_picker_open = false;
 
         let harness_id = option.harness.id();
         let changed_session = self.selected_session_mut().map(|session| {
@@ -365,7 +373,6 @@ impl BenCodeApp {
         if let Some(session) = self.selected_session_mut() {
             session.branch = Some(branch);
         }
-        self.is_branch_picker_open = false;
         cx.notify();
     }
 
@@ -394,6 +401,15 @@ impl BenCodeApp {
         self.replace_trigger('@', &format!("@{mention}"), cx);
         self.is_mention_picker_open = false;
         cx.notify();
+    }
+
+    /// Appends `text` to the prompt as its own word.
+    pub fn append_to_prompt(&mut self, text: &str, cx: &mut Context<Self>) {
+        self.prompt_input.update(cx, |input, cx| {
+            let current = input.text().trim_end().to_string();
+            let joined = if current.is_empty() { format!("{text} ") } else { format!("{current} {text} ") };
+            input.set_text(joined, cx);
+        });
     }
 
     /// Replaces the trailing `trigger…` token of the prompt with `replacement`.
@@ -545,7 +561,8 @@ impl Render for BenCodeApp {
                 .when(self.is_automations_open, |el| el.child(self.render_automations_modal(cx)))
                 .when(self.is_search_open, |el| el.child(self.render_search_modal(cx)))
                 .when(self.is_inbox_open, |el| el.child(self.render_inbox_modal(cx)))
-                .children(self.render_session_dialog(cx)),
+                .children(self.render_session_dialog(cx))
+                .children(self.render_git_confirm(cx)),
         )
     }
 }

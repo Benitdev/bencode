@@ -1,15 +1,21 @@
-use ely_gpui_component::{
-    layout::on_axis,
-    primitives::{Icon, IconName},
-    theme::{ActiveTheme, IconSize, Radius, TextSize},
-};
+//! Universal search over threads, workspace files and recent projects.
+
+use ely_gpui_component::buttons::SegmentedControl;
+use ely_gpui_component::data_display::Tag;
+use ely_gpui_component::feedback::EmptyState;
+use ely_gpui_component::forms::{InputEvent, SearchInput};
+use ely_gpui_component::lists::ListItem;
+use ely_gpui_component::overlays::Dialog;
+use ely_gpui_component::primitives::{Icon, IconName};
+use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
-    Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString,
-    Styled, div, prelude::*, px,
+    AnyElement, Context, Focusable, IntoElement, ParentElement, SharedString, Styled, div,
+    uniform_list,
 };
 
 use crate::app::{BenCodeApp, ViewMode};
-use crate::ui::theme::MonoTheme;
+use crate::db::SessionRow;
+use crate::ui::app_callback::app_callback;
 
 const SEARCH_FILE_HIT_LIMIT: usize = 30;
 
@@ -21,24 +27,117 @@ pub enum SearchScope {
     Projects,
 }
 
+const SCOPES: [(SearchScope, &str, &str); 4] = [
+    (SearchScope::All, "all", "All"),
+    (SearchScope::Conversations, "threads", "Threads"),
+    (SearchScope::Files, "files", "Files"),
+    (SearchScope::Projects, "projects", "Projects"),
+];
+
+impl SearchScope {
+    fn key(self) -> &'static str {
+        SCOPES.iter().find(|(scope, ..)| *scope == self).map_or("all", |(_, key, _)| key)
+    }
+
+    fn from_key(key: &str) -> Option<Self> {
+        SCOPES.iter().find(|(_, k, _)| *k == key).map(|(scope, ..)| *scope)
+    }
+
+    fn includes(self, other: SearchScope) -> bool {
+        self == SearchScope::All || self == other
+    }
+
+    fn tag(self) -> &'static str {
+        match self {
+            SearchScope::Conversations => "Thread",
+            SearchScope::Files => "File",
+            SearchScope::Projects => "Project",
+            SearchScope::All => "",
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct SearchHit {
-    pub id: String,
-    pub title: String,
-    pub subtitle: String,
+    pub title: SharedString,
+    pub subtitle: SharedString,
     pub scope: SearchScope,
     pub icon: IconName,
     pub target_id: String,
+}
+
+fn session_hits(query: &str, sessions: &[SessionRow]) -> impl Iterator<Item = SearchHit> {
+    sessions
+        .iter()
+        .filter(move |s| {
+            [&s.title, &s.cwd, &s.model].iter().any(|field| field.to_lowercase().contains(query))
+                || s.blocks.iter().any(|b| b.text.as_deref().is_some_and(|t| t.to_lowercase().contains(query)))
+        })
+        .map(|s| SearchHit {
+            title: s.title.clone().into(),
+            subtitle: format!("{} • {}", s.model, s.cwd).into(),
+            scope: SearchScope::Conversations,
+            icon: IconName::MessageSquare,
+            target_id: s.id.clone(),
+        })
+}
+
+fn file_hits(query: &str, root: &str, files: &[SharedString]) -> impl Iterator<Item = SearchHit> {
+    files
+        .iter()
+        .filter(move |path| path.to_lowercase().contains(query))
+        .take(SEARCH_FILE_HIT_LIMIT)
+        .map(move |path| SearchHit {
+            title: path.rsplit('/').next().unwrap_or(path).to_string().into(),
+            subtitle: format!("{root}/{path}").into(),
+            scope: SearchScope::Files,
+            icon: IconName::FileText,
+            target_id: path.to_string(),
+        })
+}
+
+fn project_hits(query: &str, projects: &[String]) -> impl Iterator<Item = SearchHit> {
+    projects.iter().filter(move |p| p.to_lowercase().contains(query)).map(|p| SearchHit {
+        title: std::path::Path::new(p).file_name().and_then(|n| n.to_str()).unwrap_or(p).to_string().into(),
+        subtitle: p.clone().into(),
+        scope: SearchScope::Projects,
+        icon: IconName::Folder,
+        target_id: p.clone(),
+    })
+}
+
+/// Everything in `scope` matching `query`, threads first, then files, then projects.
+fn collect_hits(query: &str, scope: SearchScope, app: &BenCodeApp) -> Vec<SearchHit> {
+    let query = query.trim().to_lowercase();
+    if query.is_empty() {
+        return Vec::new();
+    }
+    let mut hits = Vec::new();
+    if scope.includes(SearchScope::Conversations) {
+        hits.extend(session_hits(&query, &app.sessions));
+    }
+    if scope.includes(SearchScope::Files) {
+        hits.extend(file_hits(&query, &app.workspace.cwd, &app.workspace.files));
+    }
+    if scope.includes(SearchScope::Projects) {
+        hits.extend(project_hits(&query, &app.recent_projects));
+    }
+    hits
 }
 
 impl BenCodeApp {
     pub fn open_search_modal(&mut self, cx: &mut Context<Self>) {
         self.is_search_open = true;
         self.search_scope = SearchScope::All;
-        self.search_active_index = 0;
-        self.search_modal_input.update(cx, |input, cx| {
-            input.set_text("", cx);
-        });
+        self.search_focus_pending = true;
+        if self.search_submit.is_none() {
+            self.search_submit = Some(cx.subscribe(&self.search_modal_input, |this, _, event: &InputEvent, cx| {
+                if *event == InputEvent::Submit {
+                    this.open_search_hit(this.search_active_index, cx);
+                }
+            }));
+        }
+        self.search_modal_input.update(cx, |input, cx| input.set_text("", cx));
         self.update_search_hits(cx);
     }
 
@@ -48,401 +147,145 @@ impl BenCodeApp {
     }
 
     pub fn update_search_hits(&mut self, cx: &mut Context<Self>) {
-        let query = self.search_modal_input.read(cx).text().trim().to_lowercase();
-        let scope = self.search_scope;
-
-        if query.is_empty() {
-            self.search_hits.clear();
-            self.search_active_index = 0;
-            cx.notify();
-            return;
-        }
-
-        let mut hits = Vec::new();
-
-        // 1. Search Conversations
-        if scope == SearchScope::All || scope == SearchScope::Conversations {
-            for s in &self.sessions {
-                let matches_title = s.title.to_lowercase().contains(&query);
-                let matches_cwd = s.cwd.to_lowercase().contains(&query);
-                let matches_model = s.model.to_lowercase().contains(&query);
-                let matches_blocks = s.blocks.iter().any(|b| {
-                    b.text.as_deref().unwrap_or("").to_lowercase().contains(&query)
-                });
-
-                if matches_title || matches_cwd || matches_model || matches_blocks {
-                    hits.push(SearchHit {
-                        id: format!("conv-{}", s.id),
-                        title: s.title.clone(),
-                        subtitle: format!("{} • {}", s.model, s.cwd),
-                        scope: SearchScope::Conversations,
-                        icon: IconName::MessageSquare,
-                        target_id: s.id.clone(),
-                    });
-                }
-            }
-        }
-
-        // 2. Search Workspace Files
-        if scope == SearchScope::All || scope == SearchScope::Files {
-            // Cached, recursive index from `workspace_sync`; no disk IO per keystroke.
-            let root = self.workspace.cwd.clone();
-            let matches = self
-                .workspace
-                .files
-                .iter()
-                .filter(|path| path.to_lowercase().contains(&query))
-                .take(SEARCH_FILE_HIT_LIMIT);
-            for path in matches {
-                let file_name = path.rsplit('/').next().unwrap_or(path);
-                hits.push(SearchHit {
-                    id: format!("file-{path}"),
-                    title: file_name.to_string(),
-                    subtitle: format!("{root}/{path}"),
-                    scope: SearchScope::Files,
-                    icon: IconName::FileText,
-                    target_id: path.clone(),
-                });
-            }
-        }
-
-        // 3. Search Projects
-        if scope == SearchScope::All || scope == SearchScope::Projects {
-            for proj in &self.recent_projects {
-                if proj.to_lowercase().contains(&query) {
-                    let name = std::path::Path::new(proj)
-                        .file_name()
-                        .and_then(|n| n.to_str())
-                        .unwrap_or(proj)
-                        .to_string();
-                    hits.push(SearchHit {
-                        id: format!("proj-{}", proj),
-                        title: name,
-                        subtitle: proj.clone(),
-                        scope: SearchScope::Projects,
-                        icon: IconName::Folder,
-                        target_id: proj.clone(),
-                    });
-                }
-            }
-        }
-
-        self.search_hits = hits;
+        let query = self.search_modal_input.read(cx).text().to_string();
+        self.search_hits = collect_hits(&query, self.search_scope, self);
         self.search_active_index = 0;
         cx.notify();
     }
 
-    pub fn execute_search_hit(&mut self, hit: SearchHit, cx: &mut Context<Self>) {
-        match hit.scope {
-            SearchScope::Conversations => {
-                self.active_view_mode = ViewMode::Chat;
-                self.select_session(hit.target_id, cx);
-                self.close_search_modal(cx);
-            }
-            SearchScope::Files => {
-                self.active_view_mode = ViewMode::Changes;
-                self.select_diff_path(hit.target_id, cx);
-                self.close_search_modal(cx);
-            }
-            SearchScope::Projects => {
-                self.current_cwd = hit.target_id;
-                self.refresh_git_status(cx);
-                self.close_search_modal(cx);
-            }
-            SearchScope::All => {
-                self.close_search_modal(cx);
+    /// Opens the latest thread in `cwd`, or starts one there.
+    fn open_project(&mut self, cwd: String, cx: &mut Context<Self>) {
+        self.active_view_mode = ViewMode::Chat;
+        let latest = self.sessions.iter().filter(|s| s.cwd == cwd).max_by_key(|s| s.updated_at).map(|s| s.id.clone());
+        match latest {
+            Some(id) => self.select_session(id, cx),
+            None => {
+                self.current_cwd = cwd;
+                self.create_new_session(cx);
             }
         }
     }
 
-    pub fn render_search_modal(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.theme();
-        let query = self.search_modal_input.read(cx).text().trim().to_string();
-        let current_scope = self.search_scope;
-        let hits_count = self.search_hits.len();
-        let active_idx = self.search_active_index;
-
-        div()
-            .absolute()
-            .inset_0()
-            .bg(gpui::rgba(0x000000aa))
-            .flex()
-            .items_start()
-            .justify_center()
-            .pt(px(80.0))
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .w(px(640.0))
-                    .max_h(px(520.0))
-                    .rounded(theme.radius(Radius::Lg))
-                    .bg(MonoTheme::bg_surface())
-                    .border_1()
-                    .border_color(MonoTheme::border_stroke())
-                    .shadow_lg()
-                    .overflow_hidden()
-                    // 1. Search Header Row
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .justify_between()
-                            .px_4()
-                            .py_3()
-                            .border_b_1()
-                            .border_color(MonoTheme::border_stroke())
-                            .bg(MonoTheme::bg_base())
-                            .child(
-                                div()
-                                    .flex()
-                                    .items_center()
-                                    .gap_3()
-                                    .flex_1()
-                                    .child(
-                                        Icon::new(IconName::Search)
-                                            .size(IconSize::Sm)
-                                            .color(MonoTheme::fg_muted()),
-                                    )
-                                    .child(
-                                        div()
-                                            .flex_1()
-                                            .child(self.search_modal_input.clone()),
-                                    ),
-                            )
-                            .child(
-                                div()
-                                    .id("close-search-modal-btn")
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .px_2()
-                                    .py_1()
-                                    .rounded(theme.radius(Radius::Sm))
-                                    .bg(MonoTheme::bg_hover())
-                                    .text_color(MonoTheme::fg_muted())
-                                    .text_size(theme.text_size(TextSize::Xs))
-                                    .cursor_pointer()
-                                    .child("ESC")
-                                    .on_click(cx.listener(|this, _, _, cx| {
-                                        this.close_search_modal(cx);
-                                    })),
-                            ),
-                    )
-                    // 2. Scope Filter Pills
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap_2()
-                            .px_4()
-                            .py_2()
-                            .border_b_1()
-                            .border_color(MonoTheme::border_stroke())
-                            .bg(MonoTheme::bg_surface())
-                            .child(self.render_scope_pill(SearchScope::All, "All", current_scope, cx))
-                            .child(self.render_scope_pill(SearchScope::Conversations, "Conversations", current_scope, cx))
-                            .child(self.render_scope_pill(SearchScope::Files, "Files", current_scope, cx))
-                            .child(self.render_scope_pill(SearchScope::Projects, "Projects", current_scope, cx)),
-                    )
-                    // 3. Results Container
-                    .child(
-                        on_axis(div().id("search-hits-scroll"))
-                            .flex_1()
-                            .overflow_y_scroll()
-                            .min_h(px(260.0))
-                            .max_h(px(400.0))
-                            .p_2()
-                            .when(query.is_empty(), |el| {
-                                // Empty state matching MonoCode
-                                el.child(
-                                    div()
-                                        .flex()
-                                        .flex_col()
-                                        .items_center()
-                                        .justify_center()
-                                        .py_12()
-                                        .gap_3()
-                                        .child(
-                                            Icon::new(IconName::Search)
-                                                .size(IconSize::Lg)
-                                                .color(MonoTheme::fg_subtle()),
-                                        )
-                                        .child(
-                                            div()
-                                                .text_size(theme.text_size(TextSize::Sm))
-                                                .text_color(MonoTheme::fg_muted())
-                                                .child("Find files, conversations, messages, and projects"),
-                                        ),
-                                )
-                            })
-                            .when(!query.is_empty() && hits_count == 0, |el| {
-                                el.child(
-                                    div()
-                                        .flex()
-                                        .flex_col()
-                                        .items_center()
-                                        .justify_center()
-                                        .py_12()
-                                        .child(
-                                            div()
-                                                .text_size(theme.text_size(TextSize::Sm))
-                                                .text_color(MonoTheme::fg_muted())
-                                                .child(format!("No results found for \"{}\"", query)),
-                                        ),
-                                )
-                            })
-                            .when(!query.is_empty() && hits_count > 0, |el| {
-                                let mut list = div().flex().flex_col().gap_0p5();
-                                for (idx, hit) in self.search_hits.iter().enumerate() {
-                                    let hit_clone = hit.clone();
-                                    let is_active = idx == active_idx;
-                                    list = list.child(
-                                        div()
-                                            .id(SharedString::from(format!("search-hit-{}", hit.id)))
-                                            .flex()
-                                            .items_center()
-                                            .justify_between()
-                                            .px_3()
-                                            .py_2()
-                                            .rounded(theme.radius(Radius::Md))
-                                            .bg(if is_active {
-                                                MonoTheme::bg_active()
-                                            } else {
-                                                gpui::rgba(0x00000000)
-                                            })
-                                            .hover(|s| s.bg(MonoTheme::bg_hover()))
-                                            .cursor_pointer()
-                                            .child(
-                                                div()
-                                                    .flex()
-                                                    .items_center()
-                                                    .gap_3()
-                                                    .flex_1()
-                                                    .min_w_0()
-                                                    .child(
-                                                        Icon::new(hit.icon)
-                                                            .size(IconSize::Sm)
-                                                            .color(if is_active {
-                                                                MonoTheme::accent()
-                                                            } else {
-                                                                MonoTheme::fg_muted()
-                                                            }),
-                                                    )
-                                                    .child(
-                                                        div()
-                                                            .flex()
-                                                            .flex_col()
-                                                            .min_w_0()
-                                                            .child(
-                                                                div()
-                                                                    .font_weight(FontWeight::MEDIUM)
-                                                                    .text_size(theme.text_size(TextSize::Sm))
-                                                                    .text_color(MonoTheme::fg_primary())
-                                                                    .child(hit.title.clone()),
-                                                            )
-                                                            .child(
-                                                                div()
-                                                                    .text_size(theme.text_size(TextSize::Xs))
-                                                                    .text_color(MonoTheme::fg_muted())
-                                                                    .overflow_hidden()
-                                                                    .child(hit.subtitle.clone()),
-                                                            ),
-                                                    ),
-                                            )
-                                            .child(
-                                                div()
-                                                    .px_2()
-                                                    .py_0p5()
-                                                    .rounded(theme.radius(Radius::Sm))
-                                                    .bg(MonoTheme::bg_hover())
-                                                    .text_size(theme.text_size(TextSize::Xs))
-                                                    .text_color(MonoTheme::fg_subtle())
-                                                    .child(match hit.scope {
-                                                        SearchScope::Conversations => "Thread",
-                                                        SearchScope::Files => "File",
-                                                        SearchScope::Projects => "Project",
-                                                        SearchScope::All => "",
-                                                    }),
-                                            )
-                                            .on_click(cx.listener(move |this, _, _, cx| {
-                                                this.execute_search_hit(hit_clone.clone(), cx);
-                                            })),
-                                    );
-                                }
-                                el.child(list)
-                            }),
-                    )
-                    // 4. Footer Hints
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .justify_between()
-                            .px_4()
-                            .py_2()
-                            .border_t_1()
-                            .border_color(MonoTheme::border_stroke())
-                            .bg(MonoTheme::bg_base())
-                            .child(
-                                div()
-                                    .flex()
-                                    .items_center()
-                                    .gap_3()
-                                    .text_size(theme.text_size(TextSize::Xs))
-                                    .text_color(MonoTheme::fg_subtle())
-                                    .child("↑↓ to navigate")
-                                    .child("•")
-                                    .child("↵ to select")
-                                    .child("•")
-                                    .child("esc to dismiss"),
-                            )
-                            .child(
-                                div()
-                                    .text_size(theme.text_size(TextSize::Xs))
-                                    .text_color(MonoTheme::fg_subtle())
-                                    .child(format!("{} results", hits_count)),
-                            ),
-                    ),
-            )
+    fn open_search_hit(&mut self, ix: usize, cx: &mut Context<Self>) {
+        let Some(hit) = self.search_hits.get(ix).cloned() else { return };
+        match hit.scope {
+            SearchScope::Conversations => {
+                self.active_view_mode = ViewMode::Chat;
+                self.select_session(hit.target_id, cx);
+            }
+            SearchScope::Files if self.workspace.changes.iter().any(|c| c.path == hit.target_id) => {
+                self.active_view_mode = ViewMode::Changes;
+                self.select_diff_path(hit.target_id, cx);
+            }
+            SearchScope::Files => {
+                self.active_view_mode = ViewMode::Chat;
+                self.append_to_prompt(&format!("@{}", hit.target_id), cx);
+            }
+            SearchScope::Projects => self.open_project(hit.target_id, cx),
+            SearchScope::All => {}
+        }
+        self.close_search_modal(cx);
     }
 
-    fn render_scope_pill(
-        &self,
-        scope: SearchScope,
-        label: &'static str,
-        current: SearchScope,
-        cx: &Context<Self>,
-    ) -> impl IntoElement {
-        let theme = cx.theme();
-        let is_active = scope == current;
-
-        div()
-            .id(SharedString::from(format!("search-scope-pill-{:?}", scope)))
-            .px_2p5()
-            .py_1()
-            .rounded(theme.radius(Radius::Sm))
-            .bg(if is_active {
-                MonoTheme::accent()
-            } else {
-                MonoTheme::bg_hover()
-            })
-            .text_color(if is_active {
-                MonoTheme::on_accent()
-            } else {
-                MonoTheme::fg_muted()
-            })
-            .text_size(theme.text_size(TextSize::Xs))
-            .font_weight(if is_active {
-                FontWeight::SEMIBOLD
-            } else {
-                FontWeight::NORMAL
-            })
-            .cursor_pointer()
-            .child(label)
-            .on_click(cx.listener(move |this, _, _, cx| {
-                this.search_scope = scope;
+    pub fn render_search_modal(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+        if std::mem::take(&mut self.search_focus_pending) {
+            self.focus_search_input(cx);
+        }
+        let close = app_callback(cx, |this, cx| this.close_search_modal(cx));
+        let scopes = SCOPES.iter().fold(
+            SegmentedControl::new("search-scope", self.search_scope.key()).size(ControlSize::Sm),
+            |control, (_, key, label)| control.segment(*key, *label, None),
+        );
+        Dialog::new("search", "Search", close)
+            .detail("Threads, workspace files and recent projects. Enter opens the top result.")
+            .child(SearchInput::new("search-modal-query", &self.search_modal_input))
+            .child(scopes.on_change(cx.listener(|this, key: &SharedString, _, cx| {
+                this.search_scope = SearchScope::from_key(key).unwrap_or(SearchScope::All);
                 this.update_search_hits(cx);
-            }))
+            })))
+            .child(self.render_search_results(cx))
+    }
+
+    /// The dialog takes focus as it opens, so the query field takes it back after that frame.
+    fn focus_search_input(&self, cx: &mut Context<Self>) {
+        let focus = self.search_modal_input.read(cx).focus_handle(cx);
+        cx.defer(move |cx| {
+            let Some(window) = cx.active_window() else { return };
+            if let Err(err) = window.update(cx, |_, window, cx| window.focus(&focus, cx)) {
+                log::warn!("search: could not focus the query field: {err:#}");
+            }
+        });
+    }
+
+    fn render_search_results(&self, cx: &Context<Self>) -> AnyElement {
+        let height = cx.theme().palette_size().height;
+        if self.search_modal_input.read(cx).text().trim().is_empty() {
+            return EmptyState::new("search-idle", IconName::Search, "Find threads, files and projects")
+                .into_any_element();
+        }
+        if self.search_hits.is_empty() {
+            return EmptyState::new("search-none", IconName::SearchX, "No results")
+                .body("Try another word or a wider scope.")
+                .into_any_element();
+        }
+        let rows = cx.processor(|this, range: std::ops::Range<usize>, _, cx| {
+            range.map(|ix| this.render_search_row(ix, cx)).collect::<Vec<_>>()
+        });
+        div()
+            .h(height)
+            .child(uniform_list("search-hits", self.search_hits.len(), rows).size_full())
+            .into_any_element()
+    }
+
+    fn render_search_row(&self, ix: usize, cx: &Context<Self>) -> ListItem {
+        let hit = &self.search_hits[ix];
+        let muted = cx.theme().colors.fg_muted;
+        ListItem::new(("search-hit", ix), hit.title.clone())
+            .description(hit.subtitle.clone())
+            .leading(Icon::new(hit.icon).size(IconSize::Sm).color(muted))
+            .trailing(Tag::new(("search-hit-tag", ix), hit.scope.tag()))
+            .current(ix == self.search_active_index)
+            .on_click(cx.listener(move |this, _, _, cx| this.open_search_hit(ix, cx)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn session(id: &str, title: &str) -> SessionRow {
+        SessionRow { id: id.into(), title: title.into(), ..Default::default() }
+    }
+
+    #[test]
+    fn scope_keys_round_trip() {
+        for (scope, key, _) in SCOPES {
+            assert_eq!(SearchScope::from_key(scope.key()), Some(scope));
+            assert_eq!(scope.key(), key);
+        }
+        assert!(SearchScope::All.includes(SearchScope::Files));
+        assert!(!SearchScope::Projects.includes(SearchScope::Files));
+    }
+
+    #[test]
+    fn hits_match_case_insensitively_and_cap_files() {
+        let sessions = [session("a", "Fix Parser"), session("b", "Docs")];
+        let threads: Vec<_> = session_hits("parser", &sessions).collect();
+        assert_eq!(threads.len(), 1);
+        assert_eq!(threads[0].target_id, "a");
+
+        let files: Vec<SharedString> = (0..50).map(|i| format!("src/mod{i}.rs").into()).collect();
+        let hits: Vec<_> = file_hits("mod", "/repo", &files).collect();
+        assert_eq!(hits.len(), SEARCH_FILE_HIT_LIMIT);
+        assert_eq!(hits[0].title.as_ref(), "mod0.rs");
+        assert_eq!(hits[0].subtitle.as_ref(), "/repo/src/mod0.rs");
+    }
+
+    #[test]
+    fn project_hits_use_folder_name() {
+        let projects = vec!["/home/me/bencode".to_string(), "/tmp/other".to_string()];
+        let hits: Vec<_> = project_hits("ben", &projects).collect();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].title.as_ref(), "bencode");
     }
 }

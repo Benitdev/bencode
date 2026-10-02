@@ -7,14 +7,13 @@
 use std::path::Path;
 
 use anyhow::Result;
-use gpui::Context;
+use gpui::{Context, SharedString};
 
 use crate::app::BenCodeApp;
-use crate::git::{self, DiffLineKind, GitCommitInfo, GitDetailedStatus, GitFileChange};
-use crate::workspace::{FsNode, list_workspace_files, scan_directory};
+use crate::git::{self, DiffRow, GitCommitInfo, GitDetailedStatus, GitFileChange};
+use crate::workspace::list_workspace_files;
 
 const RECENT_COMMIT_COUNT: usize = 8;
-const FILE_TREE_DEPTH: usize = 2;
 /// Mention candidates kept in memory; filtering them per keystroke is cheap.
 const MENTION_FILE_LIMIT: usize = 2_000;
 
@@ -24,10 +23,12 @@ pub struct WorkspaceCache {
     pub cwd: String,
     pub branches: Vec<String>,
     pub changes: Vec<GitFileChange>,
-    pub files: Vec<String>,
-    pub tree: Vec<FsNode>,
+    /// Repo-relative paths; `SharedString` so views clone by refcount.
+    pub files: Vec<SharedString>,
     pub diff_path: Option<String>,
-    pub diff: Vec<DiffLineKind>,
+    pub diff: Vec<DiffRow>,
+    /// Unified text of `diff`, prepared once for the copy button.
+    pub diff_text: SharedString,
     /// Last failed git action, shown in the Changes panel until the next one.
     pub git_error: Option<String>,
     generation: u64,
@@ -39,8 +40,7 @@ struct Snapshot {
     commits: Vec<GitCommitInfo>,
     branches: Vec<String>,
     changes: Vec<GitFileChange>,
-    files: Vec<String>,
-    tree: Vec<FsNode>,
+    files: Vec<SharedString>,
 }
 
 fn load_snapshot(cwd: &str) -> Snapshot {
@@ -50,8 +50,7 @@ fn load_snapshot(cwd: &str) -> Snapshot {
         commits: git::get_recent_commits(cwd, RECENT_COMMIT_COUNT),
         branches: git::get_branches(cwd),
         changes: git::get_workspace_changes(cwd),
-        files: list_workspace_files(root, MENTION_FILE_LIMIT),
-        tree: scan_directory(root, FILE_TREE_DEPTH),
+        files: list_workspace_files(root, MENTION_FILE_LIMIT).into_iter().map(SharedString::from).collect(),
     }
 }
 
@@ -92,7 +91,6 @@ impl BenCodeApp {
                 cache.branches = snapshot.branches;
                 cache.changes = snapshot.changes;
                 cache.files = snapshot.files;
-                cache.tree = snapshot.tree;
                 let diff_path = app
                     .selected_diff_path
                     .clone()
@@ -123,18 +121,24 @@ impl BenCodeApp {
         let Some(path) = path else {
             self.workspace.diff_path = None;
             self.workspace.diff.clear();
+            self.workspace.diff_text = SharedString::default();
             return;
         };
         let cwd = self.workspace_cwd();
         let file = path.clone();
-        let task = cx.background_executor().spawn(async move { git::get_file_diff(&cwd, &file) });
+        let task = cx.background_executor().spawn(async move {
+            let rows = git::number_rows(git::get_file_diff(&cwd, &file));
+            let text = SharedString::from(git::unified_text(&rows));
+            (rows, text)
+        });
 
         cx.spawn(async move |this, cx| {
-            let diff = task.await;
+            let (diff, diff_text) = task.await;
             let _ = this.update(cx, |app, cx| {
                 if app.workspace.diff_generation == generation {
                     app.workspace.diff_path = Some(path);
                     app.workspace.diff = diff;
+                    app.workspace.diff_text = diff_text;
                     cx.notify();
                 }
             });
