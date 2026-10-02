@@ -110,7 +110,7 @@ impl LineParser for CodexParser {
 impl CodexParser {
     fn on_item_completed(&mut self, item: &Value, events: &mut Vec<AgentEvent>) {
         match str_field(item, "type") {
-            Some("agent_message") => {
+            Some("agent_message" | "agentMessage") => {
                 if let Some(text) = str_field(item, "text").filter(|t| !t.is_empty()) {
                     // Each agent_message is a whole paragraph, not a delta.
                     let separator = if self.wrote_text { "\n\n" } else { "" };
@@ -148,22 +148,115 @@ impl CodexParser {
     }
 }
 
+const PARSED_COMMAND_KEYS: &[&str] = &[
+    "commandActions",
+    "command_actions",
+    "parsed_cmd",
+    "parsedCmd",
+];
+const PARSED_COMMAND_FIELDS: &[&str] = &["command", "cmd"];
+
+fn is_posix_c_flag(part: &str) -> bool {
+    if let Some(rest) = part.strip_prefix('-') {
+        !rest.is_empty() && rest.chars().all(|c| c.is_ascii_alphabetic()) && rest.contains('c')
+    } else {
+        false
+    }
+}
+
+pub fn codex_command_text(item: &Value) -> Option<String> {
+    if let Some(cmd) = str_field(item, "command") {
+        let trimmed = cmd.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
+        }
+    }
+    if let Some(arr) = item.get("command").and_then(Value::as_array) {
+        let parts: Vec<&str> = arr
+            .iter()
+            .filter_map(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .collect();
+        if !parts.is_empty() {
+            let raw_launcher = parts[0].trim_matches(|c| c == '\'' || c == '"');
+            let launcher = raw_launcher.replace('\\', "/");
+            let launcher_name = launcher
+                .rsplit('/')
+                .next()
+                .unwrap_or("")
+                .to_ascii_lowercase();
+            let is_posix = matches!(
+                launcher_name.as_str(),
+                "sh" | "bash" | "zsh" | "dash" | "ksh"
+            );
+            let is_powershell = matches!(
+                launcher_name.as_str(),
+                "pwsh" | "pwsh.exe" | "powershell" | "powershell.exe"
+            );
+            let is_cmd = matches!(launcher_name.as_str(), "cmd" | "cmd.exe");
+
+            let mut flag = None;
+            let check_len = parts.len().saturating_sub(1);
+            for (index, &part) in parts.iter().enumerate().take(check_len).skip(1) {
+                if is_powershell
+                    && (part.eq_ignore_ascii_case("-file") || part.eq_ignore_ascii_case("-f"))
+                {
+                    break;
+                }
+                let is_match = (is_posix
+                    && (part.eq_ignore_ascii_case("--command") || is_posix_c_flag(part)))
+                    || (is_powershell
+                        && (part.eq_ignore_ascii_case("-command")
+                            || part.eq_ignore_ascii_case("-c")))
+                    || (is_cmd && part.eq_ignore_ascii_case("/c"));
+                if is_match {
+                    flag = Some(index);
+                    break;
+                }
+            }
+
+            if let Some(flag_idx) = flag
+                && parts.len() > flag_idx + 1
+            {
+                return Some(parts[flag_idx + 1].trim().to_string());
+            }
+            return Some(parts.join(" "));
+        }
+    }
+    for key in PARSED_COMMAND_KEYS {
+        if let Some(actions) = item.get(*key).and_then(Value::as_array) {
+            for action in actions {
+                for field in PARSED_COMMAND_FIELDS {
+                    if let Some(cmd) = action.get(*field).and_then(Value::as_str) {
+                        let trimmed = cmd.trim();
+                        if !trimmed.is_empty() {
+                            return Some(trimmed.to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
 fn tool_start(item: &Value) -> Option<AgentEvent> {
     let id = str_field(item, "id")?.to_string();
     let (name, input) = match str_field(item, "type")? {
-        "command_execution" => (
+        "command_execution" | "commandExecution" => (
             "Bash",
-            json!({ "command": str_field(item, "command").unwrap_or("") }),
+            json!({ "command": codex_command_text(item).unwrap_or_default() }),
         ),
-        "file_change" => (
+        "file_change" | "fileChange" => (
             "Edit",
             json!({ "changes": item.get("changes").cloned().unwrap_or(Value::Null) }),
         ),
-        "mcp_tool_call" => (
+        "mcp_tool_call" | "mcpToolCall" => (
             str_field(item, "tool").unwrap_or("mcp"),
             item.get("arguments").cloned().unwrap_or(Value::Null),
         ),
-        "web_search" => (
+        "web_search" | "webSearch" => (
             "WebSearch",
             json!({ "query": str_field(item, "query").unwrap_or("") }),
         ),
@@ -178,6 +271,8 @@ fn tool_start(item: &Value) -> Option<AgentEvent> {
 
 fn tool_output(item: &Value) -> String {
     str_field(item, "aggregated_output")
+        .or_else(|| str_field(item, "aggregatedOutput"))
+        .or_else(|| str_field(item, "output"))
         .map(String::from)
         .or_else(|| item.get("result").map(Value::to_string))
         .or_else(|| item.get("changes").map(Value::to_string))
@@ -267,6 +362,53 @@ mod tests {
                 AgentEvent::Error("quota".into()),
                 AgentEvent::Done(DoneStatus::Failed)
             ]
+        );
+    }
+
+    #[test]
+    fn extracts_codex_command_formats() {
+        // String command
+        let item1 = json!({ "command": "cargo test" });
+        assert_eq!(codex_command_text(&item1), Some("cargo test".into()));
+
+        // Posix shell array with -c / -lc
+        let item2 = json!({ "command": ["/bin/zsh", "-lc", "cargo check --all"] });
+        assert_eq!(codex_command_text(&item2), Some("cargo check --all".into()));
+
+        let item3 = json!({ "command": ["bash", "-c", "echo hello"] });
+        assert_eq!(codex_command_text(&item3), Some("echo hello".into()));
+
+        // PowerShell array
+        let item4 = json!({ "command": ["pwsh.exe", "-Command", "Get-ChildItem"] });
+        assert_eq!(codex_command_text(&item4), Some("Get-ChildItem".into()));
+
+        // Cmd array
+        let item5 = json!({ "command": ["cmd.exe", "/c", "dir /s"] });
+        assert_eq!(codex_command_text(&item5), Some("dir /s".into()));
+
+        // Plain argv array with no shell wrapper
+        let item6 = json!({ "command": ["git", "status", "-s"] });
+        assert_eq!(codex_command_text(&item6), Some("git status -s".into()));
+
+        // Fallback commandActions / parsed_cmd
+        let item7 = json!({
+            "commandActions": [
+                { "command": "rg --files -g AGENTS.md" }
+            ]
+        });
+        assert_eq!(
+            codex_command_text(&item7),
+            Some("rg --files -g AGENTS.md".into())
+        );
+
+        let item8 = json!({
+            "parsed_cmd": [
+                { "cmd": "find . -name Cargo.toml" }
+            ]
+        });
+        assert_eq!(
+            codex_command_text(&item8),
+            Some("find . -name Cargo.toml".into())
         );
     }
 }

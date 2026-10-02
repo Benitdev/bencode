@@ -398,8 +398,7 @@ impl BenCodeApp {
                             .cursor_pointer()
                             .hover(|s| s.bg(colors.hover))
                             .on_click(cx.listener(|this, _, _, cx| {
-                                this.is_settings_open = true;
-                                cx.notify();
+                                this.open_settings(cx);
                             }))
                             .child(
                                 Icon::new(IconName::Settings)

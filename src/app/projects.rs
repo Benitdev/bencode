@@ -110,6 +110,7 @@ impl BenCodeApp {
             self.recent_projects.push(cwd.clone());
         }
         self.current_cwd = cwd;
+        self.worktree_focus = None;
         self.file_tree.dir_cache.clear();
         self.file_tree.expanded_paths.clear();
         self.file_tree.selected_path = None;

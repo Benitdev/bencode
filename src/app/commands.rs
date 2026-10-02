@@ -117,6 +117,30 @@ impl BenCodeApp {
     }
 
     fn close_active(&mut self, cx: &mut Context<Self>) {
+        if self.is_settings_open {
+            self.close_settings(cx);
+            return;
+        }
+        if self.is_search_open {
+            self.is_search_open = false;
+            cx.notify();
+            return;
+        }
+        if self.is_notes_open {
+            self.is_notes_open = false;
+            cx.notify();
+            return;
+        }
+        if self.is_automations_open {
+            self.is_automations_open = false;
+            cx.notify();
+            return;
+        }
+        if self.is_inbox_open {
+            self.is_inbox_open = false;
+            cx.notify();
+            return;
+        }
         if self.active_view_mode == ViewMode::Editor && self.request_close_active_editor_file(cx) {
             return;
         }
@@ -128,8 +152,7 @@ impl BenCodeApp {
     /// Wires every command to the root element.
     pub fn bind_commands(root: Stateful<Div>, cx: &Context<Self>) -> Stateful<Div> {
         root.on_action(cx.listener(|this, _: &OpenSettings, _, cx| {
-            this.is_settings_open = true;
-            cx.notify();
+            this.open_settings(cx);
         }))
         .on_action(cx.listener(|this, _: &Search, _, cx| this.open_search_modal(cx)))
         .on_action(cx.listener(|this, _: &NewThread, _, cx| this.create_new_session(cx)))

@@ -251,9 +251,9 @@ impl BenCodeApp {
         id
     }
 
-    /// Creates a session in the current project and opens it in a new tab.
+    /// Creates a session in the current project (or focused worktree) and opens it in a new tab.
     pub fn create_new_session(&mut self, cx: &mut Context<Self>) {
-        let cwd = self.current_cwd.clone();
+        let cwd = self.workspace_cwd();
         let id = self.create_session_row(&cwd);
         self.tabs.open(&id);
         self.sync_selection(cx);

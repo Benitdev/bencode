@@ -61,6 +61,21 @@ pub enum SidebarMode {
     Changes,
 }
 
+/// The working copy a project's workspace is narrowed to.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WorktreeFocus {
+    pub path: String,
+    pub branch: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SettingsReturnView {
+    pub search: bool,
+    pub inbox: bool,
+    pub notes: bool,
+    pub automations: bool,
+}
+
 pub struct BenCodeApp {
     pub sessions: Vec<SessionRow>,
     pub selected_session_id: Option<String>,
@@ -85,6 +100,7 @@ pub struct BenCodeApp {
     pub terminal: Entity<Terminal>,
     pub is_settings_open: bool,
     pub settings_tab: SettingsTab,
+    pub settings_return_view: Option<SettingsReturnView>,
     pub is_notes_open: bool,
     pub notes: Vec<crate::db::Note>,
     pub selected_note_id: Option<String>,
@@ -101,6 +117,7 @@ pub struct BenCodeApp {
     pub automation_time_input: Entity<TextInput>,
     // Workspace & Projects
     pub current_cwd: String,
+    pub worktree_focus: Option<WorktreeFocus>,
     pub recent_projects: Vec<String>,
     // Git & Source Control
     pub git_status: crate::git::GitDetailedStatus,
@@ -382,6 +399,7 @@ impl BenCodeApp {
             terminal,
             is_settings_open: false,
             settings_tab: SettingsTab::Providers,
+            settings_return_view: None,
             is_notes_open: false,
             notes,
             selected_note_id,
@@ -397,6 +415,7 @@ impl BenCodeApp {
             automation_prompt_input,
             automation_time_input,
             current_cwd,
+            worktree_focus: None,
             recent_projects,
             git_status: Default::default(),
             git_commits: Vec::new(),
@@ -441,6 +460,36 @@ impl BenCodeApp {
         };
         app.apply_settings(saved);
         app
+    }
+
+    /// Opens settings while recording the active modal view so it can be restored on close.
+    pub fn open_settings(&mut self, cx: &mut Context<Self>) {
+        if !self.is_settings_open {
+            self.settings_return_view = Some(SettingsReturnView {
+                search: self.is_search_open,
+                inbox: self.is_inbox_open,
+                notes: self.is_notes_open,
+                automations: self.is_automations_open,
+            });
+            self.is_search_open = false;
+            self.is_inbox_open = false;
+            self.is_notes_open = false;
+            self.is_automations_open = false;
+        }
+        self.is_settings_open = true;
+        cx.notify();
+    }
+
+    /// Closes settings and restores the modal view that was active before settings opened.
+    pub fn close_settings(&mut self, cx: &mut Context<Self>) {
+        self.is_settings_open = false;
+        if let Some(return_view) = self.settings_return_view.take() {
+            self.is_search_open = return_view.search;
+            self.is_inbox_open = return_view.inbox;
+            self.is_notes_open = return_view.notes;
+            self.is_automations_open = return_view.automations;
+        }
+        cx.notify();
     }
 
     pub fn selected_session(&self) -> Option<&SessionRow> {

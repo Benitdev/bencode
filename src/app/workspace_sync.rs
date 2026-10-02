@@ -25,6 +25,7 @@ pub struct WorkspaceCache {
     pub changes: Vec<GitFileChange>,
     /// Repo-relative paths; `SharedString` so views clone by refcount.
     pub files: Vec<SharedString>,
+    pub worktrees: Vec<crate::git::Worktree>,
     pub diff_path: Option<String>,
     pub diff: Vec<DiffRow>,
     /// Unified text of `diff`, prepared once for the copy button.
@@ -41,6 +42,7 @@ struct Snapshot {
     branches: Vec<String>,
     changes: Vec<GitFileChange>,
     files: Vec<SharedString>,
+    worktrees: Vec<crate::git::Worktree>,
 }
 
 fn load_snapshot(cwd: &str) -> Snapshot {
@@ -54,13 +56,17 @@ fn load_snapshot(cwd: &str) -> Snapshot {
             .into_iter()
             .map(SharedString::from)
             .collect(),
+        worktrees: crate::git::worktrees::list_worktrees(cwd).unwrap_or_default(),
     }
 }
 
 impl BenCodeApp {
-    /// The directory the workspace views describe: the open thread's cwd,
-    /// falling back to the directory BenCode was launched in.
+    /// The directory the workspace views describe: the focused worktree cwd,
+    /// or the open thread's cwd, falling back to the current project directory.
     pub fn workspace_cwd(&self) -> String {
+        if let Some(focus) = &self.worktree_focus {
+            return focus.path.clone();
+        }
         if let Some(session) = self
             .selected_session_id
             .as_deref()
@@ -100,6 +106,7 @@ impl BenCodeApp {
                 cache.branches = snapshot.branches;
                 cache.changes = snapshot.changes;
                 cache.files = snapshot.files;
+                cache.worktrees = snapshot.worktrees;
                 let diff_path = app
                     .selected_diff_path
                     .clone()

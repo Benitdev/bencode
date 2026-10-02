@@ -7,14 +7,9 @@ use anyhow::{Context as _, Result, bail};
 mod rows;
 pub use rows::{DiffRow, number_rows, unified_text};
 
-// Ported engines that the app does not call yet; wiring them in is tracked in
-// docs/migration/TODO-100-PERCENT-COVERAGE.md (2.1, 2.2). `expect` (not
-// `allow`) so the attribute errors out as soon as the code becomes live.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "worktree engine is not wired into the app yet")
-)]
+#[allow(dead_code)]
 pub mod worktrees;
+pub use worktrees::Worktree;
 
 #[cfg_attr(
     not(test),

@@ -75,8 +75,7 @@ impl SettingsTab {
 impl BenCodeApp {
     pub fn render_settings_modal(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         let close = app_callback(cx, |this, cx| {
-            this.is_settings_open = false;
-            cx.notify();
+            this.close_settings(cx);
         });
         let layout = SettingsLayout::new(
             "settings-layout",

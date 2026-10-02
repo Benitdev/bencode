@@ -3,7 +3,7 @@
 
 use ely_gpui_component::buttons::{ButtonVariant, IconButton};
 use ely_gpui_component::git::DiffStat;
-use ely_gpui_component::menus::{ContextMenu, Menu, MenuItem, OverflowMenu};
+use ely_gpui_component::menus::{ContextMenu, DropdownMenu, Menu, MenuItem, OverflowMenu};
 use ely_gpui_component::overlays::{ConfirmDialog, PromptDialog};
 use ely_gpui_component::primitives::{Icon, IconName};
 use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize};
@@ -12,7 +12,7 @@ use gpui::{
     SharedString, Styled, Window, div, prelude::*, px,
 };
 
-use crate::app::{BenCodeApp, FilterMode, SidebarMode};
+use crate::app::{BenCodeApp, FilterMode, SidebarMode, WorktreeFocus};
 use crate::db::SessionRow;
 use crate::harness::catalog;
 use crate::ui::app_callback::app_callback;
@@ -163,6 +163,14 @@ impl BenCodeApp {
 
     fn render_sidebar_header(&self, cx: &Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
+        let valid_worktrees: Vec<&crate::git::Worktree> = self
+            .workspace
+            .worktrees
+            .iter()
+            .filter(|w| !w.missing)
+            .collect();
+        let has_worktrees = valid_worktrees.iter().any(|w| !w.is_main);
+
         div()
             .flex()
             .items_center()
@@ -171,12 +179,16 @@ impl BenCodeApp {
             .py_1p5()
             .border_b_1()
             .border_color(theme.colors.border)
-            .child(
+            .child(if has_worktrees {
+                self.render_worktree_switcher(&valid_worktrees, cx)
+                    .into_any_element()
+            } else {
                 div()
                     .text_size(theme.text_size(TextSize::Sm))
                     .font_weight(FontWeight::MEDIUM)
-                    .child("Workspace"),
-            )
+                    .child("Workspace")
+                    .into_any_element()
+            })
             .child(
                 div()
                     .flex()
@@ -198,6 +210,69 @@ impl BenCodeApp {
             )
     }
 
+    fn render_worktree_switcher(
+        &self,
+        worktrees: &[&crate::git::Worktree],
+        cx: &Context<Self>,
+    ) -> impl IntoElement {
+        let title = if let Some(focus) = &self.worktree_focus {
+            focus
+                .branch
+                .clone()
+                .unwrap_or_else(|| "Detached worktree".to_string())
+        } else {
+            "Workspace".to_string()
+        };
+
+        let mut menu = Menu::new();
+        // Item 1: Project folder (default, unfocused)
+        let main_tree = worktrees.iter().find(|w| w.is_main);
+        let main_branch = main_tree
+            .and_then(|t| t.branch.as_deref())
+            .unwrap_or("main");
+        menu = menu.item(
+            MenuItem::new(format!("{main_branch} · Project folder"))
+                .icon(IconName::GitBranch)
+                .on_click(app_callback(cx, |this, cx| {
+                    this.worktree_focus = None;
+                    this.refresh_workspace(cx);
+                })),
+        );
+        menu = menu.separator();
+
+        // Other worktrees
+        for tree in worktrees.iter().filter(|w| !w.is_main) {
+            let path = tree.path.clone();
+            let branch = tree.branch.clone();
+            let label = branch.as_deref().unwrap_or(&tree.head);
+            let short_path = std::path::Path::new(&path)
+                .file_name()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_else(|| path.clone());
+            let display_label = format!("{label} ({short_path})");
+
+            menu = menu.item(
+                MenuItem::new(display_label)
+                    .icon(IconName::FolderOpen)
+                    .on_click(app_callback(cx, move |this, cx| {
+                        this.worktree_focus = Some(WorktreeFocus {
+                            path: path.clone(),
+                            branch: branch.clone(),
+                        });
+                        this.refresh_workspace(cx);
+                    })),
+            );
+        }
+
+        DropdownMenu::new("worktree-switcher", title, menu)
+            .variant(ButtonVariant::Ghost)
+            .icon(if self.worktree_focus.is_some() {
+                IconName::FolderOpen
+            } else {
+                IconName::GitBranch
+            })
+    }
+
     fn render_session_list(&self, cx: &Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
         let query = self.search_query.to_lowercase();
@@ -208,11 +283,14 @@ impl BenCodeApp {
             .sessions
             .iter()
             .filter(|s| {
-                (current_cwd.is_empty()
-                    || current_cwd == "~"
-                    || crate::app::is_path_in_project(&s.cwd, current_cwd))
-                    && keeps(filter, s)
-                    && matches_query(s, &query)
+                let matches_worktree = if let Some(focus) = &self.worktree_focus {
+                    crate::app::is_path_in_project(&s.cwd, &focus.path)
+                } else {
+                    current_cwd.is_empty()
+                        || current_cwd == "~"
+                        || crate::app::is_path_in_project(&s.cwd, current_cwd)
+                };
+                matches_worktree && keeps(filter, s) && matches_query(s, &query)
             })
             .partition(|s| s.pinned);
 

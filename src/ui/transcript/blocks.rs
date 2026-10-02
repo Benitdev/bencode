@@ -125,10 +125,12 @@ fn user_bubble(text: &str, _cx: &App) -> AnyElement {
     let is_single_line = !text.contains('\n') && text.chars().count() < 80;
     div()
         .w_full()
+        .min_w_0()
         .flex()
         .justify_end()
         .child(
             div()
+                .min_w_0()
                 .max_w(USER_BUBBLE_MAX_WIDTH)
                 .px_3p5()
                 .py_2()
