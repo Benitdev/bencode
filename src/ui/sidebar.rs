@@ -238,18 +238,25 @@ impl BenCodeApp {
                             .flex_1()
                             .items_center()
                             .gap_1p5()
+                            .h(px(28.0))
                             .px_2()
-                            .py_1()
                             .rounded(theme.radius(Radius::Md))
                             .bg(theme.colors.bg)
                             .border_1()
                             .border_color(theme.colors.border)
+                            .text_size(px(12.0))
                             .child(
                                 Icon::new(IconName::Search)
                                     .size(IconSize::Xs)
                                     .color(theme.colors.fg_muted),
                             )
-                            .child(div().flex_1().min_w_0().child(self.search_input.clone())),
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .text_size(px(12.0))
+                                    .child(self.search_input.clone()),
+                            ),
                     )
                     .child(self.render_filter_menu(cx)),
             )
