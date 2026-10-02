@@ -27,8 +27,8 @@ as they land; MonoCode refs are relative to `reference/monocode/src`.
 ## Batch B — shell
 - [x] P0 M Back/Forward + tab visit history, ⌘[ ⌘] — `app/shell/TitleBar.tsx:527-571`, `app/App.tsx:3578-3604`
 - [x] P0 M Add project: rail "+" → "Open folder…", ⌘O, "No projects yet" — `app/shell/ProjectRail.tsx:1146-1203`
-- [x] P0 M ⌘B toggles project rail, ⇧⌘B session sidebar, persisted — `App.tsx:9729-9743`
-- [x] P0 M Archive sessions (hover button, menu, ⇧⌘A); archived hidden by default — `Sidebar.tsx:3387,1161`, `SessionFiltersMenu.tsx`
+- [x] P0 M ⌘B toggles project rail, ⇧⌘B session sidebar (not yet persisted) — `App.tsx:9729-9743`
+- [x] P0 M Archive sessions (hover button, menu; ⇧⌘A still missing); archived hidden by default — `Sidebar.tsx:3387,1161`, `SessionFiltersMenu.tsx`
 - [ ] P0 L Search/Inbox/Notes/Automations/Settings as exclusive in-shell views (one enum), 40px header, Esc closes, rail active state; Settings swaps rail for SettingsNav — `App.tsx:9788-9950,10881-11160`, `SettingsRail.tsx`
 - [ ] P1 M Project row context menu (pin, reveal, open in editor, archive, delete) — `app/shell/useProjectMenu.tsx`
 - [ ] P1 M Project row visuals (32px, unselected opacity .65, diff on every row, hover pin/"…", tooltip, busy shimmer, theme colours) — `ProjectRail.tsx:921-1061`
@@ -37,7 +37,7 @@ as they land; MonoCode refs are relative to `reference/monocode/src`.
 - [ ] P1 M Resizable rail (180-360, def 200) and sidebar (260-560, def 260)
 - [ ] P1 L Hand-rolled title-bar tab strip (224px tabs, harness icons, busy/done, meta line, hover close, tooltip, context menu, middle-click, overflow scroll; no "+"/split) — `TitleBar.tsx:202-1055`
 - [ ] P1 M Shortcuts & menus (⌘P, ⌘1-9, ⌃Tab, ⌘` new terminal, ⇧⌘A, ⌘., zoom, Edit menu) — `workspace/model/tabKeys.ts`, `src-tauri/src/menu.rs`
-- [x] P1 S Sidebar header 40px, mode tabs 24px; search button = Go to File
+- [ ] P1 S Sidebar header 40px (done), mode tabs 24px; search button = Go to File
 - [ ] P1 M Session card live status (Need approval / Working... / Done / Draft), "3h 20m" times, drag onto pane — `Sidebar.tsx:3025-3306`
 - [ ] P1 M Pinned sessions collapsible group
 - [ ] P1 M Session menu (Copy session ID, Archive, folders) + filter popover (Archived, status, time, provider)
@@ -48,7 +48,7 @@ as they land; MonoCode refs are relative to `reference/monocode/src`.
 ## Batch C — transcript & composer visuals
 - [ ] P1 L Fold turn work behind "{Model} worked for 1m 4s"; phases "Read 3 files · Ran 2 commands" — `AgentTranscript.tsx:666-975,1922-2366`
 - [ ] P1 M One-line tool rows (verb + file chip, pending/failed) — `AgentTranscript.tsx:3075-3586`
-- [x] P1 S Reasoning collapsed one-liner; "Thinking…" shimmer
+- [x] P1 S Reasoning collapsed one-liner ("Thinking…" shimmer still missing)
 - [ ] P1 M Per-turn footer (copy, save note, metrics, time); drop per-block model header
 - [ ] P1 M User bubble style, 4-line clamp, hover actions — `AgentTranscript.tsx:1682-1849`
 - [ ] P1 M Edit last turn (↑ recall, Cancel edit)
