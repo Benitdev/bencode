@@ -1,7 +1,6 @@
 //! Files sidebar: the workspace as an Ely `FileTree` with git status marks.
 
 use ely_gpui_component::buttons::{ButtonVariant, IconButton};
-use ely_gpui_component::layout::Sidebar;
 use ely_gpui_component::lists::FileTree;
 use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize};
@@ -40,44 +39,45 @@ impl BenCodeApp {
             |tree, change| tree.status(change.path.clone(), to_ely_status(&change.status)),
         );
 
-        let mut sidebar = Sidebar::new("files-sidebar", false)
-            .child(self.render_sidebar_mode_tabs(cx))
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .px_3()
-                    .py_1()
-                    .text_size(theme.text_size(TextSize::Xs))
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_color(theme.colors.fg_muted)
-                    .child(root.to_uppercase())
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap_1()
-                            .child(
-                                IconButton::new("tree-open-editor", IconName::ExternalLink)
-                                    .size(ControlSize::Sm)
-                                    .variant(ButtonVariant::Ghost)
-                                    .tooltip("Open workspace in external editor")
-                                    .on_click(cx.listener(|this, _, _, cx| {
-                                        this.open_in_external_editor(None, None, cx);
-                                    })),
-                            )
-                            .child(
-                                IconButton::new("tree-refresh", IconName::RotateCw)
-                                    .size(ControlSize::Sm)
-                                    .variant(ButtonVariant::Ghost)
-                                    .tooltip("Refresh files")
-                                    .on_click(
-                                        cx.listener(|this, _, _, cx| this.refresh_workspace(cx)),
-                                    ),
-                            ),
-                    ),
-            );
+        let mut panel = div().flex().flex_col().flex_1().min_h_0().child(
+            div()
+                .flex()
+                .items_center()
+                .justify_between()
+                .px_3()
+                .py_1p5()
+                .border_b_1()
+                .border_color(theme.colors.border)
+                .child(
+                    div()
+                        .text_size(theme.text_size(TextSize::Xs))
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(theme.colors.fg_muted)
+                        .child(root.to_uppercase()),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap_1()
+                        .child(
+                            IconButton::new("tree-open-editor", IconName::ExternalLink)
+                                .size(ControlSize::Sm)
+                                .variant(ButtonVariant::Ghost)
+                                .tooltip("Open workspace in external editor")
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.open_in_external_editor(None, None, cx);
+                                })),
+                        )
+                        .child(
+                            IconButton::new("tree-refresh", IconName::RotateCw)
+                                .size(ControlSize::Sm)
+                                .variant(ButtonVariant::Ghost)
+                                .tooltip("Refresh files")
+                                .on_click(cx.listener(|this, _, _, cx| this.refresh_workspace(cx))),
+                        ),
+                ),
+        );
 
         if !self.git_status.staged.is_empty() || !self.git_status.unstaged.is_empty() {
             let changes: Vec<String> = self
@@ -88,7 +88,7 @@ impl BenCodeApp {
                 .map(|c| c.path.clone())
                 .collect();
             let theme = cx.theme();
-            sidebar = sidebar.child(
+            panel = panel.child(
                 div()
                     .flex()
                     .flex_col()
@@ -151,12 +151,12 @@ impl BenCodeApp {
             );
         }
 
-        sidebar.child(
+        panel.child(
             tree.on_open(cx.listener(|this, path: &SharedString, window, cx| {
                 this.select_tree_file(path, window, cx)
             }))
             .flex_1()
-            .h_full(),
+            .min_h_0(),
         )
     }
 }

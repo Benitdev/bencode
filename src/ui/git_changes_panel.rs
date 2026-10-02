@@ -101,14 +101,8 @@ impl BenCodeApp {
         div()
             .flex()
             .flex_col()
-            .flex_none()
-            .w(px(280.0))
-            .h_full()
-            .border_r_1()
-            .border_color(colors.border)
-            .bg(colors.surface)
-            // 1. Sidebar Top Segmented Switcher (Sessions | Files | Changes)
-            .child(self.render_sidebar_mode_tabs(cx))
+            .flex_1()
+            .min_h_0()
             // Last failed git action dismissible alert
             .when_some(self.workspace.git_error.clone(), |el, error| {
                 el.child(div().p_2().child(
