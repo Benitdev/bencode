@@ -1,50 +1,5 @@
 use std::path::Path;
 
-#[derive(Clone, Debug)]
-pub struct SkillItem {
-    pub name: &'static str,
-    pub description: &'static str,
-    pub example: &'static str,
-}
-
-pub const BUILTIN_SKILLS: &[SkillItem] = &[
-    SkillItem {
-        name: "/commit",
-        description: "Review staged changes and generate git commit message",
-        example: "/commit -m 'feat: ...'",
-    },
-    SkillItem {
-        name: "/review",
-        description: "Perform comprehensive code review of current diff",
-        example: "/review check security and edge cases",
-    },
-    SkillItem {
-        name: "/test",
-        description: "Run test suite and investigate failing cases",
-        example: "/test cargo test --all",
-    },
-    SkillItem {
-        name: "/explain",
-        description: "Explain architecture, concepts, or specific file logic",
-        example: "/explain how GPUI view layout works",
-    },
-    SkillItem {
-        name: "/refactor",
-        description: "Refactor code to be cleaner, idiomatic, and maintainable",
-        example: "/refactor simplify state machine",
-    },
-    SkillItem {
-        name: "/compact",
-        description: "Summarize and compact conversation to save token window",
-        example: "/compact",
-    },
-    SkillItem {
-        name: "/help",
-        description: "Display all available capabilities, models, and shortcuts",
-        example: "/help",
-    },
-];
-
 pub fn list_workspace_files(root: &Path, max_files: usize) -> Vec<String> {
     let mut results = Vec::new();
     let mut dirs_to_visit = vec![root.to_path_buf()];

@@ -1,5 +1,6 @@
 //! Settings: general defaults, provider CLIs, MCP, skills, appearance, about.
 
+use ely_gpui_component::buttons::{ButtonVariant, IconButton};
 use ely_gpui_component::data_display::{Badge, Tone};
 use ely_gpui_component::feedback::EmptyState;
 use ely_gpui_component::forms::Switch;
@@ -7,14 +8,12 @@ use ely_gpui_component::overlays::Dialog;
 use ely_gpui_component::primitives::IconName;
 use ely_gpui_component::settings::{SettingsLayout, SettingsRow, SettingsSection};
 use ely_gpui_component::theme::{ActiveTheme, Mode};
-use ely_gpui_component::typography::Code;
 use gpui::{AnyElement, App, Context, IntoElement, ParentElement, SharedString, Styled, div, px};
 
 use crate::app::BenCodeApp;
 use crate::harness::HarnessInfo;
 use crate::ui::HarnessIcon;
 use crate::ui::app_callback::app_callback;
-use crate::workspace::BUILTIN_SKILLS;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum SettingsTab {
@@ -73,6 +72,36 @@ impl SettingsTab {
 }
 
 impl BenCodeApp {
+    /// Skills found in the project and user folders (MonoCode `SkillsPage`).
+    fn render_settings_skills(&self, cx: &Context<Self>) -> impl IntoElement {
+        let skills = &self.integrations.skills;
+        let section = SettingsSection::new("Skills").description(format!(
+            "{} skills. Type / in the composer to use one; add folders with a SKILL.md under .agents/skills.",
+            skills.len()
+        ));
+        let section = section.row(
+            SettingsRow::new("Rescan")
+                .description("Rescan skill folders")
+                .control(
+                    IconButton::new("skills-rescan", IconName::RefreshCw)
+                        .variant(ButtonVariant::Ghost)
+                        .on_click(cx.listener(|this, _, _, cx| this.refresh_skills(true, cx))),
+                ),
+        );
+        skills.iter().fold(section, |section, skill| {
+            let detail = if skill.path.is_empty() {
+                skill.description.clone()
+            } else {
+                format!("{}\n{}", skill.description, skill.path)
+            };
+            section.row(
+                SettingsRow::new(format!("/{}", skill.name))
+                    .description(detail)
+                    .control(Badge::new(format!("{} · {}", skill.scope, skill.source))),
+            )
+        })
+    }
+
     pub fn render_settings_modal(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         let close = app_callback(cx, |this, cx| {
             this.close_settings(cx);
@@ -102,7 +131,7 @@ impl BenCodeApp {
             SettingsTab::General => self.render_settings_general().into_any_element(),
             SettingsTab::Providers => self.render_settings_providers(cx).into_any_element(),
             SettingsTab::Mcp => self.render_settings_mcp().into_any_element(),
-            SettingsTab::Skills => render_settings_skills().into_any_element(),
+            SettingsTab::Skills => self.render_settings_skills(cx).into_any_element(),
             SettingsTab::Appearance => render_settings_appearance(cx).into_any_element(),
             SettingsTab::About => render_settings_about().into_any_element(),
         }
@@ -212,20 +241,6 @@ fn provider_row(info: &HarnessInfo, _cx: &App) -> SettingsRow {
             .gap_2p5()
             .child(HarnessIcon::new(info.id).size(px(16.0)))
             .child(status),
-    )
-}
-
-fn render_settings_skills() -> impl IntoElement {
-    BUILTIN_SKILLS.iter().fold(
-        SettingsSection::new("Skills")
-            .description("Built-in skills. Type / in the composer to use one."),
-        |section, skill| {
-            section.row(
-                SettingsRow::new(skill.name)
-                    .description(skill.description)
-                    .control(Code::new(skill.example)),
-            )
-        },
     )
 }
 

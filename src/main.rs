@@ -6,6 +6,7 @@ mod harness;
 pub mod mcp;
 mod schedule;
 mod settings;
+mod skills;
 mod ui;
 mod workspace;
 

@@ -133,7 +133,13 @@ impl BenCodeApp {
         };
         let now = now_ms();
         start_turn(session, prompt, now);
-        let request = spawn_request(session, prompt, mode);
+        // Skill bodies are small SKILL.md files; read them as MonoCode does
+        // right before the turn starts.
+        let agent_prompt = self.apply_skills(prompt);
+        let Some(session) = self.sessions.iter().find(|s| s.id == session_id) else {
+            return;
+        };
+        let request = spawn_request(session, &agent_prompt, mode);
         self.persist_session(session_id);
         let started = request
             .map_err(|message| (message, now))

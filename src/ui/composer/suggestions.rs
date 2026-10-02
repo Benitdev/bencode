@@ -11,7 +11,7 @@ use gpui::{
 
 use crate::app::BenCodeApp;
 use crate::db::Note;
-use crate::workspace::BUILTIN_SKILLS;
+use crate::skills::Skill;
 
 const MAX_FILES: usize = 8;
 const MAX_NOTES: usize = 5;
@@ -44,8 +44,9 @@ pub struct Suggestion {
     pub insert: String,
 }
 
-pub fn skill_suggestions(query: &str) -> Vec<Suggestion> {
-    BUILTIN_SKILLS
+/// `query` must already be lower-case.
+pub fn skill_suggestions(query: &str, skills: &[Skill]) -> Vec<Suggestion> {
+    skills
         .iter()
         .filter(|s| {
             query.is_empty()
@@ -54,9 +55,9 @@ pub fn skill_suggestions(query: &str) -> Vec<Suggestion> {
         })
         .map(|s| Suggestion {
             kind: SuggestionKind::Skill,
-            label: s.name.into(),
-            detail: Some(s.description.into()),
-            insert: s.name.to_string(),
+            label: format!("/{}", s.name).into(),
+            detail: Some(s.description.clone().into()),
+            insert: format!("/{}", s.name),
         })
         .collect()
 }
@@ -112,7 +113,7 @@ impl BenCodeApp {
 
     fn current_suggestions(&self) -> Vec<Suggestion> {
         if self.is_skill_picker_open {
-            skill_suggestions(&self.skill_query)
+            skill_suggestions(&self.skill_query, &self.integrations.skills)
         } else if self.is_mention_picker_open {
             mention_suggestions(&self.mention_query, &self.workspace.files, &self.notes)
         } else {
@@ -255,13 +256,16 @@ mod tests {
 
     #[test]
     fn skills_filter_by_name_or_description() {
-        assert_eq!(skill_suggestions("").len(), BUILTIN_SKILLS.len());
-        assert!(
-            skill_suggestions("commit")
-                .iter()
-                .any(|s| s.insert == "/commit")
-        );
-        assert!(skill_suggestions("zzz-no-match").is_empty());
+        let skills = [Skill {
+            name: "deploy".into(),
+            description: "Ship to production".into(),
+            path: String::new(),
+            scope: "project",
+            source: "agents",
+        }];
+        assert_eq!(skill_suggestions("", &skills).len(), 1);
+        assert_eq!(skill_suggestions("ship", &skills)[0].insert, "/deploy");
+        assert!(skill_suggestions("zzz-no-match", &skills).is_empty());
     }
 
     #[test]
