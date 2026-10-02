@@ -1,46 +1,73 @@
-//! Embedded PTY terminal with a header naming its working directory.
+//! Bottom terminal drawer (MonoCode's terminal dock): the project's PTY
+//! under a one-tab header, toggled from the footer or with ⌘J.
 
-use ely_gpui_component::data_display::Badge;
+use ely_gpui_component::buttons::{ButtonVariant, IconButton};
 use ely_gpui_component::primitives::{Icon, IconName};
-use ely_gpui_component::theme::{ActiveTheme, IconSize, TextSize};
-use gpui::{Context, IntoElement, ParentElement, Styled, div, prelude::*};
+use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize};
+use gpui::{Context, FontWeight, IntoElement, ParentElement, Styled, div, px};
 
 use crate::app::BenCodeApp;
 
+const DRAWER_HEIGHT: gpui::Pixels = px(220.0);
+
 impl BenCodeApp {
-    pub fn render_terminal_pane(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub fn render_terminal_drawer(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
-        let branch = self.git_status.branch.clone();
+        let colors = &theme.colors;
+        let project = std::path::Path::new(&self.current_cwd)
+            .file_name()
+            .map_or_else(
+                || "terminal".to_string(),
+                |n| n.to_string_lossy().into_owned(),
+            );
+
         div()
             .flex()
             .flex_col()
-            .flex_1()
-            .min_w_0()
-            .h_full()
-            .bg(theme.colors.bg)
+            .flex_none()
+            .w_full()
+            .h(DRAWER_HEIGHT)
+            .border_t_1()
+            .border_color(colors.border)
+            .bg(colors.bg)
             .child(
                 div()
                     .flex()
                     .items_center()
                     .justify_between()
-                    .gap_2()
-                    .px_4()
-                    .py_2()
+                    .px_2()
+                    .py_1()
+                    .bg(colors.surface)
                     .border_b_1()
-                    .border_color(theme.colors.border)
+                    .border_color(colors.border)
                     .child(
                         div()
                             .flex()
                             .items_center()
-                            .gap_2()
-                            .min_w_0()
+                            .gap_1p5()
+                            .px_2()
+                            .py_0p5()
+                            .rounded(theme.radius(Radius::Md))
+                            .bg(colors.hover)
                             .text_size(theme.text_size(TextSize::Xs))
-                            .text_color(theme.colors.fg_muted)
-                            .child(Icon::new(IconName::Terminal).size(IconSize::Xs))
-                            .child(div().truncate().child(self.current_cwd.clone())),
+                            .font_weight(FontWeight::MEDIUM)
+                            .child(
+                                Icon::new(IconName::Terminal)
+                                    .size(IconSize::Xs)
+                                    .color(colors.fg),
+                            )
+                            .child(project),
                     )
-                    .when(!branch.is_empty(), |el| el.child(Badge::new(branch))),
+                    .child(
+                        IconButton::new("terminal-drawer-hide", IconName::ChevronDown)
+                            .size(ControlSize::Sm)
+                            .variant(ButtonVariant::Ghost)
+                            .tooltip("Hide terminal (⌘J)")
+                            .on_click(
+                                cx.listener(|this, _, _, cx| this.set_terminal_open(false, cx)),
+                            ),
+                    ),
             )
-            .child(div().flex_1().min_h_0().child(self.terminal.clone()))
+            .child(div().flex_1().min_h_0().p_1().child(self.terminal.clone()))
     }
 }

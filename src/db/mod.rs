@@ -15,7 +15,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 pub const DEFAULT_SESSION_RUNTIME_MODE: &str = "supervised";
 
 /// Relative path of MonoCode's database under `$HOME`.
-const MONOCODE_DB_RELATIVE_PATH: &str = "Library/Application Support/com.monocode.desktop/monocode.db";
+const MONOCODE_DB_RELATIVE_PATH: &str =
+    "Library/Application Support/com.monocode.desktop/monocode.db";
 
 /// Maximum automation runs returned by `list_automation_runs`.
 const AUTOMATION_RUN_HISTORY_LIMIT: i64 = 50;
@@ -148,11 +149,19 @@ pub struct Block {
     pub turn_model: Option<TurnModel>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool: Option<serde_json::Value>,
-    #[serde(rename = "secondOpinion", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "secondOpinion",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub second_opinion: Option<serde_json::Value>,
     #[serde(rename = "startedAt", default, skip_serializing_if = "Option::is_none")]
     pub started_at: Option<i64>,
-    #[serde(rename = "durationMs", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "durationMs",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub duration_ms: Option<i64>,
     /// Every MonoCode block field BenCode does not model.
     #[serde(flatten, default)]
@@ -247,7 +256,8 @@ const LATE_SESSION_COLUMNS: &[(&str, &str)] = &[
     ("inbox_ask", "TEXT"),
 ];
 
-const SESSION_SELECT: &str = "SELECT id, title, cwd, harness, model, created_at, updated_at, branch,
+const SESSION_SELECT: &str =
+    "SELECT id, title, cwd, harness, model, created_at, updated_at, branch,
         blocks_json, context_used, context_window, pinned, archived, provider_session_id,
         runtime_mode
      FROM sessions";
@@ -312,7 +322,8 @@ impl MonoCodeDb {
     }
 
     pub fn list_recent_sessions(&self, limit: usize) -> Result<Vec<SessionRow>> {
-        let sql = format!("{SESSION_SELECT} WHERE inbox_ask IS NULL ORDER BY updated_at DESC LIMIT ?1");
+        let sql =
+            format!("{SESSION_SELECT} WHERE inbox_ask IS NULL ORDER BY updated_at DESC LIMIT ?1");
         let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt.query_map([limit as i64], session_from_row)?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
@@ -398,10 +409,8 @@ impl MonoCodeDb {
     }
 
     pub fn delete_session(&self, session_id: &str) -> Result<()> {
-        self.conn.execute(
-            "DELETE FROM sessions WHERE id = ?1",
-            params![session_id],
-        )?;
+        self.conn
+            .execute("DELETE FROM sessions WHERE id = ?1", params![session_id])?;
         Ok(())
     }
 
@@ -466,17 +475,30 @@ impl MonoCodeDb {
         let tags_json = serde_json::to_string(&note.tags)?;
         let existing = self.get_note(&note.id)?;
         if let Some(existing) = existing {
-            let updated_at = if note.title == existing.title && note.body == existing.body && note.tags == existing.tags {
+            let updated_at = if note.title == existing.title
+                && note.body == existing.body
+                && note.tags == existing.tags
+            {
                 existing.updated_at
             } else {
                 now
             };
-            let project_cwd = note.source_cwd.as_deref().or(existing.source_cwd.as_deref());
+            let project_cwd = note
+                .source_cwd
+                .as_deref()
+                .or(existing.source_cwd.as_deref());
             self.conn.execute(
                 "UPDATE notes
                  SET title = ?1, body = ?2, tags_json = ?3, updated_at = ?4, source_cwd = ?5
                  WHERE id = ?6",
-                params![note.title, note.body, tags_json, updated_at, project_cwd, note.id],
+                params![
+                    note.title,
+                    note.body,
+                    tags_json,
+                    updated_at,
+                    project_cwd,
+                    note.id
+                ],
             )?;
             Ok(Note {
                 id: note.id.clone(),
@@ -522,7 +544,8 @@ impl MonoCodeDb {
     }
 
     pub fn delete_note(&self, id: &str) -> Result<()> {
-        self.conn.execute("DELETE FROM notes WHERE id = ?1", params![id])?;
+        self.conn
+            .execute("DELETE FROM notes WHERE id = ?1", params![id])?;
         Ok(())
     }
 
@@ -530,14 +553,18 @@ impl MonoCodeDb {
         let mut stmt = self
             .conn
             .prepare("SELECT id, definition_json FROM automations ORDER BY updated_at DESC, id")?;
-        let rows = stmt.query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
 
         let mut automations = Vec::new();
         for row in rows {
             let (id, raw) = row?;
             match serde_json::from_str::<AutomationRow>(&raw) {
                 Ok(auto) => automations.push(auto),
-                Err(err) => log::warn!("Skipping automation {id}: unreadable definition_json: {err}"),
+                Err(err) => {
+                    log::warn!("Skipping automation {id}: unreadable definition_json: {err}")
+                }
             }
         }
         Ok(automations)
@@ -568,13 +595,20 @@ impl MonoCodeDb {
                  enabled = excluded.enabled,
                  next_run_at = excluded.next_run_at,
                  updated_at = excluded.updated_at",
-            params![auto.id, json, i64::from(auto.enabled), auto.next_run_at, auto.updated_at],
+            params![
+                auto.id,
+                json,
+                i64::from(auto.enabled),
+                auto.next_run_at,
+                auto.updated_at
+            ],
         )?;
         Ok(())
     }
 
     pub fn delete_automation(&self, id: &str) -> Result<()> {
-        self.conn.execute("DELETE FROM automations WHERE id = ?1", params![id])?;
+        self.conn
+            .execute("DELETE FROM automations WHERE id = ?1", params![id])?;
         Ok(())
     }
 
@@ -600,9 +634,10 @@ impl MonoCodeDb {
             "SELECT id, run_json FROM automation_runs WHERE automation_id = ?1
              ORDER BY created_at DESC LIMIT ?2",
         )?;
-        let rows = stmt.query_map(params![automation_id, AUTOMATION_RUN_HISTORY_LIMIT], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-        })?;
+        let rows = stmt.query_map(
+            params![automation_id, AUTOMATION_RUN_HISTORY_LIMIT],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+        )?;
 
         let mut runs = Vec::new();
         for row in rows {
@@ -627,15 +662,22 @@ impl MonoCodeDb {
 
     /// Marks a run terminal (`succeeded`, `failed` or `cancelled`), patching
     /// `run_json` in place so fields BenCode does not model survive.
-    pub fn finish_automation_run(&self, run_id: &str, status: &str, error: Option<&str>) -> Result<()> {
+    pub fn finish_automation_run(
+        &self,
+        run_id: &str,
+        status: &str,
+        error: Option<&str>,
+    ) -> Result<()> {
         let json: String = self.conn.query_row(
             "SELECT run_json FROM automation_runs WHERE id = ?1",
             params![run_id],
             |row| row.get(0),
         )?;
-        let mut run: Value =
-            serde_json::from_str(&json).map_err(|err| anyhow!("automation run {run_id} has invalid run_json: {err}"))?;
-        let Some(fields) = run.as_object_mut() else { bail!("automation run {run_id} is not a JSON object") };
+        let mut run: Value = serde_json::from_str(&json)
+            .map_err(|err| anyhow!("automation run {run_id} has invalid run_json: {err}"))?;
+        let Some(fields) = run.as_object_mut() else {
+            bail!("automation run {run_id} is not a JSON object")
+        };
         fields.insert("status".into(), Value::from(status));
         fields.insert("completedAt".into(), Value::from(now_millis()));
         match error {
@@ -674,11 +716,7 @@ fn slugify(title: &str) -> String {
         }
     }
     let slug = out.trim_end_matches('-').to_string();
-    if slug.is_empty() {
-        "note".into()
-    } else {
-        slug
-    }
+    if slug.is_empty() { "note".into() } else { slug }
 }
 
 fn unique_slug(conn: &Connection, title: &str) -> Result<String> {
@@ -795,7 +833,10 @@ fn known_automation_fields(auto: &AutomationRow) -> Result<Map<String, Value>> {
     };
     match serde_json::to_value(known)? {
         Value::Object(map) => Ok(map),
-        _ => Err(anyhow!("automation {} did not serialize to an object", auto.id)),
+        _ => Err(anyhow!(
+            "automation {} did not serialize to an object",
+            auto.id
+        )),
     }
 }
 
@@ -809,12 +850,20 @@ fn new_automation_definition(auto: &AutomationRow) -> Result<Map<String, Value>>
 fn patch_existing_definition(raw: &str, auto: &AutomationRow) -> Result<Map<String, Value>> {
     let mut definition = match serde_json::from_str::<Value>(raw) {
         Ok(Value::Object(map)) => map,
-        Ok(_) => bail!("refusing to overwrite automation {}: definition_json is not an object", auto.id),
-        Err(err) => bail!("refusing to overwrite automation {}: unreadable definition_json: {err}", auto.id),
+        Ok(_) => bail!(
+            "refusing to overwrite automation {}: definition_json is not an object",
+            auto.id
+        ),
+        Err(err) => bail!(
+            "refusing to overwrite automation {}: unreadable definition_json: {err}",
+            auto.id
+        ),
     };
     // Extra fields only fill gaps: the stored values are authoritative.
     for (key, value) in &auto.extra {
-        definition.entry(key.clone()).or_insert_with(|| value.clone());
+        definition
+            .entry(key.clone())
+            .or_insert_with(|| value.clone());
     }
     let mut known = known_automation_fields(auto)?;
     // createdAt never changes once stored.
@@ -922,7 +971,11 @@ mod tests {
 
     #[test]
     fn block_serializes_missing_text_as_empty_string_and_skips_none_fields() {
-        let block = Block { id: "b".into(), role: "tool".into(), ..Default::default() };
+        let block = Block {
+            id: "b".into(),
+            role: "tool".into(),
+            ..Default::default()
+        };
         let value = serde_json::to_value(&block).unwrap();
         assert_eq!(value, json!({"id": "b", "role": "tool", "text": ""}));
     }
@@ -930,13 +983,16 @@ mod tests {
     #[test]
     fn session_blocks_survive_load_and_save() {
         let db = monocode_db();
-        let blocks = r#"[{"id":"b1","role":"user","text":"x","appRequestId":"r1","btwThreads":[]}]"#;
+        let blocks =
+            r#"[{"id":"b1","role":"user","text":"x","appRequestId":"r1","btwThreads":[]}]"#;
         insert_monocode_session(&db, "s1", blocks);
         let loaded = db.get_session("s1").unwrap().unwrap();
         db.upsert_session(&loaded).unwrap();
         let stored: String = db
             .conn
-            .query_row("SELECT blocks_json FROM sessions WHERE id='s1'", [], |r| r.get(0))
+            .query_row("SELECT blocks_json FROM sessions WHERE id='s1'", [], |r| {
+                r.get(0)
+            })
             .unwrap();
         let stored: Value = serde_json::from_str(&stored).unwrap();
         assert_eq!(stored, serde_json::from_str::<Value>(blocks).unwrap());
@@ -988,7 +1044,11 @@ mod tests {
 
         let raw: String = db
             .conn
-            .query_row("SELECT definition_json FROM automations WHERE id='a1'", [], |r| r.get(0))
+            .query_row(
+                "SELECT definition_json FROM automations WHERE id='a1'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         let saved: Value = serde_json::from_str(&raw).unwrap();
         let mut expected = original;
@@ -1016,15 +1076,37 @@ mod tests {
         db.save_automation(&auto).unwrap();
         let raw: String = db
             .conn
-            .query_row("SELECT definition_json FROM automations WHERE id='new'", [], |r| r.get(0))
+            .query_row(
+                "SELECT definition_json FROM automations WHERE id='new'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         let saved: Value = serde_json::from_str(&raw).unwrap();
         for key in [
-            "id", "name", "prompt", "harness", "model", "cwd", "workspaceMode", "reuseSession",
-            "runtimeMode", "scheduleKind", "minute", "time", "dayOfWeek", "missedRunGraceMinutes",
-            "enabled", "nextRunAt", "createdAt", "updatedAt",
+            "id",
+            "name",
+            "prompt",
+            "harness",
+            "model",
+            "cwd",
+            "workspaceMode",
+            "reuseSession",
+            "runtimeMode",
+            "scheduleKind",
+            "minute",
+            "time",
+            "dayOfWeek",
+            "missedRunGraceMinutes",
+            "enabled",
+            "nextRunAt",
+            "createdAt",
+            "updatedAt",
         ] {
-            assert!(saved.get(key).is_some(), "missing required MonoCode field {key}");
+            assert!(
+                saved.get(key).is_some(),
+                "missing required MonoCode field {key}"
+            );
         }
         assert_eq!(saved["workspaceMode"], json!("worktree"));
         assert!(saved.get("lastRunAt").is_none());
@@ -1034,9 +1116,15 @@ mod tests {
     fn save_automation_refuses_to_overwrite_unparseable_definition() {
         let db = monocode_db();
         db.conn
-            .execute("INSERT INTO automations VALUES ('a1', 'not json', 1, 0, 0)", [])
+            .execute(
+                "INSERT INTO automations VALUES ('a1', 'not json', 1, 0, 0)",
+                [],
+            )
             .unwrap();
-        let auto = AutomationRow { id: "a1".into(), ..Default::default() };
+        let auto = AutomationRow {
+            id: "a1".into(),
+            ..Default::default()
+        };
         assert!(db.save_automation(&auto).is_err());
         assert!(db.list_automations().unwrap().is_empty());
     }
@@ -1079,7 +1167,10 @@ mod tests {
         };
         db.create_automation_run(&run).unwrap();
         db.conn
-            .execute("INSERT INTO automation_runs VALUES ('r2', 'a1', 2, '{bad')", [])
+            .execute(
+                "INSERT INTO automation_runs VALUES ('r2', 'a1', 2, '{bad')",
+                [],
+            )
             .unwrap();
         let runs = db.list_automation_runs("a1").unwrap();
         assert_eq!(runs.len(), 1);
@@ -1116,21 +1207,47 @@ mod tests {
         loaded.title = "Renamed".into();
         db.upsert_session(&loaded).unwrap();
 
-        let row: (String, String, String, String, String, String, String, String) = db
+        let row: (
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+        ) = db
             .conn
             .query_row(
                 "SELECT title, runtime_mode, model_settings, provider_session_id, worktree_cwd,
                         linked_work_item_json, provider_account_id, automation_id
                  FROM sessions WHERE id='s1'",
                 [],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?)),
+                |r| {
+                    Ok((
+                        r.get(0)?,
+                        r.get(1)?,
+                        r.get(2)?,
+                        r.get(3)?,
+                        r.get(4)?,
+                        r.get(5)?,
+                        r.get(6)?,
+                        r.get(7)?,
+                    ))
+                },
             )
             .unwrap();
         assert_eq!(
             row,
             (
-                "Renamed".into(), "auto".into(), "{\"effort\":\"high\"}".into(), "prov-1".into(),
-                "/wt".into(), "{\"k\":1}".into(), "acct".into(), "auto-1".into()
+                "Renamed".into(),
+                "auto".into(),
+                "{\"effort\":\"high\"}".into(),
+                "prov-1".into(),
+                "/wt".into(),
+                "{\"k\":1}".into(),
+                "acct".into(),
+                "auto-1".into()
             )
         );
     }
@@ -1157,7 +1274,9 @@ mod tests {
         assert!(db.upsert_session(&loaded).is_err());
         let stored: String = db
             .conn
-            .query_row("SELECT blocks_json FROM sessions WHERE id='s1'", [], |r| r.get(0))
+            .query_row("SELECT blocks_json FROM sessions WHERE id='s1'", [], |r| {
+                r.get(0)
+            })
             .unwrap();
         assert_eq!(stored, "{corrupt");
     }
@@ -1172,7 +1291,12 @@ mod tests {
         db.conn
             .execute("UPDATE sessions SET inbox_ask = '{}' WHERE id = 'ask'", [])
             .unwrap();
-        let ids: Vec<String> = db.list_recent_sessions(10).unwrap().into_iter().map(|s| s.id).collect();
+        let ids: Vec<String> = db
+            .list_recent_sessions(10)
+            .unwrap()
+            .into_iter()
+            .map(|s| s.id)
+            .collect();
         assert_eq!(ids, vec!["normal".to_string()]);
         assert!(db.get_session("ask").unwrap().is_none());
     }
@@ -1207,15 +1331,28 @@ mod tests {
     #[test]
     fn finish_automation_run_patches_status_and_keeps_unknown_fields() {
         let db = MonoCodeDb::open_in_memory().unwrap();
-        db.save_automation(&AutomationRow { id: "a1".into(), name: "A".into(), ..Default::default() }).unwrap();
+        db.save_automation(&AutomationRow {
+            id: "a1".into(),
+            name: "A".into(),
+            ..Default::default()
+        })
+        .unwrap();
         db.conn
             .execute(
                 "INSERT INTO automation_runs (id, automation_id, created_at, run_json) VALUES ('r1', 'a1', 1, ?1)",
                 params![r#"{"id":"r1","automationId":"a1","trigger":"manual","scheduledFor":1,"createdAt":1,"status":"running","futureField":7}"#],
             )
             .unwrap();
-        db.finish_automation_run("r1", "failed", Some("boom")).unwrap();
-        let json: String = db.conn.query_row("SELECT run_json FROM automation_runs WHERE id = 'r1'", [], |r| r.get(0)).unwrap();
+        db.finish_automation_run("r1", "failed", Some("boom"))
+            .unwrap();
+        let json: String = db
+            .conn
+            .query_row(
+                "SELECT run_json FROM automation_runs WHERE id = 'r1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
         let run: Value = serde_json::from_str(&json).unwrap();
         assert_eq!(run["status"], "failed");
         assert_eq!(run["error"], "boom");

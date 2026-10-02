@@ -1,18 +1,16 @@
-
-
 mod app;
 mod db;
+pub mod external_editor;
 mod git;
 mod harness;
+pub mod mcp;
 mod schedule;
+mod settings;
 mod ui;
 mod workspace;
 
 use app::BenCodeApp;
-use ely_gpui_component::{
-    Assets,
-    theme::Mode,
-};
+use ely_gpui_component::Assets;
 use gpui::{
     App, AppContext, Bounds, TitlebarOptions, WindowBounds, WindowOptions, point, px, size,
 };
@@ -24,7 +22,11 @@ fn main() {
         .with_assets(Assets)
         .run(|cx: &mut App| {
             ely_gpui_component::init(cx);
-            ui::theme::install(Mode::Dark, cx);
+            app::commands::install(cx);
+            let saved = settings::settings_dir()
+                .map(|dir| settings::load_from(&dir))
+                .unwrap_or_default();
+            ui::theme::install(app::theme_mode(saved.theme), cx);
 
             let bounds = Bounds::centered(None, size(px(1200.0), px(780.0)), cx);
             let options = WindowOptions {
@@ -39,7 +41,7 @@ fn main() {
             };
 
             cx.open_window(options, |window, cx| {
-                cx.new(|cx| BenCodeApp::new(window, cx))
+                cx.new(|cx| BenCodeApp::new(window, saved, cx))
             })
             .expect("Failed to open BenCode window");
 

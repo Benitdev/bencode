@@ -1,22 +1,27 @@
 mod agent;
+pub mod commands;
+mod integrations;
+mod panes;
+mod preferences;
 mod workspace_sync;
 
 use std::collections::HashSet;
 
 use ely_gpui_component::forms::{InputEvent, TextInput};
 use ely_gpui_component::primitives::FocusScope;
-use ely_gpui_component::theme::ActiveTheme;
 use ely_gpui_component::terminal::{Launch, Terminal};
+use ely_gpui_component::theme::ActiveTheme;
 use gpui::{
-    AppContext, Context, Entity, IntoElement, ParentElement, Render, Styled,
+    AppContext, Context, Entity, Focusable, IntoElement, ParentElement, Render, Styled,
     Subscription, Window, div, prelude::*,
 };
 
 pub use agent::{AgentRun, NEW_SESSION_TITLE, now_ms};
+pub use preferences::theme_mode;
 pub use workspace_sync::WorkspaceCache;
 
-use crate::db::{Block, MonoCodeDb, SessionRow};
-use crate::harness::{HarnessInfo, HarnessKind, HarnessResolver, catalog};
+use crate::db::{MonoCodeDb, SessionRow};
+use crate::harness::{HarnessInfo, HarnessResolver, catalog};
 use crate::ui::settings_modal::SettingsTab;
 
 const RECENT_SESSION_LIMIT: usize = 50;
@@ -28,8 +33,8 @@ const RECENT_PROJECT_LIMIT: usize = 8;
 pub enum ViewMode {
     #[default]
     Chat,
+    Editor,
     Changes,
-    Terminal,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -60,8 +65,8 @@ pub enum SidebarMode {
 pub struct BenCodeApp {
     pub sessions: Vec<SessionRow>,
     pub selected_session_id: Option<String>,
-    pub open_tabs: Vec<String>,
-    pub active_tab_id: Option<String>,
+    /// Open workspace tabs, each with its split layout and focused pane.
+    pub tabs: crate::ui::layout::TabSet,
     pub active_view_mode: ViewMode,
     pub filter_mode: FilterMode,
     pub permission_mode: PermissionMode,
@@ -72,6 +77,8 @@ pub struct BenCodeApp {
     pub selected_model: String,
     /// Installed harness CLIs, probed once at startup (never from render).
     pub harnesses: Vec<HarnessInfo>,
+    pub is_model_picker_open: bool,
+    pub is_permission_picker_open: bool,
     pub is_skill_picker_open: bool,
     pub skill_query: String,
     pub is_mention_picker_open: bool,
@@ -122,12 +129,20 @@ pub struct BenCodeApp {
     pub prompt_input: Entity<TextInput>,
     pub search_input: Entity<TextInput>,
     // [ui-agent-flow fields]
-    /// Virtualized transcript list state.
-    pub transcript: crate::ui::transcript::TranscriptView,
+    /// Multi-pane transcript list states keyed by session id.
+    pub transcripts: std::collections::HashMap<String, crate::ui::transcript::TranscriptView>,
+    /// Visual drop hint for an active pane drag over an edge of another pane.
+    pub active_pane_drop: Option<crate::ui::drag_drop::PaneDropTarget>,
+    /// Active file drop target session id.
+    pub active_file_drop_target: Option<String>,
     // [ui-git-files fields]
     /// Destructive git action awaiting confirmation.
     pub git_confirm: Option<crate::ui::git_changes_panel::GitConfirm>,
     // [ui-panels fields]
+    /// Preferences as last loaded or saved (`settings.json`).
+    pub settings: crate::settings::AppSettings,
+    /// External editors and MCP servers, scanned once in the background.
+    pub integrations: integrations::Integrations,
     /// Validation message for the automation time field.
     pub automation_time_error: Option<String>,
     /// Set on open; the search dialog focuses its query field once drawn.
@@ -138,11 +153,19 @@ pub struct BenCodeApp {
     pub note_pending_delete: Option<String>,
     /// Automation id awaiting delete confirmation.
     pub automation_pending_delete: Option<String>,
+    // [editor-pane fields]
+    pub editor: crate::ui::editor_pane::EditorState,
+    pub is_sidebar_open: bool,
+    pub is_terminal_open: bool,
     pub db: MonoCodeDb,
     _subscriptions: Vec<Subscription>,
 }
 
-fn text_input(window: &mut Window, cx: &mut Context<BenCodeApp>, placeholder: &str) -> Entity<TextInput> {
+fn text_input(
+    window: &mut Window,
+    cx: &mut Context<BenCodeApp>,
+    placeholder: &str,
+) -> Entity<TextInput> {
     let placeholder = placeholder.to_string();
     cx.new(|cx| TextInput::new(window, cx).placeholder(placeholder))
 }
@@ -154,7 +177,11 @@ fn multiline_input(
     rows: (usize, usize),
 ) -> Entity<TextInput> {
     let placeholder = placeholder.to_string();
-    cx.new(|cx| TextInput::new(window, cx).multi_line(rows.0, rows.1).placeholder(placeholder))
+    cx.new(|cx| {
+        TextInput::new(window, cx)
+            .multi_line(rows.0, rows.1)
+            .placeholder(placeholder)
+    })
 }
 
 /// Distinct session working directories, most recent first, current one on top.
@@ -168,59 +195,133 @@ fn recent_projects(current_cwd: &str, sessions: &[SessionRow]) -> Vec<String> {
 }
 
 impl BenCodeApp {
-    pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(
+        window: &mut Window,
+        saved: crate::settings::AppSettings,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let db = MonoCodeDb::open_default().unwrap_or_else(|err| {
             log::warn!("MonoCode DB unavailable ({err:#}); using BenCode's local database");
             MonoCodeDb::open_fallback()
         });
 
-        let sessions = db.list_recent_sessions(RECENT_SESSION_LIMIT).unwrap_or_else(|err| {
-            log::error!("failed to load sessions: {err:#}");
-            Vec::new()
-        });
-        let selected_session_id = sessions.first().map(|s| s.id.clone());
-        let open_tabs: Vec<String> = sessions.iter().take(INITIAL_OPEN_TABS).map(|s| s.id.clone()).collect();
+        let sessions = db
+            .list_recent_sessions(RECENT_SESSION_LIMIT)
+            .unwrap_or_else(|err| {
+                log::error!("failed to load sessions: {err:#}");
+                Vec::new()
+            });
+        let tabs = crate::ui::layout::TabSet::with_sessions(
+            sessions
+                .iter()
+                .take(INITIAL_OPEN_TABS)
+                .map(|s| s.id.as_str()),
+        );
+        let selected_session_id = tabs.focused_session().map(str::to_string);
 
-        let prompt_input = multiline_input(window, cx, "Ask the agent, / for skills, @ for files…", (1, 6));
-        let search_input = text_input(window, cx, "Search threads... (⌘K)");
+        let prompt_input = multiline_input(
+            window,
+            cx,
+            "Ask, build, / for commands, @ for references...",
+            (1, 6),
+        );
+        let search_input = text_input(window, cx, "Search conversations...");
         let note_filter_input = text_input(window, cx, "Filter notes...");
         let note_title_input = text_input(window, cx, "Note title...");
-        let note_body_input = multiline_input(window, cx, "Write note or scratchpad in markdown...", (5, 25));
+        let note_body_input = multiline_input(
+            window,
+            cx,
+            "Write note or scratchpad in markdown...",
+            (5, 25),
+        );
         let automation_name_input = text_input(window, cx, "Automation name...");
         let automation_prompt_input = multiline_input(window, cx, "Automation prompt...", (3, 10));
         let automation_time_input = text_input(window, cx, "09:00");
         let git_commit_input = text_input(window, cx, "Message (⌘↩ to commit)...");
-        let search_modal_input = text_input(window, cx, "Search conversations, files, projects... (⌘K)");
+        let search_modal_input =
+            text_input(window, cx, "Search conversations, files, projects... (⌘K)");
 
-        let subscriptions = vec![
-            cx.subscribe(&prompt_input, |this: &mut Self, _, event: &InputEvent, cx| match event {
-                InputEvent::Submit => this.submit_prompt(cx),
-                InputEvent::Changed => this.on_prompt_changed(cx),
-                _ => {}
-            }),
-            cx.subscribe(&search_input, |this: &mut Self, input, event: &InputEvent, cx| {
-                if *event == InputEvent::Changed {
-                    this.search_query = input.read(cx).text().to_string();
-                    cx.notify();
-                }
-            }),
-            cx.subscribe(&note_filter_input, |this: &mut Self, input, event: &InputEvent, cx| {
-                if *event == InputEvent::Changed {
-                    this.note_filter_query = input.read(cx).text().to_string();
-                    cx.notify();
-                }
-            }),
-            cx.subscribe(&git_commit_input, |this: &mut Self, _, event: &InputEvent, cx| {
-                if *event == InputEvent::Submit {
-                    this.commit_staged_changes(cx);
-                }
-            }),
-            cx.subscribe(&search_modal_input, |this: &mut Self, _, event: &InputEvent, cx| {
-                if *event == InputEvent::Changed {
-                    this.update_search_hits(cx);
-                }
-            }),
+        let composer_input = prompt_input.clone();
+        let weak_app = cx.weak_entity();
+        let mut subscriptions = vec![
+            cx.subscribe(
+                &prompt_input,
+                |this: &mut Self, _, event: &InputEvent, cx| match event {
+                    InputEvent::Submit => this.submit_prompt(cx),
+                    InputEvent::Changed => this.on_prompt_changed(cx),
+                    _ => {}
+                },
+            ),
+            cx.subscribe(
+                &search_input,
+                |this: &mut Self, input, event: &InputEvent, cx| {
+                    if *event == InputEvent::Changed {
+                        this.search_query = input.read(cx).text().to_string();
+                        cx.notify();
+                    }
+                },
+            ),
+            cx.subscribe(
+                &note_filter_input,
+                |this: &mut Self, input, event: &InputEvent, cx| {
+                    if *event == InputEvent::Changed {
+                        this.note_filter_query = input.read(cx).text().to_string();
+                        cx.notify();
+                    }
+                },
+            ),
+            cx.subscribe(
+                &git_commit_input,
+                |this: &mut Self, _, event: &InputEvent, cx| {
+                    if *event == InputEvent::Submit {
+                        this.commit_staged_changes(cx);
+                    }
+                },
+            ),
+            cx.subscribe(
+                &search_modal_input,
+                |this: &mut Self, _, event: &InputEvent, cx| {
+                    if *event == InputEvent::Changed {
+                        this.update_search_hits(cx);
+                    }
+                },
+            ),
         ];
+
+        subscriptions.push(cx.intercept_keystrokes(move |event, window, cx| {
+            let is_enter = event.keystroke.key == "enter" && !event.keystroke.modifiers.modified();
+            let is_escape =
+                event.keystroke.key == "escape" && !event.keystroke.modifiers.modified();
+            if !is_enter && !is_escape {
+                return;
+            }
+
+            let is_focused = composer_input.read(cx).focus_handle(cx).is_focused(window);
+            if !is_focused {
+                return;
+            }
+
+            if is_enter {
+                cx.stop_propagation();
+                let _ = weak_app.update(cx, |this, cx| {
+                    this.handle_composer_enter(cx);
+                });
+            } else if is_escape {
+                let handled = weak_app.update(cx, |this, cx| {
+                    if this.is_skill_picker_open || this.is_mention_picker_open {
+                        this.is_skill_picker_open = false;
+                        this.is_mention_picker_open = false;
+                        cx.notify();
+                        true
+                    } else {
+                        false
+                    }
+                });
+                if matches!(handled, Ok(true)) {
+                    cx.stop_propagation();
+                }
+            }
+        }));
 
         let current_cwd = std::env::current_dir()
             .map(|p| p.to_string_lossy().to_string())
@@ -262,15 +363,17 @@ impl BenCodeApp {
 
         // Git shells out several times; load it in the background after construction.
         cx.spawn(async move |this, cx| {
-            let _ = this.update(cx, |this, cx| this.refresh_workspace(cx));
+            let _ = this.update(cx, |this, cx| {
+                this.refresh_workspace(cx);
+                this.refresh_integrations(cx);
+            });
         })
         .detach();
 
-        Self {
+        let mut app = Self {
             sessions,
-            active_tab_id: selected_session_id.clone(),
             selected_session_id,
-            open_tabs,
+            tabs,
             active_view_mode: ViewMode::Chat,
             filter_mode: FilterMode::All,
             permission_mode: PermissionMode::Auto,
@@ -279,6 +382,8 @@ impl BenCodeApp {
             search_query: String::new(),
             selected_model,
             harnesses,
+            is_model_picker_open: false,
+            is_permission_picker_open: false,
             is_skill_picker_open: false,
             skill_query: String::new(),
             is_mention_picker_open: false,
@@ -321,18 +426,28 @@ impl BenCodeApp {
             prompt_input,
             search_input,
             // [ui-agent-flow init]
-            transcript: Default::default(),
+            transcripts: std::collections::HashMap::new(),
+            active_pane_drop: None,
+            active_file_drop_target: None,
             // [ui-git-files init]
             git_confirm: None,
             // [ui-panels init]
+            settings: Default::default(),
+            integrations: Default::default(),
             automation_time_error: None,
             search_focus_pending: false,
             search_submit: None,
             note_pending_delete: None,
             automation_pending_delete: None,
+            // [editor-pane init]
+            editor: Default::default(),
+            is_sidebar_open: true,
+            is_terminal_open: true,
             db,
             _subscriptions: subscriptions,
-        }
+        };
+        app.apply_settings(saved);
+        app
     }
 
     pub fn selected_session(&self) -> Option<&SessionRow> {
@@ -352,6 +467,7 @@ impl BenCodeApp {
             return;
         };
         self.selected_model = option.key.to_string();
+        self.save_settings(cx);
 
         let harness_id = option.harness.id();
         let changed_session = self.selected_session_mut().map(|session| {
@@ -391,6 +507,38 @@ impl BenCodeApp {
         cx.notify();
     }
 
+    pub fn handle_composer_enter(&mut self, cx: &mut Context<Self>) {
+        if self.is_skill_picker_open {
+            let suggestions = crate::ui::composer::skill_suggestions(&self.skill_query);
+            if let Some(item) = suggestions.first() {
+                let insert = item.insert.clone();
+                self.insert_skill(&insert, cx);
+                return;
+            }
+            self.is_skill_picker_open = false;
+            cx.notify();
+            return;
+        }
+
+        if self.is_mention_picker_open {
+            let suggestions = crate::ui::composer::mention_suggestions(
+                &self.mention_query,
+                &self.workspace.files,
+                &self.notes,
+            );
+            if let Some(item) = suggestions.first() {
+                let insert = item.insert.clone();
+                self.insert_mention(&insert, cx);
+                return;
+            }
+            self.is_mention_picker_open = false;
+            cx.notify();
+            return;
+        }
+
+        self.submit_prompt(cx);
+    }
+
     pub fn insert_skill(&mut self, skill_name: &str, cx: &mut Context<Self>) {
         self.replace_trigger('/', skill_name, cx);
         self.is_skill_picker_open = false;
@@ -407,7 +555,11 @@ impl BenCodeApp {
     pub fn append_to_prompt(&mut self, text: &str, cx: &mut Context<Self>) {
         self.prompt_input.update(cx, |input, cx| {
             let current = input.text().trim_end().to_string();
-            let joined = if current.is_empty() { format!("{text} ") } else { format!("{current} {text} ") };
+            let joined = if current.is_empty() {
+                format!("{text} ")
+            } else {
+                format!("{current} {text} ")
+            };
             input.set_text(joined, cx);
         });
     }
@@ -421,37 +573,75 @@ impl BenCodeApp {
         });
     }
 
-    pub fn select_session(&mut self, id: String, cx: &mut Context<Self>) {
-        if !self.open_tabs.contains(&id) {
-            self.open_tabs.push(id.clone());
+    pub fn switch_project(&mut self, new_cwd: String, cx: &mut Context<Self>) {
+        if self.current_cwd == new_cwd {
+            return;
         }
-        self.switch_tab(id, cx);
-    }
-
-    pub fn switch_tab(&mut self, id: String, cx: &mut Context<Self>) {
-        if let Some(model) = self.sessions.iter().find(|s| s.id == id).map(|s| s.model.clone())
-            && catalog::find(&model).is_some() {
-                self.selected_model = model;
-            }
-        self.selected_session_id = Some(id.clone());
-        self.active_tab_id = Some(id);
-        self.selected_diff_path = None;
-        self.refresh_workspace_if_moved(cx);
+        self.current_cwd = new_cwd.clone();
+        self.workspace.cwd = new_cwd;
+        self.refresh_workspace(cx);
+        self.refresh_git_status(cx);
         cx.notify();
     }
 
-    pub fn close_tab(&mut self, id: &str, cx: &mut Context<Self>) {
-        let Some(pos) = self.open_tabs.iter().position(|t| t == id) else { return };
-        self.open_tabs.remove(pos);
-        if self.active_tab_id.as_deref() == Some(id) {
-            self.active_tab_id = self.open_tabs.first().cloned();
-            self.selected_session_id = self.active_tab_id.clone();
+    /// Attaches a file to the composer prompt input.
+    pub fn attach_file_to_composer(
+        &mut self,
+        session_id: &str,
+        path: &str,
+        cx: &mut Context<Self>,
+    ) {
+        self.active_file_drop_target = None;
+        self.focus_pane(session_id.to_string(), cx);
+
+        self.prompt_input.update(cx, |input, cx| {
+            let current = input.text();
+            let addition = if current.trim().is_empty() || current.ends_with(' ') {
+                format!("@{path} ")
+            } else {
+                format!(" @{path} ")
+            };
+            input.set_text(format!("{current}{addition}"), cx);
+        });
+        cx.notify();
+    }
+
+    /// Attaches external files dropped from the OS (Finder) to the composer.
+    pub fn attach_external_paths_to_composer(
+        &mut self,
+        session_id: &str,
+        paths: &[std::path::PathBuf],
+        cx: &mut Context<Self>,
+    ) {
+        self.active_file_drop_target = None;
+        self.focus_pane(session_id.to_string(), cx);
+
+        let cwd_path = std::path::Path::new(&self.workspace.cwd);
+        let mut additions = Vec::new();
+        for path in paths {
+            let rel = path.strip_prefix(cwd_path).unwrap_or(path);
+            additions.push(format!("@{} ", rel.to_string_lossy()));
+        }
+
+        if !additions.is_empty() {
+            let added_text = additions.join("");
+            self.prompt_input.update(cx, |input, cx| {
+                let current = input.text();
+                let spacer = if current.is_empty() || current.ends_with(' ') {
+                    ""
+                } else {
+                    " "
+                };
+                input.set_text(format!("{current}{spacer}{added_text}"), cx);
+            });
         }
         cx.notify();
     }
 
     pub fn toggle_pin_session(&mut self, id: &str, cx: &mut Context<Self>) {
-        let Some(session) = self.sessions.iter_mut().find(|s| s.id == id) else { return };
+        let Some(session) = self.sessions.iter_mut().find(|s| s.id == id) else {
+            return;
+        };
         let was_pinned = session.pinned;
         if let Err(err) = self.db.toggle_pinned(id, was_pinned) {
             log::error!("failed to toggle pin for {id}: {err:#}");
@@ -459,56 +649,6 @@ impl BenCodeApp {
         }
         session.pinned = !was_pinned;
         cx.notify();
-    }
-
-    pub fn delete_session(&mut self, id: &str, cx: &mut Context<Self>) {
-        if self.active_run.as_ref().is_some_and(|run| run.session_id == id) {
-            log::warn!("refusing to delete session {id} while its agent is running");
-            return;
-        }
-        if let Err(err) = self.db.delete_session(id) {
-            log::error!("failed to delete session {id}: {err:#}");
-            return;
-        }
-        self.sessions.retain(|s| s.id != id);
-        self.close_tab(id, cx);
-        cx.notify();
-    }
-
-    pub fn create_new_session(&mut self, cx: &mut Context<Self>) {
-        let now = now_ms();
-        let id = format!("bencode-{now}");
-        let harness = catalog::find(&self.selected_model)
-            .map(|m| m.harness)
-            .unwrap_or(HarnessKind::Claude);
-        let branch = Some(self.git_status.branch.clone()).filter(|b| !b.is_empty());
-
-        let mut welcome = Block::new(
-            "b1",
-            "assistant",
-            "Ready for your instructions. I can edit files, run commands, and inspect git diffs.",
-        );
-        welcome.started_at = Some(now);
-
-        let session = SessionRow {
-            id: id.clone(),
-            title: NEW_SESSION_TITLE.to_string(),
-            cwd: self.current_cwd.clone(),
-            harness: harness.id().to_string(),
-            model: self.selected_model.clone(),
-            created_at: now,
-            updated_at: now,
-            branch,
-            context_used: Some(0),
-            context_window: Some(DEFAULT_CONTEXT_WINDOW),
-            blocks: vec![welcome],
-            ..Default::default()
-        };
-
-        self.sessions.insert(0, session);
-        self.persist_session(&id);
-        self.open_tabs.push(id.clone());
-        self.switch_tab(id, cx);
     }
 }
 
@@ -530,37 +670,67 @@ impl Render for BenCodeApp {
         let (bg, fg) = (colors.bg, colors.fg);
 
         FocusScope::new(&self.focus_handle).root().child(
-            div()
+            Self::bind_commands(div().id("bencode-root"), cx)
                 .flex()
                 .flex_col()
                 .size_full()
                 .bg(bg)
                 .text_color(fg)
-                .child(self.render_titlebar(cx))
                 .child(
                     div()
                         .flex()
                         .flex_1()
+                        .size_full()
                         .min_h_0()
                         .overflow_hidden()
+                        // Column 1: Leftmost Project Rail
                         .child(self.render_project_rail(cx))
-                        .child(match self.sidebar_mode {
-                            SidebarMode::Sessions => self.render_sidebar(cx).into_any_element(),
-                            SidebarMode::Files => self.render_file_tree(cx).into_any_element(),
-                            SidebarMode::Changes => self.render_git_changes_panel(cx).into_any_element(),
-                        })
-                        .child(match self.active_view_mode {
-                            ViewMode::Chat => self.render_transcript_panel(cx).into_any_element(),
-                            ViewMode::Changes => self.render_diff_viewer(cx).into_any_element(),
-                            ViewMode::Terminal => self.render_terminal_pane(cx).into_any_element(),
-                        }),
+                        // Column 2: Workspace Sidebar (when open)
+                        .when(self.is_sidebar_open, |el| el.child(self.render_sidebar(cx)))
+                        // Column 3: Main Area (TitleBar + Views + Terminal Drawer + UsageFooter)
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .flex_1()
+                                .h_full()
+                                .min_w_0()
+                                .overflow_hidden()
+                                .child(self.render_titlebar(cx))
+                                .child(div().flex().flex_1().min_h_0().overflow_hidden().child(
+                                    match self.active_view_mode {
+                                        ViewMode::Chat => {
+                                            self.render_transcript_panel(cx).into_any_element()
+                                        }
+                                        ViewMode::Editor => {
+                                            self.render_editor_pane(window, cx).into_any_element()
+                                        }
+                                        ViewMode::Changes => {
+                                            self.render_diff_viewer(cx).into_any_element()
+                                        }
+                                    },
+                                ))
+                                .when(self.is_terminal_open, |el| {
+                                    el.child(self.render_terminal_drawer(cx))
+                                })
+                                .child(self.render_usage_footer(cx)),
+                        ),
                 )
-                .child(self.render_usage_footer(cx))
-                .when(self.is_settings_open, |el| el.child(self.render_settings_modal(cx)))
-                .when(self.is_notes_open, |el| el.child(self.render_notes_modal(cx)))
-                .when(self.is_automations_open, |el| el.child(self.render_automations_modal(cx)))
-                .when(self.is_search_open, |el| el.child(self.render_search_modal(cx)))
-                .when(self.is_inbox_open, |el| el.child(self.render_inbox_modal(cx)))
+                .when(self.is_settings_open, |el| {
+                    el.child(self.render_settings_modal(cx))
+                })
+                .when(self.is_notes_open, |el| {
+                    el.child(self.render_notes_modal(cx))
+                })
+                .when(self.is_automations_open, |el| {
+                    el.child(self.render_automations_modal(cx))
+                })
+                .when(self.is_search_open, |el| {
+                    el.child(self.render_search_modal(cx))
+                })
+                .when(self.is_inbox_open, |el| {
+                    el.child(self.render_inbox_modal(cx))
+                })
                 .children(self.render_session_dialog(cx))
                 .children(self.render_git_confirm(cx)),
         )
@@ -575,15 +745,29 @@ mod tests {
     fn trigger_query_detects_word_start_tokens() {
         assert_eq!(trigger_query("/rev", '/').as_deref(), Some("rev"));
         assert_eq!(trigger_query("fix @Src/Ma", '@').as_deref(), Some("src/ma"));
-        assert_eq!(trigger_query("a/b", '/'), None, "mid-word slash is a path, not a skill");
-        assert_eq!(trigger_query("@file done", '@'), None, "token already finished");
+        assert_eq!(
+            trigger_query("a/b", '/'),
+            None,
+            "mid-word slash is a path, not a skill"
+        );
+        assert_eq!(
+            trigger_query("@file done", '@'),
+            None,
+            "token already finished"
+        );
         assert_eq!(trigger_query("xin chào /ski", '/').as_deref(), Some("ski"));
     }
 
     #[test]
     fn recent_projects_are_unique_and_current_first() {
-        let session = |cwd: &str| SessionRow { cwd: cwd.into(), ..Default::default() };
-        let projects = recent_projects("/here", &[session("/a"), session("/here"), session("/a"), session("")]);
+        let session = |cwd: &str| SessionRow {
+            cwd: cwd.into(),
+            ..Default::default()
+        };
+        let projects = recent_projects(
+            "/here",
+            &[session("/a"), session("/here"), session("/a"), session("")],
+        );
         assert_eq!(projects, ["/here", "/a"]);
     }
 }

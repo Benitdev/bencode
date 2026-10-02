@@ -106,7 +106,15 @@ pub(crate) fn str_field<'a>(value: &'a Value, key: &str) -> Option<&'a str> {
 
 /// One-line, human-readable summary of a tool call for approval prompts.
 pub fn summarize_tool_input(tool: &str, input: &Value) -> String {
-    let preferred = ["command", "file_path", "path", "pattern", "url", "query", "description"];
+    let preferred = [
+        "command",
+        "file_path",
+        "path",
+        "pattern",
+        "url",
+        "query",
+        "description",
+    ];
     let summary = preferred
         .iter()
         .find_map(|key| str_field(input, key))
@@ -132,16 +140,31 @@ mod tests {
 
     #[test]
     fn harness_ids_round_trip() {
-        for kind in [HarnessKind::Claude, HarnessKind::Antigravity, HarnessKind::Codex, HarnessKind::OpenCode] {
+        for kind in [
+            HarnessKind::Claude,
+            HarnessKind::Antigravity,
+            HarnessKind::Codex,
+            HarnessKind::OpenCode,
+        ] {
             assert_eq!(HarnessKind::from_id(kind.id()), Some(kind));
         }
-        assert_eq!(HarnessKind::from_id("pi"), None, "unsupported harnesses must not silently become Claude");
+        assert_eq!(
+            HarnessKind::from_id("pi"),
+            None,
+            "unsupported harnesses must not silently become Claude"
+        );
     }
 
     #[test]
     fn summary_prefers_meaningful_fields_and_truncates_on_char_boundary() {
-        assert_eq!(summarize_tool_input("Bash", &json!({"command": "ls -la"})), "ls -la");
-        assert_eq!(summarize_tool_input("Edit", &json!({"file_path": "/a.rs", "old": "x"})), "/a.rs");
+        assert_eq!(
+            summarize_tool_input("Bash", &json!({"command": "ls -la"})),
+            "ls -la"
+        );
+        assert_eq!(
+            summarize_tool_input("Edit", &json!({"file_path": "/a.rs", "old": "x"})),
+            "/a.rs"
+        );
         let long = "é".repeat(SUMMARY_MAX_CHARS + 10);
         let summary = summarize_tool_input("Bash", &json!({ "command": long }));
         assert_eq!(summary.chars().count(), SUMMARY_MAX_CHARS + 1);

@@ -7,6 +7,21 @@ use anyhow::{Context as _, Result, bail};
 mod rows;
 pub use rows::{DiffRow, number_rows, unified_text};
 
+// Ported engines that the app does not call yet; wiring them in is tracked in
+// docs/migration/TODO-100-PERCENT-COVERAGE.md (2.1, 2.2). `expect` (not
+// `allow`) so the attribute errors out as soon as the code becomes live.
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "worktree engine is not wired into the app yet")
+)]
+pub mod worktrees;
+
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "checkpoint engine is not wired into the app yet")
+)]
+pub mod checkpoint;
+
 /// Fallback branch name shown when git cannot tell us anything better.
 const DEFAULT_BRANCH: &str = "main";
 /// Well-known SHA-1 empty tree; used only if `git hash-object` fails.
@@ -66,9 +81,16 @@ pub struct GitDetailedStatus {
 
 fn git_command(cwd: &str) -> Command {
     let mut cmd = Command::new("git");
-    cmd.args(["-C", cwd, "-c", "core.quotepath=false", "-c", "color.ui=never"])
-        // Status polling from the UI must not fight other git processes for index.lock.
-        .env("GIT_OPTIONAL_LOCKS", "0");
+    cmd.args([
+        "-C",
+        cwd,
+        "-c",
+        "core.quotepath=false",
+        "-c",
+        "color.ui=never",
+    ])
+    // Status polling from the UI must not fight other git processes for index.lock.
+    .env("GIT_OPTIONAL_LOCKS", "0");
     cmd
 }
 
@@ -231,10 +253,7 @@ fn parse_numstat_z(raw: &[u8]) -> NumstatMap {
         } else {
             path.to_string()
         };
-        map.insert(
-            key,
-            (adds.parse().unwrap_or(0), dels.parse().unwrap_or(0)),
-        );
+        map.insert(key, (adds.parse().unwrap_or(0), dels.parse().unwrap_or(0)));
     }
     map
 }
@@ -310,12 +329,7 @@ fn combined_status(entry: &StatusEntry) -> GitFileStatus {
     }
 }
 
-fn make_change(
-    path: &str,
-    status: GitFileStatus,
-    cwd: &str,
-    stats: &NumstatMap,
-) -> GitFileChange {
+fn make_change(path: &str, status: GitFileStatus, cwd: &str, stats: &NumstatMap) -> GitFileChange {
     let (additions, deletions) = if status == GitFileStatus::Untracked {
         (count_untracked_lines(cwd, path), 0)
     } else {
@@ -478,7 +492,15 @@ pub fn get_file_diff(cwd: &str, file_path: &str) -> Vec<DiffLineKind> {
     let base = diff_base(cwd);
     let diff = run_git_string(
         cwd,
-        &["diff", "--no-ext-diff", "--no-color", "-U3", base.as_str(), "--", file_path],
+        &[
+            "diff",
+            "--no-ext-diff",
+            "--no-color",
+            "-U3",
+            base.as_str(),
+            "--",
+            file_path,
+        ],
     )
     .unwrap_or_default();
     if !diff.trim().is_empty() {
@@ -508,7 +530,11 @@ fn get_untracked_diff(cwd: &str, file_path: &str) -> Vec<DiffLineKind> {
                 content.lines().count()
             ));
             std::iter::once(header)
-                .chain(content.lines().map(|l| DiffLineKind::Addition(l.to_string())))
+                .chain(
+                    content
+                        .lines()
+                        .map(|l| DiffLineKind::Addition(l.to_string())),
+                )
                 .collect()
         }
         None => vec![DiffLineKind::Header(format!(
@@ -573,7 +599,11 @@ pub fn unstage_file(cwd: &str, file: &str) -> Result<()> {
     let paths = paths_with_rename_origin(cwd, file);
     let head_args = ["reset", "-q", "HEAD", "--"];
     let unborn_args = ["rm", "--cached", "-r", "-q", "--ignore-unmatch", "--"];
-    let prefix: &[&str] = if has_head(cwd) { &head_args } else { &unborn_args };
+    let prefix: &[&str] = if has_head(cwd) {
+        &head_args
+    } else {
+        &unborn_args
+    };
     let args: Vec<&str> = prefix
         .iter()
         .copied()
@@ -585,9 +615,9 @@ pub fn unstage_file(cwd: &str, file: &str) -> Result<()> {
 fn is_reported_untracked(cwd: &str, file: &str) -> Result<bool> {
     let entries = read_status(cwd)?;
     let trimmed = file.trim_end_matches('/');
-    Ok(entries.iter().any(|e| {
-        e.is_untracked() && (e.path == file || e.path.trim_end_matches('/') == trimmed)
-    }))
+    Ok(entries
+        .iter()
+        .any(|e| e.is_untracked() && (e.path == file || e.path.trim_end_matches('/') == trimmed)))
 }
 
 /// Discards unstaged changes to `file`.
@@ -627,7 +657,11 @@ pub fn unstage_all(cwd: &str) -> Result<()> {
     if has_head(cwd) {
         run_git(cwd, &["reset", "-q"]).map(|_| ())
     } else {
-        run_git(cwd, &["rm", "--cached", "-r", "-q", "--ignore-unmatch", "--", "."]).map(|_| ())
+        run_git(
+            cwd,
+            &["rm", "--cached", "-r", "-q", "--ignore-unmatch", "--", "."],
+        )
+        .map(|_| ())
     }
 }
 
@@ -871,7 +905,10 @@ mod tests {
 
         let changes = get_workspace_changes(repo.cwd());
 
-        assert_eq!(find(&changes, "new name.txt").status, GitFileStatus::Renamed);
+        assert_eq!(
+            find(&changes, "new name.txt").status,
+            GitFileStatus::Renamed
+        );
         let modified = find(&changes, "mod.txt");
         assert_eq!(modified.status, GitFileStatus::Modified);
         assert_eq!((modified.additions, modified.deletions), (1, 0));
@@ -912,8 +949,14 @@ mod tests {
         assert_eq!((staged_a.additions, staged_a.deletions), (1, 0));
         let unstaged_a = find(&status.unstaged, "a.txt");
         assert_eq!((unstaged_a.additions, unstaged_a.deletions), (2, 0));
-        assert_eq!(find(&status.staged, "r2.txt").status, GitFileStatus::Renamed);
-        assert_eq!(find(&status.unstaged, "u.txt").status, GitFileStatus::Untracked);
+        assert_eq!(
+            find(&status.staged, "r2.txt").status,
+            GitFileStatus::Renamed
+        );
+        assert_eq!(
+            find(&status.unstaged, "u.txt").status,
+            GitFileStatus::Untracked
+        );
         assert_eq!(status.staged.len(), 2);
         assert_eq!(status.unstaged.len(), 2);
     }
@@ -934,7 +977,9 @@ mod tests {
         assert!(get_recent_commits(repo.cwd(), 5).is_empty());
         let diff = get_file_diff(repo.cwd(), "first.txt");
         assert_eq!(
-            diff.iter().filter(|l| matches!(l, DiffLineKind::Addition(_))).count(),
+            diff.iter()
+                .filter(|l| matches!(l, DiffLineKind::Addition(_)))
+                .count(),
             2
         );
     }
@@ -1032,7 +1077,10 @@ mod tests {
         unstage_file(repo.cwd(), "a.txt").expect("unstage one");
         let status = get_detailed_status(repo.cwd());
         assert_eq!(status.staged.len(), 1);
-        assert_eq!(find(&status.unstaged, "a.txt").status, GitFileStatus::Untracked);
+        assert_eq!(
+            find(&status.unstaged, "a.txt").status,
+            GitFileStatus::Untracked
+        );
 
         unstage_all(repo.cwd()).expect("unstage all");
         assert!(get_detailed_status(repo.cwd()).staged.is_empty());

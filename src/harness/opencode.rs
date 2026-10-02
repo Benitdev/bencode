@@ -48,10 +48,13 @@ impl LineParser for OpenCodeParser {
         };
         let mut events = Vec::new();
         if !self.session_announced
-            && let Some(id) = str_field(&rec, "sessionID") {
-                self.session_announced = true;
-                events.push(AgentEvent::SessionStarted { provider_session_id: id.to_string() });
-            }
+            && let Some(id) = str_field(&rec, "sessionID")
+        {
+            self.session_announced = true;
+            events.push(AgentEvent::SessionStarted {
+                provider_session_id: id.to_string(),
+            });
+        }
 
         let part = rec.get("part").unwrap_or(&Value::Null);
         match str_field(&rec, "type") {
@@ -95,7 +98,9 @@ impl LineParser for OpenCodeParser {
 }
 
 fn on_tool_use(part: &Value, events: &mut Vec<AgentEvent>) {
-    let Some(id) = str_field(part, "callID").or_else(|| str_field(part, "id")) else { return };
+    let Some(id) = str_field(part, "callID").or_else(|| str_field(part, "id")) else {
+        return;
+    };
     let state = part.get("state").unwrap_or(&Value::Null);
     events.push(AgentEvent::ToolCallStart {
         id: id.to_string(),
@@ -136,11 +141,25 @@ mod tests {
         assert_eq!(
             events,
             vec![
-                AgentEvent::SessionStarted { provider_session_id: "ses_1".into() },
+                AgentEvent::SessionStarted {
+                    provider_session_id: "ses_1".into()
+                },
                 AgentEvent::TextDelta("Hi".into()),
-                AgentEvent::ToolCallStart { id: "c1".into(), name: "bash".into(), input: json!({"command": "ls"}) },
-                AgentEvent::ToolCallFinish { id: "c1".into(), output: "x".into(), success: true },
-                AgentEvent::Usage { input_tokens: 4, output_tokens: 3, total_tokens: 7 },
+                AgentEvent::ToolCallStart {
+                    id: "c1".into(),
+                    name: "bash".into(),
+                    input: json!({"command": "ls"})
+                },
+                AgentEvent::ToolCallFinish {
+                    id: "c1".into(),
+                    output: "x".into(),
+                    success: true
+                },
+                AgentEvent::Usage {
+                    input_tokens: 4,
+                    output_tokens: 3,
+                    total_tokens: 7
+                },
             ]
         );
     }

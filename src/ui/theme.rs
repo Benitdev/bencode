@@ -5,7 +5,6 @@
 use ely_gpui_component::theme::{Mode, Palette, Theme};
 use gpui::{App, Hsla, rgb, rgba};
 
-
 fn c(hex: u32) -> Hsla {
     rgb(hex).into()
 }

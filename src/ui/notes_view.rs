@@ -40,12 +40,18 @@ fn note_matches(note: &Note, query: &str) -> bool {
 
 /// Whether the editor's fields differ from the stored note.
 fn note_is_dirty(note: &Note, title: &str, body: &str) -> bool {
-    let title = if title.is_empty() { UNTITLED_NOTE } else { title };
+    let title = if title.is_empty() {
+        UNTITLED_NOTE
+    } else {
+        title
+    };
     note.title != title || note.body != body
 }
 
 fn note_preview(body: &str) -> &str {
-    body.lines().find(|line| !line.trim().is_empty()).unwrap_or("Empty note")
+    body.lines()
+        .find(|line| !line.trim().is_empty())
+        .unwrap_or("Empty note")
 }
 
 impl BenCodeApp {
@@ -67,7 +73,10 @@ impl BenCodeApp {
             Ok(notes) => self.notes = notes,
             Err(err) => log::error!("list_notes failed: {err:#}"),
         }
-        let selection_exists = self.selected_note_id.as_ref().is_some_and(|id| self.notes.iter().any(|n| &n.id == id));
+        let selection_exists = self
+            .selected_note_id
+            .as_ref()
+            .is_some_and(|id| self.notes.iter().any(|n| &n.id == id));
         if !selection_exists {
             self.selected_note_id = None;
             match self.notes.first().map(|n| n.id.clone()) {
@@ -104,22 +113,30 @@ impl BenCodeApp {
         }
         if let Some(note) = self.notes.iter().find(|n| n.id == id) {
             let (title, body) = (note.title.clone(), note.body.clone());
-            self.note_title_input.update(cx, |input, cx| input.set_text(title, cx));
-            self.note_body_input.update(cx, |input, cx| input.set_text(body, cx));
+            self.note_title_input
+                .update(cx, |input, cx| input.set_text(title, cx));
+            self.note_body_input
+                .update(cx, |input, cx| input.set_text(body, cx));
         }
         self.selected_note_id = Some(id);
         cx.notify();
     }
 
     fn clear_note_inputs(&mut self, cx: &mut Context<Self>) {
-        self.note_title_input.update(cx, |input, cx| input.set_text("", cx));
-        self.note_body_input.update(cx, |input, cx| input.set_text("", cx));
+        self.note_title_input
+            .update(cx, |input, cx| input.set_text("", cx));
+        self.note_body_input
+            .update(cx, |input, cx| input.set_text("", cx));
     }
 
     /// Saves the open note when its fields differ from what is stored, so
     /// switching, creating or closing never drops edits.
     fn save_note_if_dirty(&mut self, cx: &mut Context<Self>) {
-        let Some(note) = self.selected_note_id.as_ref().and_then(|id| self.notes.iter().find(|n| &n.id == id)) else {
+        let Some(note) = self
+            .selected_note_id
+            .as_ref()
+            .and_then(|id| self.notes.iter().find(|n| &n.id == id))
+        else {
             return;
         };
         let title = self.note_title_input.read(cx).text().trim().to_string();
@@ -130,13 +147,21 @@ impl BenCodeApp {
     }
 
     fn save_selected_note(&mut self, cx: &mut Context<Self>) {
-        let Some(id) = self.selected_note_id.clone() else { return };
-        let Some(pos) = self.notes.iter().position(|n| n.id == id) else { return };
+        let Some(id) = self.selected_note_id.clone() else {
+            return;
+        };
+        let Some(pos) = self.notes.iter().position(|n| n.id == id) else {
+            return;
+        };
         let title = self.note_title_input.read(cx).text().trim().to_string();
         let existing = &self.notes[pos];
         let upsert = NoteUpsert {
             id,
-            title: if title.is_empty() { UNTITLED_NOTE.to_string() } else { title },
+            title: if title.is_empty() {
+                UNTITLED_NOTE.to_string()
+            } else {
+                title
+            },
             body: self.note_body_input.read(cx).text().to_string(),
             tags: existing.tags.clone(),
             source_session_id: existing.source_session_id.clone(),
@@ -166,11 +191,24 @@ impl BenCodeApp {
     }
 
     fn add_selected_note_to_chat(&mut self, cx: &mut Context<Self>) {
-        let Some(note) = self.notes.iter().find(|n| Some(&n.id) == self.selected_note_id.as_ref()) else { return };
-        let block = format!("--- Note: {} (@note/{}) ---\n{}\n--- End Note ---", note.title, note.slug, note.body);
+        let Some(note) = self
+            .notes
+            .iter()
+            .find(|n| Some(&n.id) == self.selected_note_id.as_ref())
+        else {
+            return;
+        };
+        let block = format!(
+            "--- Note: {} (@note/{}) ---\n{}\n--- End Note ---",
+            note.title, note.slug, note.body
+        );
         self.prompt_input.update(cx, |input, cx| {
             let current = input.text().to_string();
-            let text = if current.is_empty() { block } else { format!("{current}\n\n{block}") };
+            let text = if current.is_empty() {
+                block
+            } else {
+                format!("{current}\n\n{block}")
+            };
             input.set_text(text, cx);
         });
         self.close_notes(cx);
@@ -194,20 +232,30 @@ impl BenCodeApp {
 
     fn render_notes_master(&self, cx: &Context<Self>) -> impl IntoElement {
         let query = self.note_filter_query.trim().to_lowercase();
-        let shown: Rc<[usize]> = (0..self.notes.len()).filter(|&ix| note_matches(&self.notes[ix], &query)).collect();
+        let shown: Rc<[usize]> = (0..self.notes.len())
+            .filter(|&ix| note_matches(&self.notes[ix], &query))
+            .collect();
         let list = if shown.is_empty() {
             EmptyState::new("notes-empty", IconName::FileText, "No notes")
-                .body(if query.is_empty() { "Create one to start a scratchpad." } else { "Nothing matches the filter." })
+                .body(if query.is_empty() {
+                    "Create one to start a scratchpad."
+                } else {
+                    "Nothing matches the filter."
+                })
                 .into_any_element()
         } else {
             let now = now_ms();
             let rows = cx.processor({
                 let shown = shown.clone();
                 move |this, range: std::ops::Range<usize>, _, cx| {
-                    range.map(|row| this.render_note_row(shown[row], now, cx)).collect::<Vec<_>>()
+                    range
+                        .map(|row| this.render_note_row(shown[row], now, cx))
+                        .collect::<Vec<_>>()
                 }
             });
-            uniform_list("notes-list", shown.len(), rows).size_full().into_any_element()
+            uniform_list("notes-list", shown.len(), rows)
+                .size_full()
+                .into_any_element()
         };
         div()
             .flex()
@@ -220,7 +268,12 @@ impl BenCodeApp {
                     .flex()
                     .items_center()
                     .gap_2()
-                    .child(div().flex_1().child(SearchInput::new("notes-filter", &self.note_filter_input).size(ControlSize::Sm)))
+                    .child(
+                        div().flex_1().child(
+                            SearchInput::new("notes-filter", &self.note_filter_input)
+                                .size(ControlSize::Sm),
+                        ),
+                    )
                     .child(
                         IconButton::new("notes-new", IconName::Plus)
                             .size(ControlSize::Sm)
@@ -244,7 +297,11 @@ impl BenCodeApp {
     fn render_note_detail(&self, cx: &Context<Self>) -> AnyElement {
         let Some(id) = self.selected_note_id.clone() else {
             return EmptyState::new("note-none", IconName::FileText, "No note selected")
-                .action(Button::new("note-none-new", "New note").primary().on_click(cx.listener(|this, _, _, cx| this.create_new_note(cx))))
+                .action(
+                    Button::new("note-none-new", "New note")
+                        .primary()
+                        .on_click(cx.listener(|this, _, _, cx| this.create_new_note(cx))),
+                )
                 .into_any_element();
         };
         let toolbar = div()
@@ -258,7 +315,12 @@ impl BenCodeApp {
                     .icon(IconName::MessageSquare)
                     .on_click(cx.listener(|this, _, _, cx| this.add_selected_note_to_chat(cx))),
             )
-            .child(Button::new("note-save", "Save").primary().icon(IconName::Save).on_click(cx.listener(|this, _, _, cx| this.save_selected_note(cx))))
+            .child(
+                Button::new("note-save", "Save")
+                    .primary()
+                    .icon(IconName::Save)
+                    .on_click(cx.listener(|this, _, _, cx| this.save_selected_note(cx))),
+            )
             .child(
                 IconButton::new("note-delete", IconName::Trash2)
                     .variant(ButtonVariant::Ghost)
@@ -280,17 +342,26 @@ impl BenCodeApp {
 
     fn render_note_delete_confirm(&self, cx: &Context<Self>) -> Option<impl IntoElement> {
         let id = self.note_pending_delete.clone()?;
-        let title = self.notes.iter().find(|n| n.id == id).map_or(UNTITLED_NOTE, |n| n.title.as_str());
+        let title = self
+            .notes
+            .iter()
+            .find(|n| n.id == id)
+            .map_or(UNTITLED_NOTE, |n| n.title.as_str());
         let close = app_callback(cx, |this, cx| {
             this.note_pending_delete = None;
             cx.notify();
         });
         let delete = app_callback(cx, move |this, cx| this.delete_note(&id, cx));
         Some(
-            ConfirmDialog::new("note-delete-confirm", "Delete note?", format!("“{title}” will be removed."), close)
-                .confirm("Delete")
-                .destructive()
-                .on_confirm(delete),
+            ConfirmDialog::new(
+                "note-delete-confirm",
+                "Delete note?",
+                format!("“{title}” will be removed."),
+                close,
+            )
+            .confirm("Delete")
+            .destructive()
+            .on_confirm(delete),
         )
     }
 }
@@ -340,7 +411,11 @@ mod tests {
 
     #[test]
     fn dirty_check_treats_blank_title_as_untitled() {
-        let note = Note { title: UNTITLED_NOTE.into(), body: "x".into(), ..Default::default() };
+        let note = Note {
+            title: UNTITLED_NOTE.into(),
+            body: "x".into(),
+            ..Default::default()
+        };
         assert!(!note_is_dirty(&note, "", "x"));
         assert!(note_is_dirty(&note, "", "y"));
         assert!(note_is_dirty(&note, "Plan", "x"));

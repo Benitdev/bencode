@@ -23,7 +23,12 @@ const CLAUDE: BinarySpec = BinarySpec {
     id: "claude",
     name: "Claude Code",
     binary: "claude",
-    home_dirs: &[".local/bin", ".claude/local", ".local/share/claude", ".npm-global/bin"],
+    home_dirs: &[
+        ".local/bin",
+        ".claude/local",
+        ".local/share/claude",
+        ".npm-global/bin",
+    ],
 };
 const ANTIGRAVITY: BinarySpec = BinarySpec {
     id: "antigravity",
@@ -115,7 +120,10 @@ mod tests {
     #[test]
     fn discover_lists_every_known_harness_once() {
         let ids: Vec<_> = HarnessResolver::discover().iter().map(|h| h.id).collect();
-        assert_eq!(ids, ["claude", "antigravity", "codex", "cursor", "opencode"]);
+        assert_eq!(
+            ids,
+            ["claude", "antigravity", "codex", "cursor", "opencode"]
+        );
     }
 
     #[test]

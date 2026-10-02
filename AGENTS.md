@@ -137,6 +137,9 @@ cx.spawn(async move |this, cx| {
 - Model keys use MonoCode's `harness:model` form (`claude:opus`). See `harness/catalog.rs`; never pass display names to `--model`.
 - BenCode writes MonoCode's real DB. Keep unknown JSON fields round-tripping (`Block.extra`, `AutomationRow.extra`) and never `let _ =` a DB/git `Result`. Log it or show it.
 - Transcript blocks use MonoCode roles: `user`, `assistant`, `reasoning`, `tool`, `system`.
+- **Shortcuts and menus** live only in `src/app/commands.rs` (GPUI `actions!`, `bind_keys`, `set_menus`, handlers in `bind_commands`). Never match raw keystrokes in `on_key_down`.
+- **Preferences** persist through `src/app/preferences.rs` setters (`set_permission_mode`, `set_terminal_open`, `set_theme_mode`, `save_settings`) into `settings.json`; do not mutate those fields directly.
+- **Discovery that touches PATH or config files** (external editors, MCP) is cached in `self.integrations` (`src/app/integrations.rs`); never call the discovery functions from render or per click.
 
 ---
 

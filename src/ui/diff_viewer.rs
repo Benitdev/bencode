@@ -1,12 +1,12 @@
 //! Changes view: changed files on the left, the selected file's diff on the right.
 //! Diff rows are numbered and virtualized; nothing here touches git.
 
-use ely_gpui_component::buttons::CopyButton;
+use ely_gpui_component::buttons::{ButtonVariant, CopyButton, IconButton};
 use ely_gpui_component::feedback::EmptyState;
 use ely_gpui_component::files::FileIcon;
 use ely_gpui_component::git::{DiffStat, GitStatusBadge};
 use ely_gpui_component::primitives::IconName;
-use ely_gpui_component::theme::{ActiveTheme, IconSize, Palette, TextSize};
+use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize, Palette, TextSize};
 use gpui::{
     AnyElement, App, Context, FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement,
     SharedString, Styled, div, prelude::*, px, uniform_list,
@@ -47,7 +47,13 @@ fn diff_row(row: &DiffRow, cx: &App) -> AnyElement {
     let theme = cx.theme();
     let (sign, fg, bg) = row_style(&row.kind, &theme.colors);
     let subtle = theme.colors.fg_subtle;
-    let gutter = |number: Option<u32>| div().w(LINE_NUMBER_WIDTH).flex_none().text_color(subtle).child(line_number(number));
+    let gutter = |number: Option<u32>| {
+        div()
+            .w(LINE_NUMBER_WIDTH)
+            .flex_none()
+            .text_color(subtle)
+            .child(line_number(number))
+    };
     div()
         .h(ROW_HEIGHT)
         .flex()
@@ -58,11 +64,18 @@ fn diff_row(row: &DiffRow, cx: &App) -> AnyElement {
         .text_color(fg)
         .font_family(theme.mono_family.clone())
         .text_size(theme.text_size(TextSize::Xs))
-        .when(matches!(row.kind, DiffLineKind::Header(_)), |el| el.font_weight(FontWeight::SEMIBOLD))
+        .when(matches!(row.kind, DiffLineKind::Header(_)), |el| {
+            el.font_weight(FontWeight::SEMIBOLD)
+        })
         .child(gutter(row.old))
         .child(gutter(row.new))
         .child(div().w_3().flex_none().child(sign))
-        .child(div().flex_1().whitespace_nowrap().child(row_text(&row.kind).to_string()))
+        .child(
+            div()
+                .flex_1()
+                .whitespace_nowrap()
+                .child(row_text(&row.kind).to_string()),
+        )
         .into_any_element()
 }
 
@@ -107,10 +120,17 @@ impl BenCodeApp {
                         .body("No staged or unstaged changes."),
                 )
             })
-            .children(files.iter().map(|file| self.render_changed_file(file, selected == Some(file.path.as_str()), cx)))
+            .children(files.iter().map(|file| {
+                self.render_changed_file(file, selected == Some(file.path.as_str()), cx)
+            }))
     }
 
-    fn render_changed_file(&self, file: &GitFileChange, active: bool, cx: &Context<Self>) -> impl IntoElement {
+    fn render_changed_file(
+        &self,
+        file: &GitFileChange,
+        active: bool,
+        cx: &Context<Self>,
+    ) -> impl IntoElement {
         let colors = &cx.theme().colors;
         let path = file.path.clone();
         div()
@@ -131,7 +151,10 @@ impl BenCodeApp {
                     .items_center()
                     .gap_2()
                     .min_w_0()
-                    .child(GitStatusBadge::new(SharedString::from(format!("status-{}", file.path)), to_ely_status(&file.status)))
+                    .child(GitStatusBadge::new(
+                        SharedString::from(format!("status-{}", file.path)),
+                        to_ely_status(&file.status),
+                    ))
                     .child(FileIcon::file(&file.path).size(IconSize::Xs))
                     .child(
                         div()
@@ -152,10 +175,18 @@ impl BenCodeApp {
                 .flex_1()
                 .items_center()
                 .justify_center()
-                .child(EmptyState::new("no-diff", IconName::GitPullRequest, "No file selected").body("Pick a changed file to see its diff."))
+                .child(
+                    EmptyState::new("no-diff", IconName::GitPullRequest, "No file selected")
+                        .body("Pick a changed file to see its diff."),
+                )
                 .into_any_element();
         };
-        let stat = self.workspace.changes.iter().find(|f| f.path == path).map(|f| (f.additions, f.deletions));
+        let stat = self
+            .workspace
+            .changes
+            .iter()
+            .find(|f| f.path == path)
+            .map(|f| (f.additions, f.deletions));
         let rows = self.workspace.diff.len();
 
         div()
@@ -180,19 +211,47 @@ impl BenCodeApp {
                             .min_w_0()
                             .font_family(theme.mono_family.clone())
                             .text_size(theme.text_size(TextSize::Sm))
-                            .child(div().truncate().child(path))
-                            .when_some(stat, |el, (added, removed)| el.child(DiffStat::new(added, removed))),
+                            .child(div().truncate().child(path.clone()))
+                            .when_some(stat, |el, (added, removed)| {
+                                el.child(DiffStat::new(added, removed))
+                            }),
                     )
-                    .child(CopyButton::new("copy-diff", self.workspace.diff_text.clone())),
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_1()
+                            .child({
+                                let file_rel = path.clone();
+                                IconButton::new("diff-open-editor", IconName::ExternalLink)
+                                    .size(ControlSize::Sm)
+                                    .variant(ButtonVariant::Ghost)
+                                    .tooltip("Open file in external editor")
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        this.open_in_external_editor(Some(&file_rel), Some(1), cx);
+                                    }))
+                            })
+                            .child(CopyButton::new(
+                                "copy-diff",
+                                self.workspace.diff_text.clone(),
+                            )),
+                    ),
             )
             .child(if rows == 0 {
-                div().p_6().text_color(theme.colors.fg_subtle).child("No textual changes.").into_any_element()
+                div()
+                    .p_6()
+                    .text_color(theme.colors.fg_subtle)
+                    .child("No textual changes.")
+                    .into_any_element()
             } else {
                 uniform_list(
                     "diff-rows",
                     rows,
                     cx.processor(|this, range: std::ops::Range<usize>, _, cx| {
-                        this.workspace.diff[range].iter().map(|row| diff_row(row, cx)).collect::<Vec<_>>()
+                        this.workspace.diff[range]
+                            .iter()
+                            .map(|row| diff_row(row, cx))
+                            .collect::<Vec<_>>()
                     }),
                 )
                 .flex_1()

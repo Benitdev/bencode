@@ -125,19 +125,27 @@ impl ClaudeParser {
         }
         if let Some(id) = str_field(rec, "session_id").filter(|id| !id.is_empty()) {
             self.session_announced = true;
-            events.push(AgentEvent::SessionStarted { provider_session_id: id.to_string() });
+            events.push(AgentEvent::SessionStarted {
+                provider_session_id: id.to_string(),
+            });
         }
     }
 
     fn on_stream_event(&mut self, rec: &Value, events: &mut Vec<AgentEvent>) {
-        let Some(event) = rec.get("event") else { return };
+        let Some(event) = rec.get("event") else {
+            return;
+        };
         match str_field(event, "type") {
             Some("message_start") => {
-                self.current_stream_message =
-                    event.pointer("/message/id").and_then(Value::as_str).map(String::from);
+                self.current_stream_message = event
+                    .pointer("/message/id")
+                    .and_then(Value::as_str)
+                    .map(String::from);
             }
             Some("content_block_delta") => {
-                let Some(delta) = event.get("delta") else { return };
+                let Some(delta) = event.get("delta") else {
+                    return;
+                };
                 match str_field(delta, "type") {
                     Some("text_delta") => {
                         if let Some(text) = str_field(delta, "text").filter(|t| !t.is_empty()) {
@@ -160,9 +168,14 @@ impl ClaudeParser {
     }
 
     fn on_assistant(&mut self, rec: &Value, events: &mut Vec<AgentEvent>) {
-        let Some(message) = rec.get("message") else { return };
-        let already_streamed = str_field(message, "id").is_some_and(|id| self.streamed_messages.contains(id));
-        let Some(content) = message.get("content").and_then(Value::as_array) else { return };
+        let Some(message) = rec.get("message") else {
+            return;
+        };
+        let already_streamed =
+            str_field(message, "id").is_some_and(|id| self.streamed_messages.contains(id));
+        let Some(content) = message.get("content").and_then(Value::as_array) else {
+            return;
+        };
 
         for block in content {
             match str_field(block, "type") {
@@ -172,7 +185,9 @@ impl ClaudeParser {
                     }
                 }
                 Some("tool_use") => {
-                    let Some(id) = str_field(block, "id") else { continue };
+                    let Some(id) = str_field(block, "id") else {
+                        continue;
+                    };
                     if !self.started_tools.insert(id.to_string()) {
                         continue;
                     }
@@ -189,13 +204,23 @@ impl ClaudeParser {
 }
 
 fn on_user(rec: &Value, events: &mut Vec<AgentEvent>) {
-    let Some(content) = rec.pointer("/message/content").and_then(Value::as_array) else { return };
-    for block in content.iter().filter(|b| str_field(b, "type") == Some("tool_result")) {
-        let Some(id) = str_field(block, "tool_use_id") else { continue };
+    let Some(content) = rec.pointer("/message/content").and_then(Value::as_array) else {
+        return;
+    };
+    for block in content
+        .iter()
+        .filter(|b| str_field(b, "type") == Some("tool_result"))
+    {
+        let Some(id) = str_field(block, "tool_use_id") else {
+            continue;
+        };
         events.push(AgentEvent::ToolCallFinish {
             id: id.to_string(),
             output: tool_result_text(block.get("content")),
-            success: !block.get("is_error").and_then(Value::as_bool).unwrap_or(false),
+            success: !block
+                .get("is_error")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
         });
     }
 }
@@ -214,12 +239,18 @@ fn tool_result_text(content: Option<&Value>) -> String {
 }
 
 fn on_control_request(rec: &Value, events: &mut Vec<AgentEvent>) {
-    let Some(request) = rec.get("request") else { return };
+    let Some(request) = rec.get("request") else {
+        return;
+    };
     if str_field(request, "subtype") != Some("can_use_tool") {
         return;
     }
-    let Some(request_id) = str_field(rec, "request_id") else { return };
-    let tool = str_field(request, "tool_name").unwrap_or("tool").to_string();
+    let Some(request_id) = str_field(rec, "request_id") else {
+        return;
+    };
+    let tool = str_field(request, "tool_name")
+        .unwrap_or("tool")
+        .to_string();
     let input = request.get("input").cloned().unwrap_or_else(|| json!({}));
     events.push(AgentEvent::PermissionRequest(PermissionRequest {
         request_id: request_id.to_string(),
@@ -232,8 +263,9 @@ fn on_control_request(rec: &Value, events: &mut Vec<AgentEvent>) {
 fn on_result(rec: &Value, events: &mut Vec<AgentEvent>) {
     if let Some(usage) = rec.get("usage") {
         let field = |name: &str| usage.get(name).and_then(Value::as_u64).unwrap_or(0);
-        let input_tokens =
-            field("input_tokens") + field("cache_read_input_tokens") + field("cache_creation_input_tokens");
+        let input_tokens = field("input_tokens")
+            + field("cache_read_input_tokens")
+            + field("cache_creation_input_tokens");
         let output_tokens = field("output_tokens");
         events.push(AgentEvent::Usage {
             input_tokens,
@@ -242,7 +274,10 @@ fn on_result(rec: &Value, events: &mut Vec<AgentEvent>) {
         });
     }
 
-    let is_error = rec.get("is_error").and_then(Value::as_bool).unwrap_or(false);
+    let is_error = rec
+        .get("is_error")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
     if is_error {
         let message = str_field(rec, "result")
             .or_else(|| str_field(rec, "subtype"))
@@ -260,7 +295,10 @@ mod tests {
 
     fn parse_all(lines: &[&str]) -> Vec<AgentEvent> {
         let mut parser = ClaudeParser::default();
-        lines.iter().flat_map(|line| parser.parse_line(line)).collect()
+        lines
+            .iter()
+            .flat_map(|line| parser.parse_line(line))
+            .collect()
     }
 
     fn request(policy: PermissionPolicy) -> SpawnRequest {
@@ -277,17 +315,30 @@ mod tests {
     #[test]
     fn args_use_stream_json_protocol_and_map_policy() {
         let ask = build_args(&request(PermissionPolicy::Ask));
-        assert!(ask.windows(2).any(|w| w == ["--input-format", "stream-json"]));
-        assert!(ask.windows(2).any(|w| w == ["--permission-prompt-tool", "stdio"]));
+        assert!(
+            ask.windows(2)
+                .any(|w| w == ["--input-format", "stream-json"])
+        );
+        assert!(
+            ask.windows(2)
+                .any(|w| w == ["--permission-prompt-tool", "stdio"])
+        );
         assert!(ask.windows(2).any(|w| w == ["--model", "opus"]));
         assert!(ask.windows(2).any(|w| w == ["--resume", "sess-1"]));
-        assert!(!ask.contains(&"hi".to_string()), "prompt must go over stdin, not argv");
+        assert!(
+            !ask.contains(&"hi".to_string()),
+            "prompt must go over stdin, not argv"
+        );
 
         let auto = build_args(&request(PermissionPolicy::AutoApprove));
         assert!(auto.contains(&"--dangerously-skip-permissions".to_string()));
 
         let read_only = build_args(&request(PermissionPolicy::ReadOnly));
-        assert!(read_only.windows(2).any(|w| w == ["--permission-mode", "plan"]));
+        assert!(
+            read_only
+                .windows(2)
+                .any(|w| w == ["--permission-mode", "plan"])
+        );
     }
 
     #[test]
@@ -302,7 +353,9 @@ mod tests {
         assert_eq!(
             events,
             vec![
-                AgentEvent::SessionStarted { provider_session_id: "s1".into() },
+                AgentEvent::SessionStarted {
+                    provider_session_id: "s1".into()
+                },
                 AgentEvent::TextDelta("Hel".into()),
                 AgentEvent::TextDelta("lo".into()),
             ]
@@ -319,8 +372,16 @@ mod tests {
         assert_eq!(
             events,
             vec![
-                AgentEvent::ToolCallStart { id: "t1".into(), name: "Bash".into(), input: json!({"command": "echo hi"}) },
-                AgentEvent::ToolCallFinish { id: "t1".into(), output: "hi".into(), success: true },
+                AgentEvent::ToolCallStart {
+                    id: "t1".into(),
+                    name: "Bash".into(),
+                    input: json!({"command": "echo hi"})
+                },
+                AgentEvent::ToolCallFinish {
+                    id: "t1".into(),
+                    output: "hi".into(),
+                    success: true
+                },
             ]
         );
     }
@@ -347,7 +408,10 @@ mod tests {
         assert_eq!(allow["type"], "control_response");
         assert_eq!(allow["response"]["request_id"], "r1");
         assert_eq!(allow["response"]["response"]["behavior"], "allow");
-        assert_eq!(allow["response"]["response"]["updatedInput"]["command"], "rm -rf build");
+        assert_eq!(
+            allow["response"]["response"]["updatedInput"]["command"],
+            "rm -rf build"
+        );
 
         let deny: Value = serde_json::from_str(&permission_response(req, false)).unwrap();
         assert_eq!(deny["response"]["response"]["behavior"], "deny");
@@ -361,15 +425,23 @@ mod tests {
         assert_eq!(
             ok,
             vec![
-                AgentEvent::Usage { input_tokens: 100, output_tokens: 5, total_tokens: 105 },
+                AgentEvent::Usage {
+                    input_tokens: 100,
+                    output_tokens: 5,
+                    total_tokens: 105
+                },
                 AgentEvent::Done(DoneStatus::Completed),
             ]
         );
 
-        let failed = parse_all(&[r#"{"type":"result","subtype":"error_max_turns","is_error":true}"#]);
+        let failed =
+            parse_all(&[r#"{"type":"result","subtype":"error_max_turns","is_error":true}"#]);
         assert_eq!(
             failed,
-            vec![AgentEvent::Error("error_max_turns".into()), AgentEvent::Done(DoneStatus::Failed)]
+            vec![
+                AgentEvent::Error("error_max_turns".into()),
+                AgentEvent::Done(DoneStatus::Failed)
+            ]
         );
     }
 
@@ -384,7 +456,10 @@ mod tests {
         let req = SpawnRequest {
             harness: crate::harness::HarnessKind::Claude,
             cwd: dir.to_string_lossy().into_owned(),
-            prompt: format!("Use the Write tool to create {} containing exactly: hi", target.display()),
+            prompt: format!(
+                "Use the Write tool to create {} containing exactly: hi",
+                target.display()
+            ),
             model: Some("haiku".into()),
             permission: PermissionPolicy::Ask,
             resume_id: None,
@@ -401,10 +476,28 @@ mod tests {
             seen
         });
 
-        assert!(events.iter().any(|e| matches!(e, AgentEvent::SessionStarted { .. })), "{events:#?}");
-        assert!(events.iter().any(|e| matches!(e, AgentEvent::PermissionRequest(_))), "{events:#?}");
-        assert!(events.iter().any(|e| matches!(e, AgentEvent::ToolCallFinish { success: true, .. })), "{events:#?}");
-        assert_eq!(events.last(), Some(&AgentEvent::Done(DoneStatus::Completed)));
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, AgentEvent::SessionStarted { .. })),
+            "{events:#?}"
+        );
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, AgentEvent::PermissionRequest(_))),
+            "{events:#?}"
+        );
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, AgentEvent::ToolCallFinish { success: true, .. })),
+            "{events:#?}"
+        );
+        assert_eq!(
+            events.last(),
+            Some(&AgentEvent::Done(DoneStatus::Completed))
+        );
         assert_eq!(std::fs::read_to_string(&target).unwrap().trim(), "hi");
         std::fs::remove_dir_all(&dir).unwrap();
     }

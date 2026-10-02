@@ -50,7 +50,10 @@ fn load_snapshot(cwd: &str) -> Snapshot {
         commits: git::get_recent_commits(cwd, RECENT_COMMIT_COUNT),
         branches: git::get_branches(cwd),
         changes: git::get_workspace_changes(cwd),
-        files: list_workspace_files(root, MENTION_FILE_LIMIT).into_iter().map(SharedString::from).collect(),
+        files: list_workspace_files(root, MENTION_FILE_LIMIT)
+            .into_iter()
+            .map(SharedString::from)
+            .collect(),
     }
 }
 
@@ -76,7 +79,9 @@ impl BenCodeApp {
         self.workspace.generation += 1;
         let generation = self.workspace.generation;
         let load_cwd = cwd.clone();
-        let task = cx.background_executor().spawn(async move { load_snapshot(&load_cwd) });
+        let task = cx
+            .background_executor()
+            .spawn(async move { load_snapshot(&load_cwd) });
 
         cx.spawn(async move |this, cx| {
             let snapshot = task.await;

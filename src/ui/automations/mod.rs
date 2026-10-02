@@ -12,9 +12,9 @@ use gpui::{Context, IntoElement, ParentElement, Styled, div};
 
 use jiff::tz::TimeZone;
 
-use crate::schedule;
 use crate::app::{BenCodeApp, ViewMode, now_ms};
 use crate::db::{AutomationRow, AutomationRunRow};
+use crate::schedule;
 use crate::ui::app_callback::app_callback;
 use templates::{AutomationTemplate, BLANK_AUTOMATION};
 
@@ -22,7 +22,15 @@ use templates::{AutomationTemplate, BLANK_AUTOMATION};
 const DEFAULT_AUTOMATION_MODEL: &str = "claude:sonnet";
 const HOUR_MS: i64 = 3_600_000;
 const DAY_MS: i64 = 24 * HOUR_MS;
-const WEEKDAYS: [&str; 7] = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const WEEKDAYS: [&str; 7] = [
+    "Sunday",
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+];
 
 /// A prompt to run in a fresh thread.
 pub struct ThreadRequest {
@@ -41,7 +49,9 @@ fn schedule_label(auto: &AutomationRow) -> String {
         "daily" => format!("Daily at {time}"),
         "weekdays" => format!("Weekdays at {time}"),
         _ => {
-            let day = usize::try_from(auto.day_of_week).ok().and_then(|d| WEEKDAYS.get(d));
+            let day = usize::try_from(auto.day_of_week)
+                .ok()
+                .and_then(|d| WEEKDAYS.get(d));
             format!("{} at {time}", day.unwrap_or(&"Weekly"))
         }
     }
@@ -58,8 +68,14 @@ fn run_status_tone(status: &str) -> Tone {
 }
 
 fn new_automation(draft: &AutomationTemplate, cwd: String, now: i64) -> AutomationRow {
-    let delay = if draft.schedule == "hourly" { HOUR_MS } else { DAY_MS };
-    let next_run_at = schedule::next_run_at(draft.schedule, 0, draft.time, 1, now, &TimeZone::system()).unwrap_or(now + delay);
+    let delay = if draft.schedule == "hourly" {
+        HOUR_MS
+    } else {
+        DAY_MS
+    };
+    let next_run_at =
+        schedule::next_run_at(draft.schedule, 0, draft.time, 1, now, &TimeZone::system())
+            .unwrap_or(now + delay);
     AutomationRow {
         id: format!("auto-{now}"),
         name: draft.name.to_string(),
@@ -81,7 +97,11 @@ fn new_automation(draft: &AutomationTemplate, cwd: String, now: i64) -> Automati
 /// `fallback` when the field was cleared.
 fn non_empty(text: &str, fallback: &str) -> String {
     let text = text.trim();
-    if text.is_empty() { fallback.to_string() } else { text.to_string() }
+    if text.is_empty() {
+        fallback.to_string()
+    } else {
+        text.to_string()
+    }
 }
 
 impl BenCodeApp {
@@ -120,9 +140,12 @@ impl BenCodeApp {
         self.automation_time_error = None;
         if let Some(auto) = self.selected_automation() {
             let (name, prompt, time) = (auto.name.clone(), auto.prompt.clone(), auto.time.clone());
-            self.automation_name_input.update(cx, |input, cx| input.set_text(name, cx));
-            self.automation_prompt_input.update(cx, |input, cx| input.set_text(prompt, cx));
-            self.automation_time_input.update(cx, |input, cx| input.set_text(time, cx));
+            self.automation_name_input
+                .update(cx, |input, cx| input.set_text(name, cx));
+            self.automation_prompt_input
+                .update(cx, |input, cx| input.set_text(prompt, cx));
+            self.automation_time_input
+                .update(cx, |input, cx| input.set_text(time, cx));
         }
         self.load_automation_runs(id);
         cx.notify();
@@ -139,7 +162,9 @@ impl BenCodeApp {
     }
 
     fn insert_automation(&mut self, draft: &AutomationTemplate, cx: &mut Context<Self>) {
-        let cwd = self.selected_session().map_or_else(|| self.current_cwd.clone(), |s| s.cwd.clone());
+        let cwd = self
+            .selected_session()
+            .map_or_else(|| self.current_cwd.clone(), |s| s.cwd.clone());
         let auto = new_automation(draft, cwd, now_ms());
         if let Err(err) = self.db.save_automation(&auto) {
             log::error!("save_automation failed: {err:#}");
@@ -154,13 +179,22 @@ impl BenCodeApp {
     }
 
     fn save_selected_automation(&mut self, cx: &mut Context<Self>) {
-        let Some(auto) = self.selected_automation() else { return };
+        let Some(auto) = self.selected_automation() else {
+            return;
+        };
         let time = non_empty(self.automation_time_input.read(cx).text(), &auto.time);
         let now = now_ms();
-        let Some(next_run_at) =
-            schedule::next_run_at(&auto.schedule_kind, auto.minute, &time, auto.day_of_week, now, &TimeZone::system())
-        else {
-            self.automation_time_error = Some(format!("“{time}” is not a valid 24-hour time such as 09:00."));
+        let Some(next_run_at) = schedule::next_run_at(
+            &auto.schedule_kind,
+            auto.minute,
+            &time,
+            auto.day_of_week,
+            now,
+            &TimeZone::system(),
+        ) else {
+            self.automation_time_error = Some(format!(
+                "“{time}” is not a valid 24-hour time such as 09:00."
+            ));
             cx.notify();
             return;
         };
@@ -202,7 +236,9 @@ impl BenCodeApp {
 
     /// Runs the automation's prompt in a new thread and records a manual run linked to it.
     fn run_selected_automation_now(&mut self, cx: &mut Context<Self>) {
-        let Some(auto) = self.selected_automation().cloned() else { return };
+        let Some(auto) = self.selected_automation().cloned() else {
+            return;
+        };
         let request = ThreadRequest {
             title: auto.name.clone(),
             prompt: auto.prompt.clone(),
@@ -210,7 +246,9 @@ impl BenCodeApp {
             model: Some(auto.model.clone()),
             pinned: false,
         };
-        let Some(session_id) = self.run_in_new_thread(request, cx) else { return };
+        let Some(session_id) = self.run_in_new_thread(request, cx) else {
+            return;
+        };
         let now = now_ms();
         let run = AutomationRunRow {
             id: format!("run-{now}"),
@@ -232,9 +270,16 @@ impl BenCodeApp {
     }
 
     /// Opens a new thread and submits `request.prompt` to its agent. `None` while another agent runs.
-    pub fn run_in_new_thread(&mut self, request: ThreadRequest, cx: &mut Context<Self>) -> Option<String> {
+    pub fn run_in_new_thread(
+        &mut self,
+        request: ThreadRequest,
+        cx: &mut Context<Self>,
+    ) -> Option<String> {
         if self.is_agent_running() {
-            log::warn!("not starting \"{}\": an agent is already running", request.title);
+            log::warn!(
+                "not starting \"{}\": an agent is already running",
+                request.title
+            );
             return None;
         }
         self.create_new_session(cx);
@@ -251,7 +296,8 @@ impl BenCodeApp {
         self.selected_diff_path = None;
         self.refresh_workspace_if_moved(cx);
         self.active_view_mode = ViewMode::Chat;
-        self.prompt_input.update(cx, |input, cx| input.set_text(request.prompt, cx));
+        self.prompt_input
+            .update(cx, |input, cx| input.set_text(request.prompt, cx));
         self.submit_prompt(cx);
         Some(id)
     }
@@ -274,7 +320,11 @@ impl BenCodeApp {
 
     fn render_automation_delete_confirm(&self, cx: &Context<Self>) -> Option<impl IntoElement> {
         let id = self.automation_pending_delete.clone()?;
-        let name = self.automations.iter().find(|a| a.id == id).map_or("this automation", |a| a.name.as_str());
+        let name = self
+            .automations
+            .iter()
+            .find(|a| a.id == id)
+            .map_or("this automation", |a| a.name.as_str());
         let close = app_callback(cx, |this, cx| {
             this.automation_pending_delete = None;
             cx.notify();
@@ -299,16 +349,34 @@ mod tests {
     use super::*;
 
     fn row(kind: &str, time: &str, minute: i64, day: i64) -> AutomationRow {
-        AutomationRow { schedule_kind: kind.into(), time: time.into(), minute, day_of_week: day, ..Default::default() }
+        AutomationRow {
+            schedule_kind: kind.into(),
+            time: time.into(),
+            minute,
+            day_of_week: day,
+            ..Default::default()
+        }
     }
 
     #[test]
     fn schedule_labels_follow_monocode() {
         assert_eq!(schedule_label(&row("hourly", "", 5, 0)), "Hourly at :05");
-        assert_eq!(schedule_label(&row("daily", "09:00", 0, 0)), "Daily at 09:00");
-        assert_eq!(schedule_label(&row("weekdays", "08:30", 0, 0)), "Weekdays at 08:30");
-        assert_eq!(schedule_label(&row("weekly", "10:00", 0, 1)), "Monday at 10:00");
-        assert_eq!(schedule_label(&row("weekly", "10:00", 0, 9)), "Weekly at 10:00");
+        assert_eq!(
+            schedule_label(&row("daily", "09:00", 0, 0)),
+            "Daily at 09:00"
+        );
+        assert_eq!(
+            schedule_label(&row("weekdays", "08:30", 0, 0)),
+            "Weekdays at 08:30"
+        );
+        assert_eq!(
+            schedule_label(&row("weekly", "10:00", 0, 1)),
+            "Monday at 10:00"
+        );
+        assert_eq!(
+            schedule_label(&row("weekly", "10:00", 0, 9)),
+            "Weekly at 10:00"
+        );
     }
 
     #[test]
@@ -328,7 +396,10 @@ mod tests {
         // Hourly at :00 → the top of the next hour.
         assert_eq!(auto.next_run_at, HOUR_MS);
         let daily = new_automation(&BLANK_AUTOMATION, "/r".into(), 0).next_run_at;
-        assert!(daily > 0 && daily <= DAY_MS, "next daily run within a day: {daily}");
+        assert!(
+            daily > 0 && daily <= DAY_MS,
+            "next daily run within a day: {daily}"
+        );
         assert!(auto.enabled && auto.cwd == "/repo");
     }
 

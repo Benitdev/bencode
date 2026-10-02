@@ -24,9 +24,15 @@ pub fn spawn(req: &SpawnRequest) -> Result<(HarnessProcessHandle, EventRx)> {
 }
 
 fn build_args(req: &SpawnRequest) -> Vec<String> {
-    let mut args: Vec<String> = vec!["exec".into(), "--json".into(), "--skip-git-repo-check".into()];
+    let mut args: Vec<String> = vec![
+        "exec".into(),
+        "--json".into(),
+        "--skip-git-repo-check".into(),
+    ];
     match req.permission {
-        PermissionPolicy::AutoApprove => args.push("--dangerously-bypass-approvals-and-sandbox".into()),
+        PermissionPolicy::AutoApprove => {
+            args.push("--dangerously-bypass-approvals-and-sandbox".into())
+        }
         PermissionPolicy::Ask => args.push("--full-auto".into()),
         PermissionPolicy::ReadOnly => args.extend(["--sandbox".into(), "read-only".into()]),
     }
@@ -55,7 +61,9 @@ impl LineParser for CodexParser {
         match str_field(&rec, "type") {
             Some("thread.started") => {
                 if let Some(id) = str_field(&rec, "thread_id") {
-                    events.push(AgentEvent::SessionStarted { provider_session_id: id.to_string() });
+                    events.push(AgentEvent::SessionStarted {
+                        provider_session_id: id.to_string(),
+                    });
                 }
             }
             Some("item.started") => {
@@ -116,13 +124,20 @@ impl CodexParser {
                 }
             }
             _ => {
-                let Some(id) = str_field(item, "id") else { return };
-                let Some(start) = tool_start(item) else { return };
+                let Some(id) = str_field(item, "id") else {
+                    return;
+                };
+                let Some(start) = tool_start(item) else {
+                    return;
+                };
                 // Re-announcing is harmless (the app de-duplicates by call id)
                 // and covers items that never had an `item.started`.
                 events.push(start);
                 let failed = str_field(item, "status") == Some("failed")
-                    || item.get("exit_code").and_then(Value::as_i64).is_some_and(|code| code != 0);
+                    || item
+                        .get("exit_code")
+                        .and_then(Value::as_i64)
+                        .is_some_and(|code| code != 0);
                 events.push(AgentEvent::ToolCallFinish {
                     id: id.to_string(),
                     output: tool_output(item),
@@ -136,16 +151,29 @@ impl CodexParser {
 fn tool_start(item: &Value) -> Option<AgentEvent> {
     let id = str_field(item, "id")?.to_string();
     let (name, input) = match str_field(item, "type")? {
-        "command_execution" => ("Bash", json!({ "command": str_field(item, "command").unwrap_or("") })),
-        "file_change" => ("Edit", json!({ "changes": item.get("changes").cloned().unwrap_or(Value::Null) })),
+        "command_execution" => (
+            "Bash",
+            json!({ "command": str_field(item, "command").unwrap_or("") }),
+        ),
+        "file_change" => (
+            "Edit",
+            json!({ "changes": item.get("changes").cloned().unwrap_or(Value::Null) }),
+        ),
         "mcp_tool_call" => (
             str_field(item, "tool").unwrap_or("mcp"),
             item.get("arguments").cloned().unwrap_or(Value::Null),
         ),
-        "web_search" => ("WebSearch", json!({ "query": str_field(item, "query").unwrap_or("") })),
+        "web_search" => (
+            "WebSearch",
+            json!({ "query": str_field(item, "query").unwrap_or("") }),
+        ),
         _ => return None,
     };
-    Some(AgentEvent::ToolCallStart { id, name: name.to_string(), input })
+    Some(AgentEvent::ToolCallStart {
+        id,
+        name: name.to_string(),
+        input,
+    })
 }
 
 fn tool_output(item: &Value) -> String {
@@ -163,7 +191,10 @@ mod tests {
 
     fn parse_all(lines: &[&str]) -> Vec<AgentEvent> {
         let mut parser = CodexParser::default();
-        lines.iter().flat_map(|line| parser.parse_line(line)).collect()
+        lines
+            .iter()
+            .flat_map(|line| parser.parse_line(line))
+            .collect()
     }
 
     #[test]
@@ -181,7 +212,10 @@ mod tests {
         assert!(args.windows(2).any(|w| w == ["--sandbox", "read-only"]));
         assert!(args.windows(2).any(|w| w == ["resume", "th_1"]));
         assert_eq!(&args[args.len() - 2..], ["--", "-fix it"]);
-        assert!(!args.contains(&"-p".to_string()), "-p is --profile in codex");
+        assert!(
+            !args.contains(&"-p".to_string()),
+            "-p is --profile in codex"
+        );
     }
 
     #[test]
@@ -194,17 +228,31 @@ mod tests {
             r#"{"type":"item.completed","item":{"id":"i3","type":"agent_message","text":"Second."}}"#,
             r#"{"type":"turn.completed","usage":{"input_tokens":7,"output_tokens":3}}"#,
         ]);
-        let bash = || AgentEvent::ToolCallStart { id: "i1".into(), name: "Bash".into(), input: json!({"command": "ls"}) };
+        let bash = || AgentEvent::ToolCallStart {
+            id: "i1".into(),
+            name: "Bash".into(),
+            input: json!({"command": "ls"}),
+        };
         assert_eq!(
             events,
             vec![
-                AgentEvent::SessionStarted { provider_session_id: "th_1".into() },
+                AgentEvent::SessionStarted {
+                    provider_session_id: "th_1".into()
+                },
                 bash(),
                 bash(),
-                AgentEvent::ToolCallFinish { id: "i1".into(), output: "a\nb".into(), success: true },
+                AgentEvent::ToolCallFinish {
+                    id: "i1".into(),
+                    output: "a\nb".into(),
+                    success: true
+                },
                 AgentEvent::TextDelta("First.".into()),
                 AgentEvent::TextDelta("\n\nSecond.".into()),
-                AgentEvent::Usage { input_tokens: 7, output_tokens: 3, total_tokens: 10 },
+                AgentEvent::Usage {
+                    input_tokens: 7,
+                    output_tokens: 3,
+                    total_tokens: 10
+                },
                 AgentEvent::Done(DoneStatus::Completed),
             ]
         );
@@ -213,6 +261,12 @@ mod tests {
     #[test]
     fn failed_turn_reports_error() {
         let events = parse_all(&[r#"{"type":"turn.failed","error":{"message":"quota"}}"#]);
-        assert_eq!(events, vec![AgentEvent::Error("quota".into()), AgentEvent::Done(DoneStatus::Failed)]);
+        assert_eq!(
+            events,
+            vec![
+                AgentEvent::Error("quota".into()),
+                AgentEvent::Done(DoneStatus::Failed)
+            ]
+        );
     }
 }

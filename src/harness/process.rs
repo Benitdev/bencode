@@ -44,7 +44,10 @@ type EventRx = mpsc::UnboundedReceiver<AgentEvent>;
 type StderrTail = Arc<Mutex<VecDeque<String>>>;
 
 /// Spawns the child on the harness runtime. Safe to call from any thread.
-pub fn spawn(spec: ProcessSpec, parser: impl LineParser) -> Result<(HarnessProcessHandle, EventRx)> {
+pub fn spawn(
+    spec: ProcessSpec,
+    parser: impl LineParser,
+) -> Result<(HarnessProcessHandle, EventRx)> {
     let _guard = runtime().enter();
 
     let mut cmd = Command::new(&spec.program);
@@ -190,7 +193,10 @@ async fn pump<P: LineParser>(mut ctx: PumpCtx<P>) {
     let message = if tail.is_empty() {
         reason
     } else {
-        format!("{reason}\n{}", tail.iter().cloned().collect::<Vec<_>>().join("\n"))
+        format!(
+            "{reason}\n{}",
+            tail.iter().cloned().collect::<Vec<_>>().join("\n")
+        )
     };
     let _ = ctx.event_tx.send(AgentEvent::Error(message));
     let _ = ctx.event_tx.send(AgentEvent::Done(DoneStatus::Failed));
@@ -282,16 +288,24 @@ mod tests {
         struct DoneOnLine;
         impl LineParser for DoneOnLine {
             fn parse_line(&mut self, line: &str) -> Vec<AgentEvent> {
-                vec![AgentEvent::TextDelta(line.into()), AgentEvent::Done(DoneStatus::Completed)]
+                vec![
+                    AgentEvent::TextDelta(line.into()),
+                    AgentEvent::Done(DoneStatus::Completed),
+                ]
             }
         }
         let mut spec = sh("read first; echo \"got:$first\"; cat");
-        spec.stdin = StdinMode::Protocol { initial: "hello\n".into() };
+        spec.stdin = StdinMode::Protocol {
+            initial: "hello\n".into(),
+        };
         let (_handle, rx) = spawn(spec, DoneOnLine).unwrap();
         // `cat` only exits because stdin is closed once Done is seen.
         assert_eq!(
             collect(rx),
-            vec![AgentEvent::TextDelta("got:hello".into()), AgentEvent::Done(DoneStatus::Completed)]
+            vec![
+                AgentEvent::TextDelta("got:hello".into()),
+                AgentEvent::Done(DoneStatus::Completed)
+            ]
         );
     }
 
@@ -300,7 +314,10 @@ mod tests {
         struct DoneThenNoise;
         impl LineParser for DoneThenNoise {
             fn parse_line(&mut self, line: &str) -> Vec<AgentEvent> {
-                vec![AgentEvent::Done(DoneStatus::Completed), AgentEvent::TextDelta(line.into())]
+                vec![
+                    AgentEvent::Done(DoneStatus::Completed),
+                    AgentEvent::TextDelta(line.into()),
+                ]
             }
         }
         let (_handle, rx) = spawn(sh("echo a; echo b"), DoneThenNoise).unwrap();

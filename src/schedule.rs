@@ -20,12 +20,29 @@ fn is_weekend(day: &Zoned) -> bool {
 /// The next run strictly after `after_ms`, in epoch ms, for MonoCode's
 /// `scheduleKind` (`hourly`, `daily`, `weekdays`, `weekly`). `day_of_week`
 /// counts from Sunday = 0, like JavaScript's `getDay`.
-pub fn next_run_at(kind: &str, minute: i64, time: &str, day_of_week: i64, after_ms: i64, tz: &TimeZone) -> Option<i64> {
-    let after = Timestamp::from_millisecond(after_ms).ok()?.to_zoned(tz.clone());
+pub fn next_run_at(
+    kind: &str,
+    minute: i64,
+    time: &str,
+    day_of_week: i64,
+    after_ms: i64,
+    tz: &TimeZone,
+) -> Option<i64> {
+    let after = Timestamp::from_millisecond(after_ms)
+        .ok()?
+        .to_zoned(tz.clone());
     let start = after.with().second(0).subsec_nanosecond(0).build().ok()?;
     let candidate = if kind == "hourly" {
-        let at = start.with().minute(minute.clamp(0, 59) as i8).build().ok()?;
-        if at <= after { at.checked_add(1.hour()).ok()? } else { at }
+        let at = start
+            .with()
+            .minute(minute.clamp(0, 59) as i8)
+            .build()
+            .ok()?;
+        if at <= after {
+            at.checked_add(1.hour()).ok()?
+        } else {
+            at
+        }
     } else {
         let (hour, min) = parse_time(time)?;
         let mut at = start.with().hour(hour).minute(min).build().ok()?;
@@ -77,17 +94,38 @@ mod tests {
     #[test]
     fn hourly_daily_weekdays_and_weekly() {
         // 2026-10-02 is a Friday.
-        assert_eq!(next("hourly", 30, "", 0, "2026-10-02T10:40:00Z"), ms("2026-10-02T11:30:00Z"));
-        assert_eq!(next("daily", 0, "09:00", 0, "2026-10-02T10:00:00Z"), ms("2026-10-03T09:00:00Z"));
-        assert_eq!(next("daily", 0, "17:00", 0, "2026-10-02T10:00:00Z"), ms("2026-10-02T17:00:00Z"));
-        assert_eq!(next("weekdays", 0, "09:00", 0, "2026-10-02T10:00:00Z"), ms("2026-10-05T09:00:00Z"));
-        assert_eq!(next("weekly", 0, "09:00", 1, "2026-10-02T10:00:00Z"), ms("2026-10-05T09:00:00Z"));
-        assert_eq!(next("weekly", 0, "09:00", 5, "2026-10-02T10:00:00Z"), ms("2026-10-09T09:00:00Z"));
+        assert_eq!(
+            next("hourly", 30, "", 0, "2026-10-02T10:40:00Z"),
+            ms("2026-10-02T11:30:00Z")
+        );
+        assert_eq!(
+            next("daily", 0, "09:00", 0, "2026-10-02T10:00:00Z"),
+            ms("2026-10-03T09:00:00Z")
+        );
+        assert_eq!(
+            next("daily", 0, "17:00", 0, "2026-10-02T10:00:00Z"),
+            ms("2026-10-02T17:00:00Z")
+        );
+        assert_eq!(
+            next("weekdays", 0, "09:00", 0, "2026-10-02T10:00:00Z"),
+            ms("2026-10-05T09:00:00Z")
+        );
+        assert_eq!(
+            next("weekly", 0, "09:00", 1, "2026-10-02T10:00:00Z"),
+            ms("2026-10-05T09:00:00Z")
+        );
+        assert_eq!(
+            next("weekly", 0, "09:00", 5, "2026-10-02T10:00:00Z"),
+            ms("2026-10-09T09:00:00Z")
+        );
     }
 
     #[test]
     fn invalid_input_yields_none() {
         assert_eq!(next_run_at("daily", 0, "9am", 0, 0, &TimeZone::UTC), None);
-        assert_eq!(next_run_at("monthly", 0, "09:00", 0, 0, &TimeZone::UTC), None);
+        assert_eq!(
+            next_run_at("monthly", 0, "09:00", 0, 0, &TimeZone::UTC),
+            None
+        );
     }
 }

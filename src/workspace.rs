@@ -106,7 +106,10 @@ mod tests {
         std::fs::write(root.join(".env"), "").unwrap();
         std::fs::write(root.join("src/main.rs"), "").unwrap();
 
-        assert_eq!(list_workspace_files(&root, 10), ["A.md", "b.txt", "src/main.rs"]);
+        assert_eq!(
+            list_workspace_files(&root, 10),
+            ["A.md", "b.txt", "src/main.rs"]
+        );
 
         std::fs::remove_dir_all(&root).unwrap();
     }

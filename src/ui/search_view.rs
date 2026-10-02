@@ -36,11 +36,17 @@ const SCOPES: [(SearchScope, &str, &str); 4] = [
 
 impl SearchScope {
     fn key(self) -> &'static str {
-        SCOPES.iter().find(|(scope, ..)| *scope == self).map_or("all", |(_, key, _)| key)
+        SCOPES
+            .iter()
+            .find(|(scope, ..)| *scope == self)
+            .map_or("all", |(_, key, _)| key)
     }
 
     fn from_key(key: &str) -> Option<Self> {
-        SCOPES.iter().find(|(_, k, _)| *k == key).map(|(scope, ..)| *scope)
+        SCOPES
+            .iter()
+            .find(|(_, k, _)| *k == key)
+            .map(|(scope, ..)| *scope)
     }
 
     fn includes(self, other: SearchScope) -> bool {
@@ -70,8 +76,14 @@ fn session_hits(query: &str, sessions: &[SessionRow]) -> impl Iterator<Item = Se
     sessions
         .iter()
         .filter(move |s| {
-            [&s.title, &s.cwd, &s.model].iter().any(|field| field.to_lowercase().contains(query))
-                || s.blocks.iter().any(|b| b.text.as_deref().is_some_and(|t| t.to_lowercase().contains(query)))
+            [&s.title, &s.cwd, &s.model]
+                .iter()
+                .any(|field| field.to_lowercase().contains(query))
+                || s.blocks.iter().any(|b| {
+                    b.text
+                        .as_deref()
+                        .is_some_and(|t| t.to_lowercase().contains(query))
+                })
         })
         .map(|s| SearchHit {
             title: s.title.clone().into(),
@@ -97,13 +109,21 @@ fn file_hits(query: &str, root: &str, files: &[SharedString]) -> impl Iterator<I
 }
 
 fn project_hits(query: &str, projects: &[String]) -> impl Iterator<Item = SearchHit> {
-    projects.iter().filter(move |p| p.to_lowercase().contains(query)).map(|p| SearchHit {
-        title: std::path::Path::new(p).file_name().and_then(|n| n.to_str()).unwrap_or(p).to_string().into(),
-        subtitle: p.clone().into(),
-        scope: SearchScope::Projects,
-        icon: IconName::Folder,
-        target_id: p.clone(),
-    })
+    projects
+        .iter()
+        .filter(move |p| p.to_lowercase().contains(query))
+        .map(|p| SearchHit {
+            title: std::path::Path::new(p)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(p)
+                .to_string()
+                .into(),
+            subtitle: p.clone().into(),
+            scope: SearchScope::Projects,
+            icon: IconName::Folder,
+            target_id: p.clone(),
+        })
 }
 
 /// Everything in `scope` matching `query`, threads first, then files, then projects.
@@ -131,13 +151,17 @@ impl BenCodeApp {
         self.search_scope = SearchScope::All;
         self.search_focus_pending = true;
         if self.search_submit.is_none() {
-            self.search_submit = Some(cx.subscribe(&self.search_modal_input, |this, _, event: &InputEvent, cx| {
-                if *event == InputEvent::Submit {
-                    this.open_search_hit(this.search_active_index, cx);
-                }
-            }));
+            self.search_submit = Some(cx.subscribe(
+                &self.search_modal_input,
+                |this, _, event: &InputEvent, cx| {
+                    if *event == InputEvent::Submit {
+                        this.open_search_hit(this.search_active_index, cx);
+                    }
+                },
+            ));
         }
-        self.search_modal_input.update(cx, |input, cx| input.set_text("", cx));
+        self.search_modal_input
+            .update(cx, |input, cx| input.set_text("", cx));
         self.update_search_hits(cx);
     }
 
@@ -156,7 +180,12 @@ impl BenCodeApp {
     /// Opens the latest thread in `cwd`, or starts one there.
     fn open_project(&mut self, cwd: String, cx: &mut Context<Self>) {
         self.active_view_mode = ViewMode::Chat;
-        let latest = self.sessions.iter().filter(|s| s.cwd == cwd).max_by_key(|s| s.updated_at).map(|s| s.id.clone());
+        let latest = self
+            .sessions
+            .iter()
+            .filter(|s| s.cwd == cwd)
+            .max_by_key(|s| s.updated_at)
+            .map(|s| s.id.clone());
         match latest {
             Some(id) => self.select_session(id, cx),
             None => {
@@ -167,13 +196,21 @@ impl BenCodeApp {
     }
 
     fn open_search_hit(&mut self, ix: usize, cx: &mut Context<Self>) {
-        let Some(hit) = self.search_hits.get(ix).cloned() else { return };
+        let Some(hit) = self.search_hits.get(ix).cloned() else {
+            return;
+        };
         match hit.scope {
             SearchScope::Conversations => {
                 self.active_view_mode = ViewMode::Chat;
                 self.select_session(hit.target_id, cx);
             }
-            SearchScope::Files if self.workspace.changes.iter().any(|c| c.path == hit.target_id) => {
+            SearchScope::Files
+                if self
+                    .workspace
+                    .changes
+                    .iter()
+                    .any(|c| c.path == hit.target_id) =>
+            {
                 self.active_view_mode = ViewMode::Changes;
                 self.select_diff_path(hit.target_id, cx);
             }
@@ -198,11 +235,16 @@ impl BenCodeApp {
         );
         Dialog::new("search", "Search", close)
             .detail("Threads, workspace files and recent projects. Enter opens the top result.")
-            .child(SearchInput::new("search-modal-query", &self.search_modal_input))
-            .child(scopes.on_change(cx.listener(|this, key: &SharedString, _, cx| {
-                this.search_scope = SearchScope::from_key(key).unwrap_or(SearchScope::All);
-                this.update_search_hits(cx);
-            })))
+            .child(SearchInput::new(
+                "search-modal-query",
+                &self.search_modal_input,
+            ))
+            .child(
+                scopes.on_change(cx.listener(|this, key: &SharedString, _, cx| {
+                    this.search_scope = SearchScope::from_key(key).unwrap_or(SearchScope::All);
+                    this.update_search_hits(cx);
+                })),
+            )
             .child(self.render_search_results(cx))
     }
 
@@ -210,7 +252,9 @@ impl BenCodeApp {
     fn focus_search_input(&self, cx: &mut Context<Self>) {
         let focus = self.search_modal_input.read(cx).focus_handle(cx);
         cx.defer(move |cx| {
-            let Some(window) = cx.active_window() else { return };
+            let Some(window) = cx.active_window() else {
+                return;
+            };
             if let Err(err) = window.update(cx, |_, window, cx| window.focus(&focus, cx)) {
                 log::warn!("search: could not focus the query field: {err:#}");
             }
@@ -220,8 +264,12 @@ impl BenCodeApp {
     fn render_search_results(&self, cx: &Context<Self>) -> AnyElement {
         let height = cx.theme().palette_size().height;
         if self.search_modal_input.read(cx).text().trim().is_empty() {
-            return EmptyState::new("search-idle", IconName::Search, "Find threads, files and projects")
-                .into_any_element();
+            return EmptyState::new(
+                "search-idle",
+                IconName::Search,
+                "Find threads, files and projects",
+            )
+            .into_any_element();
         }
         if self.search_hits.is_empty() {
             return EmptyState::new("search-none", IconName::SearchX, "No results")
@@ -229,7 +277,9 @@ impl BenCodeApp {
                 .into_any_element();
         }
         let rows = cx.processor(|this, range: std::ops::Range<usize>, _, cx| {
-            range.map(|ix| this.render_search_row(ix, cx)).collect::<Vec<_>>()
+            range
+                .map(|ix| this.render_search_row(ix, cx))
+                .collect::<Vec<_>>()
         });
         div()
             .h(height)
@@ -254,7 +304,11 @@ mod tests {
     use super::*;
 
     fn session(id: &str, title: &str) -> SessionRow {
-        SessionRow { id: id.into(), title: title.into(), ..Default::default() }
+        SessionRow {
+            id: id.into(),
+            title: title.into(),
+            ..Default::default()
+        }
     }
 
     #[test]

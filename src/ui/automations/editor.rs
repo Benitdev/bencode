@@ -16,7 +16,10 @@ use crate::app::BenCodeApp;
 use crate::db::{AutomationRow, AutomationRunRow};
 
 fn run_time(millis: i64) -> String {
-    Timestamp::from_millisecond(millis).map_or_else(|_| "unknown time".to_string(), |at| at.strftime("%Y-%m-%d %H:%M UTC").to_string())
+    Timestamp::from_millisecond(millis).map_or_else(
+        |_| "unknown time".to_string(),
+        |at| at.strftime("%Y-%m-%d %H:%M UTC").to_string(),
+    )
 }
 
 impl BenCodeApp {
@@ -41,10 +44,16 @@ impl BenCodeApp {
             .into_any_element()
     }
 
-    fn render_automation_actions(&self, auto: &AutomationRow, cx: &Context<Self>) -> impl IntoElement {
+    fn render_automation_actions(
+        &self,
+        auto: &AutomationRow,
+        cx: &Context<Self>,
+    ) -> impl IntoElement {
         let (toggle_id, delete_id) = (auto.id.clone(), auto.id.clone());
         let busy = self.is_agent_running();
-        let toggle = cx.listener(move |this, on: &bool, _, cx| this.set_automation_enabled(&toggle_id, *on, cx));
+        let toggle = cx.listener(move |this, on: &bool, _, cx| {
+            this.set_automation_enabled(&toggle_id, *on, cx)
+        });
         div()
             .flex()
             .flex_wrap()
@@ -57,11 +66,14 @@ impl BenCodeApp {
             )
             .child(div().flex_1())
             .child(
-                Button::new("automation-run", if busy { "Agent busy" } else { "Run now" })
-                    .primary()
-                    .icon(IconName::Play)
-                    .disabled(busy)
-                    .on_click(cx.listener(|this, _, _, cx| this.run_selected_automation_now(cx))),
+                Button::new(
+                    "automation-run",
+                    if busy { "Agent busy" } else { "Run now" },
+                )
+                .primary()
+                .icon(IconName::Play)
+                .disabled(busy)
+                .on_click(cx.listener(|this, _, _, cx| this.run_selected_automation_now(cx))),
             )
             .child(
                 Button::new("automation-save", "Save")
@@ -85,17 +97,19 @@ impl BenCodeApp {
             .flex()
             .flex_col()
             .gap_4()
-            .child(FormField::new("automation-name", "Name").child(Input::new(&self.automation_name_input)))
             .child(
-                {
-                    let field = FormField::new("automation-time", "Time (HH:MM, 24-hour)").description(schedule_label(auto));
-                    match self.automation_time_error.clone() {
-                        Some(error) => field.error(error),
-                        None => field,
-                    }
-                    .child(Input::new(&self.automation_time_input))
-                },
+                FormField::new("automation-name", "Name")
+                    .child(Input::new(&self.automation_name_input)),
             )
+            .child({
+                let field = FormField::new("automation-time", "Time (HH:MM, 24-hour)")
+                    .description(schedule_label(auto));
+                match self.automation_time_error.clone() {
+                    Some(error) => field.error(error),
+                    None => field,
+                }
+                .child(Input::new(&self.automation_time_input))
+            })
             .child(
                 FormField::new("automation-workspace", "Workspace").child(
                     div()
@@ -103,10 +117,16 @@ impl BenCodeApp {
                         .items_center()
                         .gap_2()
                         .child(Caption::new(auto.cwd.clone()))
-                        .child(Tag::new("automation-harness", auto.harness.clone()).icon(IconName::Terminal)),
+                        .child(
+                            Tag::new("automation-harness", auto.harness.clone())
+                                .icon(IconName::Terminal),
+                        ),
                 ),
             )
-            .child(FormField::new("automation-prompt", "Prompt").child(Input::new(&self.automation_prompt_input)))
+            .child(
+                FormField::new("automation-prompt", "Prompt")
+                    .child(Input::new(&self.automation_prompt_input)),
+            )
     }
 
     fn render_automation_runs(&self) -> impl IntoElement {
@@ -117,15 +137,25 @@ impl BenCodeApp {
                 .flex()
                 .flex_col()
                 .gap_1()
-                .children(self.automation_runs.iter().enumerate().map(|(ix, run)| render_run(ix, run)))
+                .children(
+                    self.automation_runs
+                        .iter()
+                        .enumerate()
+                        .map(|(ix, run)| render_run(ix, run)),
+                )
                 .into_any_element()
         };
-        Section::new("Recent runs").description(format!("{} recorded", self.automation_runs.len())).child(runs)
+        Section::new("Recent runs")
+            .description(format!("{} recorded", self.automation_runs.len()))
+            .child(runs)
     }
 }
 
 fn render_run(ix: usize, run: &AutomationRunRow) -> ListItem {
-    let detail = run.error.clone().unwrap_or_else(|| run_time(run.started_at.unwrap_or(run.created_at)));
+    let detail = run
+        .error
+        .clone()
+        .unwrap_or_else(|| run_time(run.started_at.unwrap_or(run.created_at)));
     ListItem::new(("automation-run", ix), format!("Trigger: {}", run.trigger))
         .description(detail)
         .trailing(Badge::new(run.status.clone()).tone(run_status_tone(&run.status)))

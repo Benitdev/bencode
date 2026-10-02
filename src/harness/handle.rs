@@ -38,7 +38,9 @@ impl HarnessProcessHandle {
 
     /// Writes one line to the child's stdin; a trailing newline is added.
     pub fn send_line(&self, line: &str) -> bool {
-        self.stdin_tx.send(StdinMsg::Line(format!("{line}\n"))).is_ok()
+        self.stdin_tx
+            .send(StdinMsg::Line(format!("{line}\n")))
+            .is_ok()
     }
 
     /// Answers a permission prompt using the harness' own wire format.

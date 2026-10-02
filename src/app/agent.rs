@@ -10,8 +10,8 @@ use serde_json::{Value, json};
 use crate::app::{BenCodeApp, PermissionMode};
 use crate::db::{Block, SessionRow, TurnModel};
 use crate::harness::{
-    self, AgentEvent, DoneStatus, HarnessKind, HarnessProcessHandle, PermissionPolicy, PermissionRequest,
-    SpawnRequest, catalog, summarize_tool_input,
+    self, AgentEvent, DoneStatus, HarnessKind, HarnessProcessHandle, PermissionPolicy,
+    PermissionRequest, SpawnRequest, catalog, summarize_tool_input,
 };
 
 const TITLE_PREVIEW_CHARS: usize = 48;
@@ -58,13 +58,18 @@ impl BenCodeApp {
 
     /// Whether the agent is running in this particular thread.
     pub fn is_agent_running_in(&self, session_id: &str) -> bool {
-        self.active_run.as_ref().is_some_and(|run| run.session_id == session_id)
+        self.active_run
+            .as_ref()
+            .is_some_and(|run| run.session_id == session_id)
     }
 
     /// The permission prompt owned by this thread's run, if any. Scoped so an
     /// Approve click in one tab can never answer another thread's agent.
     pub fn pending_permission_for(&self, session_id: &str) -> Option<&PermissionRequest> {
-        let run = self.active_run.as_ref().filter(|run| run.session_id == session_id)?;
+        let run = self
+            .active_run
+            .as_ref()
+            .filter(|run| run.session_id == session_id)?;
         run.pending_permission.as_ref()
     }
 
@@ -87,8 +92,12 @@ impl BenCodeApp {
         if self.selected_session_id.is_none() {
             self.create_new_session(cx);
         }
-        let Some(session_id) = self.selected_session_id.clone() else { return };
-        let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id) else { return };
+        let Some(session_id) = self.selected_session_id.clone() else {
+            return;
+        };
+        let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id) else {
+            return;
+        };
 
         let now = now_ms();
         start_turn(session, &prompt, now);
@@ -102,7 +111,8 @@ impl BenCodeApp {
             }
         };
 
-        self.prompt_input.update(cx, |input, cx| input.set_text("", cx));
+        self.prompt_input
+            .update(cx, |input, cx| input.set_text("", cx));
         self.persist_session(&session_id);
 
         match harness::spawn(&request) {
@@ -192,7 +202,9 @@ impl BenCodeApp {
     }
 
     fn stop_agent(&mut self, cx: &mut Context<Self>) {
-        let Some(run) = self.active_run.take() else { return };
+        let Some(run) = self.active_run.take() else {
+            return;
+        };
         run.handle.cancel();
         self.close_automation_run(&run, "cancelled");
         if let Some(session) = self.sessions.iter_mut().find(|s| s.id == run.session_id) {
@@ -207,13 +219,19 @@ impl BenCodeApp {
 
     /// Links the running turn of `session_id` to an automation run row.
     pub fn attach_automation_run(&mut self, session_id: &str, run_id: String) {
-        if let Some(run) = self.active_run.as_mut().filter(|run| run.session_id == session_id) {
+        if let Some(run) = self
+            .active_run
+            .as_mut()
+            .filter(|run| run.session_id == session_id)
+        {
             run.automation_run_id = Some(run_id);
         }
     }
 
     fn close_automation_run(&self, run: &AgentRun, status: &str) {
-        let Some(run_id) = &run.automation_run_id else { return };
+        let Some(run_id) = &run.automation_run_id else {
+            return;
+        };
         let error = (status == "failed").then_some("The agent turn failed.");
         if let Err(err) = self.db.finish_automation_run(run_id, status, error) {
             log::error!("failed to close automation run {run_id}: {err:#}");
@@ -229,33 +247,53 @@ impl BenCodeApp {
     }
 
     fn answer_permission(&mut self, allow: bool, cx: &mut Context<Self>) {
-        let Some(run) = self.active_run.as_mut() else { return };
-        let Some(request) = run.pending_permission.take() else { return };
+        let Some(run) = self.active_run.as_mut() else {
+            return;
+        };
+        let Some(request) = run.pending_permission.take() else {
+            return;
+        };
         if !run.handle.respond_permission(&request, allow) {
-            log::warn!("harness rejected permission reply for {}", request.request_id);
+            log::warn!(
+                "harness rejected permission reply for {}",
+                request.request_id
+            );
         }
         cx.notify();
     }
 
     /// Writes one session back to SQLite, logging instead of swallowing errors.
     pub fn persist_session(&self, session_id: &str) {
-        let Some(session) = self.sessions.iter().find(|s| s.id == session_id) else { return };
+        let Some(session) = self.sessions.iter().find(|s| s.id == session_id) else {
+            return;
+        };
         if let Err(err) = self.db.upsert_session(session) {
             log::error!("failed to save session {session_id}: {err:#}");
         }
     }
 }
 
-fn spawn_request(session: &SessionRow, prompt: &str, mode: PermissionMode) -> Result<SpawnRequest, String> {
-    let harness = HarnessKind::from_id(&session.harness)
-        .ok_or_else(|| format!("BenCode cannot drive the `{}` harness yet.", session.harness))?;
+fn spawn_request(
+    session: &SessionRow,
+    prompt: &str,
+    mode: PermissionMode,
+) -> Result<SpawnRequest, String> {
+    let harness = HarnessKind::from_id(&session.harness).ok_or_else(|| {
+        format!(
+            "BenCode cannot drive the `{}` harness yet.",
+            session.harness
+        )
+    })?;
     Ok(SpawnRequest {
         harness,
         cwd: session.cwd.clone(),
         prompt: prompt.to_string(),
         model: catalog::cli_model_id(&session.model),
         permission: mode.policy(),
-        resume_id: session.provider_session_id.clone().filter(|id| !id.is_empty()),
+        resume_id: session
+            .provider_session_id
+            .clone()
+            .filter(|id| !id.is_empty()),
     })
 }
 
@@ -295,13 +333,18 @@ fn title_from_prompt(prompt: &str) -> String {
 /// Records how long the latest user turn took, as MonoCode does.
 fn finish_turn(session: &mut SessionRow, now: i64) {
     if let Some(user) = session.blocks.iter_mut().rev().find(|b| b.role == "user")
-        && let Some(started) = user.started_at {
-            user.duration_ms = Some(now.saturating_sub(started));
-        }
+        && let Some(started) = user.started_at
+    {
+        user.duration_ms = Some(now.saturating_sub(started));
+    }
 }
 
 fn push_notice(session: &mut SessionRow, message: &str, now: i64) {
-    let mut block = Block::new(format!("sys-{now}-{}", session.blocks.len()), "system", message);
+    let mut block = Block::new(
+        format!("sys-{now}-{}", session.blocks.len()),
+        "system",
+        message,
+    );
     block.extra.insert("notice".into(), json!("error"));
     session.blocks.push(block);
 }
@@ -310,13 +353,21 @@ fn push_notice(session: &mut SessionRow, message: &str, now: i64) {
 pub fn apply_event(session: &mut SessionRow, event: AgentEvent, now: i64) {
     session.updated_at = now;
     match event {
-        AgentEvent::SessionStarted { provider_session_id } => {
+        AgentEvent::SessionStarted {
+            provider_session_id,
+        } => {
             session.provider_session_id = Some(provider_session_id);
         }
         AgentEvent::TextDelta(delta) => append_text(session, "assistant", &delta, now),
         AgentEvent::ThinkingDelta(delta) => append_text(session, "reasoning", &delta, now),
-        AgentEvent::ToolCallStart { id, name, input } => start_tool(session, &id, &name, &input, now),
-        AgentEvent::ToolCallFinish { id, output, success } => finish_tool(session, &id, &output, success),
+        AgentEvent::ToolCallStart { id, name, input } => {
+            start_tool(session, &id, &name, &input, now)
+        }
+        AgentEvent::ToolCallFinish {
+            id,
+            output,
+            success,
+        } => finish_tool(session, &id, &output, success),
         AgentEvent::Usage { total_tokens, .. } => {
             session.context_used = i64::try_from(total_tokens).ok();
         }
@@ -334,12 +385,20 @@ pub fn apply_event(session: &mut SessionRow, event: AgentEvent, now: i64) {
 
 /// Streams into the trailing block of `role`, or opens a new one.
 fn append_text(session: &mut SessionRow, role: &str, delta: &str, now: i64) {
-    if let Some(last) = session.blocks.last_mut().filter(|b| b.role == role && b.tool.is_none()) {
+    if let Some(last) = session
+        .blocks
+        .last_mut()
+        .filter(|b| b.role == role && b.tool.is_none())
+    {
         last.text.get_or_insert_with(String::new).push_str(delta);
         return;
     }
     let prefix = if role == "assistant" { "ast" } else { "rsn" };
-    let mut block = Block::new(format!("{prefix}-{now}-{}", session.blocks.len()), role, delta);
+    let mut block = Block::new(
+        format!("{prefix}-{now}-{}", session.blocks.len()),
+        role,
+        delta,
+    );
     block.started_at = Some(now);
     if role == "assistant" {
         block.turn_model = Some(turn_model(session));
@@ -349,7 +408,11 @@ fn append_text(session: &mut SessionRow, role: &str, delta: &str, now: i64) {
 
 fn tool_block_mut<'a>(session: &'a mut SessionRow, call_id: &str) -> Option<&'a mut Block> {
     session.blocks.iter_mut().rev().find(|b| {
-        b.tool.as_ref().and_then(|t| t.get("callId")).and_then(Value::as_str) == Some(call_id)
+        b.tool
+            .as_ref()
+            .and_then(|t| t.get("callId"))
+            .and_then(Value::as_str)
+            == Some(call_id)
     })
 }
 
@@ -377,10 +440,18 @@ fn finish_tool(session: &mut SessionRow, call_id: &str, output: &str, success: b
         log::debug!("result for unknown tool call {call_id}");
         return;
     };
-    let Some(tool) = block.tool.as_mut().and_then(Value::as_object_mut) else { return };
-    tool.insert("status".into(), json!(if success { "completed" } else { "failed" }));
+    let Some(tool) = block.tool.as_mut().and_then(Value::as_object_mut) else {
+        return;
+    };
+    tool.insert(
+        "status".into(),
+        json!(if success { "completed" } else { "failed" }),
+    );
     if !output.is_empty() {
-        tool.insert("detail".into(), json!(truncate(output, MAX_TOOL_OUTPUT_CHARS)));
+        tool.insert(
+            "detail".into(),
+            json!(truncate(output, MAX_TOOL_OUTPUT_CHARS)),
+        );
     }
 }
 
@@ -388,7 +459,12 @@ fn finish_tool(session: &mut SessionRow, call_id: &str, output: &str, success: b
 fn tool_kind(name: &str) -> &'static str {
     match name.to_ascii_lowercase().as_str() {
         "bash" | "shell" | "run_command" | "exec" => "execute",
-        "edit" | "multiedit" | "write" | "notebookedit" | "write_to_file" | "replace_file_content" => "edit",
+        "edit"
+        | "multiedit"
+        | "write"
+        | "notebookedit"
+        | "write_to_file"
+        | "replace_file_content" => "edit",
         "read" | "view_file" => "read",
         "grep" | "glob" | "websearch" | "grep_search" | "find_by_name" | "search_web" => "search",
         "task" | "agent" | "invoke_subagent" => "agent",
@@ -429,7 +505,10 @@ mod tests {
         start_turn(&mut s, "Fix the login bug\nwith details", 10);
         assert_eq!(roles(&s), ["user"]);
         assert_eq!(s.title, "Fix the login bug");
-        assert_eq!(s.blocks[0].turn_model.as_ref().unwrap().name.as_deref(), Some("Claude Opus"));
+        assert_eq!(
+            s.blocks[0].turn_model.as_ref().unwrap().name.as_deref(),
+            Some("Claude Opus")
+        );
     }
 
     #[test]
@@ -453,10 +532,22 @@ mod tests {
     fn tool_calls_become_tool_blocks_and_split_text() {
         let mut s = session();
         apply_event(&mut s, AgentEvent::TextDelta("Let me look.".into()), 1);
-        let start = AgentEvent::ToolCallStart { id: "t1".into(), name: "Bash".into(), input: json!({"command": "ls"}) };
+        let start = AgentEvent::ToolCallStart {
+            id: "t1".into(),
+            name: "Bash".into(),
+            input: json!({"command": "ls"}),
+        };
         apply_event(&mut s, start.clone(), 2);
         apply_event(&mut s, start, 2); // duplicate announcement is ignored
-        apply_event(&mut s, AgentEvent::ToolCallFinish { id: "t1".into(), output: "a.rs".into(), success: true }, 3);
+        apply_event(
+            &mut s,
+            AgentEvent::ToolCallFinish {
+                id: "t1".into(),
+                output: "a.rs".into(),
+                success: true,
+            },
+            3,
+        );
         apply_event(&mut s, AgentEvent::TextDelta("Done.".into()), 4);
 
         assert_eq!(roles(&s), ["assistant", "tool", "assistant"]);
@@ -470,8 +561,22 @@ mod tests {
     #[test]
     fn session_started_and_usage_update_session() {
         let mut s = session();
-        apply_event(&mut s, AgentEvent::SessionStarted { provider_session_id: "abc".into() }, 1);
-        apply_event(&mut s, AgentEvent::Usage { input_tokens: 5, output_tokens: 5, total_tokens: 10 }, 1);
+        apply_event(
+            &mut s,
+            AgentEvent::SessionStarted {
+                provider_session_id: "abc".into(),
+            },
+            1,
+        );
+        apply_event(
+            &mut s,
+            AgentEvent::Usage {
+                input_tokens: 5,
+                output_tokens: 5,
+                total_tokens: 10,
+            },
+            1,
+        );
         assert_eq!(s.provider_session_id.as_deref(), Some("abc"));
         assert_eq!(s.context_used, Some(10));
     }

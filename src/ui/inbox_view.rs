@@ -115,7 +115,9 @@ impl BenCodeApp {
 
     pub fn render_inbox_modal(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         let close = app_callback(cx, |this, cx| this.close_inbox_modal(cx));
-        let pulls = SAMPLE_PULLS.iter().map(|pull| self.render_inbox_pull(pull, cx));
+        let pulls = SAMPLE_PULLS
+            .iter()
+            .map(|pull| self.render_inbox_pull(pull, cx));
         Dialog::new("inbox", "Inbox", close)
             .detail("Pull requests waiting on you. GitHub is not connected yet.")
             .child(div().child(Badge::new("Sample data").tone(Tone::Warning).dot()))
@@ -137,7 +139,9 @@ impl BenCodeApp {
                         .size(ControlSize::Sm)
                         .icon(IconName::WandSparkles)
                         .disabled(self.is_agent_running())
-                        .on_click(cx.listener(move |this, _, _, cx| this.trigger_ci_repair(pull.title, test, cx))),
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.trigger_ci_repair(pull.title, test, cx)
+                        })),
                 )
         });
         div().flex().flex_col().gap_2().child(card).children(repair)

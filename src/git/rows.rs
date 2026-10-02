@@ -38,7 +38,11 @@ pub fn number_rows(lines: Vec<DiffLineKind>) -> Vec<DiffRow> {
             };
             old += u32::from(o.is_some());
             new += u32::from(n.is_some());
-            DiffRow { kind, old: o, new: n }
+            DiffRow {
+                kind,
+                old: o,
+                new: n,
+            }
         })
         .collect()
 }
@@ -75,13 +79,23 @@ mod tests {
         let numbers: Vec<_> = rows().iter().map(|r| (r.old, r.new)).collect();
         assert_eq!(
             numbers,
-            [(None, None), (Some(10), Some(20)), (Some(11), None), (None, Some(21)), (None, Some(22)), (Some(12), Some(23))]
+            [
+                (None, None),
+                (Some(10), Some(20)),
+                (Some(11), None),
+                (None, Some(21)),
+                (None, Some(22)),
+                (Some(12), Some(23))
+            ]
         );
     }
 
     #[test]
     fn unified_text_round_trips_prefixes() {
-        assert_eq!(unified_text(&rows()), "@@ -10,3 +20,4 @@ fn main\n a\n-b\n+c\n+d\n e\n");
+        assert_eq!(
+            unified_text(&rows()),
+            "@@ -10,3 +20,4 @@ fn main\n a\n-b\n+c\n+d\n e\n"
+        );
     }
 
     #[test]

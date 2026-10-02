@@ -56,7 +56,9 @@ impl LineParser for AntigravityParser {
         match str_field(&rec, "event") {
             Some("init") => {
                 if let Some(id) = str_field(&rec, "conversation_id") {
-                    events.push(AgentEvent::SessionStarted { provider_session_id: id.to_string() });
+                    events.push(AgentEvent::SessionStarted {
+                        provider_session_id: id.to_string(),
+                    });
                 }
             }
             Some("step_update") => {
@@ -70,9 +72,13 @@ impl LineParser for AntigravityParser {
                     events.push(usage_event(usage));
                 }
                 match str_field(result, "status") {
-                    None | Some(SUCCESS_STATUS) => events.push(AgentEvent::Done(DoneStatus::Completed)),
+                    None | Some(SUCCESS_STATUS) => {
+                        events.push(AgentEvent::Done(DoneStatus::Completed))
+                    }
                     Some(status) => {
-                        events.push(AgentEvent::Error(format!("Antigravity finished with status {status}")));
+                        events.push(AgentEvent::Error(format!(
+                            "Antigravity finished with status {status}"
+                        )));
                         events.push(AgentEvent::Done(DoneStatus::Failed));
                     }
                 }
@@ -100,8 +106,12 @@ fn on_step(step: &Value, events: &mut Vec<AgentEvent>) {
             }
         }
         Some("tool_call") => {
-            let Some(call) = step.get("tool_call") else { return };
-            let Some(id) = str_field(call, "id") else { return };
+            let Some(call) = step.get("tool_call") else {
+                return;
+            };
+            let Some(id) = str_field(call, "id") else {
+                return;
+            };
             events.push(AgentEvent::ToolCallStart {
                 id: id.to_string(),
                 name: str_field(call, "name").unwrap_or("tool").to_string(),
@@ -127,7 +137,11 @@ fn usage_event(usage: &Value) -> AgentEvent {
         .get("total_tokens")
         .and_then(Value::as_u64)
         .unwrap_or(input_tokens + output_tokens);
-    AgentEvent::Usage { input_tokens, output_tokens, total_tokens }
+    AgentEvent::Usage {
+        input_tokens,
+        output_tokens,
+        total_tokens,
+    }
 }
 
 #[cfg(test)]
@@ -145,13 +159,22 @@ mod tests {
     #[test]
     fn parses_recorded_print_session() {
         let mut parser = AntigravityParser;
-        let events: Vec<_> = RECORDED.iter().flat_map(|line| parser.parse_line(line)).collect();
+        let events: Vec<_> = RECORDED
+            .iter()
+            .flat_map(|line| parser.parse_line(line))
+            .collect();
         assert_eq!(
             events,
             vec![
-                AgentEvent::SessionStarted { provider_session_id: "d42c".into() },
+                AgentEvent::SessionStarted {
+                    provider_session_id: "d42c".into()
+                },
                 AgentEvent::TextDelta("hi\n".into()),
-                AgentEvent::Usage { input_tokens: 12231, output_tokens: 22, total_tokens: 12253 },
+                AgentEvent::Usage {
+                    input_tokens: 12231,
+                    output_tokens: 22,
+                    total_tokens: 12253
+                },
                 AgentEvent::Done(DoneStatus::Completed),
             ]
         );

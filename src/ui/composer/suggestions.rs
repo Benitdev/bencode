@@ -37,7 +37,11 @@ pub struct Suggestion {
 pub fn skill_suggestions(query: &str) -> Vec<Suggestion> {
     BUILTIN_SKILLS
         .iter()
-        .filter(|s| query.is_empty() || s.name.contains(query) || s.description.to_lowercase().contains(query))
+        .filter(|s| {
+            query.is_empty()
+                || s.name.contains(query)
+                || s.description.to_lowercase().contains(query)
+        })
         .map(|s| Suggestion {
             kind: SuggestionKind::Skill,
             label: s.name.into(),
@@ -52,10 +56,17 @@ pub fn mention_suggestions(query: &str, files: &[SharedString], notes: &[Note]) 
         .iter()
         .filter(|f| query.is_empty() || f.to_lowercase().contains(query))
         .take(MAX_FILES)
-        .map(|f| Suggestion { kind: SuggestionKind::File, label: f.clone(), detail: None, insert: f.to_string() });
+        .map(|f| Suggestion {
+            kind: SuggestionKind::File,
+            label: f.clone(),
+            detail: None,
+            insert: f.to_string(),
+        });
     let notes = notes
         .iter()
-        .filter(|n| query.is_empty() || n.title.to_lowercase().contains(query) || n.slug.contains(query))
+        .filter(|n| {
+            query.is_empty() || n.title.to_lowercase().contains(query) || n.slug.contains(query)
+        })
         .take(MAX_NOTES)
         .map(|n| Suggestion {
             kind: SuggestionKind::Note,
@@ -99,12 +110,22 @@ impl BenCodeApp {
                 .border_1()
                 .border_color(theme.colors.border)
                 .bg(theme.colors.overlay)
-                .children(items.into_iter().enumerate().map(|(ix, item)| self.render_suggestion(ix, item, cx)))
+                .children(
+                    items
+                        .into_iter()
+                        .enumerate()
+                        .map(|(ix, item)| self.render_suggestion(ix, item, cx)),
+                )
                 .into_any_element(),
         )
     }
 
-    fn render_suggestion(&self, ix: usize, item: Suggestion, cx: &Context<Self>) -> impl IntoElement {
+    fn render_suggestion(
+        &self,
+        ix: usize,
+        item: Suggestion,
+        cx: &Context<Self>,
+    ) -> impl IntoElement {
         let theme = cx.theme();
         let (icon, tag, tone) = match item.kind {
             SuggestionKind::Skill => (IconName::Zap, "skill", Tone::Accent),
@@ -126,7 +147,11 @@ impl BenCodeApp {
                 SuggestionKind::Skill => this.insert_skill(&insert, cx),
                 SuggestionKind::File | SuggestionKind::Note => this.insert_mention(&insert, cx),
             }))
-            .child(Icon::new(icon).size(IconSize::Xs).color(theme.colors.fg_muted))
+            .child(
+                Icon::new(icon)
+                    .size(IconSize::Xs)
+                    .color(theme.colors.fg_muted),
+            )
             .child(
                 div()
                     .flex()
@@ -134,8 +159,21 @@ impl BenCodeApp {
                     .flex_1()
                     .min_w_0()
                     .text_size(theme.text_size(TextSize::Xs))
-                    .child(div().font_weight(FontWeight::MEDIUM).text_color(theme.colors.fg).truncate().child(item.label))
-                    .when_some(item.detail, |el, detail| el.child(div().text_color(theme.colors.fg_muted).truncate().child(detail))),
+                    .child(
+                        div()
+                            .font_weight(FontWeight::MEDIUM)
+                            .text_color(theme.colors.fg)
+                            .truncate()
+                            .child(item.label),
+                    )
+                    .when_some(item.detail, |el, detail| {
+                        el.child(
+                            div()
+                                .text_color(theme.colors.fg_muted)
+                                .truncate()
+                                .child(detail),
+                        )
+                    }),
             )
             .child(Badge::new(tag).tone(tone))
     }
@@ -148,16 +186,31 @@ mod tests {
     #[test]
     fn skills_filter_by_name_or_description() {
         assert_eq!(skill_suggestions("").len(), BUILTIN_SKILLS.len());
-        assert!(skill_suggestions("commit").iter().any(|s| s.insert == "/commit"));
+        assert!(
+            skill_suggestions("commit")
+                .iter()
+                .any(|s| s.insert == "/commit")
+        );
         assert!(skill_suggestions("zzz-no-match").is_empty());
     }
 
     #[test]
     fn mentions_list_files_then_notes() {
-        let files = [SharedString::from("src/main.rs"), SharedString::from("README.md")];
-        let notes = [Note { id: "n".into(), slug: "main-plan".into(), title: "Plan".into(), ..Default::default() }];
+        let files = [
+            SharedString::from("src/main.rs"),
+            SharedString::from("README.md"),
+        ];
+        let notes = [Note {
+            id: "n".into(),
+            slug: "main-plan".into(),
+            title: "Plan".into(),
+            ..Default::default()
+        }];
         let found = mention_suggestions("main", &files, &notes);
-        assert_eq!(found.iter().map(|s| s.kind).collect::<Vec<_>>(), [SuggestionKind::File, SuggestionKind::Note]);
+        assert_eq!(
+            found.iter().map(|s| s.kind).collect::<Vec<_>>(),
+            [SuggestionKind::File, SuggestionKind::Note]
+        );
         assert_eq!(found[1].insert, "note/main-plan");
     }
 }

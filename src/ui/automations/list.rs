@@ -19,14 +19,24 @@ impl BenCodeApp {
         let mine = if self.automations.is_empty() {
             Caption::new("No automations yet. Start from a template below.").into_any_element()
         } else {
-            column(self.automations.iter().enumerate().map(|(ix, auto)| self.render_automation_item(ix, auto, cx)))
-                .into_any_element()
+            column(
+                self.automations
+                    .iter()
+                    .enumerate()
+                    .map(|(ix, auto)| self.render_automation_item(ix, auto, cx)),
+            )
+            .into_any_element()
         };
         let new = Button::new("automation-new", "New")
             .icon(IconName::Plus)
             .size(ControlSize::Sm)
             .on_click(cx.listener(|this, _, _, cx| this.create_new_automation(cx)));
-        let templates = column(BUILTIN_TEMPLATES.iter().enumerate().map(|(ix, tpl)| render_template_item(ix, tpl, cx)));
+        let templates = column(
+            BUILTIN_TEMPLATES
+                .iter()
+                .enumerate()
+                .map(|(ix, tpl)| render_template_item(ix, tpl, cx)),
+        );
         ScrollArea::new("automations-master").size_full().child(
             div()
                 .flex()
@@ -34,11 +44,20 @@ impl BenCodeApp {
                 .gap_6()
                 .pr_4()
                 .child(Section::new("Your automations").action(new).child(mine))
-                .child(Section::new("Starter templates").description("Pick one to create an automation from it.").child(templates)),
+                .child(
+                    Section::new("Starter templates")
+                        .description("Pick one to create an automation from it.")
+                        .child(templates),
+                ),
         )
     }
 
-    fn render_automation_item(&self, ix: usize, auto: &AutomationRow, cx: &Context<Self>) -> ListItem {
+    fn render_automation_item(
+        &self,
+        ix: usize,
+        auto: &AutomationRow,
+        cx: &Context<Self>,
+    ) -> ListItem {
         let id = auto.id.clone();
         let status = if auto.enabled {
             Badge::new("Active").tone(Tone::Success)
@@ -53,7 +72,11 @@ impl BenCodeApp {
     }
 }
 
-fn render_template_item(ix: usize, tpl: &'static AutomationTemplate, cx: &Context<BenCodeApp>) -> ListItem {
+fn render_template_item(
+    ix: usize,
+    tpl: &'static AutomationTemplate,
+    cx: &Context<BenCodeApp>,
+) -> ListItem {
     let accent = cx.theme().colors.warning;
     ListItem::new(("automation-template", ix), tpl.name)
         .description(tpl.description)

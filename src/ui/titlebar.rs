@@ -1,158 +1,116 @@
-//! Top titlebar: window drag area, open thread tabs, view mode segmented switcher, and settings trigger.
+//! Top bar: workspace tabs (Ely `TabBar`: select, close, add, reorder), a
+//! drop zone that detaches a dragged pane into its own tab, and split.
 
-use ely_gpui_component::buttons::{ButtonVariant, IconButton, SegmentedControl};
+use ely_gpui_component::buttons::{ButtonVariant, IconButton};
 use ely_gpui_component::primitives::IconName;
-use ely_gpui_component::theme::{ActiveTheme, ControlSize, Radius, TextSize};
+use ely_gpui_component::shell::{TabBar, WindowTab};
+use ely_gpui_component::theme::{ActiveTheme, ControlSize};
 use gpui::{
-    Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString, Styled,
-    WindowControlArea, div, prelude::*, px,
+    Context, InteractiveElement, IntoElement, ParentElement, SharedString, Styled,
+    WindowControlArea, div,
 };
 
-use crate::app::{BenCodeApp, ViewMode};
-use crate::ui::theme;
+use crate::app::BenCodeApp;
+use crate::ui::app_callback::app_callback;
+use crate::ui::drag_drop::DraggedPane;
+use crate::ui::layout::{SplitDir, WorkspaceTab, leaf_count};
 
-fn view_mode_key(mode: ViewMode) -> &'static str {
-    match mode {
-        ViewMode::Chat => "chat",
-        ViewMode::Changes => "changes",
-        ViewMode::Terminal => "terminal",
-    }
-}
+const NEW_TAB_TITLE: &str = "New session";
+const UNTITLED: &str = "Untitled thread";
 
 impl BenCodeApp {
-    pub fn render_titlebar(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
-        let colors = cx.theme().colors.clone();
-        let active_tab_id = self.active_tab_id.clone();
-        let changed_files = self.workspace.changes.len();
-        let changes_label = if changed_files > 0 {
-            format!("Changes ({changed_files})")
+    /// A tab is labelled by its focused thread, plus how many other panes it holds.
+    fn window_tab(&self, tab: &WorkspaceTab) -> WindowTab {
+        let title = self
+            .sessions
+            .iter()
+            .find(|s| s.id == tab.focused)
+            .map_or(NEW_TAB_TITLE, |s| {
+                if s.title.trim().is_empty() {
+                    UNTITLED
+                } else {
+                    s.title.as_str()
+                }
+            });
+        let panes = leaf_count(&tab.layout);
+        if panes > 1 {
+            WindowTab::new(tab.id.clone(), format!("{title} +{}", panes - 1))
+                .icon(IconName::Columns2)
         } else {
-            "Changes".to_string()
-        };
+            WindowTab::new(tab.id.clone(), title.to_string()).icon(IconName::MessageSquare)
+        }
+    }
 
+    fn render_tab_bar(&self, cx: &Context<Self>) -> TabBar {
+        let weak = cx.entity().downgrade();
+        let (select, close) = (weak.clone(), weak.clone());
+        let mut bar = self
+            .tabs
+            .tabs()
+            .iter()
+            .fold(TabBar::new("titlebar-tabs"), |bar, tab| {
+                bar.tab(self.window_tab(tab))
+            });
+        if let Some(active) = self.tabs.active_id() {
+            bar = bar.selected(active.to_string());
+        }
+        bar.on_select(move |id: &SharedString, _, cx| {
+            if let Err(err) = select.update(cx, |this, cx| this.switch_tab(id, cx)) {
+                log::debug!("tab select after app drop: {err:#}");
+            }
+        })
+        .on_close(move |id: &SharedString, _, cx| {
+            if let Err(err) = close.update(cx, |this, cx| this.close_tab(id, cx)) {
+                log::debug!("tab close after app drop: {err:#}");
+            }
+        })
+        .on_reorder(move |from, to, _, cx| {
+            if let Err(err) = weak.update(cx, |this, cx| this.reorder_open_tabs(from, to, cx)) {
+                log::debug!("tab reorder after app drop: {err:#}");
+            }
+        })
+        .on_add(app_callback(cx, |this, cx| this.create_new_session(cx)))
+    }
+
+    pub fn render_titlebar(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = cx.theme();
+        let colors = &theme.colors;
+        let drop_wash = colors.hover;
         div()
             .window_control_area(WindowControlArea::Drag)
             .flex()
             .items_center()
             .justify_between()
-            .h(px(40.0))
+            .gap_2()
+            .h(theme.titlebar_height())
             .w_full()
             .border_b_1()
             .border_color(colors.border)
-            .bg(colors.surface)
-            // macOS traffic lights spacer
-            .child(div().w(px(78.0)).h_full())
-            // Middle Tab Strip
+            .bg(colors.bg)
+            .px_2()
             .child(
                 div()
+                    .id("titlebar-tab-drop")
                     .flex()
-                    .items_center()
-                    .gap_1()
                     .flex_1()
-                    .h_full()
-                    .px_2()
-                    .overflow_x_hidden()
-                    .children(self.open_tabs.iter().map(|tab_id| {
-                        let is_active = active_tab_id.as_deref() == Some(tab_id.as_str());
-                        let session = self.sessions.iter().find(|s| &s.id == tab_id);
-                        let title = session
-                            .map(|s| {
-                                if s.title.trim().is_empty() {
-                                    "Untitled thread"
-                                } else {
-                                    s.title.as_str()
-                                }
-                            })
-                            .unwrap_or("New session");
-                        let harness = session.map(|s| s.harness.as_str()).unwrap_or("claude");
-                        let dot_color = theme::harness_color(harness, &colors);
-                        let id = tab_id.clone();
-                        let close_id = tab_id.clone();
-
-                        div()
-                            .id(SharedString::from(format!("tab-bar-item-{tab_id}")))
-                            .flex()
-                            .items_center()
-                            .gap_2()
-                            .h(px(28.0))
-                            .max_w(px(200.0))
-                            .px_2p5()
-                            .rounded(cx.theme().radius(Radius::Sm))
-                            .cursor_pointer()
-                            .when(is_active, |el| {
-                                el.bg(colors.bg)
-                                    .border_1()
-                                    .border_color(colors.border)
-                            })
-                            .when(!is_active, |el| el.hover(|s| s.bg(colors.hover)))
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.switch_tab(id.clone(), cx);
-                            }))
-                            .child(div().size(px(6.0)).rounded_full().bg(dot_color))
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .overflow_hidden()
-                                    .text_size(cx.theme().text_size(TextSize::Xs))
-                                    .font_weight(if is_active {
-                                        FontWeight::SEMIBOLD
-                                    } else {
-                                        FontWeight::NORMAL
-                                    })
-                                    .text_color(if is_active { colors.fg } else { colors.fg_muted })
-                                    .child(title.to_string()),
-                            )
-                            .child(
-                                IconButton::new(SharedString::from(format!("close-tab-{close_id}")), IconName::X)
-                                    .size(ControlSize::Sm)
-                                    .variant(ButtonVariant::Ghost)
-                                    .on_click(cx.listener(move |this, _, _, cx| {
-                                        this.close_tab(&close_id, cx);
-                                    })),
-                            )
-                    }))
-                    .child(
-                        IconButton::new("titlebar-new-tab", IconName::Plus)
-                            .size(ControlSize::Sm)
-                            .variant(ButtonVariant::Ghost)
-                            .tooltip("New thread")
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.create_new_session(cx);
-                            })),
-                    ),
-            )
-            // Right Controls: ViewMode SegmentedControl & Settings
-            .child(
-                div()
-                    .flex()
                     .items_center()
-                    .gap_2()
-                    .pr_3()
-                    .child(
-                        SegmentedControl::new("view-mode-switcher", view_mode_key(self.active_view_mode))
-                            .size(ControlSize::Sm)
-                            .segment("chat", "Chat", Some(IconName::MessageSquare))
-                            .segment("changes", changes_label, Some(IconName::GitPullRequest))
-                            .segment("terminal", "Terminal", Some(IconName::Terminal))
-                            .on_change(cx.listener(|this, key: &SharedString, _, cx| {
-                                this.active_view_mode = match key.as_ref() {
-                                    "changes" => ViewMode::Changes,
-                                    "terminal" => ViewMode::Terminal,
-                                    _ => ViewMode::Chat,
-                                };
-                                cx.notify();
-                            })),
-                    )
-                    .child(
-                        IconButton::new("titlebar-settings-btn", IconName::Settings)
-                            .size(ControlSize::Sm)
-                            .variant(ButtonVariant::Ghost)
-                            .tooltip("Settings (⌘,)")
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.is_settings_open = true;
-                                cx.notify();
-                            })),
-                    ),
+                    .min_w_0()
+                    .overflow_hidden()
+                    .rounded(theme.radius(ely_gpui_component::theme::Radius::Md))
+                    .drag_over::<DraggedPane>(move |style, _, _, _| style.bg(drop_wash))
+                    .on_drop(cx.listener(|this, dragged: &DraggedPane, _, cx| {
+                        this.detach_pane_to_new_tab(&dragged.session_id, cx);
+                    }))
+                    .child(self.render_tab_bar(cx)),
+            )
+            .child(
+                IconButton::new("titlebar-split-pane", IconName::Columns2)
+                    .size(ControlSize::Sm)
+                    .variant(ButtonVariant::Ghost)
+                    .tooltip("Split right (⌘D)")
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.split_active_pane(SplitDir::Right, cx);
+                    })),
             )
     }
 }

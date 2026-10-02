@@ -12,19 +12,39 @@ pub struct ModelOption {
 }
 
 const fn model(key: &'static str, label: &'static str, harness: HarnessKind) -> ModelOption {
-    ModelOption { key, label, harness }
+    ModelOption {
+        key,
+        label,
+        harness,
+    }
 }
 
 pub const MODELS: &[ModelOption] = &[
     model("claude:opus", "Claude Opus", HarnessKind::Claude),
     model("claude:sonnet", "Claude Sonnet", HarnessKind::Claude),
     model("claude:haiku", "Claude Haiku", HarnessKind::Claude),
-    model("antigravity:gemini-3.8-flash-high", "Gemini 3.8 Flash (High)", HarnessKind::Antigravity),
-    model("antigravity:gemini-3.1-pro-high", "Gemini 3.1 Pro (High)", HarnessKind::Antigravity),
-    model("antigravity:claude-sonnet-4-6", "Claude Sonnet 4.6 (Antigravity)", HarnessKind::Antigravity),
+    model(
+        "antigravity:gemini-3.8-flash-high",
+        "Gemini 3.8 Flash (High)",
+        HarnessKind::Antigravity,
+    ),
+    model(
+        "antigravity:gemini-3.1-pro-high",
+        "Gemini 3.1 Pro (High)",
+        HarnessKind::Antigravity,
+    ),
+    model(
+        "antigravity:claude-sonnet-4-6",
+        "Claude Sonnet 4.6 (Antigravity)",
+        HarnessKind::Antigravity,
+    ),
     model("codex:gpt-5-codex", "GPT-5 Codex", HarnessKind::Codex),
     model("codex:gpt-5", "GPT-5", HarnessKind::Codex),
-    model("opencode:default", "OpenCode (default model)", HarnessKind::OpenCode),
+    model(
+        "opencode:default",
+        "OpenCode (default model)",
+        HarnessKind::OpenCode,
+    ),
 ];
 
 pub fn find(key: &str) -> Option<&'static ModelOption> {
@@ -56,7 +76,11 @@ pub fn cli_model_id(key: &str) -> Option<String> {
 pub fn default_model(installed: &[HarnessInfo]) -> &'static ModelOption {
     MODELS
         .iter()
-        .find(|m| installed.iter().any(|h| h.available && h.id == m.harness.id()))
+        .find(|m| {
+            installed
+                .iter()
+                .any(|h| h.available && h.id == m.harness.id())
+        })
         .unwrap_or(&MODELS[0])
 }
 
@@ -67,7 +91,10 @@ mod tests {
     #[test]
     fn cli_model_id_strips_harness_prefix() {
         assert_eq!(cli_model_id("claude:opus").as_deref(), Some("opus"));
-        assert_eq!(cli_model_id("antigravity:gemini-3.8-flash-high").as_deref(), Some("gemini-3.8-flash-high"));
+        assert_eq!(
+            cli_model_id("antigravity:gemini-3.8-flash-high").as_deref(),
+            Some("gemini-3.8-flash-high")
+        );
         assert_eq!(cli_model_id("sonnet").as_deref(), Some("sonnet"));
     }
 
@@ -81,13 +108,22 @@ mod tests {
     #[test]
     fn every_key_is_prefixed_with_its_harness() {
         for option in MODELS {
-            assert!(option.key.starts_with(&format!("{}:", option.harness.id())), "{}", option.key);
+            assert!(
+                option.key.starts_with(&format!("{}:", option.harness.id())),
+                "{}",
+                option.key
+            );
         }
     }
 
     #[test]
     fn default_model_prefers_installed_harness() {
-        let installed = [HarnessInfo { id: "codex", name: "Codex", binary_path: None, available: true }];
+        let installed = [HarnessInfo {
+            id: "codex",
+            name: "Codex",
+            binary_path: None,
+            available: true,
+        }];
         assert_eq!(default_model(&installed).harness, HarnessKind::Codex);
         assert_eq!(default_model(&[]).key, "claude:opus");
     }

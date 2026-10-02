@@ -6,13 +6,13 @@ use ely_gpui_component::data_display::{Badge, Tone};
 use ely_gpui_component::feedback::Alert;
 use ely_gpui_component::git::{ChangeAction, Changed, ChangesList, Commit, CommitItem, DiffStat};
 use ely_gpui_component::layout::on_axis;
-use ely_gpui_component::overlays::ConfirmDialog;
 use ely_gpui_component::lists::GitStatus;
+use ely_gpui_component::overlays::ConfirmDialog;
 use ely_gpui_component::primitives::{Icon, IconName, Severity};
 use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize};
 use gpui::{
-    Context, FontWeight, InteractiveElement, IntoElement, ParentElement, Styled,
-    div, prelude::*, px,
+    Context, FontWeight, InteractiveElement, IntoElement, ParentElement, Styled, div, prelude::*,
+    px,
 };
 
 use crate::app::{BenCodeApp, ViewMode};
@@ -52,29 +52,51 @@ impl BenCodeApp {
         let staged_count = self.git_status.staged.len();
         let history_collapsed = self.git_history_collapsed;
 
-        let total_additions: usize = self.git_status.staged.iter().map(|f| f.additions).sum::<usize>()
-            + self.git_status.unstaged.iter().map(|f| f.additions).sum::<usize>();
-        let total_deletions: usize = self.git_status.staged.iter().map(|f| f.deletions).sum::<usize>()
-            + self.git_status.unstaged.iter().map(|f| f.deletions).sum::<usize>();
+        let total_additions: usize = self
+            .git_status
+            .staged
+            .iter()
+            .map(|f| f.additions)
+            .sum::<usize>()
+            + self
+                .git_status
+                .unstaged
+                .iter()
+                .map(|f| f.additions)
+                .sum::<usize>();
+        let total_deletions: usize = self
+            .git_status
+            .staged
+            .iter()
+            .map(|f| f.deletions)
+            .sum::<usize>()
+            + self
+                .git_status
+                .unstaged
+                .iter()
+                .map(|f| f.deletions)
+                .sum::<usize>();
 
         let staged_changed = to_changed(&self.git_status.staged);
         let unstaged_changed = to_changed(&self.git_status.unstaged);
 
         let (on_action, on_all) = (cx.entity().downgrade(), cx.entity().downgrade());
-        let changes_list = ChangesList::new("git-worktree-changes", staged_changed, unstaged_changed)
-            .on_action(move |path, action, _, cx| {
-                let path = path.to_string();
-                let _ = on_action.update(cx, |this, cx| this.on_change_action(path, action, cx));
-            })
-            .on_all(move |stage, _, cx| {
-                let _ = on_all.update(cx, |this, cx| {
-                    if stage {
-                        this.run_git_action("Stage all", stage_all, cx);
-                    } else {
-                        this.run_git_action("Unstage all", unstage_all, cx);
-                    }
+        let changes_list =
+            ChangesList::new("git-worktree-changes", staged_changed, unstaged_changed)
+                .on_action(move |path, action, _, cx| {
+                    let path = path.to_string();
+                    let _ =
+                        on_action.update(cx, |this, cx| this.on_change_action(path, action, cx));
+                })
+                .on_all(move |stage, _, cx| {
+                    let _ = on_all.update(cx, |this, cx| {
+                        if stage {
+                            this.run_git_action("Stage all", stage_all, cx);
+                        } else {
+                            this.run_git_action("Unstage all", unstage_all, cx);
+                        }
+                    });
                 });
-            });
 
         div()
             .flex()
@@ -89,14 +111,9 @@ impl BenCodeApp {
             .child(self.render_sidebar_mode_tabs(cx))
             // Last failed git action dismissible alert
             .when_some(self.workspace.git_error.clone(), |el, error| {
-                el.child(
-                    div()
-                        .p_2()
-                        .child(
-                            Alert::new("git-error-banner", Severity::Danger, "Git Error")
-                                .body(error),
-                        ),
-                )
+                el.child(div().p_2().child(
+                    Alert::new("git-error-banner", Severity::Danger, "Git Error").body(error),
+                ))
             })
             // 2. Branch & Sync Status Row
             .child(
@@ -114,7 +131,11 @@ impl BenCodeApp {
                             .flex()
                             .items_center()
                             .gap_1p5()
-                            .child(Icon::new(IconName::GitBranch).size(IconSize::Xs).color(colors.accent))
+                            .child(
+                                Icon::new(IconName::GitBranch)
+                                    .size(IconSize::Xs)
+                                    .color(colors.accent),
+                            )
                             .child(
                                 div()
                                     .font_weight(FontWeight::SEMIBOLD)
@@ -169,6 +190,7 @@ impl BenCodeApp {
                             .border_1()
                             .border_color(colors.border)
                             .bg(colors.surface)
+                            .text_size(px(12.0))
                             .child(self.git_commit_input.clone()),
                     )
                     .child(
@@ -185,13 +207,19 @@ impl BenCodeApp {
                                         "Commit".to_string()
                                     },
                                 )
-                                .variant(if staged_count > 0 { ButtonVariant::Primary } else { ButtonVariant::Secondary })
+                                .variant(if staged_count > 0 {
+                                    ButtonVariant::Primary
+                                } else {
+                                    ButtonVariant::Secondary
+                                })
                                 .size(ControlSize::Sm)
                                 .full_width()
                                 .icon(IconName::Check)
-                                .on_click(cx.listener(|this, _, _, cx| {
-                                    this.commit_staged_changes(cx);
-                                })),
+                                .on_click(cx.listener(
+                                    |this, _, _, cx| {
+                                        this.commit_staged_changes(cx);
+                                    },
+                                )),
                             )
                             .child(
                                 IconButton::new("git-discard-all-btn", IconName::Undo2)
@@ -228,11 +256,7 @@ impl BenCodeApp {
             )
     }
 
-    fn render_history_section(
-        &self,
-        collapsed: bool,
-        cx: &Context<Self>,
-    ) -> impl IntoElement {
+    fn render_history_section(&self, collapsed: bool, cx: &Context<Self>) -> impl IntoElement {
         let colors = &cx.theme().colors;
         let commits = &self.git_commits;
         let count = commits.len();
@@ -257,9 +281,13 @@ impl BenCodeApp {
                             .gap_1p5()
                             .cursor_pointer()
                             .child(
-                                Icon::new(if collapsed { IconName::ChevronRight } else { IconName::ChevronDown })
-                                    .size(IconSize::Xs)
-                                    .color(colors.fg_muted),
+                                Icon::new(if collapsed {
+                                    IconName::ChevronRight
+                                } else {
+                                    IconName::ChevronDown
+                                })
+                                .size(IconSize::Xs)
+                                .color(colors.fg_muted),
                             )
                             .child(
                                 div()
@@ -309,8 +337,12 @@ impl BenCodeApp {
                 self.active_view_mode = ViewMode::Changes;
                 self.select_diff_path(path, cx);
             }
-            ChangeAction::Stage => self.run_git_action("Stage", move |cwd| stage_file(cwd, &path), cx),
-            ChangeAction::Unstage => self.run_git_action("Unstage", move |cwd| unstage_file(cwd, &path), cx),
+            ChangeAction::Stage => {
+                self.run_git_action("Stage", move |cwd| stage_file(cwd, &path), cx)
+            }
+            ChangeAction::Unstage => {
+                self.run_git_action("Unstage", move |cwd| unstage_file(cwd, &path), cx)
+            }
             ChangeAction::Discard => {
                 self.git_confirm = Some(GitConfirm::DiscardFile(path));
                 cx.notify();
@@ -323,11 +355,14 @@ impl BenCodeApp {
         if message.is_empty() {
             return;
         }
-        self.git_commit_input.update(cx, |input, cx| input.set_text("", cx));
+        self.git_commit_input
+            .update(cx, |input, cx| input.set_text("", cx));
         let input = self.git_commit_input.clone();
         let cwd = self.workspace_cwd();
         let restore = message.clone();
-        let task = cx.background_executor().spawn(async move { commit(&cwd, &message) });
+        let task = cx
+            .background_executor()
+            .spawn(async move { commit(&cwd, &message) });
         cx.spawn(async move |this, cx| {
             let result = task.await;
             let _ = this.update(cx, |app, cx| {
@@ -362,15 +397,23 @@ impl BenCodeApp {
             GitConfirm::DiscardAll => this.run_git_action("Discard all", discard_all, cx),
         });
         let (title, message) = match self.git_confirm.as_ref()? {
-            GitConfirm::DiscardFile(path) => ("Discard changes?", format!("Unstaged changes to {path} will be lost.")),
-            GitConfirm::DiscardAll => ("Discard all changes?", "Every unstaged change in the working tree will be lost.".to_string()),
+            GitConfirm::DiscardFile(path) => (
+                "Discard changes?",
+                format!("Unstaged changes to {path} will be lost."),
+            ),
+            GitConfirm::DiscardAll => (
+                "Discard all changes?",
+                "Every unstaged change in the working tree will be lost.".to_string(),
+            ),
         };
         Some(
-            ConfirmDialog::new("git-discard", title, message, move |window, cx| close(&(), window, cx))
-                .confirm("Discard")
-                .destructive()
-                .on_confirm(move |window, cx| confirm(&(), window, cx))
-                .into_any_element(),
+            ConfirmDialog::new("git-discard", title, message, move |window, cx| {
+                close(&(), window, cx)
+            })
+            .confirm("Discard")
+            .destructive()
+            .on_confirm(move |window, cx| confirm(&(), window, cx))
+            .into_any_element(),
         )
     }
 }
