@@ -1,16 +1,17 @@
 //! Files sidebar: native file tree matching MonoCode's Explorer tab.
 
+mod ops;
+
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use ely_gpui_component::menus::{ContextMenu, Menu, MenuItem};
-use ely_gpui_component::overlays::{ConfirmDialog, PromptDialog};
 use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize, Radius};
 use gpui::prelude::*;
 use gpui::{
-    AnyElement, App, Context, ElementId, FontWeight, Hsla, IntoElement, ParentElement,
-    SharedString, Styled, Window, div, px, rgb,
+    AnyElement, Context, ElementId, FontWeight, Hsla, IntoElement, ParentElement, SharedString,
+    Styled, div, px, rgb,
 };
 
 use crate::app::BenCodeApp;
@@ -41,6 +42,8 @@ pub struct FileTreeState {
     pub root_expanded: bool,
     pub dir_cache: HashMap<String, Vec<FsEntry>>,
     pub dialog: Option<FileDialogAction>,
+    /// Last failed create/rename/delete, shown above the tree.
+    pub op_error: Option<String>,
 }
 
 impl Default for FileTreeState {
@@ -51,6 +54,7 @@ impl Default for FileTreeState {
             root_expanded: true,
             dir_cache: HashMap::new(),
             dialog: None,
+            op_error: None,
         }
     }
 }
@@ -376,6 +380,16 @@ impl BenCodeApp {
             .flex_1()
             .min_h_0()
             .child(toolbar)
+            .when_some(self.file_tree.op_error.clone(), |el, error| {
+                el.child(
+                    div()
+                        .px_3()
+                        .py_1()
+                        .text_size(px(12.0))
+                        .text_color(theme.colors.danger)
+                        .child(error),
+                )
+            })
             .child(root_row)
             .child(tree_content)
     }
@@ -631,10 +645,13 @@ impl BenCodeApp {
                 .on_click(move |_, _| {
                     let full = Path::new(&cwd_reveal).join(&reveal_path);
                     #[cfg(target_os = "macos")]
-                    let _ = std::process::Command::new("open")
+                    if let Err(err) = std::process::Command::new("open")
                         .arg("-R")
                         .arg(&full)
-                        .spawn();
+                        .spawn()
+                    {
+                        log::error!("could not reveal {}: {err}", full.display());
+                    }
                 }),
         );
 
@@ -642,138 +659,6 @@ impl BenCodeApp {
     }
 
     /// Renders any active file tree overlay dialog (New File, New Folder, Rename, Delete).
-    pub fn render_file_tree_dialog(&self, cx: &Context<Self>) -> Option<AnyElement> {
-        let action = self.file_tree.dialog.clone()?;
-        let close = app_callback(cx, |this, cx| {
-            this.file_tree.dialog = None;
-            cx.notify();
-        });
-
-        match action {
-            FileDialogAction::NewFile { parent_dir } => {
-                let submit = cx.listener(move |this, name: &str, window, cx| {
-                    this.create_file(&parent_dir, name, window, cx);
-                    this.file_tree.dialog = None;
-                    cx.notify();
-                });
-                Some(
-                    PromptDialog::new(
-                        "dialog-new-file",
-                        "New File",
-                        &self.file_dialog_input,
-                        close,
-                    )
-                    .label("File Name")
-                    .submit("Create")
-                    .check(|text| {
-                        if text.trim().is_empty() {
-                            Err("File name is required".into())
-                        } else {
-                            Ok(())
-                        }
-                    })
-                    .on_submit(move |raw: &str, window: &mut Window, cx: &mut App| {
-                        submit(raw, window, cx);
-                    })
-                    .into_any_element(),
-                )
-            }
-            FileDialogAction::NewFolder { parent_dir } => {
-                let submit = cx.listener(move |this, name: &str, _, cx| {
-                    this.create_folder(&parent_dir, name, cx);
-                    this.file_tree.dialog = None;
-                    cx.notify();
-                });
-                Some(
-                    PromptDialog::new(
-                        "dialog-new-folder",
-                        "New Folder",
-                        &self.file_dialog_input,
-                        close,
-                    )
-                    .label("Folder Name")
-                    .submit("Create")
-                    .check(|text| {
-                        if text.trim().is_empty() {
-                            Err("Folder name is required".into())
-                        } else {
-                            Ok(())
-                        }
-                    })
-                    .on_submit(move |raw: &str, window: &mut Window, cx: &mut App| {
-                        submit(raw, window, cx);
-                    })
-                    .into_any_element(),
-                )
-            }
-            FileDialogAction::Rename {
-                target_path,
-                is_dir,
-            } => {
-                let submit = cx.listener(move |this, new_name: &str, _, cx| {
-                    this.rename_entry(&target_path, new_name, cx);
-                    this.file_tree.dialog = None;
-                    cx.notify();
-                });
-                Some(
-                    PromptDialog::new(
-                        "dialog-rename",
-                        if is_dir {
-                            "Rename Folder"
-                        } else {
-                            "Rename File"
-                        },
-                        &self.file_dialog_input,
-                        close,
-                    )
-                    .label("New Name")
-                    .submit("Rename")
-                    .check(|text| {
-                        if text.trim().is_empty() {
-                            Err("Name is required".into())
-                        } else {
-                            Ok(())
-                        }
-                    })
-                    .on_submit(move |raw: &str, window: &mut Window, cx: &mut App| {
-                        submit(raw, window, cx);
-                    })
-                    .into_any_element(),
-                )
-            }
-            FileDialogAction::Delete {
-                target_path,
-                is_dir,
-            } => {
-                let file_name = Path::new(&target_path)
-                    .file_name()
-                    .map_or_else(|| target_path.clone(), |n| n.to_string_lossy().into_owned());
-                let target_clone = target_path.clone();
-                let on_confirm = app_callback(cx, move |this, cx| {
-                    this.delete_entry(&target_clone, is_dir, cx);
-                    this.file_tree.dialog = None;
-                    cx.notify();
-                });
-                Some(
-                    ConfirmDialog::new(
-                        "dialog-delete",
-                        if is_dir {
-                            "Delete Folder?"
-                        } else {
-                            "Delete File?"
-                        },
-                        format!("Delete “{}”? This cannot be undone.", file_name),
-                        close,
-                    )
-                    .confirm("Delete")
-                    .destructive()
-                    .on_confirm(on_confirm)
-                    .into_any_element(),
-                )
-            }
-        }
-    }
-
     pub fn refresh_file_tree(&mut self, cx: &mut Context<Self>) {
         let cwd = self.workspace_cwd();
         if cwd.is_empty() || cwd == "~" {
@@ -871,138 +756,6 @@ impl BenCodeApp {
             is_dir,
         });
         cx.notify();
-    }
-
-    pub fn create_file(
-        &mut self,
-        parent_dir: &str,
-        name: &str,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let cwd = self.workspace_cwd();
-        let rel_path = if parent_dir.is_empty() {
-            name.to_string()
-        } else {
-            format!("{parent_dir}/{name}")
-        };
-        let full_path = Path::new(&cwd).join(&rel_path);
-        let parent_to_refresh = parent_dir.to_string();
-        let path_to_open = rel_path.clone();
-
-        let task = cx.background_executor().spawn(async move {
-            if let Some(parent) = full_path.parent() {
-                let _ = std::fs::create_dir_all(parent);
-            }
-            std::fs::File::create(&full_path)
-        });
-
-        cx.spawn_in(window, async move |this, cx| {
-            let result = task.await;
-            let _ = this.update_in(cx, |this, window, cx| {
-                if result.is_ok() {
-                    if !parent_to_refresh.is_empty() {
-                        this.file_tree
-                            .expanded_paths
-                            .insert(parent_to_refresh.clone());
-                    }
-                    this.load_directory(&parent_to_refresh, cx);
-                    this.file_tree.selected_path = Some(path_to_open.clone());
-                    this.open_file_in_editor(&path_to_open, window, cx);
-                    this.refresh_workspace(cx);
-                }
-            });
-        })
-        .detach();
-    }
-
-    pub fn create_folder(&mut self, parent_dir: &str, name: &str, cx: &mut Context<Self>) {
-        let cwd = self.workspace_cwd();
-        let rel_path = if parent_dir.is_empty() {
-            name.to_string()
-        } else {
-            format!("{parent_dir}/{name}")
-        };
-        let full_path = Path::new(&cwd).join(&rel_path);
-        let parent_to_refresh = parent_dir.to_string();
-
-        let task = cx
-            .background_executor()
-            .spawn(async move { std::fs::create_dir_all(&full_path) });
-
-        cx.spawn(async move |this, cx| {
-            let result = task.await;
-            let _ = this.update(cx, |this, cx| {
-                if result.is_ok() {
-                    if !parent_to_refresh.is_empty() {
-                        this.file_tree
-                            .expanded_paths
-                            .insert(parent_to_refresh.clone());
-                    }
-                    this.load_directory(&parent_to_refresh, cx);
-                    this.refresh_workspace(cx);
-                }
-            });
-        })
-        .detach();
-    }
-
-    pub fn rename_entry(&mut self, target_path: &str, new_name: &str, cx: &mut Context<Self>) {
-        let cwd = self.workspace_cwd();
-        let parent = Path::new(target_path)
-            .parent()
-            .map_or("", |p| p.to_str().unwrap_or(""));
-        let new_rel = if parent.is_empty() {
-            new_name.to_string()
-        } else {
-            format!("{parent}/{new_name}")
-        };
-        let old_full = Path::new(&cwd).join(target_path);
-        let new_full = Path::new(&cwd).join(&new_rel);
-        let parent_to_refresh = parent.to_string();
-
-        let task = cx
-            .background_executor()
-            .spawn(async move { std::fs::rename(&old_full, &new_full) });
-
-        cx.spawn(async move |this, cx| {
-            let result = task.await;
-            let _ = this.update(cx, |this, cx| {
-                if result.is_ok() {
-                    this.load_directory(&parent_to_refresh, cx);
-                    this.refresh_workspace(cx);
-                }
-            });
-        })
-        .detach();
-    }
-
-    pub fn delete_entry(&mut self, target_path: &str, is_dir: bool, cx: &mut Context<Self>) {
-        let cwd = self.workspace_cwd();
-        let full = Path::new(&cwd).join(target_path);
-        let parent = Path::new(target_path)
-            .parent()
-            .map_or("", |p| p.to_str().unwrap_or(""))
-            .to_string();
-
-        let task = cx.background_executor().spawn(async move {
-            if is_dir {
-                std::fs::remove_dir_all(&full)
-            } else {
-                std::fs::remove_file(&full)
-            }
-        });
-
-        cx.spawn(async move |this, cx| {
-            let result = task.await;
-            let _ = this.update(cx, |this, cx| {
-                if result.is_ok() {
-                    this.load_directory(&parent, cx);
-                    this.refresh_workspace(cx);
-                }
-            });
-        })
-        .detach();
     }
 }
 
