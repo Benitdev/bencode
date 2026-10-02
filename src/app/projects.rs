@@ -10,7 +10,9 @@ use std::collections::HashSet;
 
 use gpui::Context;
 
-use crate::app::{BenCodeApp, WorktreeFocus};
+use crate::app::BenCodeApp;
+use crate::app::tab_scope::{ProjectReturn, plan_project_return};
+use crate::app::workspace_nav::WorkspaceRequest;
 use crate::db::SessionRow;
 
 const RECENT_PROJECT_LIMIT: usize = 8;
@@ -62,25 +64,62 @@ pub(super) fn recent_projects(current_cwd: &str, sessions: &[SessionRow]) -> Vec
 }
 
 impl BenCodeApp {
-    /// Makes `cwd` the active project and shows a thread from it: an open
-    /// pane, else its latest thread, else a fresh one.
+    /// Selecting a project on the rail (MonoCode `openProjects` followed by
+    /// `workspaceNavigation.selectProject`): land on a tab of that project,
+    /// then on its focused worktree.
     pub fn switch_project(&mut self, new_cwd: String, cx: &mut Context<Self>) {
         let cwd = normalize_project_path(&new_cwd);
-        if cwd.is_empty() || same_project_path(&self.current_cwd, &cwd) {
+        if cwd.is_empty() || cwd == "~" {
             return;
         }
-        self.set_current_project(cwd.clone());
-        self.load_project_sessions(&cwd);
-        match self.project_session_to_show(&cwd) {
-            Some(id) => self.select_session(id, cx),
-            None => self.start_session_in(&cwd, cx),
+        self.close_overlay_views();
+        if same_project_path(&self.current_cwd, &cwd) {
+            cx.notify();
+            return;
         }
-        // `select_session` refreshes the workspace for the new directory.
-        cx.notify();
+        self.load_project_sessions(&cwd);
+        self.return_to_project(&cwd);
+        self.set_current_project(cwd.clone());
+        let focus = self.worktree_focuses.get(&cwd).cloned();
+        self.navigate_workspace(&cwd, focus, WorkspaceRequest::Project);
+        // Refreshes git/files for the new directory and records the landing.
+        self.sync_selection(cx);
+    }
+
+    /// Opening a project leaves the full-screen views, as in MonoCode.
+    fn close_overlay_views(&mut self) {
+        self.is_search_open = false;
+        self.is_inbox_open = false;
+        self.is_notes_open = false;
+        self.is_automations_open = false;
+    }
+
+    fn return_to_project(&mut self, cwd: &str) {
+        let focused = self
+            .selected_session()
+            .map(|s| (s, self.is_agent_running_in(&s.id)));
+        let plan = plan_project_return(
+            &self.project_return,
+            self.tabs.tabs(),
+            &self.sessions,
+            focused,
+            cwd,
+        );
+        match plan {
+            ProjectReturn::Keep => {}
+            ProjectReturn::Activate { pane_id } => {
+                self.tabs.focus(&pane_id);
+            }
+            ProjectReturn::ReuseBlank { session_id } => self.move_session(&session_id, cwd, None),
+            ProjectReturn::Create => {
+                let id = self.create_session_row(cwd);
+                self.tabs.open(&id);
+            }
+        }
     }
 
     /// Follows the focused thread into its project when it lives outside the
-    /// current one (e.g. switching to a tab opened from another project).
+    /// current one (MonoCode sets the project from the opened session).
     pub(super) fn follow_focused_session_project(&mut self) {
         let Some(cwd) = self
             .selected_session()
@@ -89,45 +128,9 @@ impl BenCodeApp {
         else {
             return;
         };
-        if !is_path_in_project(&cwd, &self.current_cwd) {
-            let project = self
-                .recent_projects
-                .iter()
-                .find(|p| is_path_in_project(&cwd, p))
-                .cloned()
-                .unwrap_or(cwd);
-            self.set_current_project(project);
+        if !same_project_path(&cwd, &self.current_cwd) {
+            self.set_current_project(cwd);
         }
-        self.follow_focused_session_worktree();
-    }
-
-    /// Narrows the workspace to the focused thread's worktree (or back to the
-    /// project folder), so the sidebar, explorer and agent agree.
-    fn follow_focused_session_worktree(&mut self) {
-        let Some(session) = self.selected_session() else {
-            return;
-        };
-        let worktree = session.worktree_cwd.as_deref().filter(|p| !p.is_empty());
-        let focused = self.worktree_focus.as_ref().map(|f| f.path.as_str());
-        let unchanged = match (worktree, focused) {
-            (Some(a), Some(b)) => same_project_path(a, b),
-            (None, None) => true,
-            _ => false,
-        };
-        if unchanged {
-            return;
-        }
-        let focus = worktree.map(|path| WorktreeFocus {
-            path: path.to_string(),
-            branch: self
-                .workspace
-                .worktrees
-                .iter()
-                .find(|w| same_project_path(&w.path, path))
-                .and_then(|w| w.branch.clone())
-                .or_else(|| session.branch.clone()),
-        });
-        self.worktree_focus = focus;
     }
 
     fn set_current_project(&mut self, cwd: String) {
@@ -139,7 +142,6 @@ impl BenCodeApp {
             self.recent_projects.push(cwd.clone());
         }
         self.current_cwd = cwd;
-        self.worktree_focus = None;
         self.file_tree.dir_cache.clear();
         self.file_tree.expanded_paths.clear();
         self.file_tree.selected_path = None;
@@ -158,54 +160,6 @@ impl BenCodeApp {
         let known: HashSet<String> = self.sessions.iter().map(|s| s.id.clone()).collect();
         self.sessions
             .extend(rows.into_iter().filter(|row| !known.contains(&row.id)));
-    }
-
-    /// An open pane in `cwd` (active tab first), else its latest thread.
-    fn project_session_to_show(&self, cwd: &str) -> Option<String> {
-        let in_project = |id: &str| {
-            self.sessions
-                .iter()
-                .any(|s| s.id == id && is_path_in_project(&s.cwd, cwd))
-        };
-        let active_id = self.tabs.active_id();
-        let open_pane = self
-            .tabs
-            .active()
-            .into_iter()
-            .chain(
-                self.tabs
-                    .tabs()
-                    .iter()
-                    .filter(|t| Some(t.id.as_str()) != active_id),
-            )
-            .flat_map(|tab| tab.leaf_ids())
-            .find(|id| in_project(id));
-        open_pane.or_else(|| {
-            self.sessions
-                .iter()
-                .filter(|s| is_path_in_project(&s.cwd, cwd))
-                .max_by_key(|s| s.updated_at)
-                .map(|s| s.id.clone())
-        })
-    }
-
-    /// Moves the focused thread to `cwd` if nothing was sent in it yet,
-    /// otherwise starts a new thread there.
-    fn start_session_in(&mut self, cwd: &str, cx: &mut Context<Self>) {
-        let blank = self
-            .selected_session_mut()
-            .filter(|s| s.blocks.iter().all(|b| b.role != "user"));
-        let id = match blank {
-            Some(session) => {
-                session.cwd = cwd.to_string();
-                session.worktree_cwd = None;
-                let id = session.id.clone();
-                self.persist_session(&id);
-                id
-            }
-            None => self.create_session_row(cwd),
-        };
-        self.select_session(id, cx);
     }
 }
 

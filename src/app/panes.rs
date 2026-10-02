@@ -9,11 +9,14 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use gpui::Context;
 
+use super::tab_scope::{TabClosePlan, deck_tabs, plan_tab_close};
 use super::{BenCodeApp, DEFAULT_CONTEXT_WINDOW, NEW_SESSION_TITLE, now_ms};
 use crate::db::{Block, SessionRow};
 use crate::harness::{HarnessKind, catalog};
 use crate::ui::drag_drop::PaneDropTarget;
-use crate::ui::layout::{FocusDir, LayoutNode, PaneEdge, SplitDir, neighbor_leaf_id};
+use crate::ui::layout::{
+    FocusDir, LayoutNode, PaneEdge, SplitDir, WorkspaceTab, leaf, neighbor_leaf_id,
+};
 
 /// Suffix for session ids, so two sessions made in one millisecond differ.
 static NEXT_SESSION: AtomicU64 = AtomicU64::new(1);
@@ -24,7 +27,7 @@ const WELCOME_TEXT: &str =
 impl BenCodeApp {
     /// Makes `selected_session_id` (and the model picker) follow the active
     /// tab's focused pane.
-    fn sync_selection(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn sync_selection(&mut self, cx: &mut Context<Self>) {
         let focused = self.tabs.focused_session().map(str::to_string);
         if focused != self.selected_session_id {
             self.selected_diff_path = None;
@@ -40,6 +43,7 @@ impl BenCodeApp {
         }
         self.selected_session_id = focused;
         self.follow_focused_session_project();
+        self.remember_focused_tab();
         self.refresh_workspace_if_moved(cx);
         cx.notify();
     }
@@ -57,10 +61,31 @@ impl BenCodeApp {
         }
     }
 
+    /// Closes a tab and moves to the nearest tab of the same project and
+    /// workspace. The last such tab stays open, so closing never jumps to
+    /// another project (MonoCode `planWorkspaceTabClose`).
     pub fn close_tab(&mut self, tab_id: &str, cx: &mut Context<Self>) {
+        let TabClosePlan::Close { next_active } =
+            plan_tab_close(self.tabs.tabs(), &self.sessions, tab_id)
+        else {
+            return;
+        };
         if self.tabs.close_tab(tab_id) {
+            self.tabs.activate(&next_active);
             self.sync_selection(cx);
         }
+    }
+
+    /// Tabs shown in the title bar: the current project's, in the focused
+    /// workspace, plus the active one.
+    pub fn deck_tabs(&self) -> Vec<&WorkspaceTab> {
+        deck_tabs(
+            self.tabs.tabs(),
+            self.tabs.active_id(),
+            &self.sessions,
+            &self.current_cwd,
+            self.workspace_path(),
+        )
     }
 
     /// The active tab's layout; `None` when no tab is open.
@@ -114,6 +139,15 @@ impl BenCodeApp {
 
     /// Closes a pane; the last pane of a tab closes the tab.
     pub fn close_pane(&mut self, pane_id: &str, cx: &mut Context<Self>) {
+        let last_pane_of = self
+            .tabs
+            .tab_of(pane_id)
+            .filter(|tab| tab.layout == leaf(pane_id))
+            .map(|tab| tab.id.clone());
+        if let Some(tab_id) = last_pane_of {
+            self.close_tab(&tab_id, cx);
+            return;
+        }
         if self.tabs.close_pane(pane_id) {
             self.sync_selection(cx);
         }
@@ -196,7 +230,15 @@ impl BenCodeApp {
         to_index: usize,
         cx: &mut Context<Self>,
     ) {
-        if self.tabs.reorder(from_index, to_index) {
+        // The indices come from the title bar, which shows only `deck_tabs`.
+        let position = |ix: usize| {
+            let id = self.deck_tabs().get(ix).map(|t| t.id.clone())?;
+            self.tabs.tabs().iter().position(|t| t.id == id)
+        };
+        let (Some(from), Some(to)) = (position(from_index), position(to_index)) else {
+            return;
+        };
+        if self.tabs.reorder(from, to) {
             cx.notify();
         }
     }
@@ -233,8 +275,7 @@ impl BenCodeApp {
 
         // MonoCode keeps `cwd` on the project and records the worktree apart.
         let worktree_cwd = self
-            .worktree_focus
-            .as_ref()
+            .worktree_focus()
             .filter(|_| crate::app::same_project_path(cwd, &self.current_cwd))
             .map(|focus| focus.path.clone());
 

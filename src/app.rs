@@ -4,7 +4,11 @@ mod integrations;
 mod panes;
 mod preferences;
 mod projects;
+mod tab_scope;
+mod workspace_nav;
 mod workspace_sync;
+
+use std::collections::HashMap;
 
 use ely_gpui_component::forms::{InputEvent, TextInput};
 use ely_gpui_component::primitives::FocusScope;
@@ -17,7 +21,7 @@ use gpui::{
 
 pub use agent::{AgentRun, NEW_SESSION_TITLE, now_ms};
 pub use preferences::theme_mode;
-pub use projects::{is_path_in_project, same_project_path};
+pub use projects::{is_path_in_project, normalize_project_path, same_project_path};
 pub use workspace_sync::WorkspaceCache;
 
 use crate::db::{MonoCodeDb, SessionRow};
@@ -117,7 +121,13 @@ pub struct BenCodeApp {
     pub automation_time_input: Entity<TextInput>,
     // Workspace & Projects
     pub current_cwd: String,
-    pub worktree_focus: Option<WorktreeFocus>,
+    /// Worktree each project's workspace is narrowed to, keyed by project.
+    /// Kept for this run only, like MonoCode.
+    pub worktree_focuses: HashMap<String, WorktreeFocus>,
+    /// Pane last focused in each project, for returning to it from the rail.
+    pub project_return: HashMap<String, String>,
+    /// Tab last active in each (project, workspace) pair.
+    pub workspace_return: HashMap<String, String>,
     pub recent_projects: Vec<String>,
     // Git & Source Control
     pub git_status: crate::git::GitDetailedStatus,
@@ -331,9 +341,18 @@ impl BenCodeApp {
             }
         }));
 
-        let current_cwd = std::env::current_dir()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_else(|_| ".".to_string());
+        // The project of the thread that opens focused, else the launch dir.
+        let current_cwd = selected_session_id
+            .as_deref()
+            .and_then(|id| sessions.iter().find(|s| s.id == id))
+            .map(|s| normalize_project_path(&s.cwd))
+            .filter(|cwd| !cwd.is_empty() && cwd != "~")
+            .or_else(|| {
+                std::env::current_dir()
+                    .ok()
+                    .map(|p| normalize_project_path(&p.to_string_lossy()))
+            })
+            .unwrap_or_else(|| ".".to_string());
         let recent_projects = projects::recent_projects(&current_cwd, &sessions);
 
         let harnesses = HarnessResolver::discover();
@@ -415,7 +434,9 @@ impl BenCodeApp {
             automation_prompt_input,
             automation_time_input,
             current_cwd,
-            worktree_focus: None,
+            worktree_focuses: HashMap::new(),
+            project_return: HashMap::new(),
+            workspace_return: HashMap::new(),
             recent_projects,
             git_status: Default::default(),
             git_commits: Vec::new(),

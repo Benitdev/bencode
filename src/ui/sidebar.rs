@@ -215,7 +215,7 @@ impl BenCodeApp {
         worktrees: &[&crate::git::Worktree],
         cx: &Context<Self>,
     ) -> impl IntoElement {
-        let title = if let Some(focus) = &self.worktree_focus {
+        let title = if let Some(focus) = self.worktree_focus() {
             focus
                 .branch
                 .clone()
@@ -233,10 +233,7 @@ impl BenCodeApp {
         menu = menu.item(
             MenuItem::new(format!("{main_branch} · Project folder"))
                 .icon(IconName::GitBranch)
-                .on_click(app_callback(cx, |this, cx| {
-                    this.worktree_focus = None;
-                    this.refresh_workspace(cx);
-                })),
+                .on_click(app_callback(cx, |this, cx| this.select_workspace(None, cx))),
         );
         menu = menu.separator();
 
@@ -255,18 +252,18 @@ impl BenCodeApp {
                 MenuItem::new(display_label)
                     .icon(IconName::FolderOpen)
                     .on_click(app_callback(cx, move |this, cx| {
-                        this.worktree_focus = Some(WorktreeFocus {
+                        let focus = WorktreeFocus {
                             path: path.clone(),
                             branch: branch.clone(),
-                        });
-                        this.refresh_workspace(cx);
+                        };
+                        this.select_workspace(Some(focus), cx);
                     })),
             );
         }
 
         DropdownMenu::new("worktree-switcher", title, menu)
             .variant(ButtonVariant::Ghost)
-            .icon(if self.worktree_focus.is_some() {
+            .icon(if self.worktree_focus().is_some() {
                 IconName::FolderOpen
             } else {
                 IconName::GitBranch
@@ -279,19 +276,19 @@ impl BenCodeApp {
         let filter = self.filter_mode;
         let now = crate::app::now_ms();
         let current_cwd = &self.current_cwd;
-        let (pinned, rest): (Vec<&SessionRow>, Vec<&SessionRow>) =
-            self.sessions
-                .iter()
-                .filter(|s| {
-                    let in_project = current_cwd.is_empty()
-                        || current_cwd == "~"
-                        || crate::app::is_path_in_project(&s.cwd, current_cwd);
-                    let in_worktree = self.worktree_focus.as_ref().is_none_or(|focus| {
-                        crate::app::same_project_path(s.work_dir(), &focus.path)
-                    });
-                    in_project && in_worktree && keeps(filter, s) && matches_query(s, &query)
-                })
-                .partition(|s| s.pinned);
+        let (pinned, rest): (Vec<&SessionRow>, Vec<&SessionRow>) = self
+            .sessions
+            .iter()
+            .filter(|s| {
+                let in_project = current_cwd.is_empty()
+                    || current_cwd == "~"
+                    || crate::app::same_project_path(&s.cwd, current_cwd);
+                let in_worktree = self
+                    .worktree_focus()
+                    .is_none_or(|focus| crate::app::same_project_path(s.work_dir(), &focus.path));
+                in_project && in_worktree && keeps(filter, s) && matches_query(s, &query)
+            })
+            .partition(|s| s.pinned);
 
         div()
             .flex()

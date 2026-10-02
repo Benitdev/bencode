@@ -68,7 +68,7 @@ impl BenCodeApp {
     /// The directory the workspace views describe: the focused worktree cwd,
     /// or the open thread's cwd, falling back to the current project directory.
     pub fn workspace_cwd(&self) -> String {
-        if let Some(focus) = &self.worktree_focus {
+        if let Some(focus) = self.worktree_focus() {
             return focus.path.clone();
         }
         if let Some(session) = self

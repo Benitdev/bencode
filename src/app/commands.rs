@@ -110,7 +110,7 @@ fn cycled_tab(ids: &[&str], active: Option<&str>, delta: isize) -> Option<String
 
 impl BenCodeApp {
     fn cycle_tab(&mut self, delta: isize, cx: &mut Context<Self>) {
-        let ids: Vec<&str> = self.tabs.tabs().iter().map(|t| t.id.as_str()).collect();
+        let ids: Vec<&str> = self.deck_tabs().iter().map(|t| t.id.as_str()).collect();
         if let Some(id) = cycled_tab(&ids, self.tabs.active_id(), delta) {
             self.switch_tab(&id, cx);
         }

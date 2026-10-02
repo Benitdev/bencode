@@ -45,9 +45,8 @@ impl BenCodeApp {
         let weak = cx.entity().downgrade();
         let (select, close) = (weak.clone(), weak.clone());
         let mut bar = self
-            .tabs
-            .tabs()
-            .iter()
+            .deck_tabs()
+            .into_iter()
             .fold(TabBar::new("titlebar-tabs"), |bar, tab| {
                 bar.tab(self.window_tab(tab))
             });
