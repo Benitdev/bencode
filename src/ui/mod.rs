@@ -13,6 +13,7 @@ pub mod layout;
 pub mod notes_view;
 pub mod pane_tree;
 pub mod provider_icon;
+pub mod quick_open;
 pub mod rail;
 pub mod search_view;
 pub mod settings_modal;

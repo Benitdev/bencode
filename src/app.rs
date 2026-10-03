@@ -141,6 +141,9 @@ pub struct BenCodeApp {
     pub catalog_probes: HashMap<crate::harness::HarnessKind, Option<std::time::Instant>>,
     /// Find in conversation (⌘F): its field and the open bar.
     pub find_input: Entity<TextInput>,
+    /// Go to File (⌘P).
+    pub quick_open: crate::ui::quick_open::QuickOpen,
+    pub quick_open_input: Entity<TextInput>,
     /// Title-bar tab strip: scroll, sweeps, unseen finishes.
     pub title_strip: crate::ui::titlebar::TitleStrip,
     pub transcript_find: Option<crate::ui::transcript::find::FindState>,
@@ -314,6 +317,8 @@ impl BenCodeApp {
         let model_search_input = text_input(window, cx, "Search models");
         let find_input = text_input(window, cx, "Find in conversation");
         let find_keys_input = find_input.clone();
+        let quick_open_input = text_input(window, cx, "Go to File (type > for commands)");
+        let quick_keys_input = quick_open_input.clone();
         let note_filter_input = text_input(window, cx, "Filter notes...");
         let note_title_input = text_input(window, cx, "Note title...");
         let note_body_input = multiline_input(
@@ -376,6 +381,14 @@ impl BenCodeApp {
                 },
             ),
             cx.subscribe(
+                &quick_open_input,
+                |this: &mut Self, _, event: &InputEvent, cx| {
+                    if *event == InputEvent::Changed {
+                        this.on_quick_open_query_changed(cx);
+                    }
+                },
+            ),
+            cx.subscribe(
                 &find_input,
                 |this: &mut Self, _, event: &InputEvent, cx| match event {
                     InputEvent::Changed => this.on_find_query_changed(cx),
@@ -422,6 +435,28 @@ impl BenCodeApp {
             if pasting && composer_input.read(cx).focus_handle(cx).is_focused(window) {
                 let attached = weak_app.update(cx, |this, cx| this.paste_into_composer(cx));
                 if matches!(attached, Ok(true)) {
+                    cx.stop_propagation();
+                }
+                return;
+            }
+            // MonoCode `FilePicker`: ↑/↓, Enter, Esc and Tab belong to the picker.
+            if quick_keys_input
+                .read(cx)
+                .focus_handle(cx)
+                .is_focused(window)
+            {
+                let key = event.keystroke.key.as_str();
+                if event.keystroke.modifiers.modified()
+                    || !matches!(key, "up" | "down" | "enter" | "escape" | "tab")
+                {
+                    return;
+                }
+                let handled = weak_app.update(cx, |this, cx| {
+                    let handled = this.quick_open_key(key, cx);
+                    this.open_pending_quick_open(window, cx);
+                    handled
+                });
+                if matches!(handled, Ok(true)) {
                     cx.stop_propagation();
                 }
                 return;
@@ -565,6 +600,8 @@ impl BenCodeApp {
             find_input,
             transcript_find: None,
             title_strip: Default::default(),
+            quick_open: Default::default(),
+            quick_open_input,
             drafts: HashMap::new(),
             expanded_reasoning: std::collections::HashSet::new(),
             transcript_ui: Default::default(),
@@ -971,6 +1008,7 @@ impl Render for BenCodeApp {
                         .children(surface),
                 )
                 .children(self.render_session_dialog(cx))
+                .children(self.render_quick_open(cx))
                 .children(self.render_git_confirm(cx))
                 .children(self.render_branch_switch_confirm(cx))
                 .children(self.render_file_tree_dialog(cx)),

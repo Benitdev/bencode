@@ -866,7 +866,7 @@ impl BenCodeApp {
             } else {
                 row.child(
                     button("titlebar-goto-file", IconName::Search, "Go to File (⌘P)")
-                        .on_click(cx.listener(|this, _, _, cx| this.open_search_modal(cx))),
+                        .on_click(cx.listener(|this, _, _, cx| this.open_quick_open(cx))),
                 )
                 .child(
                     button("titlebar-new-session", IconName::Plus, "New session (⌘T)")
