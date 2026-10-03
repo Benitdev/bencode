@@ -13,7 +13,8 @@ use crate::app::BenCodeApp;
 use crate::db::Note;
 use crate::skills::Skill;
 
-const MAX_FILES: usize = 8;
+/// MonoCode `MAX_PICKER`.
+const MAX_PICKER: usize = 30;
 const MAX_NOTES: usize = 5;
 /// MonoCode `FileMentionPicker`: `max-h-[min(240px,40vh)]`, 32px rows.
 const POPOVER_MAX_HEIGHT: gpui::Pixels = px(240.0);
@@ -32,6 +33,7 @@ fn wrap_index(current: usize, delta: isize, len: usize) -> usize {
 pub enum SuggestionKind {
     Skill,
     File,
+    Folder,
     Note,
 }
 
@@ -62,17 +64,16 @@ pub fn skill_suggestions(query: &str, skills: &[Skill]) -> Vec<Suggestion> {
         .collect()
 }
 
-pub fn mention_suggestions(query: &str, files: &[SharedString], notes: &[Note]) -> Vec<Suggestion> {
-    let files = files
-        .iter()
-        .filter(|f| query.is_empty() || f.to_lowercase().contains(query))
-        .take(MAX_FILES)
-        .map(|f| Suggestion {
-            kind: SuggestionKind::File,
-            label: f.clone(),
-            detail: None,
-            insert: f.to_string(),
-        });
+/// MonoCode `rankMentionFiles`: with a query, the fuzzy ranking Go to File
+/// uses over files and folders; without one, recent files, then the
+/// shallowest entries, folders first. Notes come first, as in MonoCode.
+pub fn mention_suggestions(
+    query: &str,
+    files: &[SharedString],
+    dirs: &[SharedString],
+    notes: &[Note],
+    recents: &[String],
+) -> Vec<Suggestion> {
     let notes = notes
         .iter()
         .filter(|n| {
@@ -85,7 +86,54 @@ pub fn mention_suggestions(query: &str, files: &[SharedString], notes: &[Note]) 
             detail: Some(n.title.clone().into()),
             insert: format!("note/{}", n.slug),
         });
-    files.chain(notes).collect()
+    let needle = query.trim_end_matches('/').trim();
+    let is_dir = |path: &str| dirs.binary_search_by(|d| d.as_ref().cmp(path)).is_ok();
+    let picked: Vec<String> = if needle.is_empty() {
+        let mut out: Vec<String> = recents
+            .iter()
+            .filter(|r| files.iter().any(|f| f.as_ref() == r.as_str()))
+            .take(MAX_PICKER)
+            .cloned()
+            .collect();
+        let mut rest: Vec<&SharedString> = dirs.iter().chain(files.iter()).collect();
+        let depth = |p: &str| p.matches('/').count();
+        rest.sort_by(|a, b| {
+            depth(a)
+                .cmp(&depth(b))
+                .then(is_dir(b).cmp(&is_dir(a)))
+                .then_with(|| a.cmp(b))
+        });
+        for path in rest {
+            if out.len() >= MAX_PICKER {
+                break;
+            }
+            if !out.iter().any(|o| o.as_str() == path.as_ref()) {
+                out.push(path.to_string());
+            }
+        }
+        out
+    } else {
+        let all: Vec<SharedString> = files.iter().chain(dirs.iter()).cloned().collect();
+        crate::ui::quick_open::rank_files(&all, needle, recents)
+            .into_iter()
+            .take(MAX_PICKER)
+            .map(|(path, _)| path)
+            .collect()
+    };
+    let files = picked.into_iter().map(|path| {
+        let (dir, name) = path.rsplit_once('/').unwrap_or(("", path.as_str()));
+        Suggestion {
+            kind: if is_dir(&path) {
+                SuggestionKind::Folder
+            } else {
+                SuggestionKind::File
+            },
+            label: name.to_string().into(),
+            detail: (!dir.is_empty()).then(|| SharedString::from(dir.to_string())),
+            insert: path.clone(),
+        }
+    });
+    notes.chain(files).collect()
 }
 
 impl BenCodeApp {
@@ -106,7 +154,9 @@ impl BenCodeApp {
         let insert = item.insert.clone();
         match item.kind {
             SuggestionKind::Skill => self.insert_skill(&insert, cx),
-            SuggestionKind::File | SuggestionKind::Note => self.insert_mention(&insert, cx),
+            SuggestionKind::File | SuggestionKind::Folder | SuggestionKind::Note => {
+                self.insert_mention(&insert, cx)
+            }
         }
         true
     }
@@ -115,7 +165,13 @@ impl BenCodeApp {
         if self.is_skill_picker_open {
             skill_suggestions(&self.skill_query, &self.integrations.skills)
         } else if self.is_mention_picker_open {
-            mention_suggestions(&self.mention_query, &self.workspace.files, &self.notes)
+            mention_suggestions(
+                &self.mention_query,
+                &self.project_files.files,
+                &self.project_files.dirs,
+                &self.notes,
+                &self.quick_open_recents(),
+            )
         } else {
             Vec::new()
         }
@@ -178,6 +234,7 @@ impl BenCodeApp {
         let (icon, tag, tone) = match item.kind {
             SuggestionKind::Skill => (IconName::Zap, "skill", Tone::Accent),
             SuggestionKind::File => (IconName::FileText, "file", Tone::Neutral),
+            SuggestionKind::Folder => (IconName::Folder, "folder", Tone::Neutral),
             SuggestionKind::Note => (IconName::NotebookPen, "note", Tone::Info),
         };
         let (kind, insert) = (item.kind, item.insert);
@@ -202,7 +259,9 @@ impl BenCodeApp {
             }))
             .on_click(cx.listener(move |this, _, _, cx| match kind {
                 SuggestionKind::Skill => this.insert_skill(&insert, cx),
-                SuggestionKind::File | SuggestionKind::Note => this.insert_mention(&insert, cx),
+                SuggestionKind::File | SuggestionKind::Folder | SuggestionKind::Note => {
+                    this.insert_mention(&insert, cx)
+                }
             }))
             .child(
                 div().flex_none().child(
@@ -269,22 +328,31 @@ mod tests {
     }
 
     #[test]
-    fn mentions_list_files_then_notes() {
+    fn mentions_rank_notes_then_files_and_folders() {
         let files = [
-            SharedString::from("src/main.rs"),
             SharedString::from("README.md"),
+            SharedString::from("src/main.rs"),
         ];
+        let dirs = [SharedString::from("src")];
         let notes = [Note {
             id: "n".into(),
             slug: "main-plan".into(),
             title: "Plan".into(),
             ..Default::default()
         }];
-        let found = mention_suggestions("main", &files, &notes);
+        let found = mention_suggestions("main", &files, &dirs, &notes, &[]);
         assert_eq!(
             found.iter().map(|s| s.kind).collect::<Vec<_>>(),
-            [SuggestionKind::File, SuggestionKind::Note]
+            [SuggestionKind::Note, SuggestionKind::File]
         );
-        assert_eq!(found[1].insert, "note/main-plan");
+        assert_eq!(found[0].insert, "note/main-plan");
+        assert_eq!(found[1].label.as_ref(), "main.rs");
+        assert_eq!(found[1].detail.as_ref().map(|d| d.as_ref()), Some("src"));
+
+        // No query: shallow entries first, folders before files.
+        let browse = mention_suggestions("", &files, &dirs, &[], &[]);
+        let order: Vec<_> = browse.iter().map(|s| s.insert.as_str()).collect();
+        assert_eq!(order, ["src", "README.md", "src/main.rs"]);
+        assert_eq!(browse[0].kind, SuggestionKind::Folder);
     }
 }

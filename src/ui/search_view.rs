@@ -135,7 +135,11 @@ fn collect_hits(query: &str, scope: SearchScope, app: &BenCodeApp) -> Vec<Search
         hits.extend(session_hits(&query, &app.sessions));
     }
     if scope.includes(SearchScope::Files) {
-        hits.extend(file_hits(&query, &app.workspace.cwd, &app.workspace.files));
+        hits.extend(file_hits(
+            &query,
+            &app.project_files.root,
+            &app.project_files.files,
+        ));
     }
     if scope.includes(SearchScope::Projects) {
         hits.extend(project_hits(&query, &app.recent_projects));
@@ -145,6 +149,7 @@ fn collect_hits(query: &str, scope: SearchScope, app: &BenCodeApp) -> Vec<Search
 
 impl BenCodeApp {
     pub fn open_search_modal(&mut self, cx: &mut Context<Self>) {
+        self.index_project_files(cx);
         self.show_surface(Surface::Search, cx);
         self.search_scope = SearchScope::All;
         self.search_focus_pending = true;

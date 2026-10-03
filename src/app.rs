@@ -4,6 +4,7 @@ mod integrations;
 mod model_catalog;
 mod panes;
 mod preferences;
+pub mod project_files;
 mod projects;
 mod surfaces;
 mod tab_history;
@@ -141,6 +142,8 @@ pub struct BenCodeApp {
     pub catalog_probes: HashMap<crate::harness::HarnessKind, Option<std::time::Instant>>,
     /// Find in conversation (⌘F): its field and the open bar.
     pub find_input: Entity<TextInput>,
+    /// Every file of the project, for Go to File, `@` and Search.
+    pub project_files: crate::app::project_files::ProjectFiles,
     /// Go to File (⌘P).
     pub quick_open: crate::ui::quick_open::QuickOpen,
     pub quick_open_input: Entity<TextInput>,
@@ -601,6 +604,7 @@ impl BenCodeApp {
             transcript_find: None,
             title_strip: Default::default(),
             quick_open: Default::default(),
+            project_files: Default::default(),
             quick_open_input,
             drafts: HashMap::new(),
             expanded_reasoning: std::collections::HashSet::new(),
@@ -733,6 +737,7 @@ impl BenCodeApp {
     }
 
     pub fn on_prompt_changed(&mut self, cx: &mut Context<Self>) {
+        let was_mentioning = self.is_mention_picker_open;
         let text = self.prompt_input.read(cx).text().to_string();
         self.is_skill_picker_open = false;
         self.is_mention_picker_open = false;
@@ -742,6 +747,10 @@ impl BenCodeApp {
             self.is_skill_picker_open = true;
             self.skill_query = query;
         } else if let Some(query) = trigger_query(&text, '@') {
+            // MonoCode re-lists the project as the `@` picker opens.
+            if !was_mentioning {
+                self.index_project_files(cx);
+            }
             self.is_mention_picker_open = true;
             self.mention_query = query;
         }

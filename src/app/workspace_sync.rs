@@ -4,20 +4,15 @@
 //! re-renders on every streamed token. Everything here is loaded on the
 //! background executor and swapped in atomically; views read the cache.
 
-use std::path::Path;
-
 use anyhow::Result;
 use gpui::{Context, SharedString};
 
 use crate::app::BenCodeApp;
 use crate::git::{self, DiffRow, DiffSource, GitCommitInfo, GitDetailedStatus, GitFileChange};
-use crate::workspace::list_workspace_files;
 
 const RECENT_COMMIT_COUNT: usize = 8;
 /// MonoCode re-reads git state this often (`GIT_POLL_MS`).
 const GIT_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
-/// Mention candidates kept in memory; filtering them per keystroke is cheap.
-const MENTION_FILE_LIMIT: usize = 2_000;
 
 /// A past commit opened from the history: its files and which one is shown.
 #[derive(Clone, Debug)]
@@ -34,8 +29,6 @@ pub struct WorkspaceCache {
     pub cwd: String,
     pub branches: Vec<git::Branch>,
     pub changes: Vec<GitFileChange>,
-    /// Repo-relative paths; `SharedString` so views clone by refcount.
-    pub files: Vec<SharedString>,
     pub worktrees: Vec<crate::git::Worktree>,
     pub diff_path: Option<String>,
     /// Which change `diff` shows for `diff_path`.
@@ -59,22 +52,16 @@ struct Snapshot {
     commits: Vec<GitCommitInfo>,
     branches: Vec<git::Branch>,
     changes: Vec<GitFileChange>,
-    files: Vec<SharedString>,
     worktrees: Vec<crate::git::Worktree>,
 }
 
 fn load_snapshot(cwd: &str) -> Snapshot {
-    let root = Path::new(cwd);
     Snapshot {
         fingerprint: git::state_fingerprint(cwd),
         status: git::get_detailed_status(cwd),
         commits: git::get_recent_commits(cwd, RECENT_COMMIT_COUNT),
         branches: git::list_branches(cwd),
         changes: git::get_workspace_changes(cwd),
-        files: list_workspace_files(root, MENTION_FILE_LIMIT)
-            .into_iter()
-            .map(SharedString::from)
-            .collect(),
         worktrees: crate::git::worktrees::list_worktrees(cwd).unwrap_or_else(|err| {
             // Expected for folders that are not git repositories.
             log::debug!("no worktrees for {cwd}: {err:#}");
@@ -130,7 +117,6 @@ impl BenCodeApp {
                 cache.fingerprint = snapshot.fingerprint;
                 cache.branches = snapshot.branches;
                 cache.changes = snapshot.changes;
-                cache.files = snapshot.files;
                 cache.worktrees = snapshot.worktrees;
                 if app.workspace.commit_view.is_none() {
                     let diff_path = app
