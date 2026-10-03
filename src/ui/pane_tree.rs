@@ -2,26 +2,23 @@
 //! `SplitPane`, docked by drag-and-drop, each streaming its own transcript.
 
 use ely_gpui_component::buttons::{ButtonVariant, IconButton};
-use ely_gpui_component::data_display::{Badge, Tone};
 use ely_gpui_component::feedback::EmptyState;
 use ely_gpui_component::layout::SplitPane;
 use ely_gpui_component::primitives::{DragGhost, Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize};
 use gpui::prelude::*;
 use gpui::{
-    AnyElement, Axis, Context, DragMoveEvent, FollowMode, FontWeight, IntoElement, ListState,
-    ParentElement, SharedString, Stateful, Styled, div, list, px,
+    AnyElement, Axis, Context, DragMoveEvent, FollowMode, IntoElement, ListState, ParentElement,
+    SharedString, Stateful, Styled, div, list, px,
 };
 
 use crate::app::BenCodeApp;
 use crate::db::SessionRow;
 use crate::harness::catalog;
-use crate::ui::HarnessIcon;
 use crate::ui::drag_drop::{
     DraggedFile, DraggedPane, render_file_drop_hint, render_pane_drop_hint,
 };
 use crate::ui::layout::{LayoutNode, SplitDir, leaf_count, pane_edge_from_point, split_shares};
-use crate::ui::transcript::context_percent;
 
 const UNTITLED: &str = "Untitled thread";
 
@@ -156,11 +153,6 @@ impl BenCodeApp {
             .filter(|target| target.over_id == session_id)
             .map(|target| target.edge);
         let file_hint = self.active_file_drop_target.as_deref() == Some(session_id);
-        let border = match (in_split, is_focused) {
-            (true, true) => cx.theme().colors.accent,
-            (true, false) => cx.theme().colors.border,
-            (false, _) => gpui::transparent_black(),
-        };
         let composer = if is_focused {
             self.render_composer(Some(session), cx).into_any_element()
         } else {
@@ -174,13 +166,22 @@ impl BenCodeApp {
             .flex()
             .flex_col()
             .size_full()
-            .min_w_0()
-            .border_1()
-            .border_color(border);
-        self.with_pane_listeners(frame, session_id, cx)
-            .child(self.render_pane_header(session, in_split, is_focused, cx))
-            .child(self.render_pane_body(session, list_state, cx))
-            .child(composer)
+            .min_w_0();
+        // A thread with no message yet shows the centred composer.
+        let empty = !session.blocks.iter().any(|b| b.role == "user");
+        let frame = self
+            .with_pane_listeners(frame, session_id, cx)
+            .when(in_split, |el| {
+                el.child(self.render_pane_header(session, is_focused, cx))
+            });
+        let frame = if empty && is_focused {
+            frame.child(self.render_empty_session(session, cx))
+        } else {
+            frame
+                .child(self.render_pane_body(session, list_state, cx))
+                .child(composer)
+        };
+        frame
             .when_some(drop_hint, |el, edge| {
                 el.child(render_pane_drop_hint(edge, cx))
             })
@@ -249,9 +250,7 @@ impl BenCodeApp {
         cx: &Context<Self>,
     ) -> impl IntoElement {
         let scrolled_up = list_state.is_scrolled_to_end() == Some(false);
-        let content = if session.blocks.is_empty() {
-            self.render_welcome(session, cx)
-        } else {
+        let content = {
             let sid = session.id.clone();
             list(
                 list_state,
@@ -302,152 +301,115 @@ impl BenCodeApp {
             )
     }
 
-    /// Pane header: drag grip, harness dot, title and cwd on the left;
-    /// badges and split / close actions on the right.
+    /// MonoCode `SessionPane` header, shown only in a split: a grip to drag
+    /// the pane, a dot lit on the focused pane, the title, and close.
     fn render_pane_header(
         &self,
         session: &SessionRow,
-        in_split: bool,
         is_focused: bool,
         cx: &Context<Self>,
     ) -> impl IntoElement {
         let colors = &cx.theme().colors;
+        let title = display_title(session).to_string();
+        let ghost_title = SharedString::from(title.clone());
+        let close_id = session.id.clone();
+        let hover = colors.fg.opacity(0.1);
         div()
+            .id(SharedString::from(format!("pane-header-{}", session.id)))
             .flex()
             .flex_none()
             .items_center()
-            .justify_between()
-            .gap_2()
-            .px_4()
-            .py_1p5()
+            .gap_1p5()
+            .h(px(36.0))
+            .px_2()
             .border_b_1()
             .border_color(colors.border)
-            .bg(if is_focused {
-                colors.surface
-            } else {
-                colors.bg
-            })
-            .child(self.render_pane_title(session, is_focused, cx))
-            .child(self.render_pane_actions(session, in_split, cx))
-    }
-
-    fn render_pane_title(
-        &self,
-        session: &SessionRow,
-        is_focused: bool,
-        cx: &Context<Self>,
-    ) -> impl IntoElement {
-        let theme = cx.theme();
-        let colors = &theme.colors;
-        let title = display_title(session);
-        let ghost_title = SharedString::from(title.to_string());
-        let weight = if is_focused {
-            FontWeight::SEMIBOLD
-        } else {
-            FontWeight::NORMAL
-        };
-        div()
-            .flex()
-            .items_center()
-            .gap_2()
-            .min_w_0()
+            .cursor_grab()
+            .on_drag(
+                DraggedPane {
+                    session_id: session.id.clone(),
+                },
+                move |_, _, _, cx| {
+                    DragGhost::new(ghost_title.clone(), Some(IconName::GripVertical), cx)
+                },
+            )
+            .child(
+                Icon::new(IconName::GripVertical)
+                    .size(IconSize::Xs)
+                    .color(colors.fg.opacity(0.35)),
+            )
             .child(
                 div()
-                    .id(SharedString::from(format!("pane-grip-{}", session.id)))
+                    .size(px(8.0))
+                    .flex_none()
+                    .rounded_full()
+                    .bg(if is_focused {
+                        colors.accent
+                    } else {
+                        gpui::transparent_black()
+                    }),
+            )
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .truncate()
+                    .text_size(px(12.0))
+                    .text_color(colors.fg)
+                    .child(title),
+            )
+            .child(
+                div()
+                    .id(SharedString::from(format!("close-pane-{}", session.id)))
+                    .size(px(20.0))
                     .flex()
                     .items_center()
                     .justify_center()
-                    .p_1()
-                    .rounded(theme.radius(Radius::Sm))
-                    .cursor_grab()
-                    .hover(|s| s.bg(colors.hover))
-                    .tooltip(Tooltip::text("Drag to split, move or detach pane"))
-                    .on_drag(
-                        DraggedPane {
-                            session_id: session.id.clone(),
-                        },
-                        move |_, _, _, cx| {
-                            DragGhost::new(ghost_title.clone(), Some(IconName::GripVertical), cx)
-                        },
-                    )
+                    .rounded(px(4.0))
+                    .cursor_pointer()
+                    .hover(move |s| s.bg(hover))
+                    .tooltip(Tooltip::text("Close Pane (⌘W)"))
+                    .on_click(cx.listener(move |this, _, _, cx| this.close_pane(&close_id, cx)))
                     .child(
-                        Icon::new(IconName::GripVertical)
+                        Icon::new(IconName::X)
                             .size(IconSize::Xs)
                             .color(colors.fg_muted),
                     ),
             )
-            .child(HarnessIcon::new(&session.harness).size(px(14.0)))
-            .child(
-                div()
-                    .min_w_0()
-                    .truncate()
-                    .text_size(theme.text_size(TextSize::Sm))
-                    .font_weight(weight)
-                    .child(title.to_string()),
-            )
-            .when(!session.cwd.is_empty(), |el| {
-                el.child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap_1()
-                        .min_w_0()
-                        .text_size(theme.text_size(TextSize::Xs))
-                        .text_color(colors.fg_muted)
-                        .child(Icon::new(IconName::Folder).size(IconSize::Xs))
-                        .child(
-                            div()
-                                .min_w_0()
-                                .truncate()
-                                .max_w(theme.label_width())
-                                .child(session.cwd.clone()),
-                        ),
-                )
-            })
     }
 
-    fn render_pane_actions(
-        &self,
-        session: &SessionRow,
-        in_split: bool,
-        cx: &Context<Self>,
-    ) -> impl IntoElement {
-        let action = |name: &str, icon: IconName, tooltip: &'static str| {
-            IconButton::new(SharedString::from(format!("{name}-{}", session.id)), icon)
-                .size(ControlSize::Sm)
-                .variant(ButtonVariant::Ghost)
-                .tooltip(tooltip)
+    /// MonoCode `EmptySession`: the composer itself, centred, under
+    /// "What should we work on in {project}?".
+    fn render_empty_session(&self, session: &SessionRow, cx: &Context<Self>) -> AnyElement {
+        let project = std::path::Path::new(&session.cwd)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .filter(|n| !n.is_empty() && *n != "~");
+        let title = match project {
+            Some(name) => format!("What should we work on in {name}?"),
+            None => "What should we work on?".to_string(),
         };
-        let (right_id, down_id, close_id) =
-            (session.id.clone(), session.id.clone(), session.id.clone());
         div()
             .flex()
-            .items_center()
-            .gap_1p5()
-            .when_some(context_percent(session), |el, pct| {
-                el.child(Badge::new(format!("Context {pct}%")).tone(Tone::Info))
-            })
-            .when_some(session.branch.as_ref(), |el, branch| {
-                el.child(Badge::new(branch.clone()))
-            })
-            .child(Badge::new(catalog::label_for(&session.model)))
+            .flex_col()
+            .flex_1()
+            .min_h_0()
+            .justify_center()
+            .py_12()
             .child(
-                action("split-r", IconName::Columns2, "Split right (⌘D)").on_click(cx.listener(
-                    move |this, _, _, cx| this.split_pane_from(&right_id, SplitDir::Right, cx),
-                )),
+                div()
+                    .w_full()
+                    .max_w(px(896.0))
+                    .mx_auto()
+                    .px(px(30.0))
+                    .mb_4()
+                    .truncate()
+                    .text_size(px(18.0))
+                    .text_color(cx.theme().colors.fg)
+                    .child(title),
             )
-            .child(
-                action("split-d", IconName::Rows2, "Split down (⇧⌘D)").on_click(cx.listener(
-                    move |this, _, _, cx| this.split_pane_from(&down_id, SplitDir::Down, cx),
-                )),
-            )
-            .when(in_split, |el| {
-                el.child(
-                    action("close-pane", IconName::X, "Close split pane").on_click(
-                        cx.listener(move |this, _, _, cx| this.close_pane(&close_id, cx)),
-                    ),
-                )
-            })
+            .child(self.render_composer(Some(session), cx))
+            .into_any_element()
     }
 
     /// Composer stand-in for unfocused panes; clicking focuses the pane.

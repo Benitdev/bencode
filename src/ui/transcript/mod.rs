@@ -9,8 +9,7 @@ pub mod turns;
 
 use std::collections::{HashMap, HashSet};
 
-use ely_gpui_component::buttons::{Button, ButtonVariant};
-use ely_gpui_component::theme::{ActiveTheme, ControlSize};
+use ely_gpui_component::theme::ActiveTheme;
 use gpui::{
     AnyElement, Context, FollowMode, FontWeight, InteractiveElement, IntoElement, ListAlignment,
     ListState, ParentElement, SharedString, Styled, Window, div, prelude::*, px,
@@ -18,24 +17,12 @@ use gpui::{
 
 use crate::app::BenCodeApp;
 use crate::db::SessionRow;
-use crate::harness::catalog;
 use blocks::MESSAGE_MAX_WIDTH;
 use turns::{Row, TurnLayout};
 
 /// Rows near the end that may still change height while an agent runs.
 const LIVE_TAIL_ROWS: usize = 3;
 const LIST_OVERDRAW: gpui::Pixels = px(600.0);
-
-const SUGGESTIONS: [(&str, &str); 2] = [
-    (
-        "Review recent changes",
-        "Review recent git changes in the workspace and explain them.",
-    ),
-    (
-        "Plan the next step",
-        "Plan and implement the next feature step cleanly.",
-    ),
-];
 
 /// Scroll and measurement state for the transcript list.
 pub struct TranscriptView {
@@ -249,95 +236,5 @@ impl BenCodeApp {
                     ))),
             )
             .into_any_element()
-    }
-
-    pub fn render_welcome(&self, session: &SessionRow, cx: &Context<Self>) -> AnyElement {
-        let chips = SUGGESTIONS.iter().enumerate().map(|(ix, (label, prompt))| {
-            Button::new(("suggestion", ix), *label)
-                .variant(ButtonVariant::Secondary)
-                .size(ControlSize::Sm)
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    this.prompt_input
-                        .update(cx, |input, cx| input.set_text(*prompt, cx));
-                }))
-        });
-        let project_name = if !session.cwd.is_empty() {
-            std::path::Path::new(&session.cwd)
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or(&session.title)
-        } else {
-            &session.title
-        };
-        let heading = format!("What should we work on in {project_name}?");
-        let subtitle = format!("{} · {}", catalog::label_for(&session.model), session.cwd);
-        let theme = cx.theme();
-
-        div()
-            .flex()
-            .flex_col()
-            .items_center()
-            .justify_center()
-            .w_full()
-            .min_w_0()
-            .px_4()
-            .py_12()
-            .gap_2p5()
-            .child(
-                div()
-                    .w_full()
-                    .min_w_0()
-                    .truncate()
-                    .text_align(gpui::TextAlign::Center)
-                    .text_size(px(16.0))
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_color(theme.colors.fg)
-                    .child(heading),
-            )
-            .child(
-                div()
-                    .w_full()
-                    .min_w_0()
-                    .truncate()
-                    .text_align(gpui::TextAlign::Center)
-                    .text_size(px(12.0))
-                    .text_color(theme.colors.fg_muted)
-                    .child(subtitle),
-            )
-            .child(
-                div()
-                    .flex()
-                    .flex_wrap()
-                    .justify_center()
-                    .gap_2()
-                    .pt_2()
-                    .children(chips),
-            )
-            .into_any_element()
-    }
-}
-
-/// Share of the context window used, when both numbers are known.
-pub(crate) fn context_percent(session: &SessionRow) -> Option<u64> {
-    let (used, window) = (session.context_used?, session.context_window?);
-    (window > 0).then(|| (used.max(0) as f64 / window as f64 * 100.0).round() as u64)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn context_percent_needs_both_numbers() {
-        let mut s = SessionRow {
-            context_used: Some(50_000),
-            context_window: Some(200_000),
-            ..Default::default()
-        };
-        assert_eq!(context_percent(&s), Some(25));
-        s.context_window = Some(0);
-        assert_eq!(context_percent(&s), None);
-        s.context_window = None;
-        assert_eq!(context_percent(&s), None);
     }
 }

@@ -12,7 +12,7 @@ use gpui::Context;
 
 use super::tab_scope::{TabClosePlan, deck_tabs, is_blank_session, plan_tab_close};
 use super::{BenCodeApp, DEFAULT_CONTEXT_WINDOW, NEW_SESSION_TITLE, now_ms};
-use crate::db::{Block, SessionRow};
+use crate::db::SessionRow;
 use crate::harness::{HarnessKind, catalog};
 use crate::ui::drag_drop::PaneDropTarget;
 use crate::ui::layout::{
@@ -21,9 +21,6 @@ use crate::ui::layout::{
 
 /// Suffix for session ids, so two sessions made in one millisecond differ.
 static NEXT_SESSION: AtomicU64 = AtomicU64::new(1);
-
-const WELCOME_TEXT: &str =
-    "Ready for your instructions. I can edit files, run commands, and inspect git diffs.";
 
 impl BenCodeApp {
     /// Makes `selected_session_id` (and the model picker) follow the active
@@ -390,9 +387,6 @@ impl BenCodeApp {
             .unwrap_or(HarnessKind::Claude);
         let branch = Some(self.git_status.branch.clone()).filter(|b| !b.is_empty());
 
-        let mut welcome = Block::new("b1", "assistant", WELCOME_TEXT);
-        welcome.started_at = Some(now);
-
         // MonoCode keeps `cwd` on the project and records the worktree apart.
         let worktree_cwd = self
             .worktree_focus()
@@ -410,7 +404,7 @@ impl BenCodeApp {
             branch,
             context_used: Some(0),
             context_window: Some(DEFAULT_CONTEXT_WINDOW),
-            blocks: vec![welcome],
+            blocks: Vec::new(),
             runtime_mode: Some(self.permission_mode.id().to_string()),
             worktree_cwd,
             ..Default::default()
