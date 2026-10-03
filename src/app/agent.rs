@@ -10,6 +10,7 @@ use serde_json::{Value, json};
 use crate::app::{BenCodeApp, PermissionMode};
 use crate::db::{Block, SessionRow, TurnModel};
 use crate::harness::Attachment;
+use crate::harness::events::TurnMetrics;
 use crate::harness::{
     self, AgentEvent, DoneStatus, HarnessKind, HarnessProcessHandle, PermissionPolicy,
     PermissionRequest, SpawnRequest, catalog, summarize_tool_input,
@@ -495,6 +496,38 @@ fn title_from_prompt(prompt: &str) -> String {
     }
 }
 
+/// MonoCode `applyTurnMetrics`: the latest user block's `turnMetrics`
+/// takes every count the provider reported, keeping the others.
+fn record_turn_metrics(session: &mut SessionRow, metrics: &TurnMetrics) {
+    let Some(user) = session.blocks.iter_mut().rev().find(|b| b.role == "user") else {
+        return;
+    };
+    let entry = user
+        .extra
+        .entry("turnMetrics")
+        .or_insert_with(|| Value::Object(Default::default()));
+    if !entry.is_object() {
+        *entry = Value::Object(Default::default());
+    }
+    let Some(stored) = entry.as_object_mut() else {
+        return;
+    };
+    let counts = [
+        ("inputTokens", metrics.input_tokens),
+        ("outputTokens", metrics.output_tokens),
+        ("cacheReadTokens", metrics.cache_read_tokens),
+        ("cacheWriteTokens", metrics.cache_write_tokens),
+    ];
+    for (key, value) in counts {
+        if let Some(value) = value {
+            stored.insert(key.into(), value.into());
+        }
+    }
+    if let Some(percent) = metrics.cache_hit_percent {
+        stored.insert("cacheHitPercent".into(), json!(percent));
+    }
+}
+
 /// Records how long the latest user turn took, as MonoCode does.
 fn finish_turn(session: &mut SessionRow, now: i64) {
     if let Some(user) = session.blocks.iter_mut().rev().find(|b| b.role == "user")
@@ -536,6 +569,7 @@ pub fn apply_event(session: &mut SessionRow, event: AgentEvent, now: i64) {
         AgentEvent::Usage { total_tokens, .. } => {
             session.context_used = i64::try_from(total_tokens).ok();
         }
+        AgentEvent::TurnMetrics(metrics) => record_turn_metrics(session, &metrics),
         AgentEvent::Error(message) => push_notice(session, &message, now),
         AgentEvent::Done(status) => {
             finish_turn(session, now);

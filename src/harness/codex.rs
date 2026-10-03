@@ -5,7 +5,7 @@
 use anyhow::Result;
 use serde_json::{Value, json};
 
-use crate::harness::events::{AgentEvent, DoneStatus};
+use crate::harness::events::{AgentEvent, DoneStatus, TurnMetrics};
 use crate::harness::handle::HarnessProcessHandle;
 use crate::harness::process::{self, LineParser, ProcessSpec, StdinMode};
 use crate::harness::resolver::HarnessResolver;
@@ -97,6 +97,19 @@ impl LineParser for CodexParser {
                         output_tokens,
                         total_tokens: input_tokens + output_tokens,
                     });
+                    // Codex counts cached input inside `input_tokens`
+                    // (MonoCode `mapTokenUsage`).
+                    let cached = field("cached_input_tokens");
+                    let reported = usage.get("cached_input_tokens").is_some();
+                    if let Some(metrics) = TurnMetrics::from_counts(
+                        input_tokens,
+                        output_tokens,
+                        cached,
+                        0,
+                        reported.then_some(input_tokens),
+                    ) {
+                        events.push(AgentEvent::TurnMetrics(metrics));
+                    }
                 }
                 events.push(AgentEvent::Done(DoneStatus::Completed));
             }
@@ -351,6 +364,11 @@ mod tests {
                     output_tokens: 3,
                     total_tokens: 10
                 },
+                AgentEvent::TurnMetrics(TurnMetrics {
+                    input_tokens: Some(7),
+                    output_tokens: Some(3),
+                    ..Default::default()
+                }),
                 AgentEvent::Done(DoneStatus::Completed),
             ]
         );

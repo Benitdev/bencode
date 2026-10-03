@@ -380,6 +380,61 @@ impl BenCodeApp {
 
     /// MonoCode `TurnDuration`: copy and save the turn's text, then the time
     /// it finished. The clock itself lives on the fold line above.
+    /// MonoCode `TurnMetricsBadge`: a chart icon whose hover card reads the
+    /// turn's cache hit and output rate over its token counts.
+    fn turn_metrics_badge(
+        &self,
+        session: &SessionRow,
+        turn: &TurnLayout,
+        cx: &Context<Self>,
+    ) -> Option<AnyElement> {
+        let metrics = session.blocks[turn.user?].extra.get("turnMetrics")?;
+        let (headline, detail) =
+            turns::turn_metrics_text(metrics, turn.duration_ms(&session.blocks))?;
+        let colors = &cx.theme().colors;
+        let hover = colors.fg.opacity(0.08);
+        Some(
+            div()
+                .id(SharedString::from(format!(
+                    "turn-metrics-{}",
+                    turn.id(&session.blocks)
+                )))
+                .flex_none()
+                .ml(px(3.0))
+                .p_1()
+                .rounded(px(6.0))
+                .hover(move |s| s.bg(hover))
+                .tooltip(Tooltip::rich(move |_, cx| {
+                    let colors = &cx.theme().colors;
+                    div()
+                        .flex()
+                        .flex_col()
+                        .child(
+                            div()
+                                .text_size(px(12.0))
+                                .line_height(px(16.0))
+                                .child(headline.clone()),
+                        )
+                        .when(!detail.is_empty(), |el| {
+                            el.child(
+                                div()
+                                    .text_size(px(11.0))
+                                    .line_height(px(16.0))
+                                    .text_color(colors.tooltip_fg.opacity(0.5))
+                                    .child(detail.clone()),
+                            )
+                        })
+                        .into_any_element()
+                }))
+                .child(
+                    Icon::new(IconName::ChartColumn)
+                        .size(IconSize::Xs)
+                        .color(muted(colors.fg, 0.4)),
+                )
+                .into_any_element(),
+        )
+    }
+
     pub(super) fn render_turn_footer(
         &self,
         session: &SessionRow,
@@ -406,26 +461,34 @@ impl BenCodeApp {
             .pb_3()
             .text_size(px(14.0))
             .text_color(muted(colors.fg, 0.4))
-            .when(!copy.is_empty(), |el| {
-                el.child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap_1()
-                        .child({
+            .child(
+                div()
+                    .flex()
+                    .flex_none()
+                    .items_center()
+                    .gap_1()
+                    .map(|el| {
+                        if copy.is_empty() {
+                            el.child(
+                                Icon::new(IconName::Check)
+                                    .size(IconSize::Xs)
+                                    .color(muted(colors.fg, 0.4)),
+                            )
+                        } else {
                             let key = format!("turn-copy-{id}");
                             let copied = self.transcript_ui.copied.contains(&key);
-                            copy_button(key, copy, copied, cx)
-                        })
-                        .child(action_button(
-                            format!("turn-note-{id}"),
-                            IconName::FilePlus,
-                            "Save as note",
-                            cx,
-                            move |this, cx| this.save_turn_to_note(&note_text, cx),
-                        )),
-                )
-            })
+                            el.child(copy_button(key, copy, copied, cx))
+                                .child(action_button(
+                                    format!("turn-note-{id}"),
+                                    IconName::FilePlus,
+                                    "Save as note",
+                                    cx,
+                                    move |this, cx| this.save_turn_to_note(&note_text, cx),
+                                ))
+                        }
+                    })
+                    .children(self.turn_metrics_badge(session, turn, cx)),
+            )
             .when_some(finished, |el, time| {
                 el.child(dot(cx)).child(
                     div()

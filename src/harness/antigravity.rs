@@ -4,7 +4,7 @@
 use anyhow::Result;
 use serde_json::Value;
 
-use crate::harness::events::{AgentEvent, DoneStatus};
+use crate::harness::events::{AgentEvent, DoneStatus, TurnMetrics};
 use crate::harness::handle::HarnessProcessHandle;
 use crate::harness::process::{self, LineParser, ProcessSpec, StdinMode};
 use crate::harness::resolver::HarnessResolver;
@@ -69,6 +69,7 @@ impl LineParser for AntigravityParser {
                 let result = rec.get("result").unwrap_or(&Value::Null);
                 if let Some(usage) = result.get("usage") {
                     events.push(usage_event(usage));
+                    events.extend(metrics_event(usage));
                 }
                 match str_field(result, "status") {
                     None | Some(SUCCESS_STATUS) => {
@@ -128,6 +129,28 @@ fn on_step(step: &Value, events: &mut Vec<AgentEvent>) {
     }
 }
 
+/// MonoCode `antigravityProtocol` usage: camelCase or snake_case counts.
+fn metrics_event(usage: &Value) -> Option<AgentEvent> {
+    let field = |camel: &str, snake: &str| {
+        usage
+            .get(camel)
+            .or_else(|| usage.get(snake))
+            .and_then(Value::as_u64)
+    };
+    let read = field("cacheReadTokens", "cache_read_input_tokens");
+    let write = field("cacheWriteTokens", "cache_creation_input_tokens");
+    let input = field("inputTokens", "input_tokens").unwrap_or(0);
+    let (read_n, write_n) = (read.unwrap_or(0), write.unwrap_or(0));
+    TurnMetrics::from_counts(
+        input,
+        field("outputTokens", "output_tokens").unwrap_or(0),
+        read_n,
+        write_n,
+        (read.is_some() || write.is_some()).then_some(input + read_n + write_n),
+    )
+    .map(AgentEvent::TurnMetrics)
+}
+
 fn usage_event(usage: &Value) -> AgentEvent {
     let field = |name: &str| usage.get(name).and_then(Value::as_u64).unwrap_or(0);
     let input_tokens = field("input_tokens");
@@ -174,6 +197,11 @@ mod tests {
                     output_tokens: 22,
                     total_tokens: 12253
                 },
+                AgentEvent::TurnMetrics(TurnMetrics {
+                    input_tokens: Some(12231),
+                    output_tokens: Some(22),
+                    ..Default::default()
+                }),
                 AgentEvent::Done(DoneStatus::Completed),
             ]
         );

@@ -84,6 +84,72 @@ pub fn tool_kind(block: &Block) -> WorkKind {
     }
 }
 
+/// MonoCode `formatMetricCount`: compact, one decimal from a thousand up
+/// (`950`, `1.2K`, `3.4M`).
+pub fn format_metric_count(value: f64) -> String {
+    let n = value.max(0.0).round();
+    let (scaled, suffix) = match n {
+        n if n >= 1e12 => (n / 1e12, "T"),
+        n if n >= 1e9 => (n / 1e9, "B"),
+        n if n >= 1e6 => (n / 1e6, "M"),
+        n if n >= 1e3 => (n / 1e3, "K"),
+        n => return format!("{n}"),
+    };
+    let text = format!("{:.1}", (scaled * 10.0).round() / 10.0);
+    format!("{}{suffix}", text.trim_end_matches(".0"))
+}
+
+/// MonoCode `TurnMetricsBadge` text: a headline (cache hit, output rate)
+/// and a detail line (input · output · cached). `None` when the turn has
+/// no metrics.
+pub fn turn_metrics_text(metrics: &Value, elapsed_ms: Option<i64>) -> Option<(String, String)> {
+    let count = |key: &str| {
+        metrics
+            .get(key)
+            .and_then(Value::as_f64)
+            .filter(|n| n.is_finite())
+    };
+    let (input, output, read, write, hit) = (
+        count("inputTokens"),
+        count("outputTokens"),
+        count("cacheReadTokens"),
+        count("cacheWriteTokens"),
+        count("cacheHitPercent"),
+    );
+    let spent = [input, output, read, write]
+        .iter()
+        .any(|n| n.is_some_and(|n| n > 0.0));
+    if hit.is_none() && !spent {
+        return None;
+    }
+    let rate = output
+        .zip(elapsed_ms.filter(|ms| *ms > 0))
+        .map(|(out, ms)| out / (ms as f64 / 1000.0));
+    let headline = [
+        hit.map(|h| format!("Cache hit {}%", h.round())),
+        rate.map(|r| format!("Output {} tok/s", format_metric_count(r))),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>()
+    .join(" · ");
+    let detail = [
+        input.map(|n| format!("{} input", format_metric_count(n))),
+        output.map(|n| format!("{} output", format_metric_count(n))),
+        read.map(|n| format!("{} cached", format_metric_count(n))),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>()
+    .join(" · ");
+    let headline = if headline.is_empty() {
+        "Turn tokens".to_string()
+    } else {
+        headline
+    };
+    Some((headline, detail))
+}
+
 /// The raw tool `kind` string (`read`, `search`, `execute`, …).
 pub fn tool_kind_name(block: &Block) -> &str {
     tool_str(block, "kind").unwrap_or("")
@@ -650,6 +716,26 @@ pub fn build_rows(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn metric_counts_read_like_intl_compact() {
+        assert_eq!(format_metric_count(950.0), "950");
+        assert_eq!(format_metric_count(1000.0), "1K");
+        assert_eq!(format_metric_count(12_345.0), "12.3K");
+        assert_eq!(format_metric_count(1_250_000.0), "1.3M");
+        assert_eq!(format_metric_count(-3.0), "0");
+    }
+
+    #[test]
+    fn metrics_badge_text() {
+        let metrics = json!({ "inputTokens": 1200, "outputTokens": 500, "cacheReadTokens": 90000, "cacheHitPercent": 98.4 });
+        let (headline, detail) = turn_metrics_text(&metrics, Some(10_000)).unwrap();
+        assert_eq!(headline, "Cache hit 98% · Output 50 tok/s");
+        assert_eq!(detail, "1.2K input · 500 output · 90K cached");
+        let (bare, _) = turn_metrics_text(&json!({ "inputTokens": 3 }), None).unwrap();
+        assert_eq!(bare, "Turn tokens");
+        assert!(turn_metrics_text(&json!({ "inputTokens": 0 }), None).is_none());
+    }
     use serde_json::json;
 
     fn block(role: &str, text: &str) -> Block {

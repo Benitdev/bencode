@@ -6,7 +6,7 @@
 use anyhow::Result;
 use serde_json::Value;
 
-use crate::harness::events::AgentEvent;
+use crate::harness::events::{AgentEvent, TurnMetrics};
 use crate::harness::handle::HarnessProcessHandle;
 use crate::harness::process::{self, LineParser, ProcessSpec, StdinMode};
 use crate::harness::resolver::HarnessResolver;
@@ -86,6 +86,24 @@ impl LineParser for OpenCodeParser {
                         output_tokens,
                         total_tokens: input_tokens + output_tokens,
                     });
+                    // MonoCode `turnMetricsFromMessageInfo`.
+                    let cache = tokens.get("cache");
+                    let cached = |name: &str| {
+                        cache
+                            .and_then(|c| c.get(name))
+                            .and_then(Value::as_u64)
+                            .unwrap_or(0)
+                    };
+                    let (read, write) = (cached("read"), cached("write"));
+                    if let Some(metrics) = TurnMetrics::from_counts(
+                        input_tokens,
+                        output_tokens,
+                        read,
+                        write,
+                        cache.is_some().then_some(input_tokens + read + write),
+                    ) {
+                        events.push(AgentEvent::TurnMetrics(metrics));
+                    }
                 }
             }
             Some("error") => {
@@ -167,6 +185,11 @@ mod tests {
                     output_tokens: 3,
                     total_tokens: 7
                 },
+                AgentEvent::TurnMetrics(TurnMetrics {
+                    input_tokens: Some(4),
+                    output_tokens: Some(3),
+                    ..Default::default()
+                }),
             ]
         );
     }

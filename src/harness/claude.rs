@@ -10,7 +10,7 @@ use anyhow::Result;
 use serde_json::{Value, json};
 
 use crate::harness::attachments::{self, Attachment};
-use crate::harness::events::{AgentEvent, DoneStatus, PermissionRequest};
+use crate::harness::events::{AgentEvent, DoneStatus, PermissionRequest, TurnMetrics};
 use crate::harness::handle::HarnessProcessHandle;
 use crate::harness::process::{self, LineParser, ProcessSpec, StdinMode};
 use crate::harness::resolver::HarnessResolver;
@@ -345,6 +345,23 @@ fn on_result(rec: &Value, events: &mut Vec<AgentEvent>) {
             output_tokens,
             total_tokens: input_tokens + output_tokens,
         });
+        // MonoCode `turnMetricsFromResult`.
+        let (input, read, write) = (
+            field("input_tokens"),
+            field("cache_read_input_tokens"),
+            field("cache_creation_input_tokens"),
+        );
+        let cache_reported = usage.get("cache_read_input_tokens").is_some()
+            || usage.get("cache_creation_input_tokens").is_some();
+        if let Some(metrics) = TurnMetrics::from_counts(
+            input,
+            output_tokens,
+            read,
+            write,
+            cache_reported.then_some(input + read + write),
+        ) {
+            events.push(AgentEvent::TurnMetrics(metrics));
+        }
     }
 
     let is_error = rec
@@ -536,6 +553,13 @@ mod tests {
                     output_tokens: 5,
                     total_tokens: 105
                 },
+                AgentEvent::TurnMetrics(TurnMetrics {
+                    input_tokens: Some(10),
+                    output_tokens: Some(5),
+                    cache_read_tokens: Some(90),
+                    cache_write_tokens: None,
+                    cache_hit_percent: Some(90.0),
+                }),
                 AgentEvent::Done(DoneStatus::Completed),
             ]
         );
