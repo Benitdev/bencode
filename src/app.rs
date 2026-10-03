@@ -4,6 +4,7 @@ mod integrations;
 mod panes;
 mod preferences;
 mod projects;
+mod surfaces;
 mod tab_history;
 mod tab_scope;
 mod workspace_nav;
@@ -23,6 +24,7 @@ use gpui::{
 pub use agent::{AgentRun, NEW_SESSION_TITLE, now_ms};
 pub use preferences::{is_dark_appearance, theme_mode};
 pub use projects::{is_path_in_project, normalize_project_path, same_project_path};
+pub use surfaces::Surface;
 pub use workspace_sync::WorkspaceCache;
 
 use crate::db::{MonoCodeDb, SessionRow};
@@ -99,14 +101,6 @@ pub struct WorktreeFocus {
     pub branch: Option<String>,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
-pub struct SettingsReturnView {
-    pub search: bool,
-    pub inbox: bool,
-    pub notes: bool,
-    pub automations: bool,
-}
-
 pub struct BenCodeApp {
     pub sessions: Vec<SessionRow>,
     pub selected_session_id: Option<String>,
@@ -137,17 +131,17 @@ pub struct BenCodeApp {
     pub drafts: HashMap<String, String>,
     pub expanded_reasoning: std::collections::HashSet<String>,
     pub terminal: Entity<Terminal>,
-    pub is_settings_open: bool,
     pub settings_tab: SettingsTab,
-    pub settings_return_view: Option<SettingsReturnView>,
-    pub is_notes_open: bool,
+    /// The full-height view replacing the workspace, if any.
+    pub surface: Option<Surface>,
+    /// What Settings returns to when it closes.
+    pub settings_return: Option<Surface>,
     pub notes: Vec<crate::db::Note>,
     pub selected_note_id: Option<String>,
     pub note_filter_query: String,
     pub note_filter_input: Entity<TextInput>,
     pub note_title_input: Entity<TextInput>,
     pub note_body_input: Entity<TextInput>,
-    pub is_automations_open: bool,
     pub automations: Vec<crate::db::AutomationRow>,
     pub selected_automation_id: Option<String>,
     pub automation_runs: Vec<crate::db::AutomationRunRow>,
@@ -174,13 +168,11 @@ pub struct BenCodeApp {
     pub file_tree: crate::ui::file_tree::FileTreeState,
     pub file_dialog_input: Entity<TextInput>,
     // Universal Search
-    pub is_search_open: bool,
     pub search_modal_input: Entity<TextInput>,
     pub search_scope: crate::ui::search_view::SearchScope,
     pub search_hits: Vec<crate::ui::search_view::SearchHit>,
     pub search_active_index: usize,
     // Inbox
-    pub is_inbox_open: bool,
     /// Rename/delete dialog opened from the thread list.
     pub session_dialog: Option<crate::ui::sidebar::SessionDialog>,
     pub rename_input: Entity<TextInput>,
@@ -471,17 +463,15 @@ impl BenCodeApp {
             drafts: HashMap::new(),
             expanded_reasoning: std::collections::HashSet::new(),
             terminal,
-            is_settings_open: false,
             settings_tab: SettingsTab::Providers,
-            settings_return_view: None,
-            is_notes_open: false,
+            surface: None,
+            settings_return: None,
             notes,
             selected_note_id,
             note_filter_query: String::new(),
             note_filter_input,
             note_title_input,
             note_body_input,
-            is_automations_open: false,
             automations,
             selected_automation_id,
             automation_runs: Vec::new(),
@@ -500,12 +490,10 @@ impl BenCodeApp {
             workspace: WorkspaceCache::default(),
             file_tree: Default::default(),
             file_dialog_input: text_input(window, cx, "Name"),
-            is_search_open: false,
             search_modal_input,
             search_scope: crate::ui::search_view::SearchScope::All,
             search_hits: Vec::new(),
             search_active_index: 0,
-            is_inbox_open: false,
             session_dialog: None,
             rename_input: text_input(window, cx, "Thread title"),
             focus_handle: cx.focus_handle(),
@@ -547,35 +535,8 @@ impl BenCodeApp {
         app
     }
 
-    /// Opens settings while recording the active modal view so it can be restored on close.
     pub fn open_settings(&mut self, cx: &mut Context<Self>) {
-        if !self.is_settings_open {
-            self.settings_return_view = Some(SettingsReturnView {
-                search: self.is_search_open,
-                inbox: self.is_inbox_open,
-                notes: self.is_notes_open,
-                automations: self.is_automations_open,
-            });
-            self.save_note_if_dirty(cx);
-            self.is_search_open = false;
-            self.is_inbox_open = false;
-            self.is_notes_open = false;
-            self.is_automations_open = false;
-        }
-        self.is_settings_open = true;
-        cx.notify();
-    }
-
-    /// Closes settings and restores the modal view that was active before settings opened.
-    pub fn close_settings(&mut self, cx: &mut Context<Self>) {
-        self.is_settings_open = false;
-        if let Some(return_view) = self.settings_return_view.take() {
-            self.is_search_open = return_view.search;
-            self.is_inbox_open = return_view.inbox;
-            self.is_notes_open = return_view.notes;
-            self.is_automations_open = return_view.automations;
-        }
-        cx.notify();
+        self.show_surface(Surface::Settings, cx);
     }
 
     pub fn selected_session(&self) -> Option<&SessionRow> {
@@ -871,6 +832,10 @@ impl Render for BenCodeApp {
         }
         let colors = &cx.theme().colors;
         let (bg, fg) = (colors.bg, colors.fg);
+        // Search, Inbox, Notes, Automations and Settings replace the
+        // sidebar and the workspace column (MonoCode in-shell views).
+        let surface = self.render_surface(cx);
+        let workspace_visible = surface.is_none();
 
         FocusScope::new(&self.focus_handle).root().child(
             Self::bind_commands(div().id("bencode-root"), cx)
@@ -891,51 +856,43 @@ impl Render for BenCodeApp {
                             el.child(self.render_project_rail(cx))
                         })
                         // Column 2: Workspace Sidebar (when open)
-                        .when(self.is_sidebar_open, |el| el.child(self.render_sidebar(cx)))
+                        .when(self.is_sidebar_open && workspace_visible, |el| {
+                            el.child(self.render_sidebar(cx))
+                        })
                         // Column 3: Main Area (TitleBar + Views + Terminal Drawer + UsageFooter)
-                        .child(
-                            div()
-                                .flex()
-                                .flex_col()
-                                .flex_1()
-                                .h_full()
-                                .min_w_0()
-                                .overflow_hidden()
-                                .child(self.render_titlebar(cx))
-                                .child(div().flex().flex_1().min_h_0().overflow_hidden().child(
-                                    match self.active_view_mode {
-                                        ViewMode::Chat => {
-                                            self.render_transcript_panel(cx).into_any_element()
-                                        }
-                                        ViewMode::Editor => {
-                                            self.render_editor_pane(window, cx).into_any_element()
-                                        }
-                                        ViewMode::Changes => {
-                                            self.render_diff_viewer(cx).into_any_element()
-                                        }
-                                    },
-                                ))
-                                .when(self.is_terminal_open, |el| {
-                                    el.child(self.render_terminal_drawer(cx))
-                                })
-                                .child(self.render_usage_footer(cx)),
-                        ),
+                        .when(workspace_visible, |el| {
+                            el.child(
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .flex_1()
+                                    .h_full()
+                                    .min_w_0()
+                                    .overflow_hidden()
+                                    .child(self.render_titlebar(cx))
+                                    .child(
+                                        div().flex().flex_1().min_h_0().overflow_hidden().child(
+                                            match self.active_view_mode {
+                                                ViewMode::Chat => self
+                                                    .render_transcript_panel(cx)
+                                                    .into_any_element(),
+                                                ViewMode::Editor => self
+                                                    .render_editor_pane(window, cx)
+                                                    .into_any_element(),
+                                                ViewMode::Changes => {
+                                                    self.render_diff_viewer(cx).into_any_element()
+                                                }
+                                            },
+                                        ),
+                                    )
+                                    .when(self.is_terminal_open, |el| {
+                                        el.child(self.render_terminal_drawer(cx))
+                                    })
+                                    .child(self.render_usage_footer(cx)),
+                            )
+                        })
+                        .children(surface),
                 )
-                .when(self.is_settings_open, |el| {
-                    el.child(self.render_settings_modal(cx))
-                })
-                .when(self.is_notes_open, |el| {
-                    el.child(self.render_notes_modal(cx))
-                })
-                .when(self.is_automations_open, |el| {
-                    el.child(self.render_automations_modal(cx))
-                })
-                .when(self.is_search_open, |el| {
-                    el.child(self.render_search_modal(cx))
-                })
-                .when(self.is_inbox_open, |el| {
-                    el.child(self.render_inbox_modal(cx))
-                })
                 .children(self.render_session_dialog(cx))
                 .children(self.render_git_confirm(cx))
                 .children(self.render_branch_switch_confirm(cx))

@@ -7,13 +7,13 @@ mod templates;
 
 use ely_gpui_component::data_display::Tone;
 use ely_gpui_component::layout::MasterDetail;
-use ely_gpui_component::overlays::{ConfirmDialog, Dialog};
+use ely_gpui_component::overlays::ConfirmDialog;
 use ely_gpui_component::theme::ActiveTheme;
-use gpui::{Context, IntoElement, ParentElement, Styled, div};
+use gpui::{AnyElement, Context, IntoElement, ParentElement, Styled, div};
 
 use jiff::tz::TimeZone;
 
-use crate::app::{BenCodeApp, ViewMode, now_ms};
+use crate::app::{BenCodeApp, Surface, ViewMode, now_ms};
 use crate::db::{AutomationRow, AutomationRunRow};
 use crate::schedule;
 use crate::ui::app_callback::app_callback;
@@ -107,15 +107,15 @@ fn non_empty(text: &str, fallback: &str) -> String {
 
 impl BenCodeApp {
     pub fn open_automations(&mut self, cx: &mut Context<Self>) {
-        self.is_automations_open = true;
+        self.show_surface(Surface::Automations, cx);
         self.refresh_automations(cx);
         cx.notify();
     }
 
     fn close_automations(&mut self, cx: &mut Context<Self>) {
-        self.is_automations_open = false;
-        self.automation_pending_delete = None;
-        cx.notify();
+        if self.surface_open(Surface::Automations) {
+            self.close_surface(cx);
+        }
     }
 
     fn refresh_automations(&mut self, cx: &mut Context<Self>) {
@@ -295,20 +295,19 @@ impl BenCodeApp {
         Some(id)
     }
 
-    pub fn render_automations_modal(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
-        let close = app_callback(cx, |this, cx| this.close_automations(cx));
+    pub(crate) fn render_automations_body(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let theme = cx.theme();
         let min = theme.pane_min().to_pixels(theme.base_rem());
-        Dialog::new("automations", "Automations", close)
-            .detail(format!("{} scheduled routines", self.automations.len()))
-            .fullscreen()
-            .child(div().h_full().child(MasterDetail::new(
+        div()
+            .size_full()
+            .child(MasterDetail::new(
                 "automations-split",
                 self.render_automation_master(cx),
                 self.render_automation_detail(cx),
                 min,
-            )))
+            ))
             .children(self.render_automation_delete_confirm(cx))
+            .into_any_element()
     }
 
     fn render_automation_delete_confirm(&self, cx: &Context<Self>) -> Option<impl IntoElement> {

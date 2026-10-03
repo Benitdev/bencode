@@ -10,7 +10,7 @@ use gpui::{
     WindowControlArea, div, prelude::*, px, rgb,
 };
 
-use crate::app::BenCodeApp;
+use crate::app::{BenCodeApp, Surface};
 use crate::ui::app_callback::app_callback;
 
 fn format_diff_number(n: usize) -> String {
@@ -36,6 +36,7 @@ impl BenCodeApp {
     pub fn render_project_rail(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         let colors = cx.theme().colors.clone();
         let current_cwd = self.current_cwd.clone();
+        let surface_closed = self.surface.is_none();
 
         // Compute real git diff stats for active repo
         let staged_add: usize = self.git_status.staged.iter().map(|f| f.additions).sum();
@@ -112,6 +113,9 @@ impl BenCodeApp {
                             .child(
                                 div()
                                     .id("rail-search-item")
+                                    .when(self.surface_open(Surface::Search), |el| {
+                                        el.bg(colors.active)
+                                    })
                                     .flex()
                                     .items_center()
                                     .justify_between()
@@ -155,6 +159,9 @@ impl BenCodeApp {
                             .child(
                                 div()
                                     .id("rail-inbox-item")
+                                    .when(self.surface_open(Surface::Inbox), |el| {
+                                        el.bg(colors.active)
+                                    })
                                     .flex()
                                     .items_center()
                                     .justify_between()
@@ -186,6 +193,9 @@ impl BenCodeApp {
                             .child(
                                 div()
                                     .id("rail-notes-item")
+                                    .when(self.surface_open(Surface::Notes), |el| {
+                                        el.bg(colors.active)
+                                    })
                                     .flex()
                                     .items_center()
                                     .h(px(32.0))
@@ -216,6 +226,9 @@ impl BenCodeApp {
                             .child(
                                 div()
                                     .id("rail-automations-item")
+                                    .when(self.surface_open(Surface::Automations), |el| {
+                                        el.bg(colors.active)
+                                    })
                                     .flex()
                                     .items_center()
                                     .h(px(32.0))
@@ -288,8 +301,9 @@ impl BenCodeApp {
                                         .and_then(|n| n.to_str())
                                         .unwrap_or(path)
                                         .to_string();
-                                    let is_selected =
-                                        crate::app::same_project_path(path, &current_cwd);
+                                    // No project is highlighted while a view is open.
+                                    let is_selected = surface_closed
+                                        && crate::app::same_project_path(path, &current_cwd);
                                     let dot_color = rgb(PROJECT_COLORS[ix % PROJECT_COLORS.len()]);
                                     let path_clone = path.clone();
 
@@ -402,6 +416,9 @@ impl BenCodeApp {
                     .child(
                         div()
                             .id("rail-settings-btn")
+                            .when(self.surface_open(Surface::Settings), |el| {
+                                el.bg(colors.active)
+                            })
                             .flex()
                             .items_center()
                             .justify_between()

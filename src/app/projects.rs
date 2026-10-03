@@ -118,10 +118,10 @@ impl BenCodeApp {
 
     /// Opening a project leaves the full-screen views, as in MonoCode.
     fn close_overlay_views(&mut self) {
-        self.is_search_open = false;
-        self.is_inbox_open = false;
-        self.is_notes_open = false;
-        self.is_automations_open = false;
+        if self.surface.is_some() {
+            self.surface = None;
+            self.settings_return = None;
+        }
     }
 
     fn return_to_project(&mut self, cwd: &str) {

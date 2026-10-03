@@ -9,7 +9,7 @@ use ely_gpui_component::forms::{Input, SearchInput};
 use ely_gpui_component::forms::{InputEvent, TextInput};
 use ely_gpui_component::layout::MasterDetail;
 use ely_gpui_component::lists::ListItem;
-use ely_gpui_component::overlays::{ConfirmDialog, Dialog};
+use ely_gpui_component::overlays::ConfirmDialog;
 use ely_gpui_component::primitives::IconName;
 use ely_gpui_component::theme::{ActiveTheme, ControlSize};
 use ely_gpui_component::typography::Caption;
@@ -18,7 +18,7 @@ use gpui::{
     uniform_list,
 };
 
-use crate::app::{BenCodeApp, now_ms};
+use crate::app::{BenCodeApp, Surface, now_ms};
 use crate::db::{Note, NoteUpsert};
 use crate::ui::app_callback::app_callback;
 
@@ -63,16 +63,15 @@ fn note_preview(body: &str) -> &str {
 
 impl BenCodeApp {
     pub fn open_notes(&mut self, cx: &mut Context<Self>) {
-        self.is_notes_open = true;
+        self.show_surface(Surface::Notes, cx);
         self.refresh_notes(cx);
         cx.notify();
     }
 
     pub fn close_notes(&mut self, cx: &mut Context<Self>) {
-        self.save_note_if_dirty(cx);
-        self.is_notes_open = false;
-        self.note_pending_delete = None;
-        cx.notify();
+        if self.surface_open(Surface::Notes) {
+            self.close_surface(cx);
+        }
     }
 
     fn refresh_notes(&mut self, cx: &mut Context<Self>) {
@@ -260,20 +259,19 @@ impl BenCodeApp {
         self.close_notes(cx);
     }
 
-    pub fn render_notes_modal(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
-        let close = app_callback(cx, |this, cx| this.close_notes(cx));
+    pub(crate) fn render_notes_body(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let theme = cx.theme();
         let min = theme.pane_min().to_pixels(theme.base_rem());
-        Dialog::new("notes", "Notes", close)
-            .detail(format!("{} notes", self.notes.len()))
-            .fullscreen()
-            .child(div().h_full().child(MasterDetail::new(
+        div()
+            .size_full()
+            .child(MasterDetail::new(
                 "notes-split",
                 self.render_notes_master(cx),
                 self.render_note_detail(cx),
                 min,
-            )))
+            ))
             .children(self.render_note_delete_confirm(cx))
+            .into_any_element()
     }
 
     fn render_notes_master(&self, cx: &Context<Self>) -> impl IntoElement {

@@ -5,17 +5,15 @@ use ely_gpui_component::data_display::Tag;
 use ely_gpui_component::feedback::EmptyState;
 use ely_gpui_component::forms::{InputEvent, SearchInput};
 use ely_gpui_component::lists::ListItem;
-use ely_gpui_component::overlays::Dialog;
 use ely_gpui_component::primitives::{Icon, IconName};
 use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
-    AnyElement, Context, Focusable, IntoElement, ParentElement, SharedString, Styled, div,
+    AnyElement, Context, Focusable, IntoElement, ParentElement, SharedString, Styled, div, px,
     uniform_list,
 };
 
-use crate::app::{BenCodeApp, ViewMode};
+use crate::app::{BenCodeApp, Surface, ViewMode};
 use crate::db::SessionRow;
-use crate::ui::app_callback::app_callback;
 
 const SEARCH_FILE_HIT_LIMIT: usize = 30;
 
@@ -147,7 +145,7 @@ fn collect_hits(query: &str, scope: SearchScope, app: &BenCodeApp) -> Vec<Search
 
 impl BenCodeApp {
     pub fn open_search_modal(&mut self, cx: &mut Context<Self>) {
-        self.is_search_open = true;
+        self.show_surface(Surface::Search, cx);
         self.search_scope = SearchScope::All;
         self.search_focus_pending = true;
         if self.search_submit.is_none() {
@@ -166,8 +164,9 @@ impl BenCodeApp {
     }
 
     pub fn close_search_modal(&mut self, cx: &mut Context<Self>) {
-        self.is_search_open = false;
-        cx.notify();
+        if self.surface_open(Surface::Search) {
+            self.close_surface(cx);
+        }
     }
 
     pub fn update_search_hits(&mut self, cx: &mut Context<Self>) {
@@ -212,17 +211,22 @@ impl BenCodeApp {
         self.close_search_modal(cx);
     }
 
-    pub fn render_search_modal(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(crate) fn render_search_body(&mut self, cx: &mut Context<Self>) -> AnyElement {
         if std::mem::take(&mut self.search_focus_pending) {
             self.focus_search_input(cx);
         }
-        let close = app_callback(cx, |this, cx| this.close_search_modal(cx));
         let scopes = SCOPES.iter().fold(
             SegmentedControl::new("search-scope", self.search_scope.key()).size(ControlSize::Sm),
             |control, (_, key, label)| control.segment(*key, *label, None),
         );
-        Dialog::new("search", "Search", close)
-            .detail("Threads, workspace files and recent projects. Enter opens the top result.")
+        div()
+            .flex()
+            .flex_col()
+            .gap_3()
+            .size_full()
+            .max_w(px(720.0))
+            .mx_auto()
+            .p_4()
             .child(SearchInput::new(
                 "search-modal-query",
                 &self.search_modal_input,
@@ -234,6 +238,7 @@ impl BenCodeApp {
                 })),
             )
             .child(self.render_search_results(cx))
+            .into_any_element()
     }
 
     /// The dialog takes focus as it opens, so the query field takes it back after that frame.

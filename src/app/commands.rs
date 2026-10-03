@@ -28,6 +28,7 @@ actions!(
         OpenNotes,
         OpenInbox,
         OpenProject,
+        CloseView,
         ToggleSessionSidebar,
         GoBack,
         GoForward,
@@ -44,6 +45,7 @@ fn keymap() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-w", CloseActive, None),
         KeyBinding::new("cmd-s", Save, None),
         KeyBinding::new("cmd-o", OpenProject, None),
+        KeyBinding::new("escape", CloseView, None),
         KeyBinding::new("cmd-b", ToggleSidebar, None),
         KeyBinding::new("cmd-shift-b", ToggleSessionSidebar, None),
         KeyBinding::new("cmd-[", GoBack, None),
@@ -130,28 +132,9 @@ impl BenCodeApp {
     }
 
     fn close_active(&mut self, cx: &mut Context<Self>) {
-        if self.is_settings_open {
-            self.close_settings(cx);
-            return;
-        }
-        if self.is_search_open {
-            self.is_search_open = false;
-            cx.notify();
-            return;
-        }
-        if self.is_notes_open {
-            // Through close_notes so unsaved edits are written first.
-            self.close_notes(cx);
-            return;
-        }
-        if self.is_automations_open {
-            self.is_automations_open = false;
-            cx.notify();
-            return;
-        }
-        if self.is_inbox_open {
-            self.is_inbox_open = false;
-            cx.notify();
+        // An open view closes first (notes are saved on the way out).
+        if self.surface.is_some() {
+            self.close_surface(cx);
             return;
         }
         if self.active_view_mode == ViewMode::Editor && self.request_close_active_editor_file(cx) {
@@ -185,6 +168,13 @@ impl BenCodeApp {
             cx.notify();
         }))
         .on_action(cx.listener(|this, _: &OpenProject, _, cx| this.open_project_dialog(cx)))
+        .on_action(cx.listener(|this, _: &CloseView, _, cx| {
+            if this.surface.is_some() {
+                this.close_surface(cx);
+            } else {
+                cx.propagate();
+            }
+        }))
         .on_action(cx.listener(|this, _: &GoBack, _, cx| this.go_back(cx)))
         .on_action(cx.listener(|this, _: &GoForward, _, cx| this.go_forward(cx)))
         .on_action(cx.listener(|this, _: &ToggleTerminal, _, cx| {
@@ -232,7 +222,7 @@ mod tests {
 
     #[test]
     fn keymap_chords_are_unique_per_action() {
-        assert_eq!(keymap().len(), 21);
+        assert_eq!(keymap().len(), 22);
         assert_eq!(menus().len(), 4);
     }
 }

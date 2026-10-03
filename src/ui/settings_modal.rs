@@ -4,7 +4,6 @@ use ely_gpui_component::buttons::{ButtonVariant, IconButton};
 use ely_gpui_component::data_display::{Badge, Tone};
 use ely_gpui_component::feedback::EmptyState;
 use ely_gpui_component::forms::Switch;
-use ely_gpui_component::overlays::Dialog;
 use ely_gpui_component::primitives::IconName;
 use ely_gpui_component::settings::{
     Appearance, SettingsLayout, SettingsRow, SettingsSection, ThemeSelector,
@@ -15,7 +14,6 @@ use crate::app::BenCodeApp;
 use crate::harness::HarnessInfo;
 use crate::settings::ThemePreference;
 use crate::ui::HarnessIcon;
-use crate::ui::app_callback::app_callback;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum SettingsTab {
@@ -104,10 +102,7 @@ impl BenCodeApp {
         })
     }
 
-    pub fn render_settings_modal(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
-        let close = app_callback(cx, |this, cx| {
-            this.close_settings(cx);
-        });
+    pub(crate) fn render_settings_body(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let layout = SettingsLayout::new(
             "settings-layout",
             SECTIONS
@@ -123,9 +118,7 @@ impl BenCodeApp {
             }
             cx.notify();
         }));
-        Dialog::new("settings", "Settings", close)
-            .fullscreen()
-            .child(layout)
+        div().size_full().child(layout).into_any_element()
     }
 
     fn render_settings_page(&self, cx: &Context<Self>) -> AnyElement {

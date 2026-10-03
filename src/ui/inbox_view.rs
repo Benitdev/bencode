@@ -3,29 +3,26 @@
 //! items (`features/inbox/ui/InboxView.tsx:1001-1004,1378-1384`).
 
 use ely_gpui_component::feedback::EmptyState;
-use ely_gpui_component::overlays::Dialog;
 use ely_gpui_component::primitives::IconName;
-use gpui::{Context, IntoElement, ParentElement};
+use gpui::{AnyElement, Context, IntoElement, ParentElement, Styled, div};
 
-use crate::app::BenCodeApp;
-use crate::ui::app_callback::app_callback;
+use crate::app::{BenCodeApp, Surface};
 
 impl BenCodeApp {
     pub fn open_inbox_modal(&mut self, cx: &mut Context<Self>) {
-        self.is_inbox_open = true;
-        cx.notify();
+        self.show_surface(Surface::Inbox, cx);
     }
 
-    pub fn close_inbox_modal(&mut self, cx: &mut Context<Self>) {
-        self.is_inbox_open = false;
-        cx.notify();
-    }
-
-    pub fn render_inbox_modal(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
-        let close = app_callback(cx, |this, cx| this.close_inbox_modal(cx));
-        Dialog::new("inbox", "Inbox", close).child(
-            EmptyState::new("inbox-empty", IconName::Inbox, "Nothing in your inbox")
-                .body("Add a connection to start using the Inbox."),
-        )
+    pub(crate) fn render_inbox_body(&mut self, _cx: &mut Context<Self>) -> AnyElement {
+        div()
+            .size_full()
+            .flex()
+            .items_center()
+            .justify_center()
+            .child(
+                EmptyState::new("inbox-empty", IconName::Inbox, "Select an inbox item")
+                    .body("Add a connection to start using the Inbox."),
+            )
+            .into_any_element()
     }
 }
