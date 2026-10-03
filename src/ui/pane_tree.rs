@@ -179,6 +179,7 @@ impl BenCodeApp {
                 .child(composer)
         };
         frame
+            .children(self.render_find_bar(session_id, cx))
             .when_some(drop_hint, |el, edge| {
                 el.child(render_pane_drop_hint(edge, cx))
             })

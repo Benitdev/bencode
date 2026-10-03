@@ -139,6 +139,9 @@ pub struct BenCodeApp {
     /// Model catalog probes per harness: `None` while one runs, else when
     /// the last one ended.
     pub catalog_probes: HashMap<crate::harness::HarnessKind, Option<std::time::Instant>>,
+    /// Find in conversation (⌘F): its field and the open bar.
+    pub find_input: Entity<TextInput>,
+    pub transcript_find: Option<crate::ui::transcript::find::FindState>,
     /// Keyboard focus and highlight of the composer's menus.
     pub composer_menus: crate::ui::composer::MenuState,
     pub drafts: HashMap<String, String>,
@@ -307,6 +310,8 @@ impl BenCodeApp {
         );
         let search_input = text_input(window, cx, "Search conversations...");
         let model_search_input = text_input(window, cx, "Search models");
+        let find_input = text_input(window, cx, "Find in conversation");
+        let find_keys_input = find_input.clone();
         let note_filter_input = text_input(window, cx, "Filter notes...");
         let note_title_input = text_input(window, cx, "Note title...");
         let note_body_input = multiline_input(
@@ -368,6 +373,14 @@ impl BenCodeApp {
                     _ => {}
                 },
             ),
+            cx.subscribe(
+                &find_input,
+                |this: &mut Self, _, event: &InputEvent, cx| match event {
+                    InputEvent::Changed => this.on_find_query_changed(cx),
+                    InputEvent::Submit => this.step_find(1, cx),
+                    _ => {}
+                },
+            ),
             cx.subscribe(&note_title_input, Self::on_note_input_event),
             cx.subscribe(&note_body_input, Self::on_note_input_event),
             cx.subscribe(
@@ -407,6 +420,22 @@ impl BenCodeApp {
             if pasting && composer_input.read(cx).focus_handle(cx).is_focused(window) {
                 let attached = weak_app.update(cx, |this, cx| this.paste_into_composer(cx));
                 if matches!(attached, Ok(true)) {
+                    cx.stop_propagation();
+                }
+                return;
+            }
+            // MonoCode `TranscriptFind`: Enter steps, ⇧Enter steps back, Esc closes.
+            if find_keys_input.read(cx).focus_handle(cx).is_focused(window) {
+                let back = event.keystroke.modifiers.shift;
+                let handled = weak_app.update(cx, |this, cx| match event.keystroke.key.as_str() {
+                    "enter" => {
+                        this.step_find(if back { -1 } else { 1 }, cx);
+                        true
+                    }
+                    "escape" => this.close_find(cx),
+                    _ => false,
+                });
+                if matches!(handled, Ok(true)) {
                     cx.stop_propagation();
                 }
                 return;
@@ -531,6 +560,8 @@ impl BenCodeApp {
             last_model_settings: Default::default(),
             catalog_probes: Default::default(),
             composer_menus: crate::ui::composer::MenuState::new(menu_focus),
+            find_input,
+            transcript_find: None,
             drafts: HashMap::new(),
             expanded_reasoning: std::collections::HashSet::new(),
             transcript_ui: Default::default(),

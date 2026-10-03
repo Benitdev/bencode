@@ -178,7 +178,12 @@ impl BenCodeApp {
         let colors = &cx.theme().colors;
         let key = block.id.clone();
         let clamps = approx_lines(&text) > CLAMP_LINES;
-        let expanded = self.transcript_ui.expanded_messages.contains(&key);
+        // The current find match shows in full, its words painted.
+        let query = self
+            .find_query_for(&session.id, cx)
+            .filter(|q| !q.trim().is_empty());
+        let current = self.find_current_block(&session.id, cx) == Some(ix);
+        let expanded = self.transcript_ui.expanded_messages.contains(&key) || current;
         let single_line = !text.contains('\n') && text.chars().count() <= CHARS_PER_LINE;
         let group = SharedString::from(format!("user-msg-{key}"));
         let bubble = div()
@@ -194,7 +199,11 @@ impl BenCodeApp {
             .child(
                 div()
                     .when(clamps && !expanded, |el| el.line_clamp(CLAMP_LINES))
-                    .child(text.clone()),
+                    .child(match &query {
+                        Some(query) => super::find::highlighted_text(&text, query, current, cx)
+                            .into_any_element(),
+                        None => text.clone().into_any_element(),
+                    }),
             )
             .when(clamps, |el| {
                 el.child(self.show_more_toggle(&key, expanded, cx))

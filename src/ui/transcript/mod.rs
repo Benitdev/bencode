@@ -5,6 +5,7 @@
 
 mod activity;
 pub mod blocks;
+pub mod find;
 pub mod turns;
 
 use std::collections::{HashMap, HashSet};
@@ -147,6 +148,13 @@ impl BenCodeApp {
             return div().into_any_element();
         };
         let turn_of = |t: usize| &view.turns[t];
+        // Markdown cannot paint single words, so the row of the current find
+        // match is tinted instead (user messages paint their words).
+        let find_hit = self
+            .find_current_block(session_id, cx)
+            .is_some_and(|block| {
+                session.blocks[block].role != "user" && find::row_shows(row, &view.turns, block)
+            });
         let content = match row {
             Row::Item { turn, item } => self.render_turn_item(session, turn_of(*turn), *item, cx),
             Row::FoldLine { turn } => self.render_fold_line(session, turn_of(*turn), cx),
@@ -167,6 +175,10 @@ impl BenCodeApp {
                     .max_w(MESSAGE_MAX_WIDTH)
                     .flex()
                     .flex_col()
+                    .when(find_hit, |el| {
+                        el.rounded(px(8.0))
+                            .bg(cx.theme().colors.accent.opacity(0.1))
+                    })
                     .child(content),
             )
             .into_any_element()

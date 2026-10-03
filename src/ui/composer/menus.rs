@@ -47,7 +47,7 @@ impl MenuState {
 }
 
 /// Moves window focus to `handle` once the current update ends.
-pub(super) fn focus_later(handle: FocusHandle, cx: &mut App) {
+pub fn focus_later(handle: FocusHandle, cx: &mut App) {
     cx.defer(move |cx| {
         if let Some(window) = cx.active_window()
             && let Err(err) = window.update(cx, |_, window, cx| window.focus(&handle, cx))
@@ -93,7 +93,7 @@ impl BenCodeApp {
         focus_later(self.composer_menus.focus.clone(), cx);
     }
 
-    pub(super) fn refocus_prompt(&self, cx: &mut App) {
+    pub fn refocus_prompt(&self, cx: &mut App) {
         focus_later(self.prompt_input.read(cx).focus_handle(cx), cx);
     }
 

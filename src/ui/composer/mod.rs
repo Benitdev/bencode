@@ -24,7 +24,7 @@ use crate::db::SessionRow;
 use crate::harness::{HarnessKind, catalog};
 use crate::ui::HarnessIcon;
 use crate::ui::app_callback::app_callback;
-pub use menus::MenuState;
+pub use menus::{MenuState, focus_later};
 use menus::{popover_anchor, popover_surface};
 
 const COMPOSER_MAX_WIDTH: gpui::Pixels = px(840.0);

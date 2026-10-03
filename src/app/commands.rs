@@ -31,6 +31,9 @@ actions!(
         OpenProject,
         CloseView,
         SwitchModel,
+        FindInConversation,
+        FindNext,
+        FindPrevious,
         ToggleSessionSidebar,
         GoBack,
         GoForward,
@@ -49,6 +52,9 @@ fn keymap() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-o", OpenProject, None),
         KeyBinding::new("escape", CloseView, None),
         KeyBinding::new("cmd-.", SwitchModel, None),
+        KeyBinding::new("cmd-f", FindInConversation, None),
+        KeyBinding::new("cmd-g", FindNext, None),
+        KeyBinding::new("cmd-shift-g", FindPrevious, None),
         KeyBinding::new("cmd-b", ToggleSidebar, None),
         KeyBinding::new("cmd-shift-b", ToggleSessionSidebar, None),
         KeyBinding::new("cmd-[", GoBack, None),
@@ -92,6 +98,7 @@ fn menus() -> Vec<Menu> {
             MenuItem::action("Toggle Projects", ToggleSidebar),
             MenuItem::action("Toggle Session Sidebar", ToggleSessionSidebar),
             MenuItem::action("Switch Model…", SwitchModel),
+            MenuItem::action("Find in Conversation", FindInConversation),
             MenuItem::action("Toggle Terminal", ToggleTerminal),
             MenuItem::action("New Terminal", NewTerminal),
             MenuItem::separator(),
@@ -174,10 +181,13 @@ impl BenCodeApp {
         }))
         .on_action(cx.listener(|this, _: &OpenProject, _, cx| this.open_project_dialog(cx)))
         .on_action(cx.listener(|this, _: &SwitchModel, _, cx| this.toggle_recent_models(cx)))
+        .on_action(cx.listener(|this, _: &FindInConversation, _, cx| this.open_find(cx)))
+        .on_action(cx.listener(|this, _: &FindNext, _, cx| this.step_find(1, cx)))
+        .on_action(cx.listener(|this, _: &FindPrevious, _, cx| this.step_find(-1, cx)))
         .on_action(cx.listener(|this, _: &CloseView, _, cx| {
             if this.surface.is_some() {
                 this.close_surface(cx);
-            } else if !this.close_composer_popovers(cx) {
+            } else if !this.close_composer_popovers(cx) && !this.close_find(cx) {
                 cx.propagate();
             }
         }))
@@ -229,7 +239,7 @@ mod tests {
 
     #[test]
     fn keymap_chords_are_unique_per_action() {
-        assert_eq!(keymap().len(), 23);
+        assert_eq!(keymap().len(), 26);
         assert_eq!(menus().len(), 4);
     }
 }
