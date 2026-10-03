@@ -504,7 +504,7 @@ impl BenCodeApp {
                 id: "title-tab-menu",
                 entries: &entries,
                 active: menu.active,
-                position: menu.position,
+                place: explorer_menu::MenuPlace::At(menu.position),
                 width: TAB_MENU_WIDTH,
                 focus: &self.composer_menus.focus,
             },

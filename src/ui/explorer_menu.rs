@@ -5,8 +5,8 @@
 
 use ely_gpui_component::theme::ActiveTheme;
 use gpui::{
-    AnyElement, App, InteractiveElement, IntoElement, ParentElement, Pixels, Point, SharedString,
-    Styled, anchored, deferred, div, prelude::*, px,
+    AnimationExt, AnyElement, App, InteractiveElement, IntoElement, ParentElement, Pixels, Point,
+    SharedString, Styled, anchored, deferred, div, prelude::*, px,
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -17,6 +17,8 @@ pub struct MenuAction {
     pub shortcut: Option<&'static str>,
     pub disabled: bool,
     pub danger: bool,
+    /// MonoCode `checked`: a check at the row's end.
+    pub checked: bool,
 }
 
 impl MenuAction {
@@ -28,6 +30,7 @@ impl MenuAction {
             shortcut: None,
             disabled: false,
             danger: false,
+            checked: false,
         }
     }
 
@@ -43,6 +46,11 @@ impl MenuAction {
 
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
+        self
+    }
+
+    pub fn checked(mut self, checked: bool) -> Self {
+        self.checked = checked;
         self
     }
 
@@ -92,11 +100,20 @@ pub fn pick(entries: &[MenuEntry], active: usize) -> Option<&'static str> {
 }
 
 /// Where and what the menu draws.
+/// Where the menu opens.
+#[derive(Clone, Copy, Debug)]
+pub enum MenuPlace {
+    /// At a window point, as a context menu does.
+    At(Point<Pixels>),
+    /// Above the element it is placed in (MonoCode `Popover side="top"`).
+    Above,
+}
+
 pub struct MenuView<'a> {
     pub id: &'static str,
     pub entries: &'a [MenuEntry],
     pub active: usize,
-    pub position: Point<Pixels>,
+    pub place: MenuPlace,
     pub width: f32,
     pub focus: &'a gpui::FocusHandle,
 }
@@ -113,7 +130,7 @@ pub fn render_menu(
         id,
         entries,
         active,
-        position,
+        place,
         width,
         focus,
     } = view;
@@ -194,7 +211,16 @@ pub fn render_menu(
                             .child(text)
                     })),
             )
-            .children(item.shortcut.map(|keys| {
+            .when(item.checked, |el| {
+                el.child(
+                    ely_gpui_component::primitives::Icon::new(
+                        ely_gpui_component::primitives::IconName::Check,
+                    )
+                    .size(ely_gpui_component::theme::IconSize::Xs)
+                    .color(colors.fg),
+                )
+            })
+            .children(item.shortcut.filter(|_| !item.checked).map(|keys| {
                 div()
                     .flex_none()
                     .text_size(px(11.0))
@@ -203,26 +229,42 @@ pub fn render_menu(
             }))
             .into_any_element()
     });
-    deferred(
-        anchored().position(position).snap_to_window().child(
-            div()
-                .id(id)
-                .track_focus(focus)
-                .w(px(width))
-                .p_1()
-                .flex()
-                .flex_col()
-                .rounded(px(8.0))
-                .border_1()
-                .border_color(colors.border)
-                .bg(colors.surface)
-                .shadow_lg()
-                .on_mouse_down_out(move |_, window, cx| on_dismiss(window, cx))
-                .children(rows),
-        ),
-    )
-    .with_priority(3)
-    .into_any_element()
+    // MonoCode `Popover`: rounded-xl frame, and `popover-open` — it fades
+    // in rising 8px towards its anchor over 170ms.
+    let above = matches!(place, MenuPlace::Above);
+    let menu = div()
+        .id(id)
+        .track_focus(focus)
+        .w(px(width))
+        .p_1()
+        .flex()
+        .flex_col()
+        .rounded(px(12.0))
+        .border_1()
+        .border_color(colors.border)
+        .bg(colors.surface)
+        .shadow_xl()
+        .on_mouse_down_out(move |_, window, cx| on_dismiss(window, cx))
+        .children(rows)
+        .with_animation(
+            SharedString::from(format!("{id}-open")),
+            gpui::Animation::new(std::time::Duration::from_millis(170))
+                .with_easing(gpui::ease_out_quint()),
+            move |el, delta| {
+                let lift = px(8.0 * (1.0 - delta));
+                let el = el.opacity(delta);
+                if above { el.mb(lift) } else { el.mt(lift) }
+            },
+        );
+    let anchored = match place {
+        MenuPlace::At(position) => anchored().position(position),
+        MenuPlace::Above => anchored()
+            .anchor(gpui::Anchor::BottomLeft)
+            .offset(gpui::point(px(0.0), px(-4.0))),
+    };
+    deferred(anchored.snap_to_window().child(menu))
+        .with_priority(3)
+        .into_any_element()
 }
 
 #[cfg(test)]

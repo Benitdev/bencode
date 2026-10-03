@@ -13,8 +13,8 @@ fn a(hex_rgba: u32) -> Hsla {
     rgba(hex_rgba).into()
 }
 
-/// MonoCode electric blue, the accent in dark mode.
-const ACCENT: u32 = 0x388bfd;
+/// MonoCode `--color-accent: hsl(211 92% 62%)`, the same in both modes.
+const ACCENT: u32 = 0x459bf7;
 
 /// Registers MonoCode's palettes and applies the starting mode.
 pub fn install(mode: Mode, cx: &mut App) {
@@ -23,42 +23,70 @@ pub fn install(mode: Mode, cx: &mut App) {
     Theme::set_mode_now(mode, cx);
 }
 
+/// MonoCode's dark theme: a neutral grey (`--theme-hue: 240`,
+/// `--theme-saturation: 0%`) with the background at 9% lightness and text at
+/// 92%. Every fill is text laid over the background at a set strength
+/// (`--selection-strength: 10%`, hover 15%, stroke 7%…), so the solid
+/// colours below are those mixes.
 fn monocode_dark() -> Palette {
     let mut p = Palette::dark(false);
-    p.bg = c(0x0e1015);
-    p.surface = c(0x13161c);
-    p.sunken = c(0x0b0d11);
-    p.overlay = c(0x161922);
-    p.hover = c(0x1c202a);
-    p.active = c(0x222734);
-    p.border = a(0xffffff14);
-    p.border_strong = a(0xffffff26);
-    p.fg = c(0xf1f3f7);
-    p.fg_muted = c(0x8b949e);
-    p.fg_subtle = c(0x6e7681);
+    p.bg = c(0x171717);
+    p.surface = c(0x1f1f1f);
+    p.sunken = c(0x121212);
+    p.overlay = c(0x1f1f1f);
+    p.hover = c(0x222222);
+    p.active = c(0x2c2c2c);
+    p.border = a(0xebebeb1a);
+    p.border_strong = a(0xebebeb33);
+    p.fg = c(0xebebeb);
+    p.fg_muted = c(0x8a8a8a);
+    p.fg_subtle = c(0x6c6c6c);
+    p.fg_disabled = c(0x4a4a4a);
     p.accent = c(ACCENT);
-    p.accent_hover = c(0x4f9aff);
+    p.accent_hover = c(0x5ea9f8);
     p.on_accent = c(0xffffff);
     p.focus = c(ACCENT);
-    p.link = c(0x58a6ff);
-    p.selection = a(0x388bfd4d);
-    p.success = c(0x3fb950);
-    p.warning = c(0xd29922);
-    p.danger = c(0xf85149);
+    p.link = c(0x7dd3fc);
+    p.selection = a(0x459bf74d);
+    p.success = c(0x34d399);
+    p.warning = c(0xfbbf24);
+    p.danger = c(0xf87171);
     p.info = c(0x38bdf8);
-    p.success_subtle = a(0x2ea04326);
-    p.warning_subtle = a(0xd2992226);
-    p.danger_subtle = a(0xf8514926);
+    p.success_subtle = a(0x34d39926);
+    p.warning_subtle = a(0xfbbf2426);
+    p.danger_subtle = a(0xf8717126);
     p.info_subtle = a(0x38bdf826);
+    p.glass = a(0x171717d9);
+    p.tooltip_bg = c(0x2c2c2c);
+    p.tooltip_fg = c(0xebebeb);
     p
 }
 
+/// MonoCode's light theme: background at 97%, text at 18%, gentler fills
+/// (`--selection-strength: 6%`, hover 10%).
 fn monocode_light() -> Palette {
     let mut p = Palette::light(false);
-    p.accent = c(0x0969da);
-    p.accent_hover = c(0x0550ae);
+    p.bg = c(0xf7f7f7);
+    p.surface = c(0xffffff);
+    p.sunken = c(0xefefef);
+    p.overlay = c(0xffffff);
+    p.hover = c(0xededed);
+    p.active = c(0xebebeb);
+    p.border = a(0x2e2e2e1a);
+    p.border_strong = a(0x2e2e2e33);
+    p.fg = c(0x2e2e2e);
+    p.fg_muted = c(0x8a8a8a);
+    p.fg_subtle = c(0xa3a3a3);
+    p.accent = c(ACCENT);
+    p.accent_hover = c(0x2f86e6);
     p.on_accent = c(0xffffff);
-    p.focus = c(0x0969da);
+    p.focus = c(ACCENT);
+    p.link = c(0x0b67c9);
+    p.success = c(0x059669);
+    p.warning = c(0xd97706);
+    p.danger = c(0xef4444);
+    p.info = c(0x0284c7);
+    p.glass = a(0xf7f7f7d9);
     p
 }
 

@@ -8,6 +8,10 @@ use gpui::{App, Context, FocusHandle, Focusable, InteractiveElement, Window};
 use super::PERMISSION_MODES;
 use super::model_picker::{ModelTab, Submenu};
 use crate::app::BenCodeApp;
+use crate::ui::explorer_menu::{self, MenuAction, MenuEntry, MenuPlace, MenuView};
+
+/// MonoCode `WorkspacePicker` popover width.
+const WORKSPACE_MENU_WIDTH: f32 = 240.0;
 
 pub struct MenuState {
     /// Focused while a keyboard-driven menu (access, model) is open.
@@ -20,6 +24,8 @@ pub struct MenuState {
     pub model_submenu: Option<Submenu>,
     pub setting_index: usize,
     pub model_tab: ModelTab,
+    /// The checkout menu of a new thread, and its highlighted row.
+    pub workspace_menu: Option<usize>,
     /// The recent-models menu (⌘.) and its highlighted row.
     pub recent_open: bool,
     pub recent_index: usize,
@@ -38,6 +44,7 @@ impl MenuState {
             model_submenu: None,
             setting_index: 0,
             model_tab: ModelTab::default(),
+            workspace_menu: None,
             recent_open: false,
             recent_index: 0,
             click_inside: false,
@@ -101,6 +108,8 @@ impl BenCodeApp {
     pub fn handle_menu_key(&mut self, key: &str, cx: &mut Context<Self>) -> bool {
         if self.tab_menu_open() {
             self.tab_menu_key(key, cx)
+        } else if self.composer_menus.workspace_menu.is_some() {
+            self.workspace_menu_key(key, cx)
         } else if self.is_permission_picker_open {
             self.access_menu_key(key, cx)
         } else if self.is_model_picker_open {
@@ -134,5 +143,132 @@ impl BenCodeApp {
         }
         cx.notify();
         true
+    }
+}
+
+impl BenCodeApp {
+    /// MonoCode `WorkspacePicker` rows: the project checkout, then each
+    /// worktree by branch with its folder underneath.
+    fn workspace_menu_entries(&self) -> Vec<MenuEntry> {
+        let focused = self.worktree_focus().map(|f| f.path.clone());
+        let mut entries = vec![MenuEntry::Item(
+            MenuAction::new("current", "Current checkout").checked(focused.is_none()),
+        )];
+        for tree in self
+            .workspace
+            .worktrees
+            .iter()
+            .filter(|w| !w.is_main && !w.missing)
+        {
+            entries.push(MenuEntry::Item(
+                MenuAction::new(
+                    "tree",
+                    tree.branch.clone().unwrap_or_else(|| tree.head.clone()),
+                )
+                .description(Some(tree.path.clone()))
+                .checked(focused.as_deref() == Some(tree.path.as_str())),
+            ));
+        }
+        entries
+    }
+
+    pub(super) fn toggle_workspace_menu(&mut self, cx: &mut Context<Self>) {
+        if self.composer_menus.workspace_menu.is_some() {
+            self.composer_menus.workspace_menu = None;
+            self.refocus_prompt(cx);
+        } else {
+            self.close_composer_popovers(cx);
+            self.composer_menus.workspace_menu =
+                Some(explorer_menu::first_item(&self.workspace_menu_entries()));
+            self.focus_composer_menu(cx);
+        }
+        cx.notify();
+    }
+
+    /// Row `index` picked: the project checkout or that worktree.
+    fn pick_workspace(&mut self, index: usize, cx: &mut Context<Self>) {
+        self.composer_menus.workspace_menu = None;
+        self.refocus_prompt(cx);
+        let trees: Vec<_> = self
+            .workspace
+            .worktrees
+            .iter()
+            .filter(|w| !w.is_main && !w.missing)
+            .cloned()
+            .collect();
+        let focus = index
+            .checked_sub(1)
+            .and_then(|ix| trees.get(ix))
+            .map(|tree| crate::app::WorktreeFocus {
+                path: tree.path.clone(),
+                branch: tree.branch.clone(),
+            });
+        self.select_workspace(focus, cx);
+        cx.notify();
+    }
+
+    fn workspace_menu_key(&mut self, key: &str, cx: &mut Context<Self>) -> bool {
+        let Some(active) = self.composer_menus.workspace_menu else {
+            return false;
+        };
+        let entries = self.workspace_menu_entries();
+        match key {
+            "down" => {
+                self.composer_menus.workspace_menu = Some(explorer_menu::step(&entries, active, 1))
+            }
+            "up" => {
+                self.composer_menus.workspace_menu = Some(explorer_menu::step(&entries, active, -1))
+            }
+            "enter" | "space" => self.pick_workspace(active, cx),
+            "escape" => {
+                self.composer_menus.workspace_menu = None;
+                self.refocus_prompt(cx);
+            }
+            _ => return false,
+        }
+        cx.notify();
+        true
+    }
+
+    pub(super) fn render_workspace_menu(&self, cx: &Context<Self>) -> gpui::AnyElement {
+        let entries = self.workspace_menu_entries();
+        let entity = cx.entity().downgrade();
+        let (hover_app, pick_app, close_app) = (entity.clone(), entity.clone(), entity);
+        explorer_menu::render_menu(
+            MenuView {
+                id: "composer-workspace-menu",
+                entries: &entries,
+                active: self.composer_menus.workspace_menu.unwrap_or(0),
+                place: MenuPlace::Above,
+                width: WORKSPACE_MENU_WIDTH,
+                focus: &self.composer_menus.focus,
+            },
+            move |ix, _, cx| {
+                let hovered = hover_app.update(cx, |this, cx| {
+                    if this.composer_menus.workspace_menu != Some(ix) {
+                        this.composer_menus.workspace_menu = Some(ix);
+                        cx.notify();
+                    }
+                });
+                if let Err(err) = hovered {
+                    log::debug!("workspace menu hover after app drop: {err:#}");
+                }
+            },
+            move |ix, _, cx| {
+                if let Err(err) = pick_app.update(cx, |this, cx| this.pick_workspace(ix, cx)) {
+                    log::debug!("workspace pick after app drop: {err:#}");
+                }
+            },
+            move |_, cx| {
+                let closed = close_app.update(cx, |this, cx| {
+                    this.composer_menus.workspace_menu = None;
+                    cx.notify();
+                });
+                if let Err(err) = closed {
+                    log::debug!("workspace menu dismiss after app drop: {err:#}");
+                }
+            },
+            cx,
+        )
     }
 }

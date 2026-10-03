@@ -5,7 +5,7 @@ use ely_gpui_component::buttons::{ButtonVariant, IconButton};
 use ely_gpui_component::feedback::EmptyState;
 use ely_gpui_component::layout::SplitPane;
 use ely_gpui_component::primitives::{DragGhost, Icon, IconName, Tooltip};
-use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize};
+use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::prelude::*;
 use gpui::{
     AnyElement, Axis, Context, DragMoveEvent, FollowMode, IntoElement, ListState, ParentElement,
@@ -14,7 +14,6 @@ use gpui::{
 
 use crate::app::BenCodeApp;
 use crate::db::SessionRow;
-use crate::harness::catalog;
 use crate::ui::drag_drop::{DraggedFile, DraggedPane, render_pane_drop_hint};
 use crate::ui::layout::{LayoutNode, SplitDir, leaf_count, pane_edge_from_point, split_shares};
 
@@ -153,7 +152,7 @@ impl BenCodeApp {
         let composer = if is_focused {
             self.render_composer(Some(session), cx).into_any_element()
         } else {
-            self.render_inactive_composer(session, cx)
+            self.render_composer_view(Some(session), false, false, cx)
                 .into_any_element()
         };
 
@@ -423,65 +422,22 @@ impl BenCodeApp {
             .min_h_0()
             .justify_center()
             .py_12()
+            // MonoCode `EmptySession`: the headline sits over the composer
+            // in the same column (`px-1.5`, then `px-2.5`).
             .child(
                 div()
                     .w_full()
                     .max_w(px(896.0))
                     .mx_auto()
-                    .px(px(30.0))
+                    .px(px(16.0))
                     .mb_4()
                     .truncate()
                     .text_size(px(18.0))
+                    .line_height(px(28.0))
                     .text_color(cx.theme().colors.fg)
                     .child(title),
             )
-            .child(self.render_composer(Some(session), cx))
+            .child(self.render_composer_view(Some(session), true, true, cx))
             .into_any_element()
-    }
-
-    /// Composer stand-in for unfocused panes; clicking focuses the pane.
-    fn render_inactive_composer(
-        &self,
-        session: &SessionRow,
-        cx: &Context<Self>,
-    ) -> impl IntoElement {
-        let theme = cx.theme();
-        let colors = &theme.colors;
-        let sid = session.id.clone();
-        div().flex_none().px_6().pb_4().pt_2().child(
-            div()
-                .id(SharedString::from(format!(
-                    "inactive-composer-{}",
-                    session.id
-                )))
-                .flex()
-                .items_center()
-                .justify_between()
-                .px_4()
-                .py_2()
-                .rounded(theme.radius(Radius::Lg))
-                .border_1()
-                .border_color(colors.border)
-                .bg(colors.surface)
-                .cursor_pointer()
-                .hover(|s| s.border_color(colors.accent))
-                .on_click(cx.listener(move |this, _, _, cx| this.focus_pane(sid.clone(), cx)))
-                .child(
-                    div()
-                        .text_size(theme.text_size(TextSize::Sm))
-                        .text_color(colors.fg_muted)
-                        .child("Click to activate thread and chat…"),
-                )
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap_1()
-                        .text_size(theme.text_size(TextSize::Xs))
-                        .text_color(colors.fg_muted)
-                        .child(Icon::new(IconName::MessageSquare).size(IconSize::Xs))
-                        .child(catalog::label_for(&session.model)),
-                ),
-        )
     }
 }

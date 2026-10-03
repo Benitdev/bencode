@@ -28,7 +28,10 @@ use crate::ui::app_callback::app_callback;
 pub use menus::{MenuState, focus_later};
 use menus::{popover_anchor, popover_surface};
 
-const COMPOSER_MAX_WIDTH: gpui::Pixels = px(840.0);
+/// MonoCode `max-w-4xl`, the same column as the transcript.
+const COMPOSER_MAX_WIDTH: gpui::Pixels = px(896.0);
+/// MonoCode's default placeholder (trailing space included).
+pub const PROMPT_PLACEHOLDER: &str = "Ask, build, / for commands, @ for references... ";
 const HARNESS_ORDER: [HarnessKind; 4] = [
     HarnessKind::Claude,
     HarnessKind::Antigravity,
@@ -42,40 +45,38 @@ enum Popover {
     Access,
 }
 
-/// MonoCode's composer chip: 26px, icon, 11px label, an optional dimmed
-/// detail (the model's effort), and a chevron that turns while open.
+/// MonoCode's toolbar chip (`ModelPicker` / `AccessPicker` trigger):
+/// `h-6.5 rounded-md px-1.5 gap-1 bg-selection hover:bg-selection-hover`,
+/// an icon, an 11px label, an optional dimmed detail (the model's effort),
+/// and a chevron that turns over while the menu is open.
 fn composer_chip(
     id: &'static str,
     icon: gpui::AnyElement,
     label: String,
     detail: Option<String>,
     open: bool,
+    max_width: f32,
     cx: &Context<BenCodeApp>,
 ) -> gpui::Stateful<gpui::Div> {
     let colors = &cx.theme().colors;
-    let hover = colors.fg.opacity(0.08);
+    let (fill, hover) = (selection(cx), selection_hover(cx));
     div()
         .id(id)
         .h(px(26.0))
-        .max_w(px(160.0))
+        .max_w(px(max_width))
         .min_w_0()
+        .flex_none()
         .px_1p5()
         .rounded(px(6.0))
         .flex()
         .items_center()
         .gap_1()
         .cursor_pointer()
-        .when(open, |el| el.bg(hover))
+        .text_color(colors.fg)
+        .bg(fill)
         .hover(move |s| s.bg(hover))
-        .child(icon)
-        .child(
-            div()
-                .min_w_0()
-                .truncate()
-                .text_size(px(11.0))
-                .text_color(colors.fg.opacity(0.8))
-                .child(label),
-        )
+        .child(div().flex_none().child(icon))
+        .child(div().min_w_0().truncate().text_size(px(11.0)).child(label))
         .children(detail.map(|detail| {
             div()
                 .flex_none()
@@ -84,14 +85,87 @@ fn composer_chip(
                 .child(detail)
         }))
         .child(
-            Icon::new(if open {
-                IconName::ChevronUp
-            } else {
-                IconName::ChevronDown
-            })
-            .size(IconSize::Xs)
-            .color(colors.fg.opacity(0.5)),
+            Icon::new(IconName::ChevronDown)
+                .size(IconSize::Xs)
+                .color(colors.fg.opacity(0.5))
+                .when(open, |icon| {
+                    icon.rotate(gpui::radians(std::f32::consts::PI))
+                }),
         )
+}
+
+/// MonoCode `bg-selection`: the text colour at 10% (6% in light mode).
+fn selection(cx: &gpui::App) -> gpui::Hsla {
+    let colors = &cx.theme().colors;
+    colors
+        .fg
+        .opacity(if cx.theme().is_dark() { 0.10 } else { 0.06 })
+}
+
+/// MonoCode `bg-selection-hover`: 15% (10% in light mode).
+fn selection_hover(cx: &gpui::App) -> gpui::Hsla {
+    let colors = &cx.theme().colors;
+    colors
+        .fg
+        .opacity(if cx.theme().is_dark() { 0.15 } else { 0.10 })
+}
+
+/// MonoCode `bg-selection-emphasis`: 20% (14% in light mode).
+fn selection_emphasis(cx: &gpui::App) -> gpui::Hsla {
+    let colors = &cx.theme().colors;
+    colors
+        .fg
+        .opacity(if cx.theme().is_dark() { 0.20 } else { 0.14 })
+}
+
+/// MonoCode `GitPickerTrigger`: the top bar's 12px workspace and branch
+/// buttons, dim until hovered.
+fn git_trigger(
+    id: &'static str,
+    icon: IconName,
+    label: String,
+    enabled: bool,
+    open: bool,
+    cx: &Context<BenCodeApp>,
+) -> gpui::Stateful<gpui::Div> {
+    git_label(id, icon, label, Some(enabled), open, cx)
+}
+
+/// `GitPickerTrigger` when `enabled` is set, else MonoCode's static
+/// `WorkspaceIdentity` label (`text-content/45`, no hover).
+fn git_label(
+    id: &'static str,
+    icon: IconName,
+    label: String,
+    enabled: Option<bool>,
+    open: bool,
+    cx: &Context<BenCodeApp>,
+) -> gpui::Stateful<gpui::Div> {
+    let interactive = enabled.is_some();
+    let enabled = enabled.unwrap_or(true);
+    let colors = &cx.theme().colors;
+    let (fg, hover) = (colors.fg, colors.fg.opacity(0.08));
+    div()
+        .id(id)
+        .ml(px(-6.0))
+        .flex()
+        .flex_none()
+        .max_w(px(256.0))
+        .items_center()
+        .gap_1p5()
+        .h(px(24.0))
+        .px_1p5()
+        .rounded(px(6.0))
+        .text_size(px(12.0))
+        .text_color(fg.opacity(if interactive { 0.55 } else { 0.45 }))
+        .when(open, |el| el.bg(hover).text_color(fg))
+        .when(enabled && interactive, |el| {
+            el.cursor_pointer()
+                .hover(move |s| s.bg(hover).text_color(fg))
+        })
+        .when(!enabled, |el| el.opacity(0.4))
+        .child(Icon::new(icon).size(IconSize::Xs).color(fg.opacity(0.55)))
+        .child(div().min_w_0().truncate().child(label))
 }
 
 /// 1234567 -> "1,234,567".
@@ -156,23 +230,66 @@ impl BenCodeApp {
         session: Option<&SessionRow>,
         cx: &Context<Self>,
     ) -> impl IntoElement {
+        self.render_composer_view(session, true, false, cx)
+    }
+
+    /// The composer of a pane. `focused` is the one holding the prompt; the
+    /// others show their thread's draft and focus the pane on a click, as
+    /// each MonoCode pane keeps its own composer. `shell` is the centred
+    /// composer of a new thread (`py-4` field).
+    pub fn render_composer_view(
+        &self,
+        session: Option<&SessionRow>,
+        focused: bool,
+        shell: bool,
+        cx: &Context<Self>,
+    ) -> impl IntoElement {
         let colors = &cx.theme().colors;
         let running_here = session.is_some_and(|s| self.is_agent_running_in(&s.id));
         let queue = session.and_then(|s| self.render_message_queue(&s.id, cx));
         // MonoCode `fileDrag`: files held over this thread's pane.
         let file_drag =
             session.is_some_and(|s| self.active_file_drop_target.as_deref() == Some(s.id.as_str()));
+        let field_pad = if shell { px(16.0) } else { px(12.0) };
+        let field = if focused {
+            self.prompt_input.clone().into_any_element()
+        } else {
+            // Another pane's draft, as it was left.
+            let draft = session
+                .and_then(|s| self.drafts.get(&s.id))
+                .filter(|d| !d.is_empty());
+            div()
+                .min_h(px(22.0))
+                .max_h(px(160.0))
+                .overflow_hidden()
+                .text_color(if draft.is_some() {
+                    colors.fg
+                } else {
+                    colors.fg.opacity(0.4)
+                })
+                .child(
+                    draft
+                        .cloned()
+                        .unwrap_or_else(|| PROMPT_PLACEHOLDER.to_string()),
+                )
+                .into_any_element()
+        };
+        let focus_id = session.map(|s| s.id.clone());
         div()
+            .id(SharedString::from(format!(
+                "composer-{}",
+                session.map_or("none", |s| s.id.as_str())
+            )))
             .flex_none()
-            .px_6()
-            .pb_4()
-            .pt_2()
-            .children(queue.map(|q| div().max_w(COMPOSER_MAX_WIDTH).mx_auto().child(q)))
+            .w_full()
+            .max_w(COMPOSER_MAX_WIDTH)
+            .mx_auto()
+            .px(px(6.0))
+            .pb(px(6.0))
+            .children(queue.filter(|_| focused))
             .child(
                 div()
                     .relative()
-                    .max_w(COMPOSER_MAX_WIDTH)
-                    .mx_auto()
                     .rounded(px(8.0))
                     .border_1()
                     .border_color(if file_drag {
@@ -183,24 +300,25 @@ impl BenCodeApp {
                             .opacity(if self.prompt_focused { 0.2 } else { 0.1 })
                     })
                     .bg(colors.fg.opacity(0.03))
-                    .children(self.render_suggestions(cx))
+                    .when(focused, |el| el.children(self.render_suggestions(cx)))
                     .child(self.composer_top_bar(session, cx))
                     .children(self.render_attachment_chips(cx))
                     .child(
                         div()
-                            .px_2()
-                            .py_1()
+                            .px_3()
+                            .py(field_pad)
+                            .max_h(px(160.0) + field_pad * 2.0)
                             .text_size(px(14.0))
                             .line_height(px(22.0))
-                            .child(self.prompt_input.clone()),
+                            .child(field),
                     )
-                    .when(self.is_branch_picker_open, |el| {
+                    .when(focused && self.is_branch_picker_open, |el| {
                         el.child(popover_surface(self.render_branch_picker(cx), cx))
                     })
-                    .when(self.is_plus_menu_open, |el| {
+                    .when(focused && self.is_plus_menu_open, |el| {
                         el.child(popover_surface(self.render_plus_menu_popover(cx), cx))
                     })
-                    .when(self.is_model_picker_open, |el| {
+                    .when(focused && self.is_model_picker_open, |el| {
                         let key =
                             session.map_or(self.selected_model.as_str(), |s| s.model.as_str());
                         el.child(popover_surface(
@@ -208,13 +326,28 @@ impl BenCodeApp {
                             cx,
                         ))
                     })
-                    .when(self.composer_menus.recent_open, |el| {
+                    .when(focused && self.composer_menus.recent_open, |el| {
                         el.child(popover_surface(self.render_recent_models_popover(cx), cx))
                     })
-                    .when(self.is_permission_picker_open, |el| {
+                    .when(focused && self.is_permission_picker_open, |el| {
                         el.child(self.render_permission_picker_popover(cx))
                     })
                     .child(self.composer_bottom_bar(session, running_here, cx))
+                    // A resting pane's composer only wakes its pane.
+                    .when(!focused, |el| {
+                        el.child(
+                            div()
+                                .id("composer-wake")
+                                .absolute()
+                                .inset_0()
+                                .cursor_text()
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    if let Some(id) = focus_id.clone() {
+                                        this.focus_pane(id, cx);
+                                    }
+                                })),
+                        )
+                    })
                     .when(file_drag, |el| {
                         el.child(
                             div()
@@ -233,29 +366,44 @@ impl BenCodeApp {
             )
     }
 
-    /// Project folder, branch, and the context meter at the far right.
+    /// MonoCode's top bar: the project only for a new thread outside any
+    /// project (`showDeckProjectPicker`), the checkout, the branch, and the
+    /// context meter at the far right.
     fn composer_top_bar(
         &self,
         session: Option<&SessionRow>,
         cx: &Context<Self>,
     ) -> impl IntoElement {
-        let project = std::path::Path::new(&self.current_cwd)
-            .file_name()
-            .map_or_else(
-                || self.current_cwd.clone(),
-                |n| n.to_string_lossy().into_owned(),
-            );
+        let empty = session.is_none_or(|s| !s.blocks.iter().any(|b| b.role == "user"));
+        let projectless = session.is_none_or(|s| matches!(s.cwd.trim(), "" | "~"));
+        let busy = session.is_some_and(|s| self.is_agent_running_in(&s.id));
         div()
             .flex()
+            .min_w_0()
             .items_center()
             .gap_2p5()
+            .overflow_hidden()
             .px_3()
             .pt_2p5()
-            .child(self.project_picker(&project, cx))
-            .children(self.worktree_picker(cx))
-            .child(self.branch_menu(session, cx))
-            .child(div().flex_1())
-            .children(session.and_then(|s| self.context_meter(s, cx)))
+            .when(empty && projectless, |el| {
+                let project = std::path::Path::new(&self.current_cwd)
+                    .file_name()
+                    .map_or_else(
+                        || self.current_cwd.clone(),
+                        |n| n.to_string_lossy().into_owned(),
+                    );
+                el.child(self.project_picker(&project, cx))
+            })
+            .child(self.workspace_identity(session, empty && !busy, cx))
+            .child(self.branch_menu(session, !busy, cx))
+            .child(
+                div()
+                    .ml_auto()
+                    .flex()
+                    .flex_none()
+                    .items_center()
+                    .children(session.and_then(|s| self.context_meter(s, cx))),
+            )
     }
 
     /// MonoCode `CwdPicker`: the project chip opens recent projects and
@@ -287,49 +435,46 @@ impl BenCodeApp {
             .icon(IconName::Folder)
     }
 
-    /// MonoCode `WorkspacePicker`: the project folder or one of its
-    /// worktrees, shown when the project has any.
-    fn worktree_picker(&self, cx: &Context<Self>) -> Option<impl IntoElement> {
-        let trees: Vec<_> = self
-            .workspace
-            .worktrees
-            .iter()
-            .filter(|w| !w.is_main && !w.missing)
-            .collect();
-        if trees.is_empty() {
-            return None;
-        }
-        let focused = self.worktree_focus().map(|f| f.path.clone());
-        let label = self
-            .worktree_focus()
-            .map_or("Current checkout".to_string(), |f| {
-                f.branch.clone().unwrap_or_else(|| "Worktree".to_string())
-            });
-        let menu = trees.iter().fold(
-            Menu::new().item(
-                MenuItem::radio("Current checkout", focused.is_none())
-                    .on_click(app_callback(cx, |this, cx| this.select_workspace(None, cx))),
-            ),
-            |menu, tree| {
-                let focus = crate::app::WorktreeFocus {
-                    path: tree.path.clone(),
-                    branch: tree.branch.clone(),
-                };
-                let name = tree.branch.clone().unwrap_or_else(|| tree.head.clone());
-                menu.item(
-                    MenuItem::radio(name, focused.as_deref() == Some(tree.path.as_str())).on_click(
-                        app_callback(cx, move |this, cx| {
-                            this.select_workspace(Some(focus.clone()), cx)
-                        }),
-                    ),
-                )
-            },
-        );
-        Some(
-            DropdownMenu::new("composer-worktree", label, menu)
-                .variant(ButtonVariant::Ghost)
-                .icon(IconName::FolderOpen),
+    /// The checkout the thread runs in (MonoCode `WorkspaceIdentity`, and
+    /// `WorkspacePicker` while the thread is new): "Current checkout" or
+    /// "Worktree". A new thread in a project with worktrees can switch.
+    fn workspace_identity(
+        &self,
+        session: Option<&SessionRow>,
+        can_switch: bool,
+        cx: &Context<Self>,
+    ) -> impl IntoElement {
+        let in_worktree = session.map_or(self.worktree_focus().is_some(), |s| {
+            s.worktree_cwd.as_deref().is_some_and(|w| !w.is_empty())
+        });
+        let label = if in_worktree {
+            "Worktree"
+        } else {
+            "Current checkout"
+        };
+        let switchable = can_switch
+            && self
+                .workspace
+                .worktrees
+                .iter()
+                .any(|w| !w.is_main && !w.missing);
+        let open = self.composer_menus.workspace_menu.is_some();
+        let trigger = git_label(
+            "composer-workspace",
+            IconName::Folder,
+            label.to_string(),
+            switchable.then_some(true),
+            open,
+            cx,
         )
+        .when(switchable, |el| {
+            el.on_click(cx.listener(|this, _, _, cx| this.toggle_workspace_menu(cx)))
+        });
+        div()
+            .relative()
+            .flex_none()
+            .child(popover_anchor(trigger, cx))
+            .children(open.then(|| self.render_workspace_menu(cx)))
     }
 
     /// MonoCode `ContextMeter`: a 14px ring of the window used, with the
@@ -368,10 +513,11 @@ impl BenCodeApp {
             .to_string();
         let mode = self.session_permission_mode(session);
         let (perm_label, perm_icon) = permission_entry(mode);
+        // MonoCode tints only Full access (`text-amber-400/90`).
         let perm_color = if mode == PermissionMode::FullAccess {
-            cx.theme().colors.warning
+            cx.theme().colors.warning.opacity(0.9)
         } else {
-            cx.theme().colors.fg_muted
+            cx.theme().colors.fg
         };
         let model = composer_chip(
             "composer-model-chip",
@@ -385,6 +531,7 @@ impl BenCodeApp {
                     .to_string()
             }),
             self.is_model_picker_open || self.composer_menus.recent_open,
+            160.0,
             cx,
         )
         .on_click(cx.listener(|this, _, _, cx| this.toggle_composer_popover(Popover::Model, cx)))
@@ -402,6 +549,7 @@ impl BenCodeApp {
             perm_label.to_string(),
             None,
             self.is_permission_picker_open,
+            208.0,
             cx,
         )
         .on_click(cx.listener(|this, _, _, cx| this.toggle_composer_popover(Popover::Access, cx)));
@@ -425,27 +573,30 @@ impl BenCodeApp {
             .child(self.render_send_button(running_here, cx))
     }
 
-    /// MonoCode `ToolButton`: 26px, selection background, a thin plus.
+    /// MonoCode `ToolButton`: 26px on the selection fill, brighter while
+    /// its menu is open.
     fn plus_button(&self, cx: &Context<Self>) -> impl IntoElement {
         let colors = &cx.theme().colors;
-        let hover = colors.fg.opacity(0.15);
+        let open = self.is_plus_menu_open;
+        let (fill, hover, emphasis) = (selection(cx), selection_hover(cx), selection_emphasis(cx));
         let button = div()
             .id("composer-plus")
             .size(px(26.0))
+            .flex_none()
             .rounded(px(6.0))
-            .bg(colors.fg.opacity(0.1))
+            .bg(if open { emphasis } else { fill })
             .flex()
             .items_center()
             .justify_center()
             .cursor_pointer()
-            .hover(move |s| s.bg(hover))
-            .tooltip(Tooltip::text("Add to message"))
+            .when(!open, |el| el.hover(move |s| s.bg(hover)))
+            .tooltip(Tooltip::text("Add files or choose a mode"))
             .on_click(cx.listener(|this, _, _, cx| this.toggle_composer_popover(Popover::Plus, cx)))
-            .child(
-                Icon::new(IconName::Plus)
-                    .size(IconSize::Xs)
-                    .color(colors.fg.opacity(0.5)),
-            );
+            .child(Icon::new(IconName::Plus).size(IconSize::Xs).color(if open {
+                colors.fg
+            } else {
+                colors.fg.opacity(0.5)
+            }));
         popover_anchor(button, cx)
     }
 
@@ -455,8 +606,10 @@ impl BenCodeApp {
             || self.is_permission_picker_open
             || self.is_branch_picker_open
             || self.is_model_picker_open
-            || self.composer_menus.recent_open;
+            || self.composer_menus.recent_open
+            || self.composer_menus.workspace_menu.is_some();
         if open {
+            self.composer_menus.workspace_menu = None;
             self.composer_menus.recent_open = false;
             self.composer_menus.model_submenu = None;
             self.is_plus_menu_open = false;
@@ -788,37 +941,34 @@ impl BenCodeApp {
         popover_surface(menu, cx)
     }
 
-    /// The branch chip; opens Ely's `BranchSelector` (MonoCode `BranchPicker`).
-    fn branch_menu(&self, session: Option<&SessionRow>, cx: &Context<Self>) -> impl IntoElement {
-        let colors = &cx.theme().colors;
+    /// The branch trigger; opens Ely's `BranchSelector` (MonoCode
+    /// `BranchPicker`). Locked while the agent works.
+    fn branch_menu(
+        &self,
+        session: Option<&SessionRow>,
+        enabled: bool,
+        cx: &Context<Self>,
+    ) -> impl IntoElement {
         let current = session
             .and_then(|s| s.branch.clone())
             .or_else(|| Some(self.git_status.branch.clone()).filter(|b| !b.is_empty()))
             .unwrap_or_else(|| "main".to_string());
-        let chip = div()
-            .id("composer-branch")
-            .flex()
-            .items_center()
-            .gap_1()
-            .px_1p5()
-            .h(px(24.0))
-            .rounded(px(6.0))
-            .cursor_pointer()
-            .text_size(px(11.0))
-            .text_color(colors.fg_muted)
-            .hover(|s| s.bg(colors.hover))
-            .on_click(cx.listener(|this, _, _, cx| {
+        let chip = git_trigger(
+            "composer-branch",
+            IconName::GitBranch,
+            current,
+            enabled,
+            self.is_branch_picker_open,
+            cx,
+        )
+        .when(enabled, |el| {
+            el.on_click(cx.listener(|this, _, _, cx| {
                 let open = !this.is_branch_picker_open;
                 this.close_composer_popovers(cx);
                 this.is_branch_picker_open = open;
                 cx.notify();
             }))
-            .child(
-                Icon::new(IconName::GitBranch)
-                    .size(IconSize::Xs)
-                    .color(colors.fg_muted),
-            )
-            .child(div().max_w(px(160.0)).truncate().child(current));
+        });
         popover_anchor(chip, cx)
     }
 
