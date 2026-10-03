@@ -326,6 +326,12 @@ impl BenCodeApp {
                     }
                 },
             ),
+            // Files may have changed while BenCode was in the background.
+            cx.observe_window_activation(window, |this, window, cx| {
+                if window.is_window_active() {
+                    this.recheck_open_files_on_disk(cx);
+                }
+            }),
             cx.observe_window_appearance(window, |this, window, cx| {
                 this.on_system_appearance_changed(window.appearance(), cx)
             }),

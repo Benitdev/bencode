@@ -36,6 +36,7 @@ impl BenCodeApp {
             })
             .child(self.render_editor_toolbar(cx))
             .children(self.render_editor_notice(cx))
+            .children(self.render_disk_conflict(cx))
             .child(
                 div()
                     .flex()

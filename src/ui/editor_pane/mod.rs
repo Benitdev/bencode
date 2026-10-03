@@ -1,11 +1,12 @@
 //! Native code editor: one `CodeEditor` per open file, background reads, atomic saves.
 
+mod disk_sync;
 mod external;
 pub mod files;
 pub mod open_files;
 mod view;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use ely_gpui_component::editor::{CodeEditor, EditorEvent, LineNumbers};
 use gpui::{Context, Entity, SharedString, Subscription, Window, prelude::*};
@@ -21,6 +22,8 @@ use open_files::OpenFiles;
 /// A live editor and the subscription that tracks its edits.
 pub struct EditorHandle {
     pub entity: Entity<CodeEditor>,
+    /// `content_hash` of the file as last read from or written to disk.
+    pub disk_hash: u64,
     _changes: Subscription,
 }
 
@@ -41,12 +44,35 @@ pub struct EditorState {
     pub notice: Option<EditorNotice>,
     /// A dirty file waiting on "Discard changes?".
     pub pending_close: Option<String>,
+    /// Dirty files whose disk copy changed underneath, with the disk text.
+    pub disk_conflicts: HashMap<String, String>,
+    /// Files whose next `Changed` event is a reload, not an edit.
+    reloading: HashSet<String>,
 }
 
 impl EditorState {
     pub fn is_loading(&self) -> bool {
         !self.loading.is_empty()
     }
+}
+
+/// Why a save did not happen.
+enum SaveError {
+    /// The file on disk is no longer what the buffer was loaded from.
+    ChangedOnDisk(String),
+    Io(String),
+}
+
+/// Writes `text` unless the disk copy changed since it was last seen
+/// (`known` hash); returns the hash of what was written.
+fn save_unless_changed(path: &std::path::Path, text: &str, known: u64) -> Result<u64, SaveError> {
+    if let Ok(current) = read_text_file(path, MAX_EDITOR_FILE_BYTES)
+        && disk_sync::content_hash(&current) != known
+    {
+        return Err(SaveError::ChangedOnDisk(current));
+    }
+    atomic_write(path, text).map_err(|e| SaveError::Io(e.to_string()))?;
+    Ok(disk_sync::content_hash(text))
 }
 
 impl BenCodeApp {
@@ -132,6 +158,9 @@ impl BenCodeApp {
         let key = path.to_string();
         let changes = cx.subscribe(&entity, move |this, editor, event: &EditorEvent, cx| {
             if matches!(event, EditorEvent::Changed) {
+                if this.editor.reloading.remove(&key) {
+                    return;
+                }
                 let lines = count_lines(editor.read(cx).text());
                 this.editor.files.mark_changed(&key, lines);
                 cx.notify();
@@ -139,6 +168,7 @@ impl BenCodeApp {
         });
         EditorHandle {
             entity,
+            disk_hash: disk_sync::content_hash(text),
             _changes: changes,
         }
     }
@@ -195,14 +225,19 @@ impl BenCodeApp {
         if !file.is_dirty() {
             return;
         }
+        if self.editor.disk_conflicts.contains_key(&path) {
+            // Reload or Keep mine first; never overwrite a newer disk copy.
+            return;
+        }
         let text = file.handle.entity.read(cx).text().to_string();
+        let known = file.handle.disk_hash;
         let Some(version) = self.editor.files.begin_save(&path) else {
             return;
         };
         let abs_path = resolve_path(&self.workspace.cwd, &path);
         let task = cx
             .background_executor()
-            .spawn(async move { atomic_write(&abs_path, &text).map_err(|e| e.to_string()) });
+            .spawn(async move { save_unless_changed(&abs_path, &text, known) });
         cx.spawn(async move |this, cx| {
             let result = task.await;
             let saved = this.update(cx, |this, cx| this.finish_save(path, version, result, cx));
@@ -217,17 +252,24 @@ impl BenCodeApp {
         &mut self,
         path: String,
         version: u64,
-        result: Result<(), String>,
+        result: Result<u64, SaveError>,
         cx: &mut Context<Self>,
     ) {
         let succeeded = result.is_ok();
         let resave = self.editor.files.finish_save(&path, version, succeeded);
         match result {
-            Ok(()) => {
+            Ok(hash) => {
                 log::info!("editor: saved {path}");
+                if let Some(handle) = self.editor.files.get_handle_mut(&path) {
+                    handle.disk_hash = hash;
+                }
                 self.refresh_workspace(cx);
             }
-            Err(err) => {
+            Err(SaveError::ChangedOnDisk(disk_text)) => {
+                log::warn!("not saving {path}: it changed on disk");
+                self.editor.disk_conflicts.insert(path.clone(), disk_text);
+            }
+            Err(SaveError::Io(err)) => {
                 log::error!("failed to save {path}: {err}");
                 let title = format!("Could not save {}", file_name(&path));
                 self.show_editor_notice(title, err, cx);

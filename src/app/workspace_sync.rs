@@ -141,6 +141,7 @@ impl BenCodeApp {
                     app.load_diff(diff_path, source, cx);
                 }
                 app.refresh_file_tree(cx);
+                app.recheck_open_files_on_disk(cx);
                 cx.notify();
             });
         })

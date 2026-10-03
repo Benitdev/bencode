@@ -117,6 +117,20 @@ impl<E> OpenFiles<E> {
         }
     }
 
+    /// A buffer reloaded from disk: clean, with a new version so an in-flight
+    /// save of older text cannot mark it clean again.
+    pub fn mark_reloaded(&mut self, path: &str, line_count: usize) {
+        if let Some(file) = self.get_mut(path) {
+            file.dirty = false;
+            file.version += 1;
+            file.line_count = line_count;
+        }
+    }
+
+    pub fn get_handle_mut(&mut self, path: &str) -> Option<&mut E> {
+        self.get_mut(path).map(|file| &mut file.handle)
+    }
+
     /// Starts a save and returns the version being written, or queues one if a save is in flight.
     pub fn begin_save(&mut self, path: &str) -> Option<u64> {
         let file = self.get_mut(path)?;
