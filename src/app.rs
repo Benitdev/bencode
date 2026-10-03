@@ -141,6 +141,8 @@ pub struct BenCodeApp {
     pub catalog_probes: HashMap<crate::harness::HarnessKind, Option<std::time::Instant>>,
     /// Find in conversation (⌘F): its field and the open bar.
     pub find_input: Entity<TextInput>,
+    /// Title-bar tab strip: scroll, sweeps, unseen finishes.
+    pub title_strip: crate::ui::titlebar::TitleStrip,
     pub transcript_find: Option<crate::ui::transcript::find::FindState>,
     /// Keyboard focus and highlight of the composer's menus.
     pub composer_menus: crate::ui::composer::MenuState,
@@ -562,6 +564,7 @@ impl BenCodeApp {
             composer_menus: crate::ui::composer::MenuState::new(menu_focus),
             find_input,
             transcript_find: None,
+            title_strip: Default::default(),
             drafts: HashMap::new(),
             expanded_reasoning: std::collections::HashSet::new(),
             transcript_ui: Default::default(),
@@ -943,7 +946,7 @@ impl Render for BenCodeApp {
                                     .h_full()
                                     .min_w_0()
                                     .overflow_hidden()
-                                    .child(self.render_titlebar(cx))
+                                    .child(self.render_titlebar(window, cx))
                                     .child(
                                         div().flex().flex_1().min_h_0().overflow_hidden().child(
                                             match self.active_view_mode {

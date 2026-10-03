@@ -35,7 +35,7 @@ as they land; MonoCode refs are relative to `reference/monocode/src`.
 - [ ] P1 M Pinned projects section; scrollable list
 - [ ] P1 S Rail action rows styling; Inbox dot only when unread — `app/shell/RailAction.tsx`
 - [ ] P1 M Resizable rail (180-360, def 200) and sidebar (260-560, def 260)
-- [ ] P1 L Hand-rolled title-bar tab strip (224px tabs, harness icons, busy/done, meta line, hover close, tooltip, context menu, middle-click, overflow scroll; no "+"/split) — `TitleBar.tsx:202-1055`
+- [x] P1 L Hand-rolled title-bar tab strip (224px tabs, harness icons, busy/done, meta line, hover close, tooltip, context menu, middle-click, overflow scroll; no "+"/split) — `TitleBar.tsx:202-1055`
 - [ ] P1 M Shortcuts & menus (⌘P, ⌘1-9, ⌃Tab, ⌘` new terminal, ⇧⌘A, ⌘., zoom, Edit menu) — `workspace/model/tabKeys.ts`, `src-tauri/src/menu.rs`
 - [ ] P1 S Sidebar header 40px (done), mode tabs 24px; search button = Go to File
 - [ ] P1 M Session card live status (Need approval / Working... / Done / Draft), "3h 20m" times, drag onto pane — `Sidebar.tsx:3025-3306`

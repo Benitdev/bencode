@@ -25,6 +25,8 @@ const SIDEBAR_WIDTH: gpui::Pixels = px(260.0);
 pub enum SessionDialog {
     Rename(String),
     Delete(String),
+    /// Every thread of a title-bar tab.
+    DeleteMany(Vec<String>),
 }
 
 const FILTERS: [(FilterMode, &str); 4] = [
@@ -692,6 +694,24 @@ impl BenCodeApp {
                     "delete-thread",
                     "Delete thread?",
                     format!("“{title}” and its transcript will be removed."),
+                    close,
+                )
+                .confirm("Delete")
+                .destructive()
+                .on_confirm(delete)
+                .into_any_element()
+            }
+            SessionDialog::DeleteMany(ids) => {
+                let count = ids.len();
+                let delete = app_callback(cx, move |this, cx| {
+                    for id in &ids {
+                        this.delete_session(id, cx);
+                    }
+                });
+                ConfirmDialog::new(
+                    "delete-threads",
+                    format!("Delete {count} threads?"),
+                    format!("All {count} conversations in this tab and their transcripts will be removed."),
                     close,
                 )
                 .confirm("Delete")
