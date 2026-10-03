@@ -2,12 +2,12 @@
 //! prompt field with `/` and `@` suggestions, and send / stop.
 //! 100% faithful to MonoCode Composer layout.
 
+mod context_ring;
 mod model_picker;
 mod suggestions;
 
 use ely_gpui_component::buttons::{ButtonVariant, IconButton};
 use ely_gpui_component::git::{Branch as ElyBranch, BranchSelector};
-use ely_gpui_component::motion::ProgressRing;
 use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
@@ -229,12 +229,12 @@ impl BenCodeApp {
             )
             .child(self.branch_menu(session, cx))
             .child(div().flex_1())
-            .children(session.and_then(|s| self.context_meter(s)))
+            .children(session.and_then(|s| self.context_meter(s, cx)))
     }
 
     /// MonoCode `ContextMeter`: a 14px ring of the window used, with the
     /// numbers on hover.
-    fn context_meter(&self, session: &SessionRow) -> Option<impl IntoElement> {
+    fn context_meter(&self, session: &SessionRow, cx: &Context<Self>) -> Option<impl IntoElement> {
         let used = session.context_used?.max(0);
         let window = session.context_window.filter(|w| *w > 0)?;
         let share = (used as f32 / window as f32).clamp(0.0, 1.0);
@@ -249,7 +249,7 @@ impl BenCodeApp {
                 .id("composer-context")
                 .flex_none()
                 .tooltip(Tooltip::text(detail))
-                .child(ProgressRing::new("composer-context-ring", share).size(gpui::rems(0.875))),
+                .child(context_ring::context_ring(share, cx)),
         )
     }
 
