@@ -41,23 +41,23 @@ as they land; MonoCode refs are relative to `reference/monocode/src`.
 - [ ] P1 M Session card live status (Need approval / Working... / Done / Draft), "3h 20m" times, drag onto pane — `Sidebar.tsx:3025-3306`
 - [ ] P1 M Pinned sessions collapsible group
 - [ ] P1 M Session menu (Copy session ID, Archive, folders) + filter popover (Archived, status, time, provider)
-- [ ] P1 M Pane header only in splits (36px, grip, focus dot, title, close) — `sessions/ui/SessionPane.tsx:713-759`
+- [x] P1 M Pane header only in splits (36px, grip, focus dot, title, close) — `sessions/ui/SessionPane.tsx:713-759`
 - [ ] P1 S Footer 28px, "Terminal" text button, no "Agent running"
 - [ ] P2 Working agents panel, window title, drop pane onto tab, project colour from name
 
 ## Batch C — transcript & composer visuals
-- [ ] P1 L Fold turn work behind "{Model} worked for 1m 4s"; phases "Read 3 files · Ran 2 commands" — `AgentTranscript.tsx:666-975,1922-2366`
-- [ ] P1 M One-line tool rows (verb + file chip, pending/failed) — `AgentTranscript.tsx:3075-3586`
+- [x] P1 L Fold turn work behind "{Model} worked for 1m 4s"; phases "Read 3 files · Ran 2 commands" — `AgentTranscript.tsx:666-975,1922-2366`
+- [x] P1 M One-line tool rows (verb + file chip, pending/failed) — `AgentTranscript.tsx:3075-3586`
 - [x] P1 S Reasoning collapsed one-liner ("Thinking…" shimmer still missing)
-- [ ] P1 M Per-turn footer (copy, save note, metrics, time); drop per-block model header
-- [ ] P1 M User bubble style, 4-line clamp, hover actions — `AgentTranscript.tsx:1682-1849`
-- [ ] P1 M Edit last turn (↑ recall, Cancel edit)
-- [ ] P1 S Composer box tokens/sizes, placeholder; Send/Stop 26px
-- [ ] P1 M Model picker search/keyboard/⌘./Esc + outside dismiss
+- [x] P1 M Per-turn footer (copy, save note, metrics, time); drop per-block model header
+- [x] P1 M User bubble style, 4-line clamp, hover actions — `AgentTranscript.tsx:1682-1849`
+- [x] P1 M Edit last turn: ↑ recall only (BenCode harnesses cannot rewind provider state; MonoCode also gates true edit-and-resend on that)
+- [x] P1 S Composer box tokens/sizes, placeholder; Send/Stop 26px
+- [x] P1 M Model picker search/keyboard/⌘./Esc + outside dismiss
 - [ ] P1 M "+" Add-to-message menu (Upload file, Plan mode, Draft); P1 L attachments
-- [ ] P1 M Context meter ring; populate context_window
-- [ ] P1 M Inline Allow/Deny on the pending tool row
-- [ ] P1 S-M Empty session: centred composer, "What should we work on in {project}?"
+- [x] P1 M Context meter ring; populate context_window
+- [x] P1 M Inline Allow/Deny on the pending tool row
+- [x] P1 S-M Empty session: centred composer, "What should we work on in {project}?"
 - [ ] P1 M Find in conversation ⌘F
 - [ ] P2 Prose 14/24, plain system notices, metrics badge, composer top bar pickers
 
