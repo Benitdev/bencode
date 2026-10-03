@@ -1,20 +1,22 @@
 //! `/skill` and `@mention` suggestions shown above the composer while a
 //! trigger token is being typed.
 
-use ely_gpui_component::data_display::{Badge, Tone};
 use ely_gpui_component::primitives::{Icon, IconName};
-use ely_gpui_component::theme::{ActiveTheme, IconSize, Radius, TextSize};
+use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString,
-    Styled, div, prelude::*, px,
+    Styled, div, prelude::*, px, relative,
 };
 
+use super::mode_commands::{BUILT_INS, ModeCommand};
 use crate::app::BenCodeApp;
 use crate::db::Note;
 use crate::skills::Skill;
+use crate::ui::quick_open::fuzzy_match;
 
-/// MonoCode `MAX_PICKER`.
+/// MonoCode `MAX_PICKER`, and the `/` list's cap.
 const MAX_PICKER: usize = 30;
+const MAX_SLASH: usize = 50;
 const MAX_NOTES: usize = 5;
 /// MonoCode `FileMentionPicker`: `max-h-[min(240px,40vh)]`, 32px rows.
 const POPOVER_MAX_HEIGHT: gpui::Pixels = px(240.0);
@@ -44,23 +46,65 @@ pub struct Suggestion {
     pub detail: Option<SharedString>,
     /// Text handed to `insert_skill` / `insert_mention`.
     pub insert: String,
+    /// MonoCode's scope tag on a `/` row: `bencode`, `project`, `personal`.
+    pub tag: Option<&'static str>,
+    /// Characters of `label` the query matched, painted in the picker.
+    pub matched: Vec<usize>,
 }
 
+/// MonoCode `rankSlashCommands`: the built-in mode commands first, then
+/// skills; with a query, a fuzzy match on the name, then the description.
 /// `query` must already be lower-case.
-pub fn skill_suggestions(query: &str, skills: &[Skill]) -> Vec<Suggestion> {
-    skills
-        .iter()
-        .filter(|s| {
-            query.is_empty()
-                || s.name.contains(query)
-                || s.description.to_lowercase().contains(query)
+pub fn skill_suggestions(query: &str, skills: &[Skill], allow_draft: bool) -> Vec<Suggestion> {
+    let built_ins = BUILT_INS
+        .into_iter()
+        .filter(|m| allow_draft || *m != ModeCommand::Draft)
+        .map(|m| (m.name().to_string(), m.description().to_string(), "bencode"));
+    let skills = skills.iter().map(|s| {
+        let tag = match s.scope {
+            "project" => "project",
+            "builtin" => "bencode",
+            _ => "personal",
+        };
+        (s.name.clone(), s.description.clone(), tag)
+    });
+    let mut ranked: Vec<(i64, usize, Suggestion)> = built_ins
+        .chain(skills)
+        .enumerate()
+        .filter_map(|(order, (name, description, tag))| {
+            let (score, matched) = if query.is_empty() {
+                (0, Vec::new())
+            } else if let Some(hit) = fuzzy_match(query, &name) {
+                // Positions skip the leading "/" of the label.
+                (
+                    hit.score + 400,
+                    hit.positions.iter().map(|p| p + 1).collect(),
+                )
+            } else {
+                (
+                    fuzzy_match(query, &description.to_lowercase())?.score,
+                    Vec::new(),
+                )
+            };
+            Some((
+                score,
+                order,
+                Suggestion {
+                    kind: SuggestionKind::Skill,
+                    label: format!("/{name}").into(),
+                    detail: Some(description.into()),
+                    insert: format!("/{name}"),
+                    tag: Some(tag),
+                    matched,
+                },
+            ))
         })
-        .map(|s| Suggestion {
-            kind: SuggestionKind::Skill,
-            label: format!("/{}", s.name).into(),
-            detail: Some(s.description.clone().into()),
-            insert: format!("/{}", s.name),
-        })
+        .collect();
+    ranked.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
+    ranked
+        .into_iter()
+        .map(|(_, _, s)| s)
+        .take(MAX_SLASH)
         .collect()
 }
 
@@ -82,13 +126,15 @@ pub fn mention_suggestions(
         .take(MAX_NOTES)
         .map(|n| Suggestion {
             kind: SuggestionKind::Note,
-            label: format!("note/{}", n.slug).into(),
-            detail: Some(n.title.clone().into()),
+            label: n.title.clone().into(),
+            detail: Some("Note".into()),
             insert: format!("note/{}", n.slug),
+            tag: None,
+            matched: Vec::new(),
         });
     let needle = query.trim_end_matches('/').trim();
     let is_dir = |path: &str| dirs.binary_search_by(|d| d.as_ref().cmp(path)).is_ok();
-    let picked: Vec<String> = if needle.is_empty() {
+    let picked: Vec<(String, Vec<usize>)> = if needle.is_empty() {
         let mut out: Vec<String> = recents
             .iter()
             .filter(|r| files.iter().any(|f| f.as_ref() == r.as_str()))
@@ -111,17 +157,28 @@ pub fn mention_suggestions(
                 out.push(path.to_string());
             }
         }
-        out
+        out.into_iter().map(|p| (p, Vec::new())).collect()
     } else {
         let all: Vec<SharedString> = files.iter().chain(dirs.iter()).cloned().collect();
         crate::ui::quick_open::rank_files(&all, needle, recents)
             .into_iter()
             .take(MAX_PICKER)
-            .map(|(path, _)| path)
+            .map(|(path, hit)| (path, hit.positions))
             .collect()
     };
-    let files = picked.into_iter().map(|path| {
+    let files = picked.into_iter().map(|(path, positions)| {
         let (dir, name) = path.rsplit_once('/').unwrap_or(("", path.as_str()));
+        // Hits index the whole path; keep the ones in the name.
+        let offset = if dir.is_empty() {
+            0
+        } else {
+            dir.chars().count() + 1
+        };
+        let matched = positions
+            .into_iter()
+            .filter(|p| *p >= offset)
+            .map(|p| p - offset)
+            .collect();
         Suggestion {
             kind: if is_dir(&path) {
                 SuggestionKind::Folder
@@ -131,6 +188,8 @@ pub fn mention_suggestions(
             label: name.to_string().into(),
             detail: (!dir.is_empty()).then(|| SharedString::from(dir.to_string())),
             insert: path.clone(),
+            tag: None,
+            matched,
         }
     });
     notes.chain(files).collect()
@@ -163,7 +222,12 @@ impl BenCodeApp {
 
     fn current_suggestions(&self) -> Vec<Suggestion> {
         if self.is_skill_picker_open {
-            skill_suggestions(&self.skill_query, &self.integrations.skills)
+            // MonoCode offers /draft only while the agent is idle.
+            let idle = self
+                .selected_session_id
+                .as_deref()
+                .is_none_or(|id| !self.is_agent_running_in(id));
+            skill_suggestions(&self.skill_query, &self.integrations.skills, idle)
         } else if self.is_mention_picker_open {
             // Files and folders insert their shortest label (MonoCode
             // `mentionLabel`).
@@ -186,80 +250,83 @@ impl BenCodeApp {
         }
     }
 
-    /// The popover above the composer, while a trigger token is open.
+    /// MonoCode's `SkillPicker` / `FileMentionPicker`: a box the width of
+    /// the composer, just above it, listing up to `min(240px, 40vh)`.
     pub(super) fn render_suggestions(&self, cx: &Context<Self>) -> Option<AnyElement> {
         if !self.is_skill_picker_open && !self.is_mention_picker_open {
             return None;
         }
         let items = self.current_suggestions();
-        let theme = cx.theme();
+        let colors = &cx.theme().colors;
         let empty = if self.is_skill_picker_open {
-            "No matching skills"
+            if self.integrations.skills.is_empty() && self.skill_query.is_empty() {
+                "No commands yet"
+            } else {
+                "No matching commands or skills"
+            }
+        } else if self.project_files.loading && self.project_files.files.is_empty() {
+            "Indexing files…"
+        } else if self.mention_query.is_empty() {
+            "No files or notes found"
         } else {
             "No matching files or notes"
         };
+        let slash = self.is_skill_picker_open;
         Some(
             div()
-                .id("composer-suggestions")
                 .absolute()
                 .bottom_full()
                 .left_0()
                 .right_0()
                 .mb_1()
-                .max_h(POPOVER_MAX_HEIGHT)
-                .overflow_y_scroll()
-                .p_1()
-                .rounded(theme.radius(Radius::Md))
+                .overflow_hidden()
+                .rounded(px(8.0))
                 .border_1()
-                .border_color(theme.colors.border)
-                .bg(theme.colors.overlay)
-                .when(items.is_empty(), |el| {
-                    el.child(
-                        div()
-                            .px_3()
-                            .py_2p5()
-                            .text_size(px(12.0))
-                            .text_color(theme.colors.fg_muted)
-                            .child(empty),
-                    )
-                })
-                .children(
-                    items
-                        .into_iter()
-                        .enumerate()
-                        .map(|(ix, item)| self.render_suggestion(ix, item, cx)),
+                .border_color(colors.border)
+                .bg(colors.surface)
+                .shadow_lg()
+                .child(
+                    div()
+                        .id("composer-suggestions")
+                        .max_h(POPOVER_MAX_HEIGHT)
+                        .overflow_y_scroll()
+                        .p_1()
+                        .when(items.is_empty(), |el| {
+                            el.child(
+                                div()
+                                    .px_2()
+                                    .py_2()
+                                    .text_size(px(12.0))
+                                    .text_color(colors.fg.opacity(0.5))
+                                    .child(empty),
+                            )
+                        })
+                        .children(items.into_iter().enumerate().map(|(ix, item)| {
+                            if slash {
+                                self.render_command_row(ix, item, cx).into_any_element()
+                            } else {
+                                self.render_mention_row(ix, item, cx).into_any_element()
+                            }
+                        })),
                 )
                 .into_any_element(),
         )
     }
 
-    fn render_suggestion(
+    /// A row's frame: highlight, hover-to-highlight, click to insert.
+    fn suggestion_row(
         &self,
         ix: usize,
-        item: Suggestion,
+        item: &Suggestion,
         cx: &Context<Self>,
-    ) -> impl IntoElement {
-        let theme = cx.theme();
-        let (icon, tag, tone) = match item.kind {
-            SuggestionKind::Skill => (IconName::Zap, "skill", Tone::Accent),
-            SuggestionKind::File => (IconName::FileText, "file", Tone::Neutral),
-            SuggestionKind::Folder => (IconName::Folder, "folder", Tone::Neutral),
-            SuggestionKind::Note => (IconName::NotebookPen, "note", Tone::Info),
-        };
-        let (kind, insert) = (item.kind, item.insert);
+    ) -> gpui::Stateful<gpui::Div> {
+        let (kind, insert) = (item.kind, item.insert.clone());
         div()
             .id(("suggestion", ix))
-            .flex()
-            .items_center()
             .w_full()
             .min_w_0()
-            .overflow_hidden()
-            .gap_2()
-            .px_2()
-            .h(ROW_HEIGHT)
-            .rounded(theme.radius(Radius::Sm))
+            .rounded(px(6.0))
             .cursor_pointer()
-            .when(ix == self.picker_index, |el| el.bg(theme.colors.active))
             .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                 if *hovered && this.picker_index != ix {
                     this.picker_index = ix;
@@ -272,42 +339,129 @@ impl BenCodeApp {
                     this.insert_mention(&insert, cx)
                 }
             }))
-            .child(
-                div().flex_none().child(
-                    Icon::new(icon)
-                        .size(IconSize::Xs)
-                        .color(theme.colors.fg_muted),
-                ),
-            )
+    }
+
+    /// MonoCode `SkillPicker` row: `/name` and its scope over the
+    /// description, two lines at most.
+    fn render_command_row(
+        &self,
+        ix: usize,
+        item: Suggestion,
+        cx: &Context<Self>,
+    ) -> impl IntoElement {
+        let colors = &cx.theme().colors;
+        let highlighted = ix == self.picker_index;
+        self.suggestion_row(ix, &item, cx)
+            .flex()
+            .flex_col()
+            .gap_0p5()
+            .px_2()
+            .py_1p5()
+            .when(highlighted, |el| el.bg(colors.fg.opacity(0.10)))
             .child(
                 div()
                     .flex()
-                    .flex_col()
-                    .flex_1()
+                    .items_center()
+                    .gap_2()
                     .min_w_0()
-                    .text_size(theme.text_size(TextSize::Xs))
                     .child(
                         div()
-                            .w_full()
                             .min_w_0()
-                            .font_weight(FontWeight::MEDIUM)
-                            .text_color(theme.colors.fg)
                             .truncate()
-                            .child(item.label),
+                            .text_size(px(13.0))
+                            .text_color(colors.fg)
+                            .child(paint_matches(&item.label, &item.matched, colors.fg, cx)),
                     )
-                    .when_some(item.detail, |el, detail| {
-                        el.child(
-                            div()
-                                .w_full()
-                                .min_w_0()
-                                .text_color(theme.colors.fg_muted)
-                                .truncate()
-                                .child(detail),
-                        )
-                    }),
+                    .children(item.tag.map(|tag| {
+                        div()
+                            .flex_none()
+                            .text_size(px(10.0))
+                            .text_color(colors.fg.opacity(0.4))
+                            .child(tag.to_uppercase())
+                    })),
             )
-            .child(div().flex_none().child(Badge::new(tag).tone(tone)))
+            .children(item.detail.map(|detail| {
+                div()
+                    .text_size(px(11.0))
+                    .line_height(px(15.0))
+                    .text_color(colors.fg.opacity(0.5))
+                    .line_clamp(2)
+                    .child(detail)
+            }))
     }
+
+    /// MonoCode `FileMentionPicker` row: icon, the name (in the mention
+    /// colour while highlighted), the folder on the right.
+    fn render_mention_row(
+        &self,
+        ix: usize,
+        item: Suggestion,
+        cx: &Context<Self>,
+    ) -> impl IntoElement {
+        let colors = &cx.theme().colors;
+        let highlighted = ix == self.picker_index;
+        let (icon, tint) = match item.kind {
+            SuggestionKind::Note => (IconName::StickyNote, colors.fg.opacity(0.6)),
+            SuggestionKind::Folder => {
+                crate::ui::file_tree::resolve_entry_icon(&item.label, true, false)
+            }
+            _ => crate::ui::file_tree::resolve_entry_icon(&item.label, false, false),
+        };
+        let name_color = if highlighted { colors.info } else { colors.fg };
+        let name = match item.kind {
+            SuggestionKind::Folder => format!("{}/", item.label),
+            _ => item.label.to_string(),
+        };
+        self.suggestion_row(ix, &item, cx)
+            .flex()
+            .items_center()
+            .gap_2()
+            .h(ROW_HEIGHT)
+            .px_2()
+            .text_size(px(13.0))
+            .when(highlighted, |el| el.bg(colors.active))
+            .child(Icon::new(icon).size(IconSize::Sm).color(tint))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .truncate()
+                    .text_color(name_color)
+                    .child(paint_matches(&name, &item.matched, name_color, cx)),
+            )
+            .children(item.detail.map(|detail| {
+                div()
+                    .flex_none()
+                    .max_w(relative(0.45))
+                    .truncate()
+                    .font_family(cx.theme().mono_family.clone())
+                    .text_size(px(11.0))
+                    .text_color(colors.fg.opacity(0.4))
+                    .child(detail)
+            }))
+    }
+}
+
+/// MonoCode `MatchText`: the matched characters bold in the accent.
+fn paint_matches(
+    text: &str,
+    matched: &[usize],
+    base: gpui::Hsla,
+    cx: &gpui::App,
+) -> gpui::StyledText {
+    let accent = cx.theme().colors.accent;
+    let style = gpui::HighlightStyle {
+        color: Some(if matched.is_empty() { base } else { accent }),
+        font_weight: Some(FontWeight::SEMIBOLD),
+        ..Default::default()
+    };
+    let highlights: Vec<_> = text
+        .char_indices()
+        .enumerate()
+        .filter(|(ix, _)| matched.contains(ix))
+        .map(|(_, (at, c))| (at..at + c.len_utf8(), style))
+        .collect();
+    gpui::StyledText::new(text.to_string()).with_highlights(highlights)
 }
 
 #[cfg(test)]
@@ -331,9 +485,13 @@ mod tests {
             scope: "project",
             source: "agents",
         }];
-        assert_eq!(skill_suggestions("", &skills).len(), 1);
-        assert_eq!(skill_suggestions("ship", &skills)[0].insert, "/deploy");
-        assert!(skill_suggestions("zzz-no-match", &skills).is_empty());
+        // The built-in /plan and /draft come first; /draft only while idle.
+        assert_eq!(skill_suggestions("", &skills, true).len(), 3);
+        assert_eq!(skill_suggestions("", &skills, false).len(), 2);
+        assert_eq!(skill_suggestions("", &skills, true)[0].insert, "/plan");
+        assert_eq!(skill_suggestions("ship", &skills, true)[0].insert, "/deploy");
+        assert_eq!(skill_suggestions("dep", &skills, true)[0].matched, [1, 2, 3]);
+        assert!(skill_suggestions("zzz-no-match", &skills, true).is_empty());
     }
 
     #[test]

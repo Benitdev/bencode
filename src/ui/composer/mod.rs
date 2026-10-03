@@ -6,6 +6,7 @@ mod attachments;
 mod context_ring;
 pub mod mentions;
 mod menus;
+pub mod mode_commands;
 mod model_picker;
 mod suggestions;
 
@@ -219,6 +220,52 @@ fn permission_entry(mode: PermissionMode) -> (&'static str, IconName) {
         .map_or(("Supervised", IconName::Lock), |(_, label, _, icon)| {
             (*label, *icon)
         })
+}
+
+/// What the prompt paints as you type (MonoCode's highlight layer): a
+/// leading `/plan` in the plan colour, `/draft` dimmed, known `/skill`
+/// words in the skill colour, and known `@file` labels in the mention
+/// colour.
+pub fn prompt_highlights(
+    text: &str,
+    mentions: &mentions::MentionIndex,
+    skills: &[String],
+    cx: &gpui::App,
+) -> Vec<(std::ops::Range<usize>, ely_gpui_component::forms::Highlight)> {
+    use ely_gpui_component::forms::Highlight;
+    let colors = &cx.theme().colors;
+    let mut spans: Vec<(std::ops::Range<usize>, Highlight)> = Vec::new();
+    if let Some((mode, range)) = mode_commands::leading_mode(text) {
+        let color = match mode {
+            mode_commands::ModeCommand::Plan => colors.warning.opacity(0.9),
+            mode_commands::ModeCommand::Draft => colors.fg.opacity(0.7),
+        };
+        spans.push((range, Highlight::new(color)));
+    }
+    let skill = Highlight::new(colors.warning);
+    spans.extend(
+        mode_commands::skill_tokens(text, skills)
+            .into_iter()
+            .map(|range| (range, skill)),
+    );
+    let mention = Highlight::new(colors.info);
+    spans.extend(
+        mentions
+            .scan(text)
+            .into_iter()
+            .map(|(range, _, _)| (range, mention)),
+    );
+    spans.sort_by_key(|(range, _)| range.start);
+    // Overlaps would confuse the field; the earlier span wins.
+    let mut end = 0;
+    spans.retain(|(range, _)| {
+        let keep = range.start >= end;
+        if keep {
+            end = range.end;
+        }
+        keep
+    });
+    spans
 }
 
 impl BenCodeApp {
@@ -760,6 +807,11 @@ impl BenCodeApp {
     fn render_plus_menu_popover(&self, cx: &Context<Self>) -> gpui::Stateful<gpui::Div> {
         let colors = &cx.theme().colors;
         let sid = self.selected_session_id.clone().unwrap_or_default();
+        let typed = mode_commands::leading_mode(self.prompt_input.read(cx).text()).map(|(m, _)| m);
+        let plan_on =
+            self.plan_mode.contains(&sid) || typed == Some(mode_commands::ModeCommand::Plan);
+        let draft_on =
+            self.draft_mode.contains(&sid) || typed == Some(mode_commands::ModeCommand::Draft);
         let upload: PlusAction = |this, cx| this.open_attachment_dialog(cx);
         let plan: PlusAction = |this, cx| this.toggle_mode(false, cx);
         let draft: PlusAction = |this, cx| this.toggle_mode(true, cx);
@@ -775,20 +827,20 @@ impl BenCodeApp {
             ),
             (
                 "plus-plan",
-                IconName::Map,
-                colors.warning,
+                IconName::Lightbulb,
+                colors.warning.opacity(0.8),
                 "Plan mode",
                 "Review a plan before building",
-                self.plan_mode.contains(&sid),
+                plan_on,
                 plan,
             ),
             (
                 "plus-draft",
                 IconName::CircleDashed,
-                colors.fg_muted,
+                colors.fg.opacity(0.6),
                 "Draft",
                 "Save this message without starting the agent",
-                self.draft_mode.contains(&sid),
+                draft_on,
                 draft,
             ),
         ];
@@ -799,19 +851,20 @@ impl BenCodeApp {
             .left(px(8.0))
             .w(px(250.0))
             .p_1p5()
-            .rounded(px(8.0))
+            .rounded(px(12.0))
             .bg(colors.surface)
             .border_1()
             .border_color(colors.border)
-            .shadow_lg()
+            .shadow_xl()
             .flex()
             .flex_col()
             .child(
                 div()
                     .px_2()
-                    .pt_1()
+                    .pt_0p5()
                     .pb_1()
                     .text_size(px(10.0))
+                    .font_weight(FontWeight::MEDIUM)
                     .text_color(colors.fg.opacity(0.4))
                     .child("ADD TO MESSAGE"),
             )
@@ -819,12 +872,12 @@ impl BenCodeApp {
                 items
                     .into_iter()
                     .map(|(id, icon, tint, title, hint, active, action)| {
-                        let hover = colors.hover;
+                        let hover = colors.fg.opacity(0.10);
                         div()
                             .id(id)
                             .flex()
-                            .items_center()
-                            .gap_2()
+                            .items_start()
+                            .gap(px(10.0))
                             .px_2()
                             .py_2()
                             .rounded(px(8.0))
@@ -835,7 +888,11 @@ impl BenCodeApp {
                                 action(this, cx);
                                 cx.notify();
                             }))
-                            .child(Icon::new(icon).size(IconSize::Sm).color(tint))
+                            .child(
+                                div()
+                                    .mt_0p5()
+                                    .child(Icon::new(icon).size(IconSize::Sm).color(tint)),
+                            )
                             .child(
                                 div()
                                     .flex_1()
@@ -857,7 +914,7 @@ impl BenCodeApp {
                                 el.child(
                                     Icon::new(IconName::Check)
                                         .size(IconSize::Xs)
-                                        .color(colors.fg),
+                                        .color(colors.accent),
                                 )
                             })
                     }),

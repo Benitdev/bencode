@@ -15,6 +15,7 @@ use crate::harness::{
     self, AgentEvent, DoneStatus, HarnessKind, HarnessProcessHandle, PermissionPolicy,
     PermissionRequest, SpawnRequest, catalog, summarize_tool_input,
 };
+use crate::ui::composer::mode_commands::{self, ModeCommand};
 
 const TITLE_PREVIEW_CHARS: usize = 48;
 const MAX_TOOL_OUTPUT_CHARS: usize = 4_000;
@@ -111,7 +112,9 @@ impl BenCodeApp {
     /// agent is busy the message is queued, as MonoCode's Queue follow-up
     /// behaviour does.
     pub fn submit_prompt(&mut self, cx: &mut Context<Self>) {
-        let text = self.prompt_input.read(cx).text().trim().to_string();
+        let typed = self.prompt_input.read(cx).text().trim().to_string();
+        // A leading `/plan` or `/draft` acts as its mode and is not sent.
+        let (command, text) = mode_commands::strip_leading_mode(&typed);
         if self.selected_session_id.is_none() {
             if text.is_empty() {
                 return;
@@ -134,12 +137,15 @@ impl BenCodeApp {
                 .composer_attachments
                 .remove(&session_id)
                 .unwrap_or_default(),
-            plan: self.plan_mode.contains(&session_id),
+            plan: self.plan_mode.contains(&session_id) || command == Some(ModeCommand::Plan),
         };
         self.prompt_input
             .update(cx, |input, cx| input.set_text("", cx));
         self.drafts.remove(&session_id);
-        if self.draft_mode.remove(&session_id) {
+        // MonoCode clears Plan after each send; Draft stays chosen until a
+        // draft is saved.
+        self.plan_mode.remove(&session_id);
+        if self.draft_mode.remove(&session_id) || command == Some(ModeCommand::Draft) {
             self.save_draft(&session_id, input, cx);
             return;
         }

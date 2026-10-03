@@ -15,7 +15,7 @@ pub mod workspace_sync;
 use std::collections::HashMap;
 
 use crate::ui::composer::mentions::MentionIndex;
-use ely_gpui_component::forms::{Highlight, InputEvent, TextInput};
+use ely_gpui_component::forms::{InputEvent, TextInput};
 use ely_gpui_component::primitives::FocusScope;
 use ely_gpui_component::theme::ActiveTheme;
 use gpui::{
@@ -315,18 +315,17 @@ impl BenCodeApp {
         let mention_index: std::rc::Rc<std::cell::RefCell<std::sync::Arc<MentionIndex>>> =
             Default::default();
         let painted_mentions = mention_index.clone();
+        let skill_names: std::rc::Rc<std::cell::RefCell<std::sync::Arc<Vec<String>>>> =
+            Default::default();
+        let painted_skills = skill_names.clone();
         let prompt_input = cx.new(|cx| {
             TextInput::new(window, cx)
                 .multi_line(1, 6)
-                .placeholder("Ask, build, / for commands, @ for references...")
+                .placeholder(crate::ui::composer::PROMPT_PLACEHOLDER)
                 .highlighter(move |text, cx| {
-                    let style = Highlight::new(cx.theme().colors.info);
-                    let index = painted_mentions.borrow().clone();
-                    index
-                        .scan(text)
-                        .into_iter()
-                        .map(|(range, _, _)| (range, style))
-                        .collect()
+                    let mentions = painted_mentions.borrow().clone();
+                    let skills = painted_skills.borrow().clone();
+                    crate::ui::composer::prompt_highlights(text, &mentions, &skills, cx)
                 })
         });
         let search_input = text_input(window, cx, "Search conversations...");
@@ -676,7 +675,10 @@ impl BenCodeApp {
             git_confirm: None,
             // [ui-panels init]
             settings: Default::default(),
-            integrations: Default::default(),
+            integrations: integrations::Integrations {
+                skill_names,
+                ..Default::default()
+            },
             automation_time_error: None,
             search_focus_pending: false,
             search_submit: None,

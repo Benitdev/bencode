@@ -17,6 +17,8 @@ pub struct Integrations {
     /// Skills of `skills_project`, rescanned when the project changes.
     pub skills: Vec<Skill>,
     pub skills_project: String,
+    /// The skills' names, shared with the prompt's highlighter.
+    pub skill_names: std::rc::Rc<std::cell::RefCell<std::sync::Arc<Vec<String>>>>,
 }
 
 impl BenCodeApp {
@@ -59,6 +61,8 @@ impl BenCodeApp {
             let found = task.await;
             let updated = this.update(cx, |app, cx| {
                 if app.integrations.skills_project == project {
+                    *app.integrations.skill_names.borrow_mut() =
+                        std::sync::Arc::new(found.iter().map(|s| s.name.clone()).collect());
                     app.integrations.skills = found;
                     cx.notify();
                 }
