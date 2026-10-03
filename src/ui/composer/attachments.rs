@@ -6,12 +6,21 @@
 use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
-    AnyElement, Context, InteractiveElement, IntoElement, ParentElement, PathPromptOptions,
-    SharedString, Styled, div, prelude::*, px,
+    AnyElement, ClipboardEntry, Context, ImageFormat, InteractiveElement, IntoElement,
+    ParentElement, PathPromptOptions, SharedString, Styled, div, prelude::*, px,
 };
 
 use crate::app::{BenCodeApp, now_ms};
 use crate::harness::attachments;
+
+fn image_ext(format: ImageFormat) -> &'static str {
+    match format {
+        ImageFormat::Jpeg => "jpg",
+        ImageFormat::Webp => "webp",
+        ImageFormat::Gif => "gif",
+        _ => "png",
+    }
+}
 
 impl BenCodeApp {
     /// "+" › Upload file: pick files for the focused thread.
@@ -76,6 +85,54 @@ impl BenCodeApp {
             }
         })
         .detach();
+    }
+
+    /// MonoCode `onPaste`: images and files on the clipboard attach instead
+    /// of pasting as text. Returns whether anything was attached.
+    pub fn paste_into_composer(&mut self, cx: &mut Context<Self>) -> bool {
+        let Some(item) = cx.read_from_clipboard() else {
+            return false;
+        };
+        let mut paths: Vec<std::path::PathBuf> = Vec::new();
+        let mut images: Vec<(Vec<u8>, &'static str)> = Vec::new();
+        for entry in item.entries() {
+            match entry {
+                ClipboardEntry::Image(image) => {
+                    images.push((image.bytes.clone(), image_ext(image.format)))
+                }
+                ClipboardEntry::ExternalPaths(external) => {
+                    paths.extend(external.paths().iter().cloned())
+                }
+                ClipboardEntry::String(_) => {}
+            }
+        }
+        if paths.is_empty() && images.is_empty() {
+            return false;
+        }
+        let stamp = now_ms();
+        let task = cx.background_executor().spawn(async move {
+            let dir = std::env::temp_dir().join("bencode-paste");
+            if let Err(err) = std::fs::create_dir_all(&dir) {
+                log::error!("could not save pasted image: {err}");
+                return paths;
+            }
+            for (ix, (bytes, ext)) in images.into_iter().enumerate() {
+                let file = dir.join(format!("pasted-{stamp}-{ix}.{ext}"));
+                match std::fs::write(&file, bytes) {
+                    Ok(()) => paths.push(file),
+                    Err(err) => log::error!("could not save pasted image: {err}"),
+                }
+            }
+            paths
+        });
+        cx.spawn(async move |this, cx| {
+            let paths = task.await;
+            if let Err(err) = this.update(cx, |app, cx| app.attach_paths(paths, cx)) {
+                log::debug!("paste after app drop: {err:#}");
+            }
+        })
+        .detach();
+        true
     }
 
     fn remove_attachment(&mut self, session_id: &str, id: &str, cx: &mut Context<Self>) {

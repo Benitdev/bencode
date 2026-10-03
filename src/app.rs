@@ -390,6 +390,16 @@ impl BenCodeApp {
             // The text input binds these keys itself, deeper than any action
             // context, so the composer's Enter and the picker keys
             // (MonoCode `Composer.tsx:1742-1830`) are taken here first.
+            let pasting = event.keystroke.key == "v"
+                && event.keystroke.modifiers.platform
+                && !event.keystroke.modifiers.shift;
+            if pasting && composer_input.read(cx).focus_handle(cx).is_focused(window) {
+                let attached = weak_app.update(cx, |this, cx| this.paste_into_composer(cx));
+                if matches!(attached, Ok(true)) {
+                    cx.stop_propagation();
+                }
+                return;
+            }
             if event.keystroke.modifiers.modified() {
                 return;
             }

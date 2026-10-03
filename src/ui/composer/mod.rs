@@ -9,6 +9,7 @@ mod suggestions;
 
 use ely_gpui_component::buttons::{ButtonVariant, IconButton};
 use ely_gpui_component::git::{Branch as ElyBranch, BranchSelector};
+use ely_gpui_component::menus::{DropdownMenu, Menu, MenuItem};
 use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
@@ -200,7 +201,6 @@ impl BenCodeApp {
         session: Option<&SessionRow>,
         cx: &Context<Self>,
     ) -> impl IntoElement {
-        let colors = &cx.theme().colors;
         let project = std::path::Path::new(&self.current_cwd)
             .file_name()
             .map_or_else(
@@ -213,25 +213,85 @@ impl BenCodeApp {
             .gap_2p5()
             .px_3()
             .pt_2p5()
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_1()
-                    .px_1p5()
-                    .h(px(24.0))
-                    .text_size(px(11.0))
-                    .text_color(colors.fg_muted)
-                    .child(
-                        Icon::new(IconName::Folder)
-                            .size(IconSize::Xs)
-                            .color(colors.fg_muted),
-                    )
-                    .child(div().max_w(px(160.0)).truncate().child(project)),
-            )
+            .child(self.project_picker(&project, cx))
+            .children(self.worktree_picker(cx))
             .child(self.branch_menu(session, cx))
             .child(div().flex_1())
             .children(session.and_then(|s| self.context_meter(s, cx)))
+    }
+
+    /// MonoCode `CwdPicker`: the project chip opens recent projects and
+    /// "Open folder…".
+    fn project_picker(&self, project: &str, cx: &Context<Self>) -> impl IntoElement {
+        let menu = self
+            .recent_projects
+            .iter()
+            .fold(Menu::new(), |menu, path| {
+                let name = std::path::Path::new(path)
+                    .file_name()
+                    .map_or_else(|| path.clone(), |n| n.to_string_lossy().into_owned());
+                let target = path.clone();
+                menu.item(
+                    MenuItem::radio(name, crate::app::same_project_path(path, &self.current_cwd))
+                        .on_click(app_callback(cx, move |this, cx| {
+                            this.switch_project(target.clone(), cx)
+                        })),
+                )
+            })
+            .separator()
+            .item(
+                MenuItem::new("Open folder…")
+                    .icon(IconName::FolderPlus)
+                    .on_click(app_callback(cx, |this, cx| this.open_project_dialog(cx))),
+            );
+        DropdownMenu::new("composer-project", project.to_string(), menu)
+            .variant(ButtonVariant::Ghost)
+            .icon(IconName::Folder)
+    }
+
+    /// MonoCode `WorkspacePicker`: the project folder or one of its
+    /// worktrees, shown when the project has any.
+    fn worktree_picker(&self, cx: &Context<Self>) -> Option<impl IntoElement> {
+        let trees: Vec<_> = self
+            .workspace
+            .worktrees
+            .iter()
+            .filter(|w| !w.is_main && !w.missing)
+            .collect();
+        if trees.is_empty() {
+            return None;
+        }
+        let focused = self.worktree_focus().map(|f| f.path.clone());
+        let label = self
+            .worktree_focus()
+            .map_or("Current checkout".to_string(), |f| {
+                f.branch.clone().unwrap_or_else(|| "Worktree".to_string())
+            });
+        let menu = trees.iter().fold(
+            Menu::new().item(
+                MenuItem::radio("Current checkout", focused.is_none())
+                    .on_click(app_callback(cx, |this, cx| this.select_workspace(None, cx))),
+            ),
+            |menu, tree| {
+                let focus = crate::app::WorktreeFocus {
+                    path: tree.path.clone(),
+                    branch: tree.branch.clone(),
+                };
+                let name = tree.branch.clone().unwrap_or_else(|| tree.head.clone());
+                menu.item(
+                    MenuItem::radio(name, focused.as_deref() == Some(tree.path.as_str())).on_click(
+                        app_callback(cx, move |this, cx| {
+                            this.select_workspace(Some(focus.clone()), cx)
+                        }),
+                    ),
+                )
+            },
+        );
+        Some(
+            DropdownMenu::new("composer-worktree", label, menu)
+                .variant(ButtonVariant::Ghost)
+                .icon(IconName::FolderOpen),
+        )
     }
 
     /// MonoCode `ContextMeter`: a 14px ring of the window used, with the
