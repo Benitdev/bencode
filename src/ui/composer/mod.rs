@@ -158,7 +158,11 @@ impl BenCodeApp {
                     .mx_auto()
                     .rounded(px(8.0))
                     .border_1()
-                    .border_color(colors.fg.opacity(0.1))
+                    .border_color(
+                        colors
+                            .fg
+                            .opacity(if self.prompt_focused { 0.2 } else { 0.1 }),
+                    )
                     .bg(colors.fg.opacity(0.03))
                     .children(self.render_suggestions(cx))
                     .child(self.composer_top_bar(session, cx))

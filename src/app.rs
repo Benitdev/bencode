@@ -127,6 +127,8 @@ pub struct BenCodeApp {
     pub mention_query: String,
     /// Highlighted row of the open `/` or `@` picker.
     pub picker_index: usize,
+    /// The composer border brightens while the prompt has focus.
+    pub prompt_focused: bool,
     /// The model picker's search field and highlighted row.
     pub model_search_input: Entity<TextInput>,
     pub model_picker_index: usize,
@@ -315,7 +317,10 @@ impl BenCodeApp {
                 |this: &mut Self, _, event: &InputEvent, cx| match event {
                     InputEvent::Submit => this.submit_prompt(cx),
                     InputEvent::Changed => this.on_prompt_changed(cx),
-                    _ => {}
+                    InputEvent::Focus | InputEvent::Blur => {
+                        this.prompt_focused = *event == InputEvent::Focus;
+                        cx.notify();
+                    }
                 },
             ),
             cx.subscribe(
@@ -482,6 +487,7 @@ impl BenCodeApp {
             is_mention_picker_open: false,
             mention_query: String::new(),
             picker_index: 0,
+            prompt_focused: false,
             model_search_input,
             model_picker_index: 0,
             drafts: HashMap::new(),
