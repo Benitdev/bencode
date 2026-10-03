@@ -158,6 +158,9 @@ impl BenCodeApp {
         let colors = &cx.theme().colors;
         let running_here = session.is_some_and(|s| self.is_agent_running_in(&s.id));
         let queue = session.and_then(|s| self.render_message_queue(&s.id, cx));
+        // MonoCode `fileDrag`: files held over this thread's pane.
+        let file_drag =
+            session.is_some_and(|s| self.active_file_drop_target.as_deref() == Some(s.id.as_str()));
         div()
             .flex_none()
             .px_6()
@@ -171,11 +174,13 @@ impl BenCodeApp {
                     .mx_auto()
                     .rounded(px(8.0))
                     .border_1()
-                    .border_color(
+                    .border_color(if file_drag {
+                        colors.accent.opacity(0.6)
+                    } else {
                         colors
                             .fg
-                            .opacity(if self.prompt_focused { 0.2 } else { 0.1 }),
-                    )
+                            .opacity(if self.prompt_focused { 0.2 } else { 0.1 })
+                    })
                     .bg(colors.fg.opacity(0.03))
                     .children(self.render_suggestions(cx))
                     .child(self.composer_top_bar(session, cx))
@@ -208,7 +213,22 @@ impl BenCodeApp {
                     .when(self.is_permission_picker_open, |el| {
                         el.child(self.render_permission_picker_popover(cx))
                     })
-                    .child(self.composer_bottom_bar(session, running_here, cx)),
+                    .child(self.composer_bottom_bar(session, running_here, cx))
+                    .when(file_drag, |el| {
+                        el.child(
+                            div()
+                                .absolute()
+                                .inset_0()
+                                .rounded(px(8.0))
+                                .bg(colors.accent.opacity(0.08))
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .text_size(px(12.0))
+                                .text_color(colors.fg.opacity(0.7))
+                                .child("Drop files to attach"),
+                        )
+                    }),
             )
     }
 

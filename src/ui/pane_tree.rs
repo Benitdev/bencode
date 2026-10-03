@@ -15,9 +15,7 @@ use gpui::{
 use crate::app::BenCodeApp;
 use crate::db::SessionRow;
 use crate::harness::catalog;
-use crate::ui::drag_drop::{
-    DraggedFile, DraggedPane, render_file_drop_hint, render_pane_drop_hint,
-};
+use crate::ui::drag_drop::{DraggedFile, DraggedPane, render_pane_drop_hint};
 use crate::ui::layout::{LayoutNode, SplitDir, leaf_count, pane_edge_from_point, split_shares};
 
 const UNTITLED: &str = "Untitled thread";
@@ -152,7 +150,6 @@ impl BenCodeApp {
             .as_ref()
             .filter(|target| target.over_id == session_id)
             .map(|target| target.edge);
-        let file_hint = self.active_file_drop_target.as_deref() == Some(session_id);
         let composer = if is_focused {
             self.render_composer(Some(session), cx).into_any_element()
         } else {
@@ -185,7 +182,6 @@ impl BenCodeApp {
             .when_some(drop_hint, |el, edge| {
                 el.child(render_pane_drop_hint(edge, cx))
             })
-            .when(file_hint, |el| el.child(render_file_drop_hint(cx)))
             .into_any_element()
     }
 
@@ -204,8 +200,9 @@ impl BenCodeApp {
             sid.clone(),
             sid.clone(),
             sid.clone(),
-            sid,
+            sid.clone(),
         );
+        let finder_id = sid;
         frame
             .on_click(cx.listener(move |this, _, _, cx| this.focus_pane(focus_id.clone(), cx)))
             .on_drag_move::<DraggedPane>(cx.listener(
@@ -227,6 +224,16 @@ impl BenCodeApp {
                     if event.bounds.contains(&event.event.position) {
                         this.set_active_file_drop(Some(file_id.clone()), cx);
                     } else if this.active_file_drop_target.as_deref() == Some(file_id.as_str()) {
+                        this.set_active_file_drop(None, cx);
+                    }
+                },
+            ))
+            // Files dragged in from the Finder.
+            .on_drag_move::<gpui::ExternalPaths>(cx.listener(
+                move |this, event: &DragMoveEvent<gpui::ExternalPaths>, _, cx| {
+                    if event.bounds.contains(&event.event.position) {
+                        this.set_active_file_drop(Some(finder_id.clone()), cx);
+                    } else if this.active_file_drop_target.as_deref() == Some(finder_id.as_str()) {
                         this.set_active_file_drop(None, cx);
                     }
                 },

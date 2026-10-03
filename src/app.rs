@@ -808,29 +808,18 @@ impl BenCodeApp {
         cx.notify();
     }
 
-    /// Attaches a file to the composer prompt input.
+    /// A file dragged from the explorer attaches like one from the Finder
+    /// (MonoCode `onExplorerFilePointerDrag`).
     pub fn attach_file_to_composer(
         &mut self,
         session_id: &str,
-        path: &str,
+        rel_path: &str,
         cx: &mut Context<Self>,
     ) {
-        self.active_file_drop_target = None;
-        self.focus_pane(session_id.to_string(), cx);
-
-        self.prompt_input.update(cx, |input, cx| {
-            let current = input.text();
-            let addition = if current.trim().is_empty() || current.ends_with(' ') {
-                format!("@{path} ")
-            } else {
-                format!(" @{path} ")
-            };
-            input.set_text(format!("{current}{addition}"), cx);
-        });
-        cx.notify();
+        let path = std::path::Path::new(&self.workspace_cwd()).join(rel_path);
+        self.attach_external_paths_to_composer(session_id, &[path], cx);
     }
 
-    /// Attaches external files dropped from the OS (Finder) to the composer.
     /// Files dropped from the Finder attach to the composer (MonoCode).
     pub fn attach_external_paths_to_composer(
         &mut self,
