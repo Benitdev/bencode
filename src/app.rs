@@ -1,6 +1,7 @@
 mod agent;
 pub mod commands;
 mod integrations;
+mod model_catalog;
 mod panes;
 mod preferences;
 mod projects;
@@ -134,6 +135,10 @@ pub struct BenCodeApp {
     pub model_picker_index: usize,
     pub favorite_models: Vec<String>,
     pub recent_models: Vec<String>,
+    pub last_model_settings: serde_json::Map<String, serde_json::Value>,
+    /// Model catalog probes per harness: `None` while one runs, else when
+    /// the last one ended.
+    pub catalog_probes: HashMap<crate::harness::HarnessKind, Option<std::time::Instant>>,
     /// Keyboard focus and highlight of the composer's menus.
     pub composer_menus: crate::ui::composer::MenuState,
     pub drafts: HashMap<String, String>,
@@ -470,7 +475,7 @@ impl BenCodeApp {
         let recent_projects = projects::recent_projects(&current_cwd, &sessions);
 
         let harnesses = HarnessResolver::discover();
-        let selected_model = catalog::default_model(&harnesses).key.to_string();
+        let selected_model = catalog::default_model(&harnesses).key;
 
         let notes = db.list_notes().unwrap_or_else(|err| {
             log::error!("failed to load notes: {err:#}");
@@ -523,6 +528,8 @@ impl BenCodeApp {
             model_picker_index: 0,
             favorite_models: Vec::new(),
             recent_models: Vec::new(),
+            last_model_settings: Default::default(),
+            catalog_probes: Default::default(),
             composer_menus: crate::ui::composer::MenuState::new(menu_focus),
             drafts: HashMap::new(),
             expanded_reasoning: std::collections::HashSet::new(),
@@ -601,6 +608,7 @@ impl BenCodeApp {
         app.apply_settings(saved);
         app.start_git_poll(cx);
         app.start_clock(cx);
+        app.refresh_installed_catalogs(cx);
         app
     }
 
@@ -624,17 +632,27 @@ impl BenCodeApp {
             log::warn!("unknown model key {model_key}");
             return;
         };
-        self.selected_model = option.key.to_string();
-        self.record_recent_model(option.key, cx);
+        self.selected_model = option.key.clone();
+        self.record_recent_model(&option.key, cx);
 
+        // MonoCode `onModelChange`: the old thread's settings fill the
+        // remembered ones, and the new model takes what it accepts.
+        let current = self
+            .selected_session()
+            .and_then(|s| s.model_settings.clone());
+        if let Some(current) = &current {
+            self.save_last_model_settings(current, true, cx);
+        }
+        let settings = self.preferred_model_settings(&option.key, current.as_ref());
         let harness_id = option.harness.id();
         let changed_session = self.selected_session_mut().map(|session| {
             if session.harness != harness_id {
                 // A provider session id is only meaningful to the harness that issued it.
                 session.provider_session_id = None;
             }
-            session.model = option.key.to_string();
+            session.model = option.key.clone();
             session.harness = harness_id.to_string();
+            session.model_settings = Some(settings);
             session.id.clone()
         });
         if let Some(id) = changed_session {

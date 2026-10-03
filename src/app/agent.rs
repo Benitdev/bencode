@@ -672,7 +672,7 @@ mod tests {
         assert_eq!(s.title, "Fix the login bug");
         assert_eq!(
             s.blocks[0].turn_model.as_ref().unwrap().name.as_deref(),
-            Some("Claude Opus")
+            Some("Opus")
         );
     }
 

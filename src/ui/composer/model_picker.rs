@@ -53,29 +53,30 @@ fn model_menu_height() -> f32 {
 }
 
 /// Models of `tab` matching `query` against name and provider.
-pub fn filtered_models(
-    tab: ModelTab,
-    favorites: &[String],
-    query: &str,
-) -> Vec<&'static ModelOption> {
+pub fn filtered_models(tab: ModelTab, favorites: &[String], query: &str) -> Vec<ModelOption> {
     let query = query.trim().to_lowercase();
-    let pool: Vec<&'static ModelOption> = match tab {
+    let pool: Vec<ModelOption> = match tab {
         ModelTab::Favorites => favorites.iter().filter_map(|k| catalog::find(k)).collect(),
-        ModelTab::Harness(kind) => catalog::models_for(kind).collect(),
+        ModelTab::Harness(kind) => catalog::models_for(kind).to_vec(),
     };
     pool.into_iter()
         .filter(|m| {
             query.is_empty()
-                || format!("{} {}", m.label, m.harness.label())
-                    .to_lowercase()
-                    .contains(&query)
+                || format!(
+                    "{} {} {}",
+                    m.label,
+                    m.harness.label(),
+                    m.provider.as_deref().unwrap_or("")
+                )
+                .to_lowercase()
+                .contains(&query)
         })
         .collect()
 }
 
 /// MonoCode `recentMenuModels`: recent choices, the current model always
 /// among them, at most six.
-pub fn recent_menu_models(recent: &[String], current: &str) -> Vec<&'static ModelOption> {
+pub fn recent_menu_models(recent: &[String], current: &str) -> Vec<ModelOption> {
     let mut models: Vec<_> = recent.iter().filter_map(|k| catalog::find(k)).collect();
     if let Some(current) = catalog::find(current)
         && !models.iter().any(|m| m.key == current.key)
@@ -96,11 +97,16 @@ impl BenCodeApp {
             .map_or(self.selected_model.clone(), |s| s.model.clone())
     }
 
-    fn current_model_values(&self) -> Option<&Map<String, Value>> {
-        self.selected_session()?.model_settings.as_ref()
+    /// The thread's settings; with no thread, the last ones chosen
+    /// (MonoCode `lastModelSettings`).
+    pub(super) fn current_model_values(&self) -> Option<&Map<String, Value>> {
+        match self.selected_session() {
+            Some(session) => session.model_settings.as_ref(),
+            None => Some(&self.last_model_settings),
+        }
     }
 
-    fn visible_models(&self, cx: &Context<Self>) -> Vec<&'static ModelOption> {
+    fn visible_models(&self, cx: &Context<Self>) -> Vec<ModelOption> {
         filtered_models(
             self.composer_menus.model_tab,
             &self.favorite_models,
@@ -128,6 +134,9 @@ impl BenCodeApp {
         self.close_composer_popovers(cx);
         self.is_model_picker_open = true;
         let current = self.current_model_key();
+        if let Some(model) = catalog::find(&current) {
+            self.refresh_model_catalog(model.harness, cx);
+        }
         let menus = &mut self.composer_menus;
         menus.model_entry = 0;
         menus.model_submenu = None;
@@ -186,29 +195,33 @@ impl BenCodeApp {
     pub fn pick_highlighted_model(&mut self, cx: &mut Context<Self>) {
         let models = self.visible_models(cx);
         if let Some(model) = models.get(self.model_picker_index).or(models.first()) {
-            self.pick_model(model.key, cx);
+            self.pick_model(&model.key, cx);
         }
     }
 
     fn select_model_tab(&mut self, tab: ModelTab, cx: &mut Context<Self>) {
         self.composer_menus.model_tab = tab;
+        if let ModelTab::Harness(kind) = tab {
+            self.refresh_model_catalog(kind, cx);
+        }
         self.model_search_input
             .update(cx, |input, cx| input.set_text("", cx));
         self.model_picker_index = 0;
         cx.notify();
     }
 
-    /// Stores `value` in the focused thread's `modelSettings`.
+    /// MonoCode `onModelSettingsChange`: the focused thread's settings take
+    /// `value`, and it is remembered for threads to come.
     fn set_model_setting(&mut self, id: &str, value: &str, cx: &mut Context<Self>) {
-        let Some(session) = self.selected_session_mut() else {
-            return;
-        };
-        session
-            .model_settings
-            .get_or_insert_with(Map::new)
-            .insert(id.to_string(), Value::String(value.to_string()));
-        let id = session.id.clone();
-        self.persist_session(&id);
+        let mut next =
+            catalog::merge_settings(&self.current_model_key(), self.current_model_values());
+        next.insert(id.to_string(), Value::String(value.to_string()));
+        self.save_last_model_settings(&next, false, cx);
+        if let Some(session) = self.selected_session_mut() {
+            session.model_settings = Some(next);
+            let id = session.id.clone();
+            self.persist_session(&id);
+        }
         cx.notify();
     }
 
@@ -218,7 +231,7 @@ impl BenCodeApp {
         } else {
             "true"
         };
-        self.set_model_setting(setting.id, next, cx);
+        self.set_model_setting(&setting.id, next, cx);
     }
 
     /// MonoCode `showEntrySubmenu`: a select or the Model row opens its
@@ -273,9 +286,9 @@ impl BenCodeApp {
             ("left", _) => self.composer_menus.model_submenu = None,
             ("enter", Some(Submenu::Models)) => self.pick_highlighted_model(cx),
             ("enter", Some(Submenu::Setting(ix))) => {
-                let setting = settings[ix];
+                let setting = &settings[ix];
                 if let Some((value, _)) = setting.options.get(self.composer_menus.setting_index) {
-                    self.set_model_setting(setting.id, value, cx);
+                    self.set_model_setting(&setting.id, value, cx);
                 }
                 self.close_model_picker(cx);
             }
@@ -302,7 +315,7 @@ impl BenCodeApp {
             "up" => *index = (*index + len - 1) % len,
             "enter" | "space" => {
                 if let Some(model) = models.get(*index) {
-                    self.pick_model(model.key, cx);
+                    self.pick_model(&model.key, cx);
                 }
             }
             "escape" => self.close_model_picker(cx),
@@ -350,17 +363,23 @@ impl BenCodeApp {
                 .size(IconSize::Xs)
                 .color(colors.fg.opacity(0.45))
         };
-        let setting_rows = settings.iter().enumerate().map(|(ix, &setting)| {
+        let setting_rows = settings.iter().enumerate().map(|(ix, setting)| {
             let base = row(
                 ix,
                 SharedString::from(format!("model-setting-{}", setting.id)),
             )
-            .child(div().flex_1().min_w_0().child(setting.menu_label()));
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .child(setting.menu_label().to_string()),
+            );
             match setting.kind {
                 SettingKind::Toggle => {
                     let on = setting.value(values) == "true";
+                    let toggled = setting.clone();
                     base.on_click(
-                        cx.listener(move |this, _, _, cx| this.toggle_model_setting(setting, cx)),
+                        cx.listener(move |this, _, _, cx| this.toggle_model_setting(&toggled, cx)),
                     )
                     .child(toggle_switch(on, cx))
                 }
@@ -429,7 +448,7 @@ impl BenCodeApp {
     /// A select's choices, beside its row, with a check on the current one.
     fn render_setting_flyout(
         &self,
-        setting: &'static ModelSetting,
+        setting: &ModelSetting,
         row: usize,
         menu_height: f32,
         cx: &Context<Self>,
@@ -444,7 +463,7 @@ impl BenCodeApp {
             .options
             .iter()
             .enumerate()
-            .map(|(ix, &(value, label))| {
+            .map(|(ix, (value, label))| {
                 let hover = colors.fg.opacity(0.05);
                 div()
                     .id(SharedString::from(format!(
@@ -468,12 +487,15 @@ impl BenCodeApp {
                             cx.notify();
                         }
                     }))
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.set_model_setting(setting.id, value, cx);
-                        this.close_model_picker(cx);
-                    }))
-                    .child(div().flex_1().min_w_0().truncate().child(label))
-                    .when(value == current, |el| {
+                    .on_click({
+                        let (id, value) = (setting.id.clone(), value.clone());
+                        cx.listener(move |this, _, _, cx| {
+                            this.set_model_setting(&id, &value, cx);
+                            this.close_model_picker(cx);
+                        })
+                    })
+                    .child(div().flex_1().min_w_0().truncate().child(label.clone()))
+                    .when(*value == current, |el| {
                         el.child(
                             Icon::new(IconName::Check)
                                 .size(IconSize::Xs)
@@ -611,9 +633,10 @@ impl BenCodeApp {
         };
         let rows =
             models.iter().enumerate().map(|(ix, model)| {
-                let key = model.key;
+                let key = model.key.clone();
                 let highlighted = ix == self.model_picker_index;
-                let favorited = self.favorite_models.iter().any(|k| k == key);
+                let favorited = self.favorite_models.contains(&key);
+                let (pick_key, star_key) = (key.clone(), key.clone());
                 let group = SharedString::from(format!("model-row-{key}"));
                 let hover = colors.fg.opacity(0.05);
                 let star_hover = colors.fg.opacity(0.08);
@@ -640,7 +663,7 @@ impl BenCodeApp {
                             cx.notify();
                         }
                     }))
-                    .on_click(cx.listener(move |this, _, _, cx| this.pick_model(key, cx)))
+                    .on_click(cx.listener(move |this, _, _, cx| this.pick_model(&pick_key, cx)))
                     .child(
                         div()
                             .flex_1()
@@ -648,7 +671,7 @@ impl BenCodeApp {
                             .px_1p5()
                             .truncate()
                             .text_size(px(13.0))
-                            .child(model.label),
+                            .child(model.label.clone()),
                     )
                     // Favorites mix providers, so each row names its own.
                     .when(tab == ModelTab::Favorites, |el| {
@@ -659,7 +682,12 @@ impl BenCodeApp {
                                 .truncate()
                                 .text_size(px(10.0))
                                 .text_color(colors.fg.opacity(0.4))
-                                .child(model.harness.label()),
+                                .child(
+                                    model
+                                        .provider
+                                        .clone()
+                                        .unwrap_or_else(|| model.harness.label().to_string()),
+                                ),
                         )
                     })
                     .child(
@@ -679,7 +707,7 @@ impl BenCodeApp {
                             .tooltip(Tooltip::text(star_tip))
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 cx.stop_propagation();
-                                this.toggle_favorite_model(key, cx);
+                                this.toggle_favorite_model(&star_key, cx);
                             }))
                             .child(Icon::new(IconName::Star).size(IconSize::Xs).color(
                                 if favorited {
@@ -753,7 +781,8 @@ impl BenCodeApp {
             .into_iter()
             .enumerate()
             .map(|(ix, model)| {
-                let key = model.key;
+                let key = model.key.clone();
+                let pick_key = key.clone();
                 let hover = colors.fg.opacity(0.05);
                 div()
                     .id(SharedString::from(format!("recent-model-{key}")))
@@ -773,7 +802,7 @@ impl BenCodeApp {
                             cx.notify();
                         }
                     }))
-                    .on_click(cx.listener(move |this, _, _, cx| this.pick_model(key, cx)))
+                    .on_click(cx.listener(move |this, _, _, cx| this.pick_model(&pick_key, cx)))
                     .child(HarnessIcon::new(model.harness.id()).size(px(16.0)))
                     .child(
                         div()
@@ -855,18 +884,19 @@ mod tests {
         assert_eq!(filtered_models(claude, &[], "opus").len(), 1);
         assert_eq!(filtered_models(claude, &[], "claude code").len(), 3);
         assert!(filtered_models(claude, &[], "zzzz-none").is_empty());
-        let favorites = ["codex:gpt-5".to_string(), "gone:model".to_string()];
+        let gemini = "antigravity:gemini-3.1-pro-high".to_string();
+        let favorites = [gemini.clone(), "gone:model".to_string()];
         let starred = filtered_models(ModelTab::Favorites, &favorites, "");
         assert_eq!(starred.len(), 1);
-        assert_eq!(starred[0].key, "codex:gpt-5");
+        assert_eq!(starred[0].key, gemini);
     }
 
     #[test]
     fn recent_menu_keeps_the_current_model() {
-        let recent = vec!["codex:gpt-5".to_string()];
+        let recent = vec!["antigravity:gemini-3.1-pro-high".to_string()];
         let models = recent_menu_models(&recent, "claude:opus");
-        let keys: Vec<_> = models.iter().map(|m| m.key).collect();
-        assert_eq!(keys, ["codex:gpt-5", "claude:opus"]);
+        let keys: Vec<_> = models.iter().map(|m| m.key.as_str()).collect();
+        assert_eq!(keys, ["antigravity:gemini-3.1-pro-high", "claude:opus"]);
         assert_eq!(recent_menu_models(&[], "claude:opus").len(), 1);
     }
 }

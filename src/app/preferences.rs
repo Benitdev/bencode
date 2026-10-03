@@ -52,10 +52,12 @@ const RECENT_MODELS_KEPT: usize = 6;
 impl BenCodeApp {
     /// Seeds app state from saved preferences; unknown model keys are ignored.
     pub fn apply_settings(&mut self, saved: AppSettings) {
+        // Live catalogs arrive after startup, so any harness-prefixed key
+        // is kept rather than only the built-in ones.
         if let Some(model) = saved
             .default_model
             .as_deref()
-            .filter(|key| catalog::find(key).is_some())
+            .filter(|key| catalog::is_model_key(key))
         {
             self.selected_model = model.to_string();
         }
@@ -65,6 +67,7 @@ impl BenCodeApp {
         self.claude_hooks_disabled = saved.claude_hooks_disabled;
         self.favorite_models = saved.favorite_models.clone();
         self.recent_models = saved.recent_models.clone();
+        self.last_model_settings = saved.last_model_settings.clone();
         self.settings = saved;
     }
 
@@ -77,6 +80,7 @@ impl BenCodeApp {
             claude_hooks_disabled: self.claude_hooks_disabled,
             favorite_models: self.favorite_models.clone(),
             recent_models: self.recent_models.clone(),
+            last_model_settings: self.last_model_settings.clone(),
             extra: self.settings.extra.clone(),
         }
     }
@@ -109,6 +113,35 @@ impl BenCodeApp {
         }
         self.save_settings(cx);
         cx.notify();
+    }
+
+    /// MonoCode `saveLastModelSettings`: `fill` only adds settings not
+    /// remembered yet; otherwise `settings` win.
+    pub fn save_last_model_settings(
+        &mut self,
+        settings: &serde_json::Map<String, serde_json::Value>,
+        fill: bool,
+        cx: &mut Context<Self>,
+    ) {
+        for (id, value) in settings {
+            if !value.is_string() || (fill && self.last_model_settings.contains_key(id)) {
+                continue;
+            }
+            self.last_model_settings.insert(id.clone(), value.clone());
+        }
+        self.save_settings(cx);
+    }
+
+    /// MonoCode `preferredModelSettings`: the model's defaults, then
+    /// `current`, then the last settings chosen, as far as the model takes them.
+    pub fn preferred_model_settings(
+        &self,
+        key: &str,
+        current: Option<&serde_json::Map<String, serde_json::Value>>,
+    ) -> serde_json::Map<String, serde_json::Value> {
+        let mut wanted = current.cloned().unwrap_or_default();
+        wanted.extend(self.last_model_settings.clone());
+        catalog::merge_settings(key, Some(&wanted))
     }
 
     /// MonoCode `recordRecentModelChoice`: newest first, a few kept.

@@ -48,6 +48,9 @@ pub struct AppSettings {
     pub favorite_models: Vec<String>,
     /// MonoCode recent model choices, newest first (⌘. menu).
     pub recent_models: Vec<String>,
+    /// MonoCode `monocode.lastModelSettings`: the last effort / fast / …
+    /// chosen, carried to new threads and other models that accept them.
+    pub last_model_settings: Map<String, Value>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
@@ -113,6 +116,7 @@ mod tests {
             claude_hooks_disabled: true,
             favorite_models: vec!["claude:opus".into()],
             recent_models: Vec::new(),
+            last_model_settings: Map::new(),
             extra: Map::new(),
         };
         save_to(&dir, &settings).unwrap();

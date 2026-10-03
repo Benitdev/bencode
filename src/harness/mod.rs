@@ -7,6 +7,7 @@ pub mod antigravity;
 pub mod catalog;
 pub mod claude;
 pub mod codex;
+pub mod discovery;
 pub mod events;
 pub mod handle;
 pub mod opencode;
@@ -33,6 +34,14 @@ pub enum HarnessKind {
     Codex,
     OpenCode,
 }
+
+/// Every harness, in picker order.
+pub const ALL_HARNESSES: [HarnessKind; 4] = [
+    HarnessKind::Claude,
+    HarnessKind::Antigravity,
+    HarnessKind::Codex,
+    HarnessKind::OpenCode,
+];
 
 impl HarnessKind {
     /// Parses MonoCode's `sessions.harness` column.

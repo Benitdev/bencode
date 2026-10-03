@@ -50,7 +50,7 @@ impl BenCodeApp {
             .as_deref()
             .and_then(|id| self.sessions.iter().find(|s| s.id == id))
             .map(|s| s.model.as_str())
-            .filter(|model| catalog::find(model).is_some())
+            .filter(|model| catalog::is_model_key(model))
             .map(str::to_string);
         if let Some(model) = model {
             self.selected_model = model;
@@ -407,6 +407,7 @@ impl BenCodeApp {
             blocks: Vec::new(),
             runtime_mode: Some(self.permission_mode.id().to_string()),
             worktree_cwd,
+            model_settings: Some(self.preferred_model_settings(&self.selected_model, None)),
             ..Default::default()
         };
 

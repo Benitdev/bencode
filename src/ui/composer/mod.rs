@@ -358,7 +358,9 @@ impl BenCodeApp {
             catalog::label_for(key),
             catalog::effort_setting(key).map(|effort| {
                 effort
-                    .value_label(session.and_then(|s| s.model_settings.as_ref()))
+                    .value_label(session.map_or(Some(&self.last_model_settings), |s| {
+                        s.model_settings.as_ref()
+                    }))
                     .to_string()
             }),
             self.is_model_picker_open || self.composer_menus.recent_open,

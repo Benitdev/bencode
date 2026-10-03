@@ -46,6 +46,9 @@ fn build_args(req: &SpawnRequest) -> Vec<String> {
     if let Some(effort) = req.settings.get("reasoningEffort") {
         args.extend(["-c".into(), format!("model_reasoning_effort=\"{effort}\"")]);
     }
+    if let Some(tier) = req.settings.get("serviceTier").filter(|t| *t != "default") {
+        args.extend(["-c".into(), format!("service_tier=\"{tier}\"")]);
+    }
     if let Some(thread) = &req.resume_id {
         args.extend(["resume".into(), thread.clone()]);
     }

@@ -29,6 +29,12 @@ fn build_args(req: &SpawnRequest) -> Vec<String> {
     if let Some(model) = &req.model {
         args.extend(["--model".into(), model.clone()]);
     }
+    // MonoCode sends these with each prompt; `opencode run` takes them as flags.
+    for (id, flag) in [("variant", "--variant"), ("agent", "--agent")] {
+        if let Some(value) = req.settings.get(id) {
+            args.extend([flag.into(), value.clone()]);
+        }
+    }
     if let Some(session) = &req.resume_id {
         args.extend(["--session".into(), session.clone()]);
     }
