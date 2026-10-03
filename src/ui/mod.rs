@@ -5,6 +5,7 @@ pub mod diff_counts;
 pub mod diff_viewer;
 pub mod drag_drop;
 pub mod editor_pane;
+pub mod explorer_menu;
 pub mod file_tree;
 pub mod footer;
 pub mod git_changes_panel;

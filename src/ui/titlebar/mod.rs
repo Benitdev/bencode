@@ -13,7 +13,6 @@ use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
 use ely_gpui_component::buttons::{ButtonVariant, IconButton};
-use ely_gpui_component::menus::{ContextMenu, Menu, MenuItem};
 use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
@@ -24,8 +23,8 @@ use gpui::{
 
 use crate::app::{BenCodeApp, NEW_SESSION_TITLE};
 use crate::ui::HarnessIcon;
-use crate::ui::app_callback::app_callback;
 use crate::ui::drag_drop::DraggedPane;
+use crate::ui::explorer_menu::{self, MenuAction, MenuEntry};
 use crate::ui::layout::WorkspaceTab;
 use crate::ui::sidebar::SessionDialog;
 use tabs::{
@@ -47,6 +46,16 @@ const SPINNER_FRAMES: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "�
 /// Room for the macOS window buttons when nothing else on the left holds it.
 const TRAFFIC_LIGHT_SPACE: gpui::Pixels = px(72.0);
 
+/// MonoCode's tab menu is 244px wide.
+const TAB_MENU_WIDTH: f32 = 244.0;
+
+/// The open tab context menu.
+struct TabMenu {
+    tab_id: String,
+    position: gpui::Point<gpui::Pixels>,
+    active: usize,
+}
+
 /// A tab sweeping shut after it closed.
 struct ClosingTab {
     tab: TitleTab,
@@ -67,6 +76,7 @@ pub struct TitleStrip {
     busy: HashSet<String>,
     unseen_finished: HashSet<String>,
     window_title: String,
+    menu: Option<TabMenu>,
 }
 
 /// Payload while a title tab is dragged to a new place.
@@ -298,67 +308,192 @@ impl BenCodeApp {
         self.close_title_tab(id, cx);
     }
 
-    fn tab_context_menu(&self, tab: &TitleTab, tabs: &[TitleTab], cx: &Context<Self>) -> Menu {
-        let close_id = tab.id.clone();
-        let many = |action: CloseMany, label: &'static str| {
-            let ids = close_ids(tabs, &tab.id, action);
-            let keep = tab.id.clone();
-            MenuItem::new(label)
-                .disabled(ids.is_empty())
-                .on_click(app_callback(cx, move |this, cx| {
-                    this.close_title_tabs(&ids, &keep, cx)
-                }))
+    /// MonoCode's tab menu rows for `tab_id`, as the strip stands now.
+    fn tab_menu_entries(&self, tab_id: &str) -> Vec<MenuEntry> {
+        let tabs = self.title_tabs();
+        let Some(tab) = tabs.iter().find(|t| t.id == tab_id) else {
+            return Vec::new();
         };
-        let mut menu = Menu::new()
-            .item(
-                MenuItem::new("Close Tab")
-                    .keys("cmd-w")
-                    .disabled(!closable(tab, tabs.len()))
-                    .on_click(app_callback(cx, move |this, cx| {
-                        this.close_title_tab(&close_id, cx)
-                    })),
-            )
-            .separator()
-            .item(many(CloseMany::Others, "Close Other Tabs"))
-            .item(many(CloseMany::Right, "Close Tabs to the Right"))
-            .item(many(CloseMany::Left, "Close Tabs to the Left"));
+        let none = |action| close_ids(&tabs, tab_id, action).is_empty();
+        let mut entries = vec![
+            MenuEntry::Item(
+                MenuAction::new("close", "Close Tab")
+                    .shortcut("⌘W")
+                    .disabled(!closable(tab, tabs.len())),
+            ),
+            MenuEntry::Separator,
+            MenuEntry::Item(
+                MenuAction::new("others", "Close Other Tabs").disabled(none(CloseMany::Others)),
+            ),
+            MenuEntry::Item(
+                MenuAction::new("right", "Close Tabs to the Right")
+                    .disabled(none(CloseMany::Right)),
+            ),
+            MenuEntry::Item(
+                MenuAction::new("left", "Close Tabs to the Left").disabled(none(CloseMany::Left)),
+            ),
+        ];
         if tab.session_count > 0 {
-            let (archive_id, delete_id) = (tab.id.clone(), tab.id.clone());
-            let plural = tab.session_count > 1;
-            let sessions = self
-                .tabs
-                .tabs()
-                .iter()
-                .find(|t| t.id == delete_id)
-                .map(|t| t.leaf_ids())
-                .unwrap_or_default();
-            menu = menu
-                .separator()
-                .item(
-                    MenuItem::new(if plural {
-                        format!("Archive All {}", tab.session_count)
-                    } else {
-                        "Archive".to_string()
-                    })
-                    .icon(IconName::Archive)
-                    .on_click(app_callback(cx, move |this, cx| {
-                        this.archive_title_tab(&archive_id, cx)
-                    })),
-                )
-                .item(
-                    MenuItem::new(if plural {
-                        format!("Delete All {}…", tab.session_count)
-                    } else {
-                        "Delete…".to_string()
-                    })
-                    .icon(IconName::Trash2)
-                    .on_click(app_callback(cx, move |this, cx| {
-                        this.session_dialog = Some(SessionDialog::DeleteMany(sessions.clone()));
-                        cx.notify();
-                    })),
-                );
+            let many = tab.session_count > 1;
+            entries.extend([
+                MenuEntry::Separator,
+                MenuEntry::Item(MenuAction::new("archive", "Archive").description(
+                    many.then(|| format!("All {} conversations in this tab", tab.session_count)),
+                )),
+                MenuEntry::Item(
+                    MenuAction::new("delete", "Delete")
+                        .description(many.then(|| {
+                            format!(
+                                "Permanently delete all {} conversations in this tab",
+                                tab.session_count
+                            )
+                        }))
+                        .danger(),
+                ),
+            ]);
         }
-        menu
+        entries
+    }
+
+    /// Right-click on a tab: its menu at the pointer, first row lit.
+    fn open_tab_menu(
+        &mut self,
+        tab_id: &str,
+        position: gpui::Point<gpui::Pixels>,
+        cx: &mut Context<Self>,
+    ) {
+        let entries = self.tab_menu_entries(tab_id);
+        self.title_strip.menu = Some(TabMenu {
+            tab_id: tab_id.to_string(),
+            position,
+            active: explorer_menu::first_item(&entries),
+        });
+        self.focus_composer_menu(cx);
+        cx.notify();
+    }
+
+    pub fn tab_menu_open(&self) -> bool {
+        self.title_strip.menu.is_some()
+    }
+
+    pub fn close_tab_menu(&mut self, cx: &mut Context<Self>) -> bool {
+        if self.title_strip.menu.take().is_none() {
+            return false;
+        }
+        self.refocus_prompt(cx);
+        cx.notify();
+        true
+    }
+
+    /// MonoCode `onPickTabMenu`.
+    fn pick_tab_menu(&mut self, index: usize, cx: &mut Context<Self>) {
+        let Some(menu) = self.title_strip.menu.take() else {
+            return;
+        };
+        let entries = self.tab_menu_entries(&menu.tab_id);
+        let Some(id) = explorer_menu::pick(&entries, index) else {
+            self.title_strip.menu = Some(menu);
+            return;
+        };
+        self.refocus_prompt(cx);
+        let tabs = self.title_tabs();
+        let target = menu.tab_id;
+        match id {
+            "close" => self.close_title_tab(&target, cx),
+            "others" => {
+                self.close_title_tabs(&close_ids(&tabs, &target, CloseMany::Others), &target, cx)
+            }
+            "right" => {
+                self.close_title_tabs(&close_ids(&tabs, &target, CloseMany::Right), &target, cx)
+            }
+            "left" => {
+                self.close_title_tabs(&close_ids(&tabs, &target, CloseMany::Left), &target, cx)
+            }
+            "archive" => self.archive_title_tab(&target, cx),
+            "delete" => {
+                let sessions = self
+                    .tabs
+                    .tabs()
+                    .iter()
+                    .find(|t| t.id == target)
+                    .map(|t| t.leaf_ids())
+                    .unwrap_or_default();
+                self.session_dialog = Some(match sessions.as_slice() {
+                    [one] => SessionDialog::Delete(one.clone()),
+                    _ => SessionDialog::DeleteMany(sessions),
+                });
+            }
+            _ => {}
+        }
+        cx.notify();
+    }
+
+    /// Keys while the tab menu holds focus (MonoCode `ExplorerMenu.onMenuKey`).
+    pub fn tab_menu_key(&mut self, key: &str, cx: &mut Context<Self>) -> bool {
+        let Some(menu) = self.title_strip.menu.as_ref() else {
+            return false;
+        };
+        let entries = self.tab_menu_entries(&menu.tab_id);
+        let active = menu.active;
+        match key {
+            "down" | "up" => {
+                let dir = if key == "down" { 1 } else { -1 };
+                if let Some(menu) = self.title_strip.menu.as_mut() {
+                    menu.active = explorer_menu::step(&entries, active, dir);
+                }
+            }
+            "enter" | "space" => self.pick_tab_menu(active, cx),
+            "escape" => {
+                self.close_tab_menu(cx);
+            }
+            _ => return false,
+        }
+        cx.notify();
+        true
+    }
+
+    fn render_tab_menu(&self, cx: &Context<Self>) -> Option<AnyElement> {
+        let menu = self.title_strip.menu.as_ref()?;
+        let entries = self.tab_menu_entries(&menu.tab_id);
+        let entity = cx.entity().downgrade();
+        let (hover_app, pick_app, close_app) = (entity.clone(), entity.clone(), entity);
+        Some(explorer_menu::render_menu(
+            explorer_menu::MenuView {
+                id: "title-tab-menu",
+                entries: &entries,
+                active: menu.active,
+                position: menu.position,
+                width: TAB_MENU_WIDTH,
+                focus: &self.composer_menus.focus,
+            },
+            move |ix, _, cx| {
+                let updated = hover_app.update(cx, |this, cx| {
+                    if let Some(menu) = this.title_strip.menu.as_mut()
+                        && menu.active != ix
+                    {
+                        menu.active = ix;
+                        cx.notify();
+                    }
+                });
+                if let Err(err) = updated {
+                    log::debug!("tab menu hover after app drop: {err:#}");
+                }
+            },
+            move |ix, _, cx| {
+                if let Err(err) = pick_app.update(cx, |this, cx| this.pick_tab_menu(ix, cx)) {
+                    log::debug!("tab menu pick after app drop: {err:#}");
+                }
+            },
+            move |_, cx| {
+                let closed = close_app.update(cx, |this, cx| {
+                    this.close_tab_menu(cx);
+                });
+                if let Err(err) = closed {
+                    log::debug!("tab menu dismiss after app drop: {err:#}");
+                }
+            },
+            cx,
+        ))
     }
 
     /// MonoCode `TabHarnesses`: up to three icons, overlapping; a spinner
@@ -549,6 +684,13 @@ impl BenCodeApp {
             .w_full()
             .min_w_0()
             .items_center()
+            .on_mouse_down(MouseButton::Right, {
+                let id = tab.id.clone();
+                cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
+                    cx.stop_propagation();
+                    this.open_tab_menu(&id, event.position, cx);
+                })
+            })
             .on_mouse_down(
                 MouseButton::Middle,
                 cx.listener(move |this, _, _, cx| {
@@ -564,12 +706,7 @@ impl BenCodeApp {
             }))
             .child(button)
             .children(close);
-        ContextMenu::new(
-            SharedString::from(format!("title-tab-menu-{}", tab.id)),
-            self.tab_context_menu(tab, tabs, cx),
-        )
-        .child(item)
-        .into_any_element()
+        item.into_any_element()
     }
 
     /// Drops tab `from` where tab `to` stands.
@@ -789,6 +926,7 @@ impl BenCodeApp {
             .bg(colors.bg)
             .child(self.render_titlebar_leading(cx))
             .child(self.render_tab_strip(&tabs, cx))
+            .children(self.render_tab_menu(cx))
             .children(self.render_titlebar_trailing(cx))
     }
 

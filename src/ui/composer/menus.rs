@@ -89,7 +89,7 @@ impl BenCodeApp {
         });
     }
 
-    pub(super) fn focus_composer_menu(&self, cx: &mut App) {
+    pub fn focus_composer_menu(&self, cx: &mut App) {
         focus_later(self.composer_menus.focus.clone(), cx);
     }
 
@@ -99,7 +99,9 @@ impl BenCodeApp {
 
     /// Keys while a composer menu holds focus (MonoCode `onMenuKey`).
     pub fn handle_menu_key(&mut self, key: &str, cx: &mut Context<Self>) -> bool {
-        if self.is_permission_picker_open {
+        if self.tab_menu_open() {
+            self.tab_menu_key(key, cx)
+        } else if self.is_permission_picker_open {
             self.access_menu_key(key, cx)
         } else if self.is_model_picker_open {
             self.model_menu_key(key, cx)
