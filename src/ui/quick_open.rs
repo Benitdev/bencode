@@ -229,7 +229,7 @@ impl BenCodeApp {
                     .enumerate()
                     .filter_map(|(ix, a)| Some((ix, fuzzy_match(command, a.label)?)))
                     .collect();
-                hits.sort_by(|a, b| b.1.score.cmp(&a.1.score));
+                hits.sort_by_key(|hit| std::cmp::Reverse(hit.1.score));
                 Results::Actions(hits)
             }
             None => Results::Files(rank_files(
