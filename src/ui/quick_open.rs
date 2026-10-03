@@ -180,6 +180,11 @@ fn match_text(text: &str, positions: &[usize], cx: &gpui::App) -> StyledText {
 #[derive(Default)]
 pub struct QuickOpen {
     pub open: bool,
+    /// The project's files (MonoCode `fileIndex` cache) and the folder they
+    /// were listed from; re-read each time the picker opens.
+    files: Vec<SharedString>,
+    files_root: String,
+    loading: bool,
     pub active: usize,
     /// Files picked here, newest first (MonoCode `rememberOpenedFile`).
     recents: Vec<String>,
@@ -233,7 +238,7 @@ impl BenCodeApp {
                 Results::Actions(hits)
             }
             None => Results::Files(rank_files(
-                &self.workspace.files,
+                &self.quick_open.files,
                 &query,
                 &self.quick_open_recents(),
             )),
@@ -247,8 +252,43 @@ impl BenCodeApp {
         self.quick_open_input
             .update(cx, |input, cx| input.set_text("", cx));
         focus_later(self.quick_open_input.read(cx).focus_handle(cx), cx);
-        self.refresh_workspace(cx);
+        self.index_project_files(cx);
         cx.notify();
+    }
+
+    /// MonoCode `loadProjectFiles(cwd, true)`: keeps the cached list of this
+    /// folder on screen while the whole project is listed again off the UI
+    /// thread.
+    fn index_project_files(&mut self, cx: &mut Context<Self>) {
+        let root = self.workspace.cwd.clone();
+        if root != self.quick_open.files_root {
+            self.quick_open.files.clear();
+            self.quick_open.files_root = root.clone();
+        }
+        if root.trim().is_empty() {
+            return;
+        }
+        self.quick_open.loading = true;
+        let path = std::path::PathBuf::from(&root);
+        let task = cx
+            .background_executor()
+            .spawn(async move { crate::workspace::list_project_files(&path) });
+        cx.spawn(async move |this, cx| {
+            let files = task.await;
+            let stored = this.update(cx, |app, cx| {
+                // A listing for a folder the picker has since left is stale.
+                if app.quick_open.files_root != root {
+                    return;
+                }
+                app.quick_open.files = files.into_iter().map(SharedString::from).collect();
+                app.quick_open.loading = false;
+                cx.notify();
+            });
+            if let Err(err) = stored {
+                log::debug!("project files listed after app drop: {err:#}");
+            }
+        })
+        .detach();
     }
 
     pub fn close_quick_open(&mut self, cx: &mut Context<Self>) -> bool {
@@ -320,8 +360,12 @@ impl BenCodeApp {
             Results::Files(files) => {
                 if self.workspace.cwd.trim().is_empty() {
                     Some("Open a project to search files")
-                } else if self.workspace.files.is_empty() {
-                    Some("No files found")
+                } else if self.quick_open.files.is_empty() {
+                    Some(if self.quick_open.loading {
+                        "Indexing files…"
+                    } else {
+                        "No files found"
+                    })
                 } else if files.is_empty() {
                     Some(if self.quick_open_query(cx).trim().is_empty() {
                         "Type a file name to search"
