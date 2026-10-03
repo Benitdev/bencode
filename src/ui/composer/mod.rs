@@ -4,6 +4,7 @@
 
 mod attachments;
 mod context_ring;
+mod menus;
 mod model_picker;
 mod suggestions;
 
@@ -23,6 +24,8 @@ use crate::db::SessionRow;
 use crate::harness::{HarnessKind, catalog};
 use crate::ui::HarnessIcon;
 use crate::ui::app_callback::app_callback;
+pub use menus::MenuState;
+use menus::{popover_anchor, popover_surface};
 
 const COMPOSER_MAX_WIDTH: gpui::Pixels = px(840.0);
 const HARNESS_ORDER: [HarnessKind; 4] = [
@@ -178,15 +181,18 @@ impl BenCodeApp {
                             .child(self.prompt_input.clone()),
                     )
                     .when(self.is_branch_picker_open, |el| {
-                        el.child(self.render_branch_picker(cx))
+                        el.child(popover_surface(self.render_branch_picker(cx), cx))
                     })
                     .when(self.is_plus_menu_open, |el| {
-                        el.child(self.render_plus_menu_popover(cx))
+                        el.child(popover_surface(self.render_plus_menu_popover(cx), cx))
                     })
                     .when(self.is_model_picker_open, |el| {
                         let key =
                             session.map_or(self.selected_model.as_str(), |s| s.model.as_str());
-                        el.child(self.render_model_picker_popover(key, cx))
+                        el.child(popover_surface(
+                            self.render_model_picker_popover(key, cx),
+                            cx,
+                        ))
                     })
                     .when(self.is_permission_picker_open, |el| {
                         el.child(self.render_permission_picker_popover(cx))
@@ -343,6 +349,7 @@ impl BenCodeApp {
             cx,
         )
         .on_click(cx.listener(|this, _, _, cx| this.toggle_composer_popover(Popover::Model, cx)));
+        let model = popover_anchor(model, cx);
         let access = composer_chip(
             "composer-permission-chip",
             Icon::new(perm_icon)
@@ -354,6 +361,7 @@ impl BenCodeApp {
             cx,
         )
         .on_click(cx.listener(|this, _, _, cx| this.toggle_composer_popover(Popover::Access, cx)));
+        let access = popover_anchor(access, cx);
         div()
             .flex()
             .items_center()
@@ -377,7 +385,7 @@ impl BenCodeApp {
     fn plus_button(&self, cx: &Context<Self>) -> impl IntoElement {
         let colors = &cx.theme().colors;
         let hover = colors.fg.opacity(0.15);
-        div()
+        let button = div()
             .id("composer-plus")
             .size(px(26.0))
             .rounded(px(6.0))
@@ -393,7 +401,8 @@ impl BenCodeApp {
                 Icon::new(IconName::Plus)
                     .size(IconSize::Xs)
                     .color(colors.fg.opacity(0.5)),
-            )
+            );
+        popover_anchor(button, cx)
     }
 
     /// Esc: closes whichever composer popover is open. True if one was.
@@ -427,6 +436,16 @@ impl BenCodeApp {
         self.is_model_picker_open = open && which == Popover::Model;
         self.is_permission_picker_open = open && which == Popover::Access;
         self.is_branch_picker_open = false;
+        if self.is_permission_picker_open {
+            let mode = self.session_permission_mode(self.selected_session());
+            self.composer_menus.access_index = PERMISSION_MODES
+                .iter()
+                .position(|(m, ..)| *m == mode)
+                .unwrap_or(0);
+            self.focus_composer_menu(cx);
+        } else if which == Popover::Access {
+            self.refocus_prompt(cx);
+        }
         cx.notify();
     }
 
@@ -537,7 +556,7 @@ impl BenCodeApp {
 
     /// MonoCode's "ADD TO MESSAGE" menu: Upload file, Plan mode, Draft;
     /// the active modes carry a check.
-    fn render_plus_menu_popover(&self, cx: &Context<Self>) -> impl IntoElement {
+    fn render_plus_menu_popover(&self, cx: &Context<Self>) -> gpui::Stateful<gpui::Div> {
         let colors = &cx.theme().colors;
         let sid = self.selected_session_id.clone().unwrap_or_default();
         let upload: PlusAction = |this, cx| this.open_attachment_dialog(cx);
@@ -649,8 +668,10 @@ impl BenCodeApp {
         let session = self.selected_session();
         let current_mode = self.session_permission_mode(session);
         let busy = session.is_some_and(|s| self.is_agent_running_in(&s.id));
-        div()
+        let active = self.composer_menus.access_index;
+        let menu = div()
             .id("composer-permission-popover")
+            .track_focus(&self.composer_menus.focus)
             .absolute()
             .bottom(px(36.0))
             .left(px(140.0))
@@ -663,7 +684,7 @@ impl BenCodeApp {
             .shadow_lg()
             .flex()
             .flex_col()
-            .children(PERMISSION_MODES.iter().map(|&(mode, label, hint, icon)| {
+            .children(PERMISSION_MODES.iter().enumerate().map(|(ix, &(mode, label, hint, icon))| {
                 let icon_color = if mode == PermissionMode::FullAccess {
                     colors.warning
                 } else {
@@ -678,11 +699,18 @@ impl BenCodeApp {
                     .py_2()
                     .rounded(px(8.0))
                     .cursor_pointer()
-                    .when(mode == current_mode, |el| el.bg(colors.active))
+                    .when(mode == current_mode || ix == active, |el| el.bg(colors.active))
                     .hover(|s| s.bg(colors.hover))
+                    .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
+                        if *hovered && this.composer_menus.access_index != ix {
+                            this.composer_menus.access_index = ix;
+                            cx.notify();
+                        }
+                    }))
                     .on_click(cx.listener(move |this, _, _, cx| {
                         this.is_permission_picker_open = false;
                         this.set_permission_mode(mode, cx);
+                        this.refocus_prompt(cx);
                     }))
                     .child(Icon::new(icon).size(IconSize::Sm).color(icon_color))
                     .child(
@@ -708,7 +736,8 @@ impl BenCodeApp {
                         .text_color(colors.fg_muted)
                         .child("Access changes apply to the next turn. Stop and resend to apply them now."),
                 )
-            })
+            });
+        popover_surface(menu, cx)
     }
 
     /// The branch chip; opens Ely's `BranchSelector` (MonoCode `BranchPicker`).
@@ -718,7 +747,7 @@ impl BenCodeApp {
             .and_then(|s| s.branch.clone())
             .or_else(|| Some(self.git_status.branch.clone()).filter(|b| !b.is_empty()))
             .unwrap_or_else(|| "main".to_string());
-        div()
+        let chip = div()
             .id("composer-branch")
             .flex()
             .items_center()
@@ -731,7 +760,9 @@ impl BenCodeApp {
             .text_color(colors.fg_muted)
             .hover(|s| s.bg(colors.hover))
             .on_click(cx.listener(|this, _, _, cx| {
-                this.is_branch_picker_open = !this.is_branch_picker_open;
+                let open = !this.is_branch_picker_open;
+                this.close_composer_popovers(cx);
+                this.is_branch_picker_open = open;
                 cx.notify();
             }))
             .child(
@@ -739,10 +770,11 @@ impl BenCodeApp {
                     .size(IconSize::Xs)
                     .color(colors.fg_muted),
             )
-            .child(div().max_w(px(160.0)).truncate().child(current))
+            .child(div().max_w(px(160.0)).truncate().child(current));
+        popover_anchor(chip, cx)
     }
 
-    fn render_branch_picker(&self, cx: &Context<Self>) -> impl IntoElement {
+    fn render_branch_picker(&self, cx: &Context<Self>) -> gpui::Div {
         let branches: Vec<ElyBranch> = self
             .workspace
             .branches

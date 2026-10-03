@@ -6,8 +6,8 @@ use ely_gpui_component::forms::Input;
 use ely_gpui_component::primitives::{Icon, IconName};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
-    Context, Focusable, InteractiveElement, IntoElement, ParentElement, SharedString, Styled, div,
-    prelude::*, px,
+    Context, Focusable, InteractiveElement, ParentElement, SharedString, Styled, div, prelude::*,
+    px,
 };
 
 use super::HARNESS_ORDER;
@@ -68,14 +68,7 @@ impl BenCodeApp {
 
     pub fn close_model_picker(&mut self, cx: &mut Context<Self>) {
         self.is_model_picker_open = false;
-        let focus = self.prompt_input.read(cx).focus_handle(cx);
-        cx.defer(move |cx| {
-            if let Some(window) = cx.active_window()
-                && let Err(err) = window.update(cx, |_, window, cx| window.focus(&focus, cx))
-            {
-                log::debug!("model picker: could not refocus composer: {err:#}");
-            }
-        });
+        self.refocus_prompt(cx);
         cx.notify();
     }
 
@@ -102,7 +95,7 @@ impl BenCodeApp {
         &self,
         current_key: &str,
         cx: &Context<Self>,
-    ) -> impl IntoElement {
+    ) -> gpui::Stateful<gpui::Div> {
         let colors = &cx.theme().colors;
         let models = filtered_models(&self.model_query(cx));
         let rows = models.iter().enumerate().map(|(ix, model)| {

@@ -132,6 +132,8 @@ pub struct BenCodeApp {
     /// The model picker's search field and highlighted row.
     pub model_search_input: Entity<TextInput>,
     pub model_picker_index: usize,
+    /// Keyboard focus and highlight of the composer's menus.
+    pub composer_menus: crate::ui::composer::MenuState,
     pub drafts: HashMap<String, String>,
     pub expanded_reasoning: std::collections::HashSet<String>,
     pub transcript_ui: crate::ui::transcript::TranscriptUiState,
@@ -315,6 +317,8 @@ impl BenCodeApp {
 
         let composer_input = prompt_input.clone();
         let model_input = model_search_input.clone();
+        let menu_focus = cx.focus_handle();
+        let menu_keys_focus = menu_focus.clone();
         let weak_app = cx.weak_entity();
         let mut subscriptions = vec![
             cx.subscribe(
@@ -404,7 +408,17 @@ impl BenCodeApp {
                 return;
             }
             let key = event.keystroke.key.as_str();
-            if !matches!(key, "enter" | "escape" | "up" | "down" | "tab") {
+            if !matches!(
+                key,
+                "enter" | "escape" | "up" | "down" | "left" | "right" | "tab" | "space"
+            ) {
+                return;
+            }
+            if menu_keys_focus.is_focused(window) {
+                let handled = weak_app.update(cx, |this, cx| this.handle_menu_key(key, cx));
+                if matches!(handled, Ok(true)) {
+                    cx.stop_propagation();
+                }
                 return;
             }
             if model_input.read(cx).focus_handle(cx).is_focused(window) {
@@ -505,6 +519,7 @@ impl BenCodeApp {
             prompt_focused: false,
             model_search_input,
             model_picker_index: 0,
+            composer_menus: crate::ui::composer::MenuState::new(menu_focus),
             drafts: HashMap::new(),
             expanded_reasoning: std::collections::HashSet::new(),
             transcript_ui: Default::default(),
