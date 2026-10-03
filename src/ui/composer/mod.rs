@@ -396,6 +396,22 @@ impl BenCodeApp {
             )
     }
 
+    /// Esc: closes whichever composer popover is open. True if one was.
+    pub fn close_composer_popovers(&mut self, cx: &mut Context<Self>) -> bool {
+        let open = self.is_plus_menu_open
+            || self.is_permission_picker_open
+            || self.is_branch_picker_open
+            || self.is_model_picker_open;
+        if open {
+            self.is_plus_menu_open = false;
+            self.is_permission_picker_open = false;
+            self.is_branch_picker_open = false;
+            self.is_model_picker_open = false;
+            cx.notify();
+        }
+        open
+    }
+
     /// Opens one composer popover and closes the others.
     fn toggle_composer_popover(&mut self, which: Popover, cx: &mut Context<Self>) {
         if which == Popover::Model {

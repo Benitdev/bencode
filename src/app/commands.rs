@@ -177,7 +177,7 @@ impl BenCodeApp {
         .on_action(cx.listener(|this, _: &CloseView, _, cx| {
             if this.surface.is_some() {
                 this.close_surface(cx);
-            } else {
+            } else if !this.close_composer_popovers(cx) {
                 cx.propagate();
             }
         }))
