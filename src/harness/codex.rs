@@ -30,6 +30,8 @@ fn build_args(req: &SpawnRequest) -> Vec<String> {
         "--skip-git-repo-check".into(),
     ];
     match req.permission {
+        // Plan mode only reads, whatever the access mode.
+        _ if req.plan => args.extend(["--sandbox".into(), "read-only".into()]),
         PermissionPolicy::AutoApprove => {
             args.push("--dangerously-bypass-approvals-and-sandbox".into())
         }
@@ -45,7 +47,8 @@ fn build_args(req: &SpawnRequest) -> Vec<String> {
         args.extend(["resume".into(), thread.clone()]);
     }
     // `--` keeps a prompt that starts with '-' from being parsed as a flag.
-    args.extend(["--".into(), req.prompt.clone()]);
+    let prompt = crate::harness::attachments::plain_prompt(&req.prompt, &req.attachments);
+    args.extend(["--".into(), prompt]);
     args
 }
 
@@ -292,6 +295,8 @@ mod tests {
             permission: PermissionPolicy::Ask,
             resume_id: Some("th_1".into()),
             disable_hooks: false,
+            attachments: Vec::new(),
+            plan: false,
         };
         let args = build_args(&req);
         assert_eq!(&args[..3], ["exec", "--json", "--skip-git-repo-check"]);

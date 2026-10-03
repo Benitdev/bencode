@@ -9,6 +9,7 @@ use serde_json::{Value, json};
 
 use crate::app::{BenCodeApp, PermissionMode};
 use crate::db::{Block, SessionRow, TurnModel};
+use crate::harness::Attachment;
 use crate::harness::{
     self, AgentEvent, DoneStatus, HarnessKind, HarnessProcessHandle, PermissionPolicy,
     PermissionRequest, SpawnRequest, catalog, summarize_tool_input,
@@ -21,6 +22,14 @@ pub const NEW_SESSION_TITLE: &str = "New AI Thread";
 
 /// One in-flight agent turn; each thread runs its own. `id` guards against
 /// late events from a run that was already stopped or superseded.
+/// What one turn sends: the text, attached files, and MonoCode Plan mode.
+#[derive(Clone, Debug, Default)]
+pub struct TurnInput {
+    pub text: String,
+    pub attachments: Vec<Attachment>,
+    pub plan: bool,
+}
+
 pub struct AgentRun {
     pub id: u64,
     pub handle: HarnessProcessHandle,
@@ -69,7 +78,7 @@ impl BenCodeApp {
     }
 
     /// Prompts waiting for this thread's current turn to end.
-    pub fn queued_prompts(&self, session_id: &str) -> &[String] {
+    pub fn queued_prompts(&self, session_id: &str) -> &[TurnInput] {
         self.prompt_queues
             .get(session_id)
             .map_or(&[], |queue| queue.as_slice())
@@ -101,45 +110,129 @@ impl BenCodeApp {
     /// agent is busy the message is queued, as MonoCode's Queue follow-up
     /// behaviour does.
     pub fn submit_prompt(&mut self, cx: &mut Context<Self>) {
-        let prompt = self.prompt_input.read(cx).text().trim().to_string();
-        if prompt.is_empty() {
-            return;
-        }
+        let text = self.prompt_input.read(cx).text().trim().to_string();
         if self.selected_session_id.is_none() {
+            if text.is_empty() {
+                return;
+            }
             self.create_new_session(cx);
         }
         let Some(session_id) = self.selected_session_id.clone() else {
             return;
         };
+        let has_files = self
+            .composer_attachments
+            .get(&session_id)
+            .is_some_and(|files| !files.is_empty());
+        if text.is_empty() && !has_files {
+            return;
+        }
+        let input = TurnInput {
+            text,
+            attachments: self
+                .composer_attachments
+                .remove(&session_id)
+                .unwrap_or_default(),
+            plan: self.plan_mode.contains(&session_id),
+        };
         self.prompt_input
             .update(cx, |input, cx| input.set_text("", cx));
         self.drafts.remove(&session_id);
+        if self.draft_mode.remove(&session_id) {
+            self.save_draft(&session_id, input, cx);
+            return;
+        }
         if self.is_agent_running_in(&session_id) {
             self.prompt_queues
                 .entry(session_id)
                 .or_default()
-                .push(prompt);
+                .push(input);
             cx.notify();
             return;
         }
-        self.send_prompt(&session_id, &prompt, cx);
+        self.send_turn(&session_id, input, cx);
     }
 
-    /// Starts a turn of `prompt` in `session_id`.
+    /// MonoCode Draft: keeps the message in the thread without starting the
+    /// agent; it can be sent or removed from the transcript later.
+    fn save_draft(&mut self, session_id: &str, input: TurnInput, cx: &mut Context<Self>) {
+        let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id) else {
+            return;
+        };
+        let now = now_ms();
+        start_turn(session, &input.text, now, &input.attachments);
+        if let Some(block) = session.blocks.last_mut() {
+            block.extra.insert("draft".into(), json!(true));
+        }
+        self.persist_session(session_id);
+        cx.notify();
+    }
+
+    /// Sends a saved draft: it leaves the transcript and runs as a turn.
+    pub fn send_draft(&mut self, session_id: &str, block_id: &str, cx: &mut Context<Self>) {
+        let Some(input) = self.take_draft(session_id, block_id) else {
+            return;
+        };
+        if self.is_agent_running_in(session_id) {
+            self.prompt_queues
+                .entry(session_id.to_string())
+                .or_default()
+                .push(input);
+            cx.notify();
+        } else {
+            self.send_turn(session_id, input, cx);
+        }
+    }
+
+    pub fn remove_draft(&mut self, session_id: &str, block_id: &str, cx: &mut Context<Self>) {
+        if self.take_draft(session_id, block_id).is_some() {
+            self.persist_session(session_id);
+            cx.notify();
+        }
+    }
+
+    fn take_draft(&mut self, session_id: &str, block_id: &str) -> Option<TurnInput> {
+        let session = self.sessions.iter_mut().find(|s| s.id == session_id)?;
+        let ix = session.blocks.iter().position(|b| b.id == block_id)?;
+        let block = session.blocks.remove(ix);
+        Some(TurnInput {
+            text: block.text.unwrap_or_default(),
+            attachments: Vec::new(),
+            plan: false,
+        })
+    }
+
+    /// Starts a turn of plain `prompt` in `session_id` (automations, retries).
     pub fn send_prompt(&mut self, session_id: &str, prompt: &str, cx: &mut Context<Self>) {
+        let input = TurnInput {
+            text: prompt.to_string(),
+            ..Default::default()
+        };
+        self.send_turn(session_id, input, cx);
+    }
+
+    /// Starts a turn of `input` in `session_id`.
+    pub fn send_turn(&mut self, session_id: &str, input: TurnInput, cx: &mut Context<Self>) {
+        let prompt = input.text.as_str();
         let mode = self.session_permission_mode(self.sessions.iter().find(|s| s.id == session_id));
         let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id) else {
             return;
         };
         let now = now_ms();
-        start_turn(session, prompt, now);
+        start_turn(session, prompt, now, &input.attachments);
         // Skill bodies are small SKILL.md files; read them as MonoCode does
         // right before the turn starts.
         let agent_prompt = self.apply_skills(prompt);
         let Some(session) = self.sessions.iter().find(|s| s.id == session_id) else {
             return;
         };
-        let request = spawn_request(session, &agent_prompt, mode, self.claude_hooks_disabled);
+        let request = spawn_request(session, &agent_prompt, mode, self.claude_hooks_disabled).map(
+            |request| SpawnRequest {
+                attachments: input.attachments.clone(),
+                plan: input.plan,
+                ..request
+            },
+        );
         self.persist_session(session_id);
         let started = request
             .map_err(|message| (message, now))
@@ -256,7 +349,7 @@ impl BenCodeApp {
         if queue.is_empty() {
             self.prompt_queues.remove(session_id);
         }
-        self.send_prompt(session_id, &next, cx);
+        self.send_turn(session_id, next, cx);
     }
 
     /// Stops a thread's agent. Its queue is kept, but nothing is sent until
@@ -345,6 +438,8 @@ fn spawn_request(
             .clone()
             .filter(|id| !id.is_empty()),
         disable_hooks,
+        attachments: Vec::new(),
+        plan: false,
     })
 }
 
@@ -361,10 +456,14 @@ fn turn_model(session: &SessionRow) -> TurnModel {
 }
 
 /// Appends the user's prompt and names the thread after it if still untitled.
-pub fn start_turn(session: &mut SessionRow, prompt: &str, now: i64) {
+pub fn start_turn(session: &mut SessionRow, prompt: &str, now: i64, files: &[Attachment]) {
     let mut block = Block::new(format!("usr-{now}"), "user", prompt);
     block.started_at = Some(now);
     block.turn_model = Some(turn_model(session));
+    if !files.is_empty() {
+        let kept: Vec<Value> = files.iter().map(Attachment::to_block_json).collect();
+        block.extra.insert("attachments".into(), Value::Array(kept));
+    }
     session.blocks.push(block);
     session.updated_at = now;
 
@@ -553,7 +652,7 @@ mod tests {
     #[test]
     fn start_turn_adds_user_block_and_titles_thread() {
         let mut s = session();
-        start_turn(&mut s, "Fix the login bug\nwith details", 10);
+        start_turn(&mut s, "Fix the login bug\nwith details", 10, &[]);
         assert_eq!(roles(&s), ["user"]);
         assert_eq!(s.title, "Fix the login bug");
         assert_eq!(
@@ -565,7 +664,7 @@ mod tests {
     #[test]
     fn deltas_stream_into_separate_reasoning_and_assistant_blocks() {
         let mut s = session();
-        start_turn(&mut s, "hi", 1);
+        start_turn(&mut s, "hi", 1, &[]);
         for event in [
             AgentEvent::ThinkingDelta("think ".into()),
             AgentEvent::ThinkingDelta("more".into()),
@@ -635,7 +734,7 @@ mod tests {
     #[test]
     fn errors_become_system_notices_and_done_records_duration() {
         let mut s = session();
-        start_turn(&mut s, "hi", 100);
+        start_turn(&mut s, "hi", 100, &[]);
         apply_event(&mut s, AgentEvent::Error("boom".into()), 150);
         apply_event(&mut s, AgentEvent::Done(DoneStatus::Failed), 400);
         assert_eq!(roles(&s), ["user", "system"]);

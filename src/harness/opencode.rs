@@ -32,7 +32,8 @@ fn build_args(req: &SpawnRequest) -> Vec<String> {
     if let Some(session) = &req.resume_id {
         args.extend(["--session".into(), session.clone()]);
     }
-    args.extend(["--".into(), req.prompt.clone()]);
+    let prompt = crate::harness::attachments::plain_prompt(&req.prompt, &req.attachments);
+    args.extend(["--".into(), prompt]);
     args
 }
 

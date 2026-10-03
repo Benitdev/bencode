@@ -1,6 +1,8 @@
 //! Coding-agent CLIs driven over stdio. `spawn` is the single entry point;
 //! each provider module owns only its argv and its stdout parser.
 
+pub mod attachments;
+pub use attachments::Attachment;
 pub mod antigravity;
 pub mod catalog;
 pub mod claude;
@@ -89,6 +91,10 @@ pub struct SpawnRequest {
     pub resume_id: Option<String>,
     /// Claude only: run with `disableAllHooks` (MonoCode "Claude Code hooks" off).
     pub disable_hooks: bool,
+    /// Files the user attached to this prompt.
+    pub attachments: Vec<Attachment>,
+    /// MonoCode Plan mode: review a plan before building.
+    pub plan: bool,
 }
 
 /// Starts one agent turn. Non-blocking apart from a fork/exec; safe to call
@@ -185,6 +191,8 @@ mod tests {
             permission: PermissionPolicy::Ask,
             resume_id: None,
             disable_hooks: false,
+            attachments: Vec::new(),
+            plan: false,
         };
         assert!(spawn(&req).is_err());
     }

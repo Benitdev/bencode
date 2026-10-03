@@ -188,7 +188,12 @@ pub struct BenCodeApp {
     /// The running turn of each thread that has one, keyed by session id.
     pub runs: HashMap<String, AgentRun>,
     /// Prompts sent while a thread was busy, oldest first.
-    pub prompt_queues: HashMap<String, Vec<String>>,
+    pub prompt_queues: HashMap<String, Vec<agent::TurnInput>>,
+    /// Files attached in each thread's composer, not sent yet.
+    pub composer_attachments: HashMap<String, Vec<crate::harness::Attachment>>,
+    /// Threads whose composer has Plan mode / Draft on.
+    pub plan_mode: std::collections::HashSet<String>,
+    pub draft_mode: std::collections::HashSet<String>,
     next_run_id: u64,
     pub prompt_input: Entity<TextInput>,
     pub search_input: Entity<TextInput>,
@@ -530,6 +535,9 @@ impl BenCodeApp {
             focus_handle: cx.focus_handle(),
             runs: HashMap::new(),
             prompt_queues: HashMap::new(),
+            composer_attachments: HashMap::new(),
+            plan_mode: Default::default(),
+            draft_mode: Default::default(),
             next_run_id: 0,
             prompt_input,
             search_input,
@@ -776,6 +784,7 @@ impl BenCodeApp {
     }
 
     /// Attaches external files dropped from the OS (Finder) to the composer.
+    /// Files dropped from the Finder attach to the composer (MonoCode).
     pub fn attach_external_paths_to_composer(
         &mut self,
         session_id: &str,
@@ -784,27 +793,7 @@ impl BenCodeApp {
     ) {
         self.active_file_drop_target = None;
         self.focus_pane(session_id.to_string(), cx);
-
-        let cwd_path = std::path::Path::new(&self.workspace.cwd);
-        let mut additions = Vec::new();
-        for path in paths {
-            let rel = path.strip_prefix(cwd_path).unwrap_or(path);
-            additions.push(format!("@{} ", rel.to_string_lossy()));
-        }
-
-        if !additions.is_empty() {
-            let added_text = additions.join("");
-            self.prompt_input.update(cx, |input, cx| {
-                let current = input.text();
-                let spacer = if current.is_empty() || current.ends_with(' ') {
-                    ""
-                } else {
-                    " "
-                };
-                input.set_text(format!("{current}{spacer}{added_text}"), cx);
-            });
-        }
-        cx.notify();
+        self.attach_paths(paths.to_vec(), cx);
     }
 
     pub fn toggle_pin_session(&mut self, id: &str, cx: &mut Context<Self>) {

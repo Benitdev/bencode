@@ -2,6 +2,7 @@
 //! prompt field with `/` and `@` suggestions, and send / stop.
 //! 100% faithful to MonoCode Composer layout.
 
+mod attachments;
 mod context_ring;
 mod model_picker;
 mod suggestions;
@@ -166,6 +167,7 @@ impl BenCodeApp {
                     .bg(colors.fg.opacity(0.03))
                     .children(self.render_suggestions(cx))
                     .child(self.composer_top_bar(session, cx))
+                    .children(self.render_attachment_chips(cx))
                     .child(
                         div()
                             .px_2()
@@ -304,6 +306,7 @@ impl BenCodeApp {
                     .items_center()
                     .gap_1()
                     .child(self.plus_button(cx))
+                    .children(self.render_mode_pills(cx))
                     .child(model)
                     .child(access),
             )
@@ -426,7 +429,7 @@ impl BenCodeApp {
                         .truncate()
                         .text_size(px(12.0))
                         .text_color(colors.fg_muted)
-                        .child(text.clone()),
+                        .child(text.text.clone()),
                 )
                 .child(
                     IconButton::new(
@@ -456,36 +459,47 @@ impl BenCodeApp {
         )
     }
 
-    /// MonoCode's "ADD TO MESSAGE" menu. Only actions BenCode can honour are
-    /// listed; Plan mode and Draft need harness/DB support first.
+    /// MonoCode's "ADD TO MESSAGE" menu: Upload file, Plan mode, Draft;
+    /// the active modes carry a check.
     fn render_plus_menu_popover(&self, cx: &Context<Self>) -> impl IntoElement {
         let colors = &cx.theme().colors;
-        let reference: PlusAction = |this, cx| {
-            this.append_to_prompt("@", cx);
-            this.is_mention_picker_open = true;
-            this.mention_query = String::new();
-        };
-        let recall: PlusAction = |this, cx| this.recall_last_turn(cx);
+        let sid = self.selected_session_id.clone().unwrap_or_default();
+        let upload: PlusAction = |this, cx| this.open_attachment_dialog(cx);
+        let plan: PlusAction = |this, cx| this.toggle_mode(false, cx);
+        let draft: PlusAction = |this, cx| this.toggle_mode(true, cx);
         let items = [
             (
-                "plus-reference",
+                "plus-upload",
                 IconName::FilePlus,
-                "Reference a file",
-                "Add an @file to the message",
-                reference,
+                colors.fg_muted,
+                "Upload file",
+                "Attach files or images",
+                false,
+                upload,
             ),
             (
-                "plus-recall",
-                IconName::RotateCcw,
-                "Recall last prompt",
-                "Put your previous message back",
-                recall,
+                "plus-plan",
+                IconName::Map,
+                colors.warning,
+                "Plan mode",
+                "Review a plan before building",
+                self.plan_mode.contains(&sid),
+                plan,
+            ),
+            (
+                "plus-draft",
+                IconName::CircleDashed,
+                colors.fg_muted,
+                "Draft",
+                "Save this message without starting the agent",
+                self.draft_mode.contains(&sid),
+                draft,
             ),
         ];
         div()
             .id("composer-plus-popover")
             .absolute()
-            .bottom(px(36.0))
+            .bottom(px(40.0))
             .left(px(8.0))
             .w(px(250.0))
             .p_1p5()
@@ -496,47 +510,62 @@ impl BenCodeApp {
             .shadow_lg()
             .flex()
             .flex_col()
-            .gap_0p5()
             .child(
                 div()
                     .px_2()
                     .pt_1()
-                    .pb_0p5()
+                    .pb_1()
                     .text_size(px(10.0))
-                    .text_color(colors.fg_subtle)
+                    .text_color(colors.fg.opacity(0.4))
                     .child("ADD TO MESSAGE"),
             )
-            .children(items.into_iter().map(|(id, icon, title, hint, action)| {
-                div()
-                    .id(id)
-                    .flex()
-                    .items_center()
-                    .gap_2p5()
-                    .px_2()
-                    .py_2()
-                    .rounded(px(6.0))
-                    .cursor_pointer()
-                    .hover(|s| s.bg(colors.hover))
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.is_plus_menu_open = false;
-                        action(this, cx);
-                        cx.notify();
-                    }))
-                    .child(Icon::new(icon).size(IconSize::Sm).color(colors.fg_muted))
-                    .child(
+            .children(
+                items
+                    .into_iter()
+                    .map(|(id, icon, tint, title, hint, active, action)| {
+                        let hover = colors.hover;
                         div()
-                            .flex_1()
-                            .min_w_0()
-                            .child(div().text_size(px(13.0)).text_color(colors.fg).child(title))
+                            .id(id)
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .px_2()
+                            .py_2()
+                            .rounded(px(8.0))
+                            .cursor_pointer()
+                            .hover(move |s| s.bg(hover))
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.is_plus_menu_open = false;
+                                action(this, cx);
+                                cx.notify();
+                            }))
+                            .child(Icon::new(icon).size(IconSize::Sm).color(tint))
                             .child(
                                 div()
-                                    .text_size(px(11.0))
-                                    .text_color(colors.fg_muted)
-                                    .truncate()
-                                    .child(hint),
-                            ),
-                    )
-            }))
+                                    .flex_1()
+                                    .min_w_0()
+                                    .child(
+                                        div()
+                                            .text_size(px(13.0))
+                                            .text_color(colors.fg)
+                                            .child(title),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_size(px(11.0))
+                                            .text_color(colors.fg.opacity(0.45))
+                                            .child(hint),
+                                    ),
+                            )
+                            .when(active, |el| {
+                                el.child(
+                                    Icon::new(IconName::Check)
+                                        .size(IconSize::Xs)
+                                        .color(colors.fg),
+                                )
+                            })
+                    }),
+            )
     }
 
     fn render_permission_picker_popover(&self, cx: &Context<Self>) -> impl IntoElement {

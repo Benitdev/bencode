@@ -29,7 +29,7 @@ fn build_args(req: &SpawnRequest) -> Vec<String> {
         "--output-format".into(),
         "stream-json".into(),
         "--print".into(),
-        req.prompt.clone(),
+        crate::harness::attachments::plain_prompt(&req.prompt, &req.attachments),
     ];
     match req.permission {
         PermissionPolicy::AutoApprove => args.push("--dangerously-skip-permissions".into()),

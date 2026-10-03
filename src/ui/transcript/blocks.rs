@@ -199,6 +199,15 @@ impl BenCodeApp {
             .when(clamps, |el| {
                 el.child(self.show_more_toggle(&key, expanded, cx))
             });
+        let draft = block.extra.get("draft").and_then(|d| d.as_bool()) == Some(true);
+        let bubble = if draft {
+            bubble
+                .border_1()
+                .border_dashed()
+                .border_color(colors.fg.opacity(0.3))
+        } else {
+            bubble
+        };
         div()
             .id(SharedString::from(format!("user-row-{key}")))
             .group(group.clone())
@@ -206,13 +215,80 @@ impl BenCodeApp {
             .flex()
             .flex_col()
             .items_end()
+            .gap_1()
             .pt_1p5()
             .pr_4()
             .pb_1()
             .pl(px(56.0))
+            .children(attachment_chips(block, cx))
             .child(bubble)
-            .child(self.user_actions(session, ix, text, &group, cx))
+            .child(if draft {
+                self.draft_actions(session, ix, cx).into_any_element()
+            } else {
+                self.user_actions(session, ix, text, &group, cx)
+                    .into_any_element()
+            })
             .into_any_element()
+    }
+
+    /// A saved draft: "Draft", then Send or Remove (MonoCode drafts).
+    fn draft_actions(
+        &self,
+        session: &SessionRow,
+        ix: usize,
+        cx: &Context<Self>,
+    ) -> impl IntoElement {
+        let colors = &cx.theme().colors;
+        let block_id = session.blocks[ix].id.clone();
+        let (send_sid, send_bid) = (session.id.clone(), block_id.clone());
+        let (drop_sid, drop_bid) = (session.id.clone(), block_id.clone());
+        let button = |id: String, label: &'static str, primary: bool| {
+            let (bg, fg) = if primary {
+                (colors.fg, colors.bg)
+            } else {
+                (colors.fg.opacity(0.1), colors.fg.opacity(0.7))
+            };
+            div()
+                .id(SharedString::from(id))
+                .px_2()
+                .h(px(22.0))
+                .flex()
+                .items_center()
+                .rounded(px(6.0))
+                .bg(bg)
+                .text_color(fg)
+                .text_size(px(11.0))
+                .cursor_pointer()
+                .child(label)
+        };
+        div()
+            .flex()
+            .items_center()
+            .gap_1p5()
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_1()
+                    .text_size(px(11.0))
+                    .text_color(colors.fg.opacity(0.55))
+                    .child(
+                        Icon::new(IconName::CircleDashed)
+                            .size(IconSize::Xs)
+                            .color(colors.fg.opacity(0.55)),
+                    )
+                    .child("Draft"),
+            )
+            .child(
+                button(format!("draft-send-{block_id}"), "Send", true).on_click(
+                    cx.listener(move |this, _, _, cx| this.send_draft(&send_sid, &send_bid, cx)),
+                ),
+            )
+            .child(
+                button(format!("draft-remove-{block_id}"), "Remove", false).on_click(
+                    cx.listener(move |this, _, _, cx| this.remove_draft(&drop_sid, &drop_bid, cx)),
+                ),
+            )
     }
 
     fn show_more_toggle(&self, key: &str, expanded: bool, cx: &Context<Self>) -> impl IntoElement {
@@ -351,6 +427,51 @@ impl BenCodeApp {
             })
             .into_any_element()
     }
+}
+
+/// The files a message was sent with, as small chips above the bubble.
+fn attachment_chips(block: &crate::db::Block, cx: &Context<BenCodeApp>) -> Option<AnyElement> {
+    let files = block.extra.get("attachments")?.as_array()?;
+    if files.is_empty() {
+        return None;
+    }
+    let colors = &cx.theme().colors;
+    let chips = files.iter().filter_map(|file| {
+        let name = file.get("name")?.as_str()?.to_string();
+        let image = file.get("kind").and_then(|k| k.as_str()) == Some("image");
+        Some(
+            div()
+                .flex()
+                .items_center()
+                .gap_1()
+                .h(px(22.0))
+                .px_1p5()
+                .max_w(px(220.0))
+                .rounded(px(6.0))
+                .bg(colors.fg.opacity(0.08))
+                .text_size(px(12.0))
+                .text_color(colors.fg.opacity(0.75))
+                .child(
+                    Icon::new(if image {
+                        IconName::Image
+                    } else {
+                        IconName::FileText
+                    })
+                    .size(IconSize::Xs)
+                    .color(colors.fg_muted),
+                )
+                .child(div().min_w_0().truncate().child(name)),
+        )
+    });
+    Some(
+        div()
+            .flex()
+            .flex_wrap()
+            .justify_end()
+            .gap_1p5()
+            .children(chips)
+            .into_any_element(),
+    )
 }
 
 /// The agent's answer at full strength: 14px on 24px lines.

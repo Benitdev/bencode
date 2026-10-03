@@ -9,6 +9,7 @@ use std::collections::HashSet;
 use anyhow::Result;
 use serde_json::{Value, json};
 
+use crate::harness::attachments::{self, Attachment};
 use crate::harness::events::{AgentEvent, DoneStatus, PermissionRequest};
 use crate::harness::handle::HarnessProcessHandle;
 use crate::harness::process::{self, LineParser, ProcessSpec, StdinMode};
@@ -24,7 +25,7 @@ pub fn spawn(req: &SpawnRequest) -> Result<(HarnessProcessHandle, EventRx)> {
         args: build_args(req),
         cwd: req.cwd.clone(),
         stdin: StdinMode::Protocol {
-            initial: format!("{}\n", user_message(&req.prompt)),
+            initial: format!("{}\n", user_message(&req.prompt, &req.attachments)),
         },
         permission_responder: Some(permission_response),
     };
@@ -46,11 +47,15 @@ fn build_args(req: &SpawnRequest) -> Vec<String> {
 
     // MonoCode `runtimeModeToPermission`: always pass a mode, so the user's
     // `permissions.defaultMode` cannot silently change what the picker says.
-    let asked_mode = match req.permission {
-        PermissionPolicy::AutoApprove => None,
-        PermissionPolicy::Ask => Some("default"),
-        PermissionPolicy::AcceptEdits => Some("acceptEdits"),
-        PermissionPolicy::Auto => Some("auto"),
+    let asked_mode = if req.plan {
+        Some("plan")
+    } else {
+        match req.permission {
+            PermissionPolicy::AutoApprove => None,
+            PermissionPolicy::Ask => Some("default"),
+            PermissionPolicy::AcceptEdits => Some("acceptEdits"),
+            PermissionPolicy::Auto => Some("auto"),
+        }
     };
     match asked_mode {
         None => args.push("--dangerously-skip-permissions".into()),
@@ -73,12 +78,12 @@ fn build_args(req: &SpawnRequest) -> Vec<String> {
     args
 }
 
-fn user_message(prompt: &str) -> String {
+fn user_message(prompt: &str, files: &[Attachment]) -> String {
     json!({
         "type": "user",
         "session_id": "",
         "parent_tool_use_id": null,
-        "message": { "role": "user", "content": [{ "type": "text", "text": prompt }] },
+        "message": { "role": "user", "content": attachments::claude_content(prompt, files) },
     })
     .to_string()
 }
@@ -325,6 +330,8 @@ mod tests {
             permission: policy,
             resume_id: Some("sess-1".into()),
             disable_hooks: false,
+            attachments: Vec::new(),
+            plan: false,
         }
     }
 
@@ -493,6 +500,8 @@ mod tests {
             permission: PermissionPolicy::Ask,
             resume_id: None,
             disable_hooks: false,
+            attachments: Vec::new(),
+            plan: false,
         };
         let (handle, mut rx) = crate::harness::spawn(&req).unwrap();
         let events = crate::harness::runtime::runtime().block_on(async move {
