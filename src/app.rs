@@ -625,6 +625,11 @@ impl BenCodeApp {
                 self.submit_prompt(cx);
                 true
             }
+            // MonoCode: ↑ in an empty composer brings the last prompt back.
+            ("up", false) if self.prompt_input.read(cx).text().is_empty() => {
+                self.recall_last_turn(cx);
+                true
+            }
             ("up", true) => self.move_picker(-1, cx),
             ("down", true) => self.move_picker(1, cx),
             ("tab", true) => self.accept_picker(cx),
