@@ -4,6 +4,10 @@
 //! data BenCode does not model: unknown block fields, unknown automation
 //! definition fields, and session columns BenCode never reads.
 
+mod schedule;
+
+pub use schedule::DEFAULT_GRACE_MINUTES;
+
 use anyhow::{Result, anyhow, bail};
 use rusqlite::{Connection, OptionalExtension, Row, params};
 use serde::{Deserialize, Serialize, Serializer};
@@ -963,7 +967,7 @@ mod tests {
          );
     ";
 
-    fn monocode_db() -> MonoCodeDb {
+    pub(super) fn monocode_db() -> MonoCodeDb {
         let conn = Connection::open_in_memory().unwrap();
         conn.execute_batch(MONOCODE_SCHEMA).unwrap();
         MonoCodeDb::from_connection(conn).unwrap()

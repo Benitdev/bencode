@@ -2,6 +2,7 @@
 
 mod editor;
 mod list;
+mod scheduler;
 mod templates;
 
 use ely_gpui_component::data_display::Tone;

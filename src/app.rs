@@ -432,6 +432,7 @@ impl BenCodeApp {
             let _ = this.update(cx, |this, cx| {
                 this.refresh_workspace(cx);
                 this.refresh_integrations(cx);
+                this.start_automation_scheduler(cx);
             });
         })
         .detach();
