@@ -241,6 +241,13 @@ impl BenCodeApp {
         let Some(session) = self.sessions.iter().find(|s| s.id == session_id) else {
             return;
         };
+        // MonoCode `applyFileMentionsToTurn`, against this thread's folder.
+        let agent_prompt = if self.project_files.root == session.work_dir() {
+            let index = self.project_files.mentions.borrow().clone();
+            crate::ui::composer::mentions::spell_out_mentions(&agent_prompt, &index)
+        } else {
+            agent_prompt
+        };
         let request = spawn_request(session, &agent_prompt, mode, self.claude_hooks_disabled).map(
             |request| SpawnRequest {
                 attachments: input.attachments.clone(),

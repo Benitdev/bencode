@@ -14,7 +14,8 @@ pub mod workspace_sync;
 
 use std::collections::HashMap;
 
-use ely_gpui_component::forms::{InputEvent, TextInput};
+use crate::ui::composer::mentions::MentionIndex;
+use ely_gpui_component::forms::{Highlight, InputEvent, TextInput};
 use ely_gpui_component::primitives::FocusScope;
 use ely_gpui_component::theme::ActiveTheme;
 use gpui::{
@@ -310,12 +311,24 @@ impl BenCodeApp {
         );
         let selected_session_id = tabs.focused_session().map(str::to_string);
 
-        let prompt_input = multiline_input(
-            window,
-            cx,
-            "Ask, build, / for commands, @ for references...",
-            (1, 6),
-        );
+        // MonoCode paints known `@file` labels in the prompt.
+        let mention_index: std::rc::Rc<std::cell::RefCell<std::sync::Arc<MentionIndex>>> =
+            Default::default();
+        let painted_mentions = mention_index.clone();
+        let prompt_input = cx.new(|cx| {
+            TextInput::new(window, cx)
+                .multi_line(1, 6)
+                .placeholder("Ask, build, / for commands, @ for references...")
+                .highlighter(move |text, cx| {
+                    let style = Highlight::new(cx.theme().colors.info);
+                    let index = painted_mentions.borrow().clone();
+                    index
+                        .scan(text)
+                        .into_iter()
+                        .map(|(range, _, _)| (range, style))
+                        .collect()
+                })
+        });
         let search_input = text_input(window, cx, "Search conversations...");
         let model_search_input = text_input(window, cx, "Search models");
         let find_input = text_input(window, cx, "Find in conversation");
@@ -604,7 +617,10 @@ impl BenCodeApp {
             transcript_find: None,
             title_strip: Default::default(),
             quick_open: Default::default(),
-            project_files: Default::default(),
+            project_files: crate::app::project_files::ProjectFiles {
+                mentions: mention_index,
+                ..Default::default()
+            },
             quick_open_input,
             drafts: HashMap::new(),
             expanded_reasoning: std::collections::HashSet::new(),

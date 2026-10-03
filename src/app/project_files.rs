@@ -2,7 +2,13 @@
 //! the composer's `@` picker and Search. Re-listed off the UI thread whenever
 //! one of them opens; the last list of the same folder stays usable meanwhile.
 
+use std::cell::RefCell;
+use std::rc::Rc;
+use std::sync::Arc;
+
 use gpui::{Context, SharedString};
+
+use crate::ui::composer::mentions::MentionIndex;
 
 use crate::app::BenCodeApp;
 
@@ -16,6 +22,9 @@ pub struct ProjectFiles {
     pub dirs: Vec<SharedString>,
     /// A listing of `root` is under way.
     pub loading: bool,
+    /// `@` labels for `files`, `dirs` and notes. Shared with the prompt's
+    /// highlighter, which cannot reach the app.
+    pub mentions: Rc<RefCell<Arc<MentionIndex>>>,
 }
 
 /// Every folder on the way to `files`, each once, sorted.
@@ -47,19 +56,26 @@ impl BenCodeApp {
         }
         index.loading = true;
         let path = std::path::PathBuf::from(&root);
+        let notes: Vec<String> = self
+            .notes
+            .iter()
+            .map(|n| format!("note/{}", n.slug))
+            .collect();
         let task = cx.background_executor().spawn(async move {
             let files = crate::workspace::list_project_files(&path);
             let dirs = directories_of(&files);
-            (files, dirs)
+            let mentions = MentionIndex::build(&files, &dirs, &notes);
+            (files, dirs, mentions)
         });
         cx.spawn(async move |this, cx| {
-            let (files, dirs) = task.await;
+            let (files, dirs, mentions) = task.await;
             let stored = this.update(cx, |app, cx| {
                 let index = &mut app.project_files;
                 // A listing for a folder since left is stale.
                 if index.root == root {
                     index.files = files.into_iter().map(SharedString::from).collect();
                     index.dirs = dirs.into_iter().map(SharedString::from).collect();
+                    *index.mentions.borrow_mut() = Arc::new(mentions);
                 }
                 index.loading = false;
                 cx.notify();

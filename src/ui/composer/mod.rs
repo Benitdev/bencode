@@ -4,6 +4,7 @@
 
 mod attachments;
 mod context_ring;
+pub mod mentions;
 mod menus;
 mod model_picker;
 mod suggestions;

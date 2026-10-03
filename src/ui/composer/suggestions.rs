@@ -165,13 +165,22 @@ impl BenCodeApp {
         if self.is_skill_picker_open {
             skill_suggestions(&self.skill_query, &self.integrations.skills)
         } else if self.is_mention_picker_open {
-            mention_suggestions(
+            // Files and folders insert their shortest label (MonoCode
+            // `mentionLabel`).
+            let index = self.project_files.mentions.borrow().clone();
+            let mut items = mention_suggestions(
                 &self.mention_query,
                 &self.project_files.files,
                 &self.project_files.dirs,
                 &self.notes,
                 &self.quick_open_recents(),
-            )
+            );
+            for item in &mut items {
+                if matches!(item.kind, SuggestionKind::File | SuggestionKind::Folder) {
+                    item.insert = index.label_for(&item.insert).to_string();
+                }
+            }
+            items
         } else {
             Vec::new()
         }

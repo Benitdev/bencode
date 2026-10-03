@@ -96,6 +96,9 @@ impl BenCodeApp {
 
     pub fn refresh_workspace(&mut self, cx: &mut Context<Self>) {
         self.refresh_skills(false, cx);
+        // MonoCode keeps the composer's file index for its folder, so `@`
+        // labels paint before the picker is ever opened.
+        self.index_project_files(cx);
         let cwd = self.workspace_cwd();
         self.workspace.generation += 1;
         let generation = self.workspace.generation;
