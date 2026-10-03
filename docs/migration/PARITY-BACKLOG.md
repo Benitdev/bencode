@@ -54,7 +54,9 @@ as they land; MonoCode refs are relative to `reference/monocode/src`.
 - [x] P1 M Edit last turn: ↑ recall only (BenCode harnesses cannot rewind provider state; MonoCode also gates true edit-and-resend on that)
 - [x] P1 S Composer box tokens/sizes, placeholder; Send/Stop 26px
 - [x] P1 M Model picker search/keyboard/⌘./Esc + outside dismiss
-- [ ] P1 M "+" Add-to-message menu (Upload file, Plan mode, Draft); P1 L attachments
+- [x] P1 M Model menu settings (Effort/Fast/Thinking/Context → CLI), favorites rail, recent-models menu (⌘., right-click)
+- [x] P1 S Access picker ↑↓/Enter, outside-click dismissal for every composer popover
+- [x] P1 M "+" Add-to-message menu (Upload file, Plan mode, Draft); P1 L attachments
 - [x] P1 M Context meter ring; populate context_window
 - [x] P1 M Inline Allow/Deny on the pending tool row
 - [x] P1 S-M Empty session: centred composer, "What should we work on in {project}?"
