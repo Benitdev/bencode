@@ -203,7 +203,8 @@ impl BenCodeApp {
             sid.clone(),
             sid.clone(),
         );
-        let finder_id = sid;
+        let finder_id = sid.clone();
+        let (tab_hint_id, tab_drop_id) = (sid.clone(), sid);
         frame
             .on_click(cx.listener(move |this, _, _, cx| this.focus_pane(focus_id.clone(), cx)))
             .on_drag_move::<DraggedPane>(cx.listener(
@@ -220,6 +221,24 @@ impl BenCodeApp {
             .on_drop(cx.listener(move |this, dragged: &DraggedPane, _, cx| {
                 this.handle_pane_drop(&dragged.session_id, &drop_id, cx);
             }))
+            // A title tab dragged onto a pane joins this tab beside it
+            // (MonoCode `onPlaceOnPane`); the active tab cannot land on itself.
+            .on_drag_move::<crate::ui::titlebar::DraggedTitleTab>(cx.listener(
+                move |this, event: &DragMoveEvent<crate::ui::titlebar::DraggedTitleTab>, _, cx| {
+                    let inside = event.bounds.contains(&event.event.position);
+                    let own = this.tabs.active_id() == Some(event.drag(cx).id.as_str());
+                    if inside && !own {
+                        this.set_active_pane_drop(tab_hint_id.clone(), drop_edge(event), cx);
+                    } else {
+                        this.clear_pane_drop(&tab_hint_id, cx);
+                    }
+                },
+            ))
+            .on_drop(cx.listener(
+                move |this, dragged: &crate::ui::titlebar::DraggedTitleTab, _, cx| {
+                    this.place_title_tab_on_pane(&dragged.id, &tab_drop_id, cx);
+                },
+            ))
             .on_drag_move::<DraggedFile>(cx.listener(
                 move |this, event: &DragMoveEvent<DraggedFile>, _, cx| {
                     if event.bounds.contains(&event.event.position) {

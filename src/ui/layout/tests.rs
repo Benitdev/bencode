@@ -309,3 +309,25 @@ fn replace_pane_keeps_the_split_and_focuses_the_new_session() {
     assert_eq!(tabs.focused_session(), Some("c"));
     assert!(!tabs.replace_pane("a", "c"), "c is already open");
 }
+
+#[test]
+fn a_tab_placed_on_a_pane_joins_its_tab() {
+    let mut set = TabSet::with_sessions(["a", "b"]);
+    let b_tab = set.tab_of("b").unwrap().id.clone();
+    assert!(set.place_tab_on_pane(&b_tab, "a", PaneEdge::Right, false));
+    assert_eq!(set.tabs().len(), 1);
+    let tab = set.active().unwrap();
+    assert_eq!(tab.leaf_ids(), ["a", "b"]);
+    assert_eq!(tab.focused, "b");
+    // A tab cannot land on itself.
+    let id = tab.id.clone();
+    assert!(!set.place_tab_on_pane(&id, "a", PaneEdge::Left, false));
+}
+
+#[test]
+fn a_tab_placed_on_a_blank_pane_replaces_it() {
+    let mut set = TabSet::with_sessions(["blank", "b"]);
+    let b_tab = set.tab_of("b").unwrap().id.clone();
+    assert!(set.place_tab_on_pane(&b_tab, "blank", PaneEdge::Right, true));
+    assert_eq!(set.active().unwrap().leaf_ids(), ["b"]);
+}

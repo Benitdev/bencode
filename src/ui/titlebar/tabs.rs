@@ -114,6 +114,29 @@ pub fn strip_overflow(scrolled: f32, max_scroll: f32) -> (bool, bool) {
     (scrolled > 1.0, scrolled < max_scroll - 1.0)
 }
 
+/// The strip's order while `dragged` is held over slot `to`: the tab moves
+/// there and the ones between slide over (MonoCode `useAnimatedReorder`).
+pub fn preview_order(ids: &[String], dragged: Option<(&str, usize)>) -> Vec<String> {
+    let mut order = ids.to_vec();
+    if let Some((id, to)) = dragged
+        && let Some(from) = order.iter().position(|t| t == id)
+    {
+        let moved = order.remove(from);
+        order.insert(to.min(order.len()), moved);
+    }
+    order
+}
+
+/// The slot under `x` (from the strip's content start) for `count` tabs of
+/// `width` with `gap` between them.
+pub fn slot_at(x: f32, width: f32, gap: f32, count: usize) -> usize {
+    if count == 0 {
+        return 0;
+    }
+    let pitch = width + gap;
+    ((x.max(0.0) / pitch) as usize).min(count - 1)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -173,6 +196,18 @@ mod tests {
         assert!(focused.is_empty());
         let own = next_unseen_finished(&set(&["x"]), &set(&[]), &set(&[]), Some("x"));
         assert!(own.is_empty());
+    }
+
+    #[test]
+    fn dragging_previews_the_new_order() {
+        let ids: Vec<String> = ["a", "b", "c"].map(String::from).to_vec();
+        assert_eq!(preview_order(&ids, None), ids);
+        assert_eq!(preview_order(&ids, Some(("a", 2))), ["b", "c", "a"]);
+        assert_eq!(preview_order(&ids, Some(("c", 0))), ["c", "a", "b"]);
+        assert_eq!(preview_order(&ids, Some(("zz", 0))), ids);
+        assert_eq!(slot_at(-5.0, 224.0, 2.0, 3), 0);
+        assert_eq!(slot_at(230.0, 224.0, 2.0, 3), 1);
+        assert_eq!(slot_at(5000.0, 224.0, 2.0, 3), 2);
     }
 
     #[test]

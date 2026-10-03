@@ -77,12 +77,20 @@ pub struct TitleStrip {
     unseen_finished: HashSet<String>,
     window_title: String,
     menu: Option<TabMenu>,
+    /// While a tab is dragged along the strip: it and the place it would
+    /// land (MonoCode `useAnimatedReorder`).
+    reorder: Option<(String, usize)>,
+    /// Tab order drawn last frame, and the tabs sliding to a new place:
+    /// their start offset, a generation for the animation id, and when.
+    order: Vec<String>,
+    slides: HashMap<String, (f32, u64, Instant)>,
+    slide_seq: u64,
 }
 
 /// Payload while a title tab is dragged to a new place.
 #[derive(Clone)]
 pub struct DraggedTitleTab {
-    id: String,
+    pub id: String,
     headline: String,
 }
 
@@ -220,6 +228,40 @@ impl BenCodeApp {
             }
         }
         strip.seen = tabs.iter().map(|t| t.id.clone()).collect();
+
+        // Tabs whose place changed slide there from where they were.
+        let ids: Vec<String> = tabs.iter().map(|t| t.id.clone()).collect();
+        let order = tabs::preview_order(
+            &ids,
+            strip.reorder.as_ref().map(|(id, to)| (id.as_str(), *to)),
+        );
+        let pitch = {
+            let strip_w = f32::from(strip.scroll.bounds().size.width);
+            let count = tabs.len().max(1);
+            if strip_w <= 0.0 {
+                TAB_WIDTH
+            } else {
+                ((strip_w - STRIP_PADDING - TAB_GAP * (count - 1) as f32) / count as f32)
+                    .clamp(TAB_MIN_WIDTH, TAB_WIDTH)
+            }
+        } + TAB_GAP;
+        for (to, id) in order.iter().enumerate() {
+            let from = strip.order.iter().position(|o| o == id);
+            if let Some(from) = from
+                && from != to
+                && !first_frame
+            {
+                strip.slide_seq += 1;
+                strip.slides.insert(
+                    id.clone(),
+                    ((from as f32 - to as f32) * pitch, strip.slide_seq, now),
+                );
+            }
+        }
+        strip
+            .slides
+            .retain(|_, (_, _, at)| at.elapsed() < TAB_MOTION);
+        strip.order = order;
         strip.opening.retain(|_, at| at.elapsed() < TAB_MOTION);
 
         let active = self.tabs.active_id().map(str::to_string);
@@ -575,12 +617,7 @@ impl BenCodeApp {
         let group = SharedString::from(format!("title-tab-{}", tab.id));
         let hover_bg = colors.fg.opacity(0.05);
         let fg = colors.fg;
-        let (select_id, close_id, middle_id, drop_id) = (
-            tab.id.clone(),
-            tab.id.clone(),
-            tab.id.clone(),
-            tab.id.clone(),
-        );
+        let (select_id, close_id, middle_id) = (tab.id.clone(), tab.id.clone(), tab.id.clone());
         let drag = DraggedTitleTab {
             id: tab.id.clone(),
             headline: headline.clone(),
@@ -674,7 +711,6 @@ impl BenCodeApp {
                         ),
                 )
         });
-        let drop_hint = colors.accent;
         let item = div()
             .id(SharedString::from(format!("title-tab-{}", tab.id)))
             .group(group)
@@ -699,27 +735,47 @@ impl BenCodeApp {
                     }
                 }),
             )
-            .on_drag(drag, |dragged, _, _, cx| cx.new(|_| dragged.clone()))
-            .drag_over::<DraggedTitleTab>(move |s, _, _, _| s.border_l_2().border_color(drop_hint))
-            .on_drop(cx.listener(move |this, dragged: &DraggedTitleTab, _, cx| {
-                this.move_title_tab(&dragged.id, &drop_id, cx);
-            }))
+            // MonoCode `canDrag`: a lone tab has nowhere to go.
+            .when(tabs.len() > 1, |el| {
+                el.on_drag(drag, |dragged, _, _, cx| cx.new(|_| dragged.clone()))
+            })
             .child(button)
             .children(close);
         item.into_any_element()
     }
 
-    /// Drops tab `from` where tab `to` stands.
-    fn move_title_tab(&mut self, from: &str, to: &str, cx: &mut Context<Self>) {
-        let ids: Vec<String> = self.deck_tabs().iter().map(|t| t.id.clone()).collect();
-        let (Some(a), Some(b)) = (
-            ids.iter().position(|id| id == from),
-            ids.iter().position(|id| id == to),
-        ) else {
+    /// The tab held over the strip lands where it is previewed.
+    fn finish_tab_reorder(&mut self, cx: &mut Context<Self>) {
+        let Some((id, to)) = self.title_strip.reorder.take() else {
             return;
         };
-        if a != b {
-            self.reorder_open_tabs(a, b, cx);
+        let from = self.deck_tabs().iter().position(|t| t.id == id);
+        if let Some(from) = from
+            && from != to
+        {
+            self.reorder_open_tabs(from, to, cx);
+        }
+        cx.notify();
+    }
+
+    /// Follows a tab dragged along the strip, previewing where it lands.
+    fn track_tab_reorder(
+        &mut self,
+        event: &gpui::DragMoveEvent<DraggedTitleTab>,
+        cx: &mut Context<Self>,
+    ) {
+        let id = event.drag(cx).id.clone();
+        let inside = event.bounds.contains(&event.event.position);
+        let next = inside.then(|| {
+            let count = self.deck_tabs().len();
+            let width = self.title_tab_width(count);
+            let scroll = f32::from(self.title_strip.scroll.offset().x);
+            let x = f32::from(event.event.position.x - event.bounds.origin.x) - 6.0 - scroll;
+            (id, tabs::slot_at(x, width, TAB_GAP, count))
+        });
+        if next != self.title_strip.reorder {
+            self.title_strip.reorder = next;
+            cx.notify();
         }
     }
 
@@ -742,6 +798,31 @@ impl BenCodeApp {
             .flex_col()
             .justify_center()
             .child(self.render_title_tab(tab, tabs, width, cx));
+        let dragged = self
+            .title_strip
+            .reorder
+            .as_ref()
+            .is_some_and(|(id, _)| *id == tab.id);
+        // The dragged tab rides the pointer; its slot holds the gap open.
+        let slot = slot.when(dragged, |el| el.opacity(0.0));
+        let slide = self
+            .title_strip
+            .slides
+            .get(&tab.id)
+            .filter(|(_, _, at)| at.elapsed() < TAB_MOTION)
+            .copied();
+        if let (Some((offset, seq, _)), false) =
+            (slide, self.title_strip.opening.contains_key(&tab.id))
+        {
+            return slot
+                .relative()
+                .with_animation(
+                    SharedString::from(format!("title-tab-slide-{}-{seq}", tab.id)),
+                    Animation::new(TAB_MOTION).with_easing(ease_out_quint()),
+                    move |el, delta| el.left(px(offset * (1.0 - delta))),
+                )
+                .into_any_element();
+        }
         match self.title_strip.opening.get(&tab.id) {
             Some(_) => slot
                 .overflow_hidden()
@@ -850,8 +931,11 @@ impl BenCodeApp {
     /// The strip itself, scrolling sideways when the tabs do not fit.
     fn render_tab_strip(&self, tabs: &[TitleTab], cx: &Context<Self>) -> AnyElement {
         let width = self.title_tab_width(tabs.len() + self.title_strip.closing.len());
-        let mut slots: Vec<AnyElement> = tabs
+        let mut slots: Vec<AnyElement> = self
+            .title_strip
+            .order
             .iter()
+            .filter_map(|id| tabs.iter().find(|t| t.id == *id))
             .map(|tab| self.title_tab_slot(tab, tabs, width, cx))
             .collect();
         for closing in &self.title_strip.closing {
@@ -874,6 +958,12 @@ impl BenCodeApp {
             .drag_over::<DraggedPane>(move |style, _, _, _| style.bg(drop_wash))
             .on_drop(cx.listener(|this, dragged: &DraggedPane, _, cx| {
                 this.detach_pane_to_new_tab(&dragged.session_id, cx);
+            }))
+            .on_drag_move::<DraggedTitleTab>(cx.listener(|this, event, _, cx| {
+                this.track_tab_reorder(event, cx);
+            }))
+            .on_drop(cx.listener(|this, _: &DraggedTitleTab, _, cx| {
+                this.finish_tab_reorder(cx);
             }))
             // A vertical wheel scrolls the strip sideways.
             .on_scroll_wheel(cx.listener(|this, event: &ScrollWheelEvent, _, cx| {
@@ -911,6 +1001,9 @@ impl BenCodeApp {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let tabs = self.title_tabs();
+        if !cx.has_active_drag() {
+            self.title_strip.reorder = None;
+        }
         self.sync_title_strip(&tabs, window);
         let theme = cx.theme();
         let colors = &theme.colors;

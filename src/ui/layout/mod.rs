@@ -19,7 +19,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde::{Deserialize, Serialize};
 
-pub use dock::place_pane;
+pub use dock::{place_layout, place_pane, replace_with_layout};
 pub use edit::{close_leaf, replace_leaf, set_split_sizes, split_pane};
 pub use geometry::{neighbor_leaf_id, pane_edge_from_point, split_shares};
 pub use tabs::{TabSet, WorkspaceTab};

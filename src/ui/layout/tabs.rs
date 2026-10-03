@@ -7,8 +7,8 @@
 //! - `active` names an existing tab, and is `None` only when there are no tabs.
 
 use super::{
-    LayoutNode, PaneEdge, SplitDir, close_leaf, contains_leaf, leaf, place_pane, replace_leaf,
-    set_split_sizes, split_pane,
+    LayoutNode, PaneEdge, SplitDir, close_leaf, contains_leaf, leaf, place_layout, place_pane,
+    replace_leaf, replace_with_layout, set_split_sizes, split_pane,
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -240,6 +240,44 @@ impl TabSet {
             return Some(id);
         }
         Some(self.open(session_id))
+    }
+
+    /// MonoCode `applyPlaceTabOnPane`: tab `source` joins the tab holding
+    /// `target`, beside it on `edge`, or in its place when `replace` (a blank
+    /// thread). The merged tab becomes active, focused on the source's pane.
+    pub fn place_tab_on_pane(
+        &mut self,
+        source: &str,
+        target: &str,
+        edge: PaneEdge,
+        replace: bool,
+    ) -> bool {
+        let Some(from) = self.index_of(source) else {
+            return false;
+        };
+        let Some(to) = self.tabs.iter().position(|t| t.contains(target)) else {
+            return false;
+        };
+        let incoming = self.tabs[from].clone();
+        if from == to
+            || incoming
+                .leaf_ids()
+                .iter()
+                .any(|id| self.tabs[to].contains(id))
+        {
+            return false;
+        }
+        let into = &mut self.tabs[to];
+        into.layout = if replace {
+            replace_with_layout(&into.layout, target, &incoming.layout)
+        } else {
+            place_layout(&into.layout, &incoming.layout, target, edge)
+        };
+        into.focused = incoming.focused.clone();
+        let merged = into.id.clone();
+        self.tabs.remove(from);
+        self.active = Some(merged);
+        true
     }
 
     pub fn reorder(&mut self, from: usize, to: usize) -> bool {

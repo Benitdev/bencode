@@ -257,6 +257,35 @@ impl BenCodeApp {
         }
     }
 
+    /// MonoCode `onPlaceTabOnPane`: tab `tab_id` joins the pane `to_id` on
+    /// the hinted edge. A blank thread there is replaced and dropped.
+    pub fn place_title_tab_on_pane(&mut self, tab_id: &str, to_id: &str, cx: &mut Context<Self>) {
+        let edge = self
+            .active_pane_drop
+            .take()
+            .filter(|target| target.over_id == to_id)
+            .map_or(PaneEdge::Right, |target| target.edge);
+        self.clear_drop_hints();
+        let blank = self
+            .sessions
+            .iter()
+            .find(|s| s.id == to_id)
+            .is_some_and(|s| !s.blocks.iter().any(|b| b.role == "user"))
+            && !self.is_agent_running_in(to_id);
+        if !self.tabs.place_tab_on_pane(tab_id, to_id, edge, blank) {
+            cx.notify();
+            return;
+        }
+        if blank {
+            if let Err(err) = self.db.delete_session(to_id) {
+                log::error!("failed to drop replaced blank thread {to_id}: {err:#}");
+            }
+            self.sessions.retain(|s| s.id != to_id);
+            self.transcripts.remove(to_id);
+        }
+        self.sync_selection(cx);
+    }
+
     /// Moves a split pane into a tab of its own.
     pub fn detach_pane_to_new_tab(&mut self, pane_id: &str, cx: &mut Context<Self>) {
         self.clear_drop_hints();
