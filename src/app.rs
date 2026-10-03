@@ -145,6 +145,11 @@ pub struct BenCodeApp {
     pub find_input: Entity<TextInput>,
     /// Every file of the project, for Go to File, `@` and Search.
     pub project_files: crate::app::project_files::ProjectFiles,
+    /// The queued message being edited in place, its field, and threads
+    /// whose next message waits for that edit to end.
+    pub queue_editing: Option<(String, usize)>,
+    pub queue_edit_input: Entity<TextInput>,
+    pub queue_held: std::collections::HashSet<String>,
     /// Go to File (⌘P).
     pub quick_open: crate::ui::quick_open::QuickOpen,
     pub quick_open_input: Entity<TextInput>,
@@ -334,6 +339,8 @@ impl BenCodeApp {
         let find_keys_input = find_input.clone();
         let quick_open_input = text_input(window, cx, "Go to File (type > for commands)");
         let quick_keys_input = quick_open_input.clone();
+        let queue_edit_input = text_input(window, cx, "Edit queued message");
+        let queue_keys_input = queue_edit_input.clone();
         let note_filter_input = text_input(window, cx, "Filter notes...");
         let note_title_input = text_input(window, cx, "Note title...");
         let note_body_input = multiline_input(
@@ -396,6 +403,14 @@ impl BenCodeApp {
                 },
             ),
             cx.subscribe(
+                &queue_edit_input,
+                |this: &mut Self, _, event: &InputEvent, cx| {
+                    if *event == InputEvent::Submit {
+                        this.save_queue_edit(cx);
+                    }
+                },
+            ),
+            cx.subscribe(
                 &quick_open_input,
                 |this: &mut Self, _, event: &InputEvent, cx| {
                     if *event == InputEvent::Changed {
@@ -450,6 +465,21 @@ impl BenCodeApp {
             if pasting && composer_input.read(cx).focus_handle(cx).is_focused(window) {
                 let attached = weak_app.update(cx, |this, cx| this.paste_into_composer(cx));
                 if matches!(attached, Ok(true)) {
+                    cx.stop_propagation();
+                }
+                return;
+            }
+            // MonoCode `MessageQueue`: Esc cancels an edit in place.
+            if event.keystroke.key == "escape"
+                && queue_keys_input
+                    .read(cx)
+                    .focus_handle(cx)
+                    .is_focused(window)
+            {
+                if matches!(
+                    weak_app.update(cx, |this, cx| this.cancel_queue_edit(cx)),
+                    Ok(true)
+                ) {
                     cx.stop_propagation();
                 }
                 return;
@@ -616,6 +646,9 @@ impl BenCodeApp {
             transcript_find: None,
             title_strip: Default::default(),
             quick_open: Default::default(),
+            queue_editing: None,
+            queue_edit_input,
+            queue_held: Default::default(),
             project_files: crate::app::project_files::ProjectFiles {
                 mentions: mention_index,
                 ..Default::default()

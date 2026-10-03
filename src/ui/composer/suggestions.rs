@@ -489,8 +489,14 @@ mod tests {
         assert_eq!(skill_suggestions("", &skills, true).len(), 3);
         assert_eq!(skill_suggestions("", &skills, false).len(), 2);
         assert_eq!(skill_suggestions("", &skills, true)[0].insert, "/plan");
-        assert_eq!(skill_suggestions("ship", &skills, true)[0].insert, "/deploy");
-        assert_eq!(skill_suggestions("dep", &skills, true)[0].matched, [1, 2, 3]);
+        assert_eq!(
+            skill_suggestions("ship", &skills, true)[0].insert,
+            "/deploy"
+        );
+        assert_eq!(
+            skill_suggestions("dep", &skills, true)[0].matched,
+            [1, 2, 3]
+        );
         assert!(skill_suggestions("zzz-no-match", &skills, true).is_empty());
     }
 

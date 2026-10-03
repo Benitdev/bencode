@@ -143,7 +143,9 @@ impl BenCodeApp {
         cx.notify();
     }
 
-    /// MonoCode's chips row above the prompt: `flex-wrap gap-1.5 px-3 pt-2`.
+    /// MonoCode `AttachmentChip`s above the prompt (`flex-wrap gap-1.5
+    /// px-3 pt-2`): images as 36px thumbnails with a round remove badge,
+    /// other files as a small chip with their icon.
     pub(super) fn render_attachment_chips(&self, cx: &Context<Self>) -> Option<AnyElement> {
         let session_id = self.selected_session_id.clone()?;
         let files = self.composer_attachments.get(&session_id)?;
@@ -151,57 +153,99 @@ impl BenCodeApp {
             return None;
         }
         let colors = &cx.theme().colors;
-        let chips =
-            files.iter().map(|file| {
-                let (sid, id) = (session_id.clone(), file.id.clone());
-                let hover = colors.fg.opacity(0.15);
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_1()
-                    .h(px(24.0))
-                    .pl_1p5()
-                    .pr_0p5()
-                    .max_w(px(220.0))
-                    .rounded(px(6.0))
-                    .bg(colors.fg.opacity(0.08))
-                    .text_size(px(12.0))
-                    .text_color(colors.fg.opacity(0.8))
+        let chips = files.iter().map(|file| {
+            let (sid, id) = (session_id.clone(), file.id.clone());
+            let remove = cx.listener(move |this, _, _, cx| {
+                cx.stop_propagation();
+                this.remove_attachment(&sid, &id, cx)
+            });
+            if file.is_image() {
+                let hover = colors.fg.opacity(0.3);
+                return div()
+                    .id(SharedString::from(format!("att-{}", file.id)))
+                    .relative()
+                    .size(px(36.0))
+                    .flex_none()
+                    .tooltip(Tooltip::text(file.path.clone()))
                     .child(
-                        Icon::new(if file.is_image() {
-                            IconName::Image
-                        } else {
-                            IconName::FileText
-                        })
-                        .size(IconSize::Xs)
-                        .color(colors.fg_muted),
+                        div().size_full().rounded(px(8.0)).overflow_hidden().child(
+                            gpui::img(std::path::PathBuf::from(&file.path))
+                                .size_full()
+                                .object_fit(gpui::ObjectFit::Cover),
+                        ),
                     )
-                    .child(div().min_w_0().truncate().child(file.name.clone()))
                     .child(
                         div()
-                            .id(SharedString::from(format!("att-remove-{id}")))
-                            .size(px(18.0))
+                            .id(SharedString::from(format!("att-remove-{}", file.id)))
+                            .absolute()
+                            .top(px(-4.0))
+                            .right(px(-4.0))
+                            .size(px(20.0))
+                            .rounded_full()
                             .flex()
                             .items_center()
                             .justify_center()
-                            .rounded(px(4.0))
+                            .bg(colors.fg.opacity(0.2))
+                            .shadow_sm()
                             .cursor_pointer()
                             .hover(move |s| s.bg(hover))
                             .tooltip(Tooltip::text("Remove"))
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.remove_attachment(&sid, &id, cx)
-                            }))
-                            .child(
-                                Icon::new(IconName::X)
-                                    .size(IconSize::Xs)
-                                    .color(colors.fg_muted),
-                            ),
+                            .on_click(remove)
+                            .child(Icon::new(IconName::X).size(IconSize::Xs).color(colors.fg)),
                     )
-            });
+                    .into_any_element();
+            }
+            let hover = colors.fg.opacity(0.15);
+            let (icon, tint) = crate::ui::file_tree::resolve_entry_icon(
+                &file.name,
+                file.mime_type == "inode/directory",
+                false,
+            );
+            div()
+                .id(SharedString::from(format!("att-{}", file.id)))
+                .flex()
+                .flex_none()
+                .items_center()
+                .gap_1p5()
+                .py_0p5()
+                .px_1()
+                .rounded(px(6.0))
+                .bg(colors.fg.opacity(0.10))
+                .tooltip(Tooltip::text(file.path.clone()))
+                .child(Icon::new(icon).size(IconSize::Sm).color(tint))
+                .child(
+                    div()
+                        .max_w(px(140.0))
+                        .truncate()
+                        .text_size(px(11.0))
+                        .text_color(colors.fg.opacity(0.8))
+                        .child(file.name.clone()),
+                )
+                .child(
+                    div()
+                        .id(SharedString::from(format!("att-remove-{}", file.id)))
+                        .size(px(16.0))
+                        .rounded_full()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .cursor_pointer()
+                        .hover(move |s| s.bg(hover))
+                        .tooltip(Tooltip::text("Remove"))
+                        .on_click(remove)
+                        .child(
+                            Icon::new(IconName::X)
+                                .size(IconSize::Xs)
+                                .color(colors.fg.opacity(0.4)),
+                        ),
+                )
+                .into_any_element()
+        });
         Some(
             div()
                 .flex()
                 .flex_wrap()
+                .items_center()
                 .gap_1p5()
                 .px_3()
                 .pt_2()

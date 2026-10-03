@@ -10,11 +10,11 @@ pub mod mode_commands;
 mod model_picker;
 mod suggestions;
 
-use ely_gpui_component::buttons::{ButtonVariant, IconButton};
+use ely_gpui_component::buttons::ButtonVariant;
 use ely_gpui_component::git::{Branch as ElyBranch, BranchSelector};
 use ely_gpui_component::menus::{DropdownMenu, Menu, MenuItem};
 use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
-use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
+use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString,
     Styled, div, prelude::*, px,
@@ -167,19 +167,6 @@ fn git_label(
         .when(!enabled, |el| el.opacity(0.4))
         .child(Icon::new(icon).size(IconSize::Xs).color(fg.opacity(0.55)))
         .child(div().min_w_0().truncate().child(label))
-}
-
-/// 1234567 -> "1,234,567".
-fn group_digits(n: i64) -> String {
-    let digits = n.abs().to_string();
-    let mut out = String::new();
-    for (ix, ch) in digits.chars().enumerate() {
-        if ix > 0 && (digits.len() - ix).is_multiple_of(3) {
-            out.push(',');
-        }
-        out.push(ch);
-    }
-    if n < 0 { format!("-{out}") } else { out }
 }
 
 /// A row of the composer "+" menu.
@@ -530,17 +517,27 @@ impl BenCodeApp {
         let used = session.context_used?.max(0);
         let window = session.context_window.filter(|w| *w > 0)?;
         let share = (used as f32 / window as f32).clamp(0.0, 1.0);
-        let detail = format!(
-            "{}% context used\n{} / {} tokens",
-            (share * 100.0).round(),
-            group_digits(used),
-            group_digits(window)
-        );
+        let count = |n: i64| crate::ui::transcript::turns::format_metric_count(n as f64);
+        let headline = format!("{}% context used", (share * 100.0).round());
+        let detail = format!("{} / {} tokens", count(used), count(window));
         Some(
             div()
                 .id("composer-context")
                 .flex_none()
-                .tooltip(Tooltip::text(detail))
+                .tooltip(Tooltip::rich(move |_, cx| {
+                    let colors = &cx.theme().colors;
+                    div()
+                        .flex()
+                        .flex_col()
+                        .child(div().text_size(px(12.0)).child(headline.clone()))
+                        .child(
+                            div()
+                                .text_size(px(11.0))
+                                .text_color(colors.tooltip_fg.opacity(0.5))
+                                .child(detail.clone()),
+                        )
+                        .into_any_element()
+                }))
                 .child(context_ring::context_ring(share, cx)),
         )
     }
@@ -710,10 +707,19 @@ impl BenCodeApp {
         } else {
             (colors.fg.opacity(0.3), colors.bg.opacity(0.4))
         };
-        let tooltip = match (running_here, typed) {
-            (true, false) => "Stop",
-            (true, true) => "Queue message (↩)",
-            _ => "Send (↩)",
+        let drafting = self
+            .selected_session_id
+            .as_deref()
+            .is_some_and(|id| self.draft_mode.contains(id))
+            || mode_commands::leading_mode(self.prompt_input.read(cx).text())
+                .is_some_and(|(m, _)| m == mode_commands::ModeCommand::Draft);
+        // MonoCode `ComposerAction` labels.
+        let tooltip = if stop {
+            "Stop"
+        } else if drafting {
+            "Save draft"
+        } else {
+            "Send"
         };
         let hover = colors.fg.opacity(0.9);
         div()
@@ -745,59 +751,176 @@ impl BenCodeApp {
             })
     }
 
-    /// Messages waiting for the running turn (MonoCode `MessageQueue`).
+    /// MonoCode `MessageQueue`: a tab sitting on the composer listing the
+    /// messages that wait for the turn — each with Edit (in place) and
+    /// Remove — headed by "Queue paused" with Resume once the agent was
+    /// stopped.
     fn render_message_queue(&self, session_id: &str, cx: &Context<Self>) -> Option<AnyElement> {
         let queued = self.queued_prompts(session_id);
         if queued.is_empty() {
             return None;
         }
         let colors = &cx.theme().colors;
-        let rows = queued.iter().enumerate().map(|(ix, text)| {
-            let session = session_id.to_string();
+        let icon_button = |id: SharedString, icon: IconName, tip: &'static str| {
+            let hover = colors.fg.opacity(0.10);
             div()
+                .id(id)
+                .size(px(24.0))
+                .flex_none()
                 .flex()
                 .items_center()
-                .gap_1p5()
-                .min_h(px(28.0))
-                .when(ix > 0, |el| el.border_t_1().border_color(colors.border))
+                .justify_center()
+                .rounded(px(6.0))
+                .cursor_pointer()
+                .hover(move |s| s.bg(hover))
+                .tooltip(Tooltip::text(tip))
                 .child(
+                    Icon::new(icon)
+                        .size(IconSize::Xs)
+                        .color(colors.fg.opacity(0.55)),
+                )
+        };
+        let editing = self
+            .queue_editing
+            .as_ref()
+            .filter(|(sid, _)| sid == session_id)
+            .map(|(_, ix)| *ix);
+        let rows =
+            queued.iter().enumerate().map(|(ix, item)| {
+                let row = div()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .min_h(px(28.0))
+                    .text_size(px(12.0))
+                    .when(ix > 0, |el| el.border_t_1().border_color(colors.border));
+                if editing == Some(ix) {
+                    return row
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .px_1p5()
+                                .py_0p5()
+                                .rounded(px(6.0))
+                                .border_1()
+                                .border_color(colors.fg.opacity(0.3))
+                                .bg(colors.fg.opacity(0.05))
+                                .child(self.queue_edit_input.clone()),
+                        )
+                        .child(
+                            icon_button(format!("queue-save-{ix}").into(), IconName::Check, "Save")
+                                .on_click(cx.listener(|this, _, _, cx| this.save_queue_edit(cx))),
+                        )
+                        .child(
+                            icon_button(format!("queue-cancel-{ix}").into(), IconName::X, "Cancel")
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.cancel_queue_edit(cx);
+                                })),
+                        )
+                        .into_any_element();
+                }
+                let label = if item.text.trim().is_empty() {
+                    let n = item.attachments.len();
+                    format!("{n} attachment{}", if n == 1 { "" } else { "s" })
+                } else {
+                    item.text.lines().next().unwrap_or("").to_string()
+                };
+                let (edit_sid, remove_sid) = (session_id.to_string(), session_id.to_string());
+                row.child(
                     Icon::new(IconName::CornerDownRight)
-                        .size(IconSize::Sm)
-                        .color(colors.fg_muted),
+                        .size(IconSize::Xs)
+                        .color(colors.fg.opacity(0.55)),
                 )
                 .child(
                     div()
                         .flex_1()
                         .min_w_0()
                         .truncate()
-                        .text_size(px(12.0))
-                        .text_color(colors.fg_muted)
-                        .child(text.text.clone()),
+                        .text_color(colors.fg.opacity(0.8))
+                        .child(label),
                 )
                 .child(
-                    IconButton::new(
-                        SharedString::from(format!("queue-remove-{ix}")),
-                        IconName::Trash2,
+                    icon_button(
+                        format!("queue-edit-{ix}").into(),
+                        IconName::Pencil,
+                        "Edit queued message",
                     )
-                    .size(ControlSize::Sm)
-                    .variant(ButtonVariant::Ghost)
-                    .tooltip("Remove from queue")
+                    .on_click(
+                        cx.listener(move |this, _, _, cx| this.start_queue_edit(&edit_sid, ix, cx)),
+                    ),
+                )
+                .child(
+                    icon_button(
+                        format!("queue-remove-{ix}").into(),
+                        IconName::Trash2,
+                        "Remove queued message",
+                    )
                     .on_click(cx.listener(move |this, _, _, cx| {
-                        this.remove_queued_prompt(&session, ix, cx)
+                        this.remove_queued_prompt(&remove_sid, ix, cx)
                     })),
+                )
+                .into_any_element()
+            });
+        let paused = self.queue_paused(session_id).then(|| {
+            let sid = session_id.to_string();
+            let hover = colors.fg.opacity(0.10);
+            div()
+                .flex()
+                .items_center()
+                .gap_2()
+                .h(px(28.0))
+                .border_b_1()
+                .border_color(colors.border)
+                .text_size(px(12.0))
+                .text_color(colors.fg.opacity(0.55))
+                .child(
+                    Icon::new(IconName::Pause)
+                        .size(IconSize::Xs)
+                        .color(colors.fg.opacity(0.55)),
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .truncate()
+                        .child("Queue paused because you interrupted"),
+                )
+                .child(
+                    div()
+                        .id("queue-resume")
+                        .flex()
+                        .items_center()
+                        .gap_1p5()
+                        .h(px(24.0))
+                        .px_1p5()
+                        .rounded(px(6.0))
+                        .cursor_pointer()
+                        .hover(move |s| s.bg(hover))
+                        .on_click(cx.listener(move |this, _, _, cx| this.resume_queue(&sid, cx)))
+                        .child(
+                            Icon::new(IconName::Play)
+                                .size(IconSize::Xs)
+                                .color(colors.fg.opacity(0.55)),
+                        )
+                        .child("Resume"),
                 )
         });
         Some(
             div()
-                .mx_2()
                 .px_2()
-                .py_1()
-                .rounded_t(px(10.0))
-                .border_1()
-                .border_b_0()
-                .border_color(colors.border)
-                .bg(colors.surface)
-                .children(rows)
+                .child(
+                    div()
+                        .px_2()
+                        .py_1()
+                        .rounded_t(px(10.0))
+                        .border_1()
+                        .border_b_0()
+                        .border_color(colors.border)
+                        .bg(colors.fg.opacity(0.03))
+                        .children(paused)
+                        .children(rows),
+                )
                 .into_any_element(),
         )
     }
@@ -1087,13 +1210,6 @@ impl BenCodeApp {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn digits_group_in_thousands() {
-        assert_eq!(group_digits(701_285), "701,285");
-        assert_eq!(group_digits(1_000_000), "1,000,000");
-        assert_eq!(group_digits(12), "12");
-    }
 
     #[test]
     fn every_permission_mode_has_a_menu_entry() {

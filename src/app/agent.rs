@@ -4,7 +4,7 @@
 //! `apply_event` is a pure reducer over `SessionRow` so transcript behaviour
 //! is unit-tested without GPUI; `BenCodeApp` methods are thin glue around it.
 
-use gpui::Context;
+use gpui::{Context, Focusable};
 use serde_json::{Value, json};
 
 use crate::app::{BenCodeApp, PermissionMode};
@@ -86,7 +86,78 @@ impl BenCodeApp {
             .map_or(&[], |queue| queue.as_slice())
     }
 
+    /// MonoCode's paused queue: the agent was stopped with messages waiting.
+    pub fn queue_paused(&self, session_id: &str) -> bool {
+        !self.queued_prompts(session_id).is_empty() && !self.is_agent_running_in(session_id)
+    }
+
+    /// Resume: sends the next waiting message.
+    pub fn resume_queue(&mut self, session_id: &str, cx: &mut Context<Self>) {
+        if !self.is_agent_running_in(session_id) {
+            self.send_next_queued(session_id, cx);
+        }
+    }
+
+    /// Edit on a queued message: its text goes into the inline field.
+    pub fn start_queue_edit(&mut self, session_id: &str, ix: usize, cx: &mut Context<Self>) {
+        let Some(item) = self.queued_prompts(session_id).get(ix) else {
+            return;
+        };
+        let text = item.text.clone();
+        self.queue_editing = Some((session_id.to_string(), ix));
+        self.queue_edit_input.update(cx, |input, cx| {
+            input.set_text(text.clone(), cx);
+            input.select(text.len()..text.len(), cx);
+        });
+        crate::ui::composer::focus_later(self.queue_edit_input.read(cx).focus_handle(cx), cx);
+        cx.notify();
+    }
+
+    /// Enter / ✓: keeps the edit (an empty message without files is not kept).
+    pub fn save_queue_edit(&mut self, cx: &mut Context<Self>) {
+        let Some((session_id, ix)) = self.queue_editing.clone() else {
+            return;
+        };
+        let text = self.queue_edit_input.read(cx).text().trim().to_string();
+        if let Some(item) = self
+            .prompt_queues
+            .get_mut(&session_id)
+            .and_then(|queue| queue.get_mut(ix))
+        {
+            if text.is_empty() && item.attachments.is_empty() {
+                return;
+            }
+            item.text = text;
+        }
+        self.end_queue_edit(&session_id, cx);
+    }
+
+    /// Esc / ✕: leaves the message as it was.
+    pub fn cancel_queue_edit(&mut self, cx: &mut Context<Self>) -> bool {
+        let Some((session_id, _)) = self.queue_editing.clone() else {
+            return false;
+        };
+        self.end_queue_edit(&session_id, cx);
+        true
+    }
+
+    fn end_queue_edit(&mut self, session_id: &str, cx: &mut Context<Self>) {
+        self.queue_editing = None;
+        self.refocus_prompt(cx);
+        if self.queue_held.remove(session_id) {
+            self.send_next_queued(session_id, cx);
+        }
+        cx.notify();
+    }
+
     pub fn remove_queued_prompt(&mut self, session_id: &str, ix: usize, cx: &mut Context<Self>) {
+        if self
+            .queue_editing
+            .as_ref()
+            .is_some_and(|(sid, edited)| sid == session_id && *edited == ix)
+        {
+            self.queue_editing = None;
+        }
         if let Some(queue) = self.prompt_queues.get_mut(session_id)
             && ix < queue.len()
         {
@@ -370,6 +441,15 @@ impl BenCodeApp {
 
     /// Starts the oldest queued prompt of a thread whose turn just ended.
     fn send_next_queued(&mut self, session_id: &str, cx: &mut Context<Self>) {
+        // MonoCode holds the queue while one of its messages is being edited.
+        if self
+            .queue_editing
+            .as_ref()
+            .is_some_and(|(sid, _)| sid == session_id)
+        {
+            self.queue_held.insert(session_id.to_string());
+            return;
+        }
         let Some(queue) = self.prompt_queues.get_mut(session_id) else {
             return;
         };
