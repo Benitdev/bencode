@@ -74,7 +74,12 @@ pub struct AutomationRow {
     pub last_run_status: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
-    /// Every MonoCode field BenCode does not model (workspaceMode, triggers, ...).
+    /// MonoCode's source of truth for when the automation runs (one entry
+    /// per trigger, unknown keys kept). `None` on rows written before
+    /// triggers existed: then the legacy fields above apply.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub triggers: Option<Vec<Map<String, Value>>>,
+    /// Every MonoCode field BenCode does not model (workspaceMode, ...).
     #[serde(flatten, default)]
     pub extra: Map<String, Value>,
 }

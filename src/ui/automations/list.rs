@@ -9,10 +9,10 @@ use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
 use ely_gpui_component::typography::Caption;
 use gpui::{Context, IntoElement, ParentElement, Styled, div};
 
-use super::schedule_label;
 use super::templates::{AutomationTemplate, BUILTIN_TEMPLATES};
 use crate::app::BenCodeApp;
 use crate::db::AutomationRow;
+use crate::schedule::schedule_label;
 
 impl BenCodeApp {
     pub(super) fn render_automation_master(&self, cx: &Context<Self>) -> impl IntoElement {

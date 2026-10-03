@@ -11,9 +11,10 @@ use ely_gpui_component::typography::Caption;
 use gpui::{AnyElement, Context, IntoElement, ParentElement, Styled, div};
 use jiff::Timestamp;
 
-use super::{run_status_tone, schedule_label};
+use super::run_status_tone;
 use crate::app::BenCodeApp;
 use crate::db::{AutomationRow, AutomationRunRow};
+use crate::schedule::schedule_label;
 
 fn run_time(millis: i64) -> String {
     Timestamp::from_millisecond(millis).map_or_else(

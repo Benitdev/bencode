@@ -23,15 +23,6 @@ use templates::{AutomationTemplate, BLANK_AUTOMATION};
 const DEFAULT_AUTOMATION_MODEL: &str = "claude:sonnet";
 const HOUR_MS: i64 = 3_600_000;
 const DAY_MS: i64 = 24 * HOUR_MS;
-const WEEKDAYS: [&str; 7] = [
-    "Sunday",
-    "Monday",
-    "Tuesday",
-    "Wednesday",
-    "Thursday",
-    "Friday",
-    "Saturday",
-];
 
 /// A prompt to run in a fresh thread.
 pub struct ThreadRequest {
@@ -40,22 +31,6 @@ pub struct ThreadRequest {
     pub cwd: Option<String>,
     pub model: Option<String>,
     pub pinned: bool,
-}
-
-/// MonoCode's schedule wording, e.g. "Weekdays at 09:00" or "Hourly at :05".
-fn schedule_label(auto: &AutomationRow) -> String {
-    let time = &auto.time;
-    match auto.schedule_kind.as_str() {
-        "hourly" => format!("Hourly at :{:02}", auto.minute),
-        "daily" => format!("Daily at {time}"),
-        "weekdays" => format!("Weekdays at {time}"),
-        _ => {
-            let day = usize::try_from(auto.day_of_week)
-                .ok()
-                .and_then(|d| WEEKDAYS.get(d));
-            format!("{} at {time}", day.unwrap_or(&"Weekly"))
-        }
-    }
 }
 
 /// Tone for a MonoCode run status (pending, running, succeeded, failed, skipped, cancelled).
@@ -185,14 +160,11 @@ impl BenCodeApp {
         };
         let time = non_empty(self.automation_time_input.read(cx).text(), &auto.time);
         let now = now_ms();
-        let Some(next_run_at) = schedule::next_run_at(
-            &auto.schedule_kind,
-            auto.minute,
-            &time,
-            auto.day_of_week,
-            now,
-            &TimeZone::system(),
-        ) else {
+        // MonoCode reads `triggers`; the edit lands on the first time trigger.
+        let retimed = schedule::with_time(auto, &time);
+        let valid = schedule::parse_time(&time).is_some();
+        let next = schedule::next_automation_run_at(&retimed, now, &TimeZone::system());
+        let Some(next_run_at) = next.filter(|_| valid) else {
             self.automation_time_error = Some(format!(
                 "“{time}” is not a valid 24-hour time such as 09:00."
             ));
@@ -200,12 +172,11 @@ impl BenCodeApp {
             return;
         };
         let updated = AutomationRow {
-            name: non_empty(self.automation_name_input.read(cx).text(), &auto.name),
+            name: non_empty(self.automation_name_input.read(cx).text(), &retimed.name),
             prompt: self.automation_prompt_input.read(cx).text().to_string(),
-            time,
             next_run_at,
             updated_at: now,
-            ..auto.clone()
+            ..retimed
         };
         self.automation_time_error = None;
         if let Err(err) = self.db.save_automation(&updated) {
@@ -352,21 +323,24 @@ mod tests {
 
     #[test]
     fn schedule_labels_follow_monocode() {
-        assert_eq!(schedule_label(&row("hourly", "", 5, 0)), "Hourly at :05");
         assert_eq!(
-            schedule_label(&row("daily", "09:00", 0, 0)),
+            schedule::schedule_label(&row("hourly", "", 5, 0)),
+            "Hourly at :05"
+        );
+        assert_eq!(
+            schedule::schedule_label(&row("daily", "09:00", 0, 0)),
             "Daily at 09:00"
         );
         assert_eq!(
-            schedule_label(&row("weekdays", "08:30", 0, 0)),
+            schedule::schedule_label(&row("weekdays", "08:30", 0, 0)),
             "Weekdays at 08:30"
         );
         assert_eq!(
-            schedule_label(&row("weekly", "10:00", 0, 1)),
+            schedule::schedule_label(&row("weekly", "10:00", 0, 1)),
             "Monday at 10:00"
         );
         assert_eq!(
-            schedule_label(&row("weekly", "10:00", 0, 9)),
+            schedule::schedule_label(&row("weekly", "10:00", 0, 9)),
             "Weekly at 10:00"
         );
     }

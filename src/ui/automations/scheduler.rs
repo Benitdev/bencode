@@ -73,14 +73,7 @@ impl BenCodeApp {
     /// Claims `auto`'s due occurrence; starts it unless it was skipped.
     fn claim_and_launch(&mut self, auto: &AutomationRow, now: i64, cx: &mut Context<Self>) -> bool {
         let tz = TimeZone::system();
-        let Some(next) = schedule::next_run_at(
-            &auto.schedule_kind,
-            auto.minute,
-            &auto.time,
-            auto.day_of_week,
-            now,
-            &tz,
-        ) else {
+        let Some(next) = schedule::next_automation_run_at(auto, now, &tz) else {
             log::warn!("automation {} has an unreadable schedule", auto.id);
             return false;
         };
