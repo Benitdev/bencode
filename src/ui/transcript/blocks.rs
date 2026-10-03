@@ -1,55 +1,34 @@
-//! One transcript row per MonoCode block role.
+//! Standalone transcript rows: the user's message, the agent's answer,
+//! notices, and the footer a finished turn leaves (MonoCode
+//! `TranscriptBlock`, `UserMessage`, `TurnDuration`).
 
-use ely_gpui_component::agent::ToolCallCard;
-use ely_gpui_component::chat::{CodeBlock, StepState, StreamingMarkdown};
+use ely_gpui_component::chat::{CodeBlock, StreamingMarkdown};
 use ely_gpui_component::documents::MarkdownRenderer;
 use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
-use ely_gpui_component::theme::{ActiveTheme, IconSize, TextSize};
+use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::prelude::*;
 use gpui::{
-    AnyElement, ClipboardItem, Context, FontWeight, InteractiveElement, IntoElement, ParentElement,
-    SharedString, Styled, div, px, rgb,
+    AnyElement, App, Context, Hsla, InteractiveElement, IntoElement, ParentElement, SharedString,
+    Styled, div, px,
 };
 use jiff::Timestamp;
-use serde_json::Value;
 
+use super::turns::{self, TurnLayout};
 use crate::app::BenCodeApp;
-use crate::db::{Block, SessionRow};
-use crate::harness::catalog;
-use crate::ui::HarnessIcon;
+use crate::db::SessionRow;
 
-/// Readable column width for message content, aligned with composer card.
-pub const MESSAGE_MAX_WIDTH: gpui::Pixels = gpui::px(840.0);
-const USER_BUBBLE_MAX_WIDTH: gpui::Pixels = gpui::px(580.0);
+/// MonoCode's transcript column (`max-w-4xl`).
+pub const MESSAGE_MAX_WIDTH: gpui::Pixels = px(896.0);
+/// MonoCode's user bubble width (`min(100%, 36rem)`).
+const USER_BUBBLE_MAX_WIDTH: gpui::Pixels = px(576.0);
+/// Long messages clamp to this many lines until "Show more".
+const CLAMP_LINES: usize = 4;
+/// How long a copy button shows its check (MonoCode).
+const COPIED_FOR: std::time::Duration = std::time::Duration::from_secs(2);
+/// Rough characters per bubble line, to tell when a message needs the clamp.
+const CHARS_PER_LINE: usize = 72;
 
-fn tool_field<'a>(block: &'a Block, key: &str) -> Option<&'a str> {
-    block.tool.as_ref()?.get(key).and_then(Value::as_str)
-}
-
-/// Maps MonoCode's tool `status` onto Ely's step marks.
-pub fn step_state(status: &str) -> StepState {
-    match status {
-        "completed" | "success" => StepState::Done,
-        "failed" | "error" => StepState::Failed,
-        "pending" => StepState::Waiting,
-        _ => StepState::Working,
-    }
-}
-
-/// Display name for MonoCode's tool `kind`.
-pub fn tool_label(kind: &str) -> &'static str {
-    match kind {
-        "execute" => "Run",
-        "edit" => "Edit",
-        "read" => "Read",
-        "search" => "Search",
-        "agent" => "Agent",
-        "skill" => "Skill",
-        _ => "Tool",
-    }
-}
-
-fn markdown(id: SharedString, text: &str, live: bool) -> AnyElement {
+pub fn markdown(id: SharedString, text: &str, live: bool) -> AnyElement {
     if live {
         return StreamingMarkdown::new(id, text.to_string(), true).into_any_element();
     }
@@ -65,323 +44,25 @@ fn markdown(id: SharedString, text: &str, live: bool) -> AnyElement {
         .into_any_element()
 }
 
-/// Renders block `ix` of `session`; `live` marks the block still streaming.
-pub fn render_block(
-    app: &BenCodeApp,
-    session: &SessionRow,
-    ix: usize,
-    live: bool,
-    cx: &Context<BenCodeApp>,
-) -> AnyElement {
-    let block = &session.blocks[ix];
-    let id = SharedString::from(format!("{}-{ix}", session.id));
-    let text = block.text.as_deref().unwrap_or("");
-    match block.role.as_str() {
-        "user" => user_bubble(session, block, ix, text, cx),
-        "tool" => tool_card(id, block),
-        "reasoning" => reasoning(app, session, ix, text, cx),
-        "system" => system_notice(text, cx),
-        _ => assistant(session, block, id, text, live, cx),
-    }
+fn muted(color: Hsla, opacity: f32) -> Hsla {
+    color.opacity(opacity)
 }
 
-fn system_notice(text: &str, _cx: &Context<BenCodeApp>) -> AnyElement {
-    let lower = text.to_lowercase();
-    let is_err = lower.contains("stopped")
-        || lower.contains("fail")
-        || lower.contains("error")
-        || lower.contains("terminated")
-        || lower.contains("kill");
-    div()
-        .w_full()
-        .flex()
-        .items_center()
-        .gap_2()
-        .py_1p5()
-        .px_3()
-        .rounded(px(6.0))
-        .bg(if is_err {
-            gpui::rgba(0xef444415)
-        } else {
-            gpui::rgba(0xffffff0a)
-        })
-        .border_1()
-        .border_color(if is_err {
-            gpui::rgba(0xef444425)
-        } else {
-            gpui::rgba(0xffffff10)
-        })
-        .child(
-            Icon::new(if is_err {
-                IconName::CircleAlert
-            } else {
-                IconName::Info
-            })
-            .size(IconSize::Xs)
-            .color(if is_err { rgb(0xf87171) } else { rgb(0x8e8a9d) }),
-        )
-        .child(
-            div()
-                .text_size(px(12.0))
-                .text_color(if is_err { rgb(0xfca5a5) } else { rgb(0xdedce6) })
-                .child(text.to_string()),
-        )
-        .into_any_element()
-}
-
-fn user_bubble(
-    session: &SessionRow,
-    block: &Block,
-    ix: usize,
-    text: &str,
-    cx: &Context<BenCodeApp>,
-) -> AnyElement {
-    let is_single_line = !text.contains('\n') && text.chars().count() < 80;
-    let text_for_copy = text.to_string();
-    let text_for_edit = text.to_string();
-
-    div()
-        .w_full()
-        .min_w_0()
-        .flex()
-        .flex_col()
-        .items_end()
-        .gap_1()
-        .child(
-            div()
-                .min_w_0()
-                .max_w(USER_BUBBLE_MAX_WIDTH)
-                .px_3p5()
-                .py_2()
-                .when(is_single_line, |el| el.rounded(px(18.0)))
-                .when(!is_single_line, |el| el.rounded(px(12.0)))
-                .bg(rgb(0x232030))
-                .border_1()
-                .border_color(gpui::rgba(0xffffff10))
-                .text_size(px(13.0))
-                .text_color(rgb(0xe2e0ea))
-                .child(text.to_string()),
-        )
-        // Below the bubble: copy, recall into the composer, time.
-        .child(
-            div()
-                .flex()
-                .items_center()
-                .gap_1()
-                .pr_1()
-                .child(action_button(
-                    format!("{}-{ix}-copy", session.id),
-                    IconName::Copy,
-                    "Copy message",
-                    cx,
-                    move |_, cx| {
-                        cx.write_to_clipboard(ClipboardItem::new_string(text_for_copy.clone()))
-                    },
-                ))
-                .child(action_button(
-                    format!("{}-{ix}-edit", session.id),
-                    IconName::Pencil,
-                    "Edit in composer",
-                    cx,
-                    move |this, cx| this.edit_turn(&text_for_edit, cx),
-                ))
-                .when_some(clock_time(block.started_at), |el, time| {
-                    el.child(time_label(time, cx))
-                }),
-        )
-        .into_any_element()
-}
-
-fn tool_card(id: SharedString, block: &Block) -> AnyElement {
-    let status = tool_field(block, "status").unwrap_or("completed");
-    let name = tool_label(tool_field(block, "kind").unwrap_or_default());
-    let mut card = ToolCallCard::new(id, name, step_state(status));
-    if let Some(title) = tool_field(block, "title").filter(|t| !t.is_empty()) {
-        card = card.summary(title.to_string());
-    }
-    if let Some(detail) = tool_field(block, "detail").filter(|d| !d.is_empty()) {
-        card = card.result(detail.to_string());
-    }
-    if let Some(ms) = block.duration_ms.and_then(|ms| u64::try_from(ms).ok()) {
-        card = card.took(std::time::Duration::from_millis(ms));
-    }
-    card.into_any_element()
-}
-
-fn reasoning(
-    app: &BenCodeApp,
-    session: &SessionRow,
-    ix: usize,
-    text: &str,
-    cx: &Context<BenCodeApp>,
-) -> AnyElement {
-    let theme = cx.theme();
-    let reasoning_id = format!("{}-{ix}-reasoning", session.id);
-    let is_expanded = app.expanded_reasoning.contains(&reasoning_id);
-    let id_for_click = reasoning_id.clone();
-    let summary = reasoning_summary(text);
-
-    div()
-        .w_full()
-        .flex()
-        .flex_col()
-        .gap_1()
-        .child(
-            div()
-                .id(SharedString::from(format!("{reasoning_id}-toggle")))
-                .flex()
-                .items_center()
-                .gap_1p5()
-                .cursor_pointer()
-                .hover(|s| s.text_color(theme.colors.fg))
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    if this.expanded_reasoning.contains(&id_for_click) {
-                        this.expanded_reasoning.remove(&id_for_click);
-                    } else {
-                        this.expanded_reasoning.insert(id_for_click.clone());
-                    }
-                    cx.notify();
-                }))
-                .child(
-                    Icon::new(if is_expanded {
-                        IconName::ChevronDown
-                    } else {
-                        IconName::ChevronRight
-                    })
-                    .size(IconSize::Xs)
-                    .color(theme.colors.fg_muted),
-                )
-                .child(
-                    div()
-                        .text_size(theme.text_size(TextSize::Xs))
-                        .italic()
-                        .text_color(theme.colors.fg_muted)
-                        .truncate()
-                        .child(summary),
-                ),
-        )
-        .when(is_expanded, |el| {
-            el.child(
-                div()
-                    .pl_3()
-                    .border_l_2()
-                    .border_color(theme.colors.border_strong)
-                    .text_size(theme.text_size(TextSize::Xs))
-                    .italic()
-                    .text_color(theme.colors.fg_muted)
-                    .child(text.to_string()),
-            )
-        })
-        .into_any_element()
-}
-
-fn assistant(
-    session: &SessionRow,
-    block: &Block,
-    id: SharedString,
-    text: &str,
-    live: bool,
-    cx: &Context<BenCodeApp>,
-) -> AnyElement {
-    let theme = cx.theme();
-    let model = block
-        .turn_model
-        .as_ref()
-        .and_then(|m| m.name.clone())
-        .unwrap_or_else(|| catalog::label_for(&session.model));
-    let text_for_copy = text.to_string();
-    let text_for_note = text.to_string();
-    let session_id = session.id.clone();
-
-    div()
-        .flex()
-        .flex_col()
-        .gap_2()
-        .child(
-            div()
-                .flex()
-                .items_center()
-                .gap_2()
-                .min_w_0()
-                .text_size(theme.text_size(TextSize::Xs))
-                .font_weight(FontWeight::SEMIBOLD)
-                .text_color(theme.colors.fg_subtle)
-                .child(HarnessIcon::new(&session.harness).size(px(14.0)))
-                .child(div().min_w_0().truncate().child(model)),
-        )
-        .child(
-            div()
-                .text_size(px(13.0))
-                .text_color(theme.colors.fg)
-                .child(markdown(id.clone(), text, live)),
-        )
-        .when(!live && !text.is_empty(), |el| {
-            let copy = action_button(format!("{id}-act-copy"), IconName::Copy, "Copy", cx, {
-                move |_, cx| cx.write_to_clipboard(ClipboardItem::new_string(text_for_copy.clone()))
-            });
-            let retry = action_button(
-                format!("{id}-act-retry"),
-                IconName::RotateCcw,
-                "Retry",
-                cx,
-                move |this, cx| this.retry_turn(&session_id, cx),
-            );
-            let note = action_button(
-                format!("{id}-act-note"),
-                IconName::FilePlus,
-                "Save as note",
-                cx,
-                move |this, cx| this.save_turn_to_note(&text_for_note, cx),
-            );
-            el.child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_1()
-                    .pt_1()
-                    .pb_2()
-                    .child(copy)
-                    .child(retry)
-                    .child(note)
-                    .when_some(clock_time(block.started_at), |el, time| {
-                        el.child(dot_separator(cx)).child(time_label(time, cx))
-                    }),
-            )
-        })
-        .into_any_element()
-}
-
-/// First non-empty line of a reasoning block, as MonoCode's collapsed row.
-fn reasoning_summary(text: &str) -> String {
-    text.lines()
-        .map(|line| line.trim().trim_start_matches('#').trim().trim_matches('*'))
-        .find(|line| !line.is_empty())
-        .unwrap_or("Thinking")
-        .to_string()
-}
-
-/// Local `H:MM` of a block's start, if it has one.
-fn clock_time(started_at: Option<i64>) -> Option<String> {
-    let ts = Timestamp::from_millisecond(started_at?).ok()?;
+/// Local `H:MM` of an epoch-ms time.
+fn clock_time(at_ms: i64) -> Option<String> {
+    let ts = Timestamp::from_millisecond(at_ms).ok()?;
     let zdt = ts.to_zoned(jiff::tz::TimeZone::system());
     Some(format!("{}:{:02}", zdt.hour(), zdt.minute()))
 }
 
-fn time_label(time: String, cx: &Context<BenCodeApp>) -> impl IntoElement {
-    div()
-        .text_size(px(11.0))
-        .text_color(cx.theme().colors.fg_subtle)
-        .child(time)
+/// Lines a message wraps to, roughly, to decide on the 4-line clamp.
+fn approx_lines(text: &str) -> usize {
+    text.lines()
+        .map(|line| line.chars().count().div_ceil(CHARS_PER_LINE).max(1))
+        .sum()
 }
 
-fn dot_separator(cx: &Context<BenCodeApp>) -> impl IntoElement {
-    div()
-        .text_size(px(11.0))
-        .text_color(cx.theme().colors.fg_subtle)
-        .child("·")
-}
-
-/// A 22px icon button in a transcript action row.
+/// A 22px icon button for transcript actions.
 fn action_button(
     id: String,
     icon: IconName,
@@ -390,18 +71,318 @@ fn action_button(
     on_click: impl Fn(&mut BenCodeApp, &mut Context<BenCodeApp>) + 'static,
 ) -> impl IntoElement {
     let colors = &cx.theme().colors;
+    let hover_bg = muted(colors.fg, 0.08);
     div()
         .id(SharedString::from(id))
         .size(px(22.0))
-        .rounded(px(4.0))
+        .rounded(px(6.0))
         .flex()
         .items_center()
         .justify_center()
         .cursor_pointer()
-        .hover(|s| s.bg(colors.hover))
+        .hover(move |s| s.bg(hover_bg))
         .tooltip(Tooltip::text(tooltip))
         .on_click(cx.listener(move |this, _, _, cx| on_click(this, cx)))
-        .child(Icon::new(icon).size(IconSize::Xs).color(colors.fg_muted))
+        .child(
+            Icon::new(icon)
+                .size(IconSize::Xs)
+                .color(muted(colors.fg, 0.4)),
+        )
+}
+
+/// MonoCode `CopyTurnButton`: copies, then shows a check for two seconds.
+fn copy_button(
+    id: String,
+    text: String,
+    copied: bool,
+    cx: &Context<BenCodeApp>,
+) -> impl IntoElement {
+    let colors = &cx.theme().colors;
+    let hover_bg = muted(colors.fg, 0.08);
+    let key = id.clone();
+    div()
+        .id(SharedString::from(id))
+        .size(px(22.0))
+        .rounded(px(6.0))
+        .flex()
+        .items_center()
+        .justify_center()
+        .cursor_pointer()
+        .hover(move |s| s.bg(hover_bg))
+        .tooltip(Tooltip::text(if copied { "Copied" } else { "Copy" }))
+        .on_click(cx.listener(move |this, _, _, cx| {
+            cx.write_to_clipboard(gpui::ClipboardItem::new_string(text.clone()));
+            this.transcript_ui.copied.insert(key.clone());
+            let key = key.clone();
+            cx.spawn(async move |this, cx| {
+                cx.background_executor().timer(COPIED_FOR).await;
+                let reset = this.update(cx, |this, cx| {
+                    this.transcript_ui.copied.remove(&key);
+                    cx.notify();
+                });
+                if let Err(err) = reset {
+                    log::debug!("copy reset after app drop: {err:#}");
+                }
+            })
+            .detach();
+            cx.notify();
+        }))
+        .child(if copied {
+            Icon::new(IconName::Check)
+                .size(IconSize::Xs)
+                .color(colors.success)
+        } else {
+            Icon::new(IconName::Copy)
+                .size(IconSize::Xs)
+                .color(muted(colors.fg, 0.4))
+        })
+}
+
+fn dot(cx: &App) -> impl IntoElement {
+    div()
+        .size(px(3.0))
+        .flex_none()
+        .rounded_full()
+        .bg(muted(cx.theme().colors.fg, 0.25))
+}
+
+impl BenCodeApp {
+    /// Block `ix` on its own row. `under_work` puts prose right under the
+    /// work it follows (MonoCode `underLine`).
+    pub(super) fn render_block(
+        &self,
+        session: &SessionRow,
+        ix: usize,
+        live: bool,
+        under_work: bool,
+        cx: &Context<Self>,
+    ) -> AnyElement {
+        let block = &session.blocks[ix];
+        match block.role.as_str() {
+            "user" => self.render_user_message(session, ix, cx),
+            "system" => notice(turns::text(block), cx),
+            _ => prose(session, ix, live, under_work, cx),
+        }
+    }
+
+    /// MonoCode's user bubble: right-aligned, clamped to four lines with
+    /// Show more, and a row of actions that fades in on hover.
+    fn render_user_message(
+        &self,
+        session: &SessionRow,
+        ix: usize,
+        cx: &Context<Self>,
+    ) -> AnyElement {
+        let block = &session.blocks[ix];
+        let text = turns::text(block).to_string();
+        let colors = &cx.theme().colors;
+        let key = block.id.clone();
+        let clamps = approx_lines(&text) > CLAMP_LINES;
+        let expanded = self.transcript_ui.expanded_messages.contains(&key);
+        let single_line = !text.contains('\n') && text.chars().count() <= CHARS_PER_LINE;
+        let group = SharedString::from(format!("user-msg-{key}"));
+        let bubble = div()
+            .min_w_0()
+            .max_w(USER_BUBBLE_MAX_WIDTH)
+            .px_3()
+            .py_2()
+            .bg(muted(colors.fg, 0.1))
+            .rounded(if single_line { px(18.0) } else { px(12.0) })
+            .text_size(px(14.0))
+            .line_height(px(22.0))
+            .text_color(colors.fg)
+            .child(
+                div()
+                    .when(clamps && !expanded, |el| el.line_clamp(CLAMP_LINES))
+                    .child(text.clone()),
+            )
+            .when(clamps, |el| {
+                el.child(self.show_more_toggle(&key, expanded, cx))
+            });
+        div()
+            .id(SharedString::from(format!("user-row-{key}")))
+            .group(group.clone())
+            .w_full()
+            .flex()
+            .flex_col()
+            .items_end()
+            .pt_1p5()
+            .pr_4()
+            .pb_1()
+            .pl(px(56.0))
+            .child(bubble)
+            .child(self.user_actions(session, ix, text, &group, cx))
+            .into_any_element()
+    }
+
+    fn show_more_toggle(&self, key: &str, expanded: bool, cx: &Context<Self>) -> impl IntoElement {
+        let colors = &cx.theme().colors;
+        let key = key.to_string();
+        let hover = muted(colors.fg, 0.08);
+        div()
+            .id(SharedString::from(format!("show-more-{key}")))
+            .mt_1()
+            .px_1()
+            .rounded(px(4.0))
+            .text_size(px(12.0))
+            .text_color(muted(colors.fg, 0.6))
+            .cursor_pointer()
+            .hover(move |s| s.bg(hover))
+            .on_click(cx.listener(move |this, _, _, cx| {
+                let set = &mut this.transcript_ui.expanded_messages;
+                if !set.remove(&key) {
+                    set.insert(key.clone());
+                }
+                cx.notify();
+            }))
+            .child(if expanded { "Show less" } else { "Show more" })
+    }
+
+    /// Copy, edit (the last message, once settled), save note, time: hidden
+    /// until the message is hovered.
+    fn user_actions(
+        &self,
+        session: &SessionRow,
+        ix: usize,
+        text: String,
+        group: &SharedString,
+        cx: &Context<Self>,
+    ) -> impl IntoElement {
+        let block = &session.blocks[ix];
+        let last_user = session.blocks.iter().rposition(|b| b.role == "user") == Some(ix);
+        let editable = last_user && !self.is_agent_running_in(&session.id);
+        let (edit_text, note_text) = (text.clone(), text.clone());
+        let time = block.started_at.and_then(clock_time);
+        let colors = &cx.theme().colors;
+        div()
+            .flex()
+            .items_center()
+            .gap_0p5()
+            .h(px(24.0))
+            .opacity(0.0)
+            .group_hover(group.clone(), |s| s.opacity(1.0))
+            .child({
+                let id = format!("{}-copy", block.id);
+                let copied = self.transcript_ui.copied.contains(&id);
+                copy_button(id, text, copied, cx)
+            })
+            .when(editable, |el| {
+                el.child(action_button(
+                    format!("{}-edit", block.id),
+                    IconName::Pencil,
+                    "Edit and resend",
+                    cx,
+                    move |this, cx| this.edit_turn(&edit_text, cx),
+                ))
+            })
+            .child(action_button(
+                format!("{}-note", block.id),
+                IconName::FilePlus,
+                "Save as note",
+                cx,
+                move |this, cx| this.save_turn_to_note(&note_text, cx),
+            ))
+            .when_some(time, |el, time| {
+                el.child(
+                    div()
+                        .pl_1()
+                        .text_size(px(12.0))
+                        .text_color(muted(colors.fg, 0.4))
+                        .child(time),
+                )
+            })
+    }
+
+    /// MonoCode `TurnDuration`: copy and save the turn's text, then the time
+    /// it finished. The clock itself lives on the fold line above.
+    pub(super) fn render_turn_footer(
+        &self,
+        session: &SessionRow,
+        turn: &TurnLayout,
+        cx: &Context<Self>,
+    ) -> AnyElement {
+        let blocks = &session.blocks;
+        let copy = turns::turn_copy_text(blocks, turn.range.clone());
+        let finished = turn
+            .started_at(blocks)
+            .zip(turn.duration_ms(blocks))
+            .and_then(|(start, ms)| clock_time(start + ms));
+        let id = turn.id(blocks).to_string();
+        let colors = &cx.theme().colors;
+        let note_text = copy.clone();
+        div()
+            .flex()
+            .w_full()
+            .min_w_0()
+            .items_center()
+            .gap_2p5()
+            .px_4()
+            .pt_1()
+            .pb_3()
+            .text_size(px(14.0))
+            .text_color(muted(colors.fg, 0.4))
+            .when(!copy.is_empty(), |el| {
+                el.child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap_1()
+                        .child({
+                            let key = format!("turn-copy-{id}");
+                            let copied = self.transcript_ui.copied.contains(&key);
+                            copy_button(key, copy, copied, cx)
+                        })
+                        .child(action_button(
+                            format!("turn-note-{id}"),
+                            IconName::FilePlus,
+                            "Save as note",
+                            cx,
+                            move |this, cx| this.save_turn_to_note(&note_text, cx),
+                        )),
+                )
+            })
+            .when_some(finished, |el, time| {
+                el.child(dot(cx)).child(
+                    div()
+                        .flex_none()
+                        .text_color(muted(colors.fg, 0.35))
+                        .child(time),
+                )
+            })
+            .into_any_element()
+    }
+}
+
+/// The agent's answer at full strength: 14px on 24px lines.
+fn prose(
+    session: &SessionRow,
+    ix: usize,
+    live: bool,
+    under_work: bool,
+    cx: &Context<BenCodeApp>,
+) -> AnyElement {
+    let block = &session.blocks[ix];
+    let id = SharedString::from(format!("{}-{ix}", session.id));
+    div()
+        .px_4()
+        .when(under_work, |el| el.pt_1())
+        .when(!under_work, |el| el.pt_3())
+        .text_size(px(14.0))
+        .line_height(px(24.0))
+        .text_color(cx.theme().colors.fg)
+        .child(markdown(id, turns::text(block), live))
+        .into_any_element()
+}
+
+/// A notice the reader must not miss, as plain muted text (MonoCode).
+fn notice(text: &str, cx: &Context<BenCodeApp>) -> AnyElement {
+    div()
+        .px_4()
+        .py_2()
+        .text_size(px(14.0))
+        .text_color(muted(cx.theme().colors.fg, 0.5))
+        .child(text.to_string())
+        .into_any_element()
 }
 
 #[cfg(test)]
@@ -409,16 +390,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn tool_status_maps_to_step_marks() {
-        assert_eq!(step_state("completed"), StepState::Done);
-        assert_eq!(step_state("failed"), StepState::Failed);
-        assert_eq!(step_state("in_progress"), StepState::Working);
-        assert_eq!(step_state("pending"), StepState::Waiting);
-    }
-
-    #[test]
-    fn tool_kinds_have_labels() {
-        assert_eq!(tool_label("execute"), "Run");
-        assert_eq!(tool_label("unknown"), "Tool");
+    fn long_messages_need_the_clamp() {
+        assert!(approx_lines("short") <= CLAMP_LINES);
+        assert!(approx_lines("a\nb\nc\nd\ne") > CLAMP_LINES);
+        assert!(approx_lines(&"x".repeat(CHARS_PER_LINE * 5)) > CLAMP_LINES);
     }
 }

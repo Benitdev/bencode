@@ -129,6 +129,7 @@ pub struct BenCodeApp {
     pub picker_index: usize,
     pub drafts: HashMap<String, String>,
     pub expanded_reasoning: std::collections::HashSet<String>,
+    pub transcript_ui: crate::ui::transcript::TranscriptUiState,
     /// Each project's terminals (MonoCode project terminal docks).
     pub terminals: crate::ui::terminal_pane::TerminalDocks,
     pub settings_tab: SettingsTab,
@@ -446,6 +447,7 @@ impl BenCodeApp {
             picker_index: 0,
             drafts: HashMap::new(),
             expanded_reasoning: std::collections::HashSet::new(),
+            transcript_ui: Default::default(),
             terminals: Default::default(),
             settings_tab: SettingsTab::Providers,
             surface: None,
@@ -516,6 +518,7 @@ impl BenCodeApp {
         };
         app.apply_settings(saved);
         app.start_git_poll(cx);
+        app.start_clock(cx);
         app
     }
 
@@ -663,25 +666,6 @@ impl BenCodeApp {
             input.set_text(text_owned, cx);
         });
         cx.notify();
-    }
-
-    /// Sends the thread's latest user prompt again as a new turn.
-    pub fn retry_turn(&mut self, session_id: &str, cx: &mut Context<Self>) {
-        if self.is_agent_running_in(session_id) {
-            return;
-        }
-        let Some(session) = self.sessions.iter().find(|s| s.id == session_id) else {
-            return;
-        };
-        let last_prompt = session
-            .blocks
-            .iter()
-            .rev()
-            .find(|b| b.role == "user")
-            .and_then(|b| b.text.clone());
-        if let Some(prompt) = last_prompt {
-            self.send_prompt(session_id, &prompt, cx);
-        }
     }
 
     /// Saves a turn as a note titled after its thread (or the text's first

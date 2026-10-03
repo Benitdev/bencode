@@ -3,21 +3,24 @@
 //! Only visible rows are laid out (`gpui::list`), and only the streaming tail
 //! is re-measured, so a long thread stays cheap while tokens arrive.
 
+mod activity;
 pub mod blocks;
+pub mod turns;
+
+use std::collections::{HashMap, HashSet};
 
 use ely_gpui_component::buttons::{Button, ButtonVariant};
-use ely_gpui_component::chat::StreamingCursor;
-use ely_gpui_component::feedback::ConfirmationCard;
-use ely_gpui_component::theme::{ActiveTheme, ControlSize, TextSize};
+use ely_gpui_component::theme::{ActiveTheme, ControlSize};
 use gpui::{
-    AnyElement, Context, FollowMode, FontWeight, IntoElement, ListAlignment, ListState,
-    ParentElement, Styled, Window, div, px,
+    AnyElement, Context, FollowMode, FontWeight, InteractiveElement, IntoElement, ListAlignment,
+    ListState, ParentElement, SharedString, Styled, Window, div, prelude::*, px,
 };
 
 use crate::app::BenCodeApp;
 use crate::db::SessionRow;
 use crate::harness::catalog;
-use blocks::{MESSAGE_MAX_WIDTH, render_block};
+use blocks::MESSAGE_MAX_WIDTH;
+use turns::{Row, TurnLayout};
 
 /// Rows near the end that may still change height while an agent runs.
 const LIVE_TAIL_ROWS: usize = 3;
@@ -38,6 +41,9 @@ const SUGGESTIONS: [(&str, &str); 2] = [
 pub struct TranscriptView {
     pub list: ListState,
     pub session_id: Option<String>,
+    /// The thread laid out as turns, and the list rows drawn from them.
+    pub turns: Vec<TurnLayout>,
+    pub rows: Vec<Row>,
 }
 
 impl Default for TranscriptView {
@@ -45,43 +51,91 @@ impl Default for TranscriptView {
         Self {
             list: ListState::new(0, ListAlignment::Bottom, LIST_OVERDRAW),
             session_id: None,
+            turns: Vec::new(),
+            rows: Vec::new(),
         }
     }
 }
 
+/// What the transcript remembers the user opened (MonoCode keeps these in
+/// component state): folds, phases, failed tool output, long messages.
+#[derive(Default)]
+pub struct TranscriptUiState {
+    pub open_folds: HashSet<String>,
+    pub phase_open: HashMap<String, bool>,
+    pub open_tool_errors: HashSet<String>,
+    pub expanded_messages: HashSet<String>,
+    /// Copy buttons showing their check.
+    pub copied: HashSet<String>,
+}
+
+/// The fold line's clock ticks once a second while an agent runs.
+const CLOCK_TICK: std::time::Duration = std::time::Duration::from_secs(1);
+
 impl BenCodeApp {
+    /// Redraws every second while any agent runs, so "working for 12s" ticks.
+    pub fn start_clock(&mut self, cx: &mut Context<Self>) {
+        cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor().timer(CLOCK_TICK).await;
+                let ticked = this.update(cx, |app, cx| {
+                    if app.is_agent_running() {
+                        cx.notify();
+                    }
+                });
+                if ticked.is_err() {
+                    return;
+                }
+            }
+        })
+        .detach();
+    }
+
     /// Gets or creates the transcript view for a given session.
     pub fn transcript_view_for(&mut self, session_id: &str) -> &mut TranscriptView {
         self.transcripts.entry(session_id.to_string()).or_default()
     }
 
-    /// Keeps a session list's item count in step with the thread.
+    /// Lays the thread out as turns and keeps the list's rows in step. Rows
+    /// before the first change keep their measurements; the live tail is
+    /// re-measured while the agent streams.
     pub fn sync_transcript_list_for(&mut self, session_id: &str) {
-        let (rows, running) = match self.sessions.iter().find(|s| s.id == session_id) {
+        let running = self.is_agent_running_in(session_id);
+        let waiting = self.pending_permission_for(session_id).is_some();
+        let (turns, rows) = match self.sessions.iter().find(|s| s.id == session_id) {
             Some(s) => {
-                let running = self.is_agent_running_in(&s.id);
-                (s.blocks.len() + usize::from(running), running)
+                let turns = turns::layout_turns(&s.blocks, running);
+                let rows =
+                    turns::build_rows(&s.blocks, &turns, &self.transcript_ui.open_folds, waiting);
+                (turns, rows)
             }
-            None => (0, false),
+            None => (Vec::new(), Vec::new()),
         };
         let view = self.transcripts.entry(session_id.to_string()).or_default();
+        let count = rows.len();
         if view.session_id.as_deref() != Some(session_id) {
-            view.list.reset(rows);
+            view.list.reset(count);
             view.list.set_follow_mode(FollowMode::Tail);
             view.list.scroll_to_end();
             view.session_id = Some(session_id.to_string());
-            return;
+        } else {
+            let old = view.rows.len();
+            let same = view
+                .rows
+                .iter()
+                .zip(&rows)
+                .take_while(|(a, b)| a == b)
+                .count();
+            if same < old || count != old {
+                view.list.splice(same..old, count - same);
+            }
+            if running {
+                view.list
+                    .remeasure_items(count.saturating_sub(LIVE_TAIL_ROWS)..count);
+            }
         }
-        let old = view.list.item_count();
-        if rows > old {
-            view.list.splice(old..old, rows - old);
-        } else if rows < old {
-            view.list.splice(rows..old, 0);
-        }
-        if running || rows != old {
-            view.list
-                .remeasure_items(rows.saturating_sub(LIVE_TAIL_ROWS)..rows);
-        }
+        view.turns = turns;
+        view.rows = rows;
     }
 
     pub fn render_transcript_panel(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -96,23 +150,30 @@ impl BenCodeApp {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let Some(session) = self.sessions.iter().find(|s| s.id == session_id) else {
+        let Some(view) = self.transcripts.get(session_id) else {
             return div().into_any_element();
         };
-        let running = self.is_agent_running_in(&session.id);
-        let content = match session.blocks.get(ix) {
-            Some(block) => {
-                let live = running && ix + 1 == session.blocks.len() && block.role == "assistant";
-                render_block(self, session, ix, live, cx)
+        let (Some(row), Some(session)) = (
+            view.rows.get(ix),
+            self.sessions.iter().find(|s| s.id == session_id),
+        ) else {
+            return div().into_any_element();
+        };
+        let turn_of = |t: usize| &view.turns[t];
+        let content = match row {
+            Row::Item { turn, item } => self.render_turn_item(session, turn_of(*turn), *item, cx),
+            Row::FoldLine { turn } => self.render_fold_line(session, turn_of(*turn), cx),
+            Row::FoldItem { turn, item, .. } => {
+                self.render_fold_item(session, turn_of(*turn), *item, cx)
             }
-            None => self.render_trailer(session, cx),
+            Row::Footer { turn } => self.render_turn_footer(session, turn_of(*turn), cx),
+            Row::Trailer => self.render_trailer(session, cx),
         };
         div()
             .w_full()
             .flex()
             .justify_center()
-            .px_6()
-            .py_1p5()
+            .px_2()
             .child(
                 div()
                     .w_full()
@@ -124,30 +185,69 @@ impl BenCodeApp {
             .into_any_element()
     }
 
-    /// The row after the last block: a permission prompt, or a working indicator.
+    /// The permission prompt, inline under the work like MonoCode's
+    /// `ApprovalControls`: what the agent wants, then Allow / Deny.
     pub fn render_trailer(&self, session: &SessionRow, cx: &Context<Self>) -> AnyElement {
-        if let Some(request) = self.pending_permission_for(&session.id) {
-            let (allow_id, deny_id) = (session.id.clone(), session.id.clone());
-            let approve =
-                cx.listener(move |this, _: &(), _, cx| this.answer_permission(&allow_id, true, cx));
-            let deny =
-                cx.listener(move |this, _: &(), _, cx| this.answer_permission(&deny_id, false, cx));
-            return ConfirmationCard::new("permission-request", format!("Allow {}?", request.tool))
-                .body(request.description.clone())
-                .confirm("Allow")
-                .on_confirm(move |window, cx| approve(&(), window, cx))
-                .on_cancel(move |window, cx| deny(&(), window, cx))
-                .into_any_element();
-        }
-        let theme = cx.theme();
+        let Some(request) = self.pending_permission_for(&session.id) else {
+            return div().into_any_element();
+        };
+        let colors = &cx.theme().colors;
+        let (allow_id, deny_id) = (session.id.clone(), session.id.clone());
+        let button = |id: &str, label: &'static str, primary: bool| {
+            let (bg, fg, hover) = if primary {
+                (colors.fg, colors.bg, colors.fg.opacity(0.8))
+            } else {
+                (
+                    colors.fg.opacity(0.1),
+                    colors.fg.opacity(0.7),
+                    colors.fg.opacity(0.2),
+                )
+            };
+            div()
+                .id(SharedString::from(format!("{id}-{}", session.id)))
+                .px_2p5()
+                .py_0p5()
+                .rounded(px(6.0))
+                .text_size(px(11.0))
+                .font_weight(FontWeight::MEDIUM)
+                .bg(bg)
+                .text_color(fg)
+                .cursor_pointer()
+                .hover(move |s| s.bg(hover))
+                .child(label)
+        };
         div()
             .flex()
-            .items_center()
-            .gap_2()
-            .text_size(theme.text_size(TextSize::Xs))
-            .text_color(theme.colors.fg_muted)
-            .child(StreamingCursor::new("agent-working"))
-            .child("Agent is working…")
+            .flex_col()
+            .gap_1p5()
+            .px_4()
+            .py_1()
+            .child(
+                div()
+                    .text_size(px(14.0))
+                    .text_color(colors.fg.opacity(0.7))
+                    .child(format!("Allow {}?", request.tool)),
+            )
+            .when(!request.description.is_empty(), |el| {
+                el.child(
+                    div()
+                        .font_family(cx.theme().mono_family.clone())
+                        .text_size(px(12.0))
+                        .text_color(colors.fg.opacity(0.5))
+                        .child(request.description.clone()),
+                )
+            })
+            .child(
+                div()
+                    .flex()
+                    .gap_2()
+                    .child(button("perm-allow", "Allow", true).on_click(cx.listener(
+                        move |this, _, _, cx| this.answer_permission(&allow_id, true, cx),
+                    )))
+                    .child(button("perm-deny", "Deny", false).on_click(cx.listener(
+                        move |this, _, _, cx| this.answer_permission(&deny_id, false, cx),
+                    ))),
+            )
             .into_any_element()
     }
 
