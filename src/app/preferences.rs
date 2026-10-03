@@ -122,6 +122,9 @@ impl BenCodeApp {
 
     pub fn set_terminal_open(&mut self, open: bool, cx: &mut Context<Self>) {
         self.is_terminal_open = open;
+        if open {
+            self.ensure_project_terminal(cx);
+        }
         self.save_settings(cx);
         cx.notify();
     }

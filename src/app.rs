@@ -14,7 +14,6 @@ use std::collections::HashMap;
 
 use ely_gpui_component::forms::{InputEvent, TextInput};
 use ely_gpui_component::primitives::FocusScope;
-use ely_gpui_component::terminal::{Launch, Terminal};
 use ely_gpui_component::theme::ActiveTheme;
 use gpui::{
     AppContext, Context, Entity, Focusable, IntoElement, ParentElement, Render, Styled,
@@ -130,7 +129,8 @@ pub struct BenCodeApp {
     pub picker_index: usize,
     pub drafts: HashMap<String, String>,
     pub expanded_reasoning: std::collections::HashSet<String>,
-    pub terminal: Entity<Terminal>,
+    /// Each project's terminals (MonoCode project terminal docks).
+    pub terminals: crate::ui::terminal_pane::TerminalDocks,
     pub settings_tab: SettingsTab,
     /// The full-height view replacing the workspace, if any.
     pub surface: Option<Surface>,
@@ -398,25 +398,6 @@ impl BenCodeApp {
         let harnesses = HarnessResolver::discover();
         let selected_model = catalog::default_model(&harnesses).key.to_string();
 
-        let terminal_cwd = Some(std::path::PathBuf::from(&current_cwd));
-        let terminal = cx.new(|cx| {
-            Terminal::spawn(
-                Launch {
-                    program: None,
-                    cwd: terminal_cwd,
-                    env: vec![
-                        ("TERM".into(), "xterm-256color".into()),
-                        ("COLORTERM".into(), "truecolor".into()),
-                    ],
-                },
-                cx,
-            )
-            .unwrap_or_else(|err| {
-                log::error!("failed to start terminal: {err:#}");
-                Terminal::replay(b"Terminal unavailable\r\n", 80, 24, cx)
-            })
-        });
-
         let notes = db.list_notes().unwrap_or_else(|err| {
             log::error!("failed to load notes: {err:#}");
             Vec::new()
@@ -434,6 +415,9 @@ impl BenCodeApp {
                 this.refresh_workspace(cx);
                 this.refresh_integrations(cx);
                 this.start_automation_scheduler(cx);
+                if this.is_terminal_open {
+                    this.ensure_project_terminal(cx);
+                }
             });
         })
         .detach();
@@ -462,7 +446,7 @@ impl BenCodeApp {
             picker_index: 0,
             drafts: HashMap::new(),
             expanded_reasoning: std::collections::HashSet::new(),
-            terminal,
+            terminals: Default::default(),
             settings_tab: SettingsTab::Providers,
             surface: None,
             settings_return: None,

@@ -17,6 +17,7 @@ actions!(
         Save,
         ToggleSidebar,
         ToggleTerminal,
+        NewTerminal,
         SplitRight,
         SplitDown,
         FocusLeft,
@@ -51,7 +52,7 @@ fn keymap() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-[", GoBack, None),
         KeyBinding::new("cmd-]", GoForward, None),
         KeyBinding::new("cmd-j", ToggleTerminal, None),
-        KeyBinding::new("cmd-`", ToggleTerminal, None),
+        KeyBinding::new("cmd-`", NewTerminal, None),
         KeyBinding::new("cmd-d", SplitRight, None),
         KeyBinding::new("cmd-shift-d", SplitDown, None),
         KeyBinding::new("cmd-alt-left", FocusLeft, None),
@@ -89,6 +90,7 @@ fn menus() -> Vec<Menu> {
             MenuItem::action("Toggle Projects", ToggleSidebar),
             MenuItem::action("Toggle Session Sidebar", ToggleSessionSidebar),
             MenuItem::action("Toggle Terminal", ToggleTerminal),
+            MenuItem::action("New Terminal", NewTerminal),
             MenuItem::separator(),
             MenuItem::action("Split Pane Right", SplitRight),
             MenuItem::action("Split Pane Down", SplitDown),
@@ -177,6 +179,7 @@ impl BenCodeApp {
         }))
         .on_action(cx.listener(|this, _: &GoBack, _, cx| this.go_back(cx)))
         .on_action(cx.listener(|this, _: &GoForward, _, cx| this.go_forward(cx)))
+        .on_action(cx.listener(|this, _: &NewTerminal, _, cx| this.new_terminal(cx)))
         .on_action(cx.listener(|this, _: &ToggleTerminal, _, cx| {
             this.set_terminal_open(!this.is_terminal_open, cx)
         }))
