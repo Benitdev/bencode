@@ -60,8 +60,8 @@ as they land; MonoCode refs are relative to `reference/monocode/src`.
 - [x] P1 M Context meter ring; populate context_window
 - [x] P1 M Inline Allow/Deny on the pending tool row
 - [x] P1 S-M Empty session: centred composer, "What should we work on in {project}?"
-- [ ] P1 M Find in conversation ⌘F
-- [ ] P2 Prose 14/24, plain system notices, metrics badge, composer top bar pickers
+- [x] P1 M Find in conversation ⌘F
+- [x] P2 Prose 14/24, plain system notices, metrics badge, composer top bar pickers
 
 ## Batch D — source control & files UI
 - [ ] P1 S Changes header (36px, muted branch, ↑/↓ only when non-zero, "…" menu)
