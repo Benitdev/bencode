@@ -30,6 +30,7 @@ actions!(
         OpenInbox,
         OpenProject,
         CloseView,
+        SwitchModel,
         ToggleSessionSidebar,
         GoBack,
         GoForward,
@@ -47,6 +48,7 @@ fn keymap() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-s", Save, None),
         KeyBinding::new("cmd-o", OpenProject, None),
         KeyBinding::new("escape", CloseView, None),
+        KeyBinding::new("cmd-.", SwitchModel, None),
         KeyBinding::new("cmd-b", ToggleSidebar, None),
         KeyBinding::new("cmd-shift-b", ToggleSessionSidebar, None),
         KeyBinding::new("cmd-[", GoBack, None),
@@ -89,6 +91,7 @@ fn menus() -> Vec<Menu> {
         Menu::new("View").items([
             MenuItem::action("Toggle Projects", ToggleSidebar),
             MenuItem::action("Toggle Session Sidebar", ToggleSessionSidebar),
+            MenuItem::action("Switch Model…", SwitchModel),
             MenuItem::action("Toggle Terminal", ToggleTerminal),
             MenuItem::action("New Terminal", NewTerminal),
             MenuItem::separator(),
@@ -170,6 +173,7 @@ impl BenCodeApp {
             cx.notify();
         }))
         .on_action(cx.listener(|this, _: &OpenProject, _, cx| this.open_project_dialog(cx)))
+        .on_action(cx.listener(|this, _: &SwitchModel, _, cx| this.toggle_model_picker(cx)))
         .on_action(cx.listener(|this, _: &CloseView, _, cx| {
             if this.surface.is_some() {
                 this.close_surface(cx);
@@ -225,7 +229,7 @@ mod tests {
 
     #[test]
     fn keymap_chords_are_unique_per_action() {
-        assert_eq!(keymap().len(), 22);
+        assert_eq!(keymap().len(), 23);
         assert_eq!(menus().len(), 4);
     }
 }

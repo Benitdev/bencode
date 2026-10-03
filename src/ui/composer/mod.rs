@@ -2,6 +2,7 @@
 //! prompt field with `/` and `@` suggestions, and send / stop.
 //! 100% faithful to MonoCode Composer layout.
 
+mod model_picker;
 mod suggestions;
 
 use ely_gpui_component::buttons::{ButtonVariant, IconButton};
@@ -11,7 +12,7 @@ use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
     AnyElement, Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString,
-    Styled, div, prelude::*, px, rgb,
+    Styled, div, prelude::*, px,
 };
 
 use crate::app::workspace_sync::BranchTarget;
@@ -330,6 +331,10 @@ impl BenCodeApp {
 
     /// Opens one composer popover and closes the others.
     fn toggle_composer_popover(&mut self, which: Popover, cx: &mut Context<Self>) {
+        if which == Popover::Model {
+            self.toggle_model_picker(cx);
+            return;
+        }
         let open = match which {
             Popover::Plus => !self.is_plus_menu_open,
             Popover::Model => !self.is_model_picker_open,
@@ -445,95 +450,6 @@ impl BenCodeApp {
                 .children(rows)
                 .into_any_element(),
         )
-    }
-
-    fn render_model_picker_popover(
-        &self,
-        current_model_key: &str,
-        cx: &Context<Self>,
-    ) -> impl IntoElement {
-        let current_key = current_model_key.to_string();
-
-        div()
-            .id("composer-model-popover")
-            .absolute()
-            .bottom(px(36.0))
-            .left(px(34.0))
-            .w(px(240.0))
-            .max_h(px(300.0))
-            .overflow_y_scroll()
-            .p_1p5()
-            .rounded(px(8.0))
-            .bg(rgb(0x1a1824))
-            .border_1()
-            .border_color(gpui::rgba(0xffffff18))
-            .shadow_lg()
-            .children(HARNESS_ORDER.iter().map(|&kind| {
-                let models: Vec<_> = catalog::models_for(kind).collect();
-                let label = kind.label();
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_1()
-                    .py_1()
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap_1p5()
-                            .px_2()
-                            .text_size(px(10.0))
-                            .font_weight(FontWeight::BOLD)
-                            .text_color(rgb(0x8e8a9d))
-                            .child(HarnessIcon::new(kind.id()).size(px(12.0)))
-                            .child(label),
-                    )
-                    .children(models.into_iter().map(|option| {
-                        let is_active = option.key == current_key;
-                        let key = option.key;
-                        let opt_label = option.label;
-                        div()
-                            .id(SharedString::from(format!("model-opt-{key}")))
-                            .flex()
-                            .items_center()
-                            .justify_between()
-                            .px_2()
-                            .py_1()
-                            .rounded(px(5.0))
-                            .cursor_pointer()
-                            .when(is_active, |el| el.bg(rgb(0x2c293c)))
-                            .hover(|s| s.bg(rgb(0x252233)))
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.set_session_model(key, cx);
-                                this.is_model_picker_open = false;
-                                cx.notify();
-                            }))
-                            .child(
-                                div()
-                                    .flex()
-                                    .items_center()
-                                    .gap_2()
-                                    .child(HarnessIcon::new(kind.id()).size(px(13.0)))
-                                    .child(
-                                        div()
-                                            .text_size(px(12.0))
-                                            .text_color(if is_active {
-                                                rgb(0xffffff)
-                                            } else {
-                                                rgb(0xdedce6)
-                                            })
-                                            .child(opt_label),
-                                    ),
-                            )
-                            .when(is_active, |el| {
-                                el.child(
-                                    Icon::new(IconName::Check)
-                                        .size(IconSize::Xs)
-                                        .color(rgb(0x388bfd)),
-                                )
-                            })
-                    }))
-            }))
     }
 
     /// MonoCode's "ADD TO MESSAGE" menu. Only actions BenCode can honour are

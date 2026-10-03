@@ -127,6 +127,9 @@ pub struct BenCodeApp {
     pub mention_query: String,
     /// Highlighted row of the open `/` or `@` picker.
     pub picker_index: usize,
+    /// The model picker's search field and highlighted row.
+    pub model_search_input: Entity<TextInput>,
+    pub model_picker_index: usize,
     pub drafts: HashMap<String, String>,
     pub expanded_reasoning: std::collections::HashSet<String>,
     pub transcript_ui: crate::ui::transcript::TranscriptUiState,
@@ -287,6 +290,7 @@ impl BenCodeApp {
             (1, 6),
         );
         let search_input = text_input(window, cx, "Search conversations...");
+        let model_search_input = text_input(window, cx, "Search models");
         let note_filter_input = text_input(window, cx, "Filter notes...");
         let note_title_input = text_input(window, cx, "Note title...");
         let note_body_input = multiline_input(
@@ -303,6 +307,7 @@ impl BenCodeApp {
             text_input(window, cx, "Search conversations, files, projects... (⌘K)");
 
         let composer_input = prompt_input.clone();
+        let model_input = model_search_input.clone();
         let weak_app = cx.weak_entity();
         let mut subscriptions = vec![
             cx.subscribe(
@@ -331,6 +336,17 @@ impl BenCodeApp {
             cx.observe_window_appearance(window, |this, window, cx| {
                 this.on_system_appearance_changed(window.appearance(), cx)
             }),
+            cx.subscribe(
+                &model_search_input,
+                |this: &mut Self, _, event: &InputEvent, cx| match event {
+                    InputEvent::Changed => {
+                        this.model_picker_index = 0;
+                        cx.notify();
+                    }
+                    InputEvent::Submit => this.pick_highlighted_model(cx),
+                    _ => {}
+                },
+            ),
             cx.subscribe(&note_title_input, Self::on_note_input_event),
             cx.subscribe(&note_body_input, Self::on_note_input_event),
             cx.subscribe(
@@ -369,6 +385,27 @@ impl BenCodeApp {
             }
             let key = event.keystroke.key.as_str();
             if !matches!(key, "enter" | "escape" | "up" | "down" | "tab") {
+                return;
+            }
+            if model_input.read(cx).focus_handle(cx).is_focused(window) {
+                let handled = weak_app.update(cx, |this, cx| match key {
+                    "up" => {
+                        this.move_model_picker(-1, cx);
+                        true
+                    }
+                    "down" => {
+                        this.move_model_picker(1, cx);
+                        true
+                    }
+                    "escape" => {
+                        this.close_model_picker(cx);
+                        true
+                    }
+                    _ => false,
+                });
+                if matches!(handled, Ok(true)) {
+                    cx.stop_propagation();
+                }
                 return;
             }
             if !composer_input.read(cx).focus_handle(cx).is_focused(window) {
@@ -445,6 +482,8 @@ impl BenCodeApp {
             is_mention_picker_open: false,
             mention_query: String::new(),
             picker_index: 0,
+            model_search_input,
+            model_picker_index: 0,
             drafts: HashMap::new(),
             expanded_reasoning: std::collections::HashSet::new(),
             transcript_ui: Default::default(),
