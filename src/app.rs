@@ -132,6 +132,8 @@ pub struct BenCodeApp {
     /// The model picker's search field and highlighted row.
     pub model_search_input: Entity<TextInput>,
     pub model_picker_index: usize,
+    pub favorite_models: Vec<String>,
+    pub recent_models: Vec<String>,
     /// Keyboard focus and highlight of the composer's menus.
     pub composer_menus: crate::ui::composer::MenuState,
     pub drafts: HashMap<String, String>,
@@ -519,6 +521,8 @@ impl BenCodeApp {
             prompt_focused: false,
             model_search_input,
             model_picker_index: 0,
+            favorite_models: Vec::new(),
+            recent_models: Vec::new(),
             composer_menus: crate::ui::composer::MenuState::new(menu_focus),
             drafts: HashMap::new(),
             expanded_reasoning: std::collections::HashSet::new(),
@@ -621,7 +625,7 @@ impl BenCodeApp {
             return;
         };
         self.selected_model = option.key.to_string();
-        self.save_settings(cx);
+        self.record_recent_model(option.key, cx);
 
         let harness_id = option.harness.id();
         let changed_session = self.selected_session_mut().map(|session| {

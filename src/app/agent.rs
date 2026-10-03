@@ -163,6 +163,9 @@ impl BenCodeApp {
         start_turn(session, &input.text, now, &input.attachments);
         if let Some(block) = session.blocks.last_mut() {
             block.extra.insert("draft".into(), json!(true));
+            if input.plan {
+                block.extra.insert("plan".into(), json!(true));
+            }
         }
         self.persist_session(session_id);
         cx.notify();
@@ -195,10 +198,21 @@ impl BenCodeApp {
         let session = self.sessions.iter_mut().find(|s| s.id == session_id)?;
         let ix = session.blocks.iter().position(|b| b.id == block_id)?;
         let block = session.blocks.remove(ix);
+        let attachments = block
+            .extra
+            .get("attachments")
+            .and_then(Value::as_array)
+            .map(|files| {
+                files
+                    .iter()
+                    .filter_map(Attachment::from_block_json)
+                    .collect()
+            })
+            .unwrap_or_default();
         Some(TurnInput {
+            plan: block.extra.get("plan").and_then(Value::as_bool) == Some(true),
             text: block.text.unwrap_or_default(),
-            attachments: Vec::new(),
-            plan: false,
+            attachments,
         })
     }
 
@@ -440,6 +454,7 @@ fn spawn_request(
         disable_hooks,
         attachments: Vec::new(),
         plan: false,
+        settings: catalog::resolved_settings(&session.model, session.model_settings.as_ref()),
     })
 }
 

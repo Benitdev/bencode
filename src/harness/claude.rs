@@ -25,7 +25,10 @@ pub fn spawn(req: &SpawnRequest) -> Result<(HarnessProcessHandle, EventRx)> {
         args: build_args(req),
         cwd: req.cwd.clone(),
         stdin: StdinMode::Protocol {
-            initial: format!("{}\n", user_message(&req.prompt, &req.attachments)),
+            initial: format!(
+                "{}\n",
+                user_message(&prompt_with_effort(req), &req.attachments)
+            ),
         },
         permission_responder: Some(permission_response),
     };
@@ -66,16 +69,66 @@ fn build_args(req: &SpawnRequest) -> Vec<String> {
             "stdio".into(),
         ]),
     }
-    if req.disable_hooks {
-        args.extend(["--settings".into(), r#"{"disableAllHooks":true}"#.into()]);
+    let setting = |id: &str| req.settings.get(id).map(String::as_str);
+    if let Some(settings) = cli_settings(req) {
+        args.extend(["--settings".into(), settings]);
     }
     if let Some(model) = &req.model {
-        args.extend(["--model".into(), model.clone()]);
+        // MonoCode `resolveClaudeApiModelId`: the 1M window is a model suffix.
+        let model = match setting("context") {
+            Some("1m") => format!("{model}[1m]"),
+            _ => model.clone(),
+        };
+        args.extend(["--model".into(), model]);
+    }
+    if let Some(effort) = cli_effort(setting("effort")) {
+        args.extend(["--effort".into(), effort.into()]);
     }
     if let Some(resume) = &req.resume_id {
         args.extend(["--resume".into(), resume.clone()]);
     }
     args
+}
+
+/// MonoCode `normalizeClaudeCliEffort`: Ultracode runs at `xhigh`;
+/// Ultrathink is a prompt prefix, not a CLI effort.
+fn cli_effort(effort: Option<&str>) -> Option<&str> {
+    match effort? {
+        "ultrathink" | "" => None,
+        "ultracode" => Some("xhigh"),
+        other => Some(other),
+    }
+}
+
+/// MonoCode `launchOptions().settings`, as the `--settings` JSON.
+fn cli_settings(req: &SpawnRequest) -> Option<String> {
+    let on = |id: &str| req.settings.get(id).is_some_and(|v| v == "true");
+    let mut settings = serde_json::Map::new();
+    if on("thinking") {
+        settings.insert("alwaysThinkingEnabled".into(), true.into());
+    }
+    if on("fast") {
+        settings.insert("fastMode".into(), true.into());
+    }
+    if req.settings.get("effort").is_some_and(|e| e == "ultracode") {
+        settings.insert("ultracode".into(), true.into());
+    }
+    if req.disable_hooks {
+        settings.insert("disableAllHooks".into(), true.into());
+    }
+    (!settings.is_empty()).then(|| Value::Object(settings).to_string())
+}
+
+/// MonoCode `applyClaudePromptEffortPrefix`.
+fn prompt_with_effort(req: &SpawnRequest) -> String {
+    if req.settings.get("effort").is_none_or(|e| e != "ultrathink") {
+        return req.prompt.clone();
+    }
+    if req.prompt.is_empty() {
+        "Ultrathink:".into()
+    } else {
+        format!("Ultrathink:\n{}", req.prompt)
+    }
 }
 
 fn user_message(prompt: &str, files: &[Attachment]) -> String {
@@ -332,6 +385,7 @@ mod tests {
             disable_hooks: false,
             attachments: Vec::new(),
             plan: false,
+            settings: Default::default(),
         }
     }
 
@@ -362,6 +416,22 @@ mod tests {
                 .any(|w| w == ["--settings", r#"{"disableAllHooks":true}"#])
         );
         assert!(!ask.contains(&"--settings".to_string()));
+
+        let mut tuned = request(PermissionPolicy::Ask);
+        tuned.settings = [("effort", "ultracode"), ("fast", "true"), ("context", "1m")]
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .into();
+        let tuned_args = build_args(&tuned);
+        assert!(tuned_args.windows(2).any(|w| w == ["--effort", "xhigh"]));
+        assert!(tuned_args.windows(2).any(|w| w == ["--model", "opus[1m]"]));
+        assert!(
+            tuned_args
+                .windows(2)
+                .any(|w| w == ["--settings", r#"{"fastMode":true,"ultracode":true}"#])
+        );
+        tuned.settings.insert("effort".into(), "ultrathink".into());
+        assert!(!build_args(&tuned).contains(&"--effort".to_string()));
+        assert_eq!(prompt_with_effort(&tuned), "Ultrathink:\nhi");
 
         let auto = build_args(&request(PermissionPolicy::AutoApprove));
         assert!(auto.contains(&"--dangerously-skip-permissions".to_string()));
@@ -502,6 +572,7 @@ mod tests {
             disable_hooks: false,
             attachments: Vec::new(),
             plan: false,
+            settings: Default::default(),
         };
         let (handle, mut rx) = crate::harness::spawn(&req).unwrap();
         let events = crate::harness::runtime::runtime().block_on(async move {

@@ -43,6 +43,9 @@ fn build_args(req: &SpawnRequest) -> Vec<String> {
     if let Some(model) = &req.model {
         args.extend(["--model".into(), model.clone()]);
     }
+    if let Some(effort) = req.settings.get("reasoningEffort") {
+        args.extend(["-c".into(), format!("model_reasoning_effort=\"{effort}\"")]);
+    }
     if let Some(thread) = &req.resume_id {
         args.extend(["resume".into(), thread.clone()]);
     }
@@ -297,6 +300,7 @@ mod tests {
             disable_hooks: false,
             attachments: Vec::new(),
             plan: false,
+            settings: Default::default(),
         };
         let args = build_args(&req);
         assert_eq!(&args[..3], ["exec", "--json", "--skip-git-repo-check"]);

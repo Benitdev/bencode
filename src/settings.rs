@@ -44,6 +44,10 @@ pub struct AppSettings {
     /// MonoCode "Claude Code hooks" switched off: Claude runs with
     /// `disableAllHooks`. Hooks are on by default.
     pub claude_hooks_disabled: bool,
+    /// MonoCode `monocode.favoriteModels`: starred model keys.
+    pub favorite_models: Vec<String>,
+    /// MonoCode recent model choices, newest first (⌘. menu).
+    pub recent_models: Vec<String>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
@@ -107,6 +111,8 @@ mod tests {
             permission_mode: PermissionPreference::AutoAcceptEdits,
             terminal_open: true,
             claude_hooks_disabled: true,
+            favorite_models: vec!["claude:opus".into()],
+            recent_models: Vec::new(),
             extra: Map::new(),
         };
         save_to(&dir, &settings).unwrap();

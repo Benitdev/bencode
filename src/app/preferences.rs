@@ -47,6 +47,8 @@ pub fn is_dark_appearance(appearance: WindowAppearance) -> bool {
     )
 }
 
+const RECENT_MODELS_KEPT: usize = 6;
+
 impl BenCodeApp {
     /// Seeds app state from saved preferences; unknown model keys are ignored.
     pub fn apply_settings(&mut self, saved: AppSettings) {
@@ -61,6 +63,8 @@ impl BenCodeApp {
         self.is_terminal_open = saved.terminal_open;
         self.theme_preference = saved.theme;
         self.claude_hooks_disabled = saved.claude_hooks_disabled;
+        self.favorite_models = saved.favorite_models.clone();
+        self.recent_models = saved.recent_models.clone();
         self.settings = saved;
     }
 
@@ -71,6 +75,8 @@ impl BenCodeApp {
             permission_mode: self.permission_mode.into(),
             terminal_open: self.is_terminal_open,
             claude_hooks_disabled: self.claude_hooks_disabled,
+            favorite_models: self.favorite_models.clone(),
+            recent_models: self.recent_models.clone(),
             extra: self.settings.extra.clone(),
         }
     }
@@ -92,6 +98,25 @@ impl BenCodeApp {
                 }
             })
             .detach();
+    }
+
+    /// MonoCode `toggleFavorite`: stars or unstars a model.
+    pub fn toggle_favorite_model(&mut self, key: &str, cx: &mut Context<Self>) {
+        if let Some(ix) = self.favorite_models.iter().position(|k| k == key) {
+            self.favorite_models.remove(ix);
+        } else {
+            self.favorite_models.push(key.to_string());
+        }
+        self.save_settings(cx);
+        cx.notify();
+    }
+
+    /// MonoCode `recordRecentModelChoice`: newest first, a few kept.
+    pub fn record_recent_model(&mut self, key: &str, cx: &mut Context<Self>) {
+        self.recent_models.retain(|k| k != key);
+        self.recent_models.insert(0, key.to_string());
+        self.recent_models.truncate(RECENT_MODELS_KEPT);
+        self.save_settings(cx);
     }
 
     /// Sets the focused thread's access mode and remembers it for new

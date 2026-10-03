@@ -6,6 +6,7 @@
 use gpui::{App, Context, FocusHandle, Focusable, InteractiveElement, Window};
 
 use super::PERMISSION_MODES;
+use super::model_picker::{ModelTab, Submenu};
 use crate::app::BenCodeApp;
 
 pub struct MenuState {
@@ -13,6 +14,15 @@ pub struct MenuState {
     pub focus: FocusHandle,
     /// Highlighted row of the access picker.
     pub access_index: usize,
+    /// Model menu: highlighted row, open flyout, highlighted choice in a
+    /// setting flyout, and the provider tab of the models flyout.
+    pub model_entry: usize,
+    pub model_submenu: Option<Submenu>,
+    pub setting_index: usize,
+    pub model_tab: ModelTab,
+    /// The recent-models menu (⌘.) and its highlighted row.
+    pub recent_open: bool,
+    pub recent_index: usize,
     /// A mouse-down this dispatch landed inside a popover or its chip.
     click_inside: bool,
     /// The outside-click check for this dispatch is already queued.
@@ -24,6 +34,12 @@ impl MenuState {
         Self {
             focus,
             access_index: 0,
+            model_entry: 0,
+            model_submenu: None,
+            setting_index: 0,
+            model_tab: ModelTab::default(),
+            recent_open: false,
+            recent_index: 0,
             click_inside: false,
             check_queued: false,
         }
@@ -84,9 +100,14 @@ impl BenCodeApp {
     /// Keys while a composer menu holds focus (MonoCode `onMenuKey`).
     pub fn handle_menu_key(&mut self, key: &str, cx: &mut Context<Self>) -> bool {
         if self.is_permission_picker_open {
-            return self.access_menu_key(key, cx);
+            self.access_menu_key(key, cx)
+        } else if self.is_model_picker_open {
+            self.model_menu_key(key, cx)
+        } else if self.composer_menus.recent_open {
+            self.recent_menu_key(key, cx)
+        } else {
+            false
         }
-        false
     }
 
     /// MonoCode `AccessPicker`: ↑/↓ stop at the ends, Enter picks, Esc

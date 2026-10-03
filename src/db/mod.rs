@@ -129,6 +129,10 @@ pub struct SessionRow {
     /// Git worktree the thread runs in; `cwd` stays the project folder.
     #[serde(default)]
     pub worktree_cwd: Option<String>,
+    /// MonoCode `modelSettings` (`effort`, `fast`, `thinking`, …). `None`
+    /// keeps the stored value on update and writes `{}` on insert.
+    #[serde(default)]
+    pub model_settings: Option<serde_json::Map<String, Value>>,
     /// Set when `blocks_json` could not be parsed. Such rows carry an empty
     /// `blocks` vector and `upsert_session` refuses to write them back.
     #[serde(skip)]
@@ -281,7 +285,7 @@ const LATE_SESSION_COLUMNS: &[(&str, &str)] = &[
 const SESSION_SELECT: &str =
     "SELECT id, title, cwd, harness, model, created_at, updated_at, branch,
         blocks_json, context_used, context_window, pinned, archived, provider_session_id,
-        runtime_mode, worktree_cwd
+        runtime_mode, worktree_cwd, model_settings
      FROM sessions";
 
 pub struct MonoCodeDb {
@@ -388,14 +392,20 @@ impl MonoCodeDb {
         let blocks_json = serde_json::to_string(&blocks_value)?;
         let has_user_message = has_user_block(&blocks_value);
         let is_draft = has_draft_block(&blocks_value);
+        let model_settings = session
+            .model_settings
+            .as_ref()
+            .map(serde_json::to_string)
+            .transpose()?;
 
         self.conn.execute(
             "INSERT INTO sessions (
                 id, cwd, harness, model, title, blocks_json, created_at, updated_at,
                 branch, context_used, context_window, pinned, archived,
-                provider_session_id, runtime_mode, has_user_message, is_draft, worktree_cwd
+                provider_session_id, runtime_mode, has_user_message, is_draft, worktree_cwd,
+                model_settings
              ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14,
-                       COALESCE(?15, ?16), ?17, ?18, ?19)
+                       COALESCE(?15, ?16), ?17, ?18, ?19, COALESCE(?20, '{}'))
              ON CONFLICT(id) DO UPDATE SET
                 title = excluded.title,
                 cwd = excluded.cwd,
@@ -412,7 +422,8 @@ impl MonoCodeDb {
                 runtime_mode = COALESCE(?15, sessions.runtime_mode),
                 has_user_message = excluded.has_user_message,
                 is_draft = excluded.is_draft,
-                worktree_cwd = excluded.worktree_cwd",
+                worktree_cwd = excluded.worktree_cwd,
+                model_settings = COALESCE(?20, sessions.model_settings)",
             params![
                 session.id,
                 session.cwd,
@@ -433,6 +444,7 @@ impl MonoCodeDb {
                 i64::from(has_user_message),
                 i64::from(is_draft),
                 session.worktree_cwd,
+                model_settings,
             ],
         )?;
         Ok(())
@@ -831,6 +843,13 @@ fn session_from_row(row: &Row<'_>) -> rusqlite::Result<SessionRow> {
         provider_session_id: row.get(13)?,
         runtime_mode: row.get(14)?,
         worktree_cwd: row.get(15)?,
+        model_settings: row
+            .get::<_, Option<String>>(16)?
+            .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+            .and_then(|value| match value {
+                Value::Object(map) => Some(map),
+                _ => None,
+            }),
         blocks_parse_failed,
     })
 }
@@ -1243,6 +1262,28 @@ mod tests {
         assert_eq!(runtime_mode, DEFAULT_SESSION_RUNTIME_MODE);
         assert_eq!(has_user, 1);
         assert_eq!(settings, "{}");
+    }
+
+    #[test]
+    fn model_settings_round_trip_and_survive_none() {
+        let db = monocode_db();
+        insert_monocode_session(&db, "s1", "[]");
+        let mut loaded = db.get_session("s1").unwrap().unwrap();
+        assert_eq!(loaded.model_settings.as_ref().unwrap()["effort"], "high");
+        loaded.model_settings = None;
+        db.upsert_session(&loaded).unwrap();
+        let kept = db.get_session("s1").unwrap().unwrap();
+        assert_eq!(kept.model_settings.as_ref().unwrap()["effort"], "high");
+
+        let mut changed = kept;
+        changed
+            .model_settings
+            .as_mut()
+            .unwrap()
+            .insert("effort".into(), "low".into());
+        db.upsert_session(&changed).unwrap();
+        let saved = db.get_session("s1").unwrap().unwrap();
+        assert_eq!(saved.model_settings.unwrap()["effort"], "low");
     }
 
     #[test]

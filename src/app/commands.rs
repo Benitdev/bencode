@@ -173,7 +173,7 @@ impl BenCodeApp {
             cx.notify();
         }))
         .on_action(cx.listener(|this, _: &OpenProject, _, cx| this.open_project_dialog(cx)))
-        .on_action(cx.listener(|this, _: &SwitchModel, _, cx| this.toggle_model_picker(cx)))
+        .on_action(cx.listener(|this, _: &SwitchModel, _, cx| this.toggle_recent_models(cx)))
         .on_action(cx.listener(|this, _: &CloseView, _, cx| {
             if this.surface.is_some() {
                 this.close_surface(cx);

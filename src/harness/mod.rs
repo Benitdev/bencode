@@ -95,6 +95,8 @@ pub struct SpawnRequest {
     pub attachments: Vec<Attachment>,
     /// MonoCode Plan mode: review a plan before building.
     pub plan: bool,
+    /// The thread's model settings (`effort`, `fast`, …), defaults filled in.
+    pub settings: std::collections::BTreeMap<String, String>,
 }
 
 /// Starts one agent turn. Non-blocking apart from a fork/exec; safe to call
@@ -193,6 +195,7 @@ mod tests {
             disable_hooks: false,
             attachments: Vec::new(),
             plan: false,
+            settings: Default::default(),
         };
         assert!(spawn(&req).is_err());
     }

@@ -41,12 +41,13 @@ enum Popover {
     Access,
 }
 
-/// MonoCode's composer chip: 26px, icon, 11px label, chevron that turns
-/// while open.
+/// MonoCode's composer chip: 26px, icon, 11px label, an optional dimmed
+/// detail (the model's effort), and a chevron that turns while open.
 fn composer_chip(
     id: &'static str,
     icon: gpui::AnyElement,
     label: String,
+    detail: Option<String>,
     open: bool,
     cx: &Context<BenCodeApp>,
 ) -> gpui::Stateful<gpui::Div> {
@@ -74,6 +75,13 @@ fn composer_chip(
                 .text_color(colors.fg.opacity(0.8))
                 .child(label),
         )
+        .children(detail.map(|detail| {
+            div()
+                .flex_none()
+                .text_size(px(11.0))
+                .text_color(colors.fg.opacity(0.5))
+                .child(detail)
+        }))
         .child(
             Icon::new(if open {
                 IconName::ChevronUp
@@ -193,6 +201,9 @@ impl BenCodeApp {
                             self.render_model_picker_popover(key, cx),
                             cx,
                         ))
+                    })
+                    .when(self.composer_menus.recent_open, |el| {
+                        el.child(popover_surface(self.render_recent_models_popover(cx), cx))
                     })
                     .when(self.is_permission_picker_open, |el| {
                         el.child(self.render_permission_picker_popover(cx))
@@ -345,10 +356,19 @@ impl BenCodeApp {
             "composer-model-chip",
             HarnessIcon::new(&harness).size(px(16.0)).into_any_element(),
             catalog::label_for(key),
-            self.is_model_picker_open,
+            catalog::effort_setting(key).map(|effort| {
+                effort
+                    .value_label(session.and_then(|s| s.model_settings.as_ref()))
+                    .to_string()
+            }),
+            self.is_model_picker_open || self.composer_menus.recent_open,
             cx,
         )
-        .on_click(cx.listener(|this, _, _, cx| this.toggle_composer_popover(Popover::Model, cx)));
+        .on_click(cx.listener(|this, _, _, cx| this.toggle_composer_popover(Popover::Model, cx)))
+        .on_mouse_down(
+            gpui::MouseButton::Right,
+            cx.listener(|this, _, _, cx| this.toggle_recent_models(cx)),
+        );
         let model = popover_anchor(model, cx);
         let access = composer_chip(
             "composer-permission-chip",
@@ -357,6 +377,7 @@ impl BenCodeApp {
                 .color(perm_color)
                 .into_any_element(),
             perm_label.to_string(),
+            None,
             self.is_permission_picker_open,
             cx,
         )
@@ -410,8 +431,11 @@ impl BenCodeApp {
         let open = self.is_plus_menu_open
             || self.is_permission_picker_open
             || self.is_branch_picker_open
-            || self.is_model_picker_open;
+            || self.is_model_picker_open
+            || self.composer_menus.recent_open;
         if open {
+            self.composer_menus.recent_open = false;
+            self.composer_menus.model_submenu = None;
             self.is_plus_menu_open = false;
             self.is_permission_picker_open = false;
             self.is_branch_picker_open = false;
@@ -432,6 +456,7 @@ impl BenCodeApp {
             Popover::Model => !self.is_model_picker_open,
             Popover::Access => !self.is_permission_picker_open,
         };
+        self.composer_menus.recent_open = false;
         self.is_plus_menu_open = open && which == Popover::Plus;
         self.is_model_picker_open = open && which == Popover::Model;
         self.is_permission_picker_open = open && which == Popover::Access;

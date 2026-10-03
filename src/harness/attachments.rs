@@ -30,6 +30,19 @@ impl Attachment {
         self.mime_type.starts_with("image/")
     }
 
+    /// Back from `to_block_json` (a saved draft); images travel by path.
+    pub fn from_block_json(value: &Value) -> Option<Self> {
+        let text = |key: &str| value.get(key).and_then(Value::as_str).map(String::from);
+        Some(Self {
+            id: text("id")?,
+            name: text("name")?,
+            path: text("path")?,
+            mime_type: text("mimeType").unwrap_or_else(|| "application/octet-stream".into()),
+            size: value.get("size").and_then(Value::as_u64).unwrap_or(0),
+            data: None,
+        })
+    }
+
     /// What the transcript keeps: everything but the inline data.
     pub fn to_block_json(&self) -> Value {
         json!({
