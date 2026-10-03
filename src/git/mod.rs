@@ -4,8 +4,12 @@ use std::process::{Command, Output};
 
 use anyhow::{Context as _, Result, bail};
 
+mod branches;
 mod diffs;
 mod rows;
+pub use branches::{
+    Branch, SwitchError, create_branch, list_branches, stash_changes, switch_branch,
+};
 pub use diffs::{DiffSource, commit_files, diff_for};
 pub use rows::{DiffRow, number_rows, unified_text};
 
@@ -364,30 +368,6 @@ fn make_change(path: &str, status: GitFileStatus, cwd: &str, stats: &NumstatMap)
 // ---------------------------------------------------------------------------
 
 /// Retrieves list of local git branches for a workspace path
-pub fn get_branches(cwd: &str) -> Vec<String> {
-    let Ok(stdout) = run_git_string(cwd, &["branch", "--format=%(refname:short)"]) else {
-        return vec![DEFAULT_BRANCH.to_string()];
-    };
-    let branches: Vec<String> = stdout
-        .lines()
-        .map(|l| l.trim().to_string())
-        .filter(|l| !l.is_empty())
-        .collect();
-    if !branches.is_empty() {
-        return branches;
-    }
-    // Fresh repo: no refs yet, but HEAD still names the unborn branch.
-    vec![unborn_or_default_branch(cwd)]
-}
-
-fn unborn_or_default_branch(cwd: &str) -> String {
-    run_git_string(cwd, &["symbolic-ref", "--quiet", "--short", "HEAD"])
-        .ok()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| DEFAULT_BRANCH.to_string())
-}
-
 /// Retrieves list of modified, added, or untracked files for a workspace path
 pub fn get_workspace_changes(cwd: &str) -> Vec<GitFileChange> {
     let Ok(entries) = read_status(cwd) else {
@@ -989,7 +969,10 @@ mod tests {
         let first = find(&status.staged, "first.txt");
         assert_eq!(first.status, GitFileStatus::Added);
         assert_eq!(first.additions, 2);
-        assert_eq!(get_branches(repo.cwd()), vec!["main".to_string()]);
+        assert!(
+            list_branches(repo.cwd()).is_empty(),
+            "unborn branch has no ref yet"
+        );
         assert!(get_recent_commits(repo.cwd(), 5).is_empty());
         let diff = get_file_diff(repo.cwd(), "first.txt");
         assert_eq!(
@@ -1178,5 +1161,37 @@ mod tests {
         let rows = diff_for(repo.cwd(), "a.txt", &DiffSource::Commit(sha));
         assert!(rows.contains(&DiffLineKind::Addition("one".into())));
         assert!(!rows.contains(&DiffLineKind::Addition("dirty".into())));
+    }
+
+    #[test]
+    fn switching_branches_creates_tracks_and_reports_blocking_changes() {
+        let repo = TempRepo::new();
+        repo.write("a.txt", "one\n");
+        repo.git(&["add", "a.txt"]);
+        repo.git(&["commit", "-q", "-m", "init"]);
+        assert_eq!(create_branch(repo.cwd(), "feature").unwrap(), "feature");
+        repo.write("a.txt", "feature\n");
+        repo.git(&["commit", "-qam", "on feature"]);
+
+        repo.write("a.txt", "dirty\n");
+        let main = Branch {
+            name: "main".into(),
+            remote: false,
+            current: false,
+        };
+        assert!(matches!(
+            switch_branch(repo.cwd(), &main),
+            Err(SwitchError::BlockedByChanges)
+        ));
+
+        stash_changes(repo.cwd(), "test").unwrap();
+        assert_eq!(switch_branch(repo.cwd(), &main).unwrap(), "main");
+        let names: Vec<_> = list_branches(repo.cwd())
+            .into_iter()
+            .map(|b| (b.name, b.current))
+            .collect();
+        assert!(names.contains(&("main".to_string(), true)));
+        assert!(names.contains(&("feature".to_string(), false)));
+        assert!(create_branch(repo.cwd(), "-bad").is_err());
     }
 }

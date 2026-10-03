@@ -32,7 +32,7 @@ pub struct CommitView {
 pub struct WorkspaceCache {
     /// Directory the cache was loaded for.
     pub cwd: String,
-    pub branches: Vec<String>,
+    pub branches: Vec<git::Branch>,
     pub changes: Vec<GitFileChange>,
     /// Repo-relative paths; `SharedString` so views clone by refcount.
     pub files: Vec<SharedString>,
@@ -57,7 +57,7 @@ struct Snapshot {
     fingerprint: Option<u64>,
     status: GitDetailedStatus,
     commits: Vec<GitCommitInfo>,
-    branches: Vec<String>,
+    branches: Vec<git::Branch>,
     changes: Vec<GitFileChange>,
     files: Vec<SharedString>,
     worktrees: Vec<crate::git::Worktree>,
@@ -69,7 +69,7 @@ fn load_snapshot(cwd: &str) -> Snapshot {
         fingerprint: git::state_fingerprint(cwd),
         status: git::get_detailed_status(cwd),
         commits: git::get_recent_commits(cwd, RECENT_COMMIT_COUNT),
-        branches: git::get_branches(cwd),
+        branches: git::list_branches(cwd),
         changes: git::get_workspace_changes(cwd),
         files: list_workspace_files(root, MENTION_FILE_LIMIT)
             .into_iter()
@@ -302,5 +302,97 @@ impl BenCodeApp {
             });
         })
         .detach();
+    }
+
+    /// Checks out `target` off the UI thread (MonoCode `BranchPicker`).
+    /// Local changes in the way open the "Uncommitted changes" dialog.
+    pub fn switch_to_branch(
+        &mut self,
+        target: BranchTarget,
+        stash_first: bool,
+        cx: &mut Context<Self>,
+    ) {
+        self.is_branch_picker_open = false;
+        self.blocked_branch_switch = None;
+        let cwd = self.workspace_cwd();
+        let job = target.clone();
+        let task = cx.background_executor().spawn(async move {
+            if stash_first {
+                git::stash_changes(&cwd, &format!("BenCode: switch to {}", job.label()))
+                    .map_err(git::SwitchError::Failed)?;
+            }
+            match &job {
+                BranchTarget::Existing(branch) => git::switch_branch(&cwd, branch),
+                BranchTarget::New(name) => git::create_branch(&cwd, name),
+            }
+        });
+        cx.spawn(async move |this, cx| {
+            let result = task.await;
+            let updated = this.update(cx, |app, cx| {
+                match result {
+                    Ok(name) => {
+                        app.workspace.git_error = None;
+                        if let Some(session) = app.selected_session_mut() {
+                            session.branch = Some(name);
+                        }
+                    }
+                    Err(git::SwitchError::BlockedByChanges) => {
+                        app.blocked_branch_switch = Some(target);
+                    }
+                    Err(git::SwitchError::Failed(err)) => {
+                        log::error!("branch switch failed: {err:#}");
+                        app.workspace.git_error = Some(format!("Switch branch failed: {err:#}"));
+                    }
+                }
+                app.refresh_workspace(cx);
+                cx.notify();
+            });
+            if let Err(err) = updated {
+                log::debug!("branch switch finished after app drop: {err:#}");
+            }
+        })
+        .detach();
+    }
+
+    /// MonoCode's `SwitchBranchDialog`: Cancel or Stash & switch.
+    pub fn render_branch_switch_confirm(&self, cx: &Context<Self>) -> Option<gpui::AnyElement> {
+        use ely_gpui_component::overlays::ConfirmDialog;
+        use gpui::IntoElement;
+        let target = self.blocked_branch_switch.clone()?;
+        let cancel = crate::ui::app_callback::app_callback(cx, |this, cx| {
+            this.blocked_branch_switch = None;
+            cx.notify();
+        });
+        let label = target.label().to_string();
+        let stash = crate::ui::app_callback::app_callback(cx, move |this, cx| {
+            this.switch_to_branch(target.clone(), true, cx)
+        });
+        Some(
+            ConfirmDialog::new(
+                "branch-switch-blocked",
+                "Uncommitted changes",
+                format!("Your local changes would be overwritten by switching to {label}. Stash them and switch?"),
+                cancel,
+            )
+            .confirm("Stash & switch")
+            .on_confirm(stash)
+            .into_any_element(),
+        )
+    }
+}
+
+/// What the branch picker asked for.
+#[derive(Clone, Debug)]
+pub enum BranchTarget {
+    Existing(git::Branch),
+    New(String),
+}
+
+impl BranchTarget {
+    pub fn label(&self) -> &str {
+        match self {
+            Self::Existing(branch) => &branch.name,
+            Self::New(name) => name,
+        }
     }
 }

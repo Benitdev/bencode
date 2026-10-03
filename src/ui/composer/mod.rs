@@ -6,7 +6,7 @@ mod suggestions;
 
 use ely_gpui_component::buttons::{ButtonVariant, IconButton};
 use ely_gpui_component::chat::TokenCounter;
-use ely_gpui_component::menus::{Menu, MenuItem, SearchableMenu};
+use ely_gpui_component::git::{Branch as ElyBranch, BranchSelector};
 use ely_gpui_component::primitives::{Icon, IconName};
 use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
@@ -14,6 +14,7 @@ use gpui::{
     Styled, div, prelude::*, px, rgb,
 };
 
+use crate::app::workspace_sync::BranchTarget;
 use crate::app::{BenCodeApp, PermissionMode};
 use crate::db::SessionRow;
 use crate::harness::{HarnessKind, catalog};
@@ -153,6 +154,9 @@ impl BenCodeApp {
                             .child(self.prompt_input.clone()),
                     )
                     // 3. Floating Popovers when open
+                    .when(self.is_branch_picker_open, |el| {
+                        el.child(self.render_branch_picker(cx))
+                    })
                     .when(self.is_plus_menu_open, |el| {
                         el.child(self.render_plus_menu_popover(cx))
                     })
@@ -612,30 +616,89 @@ impl BenCodeApp {
             })
     }
 
+    /// The branch chip; opens Ely's `BranchSelector` (MonoCode `BranchPicker`).
     fn branch_menu(&self, session: Option<&SessionRow>, cx: &Context<Self>) -> impl IntoElement {
-        let current = session.and_then(|s| s.branch.clone()).unwrap_or_else(|| {
-            if self.git_status.branch.is_empty() {
-                "main".to_string()
-            } else {
-                self.git_status.branch.clone()
-            }
-        });
-        let menu = self
+        let colors = &cx.theme().colors;
+        let current = session
+            .and_then(|s| s.branch.clone())
+            .or_else(|| Some(self.git_status.branch.clone()).filter(|b| !b.is_empty()))
+            .unwrap_or_else(|| "main".to_string());
+        div()
+            .id("composer-branch")
+            .flex()
+            .items_center()
+            .gap_1()
+            .px_1p5()
+            .h(px(24.0))
+            .rounded(px(6.0))
+            .cursor_pointer()
+            .text_size(px(11.0))
+            .text_color(colors.fg_muted)
+            .hover(|s| s.bg(colors.hover))
+            .on_click(cx.listener(|this, _, _, cx| {
+                this.is_branch_picker_open = !this.is_branch_picker_open;
+                cx.notify();
+            }))
+            .child(
+                Icon::new(IconName::GitBranch)
+                    .size(IconSize::Xs)
+                    .color(colors.fg_muted),
+            )
+            .child(div().max_w(px(160.0)).truncate().child(current))
+    }
+
+    fn render_branch_picker(&self, cx: &Context<Self>) -> impl IntoElement {
+        let branches: Vec<ElyBranch> = self
             .workspace
             .branches
             .iter()
-            .fold(Menu::new(), |menu, branch| {
-                let name = branch.clone();
-                menu.item(
-                    MenuItem::radio(branch.clone(), *branch == current)
-                        .on_click(app_callback(cx, move |this, cx| {
-                            this.set_session_branch(name.clone(), cx)
-                        })),
-                )
-            });
-        SearchableMenu::new("composer-branch", current, menu)
-            .icon(IconName::GitBranch)
-            .placeholder("Find a branch")
+            .map(|b| ElyBranch {
+                name: b.name.clone().into(),
+                remote: b.remote,
+                current: b.current,
+                ahead: 0,
+                behind: 0,
+                subject: SharedString::default(),
+                when: SharedString::default(),
+            })
+            .collect();
+        let close = app_callback(cx, |this, cx| {
+            this.is_branch_picker_open = false;
+            cx.notify();
+        });
+        let entity = cx.entity().downgrade();
+        let create_entity = entity.clone();
+        let known = self.workspace.branches.clone();
+        div()
+            .absolute()
+            .bottom(px(36.0))
+            .left(px(8.0))
+            .w(px(280.0))
+            .child(
+                BranchSelector::new("composer-branch-picker", branches, close)
+                    .on_pick(move |name, _, cx| {
+                        let Some(branch) = known
+                            .iter()
+                            .find(|b| b.name.as_str() == name.as_ref())
+                            .cloned()
+                        else {
+                            return;
+                        };
+                        if let Err(err) = entity.update(cx, |this, cx| {
+                            this.switch_to_branch(BranchTarget::Existing(branch), false, cx)
+                        }) {
+                            log::debug!("branch pick after app drop: {err:#}");
+                        }
+                    })
+                    .on_create(move |name, _, cx| {
+                        let target = BranchTarget::New(name.to_string());
+                        if let Err(err) = create_entity
+                            .update(cx, |this, cx| this.switch_to_branch(target, false, cx))
+                        {
+                            log::debug!("branch create after app drop: {err:#}");
+                        }
+                    }),
+            )
     }
 }
 

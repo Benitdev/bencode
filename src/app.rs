@@ -7,7 +7,7 @@ mod projects;
 mod tab_history;
 mod tab_scope;
 mod workspace_nav;
-mod workspace_sync;
+pub mod workspace_sync;
 
 use std::collections::HashMap;
 
@@ -125,6 +125,9 @@ pub struct BenCodeApp {
     pub is_model_picker_open: bool,
     pub is_permission_picker_open: bool,
     pub is_plus_menu_open: bool,
+    pub is_branch_picker_open: bool,
+    /// A branch switch git refused because of local changes, awaiting "Stash & switch".
+    pub blocked_branch_switch: Option<crate::app::workspace_sync::BranchTarget>,
     pub is_skill_picker_open: bool,
     pub skill_query: String,
     pub is_mention_picker_open: bool,
@@ -458,6 +461,8 @@ impl BenCodeApp {
             is_model_picker_open: false,
             is_permission_picker_open: false,
             is_plus_menu_open: false,
+            is_branch_picker_open: false,
+            blocked_branch_switch: None,
             is_skill_picker_open: false,
             skill_query: String::new(),
             is_mention_picker_open: false,
@@ -604,13 +609,6 @@ impl BenCodeApp {
         });
         if let Some(id) = changed_session {
             self.persist_session(&id);
-        }
-        cx.notify();
-    }
-
-    pub fn set_session_branch(&mut self, branch: String, cx: &mut Context<Self>) {
-        if let Some(session) = self.selected_session_mut() {
-            session.branch = Some(branch);
         }
         cx.notify();
     }
@@ -940,6 +938,7 @@ impl Render for BenCodeApp {
                 })
                 .children(self.render_session_dialog(cx))
                 .children(self.render_git_confirm(cx))
+                .children(self.render_branch_switch_confirm(cx))
                 .children(self.render_file_tree_dialog(cx)),
         )
     }
