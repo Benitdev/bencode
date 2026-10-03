@@ -43,7 +43,7 @@ as they land; MonoCode refs are relative to `reference/monocode/src`.
 - [ ] P1 M Session menu (Copy session ID, Archive, folders) + filter popover (Archived, status, time, provider)
 - [x] P1 M Pane header only in splits (36px, grip, focus dot, title, close) — `sessions/ui/SessionPane.tsx:713-759`
 - [ ] P1 S Footer 28px, "Terminal" text button, no "Agent running"
-- [ ] P2 Working agents panel, window title, drop pane onto tab, project colour from name
+- [ ] P2 Working agents panel, project colour from name (window title, tab→pane drop done)
 
 ## Batch C — transcript & composer visuals
 - [x] P1 L Fold turn work behind "{Model} worked for 1m 4s"; phases "Read 3 files · Ran 2 commands" — `AgentTranscript.tsx:666-975,1922-2366`
@@ -71,7 +71,7 @@ as they land; MonoCode refs are relative to `reference/monocode/src`.
 - [ ] P1 M History graph (200 commits, lanes, refs, resizable)
 - [ ] P1 M Diff rows via Ely `git::DiffViewer`; P1 L Open All Changes
 - [ ] P1 M Editor tabs (preview, file icons, context menu, reorder); footer instead of toolbar
-- [ ] P1 M Quick Open ⌘P (Ely `navigation::QuickOpen`)
+- [x] P1 M Quick Open ⌘P (MonoCode FilePicker + fuzzy)
 - [ ] P1 S .gitignore-driven hiding (`git check-ignore`)
 - [ ] P1 M File tree menu (cut/copy/paste/duplicate, open in terminal, root menu) + keys; inline new/rename; 30px rows
 - [ ] P1 M Composer worktree picker; create/delete worktree dialogs
