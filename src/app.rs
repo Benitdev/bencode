@@ -152,6 +152,8 @@ pub struct BenCodeApp {
     pub question_focus: gpui::FocusHandle,
     /// Where the prompt's `@`s are, for the file icons drawn over them.
     pub mention_marks: Vec<crate::ui::composer::MentionMark>,
+    /// Threads stopped by their provider's usage limit.
+    pub usage_limits: HashMap<String, crate::ui::composer::usage_limit::UsageLimit>,
     /// The image shown full-window (MonoCode `ImageLightbox`).
     pub lightbox: Option<std::path::PathBuf>,
     /// MonoCode's paste / attach error under the chips, until the next edit.
@@ -695,6 +697,7 @@ impl BenCodeApp {
             question_focus_wanted: false,
             attach_error: None,
             lightbox: None,
+            usage_limits: HashMap::new(),
             mention_marks: Vec::new(),
             dock_measure: Default::default(),
             dock_launch: None,

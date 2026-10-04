@@ -173,6 +173,8 @@ pub struct ClaudeParser {
     streamed_messages: HashSet<String>,
     current_stream_message: Option<String>,
     started_tools: HashSet<String>,
+    /// A `rate_limit_event` refused the turn; its reset time, when given.
+    rate_limited: Option<Option<i64>>,
 }
 
 impl LineParser for ClaudeParser {
@@ -195,7 +197,12 @@ impl LineParser for ClaudeParser {
             Some("assistant") => self.on_assistant(&rec, &mut events),
             Some("user") => on_user(&rec, &mut events),
             Some("control_request") => on_control_request(&rec, &mut events),
-            Some("result") => on_result(&rec, &mut events),
+            Some("result") => on_result(&rec, self.rate_limited.take(), &mut events),
+            Some("rate_limit_event") => {
+                if let Some(limit) = usage_limit_from_rate_limit_event(&rec) {
+                    self.rate_limited = Some(limit);
+                }
+            }
             // MonoCode `compactionConfirmed`.
             Some("system") if str_field(&rec, "subtype") == Some("compact_boundary") => {
                 events.push(AgentEvent::Compacted {
@@ -352,7 +359,32 @@ fn on_control_request(rec: &Value, events: &mut Vec<AgentEvent>) {
     }));
 }
 
-fn on_result(rec: &Value, events: &mut Vec<AgentEvent>) {
+/// MonoCode `usageLimitFromRateLimitEvent`: a refusal outside overage,
+/// with its reset time (seconds → ms) when given.
+fn usage_limit_from_rate_limit_event(rec: &Value) -> Option<Option<i64>> {
+    let info = rec.get("rate_limit_info")?;
+    if str_field(info, "status") != Some("rejected")
+        || info.get("isUsingOverage") == Some(&Value::Bool(true))
+    {
+        return None;
+    }
+    Some(
+        info.get("resetsAt")
+            .and_then(Value::as_i64)
+            .map(|secs| secs * 1000),
+    )
+}
+
+/// MonoCode `isUsageLimitResult`: Claude also ends a limited turn with the
+/// limit as its error text.
+fn is_usage_limit_text(text: &str) -> bool {
+    let lower = text.to_lowercase();
+    lower.contains("usage limit reached")
+        || lower.contains("hit your limit")
+        || lower.contains("hit your usage limit")
+}
+
+fn on_result(rec: &Value, rate_limited: Option<Option<i64>>, events: &mut Vec<AgentEvent>) {
     if let Some(usage) = rec.get("usage") {
         let field = |name: &str| usage.get(name).and_then(Value::as_u64).unwrap_or(0);
         let input_tokens = field("input_tokens")
@@ -392,6 +424,16 @@ fn on_result(rec: &Value, events: &mut Vec<AgentEvent>) {
             .or_else(|| str_field(rec, "subtype"))
             .unwrap_or("Claude reported an error");
         events.push(AgentEvent::Error(message.to_string()));
+        let errors = rec.get("errors").and_then(Value::as_array);
+        let limited_text = is_usage_limit_text(message)
+            || errors
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .any(is_usage_limit_text);
+        if let Some(resets_at) = rate_limited.or(limited_text.then_some(None)) {
+            events.push(AgentEvent::UsageLimited { resets_at });
+        }
         events.push(AgentEvent::Done(DoneStatus::Failed));
     } else {
         events.push(AgentEvent::Done(DoneStatus::Completed));
@@ -565,6 +607,31 @@ mod tests {
 
         let deny: Value = serde_json::from_str(&permission_response(req, false)).unwrap();
         assert_eq!(deny["response"]["response"]["behavior"], "deny");
+    }
+
+    #[test]
+    fn a_refused_turn_reports_the_usage_limit() {
+        let events = parse_all(&[
+            r#"{"type":"rate_limit_event","rate_limit_info":{"status":"rejected","resetsAt":1791098400,"isUsingOverage":false}}"#,
+            r#"{"type":"result","subtype":"success","is_error":true,"result":"You've hit your session limit"}"#,
+        ]);
+        assert!(events.contains(&AgentEvent::UsageLimited {
+            resets_at: Some(1_791_098_400_000)
+        }));
+        // An allowed rate-limit event changes nothing.
+        let allowed = parse_all(&[
+            r#"{"type":"rate_limit_event","rate_limit_info":{"status":"allowed"}}"#,
+            r#"{"type":"result","is_error":false}"#,
+        ]);
+        assert!(
+            !allowed
+                .iter()
+                .any(|e| matches!(e, AgentEvent::UsageLimited { .. }))
+        );
+        let by_text = parse_all(&[
+            r#"{"type":"result","is_error":true,"result":"Claude AI usage limit reached|1791098400"}"#,
+        ]);
+        assert!(by_text.contains(&AgentEvent::UsageLimited { resets_at: None }));
     }
 
     #[test]

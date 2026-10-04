@@ -79,6 +79,11 @@ pub enum AgentEvent {
     },
     /// Token accounting for the running user turn (MonoCode `turn.metrics`).
     TurnMetrics(TurnMetrics),
+    /// The turn stopped on the provider's usage limit; it resets then
+    /// (epoch ms), when known.
+    UsageLimited {
+        resets_at: Option<i64>,
+    },
     /// The conversation was compacted; the context now holds this many tokens.
     Compacted {
         tokens_after: Option<u64>,

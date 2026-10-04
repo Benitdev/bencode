@@ -423,6 +423,7 @@ impl BenCodeApp {
             return;
         };
         start_turn(session, &input.text, now_ms(), &input.attachments);
+        self.usage_limits.remove(session_id);
         // Skill bodies are small SKILL.md files; read them as MonoCode does
         // right before the turn starts.
         let agent_prompt = self.apply_skills(&input.text);
@@ -575,6 +576,12 @@ impl BenCodeApp {
     }
 
     fn on_agent_event(&mut self, session_id: &str, run_id: u64, event: AgentEvent) {
+        if let AgentEvent::UsageLimited { resets_at } = event {
+            if self.current_run(session_id, run_id).is_some() {
+                self.record_usage_limit(session_id, resets_at);
+            }
+            return;
+        }
         let Some(run) = self.current_run(session_id, run_id) else {
             return;
         };
@@ -890,8 +897,8 @@ pub fn apply_event(session: &mut SessionRow, event: AgentEvent, now: i64) {
             session.context_used = i64::try_from(total_tokens).ok();
         }
         AgentEvent::TurnMetrics(metrics) => record_turn_metrics(session, &metrics),
-        // The run keeps it and reports it when the compaction ends.
-        AgentEvent::Compacted { .. } => {}
+        // Kept by the run and the app rather than the transcript.
+        AgentEvent::Compacted { .. } | AgentEvent::UsageLimited { .. } => {}
         AgentEvent::Error(message) => push_notice(session, &message, now),
         AgentEvent::Done(status) => {
             finish_turn(session, now);

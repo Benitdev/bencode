@@ -67,7 +67,8 @@ impl BenCodeApp {
             loop {
                 cx.background_executor().timer(CLOCK_TICK).await;
                 let ticked = this.update(cx, |app, cx| {
-                    if app.is_agent_running() {
+                    let countdown = app.tick_usage_limits(cx);
+                    if app.is_agent_running() || countdown {
                         cx.notify();
                     }
                 });
