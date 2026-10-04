@@ -32,6 +32,9 @@ pub struct TurnInput {
     pub plan: bool,
 }
 
+/// Claude's clarifying-question tool, answered in the composer.
+pub const QUESTION_TOOL: &str = "AskUserQuestion";
+
 pub struct AgentRun {
     pub id: u64,
     pub handle: HarnessProcessHandle,
@@ -40,6 +43,8 @@ pub struct AgentRun {
     pub outcome: Option<DoneStatus>,
     /// Automation run row to close when this turn ends.
     pub automation_run_id: Option<String>,
+    /// Full access: every tool is allowed at once, questions still ask.
+    pub auto_approve: bool,
 }
 
 /// MonoCode's terminal automation-run status for a turn outcome.
@@ -342,7 +347,10 @@ impl BenCodeApp {
                 })
             });
         match started {
-            Ok((handle, events)) => self.track_run(session_id.to_string(), handle, events, cx),
+            Ok((handle, events)) => {
+                let auto_approve = mode == PermissionMode::FullAccess && !input.plan;
+                self.track_run(session_id.to_string(), handle, events, auto_approve, cx)
+            }
             Err((message, at)) => {
                 log::error!("{message}");
                 if let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id) {
@@ -360,6 +368,7 @@ impl BenCodeApp {
         session_id: String,
         handle: HarnessProcessHandle,
         mut events: harness::EventRx,
+        auto_approve: bool,
         cx: &mut Context<Self>,
     ) {
         self.next_run_id += 1;
@@ -372,6 +381,7 @@ impl BenCodeApp {
                 pending_permission: None,
                 outcome: None,
                 automation_run_id: None,
+                auto_approve,
             },
         );
 
@@ -409,7 +419,19 @@ impl BenCodeApp {
             return;
         };
         if let AgentEvent::PermissionRequest(request) = event {
+            // MonoCode full access answers everything but a question.
+            if run.auto_approve && request.tool != QUESTION_TOOL {
+                if !run.handle.respond_permission(&request, true) {
+                    log::warn!("harness rejected auto-approval for {}", request.request_id);
+                }
+                return;
+            }
+            let question = request.tool == QUESTION_TOOL;
             run.pending_permission = Some(request);
+            // The form takes the keys, as MonoCode focuses its options.
+            if question && self.selected_session_id.as_deref() == Some(session_id) {
+                self.question_focus_wanted = true;
+            }
             return;
         }
         let is_done = matches!(event, AgentEvent::Done(_));
@@ -496,6 +518,31 @@ impl BenCodeApp {
     }
 
     /// Answers the permission prompt of `session_id`'s run.
+    /// Replies to the agent's `AskUserQuestion`: `Some(input)` allows the
+    /// tool with the answers filled in, `None` skips it.
+    pub fn answer_question(
+        &mut self,
+        session_id: &str,
+        answered: Option<Value>,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(run) = self.runs.get_mut(session_id) else {
+            return;
+        };
+        let Some(mut request) = run.pending_permission.take() else {
+            return;
+        };
+        let allow = answered.is_some();
+        if let Some(input) = answered {
+            request.input = input;
+        }
+        if !run.handle.respond_permission(&request, allow) {
+            log::warn!("harness rejected the answer to {}", request.request_id);
+        }
+        self.question_ui.remove(session_id);
+        cx.notify();
+    }
+
     pub fn answer_permission(&mut self, session_id: &str, allow: bool, cx: &mut Context<Self>) {
         let Some(run) = self.runs.get_mut(session_id) else {
             return;

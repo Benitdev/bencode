@@ -54,12 +54,17 @@ fn build_args(req: &SpawnRequest) -> Vec<String> {
         Some("plan")
     } else {
         match req.permission {
-            PermissionPolicy::AutoApprove => None,
+            // MonoCode `full-access`: bypass, but keep the prompt channel so
+            // AskUserQuestion still reaches the user (the app allows the rest).
+            PermissionPolicy::AutoApprove => Some("bypassPermissions"),
             PermissionPolicy::Ask => Some("default"),
             PermissionPolicy::AcceptEdits => Some("acceptEdits"),
             PermissionPolicy::Auto => Some("auto"),
         }
     };
+    if asked_mode == Some("bypassPermissions") {
+        args.push("--allow-dangerously-skip-permissions".into());
+    }
     match asked_mode {
         None => args.push("--dangerously-skip-permissions".into()),
         Some(mode) => args.extend([
@@ -451,7 +456,15 @@ mod tests {
         assert_eq!(prompt_with_effort(&tuned), "Ultrathink:\nhi");
 
         let auto = build_args(&request(PermissionPolicy::AutoApprove));
-        assert!(auto.contains(&"--dangerously-skip-permissions".to_string()));
+        assert!(
+            auto.windows(2)
+                .any(|w| w == ["--permission-mode", "bypassPermissions"])
+        );
+        assert!(auto.contains(&"--allow-dangerously-skip-permissions".to_string()));
+        assert!(
+            auto.windows(2)
+                .any(|w| w == ["--permission-prompt-tool", "stdio"])
+        );
         assert!(
             ask.windows(2)
                 .any(|w| w == ["--permission-mode", "default"])

@@ -23,7 +23,7 @@ use gpui::{
     Subscription, Window, div, prelude::*,
 };
 
-pub use agent::{AgentRun, NEW_SESSION_TITLE, now_ms};
+pub use agent::{AgentRun, NEW_SESSION_TITLE, QUESTION_TOOL, now_ms};
 pub use preferences::{is_dark_appearance, theme_mode};
 pub use projects::{is_path_in_project, normalize_project_path, same_project_path};
 pub use surfaces::Surface;
@@ -145,6 +145,13 @@ pub struct BenCodeApp {
     pub find_input: Entity<TextInput>,
     /// Every file of the project, for Go to File, `@` and Search.
     pub project_files: crate::app::project_files::ProjectFiles,
+    /// The agent's pending questions: each thread's form state, the
+    /// "Other" field, and the form's focus for its option keys.
+    pub question_ui: HashMap<String, crate::ui::composer::question::QuestionUi>,
+    pub question_custom_input: Entity<TextInput>,
+    pub question_focus: gpui::FocusHandle,
+    /// A question just arrived for the focused thread; focus moves next frame.
+    pub question_focus_wanted: bool,
     /// The queued message being edited in place, its field, and threads
     /// whose next message waits for that edit to end.
     pub queue_editing: Option<(String, usize)>,
@@ -339,6 +346,9 @@ impl BenCodeApp {
         let find_keys_input = find_input.clone();
         let quick_open_input = text_input(window, cx, "Go to File (type > for commands)");
         let quick_keys_input = quick_open_input.clone();
+        let question_custom_input = text_input(window, cx, "Type your answer");
+        let question_focus = cx.focus_handle();
+        let question_keys_focus = question_focus.clone();
         let queue_edit_input = text_input(window, cx, "Edit queued message");
         let queue_keys_input = queue_edit_input.clone();
         let note_filter_input = text_input(window, cx, "Filter notes...");
@@ -399,6 +409,18 @@ impl BenCodeApp {
                         cx.notify();
                     }
                     InputEvent::Submit => this.pick_highlighted_model(cx),
+                    _ => {}
+                },
+            ),
+            cx.subscribe(
+                &question_custom_input,
+                |this: &mut Self, _, event: &InputEvent, cx| match event {
+                    InputEvent::Changed => this.on_question_custom_changed(cx),
+                    InputEvent::Submit => {
+                        if let Some(id) = this.selected_session_id.clone() {
+                            this.continue_question(&id, cx);
+                        }
+                    }
                     _ => {}
                 },
             ),
@@ -465,6 +487,17 @@ impl BenCodeApp {
             if pasting && composer_input.read(cx).focus_handle(cx).is_focused(window) {
                 let attached = weak_app.update(cx, |this, cx| this.paste_into_composer(cx));
                 if matches!(attached, Ok(true)) {
+                    cx.stop_propagation();
+                }
+                return;
+            }
+            // MonoCode `QuestionForm`: the option keys while the form has focus.
+            if question_keys_focus.is_focused(window) && !event.keystroke.modifiers.modified() {
+                let key = event.keystroke.key.clone();
+                if matches!(
+                    weak_app.update(cx, |this, cx| this.question_key(&key, cx)),
+                    Ok(true)
+                ) {
                     cx.stop_propagation();
                 }
                 return;
@@ -646,6 +679,10 @@ impl BenCodeApp {
             transcript_find: None,
             title_strip: Default::default(),
             quick_open: Default::default(),
+            question_ui: HashMap::new(),
+            question_custom_input,
+            question_focus,
+            question_focus_wanted: false,
             queue_editing: None,
             queue_edit_input,
             queue_held: Default::default(),
@@ -1001,6 +1038,9 @@ fn trigger_query(text: &str, trigger: char) -> Option<String> {
 
 impl Render for BenCodeApp {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if std::mem::take(&mut self.question_focus_wanted) {
+            window.focus(&self.question_focus, cx);
+        }
         if !self.focus_handle.contains_focused(window, cx) && window.focused(cx).is_none() {
             window.focus(&self.focus_handle, cx);
         }

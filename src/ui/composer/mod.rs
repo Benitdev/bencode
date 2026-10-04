@@ -8,6 +8,7 @@ pub mod mentions;
 mod menus;
 pub mod mode_commands;
 mod model_picker;
+pub mod question;
 mod suggestions;
 
 use ely_gpui_component::buttons::ButtonVariant;
@@ -320,6 +321,12 @@ impl BenCodeApp {
             .mx_auto()
             .px(px(6.0))
             .pb(px(6.0))
+            // MonoCode stacks the question form, then the queue, on the box.
+            .children(
+                session
+                    .filter(|_| focused)
+                    .and_then(|s| self.render_question_form(&s.id, cx)),
+            )
             .children(queue.filter(|_| focused))
             .child(
                 div()

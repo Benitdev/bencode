@@ -159,10 +159,15 @@ impl BenCodeApp {
             .into_any_element()
     }
 
-    /// "Waiting for approval", or the running clock.
+    /// "Waiting for answers" / "Waiting for approval", or the running clock.
     fn live_status(&self, session: &SessionRow, turn: &TurnLayout) -> String {
-        if self.pending_permission_for(&session.id).is_some() {
-            return "Waiting for approval".to_string();
+        if let Some(request) = self.pending_permission_for(&session.id) {
+            return if request.tool == crate::app::QUESTION_TOOL {
+                "Waiting for answers"
+            } else {
+                "Waiting for approval"
+            }
+            .to_string();
         }
         let blocks = &session.blocks;
         let elapsed = turn.started_at(blocks).map(|start| now_ms() - start);

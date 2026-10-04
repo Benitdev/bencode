@@ -187,7 +187,11 @@ impl BenCodeApp {
     /// The permission prompt, inline under the work like MonoCode's
     /// `ApprovalControls`: what the agent wants, then Allow / Deny.
     pub fn render_trailer(&self, session: &SessionRow, cx: &Context<Self>) -> AnyElement {
-        let Some(request) = self.pending_permission_for(&session.id) else {
+        let Some(request) = self
+            .pending_permission_for(&session.id)
+            .filter(|r| r.tool != crate::app::QUESTION_TOOL)
+        else {
+            // A question is answered in the composer's form.
             return div().into_any_element();
         };
         let colors = &cx.theme().colors;
