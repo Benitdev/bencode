@@ -14,6 +14,7 @@ use gpui::{
 
 use crate::app::BenCodeApp;
 use crate::db::SessionRow;
+use crate::ui::composer::DockProbe;
 use crate::ui::drag_drop::{DraggedFile, DraggedPane, render_pane_drop_hint};
 use crate::ui::layout::{LayoutNode, SplitDir, leaf_count, pane_edge_from_point, split_shares};
 
@@ -437,7 +438,14 @@ impl BenCodeApp {
                     .text_color(cx.theme().colors.fg)
                     .child(title),
             )
-            .child(self.render_composer_view(Some(session), true, true, cx))
+            .child(
+                div()
+                    .relative()
+                    .w_full()
+                    .child(self.render_composer_view(Some(session), true, true, cx))
+                    .child(self.dock_probe_canvas(DockProbe::Composer)),
+            )
+            .child(self.dock_probe_canvas(DockProbe::Pane))
             .into_any_element()
     }
 }

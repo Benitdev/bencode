@@ -150,6 +150,12 @@ pub struct BenCodeApp {
     pub question_ui: HashMap<String, crate::ui::composer::question::QuestionUi>,
     pub question_custom_input: Entity<TextInput>,
     pub question_focus: gpui::FocusHandle,
+    /// MonoCode's paste / attach error under the chips, until the next edit.
+    pub attach_error: Option<String>,
+    /// The centred composer's last measurements, and a send from it whose
+    /// docked composer is still dropping into place.
+    pub dock_measure: std::rc::Rc<crate::ui::composer::DockMeasure>,
+    pub dock_launch: Option<crate::ui::composer::DockLaunch>,
     /// A question just arrived for the focused thread; focus moves next frame.
     pub question_focus_wanted: bool,
     /// The queued message being edited in place, its field, and threads
@@ -683,6 +689,9 @@ impl BenCodeApp {
             question_custom_input,
             question_focus,
             question_focus_wanted: false,
+            attach_error: None,
+            dock_measure: Default::default(),
+            dock_launch: None,
             queue_editing: None,
             queue_edit_input,
             queue_held: Default::default(),
@@ -825,6 +834,7 @@ impl BenCodeApp {
     }
 
     pub fn on_prompt_changed(&mut self, cx: &mut Context<Self>) {
+        self.attach_error = None;
         let was_mentioning = self.is_mention_picker_open;
         let text = self.prompt_input.read(cx).text().to_string();
         self.is_skill_picker_open = false;

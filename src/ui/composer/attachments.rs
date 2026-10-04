@@ -14,6 +14,26 @@ use super::mode_commands::{self, ModeCommand};
 use crate::app::{BenCodeApp, now_ms};
 use crate::harness::attachments;
 
+/// MonoCode `MAX_ATTACHMENTS`: files one turn carries.
+const MAX_ATTACHMENTS: usize = 20;
+
+/// MonoCode's paste warnings: nothing could be read, or the turn is full.
+fn attach_error(asked: usize, loaded: usize, wanted: usize, fitted: usize) -> Option<String> {
+    if asked > 0 && loaded == 0 {
+        Some(
+            "Nothing to attach from that path — the file may have been moved, renamed, or deleted."
+                .to_string(),
+        )
+    } else if fitted < wanted {
+        Some(format!(
+            "Attached {fitted} of {wanted} copied files. A turn carries up to {MAX_ATTACHMENTS}."
+        ))
+    } else {
+        None
+    }
+}
+
+
 fn image_ext(format: ImageFormat) -> &'static str {
     match format {
         ImageFormat::Jpeg => "jpg",
@@ -55,6 +75,7 @@ impl BenCodeApp {
             return;
         };
         let stamp = now_ms();
+        let paths_len = paths.len();
         let task = cx.background_executor().spawn(async move {
             paths
                 .iter()
@@ -70,15 +91,21 @@ impl BenCodeApp {
                 })
                 .collect::<Vec<_>>()
         });
+        let asked = paths_len;
         cx.spawn(async move |this, cx| {
             let files = task.await;
             let added = this.update(cx, |app, cx| {
                 let list = app.composer_attachments.entry(session_id).or_default();
-                for file in files {
-                    if !list.iter().any(|f| f.path == file.path) {
-                        list.push(file);
-                    }
-                }
+                let loaded = files.len();
+                let fresh: Vec<_> = files
+                    .into_iter()
+                    .filter(|file| !list.iter().any(|f| f.path == file.path))
+                    .collect();
+                let room = MAX_ATTACHMENTS.saturating_sub(list.len());
+                let (wanted, fitted) = (fresh.len(), fresh.len().min(room));
+                list.extend(fresh.into_iter().take(fitted));
+                // MonoCode `pasteError`.
+                app.attach_error = attach_error(asked, loaded, wanted, fitted);
                 cx.notify();
             });
             if let Err(err) = added {
@@ -363,5 +390,24 @@ impl BenCodeApp {
             };
         }
         cx.notify();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn paste_warnings() {
+        assert!(
+            attach_error(2, 0, 0, 0)
+                .unwrap()
+                .starts_with("Nothing to attach")
+        );
+        assert_eq!(
+            attach_error(25, 25, 25, 20).as_deref(),
+            Some("Attached 20 of 25 copied files. A turn carries up to 20.")
+        );
+        assert_eq!(attach_error(2, 2, 2, 2), None);
     }
 }

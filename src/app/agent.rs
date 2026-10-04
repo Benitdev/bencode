@@ -200,6 +200,11 @@ impl BenCodeApp {
         let Some(session_id) = self.selected_session_id.clone() else {
             return;
         };
+        let centred = self
+            .sessions
+            .iter()
+            .find(|s| s.id == session_id)
+            .is_some_and(|s| !s.blocks.iter().any(|b| b.role == "user"));
         let has_files = self
             .composer_attachments
             .get(&session_id)
@@ -218,6 +223,9 @@ impl BenCodeApp {
         self.prompt_input
             .update(cx, |input, cx| input.set_text("", cx));
         self.drafts.remove(&session_id);
+        if centred {
+            self.launch_dock_motion(&session_id);
+        }
         // MonoCode clears Plan after each send; Draft stays chosen until a
         // draft is saved.
         self.plan_mode.remove(&session_id);

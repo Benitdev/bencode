@@ -17,8 +17,8 @@ use ely_gpui_component::menus::{DropdownMenu, Menu, MenuItem};
 use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
-    AnyElement, Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString,
-    Styled, div, prelude::*, px,
+    AnimationExt, AnyElement, Context, FontWeight, InteractiveElement, IntoElement, ParentElement,
+    SharedString, Styled, div, prelude::*, px,
 };
 
 use crate::app::workspace_sync::BranchTarget;
@@ -256,7 +256,81 @@ pub fn prompt_highlights(
     spans
 }
 
+fn focus_id_key(session: Option<&SessionRow>) -> String {
+    session.map_or_else(String::new, |s| s.id.clone())
+}
+
+/// MonoCode `useComposerDockMotion`: 480ms on `cubic-bezier(0.22, 1, 0.36,
+/// 1)`, only when docking follows a send within 1.5s.
+const DOCK_MOTION: std::time::Duration = std::time::Duration::from_millis(480);
+const DOCK_WINDOW: std::time::Duration = std::time::Duration::from_millis(1500);
+
+/// What the centred composer of a new thread measures each frame, so the
+/// docked one can start where it was.
+#[derive(Clone, Copy, Debug)]
+pub enum DockProbe {
+    /// The centred composer's box.
+    Composer,
+    /// The empty pane under it; the docked composer ends at its bottom.
+    Pane,
+}
+
+/// The last measured centred composer (top, height) and pane bottom.
+#[derive(Default)]
+pub struct DockMeasure {
+    pub composer: std::cell::Cell<Option<(f32, f32)>>,
+    pub pane_bottom: std::cell::Cell<Option<f32>>,
+}
+
+/// A send from the centred composer: the thread, when, and how far below
+/// its docked place the composer starts.
+pub struct DockLaunch {
+    pub session_id: String,
+    pub at: std::time::Instant,
+    pub rise: f32,
+}
+
 impl BenCodeApp {
+    /// A zero-cost element recording `probe`'s bounds as it is laid out.
+    pub fn dock_probe_canvas(&self, probe: DockProbe) -> impl IntoElement {
+        let measure = self.dock_measure.clone();
+        gpui::canvas(
+            move |bounds, _, _| match probe {
+                DockProbe::Composer => measure.composer.set(Some((
+                    f32::from(bounds.origin.y),
+                    f32::from(bounds.size.height),
+                ))),
+                DockProbe::Pane => measure
+                    .pane_bottom
+                    .set(Some(f32::from(bounds.origin.y + bounds.size.height))),
+            },
+            |_, _, _, _| {},
+        )
+        .absolute()
+        .size_full()
+    }
+
+    /// Called as the first message leaves the centred composer.
+    pub fn launch_dock_motion(&mut self, session_id: &str) {
+        let (Some((top, height)), Some(bottom)) = (
+            self.dock_measure.composer.get(),
+            self.dock_measure.pane_bottom.get(),
+        ) else {
+            return;
+        };
+        // Docked, the box is 8px shorter (py-3 instead of py-4).
+        let docked_top = bottom - (height - 8.0);
+        let rise = top - docked_top;
+        if rise.abs() < 1.0 {
+            return;
+        }
+        self.dock_launch = Some(DockLaunch {
+            session_id: session_id.to_string(),
+            at: std::time::Instant::now(),
+            rise,
+        });
+    }
+
     /// MonoCode `Composer`: an 8px-rounded box holding the project / branch
     /// bar with the context meter, the prompt, and the + / model / access /
     /// send row.
@@ -278,7 +352,7 @@ impl BenCodeApp {
         focused: bool,
         shell: bool,
         cx: &Context<Self>,
-    ) -> impl IntoElement {
+    ) -> gpui::AnyElement {
         let colors = &cx.theme().colors;
         let running_here = session.is_some_and(|s| self.is_agent_running_in(&s.id));
         let queue = session.and_then(|s| self.render_message_queue(&s.id, cx));
@@ -310,7 +384,17 @@ impl BenCodeApp {
                 .into_any_element()
         };
         let focus_id = session.map(|s| s.id.clone());
-        div()
+        // The docked composer drops in from where the centred one stood.
+        let dock_rise = self
+            .dock_launch
+            .as_ref()
+            .filter(|launch| {
+                !shell
+                    && session.is_some_and(|s| s.id == launch.session_id)
+                    && launch.at.elapsed() < DOCK_WINDOW
+            })
+            .map(|launch| (launch.rise, launch.at));
+        let composer = div()
             .id(SharedString::from(format!(
                 "composer-{}",
                 session.map_or("none", |s| s.id.as_str())
@@ -341,9 +425,24 @@ impl BenCodeApp {
                             .opacity(if self.prompt_focused { 0.2 } else { 0.1 })
                     })
                     .bg(colors.fg.opacity(0.03))
+                    // MonoCode light theme: the page colour, lifted by a shadow.
+                    .when(!cx.theme().is_dark(), |el| el.bg(colors.bg).shadow_md())
                     .when(focused, |el| el.children(self.render_suggestions(cx)))
                     .child(self.composer_top_bar(session, cx))
-                    .children(self.render_attachment_chips(cx))
+                    .when(focused, |el| el.children(self.render_attachment_chips(cx)))
+                    .when_some(
+                        self.attach_error.clone().filter(|_| focused),
+                        |el, error| {
+                            el.child(
+                                div()
+                                    .px_3()
+                                    .pt_2()
+                                    .text_size(px(12.0))
+                                    .text_color(colors.danger)
+                                    .child(error),
+                            )
+                        },
+                    )
                     .child(
                         div()
                             .px_3()
@@ -404,7 +503,18 @@ impl BenCodeApp {
                                 .child("Drop files to attach"),
                         )
                     }),
-            )
+            );
+        match dock_rise {
+            Some((rise, at)) if at.elapsed() < DOCK_MOTION => composer
+                .relative()
+                .with_animation(
+                    SharedString::from(format!("composer-dock-{}", focus_id_key(session))),
+                    gpui::Animation::new(DOCK_MOTION).with_easing(gpui::ease_out_quint()),
+                    move |el, delta| el.top(px(rise * (1.0 - delta))),
+                )
+                .into_any_element(),
+            _ => composer.into_any_element(),
+        }
     }
 
     /// MonoCode's top bar: the project only for a new thread outside any
