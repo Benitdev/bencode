@@ -47,6 +47,39 @@ pub struct AgentRun {
     pub auto_approve: bool,
     /// Only Claude takes a follow-up in the middle of a turn.
     pub can_steer: bool,
+    pub purpose: RunPurpose,
+    /// A compaction the harness confirmed, with the context left after it.
+    pub compacted: Option<Option<u64>>,
+}
+
+/// What a run is for.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum RunPurpose {
+    /// A user turn.
+    #[default]
+    Turn,
+    /// `/compact`: shown as status lines, not as a turn.
+    Compact,
+}
+
+/// What `start_run` sends.
+struct RunRequest {
+    prompt: String,
+    attachments: Vec<Attachment>,
+    plan: bool,
+    purpose: RunPurpose,
+}
+
+/// The command a harness compacts its context with, and MonoCode's
+/// status lines around it.
+const COMPACT_COMMAND: &str = "/compact";
+const COMPACTING_NOTICE: &str = "Compacting context…";
+const COMPACTED_NOTICE: &str = "Compacted context";
+const UNCONFIRMED_COMPACT: &str = "Claude Code did not confirm context compaction";
+
+/// MonoCode `canCompactHarnessContext` for the harnesses BenCode drives.
+pub fn can_compact(harness: &str) -> bool {
+    harness::HarnessKind::from_id(harness) == Some(harness::HarnessKind::Claude)
 }
 
 /// MonoCode's terminal automation-run status for a turn outcome.
@@ -191,6 +224,15 @@ impl BenCodeApp {
     /// behaviour does.
     pub fn submit_prompt(&mut self, cx: &mut Context<Self>) {
         let typed = self.prompt_input.read(cx).text().trim().to_string();
+        // MonoCode runs a lone `/compact` instead of sending it.
+        if mode_commands::standalone_command(&typed) == Some(mode_commands::Command::Compact)
+            && let Some(id) = self.selected_session_id.clone()
+        {
+            self.prompt_input
+                .update(cx, |input, cx| input.set_text("", cx));
+            self.compact_context(&id, cx);
+            return;
+        }
         // A leading `/plan` or `/draft` acts as its mode and is not sent.
         let (command, text) = mode_commands::strip_leading_mode(&typed);
         if self.selected_session_id.is_none() {
@@ -377,16 +419,13 @@ impl BenCodeApp {
 
     /// Starts a turn of `input` in `session_id`.
     pub fn send_turn(&mut self, session_id: &str, input: TurnInput, cx: &mut Context<Self>) {
-        let prompt = input.text.as_str();
-        let mode = self.session_permission_mode(self.sessions.iter().find(|s| s.id == session_id));
         let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id) else {
             return;
         };
-        let now = now_ms();
-        start_turn(session, prompt, now, &input.attachments);
+        start_turn(session, &input.text, now_ms(), &input.attachments);
         // Skill bodies are small SKILL.md files; read them as MonoCode does
         // right before the turn starts.
-        let agent_prompt = self.apply_skills(prompt);
+        let agent_prompt = self.apply_skills(&input.text);
         let Some(session) = self.sessions.iter().find(|s| s.id == session_id) else {
             return;
         };
@@ -397,36 +436,83 @@ impl BenCodeApp {
         } else {
             agent_prompt
         };
-        let request = spawn_request(session, &agent_prompt, mode, self.claude_hooks_disabled).map(
-            |request| SpawnRequest {
-                attachments: input.attachments.clone(),
-                plan: input.plan,
-                ..request
+        self.persist_session(session_id);
+        let request = RunRequest {
+            prompt: agent_prompt,
+            attachments: input.attachments,
+            plan: input.plan,
+            purpose: RunPurpose::Turn,
+        };
+        self.start_run(session_id, request, cx);
+    }
+
+    /// MonoCode `onCompactContext`: Claude summarises the older context
+    /// (`/compact`) as a turn of its own, shown only as status lines.
+    pub fn compact_context(&mut self, session_id: &str, cx: &mut Context<Self>) {
+        if self.is_agent_running_in(session_id) {
+            return;
+        }
+        let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id) else {
+            return;
+        };
+        if !can_compact(&session.harness) {
+            let harness = harness::HarnessKind::from_id(&session.harness)
+                .map_or(session.harness.clone(), |kind| kind.label().to_string());
+            push_notice(
+                session,
+                &format!("{harness} does not support manual context compaction."),
+                now_ms(),
+            );
+            self.persist_session(session_id);
+            cx.notify();
+            return;
+        }
+        push_notice(session, COMPACTING_NOTICE, now_ms());
+        self.persist_session(session_id);
+        let request = RunRequest {
+            prompt: COMPACT_COMMAND.to_string(),
+            attachments: Vec::new(),
+            plan: false,
+            purpose: RunPurpose::Compact,
+        };
+        self.start_run(session_id, request, cx);
+    }
+
+    /// Spawns the thread's harness for `request` and follows its events; a
+    /// failure to start lands in the transcript.
+    fn start_run(&mut self, session_id: &str, request: RunRequest, cx: &mut Context<Self>) {
+        let mode = self.session_permission_mode(self.sessions.iter().find(|s| s.id == session_id));
+        let Some(session) = self.sessions.iter().find(|s| s.id == session_id) else {
+            return;
+        };
+        let spawn = spawn_request(session, &request.prompt, mode, self.claude_hooks_disabled).map(
+            |spawn| SpawnRequest {
+                attachments: request.attachments.clone(),
+                plan: request.plan,
+                ..spawn
             },
         );
-        let harness_kind = request.as_ref().ok().map(|r| r.harness);
-        self.persist_session(session_id);
-        let started = request
-            .map_err(|message| (message, now))
-            .and_then(|request| {
-                harness::spawn(&request).map_err(|err| {
-                    let message = format!("Failed to start {}: {err:#}", request.harness.label());
-                    (message, now_ms())
-                })
-            });
+        let harness_kind = spawn.as_ref().ok().map(|r| r.harness);
+        let started = spawn.and_then(|spawn| {
+            harness::spawn(&spawn)
+                .map_err(|err| format!("Failed to start {}: {err:#}", spawn.harness.label()))
+        });
         match started {
             Ok((handle, events)) => {
-                let auto_approve = mode == PermissionMode::FullAccess && !input.plan;
+                let auto_approve = mode == PermissionMode::FullAccess && !request.plan;
                 self.track_run(session_id.to_string(), handle, events, auto_approve, cx);
                 if let Some(run) = self.runs.get_mut(session_id) {
-                    run.can_steer = harness_kind == Some(harness::HarnessKind::Claude);
+                    run.can_steer = harness_kind == Some(harness::HarnessKind::Claude)
+                        && request.purpose == RunPurpose::Turn;
+                    run.purpose = request.purpose;
                 }
             }
-            Err((message, at)) => {
+            Err(message) => {
                 log::error!("{message}");
                 if let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id) {
-                    push_notice(session, &message, at);
-                    finish_turn(session, at);
+                    let now = now_ms();
+                    push_notice(session, &message, now);
+                    finish_turn(session, now);
                 }
                 self.persist_session(session_id);
             }
@@ -454,6 +540,8 @@ impl BenCodeApp {
                 automation_run_id: None,
                 auto_approve,
                 can_steer: false,
+                purpose: RunPurpose::Turn,
+                compacted: None,
             },
         );
 
@@ -490,6 +578,10 @@ impl BenCodeApp {
         let Some(run) = self.current_run(session_id, run_id) else {
             return;
         };
+        if let AgentEvent::Compacted { tokens_after } = event {
+            run.compacted = Some(tokens_after);
+            return;
+        }
         if let AgentEvent::PermissionRequest(request) = event {
             // MonoCode full access answers everything but a question.
             if run.auto_approve && request.tool != QUESTION_TOOL {
@@ -525,6 +617,22 @@ impl BenCodeApp {
         let Some(run) = self.runs.remove(session_id) else {
             return;
         };
+        if run.purpose == RunPurpose::Compact
+            && let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id)
+        {
+            match run.compacted {
+                Some(tokens) => {
+                    push_notice(session, COMPACTED_NOTICE, now_ms());
+                    if let Some(tokens) = tokens.and_then(|t| i64::try_from(t).ok()) {
+                        session.context_used = Some(tokens);
+                    }
+                }
+                None if run.outcome != Some(DoneStatus::Cancelled) => {
+                    push_notice(session, UNCONFIRMED_COMPACT, now_ms())
+                }
+                None => {}
+            }
+        }
         self.persist_session(session_id);
         self.close_automation_run(&run, automation_status(run.outcome));
         // The agent has most likely edited files.
@@ -782,6 +890,8 @@ pub fn apply_event(session: &mut SessionRow, event: AgentEvent, now: i64) {
             session.context_used = i64::try_from(total_tokens).ok();
         }
         AgentEvent::TurnMetrics(metrics) => record_turn_metrics(session, &metrics),
+        // The run keeps it and reports it when the compaction ends.
+        AgentEvent::Compacted { .. } => {}
         AgentEvent::Error(message) => push_notice(session, &message, now),
         AgentEvent::Done(status) => {
             finish_turn(session, now);

@@ -8,7 +8,7 @@ use gpui::{
     Styled, div, prelude::*, px, relative,
 };
 
-use super::mode_commands::{BUILT_INS, ModeCommand};
+use super::mode_commands::{Command, CommandContext};
 use crate::app::BenCodeApp;
 use crate::db::Note;
 use crate::skills::Skill;
@@ -55,11 +55,15 @@ pub struct Suggestion {
 /// MonoCode `rankSlashCommands`: the built-in mode commands first, then
 /// skills; with a query, a fuzzy match on the name, then the description.
 /// `query` must already be lower-case.
-pub fn skill_suggestions(query: &str, skills: &[Skill], allow_draft: bool) -> Vec<Suggestion> {
-    let built_ins = BUILT_INS
+pub fn skill_suggestions(
+    query: &str,
+    skills: &[Skill],
+    context: CommandContext,
+) -> Vec<Suggestion> {
+    let built_ins = Command::ALL
         .into_iter()
-        .filter(|m| allow_draft || *m != ModeCommand::Draft)
-        .map(|m| (m.name().to_string(), m.description().to_string(), "bencode"));
+        .filter(|c| context.offers(*c))
+        .map(|c| (c.name().to_string(), c.description().to_string(), "bencode"));
     let skills = skills.iter().map(|s| {
         let tag = match s.scope {
             "project" => "project",
@@ -196,6 +200,15 @@ pub fn mention_suggestions(
 }
 
 impl BenCodeApp {
+    /// What the focused thread can run from `/` now.
+    pub fn command_context(&self) -> CommandContext {
+        let session = self.selected_session();
+        CommandContext {
+            idle: session.is_none_or(|s| !self.is_agent_running_in(&s.id)),
+            compact: session.is_some_and(|s| crate::app::can_compact(&s.harness)),
+        }
+    }
+
     /// Moves the picker highlight; true when a picker is open.
     pub fn move_picker(&mut self, delta: isize, cx: &mut Context<Self>) -> bool {
         let len = self.current_suggestions().len();
@@ -222,12 +235,11 @@ impl BenCodeApp {
 
     fn current_suggestions(&self) -> Vec<Suggestion> {
         if self.is_skill_picker_open {
-            // MonoCode offers /draft only while the agent is idle.
-            let idle = self
-                .selected_session_id
-                .as_deref()
-                .is_none_or(|id| !self.is_agent_running_in(id));
-            skill_suggestions(&self.skill_query, &self.integrations.skills, idle)
+            skill_suggestions(
+                &self.skill_query,
+                &self.integrations.skills,
+                self.command_context(),
+            )
         } else if self.is_mention_picker_open {
             // Files and folders insert their shortest label (MonoCode
             // `mentionLabel`).
@@ -468,6 +480,15 @@ fn paint_matches(
 mod tests {
     use super::*;
 
+    const IDLE: CommandContext = CommandContext {
+        idle: true,
+        compact: false,
+    };
+    const BUSY: CommandContext = CommandContext {
+        idle: false,
+        compact: false,
+    };
+
     #[test]
     fn picker_index_wraps_both_ways() {
         assert_eq!(wrap_index(0, -1, 3), 2);
@@ -486,18 +507,18 @@ mod tests {
             source: "agents",
         }];
         // The built-in /plan and /draft come first; /draft only while idle.
-        assert_eq!(skill_suggestions("", &skills, true).len(), 3);
-        assert_eq!(skill_suggestions("", &skills, false).len(), 2);
-        assert_eq!(skill_suggestions("", &skills, true)[0].insert, "/plan");
+        assert_eq!(skill_suggestions("", &skills, IDLE).len(), 3);
+        assert_eq!(skill_suggestions("", &skills, BUSY).len(), 2);
+        assert_eq!(skill_suggestions("", &skills, IDLE)[0].insert, "/plan");
         assert_eq!(
-            skill_suggestions("ship", &skills, true)[0].insert,
+            skill_suggestions("ship", &skills, IDLE)[0].insert,
             "/deploy"
         );
         assert_eq!(
-            skill_suggestions("dep", &skills, true)[0].matched,
+            skill_suggestions("dep", &skills, IDLE)[0].matched,
             [1, 2, 3]
         );
-        assert!(skill_suggestions("zzz-no-match", &skills, true).is_empty());
+        assert!(skill_suggestions("zzz-no-match", &skills, IDLE).is_empty());
     }
 
     #[test]

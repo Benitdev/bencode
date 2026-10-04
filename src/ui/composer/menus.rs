@@ -24,6 +24,8 @@ pub struct MenuState {
     pub model_submenu: Option<Submenu>,
     pub setting_index: usize,
     pub model_tab: ModelTab,
+    /// The context meter's card, pinned open by a click.
+    pub context_pinned: bool,
     /// The checkout menu of a new thread, and its highlighted row.
     pub workspace_menu: Option<usize>,
     /// The recent-models menu (⌘.) and its highlighted row.
@@ -44,6 +46,7 @@ impl MenuState {
             model_submenu: None,
             setting_index: 0,
             model_tab: ModelTab::default(),
+            context_pinned: false,
             workspace_menu: None,
             recent_open: false,
             recent_index: 0,

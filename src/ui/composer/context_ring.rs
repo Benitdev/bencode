@@ -1,13 +1,21 @@
-//! MonoCode `ContextMeter` ring: 14px, 2px stroke, muted until the window
-//! fills — amber from 75%, red from 90% (`contextUsage.ts`).
+//! MonoCode `ContextMeter`: a 14px ring, 2px stroke, muted until the
+//! window fills — amber from 75%, red from 90% (`contextUsage.ts`). Hover
+//! shows the numbers; where the harness can compact, a click pins them with
+//! "Compact now".
 
 use std::f32::consts::{FRAC_PI_2, TAU};
 
+use ely_gpui_component::primitives::Tooltip;
 use ely_gpui_component::theme::ActiveTheme;
 use gpui::{
-    App, Hsla, IntoElement, PathBuilder, Pixels, Point, Styled, Window, canvas, div, point,
-    prelude::*, px,
+    AnyElement, App, Context, Hsla, InteractiveElement, IntoElement, ParentElement, PathBuilder,
+    Pixels, Point, Styled, Window, anchored, canvas, deferred, div, point, prelude::*, px,
 };
+
+use super::menus::{popover_anchor, popover_surface};
+use crate::app::{BenCodeApp, can_compact};
+use crate::db::SessionRow;
+use crate::ui::transcript::turns::format_metric_count;
 
 const SIZE: Pixels = px(14.0);
 const STROKE: Pixels = px(2.0);
@@ -66,4 +74,148 @@ pub fn context_ring(share: f32, cx: &App) -> impl IntoElement {
         )
         .size_full(),
     )
+}
+
+/// The meter's two lines: "N% context used" over "176K / 1M tokens".
+fn meter_text(used: i64, window: i64) -> (f32, String, String) {
+    let share = (used as f32 / window as f32).clamp(0.0, 1.0);
+    let count = |n: i64| format_metric_count(n as f64);
+    (
+        share,
+        format!("{}% context used", (share * 100.0).round()),
+        format!("{} / {} tokens", count(used), count(window)),
+    )
+}
+
+impl BenCodeApp {
+    /// The ring, its hover card, and the pinned card with "Compact now".
+    pub(super) fn context_meter(
+        &self,
+        session: &SessionRow,
+        cx: &Context<Self>,
+    ) -> Option<AnyElement> {
+        let used = session.context_used?.max(0);
+        let window = session.context_window.filter(|w| *w > 0)?;
+        let (share, headline, detail) = meter_text(used, window);
+        let compactable = can_compact(&session.harness);
+        let pinned = compactable && self.composer_menus.context_pinned;
+        let card_lines = (headline.clone(), detail.clone());
+        let ring = div()
+            .id("composer-context")
+            .flex_none()
+            .when(!pinned, |el| {
+                el.tooltip(Tooltip::rich(move |_, cx| {
+                    let colors = &cx.theme().colors;
+                    div()
+                        .flex()
+                        .flex_col()
+                        .child(div().text_size(px(12.0)).child(headline.clone()))
+                        .child(
+                            div()
+                                .text_size(px(11.0))
+                                .text_color(colors.tooltip_fg.opacity(0.5))
+                                .child(detail.clone()),
+                        )
+                        .into_any_element()
+                }))
+            })
+            .when(compactable, |el| {
+                el.cursor_pointer().on_click(cx.listener(|this, _, _, cx| {
+                    let pin = !this.composer_menus.context_pinned;
+                    this.close_composer_popovers(cx);
+                    this.composer_menus.context_pinned = pin;
+                    cx.notify();
+                }))
+            })
+            .child(context_ring(share, cx));
+        Some(
+            div()
+                .relative()
+                .child(popover_anchor(ring, cx))
+                .children(pinned.then(|| self.compact_card(session, card_lines, cx)))
+                .into_any_element(),
+        )
+    }
+
+    /// MonoCode's pinned meter: the numbers and "Compact now", locked while
+    /// the agent works.
+    fn compact_card(
+        &self,
+        session: &SessionRow,
+        (headline, detail): (String, String),
+        cx: &Context<Self>,
+    ) -> AnyElement {
+        let colors = &cx.theme().colors;
+        let busy = self.is_agent_running_in(&session.id);
+        let sid = session.id.clone();
+        let hover = colors.fg.opacity(0.15);
+        let button = div()
+            .id("compact-now")
+            .mt_1p5()
+            .w_full()
+            .px_2()
+            .py_1()
+            .rounded(px(6.0))
+            .bg(colors.fg.opacity(0.10))
+            .text_size(px(11.0))
+            .text_color(colors.fg)
+            .map(|el| {
+                if busy {
+                    el.opacity(0.4)
+                        .tooltip(Tooltip::text("Wait for the current operation to finish"))
+                } else {
+                    el.cursor_pointer()
+                        .hover(move |s| s.bg(hover))
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.composer_menus.context_pinned = false;
+                            this.compact_context(&sid, cx);
+                        }))
+                }
+            })
+            .child("Compact now");
+        let card = div()
+            .id("composer-context-card")
+            .w(px(200.0))
+            .p_2()
+            .rounded(px(12.0))
+            .border_1()
+            .border_color(colors.border)
+            .bg(colors.surface)
+            .shadow_xl()
+            .child(
+                div()
+                    .text_size(px(12.0))
+                    .text_color(colors.fg)
+                    .child(headline),
+            )
+            .child(
+                div()
+                    .text_size(px(11.0))
+                    .text_color(colors.fg.opacity(0.5))
+                    .child(detail),
+            )
+            .child(button);
+        deferred(
+            anchored()
+                .anchor(gpui::Anchor::BottomRight)
+                .offset(point(px(14.0), px(-6.0)))
+                .snap_to_window()
+                .child(popover_surface(card, cx)),
+        )
+        .with_priority(3)
+        .into_any_element()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn meter_reads_share_and_compact_counts() {
+        let (share, headline, detail) = meter_text(176_000, 1_000_000);
+        assert!((share - 0.176).abs() < 1e-6);
+        assert_eq!(headline, "18% context used");
+        assert_eq!(detail, "176K / 1M tokens");
+    }
 }

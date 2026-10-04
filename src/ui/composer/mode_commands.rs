@@ -28,8 +28,61 @@ impl ModeCommand {
     }
 }
 
-/// The built-ins offered first in the `/` picker.
-pub const BUILT_INS: [ModeCommand; 2] = [ModeCommand::Plan, ModeCommand::Draft];
+/// MonoCode's built-in `/` commands, in the picker's order.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Command {
+    Plan,
+    Draft,
+    Compact,
+}
+
+impl Command {
+    pub const ALL: [Command; 3] = [Command::Plan, Command::Draft, Command::Compact];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Plan => ModeCommand::Plan.name(),
+            Self::Draft => ModeCommand::Draft.name(),
+            Self::Compact => "compact",
+        }
+    }
+
+    pub fn description(self) -> &'static str {
+        match self {
+            Self::Plan => ModeCommand::Plan.description(),
+            Self::Draft => ModeCommand::Draft.description(),
+            Self::Compact => "Summarize older conversation context to free space.",
+        }
+    }
+}
+
+/// Which built-ins the thread can use right now.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct CommandContext {
+    /// The agent is idle (Draft saves only then).
+    pub idle: bool,
+    /// The harness can compact its context.
+    pub compact: bool,
+}
+
+impl CommandContext {
+    pub fn offers(self, command: Command) -> bool {
+        match command {
+            Command::Plan => true,
+            Command::Draft => self.idle,
+            Command::Compact => self.compact,
+        }
+    }
+}
+
+/// The prompt is exactly one command that runs on its own (`/compact`).
+pub fn standalone_command(text: &str) -> Option<Command> {
+    let name = text.trim().strip_prefix('/')?;
+    [Command::Compact].into_iter().find(|c| c.name() == name)
+}
+
+/// The mode commands, as typed at the start of the prompt.
+const BUILT_INS: [ModeCommand; 2] = [ModeCommand::Plan, ModeCommand::Draft];
 
 /// A mode command opening the prompt, and its byte range (`/plan`).
 pub fn leading_mode(text: &str) -> Option<(ModeCommand, Range<usize>)> {
@@ -90,6 +143,19 @@ mod tests {
             (Some(ModeCommand::Plan), "add tests".to_string())
         );
         assert_eq!(strip_leading_mode("hello"), (None, "hello".to_string()));
+    }
+
+    #[test]
+    fn commands_offered_by_context() {
+        let idle = CommandContext {
+            idle: true,
+            compact: false,
+        };
+        assert!(idle.offers(Command::Draft));
+        assert!(!idle.offers(Command::Compact));
+        assert_eq!(standalone_command(" /compact "), Some(Command::Compact));
+        assert_eq!(standalone_command("/compact now"), None);
+        assert_eq!(standalone_command("/plan"), None);
     }
 
     #[test]

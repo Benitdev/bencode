@@ -587,37 +587,6 @@ impl BenCodeApp {
             .children(open.then(|| self.render_workspace_menu(cx)))
     }
 
-    /// MonoCode `ContextMeter`: a 14px ring of the window used, with the
-    /// numbers on hover.
-    fn context_meter(&self, session: &SessionRow, cx: &Context<Self>) -> Option<impl IntoElement> {
-        let used = session.context_used?.max(0);
-        let window = session.context_window.filter(|w| *w > 0)?;
-        let share = (used as f32 / window as f32).clamp(0.0, 1.0);
-        let count = |n: i64| crate::ui::transcript::turns::format_metric_count(n as f64);
-        let headline = format!("{}% context used", (share * 100.0).round());
-        let detail = format!("{} / {} tokens", count(used), count(window));
-        Some(
-            div()
-                .id("composer-context")
-                .flex_none()
-                .tooltip(Tooltip::rich(move |_, cx| {
-                    let colors = &cx.theme().colors;
-                    div()
-                        .flex()
-                        .flex_col()
-                        .child(div().text_size(px(12.0)).child(headline.clone()))
-                        .child(
-                            div()
-                                .text_size(px(11.0))
-                                .text_color(colors.tooltip_fg.opacity(0.5))
-                                .child(detail.clone()),
-                        )
-                        .into_any_element()
-                }))
-                .child(context_ring::context_ring(share, cx)),
-        )
-    }
-
     /// "+" (add to message), model, access, then Send / Stop.
     fn composer_bottom_bar(
         &self,
@@ -727,8 +696,10 @@ impl BenCodeApp {
             || self.is_branch_picker_open
             || self.is_model_picker_open
             || self.composer_menus.recent_open
-            || self.composer_menus.workspace_menu.is_some();
+            || self.composer_menus.workspace_menu.is_some()
+            || self.composer_menus.context_pinned;
         if open {
+            self.composer_menus.context_pinned = false;
             self.composer_menus.workspace_menu = None;
             self.composer_menus.recent_open = false;
             self.composer_menus.model_submenu = None;

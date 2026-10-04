@@ -196,6 +196,14 @@ impl LineParser for ClaudeParser {
             Some("user") => on_user(&rec, &mut events),
             Some("control_request") => on_control_request(&rec, &mut events),
             Some("result") => on_result(&rec, &mut events),
+            // MonoCode `compactionConfirmed`.
+            Some("system") if str_field(&rec, "subtype") == Some("compact_boundary") => {
+                events.push(AgentEvent::Compacted {
+                    tokens_after: rec
+                        .pointer("/compact_metadata/post_tokens")
+                        .and_then(Value::as_u64),
+                });
+            }
             _ => {}
         }
         events
@@ -557,6 +565,16 @@ mod tests {
 
         let deny: Value = serde_json::from_str(&permission_response(req, false)).unwrap();
         assert_eq!(deny["response"]["response"]["behavior"], "deny");
+    }
+
+    #[test]
+    fn compaction_is_confirmed_with_the_tokens_left() {
+        let events = parse_all(&[
+            r#"{"type":"system","subtype":"compact_boundary","session_id":"s","compact_metadata":{"trigger":"manual","pre_tokens":22791,"post_tokens":1289}}"#,
+        ]);
+        assert!(events.contains(&AgentEvent::Compacted {
+            tokens_after: Some(1289)
+        }));
     }
 
     #[test]

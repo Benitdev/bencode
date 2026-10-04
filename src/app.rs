@@ -23,7 +23,7 @@ use gpui::{
     Subscription, Window, div, prelude::*,
 };
 
-pub use agent::{AgentRun, NEW_SESSION_TITLE, QUESTION_TOOL, now_ms};
+pub use agent::{AgentRun, NEW_SESSION_TITLE, QUESTION_TOOL, can_compact, now_ms};
 pub use preferences::{is_dark_appearance, theme_mode};
 pub use projects::{is_path_in_project, normalize_project_path, same_project_path};
 pub use surfaces::Surface;

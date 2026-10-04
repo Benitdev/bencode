@@ -79,6 +79,10 @@ pub enum AgentEvent {
     },
     /// Token accounting for the running user turn (MonoCode `turn.metrics`).
     TurnMetrics(TurnMetrics),
+    /// The conversation was compacted; the context now holds this many tokens.
+    Compacted {
+        tokens_after: Option<u64>,
+    },
     Done(DoneStatus),
     Error(String),
 }
