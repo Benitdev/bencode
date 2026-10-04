@@ -28,6 +28,10 @@ impl BenCodeApp {
     pub(super) fn sync_selection(&mut self, cx: &mut Context<Self>) {
         let focused = self.tabs.focused_session().map(str::to_string);
         if focused != self.selected_session_id {
+            // MonoCode leaves edit mode when the thread changes.
+            if self.editing_last_turn.is_some() {
+                self.leave_edit_last_turn(cx);
+            }
             if let Some(old_id) = &self.selected_session_id {
                 let current_prompt = self.prompt_input.read(cx).text().to_string();
                 if current_prompt.is_empty() {

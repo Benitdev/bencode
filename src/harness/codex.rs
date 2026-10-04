@@ -2,11 +2,15 @@
 //! `exec` cannot prompt for approvals, so the permission policy maps onto
 //! Codex's sandbox levels instead.
 
-use anyhow::Result;
+use std::path::Path;
+use std::time::Duration;
+
+use anyhow::{Context as _, Result};
 use serde_json::{Value, json};
 
 use crate::harness::events::{AgentEvent, DoneStatus, TurnMetrics};
 use crate::harness::handle::HarnessProcessHandle;
+use crate::harness::probe::AppServer;
 use crate::harness::process::{self, LineParser, ProcessSpec, StdinMode};
 use crate::harness::resolver::HarnessResolver;
 use crate::harness::{EventRx, PermissionPolicy, SpawnRequest, str_field};
@@ -21,6 +25,55 @@ pub fn spawn(req: &SpawnRequest) -> Result<(HarnessProcessHandle, EventRx)> {
         permission_responder: None,
     };
     process::spawn(spec, CodexParser::default())
+}
+
+/// How long a thread edit may take (the app-server loads the thread).
+const REWIND_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// MonoCode `rewindCodexLastTurn`: reverts `thread_id` to before its latest
+/// user turn, so an edited prompt can be sent in its place. `exec` cannot
+/// do this, so a short-lived `codex app-server` loads the thread and
+/// reverts it. Blocking; run it on a background executor.
+pub fn rewind_last_turn(thread_id: &str, cwd: &Path) -> Result<()> {
+    let program = HarnessResolver::resolve_codex().context("Codex is not installed")?;
+    let mut server = AppServer::open(&program, cwd, REWIND_TIMEOUT)?;
+    server.call(
+        "thread/resume",
+        json!({ "threadId": thread_id, "cwd": cwd.to_string_lossy() }),
+    )?;
+    let page = server.call(
+        "thread/turns/list",
+        json!({
+            "threadId": thread_id,
+            "limit": 100,
+            "sortDirection": "desc",
+            "itemsView": "summary",
+        }),
+    )?;
+    let before = last_user_turn_id(&page).context("Codex did not expose a user turn id to edit")?;
+    server.call(
+        "thread/revert",
+        json!({ "threadId": thread_id, "beforeTurnId": before }),
+    )?;
+    Ok(())
+}
+
+/// MonoCode `lastUserTurnId`: the newest turn (the page is newest first)
+/// holding a user message.
+fn last_user_turn_id(page: &Value) -> Option<&str> {
+    page.get("data")?
+        .as_array()?
+        .iter()
+        .find(|turn| {
+            turn.get("items")
+                .and_then(Value::as_array)
+                .is_some_and(|items| {
+                    items
+                        .iter()
+                        .any(|item| str_field(item, "type") == Some("userMessage"))
+                })
+        })
+        .and_then(|turn| str_field(turn, "id"))
 }
 
 fn build_args(req: &SpawnRequest) -> Vec<String> {
@@ -293,6 +346,17 @@ fn tool_output(item: &Value) -> String {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn rewind_targets_the_newest_turn_with_a_user_message() {
+        let page = json!({ "data": [
+            { "id": "turn_3", "items": [{ "type": "agentMessage" }] },
+            { "id": "turn_2", "items": [{ "type": "userMessage" }, { "type": "agentMessage" }] },
+            { "id": "turn_1", "items": [{ "type": "userMessage" }] },
+        ]});
+        assert_eq!(last_user_turn_id(&page), Some("turn_2"));
+        assert_eq!(last_user_turn_id(&json!({ "data": [] })), None);
+    }
     use super::*;
     use crate::harness::HarnessKind;
 

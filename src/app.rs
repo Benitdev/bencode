@@ -12,7 +12,7 @@ mod tab_scope;
 mod workspace_nav;
 pub mod workspace_sync;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::ui::composer::mcp_tags::McpTag;
 use crate::ui::composer::mentions::MentionIndex;
@@ -24,7 +24,7 @@ use gpui::{
     Subscription, Window, div, prelude::*,
 };
 
-pub use agent::{AgentRun, NEW_SESSION_TITLE, QUESTION_TOOL, can_compact, now_ms};
+pub use agent::{AgentRun, NEW_SESSION_TITLE, QUESTION_TOOL, TurnInput, can_compact, now_ms};
 pub use preferences::{is_dark_appearance, theme_mode};
 pub use projects::{is_path_in_project, normalize_project_path, same_project_path};
 pub use surfaces::Surface;
@@ -162,8 +162,13 @@ pub struct BenCodeApp {
     pub usage_limits: HashMap<String, crate::ui::composer::usage_limit::UsageLimit>,
     /// The image shown full-window (MonoCode `ImageLightbox`).
     pub lightbox: Option<std::path::PathBuf>,
-    /// MonoCode's paste / attach error under the chips, until the next edit.
-    pub attach_error: Option<String>,
+    /// The composer's inline error (a failed paste or attach, an edit the
+    /// provider refused), shown under the chips until the next edit.
+    pub composer_error: Option<String>,
+    /// MonoCode "Edit and resend": the thread whose last message the
+    /// composer holds, and threads whose provider is rewinding for a resend.
+    pub editing_last_turn: Option<String>,
+    pub edit_rewinding: HashSet<String>,
     /// The centred composer's last measurements, and a send from it whose
     /// docked composer is still dropping into place.
     pub dock_measure: std::rc::Rc<crate::ui::composer::DockMeasure>,
@@ -731,7 +736,9 @@ impl BenCodeApp {
             question_custom_input,
             question_focus,
             question_focus_wanted: false,
-            attach_error: None,
+            composer_error: None,
+            editing_last_turn: None,
+            edit_rewinding: HashSet::new(),
             lightbox: None,
             usage_limits: HashMap::new(),
             mention_marks: Vec::new(),
@@ -879,7 +886,7 @@ impl BenCodeApp {
     }
 
     pub fn on_prompt_changed(&mut self, cx: &mut Context<Self>) {
-        self.attach_error = None;
+        self.composer_error = None;
         let was_mentioning = self.is_mention_picker_open;
         let text = self.prompt_input.read(cx).text().to_string();
         self.is_skill_picker_open = false;
@@ -909,9 +916,15 @@ impl BenCodeApp {
                 self.submit_prompt(cx);
                 true
             }
-            // MonoCode: ↑ in an empty composer brings the last prompt back.
+            // MonoCode: ↑ in an empty composer edits the last message where
+            // the provider can rewind; elsewhere it brings the text back.
             ("up", false) if self.prompt_input.read(cx).text().is_empty() => {
-                self.recall_last_turn(cx);
+                match self.selected_session_id.clone() {
+                    Some(id) if self.is_editing_last_turn() || self.can_edit_last_turn(&id) => {
+                        self.toggle_edit_last_turn(&id, cx)
+                    }
+                    _ => self.recall_last_turn(cx),
+                }
                 true
             }
             ("up", true) => self.move_picker(-1, cx),
@@ -985,15 +998,6 @@ impl BenCodeApp {
             });
             cx.notify();
         }
-    }
-
-    /// Sets the prompt text directly into the composer (e.g. for editing last turn).
-    pub fn edit_turn(&mut self, text: &str, cx: &mut Context<Self>) {
-        let text_owned = text.to_string();
-        self.prompt_input.update(cx, |input, cx| {
-            input.set_text(text_owned, cx);
-        });
-        cx.notify();
     }
 
     /// Saves a turn as a note titled after its thread (or the text's first

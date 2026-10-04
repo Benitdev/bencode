@@ -11,12 +11,13 @@
 use std::collections::HashMap;
 use std::io::Read as _;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
-use std::sync::mpsc;
+use std::process::Command;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+
+use crate::harness::probe::run_to_end;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -283,42 +284,12 @@ pub fn add_claude_only_servers(
 /// MonoCode `claude_mcp_list`: Claude's own health check of its servers
 /// (it connects to each, so it can take a while; capped at 30s).
 pub fn claude_mcp_health(claude: &Path, cwd: &str) -> HashMap<String, String> {
-    const TIMEOUT: Duration = Duration::from_secs(30);
-    let child = Command::new(claude)
-        .args(["mcp", "list"])
-        .current_dir(cwd)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn();
-    let mut child = match child {
-        Ok(child) => child,
+    let mut command = Command::new(claude);
+    command.args(["mcp", "list"]);
+    match run_to_end(&mut command, Path::new(cwd), Duration::from_secs(30)) {
+        Ok(output) => parse_claude_mcp_list(&output),
         Err(err) => {
-            log::warn!("claude mcp list: {err}");
-            return HashMap::new();
-        }
-    };
-    let Some(mut stdout) = child.stdout.take() else {
-        return HashMap::new();
-    };
-    let (tx, rx) = mpsc::channel();
-    std::thread::spawn(move || {
-        let mut output = String::new();
-        let read = stdout.read_to_string(&mut output).map(|_| output);
-        let _ = tx.send(read);
-    });
-    let output = rx.recv_timeout(TIMEOUT);
-    if let Err(err) = child.kill().and_then(|()| child.wait().map(drop)) {
-        log::debug!("claude mcp list already exited: {err}");
-    }
-    match output {
-        Ok(Ok(output)) => parse_claude_mcp_list(&output),
-        Ok(Err(err)) => {
-            log::warn!("claude mcp list: {err}");
-            HashMap::new()
-        }
-        Err(_) => {
-            log::warn!("claude mcp list timed out");
+            log::warn!("claude mcp list: {err:#}");
             HashMap::new()
         }
     }

@@ -254,6 +254,10 @@ impl BenCodeApp {
         let Some(session_id) = self.selected_session_id.clone() else {
             return;
         };
+        // An edited resend is still waiting on the provider's rewind.
+        if self.edit_rewinding.contains(&session_id) {
+            return;
+        }
         let centred = self
             .sessions
             .iter()
@@ -285,6 +289,10 @@ impl BenCodeApp {
         self.plan_mode.remove(&session_id);
         if self.draft_mode.remove(&session_id) || command == Some(ModeCommand::Draft) {
             self.save_draft(&session_id, input, cx);
+            return;
+        }
+        if self.editing_last_turn.as_deref() == Some(session_id.as_str()) {
+            self.resend_edited(&session_id, input, typed, cx);
             return;
         }
         if self.is_agent_running_in(&session_id) {

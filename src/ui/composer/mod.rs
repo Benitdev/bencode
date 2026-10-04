@@ -4,6 +4,7 @@
 
 mod attachments;
 mod context_ring;
+pub mod edit_last_turn;
 mod mcp_picker;
 pub mod mcp_tags;
 pub mod mentions;
@@ -319,6 +320,7 @@ impl BenCodeApp {
         // MonoCode `fileDrag`: files held over this thread's pane.
         let file_drag =
             session.is_some_and(|s| self.active_file_drop_target.as_deref() == Some(s.id.as_str()));
+        let editing = focused && self.is_editing_last_turn();
         let field_pad = if shell { px(16.0) } else { px(12.0) };
         let field = if focused {
             self.prompt_input.clone().into_any_element()
@@ -382,8 +384,12 @@ impl BenCodeApp {
                     .relative()
                     .rounded(px(8.0))
                     .border_1()
+                    // MonoCode `edit-last-turn-composer`: dashed, in the accent.
+                    .when(editing && !file_drag, |el| el.border_dashed())
                     .border_color(if file_drag {
                         colors.accent.opacity(0.6)
+                    } else if editing {
+                        colors.accent.opacity(0.32)
                     } else {
                         colors
                             .fg
@@ -402,7 +408,7 @@ impl BenCodeApp {
                     .child(self.composer_top_bar(session, cx))
                     .when(focused, |el| el.children(self.render_attachment_chips(cx)))
                     .when_some(
-                        self.attach_error.clone().filter(|_| focused),
+                        self.composer_error.clone().filter(|_| focused),
                         |el, error| {
                             el.child(
                                 div()
@@ -671,7 +677,15 @@ impl BenCodeApp {
                     .child(model)
                     .child(access),
             )
-            .child(self.render_send_button(running_here, cx))
+            .child(
+                div()
+                    .flex()
+                    .flex_none()
+                    .items_center()
+                    .gap_1p5()
+                    .children(self.render_cancel_edit(cx))
+                    .child(self.render_send_button(running_here, cx)),
+            )
     }
 
     /// MonoCode `ToolButton`: 26px on the selection fill, brighter while

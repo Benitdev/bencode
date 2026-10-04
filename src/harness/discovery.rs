@@ -9,17 +9,16 @@
 //! The parsers are pure; `discover` blocks on a child process and must run
 //! on a background executor.
 
-use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
-use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::mpsc;
-use std::time::{Duration, Instant};
+use std::process::Command;
+use std::time::Duration;
 
-use anyhow::{Context as _, Result, anyhow, bail};
+use anyhow::{Context as _, Result};
 use serde_json::{Value, json};
 
 use crate::harness::HarnessKind;
 use crate::harness::catalog::{self, ModelOption, ModelSetting, SettingKind};
+use crate::harness::probe::{AppServer, LineProbe, run_to_end};
 use crate::harness::resolver::HarnessResolver;
 
 /// MonoCode `DISCOVERY_TIMEOUT_MS`.
@@ -50,16 +49,20 @@ const CLAUDE_LIST_ID: &str = "monocode_list_models";
 
 fn discover_claude() -> Result<Vec<ModelOption>> {
     let program = HarnessResolver::resolve_claude().context("Claude Code is not installed")?;
-    let mut probe = LineProbe::spawn(Command::new(program).args([
-        "-p",
-        "--output-format",
-        "stream-json",
-        "--verbose",
-        "--input-format",
-        "stream-json",
-        "--settings",
-        r#"{"disableAllHooks":true}"#,
-    ]))?;
+    let mut probe = LineProbe::spawn(
+        Command::new(program).args([
+            "-p",
+            "--output-format",
+            "stream-json",
+            "--verbose",
+            "--input-format",
+            "stream-json",
+            "--settings",
+            r#"{"disableAllHooks":true}"#,
+        ]),
+        &home(),
+        DISCOVERY_TIMEOUT,
+    )?;
     let request = |id: &str, subtype: &str| json!({ "type": "control_request", "request_id": id, "request": { "subtype": subtype } });
     probe.send(&request(CLAUDE_INIT_ID, "initialize"))?;
     let mut asked = false;
@@ -271,47 +274,14 @@ fn qualify_alias_name(name: &str, resolved: &str) -> String {
 
 fn discover_codex() -> Result<Vec<ModelOption>> {
     let program = HarnessResolver::resolve_codex().context("Codex is not installed")?;
-    let mut probe = LineProbe::spawn(Command::new(program).arg("app-server"))?;
-    let mut next_id = 0_u64;
-    let mut call = |probe: &mut LineProbe, method: &str, params: Value| -> Result<Value> {
-        next_id += 1;
-        let id = next_id;
-        probe.send(&json!({ "id": id, "method": method, "params": params }))?;
-        loop {
-            let rec = probe.next_json()?;
-            if let Some(method) = rec.get("method").and_then(Value::as_str) {
-                // A request from the server; nothing to grant during a probe.
-                if let Some(req) = rec.get("id") {
-                    log::debug!("codex probe: answering {method} with an empty result");
-                    probe.send(&json!({ "id": req, "result": {} }))?;
-                }
-                continue;
-            }
-            if rec.get("id").and_then(Value::as_u64) != Some(id) {
-                continue;
-            }
-            if let Some(error) = rec.get("error") {
-                bail!("codex {method}: {error}");
-            }
-            return Ok(rec.get("result").cloned().unwrap_or(Value::Null));
-        }
-    };
-    call(
-        &mut probe,
-        "initialize",
-        json!({
-            "clientInfo": { "name": "monocode", "title": "MonoCode", "version": "0.1.0" },
-            "capabilities": { "experimentalApi": true },
-        }),
-    )?;
-    probe.send(&json!({ "method": "initialized" }))?;
+    let mut server = AppServer::open(&program, &home(), DISCOVERY_TIMEOUT)?;
     let mut rows = Vec::new();
     let mut cursor: Option<String> = None;
     loop {
         let params = cursor
             .as_ref()
             .map_or(json!({}), |c| json!({ "cursor": c }));
-        let page = call(&mut probe, "model/list", params)?;
+        let page = server.call("model/list", params)?;
         rows.extend(
             page.get("data")
                 .and_then(Value::as_array)
@@ -462,7 +432,11 @@ fn codex_settings(rec: &Value) -> Vec<ModelSetting> {
 fn discover_antigravity() -> Result<Vec<ModelOption>> {
     let program =
         HarnessResolver::resolve_antigravity_cli().context("Antigravity is not installed")?;
-    let out = run_to_end(Command::new(program).arg("models"))?;
+    let out = run_to_end(
+        Command::new(program).arg("models"),
+        &home(),
+        DISCOVERY_TIMEOUT,
+    )?;
     Ok(antigravity_models(&out))
 }
 
@@ -506,8 +480,16 @@ const VARIANT_ORDER: [&str; 9] = [
 
 fn discover_opencode() -> Result<Vec<ModelOption>> {
     let program = HarnessResolver::resolve_opencode().context("OpenCode is not installed")?;
-    let models = run_to_end(Command::new(&program).args(["models", "--verbose"]))?;
-    let agents = match run_to_end(Command::new(&program).args(["agent", "list"])) {
+    let models = run_to_end(
+        Command::new(&program).args(["models", "--verbose"]),
+        &home(),
+        DISCOVERY_TIMEOUT,
+    )?;
+    let agents = match run_to_end(
+        Command::new(&program).args(["agent", "list"]),
+        &home(),
+        DISCOVERY_TIMEOUT,
+    ) {
         Ok(out) => opencode_agents(&out),
         Err(err) => {
             log::debug!("opencode agents: {err:#}");
@@ -658,99 +640,6 @@ fn opencode_settings(provider: &str, model: &Value, agents: &[String]) -> Vec<Mo
         });
     }
     settings
-}
-
-// ---- Process plumbing ------------------------------------------------------
-
-/// Runs a listing command to completion within the discovery timeout.
-fn run_to_end(command: &mut Command) -> Result<String> {
-    let mut probe = LineProbe::spawn(command)?;
-    let mut out = String::new();
-    while let Some(line) = probe.next_line()? {
-        out.push_str(&line);
-        out.push('\n');
-    }
-    Ok(out)
-}
-
-/// A child whose stdout arrives line by line, killed on drop, with every
-/// read bounded by one overall deadline.
-struct LineProbe {
-    child: Child,
-    stdin: Option<ChildStdin>,
-    lines: mpsc::Receiver<String>,
-    deadline: Instant,
-}
-
-impl LineProbe {
-    fn spawn(command: &mut Command) -> Result<Self> {
-        let mut child = command
-            .current_dir(home())
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-            .context("could not start the CLI")?;
-        let stdout = child.stdout.take().context("no stdout")?;
-        let (tx, lines) = mpsc::channel();
-        std::thread::spawn(move || {
-            for line in BufReader::new(stdout).lines() {
-                let Ok(line) = line else { break };
-                if tx.send(line).is_err() {
-                    break;
-                }
-            }
-        });
-        Ok(Self {
-            stdin: child.stdin.take(),
-            child,
-            lines,
-            deadline: Instant::now() + DISCOVERY_TIMEOUT,
-        })
-    }
-
-    fn send(&mut self, message: &Value) -> Result<()> {
-        let stdin = self.stdin.as_mut().context("stdin closed")?;
-        writeln!(stdin, "{message}")?;
-        stdin.flush()?;
-        Ok(())
-    }
-
-    /// The next line, or None once the CLI closes stdout.
-    fn next_line(&mut self) -> Result<Option<String>> {
-        let left = self.deadline.saturating_duration_since(Instant::now());
-        match self.lines.recv_timeout(left) {
-            Ok(line) => Ok(Some(line)),
-            Err(mpsc::RecvTimeoutError::Disconnected) => Ok(None),
-            Err(mpsc::RecvTimeoutError::Timeout) => Err(anyhow!("model discovery timed out")),
-        }
-    }
-
-    fn next_json(&mut self) -> Result<Value> {
-        loop {
-            let line = self
-                .next_line()?
-                .context("the CLI exited before answering")?;
-            let line = line.trim();
-            if line.starts_with('{')
-                && let Ok(value) = serde_json::from_str::<Value>(line)
-            {
-                return Ok(value);
-            }
-        }
-    }
-}
-
-impl Drop for LineProbe {
-    fn drop(&mut self) {
-        drop(self.stdin.take());
-        if let Err(err) = self.child.kill() {
-            log::debug!("model probe already exited: {err}");
-        }
-        if let Err(err) = self.child.wait() {
-            log::debug!("model probe wait: {err}");
-        }
-    }
 }
 
 #[cfg(test)]

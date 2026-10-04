@@ -105,7 +105,7 @@ impl BenCodeApp {
                 let (wanted, fitted) = (fresh.len(), fresh.len().min(room));
                 list.extend(fresh.into_iter().take(fitted));
                 // MonoCode `pasteError`.
-                app.attach_error = attach_error(asked, loaded, wanted, fitted);
+                app.composer_error = attach_error(asked, loaded, wanted, fitted);
                 cx.notify();
             });
             if let Err(err) = added {

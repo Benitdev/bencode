@@ -11,6 +11,7 @@ pub mod discovery;
 pub mod events;
 pub mod handle;
 pub mod opencode;
+pub mod probe;
 pub mod process;
 pub mod resolver;
 pub mod runtime;

@@ -71,8 +71,26 @@ fn action_button(
     cx: &Context<BenCodeApp>,
     on_click: impl Fn(&mut BenCodeApp, &mut Context<BenCodeApp>) + 'static,
 ) -> impl IntoElement {
+    toggle_action_button(id, icon, tooltip, false, cx, on_click)
+}
+
+/// An action that stays lit in the accent colour while `pressed` (MonoCode
+/// `edit-last-turn-button`).
+fn toggle_action_button(
+    id: String,
+    icon: IconName,
+    tooltip: &'static str,
+    pressed: bool,
+    cx: &Context<BenCodeApp>,
+    on_click: impl Fn(&mut BenCodeApp, &mut Context<BenCodeApp>) + 'static,
+) -> impl IntoElement {
     let colors = &cx.theme().colors;
     let hover_bg = muted(colors.fg, 0.08);
+    let tint = if pressed {
+        colors.accent
+    } else {
+        muted(colors.fg, 0.4)
+    };
     div()
         .id(SharedString::from(id))
         .size(px(22.0))
@@ -81,14 +99,11 @@ fn action_button(
         .items_center()
         .justify_center()
         .cursor_pointer()
+        .when(pressed, |el| el.bg(colors.accent.opacity(0.1)))
         .hover(move |s| s.bg(hover_bg))
         .tooltip(Tooltip::text(tooltip))
         .on_click(cx.listener(move |this, _, _, cx| on_click(this, cx)))
-        .child(
-            Icon::new(icon)
-                .size(IconSize::Xs)
-                .color(muted(colors.fg, 0.4)),
-        )
+        .child(Icon::new(icon).size(IconSize::Xs).color(tint))
 }
 
 /// MonoCode `CopyTurnButton`: copies, then shows a check for two seconds.
@@ -214,11 +229,19 @@ impl BenCodeApp {
                 el.child(self.show_more_toggle(&key, expanded, cx))
             });
         let draft = block.extra.get("draft").and_then(|d| d.as_bool()) == Some(true);
+        // MonoCode `edit-last-turn-bubble`: the message being edited.
+        let editing = self.editing_last_turn.as_deref() == Some(session.id.as_str())
+            && crate::ui::composer::edit_last_turn::last_user_turn(&session.blocks) == Some(ix);
         let bubble = if draft {
             bubble
                 .border_1()
                 .border_dashed()
                 .border_color(colors.fg.opacity(0.3))
+        } else if editing {
+            bubble
+                .border_1()
+                .border_dashed()
+                .border_color(colors.accent.opacity(0.45))
         } else {
             bubble
         };
@@ -338,9 +361,13 @@ impl BenCodeApp {
         cx: &Context<Self>,
     ) -> impl IntoElement {
         let block = &session.blocks[ix];
-        let last_user = session.blocks.iter().rposition(|b| b.role == "user") == Some(ix);
-        let editable = last_user && !self.is_agent_running_in(&session.id);
-        let (edit_text, note_text) = (text.clone(), text.clone());
+        // MonoCode `EditLastTurnButton`: only where the provider can rewind.
+        let editing = self.editing_last_turn.as_deref() == Some(session.id.as_str());
+        let editable = crate::ui::composer::edit_last_turn::last_user_turn(&session.blocks)
+            == Some(ix)
+            && (editing || self.can_edit_last_turn(&session.id));
+        let edit_sid = session.id.clone();
+        let note_text = text.clone();
         let time = block.started_at.and_then(clock_time);
         let colors = &cx.theme().colors;
         div()
@@ -356,12 +383,17 @@ impl BenCodeApp {
                 copy_button(id, text, copied, cx)
             })
             .when(editable, |el| {
-                el.child(action_button(
+                el.child(toggle_action_button(
                     format!("{}-edit", block.id),
                     IconName::Pencil,
-                    "Edit and resend",
+                    if editing {
+                        "Cancel edit"
+                    } else {
+                        "Edit and resend"
+                    },
+                    editing,
                     cx,
-                    move |this, cx| this.edit_turn(&edit_text, cx),
+                    move |this, cx| this.toggle_edit_last_turn(&edit_sid, cx),
                 ))
             })
             .child(action_button(
