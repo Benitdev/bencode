@@ -16,6 +16,7 @@ use crate::harness::{
     PermissionRequest, SpawnRequest, catalog, summarize_tool_input,
 };
 use crate::ui::composer::mode_commands::{self, ModeCommand};
+use crate::ui::composer::note_card::{NoteCard, compose_note_message};
 
 const TITLE_PREVIEW_CHARS: usize = 48;
 const MAX_TOOL_OUTPUT_CHARS: usize = 4_000;
@@ -30,6 +31,8 @@ pub struct TurnInput {
     pub text: String,
     pub attachments: Vec<Attachment>,
     pub plan: bool,
+    /// A note added to the chat; the agent reads it after the text.
+    pub note_card: Option<Box<NoteCard>>,
 }
 
 /// Claude's clarifying-question tool, answered in the composer.
@@ -272,7 +275,8 @@ impl BenCodeApp {
             .composer_attachments
             .get(&session_id)
             .is_some_and(|files| !files.is_empty());
-        if text.is_empty() && !has_files {
+        // A note card sends even without a message (MonoCode "Use this note.").
+        if text.is_empty() && !has_files && !self.note_cards.contains_key(&session_id) {
             return;
         }
         let input = TurnInput {
@@ -282,7 +286,9 @@ impl BenCodeApp {
                 .remove(&session_id)
                 .unwrap_or_default(),
             plan: self.plan_mode.contains(&session_id) || command == Some(ModeCommand::Plan),
+            note_card: self.note_cards.remove(&session_id).map(Box::new),
         };
+        self.sync_prompt_placeholder(cx);
         self.prompt_input
             .update(cx, |input, cx| input.set_text("", cx));
         self.drafts.remove(&session_id);
@@ -293,6 +299,12 @@ impl BenCodeApp {
         // draft is saved.
         self.plan_mode.remove(&session_id);
         if self.draft_mode.remove(&session_id) || command == Some(ModeCommand::Draft) {
+            // A draft keeps the note in its text (MonoCode `onSaveDraft`).
+            let input = TurnInput {
+                text: compose_note_message(input.note_card.as_deref(), &input.text),
+                note_card: None,
+                ..input
+            };
             self.save_draft(&session_id, input, cx);
             return;
         }
@@ -330,7 +342,8 @@ impl BenCodeApp {
         let Some(run) = self.runs.get(session_id).filter(|run| run.can_steer) else {
             return Err(input);
         };
-        if input.plan {
+        // Plan and note turns wait for their own turn.
+        if input.plan || input.note_card.is_some() {
             return Err(input);
         }
         let prompt = self.apply_skills(&input.text);
@@ -432,6 +445,7 @@ impl BenCodeApp {
             plan: block.extra.get("plan").and_then(Value::as_bool) == Some(true),
             text: block.text.unwrap_or_default(),
             attachments,
+            note_card: None,
         })
     }
 
@@ -450,10 +464,16 @@ impl BenCodeApp {
             return;
         };
         start_turn(session, &input.text, now_ms(), &input.attachments);
+        if let (Some(card), Some(block)) = (&input.note_card, session.blocks.last_mut()) {
+            block.extra.insert("noteCard".into(), card.meta.to_json());
+        }
         self.usage_limits.remove(session_id);
         // Skill bodies are small SKILL.md files; read them as MonoCode does
         // right before the turn starts.
-        let agent_prompt = self.apply_skills(&input.text);
+        let agent_prompt = self.apply_skills(&compose_note_message(
+            input.note_card.as_deref(),
+            &input.text,
+        ));
         let Some(session) = self.sessions.iter().find(|s| s.id == session_id) else {
             return;
         };

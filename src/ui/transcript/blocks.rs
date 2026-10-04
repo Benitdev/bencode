@@ -201,6 +201,9 @@ impl BenCodeApp {
         let current = self.find_current_block(&session.id, cx) == Some(ix);
         let expanded = self.transcript_ui.expanded_messages.contains(&key) || current;
         let chips = attachment_chips(block, cx);
+        // MonoCode shows the note a turn was sent with as a small card.
+        let note = crate::ui::composer::note_card::NoteCardMeta::from_block(&block.extra)
+            .map(|meta| crate::ui::composer::note_card::note_mini_card(&meta, true, None, cx));
         // A pill only for one short line with nothing attached.
         let single_line =
             chips.is_none() && !text.contains('\n') && text.chars().count() <= CHARS_PER_LINE;
@@ -215,6 +218,7 @@ impl BenCodeApp {
             .text_size(px(14.0))
             .line_height(px(22.0))
             .text_color(colors.fg)
+            .children(note.map(|card| div().when(!text.is_empty(), |el| el.mb_2()).child(card)))
             .children(chips.map(|chips| div().when(!text.is_empty(), |el| el.mb_2()).child(chips)))
             .child(
                 div()

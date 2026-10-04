@@ -12,6 +12,7 @@ mod menus;
 pub mod mode_commands;
 mod model_picker;
 mod new_worktree;
+pub mod note_card;
 pub mod prompt_marks;
 pub mod question;
 mod suggestions;
@@ -437,6 +438,11 @@ impl BenCodeApp {
                         .children(self.render_mention_marks())
                     })
                     .child(self.composer_top_bar(session, cx))
+                    .children(
+                        session
+                            .filter(|_| focused)
+                            .and_then(|s| self.render_note_card(&s.id, cx)),
+                    )
                     .when(focused, |el| el.children(self.render_attachment_chips(cx)))
                     .when_some(
                         self.composer_error.clone().filter(|_| focused),
@@ -841,7 +847,12 @@ impl BenCodeApp {
     /// empty composer offers Stop; typing turns it back into Send (queue).
     fn render_send_button(&self, running_here: bool, cx: &Context<Self>) -> impl IntoElement {
         let colors = &cx.theme().colors;
-        let typed = !self.prompt_input.read(cx).text().trim().is_empty();
+        // A note card can be sent on its own.
+        let typed = !self.prompt_input.read(cx).text().trim().is_empty()
+            || self
+                .selected_session_id
+                .as_ref()
+                .is_some_and(|id| self.note_cards.contains_key(id));
         let stop = running_here && !typed;
         let enabled = running_here || typed;
         let (bg, ink) = if enabled {

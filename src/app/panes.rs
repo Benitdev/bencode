@@ -25,7 +25,7 @@ static NEXT_SESSION: AtomicU64 = AtomicU64::new(1);
 impl BenCodeApp {
     /// Makes `selected_session_id` (and the model picker) follow the active
     /// tab's focused pane.
-    pub(super) fn sync_selection(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn sync_selection(&mut self, cx: &mut Context<Self>) {
         let focused = self.tabs.focused_session().map(str::to_string);
         if focused != self.selected_session_id {
             // MonoCode leaves edit mode when the thread changes.
@@ -60,6 +60,7 @@ impl BenCodeApp {
             self.selected_model = model;
         }
         self.selected_session_id = focused;
+        self.sync_prompt_placeholder(cx);
         self.follow_focused_session_project();
         if self.is_terminal_open {
             // Each project has its own dock; a new one starts with a shell.

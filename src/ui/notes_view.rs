@@ -235,28 +235,17 @@ impl BenCodeApp {
         cx.notify();
     }
 
+    /// MonoCode "Add to chat": a new thread carrying the note as a card.
     fn add_selected_note_to_chat(&mut self, cx: &mut Context<Self>) {
         let Some(note) = self
             .notes
             .iter()
             .find(|n| Some(&n.id) == self.selected_note_id.as_ref())
+            .cloned()
         else {
             return;
         };
-        let block = format!(
-            "--- Note: {} (@note/{}) ---\n{}\n--- End Note ---",
-            note.title, note.slug, note.body
-        );
-        self.prompt_input.update(cx, |input, cx| {
-            let current = input.text().to_string();
-            let text = if current.is_empty() {
-                block
-            } else {
-                format!("{current}\n\n{block}")
-            };
-            input.set_text(text, cx);
-        });
-        self.close_notes(cx);
+        self.add_note_to_chat(&note, cx);
     }
 
     pub(crate) fn render_notes_body(&mut self, cx: &mut Context<Self>) -> AnyElement {

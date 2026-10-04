@@ -74,7 +74,7 @@ as they land; MonoCode refs are relative to `reference/monocode/src`.
 - [x] P1 M Quick Open ⌘P (MonoCode FilePicker + fuzzy)
 - [ ] P1 S .gitignore-driven hiding (`git check-ignore`)
 - [ ] P1 M File tree menu (cut/copy/paste/duplicate, open in terminal, root menu) + keys; inline new/rename; 30px rows
-- [ ] P1 M Composer worktree picker; create/delete worktree dialogs
+- [x] P1 M Composer worktree picker (Current checkout / New worktree ⌘⇧G / existing, base picker) — create/delete worktree dialogs still open
 - [ ] P2 Switcher rows, discard wording, image/markdown preview
 
 ## Batch E — settings, skills, terminal
@@ -92,7 +92,17 @@ as they land; MonoCode refs are relative to `reference/monocode/src`.
 - [x] P0 L Automation scheduler (30s claim-due, recover stale runs)
 - [ ] P0 M Automation `triggers[]` as source of truth
 - [ ] P1 M Search keyboard nav; P1 L coverage/ranking; P1 M rows & open file in editor
-- [ ] P1 M Notes: Add to chat (new session + note card), Preview/Source editor, tags, list rows, "Untitled"; save turn as note; `@note/` injection
+- [~] P1 M Notes: Add to chat (new session + note card) ✓; Preview/Source editor, tags, list rows, "Untitled"; save turn as note; `@note/` injection
 - [ ] P1 M-L Automations: template picker, list cards, editor header/tabs, trigger editor, session settings, run history table, Run now in parallel
 - [x] P1 S Inbox honest empty state (no fake data)
 - [ ] P1 L Quick Composer
+
+## Batch G — composer parity (2026-10-04)
+- [x] P1 M `/mcp` picker: `@mcp/name` tags, Claude health, "MCP context" line — `sessions/ui/McpServerPicker.tsx`, `sessions/model/mcpPicker.ts`
+- [x] P1 M Edit and resend the last message (Codex `thread/revert` via app-server; Claude cannot rewind, as in MonoCode) — `sessions/model/editLastTurn.ts`
+- [x] P1 M New worktree on first send (`mc/<token>` in `<repo>-worktrees`) — `workspace/ui/WorkspacePicker.tsx`, `src-tauri/src/worktrees.rs`
+- [x] P1 M Usage-limit notice with Resume at reset — `sessions/ui/UsageLimitNotice.tsx`
+- [x] P1 M `/compact` and Compact now — `sessions/ui/Composer.tsx`
+- [x] P1 S Image lightbox and shared attachment chips; `@` mention file icons
+- [ ] P2 OpenCode / Pi / OMP rewind (BenCode runs `opencode run` one-shot; needs `opencode serve`)
+- [ ] P2 Worktree branch rename from the first message (`generateHarnessBranchName`)
