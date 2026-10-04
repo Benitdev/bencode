@@ -4,6 +4,8 @@
 
 mod attachments;
 mod context_ring;
+mod mcp_picker;
+pub mod mcp_tags;
 pub mod mentions;
 mod menus;
 pub mod mode_commands;
@@ -29,6 +31,7 @@ use crate::db::SessionRow;
 use crate::harness::{HarnessKind, catalog};
 use crate::ui::HarnessIcon;
 use crate::ui::app_callback::app_callback;
+pub use mcp_picker::McpPicker;
 pub use menus::{MenuState, focus_later};
 use menus::{popover_anchor, popover_surface};
 pub use prompt_marks::{MentionMark, prompt_highlights};
@@ -390,8 +393,11 @@ impl BenCodeApp {
                     // MonoCode light theme: the page colour, lifted by a shadow.
                     .when(!cx.theme().is_dark(), |el| el.bg(colors.bg).shadow_md())
                     .when(focused, |el| {
-                        el.children(self.render_suggestions(cx))
-                            .children(self.render_mention_marks())
+                        el.children(
+                            self.render_mcp_picker(cx)
+                                .or_else(|| self.render_suggestions(cx)),
+                        )
+                        .children(self.render_mention_marks())
                     })
                     .child(self.composer_top_bar(session, cx))
                     .when(focused, |el| el.children(self.render_attachment_chips(cx)))

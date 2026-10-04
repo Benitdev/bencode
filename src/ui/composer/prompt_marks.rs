@@ -1,7 +1,8 @@
 //! What the prompt paints as you type (MonoCode's highlight layer over the
 //! textarea): a leading `/plan` in the plan colour, `/draft` dimmed, known
 //! `/skill` words in the skill colour, and known `@file` labels in the
-//! mention colour with their `@` swapped for the file's icon.
+//! mention colour with their `@` swapped for the file's icon; `/mcp` tags
+//! (`@mcp/name`) are painted in the mention colour too.
 
 use std::ops::Range;
 
@@ -13,6 +14,7 @@ use gpui::{
     deferred, div, point, px,
 };
 
+use super::mcp_tags::{McpTag, mcp_tag_ranges};
 use super::mentions::{MentionIndex, MentionTarget};
 use super::mode_commands::{self, ModeCommand};
 use crate::app::BenCodeApp;
@@ -27,6 +29,7 @@ pub fn prompt_highlights(
     text: &str,
     mentions: &MentionIndex,
     skills: &[String],
+    mcp_tags: &[McpTag],
     cx: &App,
 ) -> Vec<(Range<usize>, Highlight)> {
     let colors = &cx.theme().colors;
@@ -47,6 +50,11 @@ pub fn prompt_highlights(
     // The `@` keeps its width but not its ink; the icon sits on top.
     let hidden = Highlight::new(gpui::transparent_black());
     let mention = Highlight::new(colors.info);
+    spans.extend(
+        mcp_tag_ranges(text, mcp_tags)
+            .into_iter()
+            .map(|(range, _)| (range, mention)),
+    );
     for (range, _, _) in mentions.scan(text) {
         spans.push((range.start..range.start + 1, hidden));
         spans.push((range.start + 1..range.end, mention));

@@ -193,6 +193,7 @@ impl BenCodeApp {
                 this.close_surface(cx);
             } else if !this.close_lightbox(cx)
                 && !this.close_quick_open(cx)
+                && !this.close_mcp_picker(true, cx)
                 && !this.close_composer_popovers(cx)
                 && !this.close_find(cx)
             {

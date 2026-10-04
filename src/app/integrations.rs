@@ -14,6 +14,8 @@ use crate::skills::{self, Skill};
 pub struct Integrations {
     pub editors: Option<Vec<ExternalEditor>>,
     pub mcp_servers: Option<Vec<McpConnection>>,
+    /// `claude mcp list` health by server name, for the `/mcp` picker.
+    pub mcp_health: std::collections::HashMap<String, String>,
     /// Skills of `skills_project`, rescanned when the project changes.
     pub skills: Vec<Skill>,
     pub skills_project: String,
@@ -35,6 +37,42 @@ impl BenCodeApp {
                 app.integrations.mcp_servers = Some(mcp_servers);
                 cx.notify();
             });
+        })
+        .detach();
+    }
+
+    /// MonoCode `loadMcpSettings` for the `/mcp` picker: rediscovers the
+    /// servers, then (for Claude threads) asks Claude for their health. The
+    /// list shows as soon as discovery is back; health never delays it.
+    pub fn refresh_mcp_servers(&mut self, claude_health: bool, cx: &mut Context<Self>) {
+        let cwd = self.workspace_cwd();
+        let discovery = cx.background_executor().spawn({
+            let cwd = cwd.clone();
+            async move { discover_mcp_servers(&cwd) }
+        });
+        let health = claude_health
+            .then(crate::harness::resolver::HarnessResolver::resolve_claude)
+            .flatten()
+            .map(|claude| {
+                cx.background_executor()
+                    .spawn(async move { crate::mcp::claude_mcp_health(&claude, &cwd) })
+            });
+        cx.spawn(async move |this, cx| {
+            let servers = discovery.await;
+            let _ = this.update(cx, |app, cx| {
+                app.integrations.mcp_servers = Some(servers);
+                app.on_mcp_query_changed(cx);
+            });
+            if let Some(health) = health {
+                let health = health.await;
+                let _ = this.update(cx, |app, cx| {
+                    if let Some(servers) = &mut app.integrations.mcp_servers {
+                        crate::mcp::add_claude_only_servers(servers, &health);
+                    }
+                    app.integrations.mcp_health = health;
+                    app.on_mcp_query_changed(cx);
+                });
+            }
         })
         .detach();
     }

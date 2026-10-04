@@ -8,8 +8,12 @@
 //! server processes or speak JSON-RPC to them. Codex (`~/.codex/config.toml`)
 //! is not read: BenCode has no direct TOML dependency.
 
+use std::collections::HashMap;
 use std::io::Read as _;
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::sync::mpsc;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -208,16 +212,116 @@ pub fn discover_mcp_servers(cwd: &str) -> Vec<McpConnection> {
         "mcpServers",
     );
 
-    let dot_mcp = project.join(".mcp.json");
-    add_json_file(
-        &mut connections,
-        "project",
-        "project",
-        &dot_mcp,
-        "mcpServers",
-    );
+    // 6. Claude project config (`.mcp.json`), inherited from parent folders
+    // up to (not including) home, as MonoCode reads it.
+    for directory in project.ancestors().take_while(|dir| *dir != home.as_path()) {
+        add_json_file(
+            &mut connections,
+            "claude",
+            "project",
+            &directory.join(".mcp.json"),
+            "mcpServers",
+        );
+    }
 
     connections
+}
+
+/// MonoCode `parseClaudeMcpList`: `claude mcp list` prints
+/// `name: command - ✓ Connected`; keep each name and its health text.
+pub fn parse_claude_mcp_list(output: &str) -> HashMap<String, String> {
+    output
+        .lines()
+        .filter_map(|line| {
+            let (name, detail) = line.split_once(':')?;
+            let named = !name.is_empty()
+                && name
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-');
+            let detail = detail.trim();
+            if !named
+                || detail.is_empty()
+                || !line[name.len() + 1..].starts_with(char::is_whitespace)
+            {
+                return None;
+            }
+            let status = [" - ", " — "]
+                .into_iter()
+                .filter_map(|sep| detail.rfind(sep).map(|at| at + sep.len()))
+                .max()
+                .map_or(detail, |start| &detail[start..]);
+            Some((name.to_string(), status.to_string()))
+        })
+        .collect()
+}
+
+/// MonoCode `loadClaudeHealth`: Claude can supply connections that are not
+/// stored in a local config file; list those as Claude's `local` servers.
+pub fn add_claude_only_servers(
+    connections: &mut Vec<McpConnection>,
+    health: &HashMap<String, String>,
+) {
+    let mut extra: Vec<&String> = health
+        .keys()
+        .filter(|name| {
+            !connections
+                .iter()
+                .any(|c| c.provider == "claude" && c.name == **name)
+        })
+        .collect();
+    extra.sort();
+    connections.extend(extra.into_iter().map(|name| McpConnection {
+        provider: "claude".into(),
+        name: name.clone(),
+        scope: "local".into(),
+        config_path: String::new(),
+        transport: String::new(),
+        enabled: true,
+    }));
+}
+
+/// MonoCode `claude_mcp_list`: Claude's own health check of its servers
+/// (it connects to each, so it can take a while; capped at 30s).
+pub fn claude_mcp_health(claude: &Path, cwd: &str) -> HashMap<String, String> {
+    const TIMEOUT: Duration = Duration::from_secs(30);
+    let child = Command::new(claude)
+        .args(["mcp", "list"])
+        .current_dir(cwd)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn();
+    let mut child = match child {
+        Ok(child) => child,
+        Err(err) => {
+            log::warn!("claude mcp list: {err}");
+            return HashMap::new();
+        }
+    };
+    let Some(mut stdout) = child.stdout.take() else {
+        return HashMap::new();
+    };
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let mut output = String::new();
+        let read = stdout.read_to_string(&mut output).map(|_| output);
+        let _ = tx.send(read);
+    });
+    let output = rx.recv_timeout(TIMEOUT);
+    if let Err(err) = child.kill().and_then(|()| child.wait().map(drop)) {
+        log::debug!("claude mcp list already exited: {err}");
+    }
+    match output {
+        Ok(Ok(output)) => parse_claude_mcp_list(&output),
+        Ok(Err(err)) => {
+            log::warn!("claude mcp list: {err}");
+            HashMap::new()
+        }
+        Err(_) => {
+            log::warn!("claude mcp list timed out");
+            HashMap::new()
+        }
+    }
 }
 
 #[cfg(test)]
@@ -310,5 +414,39 @@ mod tests {
         assert!(read_json(&dir.join("missing.json")).is_none());
         assert!(read_json(&bad).is_none());
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn claude_list_keeps_names_and_health() {
+        let output = "Checking MCP server health...\n\n\
+            github: npx -y @modelcontextprotocol/server-github - ✓ Connected\n\
+            linear: https://mcp.linear.app/sse (SSE) - ⚠ Needs authentication\n\
+            Not a server line\n";
+        let health = parse_claude_mcp_list(output);
+        assert_eq!(health.len(), 2);
+        assert_eq!(health["github"], "✓ Connected");
+        assert_eq!(health["linear"], "⚠ Needs authentication");
+    }
+
+    #[test]
+    fn claude_only_servers_join_the_list_once() {
+        let mut connections = Vec::new();
+        add_json_servers(
+            &mut connections,
+            "claude",
+            "user",
+            Path::new("/c.json"),
+            Some(&serde_json::json!({ "github": { "command": "gh" } })),
+        );
+        let health = HashMap::from([
+            ("github".to_string(), "✓ Connected".to_string()),
+            ("sentry".to_string(), "✓ Connected".to_string()),
+        ]);
+        add_claude_only_servers(&mut connections, &health);
+        let names: Vec<_> = connections
+            .iter()
+            .map(|c| (c.name.as_str(), c.scope.as_str()))
+            .collect();
+        assert_eq!(names, [("github", "user"), ("sentry", "local")]);
     }
 }

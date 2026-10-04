@@ -223,14 +223,22 @@ impl BenCodeApp {
         let Some(item) = items.get(self.picker_index).or(items.first()) else {
             return false;
         };
-        let insert = item.insert.clone();
-        match item.kind {
-            SuggestionKind::Skill => self.insert_skill(&insert, cx),
+        let (kind, insert) = (item.kind, item.insert.clone());
+        self.apply_suggestion(kind, &insert, cx);
+        true
+    }
+
+    /// Puts a picked row in the prompt; `/mcp` opens its own picker instead.
+    fn apply_suggestion(&mut self, kind: SuggestionKind, insert: &str, cx: &mut Context<Self>) {
+        match kind {
+            SuggestionKind::Skill if insert == format!("/{}", Command::Mcp.name()) => {
+                self.start_mcp_command(cx)
+            }
+            SuggestionKind::Skill => self.insert_skill(insert, cx),
             SuggestionKind::File | SuggestionKind::Folder | SuggestionKind::Note => {
-                self.insert_mention(&insert, cx)
+                self.insert_mention(insert, cx)
             }
         }
-        true
     }
 
     fn current_suggestions(&self) -> Vec<Suggestion> {
@@ -345,12 +353,7 @@ impl BenCodeApp {
                     cx.notify();
                 }
             }))
-            .on_click(cx.listener(move |this, _, _, cx| match kind {
-                SuggestionKind::Skill => this.insert_skill(&insert, cx),
-                SuggestionKind::File | SuggestionKind::Folder | SuggestionKind::Note => {
-                    this.insert_mention(&insert, cx)
-                }
-            }))
+            .on_click(cx.listener(move |this, _, _, cx| this.apply_suggestion(kind, &insert, cx)))
     }
 
     /// MonoCode `SkillPicker` row: `/name` and its scope over the
@@ -506,10 +509,11 @@ mod tests {
             scope: "project",
             source: "agents",
         }];
-        // The built-in /plan and /draft come first; /draft only while idle.
-        assert_eq!(skill_suggestions("", &skills, IDLE).len(), 3);
-        assert_eq!(skill_suggestions("", &skills, BUSY).len(), 2);
-        assert_eq!(skill_suggestions("", &skills, IDLE)[0].insert, "/plan");
+        // The built-ins (/mcp, /plan, /draft) come first; /draft only
+        // while idle.
+        assert_eq!(skill_suggestions("", &skills, IDLE).len(), 4);
+        assert_eq!(skill_suggestions("", &skills, BUSY).len(), 3);
+        assert_eq!(skill_suggestions("", &skills, IDLE)[0].insert, "/mcp");
         assert_eq!(
             skill_suggestions("ship", &skills, IDLE)[0].insert,
             "/deploy"

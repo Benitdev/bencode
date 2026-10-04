@@ -14,6 +14,7 @@ pub mod workspace_sync;
 
 use std::collections::HashMap;
 
+use crate::ui::composer::mcp_tags::McpTag;
 use crate::ui::composer::mentions::MentionIndex;
 use ely_gpui_component::forms::{InputEvent, TextInput};
 use ely_gpui_component::primitives::FocusScope;
@@ -134,6 +135,11 @@ pub struct BenCodeApp {
     pub prompt_focused: bool,
     /// The model picker's search field and highlighted row.
     pub model_search_input: Entity<TextInput>,
+    /// MonoCode `/mcp`: the open server picker, its search, and the servers
+    /// tagged in the prompt (shared with the prompt's highlighter).
+    pub mcp_picker: Option<crate::ui::composer::McpPicker>,
+    pub mcp_search_input: Entity<TextInput>,
+    pub mcp_tags: std::rc::Rc<std::cell::RefCell<std::sync::Arc<Vec<McpTag>>>>,
     pub model_picker_index: usize,
     pub favorite_models: Vec<String>,
     pub recent_models: Vec<String>,
@@ -342,6 +348,9 @@ impl BenCodeApp {
         let skill_names: std::rc::Rc<std::cell::RefCell<std::sync::Arc<Vec<String>>>> =
             Default::default();
         let painted_skills = skill_names.clone();
+        let mcp_tags: std::rc::Rc<std::cell::RefCell<std::sync::Arc<Vec<McpTag>>>> =
+            Default::default();
+        let painted_tags = mcp_tags.clone();
         let prompt_input = cx.new(|cx| {
             TextInput::new(window, cx)
                 .multi_line(1, 6)
@@ -349,11 +358,14 @@ impl BenCodeApp {
                 .highlighter(move |text, cx| {
                     let mentions = painted_mentions.borrow().clone();
                     let skills = painted_skills.borrow().clone();
-                    crate::ui::composer::prompt_highlights(text, &mentions, &skills, cx)
+                    let tags = painted_tags.borrow().clone();
+                    crate::ui::composer::prompt_highlights(text, &mentions, &skills, &tags, cx)
                 })
         });
         let search_input = text_input(window, cx, "Search conversations...");
         let model_search_input = text_input(window, cx, "Search models");
+        let mcp_search_input = text_input(window, cx, "Search MCP servers…");
+        let mcp_keys_input = mcp_search_input.clone();
         let find_input = text_input(window, cx, "Find in conversation");
         let find_keys_input = find_input.clone();
         let quick_open_input = text_input(window, cx, "Go to File (type > for commands)");
@@ -422,6 +434,14 @@ impl BenCodeApp {
                     }
                     InputEvent::Submit => this.pick_highlighted_model(cx),
                     _ => {}
+                },
+            ),
+            cx.subscribe(
+                &mcp_search_input,
+                |this: &mut Self, _, event: &InputEvent, cx| {
+                    if *event == InputEvent::Changed {
+                        this.on_mcp_query_changed(cx);
+                    }
                 },
             ),
             cx.subscribe(
@@ -547,6 +567,19 @@ impl BenCodeApp {
                     handled
                 });
                 if matches!(handled, Ok(true)) {
+                    cx.stop_propagation();
+                }
+                return;
+            }
+            // MonoCode `McpServerPicker`: ↑/↓, Enter and Esc in its search.
+            if mcp_keys_input.read(cx).focus_handle(cx).is_focused(window) {
+                let key = event.keystroke.key.as_str();
+                if !event.keystroke.modifiers.modified()
+                    && matches!(
+                        weak_app.update(cx, |this, cx| this.mcp_picker_key(key, cx)),
+                        Ok(true)
+                    )
+                {
                     cx.stop_propagation();
                 }
                 return;
@@ -681,6 +714,9 @@ impl BenCodeApp {
             picker_index: 0,
             prompt_focused: false,
             model_search_input,
+            mcp_picker: None,
+            mcp_search_input,
+            mcp_tags,
             model_picker_index: 0,
             favorite_models: Vec::new(),
             recent_models: Vec::new(),

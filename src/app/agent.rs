@@ -224,14 +224,24 @@ impl BenCodeApp {
     /// behaviour does.
     pub fn submit_prompt(&mut self, cx: &mut Context<Self>) {
         let typed = self.prompt_input.read(cx).text().trim().to_string();
-        // MonoCode runs a lone `/compact` instead of sending it.
-        if mode_commands::standalone_command(&typed) == Some(mode_commands::Command::Compact)
-            && let Some(id) = self.selected_session_id.clone()
-        {
-            self.prompt_input
-                .update(cx, |input, cx| input.set_text("", cx));
-            self.compact_context(&id, cx);
-            return;
+        // MonoCode runs a lone `/compact` and opens the `/mcp` picker
+        // instead of sending them.
+        match mode_commands::standalone_command(&typed) {
+            Some(mode_commands::Command::Compact) => {
+                if let Some(id) = self.selected_session_id.clone() {
+                    self.prompt_input
+                        .update(cx, |input, cx| input.set_text("", cx));
+                    self.compact_context(&id, cx);
+                    return;
+                }
+            }
+            Some(mode_commands::Command::Mcp) => {
+                self.prompt_input
+                    .update(cx, |input, cx| input.set_text("", cx));
+                self.open_mcp_picker(Some(0), cx);
+                return;
+            }
+            _ => {}
         }
         // A leading `/plan` or `/draft` acts as its mode and is not sent.
         let (command, text) = mode_commands::strip_leading_mode(&typed);
@@ -257,7 +267,7 @@ impl BenCodeApp {
             return;
         }
         let input = TurnInput {
-            text,
+            text: self.take_mcp_context(text),
             attachments: self
                 .composer_attachments
                 .remove(&session_id)

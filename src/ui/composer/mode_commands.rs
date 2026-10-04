@@ -31,16 +31,23 @@ impl ModeCommand {
 /// MonoCode's built-in `/` commands, in the picker's order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Command {
+    Mcp,
     Plan,
     Draft,
     Compact,
 }
 
 impl Command {
-    pub const ALL: [Command; 3] = [Command::Plan, Command::Draft, Command::Compact];
+    pub const ALL: [Command; 4] = [
+        Command::Mcp,
+        Command::Plan,
+        Command::Draft,
+        Command::Compact,
+    ];
 
     pub fn name(self) -> &'static str {
         match self {
+            Self::Mcp => "mcp",
             Self::Plan => ModeCommand::Plan.name(),
             Self::Draft => ModeCommand::Draft.name(),
             Self::Compact => "compact",
@@ -49,6 +56,7 @@ impl Command {
 
     pub fn description(self) -> &'static str {
         match self {
+            Self::Mcp => "Find an MCP server for this message.",
             Self::Plan => ModeCommand::Plan.description(),
             Self::Draft => ModeCommand::Draft.description(),
             Self::Compact => "Summarize older conversation context to free space.",
@@ -68,17 +76,20 @@ pub struct CommandContext {
 impl CommandContext {
     pub fn offers(self, command: Command) -> bool {
         match command {
-            Command::Plan => true,
+            Command::Mcp | Command::Plan => true,
             Command::Draft => self.idle,
             Command::Compact => self.compact,
         }
     }
 }
 
-/// The prompt is exactly one command that runs on its own (`/compact`).
+/// The prompt is exactly one command that runs on its own (`/compact`,
+/// `/mcp`).
 pub fn standalone_command(text: &str) -> Option<Command> {
     let name = text.trim().strip_prefix('/')?;
-    [Command::Compact].into_iter().find(|c| c.name() == name)
+    [Command::Compact, Command::Mcp]
+        .into_iter()
+        .find(|c| c.name().eq_ignore_ascii_case(name))
 }
 
 /// The mode commands, as typed at the start of the prompt.
@@ -156,6 +167,7 @@ mod tests {
         assert_eq!(standalone_command(" /compact "), Some(Command::Compact));
         assert_eq!(standalone_command("/compact now"), None);
         assert_eq!(standalone_command("/plan"), None);
+        assert_eq!(standalone_command(" /MCP"), Some(Command::Mcp));
     }
 
     #[test]
