@@ -150,6 +150,8 @@ pub struct BenCodeApp {
     pub question_ui: HashMap<String, crate::ui::composer::question::QuestionUi>,
     pub question_custom_input: Entity<TextInput>,
     pub question_focus: gpui::FocusHandle,
+    /// Where the prompt's `@`s are, for the file icons drawn over them.
+    pub mention_marks: Vec<crate::ui::composer::MentionMark>,
     /// The image shown full-window (MonoCode `ImageLightbox`).
     pub lightbox: Option<std::path::PathBuf>,
     /// MonoCode's paste / attach error under the chips, until the next edit.
@@ -693,6 +695,7 @@ impl BenCodeApp {
             question_focus_wanted: false,
             attach_error: None,
             lightbox: None,
+            mention_marks: Vec::new(),
             dock_measure: Default::default(),
             dock_launch: None,
             queue_editing: None,
@@ -1054,6 +1057,7 @@ impl Render for BenCodeApp {
         if std::mem::take(&mut self.question_focus_wanted) {
             window.focus(&self.question_focus, cx);
         }
+        self.sync_mention_marks(window, cx);
         if !self.focus_handle.contains_focused(window, cx) && window.focused(cx).is_none() {
             window.focus(&self.focus_handle, cx);
         }

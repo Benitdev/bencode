@@ -8,6 +8,7 @@ pub mod mentions;
 mod menus;
 pub mod mode_commands;
 mod model_picker;
+pub mod prompt_marks;
 pub mod question;
 mod suggestions;
 
@@ -29,6 +30,7 @@ use crate::ui::HarnessIcon;
 use crate::ui::app_callback::app_callback;
 pub use menus::{MenuState, focus_later};
 use menus::{popover_anchor, popover_surface};
+pub use prompt_marks::{MentionMark, prompt_highlights};
 
 /// MonoCode `max-w-4xl`, the same column as the transcript.
 const COMPOSER_MAX_WIDTH: gpui::Pixels = px(896.0);
@@ -210,52 +212,6 @@ fn permission_entry(mode: PermissionMode) -> (&'static str, IconName) {
         })
 }
 
-/// What the prompt paints as you type (MonoCode's highlight layer): a
-/// leading `/plan` in the plan colour, `/draft` dimmed, known `/skill`
-/// words in the skill colour, and known `@file` labels in the mention
-/// colour.
-pub fn prompt_highlights(
-    text: &str,
-    mentions: &mentions::MentionIndex,
-    skills: &[String],
-    cx: &gpui::App,
-) -> Vec<(std::ops::Range<usize>, ely_gpui_component::forms::Highlight)> {
-    use ely_gpui_component::forms::Highlight;
-    let colors = &cx.theme().colors;
-    let mut spans: Vec<(std::ops::Range<usize>, Highlight)> = Vec::new();
-    if let Some((mode, range)) = mode_commands::leading_mode(text) {
-        let color = match mode {
-            mode_commands::ModeCommand::Plan => colors.warning.opacity(0.9),
-            mode_commands::ModeCommand::Draft => colors.fg.opacity(0.7),
-        };
-        spans.push((range, Highlight::new(color)));
-    }
-    let skill = Highlight::new(colors.warning);
-    spans.extend(
-        mode_commands::skill_tokens(text, skills)
-            .into_iter()
-            .map(|range| (range, skill)),
-    );
-    let mention = Highlight::new(colors.info);
-    spans.extend(
-        mentions
-            .scan(text)
-            .into_iter()
-            .map(|(range, _, _)| (range, mention)),
-    );
-    spans.sort_by_key(|(range, _)| range.start);
-    // Overlaps would confuse the field; the earlier span wins.
-    let mut end = 0;
-    spans.retain(|(range, _)| {
-        let keep = range.start >= end;
-        if keep {
-            end = range.end;
-        }
-        keep
-    });
-    spans
-}
-
 fn focus_id_key(session: Option<&SessionRow>) -> String {
     session.map_or_else(String::new, |s| s.id.clone())
 }
@@ -427,7 +383,10 @@ impl BenCodeApp {
                     .bg(colors.fg.opacity(0.03))
                     // MonoCode light theme: the page colour, lifted by a shadow.
                     .when(!cx.theme().is_dark(), |el| el.bg(colors.bg).shadow_md())
-                    .when(focused, |el| el.children(self.render_suggestions(cx)))
+                    .when(focused, |el| {
+                        el.children(self.render_suggestions(cx))
+                            .children(self.render_mention_marks())
+                    })
                     .child(self.composer_top_bar(session, cx))
                     .when(focused, |el| el.children(self.render_attachment_chips(cx)))
                     .when_some(
