@@ -22,6 +22,7 @@ pub mod rail;
 pub mod search_view;
 pub mod settings_modal;
 pub mod sidebar;
+pub mod sidebar_folders;
 pub mod terminal_pane;
 pub mod theme;
 pub mod titlebar;

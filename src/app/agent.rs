@@ -238,6 +238,12 @@ impl BenCodeApp {
                     return;
                 }
             }
+            Some(mode_commands::Command::AddToFolder) => {
+                self.prompt_input
+                    .update(cx, |input, cx| input.set_text("", cx));
+                self.open_folder_picker(cx);
+                return;
+            }
             Some(mode_commands::Command::Mcp) => {
                 self.prompt_input
                     .update(cx, |input, cx| input.set_text("", cx));

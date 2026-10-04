@@ -334,6 +334,7 @@ impl BenCodeApp {
         self.vacate_pane(id);
         self.sessions.retain(|s| s.id != id);
         self.transcripts.remove(id);
+        self.forget_folder_session(id, cx);
         self.sync_selection(cx);
     }
 

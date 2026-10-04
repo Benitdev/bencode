@@ -31,6 +31,7 @@ impl ModeCommand {
 /// MonoCode's built-in `/` commands, in the picker's order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Command {
+    AddToFolder,
     Mcp,
     Plan,
     Draft,
@@ -38,7 +39,8 @@ pub enum Command {
 }
 
 impl Command {
-    pub const ALL: [Command; 4] = [
+    pub const ALL: [Command; 5] = [
+        Command::AddToFolder,
         Command::Mcp,
         Command::Plan,
         Command::Draft,
@@ -47,6 +49,7 @@ impl Command {
 
     pub fn name(self) -> &'static str {
         match self {
+            Self::AddToFolder => "add-to-folder",
             Self::Mcp => "mcp",
             Self::Plan => ModeCommand::Plan.name(),
             Self::Draft => ModeCommand::Draft.name(),
@@ -56,6 +59,7 @@ impl Command {
 
     pub fn description(self) -> &'static str {
         match self {
+            Self::AddToFolder => "Place this session in an existing or new sidebar folder.",
             Self::Mcp => "Find an MCP server for this message.",
             Self::Plan => ModeCommand::Plan.description(),
             Self::Draft => ModeCommand::Draft.description(),
@@ -71,11 +75,14 @@ pub struct CommandContext {
     pub idle: bool,
     /// The harness can compact its context.
     pub compact: bool,
+    /// A thread exists to file in a folder.
+    pub thread: bool,
 }
 
 impl CommandContext {
     pub fn offers(self, command: Command) -> bool {
         match command {
+            Command::AddToFolder => self.thread,
             Command::Mcp | Command::Plan => true,
             Command::Draft => self.idle,
             Command::Compact => self.compact,
@@ -87,7 +94,7 @@ impl CommandContext {
 /// `/mcp`).
 pub fn standalone_command(text: &str) -> Option<Command> {
     let name = text.trim().strip_prefix('/')?;
-    [Command::Compact, Command::Mcp]
+    [Command::Compact, Command::Mcp, Command::AddToFolder]
         .into_iter()
         .find(|c| c.name().eq_ignore_ascii_case(name))
 }
@@ -161,7 +168,9 @@ mod tests {
         let idle = CommandContext {
             idle: true,
             compact: false,
+            thread: false,
         };
+        assert!(!idle.offers(Command::AddToFolder));
         assert!(idle.offers(Command::Draft));
         assert!(!idle.offers(Command::Compact));
         assert_eq!(standalone_command(" /compact "), Some(Command::Compact));

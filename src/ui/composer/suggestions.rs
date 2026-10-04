@@ -206,6 +206,7 @@ impl BenCodeApp {
         CommandContext {
             idle: session.is_none_or(|s| !self.is_agent_running_in(&s.id)),
             compact: session.is_some_and(|s| crate::app::can_compact(&s.harness)),
+            thread: session.is_some(),
         }
     }
 
@@ -233,6 +234,9 @@ impl BenCodeApp {
         match kind {
             SuggestionKind::Skill if insert == format!("/{}", Command::Mcp.name()) => {
                 self.start_mcp_command(cx)
+            }
+            SuggestionKind::Skill if insert == format!("/{}", Command::AddToFolder.name()) => {
+                self.start_folder_command(cx)
             }
             SuggestionKind::Skill => self.insert_skill(insert, cx),
             SuggestionKind::File | SuggestionKind::Folder | SuggestionKind::Note => {
@@ -486,10 +490,12 @@ mod tests {
     const IDLE: CommandContext = CommandContext {
         idle: true,
         compact: false,
+        thread: false,
     };
     const BUSY: CommandContext = CommandContext {
         idle: false,
         compact: false,
+        thread: false,
     };
 
     #[test]

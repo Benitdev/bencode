@@ -27,6 +27,8 @@ pub enum SessionDialog {
     Delete(String),
     /// Every thread of a title-bar tab.
     DeleteMany(Vec<String>),
+    /// A sidebar folder's new name.
+    RenameFolder(String),
 }
 
 const FILTERS: [(FilterMode, &str); 4] = [
@@ -285,7 +287,7 @@ impl BenCodeApp {
         let filter = self.filter_mode;
         let now = crate::app::now_ms();
         let current_cwd = &self.current_cwd;
-        let (pinned, rest): (Vec<&SessionRow>, Vec<&SessionRow>) = self
+        let visible: Vec<&SessionRow> = self
             .sessions
             .iter()
             .filter(|s| {
@@ -297,6 +299,28 @@ impl BenCodeApp {
                     .is_none_or(|focus| crate::app::same_project_path(s.work_dir(), &focus.path));
                 in_project && in_worktree && keeps(filter, s) && matches_query(s, &query)
             })
+            .collect();
+        // MonoCode `buildSessionList`: folders, then pins, then the rest.
+        let folders = self.project_folders();
+        let foldered: Vec<(
+            &crate::app::session_folders::SessionFolder,
+            Vec<&SessionRow>,
+        )> = folders
+            .iter()
+            .map(|folder| {
+                let members = folder
+                    .session_ids
+                    .iter()
+                    .filter_map(|id| visible.iter().copied().find(|s| &s.id == id))
+                    .collect();
+                (folder, members)
+            })
+            .filter(|(_, members): &(_, Vec<&SessionRow>)| !members.is_empty())
+            .collect();
+        let (pinned, rest): (Vec<&SessionRow>, Vec<&SessionRow>) = visible
+            .iter()
+            .copied()
+            .filter(|s| crate::app::session_folders::folder_of(folders, &s.id).is_none())
             .partition(|s| s.pinned);
 
         div()
@@ -355,25 +379,35 @@ impl BenCodeApp {
                     .px_2()
                     .py_1()
                     .gap_1()
-                    .when(pinned.is_empty() && rest.is_empty(), |el| {
-                        el.child(
-                            div()
-                                .px_3()
-                                .py_6()
-                                .flex()
-                                .flex_col()
-                                .items_center()
-                                .justify_center()
-                                .gap_1()
-                                .text_size(px(12.0))
-                                .text_color(theme.colors.fg_muted)
-                                .child(if !query.is_empty() {
-                                    "No matching sessions"
-                                } else {
-                                    "Sessions you start will show up here"
-                                }),
-                        )
-                    })
+                    .when(
+                        foldered.is_empty() && pinned.is_empty() && rest.is_empty(),
+                        |el| {
+                            el.child(
+                                div()
+                                    .px_3()
+                                    .py_6()
+                                    .flex()
+                                    .flex_col()
+                                    .items_center()
+                                    .justify_center()
+                                    .gap_1()
+                                    .text_size(px(12.0))
+                                    .text_color(theme.colors.fg_muted)
+                                    .child(if !query.is_empty() {
+                                        "No matching sessions"
+                                    } else {
+                                        "Sessions you start will show up here"
+                                    }),
+                            )
+                        },
+                    )
+                    .children(foldered.into_iter().map(|(folder, members)| {
+                        let cards = members
+                            .into_iter()
+                            .map(|s| self.render_session_card(s, now, cx))
+                            .collect();
+                        self.render_session_folder(folder, cards, cx)
+                    }))
                     .children(
                         pinned
                             .into_iter()
@@ -443,7 +477,7 @@ impl BenCodeApp {
             session.id.clone(),
             session.id.clone(),
         );
-        Menu::new()
+        let menu = Menu::new()
             .item(
                 MenuItem::new("Rename…")
                     .icon(IconName::Pencil)
@@ -468,7 +502,8 @@ impl BenCodeApp {
                 .on_click(app_callback(cx, move |this, cx| {
                     this.toggle_archive_session(&archive, cx)
                 })),
-            )
+            );
+        self.session_folder_items(menu, session, cx)
             .separator()
             .item(
                 MenuItem::new("Delete…")
@@ -680,6 +715,24 @@ impl BenCodeApp {
                     })
                     .on_submit(move |title: &str, window: &mut Window, cx: &mut App| {
                         submit(title, window, cx)
+                    })
+                    .into_any_element()
+            }
+            SessionDialog::RenameFolder(id) => {
+                let submit =
+                    cx.listener(move |this, name: &str, _, cx| this.rename_folder(&id, name, cx));
+                PromptDialog::new("rename-folder", "Rename folder", &self.rename_input, close)
+                    .label("Name")
+                    .submit("Rename")
+                    .check(|text| {
+                        if text.trim().is_empty() {
+                            Err("A name is required".into())
+                        } else {
+                            Ok(())
+                        }
+                    })
+                    .on_submit(move |name: &str, window: &mut Window, cx: &mut App| {
+                        submit(name, window, cx)
                     })
                     .into_any_element()
             }

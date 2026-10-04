@@ -3,8 +3,8 @@
 //! `@mcp/name` tag in the prompt; a turn that still holds the tag is sent
 //! with an "MCP context" line naming the server.
 
-use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
-use ely_gpui_component::theme::{ActiveTheme, IconSize};
+use ely_gpui_component::primitives::IconName;
+use ely_gpui_component::theme::ActiveTheme;
 use gpui::{
     AnyElement, Context, Focusable, InteractiveElement, IntoElement, ParentElement, SharedString,
     Styled, div, prelude::*, px,
@@ -12,6 +12,7 @@ use gpui::{
 
 use super::focus_later;
 use super::mcp_tags::{self, Availability, PickerServer};
+use super::search_popover::{SearchPopover, footer_action};
 use crate::app::BenCodeApp;
 use crate::harness::catalog;
 use crate::ui::provider_icon::HarnessIcon;
@@ -220,17 +221,7 @@ impl BenCodeApp {
 
     pub(super) fn render_mcp_picker(&self, cx: &Context<Self>) -> Option<AnyElement> {
         let picker = self.mcp_picker?;
-        let colors = &cx.theme().colors;
-        let fg = colors.fg;
         let rows = self.mcp_rows(cx);
-        let note = |text: String, color| {
-            div()
-                .px_2()
-                .py_2()
-                .text_size(px(12.0))
-                .text_color(color)
-                .child(text)
-        };
         let empty = if self.integrations.mcp_servers.is_none() {
             Some("Checking MCP servers…")
         } else if rows.is_empty() {
@@ -242,96 +233,41 @@ impl BenCodeApp {
         } else {
             None
         };
-        let search = div()
-            .flex()
-            .items_center()
-            .gap_2()
-            .px_3()
-            .py(px(6.0))
-            .border_b_1()
-            .border_color(colors.border)
-            .child(
-                Icon::new(IconName::Search)
-                    .size(IconSize::Xs)
-                    .color(fg.opacity(0.45)),
-            )
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .text_size(px(13.0))
-                    .child(self.mcp_search_input.clone()),
-            )
-            .child(
-                div()
-                    .id("mcp-picker-close")
-                    .size(px(28.0))
-                    .flex()
-                    .flex_none()
-                    .items_center()
-                    .justify_center()
-                    .rounded(px(6.0))
-                    .cursor_pointer()
-                    .hover(move |s| s.bg(fg.opacity(0.08)))
-                    .tooltip(Tooltip::text("Back to the conversation (Esc)"))
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.close_mcp_picker(true, cx);
-                    }))
-                    .child(
-                        Icon::new(IconName::ChevronDown)
-                            .size(IconSize::Sm)
-                            .color(fg.opacity(0.45)),
-                    ),
-            );
-        let list = div()
-            .id("mcp-picker-list")
-            .max_h(LIST_MAX_HEIGHT)
-            .overflow_y_scroll()
-            .p_1()
-            .when_some(empty, |el, text| {
-                el.child(note(text.into(), fg.opacity(0.5)))
+        let rows = rows
+            .into_iter()
+            .enumerate()
+            .map(|(ix, row)| {
+                self.render_mcp_row(ix, row, picker.active == ix, cx)
+                    .into_any_element()
             })
-            .children(
-                rows.into_iter()
-                    .enumerate()
-                    .map(|(ix, row)| self.render_mcp_row(ix, row, picker.active == ix, cx)),
-            );
-        let manage = div()
-            .id("mcp-picker-manage")
-            .flex()
-            .items_center()
-            .gap_2()
-            .px_3()
-            .py_2()
-            .border_t_1()
-            .border_color(colors.border)
-            .text_size(px(12.0))
-            .text_color(fg.opacity(0.65))
-            .cursor_pointer()
-            .hover(move |s| s.bg(fg.opacity(0.05)).text_color(fg))
-            .on_click(cx.listener(|this, _, _, cx| this.manage_mcp_servers(cx)))
-            .child(Icon::new(IconName::Settings).size(IconSize::Xs))
-            .child("Manage MCP Servers…");
+            .collect();
         Some(
-            div()
-                .absolute()
-                .bottom_full()
-                .left_0()
-                .right_0()
-                .mb_1()
-                .overflow_hidden()
-                .rounded(px(8.0))
-                .border_1()
-                .border_color(colors.border)
-                .bg(colors.surface)
-                .shadow_xl()
-                .on_mouse_down_out(cx.listener(|this, _, _, cx| {
+            SearchPopover {
+                id: "mcp-picker",
+                icon: IconName::Search,
+                input: &self.mcp_search_input,
+                close: (
+                    IconName::ChevronDown,
+                    "Back to the conversation (Esc)",
+                    |this, cx| {
+                        this.close_mcp_picker(true, cx);
+                    },
+                ),
+                dismiss: |this, cx| {
                     this.close_mcp_picker(false, cx);
-                }))
-                .child(search)
-                .child(list)
-                .child(manage)
-                .into_any_element(),
+                },
+                list_max_height: LIST_MAX_HEIGHT,
+                empty: empty.map(SharedString::from),
+                rows,
+                footer: Some(footer_action(
+                    "mcp-picker-manage",
+                    IconName::Settings,
+                    "Manage MCP Servers…",
+                    |this, cx| this.manage_mcp_servers(cx),
+                    cx,
+                )),
+            }
+            .render(cx),
         )
     }
 

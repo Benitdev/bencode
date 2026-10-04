@@ -6,6 +6,7 @@ mod attachments;
 pub mod cards;
 mod context_ring;
 pub mod edit_last_turn;
+mod folder_picker;
 pub mod handoff;
 mod mcp_picker;
 pub mod mcp_tags;
@@ -17,6 +18,7 @@ mod new_worktree;
 pub mod note_card;
 pub mod prompt_marks;
 pub mod question;
+mod search_popover;
 mod suggestions;
 pub mod usage_limit;
 
@@ -437,6 +439,7 @@ impl BenCodeApp {
                     .when(focused, |el| {
                         el.children(
                             self.render_mcp_picker(cx)
+                                .or_else(|| self.render_folder_picker(cx))
                                 .or_else(|| self.render_suggestions(cx)),
                         )
                         .children(self.render_mention_marks())

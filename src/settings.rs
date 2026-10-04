@@ -51,6 +51,9 @@ pub struct AppSettings {
     /// MonoCode `monocode.lastModelSettings`: the last effort / fast / …
     /// chosen, carried to new threads and other models that accept them.
     pub last_model_settings: Map<String, Value>,
+    /// MonoCode `monocode.sessionFolders`: each project's sidebar folders.
+    pub session_folders:
+        std::collections::BTreeMap<String, Vec<crate::app::session_folders::SessionFolder>>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
@@ -117,6 +120,15 @@ mod tests {
             favorite_models: vec!["claude:opus".into()],
             recent_models: Vec::new(),
             last_model_settings: Map::new(),
+            session_folders: std::collections::BTreeMap::from([(
+                "/repo".to_string(),
+                vec![crate::app::session_folders::SessionFolder {
+                    id: "f1".into(),
+                    name: "Bugs".into(),
+                    session_ids: vec!["s1".into()],
+                    collapsed: true,
+                }],
+            )]),
             extra: Map::new(),
         };
         save_to(&dir, &settings).unwrap();

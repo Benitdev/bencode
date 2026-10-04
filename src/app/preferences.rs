@@ -68,6 +68,7 @@ impl BenCodeApp {
         self.favorite_models = saved.favorite_models.clone();
         self.recent_models = saved.recent_models.clone();
         self.last_model_settings = saved.last_model_settings.clone();
+        self.session_folders = saved.session_folders.clone();
         self.settings = saved;
     }
 
@@ -81,6 +82,7 @@ impl BenCodeApp {
             favorite_models: self.favorite_models.clone(),
             recent_models: self.recent_models.clone(),
             last_model_settings: self.last_model_settings.clone(),
+            session_folders: self.session_folders.clone(),
             extra: self.settings.extra.clone(),
         }
     }

@@ -6,6 +6,7 @@ mod panes;
 mod preferences;
 pub mod project_files;
 mod projects;
+pub mod session_folders;
 mod surfaces;
 mod tab_history;
 mod tab_scope;
@@ -141,9 +142,15 @@ pub struct BenCodeApp {
     /// tagged in the prompt (shared with the prompt's highlighter).
     pub mcp_picker: Option<crate::ui::composer::McpPicker>,
     pub mcp_search_input: Entity<TextInput>,
+    /// MonoCode `/add-to-folder`: the open folder picker's highlighted row,
+    /// and its search.
+    pub folder_picker: Option<usize>,
+    pub folder_search_input: Entity<TextInput>,
     pub mcp_tags: std::rc::Rc<std::cell::RefCell<std::sync::Arc<Vec<McpTag>>>>,
     pub model_picker_index: usize,
     pub favorite_models: Vec<String>,
+    /// MonoCode's sidebar folders, per project.
+    pub session_folders: std::collections::BTreeMap<String, Vec<session_folders::SessionFolder>>,
     pub recent_models: Vec<String>,
     pub last_model_settings: serde_json::Map<String, serde_json::Value>,
     /// Model catalog probes per harness: `None` while one runs, else when
@@ -381,6 +388,8 @@ impl BenCodeApp {
         let model_search_input = text_input(window, cx, "Search models");
         let mcp_search_input = text_input(window, cx, "Search MCP servers…");
         let mcp_keys_input = mcp_search_input.clone();
+        let folder_search_input = text_input(window, cx, "Choose or name a session folder…");
+        let folder_keys_input = folder_search_input.clone();
         let find_input = text_input(window, cx, "Find in conversation");
         let find_keys_input = find_input.clone();
         let quick_open_input = text_input(window, cx, "Go to File (type > for commands)");
@@ -456,6 +465,14 @@ impl BenCodeApp {
                 |this: &mut Self, _, event: &InputEvent, cx| {
                     if *event == InputEvent::Changed {
                         this.on_mcp_query_changed(cx);
+                    }
+                },
+            ),
+            cx.subscribe(
+                &folder_search_input,
+                |this: &mut Self, _, event: &InputEvent, cx| {
+                    if *event == InputEvent::Changed {
+                        this.on_folder_query_changed(cx);
                     }
                 },
             ),
@@ -599,6 +616,23 @@ impl BenCodeApp {
                 }
                 return;
             }
+            // MonoCode `SessionFolderPicker`: ↑/↓, Enter and Esc in its search.
+            if folder_keys_input
+                .read(cx)
+                .focus_handle(cx)
+                .is_focused(window)
+            {
+                let key = event.keystroke.key.as_str();
+                if !event.keystroke.modifiers.modified()
+                    && matches!(
+                        weak_app.update(cx, |this, cx| this.folder_picker_key(key, cx)),
+                        Ok(true)
+                    )
+                {
+                    cx.stop_propagation();
+                }
+                return;
+            }
             // MonoCode `TranscriptFind`: Enter steps, ⇧Enter steps back, Esc closes.
             if find_keys_input.read(cx).focus_handle(cx).is_focused(window) {
                 let back = event.keystroke.modifiers.shift;
@@ -732,9 +766,12 @@ impl BenCodeApp {
             model_search_input,
             mcp_picker: None,
             mcp_search_input,
+            folder_picker: None,
+            folder_search_input,
             mcp_tags,
             model_picker_index: 0,
             favorite_models: Vec::new(),
+            session_folders: Default::default(),
             recent_models: Vec::new(),
             last_model_settings: Default::default(),
             catalog_probes: Default::default(),
@@ -907,6 +944,11 @@ impl BenCodeApp {
         self.is_mention_picker_open = false;
         self.picker_index = 0;
 
+        // MonoCode `runsSessionFolderCommandOnSpace`.
+        if text.trim_start() == "/add-to-folder " && self.selected_session_id.is_some() {
+            self.start_folder_command(cx);
+            return;
+        }
         if let Some(query) = trigger_query(&text, '/') {
             self.is_skill_picker_open = true;
             self.skill_query = query;
