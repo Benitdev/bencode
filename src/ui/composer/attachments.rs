@@ -33,7 +33,6 @@ fn attach_error(asked: usize, loaded: usize, wanted: usize, fitted: usize) -> Op
     }
 }
 
-
 fn image_ext(format: ImageFormat) -> &'static str {
     match format {
         ImageFormat::Jpeg => "jpg",

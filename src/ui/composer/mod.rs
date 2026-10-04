@@ -943,9 +943,14 @@ impl BenCodeApp {
                 } else {
                     item.text.lines().next().unwrap_or("").to_string()
                 };
-                let (edit_sid, remove_sid) = (session_id.to_string(), session_id.to_string());
+                let (edit_sid, remove_sid, steer_sid) = (
+                    session_id.to_string(),
+                    session_id.to_string(),
+                    session_id.to_string(),
+                );
+                let steer_hover = colors.fg.opacity(0.10);
                 row.child(
-                    Icon::new(IconName::CornerDownRight)
+                    Icon::new(IconName::List)
                         .size(IconSize::Xs)
                         .color(colors.fg.opacity(0.55)),
                 )
@@ -957,6 +962,32 @@ impl BenCodeApp {
                         .text_color(colors.fg.opacity(0.8))
                         .child(label),
                 )
+                // MonoCode's Steer: this message into the running turn now.
+                .when(self.can_steer(session_id), |el| {
+                    el.child(
+                        div()
+                            .id(SharedString::from(format!("queue-steer-{ix}")))
+                            .flex()
+                            .flex_none()
+                            .items_center()
+                            .gap_1()
+                            .h(px(24.0))
+                            .px_1p5()
+                            .rounded(px(6.0))
+                            .cursor_pointer()
+                            .hover(move |s| s.bg(steer_hover))
+                            .tooltip(Tooltip::text("Send into the running turn"))
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.steer_queued(&steer_sid, ix, cx)
+                            }))
+                            .child(
+                                Icon::new(IconName::CornerDownRight)
+                                    .size(IconSize::Xs)
+                                    .color(colors.fg.opacity(0.55)),
+                            )
+                            .child("Steer"),
+                    )
+                })
                 .child(
                     icon_button(
                         format!("queue-edit-{ix}").into(),

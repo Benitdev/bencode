@@ -136,6 +136,12 @@ fn prompt_with_effort(req: &SpawnRequest) -> String {
     }
 }
 
+/// A follow-up written into a running turn (MonoCode `steerClaudeTurn`):
+/// Claude folds it into the turn it is working on.
+pub fn steer_message(prompt: &str, files: &[Attachment]) -> String {
+    user_message(prompt, files)
+}
+
 fn user_message(prompt: &str, files: &[Attachment]) -> String {
     json!({
         "type": "user",

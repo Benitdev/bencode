@@ -45,6 +45,8 @@ pub struct AgentRun {
     pub automation_run_id: Option<String>,
     /// Full access: every tool is allowed at once, questions still ask.
     pub auto_approve: bool,
+    /// Only Claude takes a follow-up in the middle of a turn.
+    pub can_steer: bool,
 }
 
 /// MonoCode's terminal automation-run status for a turn outcome.
@@ -234,14 +236,71 @@ impl BenCodeApp {
             return;
         }
         if self.is_agent_running_in(&session_id) {
-            self.prompt_queues
-                .entry(session_id)
-                .or_default()
-                .push(input);
+            // MonoCode's default follow-up: steer into the running turn
+            // (Plan waits for its own turn); harnesses that cannot, queue.
+            if let Err(input) = self.steer(&session_id, input, cx) {
+                self.prompt_queues
+                    .entry(session_id)
+                    .or_default()
+                    .push(input);
+            }
             cx.notify();
             return;
         }
         self.send_turn(&session_id, input, cx);
+    }
+
+    /// Writes `input` into the running turn, showing it in the transcript.
+    /// Gives it back when this thread's agent cannot take it mid-turn.
+    pub fn steer(
+        &mut self,
+        session_id: &str,
+        input: TurnInput,
+        cx: &mut Context<Self>,
+    ) -> Result<(), TurnInput> {
+        let Some(run) = self.runs.get(session_id).filter(|run| run.can_steer) else {
+            return Err(input);
+        };
+        if input.plan {
+            return Err(input);
+        }
+        let prompt = self.apply_skills(&input.text);
+        let line = crate::harness::claude::steer_message(&prompt, &input.attachments);
+        if !run.handle.send_line(&line) {
+            return Err(input);
+        }
+        if let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id) {
+            start_turn(session, &input.text, now_ms(), &input.attachments);
+        }
+        self.persist_session(session_id);
+        cx.notify();
+        Ok(())
+    }
+
+    /// The queue row's Steer: that message goes into the running turn now.
+    pub fn steer_queued(&mut self, session_id: &str, ix: usize, cx: &mut Context<Self>) {
+        let Some(queue) = self.prompt_queues.get_mut(session_id) else {
+            return;
+        };
+        if ix >= queue.len() {
+            return;
+        }
+        let input = queue.remove(ix);
+        if queue.is_empty() {
+            self.prompt_queues.remove(session_id);
+        }
+        if let Err(input) = self.steer(session_id, input, cx) {
+            self.prompt_queues
+                .entry(session_id.to_string())
+                .or_default()
+                .insert(ix, input);
+        }
+        cx.notify();
+    }
+
+    /// Whether this thread's running agent takes follow-ups mid-turn.
+    pub fn can_steer(&self, session_id: &str) -> bool {
+        self.runs.get(session_id).is_some_and(|run| run.can_steer)
     }
 
     /// MonoCode Draft: keeps the message in the thread without starting the
@@ -345,6 +404,7 @@ impl BenCodeApp {
                 ..request
             },
         );
+        let harness_kind = request.as_ref().ok().map(|r| r.harness);
         self.persist_session(session_id);
         let started = request
             .map_err(|message| (message, now))
@@ -357,7 +417,10 @@ impl BenCodeApp {
         match started {
             Ok((handle, events)) => {
                 let auto_approve = mode == PermissionMode::FullAccess && !input.plan;
-                self.track_run(session_id.to_string(), handle, events, auto_approve, cx)
+                self.track_run(session_id.to_string(), handle, events, auto_approve, cx);
+                if let Some(run) = self.runs.get_mut(session_id) {
+                    run.can_steer = harness_kind == Some(harness::HarnessKind::Claude);
+                }
             }
             Err((message, at)) => {
                 log::error!("{message}");
@@ -390,6 +453,7 @@ impl BenCodeApp {
                 outcome: None,
                 automation_run_id: None,
                 auto_approve,
+                can_steer: false,
             },
         );
 
