@@ -1,6 +1,6 @@
 //! Editor pane rendering: Ely tabs, a toolbar, the active editor, notices and the discard dialog.
 
-use ely_gpui_component::buttons::{ButtonVariant, IconButton};
+use ely_gpui_component::buttons::{Button, ButtonVariant, IconButton};
 use ely_gpui_component::data_display::Badge;
 use ely_gpui_component::feedback::{Alert, EmptyState};
 use ely_gpui_component::navigation::{EditorTab, EditorTabs};
@@ -174,6 +174,7 @@ impl BenCodeApp {
                         .flex()
                         .items_center()
                         .gap_2()
+                        .children(self.add_selection_button(&path, cx))
                         .child(Badge::new(detect_language(&path)))
                         .child(
                             div()
@@ -209,5 +210,28 @@ impl BenCodeApp {
                         ),
                 )
             })
+    }
+
+    /// MonoCode `EditorSelectionMenu`: "Add to chat" while lines of the
+    /// active file are selected; the prompt gets `@path (lines a-b)`.
+    fn add_selection_button(&self, path: &str, cx: &Context<Self>) -> Option<AnyElement> {
+        let selection = self.editor.selection.as_ref().filter(|s| s.path == path)?;
+        let root = self.workspace_cwd();
+        let relative = std::path::Path::new(path)
+            .strip_prefix(&root)
+            .map_or_else(|_| path.to_string(), |p| p.to_string_lossy().into_owned());
+        let reference = crate::ui::composer::add_to_chat::selection_reference(
+            &relative,
+            selection.start_line,
+            selection.end_line,
+        );
+        Some(
+            Button::new("editor-add-to-chat", "Add to chat")
+                .size(ControlSize::Sm)
+                .variant(ButtonVariant::Ghost)
+                .icon(IconName::MessageSquare)
+                .on_click(cx.listener(move |this, _, _, cx| this.add_to_chat(&reference, cx)))
+                .into_any_element(),
+        )
     }
 }

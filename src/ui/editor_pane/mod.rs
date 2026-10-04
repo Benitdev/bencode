@@ -25,6 +25,34 @@ pub struct EditorHandle {
     /// `content_hash` of the file as last read from or written to disk.
     pub disk_hash: u64,
     _changes: Subscription,
+    _selection: Subscription,
+}
+
+/// The lines selected in an open file (from one), for "Add to chat".
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EditorSelection {
+    pub path: String,
+    pub start_line: usize,
+    pub end_line: usize,
+}
+
+/// The primary selection's first and last line (from one); a selection
+/// ending at the start of a line does not take that line. `None` for a bare
+/// caret.
+pub fn selected_lines(text: &str, anchor: usize, head: usize) -> Option<(usize, usize)> {
+    if anchor == head {
+        return None;
+    }
+    let (from, to) = (anchor.min(head), anchor.max(head));
+    let before = |at: usize| text.get(..at.min(text.len()));
+    let line = |at: usize| before(at).map_or(0, |t| t.matches('\n').count()) + 1;
+    let ends_on_break = before(to).is_some_and(|t| t.ends_with('\n'));
+    let end = if ends_on_break {
+        line(to) - 1
+    } else {
+        line(to)
+    };
+    Some((line(from), end.max(line(from))))
 }
 
 /// An error shown above the editor until dismissed.
@@ -48,6 +76,8 @@ pub struct EditorState {
     pub disk_conflicts: HashMap<String, String>,
     /// Files whose next `Changed` event is a reload, not an edit.
     reloading: HashSet<String>,
+    /// The active file's selected lines, if any.
+    pub selection: Option<EditorSelection>,
 }
 
 impl EditorState {
@@ -166,10 +196,33 @@ impl BenCodeApp {
                 cx.notify();
             }
         });
+        // Only a change in the selected lines redraws the app.
+        let selection_key = path.to_string();
+        let selection = cx.observe(&entity, move |this, editor, cx| {
+            let editor = editor.read(cx);
+            let primary = editor.primary();
+            let next = selected_lines(editor.text(), primary.anchor, primary.head).map(
+                |(start_line, end_line)| EditorSelection {
+                    path: selection_key.clone(),
+                    start_line,
+                    end_line,
+                },
+            );
+            let mine = this
+                .editor
+                .selection
+                .as_ref()
+                .is_none_or(|s| s.path == selection_key);
+            if mine && this.editor.selection != next {
+                this.editor.selection = next;
+                cx.notify();
+            }
+        });
         EditorHandle {
             entity,
             disk_hash: disk_sync::content_hash(text),
             _changes: changes,
+            _selection: selection,
         }
     }
 
@@ -279,5 +332,20 @@ impl BenCodeApp {
             self.save_editor_file(path, cx);
         }
         cx.notify();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::selected_lines;
+
+    #[test]
+    fn selections_name_their_lines() {
+        let text = "one\ntwo\nthree\n";
+        assert_eq!(selected_lines(text, 2, 2), None);
+        assert_eq!(selected_lines(text, 0, 2), Some((1, 1)));
+        assert_eq!(selected_lines(text, 9, 1), Some((1, 3)));
+        // Ending at the start of line 3 takes lines 1-2 only.
+        assert_eq!(selected_lines(text, 0, 8), Some((1, 2)));
     }
 }

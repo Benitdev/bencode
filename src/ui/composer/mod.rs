@@ -2,6 +2,7 @@
 //! prompt field with `/` and `@` suggestions, and send / stop.
 //! 100% faithful to MonoCode Composer layout.
 
+pub mod add_to_chat;
 mod attachments;
 pub mod cards;
 mod context_ring;
