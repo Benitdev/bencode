@@ -16,6 +16,7 @@ use jiff::Timestamp;
 use super::turns::{self, TurnLayout};
 use crate::app::BenCodeApp;
 use crate::db::SessionRow;
+use crate::ui::attachment_chip::{ChipFile, attachment_chip};
 
 /// MonoCode's transcript column (`max-w-4xl`).
 pub const MESSAGE_MAX_WIDTH: gpui::Pixels = px(896.0);
@@ -184,7 +185,10 @@ impl BenCodeApp {
             .filter(|q| !q.trim().is_empty());
         let current = self.find_current_block(&session.id, cx) == Some(ix);
         let expanded = self.transcript_ui.expanded_messages.contains(&key) || current;
-        let single_line = !text.contains('\n') && text.chars().count() <= CHARS_PER_LINE;
+        let chips = attachment_chips(block, cx);
+        // A pill only for one short line with nothing attached.
+        let single_line =
+            chips.is_none() && !text.contains('\n') && text.chars().count() <= CHARS_PER_LINE;
         let group = SharedString::from(format!("user-msg-{key}"));
         let bubble = div()
             .min_w_0()
@@ -196,6 +200,7 @@ impl BenCodeApp {
             .text_size(px(14.0))
             .line_height(px(22.0))
             .text_color(colors.fg)
+            .children(chips.map(|chips| div().when(!text.is_empty(), |el| el.mb_2()).child(chips)))
             .child(
                 div()
                     .when(clamps && !expanded, |el| el.line_clamp(CLAMP_LINES))
@@ -229,7 +234,6 @@ impl BenCodeApp {
             .pr_4()
             .pb_1()
             .pl(px(56.0))
-            .children(attachment_chips(block, cx))
             .child(bubble)
             .child(if draft {
                 self.draft_actions(session, ix, cx).into_any_element()
@@ -502,46 +506,24 @@ impl BenCodeApp {
 }
 
 /// The files a message was sent with, as small chips above the bubble.
+/// MonoCode puts a sent message's files at the top of its bubble.
 fn attachment_chips(block: &crate::db::Block, cx: &Context<BenCodeApp>) -> Option<AnyElement> {
-    let files = block.extra.get("attachments")?.as_array()?;
+    let files: Vec<ChipFile> = block
+        .extra
+        .get("attachments")?
+        .as_array()?
+        .iter()
+        .filter_map(ChipFile::from_block_json)
+        .collect();
     if files.is_empty() {
         return None;
     }
-    let colors = &cx.theme().colors;
-    let chips = files.iter().filter_map(|file| {
-        let name = file.get("name")?.as_str()?.to_string();
-        let image = file.get("kind").and_then(|k| k.as_str()) == Some("image");
-        Some(
-            div()
-                .flex()
-                .items_center()
-                .gap_1()
-                .h(px(22.0))
-                .px_1p5()
-                .max_w(px(220.0))
-                .rounded(px(6.0))
-                .bg(colors.fg.opacity(0.08))
-                .text_size(px(12.0))
-                .text_color(colors.fg.opacity(0.75))
-                .child(
-                    Icon::new(if image {
-                        IconName::Image
-                    } else {
-                        IconName::FileText
-                    })
-                    .size(IconSize::Xs)
-                    .color(colors.fg_muted),
-                )
-                .child(div().min_w_0().truncate().child(name)),
-        )
-    });
     Some(
         div()
             .flex()
             .flex_wrap()
-            .justify_end()
             .gap_1p5()
-            .children(chips)
+            .children(files.iter().map(|file| attachment_chip(file, None, cx)))
             .into_any_element(),
     )
 }

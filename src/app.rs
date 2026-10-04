@@ -150,6 +150,8 @@ pub struct BenCodeApp {
     pub question_ui: HashMap<String, crate::ui::composer::question::QuestionUi>,
     pub question_custom_input: Entity<TextInput>,
     pub question_focus: gpui::FocusHandle,
+    /// The image shown full-window (MonoCode `ImageLightbox`).
+    pub lightbox: Option<std::path::PathBuf>,
     /// MonoCode's paste / attach error under the chips, until the next edit.
     pub attach_error: Option<String>,
     /// The centred composer's last measurements, and a send from it whose
@@ -690,6 +692,7 @@ impl BenCodeApp {
             question_focus,
             question_focus_wanted: false,
             attach_error: None,
+            lightbox: None,
             dock_measure: Default::default(),
             dock_launch: None,
             queue_editing: None,
@@ -1119,6 +1122,7 @@ impl Render for BenCodeApp {
                 )
                 .children(self.render_session_dialog(cx))
                 .children(self.render_quick_open(cx))
+                .children(self.render_lightbox(cx))
                 .children(self.render_git_confirm(cx))
                 .children(self.render_branch_switch_confirm(cx))
                 .children(self.render_file_tree_dialog(cx)),

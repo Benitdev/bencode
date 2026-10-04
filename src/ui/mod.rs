@@ -1,4 +1,5 @@
 pub mod app_callback;
+pub mod attachment_chip;
 pub mod automations;
 pub mod composer;
 pub mod diff_counts;
@@ -11,6 +12,7 @@ pub mod footer;
 pub mod git_changes_panel;
 pub mod inbox_view;
 pub mod layout;
+pub mod lightbox;
 pub mod notes_view;
 pub mod pane_tree;
 pub mod provider_icon;

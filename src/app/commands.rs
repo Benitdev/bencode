@@ -191,7 +191,8 @@ impl BenCodeApp {
         .on_action(cx.listener(|this, _: &CloseView, _, cx| {
             if this.surface.is_some() {
                 this.close_surface(cx);
-            } else if !this.close_quick_open(cx)
+            } else if !this.close_lightbox(cx)
+                && !this.close_quick_open(cx)
                 && !this.close_composer_popovers(cx)
                 && !this.close_find(cx)
             {
