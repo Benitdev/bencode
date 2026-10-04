@@ -8,25 +8,12 @@
 use std::hash::{BuildHasher, RandomState};
 
 use ely_gpui_component::git::{Branch as ElyBranch, BranchSelector};
-use gpui::{
-    AnyElement, App, Context, Hsla, IntoElement, ParentElement, SharedString, Styled, div, px, svg,
-};
+use gpui::{AnyElement, App, Context, IntoElement, ParentElement, SharedString, Styled, div, px};
 
 use super::popover_surface;
 use crate::app::{BenCodeApp, TurnInput};
 use crate::git::worktrees::create_worktree;
 use crate::ui::app_callback::app_callback;
-
-const FOLDER_TREE_SVG: &[u8] = include_bytes!("../../../assets/icons/folder-tree.svg");
-
-/// Lucide `folder-tree`, MonoCode's worktree icon (Ely has none).
-pub fn folder_tree_icon(size: gpui::Pixels, color: Hsla) -> impl IntoElement {
-    svg()
-        .data(FOLDER_TREE_SVG)
-        .size(size)
-        .flex_none()
-        .text_color(color)
-}
 
 /// MonoCode `temporaryWorktreeBranchName`: `mc/` and eight lowercase
 /// letters or digits.

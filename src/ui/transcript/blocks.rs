@@ -201,9 +201,8 @@ impl BenCodeApp {
         let current = self.find_current_block(&session.id, cx) == Some(ix);
         let expanded = self.transcript_ui.expanded_messages.contains(&key) || current;
         let chips = attachment_chips(block, cx);
-        // MonoCode shows the note a turn was sent with as a small card.
-        let note = crate::ui::composer::note_card::NoteCardMeta::from_block(&block.extra)
-            .map(|meta| crate::ui::composer::note_card::note_mini_card(&meta, true, None, cx));
+        // MonoCode shows the note or handoff a turn was sent with as a card.
+        let note = crate::ui::composer::cards::turn_cards(block, cx);
         // A pill only for one short line with nothing attached.
         let single_line =
             chips.is_none() && !text.contains('\n') && text.chars().count() <= CHARS_PER_LINE;
@@ -475,6 +474,43 @@ impl BenCodeApp {
         )
     }
 
+    /// MonoCode `HandoffButton`: hand the conversation so far to another
+    /// installed agent, chosen from a menu at the pointer.
+    fn handoff_button(
+        &self,
+        session: &SessionRow,
+        turn: &TurnLayout,
+        cx: &Context<Self>,
+    ) -> Option<AnyElement> {
+        let end = turn.range.end.checked_sub(1)?;
+        if turn.live || !self.can_hand_off(session, turn.user) {
+            return None;
+        }
+        let colors = &cx.theme().colors;
+        let hover_bg = muted(colors.fg, 0.08);
+        let (sid, user) = (session.id.clone(), turn.user);
+        Some(
+            div()
+                .id(SharedString::from(format!(
+                    "turn-handoff-{}",
+                    turn.id(&session.blocks)
+                )))
+                .size(px(22.0))
+                .rounded(px(6.0))
+                .flex()
+                .items_center()
+                .justify_center()
+                .cursor_pointer()
+                .hover(move |s| s.bg(hover_bg))
+                .tooltip(Tooltip::text("Handoff"))
+                .on_click(cx.listener(move |this, event: &gpui::ClickEvent, _, cx| {
+                    this.open_handoff_menu(&sid, user, end, event.position(), cx)
+                }))
+                .child(crate::ui::icons::ExtraIcon::Replace.render(px(12.0), muted(colors.fg, 0.4)))
+                .into_any_element(),
+        )
+    }
+
     pub(super) fn render_turn_footer(
         &self,
         session: &SessionRow,
@@ -527,7 +563,14 @@ impl BenCodeApp {
                                 ))
                         }
                     })
+                    .children(self.handoff_button(session, turn, cx))
                     .children(self.turn_metrics_badge(session, turn, cx)),
+            )
+            .children(
+                turn.range
+                    .end
+                    .checked_sub(1)
+                    .and_then(|end| self.render_handoff_menu(&session.id, end, cx)),
             )
             .when_some(finished, |el, time| {
                 el.child(dot(cx)).child(

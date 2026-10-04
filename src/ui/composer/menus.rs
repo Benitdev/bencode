@@ -31,6 +31,8 @@ pub struct MenuState {
     /// The recent-models menu (⌘.) and its highlighted row.
     pub recent_open: bool,
     pub recent_index: usize,
+    /// A finished turn's Handoff menu.
+    pub handoff: Option<super::handoff::HandoffMenu>,
     /// A mouse-down this dispatch landed inside a popover or its chip.
     click_inside: bool,
     /// The outside-click check for this dispatch is already queued.
@@ -50,6 +52,7 @@ impl MenuState {
             workspace_menu: None,
             recent_open: false,
             recent_index: 0,
+            handoff: None,
             click_inside: false,
             check_queued: false,
         }
@@ -111,6 +114,8 @@ impl BenCodeApp {
     pub fn handle_menu_key(&mut self, key: &str, cx: &mut Context<Self>) -> bool {
         if self.tab_menu_open() {
             self.tab_menu_key(key, cx)
+        } else if self.composer_menus.handoff.is_some() {
+            self.handoff_menu_key(key, cx)
         } else if self.composer_menus.workspace_menu.is_some() {
             self.workspace_menu_key(key, cx)
         } else if self.is_permission_picker_open {

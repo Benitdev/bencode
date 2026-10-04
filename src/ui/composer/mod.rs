@@ -3,8 +3,10 @@
 //! 100% faithful to MonoCode Composer layout.
 
 mod attachments;
+pub mod cards;
 mod context_ring;
 pub mod edit_last_turn;
+pub mod handoff;
 mod mcp_picker;
 pub mod mcp_tags;
 pub mod mentions;
@@ -163,7 +165,9 @@ impl TriggerIcon {
                 .size(IconSize::Xs)
                 .color(color)
                 .into_any_element(),
-            Self::FolderTree => new_worktree::folder_tree_icon(px(12.0), color).into_any_element(),
+            Self::FolderTree => crate::ui::icons::ExtraIcon::FolderTree
+                .render(px(12.0), color)
+                .into_any_element(),
         }
     }
 }
@@ -441,7 +445,7 @@ impl BenCodeApp {
                     .children(
                         session
                             .filter(|_| focused)
-                            .and_then(|s| self.render_note_card(&s.id, cx)),
+                            .and_then(|s| self.render_composer_card(&s.id, cx)),
                     )
                     .when(focused, |el| el.children(self.render_attachment_chips(cx)))
                     .when_some(
@@ -847,12 +851,9 @@ impl BenCodeApp {
     /// empty composer offers Stop; typing turns it back into Send (queue).
     fn render_send_button(&self, running_here: bool, cx: &Context<Self>) -> impl IntoElement {
         let colors = &cx.theme().colors;
-        // A note card can be sent on its own.
-        let typed = !self.prompt_input.read(cx).text().trim().is_empty()
-            || self
-                .selected_session_id
-                .as_ref()
-                .is_some_and(|id| self.note_cards.contains_key(id));
+        // A card can be sent on its own.
+        let typed =
+            !self.prompt_input.read(cx).text().trim().is_empty() || self.has_composer_card();
         let stop = running_here && !typed;
         let enabled = running_here || typed;
         let (bg, ink) = if enabled {

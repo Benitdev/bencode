@@ -176,9 +176,9 @@ pub struct BenCodeApp {
     /// made for their first send.
     pub new_worktrees: HashMap<String, String>,
     pub preparing_worktrees: HashSet<String>,
-    /// MonoCode `noteCard`: the note a thread's composer carries until its
-    /// next send.
-    pub note_cards: HashMap<String, crate::ui::composer::note_card::NoteCard>,
+    /// MonoCode's composer cards (note, handoff): what a thread's composer
+    /// carries until its next send.
+    pub composer_cards: HashMap<String, crate::ui::composer::cards::ComposerCard>,
     /// The centred composer's last measurements, and a send from it whose
     /// docked composer is still dropping into place.
     pub dock_measure: std::rc::Rc<crate::ui::composer::DockMeasure>,
@@ -752,7 +752,7 @@ impl BenCodeApp {
             edit_rewinding: HashSet::new(),
             new_worktrees: HashMap::new(),
             preparing_worktrees: HashSet::new(),
-            note_cards: HashMap::new(),
+            composer_cards: HashMap::new(),
             lightbox: None,
             usage_limits: HashMap::new(),
             mention_marks: Vec::new(),

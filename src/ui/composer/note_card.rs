@@ -4,23 +4,19 @@
 //! gets the message with the note appended, the transcript keeps the
 //! message and a small card naming the note.
 
-use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
+use ely_gpui_component::primitives::{Icon, IconName};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
-    AnyElement, Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString,
-    Styled, div, prelude::*, px,
+    AnyElement, Context, FontWeight, IntoElement, ParentElement, SharedString, Styled, div,
+    prelude::*, px,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use std::rc::Rc;
-
+use super::cards::{CardIcon, ComposerCard, card_frame, card_kind};
 use crate::app::BenCodeApp;
 use crate::db::Note;
 use crate::ui::attachment_chip::OnRemove;
-
-/// MonoCode's composer placeholder while a note card is attached.
-const NOTE_PLACEHOLDER: &str = "Add a message, or send…";
 
 /// MonoCode `NoteComposerCard`: the note as it was added.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -89,15 +85,14 @@ pub fn compose_note_message(card: Option<&NoteCard>, text: &str) -> String {
 }
 
 /// MonoCode `NoteMiniCard`: "Note · slug", the title, and (in the composer)
-/// the project it came from. `on_dismiss` adds the corner ×.
+/// the project it came from.
 pub fn note_mini_card(
     meta: &NoteCardMeta,
     embedded: bool,
     on_dismiss: Option<OnRemove>,
     cx: &Context<BenCodeApp>,
 ) -> AnyElement {
-    let colors = &cx.theme().colors;
-    let fg = colors.fg;
+    let fg = cx.theme().colors.fg;
     let kind = match (embedded, meta.slug.is_empty()) {
         (false, false) => format!("Note · {}", meta.slug),
         _ => "Note".to_string(),
@@ -108,35 +103,8 @@ pub fn note_mini_card(
         .filter(|_| !embedded)
         .and_then(|cwd| std::path::Path::new(cwd).file_name())
         .map(|name| name.to_string_lossy().into_owned());
-    div()
-        .relative()
-        .rounded(px(6.0))
-        .border_1()
-        .border_color(fg.opacity(0.1))
-        .bg(fg.opacity(0.06))
-        .px(px(10.0))
-        .py_2()
-        .when(on_dismiss.is_some(), |el| el.pr_8())
-        .child(
-            div()
-                .flex()
-                .min_w_0()
-                .items_center()
-                .gap_1p5()
-                .child(
-                    Icon::new(IconName::File)
-                        .size(IconSize::Xs)
-                        .color(fg.opacity(0.45)),
-                )
-                .child(
-                    div()
-                        .min_w_0()
-                        .truncate()
-                        .text_size(px(11.0))
-                        .text_color(fg.opacity(0.5))
-                        .child(kind),
-                ),
-        )
+    card_frame(&meta.id, on_dismiss, cx)
+        .child(card_kind(CardIcon::Named(IconName::File), kind, cx))
         .child(
             div()
                 .mt_1()
@@ -164,30 +132,6 @@ pub fn note_mini_card(
                     .child(div().min_w_0().truncate().child(project)),
             )
         })
-        .when_some(on_dismiss, |el, dismiss| {
-            let hover = fg.opacity(0.1);
-            el.child(
-                div()
-                    .id(SharedString::from(format!("note-card-remove-{}", meta.id)))
-                    .absolute()
-                    .right(px(6.0))
-                    .top(px(6.0))
-                    .size(px(20.0))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded(px(4.0))
-                    .cursor_pointer()
-                    .hover(move |s| s.bg(hover))
-                    .tooltip(Tooltip::text("Remove"))
-                    .on_click(cx.listener(move |this, _, _, cx| dismiss(this, cx)))
-                    .child(
-                        Icon::new(IconName::X)
-                            .size(IconSize::Xs)
-                            .color(fg.opacity(0.4)),
-                    ),
-            )
-        })
         .into_any_element()
 }
 
@@ -206,67 +150,18 @@ impl BenCodeApp {
             .clone()
             .filter(|cwd| std::path::Path::new(cwd).is_dir())
             .unwrap_or_else(|| self.current_cwd.clone());
+        let title = card.meta.title.trim().to_string();
         self.close_notes(cx);
-        let id = self.create_session_row(&cwd);
-        if let Some(session) = self.sessions.iter_mut().find(|s| s.id == id)
-            && !card.meta.title.trim().is_empty()
-        {
-            session.title = card.meta.title.trim().to_string();
-            self.persist_session(&id);
-        }
-        self.tabs.open(&id);
-        self.sync_selection(cx);
-        self.note_cards.insert(id, card);
-        self.sync_prompt_placeholder(cx);
-        self.refocus_prompt(cx);
-        cx.notify();
-    }
-
-    fn remove_note_card(&mut self, session_id: &str, cx: &mut Context<Self>) {
-        self.note_cards.remove(session_id);
-        self.sync_prompt_placeholder(cx);
-        cx.notify();
-    }
-
-    /// MonoCode's placeholder follows the card: "Add a message, or send…"
-    /// while a note waits to be sent.
-    pub fn sync_prompt_placeholder(&mut self, cx: &mut Context<Self>) {
-        let carded = self
-            .selected_session_id
-            .as_ref()
-            .is_some_and(|id| self.note_cards.contains_key(id));
-        let placeholder = if carded {
-            NOTE_PLACEHOLDER
-        } else {
-            super::PROMPT_PLACEHOLDER
-        };
-        self.prompt_input.update(cx, |input, cx| {
-            if input.placeholder_text().as_ref() != placeholder {
-                input.set_placeholder(placeholder, cx);
-            }
-        });
-    }
-
-    /// The focused thread's note card above the prompt.
-    pub(super) fn render_note_card(
-        &self,
-        session_id: &str,
-        cx: &Context<Self>,
-    ) -> Option<AnyElement> {
-        let card = self.note_cards.get(session_id)?;
-        let sid = session_id.to_string();
-        Some(
-            div()
-                .px_3()
-                .pt_2()
-                .child(note_mini_card(
-                    &card.meta,
-                    false,
-                    Some(Rc::new(move |this, cx| this.remove_note_card(&sid, cx))),
-                    cx,
-                ))
-                .into_any_element(),
-        )
+        self.open_thread_with_card(
+            &cwd,
+            move |session| {
+                if !title.is_empty() {
+                    session.title = title;
+                }
+            },
+            ComposerCard::Note(card),
+            cx,
+        );
     }
 }
 
