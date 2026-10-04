@@ -11,6 +11,7 @@ pub mod mentions;
 mod menus;
 pub mod mode_commands;
 mod model_picker;
+mod new_worktree;
 pub mod prompt_marks;
 pub mod question;
 mod suggestions;
@@ -131,7 +132,7 @@ fn selection_emphasis(cx: &gpui::App) -> gpui::Hsla {
 /// buttons, dim until hovered.
 fn git_trigger(
     id: &'static str,
-    icon: IconName,
+    icon: impl Into<TriggerIcon>,
     label: String,
     enabled: bool,
     open: bool,
@@ -140,11 +141,37 @@ fn git_trigger(
     git_label(id, icon, label, Some(enabled), open, cx)
 }
 
+/// A trigger's glyph: an Ely icon, or MonoCode's worktree folder (which
+/// Ely does not ship).
+#[derive(Clone, Copy)]
+enum TriggerIcon {
+    Named(IconName),
+    FolderTree,
+}
+
+impl From<IconName> for TriggerIcon {
+    fn from(name: IconName) -> Self {
+        Self::Named(name)
+    }
+}
+
+impl TriggerIcon {
+    fn render(self, color: gpui::Hsla) -> AnyElement {
+        match self {
+            Self::Named(name) => Icon::new(name)
+                .size(IconSize::Xs)
+                .color(color)
+                .into_any_element(),
+            Self::FolderTree => new_worktree::folder_tree_icon(px(12.0), color).into_any_element(),
+        }
+    }
+}
+
 /// `GitPickerTrigger` when `enabled` is set, else MonoCode's static
 /// `WorkspaceIdentity` label (`text-content/45`, no hover).
 fn git_label(
     id: &'static str,
-    icon: IconName,
+    icon: impl Into<TriggerIcon>,
     label: String,
     enabled: Option<bool>,
     open: bool,
@@ -173,7 +200,7 @@ fn git_label(
                 .hover(move |s| s.bg(hover).text_color(fg))
         })
         .when(!enabled, |el| el.opacity(0.4))
-        .child(Icon::new(icon).size(IconSize::Xs).color(fg.opacity(0.55)))
+        .child(icon.into().render(fg.opacity(0.55)))
         .child(div().min_w_0().truncate().child(label))
 }
 
@@ -361,6 +388,10 @@ impl BenCodeApp {
                 "composer-{}",
                 session.map_or("none", |s| s.id.as_str())
             )))
+            // MonoCode binds ⌘⇧G to the workspace only in a new thread.
+            .when(focused && self.is_draft_workspace(), |el| {
+                el.key_context("DraftComposer")
+            })
             .flex_none()
             .w_full()
             .max_w(COMPOSER_MAX_WIDTH)
@@ -431,6 +462,9 @@ impl BenCodeApp {
                     )
                     .when(focused && self.is_branch_picker_open, |el| {
                         el.child(popover_surface(self.render_branch_picker(cx), cx))
+                    })
+                    .when(focused && self.is_base_picker_open, |el| {
+                        el.child(self.render_base_picker(cx))
                     })
                     .when(focused && self.is_plus_menu_open, |el| {
                         el.child(popover_surface(self.render_plus_menu_popover(cx), cx))
@@ -523,7 +557,10 @@ impl BenCodeApp {
                 el.child(self.project_picker(&project, cx))
             })
             .child(self.workspace_identity(session, empty && !busy, cx))
-            .child(self.branch_menu(session, !busy, cx))
+            .child(match self.new_worktree_base().filter(|_| empty) {
+                Some(base) => self.base_chip(base, cx).into_any_element(),
+                None => self.branch_menu(session, !busy, cx).into_any_element(),
+            })
             .child(
                 div()
                     .ml_auto()
@@ -564,8 +601,8 @@ impl BenCodeApp {
     }
 
     /// The checkout the thread runs in (MonoCode `WorkspaceIdentity`, and
-    /// `WorkspacePicker` while the thread is new): "Current checkout" or
-    /// "Worktree". A new thread in a project with worktrees can switch.
+    /// `WorkspacePicker` while the thread is new): "Current checkout",
+    /// "New worktree" (made on the first send) or "Worktree".
     fn workspace_identity(
         &self,
         session: Option<&SessionRow>,
@@ -575,34 +612,63 @@ impl BenCodeApp {
         let in_worktree = session.map_or(self.worktree_focus().is_some(), |s| {
             s.worktree_cwd.as_deref().is_some_and(|w| !w.is_empty())
         });
-        let label = if in_worktree {
-            "Worktree"
+        let preparing = session.is_some_and(|s| self.preparing_worktrees.contains(&s.id));
+        let new_tree = can_switch && self.new_worktree_base().is_some();
+        let (label, icon) = if preparing {
+            ("Creating worktree…", TriggerIcon::FolderTree)
+        } else if new_tree {
+            ("New worktree", TriggerIcon::FolderTree)
+        } else if in_worktree {
+            ("Worktree", TriggerIcon::FolderTree)
         } else {
-            "Current checkout"
+            ("Current checkout", TriggerIcon::Named(IconName::Folder))
         };
-        let switchable = can_switch
-            && self
-                .workspace
-                .worktrees
-                .iter()
-                .any(|w| !w.is_main && !w.missing);
+        let switchable = can_switch && !preparing && self.is_draft_workspace();
         let open = self.composer_menus.workspace_menu.is_some();
         let trigger = git_label(
             "composer-workspace",
-            IconName::Folder,
+            icon,
             label.to_string(),
             switchable.then_some(true),
             open,
             cx,
         )
         .when(switchable, |el| {
-            el.on_click(cx.listener(|this, _, _, cx| this.toggle_workspace_menu(cx)))
+            el.tooltip(Tooltip::text(format!("Workspace: {label} (⌘⇧G)")))
+                .on_click(cx.listener(|this, _, _, cx| this.toggle_workspace_menu(cx)))
         });
         div()
             .relative()
             .flex_none()
             .child(popover_anchor(trigger, cx))
-            .children(open.then(|| self.render_workspace_menu(cx)))
+            // Anchored from the trigger's top, so the menu rises above it.
+            .children(open.then(|| {
+                div()
+                    .absolute()
+                    .top_0()
+                    .left_0()
+                    .child(self.render_workspace_menu(cx))
+            }))
+    }
+
+    /// MonoCode `WorktreeBasePicker` trigger: "From main".
+    fn base_chip(&self, base: &str, cx: &Context<Self>) -> impl IntoElement {
+        let chip = git_trigger(
+            "composer-worktree-base",
+            IconName::GitBranch,
+            format!("From {base}"),
+            true,
+            self.is_base_picker_open,
+            cx,
+        )
+        .tooltip(Tooltip::text(format!("Create worktree from {base}")))
+        .on_click(cx.listener(|this, _, _, cx| {
+            let open = !this.is_base_picker_open;
+            this.close_composer_popovers(cx);
+            this.is_base_picker_open = open;
+            cx.notify();
+        }));
+        popover_anchor(chip, cx)
     }
 
     /// "+" (add to message), model, access, then Send / Stop.
@@ -720,6 +786,7 @@ impl BenCodeApp {
         let open = self.is_plus_menu_open
             || self.is_permission_picker_open
             || self.is_branch_picker_open
+            || self.is_base_picker_open
             || self.is_model_picker_open
             || self.composer_menus.recent_open
             || self.composer_menus.workspace_menu.is_some()
@@ -732,6 +799,7 @@ impl BenCodeApp {
             self.is_plus_menu_open = false;
             self.is_permission_picker_open = false;
             self.is_branch_picker_open = false;
+            self.is_base_picker_open = false;
             self.is_model_picker_open = false;
             cx.notify();
         }
@@ -754,6 +822,7 @@ impl BenCodeApp {
         self.is_model_picker_open = open && which == Popover::Model;
         self.is_permission_picker_open = open && which == Popover::Access;
         self.is_branch_picker_open = false;
+        self.is_base_picker_open = false;
         if self.is_permission_picker_open {
             let mode = self.session_permission_mode(self.selected_session());
             self.composer_menus.access_index = PERMISSION_MODES

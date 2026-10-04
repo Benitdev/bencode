@@ -35,6 +35,7 @@ actions!(
         GoToFile,
         FindNext,
         FindPrevious,
+        ToggleWorkspaceMode,
         ToggleSessionSidebar,
         GoBack,
         GoForward,
@@ -57,6 +58,9 @@ fn keymap() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-p", GoToFile, None),
         KeyBinding::new("cmd-g", FindNext, None),
         KeyBinding::new("cmd-shift-g", FindPrevious, None),
+        // MonoCode "Composer: Toggle Workspace", only in a new thread's
+        // composer; deeper than the global ⌘⇧G, so it wins there.
+        KeyBinding::new("cmd-shift-g", ToggleWorkspaceMode, Some("DraftComposer")),
         KeyBinding::new("cmd-b", ToggleSidebar, None),
         KeyBinding::new("cmd-shift-b", ToggleSessionSidebar, None),
         KeyBinding::new("cmd-[", GoBack, None),
@@ -188,6 +192,7 @@ impl BenCodeApp {
         .on_action(cx.listener(|this, _: &GoToFile, _, cx| this.open_quick_open(cx)))
         .on_action(cx.listener(|this, _: &FindNext, _, cx| this.step_find(1, cx)))
         .on_action(cx.listener(|this, _: &FindPrevious, _, cx| this.step_find(-1, cx)))
+        .on_action(cx.listener(|this, _: &ToggleWorkspaceMode, _, cx| this.toggle_new_worktree(cx)))
         .on_action(cx.listener(|this, _: &CloseView, _, cx| {
             if this.surface.is_some() {
                 this.close_surface(cx);
@@ -248,7 +253,7 @@ mod tests {
 
     #[test]
     fn keymap_chords_are_unique_per_action() {
-        assert_eq!(keymap().len(), 27);
+        assert_eq!(keymap().len(), 28);
         assert_eq!(menus().len(), 4);
     }
 }

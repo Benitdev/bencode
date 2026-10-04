@@ -150,28 +150,42 @@ impl BenCodeApp {
 }
 
 impl BenCodeApp {
-    /// MonoCode `WorkspacePicker` rows: the project checkout, then each
-    /// worktree by branch with its folder underneath.
+    /// MonoCode `WorkspacePicker` rows: the project checkout, a new
+    /// worktree (made on the first send), then each existing worktree by
+    /// branch with its folder underneath.
     fn workspace_menu_entries(&self) -> Vec<MenuEntry> {
         let focused = self.worktree_focus().map(|f| f.path.clone());
-        let mut entries = vec![MenuEntry::Item(
-            MenuAction::new("current", "Current checkout").checked(focused.is_none()),
-        )];
-        for tree in self
+        let new_tree = self.new_worktree_base().is_some();
+        let mut entries = vec![
+            MenuEntry::Item(
+                MenuAction::new("current", "Current checkout")
+                    .checked(!new_tree && focused.is_none()),
+            ),
+            MenuEntry::Item(
+                MenuAction::new("new-worktree", "New worktree")
+                    .shortcut("⌘⇧G")
+                    .checked(new_tree),
+            ),
+        ];
+        let trees: Vec<_> = self
             .workspace
             .worktrees
             .iter()
             .filter(|w| !w.is_main && !w.missing)
-        {
-            entries.push(MenuEntry::Item(
+            .collect();
+        if !trees.is_empty() {
+            entries.push(MenuEntry::Separator);
+        }
+        entries.extend(trees.into_iter().map(|tree| {
+            MenuEntry::Item(
                 MenuAction::new(
                     "tree",
                     tree.branch.clone().unwrap_or_else(|| tree.head.clone()),
                 )
                 .description(Some(tree.path.clone()))
-                .checked(focused.as_deref() == Some(tree.path.as_str())),
-            ));
-        }
+                .checked(!new_tree && focused.as_deref() == Some(tree.path.as_str())),
+            )
+        }));
         entries
     }
 
@@ -188,25 +202,31 @@ impl BenCodeApp {
         cx.notify();
     }
 
-    /// Row `index` picked: the project checkout or that worktree.
+    /// Row `index` picked: the project checkout, a new worktree, or that
+    /// existing worktree.
     fn pick_workspace(&mut self, index: usize, cx: &mut Context<Self>) {
         self.composer_menus.workspace_menu = None;
         self.refocus_prompt(cx);
-        let trees: Vec<_> = self
-            .workspace
-            .worktrees
-            .iter()
-            .filter(|w| !w.is_main && !w.missing)
-            .cloned()
-            .collect();
-        let focus = index
-            .checked_sub(1)
-            .and_then(|ix| trees.get(ix))
-            .map(|tree| crate::app::WorktreeFocus {
-                path: tree.path.clone(),
-                branch: tree.branch.clone(),
-            });
-        self.select_workspace(focus, cx);
+        let entries = self.workspace_menu_entries();
+        let Some(MenuEntry::Item(action)) = entries.get(index) else {
+            return;
+        };
+        match action.id {
+            "new-worktree" => self.set_new_worktree(true, cx),
+            id => {
+                self.set_new_worktree(false, cx);
+                let focus = action
+                    .description
+                    .as_deref()
+                    .filter(|_| id == "tree")
+                    .and_then(|path| self.workspace.worktrees.iter().find(|w| w.path == path))
+                    .map(|tree| crate::app::WorktreeFocus {
+                        path: tree.path.clone(),
+                        branch: tree.branch.clone(),
+                    });
+                self.select_workspace(focus, cx);
+            }
+        }
         cx.notify();
     }
 

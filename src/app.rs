@@ -123,6 +123,8 @@ pub struct BenCodeApp {
     pub is_permission_picker_open: bool,
     pub is_plus_menu_open: bool,
     pub is_branch_picker_open: bool,
+    /// MonoCode `WorktreeBasePicker` (the "From main" chip) is open.
+    pub is_base_picker_open: bool,
     /// A branch switch git refused because of local changes, awaiting "Stash & switch".
     pub blocked_branch_switch: Option<crate::app::workspace_sync::BranchTarget>,
     pub is_skill_picker_open: bool,
@@ -169,6 +171,11 @@ pub struct BenCodeApp {
     /// composer holds, and threads whose provider is rewinding for a resend.
     pub editing_last_turn: Option<String>,
     pub edit_rewinding: HashSet<String>,
+    /// MonoCode "New worktree": the base chosen per not-yet-started thread
+    /// (`""` before the thread exists), and threads whose worktree is being
+    /// made for their first send.
+    pub new_worktrees: HashMap<String, String>,
+    pub preparing_worktrees: HashSet<String>,
     /// The centred composer's last measurements, and a send from it whose
     /// docked composer is still dropping into place.
     pub dock_measure: std::rc::Rc<crate::ui::composer::DockMeasure>,
@@ -711,6 +718,7 @@ impl BenCodeApp {
             is_permission_picker_open: false,
             is_plus_menu_open: false,
             is_branch_picker_open: false,
+            is_base_picker_open: false,
             blocked_branch_switch: None,
             is_skill_picker_open: false,
             skill_query: String::new(),
@@ -739,6 +747,8 @@ impl BenCodeApp {
             composer_error: None,
             editing_last_turn: None,
             edit_rewinding: HashSet::new(),
+            new_worktrees: HashMap::new(),
+            preparing_worktrees: HashSet::new(),
             lightbox: None,
             usage_limits: HashMap::new(),
             mention_marks: Vec::new(),

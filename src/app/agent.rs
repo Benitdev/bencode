@@ -250,12 +250,17 @@ impl BenCodeApp {
                 return;
             }
             self.create_new_session(cx);
+            if let Some(id) = self.selected_session_id.clone() {
+                self.adopt_draft_workspace(&id);
+            }
         }
         let Some(session_id) = self.selected_session_id.clone() else {
             return;
         };
-        // An edited resend is still waiting on the provider's rewind.
-        if self.edit_rewinding.contains(&session_id) {
+        // An edited resend or a new worktree is still being prepared.
+        if self.edit_rewinding.contains(&session_id)
+            || self.preparing_worktrees.contains(&session_id)
+        {
             return;
         }
         let centred = self
@@ -293,6 +298,10 @@ impl BenCodeApp {
         }
         if self.editing_last_turn.as_deref() == Some(session_id.as_str()) {
             self.resend_edited(&session_id, input, typed, cx);
+            return;
+        }
+        if self.new_worktrees.contains_key(&session_id) && !self.is_agent_running_in(&session_id) {
+            self.send_in_new_worktree(&session_id, input, typed, cx);
             return;
         }
         if self.is_agent_running_in(&session_id) {
