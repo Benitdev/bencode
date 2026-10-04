@@ -133,6 +133,11 @@ pub struct SessionRow {
     /// keeps the stored value on update and writes `{}` on insert.
     #[serde(default)]
     pub model_settings: Option<serde_json::Map<String, Value>>,
+    /// MonoCode `worktreeRemoved`: the thread's worktree was deleted; it
+    /// cannot run until a branch or worktree is chosen. Written only by
+    /// `reattach_session`.
+    #[serde(default)]
+    pub worktree_removed: bool,
     /// Set when `blocks_json` could not be parsed. Such rows carry an empty
     /// `blocks` vector and `upsert_session` refuses to write them back.
     #[serde(skip)]
@@ -140,11 +145,12 @@ pub struct SessionRow {
 }
 
 impl SessionRow {
-    /// Directory the thread's agent runs in: its worktree, else `cwd`.
+    /// Directory the thread's agent runs in: its worktree, else `cwd`
+    /// (also once the worktree was deleted).
     pub fn work_dir(&self) -> &str {
         self.worktree_cwd
             .as_deref()
-            .filter(|path| !path.is_empty())
+            .filter(|path| !path.is_empty() && !self.worktree_removed)
             .unwrap_or(&self.cwd)
     }
 }
@@ -285,7 +291,7 @@ const LATE_SESSION_COLUMNS: &[(&str, &str)] = &[
 const SESSION_SELECT: &str =
     "SELECT id, title, cwd, harness, model, created_at, updated_at, branch,
         blocks_json, context_used, context_window, pinned, archived, provider_session_id,
-        runtime_mode, worktree_cwd, model_settings
+        runtime_mode, worktree_cwd, model_settings, worktree_removed
      FROM sessions";
 
 pub struct MonoCodeDb {
@@ -381,6 +387,16 @@ impl MonoCodeDb {
 
     /// Inserts or updates a session. Columns BenCode does not model are left
     /// untouched on update and get MonoCode's defaults on insert.
+    /// MonoCode `WorktreePicker` pick: the thread runs again, in
+    /// `worktree_cwd` (a worktree) or its project folder (`None`).
+    pub fn reattach_session(&self, id: &str, worktree_cwd: Option<&str>) -> Result<()> {
+        self.conn.execute(
+            "UPDATE sessions SET worktree_removed = 0, worktree_cwd = ?2 WHERE id = ?1",
+            rusqlite::params![id, worktree_cwd],
+        )?;
+        Ok(())
+    }
+
     pub fn upsert_session(&self, session: &SessionRow) -> Result<()> {
         if session.blocks_parse_failed {
             bail!(
@@ -850,6 +866,7 @@ fn session_from_row(row: &Row<'_>) -> rusqlite::Result<SessionRow> {
                 Value::Object(map) => Some(map),
                 _ => None,
             }),
+        worktree_removed: row.get::<_, Option<i64>>(17)?.unwrap_or(0) != 0,
         blocks_parse_failed,
     })
 }

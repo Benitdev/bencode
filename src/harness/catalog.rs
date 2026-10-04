@@ -98,12 +98,25 @@ impl ModelSetting {
             )
     }
 
-    /// MonoCode `compatibleSettingValue`: `value` if this setting offers it.
     fn accepts(&self, value: &str) -> bool {
         match self.kind {
             SettingKind::Toggle => matches!(value, "true" | "false"),
             SettingKind::Select => self.options.iter().any(|(v, _)| v == value),
         }
+    }
+
+    /// MonoCode `compatibleSettingValue`: `value` if this setting offers
+    /// it, else its alias (`extra-high` ⇄ `xhigh`) when that is offered.
+    pub fn compatible<'a>(&self, value: &'a str) -> Option<&'a str> {
+        if self.accepts(value) {
+            return Some(value);
+        }
+        let alias = match value {
+            "extra-high" => "xhigh",
+            "xhigh" => "extra-high",
+            _ => return None,
+        };
+        self.accepts(alias).then_some(alias)
     }
 }
 
@@ -155,6 +168,15 @@ pub fn claude_effort(levels: &[String]) -> ModelSetting {
         default: default.into(),
         options,
     }
+}
+
+/// Tokens the model's context holds: 1M when its Context setting says so,
+/// else 200K.
+pub fn context_window_tokens(key: &str, values: Option<&Map<String, Value>>) -> i64 {
+    let one_million = find(key)
+        .and_then(|m| m.settings.into_iter().find(|s| s.id == "context"))
+        .is_some_and(|setting| setting.value(values) == "1m");
+    if one_million { 1_000_000 } else { 200_000 }
 }
 
 pub fn context_window(default: &str) -> ModelSetting {
@@ -338,7 +360,7 @@ pub fn merge_settings(key: &str, current: Option<&Map<String, Value>>) -> Map<St
             let value = current
                 .and_then(|c| c.get(&setting.id))
                 .and_then(Value::as_str)
-                .filter(|v| setting.accepts(v))
+                .and_then(|v| setting.compatible(v))
                 .unwrap_or(&setting.default);
             (setting.id.clone(), Value::String(value.to_string()))
         })
@@ -408,6 +430,19 @@ pub fn default_model(installed: &[HarnessInfo]) -> ModelOption {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn effort_values_carry_over_through_their_alias() {
+        let xhigh = ModelSetting::select(
+            "effort",
+            "Effort",
+            "high",
+            &[("high", "High"), ("xhigh", "Extra High")],
+        );
+        assert_eq!(xhigh.compatible("extra-high"), Some("xhigh"));
+        assert_eq!(xhigh.compatible("high"), Some("high"));
+        assert_eq!(xhigh.compatible("max"), None);
+    }
 
     #[test]
     fn cli_model_id_uses_the_native_id() {

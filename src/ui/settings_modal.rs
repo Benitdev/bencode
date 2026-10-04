@@ -123,7 +123,7 @@ impl BenCodeApp {
 
     fn render_settings_page(&self, cx: &Context<Self>) -> AnyElement {
         match self.settings_tab {
-            SettingsTab::General => self.render_settings_general().into_any_element(),
+            SettingsTab::General => self.render_settings_general(cx).into_any_element(),
             SettingsTab::Providers => self.render_settings_providers(cx).into_any_element(),
             SettingsTab::Mcp => self.render_settings_mcp().into_any_element(),
             SettingsTab::Skills => self.render_settings_skills(cx).into_any_element(),
@@ -132,7 +132,7 @@ impl BenCodeApp {
         }
     }
 
-    fn render_settings_general(&self) -> impl IntoElement {
+    fn render_settings_general(&self, cx: &Context<Self>) -> impl IntoElement {
         let editor_controls = match &self.integrations.editors {
             None => div().child(Badge::new("Scanning…").tone(Tone::Neutral)),
             Some(editors) if editors.is_empty() => {
@@ -154,6 +154,26 @@ impl BenCodeApp {
                         &self.selected_model,
                     ))),
             )
+            .row({
+                let entity = cx.entity().downgrade();
+                SettingsRow::new("Composer mascot")
+                    .description(
+                        "When a turn is running, the project mascot runs along the composer, \
+                         bonks the scroll-to-latest button the first time, then jumps it, and \
+                         sometimes grabs a coin.",
+                    )
+                    .control(
+                        Switch::new("composer-mascot", !self.composer_mascot_off).on_change(
+                            move |on, _, cx| {
+                                if let Err(err) =
+                                    entity.update(cx, |this, cx| this.set_composer_mascot(on, cx))
+                                {
+                                    log::debug!("mascot toggle after app drop: {err:#}");
+                                }
+                            },
+                        ),
+                    )
+            })
             .row(
                 SettingsRow::new("External editors")
                     .description(

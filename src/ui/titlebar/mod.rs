@@ -1083,8 +1083,31 @@ impl BenCodeApp {
         Some(
             if projectless {
                 row.child(
-                    button("titlebar-inbox", IconName::Inbox, "Inbox")
-                        .on_click(cx.listener(|this, _, _, cx| this.open_inbox_modal(cx))),
+                    div()
+                        .relative()
+                        .child(
+                            button(
+                                "titlebar-inbox",
+                                IconName::Inbox,
+                                if self.inbox_has_unseen() {
+                                    "Inbox, new items"
+                                } else {
+                                    "Inbox"
+                                },
+                            )
+                            .on_click(cx.listener(|this, _, _, cx| this.open_inbox_modal(cx))),
+                        )
+                        .when(self.inbox_has_unseen(), |el| {
+                            el.child(
+                                div()
+                                    .absolute()
+                                    .top(px(3.0))
+                                    .right(px(3.0))
+                                    .size(px(6.0))
+                                    .rounded_full()
+                                    .bg(cx.theme().colors.accent),
+                            )
+                        }),
                 )
                 .child(
                     button("titlebar-notes", IconName::StickyNote, "Notes")

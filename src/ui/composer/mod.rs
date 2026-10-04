@@ -4,27 +4,33 @@
 
 pub mod add_to_chat;
 mod attachments;
+pub mod branch_picker;
 pub mod cards;
 mod context_ring;
 pub mod edit_last_turn;
 mod folder_picker;
 pub mod handoff;
+pub mod inbox_card;
 mod mcp_picker;
 pub mod mcp_tags;
 pub mod mentions;
 mod menus;
 pub mod mode_commands;
 mod model_picker;
+pub mod new_skill;
 mod new_worktree;
 pub mod note_card;
 pub mod prompt_marks;
 pub mod question;
+mod removed_worktree;
+pub mod runner;
+pub mod runner_view;
 mod search_popover;
 mod suggestions;
+pub mod tokens;
 pub mod usage_limit;
 
 use ely_gpui_component::buttons::ButtonVariant;
-use ely_gpui_component::git::{Branch as ElyBranch, BranchSelector};
 use ely_gpui_component::menus::{DropdownMenu, Menu, MenuItem};
 use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
@@ -33,7 +39,6 @@ use gpui::{
     SharedString, Styled, div, prelude::*, px,
 };
 
-use crate::app::workspace_sync::BranchTarget;
 use crate::app::{BenCodeApp, PermissionMode};
 use crate::db::SessionRow;
 use crate::harness::{HarnessKind, catalog};
@@ -48,6 +53,8 @@ pub use prompt_marks::{MentionMark, prompt_highlights};
 const COMPOSER_MAX_WIDTH: gpui::Pixels = px(896.0);
 /// MonoCode's default placeholder (trailing space included).
 pub const PROMPT_PLACEHOLDER: &str = "Ask, build, / for commands, @ for references... ";
+/// MonoCode `CwdPicker` `PREVIEW`.
+const RECENT_PROJECTS_SHOWN: usize = 5;
 const HARNESS_ORDER: [HarnessKind; 4] = [
     HarnessKind::Claude,
     HarnessKind::Antigravity,
@@ -252,6 +259,24 @@ fn permission_entry(mode: PermissionMode) -> (&'static str, IconName) {
         })
 }
 
+/// MonoCode's model chip title: "Harness · Provider · Model · Effort",
+/// then how to reach the recent models.
+fn model_chip_tooltip(
+    key: &str,
+    values: Option<&serde_json::Map<String, serde_json::Value>>,
+) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    if let Some(model) = catalog::find(key) {
+        parts.push(model.harness.label().to_string());
+        parts.extend(model.provider.clone());
+    }
+    parts.push(catalog::label_for(key));
+    if let Some(effort) = catalog::effort_setting(key) {
+        parts.push(effort.value_label(values).to_string());
+    }
+    format!("{} · Recent models: right-click or ⌘.", parts.join(" · "))
+}
+
 fn focus_id_key(session: Option<&SessionRow>) -> String {
     session.map_or_else(String::new, |s| s.id.clone())
 }
@@ -406,21 +431,32 @@ impl BenCodeApp {
             .mx_auto()
             .px(px(6.0))
             .pb(px(6.0))
-            // MonoCode stacks the question form, then the queue, on the box.
-            .children(
-                session
-                    .filter(|_| focused)
-                    .and_then(|s| self.render_question_form(&s.id, cx)),
-            )
-            .children(
-                session
-                    .filter(|_| focused)
-                    .and_then(|s| self.render_usage_limit(&s.id, cx)),
-            )
-            .children(queue.filter(|_| focused))
+            // MonoCode stacks the question form, then the queue, on the box;
+            // the mascot runs on top of that stack when there is one.
             .child(
                 div()
                     .relative()
+                    .children(
+                        session
+                            .filter(|_| focused)
+                            .and_then(|s| self.render_question_form(&s.id, cx)),
+                    )
+                    .children(
+                        session
+                            .filter(|_| focused)
+                            .and_then(|s| self.render_usage_limit(&s.id, cx)),
+                    )
+                    .children(queue.filter(|_| focused))
+                    .when(focused, |el| {
+                        el.child(runner_view::measure(&self.runner_geometry.ledge))
+                    }),
+            )
+            .child(
+                div()
+                    .relative()
+                    .when(focused, |el| {
+                        el.child(runner_view::measure(&self.runner_geometry.track))
+                    })
                     .rounded(px(8.0))
                     .border_1()
                     // MonoCode `edit-last-turn-composer`: dashed, in the accent.
@@ -474,30 +510,10 @@ impl BenCodeApp {
                             .line_height(px(22.0))
                             .child(field),
                     )
-                    .when(focused && self.is_branch_picker_open, |el| {
-                        el.child(popover_surface(self.render_branch_picker(cx), cx))
-                    })
-                    .when(focused && self.is_base_picker_open, |el| {
-                        el.child(self.render_base_picker(cx))
-                    })
                     .when(focused && self.is_plus_menu_open, |el| {
                         el.child(popover_surface(self.render_plus_menu_popover(cx), cx))
                     })
-                    .when(focused && self.is_model_picker_open, |el| {
-                        let key =
-                            session.map_or(self.selected_model.as_str(), |s| s.model.as_str());
-                        el.child(popover_surface(
-                            self.render_model_picker_popover(key, cx),
-                            cx,
-                        ))
-                    })
-                    .when(focused && self.composer_menus.recent_open, |el| {
-                        el.child(popover_surface(self.render_recent_models_popover(cx), cx))
-                    })
-                    .when(focused && self.is_permission_picker_open, |el| {
-                        el.child(self.render_permission_picker_popover(cx))
-                    })
-                    .child(self.composer_bottom_bar(session, running_here, cx))
+                    .child(self.composer_bottom_bar(session, running_here, focused, cx))
                     // A resting pane's composer only wakes its pane.
                     .when(!focused, |el| {
                         el.child(
@@ -570,10 +586,14 @@ impl BenCodeApp {
                     );
                 el.child(self.project_picker(&project, cx))
             })
-            .child(self.workspace_identity(session, empty && !busy, cx))
-            .child(match self.new_worktree_base().filter(|_| empty) {
-                Some(base) => self.base_chip(base, cx).into_any_element(),
-                None => self.branch_menu(session, !busy, cx).into_any_element(),
+            .map(|el| match session.filter(|s| s.worktree_removed) {
+                Some(session) => el.child(self.removed_worktree_picker(session, cx)),
+                None => el
+                    .child(self.workspace_identity(session, empty && !busy, cx))
+                    .child(match self.new_worktree_base().filter(|_| empty) {
+                        Some(base) => self.base_chip(base, cx).into_any_element(),
+                        None => self.branch_menu(session, !busy, cx).into_any_element(),
+                    }),
             })
             .child(
                 div()
@@ -585,29 +605,49 @@ impl BenCodeApp {
             )
     }
 
-    /// MonoCode `CwdPicker`: the project chip opens recent projects and
-    /// "Open folder…".
+    /// MonoCode `CwdPicker`: the five latest other projects, the rest
+    /// under "More Projects", then "Open folder…" and "New terminal".
     fn project_picker(&self, project: &str, cx: &Context<Self>) -> impl IntoElement {
-        let menu = self
+        let item = |path: &String| {
+            let name = std::path::Path::new(path)
+                .file_name()
+                .map_or_else(|| path.clone(), |n| n.to_string_lossy().into_owned());
+            let target = path.clone();
+            MenuItem::new(name)
+                .icon(IconName::Folder)
+                .on_click(app_callback(cx, move |this, cx| {
+                    this.switch_project(target.clone(), cx)
+                }))
+        };
+        let others: Vec<&String> = self
             .recent_projects
             .iter()
-            .fold(Menu::new(), |menu, path| {
-                let name = std::path::Path::new(path)
-                    .file_name()
-                    .map_or_else(|| path.clone(), |n| n.to_string_lossy().into_owned());
-                let target = path.clone();
-                menu.item(
-                    MenuItem::radio(name, crate::app::same_project_path(path, &self.current_cwd))
-                        .on_click(app_callback(cx, move |this, cx| {
-                            this.switch_project(target.clone(), cx)
-                        })),
-                )
-            })
-            .separator()
+            .filter(|path| !crate::app::same_project_path(path, &self.current_cwd))
+            .collect();
+        let (recent, more) = others.split_at(others.len().min(RECENT_PROJECTS_SHOWN));
+        let mut menu = recent
+            .iter()
+            .fold(Menu::new(), |menu, path| menu.item(item(path)));
+        if !more.is_empty() {
+            let rest = more
+                .iter()
+                .fold(Menu::new(), |menu, path| menu.item(item(path)));
+            menu = menu.item(MenuItem::submenu("More Projects", rest));
+        }
+        if !others.is_empty() {
+            menu = menu.separator();
+        }
+        let menu = menu
             .item(
                 MenuItem::new("Open folder…")
                     .icon(IconName::FolderPlus)
                     .on_click(app_callback(cx, |this, cx| this.open_project_dialog(cx))),
+            )
+            .item(
+                MenuItem::new("New terminal")
+                    .icon(IconName::Terminal)
+                    .keys("⌘`")
+                    .on_click(app_callback(cx, |this, cx| this.new_terminal(cx))),
             );
         DropdownMenu::new("composer-project", project.to_string(), menu)
             .variant(ButtonVariant::Ghost)
@@ -677,12 +717,15 @@ impl BenCodeApp {
         )
         .tooltip(Tooltip::text(format!("Create worktree from {base}")))
         .on_click(cx.listener(|this, _, _, cx| {
-            let open = !this.is_base_picker_open;
-            this.close_composer_popovers(cx);
-            this.is_base_picker_open = open;
-            cx.notify();
+            this.toggle_branch_picker(branch_picker::BranchPickerKind::Base, cx)
         }));
-        popover_anchor(chip, cx)
+        div()
+            .relative()
+            .flex_none()
+            .child(popover_anchor(chip, cx))
+            .when(self.is_base_picker_open, |el| {
+                el.child(self.render_branch_popover(branch_picker::BranchPickerKind::Base, cx))
+            })
     }
 
     /// "+" (add to message), model, access, then Send / Stop.
@@ -690,6 +733,7 @@ impl BenCodeApp {
         &self,
         session: Option<&SessionRow>,
         running_here: bool,
+        focused: bool,
         cx: &Context<Self>,
     ) -> impl IntoElement {
         let key = session.map_or(self.selected_model.as_str(), |s| s.model.as_str());
@@ -706,6 +750,10 @@ impl BenCodeApp {
         } else {
             cx.theme().colors.fg
         };
+        let values = session.map_or(Some(&self.last_model_settings), |s| {
+            s.model_settings.as_ref()
+        });
+        let model_tip = model_chip_tooltip(key, values);
         let model = composer_chip(
             "composer-model-chip",
             HarnessIcon::new(&harness).size(px(16.0)).into_any_element(),
@@ -721,12 +769,39 @@ impl BenCodeApp {
             160.0,
             cx,
         )
+        .tooltip(Tooltip::text(model_tip))
         .on_click(cx.listener(|this, _, _, cx| this.toggle_composer_popover(Popover::Model, cx)))
         .on_mouse_down(
             gpui::MouseButton::Right,
             cx.listener(|this, _, _, cx| this.toggle_recent_models(cx)),
         );
-        let model = popover_anchor(model, cx);
+        // Popovers hang from their chip (MonoCode `Popover anchor`), so pills
+        // before it never push them out of line.
+        let model = div()
+            .relative()
+            .flex_none()
+            .child(popover_anchor(model, cx))
+            .when(focused && self.is_model_picker_open, |el| {
+                el.child(popover_surface(
+                    self.render_model_picker_popover(key, cx),
+                    cx,
+                ))
+            })
+            .when(focused && self.composer_menus.recent_open, |el| {
+                el.child(popover_surface(self.render_recent_models_popover(cx), cx))
+            });
+        let busy_note = if running_here {
+            " Changes apply to the next turn."
+        } else {
+            ""
+        };
+        let access_tip = format!(
+            "{}{busy_note}",
+            PERMISSION_MODES
+                .iter()
+                .find(|(m, ..)| *m == mode)
+                .map_or("", |(_, _, hint, _)| *hint)
+        );
         let access = composer_chip(
             "composer-permission-chip",
             Icon::new(perm_icon)
@@ -739,8 +814,15 @@ impl BenCodeApp {
             208.0,
             cx,
         )
+        .tooltip(Tooltip::text(access_tip))
         .on_click(cx.listener(|this, _, _, cx| this.toggle_composer_popover(Popover::Access, cx)));
-        let access = popover_anchor(access, cx);
+        let access = div()
+            .relative()
+            .flex_none()
+            .child(popover_anchor(access, cx))
+            .when(focused && self.is_permission_picker_open, |el| {
+                el.child(self.render_permission_picker_popover(cx))
+            });
         div()
             .flex()
             .items_center()
@@ -856,10 +938,14 @@ impl BenCodeApp {
     fn render_send_button(&self, running_here: bool, cx: &Context<Self>) -> impl IntoElement {
         let colors = &cx.theme().colors;
         // A card can be sent on its own.
-        let typed =
-            !self.prompt_input.read(cx).text().trim().is_empty() || self.has_composer_card();
+        let typed = self.composer_has_value(cx);
+        let removed = self
+            .selected_session_id
+            .as_deref()
+            .is_some_and(|id| self.worktree_removed(id));
         let stop = running_here && !typed;
-        let enabled = running_here || typed;
+        // MonoCode: no working copy, no Send.
+        let enabled = (running_here || typed) && !(removed && !stop);
         let (bg, ink) = if enabled {
             (colors.fg, colors.bg)
         } else {
@@ -990,6 +1076,7 @@ impl BenCodeApp {
                     session_id.to_string(),
                 );
                 let steer_hover = colors.fg.opacity(0.10);
+                let running_steer = self.is_agent_running_in(session_id);
                 row.child(
                     Icon::new(IconName::List)
                         .size(IconSize::Xs)
@@ -1003,32 +1090,40 @@ impl BenCodeApp {
                         .text_color(colors.fg.opacity(0.8))
                         .child(label),
                 )
-                // MonoCode's Steer: this message into the running turn now.
-                .when(self.can_steer(session_id), |el| {
-                    el.child(
-                        div()
-                            .id(SharedString::from(format!("queue-steer-{ix}")))
-                            .flex()
-                            .flex_none()
-                            .items_center()
-                            .gap_1()
-                            .h(px(24.0))
-                            .px_1p5()
-                            .rounded(px(6.0))
-                            .cursor_pointer()
-                            .hover(move |s| s.bg(steer_hover))
-                            .tooltip(Tooltip::text("Send into the running turn"))
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.steer_queued(&steer_sid, ix, cx)
-                            }))
-                            .child(
-                                Icon::new(IconName::CornerDownRight)
-                                    .size(IconSize::Xs)
-                                    .color(colors.fg.opacity(0.55)),
-                            )
-                            .child("Steer"),
-                    )
-                })
+                // MonoCode's Steer: this message into the running turn now, or
+                // as a turn of its own while the agent is idle.
+                .when(
+                    self.can_steer(session_id) || !self.is_agent_running_in(session_id),
+                    |el| {
+                        el.child(
+                            div()
+                                .id(SharedString::from(format!("queue-steer-{ix}")))
+                                .flex()
+                                .flex_none()
+                                .items_center()
+                                .gap_1()
+                                .h(px(24.0))
+                                .px_1p5()
+                                .rounded(px(6.0))
+                                .cursor_pointer()
+                                .hover(move |s| s.bg(steer_hover))
+                                .tooltip(Tooltip::text(if running_steer {
+                                    "Send into the running turn"
+                                } else {
+                                    "Send now"
+                                }))
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    this.steer_queued(&steer_sid, ix, cx)
+                                }))
+                                .child(
+                                    Icon::new(IconName::CornerDownRight)
+                                        .size(IconSize::Xs)
+                                        .color(colors.fg.opacity(0.55)),
+                                )
+                                .child("Steer"),
+                        )
+                    },
+                )
                 .child(
                     icon_button(
                         format!("queue-edit-{ix}").into(),
@@ -1127,6 +1222,7 @@ impl BenCodeApp {
         let upload: PlusAction = |this, cx| this.open_attachment_dialog(cx);
         let plan: PlusAction = |this, cx| this.toggle_mode(false, cx);
         let draft: PlusAction = |this, cx| this.toggle_mode(true, cx);
+        let can_draft = self.can_save_draft(self.selected_session_id.as_deref());
         let items = [
             (
                 "plus-upload",
@@ -1183,6 +1279,8 @@ impl BenCodeApp {
             .children(
                 items
                     .into_iter()
+                    // MonoCode offers Draft only where one can be saved.
+                    .filter(|item| item.0 != "plus-draft" || can_draft)
                     .map(|(id, icon, tint, title, hint, active, action)| {
                         let hover = colors.fg.opacity(0.10);
                         div()
@@ -1243,8 +1341,8 @@ impl BenCodeApp {
             .id("composer-permission-popover")
             .track_focus(&self.composer_menus.focus)
             .absolute()
-            .bottom(px(36.0))
-            .left(px(140.0))
+            .bottom(px(32.0))
+            .left_0()
             .w(px(288.0))
             .p_1()
             .rounded(px(8.0))
@@ -1310,8 +1408,8 @@ impl BenCodeApp {
         popover_surface(menu, cx)
     }
 
-    /// The branch trigger; opens Ely's `BranchSelector` (MonoCode
-    /// `BranchPicker`). Locked while the agent works.
+    /// The branch trigger (MonoCode `BranchPicker`); its popover opens
+    /// above it. Locked while the agent works.
     fn branch_menu(
         &self,
         session: Option<&SessionRow>,
@@ -1322,77 +1420,29 @@ impl BenCodeApp {
             .and_then(|s| s.branch.clone())
             .or_else(|| Some(self.git_status.branch.clone()).filter(|b| !b.is_empty()))
             .unwrap_or_else(|| "main".to_string());
+        // Only the focused composer's chip owns the open popover.
+        let focused = session.map(|s| s.id.as_str()) == self.selected_session_id.as_deref();
+        let open = focused && self.is_branch_picker_open;
         let chip = git_trigger(
             "composer-branch",
             IconName::GitBranch,
             current,
             enabled,
-            self.is_branch_picker_open,
+            open,
             cx,
         )
         .when(enabled, |el| {
             el.on_click(cx.listener(|this, _, _, cx| {
-                let open = !this.is_branch_picker_open;
-                this.close_composer_popovers(cx);
-                this.is_branch_picker_open = open;
-                cx.notify();
+                this.toggle_branch_picker(branch_picker::BranchPickerKind::Branch, cx)
             }))
         });
-        popover_anchor(chip, cx)
-    }
-
-    fn render_branch_picker(&self, cx: &Context<Self>) -> gpui::Div {
-        let branches: Vec<ElyBranch> = self
-            .workspace
-            .branches
-            .iter()
-            .map(|b| ElyBranch {
-                name: b.name.clone().into(),
-                remote: b.remote,
-                current: b.current,
-                ahead: 0,
-                behind: 0,
-                subject: SharedString::default(),
-                when: SharedString::default(),
-            })
-            .collect();
-        let close = app_callback(cx, |this, cx| {
-            this.is_branch_picker_open = false;
-            cx.notify();
-        });
-        let entity = cx.entity().downgrade();
-        let create_entity = entity.clone();
-        let known = self.workspace.branches.clone();
         div()
-            .absolute()
-            .bottom(px(36.0))
-            .left(px(8.0))
-            .w(px(280.0))
-            .child(
-                BranchSelector::new("composer-branch-picker", branches, close)
-                    .on_pick(move |name, _, cx| {
-                        let Some(branch) = known
-                            .iter()
-                            .find(|b| b.name.as_str() == name.as_ref())
-                            .cloned()
-                        else {
-                            return;
-                        };
-                        if let Err(err) = entity.update(cx, |this, cx| {
-                            this.switch_to_branch(BranchTarget::Existing(branch), false, cx)
-                        }) {
-                            log::debug!("branch pick after app drop: {err:#}");
-                        }
-                    })
-                    .on_create(move |name, _, cx| {
-                        let target = BranchTarget::New(name.to_string());
-                        if let Err(err) = create_entity
-                            .update(cx, |this, cx| this.switch_to_branch(target, false, cx))
-                        {
-                            log::debug!("branch create after app drop: {err:#}");
-                        }
-                    }),
-            )
+            .relative()
+            .flex_none()
+            .child(popover_anchor(chip, cx))
+            .when(open, |el| {
+                el.child(self.render_branch_popover(branch_picker::BranchPickerKind::Branch, cx))
+            })
     }
 }
 

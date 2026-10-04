@@ -27,11 +27,7 @@ impl BenCodeApp {
 
     /// `/add-to-folder`: the token leaves the prompt and the picker opens.
     pub fn start_folder_command(&mut self, cx: &mut Context<Self>) {
-        let text = self.prompt_input.read(cx).text().to_string();
-        let kept = text.rfind('/').map_or(text.as_str(), |at| &text[..at]);
-        let kept = kept.to_string();
-        self.prompt_input
-            .update(cx, |input, cx| input.set_text(kept, cx));
+        self.remove_prompt_token(cx);
         self.open_folder_picker(cx);
     }
 
@@ -66,20 +62,23 @@ impl BenCodeApp {
         cx.notify();
     }
 
-    /// ↑/↓ (clamped, as MonoCode), Enter and Esc in the picker's search.
+    /// ↑/↓ (wrapping, as MonoCode), Enter and Esc in the picker's search.
     pub fn folder_picker_key(&mut self, key: &str, cx: &mut Context<Self>) -> bool {
         let Some(active) = self.folder_picker else {
             return false;
         };
-        let last = self.folder_rows(cx).len().saturating_sub(1);
+        let len = self.folder_rows(cx).len().max(1);
         match key {
-            "up" => self.folder_picker = Some(active.saturating_sub(1)),
-            "down" => self.folder_picker = Some((active + 1).min(last)),
+            "up" => self.folder_picker = Some((active + len - 1) % len),
+            "down" => self.folder_picker = Some((active + 1) % len),
             "enter" => self.pick_folder(active, cx),
             "escape" => {
                 self.close_folder_picker(true, cx);
             }
             _ => return false,
+        }
+        if let Some(active) = self.folder_picker {
+            self.picker_scroll.scroll_to_item(active);
         }
         cx.notify();
         true
@@ -109,6 +108,7 @@ impl BenCodeApp {
             .collect();
         Some(
             SearchPopover {
+                scroll: &self.picker_scroll,
                 id: "folder-picker",
                 icon: IconName::Folder,
                 input: &self.folder_search_input,
@@ -116,7 +116,7 @@ impl BenCodeApp {
                     this.close_folder_picker(true, cx);
                 }),
                 dismiss: |this, cx| {
-                    this.close_folder_picker(false, cx);
+                    this.close_folder_picker(true, cx);
                 },
                 list_max_height: LIST_MAX_HEIGHT,
                 empty,
@@ -160,22 +160,28 @@ impl BenCodeApp {
                 let Some(folder) = self.project_folders().iter().find(|f| f.id == id) else {
                     return row.into_any_element();
                 };
-                row.child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .truncate()
-                        .text_color(fg)
-                        .child(SharedString::from(folder.name.clone())),
-                )
-                .child(
-                    div()
-                        .flex_none()
-                        .text_size(px(11.0))
-                        .text_color(fg.opacity(0.45))
-                        .child(folder.session_ids.len().to_string()),
-                )
-                .into_any_element()
+                row.when(!active, |el| el.hover(move |s| s.bg(fg.opacity(0.05))))
+                    .child(
+                        Icon::new(IconName::Folder)
+                            .size(IconSize::Xs)
+                            .color(fg.opacity(if active { 0.7 } else { 0.45 })),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .truncate()
+                            .text_color(if active { fg } else { fg.opacity(0.8) })
+                            .child(SharedString::from(folder.name.clone())),
+                    )
+                    .child(
+                        div()
+                            .flex_none()
+                            .text_size(px(11.0))
+                            .text_color(fg.opacity(0.45))
+                            .child(folder.session_ids.len().to_string()),
+                    )
+                    .into_any_element()
             }
             FolderTarget::New(name) => row
                 .child(Icon::new(IconName::Plus).size(IconSize::Xs).color(skill))

@@ -7,6 +7,9 @@ use anyhow::{Context as _, Result, bail};
 mod branches;
 mod diffs;
 mod rows;
+pub mod graph;
+pub mod sync;
+pub mod text;
 pub use branches::{
     Branch, SwitchError, create_branch, list_branches, stash_changes, switch_branch,
 };
@@ -86,7 +89,7 @@ pub struct GitDetailedStatus {
 // Process helpers
 // ---------------------------------------------------------------------------
 
-fn git_command(cwd: &str) -> Command {
+pub(crate) fn git_command(cwd: &str) -> Command {
     let mut cmd = Command::new("git");
     cmd.args([
         "-C",

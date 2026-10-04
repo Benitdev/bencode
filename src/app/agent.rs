@@ -33,6 +33,9 @@ pub struct TurnInput {
     pub plan: bool,
     /// A composer card (note, handoff) the turn is sent with.
     pub card: Option<Box<ComposerCard>>,
+    /// What the agent reads instead of `text`, which the thread shows
+    /// (MonoCode `ciRepair`: a one-line ask over the CI evidence).
+    pub agent_prompt: Option<String>,
 }
 
 /// Claude's clarifying-question tool, answered in the composer.
@@ -131,14 +134,21 @@ impl BenCodeApp {
 
     /// MonoCode's paused queue: the agent was stopped with messages waiting.
     pub fn queue_paused(&self, session_id: &str) -> bool {
-        !self.queued_prompts(session_id).is_empty() && !self.is_agent_running_in(session_id)
+        self.queue_paused.contains(session_id) && !self.queued_prompts(session_id).is_empty()
     }
 
-    /// Resume: sends the next waiting message.
+    /// MonoCode `onResumeQueue`: the agent continues where it was stopped,
+    /// then the queue drains after that turn.
     pub fn resume_queue(&mut self, session_id: &str, cx: &mut Context<Self>) {
-        if !self.is_agent_running_in(session_id) {
-            self.send_next_queued(session_id, cx);
+        if self.is_agent_running_in(session_id) || !self.queue_paused.remove(session_id) {
+            return;
         }
+        self.send_prompt(
+            session_id,
+            crate::ui::composer::usage_limit::CONTINUE_PROMPT,
+            cx,
+        );
+        cx.notify();
     }
 
     /// Edit on a queued message: its text goes into the inline field.
@@ -207,15 +217,43 @@ impl BenCodeApp {
             queue.remove(ix);
             if queue.is_empty() {
                 self.prompt_queues.remove(session_id);
+                self.queue_paused.remove(session_id);
             }
             cx.notify();
         }
     }
 
+    /// MonoCode `canSaveDraft`: the agent is idle, the thread holds no
+    /// draft yet, and no card waits in the composer.
+    pub fn can_save_draft(&self, session_id: Option<&str>) -> bool {
+        let Some(id) = session_id else {
+            return true;
+        };
+        !self.is_agent_running_in(id)
+            && !self.composer_cards.contains_key(id)
+            && !self.sessions.iter().any(|s| {
+                s.id == id
+                    && s.blocks
+                        .iter()
+                        .any(|b| b.extra.get("draft").and_then(Value::as_bool) == Some(true))
+            })
+    }
+
+    /// MonoCode `hasValue`: text, attached files or a card.
+    pub fn composer_has_value(&self, cx: &gpui::App) -> bool {
+        !self.prompt_input.read(cx).text().trim().is_empty()
+            || self.has_composer_card()
+            || self.selected_session_id.as_ref().is_some_and(|id| {
+                self.composer_attachments
+                    .get(id)
+                    .is_some_and(|files| !files.is_empty())
+            })
+    }
+
     /// The composer's button: Stop when the focused thread is running and
     /// nothing is typed; otherwise Send (which queues while running).
     pub fn handle_send_or_stop(&mut self, cx: &mut Context<Self>) {
-        let typed = !self.prompt_input.read(cx).text().trim().is_empty();
+        let typed = self.composer_has_value(cx);
         match self.selected_session_id.clone() {
             Some(id) if self.is_agent_running_in(&id) && !typed => self.stop_agent(&id, cx),
             _ => self.submit_prompt(cx),
@@ -230,13 +268,18 @@ impl BenCodeApp {
         // MonoCode runs a lone `/compact` and opens the `/mcp` picker
         // instead of sending them.
         match mode_commands::standalone_command(&typed) {
+            // The text stays when the thread cannot compact now (MonoCode
+            // `if (!onCompactContext?.()) return`).
             Some(mode_commands::Command::Compact) => {
-                if let Some(id) = self.selected_session_id.clone() {
+                if let Some(id) = self.selected_session_id.clone()
+                    && !self.is_agent_running_in(&id)
+                    && !self.worktree_removed(&id)
+                {
                     self.prompt_input
                         .update(cx, |input, cx| input.set_text("", cx));
                     self.compact_context(&id, cx);
-                    return;
                 }
+                return;
             }
             Some(mode_commands::Command::AddToFolder) => {
                 self.prompt_input
@@ -252,8 +295,26 @@ impl BenCodeApp {
             }
             _ => {}
         }
-        // A leading `/plan` or `/draft` acts as its mode and is not sent.
-        let (command, text) = mode_commands::strip_leading_mode(&typed);
+        // MonoCode `consumeSessionFolderCommand`: a leading `/add-to-folder`
+        // files the thread first; the rest stays to send after.
+        if self.selected_session_id.is_some()
+            && let Some(rest) = typed
+                .strip_prefix("/add-to-folder")
+                .filter(|rest| rest.starts_with(char::is_whitespace))
+        {
+            let rest = rest.trim_start().to_string();
+            let caret = rest.len();
+            self.set_prompt(rest, caret, cx);
+            self.open_folder_picker(cx);
+            return;
+        }
+        // A leading `/plan` or `/draft` acts as its mode and is not sent;
+        // `/draft` only where a draft can be saved (MonoCode `canSaveDraft`).
+        let can_draft = self.can_save_draft(self.selected_session_id.as_deref());
+        let (command, text) = match mode_commands::strip_leading_mode(&typed) {
+            (Some(ModeCommand::Draft), _) if !can_draft => (None, typed.clone()),
+            stripped => stripped,
+        };
         if self.selected_session_id.is_none() {
             if text.is_empty() {
                 return;
@@ -266,9 +327,14 @@ impl BenCodeApp {
         let Some(session_id) = self.selected_session_id.clone() else {
             return;
         };
-        // An edited resend or a new worktree is still being prepared.
+        if self.defer_send_for_attachments(&session_id) {
+            return;
+        }
+        // An edited resend or a new worktree is still being prepared, or the
+        // thread's worktree is gone (MonoCode `worktreeRemoved`).
         if self.edit_rewinding.contains(&session_id)
             || self.preparing_worktrees.contains(&session_id)
+            || self.worktree_removed(&session_id)
         {
             return;
         }
@@ -285,6 +351,15 @@ impl BenCodeApp {
         if text.is_empty() && !has_files && !self.composer_cards.contains_key(&session_id) {
             return;
         }
+        // MonoCode `composeInboxMessage`: an Inbox card becomes the start of
+        // the message the thread shows and the agent reads.
+        let (text, card) = match self.composer_cards.remove(&session_id) {
+            Some(ComposerCard::Inbox(card)) => (
+                crate::ui::composer::inbox_card::compose_inbox_message(&card, &text),
+                None,
+            ),
+            card => (text, card),
+        };
         let input = TurnInput {
             text: self.take_mcp_context(text),
             attachments: self
@@ -292,19 +367,32 @@ impl BenCodeApp {
                 .remove(&session_id)
                 .unwrap_or_default(),
             plan: self.plan_mode.contains(&session_id) || command == Some(ModeCommand::Plan),
-            card: self.composer_cards.remove(&session_id).map(Box::new),
+            card: card.map(Box::new),
+            agent_prompt: None,
         };
         self.sync_prompt_placeholder(cx);
         self.prompt_input
             .update(cx, |input, cx| input.set_text("", cx));
         self.drafts.remove(&session_id);
+        // MonoCode records the model on send too, so ⌘. offers threads that
+        // never changed model.
+        if let Some(model) = self
+            .sessions
+            .iter()
+            .find(|s| s.id == session_id)
+            .map(|s| s.model.clone())
+            .filter(|m| self.recent_models.first() != Some(m))
+        {
+            self.record_recent_model(&model, cx);
+        }
         if centred {
             self.launch_dock_motion(&session_id);
         }
         // MonoCode clears Plan after each send; Draft stays chosen until a
         // draft is saved.
         self.plan_mode.remove(&session_id);
-        if self.draft_mode.remove(&session_id) || command == Some(ModeCommand::Draft) {
+        let drafting = self.draft_mode.remove(&session_id) && can_draft;
+        if drafting || command == Some(ModeCommand::Draft) {
             // A draft keeps the card in its text (MonoCode `onSaveDraft`).
             let input = TurnInput {
                 text: input
@@ -368,7 +456,8 @@ impl BenCodeApp {
         Ok(())
     }
 
-    /// The queue row's Steer: that message goes into the running turn now.
+    /// The queue row's Steer: that message goes into the running turn now,
+    /// or, with the agent idle, starts a turn of its own (MonoCode).
     pub fn steer_queued(&mut self, session_id: &str, ix: usize, cx: &mut Context<Self>) {
         let Some(queue) = self.prompt_queues.get_mut(session_id) else {
             return;
@@ -379,6 +468,12 @@ impl BenCodeApp {
         let input = queue.remove(ix);
         if queue.is_empty() {
             self.prompt_queues.remove(session_id);
+            self.queue_paused.remove(session_id);
+        }
+        if !self.is_agent_running_in(session_id) {
+            self.send_turn(session_id, input, cx);
+            cx.notify();
+            return;
         }
         if let Err(input) = self.steer(session_id, input, cx) {
             self.prompt_queues
@@ -455,6 +550,7 @@ impl BenCodeApp {
             text: block.text.unwrap_or_default(),
             attachments,
             card: None,
+            agent_prompt: None,
         })
     }
 
@@ -469,6 +565,10 @@ impl BenCodeApp {
 
     /// Starts a turn of `input` in `session_id`.
     pub fn send_turn(&mut self, session_id: &str, input: TurnInput, cx: &mut Context<Self>) {
+        if self.worktree_removed(session_id) {
+            log::warn!("thread {session_id} has no working copy; turn not sent");
+            return;
+        }
         let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id) else {
             return;
         };
@@ -479,9 +579,10 @@ impl BenCodeApp {
         self.usage_limits.remove(session_id);
         // Skill bodies are small SKILL.md files; read them as MonoCode does
         // right before the turn starts.
-        let typed = match &input.card {
-            Some(card) => card.agent_prompt(&input.text),
-            None => input.text.clone(),
+        let typed = match (&input.agent_prompt, &input.card) {
+            (Some(prompt), _) => prompt.clone(),
+            (None, Some(card)) => card.agent_prompt(&input.text),
+            (None, None) => input.text.clone(),
         };
         let agent_prompt = self.apply_skills(&typed);
         let Some(session) = self.sessions.iter().find(|s| s.id == session_id) else {
@@ -705,13 +806,18 @@ impl BenCodeApp {
         cx.notify();
     }
 
-    /// Starts the oldest queued prompt of a thread whose turn just ended.
+    /// Starts the oldest queued prompt of a thread whose turn just ended
+    /// (MonoCode `canDispatchQueuedHead`).
     fn send_next_queued(&mut self, session_id: &str, cx: &mut Context<Self>) {
-        // MonoCode holds the queue while one of its messages is being edited.
+        // A paused or usage-limited queue waits for Resume.
+        if self.queue_paused.contains(session_id) || self.usage_limits.contains_key(session_id) {
+            return;
+        }
+        // MonoCode holds the queue while its head is being edited.
         if self
             .queue_editing
             .as_ref()
-            .is_some_and(|(sid, _)| sid == session_id)
+            .is_some_and(|(sid, ix)| sid == session_id && *ix == 0)
         {
             self.queue_held.insert(session_id.to_string());
             return;
@@ -722,6 +828,12 @@ impl BenCodeApp {
         let next = queue.remove(0);
         if queue.is_empty() {
             self.prompt_queues.remove(session_id);
+        }
+        // A message being edited further down moves up with the queue.
+        if let Some((sid, ix)) = &mut self.queue_editing
+            && sid == session_id
+        {
+            *ix = ix.saturating_sub(1);
         }
         self.send_turn(session_id, next, cx);
     }
@@ -734,6 +846,9 @@ impl BenCodeApp {
         };
         run.handle.cancel();
         self.close_automation_run(&run, "cancelled");
+        if !self.queued_prompts(session_id).is_empty() {
+            self.queue_paused.insert(session_id.to_string());
+        }
         if let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id) {
             let now = now_ms();
             push_notice(session, STOPPED_NOTICE, now);
@@ -952,6 +1067,13 @@ pub fn apply_event(session: &mut SessionRow, event: AgentEvent, now: i64) {
         } => finish_tool(session, &id, &output, success),
         AgentEvent::Usage { total_tokens, .. } => {
             session.context_used = i64::try_from(total_tokens).ok();
+            // The ring appears with the first report (MonoCode `contextUsage`).
+            if session.context_window.is_none() {
+                session.context_window = Some(crate::harness::catalog::context_window_tokens(
+                    &session.model,
+                    session.model_settings.as_ref(),
+                ));
+            }
         }
         AgentEvent::TurnMetrics(metrics) => record_turn_metrics(session, &metrics),
         // Kept by the run and the app rather than the transcript.

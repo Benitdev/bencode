@@ -9,6 +9,8 @@ pub enum ExtraIcon {
     FolderTree,
     /// `replace`: a handoff.
     Replace,
+    /// `file-diff`: Open All Changes.
+    FileDiff,
 }
 
 impl ExtraIcon {
@@ -16,6 +18,7 @@ impl ExtraIcon {
         match self {
             Self::FolderTree => include_bytes!("../../assets/icons/folder-tree.svg"),
             Self::Replace => include_bytes!("../../assets/icons/replace.svg"),
+            Self::FileDiff => include_bytes!("../../assets/icons/file-diff.svg"),
         }
     }
 

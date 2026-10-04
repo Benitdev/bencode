@@ -236,8 +236,60 @@ pub fn is_valid_skill_name(name: &str) -> bool {
     !name.is_empty() && name.len() <= MAX_NAME_LEN && name.split('-').all(part_ok)
 }
 
-/// Folder name as a skill name: lower-case alphanumerics joined by dashes.
-fn slug_name(raw: &str) -> String {
+/// MonoCode `blankSkillMarkdown`: the starter `SKILL.md` "New skill" writes.
+pub fn blank_skill_markdown(name: &str) -> String {
+    let title = name
+        .split('-')
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            let mut chars = part.chars();
+            chars.next().map_or_else(String::new, |first| {
+                first.to_uppercase().chain(chars).collect()
+            })
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+    let words = name.replace('-', " ");
+    format!(
+        "---\nname: {name}\ndescription: {title}. Use when the user asks to {words}.\n---\n\n# {title}\n\n## Instructions\n\n"
+    )
+}
+
+/// MonoCode `createBlankSkill`: writes `.agents/skills/<name>/SKILL.md`
+/// under `root` (the project, or home for a personal skill) and returns its
+/// path. Never overwrites an existing skill.
+pub fn create_blank_skill(root: &Path, name: &str) -> std::io::Result<PathBuf> {
+    let name = slug_name(name);
+    if !is_valid_skill_name(&name) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "Use a lowercase name with letters, numbers, and hyphens.",
+        ));
+    }
+    let dir = root.join(".agents/skills").join(&name);
+    std::fs::create_dir_all(&dir)?;
+    let path = dir.join("SKILL.md");
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&path)
+        .map_err(|err| {
+            if err.kind() == std::io::ErrorKind::AlreadyExists {
+                std::io::Error::new(
+                    err.kind(),
+                    format!("A skill named \"{name}\" already exists."),
+                )
+            } else {
+                err
+            }
+        })?;
+    std::io::Write::write_all(&mut file, blank_skill_markdown(&name).as_bytes())?;
+    Ok(path)
+}
+
+/// Folder name as a skill name: lower-case alphanumerics joined by dashes
+/// (MonoCode `slugSkillName`).
+pub fn slug_name(raw: &str) -> String {
     let mut out = String::new();
     for ch in raw.chars() {
         if ch.is_ascii_alphanumeric() {
@@ -298,6 +350,9 @@ mod tests {
         assert!(!is_valid_skill_name("a--b"));
         assert!(!is_valid_skill_name("-a"));
         assert_eq!(slug_name("My Cool_Skill!"), "my-cool-skill");
+        assert!(blank_skill_markdown("fix-ci").starts_with(
+            "---\nname: fix-ci\ndescription: Fix Ci. Use when the user asks to fix ci.\n---\n\n# Fix Ci\n"
+        ));
     }
 
     #[test]
@@ -326,5 +381,16 @@ mod tests {
         let skills = list_skills(&project.0, Some(&home.0), &disabled);
         let deploy = skills.iter().find(|s| s.name == "deploy").unwrap();
         assert_eq!(deploy.description, "user claude");
+    }
+
+    #[test]
+    fn new_skill_is_written_once() {
+        let root = tmp("create");
+        let path = create_blank_skill(&root.0, "Fix CI").unwrap();
+        assert_eq!(path, root.0.join(".agents/skills/fix-ci/SKILL.md"));
+        let skills = list_skills(&root.0, None, &HashSet::new());
+        assert!(skills.iter().any(|s| s.name == "fix-ci"));
+        assert!(create_blank_skill(&root.0, "fix-ci").is_err());
+        assert!(create_blank_skill(&root.0, "!!!").is_err());
     }
 }

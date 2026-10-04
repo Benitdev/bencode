@@ -277,6 +277,7 @@ impl BenCodeApp {
         cx: &Context<Self>,
     ) -> impl IntoElement {
         let scrolled_up = list_state.is_scrolled_to_end() == Some(false);
+        let focused = self.selected_session_id.as_deref() == Some(session.id.as_str());
         let content = {
             let sid = session.id.clone();
             list(
@@ -297,11 +298,17 @@ impl BenCodeApp {
             .justify_center()
             .child(content)
             .when(scrolled_up, |el| {
-                el.child(self.render_jump_to_latest(&session.id, cx))
+                el.child(self.render_jump_to_latest(&session.id, focused, cx))
             })
     }
 
-    fn render_jump_to_latest(&self, session_id: &str, cx: &Context<Self>) -> impl IntoElement {
+    /// The chevron of the focused pane is the composer mascot's hurdle.
+    fn render_jump_to_latest(
+        &self,
+        session_id: &str,
+        focused: bool,
+        cx: &Context<Self>,
+    ) -> impl IntoElement {
         let sid = session_id.to_string();
         div()
             .absolute()
@@ -311,20 +318,29 @@ impl BenCodeApp {
             .flex()
             .justify_center()
             .child(
-                IconButton::new(
-                    SharedString::from(format!("jump-latest-{session_id}")),
-                    IconName::ChevronDown,
-                )
-                .size(ControlSize::Sm)
-                .variant(ButtonVariant::Secondary)
-                .tooltip("Jump to latest")
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    if let Some(view) = this.transcripts.get(&sid) {
-                        // Tail mode scrolls to the end and keeps following.
-                        view.list.set_follow_mode(FollowMode::Tail);
-                        cx.notify();
-                    }
-                })),
+                div()
+                    .relative()
+                    .when(focused, |el| {
+                        el.child(crate::ui::composer::runner_view::measure(
+                            &self.runner_geometry.chevron,
+                        ))
+                    })
+                    .child(
+                        IconButton::new(
+                            SharedString::from(format!("jump-latest-{session_id}")),
+                            IconName::ChevronDown,
+                        )
+                        .size(ControlSize::Sm)
+                        .variant(ButtonVariant::Secondary)
+                        .tooltip("Jump to latest")
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            if let Some(view) = this.transcripts.get(&sid) {
+                                // Tail mode scrolls to the end and keeps following.
+                                view.list.set_follow_mode(FollowMode::Tail);
+                                cx.notify();
+                            }
+                        })),
+                    ),
             )
     }
 

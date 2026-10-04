@@ -74,6 +74,18 @@ impl BenCodeApp {
         let Some(session_id) = self.selected_session_id.clone() else {
             return;
         };
+        self.attach_paths_to(session_id, paths, cx);
+    }
+
+    /// Reads `paths` into `session_id`'s composer. A send waits for it
+    /// (MonoCode `pasteFlightRef`).
+    fn attach_paths_to(
+        &mut self,
+        session_id: String,
+        paths: Vec<std::path::PathBuf>,
+        cx: &mut Context<Self>,
+    ) {
+        *self.attaching.entry(session_id.clone()).or_default() += 1;
         let stamp = now_ms();
         let paths_len = paths.len();
         let task = cx.background_executor().spawn(async move {
@@ -95,7 +107,11 @@ impl BenCodeApp {
         cx.spawn(async move |this, cx| {
             let files = task.await;
             let added = this.update(cx, |app, cx| {
-                let list = app.composer_attachments.entry(session_id).or_default();
+                let send_now = app.finish_attaching(&session_id);
+                let list = app
+                    .composer_attachments
+                    .entry(session_id.clone())
+                    .or_default();
                 let loaded = files.len();
                 let fresh: Vec<_> = files
                     .into_iter()
@@ -106,6 +122,9 @@ impl BenCodeApp {
                 list.extend(fresh.into_iter().take(fitted));
                 // MonoCode `pasteError`.
                 app.composer_error = attach_error(asked, loaded, wanted, fitted);
+                if send_now && app.selected_session_id.as_deref() == Some(session_id.as_str()) {
+                    app.submit_prompt(cx);
+                }
                 cx.notify();
             });
             if let Err(err) = added {
@@ -119,6 +138,10 @@ impl BenCodeApp {
     /// of pasting as text. Returns whether anything was attached.
     pub fn paste_into_composer(&mut self, cx: &mut Context<Self>) -> bool {
         let Some(item) = cx.read_from_clipboard() else {
+            return false;
+        };
+        // The thread the paste was made in keeps it, wherever focus goes.
+        let Some(session_id) = self.selected_session_id.clone() else {
             return false;
         };
         let mut paths: Vec<std::path::PathBuf> = Vec::new();
@@ -138,6 +161,7 @@ impl BenCodeApp {
             return false;
         }
         let stamp = now_ms();
+        *self.attaching.entry(session_id.clone()).or_default() += 1;
         let task = cx.background_executor().spawn(async move {
             let dir = std::env::temp_dir().join("bencode-paste");
             if let Err(err) = std::fs::create_dir_all(&dir) {
@@ -155,7 +179,15 @@ impl BenCodeApp {
         });
         cx.spawn(async move |this, cx| {
             let paths = task.await;
-            if let Err(err) = this.update(cx, |app, cx| app.attach_paths(paths, cx)) {
+            let attached = this.update(cx, |app, cx| {
+                // The image save is done; the read below counts instead.
+                let send_now = app.finish_attaching(&session_id);
+                if send_now {
+                    app.send_after_attach.insert(session_id.clone());
+                }
+                app.attach_paths_to(session_id, paths, cx)
+            });
+            if let Err(err) = attached {
                 log::debug!("paste after app drop: {err:#}");
             }
         })
@@ -163,10 +195,34 @@ impl BenCodeApp {
         true
     }
 
+    /// One read for `session_id` ended; true when a send waited on the
+    /// last one.
+    fn finish_attaching(&mut self, session_id: &str) -> bool {
+        if let Some(count) = self.attaching.get_mut(session_id) {
+            *count = count.saturating_sub(1);
+            if *count > 0 {
+                return false;
+            }
+            self.attaching.remove(session_id);
+        }
+        self.send_after_attach.remove(session_id)
+    }
+
+    /// Send pressed while files are still being read: it goes once they land.
+    pub fn defer_send_for_attachments(&mut self, session_id: &str) -> bool {
+        if self.attaching.get(session_id).is_some_and(|n| *n > 0) {
+            self.send_after_attach.insert(session_id.to_string());
+            return true;
+        }
+        false
+    }
+
     fn remove_attachment(&mut self, session_id: &str, id: &str, cx: &mut Context<Self>) {
         if let Some(list) = self.composer_attachments.get_mut(session_id) {
             list.retain(|f| f.id != id);
         }
+        // MonoCode clears the paste error with the chip.
+        self.composer_error = None;
         cx.notify();
     }
 

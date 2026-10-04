@@ -107,15 +107,49 @@ impl BenCodeApp {
     }
 
     fn visible_models(&self, cx: &Context<Self>) -> Vec<ModelOption> {
+        // Favorites only offer installed harnesses (MonoCode `visibleHarnesses`).
+        let favorites: Vec<String> = self
+            .favorite_models
+            .iter()
+            .filter(|k| catalog::find(k).is_some_and(|m| self.harness_available(m.harness)))
+            .cloned()
+            .collect();
         filtered_models(
             self.composer_menus.model_tab,
-            &self.favorite_models,
+            &favorites,
             &self.model_query(cx),
         )
     }
 
+    /// The CLI was found by the startup probe (unknown harnesses count as
+    /// available).
+    pub(crate) fn harness_available(&self, kind: HarnessKind) -> bool {
+        self.harnesses
+            .iter()
+            .find(|h| h.id == kind.id())
+            .is_none_or(|h| h.available)
+    }
+
+    /// MonoCode `harnessUnavailableHint`.
+    fn harness_unavailable_hint(&self, kind: HarnessKind) -> String {
+        let name = self
+            .harnesses
+            .iter()
+            .find(|h| h.id == kind.id())
+            .map_or(kind.label(), |h| h.name);
+        format!("{name} not found. Install it, or restart BenCode if it is already installed.")
+    }
+
+    /// The rail's provider tabs: installed harnesses only.
+    fn rail_harnesses(&self) -> Vec<HarnessKind> {
+        HARNESS_ORDER
+            .into_iter()
+            .filter(|k| self.harness_available(*k))
+            .collect()
+    }
+
     /// The highlighted row on the current model, else the top.
-    fn highlight_current_model(&mut self, cx: &Context<Self>) {
+    pub(crate) fn highlight_current_model(&mut self, cx: &Context<Self>) {
         let current = self.current_model_key();
         self.model_picker_index = self
             .visible_models(cx)
@@ -140,8 +174,13 @@ impl BenCodeApp {
         let menus = &mut self.composer_menus;
         menus.model_entry = 0;
         menus.model_submenu = None;
-        menus.model_tab =
-            catalog::find(&current).map_or(ModelTab::Favorites, |m| ModelTab::Harness(m.harness));
+        // MonoCode `coerceModelPickerTab`: a hidden provider falls back to
+        // Favorites.
+        let rail = self.rail_harnesses();
+        let menus = &mut self.composer_menus;
+        menus.model_tab = catalog::find(&current)
+            .filter(|m| rail.contains(&m.harness))
+            .map_or(ModelTab::Favorites, |m| ModelTab::Harness(m.harness));
         self.model_search_input
             .update(cx, |input, cx| input.set_text("", cx));
         self.highlight_current_model(cx);
@@ -175,6 +214,9 @@ impl BenCodeApp {
     }
 
     fn pick_model(&mut self, key: &str, cx: &mut Context<Self>) {
+        if catalog::find(key).is_some_and(|m| !self.harness_available(m.harness)) {
+            return;
+        }
         self.set_session_model(key, cx);
         self.close_model_picker(cx);
     }
@@ -218,6 +260,10 @@ impl BenCodeApp {
         next.insert(id.to_string(), Value::String(value.to_string()));
         self.save_last_model_settings(&next, false, cx);
         if let Some(session) = self.selected_session_mut() {
+            if id == "context" && session.context_window.is_some() {
+                session.context_window =
+                    Some(catalog::context_window_tokens(&session.model, Some(&next)));
+            }
             session.model_settings = Some(next);
             let id = session.id.clone();
             self.persist_session(&id);
@@ -429,8 +475,8 @@ impl BenCodeApp {
             .id("composer-model-popover")
             .track_focus(&self.composer_menus.focus)
             .absolute()
-            .bottom(px(40.0))
-            .left(px(34.0))
+            .bottom(px(32.0))
+            .left_0()
             .w(px(MENU_WIDTH))
             .p_1()
             .rounded(px(8.0))
@@ -565,7 +611,7 @@ impl BenCodeApp {
                 })
                 .into_any_element(),
         );
-        let harness_tabs = HARNESS_ORDER.iter().map(|&kind| {
+        let harness_tabs = self.rail_harnesses().into_iter().map(|kind| {
             let id: &'static str = match kind {
                 HarnessKind::Claude => "model-tab-claude",
                 HarnessKind::Antigravity => "model-tab-antigravity",
@@ -784,8 +830,17 @@ impl BenCodeApp {
                 let key = model.key.clone();
                 let pick_key = key.clone();
                 let hover = colors.fg.opacity(0.05);
+                let available = self.harness_available(model.harness);
+                let subtitle = match &model.provider {
+                    Some(provider) => format!("{} · {provider}", model.harness.label()),
+                    None => model.harness.label().to_string(),
+                };
                 div()
                     .id(SharedString::from(format!("recent-model-{key}")))
+                    .when(!available, |el| {
+                        el.opacity(0.3)
+                            .tooltip(Tooltip::text(self.harness_unavailable_hint(model.harness)))
+                    })
                     .flex()
                     .items_center()
                     .gap_2()
@@ -821,7 +876,7 @@ impl BenCodeApp {
                                     .text_size(px(11.0))
                                     .line_height(px(16.0))
                                     .text_color(colors.fg.opacity(0.45))
-                                    .child(model.harness.label()),
+                                    .child(subtitle),
                             ),
                     )
                     .when(key == current, |el| {
@@ -836,8 +891,8 @@ impl BenCodeApp {
             .id("composer-recent-models")
             .track_focus(&self.composer_menus.focus)
             .absolute()
-            .bottom(px(40.0))
-            .left(px(34.0))
+            .bottom(px(32.0))
+            .left_0()
             .w(px(MENU_WIDTH))
             .p_1()
             .rounded(px(8.0))

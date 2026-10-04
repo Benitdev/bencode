@@ -39,6 +39,8 @@ actions!(
         ToggleSessionSidebar,
         GoBack,
         GoForward,
+        InboxNext,
+        InboxPrevious,
     ]
 );
 
@@ -61,6 +63,11 @@ fn keymap() -> Vec<KeyBinding> {
         // MonoCode "Composer: Toggle Workspace", only in a new thread's
         // composer; deeper than the global ⌘⇧G, so it wins there.
         KeyBinding::new("cmd-shift-g", ToggleWorkspaceMode, Some("DraftComposer")),
+        // The Inbox list, while it has focus.
+        KeyBinding::new("down", InboxNext, Some("InboxList")),
+        KeyBinding::new("up", InboxPrevious, Some("InboxList")),
+        KeyBinding::new("j", InboxNext, Some("InboxList")),
+        KeyBinding::new("k", InboxPrevious, Some("InboxList")),
         KeyBinding::new("cmd-b", ToggleSidebar, None),
         KeyBinding::new("cmd-shift-b", ToggleSessionSidebar, None),
         KeyBinding::new("cmd-[", GoBack, None),
@@ -193,6 +200,8 @@ impl BenCodeApp {
         .on_action(cx.listener(|this, _: &FindNext, _, cx| this.step_find(1, cx)))
         .on_action(cx.listener(|this, _: &FindPrevious, _, cx| this.step_find(-1, cx)))
         .on_action(cx.listener(|this, _: &ToggleWorkspaceMode, _, cx| this.toggle_new_worktree(cx)))
+        .on_action(cx.listener(|this, _: &InboxNext, _, cx| this.step_inbox_selection(1, cx)))
+        .on_action(cx.listener(|this, _: &InboxPrevious, _, cx| this.step_inbox_selection(-1, cx)))
         .on_action(cx.listener(|this, _: &CloseView, _, cx| {
             if this.surface.is_some() {
                 this.close_surface(cx);
@@ -255,7 +264,7 @@ mod tests {
 
     #[test]
     fn keymap_chords_are_unique_per_action() {
-        assert_eq!(keymap().len(), 28);
+        assert_eq!(keymap().len(), 32);
         assert_eq!(menus().len(), 4);
     }
 }

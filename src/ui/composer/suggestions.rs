@@ -52,9 +52,10 @@ pub struct Suggestion {
     pub matched: Vec<usize>,
 }
 
-/// MonoCode `rankSlashCommands`: the built-in mode commands first, then
-/// skills; with a query, a fuzzy match on the name, then the description.
-/// `query` must already be lower-case.
+/// MonoCode `rankSkills`: with no query, built-ins, then project, then
+/// personal entries, each by name; with a query, a fuzzy match on the name
+/// (ranked first), then the description, ties by name. Skills named like a
+/// built-in are left out. `query` must already be lower-case.
 pub fn skill_suggestions(
     query: &str,
     skills: &[Skill],
@@ -64,18 +65,31 @@ pub fn skill_suggestions(
         .into_iter()
         .filter(|c| context.offers(*c))
         .map(|c| (c.name().to_string(), c.description().to_string(), "bencode"));
-    let skills = skills.iter().map(|s| {
-        let tag = match s.scope {
-            "project" => "project",
-            "builtin" => "bencode",
-            _ => "personal",
-        };
-        (s.name.clone(), s.description.clone(), tag)
-    });
-    let mut ranked: Vec<(i64, usize, Suggestion)> = built_ins
+    // MonoCode `scopeLabel`.
+    let skills = skills
+        .iter()
+        .filter(|s| {
+            !Command::ALL.iter().any(|c| c.name() == s.name)
+                && !matches!(s.name.as_str(), "mono" | "monocode" | "bencode")
+        })
+        .map(|s| {
+            let tag = match (s.scope, s.source) {
+                ("builtin", _) => "bencode",
+                ("user", _) => "personal",
+                (_, "agents" | "monocode") => "project",
+                (_, source) => source,
+            };
+            (s.name.clone(), s.description.clone(), tag)
+        });
+    // MonoCode `scopeRank`.
+    let rank = |tag: &str| match tag {
+        "bencode" => 0,
+        "personal" => 2,
+        _ => 1,
+    };
+    let mut ranked: Vec<(i64, (u8, String), Suggestion)> = built_ins
         .chain(skills)
-        .enumerate()
-        .filter_map(|(order, (name, description, tag))| {
+        .filter_map(|(name, description, tag)| {
             let (score, matched) = if query.is_empty() {
                 (0, Vec::new())
             } else if let Some(hit) = fuzzy_match(query, &name) {
@@ -89,6 +103,11 @@ pub fn skill_suggestions(
                     fuzzy_match(query, &description.to_lowercase())?.score,
                     Vec::new(),
                 )
+            };
+            let order = if query.is_empty() {
+                (rank(tag), name.clone())
+            } else {
+                (0, name.clone())
             };
             Some((
                 score,
@@ -104,7 +123,7 @@ pub fn skill_suggestions(
             ))
         })
         .collect();
-    ranked.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
+    ranked.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
     ranked
         .into_iter()
         .map(|(_, _, s)| s)
@@ -204,7 +223,7 @@ impl BenCodeApp {
     pub fn command_context(&self) -> CommandContext {
         let session = self.selected_session();
         CommandContext {
-            idle: session.is_none_or(|s| !self.is_agent_running_in(&s.id)),
+            idle: self.can_save_draft(session.map(|s| s.id.as_str())),
             compact: session.is_some_and(|s| crate::app::can_compact(&s.harness)),
             thread: session.is_some(),
         }
@@ -214,6 +233,7 @@ impl BenCodeApp {
     pub fn move_picker(&mut self, delta: isize, cx: &mut Context<Self>) -> bool {
         let len = self.current_suggestions().len();
         self.picker_index = wrap_index(self.picker_index, delta, len);
+        self.picker_scroll.scroll_to_item(self.picker_index);
         cx.notify();
         true
     }
@@ -296,22 +316,31 @@ impl BenCodeApp {
             "No matching files or notes"
         };
         let slash = self.is_skill_picker_open;
+        let frame = div()
+            .absolute()
+            .bottom_full()
+            .left_0()
+            .right_0()
+            .mb_1()
+            .overflow_hidden()
+            .rounded(px(8.0))
+            .border_1()
+            .border_color(colors.border)
+            .bg(colors.surface)
+            .shadow_lg();
+        if let Some(draft) = self.skill_draft.as_ref().filter(|_| slash) {
+            return Some(
+                frame
+                    .child(self.render_new_skill_form(draft, cx))
+                    .into_any_element(),
+            );
+        }
         Some(
-            div()
-                .absolute()
-                .bottom_full()
-                .left_0()
-                .right_0()
-                .mb_1()
-                .overflow_hidden()
-                .rounded(px(8.0))
-                .border_1()
-                .border_color(colors.border)
-                .bg(colors.surface)
-                .shadow_lg()
+            frame
                 .child(
                     div()
                         .id("composer-suggestions")
+                        .track_scroll(&self.picker_scroll)
                         .max_h(POPOVER_MAX_HEIGHT)
                         .overflow_y_scroll()
                         .p_1()
@@ -333,6 +362,7 @@ impl BenCodeApp {
                             }
                         })),
                 )
+                .when(slash, |el| el.child(self.render_new_skill_row(cx)))
                 .into_any_element(),
         )
     }
@@ -519,7 +549,9 @@ mod tests {
         // while idle.
         assert_eq!(skill_suggestions("", &skills, IDLE).len(), 4);
         assert_eq!(skill_suggestions("", &skills, BUSY).len(), 3);
-        assert_eq!(skill_suggestions("", &skills, IDLE)[0].insert, "/mcp");
+        // Built-ins first, by name.
+        assert_eq!(skill_suggestions("", &skills, IDLE)[0].insert, "/draft");
+        assert_eq!(skill_suggestions("", &skills, IDLE)[3].insert, "/deploy");
         assert_eq!(
             skill_suggestions("ship", &skills, IDLE)[0].insert,
             "/deploy"

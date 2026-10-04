@@ -22,6 +22,7 @@ use crate::ui::attachment_chip::OnRemove;
 pub enum ComposerCard {
     Note(NoteCard),
     Handoff(HandoffCard),
+    Inbox(super::inbox_card::InboxCard),
 }
 
 impl ComposerCard {
@@ -30,6 +31,7 @@ impl ComposerCard {
         match self {
             Self::Note(card) => super::note_card::compose_note_message(Some(card), text),
             Self::Handoff(card) => card.agent_prompt(text),
+            Self::Inbox(card) => super::inbox_card::compose_inbox_message(card, text),
         }
     }
 
@@ -38,6 +40,7 @@ impl ComposerCard {
         match self {
             Self::Note(_) => "Add a message, or send…",
             Self::Handoff(_) => "Add context, or send to continue…",
+            Self::Inbox(_) => "Add a note, or send to start…",
         }
     }
 
@@ -48,6 +51,8 @@ impl ComposerCard {
                 block.extra.insert("noteCard".into(), card.meta.to_json());
             }
             Self::Handoff(card) => block.second_opinion = Some(card.turn_meta()),
+            // MonoCode sends the issue in the message itself.
+            Self::Inbox(_) => {}
         }
     }
 
@@ -57,6 +62,7 @@ impl ComposerCard {
             Self::Handoff(card) => {
                 handoff_mini_card(&HandoffMeta::from(card), Some(on_dismiss), cx)
             }
+            Self::Inbox(card) => super::inbox_card::inbox_mini_card(card, Some(on_dismiss), cx),
         }
     }
 }
@@ -178,11 +184,12 @@ impl BenCodeApp {
 
     /// The placeholder follows the focused thread's card.
     pub fn sync_prompt_placeholder(&mut self, cx: &mut Context<Self>) {
-        let placeholder = self
-            .selected_session_id
-            .as_ref()
-            .and_then(|id| self.composer_cards.get(id))
-            .map_or(super::PROMPT_PLACEHOLDER, ComposerCard::placeholder);
+        let placeholder = match self.selected_session_id.as_deref() {
+            Some(id) if self.worktree_removed(id) => super::removed_worktree::REMOVED_PLACEHOLDER,
+            id => id
+                .and_then(|id| self.composer_cards.get(id))
+                .map_or(super::PROMPT_PLACEHOLDER, ComposerCard::placeholder),
+        };
         self.prompt_input.update(cx, |input, cx| {
             if input.placeholder_text().as_ref() != placeholder {
                 input.set_placeholder(placeholder, cx);

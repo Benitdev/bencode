@@ -65,6 +65,14 @@ impl BenCodeApp {
         self.is_terminal_open = saved.terminal_open;
         self.theme_preference = saved.theme;
         self.claude_hooks_disabled = saved.claude_hooks_disabled;
+        self.composer_mascot_off = saved.composer_mascot_off;
+        self.inbox.seen = saved.inbox_seen.clone();
+        self.inbox.seen_seeded = saved.inbox_seen_seeded;
+        self.inbox.repairs = saved.inbox_repairs.clone();
+        self.changes_ui.tree = saved.changes_tree;
+        if let Some(width) = saved.inbox_list_width {
+            self.inbox.list_width = width;
+        }
         self.favorite_models = saved.favorite_models.clone();
         self.recent_models = saved.recent_models.clone();
         self.last_model_settings = saved.last_model_settings.clone();
@@ -79,6 +87,13 @@ impl BenCodeApp {
             permission_mode: self.permission_mode.into(),
             terminal_open: self.is_terminal_open,
             claude_hooks_disabled: self.claude_hooks_disabled,
+            composer_mascot_off: self.composer_mascot_off,
+            inbox_seen: self.inbox.seen.clone(),
+            inbox_seen_seeded: self.inbox.seen_seeded,
+            inbox_repairs: self.inbox.repairs.clone(),
+            changes_tree: self.changes_ui.tree,
+            inbox_list_width: Some(self.inbox.list_width)
+                .filter(|w| *w != crate::ui::inbox_view::DEFAULT_LIST_WIDTH),
             favorite_models: self.favorite_models.clone(),
             recent_models: self.recent_models.clone(),
             last_model_settings: self.last_model_settings.clone(),
@@ -211,6 +226,13 @@ impl BenCodeApp {
             );
             cx.notify();
         }
+    }
+
+    /// MonoCode Appearance › "Composer mascot"; a running mascot leaves.
+    pub fn set_composer_mascot(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        self.composer_mascot_off = !enabled;
+        self.save_settings(cx);
+        cx.notify();
     }
 
     /// MonoCode Advanced › "Claude Code hooks"; applies from the next turn.

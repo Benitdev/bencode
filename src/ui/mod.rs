@@ -14,6 +14,7 @@ pub mod icons;
 pub mod inbox_view;
 pub mod layout;
 pub mod lightbox;
+pub mod mascot;
 pub mod notes_view;
 pub mod pane_tree;
 pub mod provider_icon;
@@ -29,3 +30,4 @@ pub mod titlebar;
 pub mod transcript;
 
 pub use provider_icon::HarnessIcon;
+pub mod window_root;

@@ -44,6 +44,19 @@ pub struct AppSettings {
     /// MonoCode "Claude Code hooks" switched off: Claude runs with
     /// `disableAllHooks`. Hooks are on by default.
     pub claude_hooks_disabled: bool,
+    /// MonoCode `monocode.composerRunner` switched off: no mascot runs on
+    /// the composer during a turn. On by default.
+    pub composer_mascot_off: bool,
+    /// MonoCode `monocode.inboxSeen`: each Inbox item's `updatedAt` (ms)
+    /// when last read, and whether the first list was taken as read.
+    pub inbox_seen: std::collections::BTreeMap<String, i64>,
+    pub inbox_seen_seeded: bool,
+    /// The Inbox list column's width; `None` is the default.
+    pub inbox_list_width: Option<f32>,
+    /// CI repairs sent from the Inbox, oldest first.
+    pub inbox_repairs: Vec<crate::ui::inbox_view::Repair>,
+    /// MonoCode `monocode.changesView`: the Changes panel as a tree.
+    pub changes_tree: bool,
     /// MonoCode `monocode.favoriteModels`: starred model keys.
     pub favorite_models: Vec<String>,
     /// MonoCode recent model choices, newest first (⌘. menu).
@@ -117,6 +130,17 @@ mod tests {
             permission_mode: PermissionPreference::AutoAcceptEdits,
             terminal_open: true,
             claude_hooks_disabled: true,
+            composer_mascot_off: true,
+            inbox_seen: std::collections::BTreeMap::from([("o/r:issue:1".to_string(), 5)]),
+            inbox_seen_seeded: true,
+            inbox_list_width: Some(400.0),
+            changes_tree: true,
+            inbox_repairs: vec![crate::ui::inbox_view::Repair {
+                item_key: "o/r:pr:7".into(),
+                head_oid: "abc".into(),
+                checks: vec!["test".into()],
+                session_id: "s1".into(),
+            }],
             favorite_models: vec!["claude:opus".into()],
             recent_models: Vec::new(),
             last_model_settings: Map::new(),

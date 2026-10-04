@@ -37,7 +37,6 @@ use crate::ui::settings_modal::SettingsTab;
 
 const RECENT_SESSION_LIMIT: usize = 50;
 const INITIAL_OPEN_TABS: usize = 3;
-const DEFAULT_CONTEXT_WINDOW: i64 = 200_000;
 const NOTE_TITLE_CHARS: usize = 80;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -126,14 +125,32 @@ pub struct BenCodeApp {
     pub is_branch_picker_open: bool,
     /// MonoCode `WorktreeBasePicker` (the "From main" chip) is open.
     pub is_base_picker_open: bool,
+    /// The branch / base popover's state, its search, and the New branch
+    /// dialog (MonoCode `BranchPicker`, `CreateBranchDialog`).
+    pub branch_picker: crate::ui::composer::branch_picker::BranchPickerUi,
+    pub branch_search_input: Entity<TextInput>,
+    pub branch_create_open: bool,
+    pub branch_create_input: Entity<TextInput>,
+    /// MonoCode Inbox (GitHub source): the fetched list, filters,
+    /// selection and loaded bodies, and its search field.
+    pub inbox: crate::ui::inbox_view::InboxState,
+    pub inbox_search_input: Entity<TextInput>,
+    pub inbox_comment_input: Entity<TextInput>,
+    /// The Inbox list's focus, for its ↑/↓ keys.
+    pub inbox_focus: gpui::FocusHandle,
     /// A branch switch git refused because of local changes, awaiting "Stash & switch".
     pub blocked_branch_switch: Option<crate::app::workspace_sync::BranchTarget>,
     pub is_skill_picker_open: bool,
     pub skill_query: String,
+    /// The `/` or `@` token at the caret, and the caret last seen.
+    pub prompt_token: Option<crate::ui::composer::tokens::Token>,
+    pub prompt_caret: usize,
     pub is_mention_picker_open: bool,
     pub mention_query: String,
     /// Highlighted row of the open `/` or `@` picker.
     pub picker_index: usize,
+    /// The open picker's list, scrolled to keep the highlight in view.
+    pub picker_scroll: gpui::ScrollHandle,
     /// The composer border brightens while the prompt has focus.
     pub prompt_focused: bool,
     /// The model picker's search field and highlighted row.
@@ -146,7 +163,13 @@ pub struct BenCodeApp {
     /// and its search.
     pub folder_picker: Option<usize>,
     pub folder_search_input: Entity<TextInput>,
+    /// MonoCode `SkillPicker` "New skill": the open form and its name field.
+    pub skill_draft: Option<crate::ui::composer::new_skill::SkillDraft>,
+    pub skill_name_input: Entity<TextInput>,
     pub mcp_tags: std::rc::Rc<std::cell::RefCell<std::sync::Arc<Vec<McpTag>>>>,
+    /// Other threads' MCP tags, kept with their drafts (MonoCode
+    /// `getComposerMcpTags`).
+    pub mcp_tag_drafts: HashMap<String, std::sync::Arc<Vec<McpTag>>>,
     pub model_picker_index: usize,
     pub favorite_models: Vec<String>,
     /// MonoCode's sidebar folders, per project.
@@ -174,6 +197,9 @@ pub struct BenCodeApp {
     /// The composer's inline error (a failed paste or attach, an edit the
     /// provider refused), shown under the chips until the next edit.
     pub composer_error: Option<String>,
+    /// File reads in flight per thread, and threads whose send waits for them.
+    pub attaching: HashMap<String, usize>,
+    pub send_after_attach: HashSet<String>,
     /// MonoCode "Edit and resend": the thread whose last message the
     /// composer holds, and threads whose provider is rewinding for a resend.
     pub editing_last_turn: Option<String>,
@@ -186,6 +212,10 @@ pub struct BenCodeApp {
     /// MonoCode's composer cards (note, handoff): what a thread's composer
     /// carries until its next send.
     pub composer_cards: HashMap<String, crate::ui::composer::cards::ComposerCard>,
+    /// MonoCode `ComposerRunner`: the composer geometry the mascot runs on
+    /// (measured by layout, read by `RunnerLayer`), and the setting.
+    pub runner_geometry: crate::ui::composer::runner_view::RunnerGeometry,
+    pub composer_mascot_off: bool,
     /// The centred composer's last measurements, and a send from it whose
     /// docked composer is still dropping into place.
     pub dock_measure: std::rc::Rc<crate::ui::composer::DockMeasure>,
@@ -197,6 +227,9 @@ pub struct BenCodeApp {
     pub queue_editing: Option<(String, usize)>,
     pub queue_edit_input: Entity<TextInput>,
     pub queue_held: std::collections::HashSet<String>,
+    /// MonoCode `queueStatus: "paused"`: threads stopped with messages
+    /// waiting; nothing is sent from their queue until Resume.
+    pub queue_paused: std::collections::HashSet<String>,
     /// Go to File (⌘P).
     pub quick_open: crate::ui::quick_open::QuickOpen,
     pub quick_open_input: Entity<TextInput>,
@@ -239,9 +272,13 @@ pub struct BenCodeApp {
     pub recent_projects: Vec<String>,
     // Git & Source Control
     pub git_status: crate::git::GitDetailedStatus,
-    pub git_commits: Vec<crate::git::GitCommitInfo>,
+    /// MonoCode `GitDiffIndex` sync fields and the Graph's history.
+    pub git_sync: crate::git::sync::SyncInfo,
+    pub git_history: Vec<crate::git::sync::HistoryCommit>,
     pub git_commit_input: Entity<TextInput>,
-    pub git_history_collapsed: bool,
+    /// MonoCode `GitChangesPanel`'s state (busy action, amend, sections,
+    /// graph, the branch's pull request).
+    pub changes_ui: crate::ui::git_changes_panel::ChangesUi,
     /// Git/filesystem snapshot for the active workspace; see `workspace_sync`.
     pub workspace: WorkspaceCache,
     pub file_tree: crate::ui::file_tree::FileTreeState,
@@ -390,6 +427,13 @@ impl BenCodeApp {
         let mcp_keys_input = mcp_search_input.clone();
         let folder_search_input = text_input(window, cx, "Choose or name a session folder…");
         let folder_keys_input = folder_search_input.clone();
+        let branch_search_input = text_input(window, cx, "Search or create a branch...");
+        let branch_keys_input = branch_search_input.clone();
+        let branch_create_input = text_input(window, cx, "feature/my-branch");
+        let inbox_search_input = text_input(window, cx, "Filter inbox");
+        let inbox_comment_input = multiline_input(window, cx, "Leave a comment (⌘↩)", (2, 8));
+        let skill_name_input = text_input(window, cx, "skill-name");
+        let skill_keys_input = skill_name_input.clone();
         let find_input = text_input(window, cx, "Find in conversation");
         let find_keys_input = find_input.clone();
         let quick_open_input = text_input(window, cx, "Go to File (type > for commands)");
@@ -410,7 +454,7 @@ impl BenCodeApp {
         let automation_name_input = text_input(window, cx, "Automation name...");
         let automation_prompt_input = multiline_input(window, cx, "Automation prompt...", (3, 10));
         let automation_time_input = text_input(window, cx, "09:00");
-        let git_commit_input = text_input(window, cx, "Message (⌘↩ to commit)...");
+        let git_commit_input = multiline_input(window, cx, "Message (⌘↩ to commit)", (1, 7));
         let search_modal_input =
             text_input(window, cx, "Search conversations, files, projects... (⌘K)");
 
@@ -431,6 +475,13 @@ impl BenCodeApp {
                     }
                 },
             ),
+            // A click or an arrow key moves the caret without an edit; the
+            // `/` and `@` pickers still follow it (MonoCode `onSelect`).
+            cx.observe(&prompt_input, |this: &mut Self, input, cx| {
+                if input.read(cx).cursor() != this.prompt_caret {
+                    this.sync_prompt_tokens(cx);
+                }
+            }),
             cx.subscribe(
                 &search_input,
                 |this: &mut Self, input, event: &InputEvent, cx| {
@@ -452,8 +503,9 @@ impl BenCodeApp {
             cx.subscribe(
                 &model_search_input,
                 |this: &mut Self, _, event: &InputEvent, cx| match event {
+                    // MonoCode re-highlights the current model as the list changes.
                     InputEvent::Changed => {
-                        this.model_picker_index = 0;
+                        this.highlight_current_model(cx);
                         cx.notify();
                     }
                     InputEvent::Submit => this.pick_highlighted_model(cx),
@@ -474,6 +526,44 @@ impl BenCodeApp {
                     if *event == InputEvent::Changed {
                         this.on_folder_query_changed(cx);
                     }
+                },
+            ),
+            cx.subscribe(
+                &inbox_search_input,
+                |_: &mut Self, _, event: &InputEvent, cx| {
+                    if *event == InputEvent::Changed {
+                        cx.notify();
+                    }
+                },
+            ),
+            cx.subscribe(
+                &inbox_comment_input,
+                |this: &mut Self, _, event: &InputEvent, cx| match event {
+                    InputEvent::Submit => this.post_inbox_comment(cx),
+                    InputEvent::Changed => cx.notify(),
+                    _ => {}
+                },
+            ),
+            cx.subscribe(
+                &branch_search_input,
+                |this: &mut Self, _, event: &InputEvent, cx| {
+                    if *event == InputEvent::Changed {
+                        this.on_branch_query_changed(cx);
+                    }
+                },
+            ),
+            cx.subscribe_in(
+                &skill_name_input,
+                window,
+                |this: &mut Self, _, event: &InputEvent, window, cx| match event {
+                    InputEvent::Submit => this.create_new_skill(window, cx),
+                    InputEvent::Changed => {
+                        if let Some(draft) = &mut this.skill_draft {
+                            draft.error = None;
+                        }
+                        cx.notify();
+                    }
+                    _ => {}
                 },
             ),
             cx.subscribe(
@@ -525,10 +615,11 @@ impl BenCodeApp {
             ),
             cx.subscribe(
                 &git_commit_input,
-                |this: &mut Self, _, event: &InputEvent, cx| {
-                    if *event == InputEvent::Submit {
-                        this.commit_staged_changes(cx);
-                    }
+                |this: &mut Self, _, event: &InputEvent, cx| match event {
+                    InputEvent::Submit => this.commit_staged_changes(cx),
+                    // The Commit button follows the message.
+                    InputEvent::Changed => cx.notify(),
+                    _ => {}
                 },
             ),
             cx.subscribe(
@@ -612,6 +703,38 @@ impl BenCodeApp {
                         Ok(true)
                     )
                 {
+                    cx.stop_propagation();
+                }
+                return;
+            }
+            // MonoCode `BranchPicker`: ↑/↓, Enter and Esc in its search.
+            if branch_keys_input
+                .read(cx)
+                .focus_handle(cx)
+                .is_focused(window)
+            {
+                let key = event.keystroke.key.as_str();
+                if !event.keystroke.modifiers.modified()
+                    && matches!(
+                        weak_app.update(cx, |this, cx| this.branch_picker_key(key, cx)),
+                        Ok(true)
+                    )
+                {
+                    cx.stop_propagation();
+                }
+                return;
+            }
+            // MonoCode `CreateSkillForm`: Esc goes back to the list.
+            if event.keystroke.key == "escape"
+                && skill_keys_input
+                    .read(cx)
+                    .focus_handle(cx)
+                    .is_focused(window)
+            {
+                if matches!(
+                    weak_app.update(cx, |this, cx| this.cancel_new_skill(cx)),
+                    Ok(true)
+                ) {
                     cx.stop_propagation();
                 }
                 return;
@@ -756,19 +879,33 @@ impl BenCodeApp {
             is_plus_menu_open: false,
             is_branch_picker_open: false,
             is_base_picker_open: false,
+            branch_picker: Default::default(),
+            branch_search_input,
+            branch_create_open: false,
+            branch_create_input,
+            inbox: Default::default(),
+            inbox_search_input,
+            inbox_comment_input,
+            inbox_focus: cx.focus_handle(),
             blocked_branch_switch: None,
             is_skill_picker_open: false,
             skill_query: String::new(),
+            prompt_token: None,
+            prompt_caret: 0,
             is_mention_picker_open: false,
             mention_query: String::new(),
             picker_index: 0,
+            picker_scroll: gpui::ScrollHandle::new(),
             prompt_focused: false,
             model_search_input,
             mcp_picker: None,
             mcp_search_input,
             folder_picker: None,
             folder_search_input,
+            skill_draft: None,
+            skill_name_input,
             mcp_tags,
+            mcp_tag_drafts: HashMap::new(),
             model_picker_index: 0,
             favorite_models: Vec::new(),
             session_folders: Default::default(),
@@ -785,11 +922,15 @@ impl BenCodeApp {
             question_focus,
             question_focus_wanted: false,
             composer_error: None,
+            attaching: HashMap::new(),
+            send_after_attach: HashSet::new(),
             editing_last_turn: None,
             edit_rewinding: HashSet::new(),
             new_worktrees: HashMap::new(),
             preparing_worktrees: HashSet::new(),
             composer_cards: HashMap::new(),
+            runner_geometry: Default::default(),
+            composer_mascot_off: false,
             lightbox: None,
             usage_limits: HashMap::new(),
             mention_marks: Vec::new(),
@@ -798,6 +939,7 @@ impl BenCodeApp {
             queue_editing: None,
             queue_edit_input,
             queue_held: Default::default(),
+            queue_paused: Default::default(),
             project_files: crate::app::project_files::ProjectFiles {
                 mentions: mention_index,
                 ..Default::default()
@@ -828,9 +970,10 @@ impl BenCodeApp {
             workspace_return: HashMap::new(),
             recent_projects,
             git_status: Default::default(),
-            git_commits: Vec::new(),
+            git_sync: Default::default(),
+            git_history: Vec::new(),
             git_commit_input,
-            git_history_collapsed: false,
+            changes_ui: Default::default(),
             workspace: WorkspaceCache::default(),
             file_tree: Default::default(),
             file_dialog_input: text_input(window, cx, "Name"),
@@ -884,6 +1027,7 @@ impl BenCodeApp {
         app.start_git_poll(cx);
         app.start_clock(cx);
         app.refresh_installed_catalogs(cx);
+        app.start_inbox_poll(cx);
         app
     }
 
@@ -925,6 +1069,12 @@ impl BenCodeApp {
                 // A provider session id is only meaningful to the harness that issued it.
                 session.provider_session_id = None;
             }
+            if session.model != option.key {
+                // MonoCode `dropContextWindow`: the old model's window no
+                // longer measures this thread.
+                session.context_window = None;
+                session.context_used = None;
+            }
             session.model = option.key.clone();
             session.harness = harness_id.to_string();
             session.model_settings = Some(settings);
@@ -938,29 +1088,84 @@ impl BenCodeApp {
 
     pub fn on_prompt_changed(&mut self, cx: &mut Context<Self>) {
         self.composer_error = None;
-        let was_mentioning = self.is_mention_picker_open;
+        self.skill_draft = None;
         let text = self.prompt_input.read(cx).text().to_string();
-        self.is_skill_picker_open = false;
-        self.is_mention_picker_open = false;
-        self.picker_index = 0;
-
         // MonoCode `runsSessionFolderCommandOnSpace`.
         if text.trim_start() == "/add-to-folder " && self.selected_session_id.is_some() {
+            self.is_skill_picker_open = false;
+            self.is_mention_picker_open = false;
             self.start_folder_command(cx);
             return;
         }
-        if let Some(query) = trigger_query(&text, '/') {
-            self.is_skill_picker_open = true;
-            self.skill_query = query;
-        } else if let Some(query) = trigger_query(&text, '@') {
-            // MonoCode re-lists the project as the `@` picker opens.
-            if !was_mentioning {
-                self.index_project_files(cx);
+        // MonoCode drops a tag once its token leaves the text.
+        let tags = self.mcp_tags.borrow().clone();
+        if !tags.is_empty() {
+            let kept: Vec<McpTag> = tags
+                .iter()
+                .filter(|tag| {
+                    !crate::ui::composer::mcp_tags::tagged_servers(&text, std::slice::from_ref(tag))
+                        .is_empty()
+                })
+                .cloned()
+                .collect();
+            if kept.len() != tags.len() {
+                *self.mcp_tags.borrow_mut() = kept.into();
             }
-            self.is_mention_picker_open = true;
-            self.mention_query = query;
         }
+        self.sync_prompt_tokens(cx);
+    }
+
+    /// MonoCode `syncTokensFromTextarea`: the `/` or `@` picker follows the
+    /// token at the caret, after every edit and caret move.
+    pub fn sync_prompt_tokens(&mut self, cx: &mut Context<Self>) {
+        let input = self.prompt_input.read(cx);
+        let (text, caret) = (input.text().to_string(), input.cursor());
+        self.prompt_caret = caret;
+        if self.skill_draft.is_some() {
+            return;
+        }
+        let was = (self.is_skill_picker_open, self.is_mention_picker_open);
+        let slash = crate::ui::composer::tokens::slash_token_at(&text, caret);
+        let mention = slash
+            .is_none()
+            .then(|| crate::ui::composer::tokens::mention_token_at(&text, caret))
+            .flatten();
+        self.is_skill_picker_open = slash.is_some();
+        self.is_mention_picker_open = mention.is_some();
+        let query = slash
+            .as_ref()
+            .or(mention.as_ref())
+            .map(|t| t.query.to_lowercase());
+        let changed = match (&slash, &mention) {
+            (Some(_), _) => self.skill_query != query.clone().unwrap_or_default(),
+            (_, Some(_)) => self.mention_query != query.clone().unwrap_or_default(),
+            _ => false,
+        };
+        if changed || was != (self.is_skill_picker_open, self.is_mention_picker_open) {
+            self.picker_index = 0;
+        }
+        if let Some(query) = query {
+            if slash.is_some() {
+                self.skill_query = query;
+            } else {
+                self.mention_query = query;
+            }
+        }
+        // MonoCode re-lists the project as the `@` picker opens.
+        if self.is_mention_picker_open && !was.1 {
+            self.index_project_files(cx);
+        }
+        self.prompt_token = slash.or(mention);
         cx.notify();
+    }
+
+    /// Puts `text` in the prompt with the caret at `caret`.
+    pub fn set_prompt(&mut self, text: String, caret: usize, cx: &mut Context<Self>) {
+        self.prompt_input.update(cx, |input, cx| {
+            input.set_text(text, cx);
+            let caret = caret.min(input.text().len());
+            input.select(caret..caret, cx);
+        });
     }
 
     /// Enter sends; with a picker open, ↑/↓ move, Tab/Enter pick and Esc
@@ -972,20 +1177,39 @@ impl BenCodeApp {
                 self.submit_prompt(cx);
                 true
             }
-            // MonoCode: ↑ in an empty composer edits the last message where
-            // the provider can rewind; elsewhere it brings the text back.
-            ("up", false) if self.prompt_input.read(cx).text().is_empty() => {
+            // MonoCode: ↑ in an empty composer (no text, files or card)
+            // edits the last message where the provider can rewind.
+            ("up", false) if self.is_editing_last_turn() || !self.composer_has_value(cx) => {
                 match self.selected_session_id.clone() {
-                    Some(id) if self.is_editing_last_turn() || self.can_edit_last_turn(&id) => {
-                        self.toggle_edit_last_turn(&id, cx)
+                    Some(id)
+                        if self.prompt_input.read(cx).text().is_empty()
+                            && (self.is_editing_last_turn() || self.can_edit_last_turn(&id)) =>
+                    {
+                        self.toggle_edit_last_turn(&id, cx);
+                        true
                     }
-                    _ => self.recall_last_turn(cx),
+                    _ => false,
                 }
-                true
             }
             ("up", true) => self.move_picker(-1, cx),
             ("down", true) => self.move_picker(1, cx),
-            ("tab", true) => self.accept_picker(cx),
+            // MonoCode swallows Tab even when nothing matches.
+            ("tab", true) => {
+                self.accept_picker(cx);
+                true
+            }
+            // MonoCode runs a lone `/compact`, `/mcp` or `/add-to-folder`
+            // before the picker takes Enter.
+            ("enter", true)
+                if crate::ui::composer::mode_commands::standalone_command(
+                    self.prompt_input.read(cx).text(),
+                )
+                .is_some() =>
+            {
+                self.close_pickers(cx);
+                self.submit_prompt(cx);
+                true
+            }
             ("enter", true) => {
                 if !self.accept_picker(cx) {
                     // Nothing matches: close the picker and send.
@@ -1003,6 +1227,7 @@ impl BenCodeApp {
     }
 
     pub fn close_pickers(&mut self, cx: &mut Context<Self>) {
+        self.skill_draft = None;
         self.is_skill_picker_open = false;
         self.is_mention_picker_open = false;
         cx.notify();
@@ -1033,27 +1258,27 @@ impl BenCodeApp {
         });
     }
 
-    /// Replaces the trailing `trigger…` token of the prompt with `replacement`.
-    fn replace_trigger(&mut self, trigger: char, replacement: &str, cx: &mut Context<Self>) {
-        self.prompt_input.update(cx, |input, cx| {
-            let text = input.text().to_string();
-            let prefix = text.rfind(trigger).map_or("", |idx| &text[..idx]);
-            input.set_text(format!("{prefix}{replacement} "), cx);
-        });
+    /// Replaces the `/` or `@` token at the caret with `replacement`,
+    /// keeping the text after it (MonoCode `replaceSlashToken`).
+    fn replace_trigger(&mut self, _trigger: char, replacement: &str, cx: &mut Context<Self>) {
+        let Some(token) = self.prompt_token.take() else {
+            return;
+        };
+        let text = self.prompt_input.read(cx).text().to_string();
+        let (next, caret) = crate::ui::composer::tokens::replace_token(&text, &token, replacement);
+        self.set_prompt(next, caret, cx);
     }
 
-    /// Recalls the last user prompt into the composer prompt input.
-    pub fn recall_last_turn(&mut self, cx: &mut Context<Self>) {
-        let last_prompt = self
-            .selected_session()
-            .and_then(|session| session.blocks.iter().rev().find(|b| b.role == "user"))
-            .and_then(|block| block.text.clone());
-        if let Some(prompt) = last_prompt {
-            self.prompt_input.update(cx, |input, cx| {
-                input.set_text(prompt, cx);
-            });
-            cx.notify();
-        }
+    /// Takes the `/` token at the caret out of the prompt; returns where it
+    /// stood (the end of the text when there was none).
+    pub fn remove_prompt_token(&mut self, cx: &mut Context<Self>) -> usize {
+        let text = self.prompt_input.read(cx).text().to_string();
+        let Some(token) = self.prompt_token.take() else {
+            return text.len();
+        };
+        let (next, caret) = crate::ui::composer::tokens::remove_token(&text, &token);
+        self.set_prompt(next, caret, cx);
+        caret
     }
 
     /// Saves a turn as a note titled after its thread (or the text's first
@@ -1142,21 +1367,14 @@ impl BenCodeApp {
     }
 }
 
-/// If the prompt ends in a `trigger` token (`/skill`, `@file`) that starts a
-/// word, returns the lower-cased text typed after the trigger.
-fn trigger_query(text: &str, trigger: char) -> Option<String> {
-    let idx = text.rfind(trigger)?;
-    let after = &text[idx + trigger.len_utf8()..];
-    let starts_word = text[..idx].chars().last().is_none_or(char::is_whitespace);
-    (starts_word && !after.contains(char::is_whitespace)).then(|| after.to_lowercase())
-}
-
 impl Render for BenCodeApp {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if std::mem::take(&mut self.question_focus_wanted) {
             window.focus(&self.question_focus, cx);
         }
         self.sync_mention_marks(window, cx);
+        // The runner layer reads what this layout measures.
+        self.runner_geometry.clear();
         if !self.focus_handle.contains_focused(window, cx) && window.focused(cx).is_none() {
             window.focus(&self.focus_handle, cx);
         }
@@ -1167,90 +1385,78 @@ impl Render for BenCodeApp {
         let surface = self.render_surface(cx);
         let workspace_visible = surface.is_none();
 
-        FocusScope::new(&self.focus_handle).root().child(
-            Self::bind_commands(div().id("bencode-root"), cx)
-                .flex()
-                .flex_col()
-                .size_full()
-                .bg(bg)
-                .text_color(fg)
-                .child(
-                    div()
-                        .flex()
-                        .flex_1()
-                        .size_full()
-                        .min_h_0()
-                        .overflow_hidden()
-                        // Column 1: Leftmost Project Rail
-                        .when(self.is_rail_open, |el| {
-                            el.child(self.render_project_rail(cx))
-                        })
-                        // Column 2: Workspace Sidebar (when open)
-                        .when(self.is_sidebar_open && workspace_visible, |el| {
-                            el.child(self.render_sidebar(cx))
-                        })
-                        // Column 3: Main Area (TitleBar + Views + Terminal Drawer + UsageFooter)
-                        .when(workspace_visible, |el| {
-                            el.child(
-                                div()
-                                    .flex()
-                                    .flex_col()
-                                    .flex_1()
-                                    .h_full()
-                                    .min_w_0()
-                                    .overflow_hidden()
-                                    .child(self.render_titlebar(window, cx))
-                                    .child(
-                                        div().flex().flex_1().min_h_0().overflow_hidden().child(
-                                            match self.active_view_mode {
-                                                ViewMode::Chat => self
-                                                    .render_transcript_panel(cx)
-                                                    .into_any_element(),
-                                                ViewMode::Editor => self
-                                                    .render_editor_pane(window, cx)
-                                                    .into_any_element(),
-                                                ViewMode::Changes => {
-                                                    self.render_diff_viewer(cx).into_any_element()
-                                                }
-                                            },
-                                        ),
-                                    )
-                                    .when(self.is_terminal_open, |el| {
-                                        el.child(self.render_terminal_drawer(cx))
-                                    })
-                                    .child(self.render_usage_footer(cx)),
-                            )
-                        })
-                        .children(surface),
-                )
-                .children(self.render_session_dialog(cx))
-                .children(self.render_quick_open(cx))
-                .children(self.render_lightbox(cx))
-                .children(self.render_git_confirm(cx))
-                .children(self.render_branch_switch_confirm(cx))
-                .children(self.render_file_tree_dialog(cx)),
-        )
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn trigger_query_detects_word_start_tokens() {
-        assert_eq!(trigger_query("/rev", '/').as_deref(), Some("rev"));
-        assert_eq!(trigger_query("fix @Src/Ma", '@').as_deref(), Some("src/ma"));
-        assert_eq!(
-            trigger_query("a/b", '/'),
-            None,
-            "mid-word slash is a path, not a skill"
-        );
-        assert_eq!(
-            trigger_query("@file done", '@'),
-            None,
-            "token already finished"
-        );
-        assert_eq!(trigger_query("xin chào /ski", '/').as_deref(), Some("ski"));
+        // Full size explicitly: the app is laid out inside `WindowRoot`'s
+        // cached slot, not as the window's root.
+        FocusScope::new(&self.focus_handle)
+            .root()
+            .size_full()
+            .child(
+                Self::bind_commands(div().id("bencode-root"), cx)
+                    .flex()
+                    .flex_col()
+                    .size_full()
+                    .bg(bg)
+                    .text_color(fg)
+                    .child(
+                        div()
+                            .flex()
+                            .flex_1()
+                            .size_full()
+                            .min_h_0()
+                            .overflow_hidden()
+                            // Column 1: Leftmost Project Rail
+                            .when(self.is_rail_open, |el| {
+                                el.child(self.render_project_rail(cx))
+                            })
+                            // Column 2: Workspace Sidebar (when open)
+                            .when(self.is_sidebar_open && workspace_visible, |el| {
+                                el.child(self.render_sidebar(cx))
+                            })
+                            // Column 3: Main Area (TitleBar + Views + Terminal Drawer + UsageFooter)
+                            .when(workspace_visible, |el| {
+                                el.child(
+                                    div()
+                                        .flex()
+                                        .flex_col()
+                                        .flex_1()
+                                        .h_full()
+                                        .min_w_0()
+                                        .overflow_hidden()
+                                        .child(self.render_titlebar(window, cx))
+                                        .child(
+                                            div()
+                                                .flex()
+                                                .flex_1()
+                                                .min_h_0()
+                                                .overflow_hidden()
+                                                .child(match self.active_view_mode {
+                                                    ViewMode::Chat => self
+                                                        .render_transcript_panel(cx)
+                                                        .into_any_element(),
+                                                    ViewMode::Editor => self
+                                                        .render_editor_pane(window, cx)
+                                                        .into_any_element(),
+                                                    ViewMode::Changes => self
+                                                        .render_diff_viewer(cx)
+                                                        .into_any_element(),
+                                                }),
+                                        )
+                                        .when(self.is_terminal_open, |el| {
+                                            el.child(self.render_terminal_drawer(cx))
+                                        })
+                                        .child(self.render_usage_footer(cx)),
+                                )
+                            })
+                            .children(surface),
+                    )
+                    .children(self.render_session_dialog(cx))
+                    .children(self.render_quick_open(cx))
+                    .children(self.render_lightbox(cx))
+                    .children(self.render_git_confirm(cx))
+                    .children(self.render_branch_switch_confirm(cx))
+                    .children(self.render_branch_create_dialog(cx))
+                    .children(self.render_pr_action_confirm(cx))
+                    .children(self.render_file_tree_dialog(cx)),
+            )
     }
 }

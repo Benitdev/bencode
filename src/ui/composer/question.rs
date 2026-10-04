@@ -330,9 +330,30 @@ impl BenCodeApp {
         self.refocus_prompt(cx);
     }
 
-    /// Skip: the agent goes on without an answer.
+    /// MonoCode `skipCurrent`: this question goes unanswered and the form
+    /// moves on; after the last one the agent gets the questions that were
+    /// answered (or a skip when none were).
     pub fn skip_question(&mut self, session_id: &str, cx: &mut Context<Self>) {
-        self.answer_question(session_id, None, cx);
+        let Some((request_id, questions, input)) = self.pending_question(session_id) else {
+            return;
+        };
+        let mut ui = self.question_state(session_id, &request_id);
+        if let Some(question) = questions.get(ui.current) {
+            ui.answers.remove(&question.id);
+            ui.custom.remove(&question.id);
+        }
+        if ui.current + 1 < questions.len() {
+            ui.current += 1;
+            ui.active = 0;
+            self.question_ui.insert(session_id.to_string(), ui);
+            self.question_custom_input
+                .update(cx, |input, cx| input.set_text("", cx));
+            cx.notify();
+            return;
+        }
+        let answered = questions.iter().any(|q| is_complete(q, &ui));
+        let reply = answered.then(|| allow_input(&input, &questions, &ui));
+        self.answer_question(session_id, reply, cx);
         self.refocus_prompt(cx);
     }
 
@@ -357,7 +378,17 @@ impl BenCodeApp {
             }
             "home" => self.update_question(&session_id, |ui, _| ui.active = 0),
             "end" => self.update_question(&session_id, |ui, _| ui.active = len - 1),
-            "enter" if is_complete(question, &ui) && !question.multi_select => {
+            // Enter picks the highlighted option (MonoCode); on the option
+            // already picked it continues.
+            "enter"
+                if is_complete(question, &ui)
+                    && !question.multi_select
+                    && options.get(ui.active).is_some_and(|o| {
+                        ui.answers
+                            .get(&question.id)
+                            .is_some_and(|picked| picked.contains(&o.id))
+                    }) =>
+            {
                 self.continue_question(&session_id, cx)
             }
             "enter" | "space" => {

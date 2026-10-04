@@ -33,6 +33,17 @@ const PROJECT_COLORS: [u32; 6] = [
 ];
 
 impl BenCodeApp {
+    /// A project's rail colour: by its place in the project list, else by
+    /// its name (MonoCode `resolveTabGroupColor` falls back to a hash too).
+    pub fn project_color(&self, cwd: &str) -> gpui::Hsla {
+        let ix = self
+            .recent_projects
+            .iter()
+            .position(|path| crate::app::same_project_path(path, cwd))
+            .unwrap_or_else(|| cwd.bytes().map(usize::from).sum());
+        rgb(PROJECT_COLORS[ix % PROJECT_COLORS.len()]).into()
+    }
+
     pub fn render_project_rail(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         let colors = cx.theme().colors.clone();
         let current_cwd = self.current_cwd.clone();
@@ -187,7 +198,13 @@ impl BenCodeApp {
                                                     .color(colors.fg_muted),
                                             )
                                             .child("Inbox"),
-                                    ),
+                                    )
+                                    // MonoCode's `dot`: activity not read yet.
+                                    .when(self.inbox_has_unseen(), |el| {
+                                        el.child(
+                                            div().size(px(6.0)).rounded_full().bg(colors.accent),
+                                        )
+                                    }),
                             )
                             // Notes
                             .child(

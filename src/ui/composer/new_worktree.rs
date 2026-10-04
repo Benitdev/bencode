@@ -7,13 +7,10 @@
 
 use std::hash::{BuildHasher, RandomState};
 
-use ely_gpui_component::git::{Branch as ElyBranch, BranchSelector};
-use gpui::{AnyElement, App, Context, IntoElement, ParentElement, SharedString, Styled, div, px};
+use gpui::Context;
 
-use super::popover_surface;
 use crate::app::{BenCodeApp, TurnInput};
 use crate::git::worktrees::create_worktree;
-use crate::ui::app_callback::app_callback;
 
 /// MonoCode `temporaryWorktreeBranchName`: `mc/` and eight lowercase
 /// letters or digits.
@@ -93,7 +90,7 @@ impl BenCodeApp {
         self.refocus_prompt(cx);
     }
 
-    fn set_worktree_base(&mut self, base: &str, cx: &mut Context<Self>) {
+    pub(super) fn set_worktree_base(&mut self, base: &str, cx: &mut Context<Self>) {
         let key = self.draft_key();
         if let Some(chosen) = self.new_worktrees.get_mut(&key) {
             *chosen = base.to_string();
@@ -175,48 +172,6 @@ impl BenCodeApp {
         })
         .detach();
         cx.notify();
-    }
-
-    /// MonoCode `WorktreeBasePicker`: which branch the new worktree starts
-    /// from, searchable like the branch picker.
-    pub(super) fn render_base_picker(&self, cx: &Context<Self>) -> AnyElement {
-        let base = self.new_worktree_base().unwrap_or("HEAD").to_string();
-        let branches: Vec<ElyBranch> = self
-            .workspace
-            .branches
-            .iter()
-            .map(|b| ElyBranch {
-                name: b.name.clone().into(),
-                remote: b.remote,
-                current: b.name == base,
-                ahead: 0,
-                behind: 0,
-                subject: SharedString::default(),
-                when: SharedString::default(),
-            })
-            .collect();
-        let close = app_callback(cx, |this, cx| {
-            this.is_base_picker_open = false;
-            cx.notify();
-        });
-        let entity = cx.entity().downgrade();
-        let picker = div()
-            .absolute()
-            .bottom(px(36.0))
-            .left(px(8.0))
-            .w(px(280.0))
-            .child(
-                BranchSelector::new("composer-base-picker", branches, close).on_pick(
-                    move |name, _, cx: &mut App| {
-                        if let Err(err) =
-                            entity.update(cx, |this, cx| this.set_worktree_base(name, cx))
-                        {
-                            log::debug!("base pick after app drop: {err:#}");
-                        }
-                    },
-                ),
-            );
-        popover_surface(picker, cx).into_any_element()
     }
 }
 

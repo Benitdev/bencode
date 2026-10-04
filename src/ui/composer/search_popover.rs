@@ -20,6 +20,8 @@ pub struct SearchPopover<'a> {
     pub id: &'static str,
     pub icon: IconName,
     pub input: &'a Entity<TextInput>,
+    /// Kept on the highlighted row as the keys move it.
+    pub scroll: &'a gpui::ScrollHandle,
     /// The close button: its icon and tooltip, and what it does.
     pub close: (IconName, &'static str, Action),
     /// A click outside.
@@ -86,6 +88,7 @@ impl SearchPopover<'_> {
             ))))
             .max_h(self.list_max_height)
             .overflow_y_scroll()
+            .track_scroll(self.scroll)
             .p_1()
             .when_some(self.empty, |el, text| {
                 el.child(

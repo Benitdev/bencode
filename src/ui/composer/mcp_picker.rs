@@ -134,10 +134,7 @@ impl BenCodeApp {
     /// `/mcp` from the `/` list: the token leaves the prompt and the picker
     /// opens where it stood.
     pub fn start_mcp_command(&mut self, cx: &mut Context<Self>) {
-        let text = self.prompt_input.read(cx).text().to_string();
-        let at = text.rfind('/').unwrap_or(text.len());
-        self.prompt_input
-            .update(cx, |input, cx| input.set_text(&text[..at], cx));
+        let at = self.remove_prompt_token(cx);
         self.open_mcp_picker(Some(at), cx);
     }
 
@@ -154,6 +151,7 @@ impl BenCodeApp {
                 if let Some(picker) = &mut self.mcp_picker {
                     picker.active = active;
                 }
+                self.picker_scroll.scroll_to_item(active);
                 cx.notify();
                 true
             }
@@ -243,6 +241,7 @@ impl BenCodeApp {
             .collect();
         Some(
             SearchPopover {
+                scroll: &self.picker_scroll,
                 id: "mcp-picker",
                 icon: IconName::Search,
                 input: &self.mcp_search_input,

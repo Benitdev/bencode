@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use gpui::Context;
 
 use super::tab_scope::{TabClosePlan, deck_tabs, is_blank_session, plan_tab_close};
-use super::{BenCodeApp, DEFAULT_CONTEXT_WINDOW, NEW_SESSION_TITLE, now_ms};
+use super::{BenCodeApp, NEW_SESSION_TITLE, now_ms};
 use crate::db::SessionRow;
 use crate::harness::{HarnessKind, catalog};
 use crate::ui::drag_drop::PaneDropTarget;
@@ -39,7 +39,23 @@ impl BenCodeApp {
                 } else {
                     self.drafts.insert(old_id.clone(), current_prompt);
                 }
+                let tags = std::mem::take(&mut *self.mcp_tags.borrow_mut());
+                if tags.is_empty() {
+                    self.mcp_tag_drafts.remove(old_id);
+                } else {
+                    self.mcp_tag_drafts.insert(old_id.clone(), tags);
+                }
             }
+            // MonoCode closes the composer's pickers when the thread changes.
+            self.mcp_picker = None;
+            self.folder_picker = None;
+            self.skill_draft = None;
+            self.is_skill_picker_open = false;
+            self.is_mention_picker_open = false;
+            *self.mcp_tags.borrow_mut() = focused
+                .as_ref()
+                .and_then(|id| self.mcp_tag_drafts.remove(id))
+                .unwrap_or_default();
             self.selected_diff_path = None;
             let restored = focused
                 .as_ref()
@@ -49,6 +65,12 @@ impl BenCodeApp {
             self.prompt_input.update(cx, |input, cx| {
                 input.set_text(restored, cx);
             });
+            self.sync_prompt_placeholder(cx);
+            // MonoCode's focus effect: a newly focused thread's prompt
+            // takes the keyboard.
+            if focused.is_some() {
+                self.refocus_prompt(cx);
+            }
         }
         let model = focused
             .as_deref()
@@ -437,8 +459,9 @@ impl BenCodeApp {
             created_at: now,
             updated_at: now,
             branch,
-            context_used: Some(0),
-            context_window: Some(DEFAULT_CONTEXT_WINDOW),
+            // No ring until the harness reports usage (MonoCode).
+            context_used: None,
+            context_window: None,
             blocks: Vec::new(),
             runtime_mode: Some(self.permission_mode.id().to_string()),
             worktree_cwd,

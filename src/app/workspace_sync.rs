@@ -8,9 +8,8 @@ use anyhow::Result;
 use gpui::{Context, SharedString};
 
 use crate::app::BenCodeApp;
-use crate::git::{self, DiffRow, DiffSource, GitCommitInfo, GitDetailedStatus, GitFileChange};
+use crate::git::{self, DiffRow, DiffSource, GitDetailedStatus, GitFileChange};
 
-const RECENT_COMMIT_COUNT: usize = 8;
 /// MonoCode re-reads git state this often (`GIT_POLL_MS`).
 const GIT_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
 
@@ -49,7 +48,8 @@ pub struct WorkspaceCache {
 struct Snapshot {
     fingerprint: Option<u64>,
     status: GitDetailedStatus,
-    commits: Vec<GitCommitInfo>,
+    sync: git::sync::SyncInfo,
+    history: Vec<git::sync::HistoryCommit>,
     branches: Vec<git::Branch>,
     changes: Vec<GitFileChange>,
     worktrees: Vec<crate::git::Worktree>,
@@ -59,7 +59,8 @@ fn load_snapshot(cwd: &str) -> Snapshot {
     Snapshot {
         fingerprint: git::state_fingerprint(cwd),
         status: git::get_detailed_status(cwd),
-        commits: git::get_recent_commits(cwd, RECENT_COMMIT_COUNT),
+        sync: git::sync::sync_info(cwd),
+        history: git::sync::history(cwd),
         branches: git::list_branches(cwd),
         changes: git::get_workspace_changes(cwd),
         worktrees: crate::git::worktrees::list_worktrees(cwd).unwrap_or_else(|err| {
@@ -114,7 +115,9 @@ impl BenCodeApp {
                     return; // a newer refresh superseded this one
                 }
                 app.git_status = snapshot.status;
-                app.git_commits = snapshot.commits;
+                app.git_sync = snapshot.sync;
+                app.git_history = snapshot.history;
+                app.refresh_branch_pr(cx);
                 let cache = &mut app.workspace;
                 cache.cwd = cwd;
                 cache.fingerprint = snapshot.fingerprint;
@@ -191,10 +194,14 @@ impl BenCodeApp {
     }
 
     /// Opens a commit from the history: lists its files and shows the first.
-    pub fn open_commit(&mut self, commit: &GitCommitInfo, cx: &mut Context<Self>) {
+    pub fn open_commit(
+        &mut self,
+        sha: String,
+        short_hash: String,
+        subject: String,
+        cx: &mut Context<Self>,
+    ) {
         let cwd = self.workspace_cwd();
-        let sha = commit.hash.clone();
-        let (short_hash, subject) = (commit.short_hash.clone(), commit.message.clone());
         let task = cx
             .background_executor()
             .spawn(async move { git::commit_files(&cwd, &sha).map(|files| (sha, files)) });
@@ -301,7 +308,6 @@ impl BenCodeApp {
         stash_first: bool,
         cx: &mut Context<Self>,
     ) {
-        self.is_branch_picker_open = false;
         self.blocked_branch_switch = None;
         let cwd = self.workspace_cwd();
         let job = target.clone();
@@ -324,13 +330,20 @@ impl BenCodeApp {
                         if let Some(session) = app.selected_session_mut() {
                             session.branch = Some(name);
                         }
+                        app.finish_branch_switch(None, cx);
                     }
                     Err(git::SwitchError::BlockedByChanges) => {
+                        // MonoCode trades the popover for the dialog.
+                        app.close_branch_picker(false, cx);
                         app.blocked_branch_switch = Some(target);
                     }
                     Err(git::SwitchError::Failed(err)) => {
                         log::error!("branch switch failed: {err:#}");
-                        app.workspace.git_error = Some(format!("Switch branch failed: {err:#}"));
+                        // Shown in the popover when the switch came from it.
+                        if !app.finish_branch_switch(Some(format!("{err:#}")), cx) {
+                            app.workspace.git_error =
+                                Some(format!("Switch branch failed: {err:#}"));
+                        }
                     }
                 }
                 app.refresh_workspace(cx);

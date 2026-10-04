@@ -2,6 +2,7 @@ mod app;
 mod db;
 pub mod external_editor;
 mod git;
+mod github;
 mod harness;
 pub mod mcp;
 mod schedule;
@@ -10,7 +11,6 @@ mod skills;
 mod ui;
 mod workspace;
 
-use app::BenCodeApp;
 use ely_gpui_component::Assets;
 use gpui::{
     App, AppContext, Bounds, TitlebarOptions, WindowBounds, WindowOptions, point, px, size,
@@ -43,7 +43,7 @@ fn main() {
             };
 
             cx.open_window(options, |window, cx| {
-                cx.new(|cx| BenCodeApp::new(window, saved, cx))
+                cx.new(|cx| ui::window_root::WindowRoot::new(window, saved, cx))
             })
             .expect("Failed to open BenCode window");
 
