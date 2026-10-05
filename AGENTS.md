@@ -6,7 +6,7 @@ Welcome to **BenCode**! This file serves as the definitive manual and architectu
 
 ## 🎯 1. Mission & Goal
 
-**BenCode** is the 100% native, GPU-accelerated migration of **MonoCode** (originally built with Tauri v2 + React 19 + TypeScript) to **Rust + Zed's GPUI + [Ely GPUI Components](https://ely-gpui.zacharyzhang.com/)**.
+**BenCode** is the 100% native, GPU-accelerated migration of **MonoCode** (originally built with Tauri v2 + React 19 + TypeScript) to **Rust + Zed's GPUI + [Ely GPUI Components](https://elygpui.com/)**.
 
 ### Key Objectives:
 1. **Zero Electron / Zero WebKit / Zero Chromium**: Everything is rendered directly via GPU shaders (Apple Metal on macOS).

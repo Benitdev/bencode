@@ -2,7 +2,7 @@
 
 ## Overview
 BenCode is the 100% native Rust + GPUI port of MonoCode (located at `../monocode` or `reference/monocode`).
-We are using Zed's GPUI and the `ely-gpui-component` library (https://ely-gpui.zacharyzhang.com/).
+We are using Zed's GPUI and the `ely-gpui-component` library (https://elygpui.com/).
 
 ## Core Principles
 1. 100% Native Rust. No WebViews, no Chromium, no Electron.

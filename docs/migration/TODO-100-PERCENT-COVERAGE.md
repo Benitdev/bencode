@@ -7,7 +7,7 @@
 ## 📊 Tổng Quan Hiện Trạng (Audit Summary)
 
 - **Đã hoàn thành (~70%)**:
-  - Khung kiến trúc GPUI 100% Native Rust, tích hợp thư viện [Ely GPUI Components](https://ely-gpui.zacharyzhang.com/).
+  - Khung kiến trúc GPUI 100% Native Rust, tích hợp thư viện [Ely GPUI Components](https://elygpui.com/).
   - Hệ thống giao diện: Left Rail, Sidebar 3 chế độ (Sessions, File Tree, Git Changes), Titlebar, Transcript Timeline, Prompt Composer, Diff Viewer (virtualized line renderer), Terminal Pane, Settings Modal, Notes View, Automations View, Search Modal, Footer.
   - Tầng dữ liệu SQLite: Kết nối trực tiếp với DB của MonoCode (`monocode.db`), tương thích schema sessions, notes, automations.
   - Git CLI operations: Lấy status, branch, diff, commits, staging, unstage, discard.

@@ -1,6 +1,6 @@
 # Ely GPUI Components Reference for BenCode ⚡
 
-BenCode uses **[Ely GPUI Components](https://ely-gpui.zacharyzhang.com/)** (`ely-gpui-component`), a native component library designed specifically for Zed GPUI applications.
+BenCode uses **[Ely GPUI Components](https://elygpui.com/)** (`ely-gpui-component`), a native component library designed specifically for Zed GPUI applications.
 
 ---
 

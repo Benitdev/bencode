@@ -1,6 +1,6 @@
 # BenCode ⚡
 
-**BenCode** is a next-generation, 100% native GPU-accelerated Control Plane for AI Coding Agents (Claude Code, Codex, Antigravity, Cursor, Devin, Grok), written in **Rust** using **Zed's GPUI** and **[Ely GPUI Components](https://ely-gpui.zacharyzhang.com/)**.
+**BenCode** is a next-generation, 100% native GPU-accelerated Control Plane for AI Coding Agents (Claude Code, Codex, Antigravity, Cursor, Devin, Grok), written in **Rust** using **Zed's GPUI** and **[Ely GPUI Components](https://elygpui.com/)**.
 
 ---
 
