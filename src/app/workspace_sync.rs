@@ -39,6 +39,8 @@ pub struct WorkspaceCache {
     pub diff_text: SharedString,
     /// Last failed git action, shown in the Changes panel until the next one.
     pub git_error: Option<String>,
+    /// MonoCode `GitInfo.repo`: the repository name session cards show.
+    pub repo: Option<String>,
     /// `git::state_fingerprint` of the loaded snapshot.
     fingerprint: Option<u64>,
     generation: u64,
@@ -53,6 +55,7 @@ struct Snapshot {
     branches: Vec<git::Branch>,
     changes: Vec<GitFileChange>,
     worktrees: Vec<crate::git::Worktree>,
+    repo: Option<String>,
 }
 
 fn load_snapshot(cwd: &str) -> Snapshot {
@@ -68,6 +71,7 @@ fn load_snapshot(cwd: &str) -> Snapshot {
             log::debug!("no worktrees for {cwd}: {err:#}");
             Vec::new()
         }),
+        repo: git::sync::repo_name(cwd),
     }
 }
 
@@ -124,6 +128,7 @@ impl BenCodeApp {
                 cache.branches = snapshot.branches;
                 cache.changes = snapshot.changes;
                 cache.worktrees = snapshot.worktrees;
+                cache.repo = snapshot.repo;
                 if app.workspace.commit_view.is_none() {
                     let diff_path = app
                         .selected_diff_path

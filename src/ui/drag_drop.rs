@@ -2,7 +2,7 @@
 
 use ely_gpui_component::primitives::{Icon, IconName};
 use ely_gpui_component::theme::{ActiveTheme, IconSize, Radius, TextSize};
-use gpui::{App, Context, IntoElement, ParentElement, Render, Styled, Window, div};
+use gpui::{App, Context, IntoElement, ParentElement, Render, Styled, Window, div, px};
 
 use crate::ui::layout::PaneEdge;
 
@@ -52,6 +52,35 @@ impl Render for DraggedFile {
                     .max_w(theme.menu_width())
                     .child(self.name.clone()),
             )
+    }
+}
+
+/// Payload when dragging a session card out of the sidebar: onto a folder
+/// or card it groups, onto a pane it splits (MonoCode `onPlaceOnPane`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct DraggedSession {
+    pub session_id: String,
+    pub title: String,
+}
+
+impl Render for DraggedSession {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = cx.theme();
+        let colors = &theme.colors;
+        div()
+            .max_w(px(240.0))
+            .px(px(10.0))
+            .py_1p5()
+            .rounded(theme.radius(Radius::Md))
+            .bg(colors.surface)
+            .border_1()
+            .border_color(colors.border)
+            .shadow_lg()
+            .opacity(0.9)
+            .text_size(px(13.0))
+            .font_weight(gpui::FontWeight::SEMIBOLD)
+            .text_color(colors.fg)
+            .child(div().truncate().child(self.title.clone()))
     }
 }
 

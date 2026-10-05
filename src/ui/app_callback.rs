@@ -11,3 +11,17 @@ pub fn app_callback(
     let listener = cx.listener(move |this, _: &(), _, cx| f(this, cx));
     move |window, cx| listener(&(), window, cx)
 }
+
+/// `app_callback` for Ely callbacks that hand over a value first, e.g.
+/// `Fn(Hsla, &mut Window, &mut App)`.
+pub fn app_callback_with<T: 'static>(
+    cx: &Context<BenCodeApp>,
+    f: impl Fn(&mut BenCodeApp, T, &mut Context<BenCodeApp>) + 'static,
+) -> impl Fn(T, &mut Window, &mut App) + 'static {
+    let entity = cx.entity().downgrade();
+    move |value, _, cx| {
+        if let Err(err) = entity.update(cx, |this, cx| f(this, value, cx)) {
+            log::debug!("callback after app drop: {err:#}");
+        }
+    }
+}

@@ -67,6 +67,15 @@ pub struct AppSettings {
     /// MonoCode `monocode.sessionFolders`: each project's sidebar folders.
     pub session_folders:
         std::collections::BTreeMap<String, Vec<crate::app::session_folders::SessionFolder>>,
+    /// MonoCode `monocode.sessionSidebarFilters`.
+    pub session_sidebar_filters: crate::app::session_list::SessionFilters,
+    /// MonoCode `monocode.pinnedSessionsCollapsed`: projects whose Pinned
+    /// group is folded.
+    pub pinned_sessions_collapsed: std::collections::BTreeMap<String, bool>,
+    /// MonoCode `monocode.reminderSessionsCollapsed`.
+    pub reminder_sessions_collapsed: std::collections::BTreeMap<String, bool>,
+    /// MonoCode `monocode.sidebarTabOrder` (`sessions`, `files`, `changes`).
+    pub sidebar_tab_order: Vec<String>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
@@ -151,8 +160,21 @@ mod tests {
                     name: "Bugs".into(),
                     session_ids: vec!["s1".into()],
                     collapsed: true,
+                    ..Default::default()
                 }],
             )]),
+            session_sidebar_filters: crate::app::session_list::SessionFilters {
+                show_archived: true,
+                hidden_harnesses: vec!["codex".into()],
+                time: crate::app::session_list::TimeFilter::Week,
+                status: crate::app::session_list::StatusFilter {
+                    working: true,
+                    ..Default::default()
+                },
+            },
+            pinned_sessions_collapsed: std::collections::BTreeMap::from([("/repo".to_string(), true)]),
+            reminder_sessions_collapsed: std::collections::BTreeMap::from([("/repo".to_string(), true)]),
+            sidebar_tab_order: vec!["files".into(), "sessions".into(), "changes".into()],
             extra: Map::new(),
         };
         save_to(&dir, &settings).unwrap();

@@ -386,6 +386,139 @@ pub fn label_for(key: &str) -> String {
     }
 }
 
+/// MonoCode `nativeIdFrom`: the id after `harness:`, without a `[...]` suffix.
+fn native_id_from(key: &str) -> &str {
+    let id = key.split_once(':').map_or(key, |(_, id)| id);
+    id.split_once('[').map_or(id, |(head, _)| head)
+}
+
+fn is_seed(model: &ModelOption) -> bool {
+    SEEDS
+        .get(&model.harness)
+        .is_some_and(|seeds| seeds.iter().any(|s| s == model))
+}
+
+/// MonoCode `comparableNativeId`: Claude ids compare without `claude-`.
+fn comparable_native(harness: HarnessKind, native: &str) -> &str {
+    match harness {
+        HarnessKind::Claude => native.strip_prefix("claude-").unwrap_or(native),
+        _ => native,
+    }
+}
+
+fn has_digit(text: &str) -> bool {
+    text.chars().any(|c| c.is_ascii_digit())
+}
+
+/// MonoCode `resolveModel(harness, id).name`: the name a session card shows
+/// for a stored model, matching by key, native id, alias or id prefix.
+pub fn display_label(harness_id: &str, key: &str) -> String {
+    let Some(harness) = HarnessKind::from_id(harness_id) else {
+        return label_for(key);
+    };
+    let available = models_for(harness);
+    let key = key.trim();
+    if !key.is_empty() {
+        let slug = native_id_from(key);
+        // MonoCode's bundle has no bare Claude aliases, so "claude:opus"
+        // reads "Claude Opus" until the CLI lists it.
+        let seeded_alias = harness == HarnessKind::Claude
+            && matches!(slug, "opus" | "sonnet" | "haiku")
+            && !available.iter().any(|m| m.key == key && !is_seed(m));
+        if let Some(exact) = find(key).filter(|m| m.harness == harness && !seeded_alias) {
+            return exact.label;
+        }
+        let native_of = |m: &ModelOption| -> String {
+            if m.native.is_empty() {
+                native_id_from(&m.key).to_string()
+            } else {
+                m.native.clone()
+            }
+        };
+        if !seeded_alias && let Some(hit) = available.iter().find(|m| native_of(m) == slug) {
+            return hit.label.clone();
+        }
+        if seeded_alias || (harness == HarnessKind::Claude && matches!(slug, "opus" | "sonnet" | "haiku")) {
+            let mut chars = slug.chars();
+            let first = chars.next().map(|c| c.to_ascii_uppercase()).unwrap_or_default();
+            return format!("Claude {first}{}", chars.as_str());
+        }
+        let comparable = comparable_native(harness, slug);
+        let hits: Vec<&ModelOption> = available
+            .iter()
+            .filter(|m| {
+                let native = native_of(m);
+                let other = comparable_native(harness, &native);
+                other.starts_with(comparable) || comparable.starts_with(other)
+            })
+            .collect();
+        if has_digit(comparable) {
+            if let Some(same) = hits
+                .iter()
+                .find(|m| comparable_native(harness, &native_of(m)) == comparable)
+            {
+                return same.label.clone();
+            }
+            if harness != HarnessKind::Claude
+                && let [only] = hits.as_slice()
+                && !has_digit(comparable_native(harness, &native_of(only)))
+            {
+                return only.label.clone();
+            }
+        } else if let Some(first) = hits.first() {
+            return first.label.clone();
+        }
+        if let Some(seed) = SEEDS
+            .get(&harness)
+            .and_then(|seeds| seeds.iter().find(|m| m.key == key))
+        {
+            return seed.label.clone();
+        }
+        // An unknown concrete Claude version keeps its own id.
+        if harness == HarnessKind::Claude
+            && let Some(rest) = key.strip_prefix("claude:")
+            && rest.starts_with(|c: char| c.is_ascii_lowercase())
+            && rest.split('-').skip(1).any(|part| part.starts_with(|c: char| c.is_ascii_digit()))
+        {
+            return format!("claude-{rest}");
+        }
+    }
+    if available.is_empty() {
+        let own = !key.contains(':') || key.starts_with(&format!("{}:", harness.id()));
+        let native = if own { native_id_from(key) } else { "" };
+        if native.is_empty() {
+            let id = harness.id();
+            let mut chars = id.chars();
+            let first = chars.next().map(|c| c.to_ascii_uppercase()).unwrap_or_default();
+            return format!("{first}{}", chars.as_str());
+        }
+        return prettify_slug(native);
+    }
+    available[0].label.clone()
+}
+
+/// MonoCode's startup name for an uncatalogued slug: `gpt-5.4-codex` →
+/// `GPT-5.4-Codex`.
+fn prettify_slug(native: &str) -> String {
+    let mut out = String::with_capacity(native.len());
+    let rest = if native.get(..3).is_some_and(|p| p.eq_ignore_ascii_case("gpt")) {
+        out.push_str("GPT");
+        &native[3..]
+    } else {
+        native
+    };
+    let mut after_dash = false;
+    for c in rest.chars() {
+        if after_dash && c.is_ascii_lowercase() {
+            out.push(c.to_ascii_uppercase());
+        } else {
+            out.push(c);
+        }
+        after_dash = c == '-';
+    }
+    out
+}
+
 /// The value to pass as `--model`, or None to let the CLI pick its default.
 /// Legacy BenCode sessions stored display names ("Claude 3.7 Sonnet"); those
 /// are not valid CLI ids and are dropped rather than passed through.
@@ -429,6 +562,19 @@ pub fn default_model(installed: &[HarnessInfo]) -> ModelOption {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn card_labels_follow_monocode_resolve_model() {
+        assert_eq!(display_label("antigravity", "antigravity:gemini-3.8-flash-high"), "Gemini 3.8 Flash (High)");
+        assert_eq!(display_label("claude", "claude:opus"), "Claude Opus");
+        assert_eq!(display_label("claude", "claude:haiku"), "Claude Haiku");
+        assert_eq!(display_label("claude", "claude:opus-9-1"), "claude-opus-9-1");
+        assert_eq!(display_label("codex", "codex:gpt-5.4-codex"), "GPT-5.4-Codex");
+        assert_eq!(display_label("codex", ""), "Codex");
+        assert_eq!(prettify_slug("o3-mini"), "o3-Mini");
+        assert_eq!(prettify_slug("éé"), "éé", "multibyte ids never panic");
+    }
+
     use super::*;
 
     #[test]

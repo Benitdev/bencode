@@ -1,361 +1,646 @@
-//! File tree mutations: create, rename and delete, and the dialogs that ask
-//! for them. Nothing here overwrites an existing entry, and every failure is
-//! shown above the tree (MonoCode `FileTree.tsx` `NameRow` and `opError`).
+//! The Explorer's actions (MonoCode `FileTree.tsx`): listing, the inline
+//! create / rename field, delete, cut / copy / paste / duplicate, Finder
+//! files, the context menu and the tree's keys. Disk work runs on the
+//! background executor; a failure shows above the tree.
 
-use std::fs::{self, OpenOptions};
-use std::io;
 use std::path::{Path, PathBuf};
 
-use ely_gpui_component::overlays::{ConfirmDialog, PromptDialog};
-use gpui::{AnyElement, App, Context, IntoElement, SharedString, Window};
+use ely_gpui_component::overlays::ConfirmDialog;
+use gpui::{AnyElement, ClipboardEntry, Context, IntoElement};
 
-use super::FileDialogAction;
+use super::name::{dirs_touched_by_create, is_within, parent_of, rebase, well_formed};
+use super::{Clip, EditState, MenuTarget, TreeEdit, fs};
 use crate::app::BenCodeApp;
 use crate::ui::app_callback::app_callback;
-
-/// Why `name` cannot be used for a new or renamed entry, if it cannot.
-/// `taken` holds the names already in the target folder.
-pub(super) fn name_problem(name: &str, taken: &[String]) -> Option<String> {
-    let name = name.trim();
-    if name.is_empty() {
-        return Some("A file or folder name must be provided.".to_string());
-    }
-    if name == "." || name == ".." || name.contains(['/', '\\', '\0']) {
-        return Some(format!(
-            "The name {name} is not valid as a file or folder name. Please choose a different name."
-        ));
-    }
-    taken.iter().any(|t| t == name).then(|| {
-        format!(
-            "A file or folder {name} already exists at this location. Please choose a different name."
-        )
-    })
-}
-
-/// Creates an empty file, failing if anything already exists at `path`.
-fn create_file_at(path: &Path) -> io::Result<()> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(path)
-        .map(drop)
-}
-
-/// Creates a folder, failing if anything already exists at `path`.
-fn create_dir_at(path: &Path) -> io::Result<()> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    fs::create_dir(path)
-}
-
-/// Renames without replacing: `fs::rename` silently overwrites on Unix.
-/// A case-only rename of the same entry is allowed.
-fn rename_at(from: &Path, to: &Path) -> io::Result<()> {
-    let same_entry = fs::canonicalize(from).ok() == fs::canonicalize(to).ok();
-    if to.symlink_metadata().is_ok() && !same_entry {
-        return Err(io::Error::new(
-            io::ErrorKind::AlreadyExists,
-            "a file or folder with that name already exists",
-        ));
-    }
-    fs::rename(from, to)
-}
-
-fn delete_at(path: &Path, is_dir: bool) -> io::Result<()> {
-    if is_dir {
-        fs::remove_dir_all(path)
-    } else {
-        fs::remove_file(path)
-    }
-}
-
-fn join_rel(parent: &str, name: &str) -> String {
-    if parent.is_empty() {
-        name.to_string()
-    } else {
-        format!("{parent}/{name}")
-    }
-}
-
-fn parent_of(rel: &str) -> String {
-    Path::new(rel)
-        .parent()
-        .and_then(Path::to_str)
-        .unwrap_or("")
-        .to_string()
-}
+use crate::ui::composer::focus_later;
 
 impl BenCodeApp {
-    /// Names in a loaded folder, for the dialogs' conflict check.
-    fn names_in(&self, rel_dir: &str, except: Option<&str>) -> Vec<String> {
-        self.file_tree
-            .dir_cache
-            .get(rel_dir)
-            .into_iter()
-            .flatten()
-            .map(|e| e.name.clone())
-            .filter(|n| Some(n.as_str()) != except)
-            .collect()
+    fn tree_root_path(&self) -> PathBuf {
+        PathBuf::from(&self.file_tree.root)
     }
 
-    fn full_path(&self, rel: &str) -> PathBuf {
-        Path::new(&self.workspace_cwd()).join(rel)
-    }
-
-    /// Reloads `parent` after an operation and reports a failure above the
-    /// tree. Returns whether the operation succeeded.
-    fn finish_tree_op(
+    /// Runs `work` on the tree's root off the UI thread, then `done` with
+    /// its result if the root is still shown; a failure is reported.
+    fn run_tree_job<T: Send + 'static>(
         &mut self,
-        what: &str,
-        parent: &str,
-        result: io::Result<()>,
-        cx: &mut Context<Self>,
-    ) -> bool {
-        let ok = match result {
-            Ok(()) => {
-                if !parent.is_empty() {
-                    self.file_tree.expanded_paths.insert(parent.to_string());
-                }
-                self.refresh_workspace(cx);
-                true
-            }
-            Err(err) => {
-                log::error!("could not {what}: {err}");
-                self.file_tree.op_error = Some(format!("Could not {what}: {err}"));
-                false
-            }
-        };
-        self.load_directory(parent, cx);
-        cx.notify();
-        ok
-    }
-
-    /// Runs `op` off the UI thread, then `finish_tree_op`.
-    fn run_tree_op(
-        &mut self,
-        what: &'static str,
-        parent: String,
-        op: impl FnOnce() -> io::Result<()> + Send + 'static,
+        work: impl FnOnce(&Path) -> Result<T, String> + Send + 'static,
+        done: impl FnOnce(&mut Self, T, &mut Context<Self>) + 'static,
         cx: &mut Context<Self>,
     ) {
         self.file_tree.op_error = None;
-        let task = cx.background_executor().spawn(async move { op() });
+        let root = self.file_tree.root.clone();
+        let job_root = PathBuf::from(&root);
+        let task = cx.background_executor().spawn(async move { work(&job_root) });
         cx.spawn(async move |this, cx| {
             let result = task.await;
             let updated = this.update(cx, |this, cx| {
-                this.finish_tree_op(what, &parent, result, cx);
+                if this.file_tree.root != root {
+                    return;
+                }
+                match result {
+                    Ok(value) => done(this, value, cx),
+                    Err(err) => {
+                        log::warn!("file tree: {err}");
+                        this.file_tree.op_error = Some(err);
+                    }
+                }
+                cx.notify();
             });
             if let Err(err) = updated {
-                log::debug!("file tree op finished after app drop: {err:#}");
+                log::debug!("file tree job finished after app drop: {err:#}");
             }
         })
         .detach();
     }
 
-    pub fn create_file(
+    /// Re-lists the root, every open folder and every cached folder
+    /// (MonoCode `refreshCachedDirs`); folders that vanished are forgotten.
+    pub fn refresh_file_tree(&mut self, cx: &mut Context<Self>) {
+        let root = self.file_tree.root.clone();
+        if matches!(root.trim(), "" | "~") {
+            return;
+        }
+        let mut dirs: Vec<String> = std::iter::once(String::new())
+            .chain(self.file_tree.expanded_paths.iter().cloned())
+            .chain(self.file_tree.dir_cache.keys().cloned())
+            .collect();
+        dirs.sort();
+        dirs.dedup();
+        self.file_tree.loading.extend(dirs.iter().cloned());
+        self.list_tree_dirs(dirs, cx);
+    }
+
+    /// Lists `dirs` in the background and swaps the results in.
+    fn list_tree_dirs(&mut self, dirs: Vec<String>, cx: &mut Context<Self>) {
+        let root = self.file_tree.root.clone();
+        let list_root = PathBuf::from(&root);
+        let task = cx.background_executor().spawn(async move {
+            dirs.into_iter()
+                .map(|dir| {
+                    let listed = fs::list_dir(&list_root, &dir);
+                    (dir, listed)
+                })
+                .collect::<Vec<_>>()
+        });
+        cx.spawn(async move |this, cx| {
+            let listed = task.await;
+            let updated = this.update(cx, |this, cx| {
+                let tree = &mut this.file_tree;
+                if tree.root != root {
+                    return;
+                }
+                for (dir, result) in listed {
+                    tree.loading.remove(&dir);
+                    match result {
+                        Ok(entries) => {
+                            tree.dir_errors.remove(&dir);
+                            tree.dir_cache.insert(dir, entries);
+                        }
+                        // An open folder shows why; a cached one that is
+                        // gone is just forgotten.
+                        Err(err) if dir.is_empty() || tree.expanded_paths.contains(&dir) => {
+                            tree.dir_cache.remove(&dir);
+                            tree.dir_errors.insert(dir, err);
+                        }
+                        Err(_) => {
+                            tree.dir_cache.remove(&dir);
+                        }
+                    }
+                }
+                cx.notify();
+            });
+            if let Err(err) = updated {
+                log::debug!("file listing finished after app drop: {err:#}");
+            }
+        })
+        .detach();
+    }
+
+    pub fn toggle_folder_expanded(&mut self, rel: &str, cx: &mut Context<Self>) {
+        let tree = &mut self.file_tree;
+        if !tree.expanded_paths.remove(rel) {
+            tree.expanded_paths.insert(rel.to_string());
+            if !tree.dir_cache.contains_key(rel) && tree.loading.insert(rel.to_string()) {
+                self.list_tree_dirs(vec![rel.to_string()], cx);
+            }
+        }
+        cx.notify();
+    }
+
+    /// Opens `dirs` (and lists any not cached yet).
+    fn expand_tree_dirs(&mut self, dirs: &[String], cx: &mut Context<Self>) {
+        let mut missing = Vec::new();
+        for dir in dirs {
+            if dir.is_empty() {
+                self.file_tree.root_collapsed = false;
+                continue;
+            }
+            self.file_tree.expanded_paths.insert(dir.clone());
+            if !self.file_tree.dir_cache.contains_key(dir) && self.file_tree.loading.insert(dir.clone()) {
+                missing.push(dir.clone());
+            }
+        }
+        if !missing.is_empty() {
+            self.list_tree_dirs(missing, cx);
+        }
+    }
+
+    /// Re-lists folders an operation changed, forgetting moved-away ones.
+    fn refresh_touched(&mut self, touched: Vec<String>, forget: &[String], cx: &mut Context<Self>) {
+        for gone in forget {
+            self.file_tree.dir_cache.retain(|dir, _| !is_within(dir, gone));
+        }
+        let mut dirs = touched;
+        dirs.sort();
+        dirs.dedup();
+        self.list_tree_dirs(dirs, cx);
+        self.refresh_workspace(cx);
+    }
+
+    /// MonoCode "Collapse All": only the root stays open; any edit ends.
+    pub fn collapse_all_folders(&mut self, cx: &mut Context<Self>) {
+        self.file_tree.edit = None;
+        self.file_tree.expanded_paths.clear();
+        self.file_tree.root_collapsed = false;
+        cx.notify();
+    }
+
+    fn begin_tree_edit(&mut self, edit: TreeEdit, text: String, cx: &mut Context<Self>) {
+        self.file_tree.menu = None;
+        self.file_tree.edit = Some(edit);
+        self.file_tree.edit_state = EditState::default();
+        // MonoCode selects a file's stem, or the whole name.
+        let stem = match text.rfind('.') {
+            Some(dot) if dot > 0 => dot,
+            _ => text.len(),
+        };
+        self.file_dialog_input.update(cx, |input, cx| {
+            input.set_text(text, cx);
+            input.select(0..stem, cx);
+        });
+        let handle = gpui::Focusable::focus_handle(self.file_dialog_input.read(cx), cx);
+        focus_later(handle, cx);
+        cx.notify();
+    }
+
+    /// MonoCode `startCreate`: a field in the selected folder (or the
+    /// selected file's folder), opened.
+    pub fn start_tree_create(
         &mut self,
-        parent_dir: &str,
-        name: &str,
-        window: &mut Window,
+        is_dir: bool,
+        at: Option<String>,
         cx: &mut Context<Self>,
     ) {
-        self.file_tree.op_error = None;
-        let rel = join_rel(parent_dir, name.trim());
-        let full = self.full_path(&rel);
-        let parent = parent_dir.to_string();
-        let task = cx
-            .background_executor()
-            .spawn(async move { create_file_at(&full) });
-        cx.spawn_in(window, async move |this, cx| {
+        let at = at.or_else(|| self.file_tree.selected_path.clone());
+        let parent = self.file_tree.create_parent_of(at.as_deref());
+        self.expand_tree_dirs(&[String::new(), parent.clone()], cx);
+        self.begin_tree_edit(TreeEdit::Create { parent, is_dir }, String::new(), cx);
+    }
+
+    /// MonoCode `startRename` (not the root).
+    pub fn start_tree_rename(&mut self, path: &str, cx: &mut Context<Self>) {
+        if path.is_empty() {
+            return;
+        }
+        let is_dir = self.file_tree.is_dir(path);
+        let current = Path::new(path)
+            .file_name()
+            .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+        self.file_tree.selected_path = Some(path.to_string());
+        self.begin_tree_edit(
+            TreeEdit::Rename {
+                path: path.to_string(),
+                is_dir,
+            },
+            current,
+            cx,
+        );
+    }
+
+    pub fn tree_edit_active(&self) -> bool {
+        self.file_tree.edit.is_some()
+    }
+
+    pub fn cancel_tree_edit(&mut self, cx: &mut Context<Self>) {
+        if self.file_tree.edit.take().is_some() {
+            self.file_tree.edit_state = EditState::default();
+            cx.notify();
+        }
+    }
+
+    /// Enter commits; blur commits unless the name is wrong (MonoCode
+    /// `NameRow.finish`). An error keeps the field open.
+    pub fn commit_tree_edit(&mut self, from_blur: bool, cx: &mut Context<Self>) {
+        let Some(edit) = self.file_tree.edit.clone() else {
+            return;
+        };
+        if self.file_tree.edit_state.busy {
+            return;
+        }
+        let raw = self.file_dialog_input.read(cx).text().to_string();
+        if let Some(issue) = self.tree_name_issue(&raw)
+            && issue.is_error()
+        {
+            if from_blur {
+                self.cancel_tree_edit(cx);
+            } else {
+                self.file_tree.edit_state.attempted = true;
+                cx.notify();
+            }
+            return;
+        }
+        match edit {
+            TreeEdit::Create { parent, is_dir } => self.create_tree_entry(parent, is_dir, raw, cx),
+            TreeEdit::Rename { path, is_dir } => self.rename_tree_entry(path, is_dir, raw, cx),
+        }
+    }
+
+    /// Runs an inline edit's disk work; a failure stays on the field.
+    fn run_tree_edit<T: Send + 'static>(
+        &mut self,
+        work: impl FnOnce(&Path) -> Result<T, String> + Send + 'static,
+        done: impl FnOnce(&mut Self, T, &mut Context<Self>) + 'static,
+        cx: &mut Context<Self>,
+    ) {
+        self.file_tree.edit_state.busy = true;
+        self.file_tree.edit_state.submit_error = None;
+        let root = self.file_tree.root.clone();
+        let job_root = PathBuf::from(&root);
+        let task = cx.background_executor().spawn(async move { work(&job_root) });
+        cx.spawn(async move |this, cx| {
             let result = task.await;
-            let updated = this.update_in(cx, |this, window, cx| {
-                if this.finish_tree_op("create the file", &parent, result, cx) {
-                    this.file_tree.selected_path = Some(rel.clone());
-                    this.open_file_in_editor(&rel, window, cx);
+            let updated = this.update(cx, |this, cx| {
+                if this.file_tree.root != root {
+                    return;
                 }
+                this.file_tree.edit_state.busy = false;
+                match result {
+                    Ok(value) => {
+                        this.file_tree.edit = None;
+                        this.file_tree.edit_state = EditState::default();
+                        done(this, value, cx);
+                    }
+                    Err(err) => this.file_tree.edit_state.submit_error = Some(err),
+                }
+                cx.notify();
             });
             if let Err(err) = updated {
-                log::debug!("file create finished after app drop: {err:#}");
+                log::debug!("file tree edit finished after app drop: {err:#}");
             }
         })
         .detach();
+        cx.notify();
     }
 
-    pub fn create_folder(&mut self, parent_dir: &str, name: &str, cx: &mut Context<Self>) {
-        let full = self.full_path(&join_rel(parent_dir, name.trim()));
-        let op = move || create_dir_at(&full);
-        self.run_tree_op("create the folder", parent_dir.to_string(), op, cx);
+    /// MonoCode `onCreateCommit`: a trailing `/` makes a folder; nested
+    /// folders open; a new file opens in the editor.
+    fn create_tree_entry(&mut self, parent: String, is_dir: bool, raw: String, cx: &mut Context<Self>) {
+        let as_folder = is_dir || raw.ends_with(['/', '\\']);
+        let file_name = well_formed(&raw);
+        let touched = dirs_touched_by_create(&parent, &file_name);
+        let work_parent = parent.clone();
+        self.run_tree_edit(
+            move |root| fs::create(root, &work_parent, &file_name, as_folder),
+            move |this, created, cx| {
+                this.refresh_touched(touched.clone(), &[], cx);
+                this.expand_tree_dirs(&touched, cx);
+                this.file_tree.selected_path = Some(created.clone());
+                if !as_folder {
+                    this.open_tree_file(created, cx);
+                }
+            },
+            cx,
+        );
     }
 
-    pub fn rename_entry(&mut self, target_path: &str, new_name: &str, cx: &mut Context<Self>) {
-        let parent = parent_of(target_path);
-        let from = self.full_path(target_path);
-        let to = self.full_path(&join_rel(&parent, new_name.trim()));
-        self.run_tree_op("rename", parent, move || rename_at(&from, &to), cx);
+    /// Opens a file the tree just made; the editor needs the window, so
+    /// the next frame opens it.
+    fn open_tree_file(&mut self, rel: String, cx: &mut Context<Self>) {
+        self.file_tree.pending_open = Some(rel);
+        cx.notify();
     }
 
-    pub fn delete_entry(&mut self, target_path: &str, is_dir: bool, cx: &mut Context<Self>) {
-        let full = self.full_path(target_path);
-        let op = move || delete_at(&full, is_dir);
-        self.run_tree_op("delete", parent_of(target_path), op, cx);
+    /// MonoCode `onRenameCommit`: the tree and open editors follow.
+    fn rename_tree_entry(&mut self, path: String, is_dir: bool, raw: String, cx: &mut Context<Self>) {
+        let file_name = well_formed(&raw);
+        let unchanged = Path::new(&path).file_name().and_then(|n| n.to_str()) == Some(file_name.as_str())
+            && !raw.contains(['/', '\\']);
+        if file_name.is_empty() || unchanged {
+            self.cancel_tree_edit(cx);
+            return;
+        }
+        let parent = parent_of(&path);
+        let mut touched = dirs_touched_by_create(&parent, &file_name);
+        touched.push(parent.clone());
+        let from = path.clone();
+        self.run_tree_edit(
+            move |root| fs::rename(root, &from, &file_name),
+            move |this, next, cx| {
+                let forget = if is_dir { vec![path.clone()] } else { Vec::new() };
+                this.refresh_touched(touched.clone(), &forget, cx);
+                this.expand_tree_dirs(&touched, cx);
+                this.remap_tree_paths(&path, &next, cx);
+                this.on_tree_entry_moved(&path, &next, cx);
+            },
+            cx,
+        );
     }
 
+    /// MonoCode `remapTreePaths`; open folders that moved are listed at
+    /// their new place.
+    fn remap_tree_paths(&mut self, from: &str, to: &str, cx: &mut Context<Self>) {
+        let tree = &mut self.file_tree;
+        tree.expanded_paths = tree.expanded_paths.iter().map(|p| rebase(p, from, to)).collect();
+        let moved: Vec<String> = tree
+            .expanded_paths
+            .iter()
+            .filter(|p| is_within(p, to) && !tree.dir_cache.contains_key(*p))
+            .cloned()
+            .collect();
+        tree.loading.extend(moved.iter().cloned());
+        if !moved.is_empty() {
+            self.list_tree_dirs(moved, cx);
+        }
+        let tree = &mut self.file_tree;
+        if let Some(selected) = tree.selected_path.as_mut() {
+            *selected = rebase(selected, from, to);
+        }
+        if let Some(clip) = tree.clip.as_mut() {
+            clip.path = rebase(&clip.path, from, to);
+        }
+    }
+
+    /// Open editors follow a rename or move: saved tabs reopen at the new
+    /// path; a tab with unsaved edits stays where it is.
+    fn on_tree_entry_moved(&mut self, from: &str, to: &str, cx: &mut Context<Self>) {
+        let active = self.editor.files.active_path().map(str::to_string);
+        let moved: Vec<String> = self
+            .editor
+            .files
+            .iter()
+            .filter(|f| is_within(&f.path, from) && !f.is_dirty())
+            .map(|f| f.path.clone())
+            .collect();
+        for old in &moved {
+            self.close_editor_file(old, cx);
+        }
+        let reopen_active = active.filter(|a| moved.contains(a)).map(|a| rebase(&a, from, to));
+        if let Some(path) = reopen_active {
+            self.open_tree_file(path, cx);
+        }
+    }
+
+    /// MonoCode `onFileDeleted`: tabs inside the deleted path close.
+    fn on_tree_entry_deleted(&mut self, path: &str, cx: &mut Context<Self>) {
+        let gone: Vec<String> = self
+            .editor
+            .files
+            .iter()
+            .filter(|f| is_within(&f.path, path))
+            .map(|f| f.path.clone())
+            .collect();
+        for old in gone {
+            self.close_editor_file(&old, cx);
+        }
+    }
+
+    /// Asks before deleting (MonoCode `removeEntry`'s confirm).
+    pub fn request_tree_delete(&mut self, path: &str, cx: &mut Context<Self>) {
+        if path.is_empty() {
+            return;
+        }
+        let is_dir = self.file_tree.is_dir(path);
+        self.file_tree.pending_delete = Some((path.to_string(), is_dir));
+        cx.notify();
+    }
+
+    pub(super) fn delete_tree_entry(&mut self, path: String, is_dir: bool, cx: &mut Context<Self>) {
+        let target = path.clone();
+        self.run_tree_job(
+            move |root| fs::delete(root, &target),
+            move |this, (), cx| {
+                let parent = parent_of(&path);
+                let forget = if is_dir { vec![path.clone()] } else { Vec::new() };
+                this.refresh_touched(vec![parent.clone()], &forget, cx);
+                let tree = &mut this.file_tree;
+                if tree.selected_path.as_deref().is_none_or(|s| is_within(s, &path)) {
+                    tree.selected_path = Some(parent);
+                }
+                if tree.clip.as_ref().is_some_and(|c| is_within(&c.path, &path)) {
+                    tree.clip = None;
+                }
+                tree.expanded_paths.retain(|p| !is_within(p, &path));
+                this.on_tree_entry_deleted(&path, cx);
+            },
+            cx,
+        );
+    }
+
+    /// MonoCode `pasteAt`: the clipped entry, else files copied in Finder.
+    pub fn paste_in_tree(&mut self, target: &str, cx: &mut Context<Self>) {
+        let dest = self.file_tree.create_parent_of(Some(target));
+        let Some(clip) = self.file_tree.clip.clone() else {
+            let paths: Vec<PathBuf> = cx
+                .read_from_clipboard()
+                .map(|item| {
+                    item.entries()
+                        .iter()
+                        .filter_map(|entry| match entry {
+                            ClipboardEntry::ExternalPaths(paths) => Some(paths.paths().to_vec()),
+                            _ => None,
+                        })
+                        .flatten()
+                        .collect()
+                })
+                .unwrap_or_default();
+            self.drop_external_files(paths, &dest, cx);
+            return;
+        };
+        if clip.is_dir && is_within(&dest, &clip.path) {
+            self.file_tree.op_error = Some("Cannot paste a folder into itself.".into());
+            cx.notify();
+            return;
+        }
+        let from = clip.path.clone();
+        let work_dest = dest.clone();
+        self.run_tree_job(
+            move |root| {
+                if clip.cut {
+                    fs::move_into(root, &from, &work_dest)
+                } else {
+                    fs::copy_into(root, &root.join(&from), &work_dest)
+                }
+            },
+            move |this, created, cx| {
+                if clip.cut {
+                    let mut touched = vec![parent_of(&clip.path), parent_of(&created)];
+                    touched.dedup();
+                    let forget = if clip.is_dir { vec![clip.path.clone()] } else { Vec::new() };
+                    this.refresh_touched(touched, &forget, cx);
+                    this.remap_tree_paths(&clip.path, &created, cx);
+                    this.on_tree_entry_moved(&clip.path, &created, cx);
+                    this.file_tree.clip = None;
+                } else {
+                    this.refresh_touched(vec![dest.clone()], &[], cx);
+                }
+                this.expand_tree_dirs(&[dest.clone()], cx);
+                this.file_tree.selected_path = Some(created);
+            },
+            cx,
+        );
+    }
+
+    /// MonoCode `duplicateAt`.
+    pub fn duplicate_in_tree(&mut self, path: &str, cx: &mut Context<Self>) {
+        if path.is_empty() {
+            return;
+        }
+        let dest = parent_of(path);
+        let from = path.to_string();
+        let work_dest = dest.clone();
+        self.run_tree_job(
+            move |root| fs::copy_into(root, &root.join(&from), &work_dest),
+            move |this, created, cx| {
+                this.refresh_touched(vec![dest], &[], cx);
+                this.file_tree.selected_path = Some(created);
+            },
+            cx,
+        );
+    }
+
+    /// MonoCode `copyExternalFiles`: Finder files copied into `dest`, the
+    /// last one selected.
+    pub fn drop_external_files(&mut self, paths: Vec<PathBuf>, dest: &str, cx: &mut Context<Self>) {
+        self.file_tree.drop_target = None;
+        if paths.is_empty() {
+            cx.notify();
+            return;
+        }
+        let work_dest = dest.to_string();
+        let dest = dest.to_string();
+        self.run_tree_job(
+            move |root| {
+                let mut created = None;
+                for from in &paths {
+                    created = Some(fs::copy_into(root, from, &work_dest)?);
+                }
+                created.ok_or_else(|| "Nothing to paste".to_string())
+            },
+            move |this, created, cx| {
+                this.refresh_touched(vec![dest.clone()], &[], cx);
+                this.expand_tree_dirs(&[dest], cx);
+                this.file_tree.selected_path = Some(created);
+            },
+            cx,
+        );
+    }
+
+    pub(super) fn tree_abs_path(&self, rel: &str) -> PathBuf {
+        if rel.is_empty() {
+            self.tree_root_path()
+        } else {
+            self.tree_root_path().join(rel)
+        }
+    }
+
+    pub(super) fn reveal_tree_path(&mut self, rel: &str, cx: &mut Context<Self>) {
+        let path = self.tree_abs_path(rel);
+        let result = if cfg!(target_os = "macos") {
+            std::process::Command::new("open").arg("-R").arg(&path).spawn()
+        } else {
+            let folder = if path.is_dir() {
+                path.clone()
+            } else {
+                path.parent().map_or_else(|| path.clone(), Path::to_path_buf)
+            };
+            std::process::Command::new("xdg-open").arg(folder).spawn()
+        };
+        if let Err(err) = result {
+            log::error!("could not reveal {}: {err}", path.display());
+            self.file_tree.op_error = Some(format!("{}: {err}", path.display()));
+            cx.notify();
+        }
+    }
+
+    fn tree_target_for_keys(&self) -> MenuTarget {
+        let path = self.file_tree.selected_path.clone().unwrap_or_default();
+        MenuTarget {
+            is_dir: self.file_tree.is_dir(&path),
+            path,
+        }
+    }
+
+    pub fn tree_copy_path(&mut self, cx: &mut Context<Self>) {
+        let target = self.tree_target_for_keys();
+        let text = self.tree_abs_path(&target.path).to_string_lossy().into_owned();
+        cx.write_to_clipboard(gpui::ClipboardItem::new_string(text));
+    }
+
+    /// ⌘C / ⌘X on the selection (not the root).
+    pub fn tree_clip(&mut self, cut: bool, cx: &mut Context<Self>) {
+        let target = self.tree_target_for_keys();
+        if target.is_root() {
+            return;
+        }
+        self.file_tree.clip = Some(Clip {
+            cut,
+            path: target.path,
+            is_dir: target.is_dir,
+        });
+        cx.notify();
+    }
+
+    pub fn tree_paste_selected(&mut self, cx: &mut Context<Self>) {
+        let target = self.tree_target_for_keys();
+        self.paste_in_tree(&target.path, cx);
+    }
+
+    pub fn tree_rename_selected(&mut self, cx: &mut Context<Self>) {
+        if self.tree_edit_active() {
+            return;
+        }
+        let target = self.tree_target_for_keys();
+        self.start_tree_rename(&target.path, cx);
+    }
+
+    pub fn tree_delete_selected(&mut self, cx: &mut Context<Self>) {
+        let target = self.tree_target_for_keys();
+        self.request_tree_delete(&target.path, cx);
+    }
+
+    /// Esc drops a cut (MonoCode).
+    pub fn tree_clear_cut(&mut self, cx: &mut Context<Self>) {
+        if self.file_tree.clip.as_ref().is_some_and(|c| c.cut) {
+            self.file_tree.clip = None;
+            cx.notify();
+        }
+    }
+
+    /// The pending "Delete …?" (MonoCode's confirm text).
     pub fn render_file_tree_dialog(&self, cx: &Context<Self>) -> Option<AnyElement> {
-        let action = self.file_tree.dialog.clone()?;
+        let (path, is_dir) = self.file_tree.pending_delete.clone()?;
+        let label = Path::new(&path)
+            .file_name()
+            .map_or_else(|| path.clone(), |n| n.to_string_lossy().into_owned());
+        let message = if is_dir {
+            format!("Delete folder “{label}” and everything inside it?")
+        } else {
+            format!("Delete “{label}”?")
+        };
         let close = app_callback(cx, |this, cx| {
-            this.file_tree.dialog = None;
+            this.file_tree.pending_delete = None;
             cx.notify();
         });
-        let (id, title, label, submit_label, parent, current) = match &action {
-            FileDialogAction::Delete {
-                target_path,
-                is_dir,
-            } => return Some(self.delete_dialog(target_path, *is_dir, close, cx)),
-            FileDialogAction::NewFile { parent_dir } => (
-                "dialog-new-file",
-                "New File",
-                "File Name",
-                "Create",
-                parent_dir.clone(),
-                None,
-            ),
-            FileDialogAction::NewFolder { parent_dir } => (
-                "dialog-new-folder",
-                "New Folder",
-                "Folder Name",
-                "Create",
-                parent_dir.clone(),
-                None,
-            ),
-            FileDialogAction::Rename {
-                target_path,
-                is_dir,
-            } => (
-                "dialog-rename",
-                if *is_dir {
-                    "Rename Folder"
-                } else {
-                    "Rename File"
-                },
-                "New Name",
-                "Rename",
-                parent_of(target_path),
-                Path::new(target_path)
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .map(str::to_string),
-            ),
-        };
-        let taken = self.names_in(&parent, current.as_deref());
-        let submit = cx.listener(move |this, name: &str, window, cx| {
-            this.file_tree.dialog = None;
-            match &action {
-                FileDialogAction::NewFile { parent_dir } => {
-                    this.create_file(parent_dir, name, window, cx)
-                }
-                FileDialogAction::NewFolder { parent_dir } => {
-                    this.create_folder(parent_dir, name, cx)
-                }
-                FileDialogAction::Rename { target_path, .. } => {
-                    this.rename_entry(target_path, name, cx)
-                }
-                FileDialogAction::Delete { .. } => {}
-            }
-            cx.notify();
+        let confirm = app_callback(cx, move |this, cx| {
+            this.file_tree.pending_delete = None;
+            this.delete_tree_entry(path.clone(), is_dir, cx);
         });
         Some(
-            PromptDialog::new(id, title, &self.file_dialog_input, close)
-                .label(label)
-                .submit(submit_label)
-                .check(move |text| name_problem(text, &taken).map_or(Ok(()), |m| Err(m.into())))
-                .on_submit(move |raw: &str, window: &mut Window, cx: &mut App| {
-                    submit(raw, window, cx)
-                })
+            ConfirmDialog::new("dialog-delete", "Delete", message, close)
+                .confirm("Delete")
+                .destructive()
+                .on_confirm(confirm)
                 .into_any_element(),
         )
-    }
-
-    fn delete_dialog(
-        &self,
-        target_path: &str,
-        is_dir: bool,
-        close: impl Fn(&mut Window, &mut App) + 'static,
-        cx: &Context<Self>,
-    ) -> AnyElement {
-        let name = Path::new(target_path).file_name().map_or_else(
-            || target_path.to_string(),
-            |n| n.to_string_lossy().into_owned(),
-        );
-        let message: SharedString = if is_dir {
-            format!("Delete folder \"{name}\" and everything inside it?").into()
-        } else {
-            format!("Delete \"{name}\"?").into()
-        };
-        let target = target_path.to_string();
-        let on_confirm = app_callback(cx, move |this, cx| {
-            this.file_tree.dialog = None;
-            this.delete_entry(&target, is_dir, cx);
-        });
-        ConfirmDialog::new("dialog-delete", "Delete", message, close)
-            .confirm("Delete")
-            .destructive()
-            .on_confirm(on_confirm)
-            .into_any_element()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn temp_dir(tag: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("bencode-ops-{tag}-{}", std::process::id()));
-        if dir.exists() {
-            fs::remove_dir_all(&dir).unwrap();
-        }
-        fs::create_dir_all(&dir).unwrap();
-        dir
-    }
-
-    #[test]
-    fn name_problem_rejects_empty_invalid_and_taken_names() {
-        let taken = vec!["main.rs".to_string()];
-        assert!(name_problem("  ", &taken).is_some());
-        assert!(name_problem("..", &taken).is_some());
-        assert!(name_problem("a/b", &taken).is_some());
-        assert!(
-            name_problem("main.rs", &taken)
-                .unwrap()
-                .contains("already exists")
-        );
-        assert_eq!(name_problem("lib.rs", &taken), None);
-    }
-
-    #[test]
-    fn create_never_truncates_an_existing_file() {
-        let dir = temp_dir("create");
-        let file = dir.join("keep.txt");
-        fs::write(&file, "precious").unwrap();
-        assert!(create_file_at(&file).is_err());
-        assert!(create_dir_at(&file).is_err());
-        assert_eq!(fs::read_to_string(&file).unwrap(), "precious");
-        fs::remove_dir_all(&dir).unwrap();
-    }
-
-    #[test]
-    fn rename_never_replaces_another_entry() {
-        let dir = temp_dir("rename");
-        let (a, b) = (dir.join("a.txt"), dir.join("b.txt"));
-        fs::write(&a, "a").unwrap();
-        fs::write(&b, "b").unwrap();
-        assert!(rename_at(&a, &b).is_err());
-        assert_eq!(fs::read_to_string(&b).unwrap(), "b");
-        rename_at(&a, &dir.join("c.txt")).unwrap();
-        assert!(dir.join("c.txt").exists());
-        fs::remove_dir_all(&dir).unwrap();
     }
 }

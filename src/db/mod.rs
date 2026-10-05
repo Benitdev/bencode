@@ -4,7 +4,15 @@
 //! data BenCode does not model: unknown block fields, unknown automation
 //! definition fields, and session columns BenCode never reads.
 
+mod orchestration;
+mod reminders;
 mod schedule;
+mod work_item;
+
+pub use orchestration::{OrchestrationSummary, OrchestrationTask, TaskTone};
+
+pub use reminders::Reminder;
+pub use work_item::{LinkedWorkItem, WorkItemKind};
 
 pub use schedule::DEFAULT_GRACE_MINUTES;
 
@@ -138,6 +146,17 @@ pub struct SessionRow {
     /// `reattach_session`.
     #[serde(default)]
     pub worktree_removed: bool,
+    /// MonoCode `automationId`: the automation that started the thread.
+    /// Read-only here; MonoCode writes it.
+    #[serde(default)]
+    pub automation_id: Option<String>,
+    /// MonoCode `linkedWorkItem`. Read here; written only through
+    /// `set_linked_work_item`, so a session save never drops it.
+    #[serde(skip)]
+    pub linked_work_item: Option<LinkedWorkItem>,
+    /// MonoCode's saved orchestration summary when this thread led one.
+    #[serde(skip)]
+    pub orchestration: Option<OrchestrationSummary>,
     /// Set when `blocks_json` could not be parsed. Such rows carry an empty
     /// `blocks` vector and `upsert_session` refuses to write them back.
     #[serde(skip)]
@@ -152,6 +171,18 @@ impl SessionRow {
             .as_deref()
             .filter(|path| !path.is_empty() && !self.worktree_removed)
             .unwrap_or(&self.cwd)
+    }
+
+    /// MonoCode `has_user_message`: the thread was ever sent a prompt.
+    pub fn has_user_message(&self) -> bool {
+        self.blocks.iter().any(|b| b.role == "user")
+    }
+
+    /// MonoCode `draft`: a user block still saved as a draft.
+    pub fn is_draft(&self) -> bool {
+        self.blocks
+            .iter()
+            .any(|b| b.role == "user" && b.extra.get("draft").and_then(Value::as_bool) == Some(true))
     }
 }
 
@@ -291,7 +322,9 @@ const LATE_SESSION_COLUMNS: &[(&str, &str)] = &[
 const SESSION_SELECT: &str =
     "SELECT id, title, cwd, harness, model, created_at, updated_at, branch,
         blocks_json, context_used, context_window, pinned, archived, provider_session_id,
-        runtime_mode, worktree_cwd, model_settings, worktree_removed
+        runtime_mode, worktree_cwd, model_settings, worktree_removed, automation_id,
+        linked_work_item_json,
+        (SELECT summary FROM orchestration_sidebar WHERE lead_id = sessions.id)
      FROM sessions";
 
 pub struct MonoCodeDb {
@@ -350,6 +383,8 @@ impl MonoCodeDb {
         conn.execute_batch("PRAGMA foreign_keys = ON;")?;
         conn.execute_batch(SCHEMA_SQL)?;
         ensure_session_columns(&conn)?;
+        conn.execute_batch(reminders::REMINDERS_SQL)?;
+        conn.execute_batch(orchestration::ORCHESTRATION_SQL)?;
         Ok(Self { conn })
     }
 
@@ -362,9 +397,11 @@ impl MonoCodeDb {
     }
 
     pub fn list_sessions_for_cwd(&self, cwd: &str, limit: usize) -> Result<Vec<SessionRow>> {
+        // MonoCode `list_by_project` also leaves out orchestration workers.
+        let workers = " AND NOT EXISTS (SELECT 1 FROM orchestration_workers w WHERE w.session_id = sessions.id)";
         let sql = format!(
             "{SESSION_SELECT} WHERE (cwd = ?1 OR substr(cwd, 1, length(?2)) = ?2) \
-             AND inbox_ask IS NULL ORDER BY updated_at DESC LIMIT ?3"
+             AND inbox_ask IS NULL{workers} ORDER BY updated_at DESC, id ASC LIMIT ?3"
         );
         // A prefix comparison, not LIKE: `_` and `%` are common in folder names.
         let prefix = format!("{}/", cwd.trim_end_matches('/'));
@@ -376,7 +413,6 @@ impl MonoCodeDb {
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
-    #[cfg(test)]
     pub fn get_session(&self, session_id: &str) -> Result<Option<SessionRow>> {
         let sql = format!("{SESSION_SELECT} WHERE id = ?1 AND inbox_ask IS NULL");
         Ok(self
@@ -867,6 +903,15 @@ fn session_from_row(row: &Row<'_>) -> rusqlite::Result<SessionRow> {
                 _ => None,
             }),
         worktree_removed: row.get::<_, Option<i64>>(17)?.unwrap_or(0) != 0,
+        automation_id: row.get::<_, Option<String>>(18)?.filter(|id| !id.is_empty()),
+        linked_work_item: row
+            .get::<_, Option<String>>(19)?
+            .as_deref()
+            .and_then(LinkedWorkItem::from_json),
+        orchestration: row
+            .get::<_, Option<String>>(20)?
+            .as_deref()
+            .and_then(OrchestrationSummary::from_json),
         blocks_parse_failed,
     })
 }

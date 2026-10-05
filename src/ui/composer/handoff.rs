@@ -404,6 +404,7 @@ impl BenCodeApp {
                 place: MenuPlace::At(menu.position),
                 width: HANDOFF_MENU_WIDTH,
                 focus: &self.composer_menus.focus,
+                header: None,
             },
             move |ix, _, cx| {
                 let hovered = hover_app.update(cx, |this, cx| {

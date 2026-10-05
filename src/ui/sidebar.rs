@@ -1,69 +1,100 @@
 //! Left column in MonoCode's workspace layout: header, Sessions / Explorer /
 //! Changes switcher, thread search with filters, and the thread cards.
 
-use ely_gpui_component::buttons::{ButtonVariant, IconButton};
-use ely_gpui_component::menus::{ContextMenu, DropdownMenu, Menu, MenuItem, OverflowMenu};
-use ely_gpui_component::overlays::{ConfirmDialog, PromptDialog};
+use ely_gpui_component::overlays::ConfirmDialog;
 use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
-use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize};
+use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
-    AnyElement, App, Context, FontWeight, InteractiveElement, IntoElement, ParentElement,
-    SharedString, Styled, Window, div, prelude::*, px,
+    AnyElement, ClickEvent, Context, FontWeight, InteractiveElement, IntoElement, ParentElement,
+    SharedString, Styled, Window, div, prelude::*, px, relative,
 };
 
-use crate::app::{BenCodeApp, FilterMode, SidebarMode, WorktreeFocus};
-use crate::db::SessionRow;
-use crate::harness::catalog;
+use crate::app::{BenCodeApp, SidebarMode};
 use crate::ui::app_callback::app_callback;
 use crate::ui::diff_counts::diff_counts;
-use crate::ui::provider_icon::HarnessIcon;
 
-const SIDEBAR_WIDTH: gpui::Pixels = px(260.0);
+/// MonoCode `border-stroke`: content at 7%.
+pub const STROKE_OPACITY: f32 = 0.07;
+
+/// MonoCode's title bar and sidebar header are `h-10`.
+pub const TITLEBAR_HEIGHT: gpui::Pixels = px(40.0);
+
+/// MonoCode `MIN_WIDTH` / `MAX_WIDTH` / `DEFAULT_WIDTH`; the sidebar never
+/// takes more than half the window.
+pub const SIDEBAR_MIN_WIDTH: f32 = 260.0;
+const SIDEBAR_MAX_WIDTH: f32 = 560.0;
+
+/// Drag payload of a workspace tab being reordered.
+#[derive(Clone, Copy, Debug)]
+pub struct DraggedSidebarTab(pub SidebarMode);
+
+impl gpui::Render for DraggedSidebarTab {
+    fn render(&mut self, _: &mut gpui::Window, _: &mut Context<Self>) -> impl IntoElement {
+        gpui::Empty
+    }
+}
+
+/// MonoCode `DEFAULT_SIDEBAR_TAB_ORDER` ids.
+pub fn tab_id(tab: SidebarMode) -> &'static str {
+    match tab {
+        SidebarMode::Sessions => "sessions",
+        SidebarMode::Files => "files",
+        SidebarMode::Changes => "changes",
+    }
+}
+
+/// MonoCode `loadSidebarTabOrder`: known ids in order, missing ones
+/// appended, anything else the default.
+pub fn parse_tab_order(ids: &[String]) -> Vec<SidebarMode> {
+    const ALL: [SidebarMode; 3] = [SidebarMode::Sessions, SidebarMode::Files, SidebarMode::Changes];
+    let mut order: Vec<SidebarMode> = Vec::new();
+    for id in ids {
+        if let Some(tab) = ALL.into_iter().find(|t| tab_id(*t) == id)
+            && !order.contains(&tab)
+        {
+            order.push(tab);
+        }
+    }
+    for tab in ALL {
+        if !order.contains(&tab) {
+            order.push(tab);
+        }
+    }
+    order
+}
+
+/// Drag payload of the sidebar's resize sash.
+#[derive(Clone, Debug)]
+pub struct SidebarResize {
+    pub start_x: f32,
+    pub start_width: f32,
+}
+
+impl gpui::Render for SidebarResize {
+    fn render(&mut self, _: &mut gpui::Window, _: &mut Context<Self>) -> impl IntoElement {
+        gpui::Empty
+    }
+}
+
+/// The width a drag to `x` gives, clamped (MonoCode `useSidebarResize`).
+pub fn resized_width(drag: &SidebarResize, x: f32, window_width: f32) -> f32 {
+    let max = SIDEBAR_MAX_WIDTH.min(window_width * 0.5).max(SIDEBAR_MIN_WIDTH);
+    (drag.start_width + x - drag.start_x).round().clamp(SIDEBAR_MIN_WIDTH, max)
+}
 
 /// A thread-level dialog opened from a card's context menu.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SessionDialog {
-    Rename(String),
     Delete(String),
     /// Every thread of a title-bar tab.
     DeleteMany(Vec<String>),
-    /// A sidebar folder's new name.
-    RenameFolder(String),
-}
-
-const FILTERS: [(FilterMode, &str); 4] = [
-    (FilterMode::All, "All threads"),
-    (FilterMode::Active, "Active"),
-    (FilterMode::Pinned, "Pinned"),
-    (FilterMode::Archived, "Archived"),
-];
-
-fn keeps(mode: FilterMode, session: &SessionRow) -> bool {
-    match mode {
-        // MonoCode hides archived threads unless they are asked for.
-        FilterMode::All | FilterMode::Active => !session.archived,
-        FilterMode::Pinned => session.pinned && !session.archived,
-        FilterMode::Archived => session.archived,
-    }
-}
-
-fn matches_query(session: &SessionRow, query: &str) -> bool {
-    query.is_empty() || session.title.to_lowercase().contains(query)
-}
-
-/// MonoCode's compact age label: now, 5m, 3h, 2d.
-fn relative_time(updated_at: i64, now: i64) -> String {
-    let diff = now.saturating_sub(updated_at);
-    match diff {
-        d if d < 60_000 => "now".to_string(),
-        d if d < 3_600_000 => format!("{}m", d / 60_000),
-        d if d < 86_400_000 => format!("{}h", d / 3_600_000),
-        d => format!("{}d", d / 86_400_000),
-    }
+    /// The cards picked in the sidebar.
+    DeleteSelected(Vec<String>),
 }
 
 impl BenCodeApp {
-    /// Sessions | Explorer | diffstat switcher shared by every sidebar panel.
+    /// Sessions | Explorer | Changes, in the user's order (MonoCode drags
+    /// them to reorder and remembers it); Changes shows its diffstat.
     pub fn render_sidebar_mode_tabs(&self, cx: &Context<Self>) -> impl IntoElement {
         let colors = &cx.theme().colors;
         let files = self
@@ -73,43 +104,67 @@ impl BenCodeApp {
             .chain(&self.git_status.unstaged);
         let (added, removed) = files.fold((0, 0), |(a, d), f| (a + f.additions, d + f.deletions));
         let mode = self.sidebar_mode;
+        let accent = colors.accent;
+        let tabs = self.sidebar_tab_order.iter().map(|&tab| {
+            let (id, label) = match tab {
+                SidebarMode::Sessions => ("tab-sessions", "Sessions"),
+                SidebarMode::Files => ("tab-files", "Explorer"),
+                SidebarMode::Changes => ("tab-changes", "Changes"),
+            };
+            self.mode_tab(id, mode == tab, cx)
+                .map(|el| {
+                    // MonoCode `DiffStat`: 11px semibold, gap-1.5; the
+                    // label is `leading-label`.
+                    if tab == SidebarMode::Changes && added + removed > 0 {
+                        el.child(diff_counts(added, removed, colors).gap_1p5().text_size(px(11.0)))
+                    } else {
+                        el.child(div().min_w_0().truncate().line_height(px(12.0 * 1.4)).child(label))
+                    }
+                })
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.show_sidebar(tab, cx);
+                    if tab == SidebarMode::Changes {
+                        this.refresh_workspace(cx);
+                    }
+                }))
+                .on_drag(DraggedSidebarTab(tab), |dragged, _, _, cx| {
+                    let dragged = dragged.clone();
+                    cx.new(|_| dragged)
+                })
+                .drag_over::<DraggedSidebarTab>(move |style, _, _, _| style.bg(accent.opacity(0.15)))
+                .on_drop(cx.listener(move |this, dragged: &DraggedSidebarTab, _, cx| {
+                    this.move_sidebar_tab(dragged.0, tab, cx);
+                }))
+        });
 
         div()
             .flex()
             .items_center()
-            .gap_1()
+            .gap(px(1.0))
+            .flex_none()
+            .h(px(36.0))
             .px_2()
-            .py_1p5()
             .border_b_1()
-            .border_color(colors.border)
-            .child(
-                self.mode_tab("tab-sessions", mode == SidebarMode::Sessions, cx)
-                    .child("Sessions")
-                    .on_click(
-                        cx.listener(|this, _, _, cx| this.show_sidebar(SidebarMode::Sessions, cx)),
-                    ),
-            )
-            .child(
-                self.mode_tab("tab-files", mode == SidebarMode::Files, cx)
-                    .child("Explorer")
-                    .on_click(
-                        cx.listener(|this, _, _, cx| this.show_sidebar(SidebarMode::Files, cx)),
-                    ),
-            )
-            .child(
-                self.mode_tab("tab-changes", mode == SidebarMode::Changes, cx)
-                    .map(|tab| {
-                        if added + removed > 0 {
-                            tab.child(diff_counts(added, removed, colors))
-                        } else {
-                            tab.child("Changes")
-                        }
-                    })
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.show_sidebar(SidebarMode::Changes, cx);
-                        this.refresh_workspace(cx);
-                    })),
-            )
+            .border_color(colors.fg.opacity(STROKE_OPACITY))
+            .children(tabs)
+    }
+
+    /// Drops tab `from` where `to` is (MonoCode `useAnimatedReorder`).
+    fn move_sidebar_tab(&mut self, from: SidebarMode, to: SidebarMode, cx: &mut Context<Self>) {
+        let order = &mut self.sidebar_tab_order;
+        let (Some(a), Some(b)) = (
+            order.iter().position(|t| *t == from),
+            order.iter().position(|t| *t == to),
+        ) else {
+            return;
+        };
+        if a == b {
+            return;
+        }
+        let tab = order.remove(a);
+        order.insert(b, tab);
+        self.save_settings(cx);
+        cx.notify();
     }
 
     fn mode_tab(
@@ -118,568 +173,100 @@ impl BenCodeApp {
         active: bool,
         cx: &Context<Self>,
     ) -> gpui::Stateful<gpui::Div> {
-        let theme = cx.theme();
-        let colors = &theme.colors;
+        let colors = &cx.theme().colors;
+        // MonoCode: h-6 rounded-md px-2 text-[12px] leading-none, the
+        // active one on the selection fill, the others at half strength.
         div()
             .id(id)
             .flex()
             .flex_1()
+            .min_w_0()
+            .h(px(24.0))
             .items_center()
             .justify_center()
-            .py_1()
-            .rounded(theme.radius(Radius::Md))
-            .cursor_pointer()
-            .text_size(theme.text_size(TextSize::Xs))
-            .font_weight(if active {
-                FontWeight::MEDIUM
-            } else {
-                FontWeight::NORMAL
-            })
-            .text_color(if active { colors.fg } else { colors.fg_muted })
+            .px_2()
+            .rounded(px(6.0))
+            .text_size(px(12.0))
+            .line_height(relative(1.0))
+            .text_color(if active { colors.fg } else { colors.fg.opacity(0.5) })
             .when(active, |el| el.bg(colors.active))
-            .hover(|s| s.bg(colors.hover))
     }
 
+    /// MonoCode clears the search, the picks and the filter popover when
+    /// the Sessions tab is left.
     fn show_sidebar(&mut self, mode: SidebarMode, cx: &mut Context<Self>) {
+        if self.sidebar_mode == SidebarMode::Sessions && mode != SidebarMode::Sessions {
+            self.search_input.update(cx, |input, cx| input.set_text("", cx));
+            self.search_query.clear();
+            self.sessions_ui.selection.clear();
+            self.close_sidebar_menu(cx);
+            self.cancel_inline_rename(cx);
+        }
         self.sidebar_mode = mode;
         cx.notify();
     }
 
-    pub fn render_sidebar(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.theme();
-        div()
-            .flex()
-            .flex_col()
-            .flex_none()
-            .w(SIDEBAR_WIDTH)
-            .h_full()
-            .bg(theme.colors.surface)
-            .border_r_1()
-            .border_color(theme.colors.border)
-            .child(self.render_sidebar_header(cx))
-            .child(self.render_sidebar_mode_tabs(cx))
-            .child(match self.sidebar_mode {
-                SidebarMode::Sessions => self.render_session_list(cx).into_any_element(),
-                SidebarMode::Files => self.render_file_tree(cx).into_any_element(),
-                SidebarMode::Changes => self.render_git_changes_panel(cx).into_any_element(),
-            })
-    }
-
-    fn render_sidebar_header(&self, cx: &Context<Self>) -> impl IntoElement {
-        let theme = cx.theme();
-        let valid_worktrees: Vec<&crate::git::Worktree> = self
-            .workspace
-            .worktrees
-            .iter()
-            .filter(|w| !w.missing)
-            .collect();
-        let has_worktrees = valid_worktrees.iter().any(|w| !w.is_main);
-
-        // MonoCode: the header is 40px like the title bar, and takes the
-        // traffic-light space when the project rail is hidden.
-        div()
-            .window_control_area(gpui::WindowControlArea::Drag)
-            .flex()
-            .items_center()
-            .justify_between()
-            .h(theme.titlebar_height())
-            .pl_3()
-            .pr_1p5()
-            .border_b_1()
-            .border_color(theme.colors.border)
-            .when(!self.is_rail_open && cfg!(target_os = "macos"), |el| {
-                el.child(div().flex_none().w(px(72.0)))
-            })
-            .child(if has_worktrees {
-                self.render_worktree_switcher(&valid_worktrees, cx)
-                    .into_any_element()
-            } else {
-                div()
-                    .text_size(theme.text_size(TextSize::Sm))
-                    .font_weight(FontWeight::MEDIUM)
-                    .child("Workspace")
-                    .into_any_element()
-            })
-            .child(
-                div()
-                    .flex()
-                    .gap_1()
-                    .child(
-                        IconButton::new("workspace-search", IconName::Search)
-                            .size(ControlSize::Sm)
-                            .variant(ButtonVariant::Ghost)
-                            .tooltip("Search (⌘K)")
-                            .on_click(cx.listener(|this, _, _, cx| this.open_search_modal(cx))),
-                    )
-                    .child(
-                        IconButton::new("workspace-new-thread", IconName::Plus)
-                            .size(ControlSize::Sm)
-                            .variant(ButtonVariant::Ghost)
-                            .tooltip("New thread (⌘T)")
-                            .on_click(cx.listener(|this, _, _, cx| this.create_new_session(cx))),
-                    ),
-            )
-    }
-
-    fn render_worktree_switcher(
-        &self,
-        worktrees: &[&crate::git::Worktree],
-        cx: &Context<Self>,
-    ) -> impl IntoElement {
-        let title = if let Some(focus) = self.worktree_focus() {
-            focus
-                .branch
-                .clone()
-                .unwrap_or_else(|| "Detached worktree".to_string())
-        } else {
-            "Workspace".to_string()
+    pub fn start_session_rename(&mut self, id: &str, cx: &mut Context<Self>) {
+        let Some(session) = self.sessions.iter().find(|s| s.id == id) else {
+            return;
         };
-
-        let mut menu = Menu::new();
-        // Item 1: Project folder (default, unfocused)
-        let main_tree = worktrees.iter().find(|w| w.is_main);
-        let main_branch = main_tree
-            .and_then(|t| t.branch.as_deref())
-            .unwrap_or("main");
-        menu = menu.item(
-            MenuItem::new(format!("{main_branch} · Project folder"))
-                .icon(IconName::GitBranch)
-                .on_click(app_callback(cx, |this, cx| this.select_workspace(None, cx))),
-        );
-        menu = menu.separator();
-
-        // Other worktrees
-        for tree in worktrees.iter().filter(|w| !w.is_main) {
-            let path = tree.path.clone();
-            let branch = tree.branch.clone();
-            let label = branch.as_deref().unwrap_or(&tree.head);
-            let short_path = std::path::Path::new(&path)
-                .file_name()
-                .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_else(|| path.clone());
-            let display_label = format!("{label} ({short_path})");
-
-            menu = menu.item(
-                MenuItem::new(display_label)
-                    .icon(IconName::FolderOpen)
-                    .on_click(app_callback(cx, move |this, cx| {
-                        let focus = WorktreeFocus {
-                            path: path.clone(),
-                            branch: branch.clone(),
-                        };
-                        this.select_workspace(Some(focus), cx);
-                    })),
-            );
-        }
-
-        DropdownMenu::new("worktree-switcher", title, menu)
-            .variant(ButtonVariant::Ghost)
-            .icon(if self.worktree_focus().is_some() {
-                IconName::FolderOpen
-            } else {
-                IconName::GitBranch
-            })
+        let title = crate::app::session_list::display_title(&session.title, &session.harness);
+        self.sessions_ui.renaming_folder = None;
+        self.sessions_ui.renaming_session = Some(id.to_string());
+        self.begin_inline_rename(title, cx);
     }
 
-    fn render_session_list(&self, cx: &Context<Self>) -> impl IntoElement {
-        let theme = cx.theme();
-        let query = self.search_query.to_lowercase();
-        let filter = self.filter_mode;
-        let now = crate::app::now_ms();
-        let current_cwd = &self.current_cwd;
-        let visible: Vec<&SessionRow> = self
-            .sessions
+    pub fn start_folder_rename(&mut self, folder_id: &str, cx: &mut Context<Self>) {
+        let Some(name) = self
+            .project_folders()
             .iter()
-            .filter(|s| {
-                let in_project = current_cwd.is_empty()
-                    || current_cwd == "~"
-                    || crate::app::same_project_path(&s.cwd, current_cwd);
-                let in_worktree = self
-                    .worktree_focus()
-                    .is_none_or(|focus| crate::app::same_project_path(s.work_dir(), &focus.path));
-                in_project && in_worktree && keeps(filter, s) && matches_query(s, &query)
-            })
-            .collect();
-        // MonoCode `buildSessionList`: folders, then pins, then the rest.
-        let folders = self.project_folders();
-        let foldered: Vec<(
-            &crate::app::session_folders::SessionFolder,
-            Vec<&SessionRow>,
-        )> = folders
-            .iter()
-            .map(|folder| {
-                let members = folder
-                    .session_ids
-                    .iter()
-                    .filter_map(|id| visible.iter().copied().find(|s| &s.id == id))
-                    .collect();
-                (folder, members)
-            })
-            .filter(|(_, members): &(_, Vec<&SessionRow>)| !members.is_empty())
-            .collect();
-        let (pinned, rest): (Vec<&SessionRow>, Vec<&SessionRow>) = visible
-            .iter()
-            .copied()
-            .filter(|s| crate::app::session_folders::folder_of(folders, &s.id).is_none())
-            .partition(|s| s.pinned);
-
-        div()
-            .flex()
-            .flex_col()
-            .flex_1()
-            .min_h_0()
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_1()
-                    .px_2()
-                    .py_1p5()
-                    .border_b_1()
-                    .border_color(theme.colors.border)
-                    .child(
-                        div()
-                            .flex()
-                            .flex_1()
-                            .items_center()
-                            .gap_1p5()
-                            .h(px(28.0))
-                            .px_2()
-                            .rounded(theme.radius(Radius::Md))
-                            .bg(theme.colors.bg)
-                            .border_1()
-                            .border_color(theme.colors.border)
-                            .text_size(px(12.0))
-                            .child(
-                                Icon::new(IconName::Search)
-                                    .size(IconSize::Xs)
-                                    .color(theme.colors.fg_muted),
-                            )
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .min_w_0()
-                                    .text_size(px(12.0))
-                                    .child(self.search_input.clone()),
-                            ),
-                    )
-                    .child(self.render_filter_menu(cx)),
-            )
-            .child(
-                div()
-                    .id("thread-list")
-                    .flex()
-                    .flex_col()
-                    .flex_1()
-                    .w_full()
-                    .min_h_0()
-                    .min_w_0()
-                    .overflow_y_scroll()
-                    .overflow_x_hidden()
-                    .px_2()
-                    .py_1()
-                    .gap_1()
-                    .when(
-                        foldered.is_empty() && pinned.is_empty() && rest.is_empty(),
-                        |el| {
-                            el.child(
-                                div()
-                                    .px_3()
-                                    .py_6()
-                                    .flex()
-                                    .flex_col()
-                                    .items_center()
-                                    .justify_center()
-                                    .gap_1()
-                                    .text_size(px(12.0))
-                                    .text_color(theme.colors.fg_muted)
-                                    .child(if !query.is_empty() {
-                                        "No matching sessions"
-                                    } else {
-                                        "Sessions you start will show up here"
-                                    }),
-                            )
-                        },
-                    )
-                    .children(foldered.into_iter().map(|(folder, members)| {
-                        let cards = members
-                            .into_iter()
-                            .map(|s| self.render_session_card(s, now, cx))
-                            .collect();
-                        self.render_session_folder(folder, cards, cx)
-                    }))
-                    .children(
-                        pinned
-                            .into_iter()
-                            .chain(rest)
-                            .map(|s| self.render_session_card(s, now, cx)),
-                    ),
-            )
+            .find(|f| f.id == folder_id)
+            .map(|f| f.name.clone())
+        else {
+            return;
+        };
+        self.sessions_ui.renaming_session = None;
+        self.sessions_ui.renaming_folder = Some(folder_id.to_string());
+        self.begin_inline_rename(name, cx);
     }
 
-    fn render_filter_menu(&self, cx: &Context<Self>) -> impl IntoElement {
-        let menu = FILTERS.iter().fold(Menu::new(), |menu, &(mode, label)| {
-            menu.item(
-                MenuItem::radio(label, mode == self.filter_mode).on_click(app_callback(
-                    cx,
-                    move |this, cx| {
-                        this.filter_mode = mode;
-                        cx.notify();
-                    },
-                )),
-            )
+    /// Fills the shared field, selects it and focuses it.
+    fn begin_inline_rename(&mut self, text: String, cx: &mut Context<Self>) {
+        let len = text.len();
+        self.rename_input.update(cx, |input, cx| {
+            input.set_text(text, cx);
+            input.select(0..len, cx);
         });
-        OverflowMenu::new("thread-filter", menu)
-            .icon(IconName::SlidersHorizontal)
-            .tooltip("Filter threads")
+        let handle = gpui::Focusable::focus_handle(self.rename_input.read(cx), cx);
+        crate::ui::composer::focus_later(handle, cx);
+        cx.notify();
     }
 
-    /// Top-right of a session card: "Need approval", "Working...", or the
-    /// pin and relative time (MonoCode `Sidebar.tsx` session status).
-    fn session_status(&self, session: &SessionRow, now: i64, cx: &Context<Self>) -> AnyElement {
-        let colors = &cx.theme().colors;
-        let status = |icon: IconName, color: gpui::Hsla, label: &'static str| {
-            div()
-                .flex()
-                .items_center()
-                .gap_1()
-                .text_size(px(11.0))
-                .text_color(color)
-                .child(Icon::new(icon).size(IconSize::Xs).color(color))
-                .child(label)
-                .into_any_element()
-        };
-        if self.pending_permission_for(&session.id).is_some() {
-            return status(IconName::CircleAlert, colors.warning, "Need approval");
+    pub fn inline_rename_active(&self) -> bool {
+        self.sessions_ui.renaming_session.is_some() || self.sessions_ui.renaming_folder.is_some()
+    }
+
+    pub fn cancel_inline_rename(&mut self, cx: &mut Context<Self>) {
+        if self.sessions_ui.renaming_session.take().is_some()
+            | self.sessions_ui.renaming_folder.take().is_some()
+        {
+            cx.notify();
         }
-        if self.is_agent_running_in(&session.id) {
-            return status(IconName::LoaderCircle, colors.accent, "Working...");
+    }
+
+    /// Enter or blur: a non-blank name is kept, a blank one cancels
+    /// (MonoCode `SessionRenameRow` / `FolderRenameRow`).
+    pub fn commit_inline_rename(&mut self, cx: &mut Context<Self>) {
+        let text = self.rename_input.read(cx).text().trim().to_string();
+        let session = self.sessions_ui.renaming_session.take();
+        let folder = self.sessions_ui.renaming_folder.take();
+        if !text.is_empty() {
+            if let Some(id) = session {
+                self.rename_session(&id, &text, cx);
+            } else if let Some(id) = folder {
+                self.rename_folder(&id, &text, cx);
+            }
         }
-        div()
-            .flex()
-            .items_center()
-            .gap_1()
-            .when(session.pinned, |el| {
-                el.child(
-                    Icon::new(IconName::Pin)
-                        .size(IconSize::Xs)
-                        .color(colors.fg_muted),
-                )
-            })
-            .child(relative_time(session.updated_at, now))
-            .into_any_element()
-    }
-
-    fn session_menu(&self, session: &SessionRow, cx: &Context<Self>) -> Menu {
-        let (rename, pin, archive, delete) = (
-            session.id.clone(),
-            session.id.clone(),
-            session.id.clone(),
-            session.id.clone(),
-        );
-        let menu = Menu::new()
-            .item(
-                MenuItem::new("Rename…")
-                    .icon(IconName::Pencil)
-                    .on_click(app_callback(cx, move |this, cx| {
-                        this.open_rename(&rename, cx)
-                    })),
-            )
-            .item(
-                MenuItem::new(if session.pinned { "Unpin" } else { "Pin" })
-                    .icon(IconName::Pin)
-                    .on_click(app_callback(cx, move |this, cx| {
-                        this.toggle_pin_session(&pin, cx)
-                    })),
-            )
-            .item(
-                MenuItem::new(if session.archived {
-                    "Unarchive"
-                } else {
-                    "Archive"
-                })
-                .icon(IconName::Archive)
-                .on_click(app_callback(cx, move |this, cx| {
-                    this.toggle_archive_session(&archive, cx)
-                })),
-            );
-        self.session_folder_items(menu, session, cx)
-            .separator()
-            .item(
-                MenuItem::new("Delete…")
-                    .icon(IconName::Trash2)
-                    .on_click(app_callback(cx, move |this, cx| {
-                        this.session_dialog = Some(SessionDialog::Delete(delete.clone()));
-                        cx.notify();
-                    })),
-            )
-    }
-
-    fn render_session_card(
-        &self,
-        session: &SessionRow,
-        now: i64,
-        cx: &Context<Self>,
-    ) -> AnyElement {
-        let theme = cx.theme();
-        let colors = &theme.colors;
-        let selected = self.selected_session_id.as_deref() == Some(session.id.as_str());
-        let title = if session.title.trim().is_empty() {
-            "New session"
-        } else {
-            session.title.as_str()
-        };
-        let branch = session.branch.as_deref().unwrap_or(&self.git_status.branch);
-        let project = std::path::Path::new(&session.cwd)
-            .file_name()
-            .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
-        let id = session.id.clone();
-        let xs = theme.text_size(TextSize::Xs);
-
-        let open_id = id.clone();
-        let card = div()
-            .id(SharedString::from(format!("session-card-{}", session.id)))
-            .group("session-card")
-            .flex()
-            .flex_col()
-            .w_full()
-            .min_w_0()
-            .overflow_hidden()
-            .gap_0p5()
-            .px_2p5()
-            .py_2()
-            .rounded(theme.radius(Radius::Md))
-            .cursor_pointer()
-            .when(selected, |el| el.bg(colors.active))
-            .hover(|s| s.bg(colors.hover))
-            .on_click(cx.listener(move |this, _, _, cx| this.open_session(open_id.clone(), cx)))
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .w_full()
-                    .min_w_0()
-                    .gap_1p5()
-                    .text_size(xs)
-                    .text_color(colors.fg_muted)
-                    .child(
-                        div()
-                            .flex()
-                            .flex_1()
-                            .items_center()
-                            .gap_1p5()
-                            .min_w_0()
-                            .child(HarnessIcon::new(&session.harness).size(px(14.0)))
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .min_w_0()
-                                    .truncate()
-                                    .child(catalog::label_for(&session.model)),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .flex_none()
-                            .items_center()
-                            .gap_1()
-                            .child(self.session_status(session, now, cx)),
-                    ),
-            )
-            .child(
-                div()
-                    .w_full()
-                    .min_w_0()
-                    .truncate()
-                    .text_size(theme.text_size(TextSize::Sm))
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_color(colors.fg)
-                    .child(title.to_string()),
-            )
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .w_full()
-                    .min_w_0()
-                    .gap_1()
-                    .text_size(xs)
-                    .text_color(colors.fg_muted)
-                    .child(
-                        div()
-                            .flex()
-                            .flex_1()
-                            .min_w_0()
-                            .items_center()
-                            .gap_1()
-                            .child(
-                                div().flex_none().child(
-                                    Icon::new(IconName::GitBranch)
-                                        .size(IconSize::Xs)
-                                        .color(colors.fg_muted),
-                                ),
-                            )
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .min_w_0()
-                                    .truncate()
-                                    .child(format!("{project}/{branch}")),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .id(SharedString::from(format!("quick-archive-{}", session.id)))
-                            // Hover-only, like MonoCode's archive button.
-                            .opacity(0.0)
-                            .group_hover("session-card", |s| s.opacity(1.0))
-                            .size(px(18.0))
-                            .rounded(px(3.0))
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .cursor_pointer()
-                            .hover(|s| s.bg(colors.hover).text_color(colors.fg))
-                            .tooltip(Tooltip::text(if session.archived {
-                                "Unarchive"
-                            } else {
-                                "Archive"
-                            }))
-                            .on_click(cx.listener({
-                                let archive_id = id.clone();
-                                move |this, _, _, cx| {
-                                    this.toggle_archive_session(&archive_id, cx);
-                                }
-                            }))
-                            .child(
-                                Icon::new(IconName::Archive)
-                                    .size(IconSize::Xs)
-                                    .color(colors.fg_muted),
-                            ),
-                    ),
-            );
-
-        ContextMenu::new(
-            SharedString::from(format!("session-menu-{}", session.id)),
-            self.session_menu(session, cx),
-        )
-        .child(card)
-        .into_any_element()
-    }
-
-    pub fn open_rename(&mut self, id: &str, cx: &mut Context<Self>) {
-        let title = self
-            .sessions
-            .iter()
-            .find(|s| s.id == id)
-            .map(|s| s.title.clone())
-            .unwrap_or_default();
-        self.rename_input
-            .update(cx, |input, cx| input.set_text(title, cx));
-        self.session_dialog = Some(SessionDialog::Rename(id.to_string()));
         cx.notify();
     }
 
@@ -692,6 +279,182 @@ impl BenCodeApp {
         cx.notify();
     }
 
+    pub fn render_sidebar(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+        let colors = &cx.theme().colors;
+        // MonoCode `body-glass` is the base background, edged with
+        // `border-stroke`; text inherits the web's 1.5 line height.
+        div()
+            .flex()
+            .flex_col()
+            .flex_none()
+            .relative()
+            .w(px(self.sidebar_width))
+            .h_full()
+            .bg(colors.bg)
+            .border_r_1()
+            .border_color(colors.fg.opacity(STROKE_OPACITY))
+            .line_height(relative(1.5))
+            .child(self.render_sidebar_header(cx))
+            .child(self.render_sidebar_mode_tabs(cx))
+            .child(match self.sidebar_mode {
+                SidebarMode::Sessions => self.render_session_list(cx).into_any_element(),
+                SidebarMode::Files => self.render_file_tree(cx).into_any_element(),
+                SidebarMode::Changes => self.render_git_changes_panel(cx).into_any_element(),
+            })
+            .child(self.render_sidebar_sash(cx))
+    }
+
+    /// MonoCode's resize separator on the sidebar's right edge; a double
+    /// click restores the default width.
+    fn render_sidebar_sash(&self, cx: &Context<Self>) -> impl IntoElement {
+        let fg = cx.theme().colors.fg;
+        let dragging = self.sidebar_resizing;
+        let width = self.sidebar_width;
+        div()
+            .id("sidebar-resize")
+            .absolute()
+            .top_0()
+            .bottom_0()
+            .right(px(-1.0))
+            .w(px(6.0))
+            .cursor_col_resize()
+            .when(dragging, |el| el.bg(fg.opacity(0.15)))
+            .when(!dragging, |el| el.hover(move |s| s.bg(fg.opacity(0.10))))
+            .on_mouse_down(
+                gpui::MouseButton::Left,
+                cx.listener(|this, event: &gpui::MouseDownEvent, _, cx| {
+                    if event.click_count >= 2 {
+                        this.sidebar_width = SIDEBAR_MIN_WIDTH;
+                        cx.notify();
+                    }
+                    this.sidebar_drag_x = f32::from(event.position.x);
+                }),
+            )
+            .on_drag(SidebarResize { start_x: 0.0, start_width: width }, |drag, _, _, cx| {
+                let drag = drag.clone();
+                cx.new(|_| drag)
+            })
+    }
+
+    fn render_sidebar_header(&self, cx: &Context<Self>) -> impl IntoElement {
+        let colors = &cx.theme().colors;
+        let valid_worktrees: Vec<&crate::git::Worktree> = self
+            .workspace
+            .worktrees
+            .iter()
+            .filter(|w| !w.missing)
+            .collect();
+        let has_worktrees = valid_worktrees.iter().any(|w| !w.is_main);
+
+        // MonoCode: `h-10 gap-1 pl-3 pr-1.5`, 40px like the title bar, and
+        // takes the traffic-light space when the project rail is hidden.
+        div()
+            .window_control_area(gpui::WindowControlArea::Drag)
+            .flex()
+            .flex_none()
+            .items_center()
+            .gap_1()
+            .h(TITLEBAR_HEIGHT)
+            .pl_3()
+            .pr_1p5()
+            .border_b_1()
+            .border_color(colors.fg.opacity(STROKE_OPACITY))
+            .when(!self.is_rail_open && cfg!(target_os = "macos"), |el| {
+                el.child(div().flex_none().w(px(72.0)))
+            })
+            .child(
+                div().flex().flex_1().min_w_0().items_center().child(
+                    if has_worktrees || self.worktree_focus().is_some() {
+                        self.render_worktree_switcher(cx).into_any_element()
+                    } else {
+                        div()
+                            .min_w_0()
+                            .truncate()
+                            .text_size(px(14.0))
+                            .line_height(relative(1.25))
+                            .font_weight(FontWeight::MEDIUM)
+                            .child("Workspace")
+                            .into_any_element()
+                    },
+                ),
+            )
+            // MonoCode `WorkspaceTitleActions`: `gap-0.5`.
+            .child(
+                div()
+                    .flex()
+                    .flex_none()
+                    .items_center()
+                    .gap(px(2.0))
+                    .child(title_icon_button(
+                        "workspace-search",
+                        IconName::Search,
+                        "Go to File (⌘P)",
+                        cx,
+                        cx.listener(|this, _, _, cx| this.open_quick_open(cx)),
+                    ))
+                    .child(title_icon_button(
+                        "workspace-new-thread",
+                        IconName::Plus,
+                        "New session (⌘T)",
+                        cx,
+                        cx.listener(|this, _, _, cx| this.create_new_session(cx)),
+                    )),
+            )
+    }
+
+    /// MonoCode `SidebarWorktreeSwitcher`'s title button: the focused
+    /// worktree's branch, else "Workspace", over the working copies.
+    fn render_worktree_switcher(&self, cx: &Context<Self>) -> impl IntoElement {
+        let fg = cx.theme().colors.fg;
+        let focus = self.worktree_focus();
+        let title = focus.map_or("Workspace".to_string(), |f| {
+            f.branch.clone().unwrap_or_else(|| "Detached worktree".to_string())
+        });
+        let tip = match focus {
+            Some(f) => format!("{}\n{}", f.branch.as_deref().unwrap_or("detached"), f.path),
+            None => self
+                .workspace
+                .worktrees
+                .iter()
+                .find(|w| w.is_main)
+                .and_then(|w| w.branch.clone())
+                .unwrap_or_else(|| "Project folder".into()),
+        };
+        let open = self.sidebar_menu_is_worktrees();
+        // MonoCode: `-ml-1.5 h-6.5 gap-2 rounded-md px-1.5 text-sm
+        // font-medium leading-tight`, the chevrons `size-3.5`.
+        div()
+            .id("worktree-switcher")
+            .ml(px(-6.0))
+            .flex()
+            .min_w_0()
+            .max_w_full()
+            .items_center()
+            .gap_2()
+            .h(px(26.0))
+            .px(px(6.0))
+            .rounded(px(6.0))
+            .text_size(px(14.0))
+            .line_height(relative(1.25))
+            .font_weight(FontWeight::MEDIUM)
+            .when(open, |el| el.bg(fg.opacity(0.08)))
+            .hover(move |s| s.bg(fg.opacity(0.08)))
+            .tooltip(Tooltip::text(tip))
+            .on_mouse_down(
+                gpui::MouseButton::Left,
+                cx.listener(|this, event: &gpui::MouseDownEvent, _, cx| {
+                    this.sessions_ui.filter_button_hit = true;
+                    this.toggle_worktree_menu(event.position, cx);
+                }),
+            )
+            .child(div().min_w_0().truncate().child(title))
+            .child(
+                Icon::new(IconName::ChevronsUpDown)
+                    .size(IconSize::Sm)
+                    .color(fg.opacity(0.45)),
+            )
+    }
+
     /// The rename or delete dialog, when one is open.
     pub fn render_session_dialog(&self, cx: &Context<Self>) -> Option<AnyElement> {
         let dialog = self.session_dialog.clone()?;
@@ -700,53 +463,38 @@ impl BenCodeApp {
             cx.notify();
         });
         Some(match dialog {
-            SessionDialog::Rename(id) => {
-                let submit = cx
-                    .listener(move |this, title: &str, _, cx| this.rename_session(&id, title, cx));
-                PromptDialog::new("rename-thread", "Rename thread", &self.rename_input, close)
-                    .label("Title")
-                    .submit("Rename")
-                    .check(|text| {
-                        if text.trim().is_empty() {
-                            Err("A title is required".into())
-                        } else {
-                            Ok(())
-                        }
-                    })
-                    .on_submit(move |title: &str, window: &mut Window, cx: &mut App| {
-                        submit(title, window, cx)
-                    })
-                    .into_any_element()
-            }
-            SessionDialog::RenameFolder(id) => {
-                let submit =
-                    cx.listener(move |this, name: &str, _, cx| this.rename_folder(&id, name, cx));
-                PromptDialog::new("rename-folder", "Rename folder", &self.rename_input, close)
-                    .label("Name")
-                    .submit("Rename")
-                    .check(|text| {
-                        if text.trim().is_empty() {
-                            Err("A name is required".into())
-                        } else {
-                            Ok(())
-                        }
-                    })
-                    .on_submit(move |name: &str, window: &mut Window, cx: &mut App| {
-                        submit(name, window, cx)
-                    })
-                    .into_any_element()
-            }
             SessionDialog::Delete(id) => {
                 let title = self
                     .sessions
                     .iter()
                     .find(|s| s.id == id)
-                    .map_or("this thread".into(), |s| s.title.clone());
+                    .map_or("this session".into(), |s| {
+                        crate::app::session_list::display_title(&s.title, &s.harness)
+                    });
                 let delete = app_callback(cx, move |this, cx| this.delete_session(&id, cx));
+                // MonoCode `DeleteSessionDialog`.
                 ConfirmDialog::new(
                     "delete-thread",
-                    "Delete thread?",
-                    format!("“{title}” and its transcript will be removed."),
+                    "Delete session?",
+                    format!("“{title}” will be permanently deleted."),
+                    close,
+                )
+                .confirm("Delete")
+                .destructive()
+                .on_confirm(delete)
+                .into_any_element()
+            }
+            SessionDialog::DeleteSelected(ids) => {
+                let count = ids.len();
+                let delete = app_callback(cx, move |this, cx| {
+                    for id in &ids {
+                        this.delete_session(id, cx);
+                    }
+                });
+                ConfirmDialog::new(
+                    "delete-selected-threads",
+                    "Delete sessions?",
+                    format!("Delete {count} selected conversations? This can’t be undone."),
                     close,
                 )
                 .confirm("Delete")
@@ -776,42 +524,54 @@ impl BenCodeApp {
     }
 }
 
+/// MonoCode `TitleBar` `IconButton`: `size-6.5 rounded-md`, a `size-3.5`
+/// glyph at half strength that lights up with a `content/10` fill on hover.
+fn title_icon_button(
+    id: &'static str,
+    icon: IconName,
+    tip: &'static str,
+    cx: &Context<BenCodeApp>,
+    on_click: impl Fn(&ClickEvent, &mut Window, &mut gpui::App) + 'static,
+) -> impl IntoElement {
+    let fg = cx.theme().colors.fg;
+    let group = SharedString::from(id);
+    div()
+        .id(id)
+        .group(group.clone())
+        .flex()
+        .flex_none()
+        .size(px(26.0))
+        .items_center()
+        .justify_center()
+        .rounded(px(6.0))
+        .hover(move |s| s.bg(fg.opacity(0.10)))
+        .tooltip(Tooltip::text(tip))
+        .on_click(on_click)
+        .child(
+            Icon::new(icon)
+                .size(IconSize::Sm)
+                .color(fg.opacity(0.5))
+                .group_hover_color(group, fg),
+        )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn filters_select_the_right_sessions() {
-        let pinned = SessionRow {
-            pinned: true,
-            ..Default::default()
-        };
-        let archived = SessionRow {
-            archived: true,
-            ..Default::default()
-        };
-        assert!(keeps(FilterMode::Pinned, &pinned) && !keeps(FilterMode::Pinned, &archived));
-        assert!(keeps(FilterMode::Archived, &archived) && !keeps(FilterMode::Active, &archived));
-        assert!(
-            !keeps(FilterMode::All, &archived),
-            "archived threads only show under the Archived filter"
-        );
+    fn tab_orders_keep_known_ids_and_fill_in_the_rest() {
+        let order = parse_tab_order(&["changes".into(), "bogus".into(), "changes".into()]);
+        assert_eq!(order, [SidebarMode::Changes, SidebarMode::Sessions, SidebarMode::Files]);
+        assert_eq!(parse_tab_order(&[]).len(), 3);
     }
 
     #[test]
-    fn relative_time_buckets() {
-        assert_eq!(relative_time(0, 30_000), "now");
-        assert_eq!(relative_time(0, 5 * 60_000), "5m");
-        assert_eq!(relative_time(0, 3 * 3_600_000), "3h");
-        assert_eq!(relative_time(0, 2 * 86_400_000), "2d");
-    }
-
-    #[test]
-    fn query_matches_titles_case_insensitively() {
-        let s = SessionRow {
-            title: "Fix Login".into(),
-            ..Default::default()
-        };
-        assert!(matches_query(&s, "login") && matches_query(&s, "") && !matches_query(&s, "auth"));
+    fn resizing_is_clamped_to_half_the_window() {
+        let drag = SidebarResize { start_x: 100.0, start_width: 260.0 };
+        assert_eq!(resized_width(&drag, 200.0, 2000.0), 360.0);
+        assert_eq!(resized_width(&drag, 900.0, 2000.0), 560.0);
+        assert_eq!(resized_width(&drag, 900.0, 700.0), 350.0);
+        assert_eq!(resized_width(&drag, 0.0, 2000.0), 260.0);
     }
 }

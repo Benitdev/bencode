@@ -2,7 +2,7 @@
 //! and project list with git diff stats. 100% faithful to MonoCode's ProjectRail.
 
 use ely_gpui_component::buttons::{ButtonVariant, IconButton};
-use ely_gpui_component::menus::{DropdownMenu, Menu, MenuItem};
+use ely_gpui_component::menus::{Menu, MenuItem, OverflowMenu};
 use ely_gpui_component::primitives::{Icon, IconName};
 use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
@@ -295,9 +295,9 @@ impl BenCodeApp {
                                             .child("Projects"),
                                     )
                                     .child(
-                                        DropdownMenu::new(
+                                        // Icon-only: Ely's `DropdownMenu` would add a chevron.
+                                        OverflowMenu::new(
                                             "rail-add-project",
-                                            "",
                                             Menu::new().item(
                                                 MenuItem::new("Open folder…")
                                                     .icon(IconName::FolderPlus)
@@ -307,8 +307,8 @@ impl BenCodeApp {
                                                     })),
                                             ),
                                         )
-                                        .variant(ButtonVariant::Ghost)
-                                        .icon(IconName::Plus),
+                                        .icon(IconName::Plus)
+                                        .tooltip("Add project"),
                                     ),
                             )
                             .child(div().flex().flex_col().gap_0p5().children(

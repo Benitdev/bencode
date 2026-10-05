@@ -15,7 +15,7 @@ use gpui::{
 use crate::app::BenCodeApp;
 use crate::db::SessionRow;
 use crate::ui::composer::DockProbe;
-use crate::ui::drag_drop::{DraggedFile, DraggedPane, render_pane_drop_hint};
+use crate::ui::drag_drop::{DraggedFile, DraggedPane, DraggedSession, render_pane_drop_hint};
 use crate::ui::layout::{LayoutNode, SplitDir, leaf_count, pane_edge_from_point, split_shares};
 
 const UNTITLED: &str = "Untitled thread";
@@ -204,6 +204,7 @@ impl BenCodeApp {
             sid.clone(),
         );
         let finder_id = sid.clone();
+        let (card_pane_id, card_drop_id) = (sid.clone(), sid.clone());
         let (tab_hint_id, tab_drop_id) = (sid.clone(), sid);
         frame
             .on_click(cx.listener(move |this, _, _, cx| this.focus_pane(focus_id.clone(), cx)))
@@ -220,6 +221,21 @@ impl BenCodeApp {
             ))
             .on_drop(cx.listener(move |this, dragged: &DraggedPane, _, cx| {
                 this.handle_pane_drop(&dragged.session_id, &drop_id, cx);
+            }))
+            // A sidebar card splits this pane (MonoCode `onPlaceSessionOnPane`).
+            .on_drag_move::<DraggedSession>(cx.listener(
+                move |this, event: &DragMoveEvent<DraggedSession>, _, cx| {
+                    let inside = event.bounds.contains(&event.event.position);
+                    let own = event.drag(cx).session_id == card_pane_id;
+                    if inside && !own {
+                        this.set_active_pane_drop(card_pane_id.clone(), drop_edge(event), cx);
+                    } else {
+                        this.clear_pane_drop(&card_pane_id, cx);
+                    }
+                },
+            ))
+            .on_drop(cx.listener(move |this, dragged: &DraggedSession, _, cx| {
+                this.handle_pane_drop(&dragged.session_id, &card_drop_id, cx);
             }))
             // A title tab dragged onto a pane joins this tab beside it
             // (MonoCode `onPlaceOnPane`); the active tab cannot land on itself.

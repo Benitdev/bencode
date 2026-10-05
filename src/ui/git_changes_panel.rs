@@ -11,15 +11,14 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use ely_gpui_component::buttons::ButtonVariant;
 use ely_gpui_component::feedback::Alert;
-use ely_gpui_component::menus::{DropdownMenu, Menu, MenuItem};
 use ely_gpui_component::overlays::ConfirmDialog;
 use ely_gpui_component::primitives::{Icon, IconName, Severity, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
-    AnyElement, Context, FontWeight, Hsla, InteractiveElement, IntoElement, MouseButton,
-    ParentElement, PathBuilder, SharedString, Styled, canvas, div, point, prelude::*, px, rgb,
+    Animation, AnimationExt, AnyElement, Bounds, Context, FontWeight, Hsla, InteractiveElement,
+    IntoElement, MouseButton, ParentElement, PathBuilder, Pixels, SharedString, Styled, canvas,
+    div, percentage, point, prelude::*, px, relative, rgb,
 };
 
 use crate::app::{BenCodeApp, ViewMode};
@@ -30,6 +29,7 @@ use crate::git::{
     unstage_all, unstage_file,
 };
 use crate::ui::app_callback::app_callback;
+use crate::ui::git_menus::{GitMenuKind, TriggerLook};
 use crate::ui::icons::ExtraIcon;
 
 /// The Ely list's status for a file (the diff viewer's file list).
@@ -61,6 +61,8 @@ pub enum Busy {
     Generate,
     All,
     File(String),
+    /// Staging or unstaging a folder of the tree view.
+    Folder(String),
 }
 
 /// Which list a file row belongs to (MonoCode `GitFileDiffKind`).
@@ -85,6 +87,10 @@ pub struct ChangesUi {
     /// Folders closed in the tree, `<side>:<dir>`.
     pub collapsed_dirs: HashSet<String>,
     pub graph_height: f32,
+    /// The open Commit options / Branch actions menu.
+    pub menu: Option<crate::ui::git_menus::GitMenu>,
+    /// A dropdown trigger saw this mouse-down (so it is not "outside").
+    pub menu_trigger_hit: bool,
     graph_drag: Option<(f32, f32)>,
     /// The panel's height as last laid out, to cap the graph.
     panel_height: Rc<Cell<f32>>,
@@ -94,6 +100,23 @@ pub struct ChangesUi {
     pr_key: Option<String>,
     /// The commit field's disabled state as last set.
     input_disabled: Option<bool>,
+    /// The Commit options / Branch actions triggers as last laid out, so
+    /// their menus open under them.
+    commit_anchor: Anchor,
+    branch_anchor: Anchor,
+    /// The graph row under the pointer (MonoCode's `:hover` node look).
+    hovered_commit: Option<String>,
+}
+
+type Anchor = Rc<Cell<Option<Bounds<Pixels>>>>;
+
+impl ChangesUi {
+    pub(crate) fn menu_anchor(&self, kind: GitMenuKind) -> Anchor {
+        match kind {
+            GitMenuKind::Commit => self.commit_anchor.clone(),
+            GitMenuKind::Branch => self.branch_anchor.clone(),
+        }
+    }
 }
 
 impl Default for ChangesUi {
@@ -109,12 +132,17 @@ impl Default for ChangesUi {
             tree: false,
             collapsed_dirs: HashSet::new(),
             graph_height: GRAPH_DEFAULT,
+            menu: None,
+            menu_trigger_hit: false,
             graph_drag: None,
             panel_height: Rc::new(Cell::new(0.0)),
             generate_cancel: None,
             pr: None,
             pr_key: None,
             input_disabled: None,
+            commit_anchor: Rc::default(),
+            branch_anchor: Rc::default(),
+            hovered_commit: None,
         }
     }
 }
@@ -157,15 +185,63 @@ fn status_letter(status: &GitFileStatus) -> &'static str {
     }
 }
 
-/// MonoCode `statusColor` (sky, emerald, red, amber 400).
-fn status_color(status: &GitFileStatus) -> Hsla {
-    rgb(match status {
-        GitFileStatus::Untracked => 0x38bdf8,
-        GitFileStatus::Added => 0x34d399,
-        GitFileStatus::Deleted => 0xf87171,
+/// MonoCode `statusColor`: `text-sky-400`, `text-diff-add-fg`,
+/// `text-diff-del-fg`, `text-amber-400`. The diff colours are the default
+/// palette's (`#6ee7b7` / `#fda4af` dark, `#047857` / `#be123c` light).
+fn status_color(status: &GitFileStatus, dark: bool) -> Hsla {
+    rgb(match (status, dark) {
+        (GitFileStatus::Untracked, _) => 0x38bdf8,
+        (GitFileStatus::Added, true) => 0x6ee7b7,
+        (GitFileStatus::Added, false) => 0x047857,
+        (GitFileStatus::Deleted, true) => 0xfda4af,
+        (GitFileStatus::Deleted, false) => 0xbe123c,
         _ => 0xfbbf24,
     })
     .into()
+}
+
+/// MonoCode `border-stroke`: content at 7% (BenCode's `colors.border` is
+/// 10%).
+fn stroke(fg: Hsla) -> Hsla {
+    fg.opacity(0.07)
+}
+
+/// MonoCode `animate-spin` (one turn a second, linear) on `icon`.
+pub(crate) fn spinning_icon(
+    id: SharedString,
+    icon: IconName,
+    size: IconSize,
+    color: Hsla,
+) -> AnyElement {
+    Icon::new(icon)
+        .size(size)
+        .color(color)
+        .with_animation(
+            id,
+            Animation::new(Duration::from_secs(1)).repeat(),
+            |icon, delta| icon.rotate(percentage(delta)),
+        )
+        .into_any_element()
+}
+
+/// An Explorer-style icon in `tint`, `fg` while `group` is hovered
+/// (MonoCode `hover:text-content`); [`ExtraIcon`] cannot change colour.
+fn extra_icon_hover(icon: ExtraIcon, size: f32, tint: Hsla, fg: Hsla, group: SharedString) -> AnyElement {
+    div()
+        .relative()
+        .size(px(size))
+        .flex_none()
+        .child(icon.render(px(size), tint))
+        .child(
+            div()
+                .absolute()
+                .top_0()
+                .left_0()
+                .invisible()
+                .group_hover(group, |s| s.visible())
+                .child(icon.render(px(size), fg)),
+        )
+        .into_any_element()
 }
 
 /// MonoCode `ChangeDir`: changed files nested under their folders, each
@@ -256,6 +332,18 @@ impl BenCodeApp {
             .pr
             .as_ref()
             .is_some_and(|pr| pr.state == "open")
+    }
+
+    /// MonoCode `canCommitPush` and `canCommitPushPr`.
+    pub(crate) fn commit_push_allowed(&self, cx: &gpui::App) -> (bool, bool) {
+        let sync = &self.git_sync;
+        let amend = self.changes_ui.amend.is_some();
+        let diverged = sync.ahead > 0 && sync.behind > 0;
+        let push = self.can_commit(cx)
+            && sync.remote.is_some()
+            && !diverged
+            && (!amend || !sync.head_pushed);
+        (push, push && !self.has_open_pr() && !self.on_default_branch())
     }
 
     /// MonoCode `canCreatePr`.
@@ -404,6 +492,22 @@ impl BenCodeApp {
         );
     }
 
+    /// MonoCode `runFolder`: stages or unstages everything under a folder.
+    fn folder_action(&mut self, dir: String, side: Side, cx: &mut Context<Self>) {
+        let target = dir.clone();
+        self.run_changes_action(
+            Busy::Folder(dir),
+            None,
+            move |cwd| match side {
+                Side::Unstaged => stage_file(cwd, &target),
+                Side::Staged => unstage_file(cwd, &target),
+            }
+            .map_err(|err| format!("{err:#}")),
+            |_, _| {},
+            cx,
+        );
+    }
+
     fn all_action(&mut self, stage: bool, cx: &mut Context<Self>) {
         self.run_changes_action(
             Busy::All,
@@ -453,7 +557,7 @@ impl BenCodeApp {
 
     /// MonoCode `commit(push, createPr)`: asks before pushing the default
     /// branch or amending a pushed commit, then commits, pushes, opens a PR.
-    fn commit_from_panel(
+    pub(crate) fn commit_from_panel(
         &mut self,
         pending: PendingCommit,
         default_ok: bool,
@@ -555,12 +659,12 @@ impl BenCodeApp {
         );
     }
 
-    fn pull_changes(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn pull_changes(&mut self, cx: &mut Context<Self>) {
         self.run_changes_action(Busy::Pull, Some("Pull complete"), git_sync::pull, |_, _| {}, cx);
     }
 
     /// MonoCode `toggleAmend`: HEAD's message fills an empty field.
-    fn toggle_amend(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn toggle_amend(&mut self, cx: &mut Context<Self>) {
         if self.changes_ui.amend.take().is_some() {
             cx.notify();
             return;
@@ -653,6 +757,7 @@ impl BenCodeApp {
                 .px_3()
                 .py_2()
                 .text_size(px(12.0))
+                .line_height(relative(1.5))
                 .text_color(colors.fg.opacity(0.5))
                 .child("No project folder")
                 .into_any_element();
@@ -681,6 +786,9 @@ impl BenCodeApp {
         div()
             .id("git-changes-panel")
             .relative()
+            // Tailwind preflight's `line-height: 1.5` (GPUI's default is
+            // 1.618); rows that set `leading-*` override it.
+            .line_height(relative(1.5))
             .flex()
             .flex_col()
             .flex_1()
@@ -740,7 +848,6 @@ impl BenCodeApp {
         let colors = &cx.theme().colors;
         let fg = colors.fg;
         let sync = &self.git_sync;
-        let can_pull = sync.remote.is_some() && sync.upstream.is_some();
         let busy = self.changes_ui.busy.is_some();
         let pulling = self.changes_ui.busy == Some(Busy::Pull);
         div()
@@ -751,7 +858,7 @@ impl BenCodeApp {
             .h(px(36.0))
             .px_3()
             .border_b_1()
-            .border_color(colors.border)
+            .border_color(stroke(fg))
             .child(
                 div()
                     .text_size(px(12.0))
@@ -767,12 +874,6 @@ impl BenCodeApp {
             }))
             .child(div().flex_1())
             .children(sync.branch.clone().map(|branch| {
-                let actions = Menu::new().item(
-                    MenuItem::new(if pulling { "Pulling…" } else { "Pull" })
-                        .icon(IconName::RefreshCw)
-                        .disabled(busy || !can_pull)
-                        .on_click(app_callback(cx, |this, cx| this.pull_changes(cx))),
-                );
                 div()
                     .flex()
                     .min_w_0()
@@ -809,14 +910,30 @@ impl BenCodeApp {
                                 )
                             }),
                     )
+                    // MonoCode's `size-5 rounded-md text-content/50
+                    // hover:bg-content/10 hover:text-content` "Branch actions"
+                    // button: `MoreHorizontal size-4`, or `Loader size-3.5`
+                    // while pulling; disabled while git runs.
                     .child(
-                        DropdownMenu::new("git-branch-actions", "", actions)
-                            .variant(ButtonVariant::Ghost)
-                            .icon(if pulling {
-                                IconName::LoaderCircle
-                            } else {
-                                IconName::Ellipsis
-                            }),
+                        div().size(px(20.0)).flex_none().child(
+                            self.git_menu_trigger(
+                                GitMenuKind::Branch,
+                                TriggerLook {
+                                    icon: if pulling { IconName::LoaderCircle } else { IconName::Ellipsis },
+                                    size: if pulling { IconSize::Sm } else { IconSize::Md },
+                                    spin: pulling,
+                                    color: fg.opacity(0.5),
+                                    hover_color: fg,
+                                    fill: None,
+                                    hover: fg.opacity(0.10),
+                                    open: fg.opacity(0.10),
+                                    dim_disabled: true,
+                                },
+                                !busy,
+                                cx,
+                            )
+                            .rounded(px(6.0)),
+                        ),
                     )
             }))
     }
@@ -832,57 +949,49 @@ impl BenCodeApp {
         let can_commit = self.can_commit(cx);
         let amend = ui.amend.is_some();
         let sync = &self.git_sync;
-        let diverged = sync.ahead > 0 && sync.behind > 0;
-        let can_commit_push = can_commit
-            && sync.remote.is_some()
-            && !diverged
-            && (!amend || !sync.head_pushed);
-        let can_commit_push_pr = can_commit_push && !self.has_open_pr() && !self.on_default_branch();
+        // MonoCode `canEditMessage`: the textarea's `disabled:opacity-40`.
+        let can_edit = (!self.git_status.staged.is_empty() || amend) && ui.busy.is_none();
+        // `bg-content` / `bg-content/40`, `text-background-base`.
         let fill = if can_commit { fg } else { fg.opacity(0.4) };
-        let options = Menu::new()
-            .item(
-                MenuItem::new("Commit & Push")
-                    .disabled(!can_commit_push)
-                    .on_click(app_callback(cx, |this, cx| {
-                        this.commit_from_panel(PendingCommit { push: true, pr: false }, false, false, cx)
-                    })),
-            )
-            .item(
-                MenuItem::new("Commit, Push & Create PR")
-                    .disabled(!can_commit_push_pr)
-                    .on_click(app_callback(cx, |this, cx| {
-                        this.commit_from_panel(PendingCommit { push: true, pr: true }, false, false, cx)
-                    })),
-            )
-            .separator()
-            .item(
-                MenuItem::check("Amend Last Commit", amend)
-                    .on_click(app_callback(cx, |this, cx| this.toggle_amend(cx))),
-            );
+        // MonoCode `canOpenMenu`.
+        let can_open_menu = sync.branch.is_some() && ui.busy.is_none();
         let wand_hover = fg.opacity(0.20);
+        let wand_group = SharedString::from("git-generate-message");
         div()
             .flex_none()
             .p_2()
             .border_b_1()
-            .border_color(colors.border)
+            .border_color(stroke(fg))
             .flex()
             .flex_col()
             .gap(px(6.0))
             .child(
                 div()
                     .relative()
-                    .rounded(px(6.0))
-                    .bg(fg.opacity(0.10))
-                    .pl_2()
-                    .pr_8()
-                    .py_1()
-                    .text_size(px(13.0))
-                    .line_height(px(20.0))
-                    .max_h(px(160.0))
-                    .child(self.git_commit_input.clone())
+                    // The textarea: `max-h-40 rounded-md bg-content/10 py-1
+                    // pr-8 pl-2 text-[13px] leading-5 text-content`.
                     .child(
                         div()
-                            .id("git-generate-message")
+                            .rounded(px(6.0))
+                            .bg(fg.opacity(0.10))
+                            .pl_2()
+                            .pr_8()
+                            .py_1()
+                            .text_size(px(13.0))
+                            .line_height(px(20.0))
+                            .text_color(fg)
+                            .max_h(px(160.0))
+                            .when(!can_edit, |el| el.opacity(0.4))
+                            .child(self.git_commit_input.clone()),
+                    )
+                    // `absolute top-1 right-1 grid size-5 rounded-md
+                    // bg-content/10 hover:bg-content/20 disabled:opacity-40`:
+                    // `WandSparkles size-3`, or a spinning `Loader size-3.5`
+                    // that turns into `X` on hover while generating.
+                    .child(
+                        div()
+                            .id(wand_group.clone())
+                            .group(wand_group.clone())
                             .absolute()
                             .top(px(4.0))
                             .right(px(4.0))
@@ -903,21 +1012,37 @@ impl BenCodeApp {
                             } else {
                                 "Generate commit message"
                             }))
-                            .child(
-                                Icon::new(if generating {
-                                    IconName::LoaderCircle
+                            .map(|el| {
+                                if generating {
+                                    el.child(
+                                        div()
+                                            .flex()
+                                            .group_hover(wand_group.clone(), |s| s.hidden())
+                                            .child(spinning_icon(
+                                                "git-generate-spin".into(),
+                                                IconName::LoaderCircle,
+                                                IconSize::Sm,
+                                                fg,
+                                            )),
+                                    )
+                                    .child(
+                                        div()
+                                            .hidden()
+                                            .group_hover(wand_group.clone(), |s| s.flex())
+                                            .child(Icon::new(IconName::X).size(IconSize::Sm).color(fg)),
+                                    )
                                 } else {
-                                    IconName::WandSparkles
-                                })
-                                .size(IconSize::Xs)
-                                .color(fg),
-                            ),
+                                    el.child(Icon::new(IconName::WandSparkles).size(IconSize::Xs).color(fg))
+                                }
+                            }),
                     ),
             )
             .child(
                 div()
                     .flex()
                     .h(px(28.0))
+                    // `h-7 flex-1 gap-1.5 rounded-l-md text-[12px] font-medium`
+                    // with `Check size-3.5`.
                     .child(
                         div()
                             .id("git-commit-btn")
@@ -942,25 +1067,36 @@ impl BenCodeApp {
                                     )
                                 }))
                             })
-                            .child(Icon::new(IconName::Check).size(IconSize::Xs).color(bg))
+                            .child(Icon::new(IconName::Check).size(IconSize::Sm).color(bg))
                             .child(if amend { "Amend Commit" } else { "Commit" }),
                     )
+                    // MonoCode's `h-7 w-7 rounded-r-md border-l
+                    // border-background-base/10` arrow: the Commit fill,
+                    // `hover:bg-content/80` (or `hover:bg-content` while
+                    // Commit is off), `aria-expanded:bg-content`, and only
+                    // `pointer-events-none` when disabled.
                     .child(
-                        div()
-                            .w(px(28.0))
-                            .flex_none()
+                        div().w(px(28.0)).flex_none().child(
+                            self.git_menu_trigger(
+                                GitMenuKind::Commit,
+                                TriggerLook {
+                                    icon: IconName::ChevronDown,
+                                    size: IconSize::Sm,
+                                    spin: false,
+                                    color: bg,
+                                    hover_color: bg,
+                                    fill: Some(fill),
+                                    hover: if can_commit { fg.opacity(0.8) } else { fg },
+                                    open: fg,
+                                    dim_disabled: false,
+                                },
+                                can_open_menu,
+                                cx,
+                            )
                             .rounded_r(px(6.0))
                             .border_l_1()
-                            .border_color(bg.opacity(0.1))
-                            .bg(fill)
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .child(
-                                DropdownMenu::new("git-commit-options", "", options)
-                                    .variant(ButtonVariant::Ghost)
-                                    .icon(IconName::ChevronDown),
-                            ),
+                            .border_color(bg.opacity(0.1)),
+                        ),
                     ),
             )
             .children(self.render_sync_actions(cx))
@@ -1023,7 +1159,10 @@ impl BenCodeApp {
                 .when(!enabled, |el| el.opacity(0.4))
                 .when(enabled, |el| el.cursor_pointer().hover(move |s| s.bg(hover)))
         };
-        let icon = |name: IconName| Icon::new(name).size(IconSize::Xs).color(fg);
+        // `size-3.5` icons; MonoCode's loaders spin (`animate-spin`).
+        let icon = |name: IconName| Icon::new(name).size(IconSize::Sm).color(fg).into_any_element();
+        let spinner =
+            |id: &'static str, name: IconName| spinning_icon(id.into(), name, IconSize::Sm, fg);
         let count = |text: String| div().flex_none().text_color(fg.opacity(0.55)).child(text);
         let mut col = div().flex().flex_col().gap(px(6.0));
         if can_publish {
@@ -1032,11 +1171,11 @@ impl BenCodeApp {
                     .when(busy.is_none(), |el| {
                         el.on_click(cx.listener(|this, _, _, cx| this.sync_changes(cx)))
                     })
-                    .child(icon(if syncing {
-                        IconName::LoaderCircle
+                    .child(if syncing {
+                        spinner("git-publish-spin", IconName::LoaderCircle)
                     } else {
-                        IconName::CloudUpload
-                    }))
+                        icon(IconName::CloudUpload)
+                    })
                     .child(div().min_w_0().truncate().child("Publish Branch")),
             );
         } else if can_sync {
@@ -1045,11 +1184,12 @@ impl BenCodeApp {
                     .when(busy.is_none(), |el| {
                         el.on_click(cx.listener(|this, _, _, cx| this.sync_changes(cx)))
                     })
-                    .child(icon(if syncing {
-                        IconName::LoaderCircle
+                    // MonoCode spins the `RefreshCw` itself.
+                    .child(if syncing {
+                        spinner("git-sync-spin", IconName::RefreshCw)
                     } else {
-                        IconName::RefreshCw
-                    }))
+                        icon(IconName::RefreshCw)
+                    })
                     .child(div().min_w_0().truncate().child("Sync Changes"))
                     .when(behind > 0, |el| el.child(count(format!("↓{behind}"))))
                     .when(ahead > 0, |el| el.child(count(format!("↑{ahead}")))),
@@ -1065,11 +1205,11 @@ impl BenCodeApp {
                     .when(enabled, |el| {
                         el.on_click(cx.listener(|this, _, _, cx| this.create_pr(false, cx)))
                     })
-                    .child(icon(if busy == Some(Busy::Pr) {
-                        IconName::LoaderCircle
+                    .child(if busy == Some(Busy::Pr) {
+                        spinner("git-create-pr-spin", IconName::LoaderCircle)
                     } else {
-                        IconName::GitPullRequest
-                    }))
+                        icon(IconName::GitPullRequest)
+                    })
                     .child("Create PR"),
             );
         }
@@ -1081,7 +1221,7 @@ impl BenCodeApp {
                     busy.is_none(),
                     format!("View PR #{}: {}", pr.number, pr.title),
                 )
-                .on_click(move |_, _, cx| cx.open_url(&url))
+                .when(busy.is_none(), |el| el.on_click(move |_, _, cx| cx.open_url(&url)))
                 .child(icon(IconName::ExternalLink))
                 .child(
                     div()
@@ -1172,13 +1312,23 @@ impl BenCodeApp {
             Side::Unstaged => "unstaged",
         };
         let tree = ui.tree;
+        // MonoCode `IconAction`: `size-5 rounded text-content/55
+        // hover:bg-content/10 hover:text-content`, `size-3.5` icons.
         let tint = fg.opacity(0.55);
-        let named = |icon: IconName| Icon::new(icon).size(IconSize::Xs).color(tint).into_any_element();
-        let extra = |icon: ExtraIcon| icon.render(px(14.0), tint).into_any_element();
+        let action_group = |key: &str| SharedString::from(format!("git-{id}-{key}"));
+        let named = |key: &str, icon: IconName| {
+            Icon::new(icon)
+                .size(IconSize::Sm)
+                .color(tint)
+                .group_hover_color(action_group(key), fg)
+                .into_any_element()
+        };
+        let extra = |key: &str, icon: ExtraIcon| extra_icon_hover(icon, 14.0, tint, fg, action_group(key));
         let action = |key: &str, icon: AnyElement, tip: &'static str| {
             let hover = fg.opacity(0.10);
             div()
-                .id(SharedString::from(format!("git-{id}-{key}")))
+                .id(action_group(key))
+                .group(action_group(key))
                 .size(px(20.0))
                 .flex()
                 .flex_none()
@@ -1220,9 +1370,11 @@ impl BenCodeApp {
                         } else {
                             IconName::ChevronRight
                         })
-                        .size(IconSize::Xs)
+                        .size(IconSize::Sm)
                         .color(fg.opacity(0.5)),
                     )
+                    // `text-[10px] font-semibold tracking-[0.04em]
+                    // text-content/55 uppercase` (GPUI has no letter spacing).
                     .child(
                         div()
                             .min_w_0()
@@ -1244,7 +1396,8 @@ impl BenCodeApp {
                             .justify_center()
                             .rounded_full()
                             .bg(colors.accent.opacity(0.8))
-                            .text_size(px(9.0))
+                            // `text-[8px]`
+                            .text_size(px(8.0))
                             .text_color(gpui::white())
                             .child(files.len().to_string()),
                     ),
@@ -1253,9 +1406,9 @@ impl BenCodeApp {
                 action(
                     "view",
                     if tree {
-                        named(IconName::List)
+                        named("view", IconName::List)
                     } else {
-                        extra(ExtraIcon::FolderTree)
+                        extra("view", ExtraIcon::FolderTree)
                     },
                     if tree { "View as List" } else { "View as Tree" },
                 )
@@ -1266,18 +1419,18 @@ impl BenCodeApp {
                 })),
             )
             .child(
-                action("open-all", extra(ExtraIcon::FileDiff), "Open All Changes").on_click(cx.listener(
+                action("open-all", extra("open-all", ExtraIcon::FileDiff), "Open All Changes").on_click(cx.listener(
                     move |this, _, _, cx| this.open_all_changes(side, cx),
                 )),
             );
         header = match side {
             Side::Staged => header.child(
-                action("unstage-all", named(IconName::Minus), "Unstage All Changes")
+                action("unstage-all", named("unstage-all", IconName::Minus), "Unstage All Changes")
                     .on_click(cx.listener(|this, _, _, cx| this.all_action(false, cx))),
             ),
             Side::Unstaged => header
                 .child(
-                    action("discard-all", named(IconName::Undo2), "Discard All Changes").on_click(
+                    action("discard-all", named("discard-all", IconName::Undo2), "Discard All Changes").on_click(
                         cx.listener(|this, _, _, cx| {
                             if !this.git_status.unstaged.is_empty() && this.changes_ui.busy.is_none()
                             {
@@ -1288,7 +1441,7 @@ impl BenCodeApp {
                     ),
                 )
                 .child(
-                    action("stage-all", named(IconName::Plus), "Stage All Changes")
+                    action("stage-all", named("stage-all", IconName::Plus), "Stage All Changes")
                         .on_click(cx.listener(|this, _, _, cx| this.all_action(true, cx))),
                 ),
         };
@@ -1319,7 +1472,7 @@ impl BenCodeApp {
         for child in &dir.dirs {
             let key = format!("{side:?}:{}", child.path);
             let open = !self.changes_ui.collapsed_dirs.contains(&key);
-            out.push(self.render_dir_row(child, depth, open, key, cx));
+            out.push(self.render_dir_row(child, depth, open, key, side, cx));
             if open {
                 self.tree_rows(child, depth + 1, side, out, cx);
             }
@@ -1336,54 +1489,113 @@ impl BenCodeApp {
         depth: usize,
         open: bool,
         key: String,
+        side: Side,
         cx: &Context<Self>,
     ) -> AnyElement {
         let fg = cx.theme().colors.fg;
+        let busy = self.changes_ui.busy.is_some();
         let (icon, tint) = crate::ui::file_tree::resolve_entry_icon(&dir.name, true, open);
+        let group = SharedString::from(format!("git-dir-{key}"));
+        let folder = dir.path.clone();
+        let (verb, action_icon) = match side {
+            Side::Staged => ("Unstage", IconName::Minus),
+            Side::Unstaged => ("Stage", IconName::Plus),
+        };
+        let action_hover = fg.opacity(0.10);
+        let action_group = SharedString::from(format!("{group}-stage"));
+        // `hidden group-hover:flex`: no room is kept while hidden.
+        let folder_action = div()
+            .flex_none()
+            .hidden()
+            .group_hover(group.clone(), |s| s.flex())
+            .child(
+                div()
+                    .id(action_group.clone())
+                    .group(action_group.clone())
+                    .size(px(20.0))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded(px(4.0))
+                    .when(busy, |el| el.opacity(0.4))
+                    .when(!busy, |el| {
+                        el.cursor_pointer()
+                            .hover(move |s| s.bg(action_hover))
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                cx.stop_propagation();
+                                this.folder_action(folder.clone(), side, cx)
+                            }))
+                    })
+                    .tooltip(Tooltip::text(format!("{verb} Changes in {}", dir.path)))
+                    .child(
+                        Icon::new(action_icon)
+                            .size(IconSize::Sm)
+                            .color(fg.opacity(0.55))
+                            .group_hover_color(action_group, fg),
+                    ),
+            );
+        let dark = cx.theme().is_dark();
         let dot = dir
             .status
             .as_ref()
-            .map_or(fg.opacity(0.4), status_color);
+            .map_or(fg.opacity(0.4), |status| status_color(status, dark));
         let hover = fg.opacity(0.05);
+        // `group flex h-7 items-center gap-1 pr-2 leading-none text-content
+        // hover:bg-content/5`, indented `8 + depth * 12`.
         div()
-            .id(SharedString::from(format!("git-dir-{key}")))
+            .id(group.clone())
+            .group(group.clone())
             .flex()
             .items_center()
-            .gap_1p5()
+            .gap_1()
             .h(px(ROW_HEIGHT))
             .pl(px(8.0 + depth as f32 * 12.0))
             .pr_2()
-            .cursor_pointer()
+            .line_height(relative(1.0))
+            .text_color(fg)
             .hover(move |s| s.bg(hover))
-            .tooltip(Tooltip::text(dir.path.clone()))
-            .on_click(cx.listener(move |this, _, _, cx| {
-                if !this.changes_ui.collapsed_dirs.remove(&key) {
-                    this.changes_ui.collapsed_dirs.insert(key.clone());
-                }
-                cx.notify();
-            }))
             .child(
-                div().size(px(16.0)).flex().flex_none().items_center().justify_center().child(
-                    Icon::new(if open {
-                        IconName::ChevronDown
-                    } else {
-                        IconName::ChevronRight
-                    })
-                    .size(IconSize::Xs)
-                    .color(fg.opacity(0.5)),
-                ),
-            )
-            .child(Icon::new(icon).size(IconSize::Sm).color(tint))
-            .child(
+                // The toggle: `flex-1 gap-1.5`, a `size-4` chevron box,
+                // the 16px folder icon, `text-[13px] font-medium`.
                 div()
+                    .id(SharedString::from(format!("{group}-toggle")))
+                    .flex()
                     .flex_1()
                     .min_w_0()
-                    .truncate()
-                    .text_size(px(13.0))
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_color(fg)
-                    .child(SharedString::from(dir.name.clone())),
+                    .items_center()
+                    .gap_1p5()
+                    .cursor_pointer()
+                    .tooltip(Tooltip::text(dir.path.clone()))
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        if !this.changes_ui.collapsed_dirs.remove(&key) {
+                            this.changes_ui.collapsed_dirs.insert(key.clone());
+                        }
+                        cx.notify();
+                    }))
+                    .child(
+                        div().size(px(16.0)).flex().flex_none().items_center().justify_center().child(
+                            Icon::new(if open {
+                                IconName::ChevronDown
+                            } else {
+                                IconName::ChevronRight
+                            })
+                            .size(IconSize::Sm)
+                            .color(fg.opacity(0.5)),
+                        ),
+                    )
+                    .child(Icon::new(icon).size(IconSize::Md).color(tint))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .truncate()
+                            .text_size(px(13.0))
+                            .font_weight(FontWeight::MEDIUM)
+                            .child(SharedString::from(dir.name.clone())),
+                    ),
             )
+            .child(folder_action)
+            // `w-3.5` with a `size-1.5` dot in the shared status colour.
             .child(
                 div().w(px(14.0)).flex().flex_none().justify_center().child(
                     div().size(px(6.0)).rounded_full().bg(dot),
@@ -1413,15 +1625,19 @@ impl BenCodeApp {
             && self.workspace.commit_view.is_none()
             && self.selected_diff_path.as_deref() == Some(file.path.as_str())
             && self.workspace.diff_source == selected_source;
-        let busy = self.changes_ui.busy == Some(Busy::File(file.path.clone()));
+        let busy = self.changes_ui.busy.is_some();
         let (icon, tint) = crate::ui::file_tree::resolve_entry_icon(&name, false, false);
         let group = SharedString::from(format!("git-row-{side:?}-{}", file.path));
-        let selection = fg.opacity(if cx.theme().is_dark() { 0.10 } else { 0.06 });
+        // MonoCode `bg-selection`.
+        let selection = colors.active;
         let hover = fg.opacity(0.05);
+        let dark = cx.theme().is_dark();
         let action = |key: &str, icon: IconName, tip: &'static str| {
             let action_hover = fg.opacity(0.10);
+            let action_group = SharedString::from(format!("{group}-{key}"));
             div()
-                .id(SharedString::from(format!("{group}-{key}")))
+                .id(action_group.clone())
+                .group(action_group.clone())
                 .size(px(20.0))
                 .flex()
                 .items_center()
@@ -1430,15 +1646,22 @@ impl BenCodeApp {
                 .when(busy, |el| el.opacity(0.4))
                 .when(!busy, |el| el.cursor_pointer().hover(move |s| s.bg(action_hover)))
                 .tooltip(Tooltip::text(tip))
-                .child(Icon::new(icon).size(IconSize::Xs).color(fg.opacity(0.55)))
+                .child(
+                    Icon::new(icon)
+                        .size(IconSize::Sm)
+                        .color(fg.opacity(0.55))
+                        .group_hover_color(action_group, fg),
+                )
         };
         let (open_path, discard_path, toggle_path) =
             (file.path.clone(), file.path.clone(), file.path.clone());
+        // `flex` while open, else `hidden group-hover:flex`: no room is
+        // kept while hidden.
         let mut actions = div().flex().flex_none().items_center();
         actions = if active {
             actions
         } else {
-            actions.invisible().group_hover(group.clone(), |s| s.visible())
+            actions.hidden().group_hover(group.clone(), |s| s.flex())
         };
         if side == Side::Unstaged {
             actions = actions.child(
@@ -1468,6 +1691,9 @@ impl BenCodeApp {
             .gap_1()
             .h(px(ROW_HEIGHT))
             .pr_2()
+            // `leading-none text-content`
+            .line_height(relative(1.0))
+            .text_color(fg)
             .map(|el| match depth {
                 Some(depth) => el.pl(px(8.0 + depth as f32 * 12.0)),
                 None => el.pl_2(),
@@ -1488,7 +1714,8 @@ impl BenCodeApp {
                         this.open_change(open_path.clone(), side, cx)
                     }))
                     .when(depth.is_some(), |el| el.child(div().size(px(16.0)).flex_none()))
-                    .child(Icon::new(icon).size(IconSize::Sm).color(tint))
+                    // `FileTypeIcon size={16}`
+                    .child(Icon::new(icon).size(IconSize::Md).color(tint))
                     .child(
                         div()
                             .flex_1()
@@ -1503,7 +1730,6 @@ impl BenCodeApp {
                                         div()
                                             .text_size(px(13.0))
                                             .font_weight(FontWeight::MEDIUM)
-                                            .text_color(fg)
                                             .child(name),
                                     )
                                     .when(!dir.is_empty(), |el| {
@@ -1528,7 +1754,7 @@ impl BenCodeApp {
                     .font_family(cx.theme().mono_family.clone())
                     .text_size(px(11.0))
                     .font_weight(FontWeight::SEMIBOLD)
-                    .text_color(status_color(&file.status))
+                    .text_color(status_color(&file.status, dark))
                     .child(status_letter(&file.status)),
             )
             .into_any_element()
@@ -1577,16 +1803,20 @@ impl BenCodeApp {
             .flex_col()
             .overflow_hidden()
             .border_t_1()
-            .border_color(colors.border)
+            .border_color(stroke(fg))
             .map(|el| if open { el.h(px(height)) } else { el.h(px(28.0)) })
             .child(
                 div()
                     .id("git-graph-toggle")
+                    // `flex h-7 items-center gap-1 px-3 leading-none
+                    // hover:bg-content/5`, `h-full` while collapsed.
                     .flex()
                     .flex_none()
                     .items_center()
-                    .h(px(28.0))
+                    .gap_1()
+                    .map(|el| if open { el.h(px(28.0)) } else { el.flex_1() })
                     .px_3()
+                    .line_height(relative(1.0))
                     .cursor_pointer()
                     .hover(move |s| s.bg(hover))
                     .on_click(cx.listener(|this, _, _, cx| {
@@ -1600,6 +1830,7 @@ impl BenCodeApp {
                             .text_color(fg.opacity(0.55))
                             .child("GRAPH"),
                     )
+                    // `ml-auto size-3.5`
                     .child(div().flex_1())
                     .child(
                         Icon::new(if open {
@@ -1607,7 +1838,7 @@ impl BenCodeApp {
                         } else {
                             IconName::ChevronRight
                         })
-                        .size(IconSize::Xs)
+                        .size(IconSize::Sm)
                         .color(fg.opacity(0.5)),
                     ),
             )
@@ -1660,9 +1891,13 @@ impl BenCodeApp {
             .find(|r| r.color.is_some())
             .or(row.refs.first())
             .cloned();
-        let selection = fg.opacity(if cx.theme().is_dark() { 0.10 } else { 0.06 });
+        // MonoCode `bg-selection`.
+        let selection = colors.active;
         let hover = fg.opacity(0.05);
+        let hovered = self.changes_ui.hovered_commit.as_deref() == Some(commit.sha.as_str());
+        let node = node_look(bg, fg, hovered, active);
         let open = commit.clone();
+        let hover_sha = commit.sha.clone();
         let tip = if commit.author.is_empty() {
             format!("{} {}", commit.short_sha, commit.subject)
         } else {
@@ -1679,6 +1914,13 @@ impl BenCodeApp {
             .when(active, |el| el.bg(selection))
             .when(!active, |el| el.hover(move |s| s.bg(hover)))
             .tooltip(Tooltip::text(tip))
+            .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
+                let next = hovered.then(|| hover_sha.clone());
+                if *hovered || this.changes_ui.hovered_commit.as_deref() == Some(hover_sha.as_str()) {
+                    this.changes_ui.hovered_commit = next;
+                    cx.notify();
+                }
+            }))
             .on_click(cx.listener(move |this, _, _, cx| {
                 this.active_view_mode = ViewMode::Changes;
                 this.open_commit(
@@ -1691,7 +1933,7 @@ impl BenCodeApp {
             .child(
                 canvas(
                     |_, _, _| {},
-                    move |bounds, _, window, _| paint_row_graph(&shape, bounds.origin, bg, window),
+                    move |bounds, _, window, _| paint_row_graph(&shape, bounds.origin, node, window),
                 )
                 .w(px(width))
                 .h(px(graph::SWIMLANE_HEIGHT))
@@ -1705,11 +1947,13 @@ impl BenCodeApp {
                     .min_w_0()
                     .items_center()
                     .overflow_hidden()
+                    // `text-[12px] leading-[22px]`, `font-semibold` at HEAD.
                     .child(
                         div()
                             .min_w_0()
                             .truncate()
                             .text_size(px(12.0))
+                            .line_height(px(graph::SWIMLANE_HEIGHT))
                             .text_color(fg)
                             .when(commit.head, |el| el.font_weight(FontWeight::SEMIBOLD))
                             .child(if commit.subject.is_empty() {
@@ -1725,6 +1969,7 @@ impl BenCodeApp {
                                 .min_w_0()
                                 .truncate()
                                 .text_size(px(12.0))
+                                .line_height(px(graph::SWIMLANE_HEIGHT))
                                 .text_color(fg.opacity(0.45))
                                 .child(commit.author.clone()),
                         )
@@ -1736,6 +1981,9 @@ impl BenCodeApp {
                     Some(color) => (rgb(color).into(), bg),
                     None => (fg.opacity(0.10), fg.opacity(0.55)),
                 };
+                // MonoCode `RefPill`: `ml-1 h-3.5 max-w-[6.5rem] gap-0.5
+                // rounded-full px-1.5 text-[10px] leading-none`, a
+                // `GitBranch size-2.5` on local branches.
                 div()
                     .ml_1()
                     .flex()
@@ -1748,9 +1996,16 @@ impl BenCodeApp {
                     .rounded_full()
                     .bg(fill)
                     .text_size(px(10.0))
+                    .line_height(relative(1.0))
                     .text_color(ink)
                     .when(local, |el| {
-                        el.child(Icon::new(IconName::GitBranch).size(IconSize::Xs).color(ink))
+                        el.child(
+                            gpui::svg()
+                                .path(IconName::GitBranch.path())
+                                .size(px(10.0))
+                                .flex_none()
+                                .text_color(ink),
+                        )
                     })
                     .child(div().min_w_0().truncate().child(r.name))
             }))
@@ -1868,11 +2123,40 @@ impl BenCodeApp {
     }
 }
 
+/// The colours MonoCode's `.git-history-item` CSS gives a node's circles.
+#[derive(Clone, Copy)]
+struct NodeLook {
+    /// The outer circle's `stroke: background-base` halo, which masks the
+    /// lanes around the node; `transparent` on hover.
+    halo: Option<Hsla>,
+    /// The second circle's stroke and HEAD's centre: `background-base`,
+    /// mixed with content at 5% on hover and 10% when selected.
+    inner: Hsla,
+}
+
+fn node_look(bg: Hsla, fg: Hsla, hovered: bool, selected: bool) -> NodeLook {
+    let inner = if selected {
+        bg.blend(fg.opacity(0.10))
+    } else if hovered {
+        bg.blend(fg.opacity(0.05))
+    } else {
+        bg
+    };
+    NodeLook {
+        halo: (!hovered).then_some(bg),
+        inner,
+    }
+}
+
+/// MonoCode `CIRCLE_STROKE_WIDTH`: each circle's 2px stroke straddles its
+/// radius by 1px.
+const NODE_STROKE_HALF: f32 = 1.0;
+
 /// Paints one row of the graph at `origin`.
 fn paint_row_graph(
     shape: &graph::RowGraph,
     origin: gpui::Point<gpui::Pixels>,
-    bg: Hsla,
+    look: NodeLook,
     window: &mut gpui::Window,
 ) {
     let at = |x: f32, y: f32| point(origin.x + px(x), origin.y + px(y));
@@ -1900,11 +2184,26 @@ fn paint_row_graph(
         );
         window.paint_quad(gpui::fill(bounds, fill).corner_radii(px(r)));
     };
+    // The outer circle (`r` = 5, 6 or 7): filled in the lane colour, its
+    // stroke a background ring from `r - 1` to `r + 1`.
     let outer = graph::node_radius(shape.node);
-    disc(outer, color, window);
-    // HEAD reads as a ring (MonoCode's hollow centre).
-    if shape.node == Node::Head {
-        disc(outer - 2.0, bg, window);
+    match look.halo {
+        Some(halo) => {
+            disc(outer + NODE_STROKE_HALF, halo, window);
+            disc(outer - NODE_STROKE_HALF, color, window);
+        }
+        None => disc(outer, color, window),
+    }
+    match shape.node {
+        // A merge's second circle (`r = 3`, filled): a ring from 2 to 4,
+        // the lane colour inside.
+        Node::Merge => {
+            disc(3.0 + NODE_STROKE_HALF, look.inner, window);
+            disc(3.0 - NODE_STROKE_HALF, color, window);
+        }
+        // HEAD's second circle (`r = 2`, `stroke-width: 4`) fills to 4.
+        Node::Head => disc(4.0, look.inner, window),
+        Node::Commit => {}
     }
 }
 

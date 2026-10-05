@@ -117,7 +117,7 @@ impl BenCodeApp {
             .flex_none()
             .items_center()
             .gap_2()
-            .h(theme.titlebar_height())
+            .h(crate::ui::sidebar::TITLEBAR_HEIGHT) // MonoCode `h-10`
             .px_3()
             .border_b_1()
             .border_color(colors.border)

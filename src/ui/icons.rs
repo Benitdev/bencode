@@ -11,6 +11,10 @@ pub enum ExtraIcon {
     Replace,
     /// `file-diff`: Open All Changes.
     FileDiff,
+    /// `list-filter`: Filter sessions.
+    ListFilter,
+    /// `fold-vertical`: the Explorer's Collapse All.
+    FoldVertical,
 }
 
 impl ExtraIcon {
@@ -19,6 +23,8 @@ impl ExtraIcon {
             Self::FolderTree => include_bytes!("../../assets/icons/folder-tree.svg"),
             Self::Replace => include_bytes!("../../assets/icons/replace.svg"),
             Self::FileDiff => include_bytes!("../../assets/icons/file-diff.svg"),
+            Self::ListFilter => include_bytes!("../../assets/icons/list-filter.svg"),
+            Self::FoldVertical => include_bytes!("../../assets/icons/fold-vertical.svg"),
         }
     }
 

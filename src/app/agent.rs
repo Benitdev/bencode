@@ -577,6 +577,8 @@ impl BenCodeApp {
             card.stamp(block);
         }
         self.usage_limits.remove(session_id);
+        // MonoCode `dismissNoticesForContinuedSession`.
+        self.dismiss_due_reminder(session_id, cx);
         // Skill bodies are small SKILL.md files; read them as MonoCode does
         // right before the turn starts.
         let typed = match (&input.agent_prompt, &input.card) {

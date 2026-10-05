@@ -384,7 +384,16 @@ impl BenCodeApp {
                 }
                 let inbox = &mut app.inbox;
                 inbox.status = Some(status);
+                // A linked thread's item opened before the list landed
+                // stays, even when the list does not include it.
+                let kept = inbox
+                    .selected
+                    .as_deref()
+                    .and_then(|key| inbox.items.iter().find(|i| i.key() == key))
+                    .filter(|item| !list.items.iter().any(|l| l.key() == item.key()))
+                    .cloned();
                 inbox.items = list.items;
+                inbox.items.extend(kept);
                 inbox.errors = list.errors;
                 inbox.loading = false;
                 inbox.fetching = false;
@@ -445,6 +454,11 @@ impl BenCodeApp {
             })
             .map(|(ix, _)| ix)
             .collect()
+    }
+
+    /// Opens Inbox item `key` (a linked thread's badge).
+    pub fn select_inbox_key(&mut self, key: String, cx: &mut Context<Self>) {
+        self.select_inbox_item(key, cx);
     }
 
     /// MonoCode `onSelect`: the item is read and opens on the right.

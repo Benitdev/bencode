@@ -70,6 +70,33 @@ fn ref_exists(cwd: &str, spec: &str) -> bool {
         .is_ok_and(|o| o.status.success())
 }
 
+/// MonoCode `git_url_repo_name`: the last path segment of a remote URL.
+pub fn url_repo_name(url: &str) -> Option<String> {
+    let trimmed = url.trim().trim_end_matches('/').trim_end_matches(".git");
+    let name = trimmed.rsplit(['/', ':']).next().unwrap_or("").trim();
+    if name.is_empty() || name == "." || name == ".." || name.contains('\\') {
+        return None;
+    }
+    Some(name.to_string())
+}
+
+/// MonoCode `GitInfo.repo`: the origin's repository name, else the
+/// checkout's top-level folder name, else `cwd`'s own name.
+pub fn repo_name(cwd: &str) -> Option<String> {
+    let folder = |path: &str| {
+        std::path::Path::new(path)
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+    };
+    let Some(top) = stdout(cwd, &["rev-parse", "--show-toplevel"]) else {
+        return folder(cwd);
+    };
+    let top = top.trim().to_string();
+    stdout(&top, &["remote", "get-url", "origin"])
+        .and_then(|url| url_repo_name(&url))
+        .or_else(|| folder(&top))
+}
+
 /// MonoCode `git_remote_name`: `origin` when there is one, else the first.
 pub fn remote_name(cwd: &str) -> Option<String> {
     let remotes = stdout(cwd, &["remote"])?;

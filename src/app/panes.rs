@@ -477,9 +477,15 @@ impl BenCodeApp {
     /// Creates a session in the current project (and focused worktree) and
     /// opens it in a new tab.
     pub fn create_new_session(&mut self, cx: &mut Context<Self>) {
+        self.create_new_session_id(cx);
+    }
+
+    /// `create_new_session`, returning the new thread's id.
+    pub fn create_new_session_id(&mut self, cx: &mut Context<Self>) -> String {
         let cwd = self.current_cwd.clone();
         let id = self.create_session_row(&cwd);
         self.tabs.open(&id);
         self.sync_selection(cx);
+        id
     }
 }

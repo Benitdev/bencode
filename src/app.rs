@@ -6,7 +6,9 @@ mod panes;
 mod preferences;
 pub mod project_files;
 mod projects;
+pub mod reminders;
 pub mod session_folders;
+pub mod session_list;
 mod surfaces;
 mod tab_history;
 mod tab_scope;
@@ -45,15 +47,6 @@ pub enum ViewMode {
     Chat,
     Editor,
     Changes,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-pub enum FilterMode {
-    #[default]
-    All,
-    Active,
-    Pinned,
-    Archived,
 }
 
 /// MonoCode's per-session access modes (`RuntimeMode`, `session.ts:368-390`),
@@ -110,7 +103,28 @@ pub struct BenCodeApp {
     /// Open workspace tabs, each with its split layout and focused pane.
     pub tabs: crate::ui::layout::TabSet,
     pub active_view_mode: ViewMode,
-    pub filter_mode: FilterMode,
+    /// The sidebar's Sessions tab: filters, picks, inline renames.
+    pub sessions_ui: crate::ui::sidebar_sessions::SessionsUi,
+    /// The sidebar's width (MonoCode keeps it for the run, not on disk).
+    pub sidebar_width: f32,
+    pub sidebar_resizing: bool,
+    /// MonoCode `session_reminders`, every project's, soonest first.
+    pub reminders: Vec<crate::db::Reminder>,
+    /// Listing reminders failed ("Couldn’t load reminders." + Retry).
+    pub reminder_error: Option<String>,
+    /// A reminder action failed (MonoCode's "Reminder" error dialog).
+    pub reminder_failure: Option<String>,
+    /// MonoCode `LinkSessionWorkItemDialog`, while open.
+    pub link_dialog: Option<crate::ui::link_dialog::LinkDialog>,
+    pub link_input: Entity<TextInput>,
+    /// MonoCode `monocode.sidebarTabOrder`.
+    pub sidebar_tab_order: Vec<SidebarMode>,
+    /// Where the sash was pressed (window x).
+    pub sidebar_drag_x: f32,
+    /// The card, folder or filter menu open in the sidebar.
+    pub sidebar_menu: Option<crate::ui::sidebar_menus::SidebarMenu>,
+    /// Focused while cards are picked, so F2 / ⌫ / Esc reach them.
+    pub session_list_focus: gpui::FocusHandle,
     pub permission_mode: PermissionMode,
     pub sidebar_mode: SidebarMode,
     pub selected_diff_path: Option<String>,
@@ -282,7 +296,10 @@ pub struct BenCodeApp {
     /// Git/filesystem snapshot for the active workspace; see `workspace_sync`.
     pub workspace: WorkspaceCache,
     pub file_tree: crate::ui::file_tree::FileTreeState,
+    /// The Explorer's inline name field (MonoCode `NameRow`).
     pub file_dialog_input: Entity<TextInput>,
+    /// Focused while the Explorer is clicked, so its keys reach it.
+    pub file_tree_focus: gpui::FocusHandle,
     // Universal Search
     pub search_modal_input: Entity<TextInput>,
     pub search_scope: crate::ui::search_view::SearchScope,
@@ -422,6 +439,11 @@ impl BenCodeApp {
                 })
         });
         let search_input = text_input(window, cx, "Search conversations...");
+        let rename_input = text_input(window, cx, "");
+        let link_input = text_input(window, cx, "https://github.com/owner/repo/pull/123");
+        let file_dialog_input = text_input(window, cx, "");
+        let name_keys_input = file_dialog_input.clone();
+        let rename_keys_input = rename_input.clone();
         let model_search_input = text_input(window, cx, "Search models");
         let mcp_search_input = text_input(window, cx, "Search MCP servers…");
         let mcp_keys_input = mcp_search_input.clone();
@@ -495,6 +517,8 @@ impl BenCodeApp {
             cx.observe_window_activation(window, |this, window, cx| {
                 if window.is_window_active() {
                     this.recheck_open_files_on_disk(cx);
+                    // MonoCode re-lists the Explorer on focus.
+                    this.refresh_file_tree(cx);
                 }
             }),
             cx.observe_window_appearance(window, |this, window, cx| {
@@ -622,6 +646,44 @@ impl BenCodeApp {
                     _ => {}
                 },
             ),
+            // MonoCode `NameRow`: Enter commits; blur commits unless wrong.
+            cx.subscribe(
+                &file_dialog_input,
+                |this: &mut Self, _, event: &InputEvent, cx| match event {
+                    InputEvent::Submit => this.commit_tree_edit(false, cx),
+                    InputEvent::Blur if this.tree_edit_active() => this.commit_tree_edit(true, cx),
+                    InputEvent::Changed => {
+                        this.file_tree.edit_state.submit_error = None;
+                        cx.notify();
+                    }
+                    _ => {}
+                },
+            ),
+            cx.subscribe(
+                &link_input,
+                |this: &mut Self, _, event: &InputEvent, cx| match event {
+                    InputEvent::Submit => this.submit_link_dialog(cx),
+                    InputEvent::Changed => {
+                        if let Some(dialog) = this.link_dialog.as_mut()
+                            && dialog.error.take().is_some()
+                        {
+                            cx.notify();
+                        }
+                    }
+                    _ => {}
+                },
+            ),
+            // MonoCode's inline renames commit on Enter and on blur.
+            cx.subscribe(
+                &rename_input,
+                |this: &mut Self, _, event: &InputEvent, cx| {
+                    if matches!(event, InputEvent::Submit | InputEvent::Blur)
+                        && this.inline_rename_active()
+                    {
+                        this.commit_inline_rename(cx);
+                    }
+                },
+            ),
             cx.subscribe(
                 &search_modal_input,
                 |this: &mut Self, _, event: &InputEvent, cx| {
@@ -642,6 +704,34 @@ impl BenCodeApp {
             if pasting && composer_input.read(cx).focus_handle(cx).is_focused(window) {
                 let attached = weak_app.update(cx, |this, cx| this.paste_into_composer(cx));
                 if matches!(attached, Ok(true)) {
+                    cx.stop_propagation();
+                }
+                return;
+            }
+            // MonoCode `NameRow`: Esc cancels.
+            if event.keystroke.key == "escape"
+                && name_keys_input.read(cx).focus_handle(cx).is_focused(window)
+            {
+                let cancelled = weak_app.update(cx, |this, cx| {
+                    let active = this.tree_edit_active();
+                    this.cancel_tree_edit(cx);
+                    active
+                });
+                if matches!(cancelled, Ok(true)) {
+                    cx.stop_propagation();
+                }
+                return;
+            }
+            // MonoCode's inline renames: Esc cancels.
+            if event.keystroke.key == "escape"
+                && rename_keys_input.read(cx).focus_handle(cx).is_focused(window)
+            {
+                let cancelled = weak_app.update(cx, |this, cx| {
+                    let active = this.inline_rename_active();
+                    this.cancel_inline_rename(cx);
+                    active
+                });
+                if matches!(cancelled, Ok(true)) {
                     cx.stop_propagation();
                 }
                 return;
@@ -867,7 +957,18 @@ impl BenCodeApp {
             selected_session_id,
             tabs,
             active_view_mode: ViewMode::Chat,
-            filter_mode: FilterMode::All,
+            sessions_ui: Default::default(),
+            sidebar_menu: None,
+            sidebar_width: crate::ui::sidebar::SIDEBAR_MIN_WIDTH,
+            sidebar_resizing: false,
+            reminders: Vec::new(),
+            reminder_error: None,
+            reminder_failure: None,
+            link_dialog: None,
+            link_input,
+            sidebar_tab_order: crate::ui::sidebar::parse_tab_order(&[]),
+            sidebar_drag_x: 0.0,
+            session_list_focus: cx.focus_handle(),
             permission_mode: PermissionMode::default(),
             sidebar_mode: SidebarMode::Sessions,
             selected_diff_path: None,
@@ -976,13 +1077,14 @@ impl BenCodeApp {
             changes_ui: Default::default(),
             workspace: WorkspaceCache::default(),
             file_tree: Default::default(),
-            file_dialog_input: text_input(window, cx, "Name"),
+            file_dialog_input,
+            file_tree_focus: cx.focus_handle(),
             search_modal_input,
             search_scope: crate::ui::search_view::SearchScope::All,
             search_hits: Vec::new(),
             search_active_index: 0,
             session_dialog: None,
-            rename_input: text_input(window, cx, "Thread title"),
+            rename_input,
             focus_handle: cx.focus_handle(),
             runs: HashMap::new(),
             prompt_queues: HashMap::new(),
@@ -1025,6 +1127,9 @@ impl BenCodeApp {
         };
         app.apply_settings(saved);
         app.start_git_poll(cx);
+        app.start_session_age_tick(cx);
+        app.start_reminder_poll(cx);
+        app.load_folder_members(cx);
         app.start_clock(cx);
         app.refresh_installed_catalogs(cx);
         app.start_inbox_poll(cx);
@@ -1353,6 +1458,20 @@ impl BenCodeApp {
         cx.notify();
     }
 
+    /// Pins or unpins `id` (a no-op when it already is).
+    pub fn set_session_pinned(&mut self, id: &str, pinned: bool, cx: &mut Context<Self>) {
+        if self.sessions.iter().any(|s| s.id == id && s.pinned != pinned) {
+            self.toggle_pin_session(id, cx);
+        }
+    }
+
+    /// Archives or unarchives `id` (a no-op when it already is).
+    pub fn set_session_archived(&mut self, id: &str, archived: bool, cx: &mut Context<Self>) {
+        if self.sessions.iter().any(|s| s.id == id && s.archived != archived) {
+            self.toggle_archive_session(id, cx);
+        }
+    }
+
     pub fn toggle_archive_session(&mut self, id: &str, cx: &mut Context<Self>) {
         let Some(session) = self.sessions.iter_mut().find(|s| s.id == id) else {
             return;
@@ -1371,6 +1490,9 @@ impl Render for BenCodeApp {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if std::mem::take(&mut self.question_focus_wanted) {
             window.focus(&self.question_focus, cx);
+        }
+        if let Some(path) = self.file_tree.pending_open.take() {
+            self.open_file_in_editor(&path, window, cx);
         }
         self.sync_mention_marks(window, cx);
         // The runner layer reads what this layout measures.
@@ -1392,6 +1514,33 @@ impl Render for BenCodeApp {
             .size_full()
             .child(
                 Self::bind_commands(div().id("bencode-root"), cx)
+                    .on_drag_move::<crate::ui::sidebar::SidebarResize>(cx.listener(
+                        |this, event: &gpui::DragMoveEvent<crate::ui::sidebar::SidebarResize>, window, cx| {
+                            let drag = crate::ui::sidebar::SidebarResize {
+                                start_x: this.sidebar_drag_x,
+                                ..event.drag(cx).clone()
+                            };
+                            let width = crate::ui::sidebar::resized_width(
+                                &drag,
+                                f32::from(event.event.position.x),
+                                f32::from(window.viewport_size().width),
+                            );
+                            if width != this.sidebar_width || !this.sidebar_resizing {
+                                this.sidebar_width = width;
+                                this.sidebar_resizing = true;
+                                cx.notify();
+                            }
+                        },
+                    ))
+                    .on_mouse_up(
+                        gpui::MouseButton::Left,
+                        cx.listener(|this, _, _, cx| {
+                            if std::mem::take(&mut this.sidebar_resizing) {
+                                cx.notify();
+                            }
+                        }),
+                    )
+                    .relative()
                     .flex()
                     .flex_col()
                     .size_full()
@@ -1449,6 +1598,11 @@ impl Render for BenCodeApp {
                             })
                             .children(surface),
                     )
+                    .children(self.render_sidebar_menu(cx))
+                    .children(self.render_tree_menu(cx))
+                    .children(self.render_git_menu(cx))
+                    .children(self.render_link_dialog(cx))
+                    .children(self.render_reminder_notices(cx))
                     .children(self.render_session_dialog(cx))
                     .children(self.render_quick_open(cx))
                     .children(self.render_lightbox(cx))

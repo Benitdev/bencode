@@ -112,7 +112,13 @@ impl BenCodeApp {
 
     /// Keys while a composer menu holds focus (MonoCode `onMenuKey`).
     pub fn handle_menu_key(&mut self, key: &str, cx: &mut Context<Self>) -> bool {
-        if self.tab_menu_open() {
+        if self.git_menu_open() {
+            self.git_menu_key(key, cx)
+        } else if self.tree_menu_open() {
+            self.tree_menu_key(key, cx)
+        } else if self.sidebar_menu_open() {
+            self.sidebar_menu_key(key, cx)
+        } else if self.tab_menu_open() {
             self.tab_menu_key(key, cx)
         } else if self.composer_menus.handoff.is_some() {
             self.handoff_menu_key(key, cx)
@@ -270,6 +276,7 @@ impl BenCodeApp {
                 place: MenuPlace::Above,
                 width: WORKSPACE_MENU_WIDTH,
                 focus: &self.composer_menus.focus,
+                header: None,
             },
             move |ix, _, cx| {
                 let hovered = hover_app.update(cx, |this, cx| {

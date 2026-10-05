@@ -77,6 +77,10 @@ impl BenCodeApp {
         self.recent_models = saved.recent_models.clone();
         self.last_model_settings = saved.last_model_settings.clone();
         self.session_folders = saved.session_folders.clone();
+        self.sessions_ui.filters = saved.session_sidebar_filters.clone();
+        self.sessions_ui.pinned_collapsed = saved.pinned_sessions_collapsed.clone();
+        self.sessions_ui.reminders_collapsed = saved.reminder_sessions_collapsed.clone();
+        self.sidebar_tab_order = crate::ui::sidebar::parse_tab_order(&saved.sidebar_tab_order);
         self.settings = saved;
     }
 
@@ -98,6 +102,14 @@ impl BenCodeApp {
             recent_models: self.recent_models.clone(),
             last_model_settings: self.last_model_settings.clone(),
             session_folders: self.session_folders.clone(),
+            session_sidebar_filters: self.sessions_ui.filters.clone(),
+            pinned_sessions_collapsed: self.sessions_ui.pinned_collapsed.clone(),
+            reminder_sessions_collapsed: self.sessions_ui.reminders_collapsed.clone(),
+            sidebar_tab_order: self
+                .sidebar_tab_order
+                .iter()
+                .map(|t| crate::ui::sidebar::tab_id(*t).to_string())
+                .collect(),
             extra: self.settings.extra.clone(),
         }
     }

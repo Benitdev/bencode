@@ -80,6 +80,7 @@ impl BenCodeApp {
         self.load_project_sessions(&cwd);
         self.return_to_project(&cwd);
         self.set_current_project(cwd.clone());
+        self.load_folder_members(cx);
         let focus = self.worktree_focuses.get(&cwd).cloned();
         self.navigate_workspace(&cwd, focus, WorkspaceRequest::Project);
         // Refreshes git/files for the new directory and records the landing.
@@ -172,9 +173,6 @@ impl BenCodeApp {
             self.recent_projects.push(cwd.clone());
         }
         self.current_cwd = cwd;
-        self.file_tree.dir_cache.clear();
-        self.file_tree.expanded_paths.clear();
-        self.file_tree.selected_path = None;
         self.selected_diff_path = None;
     }
 

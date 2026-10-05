@@ -75,8 +75,15 @@ impl BenCodeApp {
 
     /// Opens another terminal for the current project and shows the dock.
     pub fn new_terminal(&mut self, cx: &mut Context<Self>) {
+        let cwd = self.current_cwd.clone();
+        self.new_terminal_at(&cwd, cx);
+    }
+
+    /// A terminal for the current project started in `cwd` (MonoCode
+    /// Explorer "Open in Terminal").
+    pub fn new_terminal_at(&mut self, cwd: &str, cx: &mut Context<Self>) {
         let project = self.current_cwd.clone();
-        let cwd = project.clone();
+        let cwd = cwd.to_string();
         let entity = cx.new(|cx| spawn_shell(&cwd, cx));
         self.terminals.next_id += 1;
         let id = self.terminals.next_id;

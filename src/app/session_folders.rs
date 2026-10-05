@@ -17,6 +17,60 @@ pub struct SessionFolder {
     pub name: String,
     pub session_ids: Vec<String>,
     pub collapsed: bool,
+    /// MonoCode `colorIndex` into `FOLDER_COLORS`; 0 or none is untinted.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color_index: Option<usize>,
+    /// MonoCode `customColor` (`#rrggbb`), ahead of `color_index`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub custom_color: Option<String>,
+}
+
+/// MonoCode `TAB_GROUP_COLORS` as (hue°, saturation, lightness); the
+/// first is the untinted default.
+pub const FOLDER_COLORS: [(f32, f32, f32); 9] = [
+    (210.0, 0.08, 0.58),
+    (211.0, 0.92, 0.62),
+    (12.0, 0.80, 0.58),
+    (45.0, 0.90, 0.55),
+    (142.0, 0.55, 0.50),
+    (330.0, 0.70, 0.62),
+    (280.0, 0.55, 0.62),
+    (175.0, 0.55, 0.48),
+    (25.0, 0.85, 0.58),
+];
+
+pub fn palette_color(index: usize) -> Option<gpui::Hsla> {
+    let (h, s, l) = *FOLDER_COLORS.get(index)?;
+    Some(gpui::hsla(h / 360.0, s, l, 1.0))
+}
+
+/// `#rrggbb` only (MonoCode `parseCustomHex`).
+pub fn parse_hex(text: &str) -> Option<gpui::Hsla> {
+    let hex = text.strip_prefix('#')?;
+    if hex.len() != 6 || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
+        return None;
+    }
+    gpui::Rgba::try_from(text).ok().map(Into::into)
+}
+
+/// `#rrggbb` for a colour.
+pub fn to_hex(color: gpui::Hsla) -> String {
+    let rgba = gpui::Rgba::from(color);
+    let byte = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+    format!("#{:02x}{:02x}{:02x}", byte(rgba.r), byte(rgba.g), byte(rgba.b))
+}
+
+impl SessionFolder {
+    /// MonoCode `folderAccent`: the custom colour, else a palette colour
+    /// other than the first.
+    pub fn accent(&self) -> Option<gpui::Hsla> {
+        if let Some(color) = self.custom_color.as_deref().and_then(parse_hex) {
+            return Some(color);
+        }
+        self.color_index
+            .filter(|i| (1..FOLDER_COLORS.len()).contains(i))
+            .and_then(palette_color)
+    }
 }
 
 /// MonoCode `SessionFolderTarget`: where `/add-to-folder` puts a thread.
@@ -109,11 +163,40 @@ pub fn place_session(
                     name: name.to_string(),
                     session_ids: vec![session_id.to_string()],
                     collapsed: false,
+                    ..SessionFolder::default()
                 },
             );
             next
         }
     }
+}
+
+/// MonoCode `createFolderWithSessions`: a new open folder holding
+/// `session_ids` (taken out of any other folder), first in the list.
+pub fn create_folder(folders: &[SessionFolder], session_ids: &[String]) -> (Vec<SessionFolder>, Option<String>) {
+    let mut ids: Vec<String> = Vec::new();
+    for id in session_ids {
+        if !id.is_empty() && !ids.contains(id) {
+            ids.push(id.clone());
+        }
+    }
+    if ids.is_empty() {
+        return (folders.to_vec(), None);
+    }
+    let mut next = folders.to_vec();
+    for id in &ids {
+        next = remove_session(&next, id);
+    }
+    let id = new_folder_id();
+    let folder = SessionFolder {
+        id: id.clone(),
+        name: unique_folder_name(&next),
+        session_ids: ids,
+        collapsed: false,
+        ..SessionFolder::default()
+    };
+    next.insert(0, folder);
+    (next, Some(id))
 }
 
 /// MonoCode's picker rows: folders whose name holds the query, then
@@ -141,7 +224,7 @@ impl BenCodeApp {
             .map_or(&[], Vec::as_slice)
     }
 
-    fn set_project_folders(&mut self, folders: Vec<SessionFolder>, cx: &mut Context<Self>) {
+    pub(crate) fn set_project_folders(&mut self, folders: Vec<SessionFolder>, cx: &mut Context<Self>) {
         let project = self.current_cwd.clone();
         if folders.is_empty() {
             self.session_folders.remove(&project);
@@ -162,14 +245,32 @@ impl BenCodeApp {
         self.set_project_folders(next, cx);
     }
 
-    /// The thread menu's "New folder": a folder holding just this thread.
-    pub fn new_folder_with_session(&mut self, session_id: &str, cx: &mut Context<Self>) {
-        let name = unique_folder_name(self.project_folders());
-        self.place_session_in_folder(session_id, &FolderTarget::New(name), cx);
+    /// The thread menu's "New folder" and a card dropped on a card: a
+    /// folder of these threads. Returns its id.
+    pub fn new_folder_with_sessions(
+        &mut self,
+        session_ids: &[String],
+        cx: &mut Context<Self>,
+    ) -> Option<String> {
+        let (next, id) = create_folder(self.project_folders(), session_ids);
+        id.is_some().then(|| self.set_project_folders(next, cx));
+        id
     }
 
-    pub fn remove_session_from_folder(&mut self, session_id: &str, cx: &mut Context<Self>) {
-        let next = remove_session(self.project_folders(), session_id);
+    /// MonoCode "Add to {folder}" for every menu target.
+    pub fn add_sessions_to_folder(&mut self, session_ids: &[String], folder_id: &str, cx: &mut Context<Self>) {
+        let target = FolderTarget::Existing(folder_id.to_string());
+        let next = session_ids
+            .iter()
+            .fold(self.project_folders().to_vec(), |folders, id| place_session(&folders, id, &target));
+        self.set_project_folders(next, cx);
+    }
+
+    /// MonoCode "Remove from folder(s)".
+    pub fn remove_sessions_from_folders(&mut self, session_ids: &[String], cx: &mut Context<Self>) {
+        let next = session_ids
+            .iter()
+            .fold(self.project_folders().to_vec(), |folders, id| remove_session(&folders, id));
         self.set_project_folders(next, cx);
     }
 
@@ -192,6 +293,35 @@ impl BenCodeApp {
             folder.name = name.to_string();
         }
         self.set_project_folders(next, cx);
+    }
+
+    /// MonoCode `setFolderColor`: `None` (or the first swatch) clears the
+    /// tint and any custom colour.
+    pub fn set_folder_color(&mut self, folder_id: &str, index: Option<usize>, cx: &mut Context<Self>) {
+        let mut next = self.project_folders().to_vec();
+        if let Some(folder) = next.iter_mut().find(|f| f.id == folder_id) {
+            folder.color_index = index.filter(|i| (1..FOLDER_COLORS.len()).contains(i));
+            folder.custom_color = None;
+        }
+        self.set_project_folders(next, cx);
+    }
+
+    /// MonoCode `setFolderCustomColor`, while the picker is dragged: shown
+    /// at once, saved when the folder menu closes.
+    pub fn preview_folder_custom_color(&mut self, folder_id: &str, hex: String, cx: &mut Context<Self>) {
+        if parse_hex(&hex).is_none() {
+            return;
+        }
+        if let Some(folder) = self
+            .session_folders
+            .get_mut(&self.current_cwd)
+            .and_then(|folders| folders.iter_mut().find(|f| f.id == folder_id))
+            && folder.custom_color.as_deref() != Some(hex.as_str())
+        {
+            folder.custom_color = Some(hex);
+            self.sessions_ui.folder_colors_unsaved = true;
+            cx.notify();
+        }
     }
 
     /// MonoCode "Ungroup" (`dissolveFolder`): the threads stay, loose.
@@ -232,6 +362,7 @@ mod tests {
             name: name.into(),
             session_ids: ids.iter().map(|s| s.to_string()).collect(),
             collapsed: true,
+            ..SessionFolder::default()
         }
     }
 
@@ -252,6 +383,19 @@ mod tests {
             place_session(&named, "s3", &FolderTarget::New(" ".into())),
             named
         );
+    }
+
+    #[test]
+    fn folder_accents_prefer_custom_then_palette() {
+        let mut f = folder("a", "A", &["s"]);
+        assert!(f.accent().is_none());
+        f.color_index = Some(0);
+        assert!(f.accent().is_none(), "the first swatch is untinted");
+        f.color_index = Some(2);
+        assert_eq!(f.accent(), palette_color(2));
+        f.custom_color = Some("#ff0000".into());
+        assert_eq!(to_hex(f.accent().unwrap()), "#ff0000");
+        assert!(parse_hex("red").is_none() && parse_hex("#12345").is_none());
     }
 
     #[test]

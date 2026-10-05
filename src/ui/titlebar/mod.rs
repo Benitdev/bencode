@@ -41,8 +41,6 @@ const TAB_GAP: f32 = 2.0;
 const STRIP_PADDING: f32 = 16.0;
 /// MonoCode `--motion-tab-close-duration`.
 const TAB_MOTION: Duration = Duration::from_millis(200);
-/// `TerminalSpinner` frames, one every 80ms.
-const SPINNER_FRAMES: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 /// Room for the macOS window buttons when nothing else on the left holds it.
 const TRAFFIC_LIGHT_SPACE: gpui::Pixels = px(72.0);
 
@@ -74,7 +72,7 @@ pub struct TitleStrip {
     last_active: Option<String>,
     /// Threads working last frame, and those that finished unseen.
     busy: HashSet<String>,
-    unseen_finished: HashSet<String>,
+    pub(crate) unseen_finished: HashSet<String>,
     window_title: String,
     menu: Option<TabMenu>,
     /// While a tab is dragged along the strip: it and the place it would
@@ -507,6 +505,7 @@ impl BenCodeApp {
                 place: explorer_menu::MenuPlace::At(menu.position),
                 width: TAB_MENU_WIDTH,
                 focus: &self.composer_menus.focus,
+                header: None,
             },
             move |ix, _, cx| {
                 let updated = hover_app.update(cx, |this, cx| {
@@ -557,20 +556,10 @@ impl BenCodeApp {
                     .justify_center()
                     .when(ix > 0, |el| el.ml(px(-2.0)));
                 if tab.busy.contains(harness) {
-                    slot.child(
-                        div()
-                            .text_size(px(11.0))
-                            .line_height(px(11.0))
-                            .text_color(colors.accent)
-                            .with_animation(
-                                SharedString::from(format!("tab-spin-{}-{harness}", tab.id)),
-                                Animation::new(Duration::from_millis(800)).repeat(),
-                                |el, delta| {
-                                    let frame = (delta * SPINNER_FRAMES.len() as f32) as usize;
-                                    el.child(SPINNER_FRAMES[frame.min(SPINNER_FRAMES.len() - 1)])
-                                },
-                            ),
-                    )
+                    slot.child(crate::ui::spinner::terminal_spinner(
+                        SharedString::from(format!("tab-spin-{}-{harness}", tab.id)),
+                        colors.accent,
+                    ))
                     .into_any_element()
                 } else if tab.done.contains(harness) {
                     slot.child(
@@ -1011,7 +1000,7 @@ impl BenCodeApp {
             .window_control_area(WindowControlArea::Drag)
             .flex()
             .items_stretch()
-            .h(theme.titlebar_height())
+            .h(crate::ui::sidebar::TITLEBAR_HEIGHT) // MonoCode `h-10`
             .w_full()
             .flex_none()
             .border_b_1()
