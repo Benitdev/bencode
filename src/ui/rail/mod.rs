@@ -74,7 +74,7 @@ pub(super) fn group_color(group: &ProjectGroup) -> Hsla {
 
 /// `open -R` (MonoCode `revealPath`), off the UI thread's way: spawning
 /// returns at once.
-pub(super) fn reveal_project(path: &str) {
+pub(crate) fn reveal_project(path: &str) {
     let result = if cfg!(target_os = "macos") {
         std::process::Command::new("open").arg("-R").arg(path).spawn()
     } else {

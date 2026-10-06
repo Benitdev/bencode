@@ -143,7 +143,7 @@ pub struct SessionRow {
     pub model_settings: Option<serde_json::Map<String, Value>>,
     /// MonoCode `worktreeRemoved`: the thread's worktree was deleted; it
     /// cannot run until a branch or worktree is chosen. Written only by
-    /// `reattach_session`.
+    /// `reattach_session` and `detach_worktree_sessions`.
     #[serde(default)]
     pub worktree_removed: bool,
     /// MonoCode `automationId`: the automation that started the thread.
@@ -460,12 +460,60 @@ impl MonoCodeDb {
         Ok(())
     }
 
-    /// MonoCode `worktree_lifecycle`: these threads' worktree was removed;
-    /// they keep `worktree_cwd` and wait for a new working copy.
-    pub fn mark_worktree_removed(&self, ids: &[String]) -> Result<()> {
+    /// MonoCode `worktrees.rs::session_ids`: threads still working in the
+    /// worktree at `path` (archived ones included).
+    pub fn session_ids_in_worktree(&self, path: &str) -> Result<Vec<String>> {
+        let mut query = self.conn.prepare(
+            "SELECT id, COALESCE(NULLIF(worktree_cwd, ''), cwd) FROM sessions WHERE worktree_removed = 0",
+        )?;
+        let rows = query.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        let mut ids = Vec::new();
+        for row in rows {
+            let (id, cwd) = row?;
+            if crate::app::is_path_in_project(&cwd, path) {
+                ids.push(id);
+            }
+        }
+        Ok(ids)
+    }
+
+    /// MonoCode `worktrees.rs::prepare_removal`: the worktree at `path` is
+    /// gone, so these threads keep their transcript, remember the worktree
+    /// and wait for a new working copy; a `cwd` inside it moves to
+    /// `project_cwd`, and provider and branch state is dropped.
+    pub fn detach_worktree_sessions(&self, ids: &[String], path: &str, project_cwd: &str) -> Result<()> {
         let tx = self.conn.unchecked_transaction()?;
+        let in_flight: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'in_flight_sessions')",
+            [],
+            |row| row.get(0),
+        )?;
         for id in ids {
-            tx.execute("UPDATE sessions SET worktree_removed = 1 WHERE id = ?1", [id])?;
+            let Some(cwd) = tx
+                .query_row("SELECT cwd FROM sessions WHERE id = ?1", [id], |row| {
+                    row.get::<_, String>(0)
+                })
+                .optional()?
+            else {
+                continue;
+            };
+            let detached_cwd = if crate::app::is_path_in_project(&cwd, path) {
+                project_cwd
+            } else {
+                cwd.as_str()
+            };
+            tx.execute(
+                "UPDATE sessions SET worktree_removed = 1,
+                   worktree_cwd = COALESCE(NULLIF(worktree_cwd, ''), cwd),
+                   cwd = ?2, branch = NULL, provider_session_id = NULL,
+                   context_used = NULL, context_window = NULL WHERE id = ?1",
+                rusqlite::params![id, detached_cwd],
+            )?;
+            if in_flight {
+                tx.execute("DELETE FROM in_flight_sessions WHERE session_id = ?1", [id])?;
+            }
         }
         tx.commit()?;
         Ok(())
@@ -1635,21 +1683,40 @@ mod tests {
     }
 
     #[test]
-    fn mark_worktree_removed_keeps_the_worktree_path() {
+    fn detach_worktree_sessions_matches_monocode() {
         let db = MonoCodeDb::open_in_memory().unwrap();
-        let mut row = session("s1");
-        row.worktree_cwd = Some("/p-worktrees/mc-a".into());
-        db.upsert_session(&row).unwrap();
-        db.upsert_session(&session("s2")).unwrap();
+        let mut linked = session("linked");
+        linked.cwd = "/p".into();
+        linked.worktree_cwd = Some("/p-worktrees/mc-a".into());
+        linked.branch = Some("mc/a".into());
+        linked.provider_session_id = Some("prov".into());
+        db.upsert_session(&linked).unwrap();
+        let mut direct = session("direct");
+        direct.cwd = "/p-worktrees/mc-a/src".into();
+        db.upsert_session(&direct).unwrap();
+        let mut other = session("other");
+        other.cwd = "/p".into();
+        db.upsert_session(&other).unwrap();
 
-        db.mark_worktree_removed(&["s1".to_string()]).unwrap();
+        let mut ids = db.session_ids_in_worktree("/p-worktrees/mc-a").unwrap();
+        ids.sort();
+        assert_eq!(ids, ["direct", "linked"]);
 
-        let s1 = db.get_session("s1").unwrap().unwrap();
-        assert!(s1.worktree_removed);
-        assert_eq!(s1.worktree_cwd.as_deref(), Some("/p-worktrees/mc-a"));
-        assert!(!db.get_session("s2").unwrap().unwrap().worktree_removed);
+        db.detach_worktree_sessions(&ids, "/p-worktrees/mc-a", "/p").unwrap();
 
-        db.reattach_session("s1", None).unwrap();
-        assert!(!db.get_session("s1").unwrap().unwrap().worktree_removed);
+        let linked = db.get_session("linked").unwrap().unwrap();
+        assert!(linked.worktree_removed);
+        assert_eq!(linked.cwd, "/p");
+        assert_eq!(linked.worktree_cwd.as_deref(), Some("/p-worktrees/mc-a"));
+        assert_eq!(linked.branch, None);
+        assert_eq!(linked.provider_session_id, None);
+        let direct = db.get_session("direct").unwrap().unwrap();
+        assert_eq!(direct.cwd, "/p");
+        assert_eq!(direct.worktree_cwd.as_deref(), Some("/p-worktrees/mc-a/src"));
+        assert!(!db.get_session("other").unwrap().unwrap().worktree_removed);
+        assert!(db.session_ids_in_worktree("/p-worktrees/mc-a").unwrap().is_empty());
+
+        db.reattach_session("linked", None).unwrap();
+        assert!(!db.get_session("linked").unwrap().unwrap().worktree_removed);
     }
 }

@@ -26,9 +26,11 @@ pub enum SettingsTab {
     About,
     /// MonoCode Settings › Archive: archived projects.
     Archive,
+    /// MonoCode Settings › Worktrees (`ui/settings_worktrees.rs`).
+    Worktrees,
 }
 
-const SECTIONS: [(SettingsTab, &str, &str, IconName); 7] = [
+const SECTIONS: [(SettingsTab, &str, &str, IconName); 8] = [
     (
         SettingsTab::General,
         "general",
@@ -56,6 +58,13 @@ const SECTIONS: [(SettingsTab, &str, &str, IconName); 7] = [
     ),
     (SettingsTab::About, "about", "About", IconName::Info),
     (SettingsTab::Archive, "archive", "Archive", IconName::Archive),
+    // MonoCode's nav uses `FolderTree`, which Ely's `IconName` lacks.
+    (
+        SettingsTab::Worktrees,
+        "worktrees",
+        "Worktrees",
+        IconName::GitBranch,
+    ),
 ];
 
 /// MonoCode `SETTINGS_GROUPS` with BenCode's sections in them (About is
@@ -69,7 +78,7 @@ pub(crate) const SETTINGS_GROUPS: [(&str, &[SettingsTab]); 3] = [
         "Agents",
         &[SettingsTab::Providers, SettingsTab::Mcp, SettingsTab::Skills],
     ),
-    ("Workspace", &[SettingsTab::Archive]),
+    ("Workspace", &[SettingsTab::Archive, SettingsTab::Worktrees]),
 ];
 
 impl SettingsTab {
@@ -160,6 +169,7 @@ impl BenCodeApp {
             SettingsTab::Appearance => render_settings_appearance(self, cx).into_any_element(),
             SettingsTab::About => render_settings_about().into_any_element(),
             SettingsTab::Archive => self.render_settings_archive(cx).into_any_element(),
+            SettingsTab::Worktrees => self.render_settings_worktrees(cx).into_any_element(),
         }
     }
 

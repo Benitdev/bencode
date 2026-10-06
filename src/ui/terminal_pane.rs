@@ -23,6 +23,8 @@ const TAB_HEIGHT: gpui::Pixels = px(28.0);
 pub struct TerminalTab {
     pub id: u64,
     pub entity: Entity<Terminal>,
+    /// The folder its shell started in.
+    pub cwd: String,
     _events: Subscription,
 }
 
@@ -43,6 +45,15 @@ pub struct TerminalDocks {
 impl TerminalDocks {
     pub fn dock(&self, project: &str) -> Option<&TerminalDock> {
         self.docks.get(project)
+    }
+
+    /// Whether a terminal was started inside `path` (MonoCode
+    /// `PtyHost::has_working_dir`).
+    pub fn any_in(&self, path: &str) -> bool {
+        self.docks
+            .values()
+            .flat_map(|dock| &dock.tabs)
+            .any(|tab| crate::app::is_path_in_project(&tab.cwd, path))
     }
 }
 
@@ -100,6 +111,7 @@ impl BenCodeApp {
         dock.tabs.push(TerminalTab {
             id,
             entity,
+            cwd,
             _events: events,
         });
         dock.active = id;

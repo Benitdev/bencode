@@ -43,12 +43,17 @@ mức ưu tiên. Phần đã xong chỉ được tóm tắt.
 
 - [~] **Vòng đời worktree**
   - Đã có: liệt kê, tạo worktree khi gửi tin đầu (`ui/composer/new_worktree.rs`);
-    xoá và prune từ worktree switcher ở sidebar (`app/worktree_lifecycle.rs`).
-    Worktree còn thay đổi chưa commit hoặc commit chưa push phải xác nhận lần
-    hai ("Remove anyway"); các thread chạy trong đó được đánh dấu
-    `worktree_removed` và chờ chọn working copy mới.
-  - Cần: đổi tên nhánh theo tin nhắn đầu.
-  - MonoCode: `src-tauri/src/worktree_lifecycle.rs`, `worktrees.rs`.
+    trang Settings › Worktrees (`ui/settings_worktrees.rs`) liệt kê worktree
+    của project hiện tại, Reveal, và dialog "Delete worktree?" như MonoCode:
+    luôn xoá ép buộc sau một lần xác nhận, tuỳ chọn "Also delete associated
+    sessions"; thread được giữ lại bị tách khỏi worktree (`worktree_removed`)
+    và chờ chọn working copy mới. Không xoá được worktree bị khoá, detached,
+    hoặc đang có file, terminal, agent dùng.
+  - Cần: chọn project và nút Create worktree trên trang; journal
+    `worktree_removals` của MonoCode để khôi phục khi xoá bị gián đoạn; đổi
+    tên nhánh theo tin nhắn đầu.
+  - MonoCode: `source-control/ui/WorktreesPage.tsx`, `DeleteWorktreeDialog.tsx`,
+    `src-tauri/src/worktrees.rs`, `worktree_lifecycle.rs`.
 - [ ] **Cài đặt provider**: model mặc định theo provider, "Use by default",
   "Show in picker", ghi đè đường dẫn CLI.
 - [ ] **Skills**: trang Skills trong Settings, bật tắt từng skill.
@@ -103,7 +108,7 @@ mức ưu tiên. Phần đã xong chỉ được tóm tắt.
 
 | Tính năng | MonoCode | BenCode | Trạng thái |
 | :--- | :--- | :--- | :--- |
-| Vòng đời worktree | `src-tauri/src/worktree_lifecycle.rs` | `src/git/worktrees.rs`, `src/app/worktree_lifecycle.rs` | 🟡 Thiếu đổi tên nhánh |
+| Vòng đời worktree | `src-tauri/src/worktree_lifecycle.rs` | `src/git/worktrees.rs`, `src/app/worktree_lifecycle.rs`, `src/ui/settings_worktrees.rs` | 🟡 Thiếu Create trên trang, journal, đổi tên nhánh |
 | MCP | `src-tauri/src/mcp.rs` | `src/mcp/mod.rs` | 🟡 Chỉ phát hiện |
 | Menu macOS | `src-tauri/src/menu.rs` | `src/app/commands.rs` | 🟡 Thiếu Edit / Window / Help |
 | Review hai cột | `@codemirror/merge` | `src/ui/diff_viewer.rs` | 🟡 Chỉ có unified |

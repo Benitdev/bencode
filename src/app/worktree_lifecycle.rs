@@ -1,200 +1,271 @@
-//! MonoCode `worktree_lifecycle.rs`: removing a linked worktree and pruning
-//! stale ones from the sidebar's worktree switcher. A removal asks first;
-//! a worktree with uncommitted changes or unpushed commits needs a second,
-//! explicit "Remove anyway". Threads that ran in a removed worktree are
-//! marked `worktree_removed` and wait for a new working copy
+//! MonoCode `onRemoveWorktree` (`App.tsx`), `worktrees.ts` and
+//! `worktrees.rs::remove_with_sessions`: deleting a linked worktree from
+//! Settings › Worktrees. The one confirmation covers the whole action, so
+//! the removal is always forced. Threads that used the worktree are either
+//! deleted (the dialog's switch) or kept and detached: they remember the
+//! worktree, drop provider state and wait for a new working copy
 //! (`ui/composer/removed_worktree.rs`).
 
 use gpui::Context;
 
-use crate::app::{BenCodeApp, same_project_path};
+use crate::app::file_pane::PaneTab;
+use crate::app::{BenCodeApp, is_path_in_project, same_project_path};
+use crate::db::SessionRow;
 use crate::git::Worktree;
-use crate::git::worktrees::{prune_worktrees, remove_worktree};
+use crate::git::worktrees::remove_worktree;
 
-/// The open "Remove worktree?" confirmation.
+/// The open "Delete worktree?" dialog.
 #[derive(Clone, Debug, PartialEq)]
-pub struct WorktreeRemoval {
-    pub path: String,
-    /// The branch, or "detached" with the short HEAD.
-    pub label: String,
-    /// Why a plain removal would lose work. Confirming then forces it.
-    pub warning: Option<String>,
+pub struct WorktreeDeletion {
+    pub tree: Worktree,
+    /// Threads using the worktree when the dialog opened.
+    pub session_ids: Vec<String>,
+    /// "Also delete associated sessions".
+    pub delete_sessions: bool,
+    pub busy: bool,
+    pub error: Option<String>,
 }
 
-impl WorktreeRemoval {
-    pub fn force(&self) -> bool {
-        self.warning.is_some()
+/// MonoCode `WorktreesPage`: why the delete button is disabled.
+pub fn deletion_blocker(tree: &Worktree) -> Option<&'static str> {
+    if tree.locked {
+        Some("Unlock this worktree in Git first")
+    } else if tree.branch.is_none() {
+        Some("Create a branch before deleting this detached worktree")
+    } else {
+        None
     }
 }
 
-/// What a plain `git worktree remove` would refuse for `tree`, from the
-/// last snapshot. `remove_worktree` checks again before it runs.
-pub fn removal_warning(tree: &Worktree) -> Option<String> {
-    let mut reasons = Vec::new();
-    if tree.dirty == Some(true) {
-        reasons.push("uncommitted or untracked changes".to_string());
-    }
-    match tree.unpushed {
-        Some(0) | None => {}
-        Some(1) => reasons.push("1 unpushed commit".to_string()),
-        Some(n) => reasons.push(format!("{n} unpushed commits")),
-    }
-    if tree.branch.is_none() {
-        reasons.push("a detached HEAD".to_string());
-    }
-    (!reasons.is_empty()).then(|| format!("This worktree has {}.", reasons.join(" and ")))
+/// The thread's working directory: its worktree, else its folder.
+fn work_dir(session: &SessionRow) -> &str {
+    session
+        .worktree_cwd
+        .as_deref()
+        .filter(|w| !w.is_empty())
+        .unwrap_or(&session.cwd)
 }
 
-/// The switcher's name for a worktree.
-pub fn worktree_label(tree: &Worktree) -> String {
-    tree.branch
-        .clone()
-        .unwrap_or_else(|| format!("Detached {}", tree.head.chars().take(7).collect::<String>()))
-}
-
-/// Linked worktrees git would drop on prune: their folder is gone.
-pub fn has_stale_worktrees(trees: &[Worktree]) -> bool {
-    trees
+/// MonoCode `worktreeSessionIds`: the stored ids, with live threads taking
+/// precedence over what was last saved for them.
+pub fn worktree_session_ids(path: &str, stored: &[String], sessions: &[SessionRow]) -> Vec<String> {
+    let mut ids: Vec<String> = stored
         .iter()
-        .any(|t| !t.is_main && (t.prunable || t.missing))
+        .filter(|id| !sessions.iter().any(|s| &s.id == *id))
+        .cloned()
+        .collect();
+    ids.extend(
+        sessions
+            .iter()
+            .filter(|s| !s.worktree_removed && is_path_in_project(work_dir(s), path))
+            .map(|s| s.id.clone()),
+    );
+    ids
+}
+
+/// MonoCode `detachSessionWorktree`, in memory; the database side is
+/// `MonoCodeDb::detach_worktree_sessions`.
+pub fn detach_session(session: &mut SessionRow, path: &str, project_cwd: &str) {
+    if session.worktree_cwd.as_deref().is_none_or(str::is_empty) {
+        session.worktree_cwd = Some(session.cwd.clone());
+    }
+    if is_path_in_project(&session.cwd, path) {
+        session.cwd = project_cwd.to_string();
+    }
+    session.worktree_removed = true;
+    session.branch = None;
+    session.provider_session_id = None;
+    session.context_used = None;
+    session.context_window = None;
 }
 
 impl BenCodeApp {
-    /// The "…" on a switcher row: asks before removing that worktree.
-    pub fn request_worktree_removal(&mut self, path: &str, cx: &mut Context<Self>) {
-        self.close_sidebar_menu(cx);
+    /// The page's trash button.
+    pub fn open_worktree_deletion(&mut self, path: &str, cx: &mut Context<Self>) {
         let Some(tree) = self
             .workspace
             .worktrees
             .iter()
             .find(|t| !t.is_main && same_project_path(&t.path, path))
+            .cloned()
         else {
             return;
         };
-        self.worktree_removal = Some(WorktreeRemoval {
-            path: tree.path.clone(),
-            label: worktree_label(tree),
-            warning: removal_warning(tree),
+        if deletion_blocker(&tree).is_some() {
+            return;
+        }
+        let stored = self
+            .db
+            .session_ids_in_worktree(&tree.path)
+            .unwrap_or_else(|err| {
+                log::error!(
+                    "could not list the threads of worktree {}: {err:#}",
+                    tree.path
+                );
+                Vec::new()
+            });
+        self.worktrees_page_error = None;
+        self.worktree_deletion = Some(WorktreeDeletion {
+            session_ids: worktree_session_ids(&tree.path, &stored, &self.sessions),
+            tree,
+            delete_sessions: false,
+            busy: false,
+            error: None,
         });
         cx.notify();
     }
 
-    /// Threads whose working copy is the worktree at `path`.
-    fn sessions_in_worktree(&self, path: &str) -> Vec<String> {
-        self.sessions
-            .iter()
-            .filter(|s| {
-                s.worktree_cwd
-                    .as_deref()
-                    .is_some_and(|w| !w.is_empty() && same_project_path(w, path))
-            })
-            .map(|s| s.id.clone())
-            .collect()
-    }
-
-    /// Confirmed: `git worktree remove` (forced when the dialog warned). A
-    /// refusal reopens the dialog with git's reason and the force option.
-    pub fn confirm_worktree_removal(&mut self, removal: WorktreeRemoval, cx: &mut Context<Self>) {
-        self.worktree_removal = None;
-        let affected = self.sessions_in_worktree(&removal.path);
-        if affected.iter().any(|id| self.is_agent_running_in(id)) {
-            self.workspace.git_error =
-                Some("Stop the session running in this worktree before removing it.".into());
-            cx.notify();
+    pub fn close_worktree_deletion(&mut self, cx: &mut Context<Self>) {
+        if self.worktree_deletion.as_ref().is_some_and(|d| d.busy) {
             return;
         }
-        let project = self.current_cwd.clone();
-        let (path, force) = (removal.path.clone(), removal.force());
-        let task = cx
-            .background_executor()
-            .spawn(async move { remove_worktree(&project, &path, force) });
-        cx.spawn(async move |this, cx| {
-            let result = task.await;
-            let landed = this.update(cx, |this, cx| match result {
-                Ok(()) => this.worktree_removed_at(&removal.path, &affected, cx),
-                Err(err) => {
-                    log::warn!("remove worktree {}: {err:#}", removal.path);
-                    if removal.force() {
-                        this.workspace.git_error =
-                            Some(format!("Could not remove the worktree: {err:#}"));
-                    } else {
-                        this.worktree_removal = Some(WorktreeRemoval {
-                            warning: Some(format!("{err:#}")),
-                            ..removal
-                        });
-                    }
-                    cx.notify();
-                }
-            });
-            if let Err(err) = landed {
-                log::debug!("worktree removal after app drop: {err:#}");
-            }
-        })
-        .detach();
-    }
-
-    /// The worktree is gone: its threads lose their working copy and the
-    /// switcher falls back to the project folder if it was focused.
-    fn worktree_removed_at(&mut self, path: &str, affected: &[String], cx: &mut Context<Self>) {
-        if let Err(err) = self.db.mark_worktree_removed(affected) {
-            log::error!("could not mark threads of removed worktree {path}: {err:#}");
-        }
-        for session in self
-            .sessions
-            .iter_mut()
-            .filter(|s| affected.contains(&s.id))
-        {
-            session.worktree_removed = true;
-        }
-        let focused = self
-            .worktree_focus()
-            .is_some_and(|f| same_project_path(&f.path, path));
-        if focused {
-            self.select_workspace(None, cx);
-        }
-        self.sync_prompt_placeholder(cx);
-        self.refresh_workspace(cx);
+        self.worktree_deletion = None;
         cx.notify();
     }
 
-    /// `git worktree prune`: drops worktrees whose folder was deleted.
-    pub fn prune_stale_worktrees(&mut self, cx: &mut Context<Self>) {
-        self.close_sidebar_menu(cx);
-        let project = self.current_cwd.clone();
-        let stale: Vec<String> = self
-            .workspace
-            .worktrees
+    pub fn set_delete_worktree_sessions(&mut self, on: bool, cx: &mut Context<Self>) {
+        if let Some(deletion) = self.worktree_deletion.as_mut() {
+            deletion.delete_sessions = on;
+            cx.notify();
+        }
+    }
+
+    /// MonoCode `assertWorktreeFilesClosed`: a file tab or a terminal still
+    /// open inside the worktree.
+    fn worktree_in_use(&self, path: &str) -> bool {
+        let workspace = self.workspace_path();
+        let files = self
+            .file_pane
+            .entries()
             .iter()
-            .filter(|t| !t.is_main && (t.prunable || t.missing))
-            .map(|t| t.path.clone())
-            .collect();
-        let task = cx
-            .background_executor()
-            .spawn(async move { prune_worktrees(&project) });
+            .any(|entry| match &entry.tab {
+                PaneTab::File { path: file } => {
+                    let file = if file.starts_with('/') {
+                        file.clone()
+                    } else {
+                        format!("{}/{file}", workspace.trim_end_matches('/'))
+                    };
+                    is_path_in_project(&file, path)
+                }
+                PaneTab::Review { cwd, .. }
+                | PaneTab::Changes { cwd, .. }
+                | PaneTab::SessionChanges { cwd, .. }
+                | PaneTab::Commit { cwd, .. } => is_path_in_project(cwd, path),
+            });
+        files || self.terminals.any_in(path)
+    }
+
+    fn fail_worktree_deletion(&mut self, message: String, cx: &mut Context<Self>) {
+        if let Some(deletion) = self.worktree_deletion.as_mut() {
+            deletion.busy = false;
+            deletion.error = Some(message);
+        }
+        cx.notify();
+    }
+
+    /// The dialog's Delete: the sessions (if asked), then
+    /// `git worktree remove --force`, then the kept threads are detached.
+    pub fn confirm_worktree_deletion(&mut self, cx: &mut Context<Self>) {
+        let Some(deletion) = self.worktree_deletion.clone().filter(|d| !d.busy) else {
+            return;
+        };
+        let path = deletion.tree.path.clone();
+        if self.worktree_in_use(&path) {
+            return self.fail_worktree_deletion(
+                "Close the files and terminals open in this worktree first.".into(),
+                cx,
+            );
+        }
+        let stored = match self.db.session_ids_in_worktree(&path) {
+            Ok(ids) => ids,
+            Err(err) => return self.fail_worktree_deletion(format!("{err:#}"), cx),
+        };
+        let ids = worktree_session_ids(&path, &stored, &self.sessions);
+        if ids.iter().any(|id| self.is_agent_running_in(id)) {
+            return self.fail_worktree_deletion(
+                "Close the terminals and agent processes using this worktree first.".into(),
+                cx,
+            );
+        }
+        let sessions_deleted = deletion.delete_sessions && !ids.is_empty();
+        if sessions_deleted {
+            for id in &ids {
+                self.delete_session(id, cx);
+            }
+            if self
+                .db
+                .session_ids_in_worktree(&path)
+                .is_ok_and(|left| !left.is_empty())
+            {
+                self.worktree_deletion = None;
+                self.worktrees_page_error =
+                    Some("Some sessions could not be deleted, so the worktree was kept.".into());
+                self.refresh_workspace(cx);
+                cx.notify();
+                return;
+            }
+        }
+        if let Some(d) = self.worktree_deletion.as_mut() {
+            d.busy = true;
+            d.error = None;
+        }
+        cx.notify();
+        let project = self.current_cwd.clone();
+        let kept = if sessions_deleted { Vec::new() } else { ids };
+        let task = cx.background_executor().spawn({
+            let path = path.clone();
+            async move { remove_worktree(&project, &path, true) }
+        });
         cx.spawn(async move |this, cx| {
             let result = task.await;
             let landed = this.update(cx, |this, cx| {
+                this.worktree_deletion = None;
                 match result {
-                    Ok(()) => {
-                        for path in &stale {
-                            let affected = this.sessions_in_worktree(path);
-                            this.worktree_removed_at(path, &affected, cx);
-                        }
-                    }
+                    Ok(()) => this.worktree_deleted(&path, &kept, cx),
                     Err(err) => {
-                        log::warn!("prune worktrees: {err:#}");
-                        this.workspace.git_error =
-                            Some(format!("Could not prune worktrees: {err:#}"));
+                        log::warn!("delete worktree {path}: {err:#}");
+                        this.worktrees_page_error = Some(if sessions_deleted {
+                            format!("The sessions were deleted, but the worktree was kept. {err:#}")
+                        } else {
+                            format!("{err:#}")
+                        });
                     }
                 }
                 this.refresh_workspace(cx);
                 cx.notify();
             });
             if let Err(err) = landed {
-                log::debug!("worktree prune after app drop: {err:#}");
+                log::debug!("worktree deletion after app drop: {err:#}");
             }
         })
         .detach();
+    }
+
+    /// Git removed the folder: detach the kept threads and leave the
+    /// worktree if the sidebar was focused on it.
+    fn worktree_deleted(&mut self, path: &str, kept: &[String], cx: &mut Context<Self>) {
+        let project = self
+            .workspace
+            .worktrees
+            .iter()
+            .find(|t| t.is_main)
+            .map_or_else(|| self.current_cwd.clone(), |t| t.path.clone());
+        if let Err(err) = self.db.detach_worktree_sessions(kept, path, &project) {
+            log::error!("worktree {path} deleted but its threads were not detached: {err:#}");
+            self.worktrees_page_error = Some(format!(
+                "The worktree was deleted, but its sessions could not be updated: {err:#}"
+            ));
+        }
+        for session in self.sessions.iter_mut().filter(|s| kept.contains(&s.id)) {
+            detach_session(session, path, &project);
+        }
+        if self
+            .worktree_focus()
+            .is_some_and(|f| is_path_in_project(&f.path, path))
+        {
+            self.select_workspace(None, cx);
+        }
+        self.sync_prompt_placeholder(cx);
     }
 }
 
@@ -207,83 +278,82 @@ mod tests {
             path: "/p-worktrees/mc-a".into(),
             branch: Some("mc/a".into()),
             head: "0123456789abcdef".into(),
-            is_main: false,
-            locked: false,
-            prunable: false,
-            missing: false,
             dirty: Some(false),
-            unpushed: None,
-            status_error: None,
+            ..Default::default()
+        }
+    }
+
+    fn session(id: &str, cwd: &str, worktree: Option<&str>) -> SessionRow {
+        SessionRow {
+            id: id.into(),
+            cwd: cwd.into(),
+            worktree_cwd: worktree.map(Into::into),
+            ..Default::default()
         }
     }
 
     #[test]
-    fn clean_worktree_has_no_warning() {
-        assert_eq!(removal_warning(&tree()), None);
+    fn locked_and_detached_worktrees_cannot_be_deleted() {
+        assert_eq!(deletion_blocker(&tree()), None);
         assert_eq!(
-            removal_warning(&Worktree {
-                unpushed: Some(0),
+            deletion_blocker(&Worktree {
+                locked: true,
                 ..tree()
             }),
-            None
+            Some("Unlock this worktree in Git first")
         );
-    }
-
-    #[test]
-    fn warning_names_every_reason() {
-        let dirty = Worktree {
-            dirty: Some(true),
-            unpushed: Some(2),
-            ..tree()
-        };
         assert_eq!(
-            removal_warning(&dirty).as_deref(),
-            Some("This worktree has uncommitted or untracked changes and 2 unpushed commits.")
-        );
-        let one = Worktree {
-            unpushed: Some(1),
-            ..tree()
-        };
-        assert_eq!(
-            removal_warning(&one).as_deref(),
-            Some("This worktree has 1 unpushed commit.")
-        );
-        let detached = Worktree {
-            branch: None,
-            ..tree()
-        };
-        assert_eq!(
-            removal_warning(&detached).as_deref(),
-            Some("This worktree has a detached HEAD.")
-        );
-    }
-
-    #[test]
-    fn label_falls_back_to_short_head() {
-        assert_eq!(worktree_label(&tree()), "mc/a");
-        assert_eq!(
-            worktree_label(&Worktree {
+            deletion_blocker(&Worktree {
                 branch: None,
                 ..tree()
             }),
-            "Detached 0123456"
+            Some("Create a branch before deleting this detached worktree")
         );
     }
 
     #[test]
-    fn stale_ignores_the_main_checkout() {
-        let main = Worktree {
-            is_main: true,
-            missing: true,
-            ..tree()
-        };
-        assert!(!has_stale_worktrees(&[main.clone(), tree()]));
-        assert!(has_stale_worktrees(&[
-            main,
-            Worktree {
-                prunable: true,
-                ..tree()
-            }
-        ]));
+    fn live_threads_override_stored_ids() {
+        let path = "/p-worktrees/mc-a";
+        let mut sessions = vec![
+            session("moved", "/p", None),
+            session("in", "/p", Some(path)),
+            session("nested", "/p-worktrees/mc-a/src", None),
+            session("gone", "/p", Some(path)),
+        ];
+        sessions[3].worktree_removed = true;
+        let stored = ["moved".to_string(), "archived".to_string()];
+
+        let mut ids = worktree_session_ids(path, &stored, &sessions);
+        ids.sort();
+
+        assert_eq!(ids, ["archived", "in", "nested"]);
+    }
+
+    #[test]
+    fn detach_keeps_the_worktree_and_drops_provider_state() {
+        let mut linked = session("a", "/p", Some("/p-worktrees/mc-a"));
+        linked.branch = Some("mc/a".into());
+        linked.provider_session_id = Some("prov".into());
+        linked.context_used = Some(10);
+        detach_session(&mut linked, "/p-worktrees/mc-a", "/p");
+        assert!(linked.worktree_removed);
+        assert_eq!(linked.cwd, "/p");
+        assert_eq!(linked.worktree_cwd.as_deref(), Some("/p-worktrees/mc-a"));
+        assert_eq!(
+            (
+                linked.branch,
+                linked.provider_session_id,
+                linked.context_used
+            ),
+            (None, None, None)
+        );
+
+        let mut direct = session("b", "/p-worktrees/mc-a/src", None);
+        detach_session(&mut direct, "/p-worktrees/mc-a", "/p");
+        assert_eq!(direct.cwd, "/p");
+        assert_eq!(
+            direct.worktree_cwd.as_deref(),
+            Some("/p-worktrees/mc-a/src")
+        );
     }
 }

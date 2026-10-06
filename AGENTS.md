@@ -109,7 +109,7 @@ bencode/
 | `session_review.rs` | Session review: the ordered checkpoint queue, a thread's changed files, Keep / Undo |
 | `tab_scope.rs`, `tab_history.rs`, `workspace_nav.rs` | Which tabs belong to which project or worktree; Back / Forward |
 | `reminders.rs`, `model_catalog.rs` | Session reminders; live model catalogs |
-| `worktree_lifecycle.rs` | Removing and pruning worktrees from the sidebar switcher |
+| `worktree_lifecycle.rs` | Deleting a worktree from Settings › Worktrees and detaching its threads |
 
 ### `src/ui/` — views
 
