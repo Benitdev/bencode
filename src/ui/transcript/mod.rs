@@ -9,7 +9,7 @@ pub mod find;
 mod review_card;
 pub mod turns;
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 use std::rc::Rc;
@@ -42,6 +42,8 @@ const PROMPT_REVEAL: Duration = Duration::from_millis(320);
 /// Where the prompt starts, as a fraction of the viewport from the top.
 const PROMPT_RISE_FROM: f32 = 0.3;
 const PROMPT_REVEAL_LIFT: Pixels = px(10.0);
+/// Fallback slide distance when the viewport hasn't been measured yet (~30% of a typical viewport).
+const PROMPT_FALLBACK_RISE: Pixels = px(160.0);
 
 /// The heights of the last turn's rows as they were last painted.
 type RowHeights = Rc<RefCell<HashMap<usize, Pixels>>>;
@@ -54,6 +56,7 @@ struct AnchorProbe {
     heights: RowHeights,
     /// The turn's rows, without the spacer after them.
     turn: Range<usize>,
+    last_viewport_height: Rc<Cell<Pixels>>,
 }
 
 impl AnchorProbe {
@@ -64,6 +67,7 @@ impl AnchorProbe {
         if viewport <= px(0.0) {
             return UNMEASURED_GAP;
         }
+        self.last_viewport_height.set(viewport);
         let heights = self.heights.borrow();
         let turn: Pixels = self.turn.clone().filter_map(|ix| heights.get(&ix)).sum();
         (viewport - turn).max(px(0.0))
@@ -105,6 +109,8 @@ pub struct TranscriptView {
     rise: Option<Instant>,
     /// The session review card as last measured (`SessionReview::stamp`).
     review_stamp: u64,
+    /// Cached viewport height to avoid borrowing list during item layout.
+    last_viewport_height: Rc<Cell<Pixels>>,
 }
 
 impl Default for TranscriptView {
@@ -125,16 +131,26 @@ impl Default for TranscriptView {
             heights: RowHeights::default(),
             rise: None,
             review_stamp: 0,
+            last_viewport_height: Rc::new(Cell::new(px(0.0))),
         }
     }
 }
 
 impl TranscriptView {
+    /// Caches the latest valid viewport height to avoid borrowing the list
+    /// during row layout.
+    pub fn update_viewport_height(&self, height: Pixels) {
+        if height > px(0.0) {
+            self.last_viewport_height.set(height);
+        }
+    }
+
     fn anchor_probe(&self) -> Option<AnchorProbe> {
         Some(AnchorProbe {
             list: self.list.clone(),
             heights: self.heights.clone(),
             turn: self.anchor_rows.clone()?,
+            last_viewport_height: self.last_viewport_height.clone(),
         })
     }
 
@@ -188,7 +204,12 @@ impl TranscriptView {
         let elapsed = self.rise?.elapsed();
         let progress = |of: Duration| (elapsed.as_secs_f32() / of.as_secs_f32()).min(1.0);
         if ix == turn.start {
-            let from = self.list.viewport_bounds().size.height * PROMPT_RISE_FROM;
+            let vh = self.last_viewport_height.get();
+            let from = if vh > px(0.0) {
+                vh * PROMPT_RISE_FROM
+            } else {
+                PROMPT_FALLBACK_RISE
+            };
             let rise = cubic_bezier(0.22, 1.0, 0.36, 1.0)(progress(PROMPT_RISE));
             // The fade gets its own gentler curve (CSS `ease-out`).
             let fade = cubic_bezier(0.0, 0.0, 0.58, 1.0)(progress(PROMPT_FADE));
