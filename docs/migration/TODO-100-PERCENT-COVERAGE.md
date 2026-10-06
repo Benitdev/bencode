@@ -41,10 +41,13 @@ mức ưu tiên. Phần đã xong chỉ được tóm tắt.
 
 ### P0 — Thiếu chức năng cốt lõi
 
-- [ ] **Vòng đời worktree**
-  - Đã có: liệt kê, tạo worktree khi gửi tin đầu (`ui/composer/new_worktree.rs`).
-  - Cần: xoá và prune worktree từ UI (engine có sẵn ở `src/git/worktrees.rs`),
-    đổi tên nhánh theo tin nhắn đầu.
+- [~] **Vòng đời worktree**
+  - Đã có: liệt kê, tạo worktree khi gửi tin đầu (`ui/composer/new_worktree.rs`);
+    xoá và prune từ worktree switcher ở sidebar (`app/worktree_lifecycle.rs`).
+    Worktree còn thay đổi chưa commit hoặc commit chưa push phải xác nhận lần
+    hai ("Remove anyway"); các thread chạy trong đó được đánh dấu
+    `worktree_removed` và chờ chọn working copy mới.
+  - Cần: đổi tên nhánh theo tin nhắn đầu.
   - MonoCode: `src-tauri/src/worktree_lifecycle.rs`, `worktrees.rs`.
 - [ ] **Cài đặt provider**: model mặc định theo provider, "Use by default",
   "Show in picker", ghi đè đường dẫn CLI.
@@ -100,7 +103,7 @@ mức ưu tiên. Phần đã xong chỉ được tóm tắt.
 
 | Tính năng | MonoCode | BenCode | Trạng thái |
 | :--- | :--- | :--- | :--- |
-| Vòng đời worktree | `src-tauri/src/worktree_lifecycle.rs` | `src/git/worktrees.rs`, `src/ui/composer/new_worktree.rs` | 🟡 Mới có tạo |
+| Vòng đời worktree | `src-tauri/src/worktree_lifecycle.rs` | `src/git/worktrees.rs`, `src/app/worktree_lifecycle.rs` | 🟡 Thiếu đổi tên nhánh |
 | MCP | `src-tauri/src/mcp.rs` | `src/mcp/mod.rs` | 🟡 Chỉ phát hiện |
 | Menu macOS | `src-tauri/src/menu.rs` | `src/app/commands.rs` | 🟡 Thiếu Edit / Window / Help |
 | Review hai cột | `@codemirror/merge` | `src/ui/diff_viewer.rs` | 🟡 Chỉ có unified |

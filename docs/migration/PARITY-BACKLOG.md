@@ -84,7 +84,7 @@ Notes:
 - [x] P1 M Quick Open ⌘P (MonoCode FilePicker + fuzzy)
 - [x] P1 S .gitignore-driven hiding (`git check-ignore`)
 - [x] P1 M File tree menu (cut/copy/paste/duplicate, open in terminal, root menu) + keys; inline new/rename; 30px rows
-- [x] P1 M Composer worktree picker (Current checkout / New worktree ⌘⇧G / existing, base picker) — creating is wired; removing and pruning a worktree are not
+- [x] P1 M Composer worktree picker (Current checkout / New worktree ⌘⇧G / existing, base picker) — creating is wired; removing (switcher row, forced only after a second confirmation) and pruning are wired in `app/worktree_lifecycle.rs`
 - [ ] P2 Switcher rows, discard wording, image/markdown preview
 
 ## Batch E — settings, skills, terminal

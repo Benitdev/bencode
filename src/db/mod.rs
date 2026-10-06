@@ -450,8 +450,6 @@ impl MonoCodeDb {
             .optional()?)
     }
 
-    /// Inserts or updates a session. Columns BenCode does not model are left
-    /// untouched on update and get MonoCode's defaults on insert.
     /// MonoCode `WorktreePicker` pick: the thread runs again, in
     /// `worktree_cwd` (a worktree) or its project folder (`None`).
     pub fn reattach_session(&self, id: &str, worktree_cwd: Option<&str>) -> Result<()> {
@@ -462,6 +460,19 @@ impl MonoCodeDb {
         Ok(())
     }
 
+    /// MonoCode `worktree_lifecycle`: these threads' worktree was removed;
+    /// they keep `worktree_cwd` and wait for a new working copy.
+    pub fn mark_worktree_removed(&self, ids: &[String]) -> Result<()> {
+        let tx = self.conn.unchecked_transaction()?;
+        for id in ids {
+            tx.execute("UPDATE sessions SET worktree_removed = 1 WHERE id = ?1", [id])?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Inserts or updates a session. Columns BenCode does not model are left
+    /// untouched on update and get MonoCode's defaults on insert.
     pub fn upsert_session(&self, session: &SessionRow) -> Result<()> {
         if session.blocks_parse_failed {
             bail!(
@@ -1621,5 +1632,24 @@ mod tests {
         assert_eq!(run["error"], "boom");
         assert_eq!(run["futureField"], 7);
         assert!(run["completedAt"].as_i64().is_some());
+    }
+
+    #[test]
+    fn mark_worktree_removed_keeps_the_worktree_path() {
+        let db = MonoCodeDb::open_in_memory().unwrap();
+        let mut row = session("s1");
+        row.worktree_cwd = Some("/p-worktrees/mc-a".into());
+        db.upsert_session(&row).unwrap();
+        db.upsert_session(&session("s2")).unwrap();
+
+        db.mark_worktree_removed(&["s1".to_string()]).unwrap();
+
+        let s1 = db.get_session("s1").unwrap().unwrap();
+        assert!(s1.worktree_removed);
+        assert_eq!(s1.worktree_cwd.as_deref(), Some("/p-worktrees/mc-a"));
+        assert!(!db.get_session("s2").unwrap().unwrap().worktree_removed);
+
+        db.reattach_session("s1", None).unwrap();
+        assert!(!db.get_session("s1").unwrap().unwrap().worktree_removed);
     }
 }

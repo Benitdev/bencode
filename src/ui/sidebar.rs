@@ -455,6 +455,37 @@ impl BenCodeApp {
             )
     }
 
+    /// "Remove worktree?" from the worktree switcher; a second, forced
+    /// confirmation once the worktree holds work git would lose.
+    pub fn render_worktree_removal(&self, cx: &Context<Self>) -> Option<AnyElement> {
+        let removal = self.worktree_removal.clone()?;
+        let close = app_callback(cx, |this, cx| {
+            this.worktree_removal = None;
+            cx.notify();
+        });
+        let message = match &removal.warning {
+            Some(warning) => format!(
+                "{warning} Removing “{}” deletes {} and that work with it.",
+                removal.label, removal.path
+            ),
+            None => format!(
+                "“{}” and its folder {} will be removed. The branch is kept.",
+                removal.label, removal.path
+            ),
+        };
+        let confirm = if removal.force() { "Remove anyway" } else { "Remove" };
+        let remove = app_callback(cx, move |this, cx| {
+            this.confirm_worktree_removal(removal.clone(), cx)
+        });
+        Some(
+            ConfirmDialog::new("remove-worktree", "Remove worktree?", message, close)
+                .confirm(confirm)
+                .destructive()
+                .on_confirm(remove)
+                .into_any_element(),
+        )
+    }
+
     /// The rename or delete dialog, when one is open.
     pub fn render_session_dialog(&self, cx: &Context<Self>) -> Option<AnyElement> {
         let dialog = self.session_dialog.clone()?;

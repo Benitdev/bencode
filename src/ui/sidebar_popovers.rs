@@ -10,6 +10,7 @@ use gpui::{
 };
 
 use crate::app::BenCodeApp;
+use crate::app::worktree_lifecycle::{has_stale_worktrees, worktree_label};
 use crate::app::session_folders::{FOLDER_COLORS, palette_color, parse_hex, to_hex};
 use crate::app::session_list::{SessionFilters, TimeFilter, harnesses_in};
 use crate::harness::HarnessKind;
@@ -77,9 +78,12 @@ impl BenCodeApp {
                    label: String,
                    detail: String,
                    selected: bool,
-                   pick: Option<crate::app::WorktreeFocus>| {
+                   pick: Option<crate::app::WorktreeFocus>,
+                   removable: Option<String>| {
+            let group = SharedString::from(format!("{id}-row"));
             div()
-                .id(id)
+                .id(id.clone())
+                .group(group.clone())
                 .flex()
                 .items_center()
                 .gap_2()
@@ -109,6 +113,28 @@ impl BenCodeApp {
                 .when(selected, |el| {
                     el.child(Icon::new(IconName::Check).size(IconSize::Sm).color(fg))
                 })
+                // Keeps its room while hidden: hover never toggles `display`.
+                .when_some(removable, |el, path| {
+                    el.child(
+                        div()
+                            .id(SharedString::from(format!("{id}-remove")))
+                            .flex()
+                            .flex_none()
+                            .size(px(22.0))
+                            .items_center()
+                            .justify_center()
+                            .rounded(px(5.0))
+                            .invisible()
+                            .group_hover(group.clone(), |s| s.visible())
+                            .hover(move |s| s.bg(fg.opacity(0.08)))
+                            .tooltip(Tooltip::text("Remove worktree…"))
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                cx.stop_propagation();
+                                this.request_worktree_removal(&path, cx);
+                            }))
+                            .child(Icon::new(IconName::Trash2).size(IconSize::Sm).color(fg.opacity(0.5))),
+                    )
+                })
         };
         let muted = fg.opacity(0.5);
         let mut list = div().flex().flex_col().child(row(
@@ -119,12 +145,10 @@ impl BenCodeApp {
             "Project folder · all sessions".into(),
             focus.is_none(),
             None,
+            None,
         ));
         for tree in trees.iter().filter(|t| !t.is_main && !t.missing) {
-            let label = tree
-                .branch
-                .clone()
-                .unwrap_or_else(|| format!("Detached {}", tree.head.chars().take(7).collect::<String>()));
+            let label = worktree_label(tree);
             let selected = focus
                 .as_deref()
                 .is_some_and(|f| crate::app::same_project_path(f, &tree.path));
@@ -140,7 +164,31 @@ impl BenCodeApp {
                     path: tree.path.clone(),
                     branch: tree.branch.clone(),
                 }),
+                (!tree.locked).then(|| tree.path.clone()),
             ));
+        }
+        if has_stale_worktrees(trees) {
+            list = list.child(
+                div()
+                    .id("worktree-prune")
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .mt_1()
+                    .px_2()
+                    .py(px(6.0))
+                    .rounded(px(6.0))
+                    .border_t_1()
+                    .border_color(fg.opacity(0.06))
+                    .cursor_pointer()
+                    .text_size(px(12.0))
+                    .text_color(muted)
+                    .hover(move |s| s.bg(fg.opacity(0.05)))
+                    .tooltip(Tooltip::text("Forget worktrees whose folder was deleted"))
+                    .on_click(cx.listener(|this, _, _, cx| this.prune_stale_worktrees(cx)))
+                    .child(Icon::new(IconName::Eraser).size(IconSize::Sm).color(muted))
+                    .child("Prune stale worktrees"),
+            );
         }
         let menu = popover_frame(cx)
             .id("worktree-switcher-menu")

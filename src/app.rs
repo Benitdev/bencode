@@ -17,6 +17,7 @@ mod tab_history;
 mod tab_scope;
 mod workspace_nav;
 pub mod workspace_sync;
+pub mod worktree_lifecycle;
 
 use std::collections::{HashMap, HashSet};
 
@@ -313,6 +314,8 @@ pub struct BenCodeApp {
     // Inbox
     /// Rename/delete dialog opened from the thread list.
     pub session_dialog: Option<crate::ui::sidebar::SessionDialog>,
+    /// "Remove worktree?" opened from the worktree switcher.
+    pub worktree_removal: Option<worktree_lifecycle::WorktreeRemoval>,
     pub rename_input: Entity<TextInput>,
     /// Root focus scope; Ely overlays hand focus back to it.
     pub focus_handle: gpui::FocusHandle,
@@ -1097,6 +1100,7 @@ impl BenCodeApp {
             search_hits: Vec::new(),
             search_active_index: 0,
             session_dialog: None,
+            worktree_removal: None,
             rename_input,
             focus_handle: cx.focus_handle(),
             runs: HashMap::new(),
@@ -1610,6 +1614,7 @@ impl Render for BenCodeApp {
                     .children(self.render_link_dialog(cx))
                     .children(self.render_reminder_notices(cx))
                     .children(self.render_session_dialog(cx))
+                    .children(self.render_worktree_removal(cx))
                     .children(self.render_quick_open(cx))
                     .children(self.render_lightbox(cx))
                     .children(self.render_git_confirm(cx))
