@@ -184,21 +184,7 @@ impl BenCodeApp {
     /// drops members the database no longer has (MonoCode
     /// `pruneSessionFolders`).
     pub fn load_folder_members(&mut self, cx: &mut Context<Self>) {
-        let folders = self.project_folders().to_vec();
-        let mut gone: Vec<String> = Vec::new();
-        for id in folders.iter().flat_map(|f| f.session_ids.iter()) {
-            if self.sessions.iter().any(|s| &s.id == id) {
-                continue;
-            }
-            match self.db.get_session(id) {
-                Ok(Some(row)) => self.sessions.push(row),
-                Ok(None) => gone.push(id.clone()),
-                Err(err) => log::error!("could not load folder member {id}: {err:#}"),
-            }
-        }
-        if !gone.is_empty() {
-            self.remove_sessions_from_folders(&gone, cx);
-        }
+        self.load_sessions_in_background(None, cx);
     }
 
     pub fn render_session_list(&mut self, cx: &mut Context<Self>) -> AnyElement {

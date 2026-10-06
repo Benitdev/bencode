@@ -134,15 +134,28 @@ impl BenCodeApp {
 
     /// The selected match's block index in `session_id`, if any.
     pub fn find_current_block(&self, session_id: &str, cx: &gpui::App) -> Option<usize> {
-        let state = self.transcript_find.as_ref()?;
-        if state.session_id != session_id {
-            return None;
-        }
-        let session = self.sessions.iter().find(|s| s.id == session_id)?;
+        self.find_hits(session_id, cx).0
+    }
+
+    /// The selected match's block and the match count in `session_id`, from
+    /// one scan of the thread (a pane works these out once per frame).
+    pub fn find_hits(&self, session_id: &str, cx: &gpui::App) -> (Option<usize>, usize) {
+        let Some(state) = self
+            .transcript_find
+            .as_ref()
+            .filter(|state| state.session_id == session_id)
+        else {
+            return (None, 0);
+        };
+        let Some(session) = self.sessions.iter().find(|s| s.id == session_id) else {
+            return (None, 0);
+        };
         let matches = find_blocks(&session.blocks, &self.find_query(cx));
-        matches
-            .get(state.active.min(matches.len().checked_sub(1)?))
-            .copied()
+        let current = matches
+            .len()
+            .checked_sub(1)
+            .and_then(|last| matches.get(state.active.min(last)).copied());
+        (current, matches.len())
     }
 
     fn find_matches(&self, cx: &gpui::App) -> Vec<usize> {
@@ -291,7 +304,8 @@ impl BenCodeApp {
     pub fn render_find_bar(&self, session_id: &str, cx: &Context<Self>) -> Option<AnyElement> {
         let query = self.find_query_for(session_id, cx)?;
         let colors = &cx.theme().colors;
-        let matches = self.find_matches(cx).len();
+        // Counted by the pane this frame, so the thread is scanned once.
+        let matches = self.transcripts.get(session_id).map_or(0, |view| view.find_count);
         let active = self.transcript_find.as_ref().map_or(0, |s| s.active);
         let count = if query.trim().is_empty() {
             String::new()

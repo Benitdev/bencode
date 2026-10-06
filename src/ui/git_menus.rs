@@ -34,6 +34,7 @@ pub struct GitMenu {
 }
 
 impl GitMenuKind {
+    /// The menu's floor; it grows with its rows (`min-w-*`).
     fn width(self) -> f32 {
         match self {
             GitMenuKind::Commit => COMMIT_MENU_WIDTH,
@@ -66,13 +67,15 @@ impl BenCodeApp {
                 let sync = &self.git_sync;
                 let can_pull = sync.remote.is_some() && sync.upstream.is_some();
                 let pulling = self.changes_ui.busy == Some(Busy::Pull);
-                // MonoCode's title on the disabled row, as its description.
+                // MonoCode's `title` on the disabled row.
                 let why = (!can_pull)
                     .then(|| "This branch needs a remote and upstream before it can pull".to_string());
+                let icon = if pulling { IconName::LoaderCircle } else { IconName::RefreshCw };
                 vec![MenuEntry::Item(
                     MenuAction::new("pull", if pulling { "Pulling…" } else { "Pull" })
+                        .icon(icon, pulling)
                         .disabled(self.changes_ui.busy.is_some() || !can_pull)
-                        .description(why),
+                        .tooltip(why),
                 )]
             }
         }
@@ -91,11 +94,8 @@ impl BenCodeApp {
         self.changes_ui.menu = Some(GitMenu {
             kind,
             position: match self.changes_ui.menu_anchor(kind).get() {
-                Some(bounds) => Point::new(
-                    bounds.right() - px(kind.width()),
-                    bounds.bottom() + px(MENU_GAP),
-                ),
-                None => Point::new(at.x - px(kind.width() - 10.0), at.y + px(14.0)),
+                Some(bounds) => Point::new(bounds.right(), bounds.bottom() + px(MENU_GAP)),
+                None => Point::new(at.x + px(10.0), at.y + px(14.0)),
             },
             active: explorer_menu::first_item(&entries),
         });
@@ -165,7 +165,7 @@ impl BenCodeApp {
                 id: "git-menu",
                 entries: &entries,
                 active: menu.active,
-                place: MenuPlace::At(menu.position),
+                place: MenuPlace::UnderRight(menu.position),
                 width: menu.kind.width(),
                 focus: &self.composer_menus.focus,
                 header: None,

@@ -7,6 +7,7 @@ use anyhow::{Context as _, Result, bail};
 mod branches;
 mod diffs;
 mod rows;
+mod status_pass;
 pub mod graph;
 pub mod sync;
 pub mod text;
@@ -24,6 +25,7 @@ pub use rows::{DiffRow, number_rows, unified_text};
     expect(dead_code, reason = "worktree create/remove/prune are not wired yet")
 )]
 pub mod worktrees;
+pub use status_pass::{StatusPass, read_local_state};
 pub use worktrees::Worktree;
 
 #[cfg_attr(
@@ -236,13 +238,7 @@ fn parse_porcelain_z(raw: &[u8]) -> Vec<StatusEntry> {
 /// index and work-tree status, and changed-line totals. Equal fingerprints
 /// mean a refresh would show nothing new. `None` outside a repository.
 pub fn state_fingerprint(cwd: &str) -> Option<u64> {
-    use std::hash::{Hash, Hasher};
-    let status = run_git(cwd, &["status", "--porcelain=v2", "-b", "-z", "-uall"]).ok()?;
-    let lines = run_git(cwd, &["diff", "--no-ext-diff", "--shortstat"]).unwrap_or_default();
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    status.hash(&mut hasher);
-    lines.hash(&mut hasher);
-    Some(hasher.finish())
+    StatusPass::read(cwd).map(|pass| pass.fingerprint(cwd))
 }
 
 fn read_status(cwd: &str) -> Result<Vec<StatusEntry>> {
@@ -370,19 +366,40 @@ fn make_change(path: &str, status: GitFileStatus, cwd: &str, stats: &NumstatMap)
 // Read-only queries
 // ---------------------------------------------------------------------------
 
-/// Retrieves list of local git branches for a workspace path
-/// Retrieves list of modified, added, or untracked files for a workspace path
+/// Modified, added or untracked files; refreshes read them through
+/// [`read_local_state`].
+#[cfg(test)]
 pub fn get_workspace_changes(cwd: &str) -> Vec<GitFileChange> {
-    let Ok(entries) = read_status(cwd) else {
-        return Vec::new();
+    StatusPass::read(cwd).map_or_else(Vec::new, |pass| pass.changes(cwd))
+}
+
+/// MonoCode `git_diff_stats_for`: uncommitted lines against `HEAD` (index
+/// plus work tree when there is no commit yet), untracked text files
+/// counting as additions. `None` outside a repository.
+pub fn diff_stats(cwd: &str) -> Option<(usize, usize)> {
+    let untracked = run_git(cwd, &["ls-files", "-o", "--exclude-standard", "-z", "--", "."]).ok()?;
+    let numstat = |extra: &[&str]| {
+        let args: Vec<&str> = ["diff", "--no-ext-diff", "--numstat", "-z"]
+            .into_iter()
+            .chain(extra.iter().copied())
+            .chain(["--", "."])
+            .collect();
+        run_git(cwd, &args).map(|raw| parse_numstat_z(&raw))
     };
-    let base = diff_base(cwd);
-    let stats = diff_numstat(cwd, &[base.as_str()]);
-    entries
-        .iter()
-        .filter(|e| !e.is_ignored())
-        .map(|e| make_change(&e.path, combined_status(e), cwd, &stats))
-        .collect()
+    let mut files = numstat(&["HEAD"]).unwrap_or_else(|_| {
+        let mut files = numstat(&[]).unwrap_or_default();
+        for (path, (adds, dels)) in numstat(&["--cached"]).unwrap_or_default() {
+            let entry = files.entry(path).or_default();
+            *entry = (entry.0 + adds, entry.1 + dels);
+        }
+        files
+    });
+    for path in String::from_utf8_lossy(&untracked).split('\0').filter(|p| !p.is_empty()) {
+        if !files.contains_key(path) {
+            files.insert(path.to_string(), (count_untracked_lines(cwd, path), 0));
+        }
+    }
+    Some(files.values().fold((0, 0), |(add, del), (a, d)| (add + a, del + d)))
 }
 
 fn current_branch(cwd: &str) -> String {
@@ -400,63 +417,17 @@ fn current_branch(cwd: &str) -> String {
         .unwrap_or_else(|| DEFAULT_BRANCH.to_string())
 }
 
-fn ahead_behind(cwd: &str) -> (usize, usize) {
-    let Ok(out) = run_git_string(
-        cwd,
-        &["rev-list", "--left-right", "--count", "@{upstream}...HEAD"],
-    ) else {
-        return (0, 0);
-    };
-    let parts: Vec<&str> = out.split_whitespace().collect();
-    match parts.as_slice() {
-        [behind, ahead] => (ahead.parse().unwrap_or(0), behind.parse().unwrap_or(0)),
-        _ => (0, 0),
-    }
-}
-
 pub fn get_detailed_status(cwd: &str) -> GitDetailedStatus {
     if !Path::new(cwd).exists() {
         return GitDetailedStatus::default();
     }
-    let branch = current_branch(cwd);
-    let (ahead, behind) = ahead_behind(cwd);
-    let Ok(entries) = read_status(cwd) else {
-        return GitDetailedStatus {
-            branch,
-            ahead,
-            behind,
+    match StatusPass::read(cwd) {
+        Some(pass) => pass.detailed_status(cwd),
+        // Not a repository: the fallback branch name, nothing else.
+        None => GitDetailedStatus {
+            branch: current_branch(cwd),
             ..Default::default()
-        };
-    };
-
-    let base = diff_base(cwd);
-    let staged_stats = diff_numstat(cwd, &["--cached", base.as_str()]);
-    let unstaged_stats = diff_numstat(cwd, &[]);
-
-    let visible = || entries.iter().filter(|e| !e.is_ignored());
-    let staged = visible()
-        .filter(|e| !e.is_unmerged())
-        .filter_map(|e| {
-            index_side_status(e.index).map(|s| make_change(&e.path, s, cwd, &staged_stats))
-        })
-        .collect();
-    let unstaged = visible()
-        .filter_map(|e| {
-            let status = if e.is_unmerged() {
-                Some(GitFileStatus::Modified)
-            } else {
-                worktree_side_status(e.worktree)
-            };
-            status.map(|s| make_change(&e.path, s, cwd, &unstaged_stats))
-        })
-        .collect();
-
-    GitDetailedStatus {
-        branch,
-        ahead,
-        behind,
-        staged,
-        unstaged,
+        },
     }
 }
 
@@ -915,6 +886,32 @@ mod tests {
         assert_eq!(untracked.status, GitFileStatus::Untracked);
         assert_eq!(untracked.additions, 2);
         assert_eq!(changes.len(), 3);
+    }
+
+    #[test]
+    fn diff_stats_count_tracked_and_untracked_lines() {
+        let repo = TempRepo::new();
+        repo.write("a.txt", "1\n2\n");
+        repo.commit_all("init");
+        repo.write("a.txt", "1\nchanged\n3\n");
+        repo.write("new.txt", "x\ny\nz\n");
+
+        // a.txt: +2 -1; new.txt: +3.
+        assert_eq!(diff_stats(repo.cwd()), Some((5, 1)));
+    }
+
+    #[test]
+    fn diff_stats_without_a_commit_or_a_repository() {
+        let repo = TempRepo::new();
+        repo.write("staged.txt", "1\n");
+        repo.git(&["add", "staged.txt"]);
+        repo.write("loose.txt", "1\n2\n");
+        assert_eq!(diff_stats(repo.cwd()), Some((3, 0)));
+
+        let plain = std::env::temp_dir().join(format!("bencode-no-repo-{}", std::process::id()));
+        std::fs::create_dir_all(&plain).unwrap();
+        assert_eq!(diff_stats(plain.to_str().unwrap()), None);
+        std::fs::remove_dir_all(&plain).unwrap();
     }
 
     #[test]

@@ -76,6 +76,14 @@ pub struct AppSettings {
     pub reminder_sessions_collapsed: std::collections::BTreeMap<String, bool>,
     /// MonoCode `monocode.sidebarTabOrder` (`sessions`, `files`, `changes`).
     pub sidebar_tab_order: Vec<String>,
+    /// MonoCode `monocode.pinnedProjects`: projects on the rail's Pinned
+    /// list, in rail order.
+    pub pinned_projects: Vec<String>,
+    /// The project rail's order, width, archive, groups, appearance and
+    /// notification mutes, under MonoCode's names (see `ui::rail::model`).
+    /// Declared before `extra` so its keys are not also kept as unknown.
+    #[serde(flatten)]
+    pub rail: crate::ui::rail::model::RailPrefs,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
@@ -175,6 +183,15 @@ mod tests {
             pinned_sessions_collapsed: std::collections::BTreeMap::from([("/repo".to_string(), true)]),
             reminder_sessions_collapsed: std::collections::BTreeMap::from([("/repo".to_string(), true)]),
             sidebar_tab_order: vec!["files".into(), "sessions".into(), "changes".into()],
+            pinned_projects: vec!["/repo".into()],
+            rail: crate::ui::rail::model::RailPrefs {
+                project_rail_order: vec!["/repo".into()],
+                project_rail_width: Some(240.0),
+                ..Default::default()
+            }
+            .with_new_group("g1".into())
+            .with_assignment("/repo", Some("g1"))
+            .with_label("/repo", "Repo"),
             extra: Map::new(),
         };
         save_to(&dir, &settings).unwrap();
@@ -195,6 +212,11 @@ mod tests {
         save_to(&dir, &loaded).unwrap();
         let text = std::fs::read_to_string(dir.join(FILE_NAME)).unwrap();
         assert!(text.contains("futureKey"), "{text}");
+        // Rail keys are read into `rail`, not kept twice as unknown.
+        std::fs::write(dir.join(FILE_NAME), r#"{"projectRailOrder":["/a"]}"#).unwrap();
+        let loaded = load_from(&dir);
+        assert_eq!(loaded.rail.project_rail_order, ["/a"]);
+        assert!(loaded.extra.is_empty(), "{:?}", loaded.extra);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

@@ -379,6 +379,24 @@ impl MonoCodeDb {
         Self::from_connection(conn)
     }
 
+    /// The database file, or `None` for an in-memory database.
+    pub fn file_path(&self) -> Option<PathBuf> {
+        self.conn
+            .path()
+            .filter(|path| !path.is_empty())
+            .map(PathBuf::from)
+    }
+
+    /// A read-only connection to `path` for queries off the UI thread. It
+    /// skips the schema setup: the writer connection already ran it.
+    pub fn open_reader(path: &Path) -> Result<Self> {
+        let conn = Connection::open_with_flags(
+            path,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI,
+        )?;
+        Ok(Self { conn })
+    }
+
     fn from_connection(conn: Connection) -> Result<Self> {
         conn.execute_batch("PRAGMA foreign_keys = ON;")?;
         conn.execute_batch(SCHEMA_SQL)?;
@@ -396,18 +414,29 @@ impl MonoCodeDb {
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
-    pub fn list_sessions_for_cwd(&self, cwd: &str, limit: usize) -> Result<Vec<SessionRow>> {
+    /// The project's `limit` most recent threads, leaving out `exclude`
+    /// (threads already in memory) so their transcripts are not parsed again.
+    pub fn list_sessions_for_cwd(
+        &self,
+        cwd: &str,
+        limit: usize,
+        exclude: &[String],
+    ) -> Result<Vec<SessionRow>> {
         // MonoCode `list_by_project` also leaves out orchestration workers.
         let workers = " AND NOT EXISTS (SELECT 1 FROM orchestration_workers w WHERE w.session_id = sessions.id)";
+        let order = "ORDER BY updated_at DESC, id ASC";
         let sql = format!(
-            "{SESSION_SELECT} WHERE (cwd = ?1 OR substr(cwd, 1, length(?2)) = ?2) \
-             AND inbox_ask IS NULL{workers} ORDER BY updated_at DESC, id ASC LIMIT ?3"
+            "{SESSION_SELECT} WHERE id IN (SELECT id FROM sessions \
+             WHERE (cwd = ?1 OR substr(cwd, 1, length(?2)) = ?2) \
+             AND inbox_ask IS NULL{workers} {order} LIMIT ?3) \
+             AND id NOT IN (SELECT value FROM json_each(?4)) {order}"
         );
         // A prefix comparison, not LIKE: `_` and `%` are common in folder names.
         let prefix = format!("{}/", cwd.trim_end_matches('/'));
+        let exclude = serde_json::to_string(exclude)?;
         let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt.query_map(
-            rusqlite::params![cwd, prefix, limit as i64],
+            rusqlite::params![cwd, prefix, limit as i64, exclude],
             session_from_row,
         )?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
@@ -1486,16 +1515,53 @@ mod tests {
         db.upsert_session(&s3).unwrap();
         db.upsert_session(&s4).unwrap();
 
-        let app_sessions = db.list_sessions_for_cwd("/projects/app", 10).unwrap();
+        let app_sessions = db.list_sessions_for_cwd("/projects/app", 10, &[]).unwrap();
         let ids: Vec<String> = app_sessions.into_iter().map(|s| s.id).collect();
         assert_eq!(ids.len(), 2);
         assert!(ids.contains(&"s1".to_string()));
         assert!(ids.contains(&"s2".to_string()));
         assert!(!ids.contains(&"s3".to_string()));
 
-        let other_sessions = db.list_sessions_for_cwd("/projects/other", 10).unwrap();
+        let other_sessions = db.list_sessions_for_cwd("/projects/other", 10, &[]).unwrap();
         assert_eq!(other_sessions.len(), 1);
         assert_eq!(other_sessions[0].id, "s3");
+    }
+
+    #[test]
+    fn list_sessions_for_cwd_skips_excluded_within_the_limit() {
+        let db = monocode_db();
+        for (id, updated_at) in [("s1", 3), ("s2", 2), ("s3", 1)] {
+            let mut row = session(id);
+            row.cwd = "/projects/app".to_string();
+            row.updated_at = updated_at;
+            db.upsert_session(&row).unwrap();
+        }
+
+        let rows = db
+            .list_sessions_for_cwd("/projects/app", 2, &["s1".to_string()])
+            .unwrap();
+
+        // The limit picks s1 and s2; s1 is already loaded, so only s2 comes back.
+        let ids: Vec<String> = rows.into_iter().map(|s| s.id).collect();
+        assert_eq!(ids, ["s2"]);
+    }
+
+    #[test]
+    fn reader_connection_sees_the_writer_rows() {
+        let dir = std::env::temp_dir().join(format!("bencode-reader-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("monocode.db");
+        let db = MonoCodeDb::open_at(&path).unwrap();
+        let mut row = session("s1");
+        row.cwd = "/projects/app".to_string();
+        db.upsert_session(&row).unwrap();
+
+        let reader = MonoCodeDb::open_reader(&db.file_path().unwrap()).unwrap();
+
+        assert_eq!(reader.list_sessions_for_cwd("/projects/app", 5, &[]).unwrap().len(), 1);
+        assert!(MonoCodeDb::open_in_memory().unwrap().file_path().is_none());
+        drop((reader, db));
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     // ---- 6. Fallback ----

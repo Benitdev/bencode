@@ -4,6 +4,9 @@
 //! re-renders on every streamed token. Everything here is loaded on the
 //! background executor and swapped in atomically; views read the cache.
 
+use std::collections::HashMap;
+use std::thread::ScopedJoinHandle;
+
 use anyhow::Result;
 use gpui::{Context, SharedString};
 
@@ -44,9 +47,29 @@ pub struct WorkspaceCache {
     /// `git::state_fingerprint` of the loaded snapshot.
     fingerprint: Option<u64>,
     generation: u64,
+    /// The `generation` whose load last landed; behind `generation` while
+    /// a load is in flight.
+    loaded_generation: u64,
     diff_generation: u64,
+    /// Each directory's last snapshot, shown at once when the workspace
+    /// returns to it while a fresh one loads (MonoCode `indexByCwd`).
+    snapshots: HashMap<String, Snapshot>,
 }
 
+impl WorkspaceCache {
+    /// Uncommitted lines in `project` as of its last snapshot, so the rail
+    /// can show stats for projects other than the open one.
+    pub fn cached_diff_stats(&self, project: &str) -> Option<(usize, usize)> {
+        let (_, snapshot) = self
+            .snapshots
+            .iter()
+            .find(|(cwd, _)| crate::app::same_project_path(cwd, project))?;
+        let files = snapshot.status.staged.iter().chain(&snapshot.status.unstaged);
+        Some(files.fold((0, 0), |(add, del), f| (add + f.additions, del + f.deletions)))
+    }
+}
+
+#[derive(Clone)]
 struct Snapshot {
     fingerprint: Option<u64>,
     status: GitDetailedStatus,
@@ -58,21 +81,42 @@ struct Snapshot {
     repo: Option<String>,
 }
 
+/// Runs the snapshot's git reads side by side: each is its own `git`
+/// process, so the wall time is the slowest one rather than their sum.
 fn load_snapshot(cwd: &str) -> Snapshot {
-    Snapshot {
-        fingerprint: git::state_fingerprint(cwd),
-        status: git::get_detailed_status(cwd),
-        sync: git::sync::sync_info(cwd),
-        history: git::sync::history(cwd),
-        branches: git::list_branches(cwd),
-        changes: git::get_workspace_changes(cwd),
-        worktrees: crate::git::worktrees::list_worktrees(cwd).unwrap_or_else(|err| {
-            // Expected for folders that are not git repositories.
-            log::debug!("no worktrees for {cwd}: {err:#}");
-            Vec::new()
-        }),
-        repo: git::sync::repo_name(cwd),
-    }
+    std::thread::scope(|scope| {
+        // One `git status` feeds the fingerprint, status and changes.
+        let local = scope.spawn(|| git::read_local_state(cwd));
+        let sync = scope.spawn(|| git::sync::sync_info(cwd));
+        let history = scope.spawn(|| git::sync::history(cwd));
+        let branches = scope.spawn(|| git::list_branches(cwd));
+        let worktrees = scope.spawn(|| {
+            crate::git::worktrees::list_worktrees(cwd).unwrap_or_else(|err| {
+                // Expected for folders that are not git repositories.
+                log::debug!("no worktrees for {cwd}: {err:#}");
+                Vec::new()
+            })
+        });
+        let repo = scope.spawn(|| git::sync::repo_name(cwd));
+        let local = joined(local, "status");
+        Snapshot {
+            fingerprint: local.fingerprint,
+            status: local.status,
+            sync: joined(sync, "sync info"),
+            history: joined(history, "history"),
+            branches: joined(branches, "branches"),
+            changes: local.changes,
+            worktrees: joined(worktrees, "worktrees"),
+            repo: joined(repo, "repo name"),
+        }
+    })
+}
+
+fn joined<T: Default>(handle: ScopedJoinHandle<'_, T>, what: &str) -> T {
+    handle.join().unwrap_or_else(|_| {
+        log::error!("loading git {what} panicked");
+        T::default()
+    })
 }
 
 impl BenCodeApp {
@@ -105,6 +149,9 @@ impl BenCodeApp {
         // labels paint before the picker is ever opened.
         self.index_project_files(cx);
         let cwd = self.workspace_cwd();
+        if self.workspace.cwd != cwd {
+            self.show_cached_snapshot(&cwd, cx);
+        }
         self.workspace.generation += 1;
         let generation = self.workspace.generation;
         let load_cwd = cwd.clone();
@@ -114,35 +161,69 @@ impl BenCodeApp {
 
         cx.spawn(async move |this, cx| {
             let snapshot = task.await;
-            let _ = this.update(cx, |app, cx| {
+            let landed = this.update(cx, |app, cx| {
                 if app.workspace.generation != generation {
                     return; // a newer refresh superseded this one
                 }
-                app.git_status = snapshot.status;
-                app.git_sync = snapshot.sync;
-                app.git_history = snapshot.history;
-                app.refresh_branch_pr(cx);
-                let cache = &mut app.workspace;
-                cache.cwd = cwd;
-                cache.fingerprint = snapshot.fingerprint;
-                cache.branches = snapshot.branches;
-                cache.changes = snapshot.changes;
-                cache.worktrees = snapshot.worktrees;
-                cache.repo = snapshot.repo;
-                if app.workspace.commit_view.is_none() {
-                    let diff_path = app
-                        .selected_diff_path
-                        .clone()
-                        .or_else(|| app.workspace.changes.first().map(|c| c.path.clone()));
-                    let source = app.workspace.diff_source.clone();
-                    app.load_diff(diff_path, source, cx);
-                }
+                app.workspace.loaded_generation = generation;
+                app.workspace.snapshots.insert(cwd.clone(), snapshot.clone());
+                app.apply_snapshot(cwd, snapshot, cx);
                 app.refresh_file_tree(cx);
                 app.recheck_open_files_on_disk(cx);
                 cx.notify();
             });
+            if let Err(err) = landed {
+                log::debug!("workspace snapshot after app drop: {err:#}");
+            }
         })
         .detach();
+    }
+
+    /// Moving to another directory: its last snapshot if there is one,
+    /// otherwise an empty workspace, never the previous directory's data.
+    fn show_cached_snapshot(&mut self, cwd: &str, cx: &mut Context<Self>) {
+        let cache = &mut self.workspace;
+        cache.commit_view = None;
+        cache.diff_path = None;
+        cache.diff.clear();
+        cache.diff_text = SharedString::default();
+        cache.git_error = None;
+        let snapshot = cache.snapshots.get(cwd).cloned().unwrap_or_else(|| Snapshot {
+            fingerprint: None,
+            status: GitDetailedStatus::default(),
+            sync: git::sync::SyncInfo::default(),
+            history: Vec::new(),
+            branches: Vec::new(),
+            changes: Vec::new(),
+            worktrees: Vec::new(),
+            repo: None,
+        });
+        self.apply_snapshot(cwd.to_string(), snapshot, cx);
+        cx.notify();
+    }
+
+    fn apply_snapshot(&mut self, cwd: String, snapshot: Snapshot, cx: &mut Context<Self>) {
+        self.git_status = snapshot.status;
+        self.file_tree.invalidate_tints();
+        self.git_sync = snapshot.sync;
+        self.git_history = snapshot.history;
+        self.changes_ui.invalidate_graph();
+        let cache = &mut self.workspace;
+        cache.cwd = cwd;
+        cache.fingerprint = snapshot.fingerprint;
+        cache.branches = snapshot.branches;
+        cache.changes = snapshot.changes;
+        cache.worktrees = snapshot.worktrees;
+        cache.repo = snapshot.repo;
+        self.refresh_branch_pr(cx);
+        if self.workspace.commit_view.is_none() {
+            let diff_path = self
+                .selected_diff_path
+                .clone()
+                .or_else(|| self.workspace.changes.first().map(|c| c.path.clone()));
+            let source = self.workspace.diff_source.clone();
+            self.load_diff(diff_path, source, cx);
+        }
     }
 
     /// Polls git every `GIT_POLL_INTERVAL` and refreshes when the repository
@@ -164,7 +245,13 @@ impl BenCodeApp {
                     .await;
                 let changed = this.update(cx, |app, cx| {
                     let same_dir = app.workspace.cwd == cwd;
-                    if same_dir && fingerprint.is_some() && fingerprint != app.workspace.fingerprint
+                    // A load in flight already reads the newer state;
+                    // restarting it would keep a slow repo from landing.
+                    let settled = app.workspace.loaded_generation == app.workspace.generation;
+                    if same_dir
+                        && settled
+                        && fingerprint.is_some()
+                        && fingerprint != app.workspace.fingerprint
                     {
                         app.refresh_workspace(cx);
                     }

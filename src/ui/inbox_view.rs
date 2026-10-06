@@ -350,6 +350,18 @@ impl BenCodeApp {
         .detach();
     }
 
+    /// MonoCode `markInboxItemsSeen` over every item ("Mark all as read").
+    pub fn mark_all_inbox_seen(&mut self, cx: &mut Context<Self>) {
+        let mut changed = false;
+        for item in self.inbox.items.clone() {
+            changed |= self.inbox.mark_seen(&item);
+        }
+        if changed {
+            self.save_settings(cx);
+            cx.notify();
+        }
+    }
+
     /// Any listed item has activity the user has not read.
     pub fn inbox_has_unseen(&self) -> bool {
         self.inbox

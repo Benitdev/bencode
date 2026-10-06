@@ -38,6 +38,7 @@ pub mod terminal_pane;
 pub mod theme;
 pub mod titlebar;
 pub mod transcript;
+pub mod virtual_rows;
 
 pub use provider_icon::HarnessIcon;
 pub mod window_root;

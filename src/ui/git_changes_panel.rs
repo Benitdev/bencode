@@ -4,7 +4,7 @@
 //! Publish / Sync / Create PR / View PR, the staged and unstaged files as a
 //! list or a tree, and the commit graph under a resize sash.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -17,7 +17,7 @@ use ely_gpui_component::primitives::{Icon, IconName, Severity, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
     Animation, AnimationExt, AnyElement, Bounds, Context, FontWeight, Hsla, InteractiveElement,
-    IntoElement, MouseButton, ParentElement, PathBuilder, Pixels, SharedString, Styled, canvas,
+    IntoElement, MouseButton, ParentElement, PathBuilder, Pixels, ScrollHandle, SharedString, Styled, canvas,
     div, percentage, point, prelude::*, px, relative, rgb,
 };
 
@@ -31,6 +31,7 @@ use crate::git::{
 use crate::ui::app_callback::app_callback;
 use crate::ui::git_menus::{GitMenuKind, TriggerLook};
 use crate::ui::icons::ExtraIcon;
+use crate::ui::virtual_rows;
 
 /// The Ely list's status for a file (the diff viewer's file list).
 pub fn to_ely_status(status: &GitFileStatus) -> ely_gpui_component::lists::GitStatus {
@@ -50,6 +51,10 @@ const GRAPH_DEFAULT: f32 = 240.0;
 /// MonoCode clears its status line after 4s.
 const STATUS_FOR: Duration = Duration::from_secs(4);
 const ROW_HEIGHT: f32 = 28.0;
+/// MonoCode `FileSection`'s `h-7` header.
+const SECTION_HEADER_HEIGHT: f32 = 28.0;
+/// The Changes list's `py-1`.
+const CHANGES_PAD_Y: f32 = 4.0;
 
 /// The git action running; MonoCode allows one at a time per checkout.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -63,6 +68,22 @@ pub enum Busy {
     File(String),
     /// Staging or unstaging a folder of the tree view.
     Folder(String),
+}
+
+/// One line of the Changes list, flattened so only those in view are built.
+enum ChangeItem<'a> {
+    Header { side: Side, files: &'a [GitFileChange] },
+    Dir { dir: &'a ChangeDir, depth: usize, open: bool, key: String, side: Side },
+    File { file: &'a GitFileChange, side: Side, depth: Option<usize> },
+}
+
+impl ChangeItem<'_> {
+    fn height(&self) -> f32 {
+        match self {
+            ChangeItem::Header { .. } => SECTION_HEADER_HEIGHT,
+            ChangeItem::Dir { .. } | ChangeItem::File { .. } => ROW_HEIGHT,
+        }
+    }
 }
 
 /// Which list a file row belongs to (MonoCode `GitFileDiffKind`).
@@ -106,11 +127,22 @@ pub struct ChangesUi {
     branch_anchor: Anchor,
     /// The graph row under the pointer (MonoCode's `:hover` node look).
     hovered_commit: Option<String>,
+    /// The file list's scroll pane, read to build only the rows in view.
+    scroll: ScrollHandle,
+    /// The history graph's scroll pane, likewise.
+    graph_scroll: ScrollHandle,
+    /// `graph::layout` of the current history, kept until it changes.
+    graph_rows: RefCell<Option<Rc<Vec<graph::Row>>>>,
 }
 
 type Anchor = Rc<Cell<Option<Bounds<Pixels>>>>;
 
 impl ChangesUi {
+    /// Drops the cached graph layout; called when the history changes.
+    pub(crate) fn invalidate_graph(&mut self) {
+        self.graph_rows = RefCell::new(None);
+    }
+
     pub(crate) fn menu_anchor(&self, kind: GitMenuKind) -> Anchor {
         match kind {
             GitMenuKind::Commit => self.commit_anchor.clone(),
@@ -143,6 +175,9 @@ impl Default for ChangesUi {
             commit_anchor: Rc::default(),
             branch_anchor: Rc::default(),
             hovered_commit: None,
+            scroll: ScrollHandle::default(),
+            graph_scroll: ScrollHandle::default(),
+            graph_rows: RefCell::new(None),
         }
     }
 }
@@ -1269,28 +1304,40 @@ impl BenCodeApp {
                 .child(text)
                 .into_any_element()
         } else {
+            // Only the rows in view are built (a big checkout can list
+            // thousands of files); spacers stand in for the rest.
+            let tree_of = |side: Side, files: &[GitFileChange]| {
+                (self.changes_ui.tree && self.section_open(side) && !files.is_empty()).then(|| build_tree(files))
+            };
+            let (staged_tree, unstaged_tree) = (tree_of(Side::Staged, staged), tree_of(Side::Unstaged, unstaged));
+            let mut items = Vec::new();
+            if !staged.is_empty() {
+                self.push_section(Side::Staged, staged, staged_tree.as_ref(), &mut items);
+            }
+            if !unstaged.is_empty() {
+                self.push_section(Side::Unstaged, unstaged, unstaged_tree.as_ref(), &mut items);
+            }
+            let heights: Vec<Option<f32>> = items.iter().map(|item| Some(item.height())).collect();
+            let visible = virtual_rows::for_scroll(&heights, &self.changes_ui.scroll, CHANGES_PAD_Y);
             div()
-                .children(
-                    (!staged.is_empty()).then(|| self.render_file_section(Side::Staged, staged, cx)),
-                )
-                .children(
-                    (!unstaged.is_empty())
-                        .then(|| self.render_file_section(Side::Unstaged, unstaged, cx)),
-                )
+                .when(visible.above > 0.0, |el| el.child(div().h(px(visible.above))))
+                .children(items[visible.range.clone()].iter().map(|item| self.render_change_item(item, cx)))
+                .when(visible.below > 0.0, |el| el.child(div().h(px(visible.below))))
                 .into_any_element()
         };
         div()
             .id("git-changes-scroll")
+            .track_scroll(&self.changes_ui.scroll)
             .flex_1()
             .min_h_0()
             .overflow_y_scroll()
-            .py_1()
+            .py(px(CHANGES_PAD_Y))
             .child(body)
     }
 
-    /// MonoCode `FileSection`: chevron, title, count pill and actions, then
-    /// the files.
-    fn render_file_section(
+    /// MonoCode `FileSection`'s header: chevron, title, count pill and
+    /// actions.
+    fn render_section_header(
         &self,
         side: Side,
         files: &[GitFileChange],
@@ -1299,10 +1346,7 @@ impl BenCodeApp {
         let colors = &cx.theme().colors;
         let fg = colors.fg;
         let ui = &self.changes_ui;
-        let open = match side {
-            Side::Staged => !ui.staged_closed,
-            Side::Unstaged => !ui.changes_closed,
-        };
+        let open = self.section_open(side);
         let title = match side {
             Side::Staged => "STAGED CHANGES",
             Side::Unstaged => "CHANGES",
@@ -1344,7 +1388,7 @@ impl BenCodeApp {
             .flex()
             .items_center()
             .gap_1()
-            .h(px(28.0))
+            .h(px(SECTION_HEADER_HEIGHT))
             .px(px(6.0))
             .child(
                 div()
@@ -1445,40 +1489,72 @@ impl BenCodeApp {
                         .on_click(cx.listener(|this, _, _, cx| this.all_action(true, cx))),
                 ),
         };
-        let rows: Vec<AnyElement> = if !open {
-            Vec::new()
-        } else if tree {
-            let root = build_tree(files);
-            let mut out = Vec::new();
-            self.tree_rows(&root, 0, side, &mut out, cx);
-            out
-        } else {
-            files
-                .iter()
-                .map(|f| self.render_change_row(f, side, None, cx))
-                .collect()
-        };
-        div().child(header).children(rows).into_any_element()
+        header.into_any_element()
     }
 
-    fn tree_rows(
+    /// Whether `side`'s section shows its files.
+    fn section_open(&self, side: Side) -> bool {
+        match side {
+            Side::Staged => !self.changes_ui.staged_closed,
+            Side::Unstaged => !self.changes_ui.changes_closed,
+        }
+    }
+
+    /// `side`'s header and, while open, its rows, in display order.
+    fn push_section<'a>(
         &self,
-        dir: &ChangeDir,
-        depth: usize,
         side: Side,
-        out: &mut Vec<AnyElement>,
-        cx: &Context<Self>,
+        files: &'a [GitFileChange],
+        tree: Option<&'a ChangeDir>,
+        out: &mut Vec<ChangeItem<'a>>,
     ) {
+        out.push(ChangeItem::Header { side, files });
+        if !self.section_open(side) {
+            return;
+        }
+        match tree {
+            Some(root) => self.push_tree(root, 0, side, out),
+            None => out.extend(files.iter().map(|file| ChangeItem::File {
+                file,
+                side,
+                depth: None,
+            })),
+        }
+    }
+
+    fn push_tree<'a>(&self, dir: &'a ChangeDir, depth: usize, side: Side, out: &mut Vec<ChangeItem<'a>>) {
         for child in &dir.dirs {
             let key = format!("{side:?}:{}", child.path);
             let open = !self.changes_ui.collapsed_dirs.contains(&key);
-            out.push(self.render_dir_row(child, depth, open, key, side, cx));
+            out.push(ChangeItem::Dir {
+                dir: child,
+                depth,
+                open,
+                key,
+                side,
+            });
             if open {
-                self.tree_rows(child, depth + 1, side, out, cx);
+                self.push_tree(child, depth + 1, side, out);
             }
         }
-        for file in &dir.files {
-            out.push(self.render_change_row(file, side, Some(depth), cx));
+        out.extend(dir.files.iter().map(|file| ChangeItem::File {
+            file,
+            side,
+            depth: Some(depth),
+        }));
+    }
+
+    fn render_change_item(&self, item: &ChangeItem<'_>, cx: &Context<Self>) -> AnyElement {
+        match item {
+            ChangeItem::Header { side, files } => self.render_section_header(*side, files, cx),
+            ChangeItem::Dir {
+                dir,
+                depth,
+                open,
+                key,
+                side,
+            } => self.render_dir_row(dir, *depth, *open, key.clone(), *side, cx),
+            ChangeItem::File { file, side, depth } => self.render_change_row(file, *side, *depth, cx),
         }
     }
 
@@ -1787,6 +1863,15 @@ impl BenCodeApp {
     }
 
     /// MonoCode `GitHistoryGraph`: "GRAPH" and its chevron over the rows.
+    /// The graph layout of `git_history`, laid out once per history.
+    fn graph_rows(&self) -> Rc<Vec<graph::Row>> {
+        self.changes_ui
+            .graph_rows
+            .borrow_mut()
+            .get_or_insert_with(|| Rc::new(graph::layout(&self.git_history)))
+            .clone()
+    }
+
     fn render_graph(&self, cx: &Context<Self>) -> impl IntoElement {
         let colors = &cx.theme().colors;
         let fg = colors.fg;
@@ -1795,7 +1880,7 @@ impl BenCodeApp {
         let height = self.changes_ui.graph_height.min(max);
         let hover = fg.opacity(0.05);
         let commits = &self.git_history;
-        let rows = graph::layout(commits);
+        let rows = self.graph_rows();
         let selected = self.workspace.commit_view.as_ref().map(|c| c.sha.clone());
         div()
             .flex_none()
@@ -1846,6 +1931,7 @@ impl BenCodeApp {
                 el.child(
                     div()
                         .id("git-graph-rows")
+                        .track_scroll(&self.changes_ui.graph_scroll)
                         .flex_1()
                         .min_h_0()
                         .overflow_y_scroll()
@@ -1861,10 +1947,17 @@ impl BenCodeApp {
                                         .child("No commits yet"),
                                 )
                             } else {
-                                el.children(commits.iter().zip(rows.iter()).map(|(commit, row)| {
-                                    let active = selected.as_deref() == Some(commit.sha.as_str());
-                                    self.render_history_row(commit, row, active, cx)
-                                }))
+                                // Rows are all one lane tall; only those in
+                                // view are built.
+                                let heights = vec![Some(graph::SWIMLANE_HEIGHT); commits.len()];
+                                let visible = virtual_rows::for_scroll(&heights, &self.changes_ui.graph_scroll, 0.0);
+                                let range = visible.range.clone();
+                                el.when(visible.above > 0.0, |el| el.child(div().flex_none().h(px(visible.above))))
+                                    .children(commits[range.clone()].iter().zip(&rows[range]).map(|(commit, row)| {
+                                        let active = selected.as_deref() == Some(commit.sha.as_str());
+                                        self.render_history_row(commit, row, active, cx)
+                                    }))
+                                    .when(visible.below > 0.0, |el| el.child(div().flex_none().h(px(visible.below))))
                             }
                         }),
                 )

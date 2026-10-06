@@ -27,6 +27,8 @@ pub enum SidebarMenuKind {
     Worktrees,
     /// MonoCode's "Remind me" presets (also the reminder panel's Snooze).
     Remind { ids: Vec<String> },
+    /// The rail's "Open project" popover.
+    AddProject,
 }
 
 #[derive(Clone, Debug)]
@@ -142,7 +144,9 @@ impl BenCodeApp {
                     )
                 })
                 .collect(),
-            SidebarMenuKind::Filter | SidebarMenuKind::Worktrees => Vec::new(),
+            SidebarMenuKind::Filter | SidebarMenuKind::Worktrees | SidebarMenuKind::AddProject => {
+                Vec::new()
+            }
         }
     }
 
@@ -267,7 +271,7 @@ impl BenCodeApp {
                     self.schedule_reminders(&ids, due_at, cx);
                 }
             }
-            SidebarMenuKind::Filter | SidebarMenuKind::Worktrees => {}
+            SidebarMenuKind::Filter | SidebarMenuKind::Worktrees | SidebarMenuKind::AddProject => {}
         }
         cx.notify();
     }
@@ -366,6 +370,7 @@ impl BenCodeApp {
         match menu.kind {
             SidebarMenuKind::Filter => return Some(self.render_filter_menu(menu.position, cx)),
             SidebarMenuKind::Worktrees => return Some(self.render_worktree_menu(menu.position, cx)),
+            SidebarMenuKind::AddProject => return Some(self.render_add_project_menu(menu.position, cx)),
             _ => {}
         }
         let entries = self.sidebar_menu_entries(&menu.kind);

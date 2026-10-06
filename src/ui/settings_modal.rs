@@ -24,9 +24,11 @@ pub enum SettingsTab {
     Skills,
     Appearance,
     About,
+    /// MonoCode Settings › Archive: archived projects.
+    Archive,
 }
 
-const SECTIONS: [(SettingsTab, &str, &str, IconName); 6] = [
+const SECTIONS: [(SettingsTab, &str, &str, IconName); 7] = [
     (
         SettingsTab::General,
         "general",
@@ -53,6 +55,21 @@ const SECTIONS: [(SettingsTab, &str, &str, IconName); 6] = [
         IconName::Palette,
     ),
     (SettingsTab::About, "about", "About", IconName::Info),
+    (SettingsTab::Archive, "archive", "Archive", IconName::Archive),
+];
+
+/// MonoCode `SETTINGS_GROUPS` with BenCode's sections in them (About is
+/// BenCode's own and sits with App), for the rail's settings nav.
+pub(crate) const SETTINGS_GROUPS: [(&str, &[SettingsTab]); 3] = [
+    (
+        "App",
+        &[SettingsTab::General, SettingsTab::Appearance, SettingsTab::About],
+    ),
+    (
+        "Agents",
+        &[SettingsTab::Providers, SettingsTab::Mcp, SettingsTab::Skills],
+    ),
+    ("Workspace", &[SettingsTab::Archive]),
 ];
 
 impl SettingsTab {
@@ -61,6 +78,14 @@ impl SettingsTab {
             .iter()
             .find(|(tab, ..)| *tab == self)
             .map_or("general", |(_, key, ..)| key)
+    }
+
+    /// The nav's label and icon.
+    pub(crate) fn label_icon(self) -> (&'static str, IconName) {
+        SECTIONS
+            .iter()
+            .find(|(tab, ..)| *tab == self)
+            .map_or(("General", IconName::Settings), |(_, _, name, icon)| (*name, *icon))
     }
 
     fn from_key(key: &str) -> Option<Self> {
@@ -103,6 +128,11 @@ impl BenCodeApp {
     }
 
     pub(crate) fn render_settings_body(&mut self, cx: &mut Context<Self>) -> AnyElement {
+        // MonoCode: the project rail holds the sections while settings
+        // are open, so the page stands alone.
+        if self.is_rail_open {
+            return div().size_full().child(self.render_settings_page(cx)).into_any_element();
+        }
         let layout = SettingsLayout::new(
             "settings-layout",
             SECTIONS
@@ -129,7 +159,51 @@ impl BenCodeApp {
             SettingsTab::Skills => self.render_settings_skills(cx).into_any_element(),
             SettingsTab::Appearance => render_settings_appearance(self, cx).into_any_element(),
             SettingsTab::About => render_settings_about().into_any_element(),
+            SettingsTab::Archive => self.render_settings_archive(cx).into_any_element(),
         }
+    }
+
+    /// MonoCode `ArchivePage` (projects): Restore puts one back on the rail
+    /// and opens it; Delete asks first.
+    fn render_settings_archive(&self, cx: &Context<Self>) -> impl IntoElement {
+        let archived = &self.settings.rail.archived_projects;
+        let section = SettingsSection::new("Archive").description("Projects and conversations you have archived.");
+        if archived.is_empty() {
+            return section.row(SettingsRow::new("No archived projects"));
+        }
+        archived.iter().enumerate().fold(section, |section, (ix, project)| {
+            let (restore_path, delete_path) = (project.path.clone(), project.path.clone());
+            section.row(
+                SettingsRow::new(self.rail_project_label(&project.path))
+                    .description(project.path.clone())
+                    .control(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_1()
+                            .child(
+                                ely_gpui_component::buttons::Button::new(
+                                    SharedString::from(format!("archive-restore-{ix}")),
+                                    "Restore",
+                                )
+                                .variant(ButtonVariant::Ghost)
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    this.restore_rail_project(&restore_path, cx);
+                                })),
+                            )
+                            .child(
+                                ely_gpui_component::buttons::Button::new(
+                                    SharedString::from(format!("archive-delete-{ix}")),
+                                    "Delete",
+                                )
+                                .variant(ButtonVariant::Danger)
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    this.request_remove_project(&delete_path, cx);
+                                })),
+                            ),
+                    ),
+            )
+        })
     }
 
     fn render_settings_general(&self, cx: &Context<Self>) -> impl IntoElement {

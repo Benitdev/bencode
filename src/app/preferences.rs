@@ -110,6 +110,8 @@ impl BenCodeApp {
                 .iter()
                 .map(|t| crate::ui::sidebar::tab_id(*t).to_string())
                 .collect(),
+            pinned_projects: self.settings.pinned_projects.clone(),
+            rail: self.settings.rail.clone(),
             extra: self.settings.extra.clone(),
         }
     }
@@ -120,6 +122,37 @@ impl BenCodeApp {
         if next == self.settings {
             return;
         }
+        self.write_settings(next, cx);
+    }
+
+    /// MonoCode `savePinnedProjects`.
+    pub fn set_pinned_projects(&mut self, paths: Vec<String>, cx: &mut Context<Self>) {
+        let mut next = self.current_settings();
+        next.pinned_projects = paths;
+        if next == self.settings {
+            return;
+        }
+        self.write_settings(next, cx);
+        cx.notify();
+    }
+
+    /// Saves the rail's state as `update` returns it from the current one
+    /// (MonoCode writes each of these to storage as it changes).
+    pub fn update_rail_prefs(
+        &mut self,
+        update: impl FnOnce(&crate::ui::rail::model::RailPrefs) -> crate::ui::rail::model::RailPrefs,
+        cx: &mut Context<Self>,
+    ) {
+        let mut next = self.current_settings();
+        next.rail = update(&next.rail);
+        if next == self.settings {
+            return;
+        }
+        self.write_settings(next, cx);
+        cx.notify();
+    }
+
+    fn write_settings(&mut self, next: AppSettings, cx: &mut Context<Self>) {
         self.settings = next.clone();
         let Some(dir) = settings::settings_dir() else {
             return;

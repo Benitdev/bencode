@@ -360,7 +360,7 @@ impl BenCodeApp {
             .border_b_1()
             .border_color(colors.fg.opacity(STROKE_OPACITY))
             .when(!self.is_rail_open && cfg!(target_os = "macos"), |el| {
-                el.child(div().flex_none().w(px(72.0)))
+                el.child(div().flex_none().w(px(78.0))) // MonoCode `w-[78px]`
             })
             .child(
                 div().flex().flex_1().min_w_0().items_center().child(

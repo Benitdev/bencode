@@ -5,6 +5,7 @@ mod model_catalog;
 mod panes;
 mod preferences;
 pub mod project_files;
+mod project_stats;
 mod projects;
 pub mod reminders;
 pub mod session_folders;
@@ -295,6 +296,8 @@ pub struct BenCodeApp {
     pub changes_ui: crate::ui::git_changes_panel::ChangesUi,
     /// Git/filesystem snapshot for the active workspace; see `workspace_sync`.
     pub workspace: WorkspaceCache,
+    /// Every rail project's +/- lines (MonoCode `useProjectDiffStats`).
+    pub project_stats: project_stats::ProjectStats,
     pub file_tree: crate::ui::file_tree::FileTreeState,
     /// The Explorer's inline name field (MonoCode `NameRow`).
     pub file_dialog_input: Entity<TextInput>,
@@ -358,6 +361,8 @@ pub struct BenCodeApp {
     pub is_sidebar_open: bool,
     /// The project rail (⌘B); the session sidebar is `is_sidebar_open` (⇧⌘B).
     pub is_rail_open: bool,
+    /// The project rail's menus, dialogs and drags.
+    pub rail_ui: crate::ui::rail::RailUi,
     pub theme_preference: crate::settings::ThemePreference,
     /// Run Claude with `disableAllHooks` (MonoCode "Claude Code hooks" off).
     pub claude_hooks_disabled: bool,
@@ -441,6 +446,7 @@ impl BenCodeApp {
         let search_input = text_input(window, cx, "Search conversations...");
         let rename_input = text_input(window, cx, "");
         let link_input = text_input(window, cx, "https://github.com/owner/repo/pull/123");
+        let rail_ui = crate::ui::rail::RailUi::new(window, cx);
         let file_dialog_input = text_input(window, cx, "");
         let name_keys_input = file_dialog_input.clone();
         let rename_keys_input = rename_input.clone();
@@ -519,6 +525,8 @@ impl BenCodeApp {
                     this.recheck_open_files_on_disk(cx);
                     // MonoCode re-lists the Explorer on focus.
                     this.refresh_file_tree(cx);
+                    // MonoCode re-reads stale project stats on focus.
+                    this.refresh_project_stats(cx);
                 }
             }),
             cx.observe_window_appearance(window, |this, window, cx| {
@@ -1041,10 +1049,7 @@ impl BenCodeApp {
             queue_edit_input,
             queue_held: Default::default(),
             queue_paused: Default::default(),
-            project_files: crate::app::project_files::ProjectFiles {
-                mentions: mention_index,
-                ..Default::default()
-            },
+            project_files: crate::app::project_files::ProjectFiles::new(mention_index),
             quick_open_input,
             drafts: HashMap::new(),
             expanded_reasoning: std::collections::HashSet::new(),
@@ -1076,6 +1081,7 @@ impl BenCodeApp {
             git_commit_input,
             changes_ui: Default::default(),
             workspace: WorkspaceCache::default(),
+            project_stats: Default::default(),
             file_tree: Default::default(),
             file_dialog_input,
             file_tree_focus: cx.focus_handle(),
@@ -1117,6 +1123,7 @@ impl BenCodeApp {
             editor: Default::default(),
             is_sidebar_open: true,
             is_rail_open: true,
+            rail_ui,
             theme_preference: Default::default(),
             claude_hooks_disabled: false,
             tab_history: Default::default(),
@@ -1127,6 +1134,7 @@ impl BenCodeApp {
         };
         app.apply_settings(saved);
         app.start_git_poll(cx);
+        app.start_project_stats_poll(cx);
         app.start_session_age_tick(cx);
         app.start_reminder_poll(cx);
         app.load_folder_members(cx);
@@ -1599,6 +1607,7 @@ impl Render for BenCodeApp {
                             .children(surface),
                     )
                     .children(self.render_sidebar_menu(cx))
+                    .children(self.render_rail_overlays(cx))
                     .children(self.render_tree_menu(cx))
                     .children(self.render_git_menu(cx))
                     .children(self.render_link_dialog(cx))

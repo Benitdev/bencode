@@ -126,6 +126,27 @@ pub static MASCOTS: [Mascot; 10] = [
     },
 ];
 
+/// MonoCode's mascot names, in `MASCOTS` order (saved picks use them).
+pub const MASCOT_NAMES: [&str; 10] = [
+    "invader", "ghost", "robot", "cat", "skull", "crab", "mushroom", "rocket", "dino", "frog",
+];
+
+/// MonoCode `projectMascot(project, name)`: a saved pick by name, else
+/// the one hashed from the project.
+pub fn mascot_for(project: &str, name: Option<&str>) -> &'static Mascot {
+    name.and_then(|name| MASCOT_NAMES.iter().position(|n| *n == name))
+        .map_or_else(|| project_mascot(project), |ix| &MASCOTS[ix])
+}
+
+/// The name of the mascot `mascot_for` shows.
+pub fn mascot_name_for(project: &str, name: Option<&str>) -> &'static str {
+    let shown = mascot_for(project, name);
+    MASCOTS
+        .iter()
+        .position(|m| std::ptr::eq(m, shown))
+        .map_or(MASCOT_NAMES[0], |ix| MASCOT_NAMES[ix])
+}
+
 /// MonoCode `projectMascot`: a stable pick per project name.
 pub fn project_mascot(project: &str) -> &'static Mascot {
     let hash = project.encode_utf16().fold(0u32, |hash, unit| {

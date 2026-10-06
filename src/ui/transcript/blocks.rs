@@ -198,7 +198,10 @@ impl BenCodeApp {
         let query = self
             .find_query_for(&session.id, cx)
             .filter(|q| !q.trim().is_empty());
-        let current = self.find_current_block(&session.id, cx) == Some(ix);
+        let current = self
+            .transcripts
+            .get(&session.id)
+            .is_some_and(|view| view.find_block == Some(ix));
         let expanded = self.transcript_ui.expanded_messages.contains(&key) || current;
         let chips = attachment_chips(block, cx);
         // MonoCode shows the note or handoff a turn was sent with as a card.

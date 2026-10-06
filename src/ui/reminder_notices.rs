@@ -3,9 +3,13 @@
 
 use ely_gpui_component::primitives::{Icon, IconName};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
+use std::cell::Cell;
+use std::rc::Rc;
+
 use gpui::{
-    AnyElement, Context, FontWeight, InteractiveElement, IntoElement, MouseButton, MouseDownEvent,
-    ParentElement, SharedString, Styled, deferred, div, prelude::*, px, relative, rgb,
+    AnyElement, Bounds, Context, FontWeight, InteractiveElement, IntoElement, MouseButton,
+    MouseDownEvent, ParentElement, Pixels, Point, SharedString, Styled, canvas, deferred, div,
+    prelude::*, px, relative, rgb,
 };
 
 use crate::app::BenCodeApp;
@@ -15,6 +19,8 @@ use crate::ui::sidebar_menus::SidebarMenuKind;
 /// MonoCode: `min(320px, 100vw - 24px)` wide, `top-3 right-3`.
 const PANEL_WIDTH: f32 = 320.0;
 const INSET: f32 = 12.0;
+/// MonoCode: the Snooze menu sits `4px` under its button.
+const SNOOZE_MENU_GAP: f32 = 4.0;
 /// Tailwind preflight's `line-height: 1.5` (GPUI defaults to ~1.618).
 const PREFLIGHT_LEADING: f32 = 1.5;
 
@@ -54,6 +60,7 @@ impl BenCodeApp {
             let title = crate::app::session_list::display_title(&reminder.title, &reminder.harness);
             let project = crate::ui::inbox_view::project_name(&reminder.cwd);
             let (open_id, title_id, snooze_id, dismiss_id) = (sid.clone(), sid.clone(), sid.clone(), sid.clone());
+            let snooze_anchor: Rc<Cell<Option<Bounds<Pixels>>>> = Rc::default();
             // `article px-3 py-2.5`, `divide-y divide-stroke` between them.
             div()
                 .flex()
@@ -103,7 +110,15 @@ impl BenCodeApp {
                         )
                         .child(
                             // `text-content/65 hover:bg-content/10`
+                            // MonoCode opens it at `rect.left, rect.bottom + 4`.
                             button(SharedString::from(format!("due-snooze-{sid}")), "Snooze", 0.65, 0.0, 0.1)
+                                .relative()
+                                .child({
+                                    let anchor = snooze_anchor.clone();
+                                    canvas(move |bounds, _, _| anchor.set(Some(bounds)), |_, _, _, _| {})
+                                        .absolute()
+                                        .size_full()
+                                })
                                 .on_mouse_down(
                                     MouseButton::Left,
                                     cx.listener(move |this, event: &MouseDownEvent, _, cx| {
@@ -112,7 +127,10 @@ impl BenCodeApp {
                                         let kind = SidebarMenuKind::Remind {
                                             ids: vec![snooze_id.clone()],
                                         };
-                                        this.open_sidebar_menu(kind, event.position, cx);
+                                        let at = snooze_anchor.get().map_or(event.position, |b| {
+                                            Point::new(b.left(), b.bottom() + px(SNOOZE_MENU_GAP))
+                                        });
+                                        this.open_sidebar_menu(kind, at, cx);
                                     }),
                                 ),
                         )

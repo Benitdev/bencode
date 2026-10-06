@@ -13,9 +13,10 @@ use gpui::{Context, PathPromptOptions};
 use crate::app::BenCodeApp;
 use crate::app::tab_scope::{ProjectReturn, plan_project_return};
 use crate::app::workspace_nav::WorkspaceRequest;
-use crate::db::SessionRow;
+use crate::db::{MonoCodeDb, SessionRow};
 
-const RECENT_PROJECT_LIMIT: usize = 8;
+/// MonoCode `recents.ts` `MAX`.
+const RECENT_PROJECT_LIMIT: usize = 20;
 /// Threads loaded from SQLite when switching to a project.
 const PROJECT_SESSION_LIMIT: usize = 50;
 
@@ -77,10 +78,13 @@ impl BenCodeApp {
             cx.notify();
             return;
         }
-        self.load_project_sessions(&cwd);
         self.return_to_project(&cwd);
         self.set_current_project(cwd.clone());
-        self.load_folder_members(cx);
+        // Open panes already hold their threads, so the plan above does not
+        // need the rest; they arrive from a background read.
+        self.load_sessions_in_background(Some(cwd.clone()), cx);
+        // A project new to the rail gets its stats.
+        self.refresh_project_stats(cx);
         let focus = self.worktree_focuses.get(&cwd).cloned();
         self.navigate_workspace(&cwd, focus, WorkspaceRequest::Project);
         // Refreshes git/files for the new directory and records the landing.
@@ -107,7 +111,10 @@ impl BenCodeApp {
             };
             let opened = this.update(cx, |app, cx| {
                 for path in paths {
-                    app.switch_project(path.to_string_lossy().into_owned(), cx);
+                    let path = path.to_string_lossy().into_owned();
+                    // MonoCode `rememberProject` takes it out of the archive.
+                    app.update_rail_prefs(|prefs| prefs.with_restored(&path), cx);
+                    app.switch_project(path, cx);
                 }
             });
             if let Err(err) = opened {
@@ -176,19 +183,107 @@ impl BenCodeApp {
         self.selected_diff_path = None;
     }
 
-    /// Adds the project's threads that are not in memory yet.
-    fn load_project_sessions(&mut self, cwd: &str) {
-        let rows = match self.db.list_sessions_for_cwd(cwd, PROJECT_SESSION_LIMIT) {
-            Ok(rows) => rows,
-            Err(err) => {
-                log::error!("failed to load sessions for {cwd}: {err:#}");
-                return;
-            }
+    /// Adds the threads not in memory yet: `project`'s most recent ones
+    /// and the current project's folder members. SQLite is read on the
+    /// background executor through its own read-only connection (an
+    /// in-memory database is read in place) and applied on the UI thread.
+    pub(crate) fn load_sessions_in_background(&mut self, project: Option<String>, cx: &mut Context<Self>) {
+        let known: Vec<String> = self.sessions.iter().map(|s| s.id.clone()).collect();
+        let members: Vec<String> = self
+            .project_folders()
+            .iter()
+            .flat_map(|f| f.session_ids.iter())
+            .filter(|id| !known.contains(id))
+            .cloned()
+            .collect();
+        if project.is_none() && members.is_empty() {
+            return;
+        }
+        let request = SessionsRequest { project, known, members };
+        let Some(path) = self.db.file_path() else {
+            let loaded = read_sessions(&self.db, &request);
+            self.apply_loaded_sessions(loaded, cx);
+            return;
         };
-        let known: HashSet<String> = self.sessions.iter().map(|s| s.id.clone()).collect();
-        self.sessions
-            .extend(rows.into_iter().filter(|row| !known.contains(&row.id)));
+        let task = cx.background_executor().spawn(async move {
+            let db = MonoCodeDb::open_reader(&path)?;
+            Ok(read_sessions(&db, &request))
+        });
+        cx.spawn(async move |this, cx| {
+            let loaded: anyhow::Result<LoadedSessions> = task.await;
+            match loaded {
+                Ok(loaded) => {
+                    if let Err(err) = this.update(cx, |app, cx| app.apply_loaded_sessions(loaded, cx)) {
+                        log::debug!("sessions loaded after app drop: {err:#}");
+                    }
+                }
+                Err(err) => log::error!("could not open the session reader: {err:#}"),
+            }
+        })
+        .detach();
     }
+
+    /// Rows already in memory win over the read: they may have changed
+    /// since. Folder members the database no longer has leave their folders.
+    fn apply_loaded_sessions(&mut self, loaded: LoadedSessions, cx: &mut Context<Self>) {
+        let mut known: HashSet<String> = self.sessions.iter().map(|s| s.id.clone()).collect();
+        let fresh: Vec<SessionRow> = loaded
+            .rows
+            .into_iter()
+            .filter(|row| known.insert(row.id.clone()))
+            .collect();
+        let gone: Vec<String> = loaded
+            .gone
+            .into_iter()
+            .filter(|id| !known.contains(id))
+            .collect();
+        let changed = !fresh.is_empty();
+        self.sessions.extend(fresh);
+        if !gone.is_empty() {
+            self.remove_sessions_from_folders(&gone, cx);
+        }
+        if changed {
+            cx.notify();
+        }
+    }
+}
+
+/// What [`read_sessions`] looks up; owned so it can cross threads.
+struct SessionsRequest {
+    project: Option<String>,
+    /// Threads already in memory, not read again.
+    known: Vec<String>,
+    /// Folder members not in memory.
+    members: Vec<String>,
+}
+
+#[derive(Default)]
+struct LoadedSessions {
+    rows: Vec<SessionRow>,
+    /// Folder members the database no longer has.
+    gone: Vec<String>,
+}
+
+/// Failures are logged and leave that part out, as the UI-thread load did.
+fn read_sessions(db: &MonoCodeDb, request: &SessionsRequest) -> LoadedSessions {
+    let mut loaded = LoadedSessions::default();
+    if let Some(cwd) = &request.project {
+        match db.list_sessions_for_cwd(cwd, PROJECT_SESSION_LIMIT, &request.known) {
+            Ok(rows) => loaded.rows = rows,
+            Err(err) => log::error!("failed to load sessions for {cwd}: {err:#}"),
+        }
+    }
+    for id in &request.members {
+        if loaded.rows.iter().any(|row| &row.id == id) {
+            continue;
+        }
+        match db.get_session(id) {
+            Ok(Some(row)) => loaded.rows.push(row),
+            Ok(None) => loaded.gone.push(id.clone()),
+            Err(err) => log::error!("could not load folder member {id}: {err:#}"),
+        }
+    }
+    loaded
 }
 
 #[cfg(test)]

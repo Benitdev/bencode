@@ -138,7 +138,11 @@ impl BenCodeApp {
             .into_any_element();
         }
         self.sync_transcript_list_for(session_id);
-        let list_state = self.transcript_view_for(session_id).list.clone();
+        let (find_block, find_count) = self.find_hits(session_id, cx);
+        let view = self.transcript_view_for(session_id);
+        view.find_block = find_block;
+        view.find_count = find_count;
+        let list_state = view.list.clone();
 
         // Borrowed, never cloned: a session's blocks can be huge.
         let Some(session) = self.sessions.iter().find(|s| s.id == session_id) else {

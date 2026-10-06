@@ -211,6 +211,10 @@ impl BenCodeApp {
         // MonoCode: ⌘B toggles the project rail, ⇧⌘B the session sidebar.
         .on_action(cx.listener(|this, _: &ToggleSidebar, _, cx| {
             this.is_rail_open = !this.is_rail_open;
+            // MonoCode dismisses the rail's menus when it hides.
+            if !this.is_rail_open {
+                this.close_rail_menu(cx);
+            }
             cx.notify();
         }))
         .on_action(cx.listener(|this, _: &ToggleSessionSidebar, _, cx| {

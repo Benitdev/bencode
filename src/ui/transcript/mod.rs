@@ -32,6 +32,14 @@ pub struct TranscriptView {
     /// The thread laid out as turns, and the list rows drawn from them.
     pub turns: Vec<TurnLayout>,
     pub rows: Vec<Row>,
+    /// The block of the current find match, worked out once per frame
+    /// rather than per row (each lookup scans the whole thread).
+    pub find_block: Option<usize>,
+    /// How many blocks match the find query, counted with `find_block`.
+    pub find_count: usize,
+    /// Whether the last sync saw the agent running, so the tail is measured
+    /// once more when the turn settles (its text stops revealing).
+    live: bool,
 }
 
 impl Default for TranscriptView {
@@ -41,6 +49,9 @@ impl Default for TranscriptView {
             session_id: None,
             turns: Vec::new(),
             rows: Vec::new(),
+            find_block: None,
+            find_count: 0,
+            live: false,
         }
     }
 }
@@ -118,11 +129,12 @@ impl BenCodeApp {
             if same < old || count != old {
                 view.list.splice(same..old, count - same);
             }
-            if running {
+            if running || view.live {
                 view.list
                     .remeasure_items(count.saturating_sub(LIVE_TAIL_ROWS)..count);
             }
         }
+        view.live = running;
         view.turns = turns;
         view.rows = rows;
     }
@@ -151,11 +163,10 @@ impl BenCodeApp {
         let turn_of = |t: usize| &view.turns[t];
         // Markdown cannot paint single words, so the row of the current find
         // match is tinted instead (user messages paint their words).
-        let find_hit = self
-            .find_current_block(session_id, cx)
-            .is_some_and(|block| {
-                session.blocks[block].role != "user" && find::row_shows(row, &view.turns, block)
-            });
+        let find_hit = view.find_block.is_some_and(|block| {
+            session.blocks.get(block).is_some_and(|b| b.role != "user")
+                && find::row_shows(row, &view.turns, block)
+        });
         let content = match row {
             Row::Item { turn, item } => self.render_turn_item(session, turn_of(*turn), *item, cx),
             Row::FoldLine { turn } => self.render_fold_line(session, turn_of(*turn), cx),

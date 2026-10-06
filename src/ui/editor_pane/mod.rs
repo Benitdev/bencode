@@ -106,7 +106,7 @@ fn save_unless_changed(path: &std::path::Path, text: &str, known: u64) -> Result
 }
 
 impl BenCodeApp {
-    fn show_editor_notice(&mut self, title: String, body: String, cx: &mut Context<Self>) {
+    pub(crate) fn show_editor_notice(&mut self, title: String, body: String, cx: &mut Context<Self>) {
         self.editor.notice = Some(EditorNotice {
             title: title.into(),
             body: body.into(),

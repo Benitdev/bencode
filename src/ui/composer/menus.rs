@@ -118,6 +118,8 @@ impl BenCodeApp {
             self.tree_menu_key(key, cx)
         } else if self.sidebar_menu_open() {
             self.sidebar_menu_key(key, cx)
+        } else if self.rail_menu_open() {
+            self.rail_menu_key(key, cx)
         } else if self.tab_menu_open() {
             self.tab_menu_key(key, cx)
         } else if self.composer_menus.handoff.is_some() {

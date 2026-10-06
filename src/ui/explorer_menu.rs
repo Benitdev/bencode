@@ -3,7 +3,8 @@
 //! ↑/↓ move over the rows (wrapping), Enter or Space picks, Esc closes, and
 //! a mouse-down anywhere else dismisses it.
 
-use ely_gpui_component::theme::ActiveTheme;
+use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
+use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnimationExt, AnyElement, App, Hsla, InteractiveElement, IntoElement, ParentElement, Pixels,
     Point, SharedString, Styled, anchored, deferred, div, prelude::*, px, relative, rgb,
@@ -21,6 +22,13 @@ pub struct MenuAction {
     pub checked: bool,
     /// What the row acts on when its `id` is shared (e.g. a folder id).
     pub value: Option<String>,
+    /// A leading `size-3.5` icon, spinning while `spin` is set.
+    pub icon: Option<IconName>,
+    pub spin: bool,
+    /// MonoCode `title`: shown on hover, so the row keeps its `h-7`.
+    pub tooltip: Option<String>,
+    /// Opens a submenu beside it: a `ChevronRight size-3.5` at its end.
+    pub submenu: bool,
 }
 
 impl MenuAction {
@@ -34,7 +42,27 @@ impl MenuAction {
             danger: false,
             checked: false,
             value: None,
+            icon: None,
+            spin: false,
+            tooltip: None,
+            submenu: false,
         }
+    }
+
+    pub fn submenu(mut self) -> Self {
+        self.submenu = true;
+        self
+    }
+
+    pub fn icon(mut self, icon: IconName, spin: bool) -> Self {
+        self.icon = Some(icon);
+        self.spin = spin;
+        self
+    }
+
+    pub fn tooltip(mut self, text: Option<String>) -> Self {
+        self.tooltip = text;
+        self
     }
 
     pub fn value(mut self, value: impl Into<String>) -> Self {
@@ -122,6 +150,9 @@ pub enum MenuPlace {
     At(Point<Pixels>),
     /// Above the element it is placed in (MonoCode `Popover side="top"`).
     Above,
+    /// Top-right corner at a window point, growing left with its rows;
+    /// `width` is then a floor (MonoCode `absolute top-full right-0 min-w-*`).
+    UnderRight(Point<Pixels>),
 }
 
 /// Which MonoCode menu look to draw.
@@ -289,6 +320,20 @@ pub fn render_menu_styled(
                 el.cursor_pointer()
                     .on_click(move |_, window, cx| pick(ix, window, cx))
             })
+            .when_some(item.tooltip.clone(), |el, tip| el.tooltip(Tooltip::text(tip)))
+            .children(item.icon.map(|icon| {
+                let color = if item.disabled { look.disabled } else { colors.fg };
+                if item.spin {
+                    crate::ui::git_changes_panel::spinning_icon(
+                        SharedString::from(format!("{id}-icon-{ix}")),
+                        icon,
+                        IconSize::Sm,
+                        color,
+                    )
+                } else {
+                    Icon::new(icon).size(IconSize::Sm).color(color).into_any_element()
+                }
+            }))
             .child(
                 div()
                     .flex_1()
@@ -306,13 +351,11 @@ pub fn render_menu_styled(
             )
             .when(item.checked, |el| {
                 // `Check size-3.5`
-                el.child(
-                    ely_gpui_component::primitives::Icon::new(
-                        ely_gpui_component::primitives::IconName::Check,
-                    )
-                    .size(ely_gpui_component::theme::IconSize::Sm)
-                    .color(colors.fg),
-                )
+                el.child(Icon::new(IconName::Check).size(IconSize::Sm).color(colors.fg))
+            })
+            .when(item.submenu, |el| {
+                // `ChevronRight size-3.5 shrink-0 text-content/50`
+                el.child(Icon::new(IconName::ChevronRight).size(IconSize::Sm).color(colors.fg.opacity(0.5)))
             })
             .children(item.shortcut.filter(|_| !item.checked).map(|keys| {
                 // `shrink-0 text-[11px] text-content/40`
@@ -328,7 +371,10 @@ pub fn render_menu_styled(
     let menu = div()
         .id(id)
         .track_focus(focus)
-        .w(px(width))
+        .map(|el| match place {
+            MenuPlace::UnderRight(_) => el.min_w(px(width)),
+            _ => el.w(px(width)),
+        })
         .flex()
         .flex_col()
         .overflow_hidden()
@@ -380,6 +426,7 @@ pub fn render_menu_styled(
     };
     let anchored = match place {
         MenuPlace::At(position) => anchored().position(position),
+        MenuPlace::UnderRight(position) => anchored().anchor(gpui::Anchor::TopRight).position(position),
         MenuPlace::Above => anchored()
             .anchor(gpui::Anchor::BottomLeft)
             .offset(gpui::point(px(0.0), px(-4.0))),

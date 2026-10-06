@@ -13,18 +13,20 @@ mod tints;
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
+use std::rc::Rc;
 
 use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::prelude::*;
 use gpui::{
     AnyElement, ClickEvent, Context, FontWeight, HighlightStyle, IntoElement, MouseButton,
-    MouseDownEvent, ParentElement, Pixels, Point, SharedString, Styled, StyledText, div, px,
-    relative, rgb,
+    MouseDownEvent, ParentElement, Pixels, Point, ScrollHandle, SharedString, Styled, StyledText,
+    div, px, relative, rgb,
 };
 
 use crate::app::BenCodeApp;
 use crate::ui::icons::ExtraIcon;
+use crate::ui::virtual_rows;
 
 pub use icons::resolve_entry_icon;
 pub use name::NameIssue;
@@ -43,6 +45,8 @@ const ENTRY_ICON: IconSize = IconSize::Md;
 const GLYPH: IconSize = IconSize::Sm;
 const INDENT: f32 = 12.0;
 const INSET: f32 = 8.0;
+/// A note row: one truncated `text-[12px]` line at the 1.5 leading.
+const NOTE_HEIGHT: f32 = 18.0;
 
 /// A filesystem entry (directory or file) in the workspace tree.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -106,6 +110,8 @@ struct SavedTree {
     expanded: HashSet<String>,
     selected: Option<String>,
     root_collapsed: bool,
+    /// Listings shown at once on return, while fresh ones load.
+    dir_cache: HashMap<String, Vec<FsEntry>>,
 }
 
 /// The Explorer's state. Paths are relative to `root`; `""` is the root.
@@ -133,9 +139,19 @@ pub struct FileTreeState {
     pub pending_delete: Option<(String, bool)>,
     /// A file to open in the editor on the next frame.
     pub pending_open: Option<String>,
+    /// The tree's scroll pane, read to build only the rows in view.
+    scroll: ScrollHandle,
+    /// The git tints for the current `git_status`, built once per status
+    /// change rather than per frame; cleared by [`Self::invalidate_tints`].
+    tints: Option<Rc<GitTints>>,
 }
 
 impl FileTreeState {
+    /// Drops the cached git tints; called when the git status changes.
+    pub(crate) fn invalidate_tints(&mut self) {
+        self.tints = None;
+    }
+
     /// Switches to `root`, keeping the old root's folding and selection.
     fn switch_root(&mut self, root: &str) {
         let old = std::mem::take(&mut self.root);
@@ -146,6 +162,7 @@ impl FileTreeState {
                     expanded: std::mem::take(&mut self.expanded_paths),
                     selected: self.selected_path.take(),
                     root_collapsed: self.root_collapsed,
+                    dir_cache: std::mem::take(&mut self.dir_cache),
                 },
             );
         }
@@ -154,7 +171,7 @@ impl FileTreeState {
         self.expanded_paths = saved.expanded;
         self.selected_path = saved.selected;
         self.root_collapsed = saved.root_collapsed;
-        self.dir_cache.clear();
+        self.dir_cache = saved.dir_cache;
         self.dir_errors.clear();
         self.loading.clear();
         self.edit = None;
@@ -163,6 +180,7 @@ impl FileTreeState {
         self.menu = None;
         self.op_error = None;
         self.drop_target = None;
+        self.scroll = ScrollHandle::default();
     }
 
     fn is_dir(&self, rel: &str) -> bool {
@@ -203,6 +221,18 @@ enum Row<'a> {
     Entry { entry: &'a FsEntry, depth: usize },
     Name { depth: usize, is_dir: bool },
     Note { text: String, depth: usize },
+}
+
+impl Row<'_> {
+    /// The row's laid-out height; `None` for the name field, whose
+    /// message line can wrap.
+    fn height(&self) -> Option<f32> {
+        match self {
+            Row::Entry { .. } => Some(ROW_HEIGHT),
+            Row::Note { .. } => Some(NOTE_HEIGHT),
+            Row::Name { .. } => None,
+        }
+    }
 }
 
 impl BenCodeApp {
@@ -285,19 +315,22 @@ impl BenCodeApp {
                 .child("No project folder")
                 .into_any_element();
         }
-        let tints = GitTints::new(
-            self.git_status
-                .staged
-                .iter()
-                .chain(&self.git_status.unstaged)
-                .map(|c| (c.path.clone(), c.status.clone())),
-        );
+        let tints = self.file_tree_tints();
         let root_open = !self.file_tree.root_collapsed;
         let mut rows = Vec::new();
         if root_open {
             self.collect_rows("", 0, &mut rows);
         }
-        let rendered: Vec<AnyElement> = rows
+        // Only the rows in view are built; spacers stand in for the rest.
+        // The error line above the rows has no known height, so everything
+        // is built while it shows.
+        let visible = if self.file_tree.op_error.is_some() {
+            virtual_rows::Window::all(rows.len())
+        } else {
+            let heights: Vec<Option<f32>> = rows.iter().map(Row::height).collect();
+            virtual_rows::for_scroll(&heights, &self.file_tree.scroll, 0.0)
+        };
+        let rendered: Vec<AnyElement> = rows[visible.range.clone()]
             .iter()
             .map(|row| match row {
                 Row::Entry { entry, depth } => self.render_tree_entry(entry, *depth, &tints, cx),
@@ -326,6 +359,7 @@ impl BenCodeApp {
             .child(
                 div()
                     .id("explorer-tree-scroll-pane")
+                    .track_scroll(&self.file_tree.scroll)
                     .flex()
                     .flex_col()
                     .flex_1()
@@ -360,9 +394,29 @@ impl BenCodeApp {
                                 .child(error),
                         )
                     })
-                    .children(rendered),
+                    .when(visible.above > 0.0, |el| el.child(div().flex_none().h(px(visible.above))))
+                    .children(rendered)
+                    .when(visible.below > 0.0, |el| el.child(div().flex_none().h(px(visible.below)))),
             )
             .into_any_element()
+    }
+
+    /// The git tints for the current status, rebuilt only after
+    /// [`FileTreeState::invalidate_tints`].
+    fn file_tree_tints(&mut self) -> Rc<GitTints> {
+        let status = &self.git_status;
+        self.file_tree
+            .tints
+            .get_or_insert_with(|| {
+                Rc::new(GitTints::new(
+                    status
+                        .staged
+                        .iter()
+                        .chain(&status.unstaged)
+                        .map(|c| (c.path.clone(), c.status.clone())),
+                ))
+            })
+            .clone()
     }
 
     /// MonoCode's toolbar: `h-9 gap-px border-b border-stroke px-2` and

@@ -3,6 +3,7 @@
 //! one of them opens; the last list of the same folder stays usable meanwhile.
 
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -25,6 +26,45 @@ pub struct ProjectFiles {
     /// `@` labels for `files`, `dirs` and notes. Shared with the prompt's
     /// highlighter, which cannot reach the app.
     pub mentions: Rc<RefCell<Arc<MentionIndex>>>,
+    /// Other folders' last lists, put back at once on return while a fresh
+    /// one loads (MonoCode keeps `fileIndex` per folder).
+    others: HashMap<String, Listing>,
+}
+
+#[derive(Clone)]
+struct Listing {
+    files: Vec<SharedString>,
+    dirs: Vec<SharedString>,
+    mentions: Arc<MentionIndex>,
+}
+
+impl ProjectFiles {
+    pub fn new(mentions: Rc<RefCell<Arc<MentionIndex>>>) -> Self {
+        Self {
+            mentions,
+            ..Default::default()
+        }
+    }
+
+    /// Moves to `root`, parking the current list and restoring `root`'s.
+    fn switch_root(&mut self, root: &str) {
+        let current = Listing {
+            files: std::mem::take(&mut self.files),
+            dirs: std::mem::take(&mut self.dirs),
+            mentions: self.mentions.borrow().clone(),
+        };
+        let old = std::mem::replace(&mut self.root, root.to_string());
+        if !old.is_empty() {
+            self.others.insert(old, current);
+        }
+        let restored = self.others.remove(root);
+        let mentions = restored.as_ref().map(|l| l.mentions.clone()).unwrap_or_default();
+        if let Some(listing) = restored {
+            self.files = listing.files;
+            self.dirs = listing.dirs;
+        }
+        *self.mentions.borrow_mut() = mentions;
+    }
 }
 
 /// Every folder on the way to `files`, each once, sorted.
@@ -47,9 +87,7 @@ impl BenCodeApp {
         let root = self.workspace_cwd();
         let index = &mut self.project_files;
         if root != index.root {
-            index.files.clear();
-            index.dirs.clear();
-            index.root = root.clone();
+            index.switch_root(&root);
         }
         if root.trim().is_empty() || index.loading {
             return;
@@ -71,13 +109,22 @@ impl BenCodeApp {
             let (files, dirs, mentions) = task.await;
             let stored = this.update(cx, |app, cx| {
                 let index = &mut app.project_files;
-                // A listing for a folder since left is stale.
-                if index.root == root {
-                    index.files = files.into_iter().map(SharedString::from).collect();
-                    index.dirs = dirs.into_iter().map(SharedString::from).collect();
-                    *index.mentions.borrow_mut() = Arc::new(mentions);
-                }
+                let listing = Listing {
+                    files: files.into_iter().map(SharedString::from).collect(),
+                    dirs: dirs.into_iter().map(SharedString::from).collect(),
+                    mentions: Arc::new(mentions),
+                };
                 index.loading = false;
+                if index.root == root {
+                    index.files = listing.files;
+                    index.dirs = listing.dirs;
+                    *index.mentions.borrow_mut() = listing.mentions;
+                } else {
+                    // The folder was left meanwhile: keep this list for a
+                    // return, and list the folder now shown.
+                    index.others.insert(root, listing);
+                    app.index_project_files(cx);
+                }
                 cx.notify();
             });
             if let Err(err) = stored {
@@ -96,5 +143,16 @@ mod tests {
     fn directories_cover_every_level_once() {
         let files = ["src/ui/a.rs", "src/ui/b.rs", "README.md"].map(String::from);
         assert_eq!(directories_of(&files), ["src", "src/ui"]);
+    }
+
+    #[test]
+    fn returning_to_a_folder_restores_its_list() {
+        let mut index = ProjectFiles::new(Rc::default());
+        index.switch_root("/a");
+        index.files = vec!["a.rs".into()];
+        index.switch_root("/b");
+        assert!(index.files.is_empty());
+        index.switch_root("/a");
+        assert_eq!(index.files, [SharedString::from("a.rs")]);
     }
 }
