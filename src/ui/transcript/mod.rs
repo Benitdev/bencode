@@ -56,6 +56,8 @@ struct AnchorProbe {
     heights: RowHeights,
     /// The turn's rows, without the spacer after them.
     turn: Range<usize>,
+    /// Where the measured viewport height is kept for the rows (see
+    /// `TranscriptView::last_viewport_height`).
     last_viewport_height: Rc<Cell<Pixels>>,
 }
 
@@ -109,7 +111,10 @@ pub struct TranscriptView {
     rise: Option<Instant>,
     /// The session review card as last measured (`SessionReview::stamp`).
     review_stamp: u64,
-    /// Cached viewport height to avoid borrowing list during item layout.
+    /// The viewport height as last measured by `AnchorProbe::gap`. Rows must
+    /// read this rather than `list.viewport_bounds()`: the list holds its
+    /// state mutably borrowed while it lays them out, so reading it there
+    /// panics.
     last_viewport_height: Rc<Cell<Pixels>>,
 }
 
@@ -137,14 +142,6 @@ impl Default for TranscriptView {
 }
 
 impl TranscriptView {
-    /// Caches the latest valid viewport height to avoid borrowing the list
-    /// during row layout.
-    pub fn update_viewport_height(&self, height: Pixels) {
-        if height > px(0.0) {
-            self.last_viewport_height.set(height);
-        }
-    }
-
     fn anchor_probe(&self) -> Option<AnchorProbe> {
         Some(AnchorProbe {
             list: self.list.clone(),

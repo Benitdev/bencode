@@ -301,9 +301,6 @@ impl BenCodeApp {
         cx: &Context<Self>,
     ) -> impl IntoElement {
         let view = self.transcripts.get(&session.id);
-        if let Some(view) = view {
-            view.update_viewport_height(list_state.viewport_bounds().size.height);
-        }
         let scrolled_up = list_state.is_scrolled_to_end() == Some(false)
             && !view.is_some_and(|view| view.holds_prompt());
         let focused = self.selected_session_id.as_deref() == Some(session.id.as_str());
