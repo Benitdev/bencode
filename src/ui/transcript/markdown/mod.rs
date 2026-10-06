@@ -18,8 +18,8 @@ use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::prelude::*;
 use gpui::{
-    AnyElement, App, ClickEvent, ElementId, Font, FontStyle, FontWeight, Hsla, InteractiveText,
-    SharedString, StrikethroughStyle, StyledText, TextRun, Window, div, px, rgba,
+    AnyElement, App, ClickEvent, ElementId, Font, FontStyle, FontWeight, Hsla, SharedString,
+    StrikethroughStyle, StyledText, TextRun, Window, div, px, rgba,
 };
 use pulldown_cmark::Alignment;
 use unicode_segmentation::UnicodeSegmentation;
@@ -67,8 +67,9 @@ const CATCH_UP: Duration = Duration::from_millis(350);
 /// how long they take to reach full ink once the reveal catches up.
 const FADE_TAIL: usize = 28;
 const FADE_SETTLE: Duration = Duration::from_millis(300);
-/// Padding painted around a code span, inside its chip.
-const CHIP_PAD: &str = "\u{2009}";
+/// Padding painted around a code span, inside its chip: a narrow no-break
+/// space, so a line never breaks between the chip and its punctuation.
+const CHIP_PAD: &str = "\u{202F}";
 
 /// The agent's markdown as MonoCode draws it.
 #[derive(IntoElement)]
@@ -415,7 +416,10 @@ fn fade_tail(laid: &mut Laid, strength: f32) {
     laid.runs = runs;
 }
 
-/// Inline text as an element, clickable where it links.
+/// Inline text as an element, clickable where it links. The click is the
+/// wrapping element's, not `InteractiveText`'s: that one waits for a
+/// repaint between mouse down and up, which the cached app view does not
+/// give it.
 fn inline_element(key: ElementId, laid: Laid, open: &Option<OnOpenFile>) -> AnyElement {
     let Laid {
         text,
@@ -426,21 +430,28 @@ fn inline_element(key: ElementId, laid: Laid, open: &Option<OnOpenFile>) -> AnyE
     if targets.is_empty() {
         return styled.into_any_element();
     }
-    let (ranges, targets): (Vec<_>, Vec<_>) = targets.into_iter().unzip();
+    let layout = styled.layout().clone();
     let open = open.clone();
-    InteractiveText::new(key, styled)
-        .on_click(ranges, move |ix, window, cx| match &targets[ix] {
-            Target::Url(url) => {
-                if url.starts_with("http://") || url.starts_with("https://") {
-                    cx.open_url(url);
-                } else {
-                    log::debug!("markdown: ignoring link {url}");
+    div()
+        .id(key)
+        .child(styled)
+        .on_click(move |event: &ClickEvent, window, cx| {
+            let Ok(ix) = layout.index_for_position(event.position()) else {
+                return;
+            };
+            let Some((_, target)) = targets.iter().find(|(range, _)| range.contains(&ix)) else {
+                return;
+            };
+            match target {
+                Target::Url(url) if url.starts_with("http://") || url.starts_with("https://") => {
+                    cx.open_url(url)
                 }
+                Target::Url(url) => log::debug!("markdown: ignoring link {url}"),
+                Target::File(path, line) => match &open {
+                    Some(open) => open(path, *line, window, cx),
+                    None => log::debug!("markdown: no file opener for {path}"),
+                },
             }
-            Target::File(path, line) => match &open {
-                Some(open) => open(path, *line, window, cx),
-                None => log::debug!("markdown: no file opener for {path}"),
-            },
         })
         .into_any_element()
 }
@@ -922,5 +933,47 @@ mod tests {
         assert_eq!(gap_before(Some(&para), &heading, Tone::Answer), 24.0);
         assert_eq!(gap_before(Some(&heading), &para, Tone::Answer), 8.0);
         assert_eq!(gap_before(Some(&para), &para, Tone::Fold), 8.0);
+    }
+}
+
+#[cfg(test)]
+mod layout_tests {
+    use super::*;
+
+    fn look() -> Look {
+        let font = gpui::font("Body");
+        Look {
+            tone: Tone::Answer,
+            fg: gpui::white(),
+            body: gpui::white().opacity(0.78),
+            strong: gpui::white(),
+            link: gpui::blue(),
+            chip: gpui::white().opacity(0.08),
+            shell_bg: gpui::white().opacity(0.06),
+            shell_border: gpui::white().opacity(0.1),
+            mono: Font {
+                family: "Mono".into(),
+                ..font.clone()
+            },
+            font,
+        }
+    }
+
+    #[test]
+    fn heading_runs_are_bold() {
+        let blocks = parse("## Hành vi sau khi sửa");
+        let Block::Heading(_, inline) = &blocks[0] else {
+            panic!("{blocks:?}");
+        };
+        let mut bold = inline.clone();
+        bold.spans.insert(0, (0..bold.text.len(), Span::Strong));
+        let laid = lay_out(&bold, gpui::white(), false, 0.0, &look());
+        assert!(
+            laid.runs
+                .iter()
+                .all(|run| run.font.weight == FontWeight::SEMIBOLD),
+            "{:?}",
+            laid.runs
+        );
     }
 }

@@ -9,7 +9,10 @@ use ely_gpui_component::settings::{
     Appearance, SettingsLayout, SettingsRow, SettingsSection, ThemeSelector,
 };
 use ely_gpui_component::theme::ActiveTheme;
-use gpui::{AnyElement, App, Context, IntoElement, ParentElement, SharedString, Styled, div, px};
+use gpui::{
+    AnyElement, App, Context, InteractiveElement, IntoElement, ParentElement, SharedString,
+    StatefulInteractiveElement, Styled, div, px,
+};
 
 use crate::app::BenCodeApp;
 use crate::harness::HarnessInfo;
@@ -141,7 +144,22 @@ impl BenCodeApp {
         // MonoCode: the project rail holds the sections while settings
         // are open, so the page stands alone.
         if self.is_rail_open {
-            return div().size_full().child(self.render_settings_page(cx)).into_any_element();
+            // MonoCode `mx-auto w-full max-w-5xl px-8 py-8 pb-16`, scrolling.
+            return div()
+                .id("settings-page")
+                .size_full()
+                .overflow_y_scroll()
+                .child(
+                    div()
+                        .mx_auto()
+                        .w_full()
+                        .max_w(px(1024.0))
+                        .px_8()
+                        .pt_8()
+                        .pb_16()
+                        .child(self.render_settings_page(cx)),
+                )
+                .into_any_element();
         }
         let layout = SettingsLayout::new(
             "settings-layout",
