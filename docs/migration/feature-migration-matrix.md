@@ -77,7 +77,7 @@ MonoCode paths are relative to `reference/monocode/src`, BenCode paths to `src`.
 | Commit graph | `source-control/ui/GitHistoryGraph.tsx` | `git/graph.rs`, `ui/git_changes_panel.rs` | ✅ | |
 | Review: working tree, commit | `source-control/ui/UnifiedDiffView.tsx` | `ui/diff_viewer.rs`, `ui/diff_model.rs` | 🟡 | No syntax highlighting; no side-by-side (`@codemirror/merge`) mode |
 | Commit messages, PR text | `source-control/model/gitText.ts` | `git/text.rs` | ✅ | |
-| Branch picker, worktrees | `source-control/ui/BranchPicker.tsx`, `src-tauri/src/worktrees.rs` | `ui/composer/{branch_picker,new_worktree}.rs`, `git/worktrees.rs` | 🟡 | Create is wired; remove / prune are not |
+| Branch picker, worktrees | `source-control/ui/BranchPicker.tsx`, `src-tauri/src/worktrees.rs` | `ui/composer/{branch_picker,new_worktree}.rs`, `ui/settings_worktrees.rs`, `app/worktree_lifecycle.rs`, `git/worktrees.rs` | 🟡 | Create (composer, Settings › Worktrees) and delete with MonoCode's removal journal are wired; branch rename from the first message is not |
 | Session review: Keep / Undo, session changes review | `sessions/ui/SessionReview.tsx`, `src-tauri/src/checkpoint.rs` | `ui/transcript/review_card.rs`, `app/session_review.rs`, `git/checkpoint.rs` | 🟡 | Keep / Undo are all-or-nothing in the card (the engine supports per file); no worker integration (`apply`) |
 | Open in external editor | `src-tauri/src/external_editor.rs` | `external_editor.rs` | ✅ | |
 | Terminal | `features/terminal/` | `ui/terminal_pane.rs` | 🟡 | Links and find in the terminal |

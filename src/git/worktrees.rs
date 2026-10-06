@@ -184,7 +184,7 @@ pub fn create_worktree(
         .iter()
         .any(|t| t.branch.as_deref() == Some(branch))
     {
-        bail!("This branch already has an active worktree.");
+        bail!("This branch already has a working copy. Select it from the picker.");
     }
 
     let main = existing_trees
@@ -193,7 +193,10 @@ pub fn create_worktree(
     let parent = default_worktrees_dir(Path::new(&main.path));
     let target_path = parent.join(branch_slug(branch));
     if target_path.exists() {
-        bail!("Path {} already exists.", target_path.display());
+        bail!(
+            "{} already exists. Choose another branch name.",
+            target_path.display()
+        );
     }
 
     // Resolve user-supplied refs before `worktree add`. Never let a ref be
@@ -238,7 +241,7 @@ pub fn create_worktree(
     list_worktrees(cwd)?
         .into_iter()
         .find(|t| same_path(Path::new(&t.path), &target_path))
-        .ok_or_else(|| anyhow!("Worktree created but not found in list"))
+        .ok_or_else(|| anyhow!("Worktree created, but could not be found. Refresh the working copies."))
 }
 
 fn branch_slug(branch: &str) -> String {
@@ -261,10 +264,14 @@ fn removal_target(root: &Path, path: &Path) -> Result<Worktree> {
         .find(|tree| same_path(Path::new(&tree.path), path))
         .ok_or_else(|| anyhow!("This path is not a registered worktree of this repository"))?;
     if tree.is_main {
-        bail!("The main working copy cannot be removed");
+        bail!("The main working copy cannot be deleted");
     }
     if tree.locked {
-        bail!("This worktree is locked. Unlock it in Git before removing it.");
+        bail!("This worktree is locked. Unlock it in Git before deleting it.");
+    }
+    if tree.branch.is_none() {
+        // No branch would keep its commits once the folder is gone.
+        bail!("Create a branch for this detached worktree before deleting it.");
     }
     Ok(tree)
 }
@@ -274,9 +281,6 @@ fn check_removal_safety(root: &Path, tree: &Worktree) -> Result<()> {
     let path = Path::new(&tree.path);
     if !path.is_dir() {
         bail!("This worktree's directory is missing. Prune worktrees instead.");
-    }
-    if tree.branch.is_none() {
-        bail!("This worktree has a detached HEAD; create a branch before removing it.");
     }
     if is_dirty(path)? {
         bail!("This worktree has uncommitted or untracked changes.");
@@ -544,5 +548,18 @@ mod tests {
 
         let trees = list_worktrees(cwd).unwrap();
         assert_eq!(trees.len(), 1);
+    }
+
+    #[test]
+    fn remove_refuses_detached_worktree_even_forced() {
+        let repo = repo();
+        let cwd = repo.main.to_str().unwrap();
+        let tree = create_worktree(cwd, "detach", "", false).unwrap();
+        run(Path::new(&tree.path), &["checkout", "-q", "--detach"]);
+
+        let refused = remove_worktree(cwd, &tree.path, true).unwrap_err();
+
+        assert!(refused.to_string().contains("detached"));
+        assert!(Path::new(&tree.path).exists());
     }
 }

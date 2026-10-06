@@ -84,8 +84,9 @@ Notes:
 - [x] P1 M Quick Open ⌘P (MonoCode FilePicker + fuzzy)
 - [x] P1 S .gitignore-driven hiding (`git check-ignore`)
 - [x] P1 M File tree menu (cut/copy/paste/duplicate, open in terminal, root menu) + keys; inline new/rename; 30px rows
-- [x] P1 M Composer worktree picker (Current checkout / New worktree ⌘⇧G / existing, base picker) — creating is wired; removing and pruning a worktree are not
+- [x] P1 M Composer worktree picker (Current checkout / New worktree ⌘⇧G / existing, base picker) — creating is wired; deleting is in Settings › Worktrees (below)
 - [ ] P2 Switcher rows, discard wording, image/markdown preview
+- [x] P0 L Settings › Worktrees: project picker (open, recent, archived), worktrees listed off the UI thread with stored session counts, Reveal, "Create worktree" (new branch from a base, or an existing local branch) and "Delete worktree?" (always forced, "Also delete associated sessions"); kept threads are detached through MonoCode's `worktree_removals` journal before git runs, restored on failure and settled on the next launch; blocked for locked / detached trees and while files, terminals or agents use it — `CreateWorktreeDialog.tsx`, `useProjectWorktrees.ts`, `source-control/ui/WorktreesPage.tsx`, `DeleteWorktreeDialog.tsx`, `src-tauri/src/worktrees.rs::remove_with_sessions`
 
 ## Batch E — settings, skills, terminal
 - [x] P0 L Real skills from SKILL.md folders; inject body on send — `src-tauri/src/skills.rs`, `skills/model/skills.ts`

@@ -109,6 +109,7 @@ bencode/
 | `session_review.rs` | Session review: the ordered checkpoint queue, a thread's changed files, Keep / Undo |
 | `tab_scope.rs`, `tab_history.rs`, `workspace_nav.rs` | Which tabs belong to which project or worktree; Back / Forward |
 | `reminders.rs`, `model_catalog.rs` | Session reminders; live model catalogs |
+| `worktree_lifecycle.rs` | Settings › Worktrees: project picker, create, delete (with the removal journal) |
 
 ### `src/ui/` — views
 
@@ -360,6 +361,9 @@ div()
 - BenCode writes **MonoCode's real database**:
   `~/Library/Application Support/com.monocode.desktop/monocode.db`. A bad write
   damages the user's MonoCode data.
+- Deleting a worktree goes through MonoCode's `worktree_removals` journal
+  (`db/worktree_removals.rs`): threads are detached before git runs and the
+  journal is settled when the database opens. Keep its JSON MonoCode's.
 - Keep unknown JSON fields round-tripping (`Block.extra`, `AutomationRow.extra`)
   and do not touch session columns BenCode does not model.
 - Transcript blocks use MonoCode's roles: `user`, `assistant`, `reasoning`,

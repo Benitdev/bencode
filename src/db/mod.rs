@@ -8,6 +8,7 @@ mod orchestration;
 mod reminders;
 mod schedule;
 mod work_item;
+mod worktree_removals;
 
 pub use orchestration::{OrchestrationSummary, OrchestrationTask, TaskTone};
 
@@ -143,7 +144,7 @@ pub struct SessionRow {
     pub model_settings: Option<serde_json::Map<String, Value>>,
     /// MonoCode `worktreeRemoved`: the thread's worktree was deleted; it
     /// cannot run until a branch or worktree is chosen. Written only by
-    /// `reattach_session`.
+    /// `reattach_session` and the worktree removal journal.
     #[serde(default)]
     pub worktree_removed: bool,
     /// MonoCode `automationId`: the automation that started the thread.
@@ -403,7 +404,15 @@ impl MonoCodeDb {
         ensure_session_columns(&conn)?;
         conn.execute_batch(reminders::REMINDERS_SQL)?;
         conn.execute_batch(orchestration::ORCHESTRATION_SQL)?;
-        Ok(Self { conn })
+        conn.execute_batch(worktree_removals::WORKTREE_REMOVALS_SQL)?;
+        let db = Self { conn };
+        // MonoCode `SessionStore::open`: finish a deletion that was cut off.
+        // A failure must not send BenCode to its fallback database; the
+        // entry stays for the next launch (or MonoCode's).
+        if let Err(err) = db.reconcile_worktree_removals() {
+            log::error!("could not settle interrupted worktree deletions: {err:#}");
+        }
+        Ok(db)
     }
 
     pub fn list_recent_sessions(&self, limit: usize) -> Result<Vec<SessionRow>> {
@@ -450,8 +459,6 @@ impl MonoCodeDb {
             .optional()?)
     }
 
-    /// Inserts or updates a session. Columns BenCode does not model are left
-    /// untouched on update and get MonoCode's defaults on insert.
     /// MonoCode `WorktreePicker` pick: the thread runs again, in
     /// `worktree_cwd` (a worktree) or its project folder (`None`).
     pub fn reattach_session(&self, id: &str, worktree_cwd: Option<&str>) -> Result<()> {
@@ -462,6 +469,8 @@ impl MonoCodeDb {
         Ok(())
     }
 
+    /// Inserts or updates a session. Columns BenCode does not model are left
+    /// untouched on update and get MonoCode's defaults on insert.
     pub fn upsert_session(&self, session: &SessionRow) -> Result<()> {
         if session.blocks_parse_failed {
             bail!(

@@ -425,7 +425,7 @@ impl BenCodeApp {
 }
 
 /// MonoCode `prettyCwd`: the home folder as `~`.
-fn pretty_path(path: &str) -> String {
+pub(crate) fn pretty_path(path: &str) -> String {
     match std::env::var("HOME") {
         Ok(home) if !home.is_empty() && path.starts_with(&home) => format!("~{}", &path[home.len()..]),
         _ => path.to_string(),
