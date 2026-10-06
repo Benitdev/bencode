@@ -136,6 +136,7 @@ impl BenCodeApp {
     }
 
     fn render_file_pane(&self, cx: &Context<Self>) -> impl IntoElement {
+        let glass = self.glass(cx);
         let colors = &cx.theme().colors;
         let body = match self.file_pane.active() {
             Some(tab) if tab.is_diff() => self.render_diff_doc(&tab.key(), cx),
@@ -147,7 +148,7 @@ impl BenCodeApp {
             .flex_1()
             .min_w_0()
             .h_full()
-            .bg(colors.bg)
+            .bg(glass.fill(colors.bg))
             .border_l_1()
             .border_color(colors.border)
             .when(!self.file_pane.is_empty(), |el| el.child(self.render_pane_tabs(cx)))

@@ -66,6 +66,10 @@ impl BenCodeApp {
         self.theme_preference = saved.theme;
         self.claude_hooks_disabled = saved.claude_hooks_disabled;
         self.composer_mascot_off = saved.composer_mascot_off;
+        self.sidebar_opacity = saved
+            .sidebar_opacity
+            .map_or(crate::ui::glass::OPACITY_DEFAULT, crate::ui::glass::clamp_opacity);
+        self.body_glass = !saved.body_glass_off;
         self.inbox.seen = saved.inbox_seen.clone();
         self.inbox.seen_seeded = saved.inbox_seen_seeded;
         self.inbox.repairs = saved.inbox_repairs.clone();
@@ -92,6 +96,9 @@ impl BenCodeApp {
             terminal_open: self.is_terminal_open,
             claude_hooks_disabled: self.claude_hooks_disabled,
             composer_mascot_off: self.composer_mascot_off,
+            sidebar_opacity: Some(self.sidebar_opacity)
+                .filter(|o| (o - crate::ui::glass::OPACITY_DEFAULT).abs() > f32::EPSILON),
+            body_glass_off: !self.body_glass,
             inbox_seen: self.inbox.seen.clone(),
             inbox_seen_seeded: self.inbox.seen_seeded,
             inbox_repairs: self.inbox.repairs.clone(),
@@ -276,6 +283,20 @@ impl BenCodeApp {
     /// MonoCode Appearance › "Composer mascot"; a running mascot leaves.
     pub fn set_composer_mascot(&mut self, enabled: bool, cx: &mut Context<Self>) {
         self.composer_mascot_off = !enabled;
+        self.save_settings(cx);
+        cx.notify();
+    }
+
+    /// MonoCode Appearance › Translucency › "Sidebar opacity".
+    pub fn set_sidebar_opacity(&mut self, opacity: f32, cx: &mut Context<Self>) {
+        self.sidebar_opacity = crate::ui::glass::clamp_opacity(opacity);
+        self.save_settings(cx);
+        cx.notify();
+    }
+
+    /// MonoCode Appearance › Translucency › "Main pane glass".
+    pub fn set_body_glass(&mut self, on: bool, cx: &mut Context<Self>) {
+        self.body_glass = on;
         self.save_settings(cx);
         cx.notify();
     }

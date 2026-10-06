@@ -234,6 +234,12 @@ pub struct BenCodeApp {
     /// (measured by layout, read by `RunnerLayer`), and the setting.
     pub runner_geometry: crate::ui::composer::runner_view::RunnerGeometry,
     pub composer_mascot_off: bool,
+    /// MonoCode Appearance › Translucency: the glass panes' tint over the
+    /// blurred desktop, and whether the main pane takes it (`ui::glass`).
+    pub sidebar_opacity: f32,
+    pub body_glass: bool,
+    /// The window background last set, so the blur toggles only on change.
+    pub window_background: Option<gpui::WindowBackgroundAppearance>,
     /// The centred composer's last measurements, and a send from it whose
     /// docked composer is still dropping into place.
     pub dock_measure: std::rc::Rc<crate::ui::composer::DockMeasure>,
@@ -1066,6 +1072,9 @@ impl BenCodeApp {
             composer_cards: HashMap::new(),
             runner_geometry: Default::default(),
             composer_mascot_off: false,
+            sidebar_opacity: crate::ui::glass::OPACITY_DEFAULT,
+            body_glass: true,
+            window_background: None,
             lightbox: None,
             usage_limits: HashMap::new(),
             mention_marks: Vec::new(),
@@ -1538,6 +1547,8 @@ impl Render for BenCodeApp {
         if !self.focus_handle.contains_focused(window, cx) && window.focused(cx).is_none() {
             window.focus(&self.focus_handle, cx);
         }
+        self.sync_window_glass(window, cx);
+        let glass = self.glass(cx);
         let colors = &cx.theme().colors;
         let (bg, fg) = (colors.bg, colors.fg);
         // Search, Inbox, Notes, Automations and Settings replace the
@@ -1582,7 +1593,7 @@ impl Render for BenCodeApp {
                     .flex()
                     .flex_col()
                     .size_full()
-                    .bg(bg)
+                    .bg(glass.root(bg))
                     .text_color(fg)
                     .child(
                         div()
@@ -1610,18 +1621,28 @@ impl Render for BenCodeApp {
                                         .min_w_0()
                                         .overflow_hidden()
                                         .child(self.render_titlebar(window, cx))
+                                        // MonoCode `body-glass`: the pane under
+                                        // the title bar.
                                         .child(
                                             div()
                                                 .flex()
+                                                .flex_col()
                                                 .flex_1()
                                                 .min_h_0()
-                                                .overflow_hidden()
-                                                .child(self.render_workspace_split(cx)),
-                                        )
-                                        .when(self.is_terminal_open, |el| {
-                                            el.child(self.render_terminal_drawer(cx))
-                                        })
-                                        .child(self.render_usage_footer(cx)),
+                                                .bg(glass.body(bg))
+                                                .child(
+                                                    div()
+                                                        .flex()
+                                                        .flex_1()
+                                                        .min_h_0()
+                                                        .overflow_hidden()
+                                                        .child(self.render_workspace_split(cx)),
+                                                )
+                                                .when(self.is_terminal_open, |el| {
+                                                    el.child(self.render_terminal_drawer(cx))
+                                                })
+                                                .child(self.render_usage_footer(cx)),
+                                        ),
                                 )
                             })
                             .children(surface),

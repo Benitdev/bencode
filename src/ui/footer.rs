@@ -12,6 +12,7 @@ use crate::ui::HarnessIcon;
 
 impl BenCodeApp {
     pub fn render_usage_footer(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+        let glass = self.glass(cx);
         let theme = cx.theme();
         let colors = &theme.colors;
         let harness = self.selected_session().map(|s| s.harness.clone());
@@ -24,7 +25,7 @@ impl BenCodeApp {
             .justify_between()
             .px_3()
             .py_0p5()
-            .bg(colors.bg)
+            .bg(glass.fill(colors.bg))
             .border_t_1()
             .border_color(colors.border)
             .text_size(theme.text_size(TextSize::Xs))

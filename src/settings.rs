@@ -47,6 +47,10 @@ pub struct AppSettings {
     /// MonoCode `monocode.composerRunner` switched off: no mascot runs on
     /// the composer during a turn. On by default.
     pub composer_mascot_off: bool,
+    /// MonoCode `monocode.sidebarOpacity` (0.15–1); `None` is the default.
+    pub sidebar_opacity: Option<f32>,
+    /// MonoCode `monocode.bodyGlass` switched off. On by default.
+    pub body_glass_off: bool,
     /// MonoCode `monocode.inboxSeen`: each Inbox item's `updatedAt` (ms)
     /// when last read, and whether the first list was taken as read.
     pub inbox_seen: std::collections::BTreeMap<String, i64>,
@@ -148,6 +152,8 @@ mod tests {
             terminal_open: true,
             claude_hooks_disabled: true,
             composer_mascot_off: true,
+            sidebar_opacity: Some(0.6),
+            body_glass_off: true,
             inbox_seen: std::collections::BTreeMap::from([("o/r:issue:1".to_string(), 5)]),
             inbox_seen_seeded: true,
             inbox_list_width: Some(400.0),

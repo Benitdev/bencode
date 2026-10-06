@@ -13,6 +13,7 @@ pub mod file_tree;
 pub mod footer;
 pub mod git_changes_panel;
 pub mod git_menus;
+pub mod glass;
 pub mod icons;
 pub mod inbox_view;
 pub mod layout;

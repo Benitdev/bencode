@@ -280,6 +280,7 @@ impl BenCodeApp {
     }
 
     pub fn render_sidebar(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+        let glass = self.glass(cx);
         let colors = &cx.theme().colors;
         // MonoCode `body-glass` is the base background, edged with
         // `border-stroke`; text inherits the web's 1.5 line height.
@@ -290,7 +291,7 @@ impl BenCodeApp {
             .relative()
             .w(px(self.sidebar_width))
             .h_full()
-            .bg(colors.bg)
+            .bg(glass.body(colors.bg))
             .border_r_1()
             .border_color(colors.fg.opacity(STROKE_OPACITY))
             .line_height(relative(1.5))

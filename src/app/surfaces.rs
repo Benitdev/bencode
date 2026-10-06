@@ -96,6 +96,8 @@ impl BenCodeApp {
             Surface::Automations => self.render_automations_body(cx),
             Surface::Settings => self.render_settings_body(cx),
         };
+        // In MonoCode's `body-glass` column, like the workspace.
+        let glass = self.glass(cx);
         let colors = &cx.theme().colors;
         Some(
             div()
@@ -104,7 +106,7 @@ impl BenCodeApp {
                 .flex_1()
                 .min_w_0()
                 .h_full()
-                .bg(colors.bg)
+                .bg(glass.body(colors.bg))
                 .child(self.render_surface_header(surface, cx))
                 .child(div().flex_1().min_h_0().overflow_hidden().child(body))
                 .into_any_element(),
