@@ -27,6 +27,10 @@ sha2 = "0.10"
 rusqlite = { version = "0.33", features = ["bundled"] }
 jiff = "0.2"
 
+# The transcript's markdown (the versions Ely already builds)
+pulldown-cmark = { version = "0.13", default-features = false }
+unicode-segmentation = "1"
+
 [target.'cfg(target_os = "macos")'.dependencies]
 cocoa = "0.26"
 objc = "0.2"

@@ -15,6 +15,7 @@ use gpui::{
 };
 
 use super::blocks::markdown;
+use super::markdown::Tone;
 use super::turns::{self, Item, Phase, ToolState, TurnLayout, WorkKind};
 use crate::app::{BenCodeApp, now_ms};
 use crate::db::{Block, SessionRow};
@@ -219,10 +220,7 @@ impl BenCodeApp {
                 let id = SharedString::from(format!("{}-fold-{ix}", session.id));
                 div()
                     .py_1()
-                    .text_size(px(14.0))
-                    .line_height(px(22.0))
-                    .text_color(muted(fg, 0.7))
-                    .child(markdown(id, &text, false))
+                    .child(markdown(id, &text, false, Tone::Fold, cx))
                     .into_any_element()
             }
         };
@@ -402,7 +400,6 @@ impl BenCodeApp {
         };
         let group = format!("thought-{key}");
         let body = turns::text(block).to_string();
-        let fg = cx.theme().colors.fg;
         let header = div()
             .id(SharedString::from(group.clone()))
             .group(SharedString::from(group.clone()))
@@ -425,16 +422,13 @@ impl BenCodeApp {
             .child(header)
             .when(open, |el| {
                 el.child(
-                    div()
-                        .pb_2()
-                        .text_size(px(14.0))
-                        .line_height(px(22.0))
-                        .text_color(muted(fg, 0.6))
-                        .child(markdown(
-                            SharedString::from(format!("{group}-body")),
-                            &body,
-                            false,
-                        )),
+                    div().pb_2().child(markdown(
+                        SharedString::from(format!("{group}-body")),
+                        &body,
+                        false,
+                        Tone::Reasoning,
+                        cx,
+                    )),
                 )
             })
             .into_any_element()

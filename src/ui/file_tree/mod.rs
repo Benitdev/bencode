@@ -48,6 +48,12 @@ const INSET: f32 = 8.0;
 /// A note row: one truncated `text-[12px]` line at the 1.5 leading.
 const NOTE_HEIGHT: f32 = 18.0;
 
+/// The icon and tint a file named `name` takes in the tree (MonoCode
+/// `FileTypeIcon`), for other views that show file names.
+pub fn entry_icon(name: &str) -> (ely_gpui_component::primitives::IconName, gpui::Hsla) {
+    icons::resolve_entry_icon(name, false, false)
+}
+
 /// A filesystem entry (directory or file) in the workspace tree.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FsEntry {

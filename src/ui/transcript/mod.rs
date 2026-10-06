@@ -6,6 +6,7 @@
 mod activity;
 pub mod blocks;
 pub mod find;
+pub mod markdown;
 mod review_card;
 pub mod turns;
 
