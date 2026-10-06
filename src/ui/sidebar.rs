@@ -10,6 +10,7 @@ use gpui::{
 };
 
 use crate::app::{BenCodeApp, SidebarMode};
+use crate::ui::window_drag::claim_press;
 use crate::ui::app_callback::app_callback;
 use crate::ui::diff_counts::diff_counts;
 
@@ -348,8 +349,7 @@ impl BenCodeApp {
 
         // MonoCode: `h-10 gap-1 pl-3 pr-1.5`, 40px like the title bar, and
         // takes the traffic-light space when the project rail is hidden.
-        div()
-            .window_control_area(gpui::WindowControlArea::Drag)
+        self.window_drag_region(div(), cx)
             .flex()
             .flex_none()
             .items_center()
@@ -380,7 +380,7 @@ impl BenCodeApp {
             )
             // MonoCode `WorkspaceTitleActions`: `gap-0.5`.
             .child(
-                div()
+                claim_press(div())
                     .flex()
                     .flex_none()
                     .items_center()
@@ -423,7 +423,7 @@ impl BenCodeApp {
         let open = self.sidebar_menu_is_worktrees();
         // MonoCode: `-ml-1.5 h-6.5 gap-2 rounded-md px-1.5 text-sm
         // font-medium leading-tight`, the chevrons `size-3.5`.
-        div()
+        claim_press(div())
             .id("worktree-switcher")
             .ml(px(-6.0))
             .flex()

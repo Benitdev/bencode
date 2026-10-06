@@ -7,11 +7,12 @@ use ely_gpui_component::buttons::{ButtonVariant, IconButton};
 use ely_gpui_component::primitives::{Icon, IconName};
 use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
-    AnyElement, Context, FontWeight, IntoElement, ParentElement, Styled, WindowControlArea, div,
+    AnyElement, Context, FontWeight, IntoElement, ParentElement, Styled, div,
     prelude::*, px,
 };
 
 use crate::app::BenCodeApp;
+use crate::ui::window_drag::claim_press;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Surface {
@@ -114,8 +115,7 @@ impl BenCodeApp {
     fn render_surface_header(&self, surface: Surface, cx: &Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
         let colors = &theme.colors;
-        div()
-            .window_control_area(WindowControlArea::Drag)
+        self.window_drag_region(div(), cx)
             .flex()
             .flex_none()
             .items_center()
@@ -141,11 +141,13 @@ impl BenCodeApp {
                     .child(surface.title()),
             )
             .child(
-                IconButton::new("surface-close", IconName::X)
-                    .size(ControlSize::Sm)
-                    .variant(ButtonVariant::Ghost)
-                    .tooltip("Close (Esc)")
-                    .on_click(cx.listener(|this, _, _, cx| this.close_surface(cx))),
+                claim_press(div()).child(
+                    IconButton::new("surface-close", IconName::X)
+                        .size(ControlSize::Sm)
+                        .variant(ButtonVariant::Ghost)
+                        .tooltip("Close (Esc)")
+                        .on_click(cx.listener(|this, _, _, cx| this.close_surface(cx))),
+                ),
             )
     }
 }

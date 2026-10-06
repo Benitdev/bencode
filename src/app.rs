@@ -314,6 +314,9 @@ pub struct BenCodeApp {
     // Inbox
     /// Rename/delete dialog opened from the thread list.
     pub session_dialog: Option<crate::ui::sidebar::SessionDialog>,
+    /// A left press on a window drag region's background, until the
+    /// pointer moves or lets go (`ui/window_drag.rs`).
+    pub window_drag_pressed: bool,
     /// Settings › Worktrees: the chosen project and its working copies.
     pub worktrees_page: worktree_lifecycle::WorktreesPage,
     /// Settings › Worktrees: the open "Delete worktree?" dialog.
@@ -1116,6 +1119,7 @@ impl BenCodeApp {
             search_hits: Vec::new(),
             search_active_index: 0,
             session_dialog: None,
+            window_drag_pressed: false,
             worktrees_page: Default::default(),
             worktree_deletion: None,
             worktree_creation: None,
