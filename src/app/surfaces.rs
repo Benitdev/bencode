@@ -59,6 +59,9 @@ impl BenCodeApp {
         }
         if surface == Surface::Settings {
             self.settings_return = self.surface;
+            if self.settings_tab == crate::ui::settings_modal::SettingsTab::Worktrees {
+                self.open_worktrees_page(cx);
+            }
         }
         self.surface = Some(surface);
         cx.notify();

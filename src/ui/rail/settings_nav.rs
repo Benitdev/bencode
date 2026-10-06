@@ -72,11 +72,11 @@ impl BenCodeApp {
             )
     }
 
-    fn select_settings_tab(&mut self, tab: SettingsTab, cx: &mut Context<Self>) {
+    pub(crate) fn select_settings_tab(&mut self, tab: SettingsTab, cx: &mut Context<Self>) {
         self.settings_tab = tab;
         if tab == SettingsTab::Worktrees {
-            // Fresh status and session counts for the worktree rows.
-            self.refresh_workspace(cx);
+            // MonoCode's page starts on the open project, freshly listed.
+            self.open_worktrees_page(cx);
         }
         cx.notify();
     }

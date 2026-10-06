@@ -314,10 +314,14 @@ pub struct BenCodeApp {
     // Inbox
     /// Rename/delete dialog opened from the thread list.
     pub session_dialog: Option<crate::ui::sidebar::SessionDialog>,
+    /// Settings › Worktrees: the chosen project and its working copies.
+    pub worktrees_page: worktree_lifecycle::WorktreesPage,
     /// Settings › Worktrees: the open "Delete worktree?" dialog.
     pub worktree_deletion: Option<worktree_lifecycle::WorktreeDeletion>,
-    /// Settings › Worktrees: the last failed deletion.
-    pub worktrees_page_error: Option<String>,
+    /// Settings › Worktrees: the open "Create worktree" dialog.
+    pub worktree_creation: Option<worktree_lifecycle::WorktreeCreation>,
+    /// The "New branch name" field of `worktree_creation`.
+    pub worktree_branch_input: Entity<TextInput>,
     pub rename_input: Entity<TextInput>,
     /// Root focus scope; Ely overlays hand focus back to it.
     pub focus_handle: gpui::FocusHandle,
@@ -452,6 +456,7 @@ impl BenCodeApp {
         });
         let search_input = text_input(window, cx, "Search conversations...");
         let rename_input = text_input(window, cx, "");
+        let worktree_branch_input = text_input(window, cx, "feature/my-task");
         let link_input = text_input(window, cx, "https://github.com/owner/repo/pull/123");
         let rail_ui = crate::ui::rail::RailUi::new(window, cx);
         let file_dialog_input = text_input(window, cx, "");
@@ -517,6 +522,15 @@ impl BenCodeApp {
                     this.sync_prompt_tokens(cx);
                 }
             }),
+            // Settings › Worktrees › Create: Create follows the name, Enter submits.
+            cx.subscribe(
+                &worktree_branch_input,
+                |this: &mut Self, _, event: &InputEvent, cx| match event {
+                    InputEvent::Changed if this.worktree_creation.is_some() => cx.notify(),
+                    InputEvent::Submit => this.confirm_worktree_creation(cx),
+                    _ => {}
+                },
+            ),
             cx.subscribe(
                 &search_input,
                 |this: &mut Self, input, event: &InputEvent, cx| {
@@ -1102,8 +1116,10 @@ impl BenCodeApp {
             search_hits: Vec::new(),
             search_active_index: 0,
             session_dialog: None,
+            worktrees_page: Default::default(),
             worktree_deletion: None,
-            worktrees_page_error: None,
+            worktree_creation: None,
+            worktree_branch_input,
             rename_input,
             focus_handle: cx.focus_handle(),
             runs: HashMap::new(),
@@ -1618,6 +1634,7 @@ impl Render for BenCodeApp {
                     .children(self.render_reminder_notices(cx))
                     .children(self.render_session_dialog(cx))
                     .children(self.render_worktree_deletion(cx))
+                    .children(self.render_worktree_creation(cx))
                     .children(self.render_quick_open(cx))
                     .children(self.render_lightbox(cx))
                     .children(self.render_git_confirm(cx))

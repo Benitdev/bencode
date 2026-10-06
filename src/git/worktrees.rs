@@ -184,7 +184,7 @@ pub fn create_worktree(
         .iter()
         .any(|t| t.branch.as_deref() == Some(branch))
     {
-        bail!("This branch already has an active worktree.");
+        bail!("This branch already has a working copy. Select it from the picker.");
     }
 
     let main = existing_trees
@@ -193,7 +193,10 @@ pub fn create_worktree(
     let parent = default_worktrees_dir(Path::new(&main.path));
     let target_path = parent.join(branch_slug(branch));
     if target_path.exists() {
-        bail!("Path {} already exists.", target_path.display());
+        bail!(
+            "{} already exists. Choose another branch name.",
+            target_path.display()
+        );
     }
 
     // Resolve user-supplied refs before `worktree add`. Never let a ref be
@@ -238,7 +241,7 @@ pub fn create_worktree(
     list_worktrees(cwd)?
         .into_iter()
         .find(|t| same_path(Path::new(&t.path), &target_path))
-        .ok_or_else(|| anyhow!("Worktree created but not found in list"))
+        .ok_or_else(|| anyhow!("Worktree created, but could not be found. Refresh the working copies."))
 }
 
 fn branch_slug(branch: &str) -> String {

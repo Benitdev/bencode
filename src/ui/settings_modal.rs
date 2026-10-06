@@ -152,10 +152,9 @@ impl BenCodeApp {
         .page(self.render_settings_page(cx))
         .on_select(cx.listener(|this, key: &SharedString, _, cx| {
             match SettingsTab::from_key(key) {
-                Some(tab) => this.settings_tab = tab,
+                Some(tab) => this.select_settings_tab(tab, cx),
                 None => log::warn!("unknown settings section {key}"),
             }
-            cx.notify();
         }));
         div().size_full().child(layout).into_any_element()
     }
