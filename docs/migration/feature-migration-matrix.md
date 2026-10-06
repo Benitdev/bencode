@@ -37,7 +37,7 @@ MonoCode paths are relative to `reference/monocode/src`, BenCode paths to `src`.
 
 | Feature | MonoCode | BenCode | Status | Gaps |
 | :--- | :--- | :--- | :--- | :--- |
-| Transcript | `sessions/ui/AgentTranscript.tsx` | `ui/transcript/` | ✅ | |
+| Transcript | `sessions/ui/AgentTranscript.tsx`, `PromptOutline.tsx` | `ui/transcript/` | ✅ | Prompt outline in `outline.rs` |
 | Find in conversation | `sessions/ui/TranscriptFind.tsx` | `ui/transcript/find.rs` | ✅ | |
 | Composer | `sessions/ui/Composer.tsx` | `ui/composer/` | ✅ | |
 | Model picker | `sessions/ui/ModelPicker.tsx` | `ui/composer/model_picker.rs` | ✅ | |
