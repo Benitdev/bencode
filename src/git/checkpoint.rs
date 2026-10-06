@@ -1,57 +1,99 @@
-//! Session checkpoint & rollback engine.
+//! What a session changed, and Keep / Undo for it. Ported from MonoCode
+//! (`src-tauri/src/checkpoint.rs`); the store is MonoCode's own, so a card
+//! shows the same files in both apps.
 //!
-//! Ported from MonoCode (`src-tauri/src/checkpoint.rs`).
-//! Stores file snapshots before agent tools (write_to_file, replace_file_content)
-//! modify them, allowing developers to revert changes and undo turns safely.
-//!
-//! Safety invariants (mirroring MonoCode):
-//! - Session ids are `[A-Za-z0-9_-]+`; relative paths contain only normal
-//!   components, so neither can escape the store root or the project.
-//! - No path that traverses a symbolic link is read, written, or deleted.
-//! - Blobs are named by SHA-256 and verified on every read and reuse.
-//! - Restores target the manifest's recorded project root, and refuse to
-//!   overwrite a file the user changed after the agent unless forced.
+//! A session's manifest records, per file, the contents before its first
+//! structured edit (`files`) and after its latest one (`after`). Review and
+//! Undo use only those snapshots:
+//! - a file is reviewed only when its pre-edit state was captured at a tool
+//!   start (`prepared`); nothing is guessed from the shared working tree;
+//! - Undo refuses a file that changed after the session's last edit, or
+//!   that another session in the project also edited;
+//! - session ids are `[A-Za-z0-9_-]+` and paths have no `..`, so neither
+//!   can leave the store or the project.
 
-use std::collections::{BTreeMap, BTreeSet};
-use std::fs;
-use std::path::{Component, Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::sync::{Arc, Mutex};
 
-use anyhow::{Context as _, Result, anyhow, bail};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 
-const MANIFEST_FILE: &str = "manifest.json";
-const BLOB_DIR: &str = "files";
-/// Length of a lowercase hex SHA-256 digest.
-const HASH_HEX_LEN: usize = 64;
+use super::diffs::{FileDiff, patch};
+use super::{GitFileChange, GitFileStatus, MAX_UNTRACKED_READ_BYTES, run_git};
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct Manifest {
-    /// Canonical project root the snapshots belong to.
-    pub cwd: String,
-    /// relative_path -> SHA-256 of the pre-edit content (`None` if the file
-    /// did not exist before the session touched it).
-    pub files: BTreeMap<String, Option<String>>,
-    /// relative_path -> Unix permission bits of the pre-edit file.
-    #[serde(default)]
-    pub modes: BTreeMap<String, u32>,
-    /// relative_path -> SHA-256 of the content right after the agent's last
-    /// edit (`None` if the agent deleted it). Used to detect foreign edits.
-    #[serde(default)]
-    pub after: BTreeMap<String, Option<String>>,
-    /// Paths changed by someone else between two of the agent's edits.
-    #[serde(default)]
-    pub diverged: BTreeSet<String>,
+/// MonoCode `MAX_SNAPSHOT_FILES`.
+const MAX_SNAPSHOT_FILES: usize = 500;
+/// MonoCode `MAX_TEXT_FILE_BYTES`: larger files are not snapshotted.
+const MAX_TEXT_FILE_BYTES: u64 = MAX_UNTRACKED_READ_BYTES;
+/// Relative to `$HOME`: MonoCode's app data directory.
+const STORE_RELATIVE_PATH: &str = "Library/Application Support/com.monocode.desktop/checkpoints";
+
+/// One file a session changed (MonoCode `CheckpointFile`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CheckpointFile {
+    pub relative: String,
+    /// `added`, `modified` or `deleted`.
+    pub status: String,
+    pub additions: usize,
+    pub deletions: usize,
+    /// False when the file changed between this session's own edits, so its
+    /// lines cannot be attributed exactly.
+    pub exact: bool,
+    /// False when restoring could overwrite a change made outside the session.
+    pub undoable: bool,
 }
 
-/// Outcome of restoring every file in a session.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct RestoreReport {
-    pub restored: Vec<String>,
-    /// `(relative_path, error message)` for each file that was not restored.
-    pub failed: Vec<(String, String)>,
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CheckpointStatus {
+    pub files: Vec<CheckpointFile>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct Manifest {
+    cwd: String,
+    files: BTreeMap<String, SnapshotKind>,
+    #[serde(default)]
+    touched: BTreeSet<String>,
+    #[serde(default)]
+    tracked: BTreeSet<String>,
+    /// Paths captured before a structured edit started. Only these are safe
+    /// candidates for Undo.
+    #[serde(default)]
+    prepared: BTreeSet<String>,
+    /// Worktree contents immediately after the session's latest edit.
+    #[serde(default)]
+    after: BTreeMap<String, SnapshotKind>,
+    /// Stable line counts for the session-owned before/after pair.
+    #[serde(default)]
+    stats: BTreeMap<String, ChangeStats>,
+    /// Paths whose contents changed between two edits by this session.
+    #[serde(default)]
+    diverged: BTreeSet<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct ChangeStats {
+    status: String,
+    additions: i64,
+    deletions: i64,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+enum SnapshotKind {
+    Contents,
+    Missing,
+    Skipped,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum FileState {
+    Contents(Vec<u8>),
+    Missing,
+    Skipped,
 }
 
 #[derive(Clone)]
@@ -68,812 +110,1084 @@ impl CheckpointStore {
         }
     }
 
+    /// MonoCode's store, or a local folder when `$HOME` is unknown.
     pub fn default_dir() -> PathBuf {
-        let home = std::env::var_os("HOME").map(PathBuf::from);
-        home.map_or_else(
+        std::env::var_os("HOME").map(PathBuf::from).map_or_else(
             || PathBuf::from(".bencode/checkpoints"),
-            |h| h.join(".bencode/checkpoints"),
+            |home| home.join(STORE_RELATIVE_PATH),
         )
     }
 
-    fn lock(&self) -> Result<MutexGuard<'_, ()>> {
-        self.gate
+    /// One operation at a time, as MonoCode's `exclusive`.
+    fn exclusive<T>(
+        &self,
+        session_id: &str,
+        operation: impl FnOnce(&Self) -> Result<T, String>,
+    ) -> Result<T, String> {
+        validate_id(session_id)?;
+        let _guard = self
+            .gate
             .lock()
-            .map_err(|_| anyhow!("Checkpoint store lock poisoned"))
+            .map_err(|_| "Checkpoint store lock poisoned".to_string())?;
+        operation(self)
     }
 
-    fn session_dir(&self, session_id: &str) -> Result<PathBuf> {
-        validate_id(session_id, "session")?;
-        Ok(self.root.join(session_id))
+    fn session_dir(&self, session_id: &str) -> PathBuf {
+        self.root.join(session_id)
     }
 
-    /// Prepares a checkpoint before a file is modified by an agent tool.
-    /// If the file was not already snapshotted for this session, saves its current content.
-    pub fn prepare_file(&self, session_id: &str, cwd: &str, relative_path: &str) -> Result<()> {
-        let dir = self.session_dir(session_id)?;
-        let relative = validate_relative(relative_path)?;
-        let root = project_root(cwd)?;
-        let _guard = self.lock()?;
-
-        let mut manifest = read_manifest(&dir)?.unwrap_or_else(|| Manifest {
-            cwd: root.to_string_lossy().into_owned(),
-            ..Manifest::default()
-        });
-        ensure_same_root(&manifest, &root)?;
-        reject_symlink(&root, &relative)?;
-
-        // Only the first touch owns the undo baseline. A later prepare only
-        // checks whether someone else edited the file since the agent did.
-        if manifest.files.contains_key(&relative) {
-            if let Some(expected) = manifest.after.get(&relative)
-                && current_hash(&root, &relative)? != *expected
-                && manifest.diverged.insert(relative)
-            {
-                write_manifest(&dir, &manifest)?;
+    /// Before a turn: snapshots the files that are already dirty, so they
+    /// are not mistaken for the session's work.
+    pub fn ensure(&self, session_id: &str, cwd: &str) -> Result<(), String> {
+        self.exclusive(session_id, |store| {
+            let root = project_root(cwd)?;
+            let dir = store.session_dir(session_id);
+            if let Some(manifest) = read_manifest(&dir)? {
+                if same_cwd(&manifest.cwd, cwd) {
+                    return Ok(());
+                }
+                if let Err(err) = std::fs::remove_dir_all(&dir) {
+                    log::warn!("could not reset checkpoint {}: {err}", dir.display());
+                }
             }
+            std::fs::create_dir_all(dir.join("files")).map_err(|e| e.to_string())?;
+
+            let mut files = BTreeMap::new();
+            let mut tracked = BTreeSet::new();
+            for file in dirty_files(&root) {
+                if files.len() >= MAX_SNAPSHOT_FILES {
+                    break;
+                }
+                let Ok(relative) = resolve_repo_path(&root, &file.path) else {
+                    continue;
+                };
+                if in_head(&root, &relative) {
+                    tracked.insert(relative.clone());
+                }
+                files.insert(relative.clone(), snapshot_file(&dir, &root, &relative)?);
+            }
+            write_manifest(
+                &dir,
+                &Manifest {
+                    cwd: root.to_string_lossy().into_owned(),
+                    files,
+                    touched: BTreeSet::new(),
+                    tracked,
+                    prepared: BTreeSet::new(),
+                    after: BTreeMap::new(),
+                    stats: BTreeMap::new(),
+                    diverged: BTreeSet::new(),
+                },
+            )
+        })
+    }
+
+    /// A structured edit of `paths` is starting: keeps their contents.
+    pub fn prepare(&self, session_id: &str, cwd: &str, paths: &[String]) -> Result<(), String> {
+        if paths.is_empty() {
             return Ok(());
         }
+        if paths.len() > MAX_SNAPSHOT_FILES {
+            return Err("Too many paths".into());
+        }
+        self.exclusive(session_id, |store| {
+            let root = project_root(cwd)?;
+            let dir = store.session_dir(session_id);
+            let mut manifest = match read_manifest(&dir)? {
+                Some(manifest) if same_cwd(&manifest.cwd, cwd) => manifest,
+                _ => return Ok(()),
+            };
 
-        let target = root.join(&relative);
-        let before = match fs::symlink_metadata(&target) {
-            Ok(meta) if meta.is_file() => {
-                let bytes = fs::read(&target).with_context(|| format!("Cannot read {relative}"))?;
-                if let Some(mode) = file_mode(&meta) {
-                    manifest.modes.insert(relative.clone(), mode);
+            let mut dirty = false;
+            for path in paths {
+                let Ok(relative) = relative_to_root(&root, path) else {
+                    continue;
+                };
+                // Keep the original pre-edit snapshot across later edits by
+                // this session. The first tool-start event owns the safe
+                // undo boundary.
+                if manifest.touched.contains(&relative) && manifest.prepared.contains(&relative) {
+                    if !after_matches_worktree(&dir, &root, &manifest, &relative)
+                        && manifest.diverged.insert(relative)
+                    {
+                        dirty = true;
+                    }
+                    continue;
                 }
-                Some(store_blob(&dir, &bytes)?)
+                if manifest.prepared.contains(&relative) {
+                    continue;
+                }
+                if manifest.touched.contains(&relative) {
+                    // Upgrade a completion-only claim by dropping its
+                    // untrusted state and starting at this tool boundary.
+                    release_path(&mut manifest, &relative);
+                    dirty = true;
+                }
+                let before = snapshot_file(&dir, &root, &relative)?;
+                if manifest.files.insert(relative.clone(), before) != Some(before) {
+                    dirty = true;
+                }
+                if manifest.prepared.insert(relative.clone()) {
+                    dirty = true;
+                }
+                if in_head(&root, &relative) && manifest.tracked.insert(relative) {
+                    dirty = true;
+                }
             }
-            Ok(_) => bail!("Cannot checkpoint {relative}: not a regular file"),
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => None,
-            Err(err) => return Err(err).with_context(|| format!("Cannot inspect {relative}")),
+            if dirty {
+                write_manifest(&dir, &manifest)?;
+            }
+            Ok(())
+        })
+    }
+
+    /// A structured edit of `paths` finished: keeps what they hold now.
+    pub fn capture(&self, session_id: &str, cwd: &str, paths: &[String]) -> Result<(), String> {
+        if paths.is_empty() {
+            return Ok(());
+        }
+        if paths.len() > MAX_SNAPSHOT_FILES {
+            return Err("Too many paths".into());
+        }
+        self.exclusive(session_id, |store| {
+            let root = project_root(cwd)?;
+            let dir = store.session_dir(session_id);
+            let mut manifest = match read_manifest(&dir)? {
+                Some(manifest) if same_cwd(&manifest.cwd, cwd) => manifest,
+                _ => return Ok(()),
+            };
+
+            let mut dirty = false;
+            for path in paths {
+                if manifest.touched.len() >= MAX_SNAPSHOT_FILES {
+                    break;
+                }
+                let Ok(relative) = relative_to_root(&root, path) else {
+                    continue;
+                };
+                manifest.touched.insert(relative.clone());
+                let tracked_in_head = in_head(&root, &relative);
+                if tracked_in_head {
+                    manifest.tracked.insert(relative.clone());
+                }
+                if !manifest.files.contains_key(&relative)
+                    && !root.join(&relative).exists()
+                    && !tracked_in_head
+                {
+                    // A completion without a matching prepare event is kept
+                    // for review but is deliberately not undoable.
+                    manifest
+                        .files
+                        .insert(relative.clone(), snapshot_file(&dir, &root, &relative)?);
+                }
+                let after = snapshot_after_file(&dir, &root, &relative)?;
+                manifest.after.insert(relative.clone(), after);
+                if let Some(stats) = calculate_session_stats(&dir, &manifest, &relative) {
+                    manifest.stats.insert(relative, stats);
+                }
+                dirty = true;
+            }
+            if dirty {
+                write_manifest(&dir, &manifest)?;
+            }
+            Ok(())
+        })
+    }
+
+    /// The files this session changed and that still differ.
+    pub fn status(&self, session_id: &str, cwd: &str) -> Result<CheckpointStatus, String> {
+        self.exclusive(session_id, |store| store.status_locked(session_id, cwd))
+    }
+
+    fn status_locked(&self, session_id: &str, cwd: &str) -> Result<CheckpointStatus, String> {
+        let Some(manifest) = self.load_matching(session_id, cwd)? else {
+            return Ok(CheckpointStatus::default());
         };
-        manifest.files.insert(relative, before);
-        write_manifest(&dir, &manifest)
-    }
-
-    /// Records the file's content right after an agent edit, so a later
-    /// restore can tell whether the user changed it afterwards.
-    pub fn capture_file(&self, session_id: &str, cwd: &str, relative_path: &str) -> Result<()> {
-        let dir = self.session_dir(session_id)?;
-        let relative = validate_relative(relative_path)?;
         let root = project_root(cwd)?;
-        let _guard = self.lock()?;
-
-        let mut manifest = read_manifest(&dir)?
-            .ok_or_else(|| anyhow!("No checkpoints found for session {session_id}"))?;
-        ensure_same_root(&manifest, &root)?;
-        if !manifest.files.contains_key(&relative) {
-            bail!("No checkpoint was prepared for {relative}");
-        }
-        reject_symlink(&root, &relative)?;
-        let hash = current_hash(&root, &relative)?;
-        manifest.after.insert(relative, hash);
-        write_manifest(&dir, &manifest)
+        let foreign_touched = self.foreign_touched_paths(cwd, session_id);
+        Ok(diff_from_manifest(
+            &self.session_dir(session_id),
+            &root,
+            &manifest,
+            &foreign_touched,
+        ))
     }
 
-    /// Restores a single file back to its pre-session snapshot state,
-    /// refusing if the user changed it after the agent.
-    pub fn restore_file(&self, session_id: &str, cwd: &str, relative_path: &str) -> Result<()> {
-        self.restore_file_with(session_id, cwd, relative_path, false)
-    }
-
-    /// Like [`Self::restore_file`]; `force` overwrites foreign changes.
-    pub fn restore_file_with(
-        &self,
-        session_id: &str,
-        cwd: &str,
-        relative_path: &str,
-        force: bool,
-    ) -> Result<()> {
-        let dir = self.session_dir(session_id)?;
-        let relative = validate_relative(relative_path)?;
-        let _guard = self.lock()?;
-
-        let mut manifest = read_manifest(&dir)?
-            .ok_or_else(|| anyhow!("No checkpoints found for session {session_id}"))?;
-        let root = manifest_root(&manifest, cwd)?;
-        if !manifest.files.contains_key(&relative) {
-            bail!("No checkpoint found for file {relative}");
-        }
-        restore_one(&dir, &root, &manifest, &relative, force)?;
-        release_path(&mut manifest, &relative);
-        write_manifest(&dir, &manifest)
-    }
-
-    /// Restores all files changed during the session back to their initial state.
-    ///
-    /// Returns the restored paths, or an error naming every file that failed
-    /// (the others are still restored). Use [`Self::restore_all_with`] for a
-    /// structured report.
-    pub fn restore_all(&self, session_id: &str, cwd: &str) -> Result<Vec<String>> {
-        let report = self.restore_all_with(session_id, cwd, false)?;
-        if report.failed.is_empty() {
-            return Ok(report.restored);
-        }
-        let details = report
-            .failed
-            .iter()
-            .map(|(path, err)| format!("{path}: {err}"))
-            .collect::<Vec<_>>()
-            .join("; ");
-        bail!(
-            "Restored {} file(s); {} failed: {details}",
-            report.restored.len(),
-            report.failed.len()
-        )
-    }
-
-    /// Restores every checkpointed file, collecting per-file failures.
-    /// `force` overwrites files the user changed after the agent.
-    pub fn restore_all_with(
-        &self,
-        session_id: &str,
-        cwd: &str,
-        force: bool,
-    ) -> Result<RestoreReport> {
-        let dir = self.session_dir(session_id)?;
-        let _guard = self.lock()?;
-
-        let mut manifest = read_manifest(&dir)?
-            .ok_or_else(|| anyhow!("No checkpoints found for session {session_id}"))?;
-        let root = manifest_root(&manifest, cwd)?;
-
-        let mut report = RestoreReport::default();
-        let paths: Vec<String> = manifest.files.keys().cloned().collect();
-        for path in paths {
-            let result = validate_relative(&path)
-                .and_then(|relative| restore_one(&dir, &root, &manifest, &relative, force));
-            match result {
-                Ok(()) => {
-                    release_path(&mut manifest, &path);
-                    report.restored.push(path);
-                }
-                Err(err) => report.failed.push((path, format!("{err:#}"))),
+    /// Drops everything recorded for a session (its thread was deleted).
+    pub fn forget(&self, session_id: &str) -> Result<(), String> {
+        self.exclusive(session_id, |store| {
+            let dir = store.session_dir(session_id);
+            if dir.exists() {
+                std::fs::remove_dir_all(dir).map_err(|e| e.to_string())?;
             }
-        }
-        if !report.restored.is_empty() {
-            write_manifest(&dir, &manifest)?;
-        }
-        Ok(report)
+            Ok(())
+        })
     }
 
-    /// Discards snapshot data for a completed or dismissed session.
-    pub fn discard(&self, session_id: &str) -> Result<()> {
-        let dir = self.session_dir(session_id)?;
-        let _guard = self.lock()?;
-        match fs::symlink_metadata(&dir) {
-            Ok(meta) if meta.file_type().is_symlink() => fs::remove_file(&dir)?,
-            Ok(_) => fs::remove_dir_all(&dir)?,
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
-            Err(err) => return Err(err.into()),
+    /// The session's before → after change of one file, with full context
+    /// (MonoCode `session_checkpoint_file_diff`, diffed here instead of in
+    /// the view).
+    pub fn file_diff(&self, session_id: &str, cwd: &str, relative: &str) -> Result<FileDiff, String> {
+        self.exclusive(session_id, |store| {
+            let Some(manifest) = store.load_matching(session_id, cwd)? else {
+                return Err("Session changes are no longer available".into());
+            };
+            let root = project_root(cwd)?;
+            let relative = resolve_repo_path(&root, relative)?;
+            if !manifest.touched.contains(&relative) || !manifest.prepared.contains(&relative) {
+                return Err("This file was not changed by the session".into());
+            }
+            if manifest.diverged.contains(&relative) {
+                return Err(
+                    "Exact lines are unavailable because the file changed between this session's edits"
+                        .into(),
+                );
+            }
+            let dir = store.session_dir(session_id);
+            let before = manifest
+                .files
+                .get(&relative)
+                .copied()
+                .ok_or_else(|| "Session baseline is unavailable".to_string())?;
+            let after = manifest
+                .after
+                .get(&relative)
+                .copied()
+                .ok_or_else(|| "Session result is unavailable".to_string())?;
+            let original = read_snapshot(&dir, &relative, before);
+            let current = read_after_snapshot(&dir, &relative, after);
+            if matches!(original, FileState::Skipped) || matches!(current, FileState::Skipped) {
+                return Ok(FileDiff {
+                    too_large: true,
+                    ..FileDiff::default()
+                });
+            }
+            if state_is_binary(&original) || state_is_binary(&current) {
+                return Ok(FileDiff {
+                    binary: true,
+                    ..FileDiff::default()
+                });
+            }
+            let before_path = state_blob_path(&dir.join("files"), &relative)?;
+            let after_path = state_blob_path(&dir.join("after"), &relative)?;
+            let text = diff_blobs(&before_path, &after_path, &["-U2147483647"])
+                .ok_or_else(|| "Could not diff the session's snapshots".to_string())?;
+            Ok(patch(&text))
+        })
+    }
+
+    /// Restores one file, or every file, to what it held before the session.
+    pub fn undo(
+        &self,
+        session_id: &str,
+        cwd: &str,
+        relative: Option<&str>,
+    ) -> Result<CheckpointStatus, String> {
+        self.exclusive(session_id, |store| {
+            let Some(mut manifest) = store.load_matching(session_id, cwd)? else {
+                return Ok(CheckpointStatus::default());
+            };
+            let root = project_root(cwd)?;
+            let dir = store.session_dir(session_id);
+            let foreign_touched = store.foreign_touched_paths(cwd, session_id);
+            let changed = diff_from_manifest(&dir, &root, &manifest, &foreign_touched);
+            if let Some(relative) = relative {
+                let relative = resolve_repo_path(&root, relative)?;
+                let Some(file) = changed.files.iter().find(|file| file.relative == relative) else {
+                    return store.status_locked(session_id, cwd);
+                };
+                if !file.undoable {
+                    return Err(format!(
+                        "Cannot safely undo {relative}: it changed outside this session"
+                    ));
+                }
+                restore_one(&dir, &root, &manifest, &relative)?;
+                release_path(&mut manifest, &relative);
+                write_manifest(&dir, &manifest)?;
+                return store.status_locked(session_id, cwd);
+            }
+            if changed.files.iter().any(|file| !file.undoable) {
+                return Err(
+                    "Cannot safely undo all: one or more files changed outside this session".into(),
+                );
+            }
+            for file in &changed.files {
+                restore_one(&dir, &root, &manifest, &file.relative)?;
+            }
+            if let Err(err) = std::fs::remove_dir_all(&dir) {
+                log::warn!("could not clear checkpoint {}: {err}", dir.display());
+            }
+            Ok(CheckpointStatus::default())
+        })
+    }
+
+    /// Accepts one file's change, or all of them, and stops reviewing it.
+    pub fn keep(
+        &self,
+        session_id: &str,
+        cwd: &str,
+        relative: Option<&str>,
+    ) -> Result<CheckpointStatus, String> {
+        self.exclusive(session_id, |store| {
+            let Some(mut manifest) = store.load_matching(session_id, cwd)? else {
+                return Ok(CheckpointStatus::default());
+            };
+            let root = project_root(cwd)?;
+            let dir = store.session_dir(session_id);
+            let Some(relative) = relative else {
+                if let Err(err) = std::fs::remove_dir_all(&dir) {
+                    log::warn!("could not clear checkpoint {}: {err}", dir.display());
+                }
+                return Ok(CheckpointStatus::default());
+            };
+            let relative = resolve_repo_path(&root, relative)?;
+            release_path(&mut manifest, &relative);
+            write_manifest(&dir, &manifest)?;
+            store.status_locked(session_id, cwd)
+        })
+    }
+
+    fn load_matching(&self, session_id: &str, cwd: &str) -> Result<Option<Manifest>, String> {
+        let dir = self.session_dir(session_id);
+        let Some(manifest) = read_manifest(&dir)? else {
+            return Ok(None);
+        };
+        if !same_cwd(&manifest.cwd, cwd) {
+            return Ok(None);
         }
-        Ok(())
+        Ok(Some(manifest))
+    }
+
+    /// Paths already claimed by another session in the same project.
+    fn foreign_touched_paths(&self, cwd: &str, except_session_id: &str) -> HashSet<String> {
+        let mut paths = HashSet::new();
+        let Ok(entries) = std::fs::read_dir(&self.root) else {
+            return paths;
+        };
+        for entry in entries.flatten() {
+            if entry.file_name().to_string_lossy() == except_session_id {
+                continue;
+            }
+            let Ok(Some(manifest)) = read_manifest(&entry.path()) else {
+                continue;
+            };
+            if !same_cwd(&manifest.cwd, cwd) {
+                continue;
+            }
+            paths.extend(manifest.touched.intersection(&manifest.prepared).cloned());
+        }
+        paths
     }
 }
 
-fn restore_one(
+/// Files that differ from HEAD, untracked ones included.
+fn dirty_files(root: &Path) -> Vec<GitFileChange> {
+    super::status_pass::read_changes(&root.to_string_lossy())
+}
+
+fn status_name(status: &GitFileStatus) -> &'static str {
+    match status {
+        GitFileStatus::Added | GitFileStatus::Untracked => "added",
+        GitFileStatus::Deleted => "deleted",
+        GitFileStatus::Modified | GitFileStatus::Renamed => "modified",
+    }
+}
+
+fn git_checked(root: &Path, args: &[&str]) -> Result<(), String> {
+    run_git(&root.to_string_lossy(), args)
+        .map(|_| ())
+        .map_err(|err| format!("{err:#}"))
+}
+
+fn diff_from_manifest(
+    dir: &Path,
+    root: &Path,
+    manifest: &Manifest,
+    foreign_touched: &HashSet<String>,
+) -> CheckpointStatus {
+    let index = dirty_files(root);
+    let by_relative: BTreeMap<&str, &GitFileChange> =
+        index.iter().map(|file| (file.path.as_str(), file)).collect();
+    let git_dirty: HashSet<&str> = by_relative.keys().copied().collect();
+    let mut files = Vec::new();
+
+    for relative in &manifest.touched {
+        // Without a tool-start snapshot there is no trustworthy session
+        // boundary. Never guess from the shared working tree.
+        if !manifest.prepared.contains(relative) {
+            continue;
+        }
+        if session_snapshot_differs(dir, manifest, relative) == Some(false) {
+            continue;
+        }
+        if !file_differs(dir, root, manifest, relative, &git_dirty) {
+            continue;
+        }
+        // Review is scoped to this session's captured before/after
+        // snapshots. A foreign claim can make restoring the file unsafe, but
+        // it does not make this session's recorded diff or counts inexact.
+        let exact = !manifest.diverged.contains(relative);
+        let undoable = exact
+            && !foreign_touched.contains(relative)
+            && after_matches_worktree(dir, root, manifest, relative);
+        files.push(describe_change(
+            root,
+            relative,
+            by_relative.get(relative.as_str()).copied(),
+            exact,
+            undoable,
+            manifest.stats.get(relative),
+        ));
+    }
+
+    files.sort_by(|a, b| a.relative.cmp(&b.relative));
+    CheckpointStatus { files }
+}
+
+fn session_snapshot_differs(dir: &Path, manifest: &Manifest, relative: &str) -> Option<bool> {
+    let before = manifest.files.get(relative).copied()?;
+    let after = manifest.after.get(relative).copied()?;
+    Some(read_snapshot(dir, relative, before) != read_after_snapshot(dir, relative, after))
+}
+
+fn file_differs(
     dir: &Path,
     root: &Path,
     manifest: &Manifest,
     relative: &str,
-    force: bool,
-) -> Result<()> {
-    reject_symlink(root, relative)?;
-    if !force {
-        if manifest.diverged.contains(relative) {
-            bail!("{relative} changed outside this session between agent edits");
-        }
-        if let Some(expected) = manifest.after.get(relative)
-            && current_hash(root, relative)? != *expected
-        {
-            bail!("{relative} was changed after the agent's edit; refusing to overwrite");
-        }
+    git_dirty: &HashSet<&str>,
+) -> bool {
+    // Once a tracked path is clean against HEAD, its session change was
+    // committed (or otherwise resolved) and no longer needs review.
+    if !git_dirty.contains(relative)
+        && (manifest.tracked.contains(relative) || in_head(root, relative))
+    {
+        return false;
     }
-
-    let target = root.join(relative);
     match manifest.files.get(relative) {
-        Some(Some(hash)) => {
-            let bytes = read_blob(dir, hash)?;
-            if let Some(parent) = target.parent() {
-                fs::create_dir_all(parent)
-                    .with_context(|| format!("Cannot create parent of {relative}"))?;
-            }
-            atomic_write(&target, &bytes)?;
-            if let Some(mode) = manifest.modes.get(relative) {
-                set_file_mode(&target, *mode)?;
-            }
-            Ok(())
+        Some(SnapshotKind::Skipped) => false,
+        Some(kind) => read_worktree(root, relative) != read_snapshot(dir, relative, *kind),
+        None => {
+            git_dirty.contains(relative)
+                || (root.join(relative).is_file() && !in_head(root, relative))
         }
-        Some(None) => match fs::symlink_metadata(&target) {
-            Ok(_) => fs::remove_file(&target).with_context(|| format!("Cannot remove {relative}")),
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            Err(err) => Err(err).with_context(|| format!("Cannot inspect {relative}")),
-        },
-        None => bail!("No checkpoint found for file {relative}"),
     }
+}
+
+fn describe_change(
+    root: &Path,
+    relative: &str,
+    git: Option<&GitFileChange>,
+    exact: bool,
+    undoable: bool,
+    session: Option<&ChangeStats>,
+) -> CheckpointFile {
+    let count = |n: i64| usize::try_from(n).unwrap_or(0);
+    let (status, additions, deletions) = match (session, git) {
+        (Some(stats), _) if exact => (
+            stats.status.clone(),
+            count(stats.additions),
+            count(stats.deletions),
+        ),
+        (Some(stats), _) => (stats.status.clone(), 0, 0),
+        (None, Some(file)) => (
+            status_name(&file.status).to_string(),
+            file.additions,
+            file.deletions,
+        ),
+        (None, None) => {
+            let status = if root.join(relative).exists() { "modified" } else { "deleted" };
+            (status.to_string(), 0, 0)
+        }
+    };
+    CheckpointFile {
+        relative: relative.to_string(),
+        status,
+        additions,
+        deletions,
+        exact,
+        undoable,
+    }
+}
+
+fn calculate_session_stats(dir: &Path, manifest: &Manifest, relative: &str) -> Option<ChangeStats> {
+    let before = manifest.files.get(relative).copied()?;
+    let after = manifest.after.get(relative).copied()?;
+    if before == SnapshotKind::Skipped || after == SnapshotKind::Skipped {
+        return None;
+    }
+    let before_path = state_blob_path(&dir.join("files"), relative).ok()?;
+    let after_path = state_blob_path(&dir.join("after"), relative).ok()?;
+    let text = diff_blobs(&before_path, &after_path, &["--numstat"])?;
+    let mut fields = text.lines().next().unwrap_or("0\t0").split('\t');
+    let additions = fields.next()?.parse().unwrap_or(0);
+    let deletions = fields.next()?.parse().unwrap_or(0);
+    let status = match (before, after) {
+        (SnapshotKind::Missing, SnapshotKind::Missing) => "modified",
+        (SnapshotKind::Missing, _) => "added",
+        (_, SnapshotKind::Missing) => "deleted",
+        _ => "modified",
+    };
+    Some(ChangeStats {
+        status: status.into(),
+        additions,
+        deletions,
+    })
+}
+
+/// `git diff --no-index` of two stored blobs; exit status 1 means they differ.
+fn diff_blobs(before: &Path, after: &Path, flags: &[&str]) -> Option<String> {
+    let output = Command::new("git")
+        .args(["diff", "--no-index", "--no-ext-diff", "--no-color"])
+        .args(flags)
+        .arg("--")
+        .arg(before)
+        .arg(after)
+        .env("GIT_OPTIONAL_LOCKS", "0")
+        .output()
+        .ok()?;
+    if !output.status.success() && output.status.code() != Some(1) {
+        log::warn!(
+            "git diff --no-index failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+        return None;
+    }
+    Some(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+fn after_matches_worktree(dir: &Path, root: &Path, manifest: &Manifest, relative: &str) -> bool {
+    let Some(kind) = manifest.after.get(relative).copied() else {
+        return false;
+    };
+    read_worktree(root, relative) == read_after_snapshot(dir, relative, kind)
 }
 
 fn release_path(manifest: &mut Manifest, relative: &str) {
     manifest.files.remove(relative);
-    manifest.modes.remove(relative);
+    manifest.touched.remove(relative);
+    manifest.tracked.remove(relative);
+    manifest.prepared.remove(relative);
     manifest.after.remove(relative);
+    manifest.stats.remove(relative);
     manifest.diverged.remove(relative);
 }
 
-/// Accepts ids made only of ASCII letters, digits, `-` and `_`.
-fn validate_id(value: &str, label: &str) -> Result<()> {
-    if value.is_empty()
-        || !value
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
-    {
-        bail!("Invalid {label} id");
+fn restore_one(dir: &Path, root: &Path, manifest: &Manifest, relative: &str) -> Result<(), String> {
+    let relative = resolve_repo_path(root, relative)?;
+    if path_contains_symlink(root, &relative) {
+        return Err(format!("Cannot restore through symbolic link {relative}"));
     }
-    Ok(())
+    match manifest.files.get(&relative) {
+        Some(SnapshotKind::Skipped) => Ok(()),
+        Some(kind) => restore_snapshot(dir, root, &relative, *kind),
+        None => revert_new_change(root, &relative),
+    }
 }
 
-/// Returns a normalized `a/b/c` key for a relative path made only of normal
-/// components. Absolute paths, `..`, `.`, and empty paths are rejected.
-fn validate_relative(relative: &str) -> Result<String> {
-    let mut parts = Vec::new();
-    for component in Path::new(relative).components() {
-        match component {
-            Component::Normal(part) => parts.push(
-                part.to_str()
-                    .ok_or_else(|| anyhow!("Invalid path {relative}"))?,
-            ),
-            _ => bail!("Invalid path {relative}"),
+/// Unstages `relative`; a path git does not know is not an error.
+fn unstage(root: &Path, relative: &str) {
+    if let Err(err) = git_checked(root, &["reset", "-q", "HEAD", "--", relative]) {
+        log::debug!("unstaging {relative}: {err}");
+    }
+}
+
+fn restore_snapshot(
+    dir: &Path,
+    root: &Path,
+    relative: &str,
+    kind: SnapshotKind,
+) -> Result<(), String> {
+    match kind {
+        SnapshotKind::Skipped => Ok(()),
+        SnapshotKind::Missing => {
+            unstage(root, relative);
+            remove_worktree(root, relative)
+        }
+        SnapshotKind::Contents => {
+            let FileState::Contents(bytes) = read_snapshot(dir, relative, kind) else {
+                return Ok(());
+            };
+            let path = root.join(relative);
+            write_worktree(&path, &bytes)?;
+            set_file_mode(&path, snapshot_mode(&dir.join("files"), relative, kind))?;
+            unstage(root, relative);
+            Ok(())
         }
     }
-    if parts.is_empty() {
-        bail!("Invalid path {relative:?}");
-    }
-    Ok(parts.join("/"))
 }
 
-/// True if any existing component of `root/relative` is a symlink (or cannot
-/// be inspected). Missing trailing components are fine.
+fn revert_new_change(root: &Path, relative: &str) -> Result<(), String> {
+    if in_head(root, relative) {
+        return git_checked(
+            root,
+            &["restore", "--source=HEAD", "--staged", "--worktree", "--", relative],
+        );
+    }
+    unstage(root, relative);
+    remove_worktree(root, relative)
+}
+
+fn in_head(root: &Path, relative: &str) -> bool {
+    git_checked(root, &["cat-file", "-e", &format!("HEAD:{relative}")]).is_ok()
+}
+
 fn path_contains_symlink(root: &Path, relative: &str) -> bool {
     let mut current = root.to_path_buf();
     for part in relative.split('/') {
         current.push(part);
-        match fs::symlink_metadata(&current) {
+        match std::fs::symlink_metadata(&current) {
             Ok(meta) if meta.file_type().is_symlink() => return true,
             Ok(_) => {}
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => return false,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return false,
             Err(_) => return true,
         }
     }
     false
 }
 
-fn reject_symlink(root: &Path, relative: &str) -> Result<()> {
-    if path_contains_symlink(root, relative) {
-        bail!("Refusing to touch {relative}: the path contains a symbolic link");
-    }
-    Ok(())
+fn snapshot_file(dir: &Path, root: &Path, relative: &str) -> Result<SnapshotKind, String> {
+    snapshot_file_at(&dir.join("files"), root, relative)
 }
 
-fn project_root(cwd: &str) -> Result<PathBuf> {
-    let trimmed = cwd.trim();
-    if trimmed.is_empty() {
-        bail!("cwd is required");
-    }
-    let root = Path::new(trimmed)
-        .canonicalize()
-        .with_context(|| format!("Cannot resolve {trimmed}"))?;
-    if !root.is_dir() {
-        bail!("{}: Not a directory", root.display());
-    }
-    Ok(root)
+fn snapshot_after_file(dir: &Path, root: &Path, relative: &str) -> Result<SnapshotKind, String> {
+    snapshot_file_at(&dir.join("after"), root, relative)
 }
 
-fn ensure_same_root(manifest: &Manifest, root: &Path) -> Result<()> {
-    if Path::new(&manifest.cwd) != root {
-        bail!(
-            "Checkpoint belongs to {}, not {}",
-            manifest.cwd,
-            root.display()
-        );
-    }
-    Ok(())
-}
-
-/// The project root recorded in the manifest; the caller's `cwd` must match it.
-fn manifest_root(manifest: &Manifest, cwd: &str) -> Result<PathBuf> {
-    let recorded = project_root(&manifest.cwd)?;
-    ensure_same_root(manifest, &recorded)?;
-    ensure_same_root(manifest, &project_root(cwd)?)?;
-    Ok(recorded)
-}
-
-fn sha256_hex(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
-}
-
-fn is_valid_hash(hash: &str) -> bool {
-    hash.len() == HASH_HEX_LEN
-        && hash
-            .bytes()
-            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-}
-
-/// SHA-256 of the file's current content, or `None` if it does not exist.
-fn current_hash(root: &Path, relative: &str) -> Result<Option<String>> {
-    let path = root.join(relative);
-    match fs::symlink_metadata(&path) {
-        Ok(meta) if meta.is_file() => {
-            let bytes = fs::read(&path).with_context(|| format!("Cannot read {relative}"))?;
-            Ok(Some(sha256_hex(&bytes)))
+fn snapshot_file_at(blob_root: &Path, root: &Path, relative: &str) -> Result<SnapshotKind, String> {
+    let abs = root.join(relative);
+    let blob = state_blob_path(blob_root, relative)?;
+    let write_blob = |bytes: &[u8]| -> Result<(), String> {
+        if let Some(parent) = blob.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
-        Ok(_) => bail!("{relative} is not a regular file"),
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(err) => Err(err).with_context(|| format!("Cannot inspect {relative}")),
-    }
-}
-
-fn blob_path(dir: &Path, hash: &str) -> Result<PathBuf> {
-    if !is_valid_hash(hash) {
-        bail!("Invalid snapshot hash {hash:?}");
-    }
-    Ok(dir.join(BLOB_DIR).join(hash))
-}
-
-/// Stores `bytes` under its SHA-256. An existing blob is reused only if its
-/// content is byte-identical.
-fn store_blob(dir: &Path, bytes: &[u8]) -> Result<String> {
-    let hash = sha256_hex(bytes);
-    let path = blob_path(dir, &hash)?;
-    match fs::read(&path) {
-        Ok(existing) if existing == bytes => return Ok(hash),
-        Ok(_) => bail!("Snapshot blob {hash} exists with different content"),
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
-        Err(err) => return Err(err).with_context(|| format!("Cannot read blob {hash}")),
-    }
-    fs::create_dir_all(dir.join(BLOB_DIR))?;
-    atomic_write(&path, bytes)?;
-    Ok(hash)
-}
-
-/// Reads a blob and verifies its content still matches its name.
-fn read_blob(dir: &Path, hash: &str) -> Result<Vec<u8>> {
-    let path = blob_path(dir, hash)?;
-    let bytes = fs::read(&path).with_context(|| format!("Snapshot content {hash} missing"))?;
-    if sha256_hex(&bytes) != hash {
-        bail!("Snapshot content {hash} is corrupt");
-    }
-    Ok(bytes)
-}
-
-fn read_manifest(dir: &Path) -> Result<Option<Manifest>> {
-    let path = dir.join(MANIFEST_FILE);
-    let data = match fs::read(&path) {
-        Ok(data) => data,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(err) => return Err(err).with_context(|| format!("Cannot read {}", path.display())),
+        std::fs::write(&blob, bytes).map_err(|e| e.to_string())
     };
-    let manifest = serde_json::from_slice(&data)
-        .with_context(|| format!("Corrupt checkpoint manifest {}", path.display()))?;
-    Ok(Some(manifest))
-}
-
-fn write_manifest(dir: &Path, manifest: &Manifest) -> Result<()> {
-    fs::create_dir_all(dir)?;
-    let data = serde_json::to_vec_pretty(manifest)?;
-    atomic_write(&dir.join(MANIFEST_FILE), &data)
-}
-
-/// Writes via a temp file in the destination directory, then renames it into
-/// place, so readers never observe a partially written file.
-fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
-    static COUNTER: AtomicU64 = AtomicU64::new(0);
-    let parent = path
-        .parent()
-        .ok_or_else(|| anyhow!("{} has no parent directory", path.display()))?;
-    let name = path
-        .file_name()
-        .ok_or_else(|| anyhow!("{} has no file name", path.display()))?
-        .to_string_lossy();
-    let tmp = parent.join(format!(
-        ".{name}.tmp-{}-{}",
-        std::process::id(),
-        COUNTER.fetch_add(1, Ordering::Relaxed)
-    ));
-    let result = write_and_sync(&tmp, bytes).and_then(|()| {
-        fs::rename(&tmp, path).with_context(|| format!("Cannot replace {}", path.display()))
-    });
-    if result.is_err()
-        && let Err(err) = fs::remove_file(&tmp)
-        && err.kind() != std::io::ErrorKind::NotFound
-    {
-        log::warn!("failed to clean temp file {}: {err}", tmp.display());
+    let meta = match std::fs::symlink_metadata(&abs) {
+        Ok(meta) => meta,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            write_blob(&[])?;
+            return Ok(SnapshotKind::Missing);
+        }
+        Err(error) => return Err(error.to_string()),
+    };
+    if meta.file_type().is_symlink() || !meta.is_file() || meta.len() > MAX_TEXT_FILE_BYTES {
+        return Ok(SnapshotKind::Skipped);
     }
-    result
-}
-
-fn write_and_sync(path: &Path, bytes: &[u8]) -> Result<()> {
-    use std::io::Write as _;
-    let mut file =
-        fs::File::create(path).with_context(|| format!("Cannot create {}", path.display()))?;
-    file.write_all(bytes)?;
-    file.sync_all()?;
-    Ok(())
+    let bytes = std::fs::read(&abs).map_err(|e| e.to_string())?;
+    write_blob(&bytes)?;
+    set_file_mode(&blob, file_mode(&abs))?;
+    Ok(SnapshotKind::Contents)
 }
 
 #[cfg(unix)]
-fn file_mode(meta: &fs::Metadata) -> Option<u32> {
+fn file_mode(path: &Path) -> Option<u32> {
     use std::os::unix::fs::PermissionsExt;
-    Some(meta.permissions().mode() & 0o7777)
+    std::fs::symlink_metadata(path)
+        .ok()
+        .filter(|meta| meta.is_file() && !meta.file_type().is_symlink())
+        .map(|meta| meta.permissions().mode() & 0o777)
 }
 
 #[cfg(not(unix))]
-fn file_mode(_meta: &fs::Metadata) -> Option<u32> {
+fn file_mode(_path: &Path) -> Option<u32> {
     None
 }
 
 #[cfg(unix)]
-fn set_file_mode(path: &Path, mode: u32) -> Result<()> {
+fn set_file_mode(path: &Path, mode: Option<u32>) -> Result<(), String> {
     use std::os::unix::fs::PermissionsExt;
-    fs::set_permissions(path, fs::Permissions::from_mode(mode))
-        .with_context(|| format!("Cannot set mode on {}", path.display()))
+    if let Some(mode) = mode {
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode))
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 #[cfg(not(unix))]
-fn set_file_mode(_path: &Path, _mode: u32) -> Result<()> {
+fn set_file_mode(_path: &Path, _mode: Option<u32>) -> Result<(), String> {
+    Ok(())
+}
+
+fn snapshot_mode(blob_root: &Path, relative: &str, kind: SnapshotKind) -> Option<u32> {
+    if kind != SnapshotKind::Contents {
+        return None;
+    }
+    state_blob_path(blob_root, relative)
+        .ok()
+        .and_then(|path| file_mode(&path))
+}
+
+fn read_snapshot(dir: &Path, relative: &str, kind: SnapshotKind) -> FileState {
+    read_snapshot_at(&dir.join("files"), relative, kind)
+}
+
+fn read_after_snapshot(dir: &Path, relative: &str, kind: SnapshotKind) -> FileState {
+    read_snapshot_at(&dir.join("after"), relative, kind)
+}
+
+fn read_snapshot_at(blob_root: &Path, relative: &str, kind: SnapshotKind) -> FileState {
+    match kind {
+        SnapshotKind::Missing => FileState::Missing,
+        SnapshotKind::Skipped => FileState::Skipped,
+        SnapshotKind::Contents => match state_blob_path(blob_root, relative)
+            .ok()
+            .and_then(|path| std::fs::read(path).ok())
+        {
+            Some(bytes) => FileState::Contents(bytes),
+            None => FileState::Missing,
+        },
+    }
+}
+
+fn read_worktree(root: &Path, relative: &str) -> FileState {
+    let abs = root.join(relative);
+    if !abs.exists() {
+        return FileState::Missing;
+    }
+    if !abs.is_file() {
+        return FileState::Skipped;
+    }
+    match std::fs::metadata(&abs).and_then(|meta| {
+        if meta.len() > MAX_TEXT_FILE_BYTES {
+            return Ok(FileState::Skipped);
+        }
+        std::fs::read(&abs).map(FileState::Contents)
+    }) {
+        Ok(state) => state,
+        Err(_) => FileState::Missing,
+    }
+}
+
+fn state_is_binary(state: &FileState) -> bool {
+    matches!(state, FileState::Contents(bytes) if bytes.contains(&0))
+}
+
+fn write_worktree(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    if path.is_dir() {
+        return Err(format!("{} is a directory", path.display()));
+    }
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    std::fs::write(path, bytes).map_err(|e| e.to_string())
+}
+
+fn remove_worktree(root: &Path, relative: &str) -> Result<(), String> {
+    let abs = root.join(relative);
+    if abs.is_file() || abs.is_symlink() {
+        return std::fs::remove_file(&abs).map_err(|e| e.to_string());
+    }
+    if abs.is_dir() {
+        return Err(format!("{relative} is a directory"));
+    }
+    Ok(())
+}
+
+fn state_blob_path(blob_root: &Path, relative: &str) -> Result<PathBuf, String> {
+    if relative.is_empty()
+        || relative.starts_with('/')
+        || relative
+            .split('/')
+            .any(|part| part.is_empty() || part == "." || part == "..")
+    {
+        return Err("Invalid path".into());
+    }
+    Ok(blob_root.join(relative))
+}
+
+fn read_manifest(dir: &Path) -> Result<Option<Manifest>, String> {
+    let path = dir.join("manifest.json");
+    if !path.is_file() {
+        return Ok(None);
+    }
+    let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
+    serde_json::from_slice(&bytes).map_err(|e| e.to_string())
+}
+
+fn write_manifest(dir: &Path, manifest: &Manifest) -> Result<(), String> {
+    std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    let dest = dir.join("manifest.json");
+    let tmp = dir.join("manifest.json.tmp");
+    let bytes = serde_json::to_vec_pretty(manifest).map_err(|e| e.to_string())?;
+    std::fs::write(&tmp, bytes).map_err(|e| e.to_string())?;
+    std::fs::rename(tmp, dest).map_err(|e| e.to_string())
+}
+
+fn expand_home(path: &str) -> PathBuf {
+    let home = || std::env::var_os("HOME").map(PathBuf::from);
+    if path == "~" {
+        return home().unwrap_or_else(|| PathBuf::from(path));
+    }
+    match (path.strip_prefix("~/"), home()) {
+        (Some(rest), Some(home)) => home.join(rest),
+        _ => PathBuf::from(path),
+    }
+}
+
+fn project_root(cwd: &str) -> Result<PathBuf, String> {
+    let trimmed = cwd.trim();
+    if trimmed.is_empty() || trimmed == "~" {
+        return Err("cwd is required".into());
+    }
+    let root = expand_home(trimmed);
+    if !root.is_dir() {
+        return Err(format!("{}: Not a directory", root.display()));
+    }
+    Ok(root)
+}
+
+fn same_cwd(saved: &str, cwd: &str) -> bool {
+    match (project_root(saved), project_root(cwd)) {
+        (Ok(left), Ok(right)) => left == right,
+        _ => false,
+    }
+}
+
+/// A project-relative path with only normal components.
+fn resolve_repo_path(root: &Path, relative: &str) -> Result<String, String> {
+    let relative = relative.trim();
+    if relative.is_empty()
+        || relative.starts_with('/')
+        || relative
+            .split('/')
+            .any(|part| part.is_empty() || part == "." || part == "..")
+    {
+        return Err("Invalid path".into());
+    }
+    if !root.join(relative).starts_with(root) {
+        return Err("Invalid path".into());
+    }
+    Ok(relative.to_string())
+}
+
+fn relative_to_root(root: &Path, path: &str) -> Result<String, String> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return Err("Invalid path".into());
+    }
+    let expanded = expand_home(trimmed);
+    if expanded.is_absolute() {
+        let relative = expanded
+            .strip_prefix(root)
+            .map_err(|_| "Path is outside the project".to_string())?;
+        return resolve_repo_path(root, &relative.to_string_lossy());
+    }
+    resolve_repo_path(root, trimmed.trim_start_matches("./"))
+}
+
+fn validate_id(value: &str) -> Result<(), String> {
+    if value.is_empty()
+        || !value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+    {
+        return Err("Invalid session id".into());
+    }
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::git::DiffLineKind;
+    use std::sync::atomic::{AtomicU64, Ordering};
 
-    /// Unique temp dir with `store/` and `project/`, removed on drop.
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+
     struct Fixture {
         base: PathBuf,
+        repo: PathBuf,
         store: CheckpointStore,
-        project: PathBuf,
     }
 
     impl Fixture {
         fn new() -> Self {
-            static SEQ: AtomicU64 = AtomicU64::new(0);
             let base = std::env::temp_dir().join(format!(
-                "bencode-cp-{}-{}-{}",
+                "bencode-checkpoint-{}-{}",
                 std::process::id(),
-                SEQ.fetch_add(1, Ordering::Relaxed),
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_nanos()
+                COUNTER.fetch_add(1, Ordering::SeqCst)
             ));
-            let project = base.join("project");
-            fs::create_dir_all(&project).unwrap();
-            let base = base.canonicalize().unwrap();
-            let project = base.join("project");
-            let store = CheckpointStore::new(base.join("store"));
-            Self {
+            let repo = base.join("repo");
+            std::fs::create_dir_all(&repo).unwrap();
+            let fixture = Self {
+                store: CheckpointStore::new(base.join("store")),
+                repo,
                 base,
-                store,
-                project,
-            }
+            };
+            fixture.git(&["init", "-q", "-b", "main"]);
+            fixture.git(&["config", "user.name", "BenCode Test"]);
+            fixture.git(&["config", "user.email", "test@example.invalid"]);
+            fixture.git(&["config", "commit.gpgsign", "false"]);
+            fixture.write("a.txt", "one\ntwo\n");
+            fixture.git(&["add", "."]);
+            fixture.git(&["commit", "-q", "-m", "init"]);
+            fixture
         }
 
         fn cwd(&self) -> &str {
-            self.project.to_str().unwrap()
+            self.repo.to_str().unwrap()
         }
 
-        fn write(&self, rel: &str, content: &str) {
-            let path = self.project.join(rel);
-            fs::create_dir_all(path.parent().unwrap()).unwrap();
-            fs::write(path, content).unwrap();
+        fn git(&self, args: &[&str]) {
+            run_git(self.cwd(), args).expect("test git command");
         }
 
-        fn read(&self, rel: &str) -> String {
-            fs::read_to_string(self.project.join(rel)).unwrap()
+        fn write(&self, relative: &str, text: &str) {
+            std::fs::write(self.repo.join(relative), text).unwrap();
         }
 
-        fn session_dir(&self, id: &str) -> PathBuf {
-            self.store.session_dir(id).unwrap()
+        fn read(&self, relative: &str) -> String {
+            std::fs::read_to_string(self.repo.join(relative)).unwrap()
+        }
+
+        /// One structured edit by `session`: prepare, write, capture.
+        fn edit(&self, session: &str, relative: &str, text: &str) {
+            let paths = [relative.to_string()];
+            self.store.prepare(session, self.cwd(), &paths).unwrap();
+            self.write(relative, text);
+            self.store.capture(session, self.cwd(), &paths).unwrap();
+        }
+
+        fn files(&self, session: &str) -> Vec<CheckpointFile> {
+            self.store.status(session, self.cwd()).unwrap().files
         }
     }
 
     impl Drop for Fixture {
         fn drop(&mut self) {
-            if let Err(err) = fs::remove_dir_all(&self.base) {
-                eprintln!("failed to clean {}: {err}", self.base.display());
-            }
+            let _ = std::fs::remove_dir_all(&self.base);
         }
     }
 
     #[test]
-    fn checkpoint_prepare_and_restore_cycle() {
+    fn a_session_edit_is_reviewed_and_undone() {
         let fx = Fixture::new();
-        fx.write("hello.txt", "original content");
+        fx.store.ensure("s1", fx.cwd()).unwrap();
+        fx.edit("s1", "a.txt", "one\nTWO\nthree\n");
+        fx.edit("s1", "new.txt", "hello\n");
 
-        fx.store.prepare_file("s1", fx.cwd(), "hello.txt").unwrap();
-        fx.write("hello.txt", "modified content by agent");
-        // A second prepare must not overwrite the original snapshot.
-        fx.store.prepare_file("s1", fx.cwd(), "hello.txt").unwrap();
-        fx.store.restore_file("s1", fx.cwd(), "hello.txt").unwrap();
+        let files = fx.files("s1");
+        assert_eq!(files.len(), 2);
+        assert_eq!(
+            (files[0].relative.as_str(), files[0].status.as_str(), files[0].additions, files[0].deletions),
+            ("a.txt", "modified", 2, 1)
+        );
+        assert_eq!((files[1].status.as_str(), files[1].additions), ("added", 1));
+        assert!(files.iter().all(|f| f.exact && f.undoable));
 
-        assert_eq!(fx.read("hello.txt"), "original content");
-        fx.store.discard("s1").unwrap();
-        assert!(!fx.session_dir("s1").exists());
+        let diff = fx.store.file_diff("s1", fx.cwd(), "a.txt").unwrap();
+        assert!(diff.lines.contains(&DiffLineKind::Context("one".into())));
+        assert!(diff.lines.contains(&DiffLineKind::Deletion("two".into())));
+        assert!(diff.lines.contains(&DiffLineKind::Addition("three".into())));
+
+        assert!(fx.store.undo("s1", fx.cwd(), None).unwrap().files.is_empty());
+        assert_eq!(fx.read("a.txt"), "one\ntwo\n");
+        assert!(!fx.repo.join("new.txt").exists());
     }
 
     #[test]
-    fn checkpoint_handles_newly_created_files() {
+    fn earlier_dirty_work_is_not_the_sessions() {
         let fx = Fixture::new();
+        fx.write("a.txt", "mine\n");
+        fx.write("other.txt", "untouched\n");
+        fx.store.ensure("s1", fx.cwd()).unwrap();
+        assert!(fx.files("s1").is_empty());
 
-        fx.store
-            .prepare_file("s1", fx.cwd(), "new_file.rs")
-            .unwrap();
-        fx.write("new_file.rs", "fn main() {}");
-        fx.store
-            .restore_file("s1", fx.cwd(), "new_file.rs")
-            .unwrap();
-
-        assert!(!fx.project.join("new_file.rs").exists());
+        // The session edits the already dirty file; Undo returns to the
+        // user's version, not HEAD.
+        fx.edit("s1", "a.txt", "agent\n");
+        assert_eq!(fx.files("s1").len(), 1);
+        fx.store.undo("s1", fx.cwd(), Some("a.txt")).unwrap();
+        assert_eq!(fx.read("a.txt"), "mine\n");
+        assert_eq!(fx.read("other.txt"), "untouched\n");
     }
 
     #[test]
-    fn rejects_invalid_session_ids() {
+    fn a_later_outside_edit_blocks_undo() {
         let fx = Fixture::new();
-        fx.write("a.txt", "a");
-        fs::create_dir_all(fx.base.join("store")).unwrap();
-        fs::write(fx.base.join("store/keep"), "x").unwrap();
+        fx.store.ensure("s1", fx.cwd()).unwrap();
+        fx.edit("s1", "a.txt", "agent\n");
+        fx.write("a.txt", "agent\nand me\n");
 
-        for id in ["", "..", "../x", "/tmp/abs", "a/b", "a.b", "a b"] {
-            assert!(
-                fx.store.prepare_file(id, fx.cwd(), "a.txt").is_err(),
-                "{id:?}"
-            );
-            assert!(fx.store.discard(id).is_err(), "{id:?}");
-        }
+        let files = fx.files("s1");
+        assert!(files[0].exact && !files[0].undoable);
+        assert!(fx.store.undo("s1", fx.cwd(), None).is_err());
+        assert_eq!(fx.read("a.txt"), "agent\nand me\n");
 
-        assert!(fx.base.join("store/keep").exists());
+        // Between two of the session's own edits it is no longer exact.
+        fx.edit("s1", "a.txt", "agent again\n");
+        let files = fx.files("s1");
+        assert!(!files[0].exact && !files[0].undoable);
+        assert!(fx.store.file_diff("s1", fx.cwd(), "a.txt").is_err());
     }
 
     #[test]
-    fn rejects_unsafe_relative_paths() {
+    fn another_sessions_claim_blocks_undo() {
         let fx = Fixture::new();
-        fs::write(fx.base.join("outside.txt"), "secret").unwrap();
-
-        for rel in ["", "/etc/passwd", "../outside.txt", "a/../b", "./a", "a/.."] {
-            assert!(
-                fx.store.prepare_file("s1", fx.cwd(), rel).is_err(),
-                "{rel:?}"
-            );
-        }
-
-        // Interior `.` and repeated separators normalize to the same key.
-        assert_eq!(validate_relative("a//b").unwrap(), "a/b");
-        assert_eq!(validate_relative("a/./b").unwrap(), "a/b");
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn refuses_to_snapshot_through_symlinks() {
-        let fx = Fixture::new();
-        let outside = fx.base.join("outside");
-        fs::create_dir_all(&outside).unwrap();
-        fs::write(outside.join("f.txt"), "secret").unwrap();
-        std::os::unix::fs::symlink(&outside, fx.project.join("link")).unwrap();
-
-        let error = fx
-            .store
-            .prepare_file("s1", fx.cwd(), "link/f.txt")
-            .unwrap_err();
-
-        assert!(error.to_string().contains("symbolic link"));
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn refuses_to_restore_or_delete_through_symlinks() {
-        let fx = Fixture::new();
-        fx.write("sub/f.txt", "original");
-        fx.store.prepare_file("s1", fx.cwd(), "sub/f.txt").unwrap();
-        fx.store
-            .prepare_file("s1", fx.cwd(), "sub/new.txt")
-            .unwrap();
-        let outside = fx.base.join("outside");
-        fs::create_dir_all(&outside).unwrap();
-        fs::write(outside.join("f.txt"), "victim").unwrap();
-        fs::write(outside.join("new.txt"), "victim").unwrap();
-        fs::remove_dir_all(fx.project.join("sub")).unwrap();
-        std::os::unix::fs::symlink(&outside, fx.project.join("sub")).unwrap();
-
-        let report = fx.store.restore_all_with("s1", fx.cwd(), true).unwrap();
-
-        assert_eq!(report.failed.len(), 2);
-        assert_eq!(fs::read_to_string(outside.join("f.txt")).unwrap(), "victim");
-        assert!(outside.join("new.txt").exists());
+        fx.store.ensure("s1", fx.cwd()).unwrap();
+        fx.store.ensure("s2", fx.cwd()).unwrap();
+        fx.edit("s1", "a.txt", "first\n");
+        fx.edit("s2", "a.txt", "second\n");
+        assert!(!fx.files("s1")[0].undoable);
+        assert!(!fx.files("s2")[0].undoable);
     }
 
     #[test]
-    fn blobs_are_named_by_sha256() {
+    fn keep_and_commit_end_the_review() {
         let fx = Fixture::new();
-        fx.write("abc.txt", "abc");
+        fx.store.ensure("s1", fx.cwd()).unwrap();
+        fx.edit("s1", "a.txt", "agent\n");
+        fx.edit("s1", "b.txt", "new\n");
+        let left = fx.store.keep("s1", fx.cwd(), Some("b.txt")).unwrap();
+        assert_eq!(left.files.len(), 1);
+        assert_eq!(fx.read("b.txt"), "new\n");
 
-        fx.store.prepare_file("s1", fx.cwd(), "abc.txt").unwrap();
+        fx.git(&["commit", "-qam", "agent work"]);
+        assert!(fx.files("s1").is_empty());
 
-        let expected = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
-        assert!(fx.session_dir("s1").join(BLOB_DIR).join(expected).is_file());
+        fx.edit("s1", "a.txt", "more\n");
+        assert_eq!(fx.files("s1").len(), 1);
+        assert!(fx.store.keep("s1", fx.cwd(), None).unwrap().files.is_empty());
+        assert_eq!(fx.read("a.txt"), "more\n");
     }
 
     #[test]
-    fn existing_blob_with_wrong_content_is_rejected() {
+    fn a_change_without_a_tool_start_is_not_claimed() {
         let fx = Fixture::new();
-        fx.write("abc.txt", "abc");
-        let blobs = fx.session_dir("s1").join(BLOB_DIR);
-        fs::create_dir_all(&blobs).unwrap();
-        let hash = sha256_hex(b"abc");
-        fs::write(blobs.join(&hash), "not abc").unwrap();
-
-        let error = fx
-            .store
-            .prepare_file("s1", fx.cwd(), "abc.txt")
-            .unwrap_err();
-
-        assert!(error.to_string().contains("different content"));
+        fx.store.ensure("s1", fx.cwd()).unwrap();
+        fx.write("a.txt", "shell edit\n");
+        fx.store.capture("s1", fx.cwd(), &["a.txt".to_string()]).unwrap();
+        assert!(fx.files("s1").is_empty());
     }
 
     #[test]
-    fn corrupt_blob_is_detected_on_restore() {
+    fn ids_and_paths_cannot_escape() {
         let fx = Fixture::new();
-        fx.write("a.txt", "original");
-        fx.store.prepare_file("s1", fx.cwd(), "a.txt").unwrap();
-        fx.write("a.txt", "agent");
-        let hash = sha256_hex(b"original");
-        fs::write(fx.session_dir("s1").join(BLOB_DIR).join(hash), "tampered").unwrap();
-
-        let error = fx.store.restore_file("s1", fx.cwd(), "a.txt").unwrap_err();
-
-        assert!(error.to_string().contains("corrupt"));
-        assert_eq!(fx.read("a.txt"), "agent");
+        assert!(fx.store.ensure("../x", fx.cwd()).is_err());
+        fx.store.ensure("s1", fx.cwd()).unwrap();
+        let outside = ["../outside.txt".to_string(), "/etc/hosts".to_string()];
+        fx.store.prepare("s1", fx.cwd(), &outside).unwrap();
+        fx.store.capture("s1", fx.cwd(), &outside).unwrap();
+        assert!(fx.files("s1").is_empty());
+        assert!(resolve_repo_path(&fx.repo, "a/../b").is_err());
+        assert_eq!(
+            relative_to_root(&fx.repo, &format!("{}/src/a.rs", fx.cwd())).unwrap(),
+            "src/a.rs"
+        );
     }
 
     #[test]
-    fn restore_all_collects_per_file_errors() {
+    fn a_deleted_file_comes_back() {
         let fx = Fixture::new();
-        fx.write("good.txt", "good");
-        fx.write("bad.txt", "bad");
-        fx.store.prepare_file("s1", fx.cwd(), "good.txt").unwrap();
-        fx.store.prepare_file("s1", fx.cwd(), "bad.txt").unwrap();
-        fx.write("good.txt", "changed");
-        fx.write("bad.txt", "changed");
-        fs::remove_file(fx.session_dir("s1").join(BLOB_DIR).join(sha256_hex(b"bad"))).unwrap();
-
-        let report = fx.store.restore_all_with("s1", fx.cwd(), false).unwrap();
-
-        assert_eq!(report.restored, vec!["good.txt".to_string()]);
-        assert_eq!(report.failed.len(), 1);
-        assert_eq!(report.failed[0].0, "bad.txt");
-        assert_eq!(fx.read("good.txt"), "good");
-        let error = fx.store.restore_all("s1", fx.cwd()).unwrap_err();
-        assert!(error.to_string().contains("bad.txt"));
-    }
-
-    #[test]
-    fn restore_refuses_a_different_cwd() {
-        let fx = Fixture::new();
-        let other = fx.base.join("other");
-        fs::create_dir_all(&other).unwrap();
-        fx.write("a.txt", "original");
-        fx.store.prepare_file("s1", fx.cwd(), "a.txt").unwrap();
-        fs::write(other.join("a.txt"), "other").unwrap();
-        let other_cwd = other.to_str().unwrap();
-
-        assert!(fx.store.restore_file("s1", other_cwd, "a.txt").is_err());
-        assert!(fx.store.restore_all("s1", other_cwd).is_err());
-        assert!(fx.store.prepare_file("s1", other_cwd, "a.txt").is_err());
-        assert_eq!(fs::read_to_string(other.join("a.txt")).unwrap(), "other");
-    }
-
-    #[test]
-    fn manifest_write_leaves_no_temp_files() {
-        let fx = Fixture::new();
-        fx.write("a.txt", "a");
-
-        fx.store.prepare_file("s1", fx.cwd(), "a.txt").unwrap();
-
-        let dir = fx.session_dir("s1");
-        let stray: Vec<_> = fs::read_dir(&dir)
-            .unwrap()
-            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
-            .filter(|name| name.contains(".tmp-"))
-            .collect();
-        assert!(stray.is_empty(), "{stray:?}");
-        assert!(read_manifest(&dir).unwrap().is_some());
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn restore_preserves_file_mode() {
-        use std::os::unix::fs::PermissionsExt;
-        let fx = Fixture::new();
-        fx.write("run.sh", "#!/bin/sh\n");
-        let path = fx.project.join("run.sh");
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
-        fx.store.prepare_file("s1", fx.cwd(), "run.sh").unwrap();
-        fs::remove_file(&path).unwrap();
-        fx.write("run.sh", "echo agent\n");
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
-
-        fx.store.restore_file("s1", fx.cwd(), "run.sh").unwrap();
-
-        let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
-        assert_eq!(mode, 0o755);
-        assert_eq!(fx.read("run.sh"), "#!/bin/sh\n");
-    }
-
-    #[test]
-    fn refuses_to_overwrite_user_edits_after_the_agent_unless_forced() {
-        let fx = Fixture::new();
-        fx.write("a.txt", "original");
-        fx.store.prepare_file("s1", fx.cwd(), "a.txt").unwrap();
-        fx.write("a.txt", "agent");
-        fx.store.capture_file("s1", fx.cwd(), "a.txt").unwrap();
-        fx.write("a.txt", "user");
-
-        let error = fx.store.restore_file("s1", fx.cwd(), "a.txt").unwrap_err();
-        assert!(error.to_string().contains("changed after the agent"));
-        assert_eq!(fx.read("a.txt"), "user");
-
-        fx.store
-            .restore_file_with("s1", fx.cwd(), "a.txt", true)
-            .unwrap();
-        assert_eq!(fx.read("a.txt"), "original");
-    }
-
-    #[test]
-    fn restore_succeeds_when_file_still_matches_agent_edit() {
-        let fx = Fixture::new();
-        fx.write("a.txt", "original");
-        fx.store.prepare_file("s1", fx.cwd(), "a.txt").unwrap();
-        fx.write("a.txt", "agent");
-        fx.store.capture_file("s1", fx.cwd(), "a.txt").unwrap();
-
-        let restored = fx.store.restore_all("s1", fx.cwd()).unwrap();
-
-        assert_eq!(restored, vec!["a.txt".to_string()]);
-        assert_eq!(fx.read("a.txt"), "original");
-    }
-
-    #[test]
-    fn user_edit_between_agent_edits_marks_file_diverged() {
-        let fx = Fixture::new();
-        fx.write("a.txt", "original");
-        fx.store.prepare_file("s1", fx.cwd(), "a.txt").unwrap();
-        fx.write("a.txt", "agent 1");
-        fx.store.capture_file("s1", fx.cwd(), "a.txt").unwrap();
-        fx.write("a.txt", "user");
-        fx.store.prepare_file("s1", fx.cwd(), "a.txt").unwrap();
-        fx.write("a.txt", "agent 2");
-        fx.store.capture_file("s1", fx.cwd(), "a.txt").unwrap();
-
-        let error = fx.store.restore_file("s1", fx.cwd(), "a.txt").unwrap_err();
-
-        assert!(error.to_string().contains("between agent edits"));
-        assert_eq!(fx.read("a.txt"), "agent 2");
-    }
-
-    #[test]
-    fn default_dir_lives_under_bencode() {
-        assert!(CheckpointStore::default_dir().ends_with(".bencode/checkpoints"));
-    }
-
-    #[test]
-    fn capture_requires_a_prepared_file() {
-        let fx = Fixture::new();
-        fx.write("a.txt", "a");
-        fx.write("b.txt", "b");
-        fx.store.prepare_file("s1", fx.cwd(), "a.txt").unwrap();
-
-        assert!(fx.store.capture_file("s1", fx.cwd(), "b.txt").is_err());
+        fx.store.ensure("s1", fx.cwd()).unwrap();
+        let paths = ["a.txt".to_string()];
+        fx.store.prepare("s1", fx.cwd(), &paths).unwrap();
+        std::fs::remove_file(fx.repo.join("a.txt")).unwrap();
+        fx.store.capture("s1", fx.cwd(), &paths).unwrap();
+        let files = fx.files("s1");
+        assert_eq!((files[0].status.as_str(), files[0].deletions), ("deleted", 2));
+        fx.store.undo("s1", fx.cwd(), None).unwrap();
+        assert_eq!(fx.read("a.txt"), "one\ntwo\n");
     }
 }

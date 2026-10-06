@@ -180,7 +180,6 @@ impl BenCodeApp {
             self.recent_projects.push(cwd.clone());
         }
         self.current_cwd = cwd;
-        self.selected_diff_path = None;
     }
 
     /// Adds the threads not in memory yet: `project`'s most recent ones

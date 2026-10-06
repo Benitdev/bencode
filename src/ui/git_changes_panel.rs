@@ -21,29 +21,18 @@ use gpui::{
     div, percentage, point, prelude::*, px, relative, rgb,
 };
 
-use crate::app::{BenCodeApp, ViewMode};
+use crate::app::BenCodeApp;
+use crate::app::file_pane::PaneTab;
 use crate::git::graph::{self, Cmd, Node};
 use crate::git::sync::{self as git_sync, BranchPr, HistoryCommit};
 use crate::git::{
-    DiffSource, GitFileChange, GitFileStatus, discard_all, discard_file, stage_all, stage_file,
+    GitFileChange, GitFileStatus, discard_all, discard_file, stage_all, stage_file,
     unstage_all, unstage_file,
 };
 use crate::ui::app_callback::app_callback;
 use crate::ui::git_menus::{GitMenuKind, TriggerLook};
 use crate::ui::icons::ExtraIcon;
 use crate::ui::virtual_rows;
-
-/// The Ely list's status for a file (the diff viewer's file list).
-pub fn to_ely_status(status: &GitFileStatus) -> ely_gpui_component::lists::GitStatus {
-    use ely_gpui_component::lists::GitStatus;
-    match status {
-        GitFileStatus::Modified => GitStatus::Modified,
-        GitFileStatus::Added => GitStatus::Added,
-        GitFileStatus::Deleted => GitStatus::Deleted,
-        GitFileStatus::Untracked => GitStatus::Untracked,
-        GitFileStatus::Renamed => GitStatus::Renamed,
-    }
-}
 
 /// MonoCode `GRAPH_PANEL_MIN`, `GRAPH_PANEL_DEFAULT`.
 const GRAPH_MIN: f32 = 120.0;
@@ -127,6 +116,10 @@ pub struct ChangesUi {
     branch_anchor: Anchor,
     /// The graph row under the pointer (MonoCode's `:hover` node look).
     hovered_commit: Option<String>,
+    /// The file or folder row under the pointer, which shows its actions.
+    /// Hiding them with a hover style instead would paint children GPUI
+    /// never laid out.
+    hovered_row: Option<SharedString>,
     /// The file list's scroll pane, read to build only the rows in view.
     scroll: ScrollHandle,
     /// The history graph's scroll pane, likewise.
@@ -175,6 +168,7 @@ impl Default for ChangesUi {
             commit_anchor: Rc::default(),
             branch_anchor: Rc::default(),
             hovered_commit: None,
+            hovered_row: None,
             scroll: ScrollHandle::default(),
             graph_scroll: ScrollHandle::default(),
             graph_rows: RefCell::new(None),
@@ -502,7 +496,7 @@ impl BenCodeApp {
         cx.notify();
     }
 
-    fn file_action(&mut self, path: String, side: Side, discard: bool, cx: &mut Context<Self>) {
+    pub(crate) fn file_action(&mut self, path: String, side: Side, discard: bool, cx: &mut Context<Self>) {
         if discard {
             let untracked = self
                 .git_status
@@ -555,7 +549,9 @@ impl BenCodeApp {
         );
     }
 
-    fn open_change(&mut self, path: String, side: Side, cx: &mut Context<Self>) {
+    /// MonoCode `onOpenWorkingTreeDiff`: the file's review, as a preview
+    /// tab unless `pin` (a double click).
+    fn open_change(&mut self, path: String, side: Side, pin: bool, cx: &mut Context<Self>) {
         let deleted = match side {
             Side::Staged => &self.git_status.staged,
             Side::Unstaged => &self.git_status.unstaged,
@@ -565,24 +561,18 @@ impl BenCodeApp {
         if deleted {
             return;
         }
-        self.active_view_mode = ViewMode::Changes;
-        let source = match side {
-            Side::Staged => DiffSource::Staged,
-            Side::Unstaged => DiffSource::Unstaged,
-        };
-        self.select_diff(path, source, cx);
+        let cwd = self.workspace.cwd.clone();
+        self.open_pane_tab(PaneTab::Review { cwd, path, side }, pin, cx);
     }
 
-    /// MonoCode "Open All Changes": the Changes view on that side's first file.
+    /// MonoCode "Open All Changes": that section's files stacked in one review.
     fn open_all_changes(&mut self, side: Side, cx: &mut Context<Self>) {
-        let first = match side {
-            Side::Staged => self.git_status.staged.first(),
-            Side::Unstaged => self.git_status.unstaged.first(),
-        }
-        .map(|f| f.path.clone());
-        if let Some(path) = first {
-            self.open_change(path, side, cx);
-        }
+        let tab = PaneTab::Changes {
+            cwd: self.workspace.cwd.clone(),
+            side: Some(side),
+            focus: None,
+        };
+        self.open_pane_tab(tab, false, cx);
     }
 
     /// The commit field's Submit (⌘↩).
@@ -1051,8 +1041,9 @@ impl BenCodeApp {
                                 if generating {
                                     el.child(
                                         div()
+                                            .absolute()
                                             .flex()
-                                            .group_hover(wand_group.clone(), |s| s.hidden())
+                                            .group_hover(wand_group.clone(), |s| s.invisible())
                                             .child(spinning_icon(
                                                 "git-generate-spin".into(),
                                                 IconName::LoaderCircle,
@@ -1062,8 +1053,10 @@ impl BenCodeApp {
                                     )
                                     .child(
                                         div()
-                                            .hidden()
-                                            .group_hover(wand_group.clone(), |s| s.flex())
+                                            .absolute()
+                                            .flex()
+                                            .invisible()
+                                            .group_hover(wand_group.clone(), |s| s.visible())
                                             .child(Icon::new(IconName::X).size(IconSize::Sm).color(fg)),
                                     )
                                 } else {
@@ -1544,6 +1537,24 @@ impl BenCodeApp {
         }));
     }
 
+    /// Tracks the row under the pointer in `hovered_row`.
+    fn row_hover(
+        row: SharedString,
+        cx: &Context<Self>,
+    ) -> impl Fn(&bool, &mut gpui::Window, &mut gpui::App) + 'static {
+        cx.listener(move |this, hovered: &bool, _, cx| {
+            let slot = &mut this.changes_ui.hovered_row;
+            if *hovered {
+                *slot = Some(row.clone());
+            } else if slot.as_ref() == Some(&row) {
+                *slot = None;
+            } else {
+                return;
+            }
+            cx.notify();
+        })
+    }
+
     fn render_change_item(&self, item: &ChangeItem<'_>, cx: &Context<Self>) -> AnyElement {
         match item {
             ChangeItem::Header { side, files } => self.render_section_header(*side, files, cx),
@@ -1580,10 +1591,9 @@ impl BenCodeApp {
         let action_hover = fg.opacity(0.10);
         let action_group = SharedString::from(format!("{group}-stage"));
         // `hidden group-hover:flex`: no room is kept while hidden.
+        let hovered = self.changes_ui.hovered_row.as_ref() == Some(&group);
         let folder_action = div()
             .flex_none()
-            .hidden()
-            .group_hover(group.clone(), |s| s.flex())
             .child(
                 div()
                     .id(action_group.clone())
@@ -1630,6 +1640,7 @@ impl BenCodeApp {
             .line_height(relative(1.0))
             .text_color(fg)
             .hover(move |s| s.bg(hover))
+            .on_hover(Self::row_hover(group.clone(), cx))
             .child(
                 // The toggle: `flex-1 gap-1.5`, a `size-4` chevron box,
                 // the 16px folder icon, `text-[13px] font-medium`.
@@ -1670,7 +1681,7 @@ impl BenCodeApp {
                             .child(SharedString::from(dir.name.clone())),
                     ),
             )
-            .child(folder_action)
+            .when(hovered, |el| el.child(folder_action))
             // `w-3.5` with a `size-1.5` dot in the shared status colour.
             .child(
                 div().w(px(14.0)).flex().flex_none().justify_center().child(
@@ -1693,14 +1704,11 @@ impl BenCodeApp {
         let fg = colors.fg;
         let name = basename(&file.path).to_string();
         let dir = if depth.is_none() { dirname(&file.path) } else { "" };
-        let selected_source = match side {
-            Side::Staged => DiffSource::Staged,
-            Side::Unstaged => DiffSource::Unstaged,
-        };
-        let active = self.active_view_mode == ViewMode::Changes
-            && self.workspace.commit_view.is_none()
-            && self.selected_diff_path.as_deref() == Some(file.path.as_str())
-            && self.workspace.diff_source == selected_source;
+        let active = matches!(
+            self.file_pane.active(),
+            Some(PaneTab::Review { cwd, path, side: open })
+                if *cwd == self.workspace.cwd && *path == file.path && *open == side
+        );
         let busy = self.changes_ui.busy.is_some();
         let (icon, tint) = crate::ui::file_tree::resolve_entry_icon(&name, false, false);
         let group = SharedString::from(format!("git-row-{side:?}-{}", file.path));
@@ -1733,12 +1741,8 @@ impl BenCodeApp {
             (file.path.clone(), file.path.clone(), file.path.clone());
         // `flex` while open, else `hidden group-hover:flex`: no room is
         // kept while hidden.
+        let show_actions = active || self.changes_ui.hovered_row.as_ref() == Some(&group);
         let mut actions = div().flex().flex_none().items_center();
-        actions = if active {
-            actions
-        } else {
-            actions.hidden().group_hover(group.clone(), |s| s.flex())
-        };
         if side == Side::Unstaged {
             actions = actions.child(
                 action("discard", IconName::Undo2, "Discard Changes").when(!busy, |el| {
@@ -1776,6 +1780,7 @@ impl BenCodeApp {
             })
             .when(active, |el| el.bg(selection))
             .when(!active, |el| el.hover(move |s| s.bg(hover)))
+            .on_hover(Self::row_hover(group.clone(), cx))
             .child(
                 div()
                     .id(SharedString::from(format!("{group}-open")))
@@ -1786,8 +1791,8 @@ impl BenCodeApp {
                     .gap_1p5()
                     .cursor_pointer()
                     .tooltip(Tooltip::text(file.path.clone()))
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.open_change(open_path.clone(), side, cx)
+                    .on_click(cx.listener(move |this, event: &gpui::ClickEvent, _, cx| {
+                        this.open_change(open_path.clone(), side, event.click_count() == 2, cx)
                     }))
                     .when(depth.is_some(), |el| el.child(div().size(px(16.0)).flex_none()))
                     // `FileTypeIcon size={16}`
@@ -1821,7 +1826,7 @@ impl BenCodeApp {
                             ),
                     ),
             )
-            .child(actions)
+            .when(show_actions, |el| el.child(actions))
             .child(
                 div()
                     .w(px(14.0))
@@ -1881,7 +1886,10 @@ impl BenCodeApp {
         let hover = fg.opacity(0.05);
         let commits = &self.git_history;
         let rows = self.graph_rows();
-        let selected = self.workspace.commit_view.as_ref().map(|c| c.sha.clone());
+        let selected = match self.file_pane.active() {
+            Some(PaneTab::Commit { cwd, sha, .. }) if *cwd == self.workspace.cwd => Some(sha.clone()),
+            _ => None,
+        };
         div()
             .flex_none()
             .flex()
@@ -2014,14 +2022,14 @@ impl BenCodeApp {
                     cx.notify();
                 }
             }))
-            .on_click(cx.listener(move |this, _, _, cx| {
-                this.active_view_mode = ViewMode::Changes;
-                this.open_commit(
-                    open.sha.clone(),
-                    open.short_sha.clone(),
-                    open.subject.clone(),
-                    cx,
-                );
+            .on_click(cx.listener(move |this, event: &gpui::ClickEvent, _, cx| {
+                let tab = PaneTab::Commit {
+                    cwd: this.workspace.cwd.clone(),
+                    sha: open.sha.clone(),
+                    short_sha: open.short_sha.clone(),
+                    subject: open.subject.clone(),
+                };
+                this.open_pane_tab(tab, event.click_count() == 2, cx);
             }))
             .child(
                 canvas(

@@ -209,14 +209,15 @@ impl BenCodeApp {
                         .flex()
                         .items_center()
                         .justify_center()
-                        .group_hover(header_group.clone(), |s| s.hidden())
+                        .group_hover(header_group.clone(), |s| s.invisible())
                         .child(project_mascot_icon(mascot, color, false, &id)),
                 )
                 .child(
                     div()
                         .absolute()
-                        .hidden()
-                        .group_hover(header_group.clone(), |s| s.flex())
+                        .flex()
+                        .invisible()
+                        .group_hover(header_group.clone(), |s| s.visible())
                         .child(chevron(IconName::ChevronRight)),
                 )
                 .into_any_element()
@@ -430,7 +431,7 @@ impl BenCodeApp {
                         el.child(
                             div()
                                 .flex_none()
-                                .group_hover(group.clone(), |s| s.hidden())
+                                .group_hover(group.clone(), |s| s.invisible())
                                 .child(project_diff_stat(additions, deletions, dark)),
                         )
                     })

@@ -56,7 +56,6 @@ impl BenCodeApp {
                 .as_ref()
                 .and_then(|id| self.mcp_tag_drafts.remove(id))
                 .unwrap_or_default();
-            self.selected_diff_path = None;
             let restored = focused
                 .as_ref()
                 .and_then(|id| self.drafts.get(id))
@@ -356,6 +355,7 @@ impl BenCodeApp {
         self.vacate_pane(id);
         self.sessions.retain(|s| s.id != id);
         self.transcripts.remove(id);
+        self.checkpoints.forget(id);
         self.forget_folder_session(id, cx);
         self.sync_selection(cx);
     }

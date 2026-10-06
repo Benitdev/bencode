@@ -15,6 +15,8 @@ pub enum ExtraIcon {
     ListFilter,
     /// `fold-vertical`: the Explorer's Collapse All.
     FoldVertical,
+    /// `unfold-vertical`: a review's Expand all files.
+    UnfoldVertical,
     /// `bell-off`: a project's muted notifications.
     BellOff,
     /// `image-plus`: Add project logo.
@@ -29,6 +31,7 @@ impl ExtraIcon {
             Self::FileDiff => include_bytes!("../../assets/icons/file-diff.svg"),
             Self::ListFilter => include_bytes!("../../assets/icons/list-filter.svg"),
             Self::FoldVertical => include_bytes!("../../assets/icons/fold-vertical.svg"),
+            Self::UnfoldVertical => include_bytes!("../../assets/icons/unfold-vertical.svg"),
             Self::BellOff => include_bytes!("../../assets/icons/bell-off.svg"),
             Self::ImagePlus => include_bytes!("../../assets/icons/image-plus.svg"),
         }

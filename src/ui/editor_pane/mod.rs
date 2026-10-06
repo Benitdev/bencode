@@ -11,7 +11,8 @@ use std::collections::{HashMap, HashSet};
 use ely_gpui_component::editor::{CodeEditor, EditorEvent, LineNumbers};
 use gpui::{Context, Entity, SharedString, Subscription, Window, prelude::*};
 
-use crate::app::{BenCodeApp, ViewMode};
+use crate::app::BenCodeApp;
+use crate::app::file_pane::PaneTab;
 pub use files::detect_language;
 use files::{
     MAX_EDITOR_FILE_BYTES, ReadError, atomic_write, count_lines, file_name, read_text_file,
@@ -67,7 +68,7 @@ pub struct EditorNotice {
 pub struct EditorState {
     pub files: OpenFiles<EditorHandle>,
     /// The path the user asked for last; a slower read never steals focus from it.
-    requested: Option<String>,
+    pub(crate) requested: Option<String>,
     loading: HashSet<String>,
     pub notice: Option<EditorNotice>,
     /// A dirty file waiting on "Discard changes?".
@@ -116,8 +117,9 @@ impl BenCodeApp {
 
     /// Opens a workspace-relative or absolute file, reading it off the UI thread.
     pub fn open_file_in_editor(&mut self, path: &str, window: &mut Window, cx: &mut Context<Self>) {
-        self.active_view_mode = ViewMode::Editor;
         let path = path.to_string();
+        self.file_pane.open(PaneTab::File { path: path.clone() }, true);
+        self.file_pane_focused = true;
         self.editor.requested = Some(path.clone());
         if self.editor.files.activate(&path) || !self.editor.loading.insert(path.clone()) {
             cx.notify();
@@ -155,6 +157,7 @@ impl BenCodeApp {
                 if requested {
                     self.editor.requested = None;
                 }
+                self.drop_pane_tab(&PaneTab::File { path: path.clone() }.key(), cx);
                 let title = format!("Could not open {}", file_name(&path));
                 self.show_editor_notice(title, err.to_string(), cx);
             }
@@ -226,14 +229,6 @@ impl BenCodeApp {
         }
     }
 
-    /// Switches the active tab to an already open file; its edits stay in memory.
-    pub fn switch_editor_file(&mut self, path: &str, cx: &mut Context<Self>) {
-        self.editor.requested = Some(path.to_string());
-        if self.editor.files.activate(path) {
-            cx.notify();
-        }
-    }
-
     /// Closes a tab, asking first when it holds unsaved edits.
     pub fn request_close_editor_file(&mut self, path: &str, cx: &mut Context<Self>) {
         if self.editor.files.is_dirty(path) {
@@ -244,15 +239,6 @@ impl BenCodeApp {
         }
     }
 
-    /// Closes the active tab (Cmd-W); false when no file is open.
-    pub fn request_close_active_editor_file(&mut self, cx: &mut Context<Self>) -> bool {
-        let Some(path) = self.editor.files.active_path().map(str::to_string) else {
-            return false;
-        };
-        self.request_close_editor_file(&path, cx);
-        true
-    }
-
     /// Closes a tab without asking, dropping its unsaved edits.
     pub fn close_editor_file(&mut self, path: &str, cx: &mut Context<Self>) {
         if self.editor.pending_close.as_deref() == Some(path) {
@@ -261,6 +247,7 @@ impl BenCodeApp {
         if self.editor.files.remove(path).is_some() {
             log::info!("editor: closed {path}");
         }
+        self.drop_pane_tab(&PaneTab::File { path: path.to_string() }.key(), cx);
         cx.notify();
     }
 

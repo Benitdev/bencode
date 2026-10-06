@@ -137,6 +137,10 @@ impl BenCodeApp {
             )
             .into_any_element();
         }
+        // A thread's card is read the first time its pane is drawn.
+        if !self.checkpoints.reviews.contains_key(session_id) {
+            self.load_session_review(session_id, cx);
+        }
         self.sync_transcript_list_for(session_id);
         let (find_block, find_count) = self.find_hits(session_id, cx);
         let view = self.transcript_view_for(session_id);
@@ -296,7 +300,9 @@ impl BenCodeApp {
         list_state: ListState,
         cx: &Context<Self>,
     ) -> impl IntoElement {
-        let scrolled_up = list_state.is_scrolled_to_end() == Some(false);
+        let view = self.transcripts.get(&session.id);
+        let scrolled_up = list_state.is_scrolled_to_end() == Some(false)
+            && !view.is_some_and(|view| view.holds_prompt());
         let focused = self.selected_session_id.as_deref() == Some(session.id.as_str());
         let content = {
             let sid = session.id.clone();
@@ -317,6 +323,7 @@ impl BenCodeApp {
             .min_h_0()
             .justify_center()
             .child(content)
+            .children(view.and_then(|view| view.anchor_check()))
             .when(scrolled_up, |el| {
                 el.child(self.render_jump_to_latest(&session.id, focused, cx))
             })

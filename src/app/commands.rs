@@ -3,7 +3,8 @@
 
 use gpui::{App, Context, Div, InteractiveElement, KeyBinding, Menu, MenuItem, Stateful, actions};
 
-use crate::app::{BenCodeApp, ViewMode};
+use crate::app::BenCodeApp;
+use crate::app::file_pane::PaneTab;
 use crate::ui::layout::{FocusDir, SplitDir};
 
 actions!(
@@ -187,7 +188,7 @@ impl BenCodeApp {
             self.close_surface(cx);
             return;
         }
-        if self.active_view_mode == ViewMode::Editor && self.request_close_active_editor_file(cx) {
+        if self.file_pane_focused && self.close_active_pane_tab(cx) {
             return;
         }
         if let Some(id) = self.selected_session_id.clone() {
@@ -204,7 +205,7 @@ impl BenCodeApp {
         .on_action(cx.listener(|this, _: &NewThread, _, cx| this.create_new_session(cx)))
         .on_action(cx.listener(|this, _: &CloseActive, _, cx| this.close_active(cx)))
         .on_action(cx.listener(|this, _: &Save, _, cx| {
-            if this.active_view_mode == ViewMode::Editor {
+            if matches!(this.file_pane.active(), Some(PaneTab::File { .. })) {
                 this.save_current_editor_file(cx);
             }
         }))

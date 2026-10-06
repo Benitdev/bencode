@@ -8,22 +8,13 @@ use std::collections::HashMap;
 use std::thread::ScopedJoinHandle;
 
 use anyhow::Result;
-use gpui::{Context, SharedString};
+use gpui::Context;
 
 use crate::app::BenCodeApp;
-use crate::git::{self, DiffRow, DiffSource, GitDetailedStatus, GitFileChange};
+use crate::git::{self, GitDetailedStatus, GitFileChange};
 
 /// MonoCode re-reads git state this often (`GIT_POLL_MS`).
 const GIT_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
-
-/// A past commit opened from the history: its files and which one is shown.
-#[derive(Clone, Debug)]
-pub struct CommitView {
-    pub sha: String,
-    pub short_hash: String,
-    pub subject: String,
-    pub files: Vec<GitFileChange>,
-}
 
 #[derive(Default)]
 pub struct WorkspaceCache {
@@ -32,14 +23,6 @@ pub struct WorkspaceCache {
     pub branches: Vec<git::Branch>,
     pub changes: Vec<GitFileChange>,
     pub worktrees: Vec<crate::git::Worktree>,
-    pub diff_path: Option<String>,
-    /// Which change `diff` shows for `diff_path`.
-    pub diff_source: DiffSource,
-    /// Set while a commit from the history is open in the Changes view.
-    pub commit_view: Option<CommitView>,
-    pub diff: Vec<DiffRow>,
-    /// Unified text of `diff`, prepared once for the copy button.
-    pub diff_text: SharedString,
     /// Last failed git action, shown in the Changes panel until the next one.
     pub git_error: Option<String>,
     /// MonoCode `GitInfo.repo`: the repository name session cards show.
@@ -50,7 +33,6 @@ pub struct WorkspaceCache {
     /// The `generation` whose load last landed; behind `generation` while
     /// a load is in flight.
     loaded_generation: u64,
-    diff_generation: u64,
     /// Each directory's last snapshot, shown at once when the workspace
     /// returns to it while a fresh one loads (MonoCode `indexByCwd`).
     snapshots: HashMap<String, Snapshot>,
@@ -167,7 +149,9 @@ impl BenCodeApp {
                 }
                 app.workspace.loaded_generation = generation;
                 app.workspace.snapshots.insert(cwd.clone(), snapshot.clone());
-                app.apply_snapshot(cwd, snapshot, cx);
+                app.apply_snapshot(cwd.clone(), snapshot, cx);
+                app.reload_working_tree_docs(&cwd, cx);
+                app.reload_session_reviews(&cwd, cx);
                 app.refresh_file_tree(cx);
                 app.recheck_open_files_on_disk(cx);
                 cx.notify();
@@ -183,10 +167,6 @@ impl BenCodeApp {
     /// otherwise an empty workspace, never the previous directory's data.
     fn show_cached_snapshot(&mut self, cwd: &str, cx: &mut Context<Self>) {
         let cache = &mut self.workspace;
-        cache.commit_view = None;
-        cache.diff_path = None;
-        cache.diff.clear();
-        cache.diff_text = SharedString::default();
         cache.git_error = None;
         let snapshot = cache.snapshots.get(cwd).cloned().unwrap_or_else(|| Snapshot {
             fingerprint: None,
@@ -216,14 +196,6 @@ impl BenCodeApp {
         cache.worktrees = snapshot.worktrees;
         cache.repo = snapshot.repo;
         self.refresh_branch_pr(cx);
-        if self.workspace.commit_view.is_none() {
-            let diff_path = self
-                .selected_diff_path
-                .clone()
-                .or_else(|| self.workspace.changes.first().map(|c| c.path.clone()));
-            let source = self.workspace.diff_source.clone();
-            self.load_diff(diff_path, source, cx);
-        }
     }
 
     /// Polls git every `GIT_POLL_INTERVAL` and refreshes when the repository
@@ -269,104 +241,6 @@ impl BenCodeApp {
         if self.workspace.cwd != self.workspace_cwd() {
             self.refresh_workspace(cx);
         }
-    }
-
-    /// Shows the HEAD↔work-tree diff of `path` (the Changes view list).
-    pub fn select_diff_path(&mut self, path: String, cx: &mut Context<Self>) {
-        self.select_diff(path, DiffSource::WorkingTree, cx);
-    }
-
-    pub fn select_diff(&mut self, path: String, source: DiffSource, cx: &mut Context<Self>) {
-        if !matches!(source, DiffSource::Commit(_)) {
-            self.workspace.commit_view = None;
-        }
-        self.selected_diff_path = Some(path.clone());
-        self.load_diff(Some(path), source, cx);
-        cx.notify();
-    }
-
-    /// Opens a commit from the history: lists its files and shows the first.
-    pub fn open_commit(
-        &mut self,
-        sha: String,
-        short_hash: String,
-        subject: String,
-        cx: &mut Context<Self>,
-    ) {
-        let cwd = self.workspace_cwd();
-        let task = cx
-            .background_executor()
-            .spawn(async move { git::commit_files(&cwd, &sha).map(|files| (sha, files)) });
-        cx.spawn(async move |this, cx| {
-            let result = task.await;
-            let updated = this.update(cx, |app, cx| match result {
-                Ok((sha, files)) => {
-                    let first = files.first().map(|f| f.path.clone());
-                    app.workspace.commit_view = Some(CommitView {
-                        sha: sha.clone(),
-                        short_hash,
-                        subject,
-                        files,
-                    });
-                    app.workspace.git_error = None;
-                    match first {
-                        Some(path) => app.select_diff(path, DiffSource::Commit(sha), cx),
-                        None => app.load_diff(None, DiffSource::Commit(sha), cx),
-                    }
-                    cx.notify();
-                }
-                Err(err) => {
-                    log::error!("could not open commit: {err:#}");
-                    app.workspace.git_error = Some(format!("Could not open commit: {err}"));
-                    cx.notify();
-                }
-            });
-            if let Err(err) = updated {
-                log::debug!("commit opened after app drop: {err:#}");
-            }
-        })
-        .detach();
-    }
-
-    /// Leaves an open commit and returns to the working-tree changes.
-    pub fn close_commit(&mut self, cx: &mut Context<Self>) {
-        self.workspace.commit_view = None;
-        let path = self.workspace.changes.first().map(|c| c.path.clone());
-        self.selected_diff_path = path.clone();
-        self.load_diff(path, DiffSource::WorkingTree, cx);
-        cx.notify();
-    }
-
-    fn load_diff(&mut self, path: Option<String>, source: DiffSource, cx: &mut Context<Self>) {
-        self.workspace.diff_source = source.clone();
-        self.workspace.diff_generation += 1;
-        let generation = self.workspace.diff_generation;
-        let Some(path) = path else {
-            self.workspace.diff_path = None;
-            self.workspace.diff.clear();
-            self.workspace.diff_text = SharedString::default();
-            return;
-        };
-        let cwd = self.workspace_cwd();
-        let file = path.clone();
-        let task = cx.background_executor().spawn(async move {
-            let rows = git::number_rows(git::diff_for(&cwd, &file, &source));
-            let text = SharedString::from(git::unified_text(&rows));
-            (rows, text)
-        });
-
-        cx.spawn(async move |this, cx| {
-            let (diff, diff_text) = task.await;
-            let _ = this.update(cx, |app, cx| {
-                if app.workspace.diff_generation == generation {
-                    app.workspace.diff_path = Some(path);
-                    app.workspace.diff = diff;
-                    app.workspace.diff_text = diff_text;
-                    cx.notify();
-                }
-            });
-        })
-        .detach();
     }
 
     /// Runs a mutating git command off the UI thread, surfaces failures in

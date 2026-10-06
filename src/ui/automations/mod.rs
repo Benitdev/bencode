@@ -13,7 +13,7 @@ use gpui::{AnyElement, Context, IntoElement, ParentElement, Styled, div};
 
 use jiff::tz::TimeZone;
 
-use crate::app::{BenCodeApp, Surface, ViewMode, now_ms};
+use crate::app::{BenCodeApp, Surface, now_ms};
 use crate::db::{AutomationRow, AutomationRunRow};
 use crate::schedule;
 use crate::ui::app_callback::app_callback;
@@ -259,9 +259,7 @@ impl BenCodeApp {
             session.cwd = cwd;
         }
         let id = session.id.clone();
-        self.selected_diff_path = None;
         self.refresh_workspace_if_moved(cx);
-        self.active_view_mode = ViewMode::Chat;
         self.send_prompt(&id, &request.prompt, cx);
         Some(id)
     }

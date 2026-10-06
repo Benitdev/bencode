@@ -572,6 +572,9 @@ pub enum Row {
     Footer { turn: usize },
     /// The permission prompt after the last block.
     Trailer,
+    /// Blank space stretching the last turn to the viewport after a send,
+    /// so its prompt sits at the top (MonoCode `.transcript-turn-anchor`).
+    Spacer,
 }
 
 /// The layout of one turn.

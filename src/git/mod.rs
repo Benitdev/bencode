@@ -14,8 +14,8 @@ pub mod text;
 pub use branches::{
     Branch, SwitchError, create_branch, list_branches, stash_changes, switch_branch,
 };
-pub use diffs::{DiffSource, commit_files, diff_for};
-pub use rows::{DiffRow, number_rows, unified_text};
+pub use diffs::{DiffSource, commit_files, file_diff};
+pub use rows::number_rows;
 
 // Only `list_worktrees` feeds the sidebar switcher so far; create/remove/prune
 // are tracked in docs/migration/TODO-100-PERCENT-COVERAGE.md (2.1). `expect`
@@ -28,10 +28,6 @@ pub mod worktrees;
 pub use status_pass::{StatusPass, read_local_state};
 pub use worktrees::Worktree;
 
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "checkpoint engine is not wired into the app yet")
-)]
 pub mod checkpoint;
 
 /// Fallback branch name shown when git cannot tell us anything better.
@@ -147,15 +143,6 @@ fn empty_tree(cwd: &str) -> String {
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| EMPTY_TREE_SHA1.to_string())
-}
-
-/// `HEAD` when it exists, otherwise the empty tree (fresh repo with no commits).
-fn diff_base(cwd: &str) -> String {
-    if has_head(cwd) {
-        "HEAD".to_string()
-    } else {
-        empty_tree(cwd)
-    }
 }
 
 fn is_in_index(cwd: &str, file: &str) -> bool {
@@ -455,63 +442,6 @@ fn parse_unified_diff(text: &str) -> Vec<DiffLineKind> {
         }
     }
     lines
-}
-
-/// Retrieves parsed diff lines for a specific file
-pub fn get_file_diff(cwd: &str, file_path: &str) -> Vec<DiffLineKind> {
-    let base = diff_base(cwd);
-    let diff = run_git_string(
-        cwd,
-        &[
-            "diff",
-            "--no-ext-diff",
-            "--no-color",
-            "-U3",
-            base.as_str(),
-            "--",
-            file_path,
-        ],
-    )
-    .unwrap_or_default();
-    if !diff.trim().is_empty() {
-        return parse_unified_diff(&diff);
-    }
-    if is_in_index(cwd, file_path) {
-        // Tracked and unchanged: nothing to show.
-        return Vec::new();
-    }
-    get_untracked_diff(cwd, file_path)
-}
-
-fn get_untracked_diff(cwd: &str, file_path: &str) -> Vec<DiffLineKind> {
-    let full_path = Path::new(cwd).join(file_path);
-    let too_large = std::fs::metadata(&full_path)
-        .map(|m| m.len() > MAX_UNTRACKED_READ_BYTES)
-        .unwrap_or(false);
-    let content = if too_large {
-        None
-    } else {
-        std::fs::read_to_string(&full_path).ok()
-    };
-    match content {
-        Some(content) => {
-            let header = DiffLineKind::Header(format!(
-                "@@ -0,0 +1,{} @@ (new file)",
-                content.lines().count()
-            ));
-            std::iter::once(header)
-                .chain(
-                    content
-                        .lines()
-                        .map(|l| DiffLineKind::Addition(l.to_string())),
-                )
-                .collect()
-        }
-        None => vec![DiffLineKind::Header(format!(
-            "@@ New untracked file: {} @@",
-            file_path
-        ))],
-    }
 }
 
 pub fn get_recent_commits(cwd: &str, count: usize) -> Vec<GitCommitInfo> {
@@ -974,9 +904,10 @@ mod tests {
             "unborn branch has no ref yet"
         );
         assert!(get_recent_commits(repo.cwd(), 5).is_empty());
-        let diff = get_file_diff(repo.cwd(), "first.txt");
+        let diff = file_diff(repo.cwd(), "first.txt", &DiffSource::Staged).unwrap();
         assert_eq!(
-            diff.iter()
+            diff.lines
+                .iter()
                 .filter(|l| matches!(l, DiffLineKind::Addition(_)))
                 .count(),
             2
@@ -990,9 +921,20 @@ mod tests {
         repo.commit_all("init");
         repo.write("fresh.txt", "one\ntwo\n");
 
-        assert!(get_file_diff(repo.cwd(), "same.txt").is_empty());
-        let fresh = get_file_diff(repo.cwd(), "fresh.txt");
-        assert_eq!(fresh.len(), 3);
+        let same = file_diff(repo.cwd(), "same.txt", &DiffSource::Unstaged).unwrap();
+        assert!(same.lines.is_empty());
+        let fresh = file_diff(repo.cwd(), "fresh.txt", &DiffSource::Unstaged).unwrap();
+        assert_eq!(fresh.lines.len(), 3);
+        repo.write("same.txt", "same\nmore\n");
+        let edited = file_diff(repo.cwd(), "same.txt", &DiffSource::Unstaged).unwrap();
+        // Full context: the unchanged first line is kept.
+        assert_eq!(
+            edited.lines[1..],
+            [
+                DiffLineKind::Context("same".into()),
+                DiffLineKind::Addition("more".into())
+            ]
+        );
     }
 
     // --- commits ------------------------------------------------------------
@@ -1136,11 +1078,11 @@ mod tests {
                 .collect()
         };
         assert_eq!(
-            added(diff_for(repo.cwd(), "a.txt", &DiffSource::Staged)),
+            added(file_diff(repo.cwd(), "a.txt", &DiffSource::Staged).unwrap().lines),
             ["two"]
         );
         assert_eq!(
-            added(diff_for(repo.cwd(), "a.txt", &DiffSource::Unstaged)),
+            added(file_diff(repo.cwd(), "a.txt", &DiffSource::Unstaged).unwrap().lines),
             ["three"]
         );
     }
@@ -1158,7 +1100,7 @@ mod tests {
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].path, "a.txt");
         assert_eq!(files[0].additions, 1);
-        let rows = diff_for(repo.cwd(), "a.txt", &DiffSource::Commit(sha));
+        let rows = file_diff(repo.cwd(), "a.txt", &DiffSource::Commit(sha)).unwrap().lines;
         assert!(rows.contains(&DiffLineKind::Addition("one".into())));
         assert!(!rows.contains(&DiffLineKind::Addition("dirty".into())));
     }

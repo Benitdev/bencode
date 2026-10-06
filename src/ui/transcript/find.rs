@@ -15,7 +15,7 @@ use gpui::{
 use serde_json::Value;
 
 use super::turns::{self, Item, Row};
-use crate::app::{BenCodeApp, ViewMode};
+use crate::app::BenCodeApp;
 use crate::db::Block;
 use crate::ui::composer::focus_later;
 
@@ -167,7 +167,7 @@ impl BenCodeApp {
 
     /// ⌘F: opens the bar on the focused thread with the last query selected.
     pub fn open_find(&mut self, cx: &mut Context<Self>) {
-        if self.active_view_mode != ViewMode::Chat || self.surface.is_some() {
+        if self.surface.is_some() {
             return;
         }
         let Some(session_id) = self.selected_session_id.clone() else {

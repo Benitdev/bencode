@@ -37,6 +37,7 @@ impl<E> Default for OpenFiles<E> {
 }
 
 impl<E> OpenFiles<E> {
+    #[cfg(test)]
     pub fn is_empty(&self) -> bool {
         self.files.is_empty()
     }

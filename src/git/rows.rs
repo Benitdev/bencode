@@ -47,18 +47,6 @@ pub fn number_rows(lines: Vec<DiffLineKind>) -> Vec<DiffRow> {
         .collect()
 }
 
-/// The rows as unified-diff text, for copying.
-pub fn unified_text(rows: &[DiffRow]) -> String {
-    rows.iter()
-        .map(|row| match &row.kind {
-            DiffLineKind::Header(text) => format!("{text}\n"),
-            DiffLineKind::Addition(text) => format!("+{text}\n"),
-            DiffLineKind::Deletion(text) => format!("-{text}\n"),
-            DiffLineKind::Context(text) => format!(" {text}\n"),
-        })
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -87,14 +75,6 @@ mod tests {
                 (None, Some(22)),
                 (Some(12), Some(23))
             ]
-        );
-    }
-
-    #[test]
-    fn unified_text_round_trips_prefixes() {
-        assert_eq!(
-            unified_text(&rows()),
-            "@@ -10,3 +20,4 @@ fn main\n a\n-b\n+c\n+d\n e\n"
         );
     }
 

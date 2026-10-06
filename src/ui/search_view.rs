@@ -12,7 +12,8 @@ use gpui::{
     uniform_list,
 };
 
-use crate::app::{BenCodeApp, Surface, ViewMode};
+use crate::app::file_pane::PaneTab;
+use crate::app::{BenCodeApp, Surface};
 use crate::db::SessionRow;
 
 const SEARCH_FILE_HIT_LIMIT: usize = 30;
@@ -183,7 +184,6 @@ impl BenCodeApp {
 
     /// Opens the latest thread in `cwd`, or starts one there.
     fn open_project(&mut self, cwd: String, cx: &mut Context<Self>) {
-        self.active_view_mode = ViewMode::Chat;
         self.switch_project(cwd, cx);
     }
 
@@ -193,7 +193,6 @@ impl BenCodeApp {
         };
         match hit.scope {
             SearchScope::Conversations => {
-                self.active_view_mode = ViewMode::Chat;
                 self.open_session(hit.target_id, cx);
             }
             SearchScope::Files
@@ -203,11 +202,14 @@ impl BenCodeApp {
                     .iter()
                     .any(|c| c.path == hit.target_id) =>
             {
-                self.active_view_mode = ViewMode::Changes;
-                self.select_diff_path(hit.target_id, cx);
+                let tab = PaneTab::Changes {
+                    cwd: self.workspace.cwd.clone(),
+                    side: None,
+                    focus: Some(hit.target_id),
+                };
+                self.open_pane_tab(tab, false, cx);
             }
             SearchScope::Files => {
-                self.active_view_mode = ViewMode::Chat;
                 self.append_to_prompt(&format!("@{}", hit.target_id), cx);
             }
             SearchScope::Projects => self.open_project(hit.target_id, cx),

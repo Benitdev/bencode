@@ -134,6 +134,12 @@ pub struct LocalState {
 
 /// One status read, then its line counts side by side (each is its own
 /// `git diff` process).
+/// The files that differ from HEAD, with line counts; empty outside a
+/// repository.
+pub fn read_changes(cwd: &str) -> Vec<GitFileChange> {
+    StatusPass::read(cwd).map_or_else(Vec::new, |pass| pass.changes(cwd))
+}
+
 pub fn read_local_state(cwd: &str) -> LocalState {
     let Some(pass) = StatusPass::read(cwd) else {
         return LocalState {

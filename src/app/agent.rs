@@ -7,6 +7,7 @@
 use gpui::{Context, Focusable};
 use serde_json::{Value, json};
 
+use crate::app::session_review::edit_paths;
 use crate::app::{BenCodeApp, PermissionMode};
 use crate::db::{Block, SessionRow, TurnModel};
 use crate::harness::Attachment;
@@ -56,6 +57,8 @@ pub struct AgentRun {
     pub purpose: RunPurpose,
     /// A compaction the harness confirmed, with the context left after it.
     pub compacted: Option<Option<u64>>,
+    /// The files of each edit tool still running, by call id.
+    pub edit_paths: std::collections::HashMap<String, Vec<String>>,
 }
 
 /// What a run is for.
@@ -654,6 +657,10 @@ impl BenCodeApp {
             },
         );
         let harness_kind = spawn.as_ref().ok().map(|r| r.harness);
+        // The baseline is queued before the agent can edit anything.
+        if request.purpose == RunPurpose::Turn {
+            self.checkpoints.begin_turn(session_id, session.work_dir());
+        }
         let started = spawn.and_then(|spawn| {
             harness::spawn(&spawn)
                 .map_err(|err| format!("Failed to start {}: {err:#}", spawn.harness.label()))
@@ -703,6 +710,7 @@ impl BenCodeApp {
                 can_steer: false,
                 purpose: RunPurpose::Turn,
                 compacted: None,
+                edit_paths: std::collections::HashMap::new(),
             },
         );
 
@@ -765,11 +773,34 @@ impl BenCodeApp {
             }
             return;
         }
+        // MonoCode `trackSessionEdits`: snapshot a file when its edit tool
+        // starts, and again once it completed.
+        let edit = match &event {
+            AgentEvent::ToolCallStart { id, name, input } if tool_kind(name) == "edit" => {
+                let paths = edit_paths(input);
+                run.edit_paths.insert(id.clone(), paths.clone());
+                Some((paths, false))
+            }
+            AgentEvent::ToolCallFinish { id, success, .. } => run
+                .edit_paths
+                .remove(id)
+                .filter(|_| *success)
+                .map(|paths| (paths, true)),
+            _ => None,
+        };
         let is_done = matches!(event, AgentEvent::Done(_));
         if let AgentEvent::Done(status) = event {
             run.outcome = Some(status);
         }
         if let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id) {
+            if let Some((paths, completed)) = edit.filter(|(paths, _)| !paths.is_empty()) {
+                let cwd = session.work_dir();
+                if completed {
+                    self.checkpoints.capture(session_id, cwd, paths);
+                } else {
+                    self.checkpoints.prepare(session_id, cwd, paths);
+                }
+            }
             apply_event(session, event, now_ms());
         }
         if is_done {
@@ -804,6 +835,7 @@ impl BenCodeApp {
         self.close_automation_run(&run, automation_status(run.outcome));
         // The agent has most likely edited files.
         self.refresh_workspace(cx);
+        self.load_session_review(session_id, cx);
         self.send_next_queued(session_id, cx);
         cx.notify();
     }

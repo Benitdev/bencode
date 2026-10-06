@@ -5,7 +5,7 @@
 
 use gpui::Context;
 
-use crate::app::{BenCodeApp, ViewMode};
+use crate::app::BenCodeApp;
 
 /// MonoCode `joinComposerInsert`: a blank line between the draft and the
 /// block, and one after it for the next words.
@@ -59,8 +59,7 @@ pub fn selection_reference(path: &str, start_line: usize, end_line: usize) -> St
 }
 
 impl BenCodeApp {
-    /// MonoCode `requestAddToChat`: into the focused thread's prompt, back
-    /// in the conversation view.
+    /// MonoCode `requestAddToChat`: into the focused thread's prompt.
     pub fn add_to_chat(&mut self, text: &str, cx: &mut Context<Self>) {
         let draft = self.prompt_input.read(cx).text().to_string();
         let next = append_to_draft(&draft, text);
@@ -69,7 +68,6 @@ impl BenCodeApp {
         }
         self.prompt_input
             .update(cx, |input, cx| input.set_text(next, cx));
-        self.active_view_mode = ViewMode::Chat;
         self.refocus_prompt(cx);
         cx.notify();
     }

@@ -1,5 +1,6 @@
 mod agent;
 pub mod commands;
+pub mod file_pane;
 mod integrations;
 mod model_catalog;
 mod panes;
@@ -7,6 +8,7 @@ mod preferences;
 pub mod project_files;
 mod project_stats;
 mod projects;
+pub mod session_review;
 pub mod reminders;
 pub mod session_folders;
 pub mod session_list;
@@ -41,14 +43,6 @@ use crate::ui::settings_modal::SettingsTab;
 const RECENT_SESSION_LIMIT: usize = 50;
 const INITIAL_OPEN_TABS: usize = 3;
 const NOTE_TITLE_CHARS: usize = 80;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-pub enum ViewMode {
-    #[default]
-    Chat,
-    Editor,
-    Changes,
-}
 
 /// MonoCode's per-session access modes (`RuntimeMode`, `session.ts:368-390`),
 /// stored in `sessions.runtime_mode` by their MonoCode ids.
@@ -103,7 +97,16 @@ pub struct BenCodeApp {
     pub selected_session_id: Option<String>,
     /// Open workspace tabs, each with its split layout and focused pane.
     pub tabs: crate::ui::layout::TabSet,
-    pub active_view_mode: ViewMode,
+    /// Files, reviews and commits open to the right of the chat.
+    pub file_pane: file_pane::FilePane,
+    /// What each thread's agent changed, and the store that records it.
+    pub checkpoints: session_review::Checkpoints,
+    /// The loaded review of each diff tab in `file_pane`, by tab key.
+    pub diff_docs: HashMap<String, crate::ui::diff_viewer::DiffDoc>,
+    /// Whether ⌘W closes a tab of `file_pane` rather than the thread.
+    pub file_pane_focused: bool,
+    /// The chat's and the file pane's shares of the width.
+    pub file_pane_shares: [f32; 2],
     /// The sidebar's Sessions tab: filters, picks, inline renames.
     pub sessions_ui: crate::ui::sidebar_sessions::SessionsUi,
     /// The sidebar's width (MonoCode keeps it for the run, not on disk).
@@ -128,7 +131,6 @@ pub struct BenCodeApp {
     pub session_list_focus: gpui::FocusHandle,
     pub permission_mode: PermissionMode,
     pub sidebar_mode: SidebarMode,
-    pub selected_diff_path: Option<String>,
     pub search_query: String,
     /// Model key in MonoCode's `harness:model` form, e.g. `claude:opus`.
     pub selected_model: String,
@@ -964,7 +966,13 @@ impl BenCodeApp {
             sessions,
             selected_session_id,
             tabs,
-            active_view_mode: ViewMode::Chat,
+            file_pane: Default::default(),
+            checkpoints: session_review::Checkpoints::new(crate::git::checkpoint::CheckpointStore::new(
+                crate::git::checkpoint::CheckpointStore::default_dir(),
+            )),
+            diff_docs: HashMap::new(),
+            file_pane_focused: false,
+            file_pane_shares: [1.0, 1.0],
             sessions_ui: Default::default(),
             sidebar_menu: None,
             sidebar_width: crate::ui::sidebar::SIDEBAR_MIN_WIDTH,
@@ -979,7 +987,6 @@ impl BenCodeApp {
             session_list_focus: cx.focus_handle(),
             permission_mode: PermissionMode::default(),
             sidebar_mode: SidebarMode::Sessions,
-            selected_diff_path: None,
             search_query: String::new(),
             selected_model,
             harnesses,
@@ -1586,17 +1593,7 @@ impl Render for BenCodeApp {
                                                 .flex_1()
                                                 .min_h_0()
                                                 .overflow_hidden()
-                                                .child(match self.active_view_mode {
-                                                    ViewMode::Chat => self
-                                                        .render_transcript_panel(cx)
-                                                        .into_any_element(),
-                                                    ViewMode::Editor => self
-                                                        .render_editor_pane(window, cx)
-                                                        .into_any_element(),
-                                                    ViewMode::Changes => self
-                                                        .render_diff_viewer(cx)
-                                                        .into_any_element(),
-                                                }),
+                                                .child(self.render_workspace_split(cx)),
                                         )
                                         .when(self.is_terminal_open, |el| {
                                             el.child(self.render_terminal_drawer(cx))
@@ -1616,6 +1613,7 @@ impl Render for BenCodeApp {
                     .children(self.render_quick_open(cx))
                     .children(self.render_lightbox(cx))
                     .children(self.render_git_confirm(cx))
+                    .children(self.render_session_undo_confirm(cx))
                     .children(self.render_branch_switch_confirm(cx))
                     .children(self.render_branch_create_dialog(cx))
                     .children(self.render_pr_action_confirm(cx))

@@ -2,19 +2,18 @@
 //! staged side as HEAD↔index and the unstaged side as index↔work tree, and
 //! opens a commit as its file list plus per-file diffs (`CommitDiff.tsx`).
 
+use std::path::Path;
+
 use anyhow::{Result, bail};
 
 use super::{
-    DiffLineKind, GitFileChange, GitFileStatus, get_file_diff, get_untracked_diff, is_in_index,
+    DiffLineKind, GitFileChange, GitFileStatus, MAX_UNTRACKED_READ_BYTES, is_in_index,
     parse_numstat_z, parse_unified_diff, run_git, run_git_string,
 };
 
 /// Which change a diff describes.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DiffSource {
-    /// HEAD↔work tree, both sides together (the Changes view's file list).
-    #[default]
-    WorkingTree,
     /// HEAD↔index.
     Staged,
     /// Index↔work tree; untracked files show as all-new.
@@ -22,6 +21,20 @@ pub enum DiffSource {
     /// What a commit changed.
     Commit(String),
 }
+
+/// One file's diff with every unchanged line as context, so the review can
+/// fold and unfold it (MonoCode diffs the whole original and current text).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct FileDiff {
+    pub lines: Vec<DiffLineKind>,
+    pub binary: bool,
+    pub too_large: bool,
+}
+
+/// Patches bigger than this are not shown (MonoCode `tooLarge`).
+const MAX_PATCH_BYTES: usize = 4 * 1024 * 1024;
+/// Context wide enough to take in any whole file.
+const FULL_CONTEXT: &str = "-U2147483647";
 
 /// Rejects anything but a hex object id, so it can never be read as an option.
 fn validate_sha(sha: &str) -> Result<()> {
@@ -31,42 +44,75 @@ fn validate_sha(sha: &str) -> Result<()> {
     Ok(())
 }
 
-fn unified(cwd: &str, args: &[&str]) -> Vec<DiffLineKind> {
-    match run_git_string(cwd, args) {
-        Ok(text) => parse_unified_diff(&text),
-        Err(err) => {
-            log::warn!("git {} failed: {err:#}", args.join(" "));
-            Vec::new()
-        }
+pub(super) fn patch(text: &str) -> FileDiff {
+    if text.len() > MAX_PATCH_BYTES {
+        return FileDiff {
+            too_large: true,
+            ..FileDiff::default()
+        };
+    }
+    let lines = parse_unified_diff(text);
+    let binary = lines.is_empty()
+        && text
+            .lines()
+            .any(|l| l.starts_with("Binary files ") || l == "GIT binary patch");
+    FileDiff {
+        lines,
+        binary,
+        too_large: false,
     }
 }
 
-/// Diff of `path` as described by `source`.
-pub fn diff_for(cwd: &str, path: &str, source: &DiffSource) -> Vec<DiffLineKind> {
-    const FLAGS: [&str; 3] = ["--no-ext-diff", "--no-color", "-U3"];
+/// An untracked file, all of it added.
+fn untracked(cwd: &str, path: &str) -> Result<FileDiff> {
+    let full = Path::new(cwd).join(path);
+    if std::fs::metadata(&full)?.len() > MAX_UNTRACKED_READ_BYTES {
+        return Ok(FileDiff {
+            too_large: true,
+            ..FileDiff::default()
+        });
+    }
+    let text = match String::from_utf8(std::fs::read(&full)?) {
+        Ok(text) if !text.contains('\0') => text,
+        _ => {
+            return Ok(FileDiff {
+                binary: true,
+                ..FileDiff::default()
+            });
+        }
+    };
+    let header = DiffLineKind::Header(format!("@@ -0,0 +1,{} @@", text.lines().count()));
+    let lines = std::iter::once(header)
+        .chain(text.lines().map(|l| DiffLineKind::Addition(l.to_string())))
+        .collect();
+    Ok(FileDiff {
+        lines,
+        ..FileDiff::default()
+    })
+}
+
+/// Diff of `path` as described by `source`, with full context.
+pub fn file_diff(cwd: &str, path: &str, source: &DiffSource) -> Result<FileDiff> {
+    const FLAGS: [&str; 3] = ["--no-ext-diff", "--no-color", FULL_CONTEXT];
     match source {
-        DiffSource::WorkingTree => get_file_diff(cwd, path),
         DiffSource::Staged => {
             let args = [&["diff", "--cached"][..], &FLAGS, &["--", path]].concat();
-            unified(cwd, &args)
+            Ok(patch(&run_git_string(cwd, &args)?))
         }
         DiffSource::Unstaged => {
             let args = [&["diff"][..], &FLAGS, &["--", path]].concat();
-            let rows = unified(cwd, &args);
-            if rows.is_empty() && !is_in_index(cwd, path) {
-                get_untracked_diff(cwd, path)
+            let diff = patch(&run_git_string(cwd, &args)?);
+            if diff.lines.is_empty() && !diff.binary && !is_in_index(cwd, path) {
+                untracked(cwd, path)
             } else {
-                rows
+                Ok(diff)
             }
         }
         DiffSource::Commit(sha) => {
-            if let Err(err) = validate_sha(sha) {
-                log::warn!("{err:#}");
-                return Vec::new();
-            }
+            validate_sha(sha)?;
             let head = ["show", "--format=", "-M"];
             let args = [&head[..], &FLAGS, &[sha.as_str(), "--", path]].concat();
-            unified(cwd, &args)
+            Ok(patch(&run_git_string(cwd, &args)?))
         }
     }
 }
@@ -131,6 +177,16 @@ mod tests {
                 (GitFileStatus::Added, "b.rs".to_string()),
             ]
         );
+    }
+
+    #[test]
+    fn binary_and_oversized_patches_are_flagged() {
+        let binary = patch("diff --git a/x.png b/x.png\nBinary files a/x.png and b/x.png differ\n");
+        assert!(binary.binary && binary.lines.is_empty());
+        let text = patch("@@ -1 +1 @@\n-a\n+b\n");
+        assert!(!text.binary);
+        assert_eq!(text.lines.len(), 3);
+        assert!(patch(&"x".repeat(MAX_PATCH_BYTES + 1)).too_large);
     }
 
     #[test]
