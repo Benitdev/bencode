@@ -54,6 +54,22 @@ pub struct DocFile {
     pub body: FileBody,
 }
 
+/// The files of `new` that differ from `old`, when both list the same
+/// files in the same order; `None` when the list itself changed.
+fn changed_files(old: &[DocFile], new: &[DocFile]) -> Option<Vec<usize>> {
+    if old.len() != new.len() || old.iter().zip(new).any(|(a, b)| a.id != b.id) {
+        return None;
+    }
+    Some(
+        old.iter()
+            .zip(new)
+            .enumerate()
+            .filter(|(_, (a, b))| a != b)
+            .map(|(ix, _)| ix)
+            .collect(),
+    )
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DocStatus {
     Loading,
@@ -440,16 +456,24 @@ impl BenCodeApp {
                 }
                 match result {
                     Ok(files) => {
-                        let same = doc.files.len() == files.len()
-                            && doc.files.iter().zip(&files).all(|(a, b)| a.id == b.id);
-                        if !same {
-                            // MonoCode `initialExpansion = "all"`.
-                            doc.open = files.iter().map(|f| f.id.clone()).collect();
-                            doc.reveals.clear();
+                        match changed_files(&doc.files, &files) {
+                            None => {
+                                // MonoCode `initialExpansion = "all"`.
+                                doc.open = files.iter().map(|f| f.id.clone()).collect();
+                                doc.reveals.clear();
+                                doc.files = files;
+                                doc.rebuild();
+                            }
+                            // The same files: only the changed ones get new
+                            // rows, so the others keep their measured heights.
+                            Some(changed) => {
+                                doc.files = files;
+                                for ix in changed {
+                                    doc.rebuild_file(ix);
+                                }
+                            }
                         }
-                        doc.files = files;
                         doc.status = DocStatus::Ready;
-                        doc.rebuild();
                         doc.scroll_to_focus();
                     }
                     Err(err) => {
@@ -944,6 +968,36 @@ fn render_line(line: &Line, cx: &gpui::App) -> AnyElement {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn file(id: &str, body: FileBody) -> DocFile {
+        DocFile {
+            id: id.into(),
+            path: id.into(),
+            label: id.into(),
+            side: None,
+            additions: 0,
+            deletions: 0,
+            body,
+        }
+    }
+
+    #[test]
+    fn a_reload_names_only_the_files_that_changed() {
+        let old = [file("a", FileBody::Binary), file("b", FileBody::Empty("x"))];
+        let same = old.clone();
+        assert_eq!(changed_files(&old, &same), Some(Vec::new()));
+        let edited = [file("a", FileBody::Binary), file("b", FileBody::TooLarge)];
+        assert_eq!(changed_files(&old, &edited), Some(vec![1]));
+    }
+
+    #[test]
+    fn another_file_list_is_not_patched() {
+        let old = [file("a", FileBody::Binary), file("b", FileBody::Binary)];
+        assert_eq!(changed_files(&old, &old[..1]), None);
+        let swapped = [old[1].clone(), old[0].clone()];
+        assert_eq!(changed_files(&old, &swapped), None);
+        assert_eq!(changed_files(&[], &old), None);
+    }
 
     #[test]
     fn entries_name_their_side() {
