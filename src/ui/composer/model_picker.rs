@@ -18,6 +18,7 @@ use crate::app::BenCodeApp;
 use crate::harness::HarnessKind;
 use crate::harness::catalog::{self, ModelOption, ModelSetting, SettingKind};
 use crate::ui::HarnessIcon;
+use crate::ui::sidebar_popovers::popover_glass;
 
 /// MonoCode `MENU_WIDTH`, `MODEL_MENU_WIDTH`, `SETTING_MENU_WIDTH`.
 const MENU_WIDTH: f32 = 250.0;
@@ -479,11 +480,11 @@ impl BenCodeApp {
             .left_0()
             .w(px(MENU_WIDTH))
             .p_1()
-            .rounded(px(8.0))
-            .bg(colors.surface)
+            .rounded(px(12.0))
+            .bg(popover_glass(cx))
             .border_1()
             .border_color(colors.border)
-            .shadow_lg()
+            .shadow_xl()
             .flex()
             .flex_col()
             .children(setting_rows)
@@ -556,11 +557,11 @@ impl BenCodeApp {
             .top(px(top))
             .w(px(SETTING_MENU_WIDTH))
             .p_1()
-            .rounded(px(8.0))
-            .bg(colors.surface)
+            .rounded(px(12.0))
+            .bg(popover_glass(cx))
             .border_1()
             .border_color(colors.border)
-            .shadow_lg()
+            .shadow_xl()
             .flex()
             .flex_col()
             .children(options);
@@ -796,11 +797,11 @@ impl BenCodeApp {
             .h(px(model_menu_height()))
             .flex()
             .overflow_hidden()
-            .rounded(px(8.0))
-            .bg(colors.surface)
+            .rounded(px(12.0))
+            .bg(popover_glass(cx))
             .border_1()
             .border_color(colors.border)
-            .shadow_lg()
+            .shadow_xl()
             .child(rail)
             .child(
                 div()
@@ -895,11 +896,11 @@ impl BenCodeApp {
             .left_0()
             .w(px(MENU_WIDTH))
             .p_1()
-            .rounded(px(8.0))
-            .bg(colors.surface)
+            .rounded(px(12.0))
+            .bg(popover_glass(cx))
             .border_1()
             .border_color(colors.border)
-            .shadow_lg()
+            .shadow_xl()
             .flex()
             .flex_col()
             .children(rows)

@@ -3,7 +3,7 @@
 //! its chip dismisses it, and closing with Esc or a pick hands focus back
 //! to the prompt.
 
-use gpui::{App, Context, FocusHandle, Focusable, InteractiveElement, Window};
+use gpui::{App, Context, FocusHandle, Focusable, InteractiveElement, IntoElement, Window};
 
 use super::PERMISSION_MODES;
 use super::model_picker::{ModelTab, Submenu};
@@ -68,6 +68,13 @@ pub fn focus_later(handle: FocusHandle, cx: &mut App) {
             log::debug!("composer: could not move focus: {err:#}");
         }
     });
+}
+
+/// Draws a chip's popover over everything (MonoCode `Popover` portals to
+/// the body); painted in place, whatever comes later in the composer would
+/// show through it.
+pub(super) fn over_composer(popover: impl IntoElement) -> gpui::Deferred {
+    gpui::deferred(popover).with_priority(3)
 }
 
 /// Makes `el` part of the open popover: mouse-downs on it never dismiss,

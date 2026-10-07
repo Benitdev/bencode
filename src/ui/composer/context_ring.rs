@@ -15,6 +15,7 @@ use gpui::{
 use super::menus::{popover_anchor, popover_surface};
 use crate::app::{BenCodeApp, can_compact};
 use crate::db::SessionRow;
+use crate::ui::sidebar_popovers::popover_glass;
 use crate::ui::transcript::turns::format_metric_count;
 
 const SIZE: Pixels = px(14.0);
@@ -180,7 +181,7 @@ impl BenCodeApp {
             .rounded(px(12.0))
             .border_1()
             .border_color(colors.border)
-            .bg(colors.surface)
+            .bg(popover_glass(cx))
             .shadow_xl()
             .child(
                 div()

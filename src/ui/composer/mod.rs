@@ -44,9 +44,10 @@ use crate::db::SessionRow;
 use crate::harness::{HarnessKind, catalog};
 use crate::ui::HarnessIcon;
 use crate::ui::app_callback::app_callback;
+use crate::ui::sidebar_popovers::popover_glass;
 pub use mcp_picker::McpPicker;
 pub use menus::{MenuState, focus_later};
-use menus::{popover_anchor, popover_surface};
+use menus::{over_composer, popover_anchor, popover_surface};
 pub use prompt_marks::{MentionMark, prompt_highlights};
 
 /// MonoCode `max-w-4xl`, the same column as the transcript.
@@ -513,7 +514,10 @@ impl BenCodeApp {
                             .child(field),
                     )
                     .when(focused && self.is_plus_menu_open, |el| {
-                        el.child(popover_surface(self.render_plus_menu_popover(cx), cx))
+                        el.child(over_composer(popover_surface(
+                            self.render_plus_menu_popover(cx),
+                            cx,
+                        )))
                     })
                     .child(self.composer_bottom_bar(session, running_here, focused, cx))
                     // A resting pane's composer only wakes its pane.
@@ -784,13 +788,16 @@ impl BenCodeApp {
             .flex_none()
             .child(popover_anchor(model, cx))
             .when(focused && self.is_model_picker_open, |el| {
-                el.child(popover_surface(
+                el.child(over_composer(popover_surface(
                     self.render_model_picker_popover(key, cx),
                     cx,
-                ))
+                )))
             })
             .when(focused && self.composer_menus.recent_open, |el| {
-                el.child(popover_surface(self.render_recent_models_popover(cx), cx))
+                el.child(over_composer(popover_surface(
+                    self.render_recent_models_popover(cx),
+                    cx,
+                )))
             });
         let busy_note = if running_here {
             " Changes apply to the next turn."
@@ -823,7 +830,7 @@ impl BenCodeApp {
             .flex_none()
             .child(popover_anchor(access, cx))
             .when(focused && self.is_permission_picker_open, |el| {
-                el.child(self.render_permission_picker_popover(cx))
+                el.child(over_composer(self.render_permission_picker_popover(cx)))
             });
         div()
             .flex()
@@ -1262,7 +1269,7 @@ impl BenCodeApp {
             .w(px(250.0))
             .p_1p5()
             .rounded(px(12.0))
-            .bg(colors.surface)
+            .bg(popover_glass(cx))
             .border_1()
             .border_color(colors.border)
             .shadow_xl()
@@ -1347,11 +1354,11 @@ impl BenCodeApp {
             .left_0()
             .w(px(288.0))
             .p_1()
-            .rounded(px(8.0))
-            .bg(colors.surface)
+            .rounded(px(12.0))
+            .bg(popover_glass(cx))
             .border_1()
             .border_color(colors.border)
-            .shadow_lg()
+            .shadow_xl()
             .flex()
             .flex_col()
             .children(PERMISSION_MODES.iter().enumerate().map(|(ix, &(mode, label, hint, icon))| {

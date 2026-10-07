@@ -5,8 +5,8 @@
 use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
-    AnyElement, App, Context, Div, InteractiveElement, IntoElement, ParentElement, Pixels, Point,
-    SharedString, Styled, anchored, deferred, div, prelude::*, px, relative,
+    AnyElement, App, Context, Div, Hsla, InteractiveElement, IntoElement, ParentElement, Pixels,
+    Point, SharedString, Styled, anchored, deferred, div, prelude::*, px, relative,
 };
 
 use crate::app::BenCodeApp;
@@ -19,23 +19,30 @@ use crate::ui::sidebar_menus::{SidebarMenu, SidebarMenuKind};
 /// MonoCode's filter popover is 228px wide.
 const MENU_WIDTH: f32 = 228.0;
 
+/// MonoCode `.popover-backdrop`: `content` at 2% over a `backdrop-blur-xl`
+/// (the base background alone in the light theme). GPUI cannot blur what
+/// lies behind an element, so the tint is laid on the opaque background.
+pub(crate) fn popover_glass(cx: &App) -> Hsla {
+    let theme = cx.theme();
+    let colors = &theme.colors;
+    if theme.is_dark() {
+        colors.bg.blend(colors.fg.opacity(0.02))
+    } else {
+        colors.bg
+    }
+}
+
 /// MonoCode `Popover`'s frame: `rounded-xl border border-content/10
 /// shadow-xl` over its glass (`content` at 2% on the base background; the
 /// base alone in the light theme). Popovers draw outside the sidebar, so
 /// the web's 1.5 line height and text colour are set here too.
 pub(crate) fn popover_frame(cx: &App) -> Div {
-    let theme = cx.theme();
-    let colors = &theme.colors;
-    let glass = if theme.is_dark() {
-        colors.bg.blend(colors.fg.opacity(0.02))
-    } else {
-        colors.bg
-    };
+    let colors = &cx.theme().colors;
     div()
         .rounded(px(12.0))
         .border_1()
         .border_color(colors.fg.opacity(0.10))
-        .bg(glass)
+        .bg(popover_glass(cx))
         .shadow_xl()
         .text_color(colors.fg)
         .line_height(relative(1.5))
