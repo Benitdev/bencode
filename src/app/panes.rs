@@ -342,6 +342,8 @@ impl BenCodeApp {
             return;
         }
         if blank {
+            // Queued saves of the thread land first, or they would bring it back.
+            self.settle_db_writes();
             if let Err(err) = self.db.delete_session(to_id) {
                 log::error!("failed to drop replaced blank thread {to_id}: {err:#}");
             }
@@ -387,6 +389,8 @@ impl BenCodeApp {
             log::warn!("refusing to delete session {id} while its agent is running");
             return;
         }
+        // Queued saves of the thread land first, or they would bring it back.
+        self.settle_db_writes();
         if let Err(err) = self.db.delete_session(id) {
             log::error!("failed to delete session {id}: {err:#}");
             return;
@@ -465,6 +469,8 @@ impl BenCodeApp {
     /// Drops a replaced thread that never received a prompt; MonoCode does
     /// not keep those either.
     fn discard_blank_session(&mut self, id: &str) {
+        // Queued saves of the thread land first, or they would bring it back.
+        self.settle_db_writes();
         if let Err(err) = self.db.delete_session(id) {
             log::error!("failed to drop empty session {id}: {err:#}");
             return;

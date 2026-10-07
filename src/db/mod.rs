@@ -11,11 +11,13 @@ mod reminders;
 mod schedule;
 mod work_item;
 mod worktree_removals;
+mod writer;
 
 pub use orchestration::{OrchestrationSummary, OrchestrationTask, TaskTone};
 
 pub use reminders::Reminder;
 pub use work_item::{LinkedWorkItem, WorkItemKind};
+pub use writer::DbWriter;
 
 pub use schedule::DEFAULT_GRACE_MINUTES;
 
@@ -471,10 +473,9 @@ impl AppDb {
                 session.id
             );
         }
-        let blocks_value = serde_json::to_value(&session.blocks)?;
-        let blocks_json = serde_json::to_string(&blocks_value)?;
-        let has_user_message = has_user_block(&blocks_value);
-        let is_draft = has_draft_block(&blocks_value);
+        let blocks_json = serde_json::to_string(&session.blocks)?;
+        let has_user_message = session.has_user_message();
+        let is_draft = session.is_draft();
         let model_settings = session
             .model_settings
             .as_ref()
@@ -941,25 +942,6 @@ fn session_from_row(row: &Row<'_>) -> rusqlite::Result<SessionRow> {
             .as_deref()
             .and_then(OrchestrationSummary::from_json),
         blocks_parse_failed,
-    })
-}
-
-/// Mirrors MonoCode's `has_user_block` in session_store.rs.
-fn has_user_block(blocks: &Value) -> bool {
-    blocks.as_array().is_some_and(|blocks| {
-        blocks
-            .iter()
-            .any(|block| block.get("role").and_then(Value::as_str) == Some("user"))
-    })
-}
-
-/// Mirrors MonoCode's `has_draft_block` in session_store.rs.
-fn has_draft_block(blocks: &Value) -> bool {
-    blocks.as_array().is_some_and(|blocks| {
-        blocks.iter().any(|block| {
-            block.get("role").and_then(Value::as_str) == Some("user")
-                && block.get("draft").and_then(Value::as_bool) == Some(true)
-        })
     })
 }
 

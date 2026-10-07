@@ -31,6 +31,8 @@ impl BenCodeApp {
         worktree: Option<String>,
         cx: &mut Context<Self>,
     ) {
+        // A queued save of the thread would put its old worktree back.
+        self.settle_db_writes();
         if let Err(err) = self.db.reattach_session(session_id, worktree.as_deref()) {
             log::error!("could not move thread {session_id} to a working copy: {err:#}");
             self.composer_error = Some(format!("Could not continue in that working copy: {err}"));

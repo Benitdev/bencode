@@ -485,6 +485,8 @@ impl BenCodeApp {
                 cx,
             );
         }
+        // Queued saves decide which threads the database places here.
+        self.settle_db_writes();
         let stored = match self.db.session_ids_in_worktree(&path) {
             Ok(ids) => ids,
             Err(err) => return self.fail_worktree_deletion(format!("{err:#}"), cx),

@@ -121,6 +121,8 @@ pub struct BenCodeApp {
     pub reminders: Vec<crate::db::Reminder>,
     /// Listing reminders failed ("Couldn’t load reminders." + Retry).
     pub reminder_error: Option<String>,
+    /// Bumped by every reminder reload; a result of an older one is dropped.
+    pub reminder_generation: u64,
     /// A reminder action failed (MonoCode's "Reminder" error dialog).
     pub reminder_failure: Option<String>,
     /// MonoCode `LinkSessionWorkItemDialog`, while open.
@@ -426,6 +428,9 @@ pub struct BenCodeApp {
     navigating_history: bool,
     pub is_terminal_open: bool,
     pub db: AppDb,
+    /// Writes to `db`'s file in order, off the UI thread. `None` while `db` is
+    /// the in-memory fallback, which a second connection cannot see.
+    pub db_writer: Option<crate::db::DbWriter>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -461,6 +466,13 @@ impl BenCodeApp {
         let db = AppDb::open_default().unwrap_or_else(|err| {
             log::error!("database unavailable ({err:#}); nothing will be saved this launch");
             AppDb::open_fallback()
+        });
+        let db_writer = db.file_path().and_then(|path| {
+            crate::db::DbWriter::open(&path)
+                .map_err(|err| {
+                    log::error!("database writer unavailable, saving on the UI thread: {err:#}")
+                })
+                .ok()
         });
 
         let sessions = db
@@ -1067,6 +1079,7 @@ impl BenCodeApp {
             sidebar_resizing: false,
             reminders: Vec::new(),
             reminder_error: None,
+            reminder_generation: 0,
             reminder_failure: None,
             link_dialog: None,
             link_input,
@@ -1248,6 +1261,7 @@ impl BenCodeApp {
             navigating_history: false,
             is_terminal_open: true,
             db,
+            db_writer,
             _subscriptions: subscriptions,
         };
         app.apply_settings(saved);
@@ -1582,11 +1596,10 @@ impl BenCodeApp {
             return;
         };
         let was_pinned = session.pinned;
-        if let Err(err) = self.db.toggle_pinned(id, was_pinned) {
-            log::error!("failed to toggle pin for {id}: {err:#}");
-            return;
-        }
+        // Memory first: a queued save of this thread then carries the new value.
         session.pinned = !was_pinned;
+        let id = id.to_string();
+        self.db_write("toggle pin", move |db| db.toggle_pinned(&id, was_pinned));
         cx.notify();
     }
 
@@ -1609,12 +1622,55 @@ impl BenCodeApp {
             return;
         };
         let was_archived = session.archived;
-        if let Err(err) = self.db.toggle_archived(id, was_archived) {
-            log::error!("failed to toggle archive for {id}: {err:#}");
-            return;
-        }
         session.archived = !was_archived;
+        let id = id.to_string();
+        self.db_write("toggle archive", move |db| db.toggle_archived(&id, was_archived));
         cx.notify();
+    }
+
+    /// Runs `job` on the writer, or right here on the fallback database.
+    pub(crate) fn db_write(
+        &self,
+        what: &'static str,
+        job: impl FnOnce(&AppDb) -> anyhow::Result<()> + Send + 'static,
+    ) {
+        match &self.db_writer {
+            Some(writer) => writer.run_logged(what, job),
+            None => {
+                if let Err(err) = job(&self.db) {
+                    log::error!("database {what} failed: {err:#}");
+                }
+            }
+        }
+    }
+
+    /// Runs `job` on the writer (after every queued write) and hands back its
+    /// result; on the fallback database it runs now.
+    pub(crate) fn db_read<T: Send + 'static>(
+        &self,
+        job: impl FnOnce(&AppDb) -> T + Send + 'static,
+    ) -> tokio::sync::oneshot::Receiver<T> {
+        match &self.db_writer {
+            Some(writer) => writer.run(job),
+            None => {
+                let (done, result) = tokio::sync::oneshot::channel();
+                // The receiver is right here, so this cannot fail.
+                if done.send(job(&self.db)).is_err() {
+                    log::trace!("database result dropped");
+                }
+                result
+            }
+        }
+    }
+
+    /// Waits for queued writes before a synchronous read or write of the
+    /// same rows on `db`. Short in practice: the queue is usually empty.
+    pub(crate) fn settle_db_writes(&self) {
+        if let Some(writer) = &self.db_writer
+            && !writer.flush(std::time::Duration::from_secs(2))
+        {
+            log::warn!("queued database writes are still running");
+        }
     }
 }
 

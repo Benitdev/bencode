@@ -909,9 +909,10 @@ impl BenCodeApp {
             return;
         };
         let error = (status == "failed").then_some("The agent turn failed.");
-        if let Err(err) = self.db.finish_automation_run(run_id, status, error) {
-            log::error!("failed to close automation run {run_id}: {err:#}");
-        }
+        let (run_id, status) = (run_id.clone(), status.to_string());
+        self.db_write("close automation run", move |db| {
+            db.finish_automation_run(&run_id, &status, error)
+        });
     }
 
     /// Answers the permission prompt of `session_id`'s run.
@@ -956,13 +957,20 @@ impl BenCodeApp {
         cx.notify();
     }
 
-    /// Writes one session back to SQLite, logging instead of swallowing errors.
+    /// Saves one session to SQLite: queued on the writer thread, so the UI
+    /// does not wait for it. Errors are logged, not swallowed.
     pub fn persist_session(&self, session_id: &str) {
         let Some(session) = self.sessions.iter().find(|s| s.id == session_id) else {
             return;
         };
-        if let Err(err) = self.db.upsert_session(session) {
-            log::error!("failed to save session {session_id}: {err:#}");
+        match &self.db_writer {
+            // A snapshot: the transcript keeps changing while the write waits.
+            Some(writer) => writer.save(session.clone()),
+            None => {
+                if let Err(err) = self.db.upsert_session(session) {
+                    log::error!("failed to save session {session_id}: {err:#}");
+                }
+            }
         }
     }
 }
