@@ -196,7 +196,7 @@ impl BenCodeApp {
             .filter(|cwd| !cwd.is_empty());
         let body = text.replace("\r\n", "\n").replace('\r', "\n");
         let upsert = crate::db::NoteUpsert {
-            id: format!("note-{}", crate::app::now_ms()),
+            id: crate::app::unique_id("note"),
             title: note_title(&body),
             body,
             tags: Vec::new(),

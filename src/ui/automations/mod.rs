@@ -53,7 +53,7 @@ fn new_automation(draft: &AutomationTemplate, cwd: String, now: i64) -> Automati
         schedule::next_run_at(draft.schedule, 0, draft.time, 1, now, &TimeZone::system())
             .unwrap_or(now + delay);
     AutomationRow {
-        id: format!("auto-{now}"),
+        id: crate::app::unique_id("auto"),
         name: draft.name.to_string(),
         prompt: draft.prompt.to_string(),
         harness: "claude".to_string(),
@@ -223,7 +223,7 @@ impl BenCodeApp {
         };
         let now = now_ms();
         let run = AutomationRunRow {
-            id: format!("run-{now}"),
+            id: crate::app::unique_id("run"),
             automation_id: auto.id.clone(),
             trigger: "manual".to_string(),
             scheduled_for: now,
@@ -355,7 +355,7 @@ mod tests {
     fn new_automation_uses_draft_and_next_scheduled_run() {
         let hourly = &templates::BUILTIN_TEMPLATES[4];
         let auto = new_automation(hourly, "/repo".into(), 1_000);
-        assert_eq!(auto.id, "auto-1000");
+        assert!(auto.id.starts_with("auto-"), "{}", auto.id);
         assert_eq!(auto.schedule_kind, "hourly");
         // Hourly at :00 → the top of the next hour.
         assert_eq!(auto.next_run_at, HOUR_MS);

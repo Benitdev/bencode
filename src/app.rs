@@ -3,6 +3,7 @@ mod agent;
 pub mod chat_background;
 pub mod commands;
 pub mod file_pane;
+mod ids;
 mod integrations;
 mod model_catalog;
 mod panes;
@@ -36,6 +37,7 @@ use gpui::{
 };
 
 pub use agent::{AgentRun, NEW_SESSION_TITLE, QUESTION_TOOL, TurnInput, can_compact, now_ms};
+pub use ids::unique_id;
 pub use preferences::{appearance_prefs, is_dark_appearance, theme_mode};
 pub use projects::{is_path_in_project, normalize_project_path, same_project_path};
 pub use surfaces::Surface;
@@ -1567,7 +1569,7 @@ impl BenCodeApp {
             })
             .unwrap_or_else(|| "Untitled".to_string());
         let upsert = crate::db::NoteUpsert {
-            id: format!("note-{}", now_ms()),
+            id: unique_id("note"),
             title: title.chars().take(NOTE_TITLE_CHARS).collect(),
             body: text.to_string(),
             tags: Vec::new(),

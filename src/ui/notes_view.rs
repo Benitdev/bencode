@@ -96,7 +96,7 @@ impl BenCodeApp {
     fn create_new_note(&mut self, cx: &mut Context<Self>) {
         self.save_note_if_dirty(cx);
         let upsert = NoteUpsert {
-            id: format!("note-{}", now_ms()),
+            id: crate::app::unique_id("note"),
             title: UNTITLED_NOTE.to_string(),
             body: String::new(),
             tags: Vec::new(),
