@@ -9,7 +9,7 @@ use gpui::Context;
 use jiff::tz::TimeZone;
 
 use crate::app::{BenCodeApp, now_ms};
-use crate::db::{AutomationRow, AutomationRunRow, DEFAULT_GRACE_MINUTES};
+use crate::db::{AppDb, AutomationRow, AutomationRunRow, DEFAULT_GRACE_MINUTES};
 use crate::harness::catalog;
 use crate::schedule;
 
@@ -23,16 +23,43 @@ fn grace_minutes(auto: &AutomationRow) -> i64 {
         .unwrap_or(DEFAULT_GRACE_MINUTES)
 }
 
+/// MonoCode `claimDueAutomations`: claims every due occurrence and returns
+/// what to start. Runs on the database writer, not the UI thread.
+fn claim_due(db: &AppDb, now: i64) -> anyhow::Result<Vec<(AutomationRow, AutomationRunRow)>> {
+    let tz = TimeZone::system();
+    let mut claimed = Vec::new();
+    // Read the table each time: MonoCode may have edited it.
+    for auto in db.list_automations()? {
+        if !(auto.enabled && auto.next_run_at > 0 && auto.next_run_at <= now) {
+            continue;
+        }
+        let Some(next) = schedule::next_automation_run_at(&auto, now, &tz) else {
+            log::warn!("automation {} has an unreadable schedule", auto.id);
+            continue;
+        };
+        let grace = grace_minutes(&auto);
+        match db.claim_due_automation(&auto.id, auto.next_run_at, next, now, grace) {
+            Ok(Some(run)) => claimed.push((auto, run)),
+            Ok(None) => {}
+            Err(err) => log::error!("could not claim automation {}: {err:#}", auto.id),
+        }
+    }
+    Ok(claimed)
+}
+
 impl BenCodeApp {
     /// Closes stale runs, then checks for due automations now and every
     /// `POLL_INTERVAL`.
     pub fn start_automation_scheduler(&mut self, cx: &mut Context<Self>) {
         let now = now_ms();
-        match self.db.recover_automation_runs(now, now) {
-            Ok(0) => {}
-            Ok(closed) => log::info!("closed {closed} automation runs left open"),
-            Err(err) => log::error!("could not recover automation runs: {err:#}"),
-        }
+        // Queued ahead of the first claim, so it still runs first.
+        self.db_write("recover automation runs", move |db| {
+            let closed = db.recover_automation_runs(now, now)?;
+            if closed > 0 {
+                log::info!("closed {closed} automation runs left open");
+            }
+            Ok(())
+        });
         self.run_due_automations(cx);
         cx.spawn(async move |this, cx| {
             loop {
@@ -48,52 +75,42 @@ impl BenCodeApp {
         .detach();
     }
 
+    /// Claims the due occurrences off the UI thread, then starts each one
+    /// that was not skipped.
     fn run_due_automations(&mut self, cx: &mut Context<Self>) {
         let now = now_ms();
-        // Read the table each time: MonoCode may have edited it.
-        let automations = match self.db.list_automations() {
-            Ok(list) => list,
-            Err(err) => {
-                log::error!("could not list automations: {err:#}");
+        let claimed = self.db_read(move |db| claim_due(db, now));
+        cx.spawn(async move |this, cx| {
+            let claimed = match claimed.await {
+                Ok(Ok(claimed)) => claimed,
+                Ok(Err(err)) => {
+                    log::error!("could not claim due automations: {err:#}");
+                    return;
+                }
+                Err(_) => {
+                    log::error!("the database writer stopped");
+                    return;
+                }
+            };
+            if claimed.is_empty() {
                 return;
             }
-        };
-        let mut claimed_any = false;
-        for auto in automations
-            .iter()
-            .filter(|a| a.enabled && a.next_run_at > 0 && a.next_run_at <= now)
-        {
-            claimed_any |= self.claim_and_launch(auto, now, cx);
-        }
-        if claimed_any {
-            self.refresh_automations(cx);
-        }
-    }
-
-    /// Claims `auto`'s due occurrence; starts it unless it was skipped.
-    fn claim_and_launch(&mut self, auto: &AutomationRow, now: i64, cx: &mut Context<Self>) -> bool {
-        let tz = TimeZone::system();
-        let Some(next) = schedule::next_automation_run_at(auto, now, &tz) else {
-            log::warn!("automation {} has an unreadable schedule", auto.id);
-            return false;
-        };
-        let grace = grace_minutes(auto);
-        let claim = self
-            .db
-            .claim_due_automation(&auto.id, auto.next_run_at, next, now, grace);
-        match claim {
-            Ok(Some(run)) => {
-                if run.status == "pending" {
-                    self.launch_scheduled_run(auto, &run, cx);
+            let landed = this.update(cx, |app, cx| {
+                for (auto, run) in &claimed {
+                    if run.status == "pending" {
+                        app.launch_scheduled_run(auto, run, cx);
+                    }
                 }
-                true
+                // The list below reads `db`; let the runs' queued rows land.
+                app.settle_db_writes();
+                app.refresh_automations(cx);
+                cx.notify();
+            });
+            if let Err(err) = landed {
+                log::debug!("automations claimed after app drop: {err:#}");
             }
-            Ok(None) => false,
-            Err(err) => {
-                log::error!("could not claim automation {}: {err:#}", auto.id);
-                false
-            }
-        }
+        })
+        .detach();
     }
 
     /// Starts `auto` in a new thread that stays in the background.
@@ -113,17 +130,18 @@ impl BenCodeApp {
         }
         self.persist_session(&session_id);
         self.send_prompt(&session_id, &auto.prompt, cx);
+        let run_id = run.id.clone();
         if !self.is_agent_running_in(&session_id) {
             // send_prompt already explains the failure inside the thread.
-            let error = Some("The agent could not start.");
-            if let Err(err) = self.db.finish_automation_run(&run.id, "failed", error) {
-                log::error!("could not close automation run {}: {err:#}", run.id);
-            }
+            self.db_write("close automation run", move |db| {
+                db.finish_automation_run(&run_id, "failed", Some("The agent could not start."))
+            });
             return;
         }
-        if let Err(err) = self.db.start_automation_run(&run.id, &session_id, now_ms()) {
-            log::error!("could not mark automation run {} started: {err:#}", run.id);
-        }
+        let (thread, now) = (session_id.clone(), now_ms());
+        self.db_write("start automation run", move |db| {
+            db.start_automation_run(&run_id, &thread, now)
+        });
         self.attach_automation_run(&session_id, run.id.clone());
     }
 }

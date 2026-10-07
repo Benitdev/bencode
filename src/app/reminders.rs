@@ -148,38 +148,75 @@ impl BenCodeApp {
         .detach();
     }
 
+    /// Re-reads the list off the UI thread; a newer reload wins.
     pub fn refresh_reminders(&mut self, cx: &mut Context<Self>) {
-        match self.db.list_reminders() {
-            Ok(list) => {
-                if list != self.reminders || self.reminder_error.is_some() {
-                    self.reminders = list;
-                    self.reminder_error = None;
-                    cx.notify();
+        self.reminder_generation += 1;
+        let generation = self.reminder_generation;
+        let list = self.db_read(|db| db.list_reminders());
+        cx.spawn(async move |this, cx| {
+            let Ok(list) = list.await else {
+                log::error!("the database writer stopped");
+                return;
+            };
+            let landed = this.update(cx, |app, cx| {
+                if app.reminder_generation != generation {
+                    return; // a newer reload superseded this one
                 }
+                match list {
+                    Ok(list) => {
+                        if list != app.reminders || app.reminder_error.is_some() {
+                            app.reminders = list;
+                            app.reminder_error = None;
+                            cx.notify();
+                        }
+                    }
+                    Err(err) => {
+                        log::error!("could not load reminders: {err:#}");
+                        app.reminder_error = Some(err.to_string());
+                        cx.notify();
+                    }
+                }
+            });
+            if let Err(err) = landed {
+                log::debug!("reminders loaded after app drop: {err:#}");
             }
-            Err(err) => {
-                log::error!("could not load reminders: {err:#}");
-                self.reminder_error = Some(err.to_string());
-                cx.notify();
-            }
-        }
+        })
+        .detach();
     }
 
     /// Claims what came due and raises a desktop alert for each.
     fn claim_due_reminders(&mut self, cx: &mut Context<Self>) {
-        match self.db.take_due_reminders(now_ms()) {
-            Ok(claimed) if !claimed.is_empty() => {
+        let now = now_ms();
+        let claimed = self.db_read(move |db| db.take_due_reminders(now));
+        cx.spawn(async move |this, cx| {
+            let claimed = match claimed.await {
+                Ok(Ok(claimed)) => claimed,
+                Ok(Err(err)) => {
+                    log::error!("could not claim due reminders: {err:#}");
+                    return;
+                }
+                Err(_) => {
+                    log::error!("the database writer stopped");
+                    return;
+                }
+            };
+            if claimed.is_empty() {
+                return;
+            }
+            let landed = this.update(cx, |app, cx| {
                 for reminder in &claimed {
                     let title = crate::app::session_list::display_title(&reminder.title, &reminder.harness);
                     cx.background_executor()
                         .spawn(async move { desktop_alert(&title) })
                         .detach();
                 }
-                self.refresh_reminders(cx);
+                app.refresh_reminders(cx);
+            });
+            if let Err(err) = landed {
+                log::debug!("reminders claimed after app drop: {err:#}");
             }
-            Ok(_) => {}
-            Err(err) => log::error!("could not claim due reminders: {err:#}"),
-        }
+        })
+        .detach();
     }
 
     /// MonoCode `due`: reminders whose time has come, soonest first.
@@ -195,6 +232,8 @@ impl BenCodeApp {
     /// MonoCode `schedule`: sets (or moves) the threads' reminder and opens
     /// the Reminders group.
     pub fn schedule_reminders(&mut self, session_ids: &[String], due_at: i64, cx: &mut Context<Self>) {
+        // A thread saved a moment ago must be in the table first.
+        self.settle_db_writes();
         if let Err(err) = self.db.set_reminders(session_ids, due_at, now_ms()) {
             self.reminder_failure = Some(err.to_string());
             log::warn!("could not set reminder: {err:#}");
