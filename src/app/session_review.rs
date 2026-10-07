@@ -385,4 +385,129 @@ mod tests {
         last.blocking_recv().unwrap();
         assert_eq!(*log.lock().unwrap(), (0..20).collect::<Vec<_>>());
     }
+
+    /// A git repository and a checkpoint store of its own under the temp
+    /// folder; removed on drop.
+    struct Fixture {
+        base: std::path::PathBuf,
+        checkpoints: Checkpoints,
+    }
+
+    impl Fixture {
+        fn new() -> Self {
+            static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+            let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let base =
+                std::env::temp_dir().join(format!("bencode-review-{}-{n}", std::process::id()));
+            std::fs::create_dir_all(base.join("repo")).unwrap();
+            // macOS' temp folder sits behind a symlink; the store compares
+            // real paths with git's top level.
+            let base = std::fs::canonicalize(base).unwrap();
+            let fixture = Self {
+                checkpoints: Checkpoints::new(CheckpointStore::new(base.join("store"))),
+                base,
+            };
+            fixture.git(&["init"]);
+            std::fs::write(fixture.file(), "one\ntwo\n").unwrap();
+            fixture.git(&["add", "."]);
+            fixture.git(&["commit", "-m", "init"]);
+            fixture
+        }
+
+        fn git(&self, args: &[&str]) {
+            let output = std::process::Command::new("git")
+                .arg("-C")
+                .arg(self.base.join("repo"))
+                .args(["-c", "user.name=Test", "-c", "user.email=test@example.com"])
+                .args(["-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main"])
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "git {args:?} failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+
+        fn cwd(&self) -> String {
+            self.base.join("repo").to_string_lossy().into_owned()
+        }
+
+        fn file(&self) -> std::path::PathBuf {
+            self.base.join("repo").join("a.txt")
+        }
+
+        fn text(&self) -> String {
+            std::fs::read_to_string(self.file()).unwrap()
+        }
+
+        /// Store jobs run on another thread: waits until the queued ones ran.
+        fn settle(&self) {
+            self.checkpoints.run(|_| ()).blocking_recv().unwrap();
+        }
+
+        /// What the agent glue queues around an edit of `a.txt` to "agent".
+        fn edit(&self) {
+            let cwd = self.cwd();
+            // Absolute, as Claude sends it.
+            let paths = vec![self.file().to_string_lossy().into_owned()];
+            self.checkpoints.begin_turn("s1", &cwd);
+            self.checkpoints.prepare("s1", &cwd, paths.clone());
+            self.settle();
+            std::fs::write(self.file(), "agent\n").unwrap();
+            self.checkpoints.capture("s1", &cwd, paths);
+            self.settle();
+        }
+
+        fn status(&self) -> CheckpointStatus {
+            let cwd = self.cwd();
+            let status = self.checkpoints.run(move |store| store.status("s1", &cwd));
+            status.blocking_recv().unwrap().unwrap()
+        }
+    }
+
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            if let Err(err) = std::fs::remove_dir_all(&self.base) {
+                eprintln!("failed to clean {}: {err}", self.base.display());
+            }
+        }
+    }
+
+    #[test]
+    fn queued_edit_is_reviewed_then_undone() {
+        let fixture = Fixture::new();
+        fixture.edit();
+        assert_eq!(fixture.status().files.len(), 1);
+
+        let cwd = fixture.cwd();
+        let undone = fixture.checkpoints.run(move |store| store.undo("s1", &cwd, None));
+        assert!(undone.blocking_recv().unwrap().unwrap().files.is_empty());
+        assert_eq!(fixture.text(), "one\ntwo\n");
+    }
+
+    #[test]
+    fn queued_keep_leaves_the_edit_and_ends_the_review() {
+        let fixture = Fixture::new();
+        fixture.edit();
+
+        let cwd = fixture.cwd();
+        let kept = fixture.checkpoints.run(move |store| store.keep("s1", &cwd, None));
+        assert!(kept.blocking_recv().unwrap().unwrap().files.is_empty());
+        assert_eq!(fixture.text(), "agent\n");
+        assert!(fixture.status().files.is_empty());
+    }
+
+    #[test]
+    fn forget_drops_the_review() {
+        let mut fixture = Fixture::new();
+        fixture.edit();
+        assert_eq!(fixture.status().files.len(), 1);
+
+        fixture.checkpoints.forget("s1");
+        fixture.settle();
+        assert!(fixture.status().files.is_empty());
+        assert!(!fixture.checkpoints.reviews.contains_key("s1"));
+    }
 }
