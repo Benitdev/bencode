@@ -484,7 +484,7 @@ impl BenCodeApp {
                 button(
                     "tree-toolbar-collapse-all",
                     "Collapse All",
-                    ExtraIcon::FoldVertical.render(px(14.0), muted).into_any_element(),
+                    ExtraIcon::FoldVertical.icon().size(IconSize::Sm).color(muted).into_any_element(),
                 )
                 .on_click(cx.listener(|this, _, _, cx| this.collapse_all_folders(cx))),
             )

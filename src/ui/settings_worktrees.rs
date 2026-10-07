@@ -425,7 +425,9 @@ impl BenCodeApp {
             Some(true) => {
                 list = list.child(consequence(
                     ExtraIcon::FileDiff
-                        .render(px(14.0), amber)
+                        .icon()
+                        .size(IconSize::Sm)
+                        .color(amber)
                         .into_any_element(),
                     "All uncommitted and untracked changes here are discarded.".into(),
                 ))

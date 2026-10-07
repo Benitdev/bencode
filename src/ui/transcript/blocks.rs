@@ -231,11 +231,7 @@ impl BenCodeApp {
             .child(
                 div()
                     .when(clamps && !expanded, |el| el.line_clamp(CLAMP_LINES))
-                    .child(match &query {
-                        Some(query) => super::find::highlighted_text(&text, query, current, cx)
-                            .into_any_element(),
-                        None => text.clone().into_any_element(),
-                    }),
+                    .child(
             )
             .when(clamps, |el| {
                 el.child(self.show_more_toggle(&key, expanded, cx))
@@ -515,7 +511,12 @@ impl BenCodeApp {
                 .on_click(cx.listener(move |this, event: &gpui::ClickEvent, _, cx| {
                     this.open_handoff_menu(&sid, user, end, event.position(), cx)
                 }))
-                .child(crate::ui::icons::ExtraIcon::Replace.render(px(12.0), muted(colors.fg, 0.4)))
+                .child(
+                    crate::ui::icons::ExtraIcon::Replace
+                        .icon()
+                        .size(IconSize::Xs)
+                        .color(muted(colors.fg, 0.4)),
+                )
                 .into_any_element(),
         )
     }

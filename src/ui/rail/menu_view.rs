@@ -63,7 +63,7 @@ impl RowIcon {
     fn render(self, color: Hsla) -> AnyElement {
         match self {
             Self::Ely(icon) => Icon::new(icon).size(IconSize::Sm).color(color).into_any_element(),
-            Self::Extra(icon) => icon.render(px(14.0), color).into_any_element(),
+            Self::Extra(icon) => icon.icon().size(IconSize::Sm).color(color).into_any_element(),
         }
     }
 }
@@ -329,7 +329,11 @@ impl BenCodeApp {
                     .on_click(cx.listener(move |this, _, _, cx| this.pick_project_logo(&pick_path, cx)))
                     .child(match logo {
                         Some(file) => img(std::path::PathBuf::from(file)).size_5().into_any_element(),
-                        None => ExtraIcon::ImagePlus.render(px(20.0), fg.opacity(0.7)).into_any_element(),
+                        None => ExtraIcon::ImagePlus
+                            .icon()
+                            .size(IconSize::Lg)
+                            .color(fg.opacity(0.7))
+                            .into_any_element(),
                     }),
             )
             .child(

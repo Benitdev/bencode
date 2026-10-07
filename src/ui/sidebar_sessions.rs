@@ -333,7 +333,7 @@ impl BenCodeApp {
         // at half strength until hovered (`content/10`), opened or active
         // (`bg-selection`).
         let filter_group = SharedString::from("filter-sessions");
-        let filter_glyph = |color: gpui::Hsla| ExtraIcon::ListFilter.render(px(12.0), color);
+        let filter_glyph = |color: gpui::Hsla| ExtraIcon::ListFilter.icon().size(IconSize::Xs).color(color);
         div()
             .flex()
             .flex_none()

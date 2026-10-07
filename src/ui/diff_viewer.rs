@@ -635,7 +635,7 @@ impl BenCodeApp {
                 .when(enabled, |el| el.cursor_pointer().hover(|s| s.bg(fg.opacity(0.10))))
                 .when(!enabled, |el| el.opacity(0.4))
                 .tooltip(Tooltip::text(tip))
-                .child(icon.render(px(14.0), fg.opacity(0.45)))
+                .child(icon.icon().size(IconSize::Sm).color(fg.opacity(0.45)))
         };
         let expand_key = key.to_string();
         let collapse_key = key.to_string();

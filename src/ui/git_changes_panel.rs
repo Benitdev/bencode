@@ -253,25 +253,6 @@ pub(crate) fn spinning_icon(
         .into_any_element()
 }
 
-/// An Explorer-style icon in `tint`, `fg` while `group` is hovered
-/// (MonoCode `hover:text-content`); [`ExtraIcon`] cannot change colour.
-fn extra_icon_hover(icon: ExtraIcon, size: f32, tint: Hsla, fg: Hsla, group: SharedString) -> AnyElement {
-    div()
-        .relative()
-        .size(px(size))
-        .flex_none()
-        .child(icon.render(px(size), tint))
-        .child(
-            div()
-                .absolute()
-                .top_0()
-                .left_0()
-                .invisible()
-                .group_hover(group, |s| s.visible())
-                .child(icon.render(px(size), fg)),
-        )
-        .into_any_element()
-}
 
 /// MonoCode `ChangeDir`: changed files nested under their folders, each
 /// folder with the status its files share (or none when they differ).
@@ -1353,14 +1334,15 @@ impl BenCodeApp {
         // hover:bg-content/10 hover:text-content`, `size-3.5` icons.
         let tint = fg.opacity(0.55);
         let action_group = |key: &str| SharedString::from(format!("git-{id}-{key}"));
-        let named = |key: &str, icon: IconName| {
-            Icon::new(icon)
-                .size(IconSize::Sm)
+        // In `tint`, `fg` while its button is hovered (MonoCode
+        // `hover:text-content`).
+        let glyph = |key: &str, icon: Icon| {
                 .color(tint)
                 .group_hover_color(action_group(key), fg)
                 .into_any_element()
         };
-        let extra = |key: &str, icon: ExtraIcon| extra_icon_hover(icon, 14.0, tint, fg, action_group(key));
+        let named = |key: &str, icon: IconName| glyph(key, Icon::new(icon));
+        let extra = |key: &str, icon: ExtraIcon| glyph(key, icon.icon());
         let action = |key: &str, icon: AnyElement, tip: &'static str| {
             let hover = fg.opacity(0.10);
             div()

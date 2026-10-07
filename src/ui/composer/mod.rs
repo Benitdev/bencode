@@ -176,7 +176,9 @@ impl TriggerIcon {
                 .color(color)
                 .into_any_element(),
             Self::FolderTree => crate::ui::icons::ExtraIcon::FolderTree
-                .render(px(12.0), color)
+                .icon()
+                .size(IconSize::Xs)
+                .color(color)
                 .into_any_element(),
         }
     }

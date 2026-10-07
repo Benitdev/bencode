@@ -98,7 +98,7 @@ impl BenCodeApp {
                     .justify_center()
                     .rounded(px(8.0))
                     .bg(fg.opacity(0.08))
-                    .child(ExtraIcon::FileDiff.render(px(16.0), fg.opacity(0.55))),
+                    .child(ExtraIcon::FileDiff.icon().size(IconSize::Md).color(fg.opacity(0.55))),
             )
             .child(
                 div()
