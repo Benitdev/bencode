@@ -106,6 +106,8 @@ pub struct BenCodeApp {
     pub file_pane: file_pane::FilePane,
     /// What each thread's agent changed, and the store that records it.
     pub checkpoints: session_review::Checkpoints,
+    /// The Quit confirmation is open (agents are running).
+    pub quit_confirm_open: bool,
     /// The loaded review of each diff tab in `file_pane`, by tab key.
     pub diff_docs: HashMap<String, crate::ui::diff_viewer::DiffDoc>,
     /// Whether ⌘W closes a tab of `file_pane` rather than the thread.
@@ -803,6 +805,14 @@ impl BenCodeApp {
                 },
             ),
         ];
+        // Every quit path (⌘Q, Dock, logout) ends here. The work happens in the
+        // callback itself: GPUI polls the returned future for only 200 ms.
+        subscriptions.push(cx.on_app_quit(|this, _cx| {
+            this.interrupt_runs_for_quit();
+            async {}
+        }));
+        // Closing the window drops the app without quitting (macOS).
+        subscriptions.push(cx.on_release(|this, _cx| this.interrupt_runs_for_quit()));
 
         subscriptions.push(cx.intercept_keystrokes(move |event, window, cx| {
             // The text input binds these keys itself, deeper than any action
@@ -1250,6 +1260,7 @@ impl BenCodeApp {
             note_autosave_generation: 0,
             note_save_error: None,
             automation_pending_delete: None,
+            quit_confirm_open: false,
             // [editor-pane init]
             editor: Default::default(),
             is_sidebar_open: true,
@@ -1820,7 +1831,8 @@ impl Render for BenCodeApp {
                     .children(self.render_branch_switch_confirm(cx))
                     .children(self.render_branch_create_dialog(cx))
                     .children(self.render_pr_action_confirm(cx))
-                    .children(self.render_file_tree_dialog(cx)),
+                    .children(self.render_file_tree_dialog(cx))
+                    .children(self.render_quit_confirm(cx)),
             )
     }
 }

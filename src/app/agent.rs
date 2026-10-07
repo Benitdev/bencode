@@ -5,6 +5,7 @@
 //! is unit-tested without GPUI; `BenCodeApp` methods are thin glue around it.
 
 use std::collections::{HashMap, HashSet};
+use std::time::{Duration, Instant};
 
 use gpui::{Context, Focusable};
 use serde_json::{Value, json};
@@ -25,6 +26,13 @@ use crate::ui::composer::mode_commands::{self, ModeCommand};
 const TITLE_PREVIEW_CHARS: usize = 48;
 const MAX_TOOL_OUTPUT_CHARS: usize = 4_000;
 const STOPPED_NOTICE: &str = "Agent execution stopped by user.";
+/// MonoCode `INTERRUPT_MESSAGE` (inFlight.ts), with BenCode's name.
+const INTERRUPT_NOTICE: &str = "Turn interrupted when BenCode quit.";
+/// A streaming turn is saved at most this often, so a crash or quit loses
+/// seconds of output rather than the whole turn.
+const STREAM_SAVE_INTERVAL: Duration = Duration::from_secs(3);
+/// A finished tool is worth saving sooner, but not on every call of a fast loop.
+const TOOL_SAVE_INTERVAL: Duration = Duration::from_millis(500);
 pub const NEW_SESSION_TITLE: &str = "New AI Thread";
 
 /// One in-flight agent turn; each thread runs its own. `id` guards against
@@ -62,6 +70,8 @@ pub struct AgentRun {
     pub compacted: Option<Option<u64>>,
     /// The files of each edit tool still running, by call id.
     pub edit_paths: HashMap<String, Vec<String>>,
+    /// When this run last saved its thread (see `save_due`).
+    pub last_saved: Instant,
 }
 
 /// What a run is for.
@@ -174,6 +184,17 @@ fn plan_event(
         event,
         checkpoint: edit.filter(|(paths, _)| !paths.is_empty()),
         done,
+    }
+}
+
+/// Whether this event should save the running thread now, given how long
+/// ago the run last saved.
+fn save_due(event: &AgentEvent, since_last_save: Duration) -> bool {
+    match event {
+        // The resume id and the turn's end must never wait.
+        AgentEvent::SessionStarted { .. } | AgentEvent::Done(_) => true,
+        AgentEvent::ToolCallFinish { .. } => since_last_save >= TOOL_SAVE_INTERVAL,
+        _ => since_last_save >= STREAM_SAVE_INTERVAL,
     }
 }
 
@@ -856,6 +877,7 @@ impl BenCodeApp {
                 purpose: RunPurpose::Turn,
                 compacted: None,
                 edit_paths: HashMap::new(),
+                last_saved: Instant::now(),
             },
         );
 
@@ -893,6 +915,7 @@ impl BenCodeApp {
         let Some(run) = self.current_run(session_id, run_id) else {
             return;
         };
+        let save = save_due(&event, run.last_saved.elapsed());
         match plan_event(run.auto_approve, &mut run.edit_paths, focused, event) {
             EventStep::UsageLimited(resets_at) => self.record_usage_limit(session_id, resets_at),
             EventStep::Compacted(tokens_after) => run.compacted = Some(tokens_after),
@@ -906,10 +929,13 @@ impl BenCodeApp {
                 focus_question,
             } => {
                 run.pending_permission = Some(request);
+                run.last_saved = Instant::now();
                 // The form takes the keys, as MonoCode focuses its options.
                 if focus_question {
                     self.question_focus_wanted = true;
                 }
+                // The user may walk away while the prompt waits.
+                self.persist_session(session_id);
             }
             EventStep::Apply {
                 event,
@@ -918,6 +944,9 @@ impl BenCodeApp {
             } => {
                 if let Some(status) = done {
                     run.outcome = Some(status);
+                }
+                if save {
+                    run.last_saved = Instant::now();
                 }
                 if let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id) {
                     if let Some((paths, completed)) = checkpoint {
@@ -930,7 +959,7 @@ impl BenCodeApp {
                     }
                     apply_event(session, event, now_ms());
                 }
-                if done.is_some() {
+                if save {
                     self.persist_session(session_id);
                 }
             }
@@ -1018,6 +1047,37 @@ impl BenCodeApp {
     pub fn attach_automation_run(&mut self, session_id: &str, run_id: String) {
         if let Some(run) = self.runs.get_mut(session_id) {
             run.automation_run_id = Some(run_id);
+        }
+    }
+
+    /// ⌘Q: quits at once unless agents are running (MonoCode asks then).
+    pub fn request_quit(&mut self, cx: &mut Context<Self>) {
+        if self.runs.is_empty() {
+            cx.quit();
+            return;
+        }
+        self.quit_confirm_open = true;
+        cx.notify();
+    }
+
+    /// Quit or window close: stops every run, marks its turn interrupted,
+    /// saves it, and waits for the writer. Needs no `cx`: it also runs from
+    /// `on_release`.
+    pub(crate) fn interrupt_runs_for_quit(&mut self) {
+        let runs: Vec<(String, AgentRun)> = self.runs.drain().collect();
+        for (session_id, run) in &runs {
+            run.handle.cancel();
+            self.close_automation_run(run, "cancelled");
+            if let Some(session) = self.sessions.iter_mut().find(|s| &s.id == session_id) {
+                mark_turn_interrupted(session, now_ms());
+            }
+            self.persist_session(session_id);
+        }
+        // Without runs too: other saves may still be queued.
+        if let Some(writer) = &self.db_writer
+            && !writer.flush(Duration::from_secs(3))
+        {
+            log::error!("quit before every thread was saved");
         }
     }
 
@@ -1198,6 +1258,39 @@ fn finish_turn(session: &mut SessionRow, now: i64) {
     {
         user.duration_ms = Some(now.saturating_sub(started));
     }
+}
+
+/// MonoCode `markTurnInterrupted` (inFlight.ts): open tools become
+/// cancelled and the turn ends with an interrupt notice (once).
+fn mark_turn_interrupted(session: &mut SessionRow, now: i64) {
+    for block in &mut session.blocks {
+        let Some(tool) = block.tool.as_mut().and_then(Value::as_object_mut) else {
+            continue;
+        };
+        let open = tool.get("status").and_then(Value::as_str).is_some_and(|status| {
+            matches!(
+                status.to_ascii_lowercase().as_str(),
+                "in_progress" | "pending" | "running"
+            )
+        });
+        if open {
+            tool.insert("status".into(), json!("cancelled"));
+        }
+    }
+    let noted = session
+        .blocks
+        .last()
+        .is_some_and(|b| b.role == "system" && b.text.as_deref() == Some(INTERRUPT_NOTICE));
+    if !noted {
+        let mut block = Block::new(
+            format!("sys-{now}-{}", session.blocks.len()),
+            "system",
+            INTERRUPT_NOTICE,
+        );
+        block.extra.insert("notice".into(), json!("interrupt"));
+        session.blocks.push(block);
+    }
+    finish_turn(session, now);
 }
 
 fn push_notice(session: &mut SessionRow, message: &str, now: i64) {
@@ -1728,5 +1821,66 @@ mod tests {
         assert_eq!(compact_end(None, Some(Cancelled)), CompactEnd::Cancelled);
         assert_eq!(compact_end(None, Some(Failed)), CompactEnd::Unconfirmed);
         assert_eq!(compact_end(None, None), CompactEnd::Unconfirmed);
+    }
+
+    #[test]
+    fn session_started_and_done_save_at_once() {
+        let started = AgentEvent::SessionStarted {
+            provider_session_id: "p1".into(),
+        };
+        assert!(save_due(&started, Duration::ZERO));
+        assert!(save_due(&AgentEvent::Done(DoneStatus::Completed), Duration::ZERO));
+    }
+
+    #[test]
+    fn streaming_text_saves_every_few_seconds() {
+        let text = AgentEvent::TextDelta("x".into());
+        assert!(!save_due(&text, Duration::from_secs(1)));
+        assert!(save_due(&text, Duration::from_secs(3)));
+        let thinking = AgentEvent::ThinkingDelta("x".into());
+        assert!(!save_due(&thinking, Duration::from_millis(2900)));
+    }
+
+    #[test]
+    fn finished_tools_save_sooner() {
+        let finish = tool_finish("t1", true);
+        assert!(!save_due(&finish, Duration::from_millis(100)));
+        assert!(save_due(&finish, Duration::from_millis(500)));
+    }
+
+    fn tool_status(session: &SessionRow, call_id: &str) -> String {
+        let block = session
+            .blocks
+            .iter()
+            .find(|b| b.id == format!("tool-{call_id}"))
+            .unwrap();
+        block.tool.as_ref().unwrap()["status"].as_str().unwrap().to_string()
+    }
+
+    #[test]
+    fn interrupt_cancels_open_tools_and_adds_one_notice() {
+        let mut s = session();
+        start_turn(&mut s, "go", 10, &[]);
+        apply_event(&mut s, edit_start("t1", "Bash", json!({"command": "ls"})), 11);
+        mark_turn_interrupted(&mut s, 20);
+        mark_turn_interrupted(&mut s, 21);
+        assert_eq!(tool_status(&s, "t1"), "cancelled");
+        let notices: Vec<&Block> = s
+            .blocks
+            .iter()
+            .filter(|b| b.text.as_deref() == Some(INTERRUPT_NOTICE))
+            .collect();
+        assert_eq!(notices.len(), 1);
+        assert_eq!(notices[0].extra["notice"], "interrupt");
+    }
+
+    #[test]
+    fn interrupt_keeps_finished_tools() {
+        let mut s = session();
+        start_turn(&mut s, "go", 10, &[]);
+        apply_event(&mut s, edit_start("t1", "Bash", json!({"command": "ls"})), 11);
+        apply_event(&mut s, tool_finish("t1", true), 12);
+        mark_turn_interrupted(&mut s, 20);
+        assert_eq!(tool_status(&s, "t1"), "completed");
     }
 }

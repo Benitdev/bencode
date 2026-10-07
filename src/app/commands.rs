@@ -136,6 +136,8 @@ fn keymap() -> Vec<KeyBinding> {
 /// Installs the keymap and the menu bar. Call once at startup.
 pub fn install(cx: &mut App) {
     cx.bind_keys(keymap());
+    // When nothing in the window has focus the app's own handler is not on
+    // the dispatch path; quitting still saves through `on_app_quit`.
     cx.on_action(|_: &Quit, cx| cx.quit());
     cx.set_menus(menus());
 }
@@ -228,6 +230,7 @@ impl BenCodeApp {
         root.on_action(cx.listener(|this, _: &OpenSettings, _, cx| {
             this.open_settings(cx);
         }))
+        .on_action(cx.listener(|this, _: &Quit, _, cx| this.request_quit(cx)))
         .on_action(cx.listener(|this, _: &Search, _, cx| this.open_search_modal(cx)))
         .on_action(cx.listener(|this, _: &ZoomIn, _, cx| this.step_ui_scale(1.0, cx)))
         .on_action(cx.listener(|this, _: &ZoomOut, _, cx| this.step_ui_scale(-1.0, cx)))

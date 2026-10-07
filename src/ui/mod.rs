@@ -25,6 +25,7 @@ pub mod notes_view;
 pub mod pane_tree;
 pub mod provider_icon;
 pub mod quick_open;
+pub mod quit_confirm;
 pub mod rail;
 pub mod reminder_notices;
 pub mod scrollbar;
