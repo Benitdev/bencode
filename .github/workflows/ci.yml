@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    # GPUI renders through Metal; BenCode is macOS-first.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      # GPUI compiles its Metal shaders at build time; newer Xcode images
+      # ship the Metal toolchain as a separate download.
+      - name: Metal toolchain
+        run: xcrun -sdk macosx metal --version || xcodebuild -downloadComponent MetalToolchain
+      # No `cargo fmt --check`: the tree is not rustfmt-clean yet.
+      - name: Check
+        run: cargo check --locked
+      # No `-D warnings`: there are existing clippy warnings.
+      - name: Clippy
+        run: cargo clippy --all-targets --locked
+      - name: Test
+        run: cargo test --locked
