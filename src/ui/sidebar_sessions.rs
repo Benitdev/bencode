@@ -4,13 +4,15 @@
 //! the context menu, drag onto a folder or another card to group them, or
 //! onto a pane to split it.
 
-use std::collections::BTreeMap;
+use std::cell::RefCell;
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::rc::Rc;
 
 use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, Context, InteractiveElement, IntoElement, MouseButton, MouseDownEvent,
-    ParentElement, SharedString, Styled, div, prelude::*,
+    ParentElement, SharedString, Styled, canvas, div, prelude::*,
 };
 
 use crate::app::BenCodeApp;
@@ -22,7 +24,11 @@ use crate::db::SessionRow;
 use crate::ui::icons::ExtraIcon;
 use crate::ui::scale::px;
 use crate::ui::sidebar_folders::SessionGroup;
+use crate::ui::virtual_rows;
 
+/// The list's padding, and the gap between its rows.
+const LIST_PAD: f32 = 6.0;
+const ROW_GAP: f32 = 2.0;
 /// MonoCode `SESSION_INSERT_WINDOW_MS`.
 const INSERT_WINDOW_MS: i64 = 15_000;
 /// MonoCode `ParticleText`'s `SWEEP_MS`.
@@ -85,6 +91,20 @@ pub struct SessionsUi {
     pub folder_colors_unsaved: bool,
     /// The filter button saw this mouse-down (so it is not "outside").
     pub filter_button_hit: bool,
+    /// Each list row's height as last painted, by row key, so only the rows
+    /// in view are built (`virtual_rows`).
+    pub row_heights: Rc<RefCell<HashMap<String, f32>>>,
+}
+
+/// A list row's key for its measured height: a thread and a folder may
+/// share an id.
+fn entry_key(entry: &ListEntry<'_>) -> String {
+    match entry {
+        ListEntry::Session(session) => format!("s:{}", session.id),
+        ListEntry::Folder { folder, .. } => format!("f:{}", folder.id),
+        ListEntry::Pinned { .. } => "pinned".into(),
+        ListEntry::Reminders { .. } => "reminders".into(),
+    }
 }
 
 impl BenCodeApp {
@@ -156,13 +176,16 @@ impl BenCodeApp {
     /// worktree.
     pub(crate) fn listed_sessions(&self) -> Vec<&SessionRow> {
         let folders = self.project_folders();
-        let in_folder = |id: &str| folders.iter().any(|f| f.session_ids.iter().any(|s| s == id));
+        let in_folder: HashSet<&str> = folders
+            .iter()
+            .flat_map(|f| f.session_ids.iter().map(String::as_str))
+            .collect();
         let cwd = &self.current_cwd;
         let focus = self.worktree_focus();
         self.sessions
             .iter()
             .filter(|s| crate::app::same_project_path(&s.cwd, cwd))
-            .filter(|s| s.has_user_message() || in_folder(&s.id))
+            .filter(|s| s.has_user_message() || in_folder.contains(s.id.as_str()))
             .filter(|s| {
                 focus.is_none_or(|focus| crate::app::same_project_path(s.work_dir(), &focus.path))
             })
@@ -225,20 +248,68 @@ impl BenCodeApp {
                 sessions_empty(cx).into_any_element()
             }
         } else {
-            let rows: Vec<AnyElement> = entries
-                .iter()
-                .enumerate()
-                .map(|(ix, entry)| {
+            // Only the rows in view are built; every row is, until each has
+            // been painted once and its height is known.
+            let keys: Vec<String> = entries.iter().map(entry_key).collect();
+            let heights: Vec<Option<f32>> = {
+                let known = self.sessions_ui.row_heights.borrow();
+                keys.iter().map(|key| known.get(key).copied()).collect()
+            };
+            let window = virtual_rows::for_scroll(&heights, &self.sessions_ui.scroll, LIST_PAD);
+            let app = cx.entity().downgrade();
+            let rows: Vec<AnyElement> = window
+                .range
+                .clone()
+                .map(|ix| {
+                    let entry = &entries[ix];
                     let before_loose = matches!(entries.get(ix + 1), Some(ListEntry::Session(_)));
-                    self.render_list_entry(entry, before_loose, searching, &states, now, cx)
+                    let (measured, key, app) =
+                        (self.sessions_ui.row_heights.clone(), keys[ix].clone(), app.clone());
+                    div()
+                        .relative()
+                        .flex()
+                        .flex_col()
+                        // The gap between rows, inside the measured height.
+                        .when(ix + 1 < entries.len(), |el| el.pb(px(ROW_GAP)))
+                        .child(self.render_list_entry(entry, before_loose, searching, &states, now, cx))
+                        .child(
+                            canvas(
+                                move |bounds, _, cx| {
+                                    let height = crate::ui::scale::logical(bounds.size.height);
+                                    let was = measured.borrow_mut().insert(key.clone(), height);
+                                    // The spacers were sized from the old
+                                    // height: lay the list out once more.
+                                    if was.is_some_and(|was| (was - height).abs() > 0.5) {
+                                        let app = app.clone();
+                                        cx.defer(move |cx| {
+                                            if let Err(err) = app.update(cx, |_, cx| cx.notify()) {
+                                                log::debug!("row measured after app drop: {err:#}");
+                                            }
+                                        });
+                                    }
+                                },
+                                |_, _, _, _| {},
+                            )
+                            .absolute()
+                            .size_full(),
+                        )
+                        .into_any_element()
                 })
                 .collect();
+            {
+                let listed: HashSet<&str> = keys.iter().map(String::as_str).collect();
+                self.sessions_ui
+                    .row_heights
+                    .borrow_mut()
+                    .retain(|key, _| listed.contains(key.as_str()));
+            }
             div()
                 .flex()
                 .flex_col()
-                .gap(px(2.0))
-                .p(px(6.0))
+                .p(px(LIST_PAD))
+                .when(window.above > 0.0, |el| el.child(div().h(px(window.above))))
                 .children(rows)
+                .when(window.below > 0.0, |el| el.child(div().h(px(window.below))))
                 .into_any_element()
         };
         let shown: Vec<(String, String, i64)> = visible
@@ -427,24 +498,28 @@ impl BenCodeApp {
         let first_look = !self.sessions_ui.seen.contains_key(&project);
         let seen = self.sessions_ui.seen.entry(project).or_default();
         for (id, _, created_at) in shown {
-            if seen.insert(id.clone()) && !first_look && now - created_at < INSERT_WINDOW_MS {
-                self.sessions_ui.sliding.insert(id.clone());
+            // Nothing is cloned for a card already seen.
+            if !seen.contains(id) {
+                seen.insert(id.clone());
+                if !first_look && now - created_at < INSERT_WINDOW_MS {
+                    self.sessions_ui.sliding.insert(id.clone());
+                }
             }
         }
         let mut changed = false;
         for (id, title, _) in shown {
-            match self.sessions_ui.shown_titles.insert(id.clone(), title.clone()) {
-                Some(old) if old != *title => {
-                    self.sessions_ui.title_serial += 1;
-                    let change = TitleChange {
-                        old,
-                        at: std::time::Instant::now(),
-                        serial: self.sessions_ui.title_serial,
-                    };
-                    self.sessions_ui.title_changes.insert(id.clone(), change);
-                    changed = true;
-                }
-                _ => {}
+            if self.sessions_ui.shown_titles.get(id) == Some(title) {
+                continue;
+            }
+            if let Some(old) = self.sessions_ui.shown_titles.insert(id.clone(), title.clone()) {
+                self.sessions_ui.title_serial += 1;
+                let change = TitleChange {
+                    old,
+                    at: std::time::Instant::now(),
+                    serial: self.sessions_ui.title_serial,
+                };
+                self.sessions_ui.title_changes.insert(id.clone(), change);
+                changed = true;
             }
         }
         if changed {
@@ -624,4 +699,27 @@ fn sessions_empty(cx: &Context<BenCodeApp>) -> impl IntoElement {
                 .child("Sessions you start will show up here"),
         )
         .child(div().flex().flex_col().flex_none().children(rows))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::session_folders::SessionFolder;
+
+    #[test]
+    fn a_thread_and_a_folder_with_one_id_keep_separate_rows() {
+        let session = SessionRow {
+            id: "x".into(),
+            ..Default::default()
+        };
+        let folder = SessionFolder {
+            id: "x".into(),
+            ..Default::default()
+        };
+        let folder_entry = ListEntry::Folder {
+            folder: &folder,
+            sessions: Vec::new(),
+        };
+        assert_ne!(entry_key(&ListEntry::Session(&session)), entry_key(&folder_entry));
+    }
 }

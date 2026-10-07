@@ -35,6 +35,7 @@ impl BenCodeApp {
     fn session_status(
         &self,
         session: &SessionRow,
+        draft: bool,
         states: &LiveStates,
         now: i64,
         cx: &Context<Self>,
@@ -77,7 +78,7 @@ impl BenCodeApp {
                 .child("Done")
                 .into_any_element();
         }
-        if session.is_draft() {
+        if draft {
             let muted = colors.fg.opacity(0.55);
             return row(muted)
                 .child(icon(IconName::CircleDashed, muted))
@@ -181,7 +182,7 @@ impl BenCodeApp {
             .items_center()
             .gap_1p5()
             .children(self.linked_update_dot(session, cx))
-            .child(self.session_status(session, states, now, cx));
+            .child(self.session_status(session, draft, states, now, cx));
         // MonoCode `orchestrationExpanded`: an orchestrator lists its agents
         // while open, picked or working, and keeps its model row then.
         let expanded = session.orchestration.is_some()
