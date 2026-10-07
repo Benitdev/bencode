@@ -36,7 +36,7 @@ pub struct WorkspaceCache {
     /// MonoCode `GitInfo.repo`: the repository name session cards show.
     pub repo: Option<String>,
     /// `git::state_fingerprint` of the loaded snapshot.
-    fingerprint: Option<u64>,
+    fingerprint: Option<git::StateFingerprint>,
     generation: u64,
     /// The `generation` whose load last landed; behind `generation` while
     /// a load is in flight.
@@ -63,21 +63,87 @@ impl WorkspaceCache {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 struct Snapshot {
-    fingerprint: Option<u64>,
+    fingerprint: Option<git::StateFingerprint>,
     status: GitDetailedStatus,
+    changes: Vec<GitFileChange>,
+    refs: RefsState,
+}
+
+/// The parts of a snapshot that only change when refs or config move. A new
+/// snapshot field goes here when it depends on refs alone, else it is read
+/// with `read_local_state`; the wrong home shows stale data.
+#[derive(Clone, Default)]
+struct RefsState {
     sync: git::sync::SyncInfo,
     history: Vec<git::sync::HistoryCommit>,
     branches: Vec<git::Branch>,
-    changes: Vec<GitFileChange>,
     worktrees: Vec<crate::git::Worktree>,
     repo: Option<String>,
 }
 
+/// How much of the workspace a refresh reloads.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct RefreshScope {
+    /// History, branches, worktrees, sync info and the repo name.
+    pub refs: bool,
+    /// The `git ls-files` index behind Go to File and `@` mentions.
+    pub file_index: bool,
+}
+
+impl RefreshScope {
+    pub(crate) const FULL: Self = Self {
+        refs: true,
+        file_index: true,
+    };
+}
+
+/// What a poll that saw `new` must reload, given the loaded `old`; `None`
+/// when nothing changed.
+fn scope_for(
+    old: Option<git::StateFingerprint>,
+    new: git::StateFingerprint,
+) -> Option<RefreshScope> {
+    let Some(old) = old else {
+        return Some(RefreshScope::FULL);
+    };
+    if old.refs != new.refs {
+        Some(RefreshScope::FULL)
+    } else if old.paths != new.paths {
+        Some(RefreshScope {
+            refs: false,
+            file_index: true,
+        })
+    } else if old.tree != new.tree {
+        Some(RefreshScope {
+            refs: false,
+            file_index: false,
+        })
+    } else {
+        None
+    }
+}
+
 /// Runs the snapshot's git reads side by side: each is its own `git`
 /// process, so the wall time is the slowest one rather than their sum.
-fn load_snapshot(cwd: &str) -> Snapshot {
+/// With `reuse` (the refs state of the last snapshot and the refs
+/// fingerprint it was loaded for) only the status is read.
+fn load_snapshot(cwd: &str, reuse: Option<(RefsState, u64)>) -> Snapshot {
+    if let Some((refs, refs_fingerprint)) = reuse {
+        let local = git::read_local_state(cwd);
+        return Snapshot {
+            // The refs part stays the one `refs` was read for, so a ref
+            // that moved since still shows as a change to the next poll.
+            fingerprint: local.fingerprint.map(|fingerprint| git::StateFingerprint {
+                refs: refs_fingerprint,
+                ..fingerprint
+            }),
+            status: local.status,
+            changes: local.changes,
+            refs,
+        };
+    }
     std::thread::scope(|scope| {
         // One `git status` feeds the fingerprint, status and changes.
         let local = scope.spawn(|| git::read_local_state(cwd));
@@ -96,12 +162,14 @@ fn load_snapshot(cwd: &str) -> Snapshot {
         Snapshot {
             fingerprint: local.fingerprint,
             status: local.status,
-            sync: joined(sync, "sync info"),
-            history: joined(history, "history"),
-            branches: joined(branches, "branches"),
             changes: local.changes,
-            worktrees: joined(worktrees, "worktrees"),
-            repo: joined(repo, "repo name"),
+            refs: RefsState {
+                sync: joined(sync, "sync info"),
+                history: joined(history, "history"),
+                branches: joined(branches, "branches"),
+                worktrees: joined(worktrees, "worktrees"),
+                repo: joined(repo, "repo name"),
+            },
         }
     })
 }
@@ -132,21 +200,36 @@ impl BenCodeApp {
         self.current_cwd.clone()
     }
 
+    /// Reloads everything the workspace views show.
     pub fn refresh_workspace(&mut self, cx: &mut Context<Self>) {
+        self.refresh_workspace_scoped(RefreshScope::FULL, cx);
+    }
+
+    /// The poll's refresh: only what `scope` says changed is read again.
+    fn refresh_workspace_scoped(&mut self, mut scope: RefreshScope, cx: &mut Context<Self>) {
         self.refresh_skills(false, cx);
-        // MonoCode keeps the composer's file index for its folder, so `@`
-        // labels paint before the picker is ever opened.
-        self.index_project_files(cx);
         let cwd = self.workspace_cwd();
         if self.workspace.cwd != cwd {
             self.show_cached_snapshot(&cwd, cx);
+            scope = RefreshScope::FULL;
         }
+        if scope.file_index {
+            // MonoCode keeps the composer's file index for its folder, so `@`
+            // labels paint before the picker is ever opened.
+            self.index_project_files(cx);
+        }
+        // Without a snapshot that knows its refs, everything is read.
+        let reuse = (!scope.refs)
+            .then(|| self.workspace.snapshots.get(&cwd))
+            .flatten()
+            .and_then(|last| Some((last.refs.clone(), last.fingerprint?.refs)));
+        let refs_reloaded = reuse.is_none();
         self.workspace.generation += 1;
         let generation = self.workspace.generation;
         let load_cwd = cwd.clone();
         let task = cx
             .background_executor()
-            .spawn(async move { load_snapshot(&load_cwd) });
+            .spawn(async move { load_snapshot(&load_cwd, reuse) });
 
         cx.spawn(async move |this, cx| {
             let snapshot = task.await;
@@ -156,7 +239,7 @@ impl BenCodeApp {
                 }
                 app.workspace.loaded_generation = generation;
                 app.workspace.snapshots.insert(cwd.clone(), snapshot.clone());
-                app.apply_snapshot(cwd.clone(), snapshot, cx);
+                app.apply_snapshot(cwd.clone(), snapshot, refs_reloaded, cx);
                 app.reload_working_tree_docs(&cwd, cx);
                 app.reload_session_reviews(&cwd, cx);
                 app.refresh_file_tree(cx);
@@ -175,33 +258,35 @@ impl BenCodeApp {
     fn show_cached_snapshot(&mut self, cwd: &str, cx: &mut Context<Self>) {
         let cache = &mut self.workspace;
         cache.git_error = None;
-        let snapshot = cache.snapshots.get(cwd).cloned().unwrap_or_else(|| Snapshot {
-            fingerprint: None,
-            status: GitDetailedStatus::default(),
-            sync: git::sync::SyncInfo::default(),
-            history: Vec::new(),
-            branches: Vec::new(),
-            changes: Vec::new(),
-            worktrees: Vec::new(),
-            repo: None,
-        });
-        self.apply_snapshot(cwd.to_string(), snapshot, cx);
+        let snapshot = cache.snapshots.get(cwd).cloned().unwrap_or_default();
+        self.apply_snapshot(cwd.to_string(), snapshot, true, cx);
         cx.notify();
     }
 
-    fn apply_snapshot(&mut self, cwd: String, snapshot: Snapshot, cx: &mut Context<Self>) {
+    /// `refs_changed`: the snapshot's refs state is not the one shown, so
+    /// the commit graph is laid out again.
+    fn apply_snapshot(
+        &mut self,
+        cwd: String,
+        snapshot: Snapshot,
+        refs_changed: bool,
+        cx: &mut Context<Self>,
+    ) {
         self.git_status = snapshot.status;
         self.file_tree.invalidate_tints();
-        self.git_sync = snapshot.sync;
-        self.git_history = snapshot.history;
-        self.changes_ui.invalidate_graph();
         let cache = &mut self.workspace;
         cache.cwd = cwd;
         cache.fingerprint = snapshot.fingerprint;
-        cache.branches = snapshot.branches;
         cache.changes = snapshot.changes;
-        cache.worktrees = snapshot.worktrees;
-        cache.repo = snapshot.repo;
+        if refs_changed {
+            let refs = snapshot.refs;
+            self.git_sync = refs.sync;
+            self.git_history = refs.history;
+            self.changes_ui.invalidate_graph();
+            cache.branches = refs.branches;
+            cache.worktrees = refs.worktrees;
+            cache.repo = refs.repo;
+        }
         self.refresh_branch_pr(cx);
     }
 
@@ -229,10 +314,10 @@ impl BenCodeApp {
                     let settled = app.workspace.loaded_generation == app.workspace.generation;
                     if same_dir
                         && settled
-                        && fingerprint.is_some()
-                        && fingerprint != app.workspace.fingerprint
+                        && let Some(new) = fingerprint
+                        && let Some(scope) = scope_for(app.workspace.fingerprint, new)
                     {
-                        app.refresh_workspace(cx);
+                        app.refresh_workspace_scoped(scope, cx);
                     }
                 });
                 if changed.is_err() {
@@ -412,5 +497,55 @@ impl BranchTarget {
             Self::Existing(branch) => &branch.name,
             Self::New(name) => name,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fingerprint(refs: u64, paths: u64, tree: u64) -> git::StateFingerprint {
+        git::StateFingerprint { refs, paths, tree }
+    }
+
+    #[test]
+    fn a_first_poll_reloads_everything() {
+        assert_eq!(scope_for(None, fingerprint(1, 1, 1)), Some(RefreshScope::FULL));
+    }
+
+    #[test]
+    fn moved_refs_reload_everything() {
+        let old = Some(fingerprint(1, 1, 1));
+        assert_eq!(scope_for(old, fingerprint(2, 2, 2)), Some(RefreshScope::FULL));
+        assert_eq!(scope_for(old, fingerprint(2, 1, 1)), Some(RefreshScope::FULL));
+    }
+
+    #[test]
+    fn a_new_or_removed_path_reindexes_files_only() {
+        let scope = scope_for(Some(fingerprint(1, 1, 1)), fingerprint(1, 2, 2));
+        assert_eq!(
+            scope,
+            Some(RefreshScope {
+                refs: false,
+                file_index: true
+            })
+        );
+    }
+
+    #[test]
+    fn a_content_change_reads_the_status_only() {
+        let scope = scope_for(Some(fingerprint(1, 1, 1)), fingerprint(1, 1, 2));
+        assert_eq!(
+            scope,
+            Some(RefreshScope {
+                refs: false,
+                file_index: false
+            })
+        );
+    }
+
+    #[test]
+    fn an_unchanged_repository_reloads_nothing() {
+        assert_eq!(scope_for(Some(fingerprint(1, 1, 1)), fingerprint(1, 1, 1)), None);
     }
 }

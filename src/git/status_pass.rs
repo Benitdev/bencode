@@ -50,12 +50,12 @@ impl StatusPass {
     }
 
     /// See `super::state_fingerprint`.
-    pub fn fingerprint(&self, cwd: &str) -> u64 {
-        let lines = run_git(cwd, &["diff", "--no-ext-diff", "--shortstat"]).unwrap_or_default();
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        self.raw.hash(&mut hasher);
-        lines.hash(&mut hasher);
-        hasher.finish()
+    pub fn fingerprint(&self, cwd: &str) -> StateFingerprint {
+        let shortstat = run_git(cwd, &["diff", "--no-ext-diff", "--shortstat"]).unwrap_or_default();
+        // Branches, tags and remote refs moved outside BenCode show here only.
+        let refs = run_git(cwd, &["for-each-ref", "--format=%(objectname) %(refname)"])
+            .unwrap_or_default();
+        fingerprint_parts(&self.raw, &self.entries, &refs, &shortstat)
     }
 
     /// `HEAD`, or the empty tree in a repository with no commits yet.
@@ -119,10 +119,60 @@ impl StatusPass {
     }
 }
 
+/// What a poll compares to decide how much to reload.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct StateFingerprint {
+    /// HEAD, branch and upstream (`# branch.*` headers) plus every ref.
+    pub refs: u64,
+    /// Which paths are added, deleted, renamed, copied or untracked.
+    pub paths: u64,
+    /// Everything `git status` and `git diff --shortstat` report.
+    pub tree: u64,
+}
+
+fn fingerprint_parts(
+    raw: &[u8],
+    entries: &[StatusEntry],
+    refs: &[u8],
+    shortstat: &[u8],
+) -> StateFingerprint {
+    let hasher = std::collections::hash_map::DefaultHasher::new;
+    let mut refs_hash = hasher();
+    for header in raw.split(|b| *b == 0).filter(|rec| rec.first() == Some(&b'#')) {
+        header.hash(&mut refs_hash);
+    }
+    refs.hash(&mut refs_hash);
+
+    // The entries that add a file to the project or take one away.
+    let mut moved: Vec<(&str, Option<&str>)> = entries
+        .iter()
+        .filter(|e| !e.is_ignored())
+        .filter(|e| {
+            e.is_untracked()
+                || [e.index, e.worktree]
+                    .iter()
+                    .any(|side| matches!(side, 'A' | 'D' | 'R' | 'C'))
+        })
+        .map(|e| (e.path.as_str(), e.orig_path.as_deref()))
+        .collect();
+    moved.sort_unstable();
+    let mut paths_hash = hasher();
+    moved.hash(&mut paths_hash);
+
+    let mut tree_hash = hasher();
+    raw.hash(&mut tree_hash);
+    shortstat.hash(&mut tree_hash);
+    StateFingerprint {
+        refs: refs_hash.finish(),
+        paths: paths_hash.finish(),
+        tree: tree_hash.finish(),
+    }
+}
+
 /// What a workspace refresh reads from `git status`.
 #[derive(Default)]
 pub struct LocalState {
-    pub fingerprint: Option<u64>,
+    pub fingerprint: Option<StateFingerprint>,
     pub status: GitDetailedStatus,
     pub changes: Vec<GitFileChange>,
 }
@@ -227,6 +277,56 @@ fn read_header(line: &str, branch: &mut BranchHeader) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const HEAD: &[u8] = b"# branch.oid 0123abcd\0# branch.head main\0";
+
+    fn parts(raw: &[u8], refs: &[u8], shortstat: &[u8]) -> StateFingerprint {
+        let (_, entries) = parse_porcelain_v2(raw);
+        fingerprint_parts(raw, &entries, refs, shortstat)
+    }
+
+    fn status(entries: &[u8]) -> Vec<u8> {
+        [HEAD, entries].concat()
+    }
+
+    #[test]
+    fn content_only_change_moves_tree_only() {
+        let raw = status(b"1 .M N... 100644 100644 100644 aaaa bbbb file.txt\0");
+        let before = parts(&raw, b"r", b" 1 file changed, 1 insertion(+)");
+        let after = parts(&raw, b"r", b" 1 file changed, 2 insertions(+)");
+        assert_eq!(before.refs, after.refs);
+        assert_eq!(before.paths, after.paths);
+        assert_ne!(before.tree, after.tree);
+    }
+
+    #[test]
+    fn new_untracked_file_moves_paths() {
+        let before = parts(&status(b""), b"r", b"");
+        let after = parts(&status(b"? new.txt\0"), b"r", b"");
+        assert_eq!(before.refs, after.refs);
+        assert_ne!(before.paths, after.paths);
+        assert_ne!(before.tree, after.tree);
+    }
+
+    #[test]
+    fn modified_entry_does_not_move_paths() {
+        let unstaged = status(b"1 .M N... 100644 100644 100644 aaaa bbbb file.txt\0");
+        let staged = status(b"1 M. N... 100644 100644 100644 aaaa bbbb file.txt\0");
+        assert_eq!(parts(&unstaged, b"r", b"").paths, parts(&staged, b"r", b"").paths);
+        assert_eq!(parts(&unstaged, b"r", b"").paths, parts(&status(b""), b"r", b"").paths);
+    }
+
+    #[test]
+    fn head_or_ref_change_moves_refs() {
+        let raw = status(b"");
+        let was = parts(&raw, b"aaaa refs/heads/main", b"");
+        let moved_head = parts(b"# branch.oid ffff0000\0# branch.head main\0", b"aaaa refs/heads/main", b"");
+        assert_ne!(was.refs, moved_head.refs);
+        let new_branch = parts(&raw, b"aaaa refs/heads/main\naaaa refs/heads/topic", b"");
+        assert_ne!(was.refs, new_branch.refs);
+        assert_eq!(was.paths, new_branch.paths);
+        assert_eq!(was.tree, new_branch.tree);
+    }
 
     #[test]
     fn parses_branch_header_and_every_entry_kind() {

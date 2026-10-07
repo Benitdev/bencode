@@ -25,7 +25,7 @@ pub use rows::number_rows;
     expect(dead_code, reason = "worktree create/remove/prune are not wired yet")
 )]
 pub mod worktrees;
-pub use status_pass::{StatusPass, read_local_state};
+pub use status_pass::{StateFingerprint, StatusPass, read_local_state};
 pub use worktrees::Worktree;
 
 pub mod checkpoint;
@@ -207,10 +207,12 @@ fn parse_porcelain_z(raw: &[u8]) -> Vec<StatusEntry> {
     entries
 }
 
-/// Cheap summary of the repository state: HEAD, branch, upstream counts,
-/// index and work-tree status, and changed-line totals. Equal fingerprints
-/// mean a refresh would show nothing new. `None` outside a repository.
-pub fn state_fingerprint(cwd: &str) -> Option<u64> {
+/// Cheap summary of the repository state, in three parts so a poll can tell
+/// what kind of change happened: refs (HEAD, branch, upstream counts, every
+/// ref), the set of added / removed paths, and everything status and the
+/// changed-line totals show. Equal fingerprints mean a refresh would show
+/// nothing new. `None` outside a repository.
+pub fn state_fingerprint(cwd: &str) -> Option<StateFingerprint> {
     StatusPass::read(cwd).map(|pass| pass.fingerprint(cwd))
 }
 
