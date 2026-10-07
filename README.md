@@ -81,9 +81,14 @@ RUST_BACKTRACE=1 cargo run   # in backtrace khi panic
 
 | Dữ liệu | Đường dẫn |
 | :--- | :--- |
-| Thread, block, ghi chú, automation, nhắc việc | `~/Library/Application Support/com.monocode.desktop/monocode.db` (dùng chung với MonoCode) |
+| Thread, block, ghi chú, automation, nhắc việc | `~/Library/Application Support/BenCode/bencode.db` |
 | Thiết lập riêng của BenCode | `~/Library/Application Support/BenCode/settings.json` |
-| Checkpoint để xem lại và hoàn tác thay đổi của agent | `~/Library/Application Support/com.monocode.desktop/checkpoints` (dùng chung với MonoCode) |
+| Checkpoint để xem lại và hoàn tác thay đổi của agent | `~/Library/Application Support/BenCode/checkpoints` |
+| Thư mục cấu hình của từng account provider | `~/Library/Application Support/BenCode/provider-accounts` |
+
+BenCode không dùng chung dữ liệu nào với MonoCode. Lần chạy đầu tiên chưa có
+`bencode.db`, nó sao chép một lần database, checkpoints và account profiles của
+MonoCode (nếu có) sang thư mục trên; MonoCode chỉ bị đọc, không bị sửa.
 
 ---
 

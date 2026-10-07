@@ -41,7 +41,7 @@ pub use projects::{is_path_in_project, normalize_project_path, same_project_path
 pub use surfaces::Surface;
 pub use workspace_sync::WorkspaceCache;
 
-use crate::db::{MonoCodeDb, SessionRow};
+use crate::db::{AppDb, SessionRow};
 use crate::harness::{HarnessInfo, HarnessResolver, catalog};
 use crate::ui::settings_modal::SettingsTab;
 
@@ -425,7 +425,7 @@ pub struct BenCodeApp {
     /// Set while Back/Forward switches tabs, so the move is not recorded.
     navigating_history: bool,
     pub is_terminal_open: bool,
-    pub db: MonoCodeDb,
+    pub db: AppDb,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -458,9 +458,9 @@ impl BenCodeApp {
         saved: crate::settings::AppSettings,
         cx: &mut Context<Self>,
     ) -> Self {
-        let db = MonoCodeDb::open_default().unwrap_or_else(|err| {
-            log::warn!("MonoCode DB unavailable ({err:#}); using BenCode's local database");
-            MonoCodeDb::open_fallback()
+        let db = AppDb::open_default().unwrap_or_else(|err| {
+            log::error!("database unavailable ({err:#}); nothing will be saved this launch");
+            AppDb::open_fallback()
         });
 
         let sessions = db
@@ -1260,7 +1260,7 @@ impl BenCodeApp {
         app.start_clock(cx);
         app.start_usage_clock(cx);
         app.start_process_monitor(cx);
-        app.load_shared_accounts(cx);
+        app.load_account_profiles(cx);
         app.refresh_installed_catalogs(cx);
         app.start_inbox_poll(cx);
         app

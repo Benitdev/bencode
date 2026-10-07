@@ -33,7 +33,7 @@ mức ưu tiên. Phần đã xong chỉ được tóm tắt.
   với MonoCode).
 - **Surface**: Search, Inbox GitHub (checks, comment, merge, sửa CI), Notes,
   Automations (có scheduler 30 giây), Settings.
-- **Hạ tầng**: đọc ghi `monocode.db`, `settings.json`, terminal native theo
+- **Hạ tầng**: đọc ghi `bencode.db` (database riêng, cùng schema với MonoCode), `settings.json`, terminal native theo
   project, phát hiện MCP server.
 
 ---

@@ -1,8 +1,7 @@
 //! Provider account profiles (MonoCode `providers/model/providerAccounts.ts`
 //! and `provider_account_dir` / the account env in `src-tauri/src/harness.rs`):
 //! locally named sign-ins of a CLI, each isolated in its own config
-//! directory under MonoCode's `provider-accounts`, so both apps reach the
-//! same profiles.
+//! directory under BenCode's `provider-accounts` (`storage`).
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -12,7 +11,6 @@ use serde::{Deserialize, Serialize};
 pub const DEFAULT_ACCOUNT_ID: &str = "default";
 pub const DEFAULT_ACCOUNT_LABEL: &str = "Default account";
 
-const ROOT_RELATIVE: &str = "Library/Application Support/com.monocode.desktop/provider-accounts";
 const MAX_LABEL_CHARS: usize = 48;
 
 /// Providers whose CLIs support isolated, locally named account profiles.
@@ -53,20 +51,14 @@ pub fn clean_label(value: &str) -> String {
     collapsed.chars().take(MAX_LABEL_CHARS).collect()
 }
 
-/// `provider`'s accounts: the default profile first, then `stored` (this
-/// app's), then any of `shared` (MonoCode's) not already listed. Entries
-/// with a bad id or an empty label are skipped; a stored `default` entry
-/// only renames the default profile.
-pub fn provider_accounts(
-    provider: &str,
-    stored: &StoredAccounts,
-    shared: &[ProviderAccount],
-) -> Vec<ProviderAccount> {
+/// `provider`'s accounts: the default profile first, then `stored`.
+/// Entries with a bad id or an empty label are skipped; a stored `default`
+/// entry only renames the default profile.
+pub fn provider_accounts(provider: &str, stored: &StoredAccounts) -> Vec<ProviderAccount> {
     let mut default_label = DEFAULT_ACCOUNT_LABEL.to_string();
     let mut profiles: Vec<ProviderAccount> = Vec::new();
     let own = stored.get(provider).map(Vec::as_slice).unwrap_or_default();
-    let shared = shared.iter().filter(|account| account.provider == provider);
-    for account in own.iter().chain(shared) {
+    for account in own {
         let label = clean_label(&account.label);
         if label.is_empty() || !valid_account_id(&account.id) {
             continue;
@@ -196,9 +188,9 @@ pub fn selected_account_id(
 }
 
 /// `(provider, account id)` of every profile directory on disk, so a thread
-/// pinned to one MonoCode's list no longer names can still run. Blocking.
+/// pinned to one the list no longer names can still run. Blocking.
 pub fn profiles_on_disk() -> Vec<(String, String)> {
-    let Some(root) = std::env::var_os("HOME").map(|home| PathBuf::from(home).join(ROOT_RELATIVE)) else {
+    let Some(root) = crate::storage::provider_accounts_dir() else {
         return Vec::new();
     };
     let mut found = Vec::new();
@@ -234,10 +226,9 @@ impl AccountProfile {
             "codex" => "codex",
             _ => return None,
         };
-        let home = PathBuf::from(std::env::var_os("HOME")?);
         Some(Self {
             provider,
-            dir: home.join(ROOT_RELATIVE).join(provider).join(id),
+            dir: crate::storage::provider_accounts_dir()?.join(provider).join(id),
         })
     }
 
@@ -342,29 +333,24 @@ mod tests {
                 account("account-2", "claude", "   "),
             ],
         );
-        let shared = [
-            account("account-1", "claude", "MonoCode's name"),
-            account("account-3", "claude", "Personal"),
-            account("account-9", "codex", "Other provider"),
-        ];
-        let accounts = provider_accounts("claude", &stored, &shared);
+        stored.insert("codex".into(), vec![account("account-9", "codex", "Other provider")]);
+        let accounts = provider_accounts("claude", &stored);
         let labels: Vec<_> = accounts.iter().map(|a| (a.id.as_str(), a.label.as_str())).collect();
         assert_eq!(
             labels,
             [
                 ("default", "Default account"),
-                ("account-1", "Work laptop"),
-                ("account-3", "Personal")
+                ("account-1", "Work laptop")
             ]
         );
-        assert_eq!(provider_accounts("codex", &stored, &shared).len(), 2);
+        assert_eq!(provider_accounts("codex", &stored).len(), 2);
     }
 
     #[test]
     fn a_stored_default_entry_renames_the_default_profile() {
         let mut stored = StoredAccounts::new();
         stored.insert("codex".into(), vec![account("default", "codex", "Main")]);
-        let accounts = provider_accounts("codex", &stored, &[]);
+        let accounts = provider_accounts("codex", &stored);
         assert_eq!(accounts, [account("default", "codex", "Main")]);
     }
 
@@ -399,12 +385,11 @@ mod tests {
         let mut stored = StoredAccounts::new();
         stored.insert("claude".into(), vec![account("a1", "claude", "Work")]);
         assert!(rename_account(&mut stored, &account("a1", "claude", "Work"), "  Day   job "));
-        // MonoCode's own account and the default profile get an entry.
-        assert!(rename_account(&mut stored, &account("m1", "claude", "MonoCode's"), "Mine"));
+        // An unlisted profile and the default one get an entry.
+        assert!(rename_account(&mut stored, &account("m1", "claude", "Unnamed account"), "Mine"));
         assert!(rename_account(&mut stored, &account("default", "claude", "Default account"), "Main"));
         assert!(!rename_account(&mut stored, &account("a1", "claude", "Work"), "   "));
-        let shared = [account("m1", "claude", "MonoCode's")];
-        let labels: Vec<_> = provider_accounts("claude", &stored, &shared)
+        let labels: Vec<_> = provider_accounts("claude", &stored)
             .into_iter()
             .map(|a| a.label)
             .collect();

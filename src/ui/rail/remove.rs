@@ -45,7 +45,7 @@ impl BenCodeApp {
     /// The ids of every saved conversation of `path`, read on a background
     /// connection (the in-memory DB of tests is read in place).
     fn read_project_session_ids(&self, path: &str, cx: &Context<Self>) -> gpui::Task<anyhow::Result<Vec<String>>> {
-        let ids = |db: &crate::db::MonoCodeDb, path: &str| -> anyhow::Result<Vec<String>> {
+        let ids = |db: &crate::db::AppDb, path: &str| -> anyhow::Result<Vec<String>> {
             Ok(db
                 .list_sessions_for_cwd(path, ALL_SESSIONS, &[])?
                 .into_iter()
@@ -57,7 +57,7 @@ impl BenCodeApp {
         };
         let path = path.to_string();
         cx.background_executor().spawn(async move {
-            let db = crate::db::MonoCodeDb::open_reader(&file)?;
+            let db = crate::db::AppDb::open_reader(&file)?;
             ids(&db, &path)
         })
     }

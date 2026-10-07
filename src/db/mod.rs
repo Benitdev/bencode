@@ -1,10 +1,11 @@
-//! Direct access to MonoCode's SQLite database.
+//! BenCode's SQLite database (`storage::db_path`), in the schema it took
+//! over from MonoCode.
 //!
-//! BenCode shares MonoCode's live database, so every write here must preserve
-//! data BenCode does not model: unknown block fields, unknown automation
-//! definition fields, and session columns BenCode never reads.
+//! A first launch copies a MonoCode install's database in
+//! (`monocode_import`), so writes here still preserve what BenCode does not
+//! model: unknown block fields, unknown automation definition fields, and
+//! session columns it never reads.
 
-pub mod monocode_accounts;
 mod orchestration;
 mod reminders;
 mod schedule;
@@ -27,10 +28,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 /// MonoCode's `DEFAULT_RUNTIME_MODE` (src/features/sessions/model/session.ts).
 pub const DEFAULT_SESSION_RUNTIME_MODE: &str = "supervised";
-
-/// Relative path of MonoCode's database under `$HOME`.
-const MONOCODE_DB_RELATIVE_PATH: &str =
-    "Library/Application Support/com.monocode.desktop/monocode.db";
 
 /// Maximum automation runs returned by `list_automation_runs`.
 const AUTOMATION_RUN_HISTORY_LIMIT: i64 = 50;
@@ -254,8 +251,8 @@ fn serialize_text<S: Serializer>(text: &Option<String>, serializer: S) -> Result
     serializer.serialize_str(text.as_deref().unwrap_or(""))
 }
 
-/// Full MonoCode schema for the tables BenCode touches. `IF NOT EXISTS` makes
-/// this a no-op on MonoCode's real database.
+/// MonoCode's schema for the tables BenCode touches. `IF NOT EXISTS` makes
+/// this a no-op on a database that has them.
 const SCHEMA_SQL: &str = "
     CREATE TABLE IF NOT EXISTS sessions (
         id TEXT PRIMARY KEY,
@@ -312,9 +309,9 @@ const SCHEMA_SQL: &str = "
     CREATE INDEX IF NOT EXISTS automation_runs_history_idx ON automation_runs (automation_id, created_at DESC);
 ";
 
-/// Session columns added by later MonoCode migrations. Older BenCode fallback
-/// databases may lack them; on MonoCode's real database these all exist and
-/// `ensure_session_columns` does nothing.
+/// Session columns added by later MonoCode migrations. An older database
+/// may lack them; where they all exist `ensure_session_columns` does
+/// nothing.
 const LATE_SESSION_COLUMNS: &[(&str, &str)] = &[
     ("worktree_cwd", "TEXT"),
     ("has_user_message", "INTEGER NOT NULL DEFAULT 0"),
@@ -335,39 +332,28 @@ const SESSION_SELECT: &str =
         provider_account_id
      FROM sessions";
 
-pub struct MonoCodeDb {
+pub struct AppDb {
     conn: Connection,
 }
 
-impl MonoCodeDb {
-    /// Opens MonoCode's database, or `~/.bencode/bencode.db` if MonoCode is
-    /// not installed. See `open_fallback` for a non-failing alternative.
+impl AppDb {
+    /// Opens BenCode's own database (`storage::db_path`), creating it on a
+    /// first launch. See `open_fallback` for a non-failing alternative.
     pub fn open_default() -> Result<Self> {
-        let home = std::env::var("HOME")?;
-        let monocode_db_path = PathBuf::from(&home).join(MONOCODE_DB_RELATIVE_PATH);
-        if monocode_db_path.exists() {
-            return Self::open_at(&monocode_db_path);
+        let path = crate::storage::db_path().ok_or_else(|| anyhow!("no home directory"))?;
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir)?;
         }
-        Self::open_at(&bencode_db_path(&home)?)
+        Self::open_at(&path)
     }
 
-    /// Never fails: tries `~/.bencode/bencode.db`, then an in-memory database.
-    /// Use this when `open_default` returns an error.
+    /// Never fails: an in-memory database, so the app still runs when its
+    /// own cannot be opened. Nothing in it outlives the launch.
     pub fn open_fallback() -> Self {
-        let file_db = std::env::var("HOME")
-            .map_err(anyhow::Error::from)
-            .and_then(|home| bencode_db_path(&home))
-            .and_then(|path| Self::open_at(&path));
-        match file_db {
-            Ok(db) => db,
-            Err(err) => {
-                log::warn!("Falling back to in-memory database: {err:#}");
-                Self::open_in_memory().unwrap_or_else(|err| {
-                    // SQLite in-memory databases only fail on allocation failure.
-                    panic!("Could not open in-memory SQLite database: {err:#}")
-                })
-            }
-        }
+        Self::open_in_memory().unwrap_or_else(|err| {
+            // SQLite in-memory databases only fail on allocation failure.
+            panic!("Could not open in-memory SQLite database: {err:#}")
+        })
     }
 
     /// Opens a fresh in-memory database with MonoCode's schema.
@@ -415,7 +401,7 @@ impl MonoCodeDb {
         let db = Self { conn };
         // MonoCode `SessionStore::open`: finish a deletion that was cut off.
         // A failure must not send BenCode to its fallback database; the
-        // entry stays for the next launch (or MonoCode's).
+        // entry stays for the next launch.
         if let Err(err) = db.reconcile_worktree_removals() {
             log::error!("could not settle interrupted worktree deletions: {err:#}");
         }
@@ -896,12 +882,6 @@ fn unique_slug(conn: &Connection, title: &str) -> Result<String> {
     }
 }
 
-fn bencode_db_path(home: &str) -> Result<PathBuf> {
-    let bencode_dir = PathBuf::from(home).join(".bencode");
-    std::fs::create_dir_all(&bencode_dir)?;
-    Ok(bencode_dir.join("bencode.db"))
-}
-
 fn ensure_session_columns(conn: &Connection) -> Result<()> {
     let mut stmt = conn.prepare("PRAGMA table_info(sessions)")?;
     let existing = stmt
@@ -1101,13 +1081,13 @@ mod tests {
          );
     ";
 
-    pub(super) fn monocode_db() -> MonoCodeDb {
+    pub(super) fn monocode_db() -> AppDb {
         let conn = Connection::open_in_memory().unwrap();
         conn.execute_batch(MONOCODE_SCHEMA).unwrap();
-        MonoCodeDb::from_connection(conn).unwrap()
+        AppDb::from_connection(conn).unwrap()
     }
 
-    fn insert_monocode_session(db: &MonoCodeDb, id: &str, blocks_json: &str) {
+    fn insert_monocode_session(db: &AppDb, id: &str, blocks_json: &str) {
         db.conn
             .execute(
                 "INSERT INTO sessions (id, cwd, harness, model, model_settings, runtime_mode, title,
@@ -1570,15 +1550,15 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("bencode-reader-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("monocode.db");
-        let db = MonoCodeDb::open_at(&path).unwrap();
+        let db = AppDb::open_at(&path).unwrap();
         let mut row = session("s1");
         row.cwd = "/projects/app".to_string();
         db.upsert_session(&row).unwrap();
 
-        let reader = MonoCodeDb::open_reader(&db.file_path().unwrap()).unwrap();
+        let reader = AppDb::open_reader(&db.file_path().unwrap()).unwrap();
 
         assert_eq!(reader.list_sessions_for_cwd("/projects/app", 5, &[]).unwrap().len(), 1);
-        assert!(MonoCodeDb::open_in_memory().unwrap().file_path().is_none());
+        assert!(AppDb::open_in_memory().unwrap().file_path().is_none());
         drop((reader, db));
         std::fs::remove_dir_all(&dir).unwrap();
     }
@@ -1587,7 +1567,7 @@ mod tests {
 
     #[test]
     fn in_memory_db_has_full_schema_and_is_usable() {
-        let db = MonoCodeDb::open_in_memory().unwrap();
+        let db = AppDb::open_in_memory().unwrap();
         db.upsert_session(&session("s1")).unwrap();
         assert_eq!(db.list_recent_sessions(5).unwrap().len(), 1);
     }
@@ -1605,14 +1585,14 @@ mod tests {
                 archived INTEGER NOT NULL DEFAULT 0, pinned INTEGER NOT NULL DEFAULT 0);",
         )
         .unwrap();
-        let db = MonoCodeDb::from_connection(conn).unwrap();
+        let db = AppDb::from_connection(conn).unwrap();
         db.upsert_session(&session("s1")).unwrap();
         assert_eq!(db.list_recent_sessions(5).unwrap().len(), 1);
     }
 
     #[test]
     fn finish_automation_run_patches_status_and_keeps_unknown_fields() {
-        let db = MonoCodeDb::open_in_memory().unwrap();
+        let db = AppDb::open_in_memory().unwrap();
         db.save_automation(&AutomationRow {
             id: "a1".into(),
             name: "A".into(),

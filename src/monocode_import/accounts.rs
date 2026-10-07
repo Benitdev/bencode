@@ -1,7 +1,7 @@
-//! MonoCode's account profiles, so threads it pinned to one keep their
-//! account here. MonoCode keeps the list (`monocode.providerAccounts.v1`)
-//! in its webview's local storage, a SQLite file under `~/Library/WebKit`;
-//! it is only ever read. Blocking; call it on a background executor.
+//! The names MonoCode gave its account profiles, read once by the import
+//! so the copied profiles keep them. MonoCode keeps the list
+//! (`monocode.providerAccounts.v1`) in its webview's local storage, a
+//! SQLite file under `~/Library/WebKit`; it is only ever read. Blocking.
 
 use std::path::{Path, PathBuf};
 
@@ -15,10 +15,7 @@ const ACCOUNTS_KEY: &str = "monocode.providerAccounts.v1";
 
 /// Every account MonoCode lists, across its storage origins. Nothing when
 /// MonoCode is not installed or its storage cannot be read.
-pub fn load() -> Vec<ProviderAccount> {
-    let Some(home) = std::env::var_os("HOME").map(PathBuf::from) else {
-        return Vec::new();
-    };
+pub fn load(home: &Path) -> Vec<ProviderAccount> {
     let mut accounts = Vec::new();
     for file in storage_files(&home.join(STORAGE_ROOT)) {
         match read_accounts(&file) {

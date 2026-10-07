@@ -18,8 +18,9 @@ Goals:
 
 1. **No Electron, WebKit or Chromium.** Everything is drawn by GPUI (Metal on macOS).
 2. **Fast and small.** Targets: sub-50ms startup, about 30MB of RAM.
-3. **Local-first and MonoCode-compatible.** BenCode reads and writes MonoCode's
-   own SQLite database, so both apps show the same threads.
+3. **Local-first, with its own data.** Threads, checkpoints and account profiles
+   live in BenCode's folder. Nothing is shared with MonoCode; a first launch
+   copies a MonoCode install's data in once.
 4. **Agent control plane.** Agent CLIs are driven over stdio; BenCode adds no
    token cost of its own.
 
@@ -80,7 +81,7 @@ bencode/
     ├── main.rs               window, theme, keymap, root view
     ├── app.rs                BenCodeApp: the one app entity and its state
     ├── app/                  app logic split by concern (no rendering)
-    ├── db/                   MonoCode's SQLite database
+    ├── db/                   BenCode's SQLite database (MonoCode's schema)
     ├── git/                  git through the `git` CLI
     ├── harness/              agent CLIs over stdio
     ├── ui/                   every view (render functions on BenCodeApp)
@@ -90,6 +91,8 @@ bencode/
     ├── skills/               SKILL.md discovery and `/skill` injection
     ├── schedule.rs           automation schedules (next run time)
     ├── settings.rs           BenCode's settings.json
+    ├── storage.rs            where BenCode keeps its data (database, checkpoints, account profiles)
+    ├── monocode_import/      the one-time copy of a MonoCode install's data
     ├── external_editor.rs    finding and launching VS Code, Cursor, Zed, …
     └── workspace.rs          workspace file helpers
 ```
@@ -225,7 +228,7 @@ only read that cache.
 | `Sidebar.tsx` `CompactProjectRail`, `settings.ts` `CollapsedProjectRailMode` | `ui/rail/compact.rs` | Icon rail with the sidebar as a drawer; its project list has no search or per-project menu |
 | `ProjectRail`, `TitleBar.tsx`, `Sidebar.tsx` | `ui/rail/`, `ui/titlebar/`, `ui/sidebar*.rs` | Shell |
 | `app/shell/UsageFooter.tsx`, `UsageProviderChip.tsx`, `providers/model/rateLimits*.ts`, `src-tauri/src/rate_limits.rs` | `ui/footer/`, `app/usage.rs`, `rate_limits/` | 5h / weekly / monthly usage per account; HTTP through `curl` |
-| `providers/model/providerAccounts.ts`, `accountUsage.ts`, `harness/core/auth.ts`, `src-tauri/src/account_identity.rs` | `harness/accounts.rs`, `harness/login.rs`, `harness/account_identity.rs`, `app/accounts.rs`, `db/monocode_accounts.rs` | Account profiles shared with MonoCode on disk; BenCode's own list is in `settings.json` |
+| `providers/model/providerAccounts.ts`, `accountUsage.ts`, `harness/core/auth.ts`, `src-tauri/src/account_identity.rs` | `harness/accounts.rs`, `harness/login.rs`, `harness/account_identity.rs`, `app/accounts.rs` | Account profiles in BenCode's own `provider-accounts`; the list is in `settings.json` |
 | `shared/ui/` (buttons, dialogs) | Ely components directly | No local component library |
 | `integrations/harness/` | `harness/` | Argv builders and stdout parsers |
 | `src-tauri/src/` (`checkpoint.rs`, `reminders.rs`, `fs.rs`, …) | `git/checkpoint.rs`, `db/`, `ui/file_tree/fs.rs` | In-process calls, no IPC |
@@ -375,7 +378,7 @@ div()
 - **Model keys use MonoCode's `harness:model` form** (`claude:opus`). See
   `catalog.rs` and `discovery.rs`; never pass a display name to `--model`.
 - **Account profiles** (`accounts.rs`): a thread's `provider_account_id` picks
-  the profile directory under MonoCode's `provider-accounts`; `SpawnRequest.account`
+  the profile directory under BenCode's `provider-accounts` (`storage.rs`); `SpawnRequest.account`
   (and `AppServer::open`'s `account`) point the CLI at it. Any new place that
   starts Claude or Codex for a thread must pass the thread's `AccountProfile`.
 - `AgentEvent` is the whole contract with the UI: `SessionStarted`, `TextDelta`,
@@ -384,16 +387,20 @@ div()
 
 ### Database (`src/db/`)
 
-- BenCode writes **MonoCode's real database**:
-  `~/Library/Application Support/com.monocode.desktop/monocode.db`. A bad write
-  damages the user's MonoCode data.
-- Deleting a worktree goes through MonoCode's `worktree_removals` journal
+- BenCode has **its own database**,
+  `~/Library/Application Support/BenCode/bencode.db` (`storage.rs`), in
+  MonoCode's schema. It is the user's real threads: a bad write loses them.
+- **Nothing is shared with MonoCode.** No code outside `monocode_import/` may
+  name a MonoCode path. That module runs once, when BenCode has no database
+  yet: it copies MonoCode's database, checkpoints and account profiles in and
+  reads the account names from its webview storage. It only ever reads
+  MonoCode's files.
+- Deleting a worktree goes through the `worktree_removals` journal
   (`db/worktree_removals.rs`): threads are detached before git runs and the
-  journal is settled when the database opens. Keep its JSON MonoCode's.
+  journal is settled when the database opens.
 - Keep unknown JSON fields round-tripping (`Block.extra`, `AutomationRow.extra`)
-  and do not touch session columns BenCode does not model.
-- MonoCode's account list is in its webview storage (`~/Library/WebKit/…`);
-  `db/monocode_accounts.rs` opens it read-only. Never write there.
+  and do not touch session columns BenCode does not model: imported rows carry
+  them.
 - Transcript blocks use MonoCode's roles: `user`, `assistant`, `reasoning`,
   `tool`, `system`.
 - **Never `let _ =` a DB or git `Result`.** Log it or show it.
@@ -408,8 +415,8 @@ div()
   push, PRs and history; `graph.rs` lays out the commit graph;
   `worktrees.rs` manages worktrees; `checkpoint.rs` records what each thread's agent changed (a snapshot
   when an edit tool starts and another when it completes) for the session
-  review card's Keep / Undo. It uses MonoCode's own store
-  (`~/Library/Application Support/com.monocode.desktop/checkpoints`), so the manifest format must stay compatible.
+  review card's Keep / Undo. It uses BenCode's own store
+  (`~/Library/Application Support/BenCode/checkpoints`) in MonoCode's manifest format, which imported checkpoints rely on.
 
 ### Commands, preferences, discovery
 
@@ -444,7 +451,7 @@ div()
 ```bash
 cargo check          # fast type check
 cargo test           # unit tests (parsers, models, git against temp repos)
-cargo run            # the app; this opens MonoCode's real database
+cargo run            # the app; this opens the user's real BenCode database
 RUST_BACKTRACE=1 cargo run   # when chasing a panic
 RUST_LOG=debug cargo run     # env_logger output
 ```

@@ -8,7 +8,7 @@ use anyhow::Result;
 use rusqlite::params;
 use serde_json::Value;
 
-use super::{AutomationRunRow, MonoCodeDb};
+use super::{AutomationRunRow, AppDb};
 
 /// MonoCode's default `missedRunGraceMinutes`.
 pub const DEFAULT_GRACE_MINUTES: i64 = 720;
@@ -16,7 +16,7 @@ const INTERRUPTED: &str = "Interrupted when BenCode last stopped.";
 const NOT_STARTED: &str = "Not started before BenCode last stopped.";
 const MISSED: &str = "Missed the scheduled run beyond its grace period.";
 
-impl MonoCodeDb {
+impl AppDb {
     /// Advances automation `id` from `expected_next` to `next` and records a
     /// `scheduled` run, if the occurrence is still unclaimed and due at
     /// `now`. A run later than `grace_minutes` is recorded as `skipped`.
@@ -136,7 +136,7 @@ mod tests {
     use super::super::tests::monocode_db;
     use super::*;
 
-    fn insert_automation(db: &MonoCodeDb, id: &str, next: i64) {
+    fn insert_automation(db: &AppDb, id: &str, next: i64) {
         db.conn
             .execute(
                 "INSERT INTO automations (id, definition_json, enabled, next_run_at, updated_at)

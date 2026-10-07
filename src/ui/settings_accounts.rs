@@ -162,7 +162,6 @@ impl BenCodeApp {
         let busy = self.accounts.working.is_some();
         let removing = self.accounts.working
             == Some(Working::Removing(account.provider.clone(), account.id.clone()));
-        let shared = self.accounts.is_shared(account);
         let identity = self.accounts.identity(account);
         let usage = self.usage.cached(provider, &account.id);
         let id = format!("{}-{}", provider.id(), account.id);
@@ -283,13 +282,8 @@ impl BenCodeApp {
                             IconButton::new(SharedString::from(format!("account-remove-{id}")), IconName::Trash2)
                                 .variant(ButtonVariant::Ghost)
                                 .size(ControlSize::Sm)
-                                // MonoCode's list is its own: BenCode only reads it.
-                                .tooltip(if shared {
-                                    "Added in MonoCode; remove it there"
-                                } else {
-                                    "Remove account"
-                                })
-                                .disabled(busy || shared)
+                                .tooltip("Remove account")
+                                .disabled(busy)
                                 .on_click(cx.listener(move |this, _, _, cx| {
                                     this.request_remove_account(remove_target.clone(), cx);
                                 })),

@@ -18,7 +18,7 @@ use gpui::Context;
 
 use crate::app::file_pane::PaneTab;
 use crate::app::{BenCodeApp, is_path_in_project, normalize_project_path, same_project_path};
-use crate::db::{MonoCodeDb, SessionRow};
+use crate::db::{AppDb, SessionRow};
 use crate::git::Worktree;
 use crate::git::worktrees::{create_worktree, list_worktrees, remove_worktree};
 use crate::git::{Branch, list_branches};
@@ -135,7 +135,7 @@ pub fn worktree_session_ids(path: &str, stored: &[String], sessions: &[SessionRo
 }
 
 /// MonoCode `detachSessionWorktree`, in memory; the database side is
-/// `MonoCodeDb::prepare_worktree_removal`.
+/// `AppDb::prepare_worktree_removal`.
 pub fn detach_session(session: &mut SessionRow, path: &str, project_cwd: &str) {
     if session.worktree_cwd.as_deref().is_none_or(str::is_empty) {
         session.worktree_cwd = Some(session.cwd.clone());
@@ -172,7 +172,7 @@ fn load_page(project: &str, db_file: Option<std::path::PathBuf>) -> PageLoad {
     let trees = list_worktrees(project).and_then(|trees| {
         let mut stored = HashMap::new();
         if let Some(file) = db_file {
-            let reader = MonoCodeDb::open_reader(&file)?;
+            let reader = AppDb::open_reader(&file)?;
             for tree in trees.iter().filter(|t| !t.is_main) {
                 stored.insert(
                     tree.path.clone(),

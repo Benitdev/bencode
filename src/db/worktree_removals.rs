@@ -12,7 +12,7 @@ use anyhow::Result;
 use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 
-use super::MonoCodeDb;
+use super::AppDb;
 
 /// MonoCode `migrate`: the journal and the in-flight table it restores.
 pub(super) const WORKTREE_REMOVALS_SQL: &str = "
@@ -59,7 +59,7 @@ fn contains_working_dir(root: &str, cwd: &str) -> bool {
     crate::app::is_path_in_project(&expand_home(cwd).to_string_lossy(), root)
 }
 
-impl MonoCodeDb {
+impl AppDb {
     /// MonoCode `session_ids`: threads still working in the worktree at
     /// `path`, archived ones included.
     pub fn session_ids_in_worktree(&self, path: &str) -> Result<Vec<String>> {
@@ -214,8 +214,8 @@ mod tests {
     use super::*;
     use crate::db::SessionRow;
 
-    fn db_with(rows: &[SessionRow]) -> MonoCodeDb {
-        let db = MonoCodeDb::open_in_memory().unwrap();
+    fn db_with(rows: &[SessionRow]) -> AppDb {
+        let db = AppDb::open_in_memory().unwrap();
         for row in rows {
             db.upsert_session(row).unwrap();
         }
@@ -240,7 +240,7 @@ mod tests {
 
     type Context = (String, Option<String>, bool, Option<String>, Option<String>);
 
-    fn context(db: &MonoCodeDb, id: &str) -> Context {
+    fn context(db: &AppDb, id: &str) -> Context {
         let s = db.get_session(id).unwrap().unwrap();
         (
             s.cwd,
@@ -251,7 +251,7 @@ mod tests {
         )
     }
 
-    fn journal_count(db: &MonoCodeDb) -> i64 {
+    fn journal_count(db: &AppDb) -> i64 {
         db.conn
             .query_row("SELECT COUNT(*) FROM worktree_removals", [], |r| r.get(0))
             .unwrap()
