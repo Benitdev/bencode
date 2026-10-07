@@ -585,7 +585,7 @@ impl BenCodeApp {
             .map(DocRow::file)
             .filter(|f| doc.open.contains(&doc.files[*f].id));
         let rows_key = key.to_string();
-        let gutter = scrollbar::gutter();
+        let gutter = scrollbar::gutter(&doc.list);
         div()
             .flex()
             .flex_col()

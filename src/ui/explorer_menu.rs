@@ -391,14 +391,9 @@ pub fn render_menu_styled(
         // GPUI cannot blur what lies behind an element, so the glass is
         // the opaque background with that tint laid on.
         MenuStyle::Explorer => {
-            let glass = if theme.is_dark() {
-                colors.bg.blend(colors.fg.opacity(0.02))
-            } else {
-                colors.bg
-            };
             menu.p_1()
                 .rounded(px(12.0))
-                .bg(glass)
+                .bg(crate::ui::sidebar_popovers::popover_glass(cx))
                 .shadow_xl()
                 // `popover-open`: 170ms `cubic-bezier(0.16, 1, 0.3, 1)` from
                 // opacity 0, `scale(0.94)` and 8px towards the anchor

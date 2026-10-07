@@ -449,12 +449,18 @@ impl BenCodeApp {
     ) -> impl IntoElement {
         let colors = &cx.theme().colors;
         let highlighted = ix == self.picker_index;
-        let (icon, tint) = match item.kind {
-            SuggestionKind::Note => (IconName::StickyNote, colors.fg.opacity(0.6)),
-            SuggestionKind::Folder => {
-                crate::ui::file_tree::resolve_entry_icon(&item.label, true, false)
-            }
-            _ => crate::ui::file_tree::resolve_entry_icon(&item.label, false, false),
+        let entry = |dir| {
+            crate::ui::file_tree::resolve_entry_icon(&item.label, dir, false)
+                .size(IconSize::Sm)
+                .into_any_element()
+        };
+        let icon = match item.kind {
+            SuggestionKind::Note => Icon::new(IconName::StickyNote)
+                .size(IconSize::Sm)
+                .color(colors.fg.opacity(0.6))
+                .into_any_element(),
+            SuggestionKind::Folder => entry(true),
+            _ => entry(false),
         };
         let name_color = if highlighted { colors.info } else { colors.fg };
         let name = match item.kind {
@@ -469,7 +475,7 @@ impl BenCodeApp {
             .px_2()
             .text_size(px(13.0))
             .when(highlighted, |el| el.bg(colors.active))
-            .child(Icon::new(icon).size(IconSize::Sm).color(tint))
+            .child(icon)
             .child(
                 div()
                     .flex_1()

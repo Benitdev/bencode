@@ -291,7 +291,7 @@ impl BenCodeApp {
                 uniform_list("search-hits", self.search_hits.len(), rows)
                     .track_scroll(&self.search_scroll)
                     .size_full()
-                    .pr(crate::ui::scrollbar::gutter()),
+                    .pr(crate::ui::scrollbar::gutter(&self.search_scroll)),
             ))
             .into_any_element()
     }

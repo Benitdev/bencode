@@ -304,8 +304,9 @@ impl BenCodeApp {
         cx: &Context<Self>,
     ) -> impl IntoElement {
         let view = self.transcripts.get(&session.id);
-        let scrolled_up = list_state.is_scrolled_to_end() == Some(false)
-            && !view.is_some_and(|view| view.holds_prompt());
+        // Not `is_scrolled_to_end`: it knows nothing until every row has
+        // been measured, which a long transcript's rows never all are.
+        let scrolled_up = view.is_some_and(|view| !view.near_end());
         let focused = self.selected_session_id.as_deref() == Some(session.id.as_str());
         let scrollbar = crate::ui::scrollbar::ScrollBar::new(
             SharedString::from(format!("transcript-scrollbar-{}", session.id)),

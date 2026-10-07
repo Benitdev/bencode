@@ -71,6 +71,7 @@ bencode/
 ├── Cargo.toml                dependencies and build profiles
 ├── assets/
 │   ├── icons/                Lucide SVGs Ely does not ship (ui/icons.rs)
+│   ├── file-icons/           Material Icon Theme SVGs and lookup tables (ui/file_tree/icons.rs)
 │   └── providers/            harness brand icons (ui/provider_icon.rs)
 ├── docs/migration/           parity backlog and migration notes
 ├── reference/monocode        symlink to the MonoCode source (git-ignored)
@@ -242,6 +243,9 @@ pages in `examples/gallery/pages/<chapter>.rs`. Read the library's own
   `harness_color` gives each harness its brand dot.
 - Icons: `IconName` from Ely first. A Lucide icon Ely lacks goes in
   `assets/icons/` and `ui/icons.rs::ExtraIcon`.
+- File and folder names take MonoCode's Material icon through
+  `file_tree::resolve_entry_icon(..).size(..)`; `assets/file-icons/generate.mjs`
+  rebuilds the pack from MonoCode's `react-material-icon-theme`.
 
 ### Callbacks
 

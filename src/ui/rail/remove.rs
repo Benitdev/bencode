@@ -119,8 +119,25 @@ impl BenCodeApp {
     }
 
     fn forget_rail_project(&mut self, path: &str, ids: &[String], cx: &mut Context<Self>) {
+        // The next project takes over first, and the project's panes close
+        // outright: `delete_session` would otherwise keep its last tab open
+        // on a fresh thread, saved in the very folder being removed.
+        self.leave_removed_project(path, cx);
+        let left = !crate::app::same_project_path(path, &self.current_cwd);
         for id in ids {
+            if left && !self.is_agent_running_in(id) {
+                self.tabs.remove_session(id);
+            }
             self.delete_session(id, cx);
+        }
+        // `recent_projects` is only rebuilt from the sessions at startup.
+        let emptied = !self
+            .sessions
+            .iter()
+            .any(|s| crate::app::same_project_path(&s.cwd, path));
+        if left && emptied {
+            self.recent_projects
+                .retain(|p| !crate::app::same_project_path(p, path));
         }
         let pins: Vec<String> = self
             .settings
@@ -131,7 +148,7 @@ impl BenCodeApp {
             .collect();
         self.set_pinned_projects(pins, cx);
         self.update_rail_prefs(|prefs| prefs.without_project(path), cx);
-        self.leave_removed_project(path, cx);
+        cx.notify();
     }
 
     /// MonoCode `RemoveProjectDialog`, as a `ConfirmDialog`.
@@ -155,9 +172,11 @@ impl BenCodeApp {
             ConfirmDialog::new(
                 "remove-project",
                 format!("Delete “{}”?", removing.name),
+                // Broken by hand: Ely's dialog does not wrap its message.
                 format!(
-                    "All conversations for this project will be deleted. It also leaves the sidebar. \
-                     The folder on disk stays put, and opening it again brings the project back empty.{count}\n\n{}",
+                    "All conversations for this project will be deleted.\n\
+                     It also leaves the sidebar. The folder on disk stays put,\n\
+                     and opening it again brings the project back empty.{count}\n\n{}",
                     removing.path
                 ),
                 close,

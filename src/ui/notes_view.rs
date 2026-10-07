@@ -292,7 +292,7 @@ impl BenCodeApp {
                 uniform_list("notes-list", shown.len(), rows)
                     .track_scroll(&self.notes_scroll)
                     .size_full()
-                    .pr(crate::ui::scrollbar::gutter()),
+                    .pr(crate::ui::scrollbar::gutter(&self.notes_scroll)),
             )
             .into_any_element()
         };

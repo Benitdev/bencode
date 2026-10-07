@@ -399,9 +399,9 @@ impl BenCodeApp {
                         .copied()
                         .filter(|p| *p < dir.chars().count())
                         .collect();
-                    let (icon, tint) = resolve_entry_icon(name, false, false);
+                    let icon = resolve_entry_icon(name, false, false);
                     self.quick_open_row(ix, cx)
-                        .child(Icon::new(icon).size(IconSize::Sm).color(tint))
+                        .child(icon.size(IconSize::Sm))
                         .child(
                             div()
                                 .flex_1()

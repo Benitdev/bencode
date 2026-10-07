@@ -58,12 +58,14 @@ const INSET: f32 = 2.0;
 const OVERLAY_IDLE: Duration = Duration::from_millis(1000);
 const OVERLAY_FADE: Duration = Duration::from_millis(300);
 
-/// Room a scroll view keeps at its right edge for the bar: WebKit lays a
-/// legacy bar beside the content, an overlay one over it.
-pub fn gutter() -> Pixels {
+/// Room a scroll view keeps at its right edge for its bar: WebKit
+/// (`overflow: auto`) lays a legacy bar beside the content, and only while
+/// the content overflows; an overlay bar goes over it. The extent is the
+/// last layout's, so the room follows a change one frame later.
+pub fn gutter(source: impl Into<ScrollSource>) -> Pixels {
     match system_style() {
-        Style::Legacy => px(TRACK),
-        Style::Overlay => Pixels::ZERO,
+        Style::Legacy if source.into().extent().reach > px(0.5) => px(TRACK),
+        _ => Pixels::ZERO,
     }
 }
 
@@ -226,16 +228,26 @@ pub fn framed(
 pub struct Scrolled {
     id: ElementId,
     scroller: gpui::Stateful<gpui::Div>,
+    /// The scroller's own right padding, when its rows reach the edge and
+    /// it keeps the bar's room beside them.
+    gutter: Option<Pixels>,
 }
 
 impl Scrolled {
-    /// `scroller` scrolls (`overflow_y_scroll`) and fills its frame; it
-    /// keeps `gutter()` at its right where its rows reach the edge.
+    /// `scroller` scrolls (`overflow_y_scroll`) and fills its frame.
     pub fn new(id: impl Into<ElementId>, scroller: gpui::Stateful<gpui::Div>) -> Self {
         Self {
             id: id.into(),
             scroller,
+            gutter: None,
         }
+    }
+
+    /// Keeps `gutter()` at the scroller's right, on top of its own `padding`
+    /// (which this sets, so the scroller must not set its right padding).
+    pub fn gutter(mut self, padding: Pixels) -> Self {
+        self.gutter = Some(padding);
+        self
     }
 }
 
@@ -245,7 +257,11 @@ impl RenderOnce for Scrolled {
             .use_keyed_state((self.id.clone(), "scroll"), cx, |_, _| ScrollHandle::new())
             .read(cx)
             .clone();
-        framed(self.id, &handle, self.scroller.track_scroll(&handle))
+        let scroller = match self.gutter {
+            Some(padding) => self.scroller.pr(padding + gutter(&handle)),
+            None => self.scroller,
+        };
+        framed(self.id, &handle, scroller.track_scroll(&handle))
     }
 }
 

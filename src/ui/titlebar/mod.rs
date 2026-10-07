@@ -544,10 +544,14 @@ impl BenCodeApp {
         let colors = &cx.theme().colors;
         let shown = tab.harnesses.iter().take(3);
         let extra = tab.harnesses.len().saturating_sub(3);
-        div()
+        // Sized by hand: taffy gives a row no width at all once a child has
+        // a negative margin, and the headline would start under the icons.
+        let stack_width = 14.0 + 12.0 * shown.len().saturating_sub(1) as f32;
+        let stack = div()
             .flex()
             .flex_none()
             .items_center()
+            .w(px(stack_width))
             .children(shown.enumerate().map(|(ix, harness)| {
                 let slot = div()
                     .size(px(14.0))
@@ -574,7 +578,12 @@ impl BenCodeApp {
                         .child(HarnessIcon::new(harness.as_str()).size(px(14.0)))
                         .into_any_element()
                 }
-            }))
+            }));
+        div()
+            .flex()
+            .flex_none()
+            .items_center()
+            .child(stack)
             .when(extra > 0, |el| {
                 el.child(
                     div()

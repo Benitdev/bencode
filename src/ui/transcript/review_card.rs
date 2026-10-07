@@ -252,7 +252,7 @@ impl BenCodeApp {
         let colors = &theme.colors;
         let fg = colors.fg;
         let name = file.relative.rsplit('/').next().unwrap_or(&file.relative);
-        let (icon, tint) = crate::ui::file_tree::resolve_entry_icon(name, false, false);
+        let icon = crate::ui::file_tree::resolve_entry_icon(name, false, false);
         let (open_id, focus) = (session_id.to_string(), file.relative.clone());
         div()
             .id(SharedString::from(format!("review-file-{session_id}-{}", file.relative)))
@@ -270,7 +270,7 @@ impl BenCodeApp {
             .on_click(cx.listener(move |this, _, _, cx| {
                 this.open_session_changes(&open_id, Some(focus.clone()), cx)
             }))
-            .child(Icon::new(icon).size(IconSize::Sm).color(tint))
+            .child(icon.size(IconSize::Sm))
             .child(
                 div()
                     .flex_1()

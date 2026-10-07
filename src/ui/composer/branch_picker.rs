@@ -17,6 +17,7 @@ use crate::app::BenCodeApp;
 use crate::app::workspace_sync::BranchTarget;
 use crate::git;
 use crate::ui::app_callback::app_callback;
+use crate::ui::sidebar_popovers::popover_glass;
 
 /// MonoCode `MENU_WIDTH`, `MENU_MIN_HEIGHT`, `MENU_MAX_HEIGHT`.
 const MENU_WIDTH: f32 = 280.0;
@@ -442,7 +443,7 @@ impl BenCodeApp {
             .rounded(px(12.0))
             .border_1()
             .border_color(colors.border)
-            .bg(colors.surface)
+            .bg(popover_glass(cx))
             .shadow_xl()
             .child(search)
             .child(
