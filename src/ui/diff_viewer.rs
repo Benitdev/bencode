@@ -15,6 +15,7 @@ use gpui::{
 };
 
 use crate::app::BenCodeApp;
+use crate::ui::scrollbar::{self, ScrollBar};
 use crate::app::file_pane::PaneTab;
 use crate::git::checkpoint::CheckpointStore;
 use crate::git::{self, DiffSource};
@@ -584,6 +585,7 @@ impl BenCodeApp {
             .map(DocRow::file)
             .filter(|f| doc.open.contains(&doc.files[*f].id));
         let rows_key = key.to_string();
+        let gutter = scrollbar::gutter();
         div()
             .flex()
             .flex_col()
@@ -602,7 +604,8 @@ impl BenCodeApp {
                                 this.render_doc_row(&rows_key, ix, cx)
                             }),
                         )
-                        .size_full(),
+                        .size_full()
+                        .pr(gutter),
                     )
                     .children(pinned.map(|f| {
                         div()
@@ -610,9 +613,13 @@ impl BenCodeApp {
                             .absolute()
                             .top_0()
                             .left_0()
-                            .right_0()
+                            .right(gutter)
                             .child(self.render_doc_header(key, doc, f, true, cx))
-                    })),
+                    }))
+                    .child(ScrollBar::new(
+                        SharedString::from(format!("diff-scrollbar-{key}")),
+                        &doc.list,
+                    )),
             )
             .into_any_element()
     }

@@ -145,7 +145,7 @@ impl BenCodeApp {
         // are open, so the page stands alone.
         if self.is_rail_open {
             // MonoCode `mx-auto w-full max-w-5xl px-8 py-8 pb-16`, scrolling.
-            return div()
+            let page = div()
                 .id("settings-page")
                 .size_full()
                 .overflow_y_scroll()
@@ -158,7 +158,8 @@ impl BenCodeApp {
                         .pt_8()
                         .pb_16()
                         .child(self.render_settings_page(cx)),
-                )
+                );
+            return crate::ui::scrollbar::Scrolled::new("settings-page-scrollbar", page)
                 .into_any_element();
         }
         let layout = SettingsLayout::new(

@@ -286,9 +286,15 @@ impl BenCodeApp {
                         .collect::<Vec<_>>()
                 }
             });
-            uniform_list("notes-list", shown.len(), rows)
-                .size_full()
-                .into_any_element()
+            crate::ui::scrollbar::framed(
+                "notes-list-scrollbar",
+                &self.notes_scroll,
+                uniform_list("notes-list", shown.len(), rows)
+                    .track_scroll(&self.notes_scroll)
+                    .size_full()
+                    .pr(crate::ui::scrollbar::gutter()),
+            )
+            .into_any_element()
         };
         div()
             .flex()

@@ -362,7 +362,9 @@ impl BenCodeApp {
             .line_height(relative(PREFLIGHT_LEADING))
             .child(self.render_tree_toolbar(cx))
             .child(self.render_tree_root_row(&cwd, cx))
-            .child(
+            .child(crate::ui::scrollbar::framed(
+                "explorer-tree-scrollbar",
+                &self.file_tree.scroll,
                 div()
                     .id("explorer-tree-scroll-pane")
                     .track_scroll(&self.file_tree.scroll)
@@ -372,6 +374,7 @@ impl BenCodeApp {
                     .w_full()
                     .min_h_0()
                     .min_w_0()
+                    .pr(crate::ui::scrollbar::gutter())
                     .overflow_y_scroll()
                     .overflow_x_hidden()
                     // Right-clicking empty space opens the root's menu.
@@ -403,7 +406,7 @@ impl BenCodeApp {
                     .when(visible.above > 0.0, |el| el.child(div().flex_none().h(px(visible.above))))
                     .children(rendered)
                     .when(visible.below > 0.0, |el| el.child(div().flex_none().h(px(visible.below)))),
-            )
+            ))
             .into_any_element()
     }
 

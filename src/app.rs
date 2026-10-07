@@ -278,6 +278,8 @@ pub struct BenCodeApp {
     pub notes: Vec<crate::db::Note>,
     pub selected_note_id: Option<String>,
     pub note_filter_query: String,
+    /// The notes list's scroll, for its scroll bar.
+    pub notes_scroll: gpui::UniformListScrollHandle,
     pub note_filter_input: Entity<TextInput>,
     pub note_title_input: Entity<TextInput>,
     pub note_body_input: Entity<TextInput>,
@@ -319,6 +321,8 @@ pub struct BenCodeApp {
     pub search_modal_input: Entity<TextInput>,
     pub search_scope: crate::ui::search_view::SearchScope,
     pub search_hits: Vec<crate::ui::search_view::SearchHit>,
+    /// The hit list's scroll, for its scroll bar.
+    pub search_scroll: gpui::UniformListScrollHandle,
     pub search_active_index: usize,
     // Inbox
     /// Rename/delete dialog opened from the thread list.
@@ -1105,6 +1109,7 @@ impl BenCodeApp {
             notes,
             selected_note_id,
             note_filter_query: String::new(),
+            notes_scroll: Default::default(),
             note_filter_input,
             note_title_input,
             note_body_input,
@@ -1132,6 +1137,7 @@ impl BenCodeApp {
             search_modal_input,
             search_scope: crate::ui::search_view::SearchScope::All,
             search_hits: Vec::new(),
+            search_scroll: Default::default(),
             search_active_index: 0,
             session_dialog: None,
             window_drag_pressed: false,

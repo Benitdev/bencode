@@ -27,6 +27,7 @@ pub mod provider_icon;
 pub mod quick_open;
 pub mod rail;
 pub mod reminder_notices;
+pub mod scrollbar;
 pub mod search_view;
 pub mod settings_modal;
 pub mod settings_worktrees;

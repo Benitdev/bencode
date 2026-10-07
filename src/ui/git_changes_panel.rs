@@ -22,6 +22,7 @@ use gpui::{
 };
 
 use crate::app::BenCodeApp;
+use crate::ui::scrollbar;
 use crate::app::file_pane::PaneTab;
 use crate::git::graph::{self, Cmd, Node};
 use crate::git::sync::{self as git_sync, BranchPr, HistoryCommit};
@@ -1299,14 +1300,19 @@ impl BenCodeApp {
                 .when(visible.below > 0.0, |el| el.child(div().h(px(visible.below))))
                 .into_any_element()
         };
-        div()
-            .id("git-changes-scroll")
-            .track_scroll(&self.changes_ui.scroll)
-            .flex_1()
-            .min_h_0()
-            .overflow_y_scroll()
-            .py(px(CHANGES_PAD_Y))
-            .child(body)
+        scrollbar::framed(
+            "git-changes-scrollbar",
+            &self.changes_ui.scroll,
+            div()
+                .id("git-changes-scroll")
+                .track_scroll(&self.changes_ui.scroll)
+                .flex_1()
+                .min_h_0()
+                .overflow_y_scroll()
+                .py(px(CHANGES_PAD_Y))
+                .pr(scrollbar::gutter())
+                .child(body),
+        )
     }
 
     /// MonoCode `FileSection`'s header: chevron, title, count pill and
@@ -1337,6 +1343,7 @@ impl BenCodeApp {
         // In `tint`, `fg` while its button is hovered (MonoCode
         // `hover:text-content`).
         let glyph = |key: &str, icon: Icon| {
+            icon.size(IconSize::Sm)
                 .color(tint)
                 .group_hover_color(action_group(key), fg)
                 .into_any_element()
@@ -1918,12 +1925,15 @@ impl BenCodeApp {
                     ),
             )
             .when(open, |el| {
-                el.child(
+                el.child(scrollbar::framed(
+                    "git-graph-scrollbar",
+                    &self.changes_ui.graph_scroll,
                     div()
                         .id("git-graph-rows")
                         .track_scroll(&self.changes_ui.graph_scroll)
                         .flex_1()
                         .min_h_0()
+                        .pr(scrollbar::gutter())
                         .overflow_y_scroll()
                         .overflow_x_hidden()
                         .map(|el| {
@@ -1950,7 +1960,7 @@ impl BenCodeApp {
                                     .when(visible.below > 0.0, |el| el.child(div().flex_none().h(px(visible.below))))
                             }
                         }),
-                )
+                ))
             })
     }
 

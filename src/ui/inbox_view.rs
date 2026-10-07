@@ -858,12 +858,17 @@ impl BenCodeApp {
             .key_context("InboxList")
             .track_focus(&self.inbox_focus)
             .size_full()
-            .child(
+            .flex()
+            .flex_col()
+            .child(crate::ui::scrollbar::framed(
+                "inbox-list-scrollbar",
+                &self.inbox.scroll,
                 uniform_list("inbox-list", len, rows)
                     .track_scroll(&self.inbox.scroll)
                     .size_full()
-                    .p(px(6.0)),
-            )
+                    .p(px(6.0))
+                    .pr(px(6.0) + crate::ui::scrollbar::gutter()),
+            ))
             .into_any_element()
     }
 

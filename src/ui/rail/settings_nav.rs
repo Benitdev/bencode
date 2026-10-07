@@ -49,7 +49,8 @@ impl BenCodeApp {
             .flex_1()
             .min_h_0()
             .flex_col()
-            .child(
+            .child(crate::ui::scrollbar::Scrolled::new(
+                "settings-nav-scrollbar",
                 // `flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-2 py-3`
                 div()
                     .id("settings-nav")
@@ -60,9 +61,10 @@ impl BenCodeApp {
                     .gap_5()
                     .overflow_y_scroll()
                     .px_2()
+                    .pr(px(8.0) + crate::ui::scrollbar::gutter())
                     .py_3()
                     .children(groups),
-            )
+            ))
             .child(
                 // `flex shrink-0 flex-col gap-px p-2`
                 div().flex().flex_none().flex_col().gap(px(1.0)).p_2().child(

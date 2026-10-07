@@ -276,8 +276,9 @@ impl BenCodeApp {
         let empty = sections.ungrouped.is_empty() && sections.groups.is_empty() && sections.pinned.is_empty();
         let pinned = sections.pinned;
         // `flex min-h-0 flex-1 flex-col overflow-y-auto pb-2`
-        div()
+        let projects = div()
             .id("rail-projects")
+            .pr(crate::ui::scrollbar::gutter())
             .flex()
             .flex_1()
             .min_h_0()
@@ -290,7 +291,8 @@ impl BenCodeApp {
             .when(!sections.groups.is_empty(), |el| {
                 el.child(self.render_groups_section(&sections.groups, cx))
             })
-            .child(self.render_project_section("Projects", "projects", &sections.ungrouped, true, empty, cx))
+            .child(self.render_project_section("Projects", "projects", &sections.ungrouped, true, empty, cx));
+        crate::ui::scrollbar::Scrolled::new("rail-projects-scrollbar", projects)
     }
 
     /// MonoCode `AddProjectButton`, lit while its popover is open.

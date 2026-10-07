@@ -307,6 +307,10 @@ impl BenCodeApp {
         let scrolled_up = list_state.is_scrolled_to_end() == Some(false)
             && !view.is_some_and(|view| view.holds_prompt());
         let focused = self.selected_session_id.as_deref() == Some(session.id.as_str());
+        let scrollbar = crate::ui::scrollbar::ScrollBar::new(
+            SharedString::from(format!("transcript-scrollbar-{}", session.id)),
+            &list_state,
+        );
         let content = {
             let sid = session.id.clone();
             list(
@@ -330,6 +334,7 @@ impl BenCodeApp {
             .child(content)
             .children(view.and_then(|view| view.anchor_check()))
             .children(outline)
+            .child(scrollbar)
             .children(self.render_selection_menu(&session.id, cx))
             .when(scrolled_up, |el| {
                 el.child(self.render_jump_to_latest(&session.id, focused, cx))
