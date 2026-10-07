@@ -134,6 +134,51 @@ fn random_uuid() -> String {
     )
 }
 
+/// MonoCode `renameProviderAccount`: names `account` `label` in this app's
+/// list. An account only MonoCode lists, or the default profile, gets an
+/// entry here, which wins over MonoCode's name. False for a blank label.
+pub fn rename_account(stored: &mut StoredAccounts, account: &ProviderAccount, label: &str) -> bool {
+    let label = clean_label(label);
+    if label.is_empty() || !valid_account_id(&account.id) {
+        return false;
+    }
+    let list = stored.entry(account.provider.clone()).or_default();
+    match list.iter_mut().find(|entry| entry.id == account.id) {
+        Some(entry) => entry.label = label,
+        None => list.push(ProviderAccount {
+            id: account.id.clone(),
+            provider: account.provider.clone(),
+            label,
+        }),
+    }
+    true
+}
+
+/// MonoCode `removeProviderAccount`: drops the account from this app's list
+/// and from every project's choice. The default profile stays.
+pub fn remove_account(
+    stored: &mut StoredAccounts,
+    selections: &mut StoredSelections,
+    provider: &str,
+    id: &str,
+) {
+    if id == DEFAULT_ACCOUNT_ID {
+        return;
+    }
+    if let Some(list) = stored.get_mut(provider) {
+        list.retain(|account| account.id != id);
+        if list.is_empty() {
+            stored.remove(provider);
+        }
+    }
+    selections.retain(|_, selection| {
+        if selection.get(provider).is_some_and(|chosen| chosen == id) {
+            selection.remove(provider);
+        }
+        !selection.is_empty()
+    });
+}
+
 /// The account a new thread of `project` uses; the default profile when the
 /// remembered one is gone.
 pub fn selected_account_id(
@@ -242,6 +287,32 @@ impl AccountProfile {
         }
     }
 
+    /// MonoCode `provider_account_remove`: deletes the profile's sign-in
+    /// (Claude's is in the Keychain), then its directory. Blocking.
+    pub fn remove(&self) -> Result<(), String> {
+        if self.provider == "claude" {
+            crate::rate_limits::delete_claude_credentials(&self.dir)?;
+        }
+        let failed = |err: std::io::Error| {
+            format!(
+                "Could not remove the {} account directory {}: {err}",
+                self.provider,
+                self.dir.display()
+            )
+        };
+        let metadata = match std::fs::symlink_metadata(&self.dir) {
+            Ok(metadata) => metadata,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(err) => return Err(failed(err)),
+        };
+        if metadata.is_dir() {
+            std::fs::remove_dir_all(&self.dir)
+        } else {
+            std::fs::remove_file(&self.dir)
+        }
+        .map_err(failed)
+    }
+
     /// `apply` for the harness runtime's commands.
     pub fn apply_async(&self, command: &mut tokio::process::Command) {
         self.apply(command.as_std_mut());
@@ -321,6 +392,72 @@ mod tests {
         assert_eq!(selected_account_id(&selections, "/repo", "codex", &accounts), "default");
         // The remembered account was removed.
         assert_eq!(selected_account_id(&selections, "/repo", "claude", &accounts[..1]), "default");
+    }
+
+    #[test]
+    fn renaming_names_the_account_in_this_apps_list() {
+        let mut stored = StoredAccounts::new();
+        stored.insert("claude".into(), vec![account("a1", "claude", "Work")]);
+        assert!(rename_account(&mut stored, &account("a1", "claude", "Work"), "  Day   job "));
+        // MonoCode's own account and the default profile get an entry.
+        assert!(rename_account(&mut stored, &account("m1", "claude", "MonoCode's"), "Mine"));
+        assert!(rename_account(&mut stored, &account("default", "claude", "Default account"), "Main"));
+        assert!(!rename_account(&mut stored, &account("a1", "claude", "Work"), "   "));
+        let shared = [account("m1", "claude", "MonoCode's")];
+        let labels: Vec<_> = provider_accounts("claude", &stored, &shared)
+            .into_iter()
+            .map(|a| a.label)
+            .collect();
+        assert_eq!(labels, ["Main", "Day job", "Mine"]);
+    }
+
+    #[test]
+    fn removing_drops_the_account_and_its_selections() {
+        let mut stored = StoredAccounts::new();
+        stored.insert(
+            "claude".into(),
+            vec![account("a1", "claude", "Work"), account("a2", "claude", "Home")],
+        );
+        stored.insert("codex".into(), vec![account("a1", "codex", "Same id")]);
+        let mut selections = StoredSelections::new();
+        selections.insert("/one".into(), [("claude".to_string(), "a1".to_string())].into());
+        selections.insert(
+            "/two".into(),
+            [("claude".to_string(), "a1".to_string()), ("codex".to_string(), "a1".to_string())].into(),
+        );
+        selections.insert("/three".into(), [("claude".to_string(), "a2".to_string())].into());
+        remove_account(&mut stored, &mut selections, "claude", "a1");
+        assert_eq!(stored["claude"], [account("a2", "claude", "Home")]);
+        assert_eq!(stored["codex"].len(), 1);
+        assert!(!selections.contains_key("/one"));
+        assert_eq!(selections["/two"], [("codex".to_string(), "a1".to_string())].into());
+        assert_eq!(selections["/three"]["claude"], "a2");
+        remove_account(&mut stored, &mut selections, "claude", "a2");
+        assert!(!stored.contains_key("claude"));
+        remove_account(&mut stored, &mut selections, "codex", "default");
+        assert_eq!(stored["codex"].len(), 1);
+    }
+
+    #[test]
+    fn removing_a_profile_deletes_its_directory() {
+        let dir = std::env::temp_dir().join(format!(
+            "bencode-account-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(dir.join("sessions")).unwrap();
+        std::fs::write(dir.join("auth.json"), "{}").unwrap();
+        let profile = AccountProfile {
+            provider: "codex",
+            dir: dir.clone(),
+        };
+        profile.remove().unwrap();
+        assert!(!dir.exists());
+        // Already gone is fine.
+        profile.remove().unwrap();
     }
 
     #[test]

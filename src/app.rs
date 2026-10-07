@@ -320,6 +320,8 @@ pub struct BenCodeApp {
     pub accounts: accounts::AccountsState,
     /// The Add account form's name field.
     pub account_name_input: Entity<TextInput>,
+    /// Settings › Accounts' name field, for adding and renaming.
+    pub account_editor_input: Entity<TextInput>,
     pub file_tree: crate::ui::file_tree::FileTreeState,
     /// The Explorer's inline name field (MonoCode `NameRow`).
     pub file_dialog_input: Entity<TextInput>,
@@ -485,6 +487,7 @@ impl BenCodeApp {
         let rail_ui = crate::ui::rail::RailUi::new(window, cx);
         let file_dialog_input = text_input(window, cx, "");
         let account_name_input = text_input(window, cx, "Work or Personal");
+        let account_editor_input = text_input(window, cx, "Work or Personal");
         let name_keys_input = file_dialog_input.clone();
         let rename_keys_input = rename_input.clone();
         let model_search_input = text_input(window, cx, "Search models");
@@ -710,6 +713,15 @@ impl BenCodeApp {
                             this.add_provider_account(provider, cx);
                         }
                     }
+                    InputEvent::Changed => cx.notify(),
+                    _ => {}
+                },
+            ),
+            // MonoCode `ProviderAccountEditor`: Enter submits the form.
+            cx.subscribe(
+                &account_editor_input,
+                |this: &mut Self, _, event: &InputEvent, cx| match event {
+                    InputEvent::Submit => this.submit_account_editor(cx),
                     InputEvent::Changed => cx.notify(),
                     _ => {}
                 },
@@ -1156,6 +1168,7 @@ impl BenCodeApp {
             usage: Default::default(),
             accounts: Default::default(),
             account_name_input,
+            account_editor_input,
             file_tree: Default::default(),
             file_dialog_input,
             file_tree_focus: cx.focus_handle(),
@@ -1701,6 +1714,7 @@ impl Render for BenCodeApp {
                     .children(self.render_reminder_notices(cx))
                     .children(self.render_session_dialog(cx))
                     .children(self.render_worktree_deletion(cx))
+                    .children(self.render_account_removal(cx))
                     .children(self.render_worktree_creation(cx))
                     .children(self.render_quick_open(cx))
                     .children(self.render_lightbox(cx))

@@ -55,7 +55,7 @@ Notes:
 - [x] P1 S Footer 28px, "Terminal" text button, no "Agent running"
 - [x] P1 M Footer provider usage (Claude, Codex, OpenCode Go): chip, Refresh, details popover — `app/shell/UsageFooter.tsx`, `UsageProviderChip.tsx`, `src-tauri/src/rate_limits.rs`
 - [x] P1 L Provider accounts: account label and picker on the usage chip, Add account / sign-in, threads pinned to `provider_account_id`, CLIs run under the account's `CLAUDE_CONFIG_DIR` / `CODEX_HOME` — `providers/model/providerAccounts.ts`, `harness.rs:provider_account_dir`
-- [ ] P1 M Settings › provider accounts: rename, remove (with Keychain cleanup), "Manage accounts…" from the picker; accounts added here are not listed in MonoCode (its list lives in webview storage, which BenCode only reads) — `settings/ui/SettingsView.tsx`
+- [x] P1 M Settings › provider accounts: add, rename, remove (with Keychain cleanup), "Manage accounts…" from the picker — `settings/ui/SettingsView.tsx` `ProviderAccountsSettings`. Open: the account list is not shared both ways; accounts added here are not listed in MonoCode (its list lives in webview storage, which BenCode only reads), a rename here does not reach MonoCode, and accounts MonoCode lists can only be removed there
 - [ ] P2 S Usage popover extras: Codex banked resets, "show remaining" and email-masking preferences; running-terminal chip and the harness chip's "sign in" in the footer
 - [ ] P2 Working agents panel, project colour from name (window title, tab→pane drop done)
 

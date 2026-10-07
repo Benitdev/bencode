@@ -76,9 +76,11 @@ impl BenCodeApp {
 
     pub(crate) fn select_settings_tab(&mut self, tab: SettingsTab, cx: &mut Context<Self>) {
         self.settings_tab = tab;
-        if tab == SettingsTab::Worktrees {
+        match tab {
             // MonoCode's page starts on the open project, freshly listed.
-            self.open_worktrees_page(cx);
+            SettingsTab::Worktrees => self.open_worktrees_page(cx),
+            SettingsTab::Providers => self.load_accounts_page(false, cx),
+            _ => {}
         }
         cx.notify();
     }

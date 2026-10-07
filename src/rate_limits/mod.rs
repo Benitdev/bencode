@@ -14,6 +14,7 @@ use serde_json::Value;
 pub use account_status::{
     AccountStatus, AccountTone, account_status, best_alternative, needs_provider_login,
 };
+pub use claude::delete_credentials as delete_claude_credentials;
 
 use crate::harness::accounts::AccountProfile;
 

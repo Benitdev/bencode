@@ -1,0 +1,396 @@
+//! MonoCode Settings › Providers › Accounts (`SettingsView.tsx`
+//! `ProviderAccountsSettings` and `ProviderAccountEditor`): each provider's
+//! accounts with who they are and their usage, Add account, Rename, and
+//! Remove behind one confirmation. State and logic: `app/accounts.rs`.
+
+use ely_gpui_component::buttons::{Button, ButtonVariant, IconButton};
+use ely_gpui_component::overlays::Dialog;
+use ely_gpui_component::primitives::IconName;
+use ely_gpui_component::settings::{SettingsRow, SettingsSection};
+use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
+use gpui::{
+    AnyElement, Context, FontWeight, IntoElement, ParentElement, SharedString, Styled, div,
+    prelude::*, px, relative,
+};
+
+use crate::app::BenCodeApp;
+use crate::app::accounts::{ACCOUNT_PROVIDERS, Working};
+use crate::harness::accounts::ProviderAccount;
+use crate::rate_limits::{ProviderRateLimits, RateLimitProvider, account_status};
+use crate::ui::HarnessIcon;
+use crate::ui::app_callback::app_callback;
+use crate::ui::footer::{account_status_label, usage_meter};
+use crate::ui::git_changes_panel::spinning_icon;
+
+/// MonoCode `UsageMeter`'s `w-36`.
+const METER_WIDTH: f32 = 144.0;
+
+fn plural_accounts(n: usize) -> String {
+    format!("{n} {}", if n == 1 { "account" } else { "accounts" })
+}
+
+impl BenCodeApp {
+    /// MonoCode `ProviderAccountsSettings`.
+    pub(crate) fn render_settings_accounts(&self, cx: &Context<Self>) -> impl IntoElement {
+        let refreshing = self.usage.refreshing();
+        let section = SettingsSection::new("Accounts")
+            .description(
+                "Create isolated sign-ins for providers that support account profiles. \
+                 Account switching stays available from the usage control in the footer.",
+            )
+            .row(
+                SettingsRow::new("Usage limits")
+                    .description("Read every account's usage again")
+                    .control(
+                        IconButton::new("accounts-refresh", IconName::RefreshCw)
+                            .variant(ButtonVariant::Ghost)
+                            .tooltip("Refresh usage limits")
+                            .disabled(refreshing)
+                            .on_click(cx.listener(|this, _, _, cx| this.load_accounts_page(true, cx))),
+                    ),
+            );
+        let section = ACCOUNT_PROVIDERS
+            .iter()
+            .fold(section, |section, provider| section.row(self.render_provider_accounts(*provider, cx)));
+        div().flex().flex_col().child(section).children(self.accounts.error.clone().map(|error| {
+            div()
+                .pt_2()
+                .text_size(px(11.0))
+                .line_height(px(16.0))
+                .text_color(cx.theme().colors.danger)
+                .child(error)
+        }))
+    }
+
+    /// One provider: its header with Add account, then its accounts.
+    fn render_provider_accounts(&self, provider: RateLimitProvider, cx: &Context<Self>) -> AnyElement {
+        let colors = &cx.theme().colors;
+        let fg = colors.fg;
+        let accounts = self.provider_accounts(provider.id());
+        let busy = self.accounts.working.is_some();
+        let editor = self.accounts.editor.as_ref().filter(|editor| editor.provider == provider);
+        let adding = editor.is_some_and(|editor| editor.account_id.is_none());
+
+        let header = div()
+            .flex()
+            .items_center()
+            .gap_4()
+            .py(px(14.0))
+            .child(
+                div()
+                    .flex()
+                    .flex_1()
+                    .min_w_0()
+                    .items_center()
+                    .gap(px(10.0))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_none()
+                            .items_center()
+                            .justify_center()
+                            .size(px(28.0))
+                            .rounded(px(8.0))
+                            .bg(fg.opacity(0.05))
+                            .border_1()
+                            .border_color(fg.opacity(0.06))
+                            .child(HarnessIcon::new(provider.id()).size(px(16.0))),
+                    )
+                    .child(
+                        div()
+                            .min_w_0()
+                            .child(
+                                div()
+                                    .text_size(px(13.0))
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .child(provider.title()),
+                            )
+                            .child(
+                                div()
+                                    .mt(px(2.0))
+                                    .text_size(px(11.0))
+                                    .text_color(fg.opacity(0.4))
+                                    .child(plural_accounts(accounts.len())),
+                            ),
+                    ),
+            )
+            .child(
+                Button::new(SharedString::from(format!("accounts-add-{}", provider.id())), "Add account")
+                    .icon(IconName::Plus)
+                    .variant(ButtonVariant::Outline)
+                    .size(ControlSize::Sm)
+                    .disabled(busy)
+                    .on_click(cx.listener(move |this, _, _, cx| this.open_account_editor(provider, None, cx))),
+            );
+
+        let rows = accounts.iter().map(|account| {
+            let editing = editor.is_some_and(|editor| editor.account_id.as_deref() == Some(account.id.as_str()));
+            if editing {
+                self.render_account_editor(provider, false, cx)
+            } else {
+                self.render_account_row(provider, account, cx)
+            }
+        });
+
+        div()
+            .border_b_1()
+            .border_color(colors.border)
+            .child(header)
+            .child(
+                div()
+                    .pl(px(40.0))
+                    .border_t_1()
+                    .border_color(fg.opacity(0.05))
+                    .children(rows)
+                    .when(adding, |el| el.child(self.render_account_editor(provider, true, cx))),
+            )
+            .into_any_element()
+    }
+
+    /// An account: its name and org, status and who it is, usage meters,
+    /// then Rename and Remove.
+    fn render_account_row(
+        &self,
+        provider: RateLimitProvider,
+        account: &ProviderAccount,
+        cx: &Context<Self>,
+    ) -> AnyElement {
+        let colors = &cx.theme().colors;
+        let fg = colors.fg;
+        let now = crate::app::now_ms();
+        let busy = self.accounts.working.is_some();
+        let removing = self.accounts.working
+            == Some(Working::Removing(account.provider.clone(), account.id.clone()));
+        let shared = self.accounts.is_shared(account);
+        let identity = self.accounts.identity(account);
+        let usage = self.usage.cached(provider, &account.id);
+        let id = format!("{}-{}", provider.id(), account.id);
+
+        let meters: Vec<gpui::Div> = usage
+            .map(ProviderRateLimits::windows)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(_, window)| div().flex_none().w(px(METER_WIDTH)).child(usage_meter(window, now, colors)))
+            .collect();
+        let subtitle = identity.and_then(|identity| identity.subtitle()).unwrap_or_else(|| {
+            if account.is_default() {
+                "Provider CLI profile".into()
+            } else {
+                "Isolated profile".into()
+            }
+        });
+
+        let rename_target = account.clone();
+        let remove_target = account.clone();
+        div()
+            .id(SharedString::from(format!("account-row-{id}")))
+            .flex()
+            .items_center()
+            .gap_3()
+            .h(px(48.0))
+            .px_4()
+            .py_2()
+            .border_b_1()
+            .border_color(fg.opacity(0.05))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(6.0))
+                            .min_w_0()
+                            .child(
+                                div()
+                                    .min_w_0()
+                                    .truncate()
+                                    .text_size(px(12.0))
+                                    .text_color(fg.opacity(0.85))
+                                    .child(account.label.clone()),
+                            )
+                            .when_some(identity.and_then(|identity| identity.organization_tag()), |el, tag| {
+                                el.child(
+                                    div()
+                                        .flex_none()
+                                        .max_w(px(128.0))
+                                        .truncate()
+                                        .px_1()
+                                        .rounded(px(4.0))
+                                        .bg(fg.opacity(0.07))
+                                        .text_size(px(9.0))
+                                        .line_height(px(16.0))
+                                        .text_color(fg.opacity(0.5))
+                                        .child(tag.to_string()),
+                                )
+                            }),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(10.0))
+                            .min_w_0()
+                            .mt(px(2.0))
+                            .text_size(px(10.0))
+                            .child(account_status_label(&account_status(usage, now), colors).flex_none())
+                            .child(div().min_w_0().truncate().text_color(fg.opacity(0.3)).child(subtitle)),
+                    ),
+            )
+            .child(div().flex().flex_none().gap_4().children(meters))
+            .child(
+                div()
+                    .flex()
+                    .flex_none()
+                    .w(px(96.0))
+                    .items_center()
+                    .justify_end()
+                    .gap_1()
+                    .when(account.is_default(), |el| {
+                        el.child(
+                            div()
+                                .mr_1()
+                                .text_size(px(10.0))
+                                .font_weight(FontWeight::MEDIUM)
+                                .text_color(fg.opacity(0.3))
+                                .child("DEFAULT"),
+                        )
+                    })
+                    .child(
+                        IconButton::new(SharedString::from(format!("account-rename-{id}")), IconName::Pencil)
+                            .variant(ButtonVariant::Ghost)
+                            .size(ControlSize::Sm)
+                            .tooltip("Rename account")
+                            .disabled(busy)
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.open_account_editor(provider, Some(&rename_target), cx);
+                            })),
+                    )
+                    .when(!account.is_default(), |el| {
+                        if removing {
+                            return el.child(
+                                div().flex().size(px(28.0)).items_center().justify_center().child(spinning_icon(
+                                    SharedString::from(format!("account-removing-{id}")),
+                                    IconName::RefreshCw,
+                                    IconSize::Sm,
+                                    fg.opacity(0.5),
+                                )),
+                            );
+                        }
+                        el.child(
+                            IconButton::new(SharedString::from(format!("account-remove-{id}")), IconName::Trash2)
+                                .variant(ButtonVariant::Ghost)
+                                .size(ControlSize::Sm)
+                                // MonoCode's list is its own: BenCode only reads it.
+                                .tooltip(if shared {
+                                    "Added in MonoCode; remove it there"
+                                } else {
+                                    "Remove account"
+                                })
+                                .disabled(busy || shared)
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    this.request_remove_account(remove_target.clone(), cx);
+                                })),
+                        )
+                    }),
+            )
+            .into_any_element()
+    }
+
+    /// MonoCode `ProviderAccountEditor`: the name field with Cancel and
+    /// Save, or Sign in and add for a new account.
+    fn render_account_editor(&self, provider: RateLimitProvider, adding: bool, cx: &Context<Self>) -> AnyElement {
+        let colors = &cx.theme().colors;
+        let fg = colors.fg;
+        let working = self.accounts.working.is_some();
+        let named = !self.account_editor_input.read(cx).text().trim().is_empty();
+        let submit = match (adding, working) {
+            (true, true) => "Waiting for browser…",
+            (true, false) => "Sign in and add",
+            (false, _) => "Save",
+        };
+        div()
+            .id(SharedString::from(format!("account-editor-{}", provider.id())))
+            .flex()
+            .items_center()
+            .h(px(48.0))
+            .px_4()
+            .py_2()
+            .border_b_1()
+            .border_color(fg.opacity(0.05))
+            .child(
+                div()
+                    .flex()
+                    .flex_1()
+                    .min_w_0()
+                    .items_center()
+                    .gap_1()
+                    .h(px(32.0))
+                    .pl(px(10.0))
+                    .pr_1()
+                    .rounded(px(6.0))
+                    .border_1()
+                    .border_color(fg.opacity(0.10))
+                    .bg(fg.opacity(0.04))
+                    .text_size(px(12.0))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .when(working, |el| el.opacity(0.5))
+                            .child(self.account_editor_input.clone()),
+                    )
+                    .child(
+                        Button::new("account-editor-cancel", "Cancel")
+                            .variant(ButtonVariant::Ghost)
+                            .size(ControlSize::Sm)
+                            .disabled(working)
+                            .on_click(cx.listener(|this, _, _, cx| this.close_account_editor(cx))),
+                    )
+                    .child(
+                        Button::new("account-editor-submit", submit)
+                            .variant(ButtonVariant::Primary)
+                            .size(ControlSize::Sm)
+                            .loading(working)
+                            .disabled(working || !named)
+                            .on_click(cx.listener(|this, _, _, cx| this.submit_account_editor(cx))),
+                    ),
+            )
+            .into_any_element()
+    }
+
+    /// MonoCode's Remove warning. A `Dialog` rather than `ConfirmDialog`,
+    /// whose message does not wrap.
+    pub fn render_account_removal(&self, cx: &Context<Self>) -> Option<AnyElement> {
+        let account = self.accounts.pending_remove.as_ref()?;
+        let provider = RateLimitProvider::from_harness(&account.provider)?;
+        let close = app_callback(cx, |this, cx| this.cancel_remove_account(cx));
+        let confirm = app_callback(cx, |this, cx| this.confirm_remove_account(cx));
+        let message = format!(
+            "Remove “{}”? Its stored credentials will be deleted and any running turns for this \
+             account will stop. Existing conversations stay in history, but cannot continue until \
+             you switch accounts.",
+            account.label
+        );
+        let dialog = Dialog::new("account-remove", format!("Remove {} account", provider.title()), close)
+            .child(
+                div()
+                    .text_size(px(13.0))
+                    .line_height(relative(1.5))
+                    .text_color(cx.theme().colors.fg_muted)
+                    .child(message),
+            )
+            .action(|close| {
+                Button::new("account-remove-cancel", "Cancel")
+                    .variant(ButtonVariant::Ghost)
+                    .on_click(move |_, window, cx| close(window, cx))
+            })
+            .action(move |_| {
+                Button::new("account-remove-confirm", "Remove account")
+                    .variant(ButtonVariant::Danger)
+                    .on_click(move |_, window, cx| confirm(window, cx))
+            });
+        Some(dialog.into_any_element())
+    }
+}

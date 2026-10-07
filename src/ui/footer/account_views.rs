@@ -24,7 +24,7 @@ use crate::ui::git_changes_panel::spinning_icon;
 
 /// MonoCode `AccountStatusLabel`: dot + word, e.g. "● Ready" or
 /// "● Exhausted back in 31m".
-fn account_status_label(status: &AccountStatus, colors: &Palette) -> gpui::Div {
+pub(crate) fn account_status_label(status: &AccountStatus, colors: &Palette) -> gpui::Div {
     let fg = colors.fg;
     let (dot, text) = match status.tone {
         AccountTone::Ready => (colors.success, fg.opacity(0.6)),
@@ -57,7 +57,7 @@ fn account_status_label(status: &AccountStatus, colors: &Palette) -> gpui::Div {
 }
 
 /// MonoCode `UsageMeter`: "5h · 2h 24m" over a thin bar, for one window.
-fn usage_meter(window: &RateLimitWindow, now: i64, colors: &Palette) -> gpui::Div {
+pub(crate) fn usage_meter(window: &RateLimitWindow, now: i64, colors: &Palette) -> gpui::Div {
     let fg = colors.fg;
     let used = clamp_used_percent(window.used_percent);
     let full = used >= 100.0 && window.resets_at.is_none_or(|resets_at| resets_at > now);
@@ -296,6 +296,22 @@ impl BenCodeApp {
                     .on_click(cx.listener(|this, _, _, cx| this.set_usage_view(UsageView::Add, cx)))
                     .child(Icon::new(IconName::Plus).size(IconSize::Sm).color(fg.opacity(0.55)))
                     .child("Add account"),
+            )
+            .child(
+                div()
+                    .id("usage-manage-accounts")
+                    .flex()
+                    .items_center()
+                    .h(px(32.0))
+                    .mt(px(2.0))
+                    .px(px(10.0))
+                    .rounded(px(8.0))
+                    .text_size(px(11.0))
+                    .text_color(fg.opacity(0.45))
+                    .cursor_pointer()
+                    .hover(move |s| s.bg(fg.opacity(0.07)).text_color(fg))
+                    .on_click(cx.listener(|this, _, _, cx| this.manage_accounts(cx)))
+                    .child("Manage accounts…"),
             )
             .into_any_element()
     }

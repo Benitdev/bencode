@@ -111,7 +111,7 @@ bencode/
 | `tab_scope.rs`, `tab_history.rs`, `workspace_nav.rs` | Which tabs belong to which project or worktree; Back / Forward |
 | `reminders.rs`, `model_catalog.rs` | Session reminders; live model catalogs |
 | `usage.rs` | Provider usage snapshots for the footer, per account: load once, Refresh, the 30s countdown tick |
-| `accounts.rs` | Provider accounts: a thread's account, switching, Add account / sign-in, identities |
+| `accounts.rs` | Provider accounts: a thread's account, switching, Add account / sign-in, rename, remove, identities |
 | `worktree_lifecycle.rs` | Settings › Worktrees: project picker, create, delete (with the removal journal) |
 
 ### `src/ui/` — views
@@ -133,6 +133,7 @@ bencode/
 | `terminal_pane.rs` | Terminal dock |
 | `footer/` | Status bar: provider usage chip, its details popover and account pages, terminal toggle |
 | `inbox_view*`, `notes_view.rs`, `automations/`, `search_view.rs`, `settings_modal.rs` | The five surfaces |
+| `settings_accounts.rs`, `settings_worktrees.rs` | Settings pages: provider accounts, worktrees |
 | `quick_open.rs`, `lightbox.rs`, `link_dialog.rs`, `reminder_notices.rs` | Overlays |
 | `theme.rs`, `icons.rs`, `provider_icon.rs`, `mascot.rs`, `motion.rs`, `spinner.rs` | Look and shared drawing |
 | `app_callback.rs`, `virtual_rows.rs`, `explorer_menu.rs`, `drag_drop.rs` | Shared helpers |

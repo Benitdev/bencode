@@ -73,6 +73,13 @@ impl UsageState {
         self.snapshots.get(&(provider, account_id.to_string()))
     }
 
+    /// Drops a removed account's snapshot (MonoCode `clearCachedRateLimits`).
+    pub fn forget(&mut self, provider: RateLimitProvider, account_id: &str) {
+        let key = (provider, account_id.to_string());
+        self.snapshots.remove(&key);
+        self.pending.remove(&key);
+    }
+
     /// A Refresh is running (the first load only shows on the chip).
     pub fn refreshing(&self) -> bool {
         self.pending.values().any(|forced| *forced)
@@ -154,12 +161,7 @@ impl BenCodeApp {
             return;
         }
         self.usage.popover = Some(provider);
-        if supports_accounts(provider.id()) {
-            self.load_account_identities(provider.id(), cx);
-            for account in self.provider_accounts(provider.id()) {
-                self.load_rate_limits(provider, &account.id, false, cx);
-            }
-        }
+        self.load_account_details(provider, false, cx);
         cx.notify();
     }
 

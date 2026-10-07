@@ -5,6 +5,8 @@
 mod account_views;
 mod usage_chip;
 
+pub(crate) use account_views::{account_status_label, usage_meter};
+
 use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{Context, IntoElement, ParentElement, Styled, div, prelude::*, px};

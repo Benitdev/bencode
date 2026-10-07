@@ -159,27 +159,55 @@ mod keychain {
         }
     }
 
+    /// Deletes a profile's Keychain item (MonoCode
+    /// `delete_claude_keychain_credentials`); one already gone is fine.
+    pub fn delete(config_dir: &Path) -> Result<(), String> {
+        let service = service(Some(config_dir));
+        let failed = |detail: String| {
+            format!("Could not remove the Claude credentials from Keychain ({service}): {detail}")
+        };
+        let (ok, _, stderr) =
+            run(&["delete-generic-password", "-s", service.as_str()]).map_err(failed)?;
+        if ok || stderr.contains("could not be found") {
+            Ok(())
+        } else {
+            Err(failed(stderr))
+        }
+    }
+
     /// `security`'s stdout, or None when it fails or hangs on a locked
     /// Keychain past the timeout.
     fn security(args: &[&str]) -> Option<String> {
+        let (ok, out, _) = run(args).ok()?;
+        (ok && !out.is_empty()).then_some(out)
+    }
+
+    /// Runs `security`: whether it succeeded, then its trimmed stdout and
+    /// stderr. Fails when it cannot start or outlives the timeout.
+    fn run(args: &[&str]) -> Result<(bool, String, String), String> {
         let mut child = Command::new("security")
             .args(args)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
+            .stderr(Stdio::piped())
             .spawn()
-            .ok()?;
+            .map_err(|err| err.to_string())?;
         let started = Instant::now();
         loop {
             match child.try_wait() {
                 Ok(Some(status)) => {
-                    if !status.success() {
-                        return None;
+                    let (mut out, mut err) = (String::new(), String::new());
+                    if let Some(mut stdout) = child.stdout.take()
+                        && let Err(read) = stdout.read_to_string(&mut out)
+                    {
+                        log::debug!("security stdout: {read}");
                     }
-                    let mut out = String::new();
-                    child.stdout.take()?.read_to_string(&mut out).ok()?;
-                    let out = out.trim();
-                    return (!out.is_empty()).then(|| out.to_string());
+                    if let Some(mut stderr) = child.stderr.take()
+                        && let Err(read) = stderr.read_to_string(&mut err)
+                    {
+                        log::debug!("security stderr: {read}");
+                    }
+                    return Ok((status.success(), out.trim().to_string(), err.trim().to_string()));
                 }
                 Ok(None) if started.elapsed() > TIMEOUT => {
                     if let Err(err) = child.kill() {
@@ -188,13 +216,23 @@ mod keychain {
                     if let Err(err) = child.wait() {
                         log::debug!("security wait: {err}");
                     }
-                    return None;
+                    return Err("the Keychain did not answer".into());
                 }
                 Ok(None) => std::thread::sleep(Duration::from_millis(40)),
-                Err(_) => return None,
+                Err(err) => return Err(err.to_string()),
             }
         }
     }
+}
+
+/// Deletes the Claude sign-in an account profile keeps in the Keychain;
+/// elsewhere it is `.credentials.json`, which goes with the directory.
+/// Blocking.
+#[cfg_attr(not(target_os = "macos"), allow(unused_variables))]
+pub fn delete_credentials(config_dir: &Path) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    keychain::delete(config_dir)?;
+    Ok(())
 }
 
 #[cfg(test)]
