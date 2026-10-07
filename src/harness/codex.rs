@@ -8,6 +8,7 @@ use std::time::Duration;
 use anyhow::{Context as _, Result};
 use serde_json::{Value, json};
 
+use crate::harness::accounts::AccountProfile;
 use crate::harness::events::{AgentEvent, DoneStatus, TurnMetrics};
 use crate::harness::handle::HarnessProcessHandle;
 use crate::harness::probe::AppServer;
@@ -23,6 +24,7 @@ pub fn spawn(req: &SpawnRequest) -> Result<(HarnessProcessHandle, EventRx)> {
         cwd: req.cwd.clone(),
         stdin: StdinMode::Null,
         permission_responder: None,
+        account: req.account.clone(),
     };
     process::spawn(spec, CodexParser::default())
 }
@@ -34,9 +36,9 @@ const REWIND_TIMEOUT: Duration = Duration::from_secs(30);
 /// user turn, so an edited prompt can be sent in its place. `exec` cannot
 /// do this, so a short-lived `codex app-server` loads the thread and
 /// reverts it. Blocking; run it on a background executor.
-pub fn rewind_last_turn(thread_id: &str, cwd: &Path) -> Result<()> {
+pub fn rewind_last_turn(thread_id: &str, cwd: &Path, account: Option<&AccountProfile>) -> Result<()> {
     let program = HarnessResolver::resolve_codex().context("Codex is not installed")?;
-    let mut server = AppServer::open(&program, cwd, REWIND_TIMEOUT)?;
+    let mut server = AppServer::open(&program, cwd, REWIND_TIMEOUT, account)?;
     server.call(
         "thread/resume",
         json!({ "threadId": thread_id, "cwd": cwd.to_string_lossy() }),
@@ -381,6 +383,7 @@ mod tests {
             attachments: Vec::new(),
             plan: false,
             settings: Default::default(),
+            account: None,
         };
         let args = build_args(&req);
         assert_eq!(&args[..3], ["exec", "--json", "--skip-git-repo-check"]);

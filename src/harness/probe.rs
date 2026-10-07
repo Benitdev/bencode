@@ -12,6 +12,8 @@ use std::time::{Duration, Instant};
 use anyhow::{Context as _, Result, anyhow, bail};
 use serde_json::{Value, json};
 
+use crate::harness::accounts::AccountProfile;
+
 /// Runs a listing command in `cwd` to completion within `timeout`.
 pub fn run_to_end(command: &mut Command, cwd: &Path, timeout: Duration) -> Result<String> {
     let mut probe = LineProbe::spawn(command, cwd, timeout)?;
@@ -110,8 +112,20 @@ pub struct AppServer {
 }
 
 impl AppServer {
-    pub fn open(program: &Path, cwd: &Path, timeout: Duration) -> Result<Self> {
-        let probe = LineProbe::spawn(Command::new(program).arg("app-server"), cwd, timeout)?;
+    /// `account` signs the server in with that profile instead of the
+    /// default one.
+    pub fn open(
+        program: &Path,
+        cwd: &Path,
+        timeout: Duration,
+        account: Option<&AccountProfile>,
+    ) -> Result<Self> {
+        let mut command = Command::new(program);
+        command.arg("app-server");
+        if let Some(account) = account {
+            account.apply(&mut command);
+        }
+        let probe = LineProbe::spawn(&mut command, cwd, timeout)?;
         let mut server = Self { probe, next_id: 0 };
         server.call(
             "initialize",

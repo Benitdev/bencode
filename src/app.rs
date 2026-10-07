@@ -1,3 +1,4 @@
+pub mod accounts;
 mod agent;
 pub mod commands;
 pub mod file_pane;
@@ -15,6 +16,7 @@ pub mod session_list;
 mod surfaces;
 mod tab_history;
 mod tab_scope;
+pub mod usage;
 mod workspace_nav;
 pub mod workspace_sync;
 pub mod worktree_lifecycle;
@@ -312,6 +314,12 @@ pub struct BenCodeApp {
     pub workspace: WorkspaceCache,
     /// Every rail project's +/- lines (MonoCode `useProjectDiffStats`).
     pub project_stats: project_stats::ProjectStats,
+    /// Provider usage for the footer (MonoCode `rateLimitsCache`).
+    pub usage: usage::UsageState,
+    /// Provider account profiles (MonoCode `providerAccounts`).
+    pub accounts: accounts::AccountsState,
+    /// The Add account form's name field.
+    pub account_name_input: Entity<TextInput>,
     pub file_tree: crate::ui::file_tree::FileTreeState,
     /// The Explorer's inline name field (MonoCode `NameRow`).
     pub file_dialog_input: Entity<TextInput>,
@@ -476,6 +484,7 @@ impl BenCodeApp {
         let link_input = text_input(window, cx, "https://github.com/owner/repo/pull/123");
         let rail_ui = crate::ui::rail::RailUi::new(window, cx);
         let file_dialog_input = text_input(window, cx, "");
+        let account_name_input = text_input(window, cx, "Work or Personal");
         let name_keys_input = file_dialog_input.clone();
         let rename_keys_input = rename_input.clone();
         let model_search_input = text_input(window, cx, "Search models");
@@ -688,6 +697,19 @@ impl BenCodeApp {
                 |this: &mut Self, _, event: &InputEvent, cx| match event {
                     InputEvent::Submit => this.commit_staged_changes(cx),
                     // The Commit button follows the message.
+                    InputEvent::Changed => cx.notify(),
+                    _ => {}
+                },
+            ),
+            // MonoCode `AddProviderAccount`: Enter submits the form.
+            cx.subscribe(
+                &account_name_input,
+                |this: &mut Self, _, event: &InputEvent, cx| match event {
+                    InputEvent::Submit => {
+                        if let Some(provider) = this.usage.popover {
+                            this.add_provider_account(provider, cx);
+                        }
+                    }
                     InputEvent::Changed => cx.notify(),
                     _ => {}
                 },
@@ -1131,6 +1153,9 @@ impl BenCodeApp {
             changes_ui: Default::default(),
             workspace: WorkspaceCache::default(),
             project_stats: Default::default(),
+            usage: Default::default(),
+            accounts: Default::default(),
+            account_name_input,
             file_tree: Default::default(),
             file_dialog_input,
             file_tree_focus: cx.focus_handle(),
@@ -1195,6 +1220,8 @@ impl BenCodeApp {
         app.start_reminder_poll(cx);
         app.load_folder_members(cx);
         app.start_clock(cx);
+        app.start_usage_clock(cx);
+        app.load_shared_accounts(cx);
         app.refresh_installed_catalogs(cx);
         app.start_inbox_poll(cx);
         app
@@ -1235,8 +1262,10 @@ impl BenCodeApp {
         let harness_id = option.harness.id();
         let changed_session = self.selected_session_mut().map(|session| {
             if session.harness != harness_id {
-                // A provider session id is only meaningful to the harness that issued it.
+                // A provider session id is only meaningful to the harness that
+                // issued it, and so is the account it belongs to.
                 session.provider_session_id = None;
+                session.provider_account_id = None;
             }
             if session.model != option.key {
                 // MonoCode `dropContextWindow`: the old model's window no

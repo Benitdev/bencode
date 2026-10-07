@@ -20,6 +20,7 @@ pub fn spawn(req: &SpawnRequest) -> Result<(HarnessProcessHandle, EventRx)> {
         cwd: req.cwd.clone(),
         stdin: StdinMode::Null,
         permission_responder: None,
+        account: None,
     };
     process::spawn(spec, OpenCodeParser::default())
 }

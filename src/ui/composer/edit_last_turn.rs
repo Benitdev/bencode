@@ -190,11 +190,15 @@ impl BenCodeApp {
             return;
         };
         let cwd = std::path::PathBuf::from(session.work_dir());
+        let account = crate::harness::accounts::AccountProfile::resolve(
+            &session.harness,
+            session.provider_account_id.as_deref(),
+        );
         let session_id = session_id.to_string();
         self.edit_rewinding.insert(session_id.clone());
         let rewind = cx
             .background_executor()
-            .spawn(async move { codex::rewind_last_turn(&thread, &cwd) });
+            .spawn(async move { codex::rewind_last_turn(&thread, &cwd, account.as_ref()) });
         cx.spawn(async move |this, cx| {
             let result = rewind.await;
             let _ = this.update(cx, |app, cx| {

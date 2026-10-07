@@ -4,6 +4,7 @@
 //! data BenCode does not model: unknown block fields, unknown automation
 //! definition fields, and session columns BenCode never reads.
 
+pub mod monocode_accounts;
 mod orchestration;
 mod reminders;
 mod schedule;
@@ -131,6 +132,11 @@ pub struct SessionRow {
     /// Provider-side session id (e.g. for `claude --resume`).
     #[serde(default)]
     pub provider_session_id: Option<String>,
+    /// MonoCode `providerAccountId`: the account profile the thread's
+    /// provider session belongs to. `None` is a thread that has not run yet
+    /// (or predates accounts and uses the default profile).
+    #[serde(default)]
+    pub provider_account_id: Option<String>,
     /// MonoCode runtime mode. `None` keeps the stored value on update and
     /// uses `DEFAULT_SESSION_RUNTIME_MODE` on insert.
     #[serde(default)]
@@ -325,7 +331,8 @@ const SESSION_SELECT: &str =
         blocks_json, context_used, context_window, pinned, archived, provider_session_id,
         runtime_mode, worktree_cwd, model_settings, worktree_removed, automation_id,
         linked_work_item_json,
-        (SELECT summary FROM orchestration_sidebar WHERE lead_id = sessions.id)
+        (SELECT summary FROM orchestration_sidebar WHERE lead_id = sessions.id),
+        provider_account_id
      FROM sessions";
 
 pub struct MonoCodeDb {
@@ -493,9 +500,9 @@ impl MonoCodeDb {
                 id, cwd, harness, model, title, blocks_json, created_at, updated_at,
                 branch, context_used, context_window, pinned, archived,
                 provider_session_id, runtime_mode, has_user_message, is_draft, worktree_cwd,
-                model_settings
+                model_settings, provider_account_id
              ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14,
-                       COALESCE(?15, ?16), ?17, ?18, ?19, COALESCE(?20, '{}'))
+                       COALESCE(?15, ?16), ?17, ?18, ?19, COALESCE(?20, '{}'), ?21)
              ON CONFLICT(id) DO UPDATE SET
                 title = excluded.title,
                 cwd = excluded.cwd,
@@ -513,7 +520,8 @@ impl MonoCodeDb {
                 has_user_message = excluded.has_user_message,
                 is_draft = excluded.is_draft,
                 worktree_cwd = excluded.worktree_cwd,
-                model_settings = COALESCE(?20, sessions.model_settings)",
+                model_settings = COALESCE(?20, sessions.model_settings),
+                provider_account_id = excluded.provider_account_id",
             params![
                 session.id,
                 session.cwd,
@@ -535,6 +543,7 @@ impl MonoCodeDb {
                 i64::from(is_draft),
                 session.worktree_cwd,
                 model_settings,
+                session.provider_account_id,
             ],
         )?;
         Ok(())
@@ -931,6 +940,7 @@ fn session_from_row(row: &Row<'_>) -> rusqlite::Result<SessionRow> {
         archived: row.get::<_, i64>(12)? != 0,
         blocks,
         provider_session_id: row.get(13)?,
+        provider_account_id: row.get::<_, Option<String>>(21)?.filter(|id| !id.is_empty()),
         runtime_mode: row.get(14)?,
         worktree_cwd: row.get(15)?,
         model_settings: row

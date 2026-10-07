@@ -31,6 +31,7 @@ pub fn spawn(req: &SpawnRequest) -> Result<(HarnessProcessHandle, EventRx)> {
             ),
         },
         permission_responder: Some(permission_response),
+        account: req.account.clone(),
     };
     process::spawn(spec, ClaudeParser::default())
 }
@@ -464,6 +465,7 @@ mod tests {
             attachments: Vec::new(),
             plan: false,
             settings: Default::default(),
+            account: None,
         }
     }
 
@@ -701,6 +703,7 @@ mod tests {
             attachments: Vec::new(),
             plan: false,
             settings: Default::default(),
+            account: None,
         };
         let (handle, mut rx) = crate::harness::spawn(&req).unwrap();
         let events = crate::harness::runtime::runtime().block_on(async move {
