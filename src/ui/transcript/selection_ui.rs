@@ -204,7 +204,7 @@ impl BenCodeApp {
             source_cwd: cwd,
         };
         let note = self.db.upsert_note(&upsert)?;
-        self.notes.insert(0, note);
+        self.notes.items.insert(0, note);
         Ok(())
     }
 

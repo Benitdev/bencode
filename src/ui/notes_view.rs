@@ -14,14 +14,55 @@ use ely_gpui_component::primitives::IconName;
 use ely_gpui_component::theme::{ActiveTheme, ControlSize};
 use ely_gpui_component::typography::Caption;
 use gpui::{
-    AnyElement, Context, Entity, IntoElement, ParentElement, Styled, div, prelude::*,
+    AnyElement, Context, Entity, IntoElement, ParentElement, Styled, Window, div, prelude::*,
     uniform_list,
 };
 
-use crate::app::{BenCodeApp, Surface, now_ms};
+use crate::app::{BenCodeApp, Surface, multiline_input, now_ms, text_input};
 use crate::db::{Note, NoteUpsert};
 use crate::ui::app_callback::app_callback;
 use crate::ui::scale::px;
+
+/// The Notes surface's data, selection, fields and pending dialogs.
+pub struct NotesState {
+    pub items: Vec<Note>,
+    pub selected_id: Option<String>,
+    pub filter_query: String,
+    /// The notes list's scroll, for its scroll bar.
+    pub scroll: gpui::UniformListScrollHandle,
+    pub filter_input: Entity<TextInput>,
+    pub title_input: Entity<TextInput>,
+    pub body_input: Entity<TextInput>,
+    /// Note id awaiting delete confirmation.
+    pub pending_delete: Option<String>,
+    /// Bumped on every note edit; a pending autosave only runs if it still matches.
+    pub autosave_generation: u64,
+    /// Last failed note save, shown with a Retry action.
+    pub save_error: Option<String>,
+}
+
+impl NotesState {
+    /// The fields, with no notes loaded yet.
+    pub fn new(window: &mut Window, cx: &mut Context<BenCodeApp>) -> Self {
+        Self {
+            items: Vec::new(),
+            selected_id: None,
+            filter_query: String::new(),
+            scroll: Default::default(),
+            filter_input: text_input(window, cx, "Filter notes..."),
+            title_input: text_input(window, cx, "Note title..."),
+            body_input: multiline_input(
+                window,
+                cx,
+                "Write note or scratchpad in markdown...",
+                (5, 25),
+            ),
+            pending_delete: None,
+            autosave_generation: 0,
+            save_error: None,
+        }
+    }
+}
 
 const UNTITLED_NOTE: &str = "Untitled";
 /// MonoCode saves this long after the last keystroke (`NotesView.tsx`).
@@ -77,16 +118,16 @@ impl BenCodeApp {
 
     fn refresh_notes(&mut self, cx: &mut Context<Self>) {
         match self.db.list_notes() {
-            Ok(notes) => self.notes = notes,
+            Ok(notes) => self.notes.items = notes,
             Err(err) => log::error!("list_notes failed: {err:#}"),
         }
         let selection_exists = self
-            .selected_note_id
+            .notes.selected_id
             .as_ref()
-            .is_some_and(|id| self.notes.iter().any(|n| &n.id == id));
+            .is_some_and(|id| self.notes.items.iter().any(|n| &n.id == id));
         if !selection_exists {
-            self.selected_note_id = None;
-            match self.notes.first().map(|n| n.id.clone()) {
+            self.notes.selected_id = None;
+            match self.notes.items.first().map(|n| n.id.clone()) {
                 Some(id) => self.select_note(id, cx),
                 None => self.clear_note_inputs(cx),
             }
@@ -106,7 +147,7 @@ impl BenCodeApp {
         match self.db.upsert_note(&upsert) {
             Ok(note) => {
                 let id = note.id.clone();
-                self.notes.insert(0, note);
+                self.notes.items.insert(0, note);
                 self.select_note(id, cx);
             }
             Err(err) => log::error!("upsert_note failed: {err:#}"),
@@ -115,24 +156,24 @@ impl BenCodeApp {
     }
 
     pub(crate) fn select_note(&mut self, id: String, cx: &mut Context<Self>) {
-        if self.selected_note_id.as_ref() != Some(&id) {
+        if self.notes.selected_id.as_ref() != Some(&id) {
             self.save_note_if_dirty(cx);
         }
-        if let Some(note) = self.notes.iter().find(|n| n.id == id) {
+        if let Some(note) = self.notes.items.iter().find(|n| n.id == id) {
             let (title, body) = (note.title.clone(), note.body.clone());
-            self.note_title_input
+            self.notes.title_input
                 .update(cx, |input, cx| input.set_text(title, cx));
-            self.note_body_input
+            self.notes.body_input
                 .update(cx, |input, cx| input.set_text(body, cx));
         }
-        self.selected_note_id = Some(id);
+        self.notes.selected_id = Some(id);
         cx.notify();
     }
 
     fn clear_note_inputs(&mut self, cx: &mut Context<Self>) {
-        self.note_title_input
+        self.notes.title_input
             .update(cx, |input, cx| input.set_text("", cx));
-        self.note_body_input
+        self.notes.body_input
             .update(cx, |input, cx| input.set_text("", cx));
     }
 
@@ -152,13 +193,13 @@ impl BenCodeApp {
     }
 
     fn schedule_note_autosave(&mut self, cx: &mut Context<Self>) {
-        self.note_autosave_generation += 1;
-        let generation = self.note_autosave_generation;
+        self.notes.autosave_generation += 1;
+        let generation = self.notes.autosave_generation;
         let timer = cx.background_executor().timer(AUTOSAVE_DELAY);
         cx.spawn(async move |this, cx| {
             timer.await;
             let saved = this.update(cx, |this, cx| {
-                if this.note_autosave_generation == generation {
+                if this.notes.autosave_generation == generation {
                     this.save_note_if_dirty(cx);
                 }
             });
@@ -173,28 +214,28 @@ impl BenCodeApp {
     /// switching, creating or closing never drops edits.
     pub(crate) fn save_note_if_dirty(&mut self, cx: &mut Context<Self>) {
         let Some(note) = self
-            .selected_note_id
+            .notes.selected_id
             .as_ref()
-            .and_then(|id| self.notes.iter().find(|n| &n.id == id))
+            .and_then(|id| self.notes.items.iter().find(|n| &n.id == id))
         else {
             return;
         };
-        let title = self.note_title_input.read(cx).text().trim().to_string();
-        let body = self.note_body_input.read(cx).text().to_string();
+        let title = self.notes.title_input.read(cx).text().trim().to_string();
+        let body = self.notes.body_input.read(cx).text().to_string();
         if note_is_dirty(note, &title, &body) {
             self.save_selected_note(cx);
         }
     }
 
     fn save_selected_note(&mut self, cx: &mut Context<Self>) {
-        let Some(id) = self.selected_note_id.clone() else {
+        let Some(id) = self.notes.selected_id.clone() else {
             return;
         };
-        let Some(pos) = self.notes.iter().position(|n| n.id == id) else {
+        let Some(pos) = self.notes.items.iter().position(|n| n.id == id) else {
             return;
         };
-        let title = self.note_title_input.read(cx).text().trim().to_string();
-        let existing = &self.notes[pos];
+        let title = self.notes.title_input.read(cx).text().trim().to_string();
+        let existing = &self.notes.items[pos];
         let upsert = NoteUpsert {
             id,
             title: if title.is_empty() {
@@ -202,19 +243,19 @@ impl BenCodeApp {
             } else {
                 title
             },
-            body: self.note_body_input.read(cx).text().to_string(),
+            body: self.notes.body_input.read(cx).text().to_string(),
             tags: existing.tags.clone(),
             source_session_id: existing.source_session_id.clone(),
             source_cwd: existing.source_cwd.clone(),
         };
         match self.db.upsert_note(&upsert) {
             Ok(saved) => {
-                self.notes[pos] = saved;
-                self.note_save_error = None;
+                self.notes.items[pos] = saved;
+                self.notes.save_error = None;
             }
             Err(err) => {
                 log::error!("upsert_note failed: {err:#}");
-                self.note_save_error = Some(format!("Could not save note: {err}"));
+                self.notes.save_error = Some(format!("Could not save note: {err}"));
             }
         }
         cx.notify();
@@ -225,10 +266,10 @@ impl BenCodeApp {
             log::error!("delete_note failed: {err:#}");
             return;
         }
-        self.notes.retain(|n| n.id != id);
-        if self.selected_note_id.as_deref() == Some(id) {
-            self.selected_note_id = None;
-            match self.notes.first().map(|n| n.id.clone()) {
+        self.notes.items.retain(|n| n.id != id);
+        if self.notes.selected_id.as_deref() == Some(id) {
+            self.notes.selected_id = None;
+            match self.notes.items.first().map(|n| n.id.clone()) {
                 Some(next) => self.select_note(next, cx),
                 None => self.clear_note_inputs(cx),
             }
@@ -240,8 +281,9 @@ impl BenCodeApp {
     fn add_selected_note_to_chat(&mut self, cx: &mut Context<Self>) {
         let Some(note) = self
             .notes
+            .items
             .iter()
-            .find(|n| Some(&n.id) == self.selected_note_id.as_ref())
+            .find(|n| Some(&n.id) == self.notes.selected_id.as_ref())
             .cloned()
         else {
             return;
@@ -265,9 +307,9 @@ impl BenCodeApp {
     }
 
     fn render_notes_master(&self, cx: &Context<Self>) -> impl IntoElement {
-        let query = self.note_filter_query.trim().to_lowercase();
-        let shown: Rc<[usize]> = (0..self.notes.len())
-            .filter(|&ix| note_matches(&self.notes[ix], &query))
+        let query = self.notes.filter_query.trim().to_lowercase();
+        let shown: Rc<[usize]> = (0..self.notes.items.len())
+            .filter(|&ix| note_matches(&self.notes.items[ix], &query))
             .collect();
         let list = if shown.is_empty() {
             EmptyState::new("notes-empty", IconName::FileText, "No notes")
@@ -289,11 +331,11 @@ impl BenCodeApp {
             });
             crate::ui::scrollbar::framed(
                 "notes-list-scrollbar",
-                &self.notes_scroll,
+                &self.notes.scroll,
                 uniform_list("notes-list", shown.len(), rows)
-                    .track_scroll(&self.notes_scroll)
+                    .track_scroll(&self.notes.scroll)
                     .size_full()
-                    .pr(crate::ui::scrollbar::gutter(&self.notes_scroll)),
+                    .pr(crate::ui::scrollbar::gutter(&self.notes.scroll)),
             )
             .into_any_element()
         };
@@ -310,7 +352,7 @@ impl BenCodeApp {
                     .gap_2()
                     .child(
                         div().flex_1().child(
-                            SearchInput::new("notes-filter", &self.note_filter_input)
+                            SearchInput::new("notes-filter", &self.notes.filter_input)
                                 .size(ControlSize::Sm),
                         ),
                     )
@@ -325,17 +367,17 @@ impl BenCodeApp {
     }
 
     fn render_note_row(&self, ix: usize, now: i64, cx: &Context<Self>) -> ListItem {
-        let note = &self.notes[ix];
+        let note = &self.notes.items[ix];
         let id = note.id.clone();
         ListItem::new(("note-row", ix), note.title.clone())
             .description(note_preview(&note.body).to_string())
             .trailing(Caption::new(relative_time(now, note.updated_at)))
-            .selected(self.selected_note_id.as_deref() == Some(note.id.as_str()))
+            .selected(self.notes.selected_id.as_deref() == Some(note.id.as_str()))
             .on_click(cx.listener(move |this, _, _, cx| this.select_note(id.clone(), cx)))
     }
 
     fn render_note_detail(&self, cx: &Context<Self>) -> AnyElement {
-        let Some(id) = self.selected_note_id.clone() else {
+        let Some(id) = self.notes.selected_id.clone() else {
             return EmptyState::new("note-none", IconName::FileText, "No note selected")
                 .action(
                     Button::new("note-none-new", "New note")
@@ -348,7 +390,7 @@ impl BenCodeApp {
             .flex()
             .items_center()
             .gap_2()
-            .child(div().flex_1().child(Input::new(&self.note_title_input)))
+            .child(div().flex_1().child(Input::new(&self.notes.title_input)))
             .child(
                 Button::new("note-to-chat", "Add to chat")
                     .variant(ButtonVariant::Secondary)
@@ -360,7 +402,7 @@ impl BenCodeApp {
                     .variant(ButtonVariant::Ghost)
                     .tooltip("Delete note")
                     .on_click(cx.listener(move |this, _, _, cx| {
-                        this.note_pending_delete = Some(id.clone());
+                        this.notes.pending_delete = Some(id.clone());
                         cx.notify();
                     })),
             );
@@ -370,7 +412,7 @@ impl BenCodeApp {
             .gap_3()
             .pl_4()
             .child(toolbar)
-            .when_some(self.note_save_error.clone(), |el, error| {
+            .when_some(self.notes.save_error.clone(), |el, error| {
                 el.child(
                     div()
                         .flex()
@@ -388,19 +430,20 @@ impl BenCodeApp {
                         ),
                 )
             })
-            .child(Input::new(&self.note_body_input))
+            .child(Input::new(&self.notes.body_input))
             .into_any_element()
     }
 
     fn render_note_delete_confirm(&self, cx: &Context<Self>) -> Option<impl IntoElement> {
-        let id = self.note_pending_delete.clone()?;
+        let id = self.notes.pending_delete.clone()?;
         let title = self
             .notes
+            .items
             .iter()
             .find(|n| n.id == id)
             .map_or(UNTITLED_NOTE, |n| n.title.as_str());
         let close = app_callback(cx, |this, cx| {
-            this.note_pending_delete = None;
+            this.notes.pending_delete = None;
             cx.notify();
         });
         let delete = app_callback(cx, move |this, cx| this.delete_note(&id, cx));

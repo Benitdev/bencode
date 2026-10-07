@@ -277,20 +277,10 @@ pub struct BenCodeApp {
     pub surface: Option<Surface>,
     /// What Settings returns to when it closes.
     pub settings_return: Option<Surface>,
-    pub notes: Vec<crate::db::Note>,
-    pub selected_note_id: Option<String>,
-    pub note_filter_query: String,
-    /// The notes list's scroll, for its scroll bar.
-    pub notes_scroll: gpui::UniformListScrollHandle,
-    pub note_filter_input: Entity<TextInput>,
-    pub note_title_input: Entity<TextInput>,
-    pub note_body_input: Entity<TextInput>,
-    pub automations: Vec<crate::db::AutomationRow>,
-    pub selected_automation_id: Option<String>,
-    pub automation_runs: Vec<crate::db::AutomationRunRow>,
-    pub automation_name_input: Entity<TextInput>,
-    pub automation_prompt_input: Entity<TextInput>,
-    pub automation_time_input: Entity<TextInput>,
+    /// The Notes surface: its notes, selection, fields and dialogs.
+    pub notes: crate::ui::notes_view::NotesState,
+    /// The Automations surface: definitions, run history, fields and dialogs.
+    pub automations: crate::ui::automations::AutomationsState,
     // Workspace & Projects
     pub current_cwd: String,
     /// Worktree each project's workspace is narrowed to, keyed by project.
@@ -336,7 +326,6 @@ pub struct BenCodeApp {
     /// The hit list's scroll, for its scroll bar.
     pub search_scroll: gpui::UniformListScrollHandle,
     pub search_active_index: usize,
-    // Inbox
     /// Rename/delete dialog opened from the thread list.
     pub session_dialog: Option<crate::ui::sidebar::SessionDialog>,
     /// A left press on a window drag region's background, until the
@@ -361,36 +350,22 @@ pub struct BenCodeApp {
     next_run_id: u64,
     pub prompt_input: Entity<TextInput>,
     pub search_input: Entity<TextInput>,
-    // [ui-agent-flow fields]
     /// Multi-pane transcript list states keyed by session id.
     pub transcripts: std::collections::HashMap<String, crate::ui::transcript::TranscriptView>,
     /// Visual drop hint for an active pane drag over an edge of another pane.
     pub active_pane_drop: Option<crate::ui::drag_drop::PaneDropTarget>,
     /// Active file drop target session id.
     pub active_file_drop_target: Option<String>,
-    // [ui-git-files fields]
     /// Destructive git action awaiting confirmation.
     pub git_confirm: Option<crate::ui::git_changes_panel::GitConfirm>,
-    // [ui-panels fields]
     /// Preferences as last loaded or saved (`settings.json`).
     pub settings: crate::settings::AppSettings,
     /// External editors and MCP servers, scanned once in the background.
     pub integrations: integrations::Integrations,
-    /// Validation message for the automation time field.
-    pub automation_time_error: Option<String>,
     /// Set on open; the search dialog focuses its query field once drawn.
     pub search_focus_pending: bool,
     /// Enter in the search field opens the top hit; subscribed on first open.
     pub search_submit: Option<Subscription>,
-    /// Note id awaiting delete confirmation.
-    pub note_pending_delete: Option<String>,
-    /// Bumped on every note edit; a pending autosave only runs if it still matches.
-    pub note_autosave_generation: u64,
-    /// Last failed note save, shown with a Retry action.
-    pub note_save_error: Option<String>,
-    /// Automation id awaiting delete confirmation.
-    pub automation_pending_delete: Option<String>,
-    // [editor-pane fields]
     pub editor: crate::ui::editor_pane::EditorState,
     pub is_sidebar_open: bool,
     /// The project rail (⌘B); the session sidebar is `is_sidebar_open` (⇧⌘B).
@@ -411,7 +386,7 @@ pub struct BenCodeApp {
     _subscriptions: Vec<Subscription>,
 }
 
-fn text_input(
+pub(crate) fn text_input(
     window: &mut Window,
     cx: &mut Context<BenCodeApp>,
     placeholder: &str,
@@ -420,7 +395,7 @@ fn text_input(
     cx.new(|cx| TextInput::new(window, cx).placeholder(placeholder))
 }
 
-fn multiline_input(
+pub(crate) fn multiline_input(
     window: &mut Window,
     cx: &mut Context<BenCodeApp>,
     placeholder: &str,
@@ -526,17 +501,8 @@ impl BenCodeApp {
         let question_keys_focus = question_focus.clone();
         let queue_edit_input = text_input(window, cx, "Edit queued message");
         let queue_keys_input = queue_edit_input.clone();
-        let note_filter_input = text_input(window, cx, "Filter notes...");
-        let note_title_input = text_input(window, cx, "Note title...");
-        let note_body_input = multiline_input(
-            window,
-            cx,
-            "Write note or scratchpad in markdown...",
-            (5, 25),
-        );
-        let automation_name_input = text_input(window, cx, "Automation name...");
-        let automation_prompt_input = multiline_input(window, cx, "Automation prompt...", (3, 10));
-        let automation_time_input = text_input(window, cx, "09:00");
+        let mut notes = crate::ui::notes_view::NotesState::new(window, cx);
+        let mut automations = crate::ui::automations::AutomationsState::new(window, cx);
         let git_commit_input = multiline_input(window, cx, "Message (⌘↩ to commit)", (1, 7));
         let search_modal_input =
             text_input(window, cx, "Search conversations, files, projects... (⌘K)");
@@ -699,13 +665,13 @@ impl BenCodeApp {
                     _ => {}
                 },
             ),
-            cx.subscribe(&note_title_input, Self::on_note_input_event),
-            cx.subscribe(&note_body_input, Self::on_note_input_event),
+            cx.subscribe(&notes.title_input, Self::on_note_input_event),
+            cx.subscribe(&notes.body_input, Self::on_note_input_event),
             cx.subscribe(
-                &note_filter_input,
+                &notes.filter_input,
                 |this: &mut Self, input, event: &InputEvent, cx| {
                     if *event == InputEvent::Changed {
-                        this.note_filter_query = input.read(cx).text().to_string();
+                        this.notes.filter_query = input.read(cx).text().to_string();
                         cx.notify();
                     }
                 },
@@ -1031,16 +997,16 @@ impl BenCodeApp {
         let harnesses = HarnessResolver::discover();
         let selected_model = catalog::default_model(&harnesses).key;
 
-        let notes = db.list_notes().unwrap_or_else(|err| {
+        notes.items = db.list_notes().unwrap_or_else(|err| {
             log::error!("failed to load notes: {err:#}");
             Vec::new()
         });
-        let selected_note_id = notes.first().map(|n| n.id.clone());
-        let automations = db.list_automations().unwrap_or_else(|err| {
+        notes.selected_id = notes.items.first().map(|n| n.id.clone());
+        automations.items = db.list_automations().unwrap_or_else(|err| {
             log::error!("failed to load automations: {err:#}");
             Vec::new()
         });
-        let selected_automation_id = automations.first().map(|a| a.id.clone());
+        automations.selected_id = automations.items.first().map(|a| a.id.clone());
 
         // Git shells out several times; load it in the background after construction.
         cx.spawn(async move |this, cx| {
@@ -1155,18 +1121,7 @@ impl BenCodeApp {
             surface: None,
             settings_return: None,
             notes,
-            selected_note_id,
-            note_filter_query: String::new(),
-            notes_scroll: Default::default(),
-            note_filter_input,
-            note_title_input,
-            note_body_input,
             automations,
-            selected_automation_id,
-            automation_runs: Vec::new(),
-            automation_name_input,
-            automation_prompt_input,
-            automation_time_input,
             current_cwd,
             worktree_focuses: HashMap::new(),
             project_return: HashMap::new(),
@@ -1205,27 +1160,18 @@ impl BenCodeApp {
             next_run_id: 0,
             prompt_input,
             search_input,
-            // [ui-agent-flow init]
             transcripts: std::collections::HashMap::new(),
             active_pane_drop: None,
             active_file_drop_target: None,
-            // [ui-git-files init]
             git_confirm: None,
-            // [ui-panels init]
             settings: Default::default(),
             integrations: integrations::Integrations {
                 skill_names,
                 ..Default::default()
             },
-            automation_time_error: None,
             search_focus_pending: false,
             search_submit: None,
-            note_pending_delete: None,
-            note_autosave_generation: 0,
-            note_save_error: None,
-            automation_pending_delete: None,
             quit_confirm_open: false,
-            // [editor-pane init]
             editor: Default::default(),
             is_sidebar_open: true,
             is_rail_open: true,
@@ -1540,7 +1486,7 @@ impl BenCodeApp {
         match self.db.upsert_note(&upsert) {
             Ok(note) => {
                 let id = note.id.clone();
-                self.notes.insert(0, note);
+                self.notes.items.insert(0, note);
                 self.open_notes(cx);
                 self.select_note(id, cx);
             }

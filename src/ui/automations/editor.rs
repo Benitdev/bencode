@@ -82,7 +82,7 @@ impl BenCodeApp {
                     .variant(ButtonVariant::Ghost)
                     .tooltip("Delete automation")
                     .on_click(cx.listener(move |this, _, _, cx| {
-                        this.automation_pending_delete = Some(delete_id.clone());
+                        this.automations.pending_delete = Some(delete_id.clone());
                         cx.notify();
                     })),
             )
@@ -95,16 +95,16 @@ impl BenCodeApp {
             .gap_4()
             .child(
                 FormField::new("automation-name", "Name")
-                    .child(Input::new(&self.automation_name_input)),
+                    .child(Input::new(&self.automations.name_input)),
             )
             .child({
                 let field = FormField::new("automation-time", "Time (HH:MM, 24-hour)")
                     .description(schedule_label(auto));
-                match self.automation_time_error.clone() {
+                match self.automations.time_error.clone() {
                     Some(error) => field.error(error),
                     None => field,
                 }
-                .child(Input::new(&self.automation_time_input))
+                .child(Input::new(&self.automations.time_input))
             })
             .child(
                 FormField::new("automation-workspace", "Workspace").child(
@@ -121,12 +121,12 @@ impl BenCodeApp {
             )
             .child(
                 FormField::new("automation-prompt", "Prompt")
-                    .child(Input::new(&self.automation_prompt_input)),
+                    .child(Input::new(&self.automations.prompt_input)),
             )
     }
 
     fn render_automation_runs(&self) -> impl IntoElement {
-        let runs: AnyElement = if self.automation_runs.is_empty() {
+        let runs: AnyElement = if self.automations.runs.is_empty() {
             Caption::new("No runs recorded yet.").into_any_element()
         } else {
             div()
@@ -134,7 +134,7 @@ impl BenCodeApp {
                 .flex_col()
                 .gap_1()
                 .children(
-                    self.automation_runs
+                    self.automations.runs
                         .iter()
                         .enumerate()
                         .map(|(ix, run)| render_run(ix, run)),
@@ -142,7 +142,7 @@ impl BenCodeApp {
                 .into_any_element()
         };
         Section::new("Recent runs")
-            .description(format!("{} recorded", self.automation_runs.len()))
+            .description(format!("{} recorded", self.automations.runs.len()))
             .child(runs)
     }
 }

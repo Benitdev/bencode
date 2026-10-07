@@ -16,11 +16,11 @@ use crate::schedule::schedule_label;
 
 impl BenCodeApp {
     pub(super) fn render_automation_master(&self, cx: &Context<Self>) -> impl IntoElement {
-        let mine = if self.automations.is_empty() {
+        let mine = if self.automations.items.is_empty() {
             Caption::new("No automations yet. Start from a template below.").into_any_element()
         } else {
             column(
-                self.automations
+                self.automations.items
                     .iter()
                     .enumerate()
                     .map(|(ix, auto)| self.render_automation_item(ix, auto, cx)),
@@ -67,7 +67,7 @@ impl BenCodeApp {
         ListItem::new(("automation", ix), auto.name.clone())
             .description(schedule_label(auto))
             .trailing(status)
-            .selected(self.selected_automation_id.as_deref() == Some(auto.id.as_str()))
+            .selected(self.automations.selected_id.as_deref() == Some(auto.id.as_str()))
             .on_click(cx.listener(move |this, _, _, cx| this.select_automation(&id, cx)))
     }
 }

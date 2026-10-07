@@ -76,9 +76,9 @@ impl BenCodeApp {
         match self.surface {
             Some(Surface::Notes) => {
                 self.save_note_if_dirty(cx);
-                self.note_pending_delete = None;
+                self.notes.pending_delete = None;
             }
-            Some(Surface::Automations) => self.automation_pending_delete = None,
+            Some(Surface::Automations) => self.automations.pending_delete = None,
             Some(Surface::Settings) => {
                 self.surface = self.settings_return.take();
                 cx.notify();

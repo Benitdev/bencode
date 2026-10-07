@@ -282,7 +282,7 @@ impl BenCodeApp {
                 &self.mention_query,
                 &self.project_files.files,
                 &self.project_files.dirs,
-                &self.notes,
+                &self.notes.items,
                 &self.quick_open_recents(),
             );
             for item in &mut items {

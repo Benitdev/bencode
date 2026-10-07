@@ -9,11 +9,12 @@ use ely_gpui_component::data_display::Tone;
 use ely_gpui_component::layout::MasterDetail;
 use ely_gpui_component::overlays::ConfirmDialog;
 use ely_gpui_component::theme::ActiveTheme;
-use gpui::{AnyElement, Context, IntoElement, ParentElement, Styled, div};
+use ely_gpui_component::forms::TextInput;
+use gpui::{AnyElement, Context, Entity, IntoElement, ParentElement, Styled, Window, div};
 
 use jiff::tz::TimeZone;
 
-use crate::app::{BenCodeApp, Surface, now_ms};
+use crate::app::{BenCodeApp, Surface, multiline_input, now_ms, text_input};
 use crate::db::{AutomationRow, AutomationRunRow};
 use crate::schedule;
 use crate::ui::app_callback::app_callback;
@@ -23,6 +24,37 @@ use templates::{AutomationTemplate, BLANK_AUTOMATION};
 const DEFAULT_AUTOMATION_MODEL: &str = "claude:sonnet";
 const HOUR_MS: i64 = 3_600_000;
 const DAY_MS: i64 = 24 * HOUR_MS;
+
+/// The Automations surface's data, selection, fields and pending dialogs.
+pub struct AutomationsState {
+    pub items: Vec<AutomationRow>,
+    pub selected_id: Option<String>,
+    /// The selected automation's run history.
+    pub runs: Vec<AutomationRunRow>,
+    pub name_input: Entity<TextInput>,
+    pub prompt_input: Entity<TextInput>,
+    pub time_input: Entity<TextInput>,
+    /// Validation message for the automation time field.
+    pub time_error: Option<String>,
+    /// Automation id awaiting delete confirmation.
+    pub pending_delete: Option<String>,
+}
+
+impl AutomationsState {
+    /// The fields, with no automations loaded yet.
+    pub fn new(window: &mut Window, cx: &mut Context<BenCodeApp>) -> Self {
+        Self {
+            items: Vec::new(),
+            selected_id: None,
+            runs: Vec::new(),
+            name_input: text_input(window, cx, "Automation name..."),
+            prompt_input: multiline_input(window, cx, "Automation prompt...", (3, 10)),
+            time_input: text_input(window, cx, "09:00"),
+            time_error: None,
+            pending_delete: None,
+        }
+    }
+}
 
 /// A prompt to run in a fresh thread.
 pub struct ThreadRequest {
@@ -95,32 +127,32 @@ impl BenCodeApp {
 
     fn refresh_automations(&mut self, cx: &mut Context<Self>) {
         match self.db.list_automations() {
-            Ok(automations) => self.automations = automations,
+            Ok(automations) => self.automations.items = automations,
             Err(err) => log::error!("list_automations failed: {err:#}"),
         }
         let selected_exists = self.selected_automation().is_some();
-        match self.automations.first().map(|a| a.id.clone()) {
+        match self.automations.items.first().map(|a| a.id.clone()) {
             Some(first) if !selected_exists => self.select_automation(&first, cx),
             Some(_) => {}
-            None => self.selected_automation_id = None,
+            None => self.automations.selected_id = None,
         }
     }
 
     fn selected_automation(&self) -> Option<&AutomationRow> {
-        let id = self.selected_automation_id.as_deref()?;
-        self.automations.iter().find(|a| a.id == id)
+        let id = self.automations.selected_id.as_deref()?;
+        self.automations.items.iter().find(|a| a.id == id)
     }
 
     fn select_automation(&mut self, id: &str, cx: &mut Context<Self>) {
-        self.selected_automation_id = Some(id.to_string());
-        self.automation_time_error = None;
+        self.automations.selected_id = Some(id.to_string());
+        self.automations.time_error = None;
         if let Some(auto) = self.selected_automation() {
             let (name, prompt, time) = (auto.name.clone(), auto.prompt.clone(), auto.time.clone());
-            self.automation_name_input
+            self.automations.name_input
                 .update(cx, |input, cx| input.set_text(name, cx));
-            self.automation_prompt_input
+            self.automations.prompt_input
                 .update(cx, |input, cx| input.set_text(prompt, cx));
-            self.automation_time_input
+            self.automations.time_input
                 .update(cx, |input, cx| input.set_text(time, cx));
         }
         self.load_automation_runs(id);
@@ -129,10 +161,10 @@ impl BenCodeApp {
 
     fn load_automation_runs(&mut self, id: &str) {
         match self.db.list_automation_runs(id) {
-            Ok(runs) => self.automation_runs = runs,
+            Ok(runs) => self.automations.runs = runs,
             Err(err) => {
                 log::error!("list_automation_runs failed: {err:#}");
-                self.automation_runs.clear();
+                self.automations.runs.clear();
             }
         }
     }
@@ -158,27 +190,27 @@ impl BenCodeApp {
         let Some(auto) = self.selected_automation() else {
             return;
         };
-        let time = non_empty(self.automation_time_input.read(cx).text(), &auto.time);
+        let time = non_empty(self.automations.time_input.read(cx).text(), &auto.time);
         let now = now_ms();
         // MonoCode reads `triggers`; the edit lands on the first time trigger.
         let retimed = schedule::with_time(auto, &time);
         let valid = schedule::parse_time(&time).is_some();
         let next = schedule::next_automation_run_at(&retimed, now, &TimeZone::system());
         let Some(next_run_at) = next.filter(|_| valid) else {
-            self.automation_time_error = Some(format!(
+            self.automations.time_error = Some(format!(
                 "“{time}” is not a valid 24-hour time such as 09:00."
             ));
             cx.notify();
             return;
         };
         let updated = AutomationRow {
-            name: non_empty(self.automation_name_input.read(cx).text(), &retimed.name),
-            prompt: self.automation_prompt_input.read(cx).text().to_string(),
+            name: non_empty(self.automations.name_input.read(cx).text(), &retimed.name),
+            prompt: self.automations.prompt_input.read(cx).text().to_string(),
             next_run_at,
             updated_at: now,
             ..retimed
         };
-        self.automation_time_error = None;
+        self.automations.time_error = None;
         if let Err(err) = self.db.save_automation(&updated) {
             log::error!("save_automation failed: {err:#}");
         }
@@ -190,9 +222,9 @@ impl BenCodeApp {
             log::error!("delete_automation failed: {err:#}");
             return;
         }
-        if self.selected_automation_id.as_deref() == Some(id) {
-            self.selected_automation_id = None;
-            self.automation_runs.clear();
+        if self.automations.selected_id.as_deref() == Some(id) {
+            self.automations.selected_id = None;
+            self.automations.runs.clear();
         }
         self.refresh_automations(cx);
         cx.notify();
@@ -280,14 +312,15 @@ impl BenCodeApp {
     }
 
     fn render_automation_delete_confirm(&self, cx: &Context<Self>) -> Option<impl IntoElement> {
-        let id = self.automation_pending_delete.clone()?;
+        let id = self.automations.pending_delete.clone()?;
         let name = self
             .automations
+            .items
             .iter()
             .find(|a| a.id == id)
             .map_or("this automation", |a| a.name.as_str());
         let close = app_callback(cx, |this, cx| {
-            this.automation_pending_delete = None;
+            this.automations.pending_delete = None;
             cx.notify();
         });
         let delete = app_callback(cx, move |this, cx| this.delete_automation(&id, cx));

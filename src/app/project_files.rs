@@ -96,6 +96,7 @@ impl BenCodeApp {
         let path = std::path::PathBuf::from(&root);
         let notes: Vec<String> = self
             .notes
+            .items
             .iter()
             .map(|n| format!("note/{}", n.slug))
             .collect();
