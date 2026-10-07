@@ -4,6 +4,8 @@
 //! `apply_event` is a pure reducer over `SessionRow` so transcript behaviour
 //! is unit-tested without GPUI; `BenCodeApp` methods are thin glue around it.
 
+use std::collections::{HashMap, HashSet};
+
 use gpui::{Context, Focusable};
 use serde_json::{Value, json};
 
@@ -59,7 +61,7 @@ pub struct AgentRun {
     /// A compaction the harness confirmed, with the context left after it.
     pub compacted: Option<Option<u64>>,
     /// The files of each edit tool still running, by call id.
-    pub edit_paths: std::collections::HashMap<String, Vec<String>>,
+    pub edit_paths: HashMap<String, Vec<String>>,
 }
 
 /// What a run is for.
@@ -98,6 +100,158 @@ fn automation_status(outcome: Option<DoneStatus>) -> &'static str {
         Some(DoneStatus::Completed) => "succeeded",
         Some(DoneStatus::Cancelled) => "cancelled",
         Some(DoneStatus::Failed) | None => "failed",
+    }
+}
+
+/// What `on_agent_event` does with one event of a live run, decided without
+/// GPUI so it can be tested.
+#[derive(Debug, PartialEq)]
+enum EventStep {
+    /// The provider refused the turn on its usage limit.
+    UsageLimited(Option<i64>),
+    /// The harness confirmed a compaction.
+    Compacted(Option<u64>),
+    /// Full access: allow at once.
+    AutoApprove(PermissionRequest),
+    /// The user answers; a question for the focused thread takes the keys.
+    Ask {
+        request: PermissionRequest,
+        focus_question: bool,
+    },
+    /// Fold into the transcript, after the checkpoint call it needs.
+    Apply {
+        event: AgentEvent,
+        /// The edited files, and whether the tool completed (capture) or
+        /// is starting (prepare). Never empty.
+        checkpoint: Option<(Vec<String>, bool)>,
+        done: Option<DoneStatus>,
+    },
+}
+
+/// MonoCode `trackSessionEdits` and the permission rules, for one event.
+/// `running_edits` is the run's map of edit tools still running.
+fn plan_event(
+    auto_approve: bool,
+    running_edits: &mut HashMap<String, Vec<String>>,
+    focused: bool,
+    event: AgentEvent,
+) -> EventStep {
+    let event = match event {
+        AgentEvent::UsageLimited { resets_at } => return EventStep::UsageLimited(resets_at),
+        AgentEvent::Compacted { tokens_after } => return EventStep::Compacted(tokens_after),
+        AgentEvent::PermissionRequest(request) => {
+            let question = request.tool == QUESTION_TOOL;
+            // MonoCode full access answers everything but a question.
+            if auto_approve && !question {
+                return EventStep::AutoApprove(request);
+            }
+            return EventStep::Ask {
+                request,
+                focus_question: question && focused,
+            };
+        }
+        event => event,
+    };
+    // MonoCode `trackSessionEdits`: snapshot a file when its edit tool
+    // starts, and again once it completed.
+    let edit = match &event {
+        AgentEvent::ToolCallStart { id, name, input } if tool_kind(name) == "edit" => {
+            let paths = edit_paths(input);
+            running_edits.insert(id.clone(), paths.clone());
+            Some((paths, false))
+        }
+        AgentEvent::ToolCallFinish { id, success, .. } => running_edits
+            .remove(id)
+            .filter(|_| *success)
+            .map(|paths| (paths, true)),
+        _ => None,
+    };
+    let done = match &event {
+        AgentEvent::Done(status) => Some(*status),
+        _ => None,
+    };
+    EventStep::Apply {
+        event,
+        checkpoint: edit.filter(|(paths, _)| !paths.is_empty()),
+        done,
+    }
+}
+
+/// What a thread's queue does when its turn ends (MonoCode `canDispatchQueuedHead`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum QueueDispatch {
+    /// Paused or usage-limited: wait for Resume.
+    Wait,
+    /// The head is being edited: send once the edit ends.
+    Hold,
+    Send,
+}
+
+fn queue_dispatch(paused: bool, usage_limited: bool, editing_head: bool) -> QueueDispatch {
+    if paused || usage_limited {
+        QueueDispatch::Wait
+    } else if editing_head {
+        // MonoCode holds the queue while its head is being edited.
+        QueueDispatch::Hold
+    } else {
+        QueueDispatch::Send
+    }
+}
+
+/// Takes the head of a thread's queue, dropping the emptied queue; an edit
+/// further down moves up with it.
+fn pop_queue_head(
+    queues: &mut HashMap<String, Vec<TurnInput>>,
+    editing: &mut Option<(String, usize)>,
+    session_id: &str,
+) -> Option<TurnInput> {
+    let queue = queues.get_mut(session_id)?;
+    let next = queue.remove(0);
+    if queue.is_empty() {
+        queues.remove(session_id);
+    }
+    if let Some((sid, ix)) = editing
+        && sid == session_id
+    {
+        *ix = ix.saturating_sub(1);
+    }
+    Some(next)
+}
+
+/// Takes the item at `ix`; an emptied queue is dropped and unpaused.
+fn take_queued(
+    queues: &mut HashMap<String, Vec<TurnInput>>,
+    paused: &mut HashSet<String>,
+    session_id: &str,
+    ix: usize,
+) -> Option<TurnInput> {
+    let queue = queues.get_mut(session_id)?;
+    if ix >= queue.len() {
+        return None;
+    }
+    let input = queue.remove(ix);
+    if queue.is_empty() {
+        queues.remove(session_id);
+        paused.remove(session_id);
+    }
+    Some(input)
+}
+
+/// How a `/compact` run ended.
+#[derive(Debug, PartialEq, Eq)]
+enum CompactEnd {
+    /// Confirmed, with the context left when the harness reported it.
+    Confirmed(Option<i64>),
+    Unconfirmed,
+    /// Stopped by the user: no notice.
+    Cancelled,
+}
+
+fn compact_end(compacted: Option<Option<u64>>, outcome: Option<DoneStatus>) -> CompactEnd {
+    match compacted {
+        Some(tokens) => CompactEnd::Confirmed(tokens.and_then(|t| i64::try_from(t).ok())),
+        None if outcome == Some(DoneStatus::Cancelled) => CompactEnd::Cancelled,
+        None => CompactEnd::Unconfirmed,
     }
 }
 
@@ -215,14 +369,7 @@ impl BenCodeApp {
         {
             self.queue_editing = None;
         }
-        if let Some(queue) = self.prompt_queues.get_mut(session_id)
-            && ix < queue.len()
-        {
-            queue.remove(ix);
-            if queue.is_empty() {
-                self.prompt_queues.remove(session_id);
-                self.queue_paused.remove(session_id);
-            }
+        if take_queued(&mut self.prompt_queues, &mut self.queue_paused, session_id, ix).is_some() {
             cx.notify();
         }
     }
@@ -463,17 +610,11 @@ impl BenCodeApp {
     /// The queue row's Steer: that message goes into the running turn now,
     /// or, with the agent idle, starts a turn of its own (MonoCode).
     pub fn steer_queued(&mut self, session_id: &str, ix: usize, cx: &mut Context<Self>) {
-        let Some(queue) = self.prompt_queues.get_mut(session_id) else {
+        let Some(input) =
+            take_queued(&mut self.prompt_queues, &mut self.queue_paused, session_id, ix)
+        else {
             return;
         };
-        if ix >= queue.len() {
-            return;
-        }
-        let input = queue.remove(ix);
-        if queue.is_empty() {
-            self.prompt_queues.remove(session_id);
-            self.queue_paused.remove(session_id);
-        }
         if !self.is_agent_running_in(session_id) {
             self.send_turn(session_id, input, cx);
             cx.notify();
@@ -714,7 +855,7 @@ impl BenCodeApp {
                 can_steer: false,
                 purpose: RunPurpose::Turn,
                 compacted: None,
-                edit_paths: std::collections::HashMap::new(),
+                edit_paths: HashMap::new(),
             },
         );
 
@@ -748,67 +889,51 @@ impl BenCodeApp {
     }
 
     fn on_agent_event(&mut self, session_id: &str, run_id: u64, event: AgentEvent) {
-        if let AgentEvent::UsageLimited { resets_at } = event {
-            if self.current_run(session_id, run_id).is_some() {
-                self.record_usage_limit(session_id, resets_at);
-            }
-            return;
-        }
+        let focused = self.selected_session_id.as_deref() == Some(session_id);
         let Some(run) = self.current_run(session_id, run_id) else {
             return;
         };
-        if let AgentEvent::Compacted { tokens_after } = event {
-            run.compacted = Some(tokens_after);
-            return;
-        }
-        if let AgentEvent::PermissionRequest(request) = event {
-            // MonoCode full access answers everything but a question.
-            if run.auto_approve && request.tool != QUESTION_TOOL {
+        match plan_event(run.auto_approve, &mut run.edit_paths, focused, event) {
+            EventStep::UsageLimited(resets_at) => self.record_usage_limit(session_id, resets_at),
+            EventStep::Compacted(tokens_after) => run.compacted = Some(tokens_after),
+            EventStep::AutoApprove(request) => {
                 if !run.handle.respond_permission(&request, true) {
                     log::warn!("harness rejected auto-approval for {}", request.request_id);
                 }
-                return;
             }
-            let question = request.tool == QUESTION_TOOL;
-            run.pending_permission = Some(request);
-            // The form takes the keys, as MonoCode focuses its options.
-            if question && self.selected_session_id.as_deref() == Some(session_id) {
-                self.question_focus_wanted = true;
-            }
-            return;
-        }
-        // MonoCode `trackSessionEdits`: snapshot a file when its edit tool
-        // starts, and again once it completed.
-        let edit = match &event {
-            AgentEvent::ToolCallStart { id, name, input } if tool_kind(name) == "edit" => {
-                let paths = edit_paths(input);
-                run.edit_paths.insert(id.clone(), paths.clone());
-                Some((paths, false))
-            }
-            AgentEvent::ToolCallFinish { id, success, .. } => run
-                .edit_paths
-                .remove(id)
-                .filter(|_| *success)
-                .map(|paths| (paths, true)),
-            _ => None,
-        };
-        let is_done = matches!(event, AgentEvent::Done(_));
-        if let AgentEvent::Done(status) = event {
-            run.outcome = Some(status);
-        }
-        if let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id) {
-            if let Some((paths, completed)) = edit.filter(|(paths, _)| !paths.is_empty()) {
-                let cwd = session.work_dir();
-                if completed {
-                    self.checkpoints.capture(session_id, cwd, paths);
-                } else {
-                    self.checkpoints.prepare(session_id, cwd, paths);
+            EventStep::Ask {
+                request,
+                focus_question,
+            } => {
+                run.pending_permission = Some(request);
+                // The form takes the keys, as MonoCode focuses its options.
+                if focus_question {
+                    self.question_focus_wanted = true;
                 }
             }
-            apply_event(session, event, now_ms());
-        }
-        if is_done {
-            self.persist_session(session_id);
+            EventStep::Apply {
+                event,
+                checkpoint,
+                done,
+            } => {
+                if let Some(status) = done {
+                    run.outcome = Some(status);
+                }
+                if let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id) {
+                    if let Some((paths, completed)) = checkpoint {
+                        let cwd = session.work_dir();
+                        if completed {
+                            self.checkpoints.capture(session_id, cwd, paths);
+                        } else {
+                            self.checkpoints.prepare(session_id, cwd, paths);
+                        }
+                    }
+                    apply_event(session, event, now_ms());
+                }
+                if done.is_some() {
+                    self.persist_session(session_id);
+                }
+            }
         }
     }
 
@@ -822,17 +947,15 @@ impl BenCodeApp {
         if run.purpose == RunPurpose::Compact
             && let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id)
         {
-            match run.compacted {
-                Some(tokens) => {
+            match compact_end(run.compacted, run.outcome) {
+                CompactEnd::Confirmed(tokens) => {
                     push_notice(session, COMPACTED_NOTICE, now_ms());
-                    if let Some(tokens) = tokens.and_then(|t| i64::try_from(t).ok()) {
+                    if let Some(tokens) = tokens {
                         session.context_used = Some(tokens);
                     }
                 }
-                None if run.outcome != Some(DoneStatus::Cancelled) => {
-                    push_notice(session, UNCONFIRMED_COMPACT, now_ms())
-                }
-                None => {}
+                CompactEnd::Unconfirmed => push_notice(session, UNCONFIRMED_COMPACT, now_ms()),
+                CompactEnd::Cancelled => {}
             }
         }
         self.persist_session(session_id);
@@ -847,32 +970,26 @@ impl BenCodeApp {
     /// Starts the oldest queued prompt of a thread whose turn just ended
     /// (MonoCode `canDispatchQueuedHead`).
     fn send_next_queued(&mut self, session_id: &str, cx: &mut Context<Self>) {
-        // A paused or usage-limited queue waits for Resume.
-        if self.queue_paused.contains(session_id) || self.usage_limits.contains_key(session_id) {
-            return;
-        }
-        // MonoCode holds the queue while its head is being edited.
-        if self
+        let editing_head = self
             .queue_editing
             .as_ref()
-            .is_some_and(|(sid, ix)| sid == session_id && *ix == 0)
-        {
-            self.queue_held.insert(session_id.to_string());
-            return;
+            .is_some_and(|(sid, ix)| sid == session_id && *ix == 0);
+        match queue_dispatch(
+            self.queue_paused.contains(session_id),
+            self.usage_limits.contains_key(session_id),
+            editing_head,
+        ) {
+            QueueDispatch::Wait => return,
+            QueueDispatch::Hold => {
+                self.queue_held.insert(session_id.to_string());
+                return;
+            }
+            QueueDispatch::Send => {}
         }
-        let Some(queue) = self.prompt_queues.get_mut(session_id) else {
+        let Some(next) = pop_queue_head(&mut self.prompt_queues, &mut self.queue_editing, session_id)
+        else {
             return;
         };
-        let next = queue.remove(0);
-        if queue.is_empty() {
-            self.prompt_queues.remove(session_id);
-        }
-        // A message being edited further down moves up with the queue.
-        if let Some((sid, ix)) = &mut self.queue_editing
-            && sid == session_id
-        {
-            *ix = ix.saturating_sub(1);
-        }
         self.send_turn(session_id, next, cx);
     }
 
@@ -1371,5 +1488,245 @@ mod tests {
     fn long_output_is_truncated_on_char_boundary() {
         let text = "ü".repeat(MAX_TOOL_OUTPUT_CHARS + 5);
         assert!(truncate(&text, MAX_TOOL_OUTPUT_CHARS).ends_with("(truncated)"));
+    }
+
+    fn permission(tool: &str) -> AgentEvent {
+        AgentEvent::PermissionRequest(PermissionRequest {
+            request_id: "r1".into(),
+            tool: tool.into(),
+            description: String::new(),
+            input: json!({}),
+        })
+    }
+
+    fn edit_start(id: &str, name: &str, input: Value) -> AgentEvent {
+        AgentEvent::ToolCallStart {
+            id: id.into(),
+            name: name.into(),
+            input,
+        }
+    }
+
+    fn tool_finish(id: &str, success: bool) -> AgentEvent {
+        AgentEvent::ToolCallFinish {
+            id: id.into(),
+            output: String::new(),
+            success,
+        }
+    }
+
+    /// The checkpoint an applied event asks for.
+    fn checkpoint_of(step: EventStep) -> Option<(Vec<String>, bool)> {
+        match step {
+            EventStep::Apply { checkpoint, .. } => checkpoint,
+            other => panic!("not applied: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn usage_limit_and_compaction_skip_the_transcript() {
+        let mut edits = HashMap::new();
+        let limited = AgentEvent::UsageLimited { resets_at: Some(5) };
+        assert_eq!(
+            plan_event(false, &mut edits, true, limited),
+            EventStep::UsageLimited(Some(5))
+        );
+        let compacted = AgentEvent::Compacted {
+            tokens_after: Some(9),
+        };
+        assert_eq!(
+            plan_event(false, &mut edits, true, compacted),
+            EventStep::Compacted(Some(9))
+        );
+    }
+
+    #[test]
+    fn full_access_approves_all_but_questions() {
+        let mut edits = HashMap::new();
+        assert!(matches!(
+            plan_event(true, &mut edits, true, permission("Bash")),
+            EventStep::AutoApprove(_)
+        ));
+        assert!(matches!(
+            plan_event(true, &mut edits, true, permission(QUESTION_TOOL)),
+            EventStep::Ask {
+                focus_question: true,
+                ..
+            }
+        ));
+        assert!(matches!(
+            plan_event(true, &mut edits, false, permission(QUESTION_TOOL)),
+            EventStep::Ask {
+                focus_question: false,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn supervised_permissions_ask_without_focus() {
+        let mut edits = HashMap::new();
+        assert!(matches!(
+            plan_event(false, &mut edits, true, permission("Bash")),
+            EventStep::Ask {
+                focus_question: false,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn edit_tools_prepare_then_capture() {
+        let mut edits = HashMap::new();
+        let start = edit_start("t1", "Edit", json!({"file_path": "/r/a.rs"}));
+        let step = plan_event(false, &mut edits, true, start);
+        assert!(matches!(step, EventStep::Apply { done: None, .. }));
+        assert_eq!(checkpoint_of(step), Some((vec!["/r/a.rs".to_string()], false)));
+        assert!(edits.contains_key("t1"));
+
+        let step = plan_event(false, &mut edits, true, tool_finish("t1", true));
+        assert_eq!(checkpoint_of(step), Some((vec!["/r/a.rs".to_string()], true)));
+        assert!(edits.is_empty());
+    }
+
+    #[test]
+    fn a_failed_edit_captures_nothing() {
+        let mut edits = HashMap::new();
+        let start = edit_start("t1", "Edit", json!({"file_path": "/r/a.rs"}));
+        drop(plan_event(false, &mut edits, true, start));
+        let step = plan_event(false, &mut edits, true, tool_finish("t1", false));
+        assert_eq!(checkpoint_of(step), None);
+        assert!(edits.is_empty());
+    }
+
+    #[test]
+    fn non_edit_tools_and_pathless_edits_take_no_checkpoint() {
+        let mut edits = HashMap::new();
+        let bash = edit_start("t1", "Bash", json!({"command": "ls"}));
+        assert_eq!(checkpoint_of(plan_event(false, &mut edits, true, bash)), None);
+        assert!(edits.is_empty());
+
+        // An edit that names no file is still tracked until it finishes.
+        let write = edit_start("t2", "Write", json!({}));
+        assert_eq!(checkpoint_of(plan_event(false, &mut edits, true, write)), None);
+        assert_eq!(edits.get("t2"), Some(&Vec::new()));
+
+        let unknown = tool_finish("nope", true);
+        assert_eq!(checkpoint_of(plan_event(false, &mut edits, true, unknown)), None);
+    }
+
+    #[test]
+    fn done_reports_its_status() {
+        let mut edits = HashMap::new();
+        let done = AgentEvent::Done(DoneStatus::Completed);
+        assert!(matches!(
+            plan_event(false, &mut edits, true, done),
+            EventStep::Apply {
+                done: Some(DoneStatus::Completed),
+                ..
+            }
+        ));
+        let text = AgentEvent::TextDelta("x".into());
+        assert!(matches!(
+            plan_event(false, &mut edits, true, text),
+            EventStep::Apply {
+                done: None,
+                checkpoint: None,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn recorded_claude_edit_turn_prepares_and_captures() {
+        use crate::harness::process::LineParser;
+
+        let lines = [
+            r#"{"type":"assistant","message":{"id":"m1","content":[{"type":"tool_use","id":"t1","name":"Edit","input":{"file_path":"/r/a.rs","old_string":"x","new_string":"y"}}]},"parent_tool_use_id":null}"#,
+            r#"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":[{"type":"text","text":"ok"}],"is_error":false}]},"parent_tool_use_id":null}"#,
+        ];
+        let mut parser = crate::harness::claude::ClaudeParser::default();
+        let mut edits = HashMap::new();
+        let mut checkpoints = Vec::new();
+        for line in lines {
+            for event in parser.parse_line(line) {
+                if let EventStep::Apply {
+                    checkpoint: Some(checkpoint),
+                    ..
+                } = plan_event(false, &mut edits, true, event)
+                {
+                    checkpoints.push(checkpoint);
+                }
+            }
+        }
+        let path = vec!["/r/a.rs".to_string()];
+        assert_eq!(checkpoints, [(path.clone(), false), (path, true)]);
+    }
+
+    fn queued(text: &str) -> TurnInput {
+        TurnInput {
+            text: text.into(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn queue_dispatch_waits_holds_or_sends() {
+        assert_eq!(queue_dispatch(true, false, false), QueueDispatch::Wait);
+        assert_eq!(queue_dispatch(false, true, false), QueueDispatch::Wait);
+        assert_eq!(queue_dispatch(false, false, true), QueueDispatch::Hold);
+        // A pause wins over an edit of the head.
+        assert_eq!(queue_dispatch(true, false, true), QueueDispatch::Wait);
+        assert_eq!(queue_dispatch(false, false, false), QueueDispatch::Send);
+    }
+
+    #[test]
+    fn popping_the_head_drops_an_empty_queue_and_moves_the_edit_up() {
+        let mut queues = HashMap::from([("s1".to_string(), vec![queued("a"), queued("b")])]);
+        let mut editing = Some(("s1".to_string(), 1));
+        let head = pop_queue_head(&mut queues, &mut editing, "s1").unwrap();
+        assert_eq!(head.text, "a");
+        assert_eq!(editing, Some(("s1".to_string(), 0)));
+        assert_eq!(queues["s1"].len(), 1);
+
+        let head = pop_queue_head(&mut queues, &mut editing, "s1").unwrap();
+        assert_eq!(head.text, "b");
+        assert!(!queues.contains_key("s1"));
+
+        let before = editing.clone();
+        assert!(pop_queue_head(&mut queues, &mut editing, "s1").is_none());
+        assert_eq!(editing, before);
+
+        // An edit in another thread's queue stays where it is.
+        let mut queues = HashMap::from([("s1".to_string(), vec![queued("a")])]);
+        let mut editing = Some(("other".to_string(), 2));
+        assert!(pop_queue_head(&mut queues, &mut editing, "s1").is_some());
+        assert_eq!(editing, Some(("other".to_string(), 2)));
+    }
+
+    #[test]
+    fn taking_the_last_item_unpauses() {
+        let mut queues = HashMap::from([("s1".to_string(), vec![queued("a")])]);
+        let mut paused = HashSet::from(["s1".to_string()]);
+        assert!(take_queued(&mut queues, &mut paused, "s1", 5).is_none());
+        assert_eq!(queues["s1"].len(), 1);
+        assert!(paused.contains("s1"));
+
+        assert!(take_queued(&mut queues, &mut paused, "s1", 0).is_some());
+        assert!(queues.is_empty());
+        assert!(paused.is_empty());
+    }
+
+    #[test]
+    fn compaction_end_states() {
+        use DoneStatus::{Cancelled, Completed, Failed};
+        assert_eq!(
+            compact_end(Some(Some(1289)), Some(Completed)),
+            CompactEnd::Confirmed(Some(1289))
+        );
+        assert_eq!(compact_end(Some(None), None), CompactEnd::Confirmed(None));
+        assert_eq!(compact_end(None, Some(Cancelled)), CompactEnd::Cancelled);
+        assert_eq!(compact_end(None, Some(Failed)), CompactEnd::Unconfirmed);
+        assert_eq!(compact_end(None, None), CompactEnd::Unconfirmed);
     }
 }
