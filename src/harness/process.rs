@@ -12,6 +12,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, Command};
 use tokio::sync::{mpsc, oneshot};
 
+use crate::harness::accounts::AccountProfile;
 use crate::harness::events::{AgentEvent, DoneStatus};
 use crate::harness::handle::{HarnessProcessHandle, PermissionResponder, StdinMsg};
 use crate::harness::runtime::runtime;
@@ -38,6 +39,8 @@ pub struct ProcessSpec {
     pub cwd: String,
     pub stdin: StdinMode,
     pub permission_responder: Option<PermissionResponder>,
+    /// The account profile the child signs in with, if not the default.
+    pub account: Option<AccountProfile>,
 }
 
 type EventRx = mpsc::UnboundedReceiver<AgentEvent>;
@@ -57,6 +60,9 @@ pub fn spawn(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
+    if let Some(account) = &spec.account {
+        account.apply_async(&mut cmd);
+    }
     cmd.stdin(match spec.stdin {
         StdinMode::Null => Stdio::null(),
         StdinMode::Protocol { .. } => Stdio::piped(),
@@ -239,6 +245,7 @@ mod tests {
             cwd: std::env::temp_dir().to_string_lossy().into_owned(),
             stdin: StdinMode::Null,
             permission_responder: None,
+            account: None,
         }
     }
 

@@ -86,6 +86,7 @@ bencode/
     ├── ui/                   every view (render functions on BenCodeApp)
     ├── github.rs             GitHub through `gh` (Inbox, PR actions)
     ├── mcp/                  MCP server discovery
+    ├── rate_limits/          provider usage windows (footer): parsers and fetchers
     ├── skills/               SKILL.md discovery and `/skill` injection
     ├── schedule.rs           automation schedules (next run time)
     ├── settings.rs           BenCode's settings.json
@@ -110,6 +111,8 @@ bencode/
 | `session_review.rs` | Session review: the ordered checkpoint queue, a thread's changed files, Keep / Undo |
 | `tab_scope.rs`, `tab_history.rs`, `workspace_nav.rs` | Which tabs belong to which project or worktree; Back / Forward |
 | `reminders.rs`, `model_catalog.rs` | Session reminders; live model catalogs |
+| `usage.rs` | Provider usage snapshots for the footer, per account: load once, Refresh, the 30s countdown tick |
+| `accounts.rs` | Provider accounts: a thread's account, switching, Add account / sign-in, rename, remove, identities |
 | `worktree_lifecycle.rs` | Settings › Worktrees: project picker, create, delete (with the removal journal) |
 
 ### `src/ui/` — views
@@ -129,7 +132,9 @@ bencode/
 | `editor_pane/` | Code editor: open files, saves, disk sync |
 | `diff_viewer.rs`, `diff_model.rs` | Review of working-tree changes and commits |
 | `terminal_pane.rs` | Terminal dock |
+| `footer/` | Status bar: provider usage chip, its details popover and account pages, terminal toggle |
 | `inbox_view*`, `notes_view.rs`, `automations/`, `search_view.rs`, `settings_modal.rs` | The five surfaces |
+| `settings_accounts.rs`, `settings_worktrees.rs` | Settings pages: provider accounts, worktrees |
 | `quick_open.rs`, `lightbox.rs`, `link_dialog.rs`, `reminder_notices.rs` | Overlays |
 | `theme.rs`, `icons.rs`, `provider_icon.rs`, `mascot.rs`, `motion.rs`, `spinner.rs` | Look and shared drawing |
 | `app_callback.rs`, `virtual_rows.rs`, `explorer_menu.rs`, `drag_drop.rs` | Shared helpers |
@@ -215,6 +220,8 @@ only read that cache.
 | `features/search/` | `ui/search_view.rs`, `ui/quick_open.rs` | Universal search; Go to File (⌘P) |
 | `features/settings/` | `ui/settings_modal.rs`, `settings.rs` | Providers, MCP, skills, appearance |
 | `ProjectRail`, `TitleBar.tsx`, `Sidebar.tsx` | `ui/rail/`, `ui/titlebar/`, `ui/sidebar*.rs` | Shell |
+| `app/shell/UsageFooter.tsx`, `UsageProviderChip.tsx`, `providers/model/rateLimits*.ts`, `src-tauri/src/rate_limits.rs` | `ui/footer/`, `app/usage.rs`, `rate_limits/` | 5h / weekly / monthly usage per account; HTTP through `curl` |
+| `providers/model/providerAccounts.ts`, `accountUsage.ts`, `harness/core/auth.ts`, `src-tauri/src/account_identity.rs` | `harness/accounts.rs`, `harness/login.rs`, `harness/account_identity.rs`, `app/accounts.rs`, `db/monocode_accounts.rs` | Account profiles shared with MonoCode on disk; BenCode's own list is in `settings.json` |
 | `shared/ui/` (buttons, dialogs) | Ely components directly | No local component library |
 | `integrations/harness/` | `harness/` | Argv builders and stdout parsers |
 | `src-tauri/src/` (`checkpoint.rs`, `reminders.rs`, `fs.rs`, …) | `git/checkpoint.rs`, `db/`, `ui/file_tree/fs.rs` | In-process calls, no IPC |
@@ -356,6 +363,10 @@ div()
   child processes run on the dedicated runtime in `runtime.rs`.
 - **Model keys use MonoCode's `harness:model` form** (`claude:opus`). See
   `catalog.rs` and `discovery.rs`; never pass a display name to `--model`.
+- **Account profiles** (`accounts.rs`): a thread's `provider_account_id` picks
+  the profile directory under MonoCode's `provider-accounts`; `SpawnRequest.account`
+  (and `AppServer::open`'s `account`) point the CLI at it. Any new place that
+  starts Claude or Codex for a thread must pass the thread's `AccountProfile`.
 - `AgentEvent` is the whole contract with the UI: `SessionStarted`, `TextDelta`,
   `ThinkingDelta`, `ToolCallStart` / `ToolCallFinish`, `PermissionRequest`,
   `Usage`, `TurnMetrics`, `UsageLimited`, `Compacted`, `Done`, `Error`.
@@ -370,6 +381,8 @@ div()
   journal is settled when the database opens. Keep its JSON MonoCode's.
 - Keep unknown JSON fields round-tripping (`Block.extra`, `AutomationRow.extra`)
   and do not touch session columns BenCode does not model.
+- MonoCode's account list is in its webview storage (`~/Library/WebKit/…`);
+  `db/monocode_accounts.rs` opens it read-only. Never write there.
 - Transcript blocks use MonoCode's roles: `user`, `assistant`, `reasoning`,
   `tool`, `system`.
 - **Never `let _ =` a DB or git `Result`.** Log it or show it.
@@ -429,8 +442,9 @@ RUST_LOG=debug cargo run     # env_logger output
   change, including hover and the empty, loading and error states.
 - Tests must not touch the real database or the user's repositories; git tests
   build a `TempRepo`.
-- One test is `#[ignore]`d because it calls the live Claude CLI
-  (`harness/claude.rs::live_permission_round_trip`).
+- Two tests are `#[ignore]`d because they are live: one calls the Claude CLI
+  (`harness/claude.rs::live_permission_round_trip`), one reads the Keychain
+  and Anthropic's usage endpoint (`rate_limits/claude.rs::live_usage_round_trip`).
 
 ### Code style
 

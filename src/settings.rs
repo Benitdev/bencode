@@ -83,6 +83,12 @@ pub struct AppSettings {
     /// MonoCode `monocode.pinnedProjects`: projects on the rail's Pinned
     /// list, in rail order.
     pub pinned_projects: Vec<String>,
+    /// Account profiles added here, in MonoCode's
+    /// `monocode.providerAccounts.v1` shape (MonoCode's own are read from
+    /// its storage and are not copied in).
+    pub provider_accounts: crate::harness::accounts::StoredAccounts,
+    /// MonoCode `monocode.providerAccountSelections.v1`.
+    pub provider_account_selections: crate::harness::accounts::StoredSelections,
     /// The project rail's order, width, archive, groups, appearance and
     /// notification mutes, under MonoCode's names (see `ui::rail::model`).
     /// Declared before `extra` so its keys are not also kept as unknown.
@@ -190,6 +196,20 @@ mod tests {
             reminder_sessions_collapsed: std::collections::BTreeMap::from([("/repo".to_string(), true)]),
             sidebar_tab_order: vec!["files".into(), "sessions".into(), "changes".into()],
             pinned_projects: vec!["/repo".into()],
+            provider_accounts: [(
+                "claude".to_string(),
+                vec![crate::harness::accounts::ProviderAccount {
+                    id: "account-1".into(),
+                    provider: "claude".into(),
+                    label: "Work".into(),
+                }],
+            )]
+            .into(),
+            provider_account_selections: [(
+                "/repo".to_string(),
+                [("claude".to_string(), "account-1".to_string())].into(),
+            )]
+            .into(),
             rail: crate::ui::rail::model::RailPrefs {
                 project_rail_order: vec!["/repo".into()],
                 project_rail_width: Some(240.0),

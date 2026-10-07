@@ -14,7 +14,7 @@ pub mod inbox_card;
 mod mcp_picker;
 pub mod mcp_tags;
 pub mod mentions;
-mod menus;
+pub(crate) mod menus;
 pub mod mode_commands;
 mod model_picker;
 pub mod new_skill;

@@ -5,6 +5,7 @@ mod git;
 mod github;
 mod harness;
 pub mod mcp;
+mod rate_limits;
 mod schedule;
 mod settings;
 mod skills;

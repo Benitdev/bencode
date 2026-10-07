@@ -274,7 +274,7 @@ fn qualify_alias_name(name: &str, resolved: &str) -> String {
 
 fn discover_codex() -> Result<Vec<ModelOption>> {
     let program = HarnessResolver::resolve_codex().context("Codex is not installed")?;
-    let mut server = AppServer::open(&program, &home(), DISCOVERY_TIMEOUT)?;
+    let mut server = AppServer::open(&program, &home(), DISCOVERY_TIMEOUT, None)?;
     let mut rows = Vec::new();
     let mut cursor: Option<String> = None;
     loop {

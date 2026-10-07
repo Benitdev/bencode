@@ -300,6 +300,7 @@ impl BenCodeApp {
             .flex()
             .flex_col()
             .gap_6()
+            .child(self.render_settings_accounts(cx))
             .child(providers)
             .child(self.render_settings_advanced(cx))
     }

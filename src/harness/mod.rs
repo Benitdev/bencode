@@ -1,6 +1,8 @@
 //! Coding-agent CLIs driven over stdio. `spawn` is the single entry point;
 //! each provider module owns only its argv and its stdout parser.
 
+pub mod account_identity;
+pub mod accounts;
 pub mod attachments;
 pub use attachments::Attachment;
 pub mod antigravity;
@@ -10,6 +12,7 @@ pub mod codex;
 pub mod discovery;
 pub mod events;
 pub mod handle;
+pub mod login;
 pub mod opencode;
 pub mod probe;
 pub mod process;
@@ -107,6 +110,8 @@ pub struct SpawnRequest {
     pub plan: bool,
     /// The thread's model settings (`effort`, `fast`, …), defaults filled in.
     pub settings: std::collections::BTreeMap<String, String>,
+    /// The thread's account profile; None runs under the default one.
+    pub account: Option<accounts::AccountProfile>,
 }
 
 /// Starts one agent turn. Non-blocking apart from a fork/exec; safe to call
@@ -206,6 +211,7 @@ mod tests {
             attachments: Vec::new(),
             plan: false,
             settings: Default::default(),
+            account: None,
         };
         assert!(spawn(&req).is_err());
     }

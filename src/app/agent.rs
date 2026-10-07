@@ -11,6 +11,7 @@ use crate::app::session_review::edit_paths;
 use crate::app::{BenCodeApp, PermissionMode};
 use crate::db::{Block, SessionRow, TurnModel};
 use crate::harness::Attachment;
+use crate::harness::accounts::AccountProfile;
 use crate::harness::events::TurnMetrics;
 use crate::harness::{
     self, AgentEvent, DoneStatus, HarnessKind, HarnessProcessHandle, PermissionPolicy,
@@ -646,10 +647,13 @@ impl BenCodeApp {
     /// failure to start lands in the transcript.
     fn start_run(&mut self, session_id: &str, request: RunRequest, cx: &mut Context<Self>) {
         let mode = self.session_permission_mode(self.sessions.iter().find(|s| s.id == session_id));
+        let pinned = self.pin_session_account(session_id);
         let Some(session) = self.sessions.iter().find(|s| s.id == session_id) else {
             return;
         };
-        let spawn = spawn_request(session, &request.prompt, mode, self.claude_hooks_disabled).map(
+        let spawn = pinned
+            .and_then(|()| spawn_request(session, &request.prompt, mode, self.claude_hooks_disabled))
+            .map(
             |spawn| SpawnRequest {
                 attachments: request.attachments.clone(),
                 plan: request.plan,
@@ -989,6 +993,7 @@ fn spawn_request(
         attachments: Vec::new(),
         plan: false,
         settings: catalog::resolved_settings(&session.model, session.model_settings.as_ref()),
+        account: AccountProfile::resolve(&session.harness, session.provider_account_id.as_deref()),
     })
 }
 

@@ -118,6 +118,8 @@ impl BenCodeApp {
                 .map(|t| crate::ui::sidebar::tab_id(*t).to_string())
                 .collect(),
             pinned_projects: self.settings.pinned_projects.clone(),
+            provider_accounts: self.settings.provider_accounts.clone(),
+            provider_account_selections: self.settings.provider_account_selections.clone(),
             rail: self.settings.rail.clone(),
             extra: self.settings.extra.clone(),
         }
@@ -136,6 +138,24 @@ impl BenCodeApp {
     pub fn set_pinned_projects(&mut self, paths: Vec<String>, cx: &mut Context<Self>) {
         let mut next = self.current_settings();
         next.pinned_projects = paths;
+        if next == self.settings {
+            return;
+        }
+        self.write_settings(next, cx);
+        cx.notify();
+    }
+
+    /// Saves a change to the account profiles and each project's choice.
+    pub fn update_provider_accounts(
+        &mut self,
+        update: impl FnOnce(
+            &mut crate::harness::accounts::StoredAccounts,
+            &mut crate::harness::accounts::StoredSelections,
+        ),
+        cx: &mut Context<Self>,
+    ) {
+        let mut next = self.current_settings();
+        update(&mut next.provider_accounts, &mut next.provider_account_selections);
         if next == self.settings {
             return;
         }

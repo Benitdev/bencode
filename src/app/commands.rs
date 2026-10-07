@@ -289,6 +289,7 @@ impl BenCodeApp {
                 && !this.close_folder_picker(true, cx)
                 && !this.close_handoff_menu(cx)
                 && !this.close_composer_popovers(cx)
+                && !this.close_usage_popover(cx)
                 && !this.close_find(cx)
             {
                 cx.propagate();
