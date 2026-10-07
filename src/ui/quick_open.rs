@@ -7,12 +7,13 @@ use ely_gpui_component::primitives::{Icon, IconName};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, Context, Focusable, FontWeight, HighlightStyle, InteractiveElement, IntoElement,
-    ParentElement, SharedString, Styled, StyledText, Window, deferred, div, prelude::*, px,
+    ParentElement, SharedString, Styled, StyledText, Window, deferred, div, prelude::*,
 };
 
 use crate::app::BenCodeApp;
 use crate::ui::composer::focus_later;
 use crate::ui::file_tree::resolve_entry_icon;
+use crate::ui::scale::px;
 
 /// MonoCode `MAX_RECENTS`, `MAX_RESULTS`.
 const MAX_RECENTS: usize = 30;

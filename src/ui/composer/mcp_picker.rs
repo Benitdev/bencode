@@ -7,8 +7,10 @@ use ely_gpui_component::primitives::IconName;
 use ely_gpui_component::theme::ActiveTheme;
 use gpui::{
     AnyElement, Context, Focusable, InteractiveElement, IntoElement, ParentElement, SharedString,
-    Styled, div, prelude::*, px,
+    Styled, div, prelude::*,
 };
+
+use crate::ui::scale::px;
 
 use super::focus_later;
 use super::mcp_tags::{self, Availability, PickerServer};
@@ -19,8 +21,8 @@ use crate::ui::provider_icon::HarnessIcon;
 use crate::ui::settings_modal::SettingsTab;
 
 /// MonoCode `max-h-[min(184px,45vh)]` and its 44px rows.
-const LIST_MAX_HEIGHT: gpui::Pixels = px(184.0);
-const ROW_HEIGHT: gpui::Pixels = px(44.0);
+const LIST_MAX_HEIGHT: f32 = 184.0;
+const ROW_HEIGHT: f32 = 44.0;
 
 /// The open picker.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -255,7 +257,7 @@ impl BenCodeApp {
                 dismiss: |this, cx| {
                     this.close_mcp_picker(false, cx);
                 },
-                list_max_height: LIST_MAX_HEIGHT,
+                list_max_height: px(LIST_MAX_HEIGHT),
                 empty: empty.map(SharedString::from),
                 rows,
                 footer: Some(footer_action(
@@ -299,7 +301,7 @@ impl BenCodeApp {
             .flex()
             .items_center()
             .gap_2()
-            .h(ROW_HEIGHT)
+            .h(px(ROW_HEIGHT))
             .px_2()
             .rounded(px(6.0))
             .text_color(if available { fg } else { fg.opacity(0.4) })

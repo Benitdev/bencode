@@ -36,7 +36,7 @@ use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnimationExt, AnyElement, Context, FontWeight, InteractiveElement, IntoElement, ParentElement,
-    SharedString, Styled, div, prelude::*, px,
+    SharedString, Styled, div, prelude::*,
 };
 
 use crate::app::{BenCodeApp, PermissionMode};
@@ -44,6 +44,7 @@ use crate::db::SessionRow;
 use crate::harness::{HarnessKind, catalog};
 use crate::ui::HarnessIcon;
 use crate::ui::app_callback::app_callback;
+use crate::ui::scale::px;
 use crate::ui::sidebar_popovers::popover_glass;
 pub use mcp_picker::McpPicker;
 pub use menus::{MenuState, focus_later};
@@ -51,7 +52,7 @@ use menus::{over_composer, popover_anchor, popover_surface};
 pub use prompt_marks::{MentionMark, prompt_highlights};
 
 /// MonoCode `max-w-4xl`, the same column as the transcript.
-const COMPOSER_MAX_WIDTH: gpui::Pixels = px(896.0);
+const COMPOSER_MAX_WIDTH: f32 = 896.0;
 /// MonoCode's default placeholder (trailing space included).
 pub const PROMPT_PLACEHOLDER: &str = "Ask, build, / for commands, @ for references... ";
 /// MonoCode `CwdPicker` `PREVIEW`.
@@ -321,12 +322,12 @@ impl BenCodeApp {
         gpui::canvas(
             move |bounds, _, _| match probe {
                 DockProbe::Composer => measure.composer.set(Some((
-                    f32::from(bounds.origin.y),
-                    f32::from(bounds.size.height),
+                    crate::ui::scale::logical(bounds.origin.y),
+                    crate::ui::scale::logical(bounds.size.height),
                 ))),
                 DockProbe::Pane => measure
                     .pane_bottom
-                    .set(Some(f32::from(bounds.origin.y + bounds.size.height))),
+                    .set(Some(crate::ui::scale::logical(bounds.origin.y + bounds.size.height))),
             },
             |_, _, _, _| {},
         )
@@ -430,7 +431,7 @@ impl BenCodeApp {
             })
             .flex_none()
             .w_full()
-            .max_w(COMPOSER_MAX_WIDTH)
+            .max_w(px(COMPOSER_MAX_WIDTH))
             .mx_auto()
             .px(px(6.0))
             .pb(px(6.0))
@@ -955,10 +956,14 @@ impl BenCodeApp {
         let stop = running_here && !typed;
         // MonoCode: no working copy, no Send.
         let enabled = (running_here || typed) && !(removed && !stop);
-        let (bg, ink) = if enabled {
-            (colors.fg, colors.bg)
-        } else {
-            (colors.fg.opacity(0.3), colors.bg.opacity(0.4))
+        // MonoCode `html.has-user-accent .primary-action`: the accent the
+        // user picked, else the light button.
+        let accent = crate::ui::appearance::user_accent(cx);
+        let (bg, ink) = match (accent, enabled) {
+            (Some(accent), true) => (accent.color, accent.foreground),
+            (Some(accent), false) => (accent.color.opacity(0.28), colors.fg.opacity(0.35)),
+            (None, true) => (colors.fg, colors.bg),
+            (None, false) => (colors.fg.opacity(0.3), colors.bg.opacity(0.4)),
         };
         let drafting = self
             .selected_session_id
@@ -974,7 +979,10 @@ impl BenCodeApp {
         } else {
             "Send"
         };
-        let hover = colors.fg.opacity(0.9);
+        let hover = match accent {
+            Some(accent) => crate::ui::appearance::mix(accent.color, colors.fg, 0.12),
+            None => colors.fg.opacity(0.9),
+        };
         div()
             .id("composer-send-btn")
             .size(px(26.0))

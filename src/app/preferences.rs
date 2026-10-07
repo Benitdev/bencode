@@ -7,6 +7,10 @@ use gpui::{Context, WindowAppearance};
 use crate::app::{BenCodeApp, PermissionMode};
 use crate::harness::catalog;
 use crate::settings::{self, AppSettings, PermissionPreference, ThemePreference};
+use crate::ui::appearance::{
+    self, AppearancePrefs, AppearanceTokens, ChatBackgroundPrefs, CollapsedRailMode, DiffPalette,
+    ThemeTint,
+};
 
 impl From<PermissionPreference> for PermissionMode {
     fn from(pref: PermissionPreference) -> Self {
@@ -49,6 +53,49 @@ pub fn is_dark_appearance(appearance: WindowAppearance) -> bool {
 
 const RECENT_MODELS_KEPT: usize = 6;
 
+/// The Appearance choices in `saved`, each within its range (MonoCode's
+/// `load*` functions).
+pub fn appearance_prefs(saved: &AppSettings) -> AppearancePrefs {
+    let defaults = AppearancePrefs::default();
+    AppearancePrefs {
+        tint: ThemeTint {
+            hue: saved.theme_hue.unwrap_or(appearance::HUE_DEFAULT),
+            saturation: saved.theme_saturation.unwrap_or(appearance::SATURATION_DEFAULT),
+            dark_lightness: saved.theme_dark_lightness.unwrap_or(appearance::DARK_LIGHTNESS_DEFAULT),
+        }
+        .clamped(),
+        accent_color: saved
+            .accent_color
+            .as_deref()
+            .filter(|hex| appearance::parse_hex(hex).is_some())
+            .map(str::to_lowercase),
+        diff_palette: saved.diff_palette,
+        show_excluded_files: saved.show_excluded_files,
+        ui_scale: saved.ui_scale.map_or(defaults.ui_scale, appearance::normalize_ui_scale),
+        chat_background: ChatBackgroundPrefs {
+            path: saved.chat_background_path.clone().filter(|path| !path.is_empty()),
+            revision: saved.chat_background_revision,
+            empty_opacity: saved
+                .chat_background_empty_opacity
+                .map_or(defaults.chat_background.empty_opacity, appearance::clamp_background_opacity),
+            session_opacity: saved
+                .chat_background_session_opacity
+                .map_or(defaults.chat_background.session_opacity, appearance::clamp_background_opacity),
+            scope: saved.chat_background_scope,
+            effect: saved.new_thread_background_effect,
+        },
+        collapsed_rail: saved.collapsed_project_rail_mode,
+    }
+}
+
+/// Where `settings.json` is in being written (`write_settings`).
+#[derive(Default)]
+pub struct SettingsWrite {
+    in_flight: bool,
+    /// The state changed again while a write was running.
+    pending: bool,
+}
+
 impl BenCodeApp {
     /// Seeds app state from saved preferences; unknown model keys are ignored.
     pub fn apply_settings(&mut self, saved: AppSettings) {
@@ -86,6 +133,8 @@ impl BenCodeApp {
         self.sessions_ui.pinned_collapsed = saved.pinned_sessions_collapsed.clone();
         self.sessions_ui.reminders_collapsed = saved.reminder_sessions_collapsed.clone();
         self.sidebar_tab_order = crate::ui::sidebar::parse_tab_order(&saved.sidebar_tab_order);
+        self.appearance = appearance_prefs(&saved);
+        crate::ui::scale::set_ui_scale(self.appearance.ui_scale);
         self.settings = saved;
     }
 
@@ -104,6 +153,24 @@ impl BenCodeApp {
             inbox_seen_seeded: self.inbox.seen_seeded,
             inbox_repairs: self.inbox.repairs.clone(),
             changes_tree: self.changes_ui.tree,
+            theme_hue: Some(self.appearance.tint.hue).filter(|v| *v != appearance::HUE_DEFAULT),
+            theme_saturation: Some(self.appearance.tint.saturation)
+                .filter(|v| *v != appearance::SATURATION_DEFAULT),
+            theme_dark_lightness: Some(self.appearance.tint.dark_lightness)
+                .filter(|v| *v != appearance::DARK_LIGHTNESS_DEFAULT),
+            accent_color: self.appearance.accent_color.clone(),
+            diff_palette: self.appearance.diff_palette,
+            show_excluded_files: self.appearance.show_excluded_files,
+            ui_scale: Some(self.appearance.ui_scale).filter(|v| *v != appearance::UI_SCALE_DEFAULT),
+            chat_background_path: self.appearance.chat_background.path.clone(),
+            chat_background_revision: self.appearance.chat_background.revision,
+            chat_background_empty_opacity: Some(self.appearance.chat_background.empty_opacity)
+                .filter(|v| *v != appearance::CHAT_BACKGROUND_OPACITY_DEFAULT),
+            chat_background_session_opacity: Some(self.appearance.chat_background.session_opacity)
+                .filter(|v| *v != appearance::CHAT_BACKGROUND_OPACITY_DEFAULT),
+            chat_background_scope: self.appearance.chat_background.scope,
+            new_thread_background_effect: self.appearance.chat_background.effect,
+            collapsed_project_rail_mode: self.appearance.collapsed_rail,
             terminal_docks: self.terminals.layouts.clone(),
             inbox_list_width: Some(self.inbox.list_width)
                 .filter(|w| *w != crate::ui::inbox_view::DEFAULT_LIST_WIDTH),
@@ -181,18 +248,42 @@ impl BenCodeApp {
         cx.notify();
     }
 
+    /// One write at a time, the latest state last: a slider drag saves on
+    /// every step, and two writes racing on the temp file could leave an
+    /// older or a torn `settings.json`.
     fn write_settings(&mut self, next: AppSettings, cx: &mut Context<Self>) {
-        self.settings = next.clone();
+        self.settings = next;
+        if self.settings_write.in_flight {
+            self.settings_write.pending = true;
+            return;
+        }
+        self.start_settings_write(cx);
+    }
+
+    fn start_settings_write(&mut self, cx: &mut Context<Self>) {
         let Some(dir) = settings::settings_dir() else {
             return;
         };
-        cx.background_executor()
-            .spawn(async move {
-                if let Err(err) = settings::save_to(&dir, &next) {
-                    log::error!("failed to save settings: {err:#}");
+        self.settings_write.in_flight = true;
+        let next = self.settings.clone();
+        let task = cx.background_executor().spawn(async move {
+            if let Err(err) = settings::save_to(&dir, &next) {
+                log::error!("failed to save settings: {err:#}");
+            }
+        });
+        cx.spawn(async move |this, cx| {
+            task.await;
+            let landed = this.update(cx, |this, cx| {
+                this.settings_write.in_flight = false;
+                if std::mem::take(&mut this.settings_write.pending) {
+                    this.start_settings_write(cx);
                 }
-            })
-            .detach();
+            });
+            if let Err(err) = landed {
+                log::debug!("settings saved after app drop: {err:#}");
+            }
+        })
+        .detach();
     }
 
     /// MonoCode `toggleFavorite`: stars or unstars a model.
@@ -314,6 +405,106 @@ impl BenCodeApp {
         self.sidebar_opacity = crate::ui::glass::clamp_opacity(opacity);
         self.save_settings(cx);
         cx.notify();
+    }
+
+    /// MonoCode `onTint` / `onDarkLightness`: rebuilds the palettes.
+    pub fn set_theme_tint(&mut self, tint: ThemeTint, cx: &mut Context<Self>) {
+        let tint = tint.clamped();
+        if tint == self.appearance.tint {
+            return;
+        }
+        self.appearance.tint = tint;
+        crate::ui::theme::set_tint(&tint, cx);
+        self.save_settings(cx);
+        cx.notify();
+    }
+
+    /// MonoCode `onAccentColor`: `None` is Default.
+    pub fn set_accent_color(&mut self, color: Option<String>, cx: &mut Context<Self>) {
+        let color = color
+            .filter(|hex| appearance::parse_hex(hex).is_some())
+            .map(|hex| hex.to_lowercase());
+        self.appearance.accent_color = color;
+        self.apply_appearance_tokens(cx);
+    }
+
+    /// MonoCode `onDiffPalette`.
+    pub fn set_diff_palette(&mut self, palette: DiffPalette, cx: &mut Context<Self>) {
+        self.appearance.diff_palette = palette;
+        self.apply_appearance_tokens(cx);
+    }
+
+    fn apply_appearance_tokens(&mut self, cx: &mut Context<Self>) {
+        AppearanceTokens::set(self.appearance.tokens(), cx);
+        self.save_settings(cx);
+        cx.notify();
+    }
+
+    /// MonoCode `onShowExcludedFiles`.
+    pub fn set_show_excluded_files(&mut self, on: bool, cx: &mut Context<Self>) {
+        self.appearance.show_excluded_files = on;
+        self.save_settings(cx);
+        cx.notify();
+    }
+
+    /// MonoCode `onCollapsedProjectRailMode`.
+    pub fn set_collapsed_rail_mode(&mut self, mode: CollapsedRailMode, cx: &mut Context<Self>) {
+        self.appearance.collapsed_rail = mode;
+        self.sidebar_drawer_open = false;
+        self.save_settings(cx);
+        cx.notify();
+    }
+
+    /// MonoCode `onUiScale` (and ⌘= / ⌘- / ⌘0): the window's rem follows
+    /// on the next frame (`apply_ui_scale`).
+    pub fn set_ui_scale(&mut self, scale: f32, cx: &mut Context<Self>) {
+        let scale = appearance::normalize_ui_scale(scale);
+        if scale == self.appearance.ui_scale {
+            return;
+        }
+        self.appearance.ui_scale = scale;
+        crate::ui::scale::set_ui_scale(scale);
+        // Rows were measured at the old scale.
+        for view in self.transcripts.values() {
+            view.list.remeasure();
+        }
+        for doc in self.diff_docs.values() {
+            doc.remeasure();
+        }
+        self.save_settings(cx);
+        cx.refresh_windows();
+        cx.notify();
+    }
+
+    /// MonoCode `zoomInUiScale` / `zoomOutUiScale`: one step either way.
+    pub fn step_ui_scale(&mut self, steps: f32, cx: &mut Context<Self>) {
+        self.set_ui_scale(self.appearance.ui_scale + steps * appearance::UI_SCALE_STEP, cx);
+    }
+
+    /// Sizes the window's rem for the interface scale, for Ely's components
+    /// (the views' own lengths go through `ui::scale::px`).
+    pub fn apply_ui_scale(&self, window: &mut gpui::Window) {
+        let rem = crate::ui::scale::px(appearance::REM);
+        if window.rem_size() != rem {
+            window.set_rem_size(rem);
+        }
+    }
+
+    /// MonoCode `restoreDefaults`: every Appearance choice BenCode has.
+    pub fn restore_appearance_defaults(&mut self, cx: &mut Context<Self>) {
+        self.set_theme_preference(ThemePreference::default(), cx);
+        self.set_sidebar_opacity(crate::ui::glass::OPACITY_DEFAULT, cx);
+        self.set_body_glass(true, cx);
+        if self.appearance.chat_background.path.is_some() {
+            self.clear_chat_background(cx);
+        }
+        let mut defaults = AppearancePrefs::default();
+        // Not a choice: it tells one saved image from the next.
+        defaults.chat_background.revision = self.appearance.chat_background.revision;
+        self.set_theme_tint(defaults.tint, cx);
+        self.set_ui_scale(defaults.ui_scale, cx);
+        self.appearance = defaults;
+        self.apply_appearance_tokens(cx);
     }
 
     /// MonoCode Appearance › Translucency › "Main pane glass".

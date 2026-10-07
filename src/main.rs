@@ -34,7 +34,9 @@ fn main() {
                 .map(|dir| settings::load_from(&dir))
                 .unwrap_or_default();
             let system_dark = app::is_dark_appearance(cx.window_appearance());
-            ui::theme::install(app::theme_mode(saved.theme, system_dark), cx);
+            let appearance = app::appearance_prefs(&saved);
+            ui::theme::install(app::theme_mode(saved.theme, system_dark), &appearance.tint, cx);
+            ui::appearance::AppearanceTokens::set(appearance.tokens(), cx);
 
             let bounds = Bounds::centered(None, size(px(1200.0), px(780.0)), cx);
             let options = WindowOptions {

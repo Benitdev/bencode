@@ -31,6 +31,9 @@ jiff = "0.2"
 pulldown-cmark = { version = "0.13", default-features = false }
 unicode-segmentation = "1"
 
+# The chat background's decoding and effects (the version GPUI already builds)
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
+
 # The footer's CPU and memory readout (getrusage, proc_pid_rusage)
 libc = "0.2"
 

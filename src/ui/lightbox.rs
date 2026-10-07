@@ -8,10 +8,11 @@ use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::IconSize;
 use gpui::{
     AnyElement, Context, InteractiveElement, IntoElement, MouseButton, ObjectFit, ParentElement,
-    Styled, StyledImage, deferred, div, img, prelude::*, px, rgba,
+    Styled, StyledImage, deferred, div, img, prelude::*, rgba,
 };
 
 use crate::app::BenCodeApp;
+use crate::ui::scale::px;
 
 impl BenCodeApp {
     pub fn open_lightbox(&mut self, path: PathBuf, cx: &mut Context<Self>) {

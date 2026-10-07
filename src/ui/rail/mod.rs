@@ -6,6 +6,7 @@
 
 pub mod model;
 mod cards;
+mod compact;
 mod menu;
 mod menu_view;
 mod notify;
@@ -23,8 +24,10 @@ use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, Bounds, Context, DragMoveEvent, Hsla, InteractiveElement, IntoElement,
     MouseButton, MouseDownEvent, ParentElement, Pixels, Point, SharedString, Styled,
-    anchored, canvas, deferred, div, prelude::*, px, relative,
+    anchored, canvas, deferred, div, prelude::*, relative,
 };
+
+use crate::ui::scale::px;
 
 pub use state::RailUi;
 
@@ -166,10 +169,10 @@ impl BenCodeApp {
             .flex()
             .flex_none()
             .items_center()
-            .h(TITLEBAR_HEIGHT)
+            .h(px(TITLEBAR_HEIGHT))
             .pr(px(6.0))
             .when(cfg!(target_os = "macos"), |el| {
-                el.child(div().flex_none().w(px(TRAFFIC_LIGHT_SPACE)))
+                el.child(div().flex_none().w(gpui::px(TRAFFIC_LIGHT_SPACE)))
             })
             // `DevModeSlot`: the flexible gap before the arrows.
             .child(div().flex_1().min_w_0())
@@ -396,7 +399,7 @@ impl BenCodeApp {
     /// The Delete confirmation also serves Settings › Archive, so it shows
     /// with the rail hidden; the menus belong to the rail.
     pub fn render_rail_overlays(&self, cx: &Context<Self>) -> Vec<AnyElement> {
-        let menus = if self.is_rail_open {
+        let menus = if self.is_rail_open || self.compact_rail_active() {
             vec![
                 self.render_rail_menu(cx),
                 self.render_inbox_menu(cx),

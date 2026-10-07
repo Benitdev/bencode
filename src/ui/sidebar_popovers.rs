@@ -6,7 +6,7 @@ use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, App, Context, Div, Hsla, InteractiveElement, IntoElement, ParentElement, Pixels,
-    Point, SharedString, Styled, anchored, deferred, div, prelude::*, px, relative,
+    Point, SharedString, Styled, anchored, deferred, div, prelude::*, relative,
 };
 
 use crate::app::BenCodeApp;
@@ -14,6 +14,7 @@ use crate::app::session_folders::{FOLDER_COLORS, palette_color, parse_hex, to_he
 use crate::app::session_list::{SessionFilters, TimeFilter, harnesses_in};
 use crate::harness::HarnessKind;
 use crate::ui::provider_icon::HarnessIcon;
+use crate::ui::scale::px;
 use crate::ui::sidebar_menus::{SidebarMenu, SidebarMenuKind};
 
 /// MonoCode's filter popover is 228px wide.

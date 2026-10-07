@@ -114,13 +114,14 @@ bencode/
 | `usage.rs` | Provider usage snapshots for the footer, per account: load once, Refresh, the 30s countdown tick |
 | `accounts.rs` | Provider accounts: a thread's account, switching, Add account / sign-in, rename, remove, identities |
 | `worktree_lifecycle.rs` | Settings › Worktrees: project picker, create, delete (with the removal journal) |
+| `chat_background.rs` | Appearance › Chat background: the saved copy of the image, decoding and effects off the UI thread, the image the panes draw |
 
 ### `src/ui/` — views
 
 | Path | View |
 | :--- | :--- |
 | `window_root.rs` | Window root: the app (cached) under the composer runner layer |
-| `rail/` | Project rail: projects, groups, menus, notifications, reorder |
+| `rail/` | Project rail: projects, groups, menus, notifications, reorder; `compact.rs` is the icon rail it collapses to |
 | `sidebar*.rs` | Sidebar: Sessions tab (cards, folders, menus, popovers) |
 | `file_tree/` | Sidebar: Explorer tab |
 | `git_changes_panel.rs`, `git_menus.rs` | Sidebar: Changes tab and commit graph |
@@ -134,9 +135,9 @@ bencode/
 | `terminal_pane.rs` | Terminal dock |
 | `footer/` | Status bar: provider usage chip, its details popover and account pages, terminal toggle |
 | `inbox_view*`, `notes_view.rs`, `automations/`, `search_view.rs`, `settings_modal.rs` | The five surfaces |
-| `settings_accounts.rs`, `settings_worktrees.rs` | Settings pages: provider accounts, worktrees |
+| `settings_accounts.rs`, `settings_appearance.rs`, `settings_worktrees.rs` | Settings pages: provider accounts, appearance, worktrees |
 | `quick_open.rs`, `lightbox.rs`, `link_dialog.rs`, `reminder_notices.rs` | Overlays |
-| `theme.rs`, `icons.rs`, `provider_icon.rs`, `mascot.rs`, `motion.rs`, `spinner.rs` | Look and shared drawing |
+| `theme.rs`, `appearance.rs`, `scale.rs`, `background_effects.rs`, `icons.rs`, `provider_icon.rs`, `mascot.rs`, `motion.rs`, `spinner.rs` | Look and shared drawing: palettes, tint / accent / diff colours, interface scale, chat background effects |
 | `app_callback.rs`, `virtual_rows.rs`, `explorer_menu.rs`, `drag_drop.rs` | Shared helpers |
 
 ---
@@ -218,7 +219,10 @@ only read that cache.
 | `features/automations/` | `ui/automations/`, `schedule.rs`, `db/schedule.rs` | Scheduled prompts, run history, 30s scheduler |
 | `features/inbox/` | `ui/inbox_view*`, `github.rs` | GitHub issues and PRs, checks, CI repair, comments |
 | `features/search/` | `ui/search_view.rs`, `ui/quick_open.rs` | Universal search; Go to File (⌘P) |
-| `features/settings/` | `ui/settings_modal.rs`, `settings.rs` | Providers, MCP, skills, appearance |
+| `features/settings/` | `ui/settings_modal.rs`, `settings.rs` | Providers, MCP, skills |
+| `features/settings/model/appearance.ts`, `uiScale.ts`, `AppearancePage` | `ui/settings_appearance.rs`, `ui/appearance.rs`, `ui/scale.rs`, `ui/theme.rs` | Tint, accent, diff palette, interface scale, excluded files |
+| `src-tauri/src/chat_background.rs`, `projects/model/chatBackground.ts`, `settings/model/newThreadBackgroundEffects*.ts` | `app/chat_background.rs`, `ui/background_effects.rs`, `ui/pane_tree.rs` | One image behind the chat panes, six effects (Haze is baked into the image); no per-project backgrounds |
+| `Sidebar.tsx` `CompactProjectRail`, `settings.ts` `CollapsedProjectRailMode` | `ui/rail/compact.rs` | Icon rail with the sidebar as a drawer; its project list has no search or per-project menu |
 | `ProjectRail`, `TitleBar.tsx`, `Sidebar.tsx` | `ui/rail/`, `ui/titlebar/`, `ui/sidebar*.rs` | Shell |
 | `app/shell/UsageFooter.tsx`, `UsageProviderChip.tsx`, `providers/model/rateLimits*.ts`, `src-tauri/src/rate_limits.rs` | `ui/footer/`, `app/usage.rs`, `rate_limits/` | 5h / weekly / monthly usage per account; HTTP through `curl` |
 | `providers/model/providerAccounts.ts`, `accountUsage.ts`, `harness/core/auth.ts`, `src-tauri/src/account_identity.rs` | `harness/accounts.rs`, `harness/login.rs`, `harness/account_identity.rs`, `app/accounts.rs`, `db/monocode_accounts.rs` | Account profiles shared with MonoCode on disk; BenCode's own list is in `settings.json` |
@@ -246,8 +250,15 @@ pages in `examples/gallery/pages/<chapter>.rs`. Read the library's own
   `border`, `fg`, `fg_muted`, `accent`, `success`, `danger`, …). Sizes come from
   `theme.text_size(..)`, `theme.radius(..)`, `IconSize`. Borrow `colors`; do not
   clone it per frame.
-- MonoCode's dark and light palettes are registered in `ui/theme.rs::install`;
-  `harness_color` gives each harness its brand dot.
+- MonoCode's dark and light palettes are registered in `ui/theme.rs::install`,
+  built from the Appearance tint; `harness_color` gives each harness its brand dot.
+- **Diff colours come from `ui::appearance::diff_colors(cx)`** (added / removed
+  lines, `+N -M` counts, added / deleted file names), never from
+  `colors.success` / `colors.danger` or a hex value: the user picks the palette.
+- **Pixel lengths in views use `crate::ui::scale::px`, not `gpui::px`**, so they
+  follow Appearance › Interface scale. A length GPUI measured (pointer
+  position, bounds) becomes a plain number through `scale::logical(..)`, not
+  `f32::from(..)`. Only the traffic-light gaps stay in real pixels.
 - Icons: `IconName` from Ely first. A Lucide icon Ely lacks goes in
   `assets/icons/` and `ui/icons.rs::ExtraIcon`.
 - File and folder names take MonoCode's Material icon through

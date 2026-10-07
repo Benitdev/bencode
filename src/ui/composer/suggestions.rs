@@ -5,8 +5,10 @@ use ely_gpui_component::primitives::{Icon, IconName};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString,
-    Styled, div, prelude::*, px, relative,
+    Styled, div, prelude::*, relative,
 };
+
+use crate::ui::scale::px;
 
 use super::mode_commands::{Command, CommandContext};
 use crate::app::BenCodeApp;
@@ -19,8 +21,8 @@ const MAX_PICKER: usize = 30;
 const MAX_SLASH: usize = 50;
 const MAX_NOTES: usize = 5;
 /// MonoCode `FileMentionPicker`: `max-h-[min(240px,40vh)]`, 32px rows.
-const POPOVER_MAX_HEIGHT: gpui::Pixels = px(240.0);
-const ROW_HEIGHT: gpui::Pixels = px(32.0);
+const POPOVER_MAX_HEIGHT: f32 = 240.0;
+const ROW_HEIGHT: f32 = 32.0;
 
 /// `current` moved by `delta`, wrapping around a list of `len` rows.
 fn wrap_index(current: usize, delta: isize, len: usize) -> usize {
@@ -341,7 +343,7 @@ impl BenCodeApp {
                     div()
                         .id("composer-suggestions")
                         .track_scroll(&self.picker_scroll)
-                        .max_h(POPOVER_MAX_HEIGHT)
+                        .max_h(px(POPOVER_MAX_HEIGHT))
                         .overflow_y_scroll()
                         .p_1()
                         .when(items.is_empty(), |el| {
@@ -471,7 +473,7 @@ impl BenCodeApp {
             .flex()
             .items_center()
             .gap_2()
-            .h(ROW_HEIGHT)
+            .h(px(ROW_HEIGHT))
             .px_2()
             .text_size(px(13.0))
             .when(highlighted, |el| el.bg(colors.active))

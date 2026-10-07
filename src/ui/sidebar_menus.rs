@@ -3,12 +3,13 @@
 //! folder's menu, and the "Remind me" presets. The popovers they share
 //! state with are in `sidebar_popovers`.
 
-use gpui::{AnyElement, Context, Pixels, Point, px};
+use gpui::{AnyElement, Context, Pixels, Point};
 
 use crate::app::BenCodeApp;
 use crate::app::reminders;
 use crate::app::session_folders::folder_of;
 use crate::ui::explorer_menu::{self, MenuAction, MenuEntry, MenuPlace, MenuView};
+use crate::ui::scale::px;
 use crate::ui::sidebar::SessionDialog;
 
 /// MonoCode's session menu is an `ExplorerMenu` (228px); the filter
@@ -29,6 +30,8 @@ pub enum SidebarMenuKind {
     Remind { ids: Vec<String> },
     /// The rail's "Open project" popover.
     AddProject,
+    /// The icon rail's project list.
+    CompactProjects,
 }
 
 #[derive(Clone, Debug)]
@@ -144,9 +147,10 @@ impl BenCodeApp {
                     )
                 })
                 .collect(),
-            SidebarMenuKind::Filter | SidebarMenuKind::Worktrees | SidebarMenuKind::AddProject => {
-                Vec::new()
-            }
+            SidebarMenuKind::Filter
+            | SidebarMenuKind::Worktrees
+            | SidebarMenuKind::AddProject
+            | SidebarMenuKind::CompactProjects => Vec::new(),
         }
     }
 
@@ -271,7 +275,10 @@ impl BenCodeApp {
                     self.schedule_reminders(&ids, due_at, cx);
                 }
             }
-            SidebarMenuKind::Filter | SidebarMenuKind::Worktrees | SidebarMenuKind::AddProject => {}
+            SidebarMenuKind::Filter
+            | SidebarMenuKind::Worktrees
+            | SidebarMenuKind::AddProject
+            | SidebarMenuKind::CompactProjects => {}
         }
         cx.notify();
     }
@@ -371,6 +378,9 @@ impl BenCodeApp {
             SidebarMenuKind::Filter => return Some(self.render_filter_menu(menu.position, cx)),
             SidebarMenuKind::Worktrees => return Some(self.render_worktree_menu(menu.position, cx)),
             SidebarMenuKind::AddProject => return Some(self.render_add_project_menu(menu.position, cx)),
+            SidebarMenuKind::CompactProjects => {
+                return Some(self.render_compact_projects_menu(menu.position, cx));
+            }
             _ => {}
         }
         let entries = self.sidebar_menu_entries(&menu.kind);

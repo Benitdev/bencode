@@ -18,10 +18,11 @@ use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
     Animation, AnimationExt, AnyElement, Context, FontWeight, InteractiveElement, IntoElement,
     MouseButton, ParentElement, Render, ScrollHandle, ScrollWheelEvent, SharedString, Styled,
-    Window, div, ease_out_quint, point, prelude::*, px,
+    Window, div, ease_out_quint, point, prelude::*,
 };
 
 use crate::app::{BenCodeApp, NEW_SESSION_TITLE};
+use crate::ui::scale::px;
 use crate::ui::window_drag::claim_press;
 use crate::ui::HarnessIcon;
 use crate::ui::drag_drop::DraggedPane;
@@ -43,7 +44,7 @@ const STRIP_PADDING: f32 = 16.0;
 /// MonoCode `--motion-tab-close-duration`.
 const TAB_MOTION: Duration = Duration::from_millis(200);
 /// Room for the macOS window buttons when nothing else on the left holds it.
-const TRAFFIC_LIGHT_SPACE: gpui::Pixels = px(72.0);
+const TRAFFIC_LIGHT_SPACE: gpui::Pixels = gpui::px(72.0);
 
 /// MonoCode's tab menu is 244px wide.
 const TAB_MENU_WIDTH: f32 = 244.0;
@@ -191,7 +192,7 @@ impl BenCodeApp {
 
     /// The width each tab gets in the strip as it stands.
     fn title_tab_width(&self, count: usize) -> f32 {
-        let strip = f32::from(self.title_strip.scroll.bounds().size.width);
+        let strip = crate::ui::scale::logical(self.title_strip.scroll.bounds().size.width);
         if strip <= 0.0 || count == 0 {
             return TAB_WIDTH;
         }
@@ -235,7 +236,7 @@ impl BenCodeApp {
             strip.reorder.as_ref().map(|(id, to)| (id.as_str(), *to)),
         );
         let pitch = {
-            let strip_w = f32::from(strip.scroll.bounds().size.width);
+            let strip_w = crate::ui::scale::logical(strip.scroll.bounds().size.width);
             let count = tabs.len().max(1);
             if strip_w <= 0.0 {
                 TAB_WIDTH
@@ -769,8 +770,8 @@ impl BenCodeApp {
         let next = inside.then(|| {
             let count = self.deck_tabs().len();
             let width = self.title_tab_width(count);
-            let scroll = f32::from(self.title_strip.scroll.offset().x);
-            let x = f32::from(event.event.position.x - event.bounds.origin.x) - 6.0 - scroll;
+            let scroll = crate::ui::scale::logical(self.title_strip.scroll.offset().x);
+            let x = crate::ui::scale::logical(event.event.position.x - event.bounds.origin.x) - 6.0 - scroll;
             (id, tabs::slot_at(x, width, TAB_GAP, count))
         });
         if next != self.title_strip.reorder {
@@ -908,10 +909,10 @@ impl BenCodeApp {
                     }))
                     .on_click(cx.listener(move |this, _, _, cx| {
                         let scroll = &this.title_strip.scroll;
-                        let visible = f32::from(scroll.bounds().size.width);
+                        let visible = crate::ui::scale::logical(scroll.bounds().size.width);
                         let step = (visible * 0.6).max(112.0) * if left { 1.0 } else { -1.0 };
-                        let max = f32::from(scroll.max_offset().x);
-                        let x = (f32::from(scroll.offset().x) + step).clamp(-max, 0.0);
+                        let max = crate::ui::scale::logical(scroll.max_offset().x);
+                        let x = (crate::ui::scale::logical(scroll.offset().x) + step).clamp(-max, 0.0);
                         scroll.set_offset(point(px(x), px(0.0)));
                         cx.notify();
                     }))
@@ -944,8 +945,8 @@ impl BenCodeApp {
         }
         let scroll = &self.title_strip.scroll;
         let (left, right) = strip_overflow(
-            -f32::from(scroll.offset().x),
-            f32::from(scroll.max_offset().x),
+            -crate::ui::scale::logical(scroll.offset().x),
+            crate::ui::scale::logical(scroll.max_offset().x),
         );
         let drop_wash = cx.theme().colors.hover;
         div()
@@ -969,11 +970,11 @@ impl BenCodeApp {
             .on_scroll_wheel(cx.listener(|this, event: &ScrollWheelEvent, _, cx| {
                 let delta = event.delta.pixel_delta(px(16.0));
                 let scroll = &this.title_strip.scroll;
-                let max = f32::from(scroll.max_offset().x);
-                if max <= 0.0 || f32::from(delta.x) != 0.0 || f32::from(delta.y) == 0.0 {
+                let max = crate::ui::scale::logical(scroll.max_offset().x);
+                if max <= 0.0 || crate::ui::scale::logical(delta.x) != 0.0 || crate::ui::scale::logical(delta.y) == 0.0 {
                     return;
                 }
-                let x = (f32::from(scroll.offset().x) + f32::from(delta.y)).clamp(-max, 0.0);
+                let x = (crate::ui::scale::logical(scroll.offset().x) + crate::ui::scale::logical(delta.y)).clamp(-max, 0.0);
                 scroll.set_offset(point(px(x), px(0.0)));
                 cx.notify();
             }))
@@ -1012,7 +1013,7 @@ impl BenCodeApp {
         self.window_drag_region(div(), cx)
             .flex()
             .items_stretch()
-            .h(crate::ui::sidebar::TITLEBAR_HEIGHT) // MonoCode `h-10`
+            .h(crate::ui::scale::px(crate::ui::sidebar::TITLEBAR_HEIGHT)) // MonoCode `h-10`
             .w_full()
             .flex_none()
             .border_b_1()
@@ -1028,7 +1029,11 @@ impl BenCodeApp {
     /// and controls; with the sidebar hidden it offers to bring it back
     /// (MonoCode `TitleBar.tsx:856-941`).
     fn render_titlebar_leading(&self, cx: &Context<Self>) -> impl IntoElement {
-        let rail_hidden = !self.is_rail_open;
+        // The icon rail expands the projects itself; with the title bar
+        // above it (MonoCode `compactRail`: `pl-[70px]` then `TabVisitNav`)
+        // only the traffic-light gap and Back / Forward lead.
+        let compact = self.compact_rail_active();
+        let rail_hidden = !self.is_rail_open && !compact;
         let sidebar_hidden = !self.is_sidebar_open;
         claim_press(div())
             .flex()
@@ -1036,6 +1041,9 @@ impl BenCodeApp {
             .items_center()
             .gap_0p5()
             .when(rail_hidden || sidebar_hidden, |el| el.px_1p5())
+            .when(self.compact_title_bar(), |el| {
+                el.pl(gpui::px(70.0)).children(self.history_buttons("titlebar", cx))
+            })
             .when(
                 rail_hidden && sidebar_hidden && cfg!(target_os = "macos"),
                 |el| el.child(div().w(TRAFFIC_LIGHT_SPACE)),

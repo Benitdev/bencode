@@ -2,9 +2,10 @@
 
 use ely_gpui_component::primitives::{Icon, IconName};
 use ely_gpui_component::theme::{ActiveTheme, IconSize, Radius, TextSize};
-use gpui::{App, Context, IntoElement, ParentElement, Render, Styled, Window, div, px};
+use gpui::{App, Context, IntoElement, ParentElement, Render, Styled, Window, div};
 
 use crate::ui::layout::PaneEdge;
+use crate::ui::scale::px;
 
 /// Payload when dragging a split pane by its grip. The preview is an Ely
 /// `DragGhost`.

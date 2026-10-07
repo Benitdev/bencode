@@ -74,7 +74,7 @@ mức ưu tiên. Phần đã xong chỉ được tóm tắt.
 - [ ] **Pane file**: lưu theo từng tab workspace và khôi phục khi mở lại; chia
   pane editor; menu chuột phải trên tab.
 - [ ] **Editor**: footer thay cho toolbar; xem trước ảnh và markdown.
-- [ ] **Phím tắt và menu**: menu Edit / Window / Help, ⌘1-9, ⌃Tab, ⇧⌘A, zoom,
+- [ ] **Phím tắt và menu**: menu Edit / Window / Help, ⌘1-9, ⌃Tab, ⇧⌘A,
   trang Keybindings.
 - [ ] **Search**: điều hướng bằng bàn phím, xếp hạng và phạm vi như MonoCode,
   mở file trong editor.

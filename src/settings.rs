@@ -59,6 +59,33 @@ pub struct AppSettings {
     pub inbox_list_width: Option<f32>,
     /// CI repairs sent from the Inbox, oldest first.
     pub inbox_repairs: Vec<crate::ui::inbox_view::Repair>,
+    /// MonoCode `monocode.themeHue` / `themeSaturation` /
+    /// `themeDarkLightness`; `None` is the default.
+    pub theme_hue: Option<f32>,
+    pub theme_saturation: Option<f32>,
+    pub theme_dark_lightness: Option<f32>,
+    /// MonoCode `monocode.accentColor`: `#rrggbb`; `None` is Default.
+    pub accent_color: Option<String>,
+    /// MonoCode `monocode.diffPalette`.
+    pub diff_palette: crate::ui::appearance::DiffPalette,
+    /// MonoCode `monocode.showExcludedFiles`.
+    pub show_excluded_files: bool,
+    /// MonoCode `monocode.uiScale` (0.5–2); `None` is 100%.
+    pub ui_scale: Option<f32>,
+    /// MonoCode `monocode.chatBackgroundPath`: BenCode's saved copy of the
+    /// image (under its own `backgrounds` folder), and how often it changed.
+    pub chat_background_path: Option<String>,
+    pub chat_background_revision: u64,
+    /// MonoCode `monocode.chatBackgroundEmptyOpacity` / `SessionOpacity`
+    /// (0.05–0.65); `None` is the default.
+    pub chat_background_empty_opacity: Option<f32>,
+    pub chat_background_session_opacity: Option<f32>,
+    /// MonoCode `monocode.chatBackgroundScope`.
+    pub chat_background_scope: crate::ui::appearance::ChatBackgroundScope,
+    /// MonoCode `monocode.newThreadBackgroundEffect`.
+    pub new_thread_background_effect: crate::ui::appearance::BackgroundEffect,
+    /// MonoCode `monocode.collapsedProjectRailMode`.
+    pub collapsed_project_rail_mode: crate::ui::appearance::CollapsedRailMode,
     /// MonoCode `monocode.changesView`: the Changes panel as a tree.
     pub changes_tree: bool,
     /// MonoCode `monocode.favoriteModels`: starred model keys.
@@ -168,6 +195,20 @@ mod tests {
             inbox_seen_seeded: true,
             inbox_list_width: Some(400.0),
             changes_tree: true,
+            theme_hue: Some(210.0),
+            theme_saturation: Some(12.0),
+            theme_dark_lightness: Some(4.0),
+            accent_color: Some("#8b5cf6".into()),
+            diff_palette: crate::ui::appearance::DiffPalette::HighContrast,
+            show_excluded_files: true,
+            ui_scale: Some(1.2),
+            chat_background_path: Some("/tmp/backgrounds/chat-background.png".into()),
+            chat_background_revision: 3,
+            chat_background_empty_opacity: Some(0.4),
+            chat_background_session_opacity: Some(0.1),
+            chat_background_scope: crate::ui::appearance::ChatBackgroundScope::Empty,
+            new_thread_background_effect: crate::ui::appearance::BackgroundEffect::GradientBlur,
+            collapsed_project_rail_mode: crate::ui::appearance::CollapsedRailMode::Hidden,
             inbox_repairs: vec![crate::ui::inbox_view::Repair {
                 item_key: "o/r:pr:7".into(),
                 head_oid: "abc".into(),

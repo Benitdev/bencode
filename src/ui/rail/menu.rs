@@ -195,8 +195,8 @@ impl BenCodeApp {
     }
 
     /// MonoCode `projectMenuExtraItems`. Background image and Notification
-    /// settings are left out: BenCode has neither chat backgrounds nor a
-    /// notification settings page.
+    /// settings are left out: BenCode has neither per-project chat
+    /// backgrounds nor a notification settings page.
     pub(super) fn project_extra_items(&self, path: &str) -> Vec<ExtraItem> {
         let pinned = self
             .settings

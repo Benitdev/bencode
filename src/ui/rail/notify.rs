@@ -8,8 +8,10 @@ use ely_gpui_component::forms::DateTimePicker;
 use ely_gpui_component::theme::{ActiveTheme, ControlSize};
 use gpui::{
     AnyElement, Bounds, Context, FontWeight, InteractiveElement, IntoElement, MouseDownEvent,
-    ParentElement, Pixels, Point, Styled, anchored, deferred, div, px, rgb,
+    ParentElement, Pixels, Point, Styled, anchored, deferred, div, rgb,
 };
+
+use crate::ui::scale::px;
 use jiff::civil::DateTime;
 use jiff::tz::TimeZone;
 

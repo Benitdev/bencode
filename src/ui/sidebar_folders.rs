@@ -7,7 +7,7 @@ use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, Context, FontWeight, Hsla, InteractiveElement, IntoElement, MouseButton,
-    MouseDownEvent, ParentElement, SharedString, Styled, div, prelude::*, px, rgb,
+    MouseDownEvent, ParentElement, SharedString, Styled, div, prelude::*, rgb,
 };
 
 use crate::app::BenCodeApp;
@@ -15,6 +15,7 @@ use crate::app::session_folders::{FolderTarget, SessionFolder};
 use crate::app::session_list::LiveStates;
 use crate::db::SessionRow;
 use crate::ui::drag_drop::DraggedSession;
+use crate::ui::scale::px;
 use crate::ui::sidebar_sessions::ListDrop;
 use crate::ui::spinner::terminal_spinner;
 

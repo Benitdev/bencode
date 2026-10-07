@@ -15,8 +15,10 @@ use gpui::prelude::*;
 use gpui::{
     App, Bounds, CursorStyle, DispatchPhase, ElementId, ListState, MouseButton, MouseDownEvent,
     MouseMoveEvent, MouseUpEvent, Pixels, ScrollHandle, UniformListScrollHandle, Window, canvas,
-    div, point, px,
+    div, point,
 };
+
+use crate::ui::scale::px;
 
 /// How the system draws scroll bars (`NSScroller.preferredScrollerStyle`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

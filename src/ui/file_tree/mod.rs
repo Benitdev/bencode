@@ -21,11 +21,12 @@ use gpui::prelude::*;
 use gpui::{
     AnyElement, ClickEvent, Context, FontWeight, HighlightStyle, IntoElement, MouseButton,
     MouseDownEvent, ParentElement, Pixels, Point, ScrollHandle, SharedString, Styled, StyledText,
-    div, px, relative, rgb,
+    div, relative, rgb,
 };
 
 use crate::app::BenCodeApp;
 use crate::ui::icons::ExtraIcon;
+use crate::ui::scale::px;
 use crate::ui::virtual_rows;
 
 pub use icons::{EntryIcon, resolve_entry_icon};
@@ -60,8 +61,8 @@ pub struct FsEntry {
     pub name: String,
     pub rel_path: String,
     pub is_dir: bool,
-    /// Git-ignored (or `.git`): hidden, like MonoCode with "Show excluded
-    /// files" off.
+    /// Git-ignored (or `.git`): hidden unless Appearance › "Show excluded
+    /// files" is on, then dimmed and italic.
     pub ignored: bool,
 }
 
@@ -278,7 +279,10 @@ impl BenCodeApp {
                 depth,
             });
         }
-        let visible: Vec<&FsEntry> = entries.into_iter().flatten().filter(|e| !e.ignored).collect();
+        // MonoCode `TreeChildren`: excluded entries only with "Show excluded files".
+        let show_excluded = self.appearance.show_excluded_files;
+        let visible: Vec<&FsEntry> =
+            entries.into_iter().flatten().filter(|e| show_excluded || !e.ignored).collect();
         for entry in visible.iter().filter(|e| e.is_dir) {
             self.push_entry(entry, depth, out);
         }
@@ -611,7 +615,12 @@ impl BenCodeApp {
         let cut = tree.clip.as_ref().is_some_and(|c| c.cut && c.path == rel);
         let drop = tree.drop_target.as_deref() == Some(rel.as_str());
         let icon = resolve_entry_icon(&entry.name, is_dir, open);
-        let name_color = tints.color(&rel, is_dir, cx.theme().is_dark()).unwrap_or(fg);
+        // MonoCode `entry.ignored ? "italic text-content/50" : gitColor`.
+        let name_color = if entry.ignored {
+            fg.opacity(0.5)
+        } else {
+            tints.color(&rel, is_dir, crate::ui::appearance::diff_colors(cx)).unwrap_or(fg)
+        };
         let selection = colors.active;
         let (click_rel, menu_rel, hover_rel, drop_rel) = (rel.clone(), rel.clone(), rel.clone(), rel.clone());
         let mut row = div()
@@ -707,6 +716,7 @@ impl BenCodeApp {
                     .truncate()
                     .line_height(relative(LABEL_LEADING))
                     .text_color(name_color)
+                    .when(entry.ignored, |el| el.italic())
                     .child(entry.name.clone()),
             );
         if !is_dir {

@@ -19,8 +19,10 @@ use gpui::prelude::*;
 use gpui::{
     App, Bounds, CursorStyle, DispatchPhase, Div, Entity, FocusHandle, Hsla, MouseButton,
     MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, SharedString, Stateful, StyledText,
-    TextLayout, TextRun, canvas, div, px, size,
+    TextLayout, TextRun, canvas, div, size,
 };
+
+use crate::ui::scale::px;
 use unicode_segmentation::UnicodeSegmentation;
 
 /// Where a run of text sits in reading order: the block it draws, then its

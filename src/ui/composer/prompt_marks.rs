@@ -11,8 +11,10 @@ use ely_gpui_component::primitives::{Icon, IconName};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, App, IntoElement, ParentElement, Pixels, Point, Styled, Window, anchored,
-    deferred, div, point, px,
+    deferred, div, point,
 };
+
+use crate::ui::scale::px;
 
 use super::mcp_tags::{McpTag, mcp_tag_ranges};
 use super::mentions::{MentionIndex, MentionTarget};

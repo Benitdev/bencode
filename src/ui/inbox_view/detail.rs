@@ -10,8 +10,10 @@ use ely_gpui_component::primitives::{Icon, IconName};
 use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
     AnyElement, Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString,
-    Styled, div, prelude::*, px,
+    Styled, div, prelude::*,
 };
+
+use crate::ui::scale::px;
 
 use super::{kind_label, project_name, relative_time, status_mark};
 use crate::app::BenCodeApp;

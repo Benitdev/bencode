@@ -7,8 +7,10 @@ use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString,
-    Styled, div, prelude::*, px,
+    Styled, div, prelude::*,
 };
+
+use crate::ui::scale::px;
 
 use super::cards::card_frame;
 use crate::app::BenCodeApp;

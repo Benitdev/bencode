@@ -18,12 +18,14 @@ use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
     Animation, AnimationExt, AnyElement, Bounds, Context, FontWeight, Hsla, InteractiveElement,
     IntoElement, MouseButton, ParentElement, PathBuilder, Pixels, ScrollHandle, SharedString, Styled, canvas,
-    div, percentage, point, prelude::*, px, relative, rgb,
+    div, percentage, point, prelude::*, relative, rgb,
 };
 
 use crate::app::BenCodeApp;
+use crate::ui::scale::px;
 use crate::ui::scrollbar;
 use crate::app::file_pane::PaneTab;
+use crate::ui::appearance::DiffColors;
 use crate::git::graph::{self, Cmd, Node};
 use crate::git::sync::{self as git_sync, BranchPr, HistoryCommit};
 use crate::git::{
@@ -216,18 +218,14 @@ fn status_letter(status: &GitFileStatus) -> &'static str {
 }
 
 /// MonoCode `statusColor`: `text-sky-400`, `text-diff-add-fg`,
-/// `text-diff-del-fg`, `text-amber-400`. The diff colours are the default
-/// palette's (`#6ee7b7` / `#fda4af` dark, `#047857` / `#be123c` light).
-fn status_color(status: &GitFileStatus, dark: bool) -> Hsla {
-    rgb(match (status, dark) {
-        (GitFileStatus::Untracked, _) => 0x38bdf8,
-        (GitFileStatus::Added, true) => 0x6ee7b7,
-        (GitFileStatus::Added, false) => 0x047857,
-        (GitFileStatus::Deleted, true) => 0xfda4af,
-        (GitFileStatus::Deleted, false) => 0xbe123c,
-        _ => 0xfbbf24,
-    })
-    .into()
+/// `text-diff-del-fg` (the chosen diff palette), `text-amber-400`.
+fn status_color(status: &GitFileStatus, diff: DiffColors) -> Hsla {
+    match status {
+        GitFileStatus::Untracked => rgb(0x38bdf8).into(),
+        GitFileStatus::Added => diff.add_fg,
+        GitFileStatus::Deleted => diff.del_fg,
+        _ => rgb(0xfbbf24).into(),
+    }
 }
 
 /// MonoCode `border-stroke`: content at 7% (BenCode's `colors.border` is
@@ -803,7 +801,7 @@ impl BenCodeApp {
             .overflow_hidden()
             .child(
                 canvas(
-                    move |bounds, _, _| height.set(f32::from(bounds.size.height)),
+                    move |bounds, _, _| height.set(crate::ui::scale::logical(bounds.size.height)),
                     |_, _, _, _| {},
                 )
                 .absolute()
@@ -815,7 +813,7 @@ impl BenCodeApp {
                         if let Some((start_y, start_height)) = this.changes_ui.graph_drag {
                             let max = (this.changes_ui.panel_height.get() - 160.0).max(GRAPH_MIN);
                             this.changes_ui.graph_height = (start_height
-                                - (f32::from(event.position.y) - start_y))
+                                - (crate::ui::scale::logical(event.position.y) - start_y))
                                 .clamp(GRAPH_MIN, max);
                             cx.notify();
                         }
@@ -1609,11 +1607,10 @@ impl BenCodeApp {
                             .group_hover_color(action_group, fg),
                     ),
             );
-        let dark = cx.theme().is_dark();
         let dot = dir
             .status
             .as_ref()
-            .map_or(fg.opacity(0.4), |status| status_color(status, dark));
+            .map_or(fg.opacity(0.4), |status| status_color(status, crate::ui::appearance::diff_colors(cx)));
         let hover = fg.opacity(0.05);
         // `group flex h-7 items-center gap-1 pr-2 leading-none text-content
         // hover:bg-content/5`, indented `8 + depth * 12`.
@@ -1704,7 +1701,6 @@ impl BenCodeApp {
         // MonoCode `bg-selection`.
         let selection = colors.active;
         let hover = fg.opacity(0.05);
-        let dark = cx.theme().is_dark();
         let action = |key: &str, icon: IconName, tip: &'static str| {
             let action_hover = fg.opacity(0.10);
             let action_group = SharedString::from(format!("{group}-{key}"));
@@ -1824,7 +1820,7 @@ impl BenCodeApp {
                     .font_family(cx.theme().mono_family.clone())
                     .text_size(px(11.0))
                     .font_weight(FontWeight::SEMIBOLD)
-                    .text_color(status_color(&file.status, dark))
+                    .text_color(status_color(&file.status, crate::ui::appearance::diff_colors(cx)))
                     .child(status_letter(&file.status)),
             )
             .into_any_element()
@@ -1849,7 +1845,7 @@ impl BenCodeApp {
                         this.changes_ui.graph_height = GRAPH_DEFAULT;
                     } else {
                         this.changes_ui.graph_drag =
-                            Some((f32::from(event.position.y), this.changes_ui.graph_height));
+                            Some((crate::ui::scale::logical(event.position.y), this.changes_ui.graph_height));
                     }
                     cx.notify();
                 }),

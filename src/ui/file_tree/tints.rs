@@ -7,6 +7,7 @@ use gpui::{Hsla, rgb};
 
 use super::name;
 use crate::git::GitFileStatus;
+use crate::ui::appearance::DiffColors;
 
 /// MonoCode `useGitFileStatuses`: each changed file's status, and each
 /// folder's most important status below it (modified, then deleted, then
@@ -49,35 +50,27 @@ impl GitTints {
     }
 
     /// MonoCode `GIT_STATUS_COLOR` (renamed files stay plain):
-    /// `text-amber-400`, and `text-diff-add-fg` / `text-diff-del-fg` from
-    /// `index.css` (`#6ee7b7` / `#fda4af`, `theme-light` `#047857` /
-    /// `#be123c`).
-    pub(super) fn color(&self, rel: &str, is_dir: bool, is_dark: bool) -> Option<Hsla> {
+    /// `text-amber-400`, and `text-diff-add-fg` / `text-diff-del-fg` of the
+    /// chosen diff palette.
+    pub(super) fn color(&self, rel: &str, is_dir: bool, diff: DiffColors) -> Option<Hsla> {
         let status = if is_dir {
             self.dirs.get(rel)
         } else {
             self.files.get(rel)
         }?;
-        let (add, del) = if is_dark {
-            (0x6ee7b7, 0xfda4af)
-        } else {
-            (0x047857, 0xbe123c)
-        };
-        Some(
-            rgb(match status {
-                GitFileStatus::Modified => 0xfbbf24,
-                GitFileStatus::Added | GitFileStatus::Untracked => add,
-                GitFileStatus::Deleted => del,
-                GitFileStatus::Renamed => return None,
-            })
-            .into(),
-        )
+        Some(match status {
+            GitFileStatus::Modified => rgb(0xfbbf24).into(),
+            GitFileStatus::Added | GitFileStatus::Untracked => diff.add_fg,
+            GitFileStatus::Deleted => diff.del_fg,
+            GitFileStatus::Renamed => return None,
+        })
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ui::appearance::DiffPalette;
 
     #[test]
     fn folders_take_their_strongest_change() {
@@ -93,7 +86,8 @@ mod tests {
         assert_eq!(tints.dirs.get("src"), Some(&GitFileStatus::Modified));
         assert_eq!(tints.dirs.get("src/a"), Some(&GitFileStatus::Untracked));
         assert_eq!(tints.dirs.get("docs"), Some(&GitFileStatus::Deleted));
-        assert!(tints.color("moved.rs", false, true).is_none(), "renames stay plain");
-        assert!(tints.color("src", true, true).is_some());
+        let diff = DiffColors::new(DiffPalette::Default, true);
+        assert!(tints.color("moved.rs", false, diff).is_none(), "renames stay plain");
+        assert!(tints.color("src", true, diff).is_some());
     }
 }

@@ -11,8 +11,10 @@ use std::time::{Duration, Instant};
 use ely_gpui_component::theme::ActiveTheme;
 use gpui::{
     AnyElement, Context, FocusHandle, InteractiveElement, IntoElement, ListOffset, ParentElement,
-    SharedString, StatefulInteractiveElement, Styled, Window, canvas, div, px, relative,
+    SharedString, StatefulInteractiveElement, Styled, Window, canvas, div, relative,
 };
+
+use crate::ui::scale::px;
 
 use super::outline_model::{
     BAR_HEIGHT, MIN_PROMPTS, Place, RIPPLE_SPAN, active_prompt, bar_lift, bar_stack, prompt_blocks,
@@ -187,7 +189,7 @@ impl BenCodeApp {
         let view = self.transcripts.get_mut(session_id)?;
         let viewport = view.list.viewport_bounds();
         // A hidden pane has a zero-size box; the rule would pick the last prompt.
-        if viewport.size.height <= px(0.0) || f32::from(viewport.size.width) < MIN_PANE_WIDTH {
+        if viewport.size.height <= px(0.0) || crate::ui::scale::logical(viewport.size.width) < MIN_PANE_WIDTH {
             return None;
         }
         let rows = prompt_rows(view, &prompts);
@@ -196,7 +198,7 @@ impl BenCodeApp {
         let stack = bar_stack(
             ids.len(),
             active,
-            stack_budget(f32::from(viewport.size.height)),
+            stack_budget(crate::ui::scale::logical(viewport.size.height)),
         );
         let bars: Vec<String> = ids[stack.range.clone()].to_vec();
         let active_id = active.map(|a| ids[a].clone());

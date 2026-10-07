@@ -7,8 +7,10 @@ use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, ClipboardEntry, Context, ImageFormat, InteractiveElement, IntoElement,
-    ParentElement, PathPromptOptions, SharedString, Styled, div, prelude::*, px,
+    ParentElement, PathPromptOptions, SharedString, Styled, div, prelude::*,
 };
+
+use crate::ui::scale::px;
 
 use super::mode_commands::{self, ModeCommand};
 use crate::app::{BenCodeApp, now_ms};

@@ -6,8 +6,10 @@ use ely_gpui_component::primitives::{Icon, IconName};
 use ely_gpui_component::theme::{ActiveTheme, IconSize, Palette};
 use gpui::{
     AnyElement, Context, FontWeight, Hsla, IntoElement, ParentElement, SharedString, Styled, div,
-    prelude::*, px,
+    prelude::*,
 };
+
+use crate::ui::scale::px;
 
 use super::usage_chip::{ChipAccounts, usage_bar};
 use crate::app::BenCodeApp;

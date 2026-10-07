@@ -14,13 +14,14 @@ use ely_gpui_component::primitives::IconName;
 use ely_gpui_component::theme::{ActiveTheme, ControlSize};
 use ely_gpui_component::typography::Caption;
 use gpui::{
-    AnyElement, Context, Entity, IntoElement, ParentElement, Styled, div, prelude::*, px,
+    AnyElement, Context, Entity, IntoElement, ParentElement, Styled, div, prelude::*,
     uniform_list,
 };
 
 use crate::app::{BenCodeApp, Surface, now_ms};
 use crate::db::{Note, NoteUpsert};
 use crate::ui::app_callback::app_callback;
+use crate::ui::scale::px;
 
 const UNTITLED_NOTE: &str = "Untitled";
 /// MonoCode saves this long after the last keystroke (`NotesView.tsx`).
@@ -250,7 +251,7 @@ impl BenCodeApp {
 
     pub(crate) fn render_notes_body(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let theme = cx.theme();
-        let min = theme.pane_min().to_pixels(theme.base_rem());
+        let min = theme.pane_min().to_pixels(theme.base_rem() * crate::ui::scale::ui_scale());
         div()
             .size_full()
             .child(MasterDetail::new(

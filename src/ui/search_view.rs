@@ -8,13 +8,14 @@ use ely_gpui_component::lists::ListItem;
 use ely_gpui_component::primitives::{Icon, IconName};
 use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
-    AnyElement, Context, Focusable, IntoElement, ParentElement, SharedString, Styled, div, px,
+    AnyElement, Context, Focusable, IntoElement, ParentElement, SharedString, Styled, div,
     uniform_list,
 };
 
 use crate::app::file_pane::PaneTab;
 use crate::app::{BenCodeApp, Surface};
 use crate::db::SessionRow;
+use crate::ui::scale::px;
 
 const SEARCH_FILE_HIT_LIMIT: usize = 30;
 

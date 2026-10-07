@@ -7,8 +7,10 @@ use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnimationExt, AnyElement, App, Hsla, InteractiveElement, IntoElement, ParentElement, Pixels,
-    Point, SharedString, Styled, anchored, deferred, div, prelude::*, px, relative, rgb,
+    Point, SharedString, Styled, anchored, deferred, div, prelude::*, relative, rgb,
 };
+
+use crate::ui::scale::px;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct MenuAction {

@@ -12,12 +12,13 @@ use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, Context, FontWeight, InteractiveElement, IntoElement, ParentElement, Styled, div,
-    prelude::*, px,
+    prelude::*,
 };
 
 use crate::app::{BenCodeApp, TurnInput};
 use crate::db::{Block, SessionRow};
 use crate::harness::{Attachment, HarnessKind, codex};
+use crate::ui::scale::px;
 
 /// MonoCode `isLastUserTurnBlock`: a user turn the person wrote (not an
 /// internal one) that was sent (not a draft).

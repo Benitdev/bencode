@@ -10,7 +10,7 @@ use ely_gpui_component::settings::{SettingsRow, SettingsSection};
 use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
     AnyElement, Context, FontWeight, IntoElement, ParentElement, SharedString, Styled, div,
-    prelude::*, px, relative,
+    prelude::*, relative,
 };
 
 use crate::app::BenCodeApp;
@@ -21,6 +21,7 @@ use crate::ui::HarnessIcon;
 use crate::ui::app_callback::app_callback;
 use crate::ui::footer::{account_status_label, usage_meter};
 use crate::ui::git_changes_panel::spinning_icon;
+use crate::ui::scale::px;
 
 /// MonoCode `UsageMeter`'s `w-36`.
 const METER_WIDTH: f32 = 144.0;

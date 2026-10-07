@@ -16,15 +16,17 @@ use ely_gpui_component::terminal::{Launch, Terminal, TerminalEvent};
 use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
     AnyElement, Context, Entity, InteractiveElement, IntoElement, ParentElement, SharedString,
-    Styled, Subscription, Window, div, prelude::*, px,
+    Styled, Subscription, Window, div, prelude::*,
 };
+
+use crate::ui::scale::px;
 
 pub use layout::{DockLayout, DockSide};
 
 use crate::app::BenCodeApp;
 use crate::ui::icons::ExtraIcon;
 
-const TAB_HEIGHT: gpui::Pixels = px(28.0);
+const TAB_HEIGHT: f32 = 28.0;
 
 pub struct TerminalTab {
     pub id: u64,
@@ -120,7 +122,7 @@ fn spawn_shell(cwd: &str, cx: &mut Context<Terminal>) -> Terminal {
 
 fn window_size(window: &Window) -> (f32, f32) {
     let size = window.viewport_size();
-    (f32::from(size.width), f32::from(size.height))
+    (crate::ui::scale::logical(size.width), crate::ui::scale::logical(size.height))
 }
 
 /// MonoCode `sideIcon`: the Move Terminal button shows where the dock is.
@@ -319,7 +321,7 @@ impl BenCodeApp {
                     } else {
                         event.event.position.x
                     };
-                    let next = layout.dragged(start_size, start, f32::from(point), window_size(window));
+                    let next = layout.dragged(start_size, start, crate::ui::scale::logical(point), window_size(window));
                     if next != layout || !this.terminals.resizing {
                         this.terminals.set_layout(&project, next);
                         this.terminals.resizing = true;
@@ -374,7 +376,7 @@ impl BenCodeApp {
                     } else {
                         event.position.x
                     };
-                    this.terminals.resize_from = Some((f32::from(point), layout.size));
+                    this.terminals.resize_from = Some((crate::ui::scale::logical(point), layout.size));
                 }),
             )
             .on_drag(TerminalResize, |drag, _, _, cx| cx.new(|_| *drag))
@@ -485,7 +487,7 @@ impl BenCodeApp {
             .flex_none()
             .items_center()
             .gap_1p5()
-            .h(TAB_HEIGHT)
+            .h(px(TAB_HEIGHT))
             .pl_2()
             .pr_1()
             .max_w(px(200.0))

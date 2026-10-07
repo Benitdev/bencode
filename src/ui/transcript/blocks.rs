@@ -7,8 +7,10 @@ use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::prelude::*;
 use gpui::{
     AnyElement, App, Context, Hsla, InteractiveElement, IntoElement, ParentElement, SharedString,
-    Styled, div, px,
+    Styled, div,
 };
+
+use crate::ui::scale::px;
 use jiff::Timestamp;
 use std::rc::Rc;
 
@@ -20,9 +22,9 @@ use crate::db::SessionRow;
 use crate::ui::attachment_chip::{ChipFile, attachment_chip};
 
 /// MonoCode's transcript column (`max-w-4xl`).
-pub const MESSAGE_MAX_WIDTH: gpui::Pixels = px(896.0);
+pub const MESSAGE_MAX_WIDTH: f32 = 896.0;
 /// MonoCode's user bubble width (`min(100%, 36rem)`).
-const USER_BUBBLE_MAX_WIDTH: gpui::Pixels = px(576.0);
+const USER_BUBBLE_MAX_WIDTH: f32 = 576.0;
 /// Long messages clamp to this many lines until "Show more".
 const CLAMP_LINES: usize = 4;
 /// How long a copy button shows its check (MonoCode).
@@ -226,12 +228,15 @@ impl BenCodeApp {
         let single_line =
             chips.is_none() && !text.contains('\n') && text.chars().count() <= CHARS_PER_LINE;
         let group = SharedString::from(format!("user-msg-{key}"));
+        let accent = crate::ui::appearance::user_accent(cx);
         let bubble = div()
             .min_w_0()
-            .max_w(USER_BUBBLE_MAX_WIDTH)
+            .max_w(px(USER_BUBBLE_MAX_WIDTH))
             .px_3()
             .py_2()
             .bg(muted(colors.fg, 0.1))
+            // MonoCode `html.has-user-accent .user-message-bubble`.
+            .when_some(accent, |el, accent| el.bg(accent.color.opacity(0.24)))
             .rounded(if single_line { px(18.0) } else { px(12.0) })
             .text_size(px(14.0))
             .line_height(px(22.0))
@@ -261,11 +266,14 @@ impl BenCodeApp {
                 .border_1()
                 .border_dashed()
                 .border_color(colors.fg.opacity(0.3))
+                .when_some(accent, |el, accent| {
+                    el.bg(accent.color.opacity(0.08)).border_color(accent.color.opacity(0.38))
+                })
         } else if editing {
             bubble
                 .border_1()
                 .border_dashed()
-                .border_color(colors.accent.opacity(0.45))
+                .border_color(accent.map_or(colors.accent, |accent| accent.color).opacity(0.45))
         } else {
             bubble
         };

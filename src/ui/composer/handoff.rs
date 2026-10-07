@@ -8,8 +8,10 @@ use ely_gpui_component::primitives::{Icon, IconName};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, Context, FontWeight, IntoElement, ParentElement, Pixels, Point, Styled, div,
-    prelude::*, px,
+    prelude::*,
 };
+
+use crate::ui::scale::px;
 use serde_json::{Value, json};
 
 use super::cards::{CardIcon, ComposerCard, card_frame, card_kind};

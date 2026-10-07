@@ -10,8 +10,10 @@ use ely_gpui_component::typography::ShimmerText;
 use gpui::{
     AnyElement, Bounds, Context, DragMoveEvent, FontWeight, InteractiveElement, IntoElement,
     MouseButton, MouseDownEvent, ParentElement, Pixels, Point, SharedString, Styled, canvas, div,
-    img, prelude::*, px, relative, rgb,
+    img, prelude::*, relative, rgb,
 };
+
+use crate::ui::scale::px;
 
 use super::group_color;
 use super::model::{ProjectGroup, mute_status, notification_id, path_key};
@@ -432,7 +434,7 @@ impl BenCodeApp {
                             div()
                                 .flex_none()
                                 .group_hover(group.clone(), |s| s.invisible())
-                                .child(project_diff_stat(additions, deletions, dark)),
+                                .child(project_diff_stat(additions, deletions, crate::ui::appearance::diff_colors(cx))),
                         )
                     })
                     .when_some(card.mute, |el, status| {
