@@ -1344,6 +1344,16 @@ impl BenCodeApp {
 
 impl Render for BenCodeApp {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // How often the whole app re-renders, for perf work: run with
+        // RUST_LOG=bencode::app=trace.
+        if log::log_enabled!(log::Level::Trace) {
+            use std::sync::atomic::{AtomicU64, Ordering};
+            static RENDERS: AtomicU64 = AtomicU64::new(0);
+            let n = RENDERS.fetch_add(1, Ordering::Relaxed) + 1;
+            if n.is_multiple_of(120) {
+                log::trace!("app renders: {n}");
+            }
+        }
         self.apply_ui_scale(window);
         self.sync_chat_background(!cx.theme().is_dark(), cx);
         if std::mem::take(&mut self.question_focus_wanted) {

@@ -132,6 +132,32 @@ struct Reveal {
     shown: f32,
     at: Instant,
     settled: Option<Instant>,
+    /// The text length `total` was counted for, so a frame that shows the
+    /// same text does not walk its graphemes again.
+    counted: usize,
+    total: usize,
+}
+
+/// The blocks last parsed for an element and the text they came from, so a
+/// frame that shows the same text does not parse it again.
+struct Parsed {
+    text: String,
+    blocks: Rc<Vec<Block>>,
+}
+
+/// The cached blocks when `shown` is the text they were parsed from.
+fn cached_blocks(cache: &Parsed, shown: &str) -> Option<Rc<Vec<Block>>> {
+    (cache.text == shown).then(|| cache.blocks.clone())
+}
+
+/// The byte offset after `shown` graphemes of `text`.
+fn reveal_end(text: &str, shown: usize, total: usize) -> usize {
+    if shown >= total {
+        return text.len();
+    }
+    text.grapheme_indices(true)
+        .nth(shown)
+        .map_or(text.len(), |(at, _)| at)
 }
 
 /// Graphemes shown after `elapsed`: a steady pace, faster when far behind.
@@ -148,14 +174,27 @@ fn advanced(shown: f32, total: usize, elapsed: Duration) -> f32 {
 /// strongly its edge is faded (1 while revealing, easing to 0 once caught
 /// up). Asks for frames until both settle.
 fn revealed(id: &ElementId, text: &str, window: &mut Window, cx: &mut App) -> (usize, f32) {
-    let total = text.graphemes(true).count();
     let now = Instant::now();
     let state = window.use_keyed_state((id.clone(), "reveal"), cx, |_, _| Reveal {
         shown: 0.0,
         at: now,
         settled: None,
+        counted: usize::MAX,
+        total: 0,
     });
-    let Reveal { shown, at, settled } = *state.read(cx);
+    let Reveal {
+        shown,
+        at,
+        settled,
+        counted,
+        total,
+    } = *state.read(cx);
+    // A streamed reply only grows, so the same length is the same text.
+    let total = if counted == text.len() {
+        total
+    } else {
+        text.graphemes(true).count()
+    };
     let still = cx.theme().reduced_motion;
     let shown = if still {
         total as f32
@@ -176,6 +215,8 @@ fn revealed(id: &ElementId, text: &str, window: &mut Window, cx: &mut App) -> (u
             shown,
             at: now,
             settled,
+            counted: text.len(),
+            total,
         }
     });
     let fade = match settled {
@@ -189,11 +230,7 @@ fn revealed(id: &ElementId, text: &str, window: &mut Window, cx: &mut App) -> (u
     if fade > 0.0 {
         window.request_animation_frame();
     }
-    let end = text
-        .grapheme_indices(true)
-        .nth(shown as usize)
-        .map_or(text.len(), |(at, _)| at);
-    (end, fade)
+    (reveal_end(text, shown as usize, total), fade)
 }
 
 /// The fonts and inks one render draws with.
@@ -1069,7 +1106,24 @@ impl RenderOnce for AgentMarkdown {
         } else {
             (self.source.len(), 0.0)
         };
-        let blocks = parse(&self.source[..end]);
+        let shown = &self.source[..end];
+        let cache = window.use_keyed_state((self.id.clone(), "parsed"), cx, |_, _| Parsed {
+            text: String::new(),
+            blocks: Rc::new(Vec::new()),
+        });
+        let blocks = match cached_blocks(cache.read(cx), shown) {
+            Some(blocks) => blocks,
+            None => {
+                let blocks = Rc::new(parse(shown));
+                // No notify: this only stores what was drawn.
+                cache.update(cx, |cache, _| {
+                    cache.text.clear();
+                    cache.text.push_str(shown);
+                    cache.blocks = blocks.clone();
+                });
+                blocks
+            }
+        };
         let look = Look::new(self.tone, window, cx);
         let draw = Draw {
             id: &self.id,
@@ -1102,6 +1156,29 @@ mod tests {
         let long = advanced(0.0, 1000, tick);
         assert!(long > PACE * 0.1 && long < 1000.0, "{long}");
         assert_eq!(advanced(12.0, 10, tick), 10.0);
+    }
+
+    #[test]
+    fn cached_blocks_hits_only_on_the_same_text() {
+        let cache = Parsed {
+            text: "a **b**".into(),
+            blocks: Rc::new(parse("a **b**")),
+        };
+        let hit = cached_blocks(&cache, "a **b**").unwrap();
+        assert!(Rc::ptr_eq(&hit, &cache.blocks));
+        assert!(cached_blocks(&cache, "a **b** c").is_none());
+        assert!(cached_blocks(&cache, "a").is_none());
+    }
+
+    #[test]
+    fn reveal_end_is_a_char_boundary() {
+        let text = "héllo 👋🏽 wörld";
+        let total = text.graphemes(true).count();
+        for shown in 0..=total + 2 {
+            assert!(text.is_char_boundary(reveal_end(text, shown, total)));
+        }
+        assert_eq!(reveal_end(text, total, total), text.len());
+        assert_eq!(reveal_end(text, 1, total), 1);
     }
 
     #[test]
