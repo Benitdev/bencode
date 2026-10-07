@@ -147,6 +147,8 @@ impl BenCodeApp {
         view.find_block = find_block;
         view.find_count = find_count;
         let list_state = view.list.clone();
+        // Needs fewer than two prompts to be absent, so an empty thread has none.
+        let outline = self.render_prompt_outline(session_id, cx);
 
         // Borrowed, never cloned: a session's blocks can be huge.
         let Some(session) = self.sessions.iter().find(|s| s.id == session_id) else {
@@ -183,7 +185,7 @@ impl BenCodeApp {
             frame.child(self.render_empty_session(session, cx))
         } else {
             frame
-                .child(self.render_pane_body(session, list_state, cx))
+                .child(self.render_pane_body(session, list_state, outline, cx))
                 .child(composer)
         };
         frame
@@ -298,6 +300,7 @@ impl BenCodeApp {
         &self,
         session: &SessionRow,
         list_state: ListState,
+        outline: Option<AnyElement>,
         cx: &Context<Self>,
     ) -> impl IntoElement {
         let view = self.transcripts.get(&session.id);
@@ -324,6 +327,7 @@ impl BenCodeApp {
             .justify_center()
             .child(content)
             .children(view.and_then(|view| view.anchor_check()))
+            .children(outline)
             .when(scrolled_up, |el| {
                 el.child(self.render_jump_to_latest(&session.id, focused, cx))
             })

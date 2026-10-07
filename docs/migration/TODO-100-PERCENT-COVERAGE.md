@@ -15,7 +15,8 @@ mức ưu tiên. Phần đã xong chỉ được tóm tắt.
 - **Agent**: chạy lượt thật qua stdio cho Claude Code, Antigravity, Codex,
   OpenCode; stream token và tool call; dừng lượt; hỏi quyền chạy tool; mỗi
   thread chạy độc lập, có hàng đợi tin nhắn; catalog model lấy trực tiếp từ CLI.
-- **Chat**: transcript theo lượt, gập phần "đã làm việc", tìm trong hội thoại;
+- **Chat**: transcript theo lượt, gập phần "đã làm việc", tìm trong hội thoại,
+  thanh mục lục prompt ở mép phải (prompt outline);
   composer với model picker, chế độ quyền, `@` file, `/` skill, `/mcp`, đính kèm,
   handoff, câu hỏi làm rõ, thông báo giới hạn sử dụng, `/compact`.
 - **Shell**: rail project (nhóm, ghim, menu, kéo thả, đổi kích thước), title

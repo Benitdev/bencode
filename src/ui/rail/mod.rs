@@ -23,13 +23,14 @@ use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, Bounds, Context, DragMoveEvent, Hsla, InteractiveElement, IntoElement,
     MouseButton, MouseDownEvent, ParentElement, Pixels, Point, SharedString, Styled,
-    WindowControlArea, anchored, canvas, deferred, div, prelude::*, px, relative,
+    anchored, canvas, deferred, div, prelude::*, px, relative,
 };
 
 pub use state::RailUi;
 
 use crate::app::session_folders::{palette_color, parse_hex};
 use crate::app::{BenCodeApp, Surface, same_project_path};
+use crate::ui::window_drag::claim_press;
 use crate::ui::mascot::{Mascot, mascot_for};
 use crate::ui::sidebar::TITLEBAR_HEIGHT;
 use crate::ui::sidebar_menus::SidebarMenuKind;
@@ -161,8 +162,7 @@ impl BenCodeApp {
     /// holding the traffic-light gap and `TabVisitNav` (without the panel
     /// toggle while Settings is open).
     fn render_rail_top_strip(&self, settings_open: bool, cx: &Context<Self>) -> impl IntoElement {
-        div()
-            .window_control_area(WindowControlArea::Drag)
+        self.window_drag_region(div(), cx)
             .flex()
             .flex_none()
             .items_center()
@@ -174,7 +174,7 @@ impl BenCodeApp {
             // `DevModeSlot`: the flexible gap before the arrows.
             .child(div().flex_1().min_w_0())
             .child(
-                div()
+                claim_press(div())
                     .flex()
                     .flex_none()
                     .items_center()

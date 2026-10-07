@@ -39,6 +39,9 @@ fn main() {
                     traffic_light_position: Some(point(px(16.0), px(18.0))),
                 }),
                 window_min_size: Some(size(px(880.0), px(560.0))),
+                // The title bar's drag regions move the window themselves
+                // (`ui/window_drag.rs`), so dragging a tab no longer does.
+                app_owns_titlebar_drag: true,
                 ..Default::default()
             };
 

@@ -122,7 +122,7 @@ bencode/
 | `git_changes_panel.rs`, `git_menus.rs` | Sidebar: Changes tab and commit graph |
 | `titlebar/` | Title bar and workspace tabs |
 | `pane_tree.rs`, `layout/` | Split chat panes and the layout tree |
-| `transcript/` | Turns, blocks, activity folds, find in conversation |
+| `transcript/` | Turns, blocks, activity folds, find in conversation, prompt outline |
 | `composer/` | Prompt composer and its pickers, cards, runner |
 | `file_pane.rs` | The pane beside the chat and its tab strip |
 | `editor_pane/` | Code editor: open files, saves, disk sync |

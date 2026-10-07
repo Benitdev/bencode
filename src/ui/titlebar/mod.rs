@@ -18,10 +18,11 @@ use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
     Animation, AnimationExt, AnyElement, Context, FontWeight, InteractiveElement, IntoElement,
     MouseButton, ParentElement, Render, ScrollHandle, ScrollWheelEvent, SharedString, Styled,
-    Window, WindowControlArea, div, ease_out_quint, point, prelude::*, px,
+    Window, div, ease_out_quint, point, prelude::*, px,
 };
 
 use crate::app::{BenCodeApp, NEW_SESSION_TITLE};
+use crate::ui::window_drag::claim_press;
 use crate::ui::HarnessIcon;
 use crate::ui::drag_drop::DraggedPane;
 use crate::ui::explorer_menu::{self, MenuAction, MenuEntry};
@@ -730,7 +731,8 @@ impl BenCodeApp {
             })
             .child(button)
             .children(close);
-        item.into_any_element()
+        // A press on a tab is the tab's, never the window's.
+        claim_press(item).into_any_element()
     }
 
     /// The tab held over the strip lands where it is previewed.
@@ -861,7 +863,7 @@ impl BenCodeApp {
     fn strip_chevron(&self, left: bool, cx: &Context<Self>) -> AnyElement {
         let colors = &cx.theme().colors;
         let hover = colors.fg.opacity(0.15);
-        div()
+        claim_press(div())
             .id(if left {
                 "title-strip-left"
             } else {
@@ -998,8 +1000,7 @@ impl BenCodeApp {
         let glass = self.glass(cx);
         let theme = cx.theme();
         let colors = &theme.colors;
-        div()
-            .window_control_area(WindowControlArea::Drag)
+        self.window_drag_region(div(), cx)
             .flex()
             .items_stretch()
             .h(crate::ui::sidebar::TITLEBAR_HEIGHT) // MonoCode `h-10`
@@ -1020,7 +1021,7 @@ impl BenCodeApp {
     fn render_titlebar_leading(&self, cx: &Context<Self>) -> impl IntoElement {
         let rail_hidden = !self.is_rail_open;
         let sidebar_hidden = !self.is_sidebar_open;
-        div()
+        claim_press(div())
             .flex()
             .flex_none()
             .items_center()
@@ -1070,7 +1071,7 @@ impl BenCodeApp {
                 .variant(ButtonVariant::Ghost)
                 .tooltip(tip)
         };
-        let row = div().flex().flex_none().items_center().gap_0p5().px_2();
+        let row = claim_press(div()).flex().flex_none().items_center().gap_0p5().px_2();
         Some(
             if projectless {
                 row.child(

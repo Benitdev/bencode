@@ -52,6 +52,9 @@ actions!(
         GoForward,
         InboxNext,
         InboxPrevious,
+        OutlineNext,
+        OutlinePrevious,
+        OutlineJump,
     ]
 );
 
@@ -75,6 +78,11 @@ fn keymap() -> Vec<KeyBinding> {
         // composer; deeper than the global ⌘⇧G, so it wins there.
         KeyBinding::new("cmd-shift-g", ToggleWorkspaceMode, Some("DraftComposer")),
         // The Inbox list, while it has focus.
+        // MonoCode `PromptOutline`: the rail is one tab stop; arrows walk it.
+        KeyBinding::new("down", OutlineNext, Some("PromptOutline")),
+        KeyBinding::new("up", OutlinePrevious, Some("PromptOutline")),
+        KeyBinding::new("enter", OutlineJump, Some("PromptOutline")),
+        KeyBinding::new("space", OutlineJump, Some("PromptOutline")),
         KeyBinding::new("down", InboxNext, Some("InboxList")),
         KeyBinding::new("up", InboxPrevious, Some("InboxList")),
         KeyBinding::new("j", InboxNext, Some("InboxList")),
@@ -247,6 +255,11 @@ impl BenCodeApp {
         .on_action(cx.listener(|this, _: &FindPrevious, _, cx| this.step_find(-1, cx)))
         .on_action(cx.listener(|this, _: &ToggleWorkspaceMode, _, cx| this.toggle_new_worktree(cx)))
         .on_action(cx.listener(|this, _: &InboxNext, _, cx| this.step_inbox_selection(1, cx)))
+        .on_action(cx.listener(|this, _: &OutlineNext, window, cx| this.step_outline(1, window, cx)))
+        .on_action(cx.listener(|this, _: &OutlinePrevious, window, cx| {
+            this.step_outline(-1, window, cx)
+        }))
+        .on_action(cx.listener(|this, _: &OutlineJump, window, cx| this.open_outline_cursor(window, cx)))
         .on_action(cx.listener(|this, _: &InboxPrevious, _, cx| this.step_inbox_selection(-1, cx)))
         .on_action(cx.listener(|this, _: &CloseView, _, cx| {
             if this.surface.is_some() {
@@ -310,7 +323,7 @@ mod tests {
 
     #[test]
     fn keymap_chords_are_unique_per_action() {
-        assert_eq!(keymap().len(), 44);
+        assert_eq!(keymap().len(), 48);
         assert_eq!(menus().len(), 4);
     }
 }

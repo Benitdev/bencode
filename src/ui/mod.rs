@@ -30,6 +30,7 @@ pub mod reminder_notices;
 pub mod search_view;
 pub mod settings_modal;
 pub mod settings_worktrees;
+pub mod window_drag;
 pub mod sidebar;
 pub mod sidebar_card_extras;
 pub mod sidebar_cards;

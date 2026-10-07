@@ -71,6 +71,7 @@ Notes:
 - [x] P1 M Inline Allow/Deny on the pending tool row
 - [x] P1 S-M Empty session: centred composer, "What should we work on in {project}?"
 - [x] P1 M Find in conversation ⌘F
+- [x] P1 M Prompt outline: a bar per prompt at the transcript's right edge, the one in view lit, hover ripple and preview card, click to jump, ↑/↓/Enter on the rail — `sessions/ui/PromptOutline.tsx`, `sessions/model/promptOutline.ts`
 - [x] P2 Prose 14/24, plain system notices, metrics badge, composer top bar pickers
 
 ## Batch D — source control & files UI

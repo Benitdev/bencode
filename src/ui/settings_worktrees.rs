@@ -76,7 +76,6 @@ impl BenCodeApp {
             .child(
                 div().min_w(px(220.0)).child(
                     Select::new("worktrees-project", project_choices)
-                        .label("Project")
                         .placeholder("Choose a project…")
                         .selected(page.project.clone())
                         .on_change(on_value(cx, |this, path, cx| {
@@ -265,7 +264,6 @@ impl BenCodeApp {
                 Choice::new("existing", "Use an existing local branch"),
             ],
         )
-        .label("Branch type")
         .selected(if creation.existing { "existing" } else { "new" })
         .disabled(busy)
         .on_change(on_value(cx, |this, value, cx| {
@@ -279,7 +277,6 @@ impl BenCodeApp {
                     .filter(|b| !b.remote)
                     .map(|b| Choice::new(b.name.clone(), b.name.clone())),
             )
-            .label("Existing branch")
             .placeholder("Choose a branch…")
             .when(!creation.existing_branch.is_empty(), |s| {
                 s.selected(creation.existing_branch.clone())
@@ -308,7 +305,6 @@ impl BenCodeApp {
                 .map(|b| Choice::new(b.name.clone(), b.name.clone())),
         );
         let base = Select::new("create-worktree-base", bases)
-            .label("Start from")
             .selected(creation.base.clone())
             .disabled(busy)
             .on_change(on_value(cx, |this, value, cx| {

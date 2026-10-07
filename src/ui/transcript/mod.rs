@@ -7,6 +7,8 @@ mod activity;
 pub mod blocks;
 pub mod find;
 pub mod markdown;
+mod outline;
+pub mod outline_model;
 mod review_card;
 pub mod turns;
 
@@ -117,6 +119,8 @@ pub struct TranscriptView {
     /// state mutably borrowed while it lays them out, so reading it there
     /// panics.
     last_viewport_height: Rc<Cell<Pixels>>,
+    /// The prompt outline at the right edge (`outline.rs`).
+    pub outline: outline::OutlineState,
 }
 
 impl Default for TranscriptView {
@@ -138,6 +142,7 @@ impl Default for TranscriptView {
             rise: None,
             review_stamp: 0,
             last_viewport_height: Rc::new(Cell::new(px(0.0))),
+            outline: Default::default(),
         }
     }
 }
@@ -245,7 +250,7 @@ impl TranscriptView {
 }
 
 /// The turn a row belongs to; the trailer and spacer follow the last one.
-fn row_turn(row: &Row) -> Option<usize> {
+pub(super) fn row_turn(row: &Row) -> Option<usize> {
     match row {
         Row::Item { turn, .. }
         | Row::FoldLine { turn }
