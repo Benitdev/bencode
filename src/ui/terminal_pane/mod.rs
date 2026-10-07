@@ -4,6 +4,7 @@
 //! edge of the workspace (Move Terminal), the sash on its inner edge
 //! resizes it, and each project's side and size are saved.
 
+mod ime;
 mod layout;
 mod menu;
 
@@ -31,6 +32,8 @@ const TAB_HEIGHT: f32 = 28.0;
 pub struct TerminalTab {
     pub id: u64,
     pub entity: Entity<Terminal>,
+    /// The terminal as the dock shows it, with text composition.
+    view: Entity<ime::TerminalIme>,
     /// The folder its shell started in.
     pub cwd: String,
     _events: Subscription,
@@ -169,6 +172,7 @@ impl BenCodeApp {
         let project = self.current_cwd.clone();
         let cwd = cwd.to_string();
         let entity = cx.new(|cx| spawn_shell(&cwd, cx));
+        let view = cx.new(|_| ime::TerminalIme::new(entity.clone()));
         self.terminals.next_id += 1;
         let id = self.terminals.next_id;
         let key = project.clone();
@@ -184,6 +188,7 @@ impl BenCodeApp {
         dock.tabs.push(TerminalTab {
             id,
             entity,
+            view,
             cwd,
             _events: events,
         });
@@ -280,7 +285,7 @@ impl BenCodeApp {
             .terminals
             .dock(&self.current_cwd)
             .and_then(|dock| dock.tabs.iter().find(|t| t.id == dock.active))
-            .map(|tab| tab.entity.clone());
+            .map(|tab| tab.view.clone());
         let body = match active {
             Some(terminal) => div().flex_1().min_h_0().min_w_0().p_1().child(terminal),
             None => div()
