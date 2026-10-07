@@ -730,9 +730,20 @@ impl BenCodeApp {
     }
 
     /// Starts a turn of `input` in `session_id`.
-    pub fn send_turn(&mut self, session_id: &str, input: TurnInput, cx: &mut Context<Self>) {
+    /// Why a turn cannot start in `session_id`, if it cannot.
+    fn turn_blocked(&self, session_id: &str) -> Option<&'static str> {
         if self.worktree_removed(session_id) {
-            log::warn!("thread {session_id} has no working copy; turn not sent");
+            Some("has no working copy")
+        } else if !self.sessions.iter().any(|s| s.id == session_id) {
+            Some("is not loaded")
+        } else {
+            None
+        }
+    }
+
+    pub fn send_turn(&mut self, session_id: &str, input: TurnInput, cx: &mut Context<Self>) {
+        if let Some(why) = self.turn_blocked(session_id) {
+            log::warn!("thread {session_id} {why}; turn not sent");
             return;
         }
         let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id) else {
@@ -1014,6 +1025,14 @@ impl BenCodeApp {
                 return;
             }
             QueueDispatch::Send => {}
+        }
+        // The head stays queued; Resume sends it once the thread can run.
+        if let Some(why) = self.turn_blocked(session_id) {
+            if self.prompt_queues.contains_key(session_id) {
+                log::warn!("thread {session_id} {why}; queued prompt kept");
+                self.queue_paused.insert(session_id.to_string());
+            }
+            return;
         }
         let Some(next) = pop_queue_head(&mut self.prompt_queues, &mut self.queue_editing, session_id)
         else {
