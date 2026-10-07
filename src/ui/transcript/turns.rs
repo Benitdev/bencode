@@ -639,7 +639,46 @@ impl TurnLayout {
     }
 }
 
+/// What `layout_turns` and `build_rows` read, folded into a few words, so a
+/// frame whose thread kept its shape can keep last frame's rows. No
+/// allocation: it runs every frame.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LayoutKey {
+    len: usize,
+    fingerprint: u64,
+    running: bool,
+    trailer: bool,
+}
+
+impl LayoutKey {
+    pub fn new(blocks: &[Block], running: bool, trailer: bool, open: &HashSet<String>) -> Self {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::hash::DefaultHasher::new();
+        for (ix, block) in blocks.iter().enumerate() {
+            block.role.hash(&mut hasher);
+            text(block).trim().is_empty().hash(&mut hasher);
+            block.extra.contains_key("notice").hash(&mut hasher);
+            block.duration_ms.is_some().hash(&mut hasher);
+            if ix == 0 || block.role == "user" {
+                // Turn starts: fold state and prompt identity.
+                block.id.hash(&mut hasher);
+                open.contains(&block.id).hash(&mut hasher);
+                (block.extra.get("internal").and_then(Value::as_bool) == Some(true))
+                    .hash(&mut hasher);
+            }
+        }
+        Self {
+            len: blocks.len(),
+            fingerprint: hasher.finish(),
+            running,
+            trailer,
+        }
+    }
+}
+
 /// Lays out every turn of a thread. `running` marks the last turn live.
+/// A block property that changes the rows (not just how one draws) must
+/// also go into `LayoutKey::new`, or the list keeps stale rows.
 pub fn layout_turns(blocks: &[Block], running: bool) -> Vec<TurnLayout> {
     let turns = group_turns(blocks);
     let count = turns.len();
@@ -867,5 +906,81 @@ mod tests {
             prose_summary("```\ncode\n```\n# Title\nmore\n\nnext"),
             "Title more"
         );
+    }
+
+    fn layout(blocks: &[Block], open: &HashSet<String>) -> (Vec<TurnLayout>, Vec<Row>) {
+        let turns = layout_turns(blocks, false);
+        let rows = build_rows(blocks, &turns, open, false);
+        (turns, rows)
+    }
+
+    fn key(blocks: &[Block]) -> LayoutKey {
+        LayoutKey::new(blocks, false, false, &HashSet::new())
+    }
+
+    #[test]
+    fn layout_key_ignores_streamed_text() {
+        let before = vec![finished_user("a"), block("assistant", "hi")];
+        let mut after = before.clone();
+        after[1].text = Some("hi there".into());
+        assert_eq!(key(&before), key(&after));
+        let open = HashSet::new();
+        assert_eq!(layout(&before, &open), layout(&after, &open));
+    }
+
+    #[test]
+    fn layout_key_ignores_tool_status() {
+        let before = vec![finished_user("a"), tool("execute", "ls", "pending")];
+        let after = vec![finished_user("a"), tool("execute", "ls", "completed")];
+        assert_eq!(key(&before), key(&after));
+        let open = HashSet::new();
+        assert_eq!(layout(&before, &open).1, layout(&after, &open).1);
+    }
+
+    #[test]
+    fn layout_key_sees_shape_changes() {
+        let base = vec![block("user", "a"), block("assistant", ""), block("system", "s")];
+        let none = HashSet::new();
+        let was = key(&base);
+
+        let mut pushed = base.clone();
+        pushed.push(block("assistant", "more"));
+        assert_ne!(key(&pushed), was);
+
+        let mut written = base.clone();
+        written[1].text = Some("x".into());
+        assert_ne!(key(&written), was);
+
+        let mut finished = base.clone();
+        finished[0].duration_ms = Some(5);
+        assert_ne!(key(&finished), was);
+
+        let mut noticed = base.clone();
+        noticed[2].extra.insert("notice".into(), json!("error"));
+        assert_ne!(key(&noticed), was);
+
+        let open = HashSet::from([base[0].id.clone()]);
+        assert_ne!(LayoutKey::new(&base, false, false, &open), was);
+        assert_ne!(LayoutKey::new(&base, true, false, &none), was);
+        assert_ne!(LayoutKey::new(&base, false, true, &none), was);
+    }
+
+    #[test]
+    fn equal_keys_mean_equal_layouts() {
+        let open = HashSet::new();
+        let pairs = [
+            (
+                vec![finished_user("a"), block("assistant", "hi")],
+                vec![finished_user("a"), block("assistant", "hi there")],
+            ),
+            (
+                vec![finished_user("a"), tool("execute", "ls", "pending"), block("assistant", "ok")],
+                vec![finished_user("a"), tool("execute", "ls", "completed"), block("assistant", "ok")],
+            ),
+        ];
+        for (a, b) in pairs {
+            assert_eq!(key(&a), key(&b));
+            assert_eq!(layout(&a, &open), layout(&b, &open));
+        }
     }
 }

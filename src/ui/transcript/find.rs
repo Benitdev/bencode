@@ -5,6 +5,7 @@
 //! under the bar.
 
 use std::ops::Range;
+use std::rc::Rc;
 
 use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
@@ -33,6 +34,46 @@ pub struct FindState {
     /// The list row last scrolled to; it is re-measured when the match
     /// moves on, since a long message shows in full only while current.
     shown_row: Option<usize>,
+    /// The matches of the last search, reused while nothing it read changed.
+    cache: std::cell::RefCell<Option<FindCache>>,
+}
+
+/// The matches last found, and for what: the query and a stamp of the
+/// blocks' searchable text (cheap to recompute each frame).
+struct FindCache {
+    query: String,
+    len: usize,
+    stamp: u64,
+    matches: Rc<Vec<usize>>,
+}
+
+/// Changes when a block's searchable text plausibly changed: the length of
+/// each part `block_text` joins, and the tool's status.
+fn find_stamp(blocks: &[Block]) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::hash::DefaultHasher::new();
+    for block in blocks {
+        let tool = |key: &str| block.tool.as_ref().and_then(|t| t.get(key));
+        let preview = |key: &str| tool("preview").and_then(|p| p.get(key));
+        let image = |key: &str| block.extra.get("image").and_then(|i| i.get(key));
+        let len = |value: Option<&Value>| value.and_then(Value::as_str).map(str::len);
+        block.role.hash(&mut hasher);
+        turns::text(block).len().hash(&mut hasher);
+        tool("status").and_then(Value::as_str).hash(&mut hasher);
+        for part in [
+            tool("title"),
+            image("name"),
+            image("alt"),
+            tool("detail"),
+            preview("query"),
+            preview("path"),
+            preview("output"),
+            preview("title"),
+        ] {
+            len(part).hash(&mut hasher);
+        }
+    }
+    hasher.finish()
 }
 
 /// MonoCode `transcriptBlockText`: the words a block shows, tool output
@@ -149,10 +190,7 @@ impl BenCodeApp {
         else {
             return (None, 0);
         };
-        let Some(session) = self.sessions.iter().find(|s| s.id == session_id) else {
-            return (None, 0);
-        };
-        let matches = find_blocks(&session.blocks, &self.find_query(cx));
+        let matches = self.cached_matches(session_id, cx);
         let current = matches
             .len()
             .checked_sub(1)
@@ -160,11 +198,45 @@ impl BenCodeApp {
         (current, matches.len())
     }
 
-    fn find_matches(&self, cx: &gpui::App) -> Vec<usize> {
-        self.transcript_find
+    fn find_matches(&self, cx: &gpui::App) -> Rc<Vec<usize>> {
+        match &self.transcript_find {
+            Some(state) => self.cached_matches(&state.session_id, cx),
+            None => Rc::default(),
+        }
+    }
+
+    /// The blocks the query hits in `session_id`; searched again only when
+    /// the query or the thread's text changed. Empty while the bar is
+    /// closed or on another thread.
+    fn cached_matches(&self, session_id: &str, cx: &gpui::App) -> Rc<Vec<usize>> {
+        let Some(state) = self
+            .transcript_find
             .as_ref()
-            .and_then(|state| self.sessions.iter().find(|s| s.id == state.session_id))
-            .map_or_else(Vec::new, |s| find_blocks(&s.blocks, &self.find_query(cx)))
+            .filter(|state| state.session_id == session_id)
+        else {
+            return Rc::default();
+        };
+        let Some(session) = self.sessions.iter().find(|s| s.id == session_id) else {
+            return Rc::default();
+        };
+        let input = self.find_input.read(cx);
+        let query = input.text();
+        let (len, stamp) = (session.blocks.len(), find_stamp(&session.blocks));
+        let mut cache = state.cache.borrow_mut();
+        if let Some(hit) = cache
+            .as_ref()
+            .filter(|c| c.query == query && c.len == len && c.stamp == stamp)
+        {
+            return hit.matches.clone();
+        }
+        let matches = Rc::new(find_blocks(&session.blocks, query));
+        *cache = Some(FindCache {
+            query: query.to_string(),
+            len,
+            stamp,
+            matches: matches.clone(),
+        });
+        matches
     }
 
     /// ⌘F: opens the bar on the focused thread with the last query selected.
@@ -184,6 +256,7 @@ impl BenCodeApp {
             session_id,
             active,
             shown_row: None,
+            cache: Default::default(),
         });
         let len = self.find_query(cx).len();
         self.find_input
@@ -441,6 +514,28 @@ mod tests {
 
     fn block(id: &str, role: &str, text: &str) -> Block {
         Block::new(id, role, text)
+    }
+
+    #[test]
+    fn the_find_stamp_follows_searchable_text() {
+        let mut tool = block("t", "tool", "");
+        tool.tool = Some(json!({ "title": "ls", "status": "in_progress" }));
+        let blocks = [block("a", "assistant", "hello"), tool];
+        let was = find_stamp(&blocks);
+        assert_eq!(find_stamp(&blocks.clone()), was);
+
+        let mut grown = blocks.clone();
+        grown[0].text = Some("hello there".into());
+        assert_ne!(find_stamp(&grown), was);
+
+        let mut finished = blocks.clone();
+        finished[1].tool = Some(json!({ "title": "ls", "status": "completed" }));
+        assert_ne!(find_stamp(&finished), was);
+
+        let mut answered = blocks.clone();
+        answered[1].tool =
+            Some(json!({ "title": "ls", "status": "in_progress", "preview": { "output": "a.rs" } }));
+        assert_ne!(find_stamp(&answered), was);
     }
 
     #[test]

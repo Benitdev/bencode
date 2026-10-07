@@ -89,6 +89,8 @@ pub struct TranscriptView {
     /// The thread laid out as turns, and the list rows drawn from them.
     pub turns: Vec<TurnLayout>,
     pub rows: Vec<Row>,
+    /// The thread's shape the rows were built for.
+    pub layout_key: Option<turns::LayoutKey>,
     /// The block of the current find match, worked out once per frame
     /// rather than per row (each lookup scans the whole thread).
     pub find_block: Option<usize>,
@@ -136,6 +138,7 @@ impl Default for TranscriptView {
             session_id: None,
             turns: Vec::new(),
             rows: Vec::new(),
+            layout_key: None,
             find_block: None,
             find_count: 0,
             live: false,
@@ -328,23 +331,31 @@ impl BenCodeApp {
             .get(session_id)
             .map_or(0, |review| review.stamp);
         let session = self.sessions.iter().find(|s| s.id == session_id);
-        let (turns, mut rows) = match session {
-            Some(s) => {
-                let turns = turns::layout_turns(&s.blocks, running);
-                let rows =
-                    turns::build_rows(
-                    &s.blocks,
-                    &turns,
-                    &self.transcript_ui.open_folds,
-                    waiting || review,
-                );
-                (turns, rows)
-            }
-            None => (Vec::new(), Vec::new()),
-        };
-        let prompt = session.and_then(|s| Some(s.blocks[turns.last()?.user?].id.as_str()));
+        let open = &self.transcript_ui.open_folds;
+        let trailer = waiting || review;
+        let key = session.map(|s| turns::LayoutKey::new(&s.blocks, running, trailer, open));
         let view = self.transcripts.entry(session_id.to_string()).or_default();
         let fresh = view.session_id.as_deref() != Some(session_id);
+        let relayout = fresh || key.is_none() || view.layout_key != key;
+        let (turns, mut rows) = if relayout {
+            match session {
+                Some(s) => {
+                    let turns = turns::layout_turns(&s.blocks, running);
+                    let rows = turns::build_rows(&s.blocks, &turns, open, trailer);
+                    (turns, rows)
+                }
+                None => (Vec::new(), Vec::new()),
+            }
+        } else {
+            // Same shape: last frame's layout, without the spacer it may end with.
+            let mut rows = view.rows.clone();
+            if rows.last() == Some(&Row::Spacer) {
+                rows.pop();
+            }
+            (std::mem::take(&mut view.turns), rows)
+        };
+        view.layout_key = key;
+        let prompt = session.and_then(|s| Some(s.blocks[turns.last()?.user?].id.as_str()));
         // MonoCode stretches the last turn after a send, and on opening a
         // thread whose agent is at work.
         let sent = !fresh && prompt.is_some() && view.prompt.as_deref() != prompt;

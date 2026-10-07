@@ -6,6 +6,7 @@
 //! `outline_model.rs`.
 
 use std::collections::HashMap;
+use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use ely_gpui_component::theme::ActiveTheme;
@@ -20,7 +21,7 @@ use super::outline_model::{
     BAR_HEIGHT, MIN_PROMPTS, Place, RIPPLE_SPAN, active_prompt, bar_lift, bar_stack, prompt_blocks,
     prompt_preview, stack_budget,
 };
-use super::{TranscriptView, row_turn};
+use super::{TranscriptView, row_turn, turns};
 use crate::app::BenCodeApp;
 use crate::ui::motion::cubic_bezier;
 use crate::ui::sidebar_popovers::popover_frame;
@@ -134,16 +135,38 @@ pub struct OutlineState {
     /// The prompt in view as last drawn.
     active: Option<String>,
     motion: BarMotion,
+    /// The prompts and their rows, kept while the thread keeps its shape.
+    prompts: Option<(turns::LayoutKey, Rc<PromptRows>)>,
+}
+
+/// A thread's prompts: their block indexes, block ids, and the row each
+/// one's turn starts at.
+struct PromptRows {
+    blocks: Vec<usize>,
+    ids: Vec<String>,
+    rows: Vec<Option<usize>>,
 }
 
 /// The rows of each prompt's turn start, in prompt order.
 fn prompt_rows(view: &TranscriptView, prompts: &[usize]) -> Vec<Option<usize>> {
+    let mut first_row: Vec<Option<usize>> = vec![None; view.turns.len()];
+    for (ix, row) in view.rows.iter().enumerate() {
+        if let Some(first) = row_turn(row).and_then(|turn| first_row.get_mut(turn))
+            && first.is_none()
+        {
+            *first = Some(ix);
+        }
+    }
+    // The first turn with each user block, as the scan it replaces found.
+    let mut turn_of: HashMap<usize, usize> = HashMap::new();
+    for (turn, layout) in view.turns.iter().enumerate() {
+        if let Some(user) = layout.user {
+            turn_of.entry(user).or_insert(turn);
+        }
+    }
     prompts
         .iter()
-        .map(|block| {
-            let turn = view.turns.iter().position(|t| t.user == Some(*block))?;
-            view.rows.iter().position(|row| row_turn(row) == Some(turn))
-        })
+        .map(|block| first_row[*turn_of.get(block)?])
         .collect()
 }
 
@@ -178,23 +201,38 @@ impl BenCodeApp {
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
         let session = self.sessions.iter().find(|s| s.id == session_id)?;
-        let prompts = prompt_blocks(&session.blocks);
+        let view = self.transcripts.get_mut(session_id)?;
+        // `sync_transcript_list_for` ran first this frame, so the key is current.
+        let cached = view
+            .outline
+            .prompts
+            .as_ref()
+            .filter(|(key, _)| view.layout_key == Some(*key))
+            .map(|(_, cached)| cached.clone());
+        let cached = match cached {
+            Some(cached) => cached,
+            None => {
+                let blocks = prompt_blocks(&session.blocks);
+                let fresh = Rc::new(PromptRows {
+                    ids: blocks.iter().map(|ix| session.blocks[*ix].id.clone()).collect(),
+                    rows: prompt_rows(view, &blocks),
+                    blocks,
+                });
+                view.outline.prompts = view.layout_key.map(|key| (key, fresh.clone()));
+                fresh
+            }
+        };
+        let (prompts, ids, rows) = (&cached.blocks, &cached.ids, &cached.rows);
         if prompts.len() < MIN_PROMPTS {
             return None;
         }
-        let ids: Vec<String> = prompts
-            .iter()
-            .map(|ix| session.blocks[*ix].id.clone())
-            .collect();
-        let view = self.transcripts.get_mut(session_id)?;
         let viewport = view.list.viewport_bounds();
         // A hidden pane has a zero-size box; the rule would pick the last prompt.
         if viewport.size.height <= px(0.0) || crate::ui::scale::logical(viewport.size.width) < MIN_PANE_WIDTH {
             return None;
         }
-        let rows = prompt_rows(view, &prompts);
         let near_end = view.near_end();
-        let active = active_prompt(&places(view, &rows), near_end);
+        let active = active_prompt(&places(view, rows), near_end);
         let stack = bar_stack(
             ids.len(),
             active,
