@@ -113,6 +113,9 @@ bencode/
 | `session_list.rs`, `session_folders.rs` | Sidebar session filters and folders |
 | `session_review.rs` | Session review: the ordered checkpoint queue, a thread's changed files, Keep / Undo |
 | `thread_state.rs` | `ThreadState`: each thread's composer and queue state (draft, attachments, modes, card, question form, usage limit), dropped with the thread |
+| `composer_input.rs` | The prompt field: `/` and `@` tokens and pickers, inserting skills and mentions, the key interceptor, dropped files |
+| `session_flags.rs` | Pinning and archiving threads |
+| `source_control.rs` | The Changes panel's git and PR actions: stage, discard, commit, push, pull, sync, create / view PR |
 | `tab_scope.rs`, `tab_history.rs`, `workspace_nav.rs` | Which tabs belong to which project or worktree; Back / Forward |
 | `reminders.rs`, `model_catalog.rs` | Session reminders; live model catalogs |
 | `usage.rs` | Provider usage snapshots for the footer, per account: load once, Refresh, the 30s countdown tick |
@@ -128,7 +131,7 @@ bencode/
 | `rail/` | Project rail: projects, groups, menus, notifications, reorder; `compact.rs` is the icon rail it collapses to |
 | `sidebar*.rs` | Sidebar: Sessions tab (cards, folders, menus, popovers) |
 | `file_tree/` | Sidebar: Explorer tab |
-| `git_changes_panel.rs`, `git_menus.rs` | Sidebar: Changes tab and commit graph |
+| `git_changes_panel/` (`tree.rs`, `graph.rs`, `confirm.rs`), `git_menus.rs` | Sidebar: Changes tab and commit graph |
 | `titlebar/` | Title bar and workspace tabs |
 | `pane_tree.rs`, `layout/` | Split chat panes and the layout tree |
 | `transcript/` | Turns, blocks, activity folds, find in conversation, prompt outline, text selection |
@@ -215,7 +218,7 @@ only read that cache.
 | `features/files/ui/FileTree.tsx` | `ui/file_tree/` | Explorer with create, rename, copy, cut, paste, delete, git tints |
 | `features/files/ui/FileEditor.tsx` | `ui/editor_pane/` | One `CodeEditor` per file, atomic saves, disk-conflict handling |
 | `features/workspace/model/layout.ts` (`openEditorTab`, `openChangesTab`, `openCommitTab`), `SurfaceTabs.tsx` | `app/file_pane.rs`, `ui/file_pane.rs` | Tabs beside the chat, preview tabs |
-| `features/source-control/ui/GitChangesPanel.tsx`, `GitHistoryGraph` | `ui/git_changes_panel.rs`, `git/` | Staged / unstaged, commit, sync, PR, graph |
+| `features/source-control/ui/GitChangesPanel.tsx`, `GitHistoryGraph` | `ui/git_changes_panel/`, `app/source_control.rs`, `git/` | Staged / unstaged, commit, sync, PR, graph |
 | `features/source-control/ui/UnifiedDiffView.tsx`, `model/unifiedDiff.ts` | `ui/diff_viewer.rs`, `ui/diff_model.rs`, `git/diffs.rs` | Stacked files, sticky headers, folds, stage / discard |
 | `sessions/ui/SessionReview.tsx`, `sessions/model/checkpoint.ts`, `source-control/ui/SessionChangesDiff.tsx` | `ui/transcript/review_card.rs`, `app/session_review.rs`, `git/checkpoint.rs` | "Changed N files" card with Undo / Keep / Review |
 | `features/terminal/` | `ui/terminal_pane.rs` | Ely PTY terminal, one dock per project |
@@ -304,7 +307,7 @@ Use one of these instead:
 - Hover tracked in state when the element must take no room while hidden:
   `.on_hover(...)` sets a field, `cx.notify()`, and the element is added with
   `.when(hovered, ...)`. See `ChangesUi::hovered_row` in
-  `ui/git_changes_panel.rs`.
+  `ui/git_changes_panel/mod.rs`.
 
 ---
 

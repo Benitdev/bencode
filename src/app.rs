@@ -17,6 +17,7 @@ pub mod session_review;
 pub mod reminders;
 mod session_flags;
 pub mod session_folders;
+mod source_control;
 pub mod session_list;
 mod surfaces;
 mod tab_history;
