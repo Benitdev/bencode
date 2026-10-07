@@ -1012,6 +1012,7 @@ impl Draw<'_> {
         } else {
             look.fg.opacity(0.65)
         };
+        let weights = column_weights(head, rows);
         // Cells go in reading order, so a copy reads row by row.
         let cell = |inline: &Inline, row: usize, column: usize, window: &mut Window, cx: &mut App| {
             let mut inline = inline.clone();
@@ -1025,7 +1026,8 @@ impl Draw<'_> {
             };
             div()
                 .flex_1()
-                .min_w(px(64.0))
+                .flex_grow(weights.get(column).copied().unwrap_or(1.0))
+                .min_w(px(CELL_MIN_WIDTH))
                 .flex()
                 .px(px(10.0))
                 .py(px(8.0))
@@ -1035,7 +1037,14 @@ impl Draw<'_> {
                 .when(aligns.get(column) == Some(&Alignment::Center), |el| {
                     el.justify_center()
                 })
-                .child(self.text(&inline, Run::new(cell_ink, joint).cell(), window, cx))
+                // The text may shrink to its cell and wrap; a flex item is
+                // otherwise as wide as its longest line and runs into the
+                // next column.
+                .child(
+                    div()
+                        .min_w_0()
+                        .child(self.text(&inline, Run::new(cell_ink, joint).cell(), window, cx)),
+                )
         };
         let mut lines = Vec::with_capacity(rows.len() + 1);
         for (ix, row) in std::iter::once(head).chain(rows.iter().map(Vec::as_slice)).enumerate() {
@@ -1066,6 +1075,30 @@ impl Draw<'_> {
             .children(lines)
             .into_any_element()
     }
+}
+
+/// A table cell is never narrower than this.
+const CELL_MIN_WIDTH: f32 = 64.0;
+/// The share of the table a column's longest cell can claim, in characters:
+/// a column of numbers stays narrow, and one long cell does not starve the
+/// rest.
+const COLUMN_WEIGHT: std::ops::RangeInclusive<usize> = 4..=48;
+
+/// How the table's width is split between its columns: by each column's
+/// longest cell, as a browser's table layout does.
+fn column_weights(head: &[Inline], rows: &[Vec<Inline>]) -> Vec<f32> {
+    let columns = rows.iter().map(Vec::len).fold(head.len(), usize::max);
+    (0..columns)
+        .map(|column| {
+            let longest = std::iter::once(head)
+                .chain(rows.iter().map(Vec::as_slice))
+                .filter_map(|row| row.get(column))
+                .map(|cell| cell.text.chars().count())
+                .max()
+                .unwrap_or(0);
+            longest.clamp(*COLUMN_WEIGHT.start(), *COLUMN_WEIGHT.end()) as f32
+        })
+        .collect()
 }
 
 /// The space above `block` after `prev` (Streamdown's margins, with
@@ -1179,6 +1212,21 @@ mod tests {
         }
         assert_eq!(reveal_end(text, total, total), text.len());
         assert_eq!(reveal_end(text, 1, total), 1);
+    }
+
+    #[test]
+    fn columns_share_the_width_by_their_longest_cell() {
+        let cell = |text: &str| Inline {
+            text: text.into(),
+            ..Default::default()
+        };
+        let head = [cell("#"), cell("Finding"), cell("Risk")];
+        let rows = vec![
+            vec![cell("1"), cell(&"long ".repeat(30)), cell("LOW")],
+            vec![cell("12"), cell("short")],
+        ];
+        assert_eq!(column_weights(&head, &rows), [4.0, 48.0, 4.0]);
+        assert!(column_weights(&[], &[]).is_empty());
     }
 
     #[test]
