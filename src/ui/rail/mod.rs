@@ -76,17 +76,9 @@ pub(super) fn group_color(group: &ProjectGroup) -> Hsla {
         .unwrap_or_else(|| tab_group_color(&group.id))
 }
 
-/// `open -R` (MonoCode `revealPath`), off the UI thread's way: spawning
-/// returns at once.
-pub(crate) fn reveal_project(path: &str) {
-    let result = if cfg!(target_os = "macos") {
-        std::process::Command::new("open").arg("-R").arg(path).spawn()
-    } else {
-        std::process::Command::new("xdg-open").arg(path).spawn()
-    };
-    if let Err(err) = result {
-        log::error!("could not reveal {path}: {err}");
-    }
+/// MonoCode `revealPath`: Finder on macOS, the file manager elsewhere.
+pub(crate) fn reveal_project(path: &str, cx: &gpui::App) {
+    cx.reveal_path(std::path::Path::new(path));
 }
 
 type Anchor = Rc<Cell<Option<Bounds<Pixels>>>>;

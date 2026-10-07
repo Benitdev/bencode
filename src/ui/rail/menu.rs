@@ -420,7 +420,7 @@ impl BenCodeApp {
                 self.update_rail_prefs(|prefs| prefs.with_mute(&ids, None, now), cx);
             }
             "pin" | "unpin" => self.toggle_project_pin(path, cx),
-            "reveal" => super::reveal_project(path),
+            "reveal" => super::reveal_project(path, cx),
             "archive" => self.archive_rail_project(path, cx),
             "delete" => self.request_remove_project(path, cx),
             _ => {}

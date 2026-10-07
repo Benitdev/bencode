@@ -305,10 +305,13 @@ impl BenCodeApp {
 
     /// MonoCode `openCreatedPr`: Claude writes the PR, `gh` opens it.
     pub(crate) fn open_created_pr(&mut self, cx: &mut Context<Self>) {
+        // Opened from the UI thread with GPUI's `open_url` once the PR exists.
+        let created: Arc<std::sync::Mutex<Option<String>>> = Default::default();
+        let slot = created.clone();
         self.run_changes_action(
             Busy::Pr,
             None,
-            |cwd| {
+            move |cwd| {
                 let content = crate::git::text::generate_pr_content(cwd)?;
                 let url = git_sync::pr_create(
                     cwd,
@@ -319,14 +322,17 @@ impl BenCodeApp {
                 )?;
                 let url = url.trim().to_string();
                 if url.starts_with("https://") || url.starts_with("http://") {
-                    std::process::Command::new("open")
-                        .arg(&url)
-                        .status()
-                        .map_err(|err| err.to_string())?;
+                    *slot.lock().map_err(|err| err.to_string())? = Some(url);
                 }
                 Ok(())
             },
-            |app, cx| app.reload_branch_pr(cx),
+            move |app, cx| {
+                let url = created.lock().ok().and_then(|mut url| url.take());
+                if let Some(url) = url {
+                    cx.open_url(&url);
+                }
+                app.reload_branch_pr(cx);
+            },
             cx,
         );
     }

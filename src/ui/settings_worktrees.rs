@@ -210,7 +210,7 @@ impl BenCodeApp {
                                 .variant(ButtonVariant::Ghost)
                                 .disabled(tree.missing)
                                 .tooltip("Reveal folder")
-                                .on_click(move |_, _, _| crate::ui::rail::reveal_project(&reveal)),
+                                .on_click(move |_, _, cx| crate::ui::rail::reveal_project(&reveal, cx)),
                             )
                             .child(
                                 IconButton::new(

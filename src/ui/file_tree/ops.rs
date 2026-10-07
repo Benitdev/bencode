@@ -545,22 +545,7 @@ impl BenCodeApp {
     }
 
     pub(super) fn reveal_tree_path(&mut self, rel: &str, cx: &mut Context<Self>) {
-        let path = self.tree_abs_path(rel);
-        let result = if cfg!(target_os = "macos") {
-            std::process::Command::new("open").arg("-R").arg(&path).spawn()
-        } else {
-            let folder = if path.is_dir() {
-                path.clone()
-            } else {
-                path.parent().map_or_else(|| path.clone(), Path::to_path_buf)
-            };
-            std::process::Command::new("xdg-open").arg(folder).spawn()
-        };
-        if let Err(err) = result {
-            log::error!("could not reveal {}: {err}", path.display());
-            self.file_tree.op_error = Some(format!("{}: {err}", path.display()));
-            cx.notify();
-        }
+        cx.reveal_path(&self.tree_abs_path(rel));
     }
 
     fn tree_target_for_keys(&self) -> MenuTarget {
