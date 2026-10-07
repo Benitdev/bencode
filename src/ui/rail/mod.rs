@@ -111,12 +111,9 @@ impl BenCodeApp {
     pub fn render_project_rail(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
         let colors = &theme.colors;
-        // `.sidebar-glass`: the background mixed 10% toward black, plain in light.
-        let glass = if theme.is_dark() {
-            colors.bg.blend(gpui::black().opacity(0.1))
-        } else {
-            colors.bg
-        };
+        // `.sidebar-glass`: the background mixed 10% toward black, plain in
+        // light, tinted at the sidebar opacity over the window's blur.
+        let glass = self.glass(cx).sidebar(colors.bg, theme.is_dark());
         let fg = colors.fg;
         let settings_open = self.surface == Some(Surface::Settings);
         div()

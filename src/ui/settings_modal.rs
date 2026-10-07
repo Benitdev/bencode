@@ -3,12 +3,16 @@
 use ely_gpui_component::buttons::{ButtonVariant, IconButton};
 use ely_gpui_component::data_display::{Badge, Tone};
 use ely_gpui_component::feedback::EmptyState;
-use ely_gpui_component::forms::Switch;
+use ely_gpui_component::forms::{Slider, Switch};
 use ely_gpui_component::primitives::IconName;
 use ely_gpui_component::settings::{
     Appearance, SettingsLayout, SettingsRow, SettingsSection, ThemeSelector,
 };
-use gpui::{AnyElement, App, Context, IntoElement, ParentElement, SharedString, Styled, div, px};
+use ely_gpui_component::theme::ActiveTheme;
+use gpui::{
+    AnyElement, App, Context, InteractiveElement, IntoElement, ParentElement, SharedString,
+    StatefulInteractiveElement, Styled, div, px,
+};
 
 use crate::app::BenCodeApp;
 use crate::harness::HarnessInfo;
@@ -140,7 +144,22 @@ impl BenCodeApp {
         // MonoCode: the project rail holds the sections while settings
         // are open, so the page stands alone.
         if self.is_rail_open {
-            return div().size_full().child(self.render_settings_page(cx)).into_any_element();
+            // MonoCode `mx-auto w-full max-w-5xl px-8 py-8 pb-16`, scrolling.
+            return div()
+                .id("settings-page")
+                .size_full()
+                .overflow_y_scroll()
+                .child(
+                    div()
+                        .mx_auto()
+                        .w_full()
+                        .max_w(px(1024.0))
+                        .px_8()
+                        .pt_8()
+                        .pb_16()
+                        .child(self.render_settings_page(cx)),
+                )
+                .into_any_element();
         }
         let layout = SettingsLayout::new(
             "settings-layout",
@@ -376,7 +395,7 @@ fn render_settings_appearance(app: &BenCodeApp, cx: &Context<BenCodeApp>) -> imp
         ThemePreference::System => Appearance::System,
     };
     let entity = cx.entity().downgrade();
-    SettingsSection::new("Theme").row(
+    let theme = SettingsSection::new("Theme").row(
         SettingsRow::new("Theme")
             .description("System follows the OS appearance.")
             .control(
@@ -395,7 +414,86 @@ fn render_settings_appearance(app: &BenCodeApp, cx: &Context<BenCodeApp>) -> imp
                     },
                 ),
             ),
-    )
+    );
+    div()
+        .flex()
+        .flex_col()
+        .gap_6()
+        .child(theme)
+        .child(render_translucency(app, cx))
+}
+
+/// MonoCode Appearance › Translucency: how much of the desktop shows
+/// through the glass panes (`ui::glass`).
+fn render_translucency(app: &BenCodeApp, cx: &Context<BenCodeApp>) -> impl IntoElement {
+    let glass = app.glass(cx);
+    let disabled = !glass.on;
+    let description = if !crate::ui::glass::SUPPORTED {
+        "Window translucency needs macOS."
+    } else if disabled {
+        "Light mode always uses an opaque window, so these are off. Your dark-mode values are \
+         preserved."
+    } else {
+        "How much of the desktop shows through BenCode."
+    };
+    let percent = (app.sidebar_opacity * 100.0).round();
+    let opacity = {
+        let entity = cx.entity().downgrade();
+        div()
+            .flex()
+            .items_center()
+            .gap_3()
+            .child(
+                div().w(px(180.0)).child(
+                    Slider::new("glass-opacity", f64::from(percent))
+                        .range(
+                            f64::from(crate::ui::glass::OPACITY_MIN * 100.0),
+                            f64::from(crate::ui::glass::OPACITY_MAX * 100.0),
+                        )
+                        .step(1.0)
+                        .disabled(disabled)
+                        .on_change(move |value, _, cx| {
+                            let opacity = value as f32 / 100.0;
+                            if let Err(err) =
+                                entity.update(cx, |this, cx| this.set_sidebar_opacity(opacity, cx))
+                            {
+                                log::debug!("opacity change after app drop: {err:#}");
+                            }
+                        }),
+                ),
+            )
+            .child(
+                div()
+                    .w(px(36.0))
+                    .text_size(px(12.0))
+                    .text_color(cx.theme().colors.fg_muted)
+                    .child(format!("{percent}%")),
+            )
+    };
+    let body = {
+        let entity = cx.entity().downgrade();
+        Switch::new("glass-body", app.body_glass)
+            .disabled(disabled)
+            .on_change(move |on, _, cx| {
+                if let Err(err) = entity.update(cx, |this, cx| this.set_body_glass(on, cx)) {
+                    log::debug!("main pane glass toggle after app drop: {err:#}");
+                }
+            })
+    };
+    SettingsSection::new("Translucency")
+        .description(description)
+        .row(
+            SettingsRow::new("Sidebar opacity")
+                .description("Applies to the project rail and the other glass panes.")
+                .control(opacity),
+        )
+        .row(
+            SettingsRow::new("Main pane glass")
+                .description(
+                    "Extend the translucent treatment to the main pane behind sessions and editors.",
+                )
+                .control(body),
+        )
 }
 
 fn render_settings_about() -> impl IntoElement {

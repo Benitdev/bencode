@@ -55,7 +55,7 @@ impl BenCodeApp {
             .flex_1()
             .min_w_0()
             .h_full()
-            .bg(cx.theme().colors.bg);
+            .bg(self.glass(cx).fill(cx.theme().colors.bg));
 
         // The tree is a handful of ids; cloning it frees `self` for rendering.
         let Some(layout) = self.active_layout().cloned() else {

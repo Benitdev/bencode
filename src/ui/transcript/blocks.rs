@@ -2,8 +2,6 @@
 //! notices, and the footer a finished turn leaves (MonoCode
 //! `TranscriptBlock`, `UserMessage`, `TurnDuration`).
 
-use ely_gpui_component::chat::{CodeBlock, StreamingMarkdown};
-use ely_gpui_component::documents::MarkdownRenderer;
 use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::prelude::*;
@@ -12,7 +10,9 @@ use gpui::{
     Styled, div, px,
 };
 use jiff::Timestamp;
+use std::rc::Rc;
 
+use super::markdown::{AgentMarkdown, Tone};
 use super::turns::{self, TurnLayout};
 use crate::app::BenCodeApp;
 use crate::db::SessionRow;
@@ -29,19 +29,25 @@ const COPIED_FOR: std::time::Duration = std::time::Duration::from_secs(2);
 /// Rough characters per bubble line, to tell when a message needs the clamp.
 const CHARS_PER_LINE: usize = 72;
 
-pub fn markdown(id: SharedString, text: &str, live: bool) -> AnyElement {
-    if live {
-        return StreamingMarkdown::new(id, text.to_string(), true).into_any_element();
-    }
-    MarkdownRenderer::new(id, text.to_string())
-        .code(|id, language, code| {
-            let block = CodeBlock::new(id, code);
-            match language {
-                Some(language) => block.language(language),
-                None => block,
+/// The agent's markdown in MonoCode's ink for `tone`; the files it names
+/// open in the editor.
+pub fn markdown(
+    id: SharedString,
+    text: &str,
+    live: bool,
+    tone: Tone,
+    cx: &Context<BenCodeApp>,
+) -> AnyElement {
+    let app = cx.entity().downgrade();
+    AgentMarkdown::new(id, text.to_string())
+        .live(live)
+        .tone(tone)
+        .on_open_file(Rc::new(move |path, _line, window, cx| {
+            let opened = app.update(cx, |this, cx| this.open_file_in_editor(path, window, cx));
+            if let Err(err) = opened {
+                log::debug!("markdown file link after app drop: {err:#}");
             }
-            .into_any_element()
-        })
+        }))
         .into_any_element()
 }
 
@@ -610,7 +616,7 @@ fn attachment_chips(block: &crate::db::Block, cx: &Context<BenCodeApp>) -> Optio
     )
 }
 
-/// The agent's answer at full strength: 14px on 24px lines.
+/// The agent's answer (MonoCode `.agent-markdown`: 14px on 24px lines).
 fn prose(
     session: &SessionRow,
     ix: usize,
@@ -624,10 +630,7 @@ fn prose(
         .px_4()
         .when(under_work, |el| el.pt_1())
         .when(!under_work, |el| el.pt_3())
-        .text_size(px(14.0))
-        .line_height(px(24.0))
-        .text_color(cx.theme().colors.fg)
-        .child(markdown(id, turns::text(block), live))
+        .child(markdown(id, turns::text(block), live, Tone::Answer, cx))
         .into_any_element()
 }
 

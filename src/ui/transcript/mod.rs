@@ -6,6 +6,7 @@
 mod activity;
 pub mod blocks;
 pub mod find;
+pub mod markdown;
 mod outline;
 pub mod outline_model;
 mod review_card;

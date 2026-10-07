@@ -996,6 +996,8 @@ impl BenCodeApp {
             self.title_strip.reorder = None;
         }
         self.sync_title_strip(&tabs, window);
+        // MonoCode's title bar takes no glass tint: the blur shows bare.
+        let glass = self.glass(cx);
         let theme = cx.theme();
         let colors = &theme.colors;
         self.window_drag_region(div(), cx)
@@ -1006,7 +1008,7 @@ impl BenCodeApp {
             .flex_none()
             .border_b_1()
             .border_color(colors.border)
-            .bg(colors.bg)
+            .bg(glass.fill(colors.bg))
             .child(self.render_titlebar_leading(cx))
             .child(self.render_tab_strip(&tabs, cx))
             .children(self.render_tab_menu(cx))
