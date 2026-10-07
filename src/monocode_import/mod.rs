@@ -29,16 +29,31 @@ pub struct Imported {
     pub accounts: Vec<ProviderAccount>,
 }
 
+/// How the first-launch import went.
+#[derive(Debug)]
+pub enum ImportOutcome {
+    /// BenCode already had a database, or there was nothing to bring.
+    Nothing,
+    Imported(Imported),
+    /// The copy failed and left no database, so the next launch tries again.
+    Failed(String),
+}
+
 /// Imports once: nothing happens when BenCode already has a database, or
 /// when there is nothing to bring. Blocking; run before the database opens.
-pub fn import_once() -> Option<Imported> {
-    let home = PathBuf::from(std::env::var_os("HOME")?);
-    let db = crate::storage::db_path()?;
+pub fn import_once() -> ImportOutcome {
+    let Some(home) = std::env::var_os("HOME").map(PathBuf::from) else {
+        return ImportOutcome::Nothing;
+    };
+    let Some(db) = crate::storage::db_path() else {
+        return ImportOutcome::Nothing;
+    };
     match import(&home, &db) {
-        Ok(imported) => imported,
+        Ok(Some(imported)) => ImportOutcome::Imported(imported),
+        Ok(None) => ImportOutcome::Nothing,
         Err(err) => {
             log::error!("importing MonoCode's data: {err:#}");
-            None
+            ImportOutcome::Failed(format!("{err:#}"))
         }
     }
 }
@@ -227,6 +242,20 @@ mod tests {
         database(&monocode.join("monocode.db"), "later");
         assert_eq!(import(&home, &db).unwrap(), None);
         assert_eq!(notes(&db), ["from monocode"]);
+    }
+
+    /// What `ImportOutcome::Failed` relies on: no database is left behind,
+    /// so the next launch imports again.
+    #[test]
+    fn a_failed_import_leaves_no_database() {
+        let home = temp_home("corrupt");
+        write(&home.join(MONOCODE_DIR).join("monocode.db"), "not a database");
+        let db = home.join("data/bencode.db");
+
+        assert!(import(&home, &db).is_err());
+
+        assert!(!db.exists());
+        assert!(!partial_path(&db).exists());
     }
 
     #[test]

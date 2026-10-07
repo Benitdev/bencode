@@ -18,8 +18,15 @@ pub struct WindowRoot {
 }
 
 impl WindowRoot {
-    pub fn new(window: &mut Window, saved: AppSettings, cx: &mut Context<Self>) -> Self {
-        let app = cx.new(|cx| BenCodeApp::new(window, saved, cx));
+    /// `import_failed`: the first-launch import did not finish (see
+    /// `BenCodeApp::new`).
+    pub fn new(
+        window: &mut Window,
+        saved: AppSettings,
+        import_failed: bool,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let app = cx.new(|cx| BenCodeApp::new(window, saved, import_failed, cx));
         let weak = app.downgrade();
         let runner = cx.new(|_| RunnerLayer::new(weak));
         Self { app, runner }

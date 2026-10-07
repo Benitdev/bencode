@@ -19,6 +19,8 @@ use gpui::{
     App, AppContext, Bounds, TitlebarOptions, WindowBounds, WindowOptions, point, px, size,
 };
 
+use monocode_import::ImportOutcome;
+
 fn main() {
     env_logger::init();
 
@@ -38,12 +40,18 @@ fn main() {
             let mut saved = settings::settings_dir()
                 .map(|dir| settings::load_from(&dir))
                 .unwrap_or_default();
-            if let Some(imported) = imported
-                && monocode_import::merge_accounts(&mut saved.provider_accounts, imported.accounts)
-                && let Some(dir) = settings::settings_dir()
-                && let Err(err) = settings::save_to(&dir, &saved)
-            {
-                log::error!("saving the imported account names: {err:#}");
+            let mut import_error = None;
+            match imported {
+                ImportOutcome::Nothing => {}
+                ImportOutcome::Imported(imported) => {
+                    if monocode_import::merge_accounts(&mut saved.provider_accounts, imported.accounts)
+                        && let Some(dir) = settings::settings_dir()
+                        && let Err(err) = settings::save_to(&dir, &saved)
+                    {
+                        log::error!("saving the imported account names: {err:#}");
+                    }
+                }
+                ImportOutcome::Failed(err) => import_error = Some(err),
             }
             let system_dark = app::is_dark_appearance(cx.window_appearance());
             let appearance = app::appearance_prefs(&saved);
@@ -65,10 +73,30 @@ fn main() {
                 ..Default::default()
             };
 
-            cx.open_window(options, |window, cx| {
-                cx.new(|cx| ui::window_root::WindowRoot::new(window, saved, cx))
-            })
-            .expect("Failed to open BenCode window");
+            let import_failed = import_error.is_some();
+            let window = cx
+                .open_window(options, |window, cx| {
+                    cx.new(|cx| ui::window_root::WindowRoot::new(window, saved, import_failed, cx))
+                })
+                .expect("Failed to open BenCode window");
+            if let Some(err) = import_error {
+                let detail = format!(
+                    "{err}\n\nNothing will be saved this launch. BenCode will try the import again next time it starts."
+                );
+                let shown = window.update(cx, |_, window, cx| {
+                    // The answer does not matter; the dialog only informs.
+                    drop(window.prompt(
+                        gpui::PromptLevel::Critical,
+                        "BenCode could not import your MonoCode data",
+                        Some(&detail),
+                        &["OK"],
+                        cx,
+                    ));
+                });
+                if let Err(err) = shown {
+                    log::error!("could not show the import failure: {err:#}");
+                }
+            }
 
             cx.activate(true);
         });

@@ -463,12 +463,20 @@ impl BenCodeApp {
     pub fn new(
         window: &mut Window,
         saved: crate::settings::AppSettings,
+        import_failed: bool,
         cx: &mut Context<Self>,
     ) -> Self {
-        let db = AppDb::open_default().unwrap_or_else(|err| {
-            log::error!("database unavailable ({err:#}); nothing will be saved this launch");
+        let db = if import_failed {
+            // Opening the default path would create an empty database, and
+            // the import would never run again.
+            log::error!("the import failed; nothing will be saved this launch");
             AppDb::open_fallback()
-        });
+        } else {
+            AppDb::open_default().unwrap_or_else(|err| {
+                log::error!("database unavailable ({err:#}); nothing will be saved this launch");
+                AppDb::open_fallback()
+            })
+        };
         let db_writer = db.file_path().and_then(|path| {
             crate::db::DbWriter::open(&path)
                 .map_err(|err| {
