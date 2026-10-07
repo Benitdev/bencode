@@ -6,6 +6,7 @@
 
 use std::collections::HashMap;
 use std::thread::ScopedJoinHandle;
+use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use gpui::Context;
@@ -14,7 +15,15 @@ use crate::app::BenCodeApp;
 use crate::git::{self, GitDetailedStatus, GitFileChange};
 
 /// MonoCode re-reads git state this often (`GIT_POLL_MS`).
-const GIT_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
+const GIT_POLL_INTERVAL: Duration = Duration::from_secs(2);
+/// VS Code's `git.autofetchPeriod` (180s): how stale a directory's remote
+/// refs may get before the background fetch runs again.
+const AUTO_FETCH_INTERVAL: Duration = Duration::from_secs(180);
+/// How often the auto-fetch loop looks at the open directory, so switching
+/// to a project that was never fetched does not wait a full period.
+const AUTO_FETCH_TICK: Duration = Duration::from_secs(30);
+/// Focusing the window fetches when the last fetch is older than this.
+const FOCUS_FETCH_AGE: Duration = Duration::from_secs(60);
 
 #[derive(Default)]
 pub struct WorkspaceCache {
@@ -36,6 +45,10 @@ pub struct WorkspaceCache {
     /// Each directory's last snapshot, shown at once when the workspace
     /// returns to it while a fresh one loads (MonoCode `indexByCwd`).
     snapshots: HashMap<String, Snapshot>,
+    /// A background `git fetch` is running.
+    fetching: bool,
+    /// When each directory's remote refs were last fetched.
+    fetched_at: HashMap<String, Instant>,
 }
 
 impl WorkspaceCache {
@@ -231,6 +244,72 @@ impl BenCodeApp {
                 if changed.is_err() {
                     return;
                 }
+            }
+        })
+        .detach();
+    }
+
+    /// Fetches the open directory's remote every `AUTO_FETCH_INTERVAL`, so
+    /// new remote commits show as behind and offer Sync Changes.
+    pub fn start_auto_fetch(&mut self, cx: &mut Context<Self>) {
+        cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor().timer(AUTO_FETCH_TICK).await;
+                if this
+                    .update(cx, |app, cx| app.auto_fetch(AUTO_FETCH_INTERVAL, cx))
+                    .is_err()
+                {
+                    return; // app dropped
+                }
+            }
+        })
+        .detach();
+    }
+
+    /// The window came back to the front: catch up on remote commits.
+    pub fn auto_fetch_on_focus(&mut self, cx: &mut Context<Self>) {
+        self.auto_fetch(FOCUS_FETCH_AGE, cx);
+    }
+
+    /// Fetches the open directory when its last fetch is older than
+    /// `min_age`, then reloads the snapshot if a remote ref moved.
+    fn auto_fetch(&mut self, min_age: Duration, cx: &mut Context<Self>) {
+        let cwd = self.workspace.cwd.clone();
+        let fresh = self
+            .workspace
+            .fetched_at
+            .get(&cwd)
+            .is_some_and(|at| at.elapsed() < min_age);
+        // A Pull / Push / Sync the user started already talks to the
+        // remote, and two fetches would fight over the ref locks.
+        if cwd.is_empty()
+            || fresh
+            || self.workspace.fetching
+            || self.git_sync.remote.is_none()
+            || self.changes_ui.busy.is_some()
+        {
+            return;
+        }
+        self.workspace.fetching = true;
+        // Stamped before it runs, so a failing remote waits a full period too.
+        self.workspace.fetched_at.insert(cwd.clone(), Instant::now());
+        let fetch_cwd = cwd.clone();
+        let task = cx
+            .background_executor()
+            .spawn(async move { git::sync::auto_fetch(&fetch_cwd) });
+        cx.spawn(async move |this, cx| {
+            let result = task.await;
+            let landed = this.update(cx, |app, cx| {
+                app.workspace.fetching = false;
+                match result {
+                    Ok(true) if app.workspace.cwd == cwd => app.refresh_workspace(cx),
+                    Ok(_) => {}
+                    // Offline or signed out: expected, and nothing to show.
+                    Err(err) => log::info!("auto-fetch in {cwd} failed: {err}"),
+                }
+            });
+            if let Err(err) = landed {
+                log::debug!("auto-fetch after app drop: {err:#}");
             }
         })
         .detach();

@@ -557,6 +557,7 @@ impl BenCodeApp {
                     this.refresh_file_tree(cx);
                     // MonoCode re-reads stale project stats on focus.
                     this.refresh_project_stats(cx);
+                    this.auto_fetch_on_focus(cx);
                 }
             }),
             cx.observe_window_appearance(window, |this, window, cx| {
@@ -1177,6 +1178,7 @@ impl BenCodeApp {
         };
         app.apply_settings(saved);
         app.start_git_poll(cx);
+        app.start_auto_fetch(cx);
         app.start_project_stats_poll(cx);
         app.start_session_age_tick(cx);
         app.start_reminder_poll(cx);
