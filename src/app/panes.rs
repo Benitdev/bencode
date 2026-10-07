@@ -351,6 +351,9 @@ impl BenCodeApp {
             self.transcripts.remove(to_id);
         }
         self.sync_selection(cx);
+        if blank {
+            self.forget_thread_state(to_id);
+        }
     }
 
     /// Moves a split pane into a tab of its own.
@@ -401,6 +404,33 @@ impl BenCodeApp {
         self.checkpoints.forget(id);
         self.forget_folder_session(id, cx);
         self.sync_selection(cx);
+        self.forget_thread_state(id);
+    }
+
+    /// Drops what the composer and the queue kept for a thread that no
+    /// longer exists (MonoCode `sessionRemoval`). Runs after
+    /// `sync_selection`, which saves the old selection's draft.
+    fn forget_thread_state(&mut self, id: &str) {
+        self.drafts.remove(id);
+        self.mcp_tag_drafts.remove(id);
+        self.prompt_queues.remove(id);
+        self.queue_held.remove(id);
+        self.queue_paused.remove(id);
+        self.composer_attachments.remove(id);
+        self.attaching.remove(id);
+        self.send_after_attach.remove(id);
+        self.plan_mode.remove(id);
+        self.draft_mode.remove(id);
+        self.usage_limits.remove(id);
+        self.edit_rewinding.remove(id);
+        self.new_worktrees.remove(id);
+        self.preparing_worktrees.remove(id);
+        self.composer_cards.remove(id);
+        self.question_ui.remove(id);
+        self.transcripts.remove(id);
+        if self.queue_editing.as_ref().is_some_and(|(sid, _)| sid == id) {
+            self.queue_editing = None;
+        }
     }
 
     /// Takes `id` out of the tabs without leaving its project: a tab it fills
@@ -437,10 +467,13 @@ impl BenCodeApp {
     /// open, else shows it in place of an empty pane of the active tab, else
     /// in a new tab. MonoCode `onSelectHistorySession`.
     pub fn open_session(&mut self, id: String, cx: &mut Context<Self>) {
+        let mut discarded = None;
         if !self.tabs.focus(&id) {
             match self.blank_pane_in_active_tab().filter(|blank| *blank != id) {
                 Some(blank) if self.tabs.replace_pane(&blank, &id) => {
-                    self.discard_blank_session(&blank);
+                    if self.discard_blank_session(&blank) {
+                        discarded = Some(blank);
+                    }
                 }
                 _ => {
                     self.tabs.open(&id);
@@ -448,6 +481,9 @@ impl BenCodeApp {
             }
         }
         self.sync_selection(cx);
+        if let Some(blank) = discarded {
+            self.forget_thread_state(&blank);
+        }
     }
 
     /// The active tab's focused pane if it is an empty thread, else its
@@ -467,16 +503,17 @@ impl BenCodeApp {
     }
 
     /// Drops a replaced thread that never received a prompt; MonoCode does
-    /// not keep those either.
-    fn discard_blank_session(&mut self, id: &str) {
+    /// not keep those either. True when the row was dropped.
+    fn discard_blank_session(&mut self, id: &str) -> bool {
         // Queued saves of the thread land first, or they would bring it back.
         self.settle_db_writes();
         if let Err(err) = self.db.delete_session(id) {
             log::error!("failed to drop empty session {id}: {err:#}");
-            return;
+            return false;
         }
         self.sessions.retain(|s| s.id != id);
         self.transcripts.remove(id);
+        true
     }
 
     /// Creates and persists a new session row with the welcome block.
