@@ -53,20 +53,19 @@ impl BenCodeApp {
         .detach();
     }
 
-    /// Re-lists the root, every open folder and every cached folder
-    /// (MonoCode `refreshCachedDirs`); folders that vanished are forgotten.
+    /// Re-lists the root and every open folder; folders that vanished are
+    /// forgotten. Cached folders that are collapsed are marked stale and
+    /// listed again when they open (see `split_refresh_dirs`).
     pub fn refresh_file_tree(&mut self, cx: &mut Context<Self>) {
         let root = self.file_tree.root.clone();
         if matches!(root.trim(), "" | "~") {
             return;
         }
-        let mut dirs: Vec<String> = std::iter::once(String::new())
-            .chain(self.file_tree.expanded_paths.iter().cloned())
-            .chain(self.file_tree.dir_cache.keys().cloned())
-            .collect();
-        dirs.sort();
-        dirs.dedup();
-        self.file_tree.loading.extend(dirs.iter().cloned());
+        let tree = &mut self.file_tree;
+        let (dirs, stale) =
+            super::split_refresh_dirs(&tree.expanded_paths, tree.dir_cache.keys().cloned());
+        tree.stale_dirs.extend(stale);
+        tree.loading.extend(dirs.iter().cloned());
         self.list_tree_dirs(dirs, cx);
     }
 
@@ -91,6 +90,7 @@ impl BenCodeApp {
                 }
                 for (dir, result) in listed {
                     tree.loading.remove(&dir);
+                    tree.stale_dirs.remove(&dir);
                     match result {
                         Ok(entries) => {
                             tree.dir_errors.remove(&dir);
@@ -120,7 +120,8 @@ impl BenCodeApp {
         let tree = &mut self.file_tree;
         if !tree.expanded_paths.remove(rel) {
             tree.expanded_paths.insert(rel.to_string());
-            if !tree.dir_cache.contains_key(rel) && tree.loading.insert(rel.to_string()) {
+            // A stale listing keeps showing while the fresh one loads.
+            if tree.needs_listing(rel) && tree.loading.insert(rel.to_string()) {
                 self.list_tree_dirs(vec![rel.to_string()], cx);
             }
         }
@@ -136,7 +137,7 @@ impl BenCodeApp {
                 continue;
             }
             self.file_tree.expanded_paths.insert(dir.clone());
-            if !self.file_tree.dir_cache.contains_key(dir) && self.file_tree.loading.insert(dir.clone()) {
+            if self.file_tree.needs_listing(dir) && self.file_tree.loading.insert(dir.clone()) {
                 missing.push(dir.clone());
             }
         }

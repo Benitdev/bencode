@@ -133,6 +133,9 @@ pub struct FileTreeState {
     pub dir_cache: HashMap<String, Vec<FsEntry>>,
     pub dir_errors: HashMap<String, String>,
     pub loading: HashSet<String>,
+    /// Cached folders not re-listed by the last refresh (they were
+    /// collapsed); listed again when they open.
+    pub stale_dirs: HashSet<String>,
     saved: HashMap<String, SavedTree>,
     pub edit: Option<TreeEdit>,
     pub edit_state: EditState,
@@ -153,7 +156,33 @@ pub struct FileTreeState {
     tints: Option<Rc<GitTints>>,
 }
 
+/// The folders a refresh re-lists (the root and every open folder) and the
+/// cached ones it leaves stale. MonoCode re-lists every cached folder
+/// (`refreshCachedDirs`); collapsed ones wait until they open, so a poll in
+/// a big tree does not walk folders nobody is looking at.
+pub(crate) fn split_refresh_dirs(
+    expanded: &HashSet<String>,
+    cached: impl Iterator<Item = String>,
+) -> (Vec<String>, Vec<String>) {
+    let mut relist: Vec<String> = std::iter::once(String::new())
+        .chain(expanded.iter().cloned())
+        .collect();
+    relist.sort();
+    relist.dedup();
+    let mut stale: Vec<String> = cached
+        .filter(|dir| relist.binary_search(dir).is_err())
+        .collect();
+    stale.sort();
+    (relist, stale)
+}
+
 impl FileTreeState {
+    /// Whether opening `dir` must list it: never listed, or listed before
+    /// a refresh that skipped it.
+    pub(crate) fn needs_listing(&self, dir: &str) -> bool {
+        !self.dir_cache.contains_key(dir) || self.stale_dirs.contains(dir)
+    }
+
     /// Drops the cached git tints; called when the git status changes.
     pub(crate) fn invalidate_tints(&mut self) {
         self.tints = None;
@@ -179,6 +208,8 @@ impl FileTreeState {
         self.selected_path = saved.selected;
         self.root_collapsed = saved.root_collapsed;
         self.dir_cache = saved.dir_cache;
+        // A restored listing may be old.
+        self.stale_dirs = self.dir_cache.keys().cloned().collect();
         self.dir_errors.clear();
         self.loading.clear();
         self.edit = None;
@@ -854,6 +885,15 @@ impl BenCodeApp {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_refresh_lists_the_root_and_open_folders_only() {
+        let expanded = HashSet::from(["src".to_string()]);
+        let cached = ["", "src", "docs"].map(String::from).into_iter();
+        let (relist, stale) = split_refresh_dirs(&expanded, cached);
+        assert_eq!(relist, ["", "src"]);
+        assert_eq!(stale, ["docs"]);
+    }
 
     #[test]
     fn switching_roots_keeps_each_roots_folding() {
