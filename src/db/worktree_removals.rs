@@ -188,7 +188,8 @@ impl AppDb {
 
     /// MonoCode `reconcile_removals`: a worktree whose git link survived
     /// was not deleted, so its threads get their context back; otherwise
-    /// the detached threads are final.
+    /// the detached threads are final. Unlike MonoCode, an entry that cannot
+    /// be settled does not keep the later ones waiting.
     pub fn reconcile_worktree_removals(&self) -> Result<()> {
         let pending = self
             .conn
@@ -197,15 +198,27 @@ impl AppDb {
                 Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
+        let mut failed = 0;
         for (path, json) in pending {
-            let restore = if Path::new(&path).join(".git").try_exists()? {
-                serde_json::from_str::<Vec<SessionBeforeRemoval>>(&json)?
-            } else {
-                Vec::new()
-            };
-            self.finish_worktree_removal(&path, &restore)?;
+            if let Err(err) = self.settle_worktree_removal(&path, &json) {
+                // Left in the journal for the next launch; the others settle now.
+                log::error!("could not settle the deletion of {path}: {err:#}");
+                failed += 1;
+            }
+        }
+        if failed > 0 {
+            anyhow::bail!("{failed} interrupted worktree deletion(s) left for the next launch");
         }
         Ok(())
+    }
+
+    fn settle_worktree_removal(&self, path: &str, json: &str) -> Result<()> {
+        let restore = if Path::new(path).join(".git").try_exists()? {
+            serde_json::from_str::<Vec<SessionBeforeRemoval>>(json)?
+        } else {
+            Vec::new()
+        };
+        self.finish_worktree_removal(path, &restore)
     }
 }
 
@@ -398,6 +411,45 @@ mod tests {
             ("/p".into(), Some(gone), true, None, None)
         );
         assert_eq!(journal_count(&db), 0);
+        std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn an_unreadable_entry_does_not_block_the_others() {
+        let base = std::env::temp_dir().join(format!(
+            "bencode-wt-journal-bad-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let alive = base.join("alive");
+        std::fs::create_dir_all(&alive).unwrap();
+        std::fs::write(alive.join(".git"), "gitdir: /x").unwrap();
+        let (alive, gone) = (
+            alive.to_string_lossy().into_owned(),
+            base.join("gone").to_string_lossy().into_owned(),
+        );
+        let db = db_with(&[row("a", "/p", Some(&alive)), row("g", "/p", Some(&gone))]);
+        db.prepare_worktree_removal(&alive, "/p", &["a".into()])
+            .unwrap();
+        db.prepare_worktree_removal(&gone, "/p", &["g".into()])
+            .unwrap();
+        db.conn
+            .execute(
+                "UPDATE worktree_removals SET sessions_json = 'not json' WHERE path = ?1",
+                [&alive],
+            )
+            .unwrap();
+
+        assert!(db.reconcile_worktree_removals().is_err());
+
+        assert_eq!(
+            context(&db, "g"),
+            ("/p".into(), Some(gone), true, None, None)
+        );
+        assert_eq!(journal_count(&db), 1);
         std::fs::remove_dir_all(&base).unwrap();
     }
 
