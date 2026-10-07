@@ -117,7 +117,9 @@ impl BenCodeApp {
         cx: &mut Context<Self>,
     ) {
         self.skill_draft = None;
-        self.is_skill_picker_open = false;
+        if self.skill_picker_open() {
+            self.token_picker = None;
+        }
         // MonoCode drops the `/query` token the form was opened from.
         self.remove_prompt_token(cx);
         self.refresh_skills(true, cx);

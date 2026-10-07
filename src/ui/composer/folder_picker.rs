@@ -37,8 +37,7 @@ impl BenCodeApp {
         if self.selected_session_id.is_none() {
             return;
         }
-        self.is_skill_picker_open = false;
-        self.is_mention_picker_open = false;
+        self.token_picker = None;
         self.folder_picker = Some(0);
         self.folder_search_input
             .update(cx, |input, cx| input.set_text("", cx));

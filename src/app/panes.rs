@@ -51,8 +51,7 @@ impl BenCodeApp {
             self.mcp_picker = None;
             self.folder_picker = None;
             self.skill_draft = None;
-            self.is_skill_picker_open = false;
-            self.is_mention_picker_open = false;
+            self.token_picker = None;
             *self.mcp_tags.borrow_mut() = focused
                 .as_ref()
                 .and_then(|id| self.threads.get_mut(id)?.mcp_tags.take())

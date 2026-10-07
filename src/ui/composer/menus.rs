@@ -8,6 +8,7 @@ use gpui::{App, Context, FocusHandle, Focusable, InteractiveElement, IntoElement
 use super::PERMISSION_MODES;
 use super::model_picker::{ModelTab, Submenu};
 use crate::app::BenCodeApp;
+use crate::ui::composer::ComposerPopover;
 use crate::ui::explorer_menu::{self, MenuAction, MenuEntry, MenuPlace, MenuView};
 
 /// MonoCode `WorkspacePicker` popover width.
@@ -135,9 +136,9 @@ impl BenCodeApp {
             self.handoff_menu_key(key, cx)
         } else if self.composer_menus.workspace_menu.is_some() {
             self.workspace_menu_key(key, cx)
-        } else if self.is_permission_picker_open {
+        } else if self.popover_open(ComposerPopover::Access) {
             self.access_menu_key(key, cx)
-        } else if self.is_model_picker_open {
+        } else if self.popover_open(ComposerPopover::Model) {
             self.model_menu_key(key, cx)
         } else if self.composer_menus.recent_open {
             self.recent_menu_key(key, cx)
@@ -156,12 +157,12 @@ impl BenCodeApp {
             "up" => *index = index.saturating_sub(1),
             "enter" => {
                 let mode = PERMISSION_MODES[(*index).min(last)].0;
-                self.is_permission_picker_open = false;
+                self.close_popover(ComposerPopover::Access);
                 self.set_permission_mode(mode, cx);
                 self.refocus_prompt(cx);
             }
             "escape" => {
-                self.is_permission_picker_open = false;
+                self.close_popover(ComposerPopover::Access);
                 self.refocus_prompt(cx);
             }
             _ => return false,

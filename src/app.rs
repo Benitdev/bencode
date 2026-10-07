@@ -28,6 +28,7 @@ pub mod worktree_lifecycle;
 use std::collections::HashMap;
 
 use crate::ui::composer::mcp_tags::McpTag;
+use crate::ui::composer::{ComposerPopover, TokenPicker};
 use crate::ui::composer::mentions::MentionIndex;
 use ely_gpui_component::forms::{InputEvent, TextInput};
 use ely_gpui_component::primitives::FocusScope;
@@ -148,12 +149,9 @@ pub struct BenCodeApp {
     pub selected_model: String,
     /// Installed harness CLIs, probed once at startup (never from render).
     pub harnesses: Vec<HarnessInfo>,
-    pub is_model_picker_open: bool,
-    pub is_permission_picker_open: bool,
-    pub is_plus_menu_open: bool,
-    pub is_branch_picker_open: bool,
-    /// MonoCode `WorktreeBasePicker` (the "From main" chip) is open.
-    pub is_base_picker_open: bool,
+    /// The composer's open toolbar popover (Plus, model, access, branch or
+    /// the "From main" base chip).
+    pub composer_popover: Option<ComposerPopover>,
     /// The branch / base popover's state, its search, and the New branch
     /// dialog (MonoCode `BranchPicker`, `CreateBranchDialog`).
     pub branch_picker: crate::ui::composer::branch_picker::BranchPickerUi,
@@ -169,12 +167,12 @@ pub struct BenCodeApp {
     pub inbox_focus: gpui::FocusHandle,
     /// A branch switch git refused because of local changes, awaiting "Stash & switch".
     pub blocked_branch_switch: Option<crate::app::workspace_sync::BranchTarget>,
-    pub is_skill_picker_open: bool,
+    /// The open `/` skill or `@` mention picker.
+    pub token_picker: Option<TokenPicker>,
     pub skill_query: String,
     /// The `/` or `@` token at the caret, and the caret last seen.
     pub prompt_token: Option<crate::ui::composer::tokens::Token>,
     pub prompt_caret: usize,
-    pub is_mention_picker_open: bool,
     pub mention_query: String,
     /// Highlighted row of the open `/` or `@` picker.
     pub picker_index: usize,
@@ -1086,11 +1084,7 @@ impl BenCodeApp {
             search_query: String::new(),
             selected_model,
             harnesses,
-            is_model_picker_open: false,
-            is_permission_picker_open: false,
-            is_plus_menu_open: false,
-            is_branch_picker_open: false,
-            is_base_picker_open: false,
+            composer_popover: None,
             branch_picker: Default::default(),
             branch_search_input,
             branch_create_open: false,
@@ -1100,11 +1094,10 @@ impl BenCodeApp {
             inbox_comment_input,
             inbox_focus: cx.focus_handle(),
             blocked_branch_switch: None,
-            is_skill_picker_open: false,
+            token_picker: None,
             skill_query: String::new(),
             prompt_token: None,
             prompt_caret: 0,
-            is_mention_picker_open: false,
             mention_query: String::new(),
             picker_index: 0,
             picker_scroll: gpui::ScrollHandle::new(),
@@ -1325,8 +1318,7 @@ impl BenCodeApp {
         let text = self.prompt_input.read(cx).text().to_string();
         // MonoCode `runsSessionFolderCommandOnSpace`.
         if text.trim_start() == "/add-to-folder " && self.selected_session_id.is_some() {
-            self.is_skill_picker_open = false;
-            self.is_mention_picker_open = false;
+            self.token_picker = None;
             self.start_folder_command(cx);
             return;
         }
@@ -1357,14 +1349,19 @@ impl BenCodeApp {
         if self.skill_draft.is_some() {
             return;
         }
-        let was = (self.is_skill_picker_open, self.is_mention_picker_open);
+        let was = self.token_picker;
         let slash = crate::ui::composer::tokens::slash_token_at(&text, caret);
         let mention = slash
             .is_none()
             .then(|| crate::ui::composer::tokens::mention_token_at(&text, caret))
             .flatten();
-        self.is_skill_picker_open = slash.is_some();
-        self.is_mention_picker_open = mention.is_some();
+        self.token_picker = if slash.is_some() {
+            Some(TokenPicker::Skill)
+        } else if mention.is_some() {
+            Some(TokenPicker::Mention)
+        } else {
+            None
+        };
         let query = slash
             .as_ref()
             .or(mention.as_ref())
@@ -1374,7 +1371,7 @@ impl BenCodeApp {
             (_, Some(_)) => self.mention_query != query.clone().unwrap_or_default(),
             _ => false,
         };
-        if changed || was != (self.is_skill_picker_open, self.is_mention_picker_open) {
+        if changed || was != self.token_picker {
             self.picker_index = 0;
         }
         if let Some(query) = query {
@@ -1385,7 +1382,7 @@ impl BenCodeApp {
             }
         }
         // MonoCode re-lists the project as the `@` picker opens.
-        if self.is_mention_picker_open && !was.1 {
+        if self.mention_picker_open() && was != Some(TokenPicker::Mention) {
             self.index_project_files(cx);
         }
         self.prompt_token = slash.or(mention);
@@ -1404,7 +1401,7 @@ impl BenCodeApp {
     /// Enter sends; with a picker open, ↑/↓ move, Tab/Enter pick and Esc
     /// closes it. Returns whether the key was used.
     fn handle_composer_key(&mut self, key: &str, cx: &mut Context<Self>) -> bool {
-        let picker_open = self.is_skill_picker_open || self.is_mention_picker_open;
+        let picker_open = self.skill_picker_open() || self.mention_picker_open();
         match (key, picker_open) {
             ("enter", false) => {
                 self.submit_prompt(cx);
@@ -1461,20 +1458,23 @@ impl BenCodeApp {
 
     pub fn close_pickers(&mut self, cx: &mut Context<Self>) {
         self.skill_draft = None;
-        self.is_skill_picker_open = false;
-        self.is_mention_picker_open = false;
+        self.token_picker = None;
         cx.notify();
     }
 
     pub fn insert_skill(&mut self, skill_name: &str, cx: &mut Context<Self>) {
         self.replace_trigger('/', skill_name, cx);
-        self.is_skill_picker_open = false;
+        if self.skill_picker_open() {
+            self.token_picker = None;
+        }
         cx.notify();
     }
 
     pub fn insert_mention(&mut self, mention: &str, cx: &mut Context<Self>) {
         self.replace_trigger('@', &format!("@{mention}"), cx);
-        self.is_mention_picker_open = false;
+        if self.mention_picker_open() {
+            self.token_picker = None;
+        }
         cx.notify();
     }
 

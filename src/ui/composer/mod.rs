@@ -63,11 +63,23 @@ const HARNESS_ORDER: [HarnessKind; 4] = [
     HarnessKind::Codex,
     HarnessKind::OpenCode,
 ];
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Popover {
+/// The composer's toolbar popover; at most one is open.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ComposerPopover {
     Plus,
     Model,
+    /// MonoCode `AccessPicker`.
     Access,
+    Branch,
+    /// MonoCode `WorktreeBasePicker` (the "From main" chip).
+    Base,
+}
+
+/// The `/` or `@` picker following the token at the caret.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TokenPicker {
+    Skill,
+    Mention,
 }
 
 /// MonoCode's toolbar chip (`ModelPicker` / `AccessPicker` trigger):
@@ -514,7 +526,7 @@ impl BenCodeApp {
                             .line_height(px(22.0))
                             .child(field),
                     )
-                    .when(focused && self.is_plus_menu_open, |el| {
+                    .when(focused && self.popover_open(ComposerPopover::Plus), |el| {
                         el.child(over_composer(popover_surface(
                             self.render_plus_menu_popover(cx),
                             cx,
@@ -719,7 +731,7 @@ impl BenCodeApp {
             IconName::GitBranch,
             format!("From {base}"),
             true,
-            self.is_base_picker_open,
+            self.popover_open(ComposerPopover::Base),
             cx,
         )
         .tooltip(Tooltip::text(format!("Create worktree from {base}")))
@@ -730,7 +742,7 @@ impl BenCodeApp {
             .relative()
             .flex_none()
             .child(popover_anchor(chip, cx))
-            .when(self.is_base_picker_open, |el| {
+            .when(self.popover_open(ComposerPopover::Base), |el| {
                 el.child(self.render_branch_popover(branch_picker::BranchPickerKind::Base, cx))
             })
     }
@@ -772,12 +784,12 @@ impl BenCodeApp {
                     }))
                     .to_string()
             }),
-            self.is_model_picker_open || self.composer_menus.recent_open,
+            self.popover_open(ComposerPopover::Model) || self.composer_menus.recent_open,
             160.0,
             cx,
         )
         .tooltip(Tooltip::text(model_tip))
-        .on_click(cx.listener(|this, _, _, cx| this.toggle_composer_popover(Popover::Model, cx)))
+        .on_click(cx.listener(|this, _, _, cx| this.toggle_composer_popover(ComposerPopover::Model, cx)))
         .on_mouse_down(
             gpui::MouseButton::Right,
             cx.listener(|this, _, _, cx| this.toggle_recent_models(cx)),
@@ -788,7 +800,7 @@ impl BenCodeApp {
             .relative()
             .flex_none()
             .child(popover_anchor(model, cx))
-            .when(focused && self.is_model_picker_open, |el| {
+            .when(focused && self.popover_open(ComposerPopover::Model), |el| {
                 el.child(over_composer(popover_surface(
                     self.render_model_picker_popover(key, cx),
                     cx,
@@ -820,17 +832,17 @@ impl BenCodeApp {
                 .into_any_element(),
             perm_label.to_string(),
             None,
-            self.is_permission_picker_open,
+            self.popover_open(ComposerPopover::Access),
             208.0,
             cx,
         )
         .tooltip(Tooltip::text(access_tip))
-        .on_click(cx.listener(|this, _, _, cx| this.toggle_composer_popover(Popover::Access, cx)));
+        .on_click(cx.listener(|this, _, _, cx| this.toggle_composer_popover(ComposerPopover::Access, cx)));
         let access = div()
             .relative()
             .flex_none()
             .child(popover_anchor(access, cx))
-            .when(focused && self.is_permission_picker_open, |el| {
+            .when(focused && self.popover_open(ComposerPopover::Access), |el| {
                 el.child(over_composer(self.render_permission_picker_popover(cx)))
             });
         div()
@@ -864,7 +876,7 @@ impl BenCodeApp {
     /// its menu is open.
     fn plus_button(&self, cx: &Context<Self>) -> impl IntoElement {
         let colors = &cx.theme().colors;
-        let open = self.is_plus_menu_open;
+        let open = self.popover_open(ComposerPopover::Plus);
         let (fill, hover, emphasis) = (selection(cx), selection_hover(cx), selection_emphasis(cx));
         let button = div()
             .id("composer-plus")
@@ -878,7 +890,7 @@ impl BenCodeApp {
             .cursor_pointer()
             .when(!open, |el| el.hover(move |s| s.bg(hover)))
             .tooltip(Tooltip::text("Add files or choose a mode"))
-            .on_click(cx.listener(|this, _, _, cx| this.toggle_composer_popover(Popover::Plus, cx)))
+            .on_click(cx.listener(|this, _, _, cx| this.toggle_composer_popover(ComposerPopover::Plus, cx)))
             .child(Icon::new(IconName::Plus).size(IconSize::Xs).color(if open {
                 colors.fg
             } else {
@@ -887,13 +899,29 @@ impl BenCodeApp {
         popover_anchor(button, cx)
     }
 
+    /// Whether `which` is the open toolbar popover.
+    pub(crate) fn popover_open(&self, which: ComposerPopover) -> bool {
+        self.composer_popover == Some(which)
+    }
+
+    /// Closes `which` if it is the open one; another popover stays.
+    pub(crate) fn close_popover(&mut self, which: ComposerPopover) {
+        if self.composer_popover == Some(which) {
+            self.composer_popover = None;
+        }
+    }
+
+    pub(crate) fn skill_picker_open(&self) -> bool {
+        self.token_picker == Some(TokenPicker::Skill)
+    }
+
+    pub(crate) fn mention_picker_open(&self) -> bool {
+        self.token_picker == Some(TokenPicker::Mention)
+    }
+
     /// Esc: closes whichever composer popover is open. True if one was.
     pub fn close_composer_popovers(&mut self, cx: &mut Context<Self>) -> bool {
-        let open = self.is_plus_menu_open
-            || self.is_permission_picker_open
-            || self.is_branch_picker_open
-            || self.is_base_picker_open
-            || self.is_model_picker_open
+        let open = self.composer_popover.is_some()
             || self.composer_menus.recent_open
             || self.composer_menus.workspace_menu.is_some()
             || self.composer_menus.context_pinned;
@@ -902,41 +930,29 @@ impl BenCodeApp {
             self.composer_menus.workspace_menu = None;
             self.composer_menus.recent_open = false;
             self.composer_menus.model_submenu = None;
-            self.is_plus_menu_open = false;
-            self.is_permission_picker_open = false;
-            self.is_branch_picker_open = false;
-            self.is_base_picker_open = false;
-            self.is_model_picker_open = false;
+            self.composer_popover = None;
             cx.notify();
         }
         open
     }
 
     /// Opens one composer popover and closes the others.
-    fn toggle_composer_popover(&mut self, which: Popover, cx: &mut Context<Self>) {
-        if which == Popover::Model {
+    fn toggle_composer_popover(&mut self, which: ComposerPopover, cx: &mut Context<Self>) {
+        if which == ComposerPopover::Model {
             self.toggle_model_picker(cx);
             return;
         }
-        let open = match which {
-            Popover::Plus => !self.is_plus_menu_open,
-            Popover::Model => !self.is_model_picker_open,
-            Popover::Access => !self.is_permission_picker_open,
-        };
+        let open = !self.popover_open(which);
         self.composer_menus.recent_open = false;
-        self.is_plus_menu_open = open && which == Popover::Plus;
-        self.is_model_picker_open = open && which == Popover::Model;
-        self.is_permission_picker_open = open && which == Popover::Access;
-        self.is_branch_picker_open = false;
-        self.is_base_picker_open = false;
-        if self.is_permission_picker_open {
+        self.composer_popover = open.then_some(which);
+        if self.popover_open(ComposerPopover::Access) {
             let mode = self.session_permission_mode(self.selected_session());
             self.composer_menus.access_index = PERMISSION_MODES
                 .iter()
                 .position(|(m, ..)| *m == mode)
                 .unwrap_or(0);
             self.focus_composer_menu(cx);
-        } else if which == Popover::Access {
+        } else if which == ComposerPopover::Access {
             self.refocus_prompt(cx);
         }
         cx.notify();
@@ -1311,7 +1327,7 @@ impl BenCodeApp {
                             .cursor_pointer()
                             .hover(move |s| s.bg(hover))
                             .on_click(cx.listener(move |this, _, _, cx| {
-                                this.is_plus_menu_open = false;
+                                this.close_popover(ComposerPopover::Plus);
                                 action(this, cx);
                                 cx.notify();
                             }))
@@ -1393,7 +1409,7 @@ impl BenCodeApp {
                         }
                     }))
                     .on_click(cx.listener(move |this, _, _, cx| {
-                        this.is_permission_picker_open = false;
+                        this.close_popover(ComposerPopover::Access);
                         this.set_permission_mode(mode, cx);
                         this.refocus_prompt(cx);
                     }))
@@ -1439,7 +1455,7 @@ impl BenCodeApp {
             .unwrap_or_else(|| "main".to_string());
         // Only the focused composer's chip owns the open popover.
         let focused = session.map(|s| s.id.as_str()) == self.selected_session_id.as_deref();
-        let open = focused && self.is_branch_picker_open;
+        let open = focused && self.popover_open(ComposerPopover::Branch);
         let chip = git_trigger(
             "composer-branch",
             IconName::GitBranch,

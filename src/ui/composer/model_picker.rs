@@ -17,6 +17,7 @@ use serde_json::{Map, Value};
 use super::HARNESS_ORDER;
 use super::menus::popover_surface;
 use crate::app::BenCodeApp;
+use crate::ui::composer::ComposerPopover;
 use crate::harness::HarnessKind;
 use crate::harness::catalog::{self, ModelOption, ModelSetting, SettingKind};
 use crate::ui::HarnessIcon;
@@ -164,12 +165,12 @@ impl BenCodeApp {
     /// Opens the menu on its first row with the current provider's tab, or
     /// closes it.
     pub fn toggle_model_picker(&mut self, cx: &mut Context<Self>) {
-        if self.is_model_picker_open {
+        if self.popover_open(ComposerPopover::Model) {
             self.close_model_picker(cx);
             return;
         }
         self.close_composer_popovers(cx);
-        self.is_model_picker_open = true;
+        self.composer_popover = Some(ComposerPopover::Model);
         let current = self.current_model_key();
         if let Some(model) = catalog::find(&current) {
             self.refresh_model_catalog(model.harness, cx);
@@ -209,7 +210,7 @@ impl BenCodeApp {
     }
 
     pub fn close_model_picker(&mut self, cx: &mut Context<Self>) {
-        self.is_model_picker_open = false;
+        self.close_popover(ComposerPopover::Model);
         self.composer_menus.recent_open = false;
         self.composer_menus.model_submenu = None;
         self.refocus_prompt(cx);

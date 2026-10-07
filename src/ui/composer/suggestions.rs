@@ -268,13 +268,13 @@ impl BenCodeApp {
     }
 
     fn current_suggestions(&self) -> Vec<Suggestion> {
-        if self.is_skill_picker_open {
+        if self.skill_picker_open() {
             skill_suggestions(
                 &self.skill_query,
                 &self.integrations.skills,
                 self.command_context(),
             )
-        } else if self.is_mention_picker_open {
+        } else if self.mention_picker_open() {
             // Files and folders insert their shortest label (MonoCode
             // `mentionLabel`).
             let index = self.project_files.mentions.borrow().clone();
@@ -299,12 +299,12 @@ impl BenCodeApp {
     /// MonoCode's `SkillPicker` / `FileMentionPicker`: a box the width of
     /// the composer, just above it, listing up to `min(240px, 40vh)`.
     pub(super) fn render_suggestions(&self, cx: &Context<Self>) -> Option<AnyElement> {
-        if !self.is_skill_picker_open && !self.is_mention_picker_open {
+        if !self.skill_picker_open() && !self.mention_picker_open() {
             return None;
         }
         let items = self.current_suggestions();
         let colors = &cx.theme().colors;
-        let empty = if self.is_skill_picker_open {
+        let empty = if self.skill_picker_open() {
             if self.integrations.skills.is_empty() && self.skill_query.is_empty() {
                 "No commands yet"
             } else {
@@ -317,7 +317,7 @@ impl BenCodeApp {
         } else {
             "No matching files or notes"
         };
-        let slash = self.is_skill_picker_open;
+        let slash = self.skill_picker_open();
         let frame = div()
             .absolute()
             .bottom_full()

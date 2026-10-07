@@ -10,6 +10,7 @@ use std::hash::{BuildHasher, RandomState};
 use gpui::Context;
 
 use crate::app::{BenCodeApp, TurnInput};
+use crate::ui::composer::ComposerPopover;
 use crate::git::worktrees::create_worktree;
 
 /// MonoCode `temporaryWorktreeBranchName`: `mc/` and eight lowercase
@@ -95,7 +96,7 @@ impl BenCodeApp {
         if let Some(chosen) = self.new_worktrees.get_mut(&key) {
             *chosen = base.to_string();
         }
-        self.is_base_picker_open = false;
+        self.close_popover(ComposerPopover::Base);
         self.refocus_prompt(cx);
         cx.notify();
     }

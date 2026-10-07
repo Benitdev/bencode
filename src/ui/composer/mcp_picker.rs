@@ -97,8 +97,7 @@ impl BenCodeApp {
 
     /// Opens the picker; the tag will go at `insert_at` (else the caret).
     pub fn open_mcp_picker(&mut self, insert_at: Option<usize>, cx: &mut Context<Self>) {
-        self.is_skill_picker_open = false;
-        self.is_mention_picker_open = false;
+        self.token_picker = None;
         self.mcp_picker = Some(McpPicker {
             active: 0,
             insert_at,

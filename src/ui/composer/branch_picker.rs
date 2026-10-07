@@ -16,6 +16,7 @@ use crate::ui::scale::px;
 use super::focus_later;
 use super::menus::popover_surface;
 use crate::app::BenCodeApp;
+use crate::ui::composer::ComposerPopover;
 use crate::app::workspace_sync::BranchTarget;
 use crate::git;
 use crate::ui::app_callback::app_callback;
@@ -105,9 +106,9 @@ pub fn create_name(branches: &[git::Branch], query: &str) -> Option<String> {
 
 impl BenCodeApp {
     fn open_picker_kind(&self) -> Option<BranchPickerKind> {
-        if self.is_branch_picker_open {
+        if self.popover_open(ComposerPopover::Branch) {
             Some(BranchPickerKind::Branch)
-        } else if self.is_base_picker_open {
+        } else if self.popover_open(ComposerPopover::Base) {
             Some(BranchPickerKind::Base)
         } else {
             None
@@ -145,8 +146,8 @@ impl BenCodeApp {
             return;
         }
         match kind {
-            BranchPickerKind::Branch => self.is_branch_picker_open = true,
-            BranchPickerKind::Base => self.is_base_picker_open = true,
+            BranchPickerKind::Branch => self.composer_popover = Some(ComposerPopover::Branch),
+            BranchPickerKind::Base => self.composer_popover = Some(ComposerPopover::Base),
         }
         self.branch_picker = BranchPickerUi::default();
         let placeholder = match kind {
@@ -173,8 +174,8 @@ impl BenCodeApp {
 
     /// Closes the popover; with `refocus` the prompt takes the keyboard.
     pub fn close_branch_picker(&mut self, refocus: bool, cx: &mut Context<Self>) {
-        self.is_branch_picker_open = false;
-        self.is_base_picker_open = false;
+        self.close_popover(ComposerPopover::Branch);
+        self.close_popover(ComposerPopover::Base);
         self.branch_picker = BranchPickerUi::default();
         if refocus {
             self.refocus_prompt(cx);
@@ -251,7 +252,7 @@ impl BenCodeApp {
     /// A switch started from the popover ended (MonoCode `run`): done
     /// closes it, a failure stays in it.
     pub fn finish_branch_switch(&mut self, error: Option<String>, cx: &mut Context<Self>) -> bool {
-        if !self.is_branch_picker_open {
+        if !self.popover_open(ComposerPopover::Branch) {
             return false;
         }
         match error {
