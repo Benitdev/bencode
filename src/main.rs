@@ -64,7 +64,7 @@ fn main() {
                 titlebar: Some(TitlebarOptions {
                     title: Some("BenCode".into()),
                     appears_transparent: true,
-                    traffic_light_position: Some(point(px(16.0), px(18.0))),
+                    traffic_light_position: Some(point(px(12.0), px(14.0))),
                 }),
                 window_min_size: Some(size(px(880.0), px(560.0))),
                 // The title bar's drag regions move the window themselves
