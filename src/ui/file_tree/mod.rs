@@ -28,7 +28,7 @@ use crate::app::BenCodeApp;
 use crate::ui::icons::ExtraIcon;
 use crate::ui::virtual_rows;
 
-pub use icons::resolve_entry_icon;
+pub use icons::{EntryIcon, resolve_entry_icon};
 pub use name::NameIssue;
 use tints::GitTints;
 
@@ -48,9 +48,9 @@ const INSET: f32 = 8.0;
 /// A note row: one truncated `text-[12px]` line at the 1.5 leading.
 const NOTE_HEIGHT: f32 = 18.0;
 
-/// The icon and tint a file named `name` takes in the tree (MonoCode
+/// The icon a file named `name` takes in the tree (MonoCode
 /// `FileTypeIcon`), for other views that show file names.
-pub fn entry_icon(name: &str) -> (ely_gpui_component::primitives::IconName, gpui::Hsla) {
+pub fn entry_icon(name: &str) -> icons::EntryIcon {
     icons::resolve_entry_icon(name, false, false)
 }
 
@@ -610,7 +610,7 @@ impl BenCodeApp {
         let open = is_dir && tree.expanded_paths.contains(&rel);
         let cut = tree.clip.as_ref().is_some_and(|c| c.cut && c.path == rel);
         let drop = tree.drop_target.as_deref() == Some(rel.as_str());
-        let (icon, icon_color) = resolve_entry_icon(&entry.name, is_dir, open);
+        let icon = resolve_entry_icon(&entry.name, is_dir, open);
         let name_color = tints.color(&rel, is_dir, cx.theme().is_dark()).unwrap_or(fg);
         let selection = colors.active;
         let (click_rel, menu_rel, hover_rel, drop_rel) = (rel.clone(), rel.clone(), rel.clone(), rel.clone());
@@ -698,7 +698,7 @@ impl BenCodeApp {
                     .flex()
                     .items_center()
                     .justify_center()
-                    .child(Icon::new(icon).size(ENTRY_ICON).color(icon_color)),
+                    .child(icon.size(ENTRY_ICON)),
             )
             .child(
                 // `min-w-0 truncate leading-label`
@@ -727,7 +727,7 @@ impl BenCodeApp {
         let colors = &cx.theme().colors;
         let fg = colors.fg;
         let raw = self.file_dialog_input.read(cx).text().to_string();
-        let (icon, tint) = resolve_entry_icon(&name::leaf(&raw), is_dir, false);
+        let icon = resolve_entry_icon(&name::leaf(&raw), is_dir, false);
         let issue = self.tree_name_issue(&raw);
         let state = &self.file_tree.edit_state;
         let message = state.submit_error.clone().or_else(|| {
@@ -768,7 +768,7 @@ impl BenCodeApp {
                             .flex_none()
                             .items_center()
                             .justify_center()
-                            .child(Icon::new(icon).size(ENTRY_ICON).color(tint)),
+                            .child(icon.size(ENTRY_ICON)),
                     )
                     .child(
                         // `h-5 rounded-sm bg-content/10 px-1 text-[14px]

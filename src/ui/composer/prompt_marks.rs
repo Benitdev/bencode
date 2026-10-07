@@ -10,7 +10,7 @@ use ely_gpui_component::forms::Highlight;
 use ely_gpui_component::primitives::{Icon, IconName};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
-    AnyElement, App, Hsla, IntoElement, ParentElement, Pixels, Point, Styled, Window, anchored,
+    AnyElement, App, IntoElement, ParentElement, Pixels, Point, Styled, Window, anchored,
     deferred, div, point, px,
 };
 
@@ -18,7 +18,7 @@ use super::mcp_tags::{McpTag, mcp_tag_ranges};
 use super::mentions::{MentionIndex, MentionTarget};
 use super::mode_commands::{self, ModeCommand};
 use crate::app::BenCodeApp;
-use crate::ui::file_tree::resolve_entry_icon;
+use crate::ui::file_tree::{EntryIcon, resolve_entry_icon};
 
 /// MonoCode's mention icon: 13px over the `@`.
 const MARK_SIZE: f32 = 13.0;
@@ -75,20 +75,26 @@ pub fn prompt_highlights(
 #[derive(Clone, Debug, PartialEq)]
 pub struct MentionMark {
     pub center: Point<Pixels>,
-    pub icon: IconName,
-    pub tint: Hsla,
+    pub icon: MarkIcon,
 }
 
-fn mark_icon(target: &MentionTarget, cx: &App) -> (IconName, Hsla) {
+/// A note's sticky note, or the mentioned file's own icon.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum MarkIcon {
+    Note,
+    Entry(EntryIcon),
+}
+
+fn mark_icon(target: &MentionTarget) -> MarkIcon {
     if target.relative.starts_with("note/") {
-        return (IconName::StickyNote, cx.theme().colors.info);
+        return MarkIcon::Note;
     }
     let name = target
         .relative
         .rsplit('/')
         .next()
         .unwrap_or(&target.relative);
-    resolve_entry_icon(name, target.dir, false)
+    MarkIcon::Entry(resolve_entry_icon(name, target.dir, false))
 }
 
 impl BenCodeApp {
@@ -106,11 +112,9 @@ impl BenCodeApp {
                     .bounds_for_range(range.start..range.start + 1)
                     .into_iter()
                     .next()?;
-                let (icon, tint) = mark_icon(target, cx);
                 Some(MentionMark {
                     center: glyph.center(),
-                    icon,
-                    tint,
+                    icon: mark_icon(target),
                 })
             })
             .collect();
@@ -121,19 +125,24 @@ impl BenCodeApp {
     }
 
     /// The icons over the prompt's `@`s.
-    pub fn render_mention_marks(&self) -> Option<AnyElement> {
+    pub fn render_mention_marks(&self, cx: &App) -> Option<AnyElement> {
         if self.mention_marks.is_empty() {
             return None;
         }
+        let note_tint = cx.theme().colors.info;
         let half = px(MARK_SIZE / 2.0);
         Some(
             deferred(div().children(self.mention_marks.iter().map(|mark| {
                 anchored()
                     .position(point(mark.center.x - half, mark.center.y - half))
                     .child(
-                        div()
-                            .size(px(MARK_SIZE))
-                            .child(Icon::new(mark.icon).size(IconSize::Xs).color(mark.tint)),
+                        div().size(px(MARK_SIZE)).child(match mark.icon {
+                            MarkIcon::Note => Icon::new(IconName::StickyNote)
+                                .size(IconSize::Xs)
+                                .color(note_tint)
+                                .into_any_element(),
+                            MarkIcon::Entry(icon) => icon.size(IconSize::Xs).into_any_element(),
+                        }),
                     )
             })))
             .with_priority(1)

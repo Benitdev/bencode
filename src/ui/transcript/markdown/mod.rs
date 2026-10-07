@@ -856,10 +856,9 @@ impl Draw<'_> {
             .line_height(px(16.0))
             .font_weight(FontWeight::MEDIUM)
             .text_color(look.fg.opacity(0.65))
-            .children(icon_name.map(|name| {
-                let (icon, tint) = crate::ui::file_tree::entry_icon(&name);
-                Icon::new(icon).size(IconSize::Sm).color(tint)
-            }))
+            .children(
+                icon_name.map(|name| crate::ui::file_tree::entry_icon(&name).size(IconSize::Sm)),
+            )
             .child(
                 div()
                     .id((key.clone(), "label"))

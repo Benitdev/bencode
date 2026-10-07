@@ -482,7 +482,7 @@ impl BenCodeApp {
                                 .or_else(|| self.render_folder_picker(cx))
                                 .or_else(|| self.render_suggestions(cx)),
                         )
-                        .children(self.render_mention_marks())
+                        .children(self.render_mention_marks(cx))
                     })
                     .child(self.composer_top_bar(session, cx))
                     .children(

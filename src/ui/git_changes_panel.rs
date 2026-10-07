@@ -1570,7 +1570,7 @@ impl BenCodeApp {
     ) -> AnyElement {
         let fg = cx.theme().colors.fg;
         let busy = self.changes_ui.busy.is_some();
-        let (icon, tint) = crate::ui::file_tree::resolve_entry_icon(&dir.name, true, open);
+        let icon = crate::ui::file_tree::resolve_entry_icon(&dir.name, true, open);
         let group = SharedString::from(format!("git-dir-{key}"));
         let folder = dir.path.clone();
         let (verb, action_icon) = match side {
@@ -1659,7 +1659,7 @@ impl BenCodeApp {
                             .color(fg.opacity(0.5)),
                         ),
                     )
-                    .child(Icon::new(icon).size(IconSize::Md).color(tint))
+                    .child(icon.size(IconSize::Md))
                     .child(
                         div()
                             .flex_1()
@@ -1699,7 +1699,7 @@ impl BenCodeApp {
                 if *cwd == self.workspace.cwd && *path == file.path && *open == side
         );
         let busy = self.changes_ui.busy.is_some();
-        let (icon, tint) = crate::ui::file_tree::resolve_entry_icon(&name, false, false);
+        let icon = crate::ui::file_tree::resolve_entry_icon(&name, false, false);
         let group = SharedString::from(format!("git-row-{side:?}-{}", file.path));
         // MonoCode `bg-selection`.
         let selection = colors.active;
@@ -1785,7 +1785,7 @@ impl BenCodeApp {
                     }))
                     .when(depth.is_some(), |el| el.child(div().size(px(16.0)).flex_none()))
                     // `FileTypeIcon size={16}`
-                    .child(Icon::new(icon).size(IconSize::Md).color(tint))
+                    .child(icon.size(IconSize::Md))
                     .child(
                         div()
                             .flex_1()

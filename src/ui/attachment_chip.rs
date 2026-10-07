@@ -115,7 +115,7 @@ pub fn attachment_chip(
             .children(remove(20.0, true))
             .into_any_element();
     }
-    let (icon, tint) = resolve_entry_icon(&file.name, file.folder, false);
+    let icon = resolve_entry_icon(&file.name, file.folder, false);
     div()
         .id(id)
         .flex()
@@ -127,7 +127,7 @@ pub fn attachment_chip(
         .rounded(px(6.0))
         .bg(colors.fg.opacity(0.10))
         .tooltip(Tooltip::text(file.path.clone()))
-        .child(Icon::new(icon).size(IconSize::Sm).color(tint))
+        .child(icon.size(IconSize::Sm))
         .child(
             div()
                 .max_w(px(140.0))
