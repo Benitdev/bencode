@@ -7,7 +7,8 @@ description = "A native GPU-accelerated control plane for MonoCode using Rust an
 
 [dependencies]
 # Ely GPUI Component Library
-ely-gpui-component = { git = "https://github.com/ZacharyZhang-NY/Ely-GPUI-Components" }
+# Pinned: later Ely commits change ThemeSelector / SettingsLayout (ad47249).
+ely-gpui-component = { git = "https://github.com/ZacharyZhang-NY/Ely-GPUI-Components", rev = "45cecebea5b6a684d09f19c7e0504da727f7be1b" }
 
 # GPUI Core from Zed (same commit pinned by Ely)
 gpui = { git = "https://github.com/zed-industries/zed", rev = "1a28cff4b409169bac058bca40dfbfeb7621d19b", default-features = false, features = ["stacker"] }
