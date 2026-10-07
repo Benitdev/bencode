@@ -32,18 +32,19 @@ impl BenCodeApp {
             if self.editing_last_turn.is_some() {
                 self.leave_edit_last_turn(cx);
             }
-            if let Some(old_id) = &self.selected_session_id {
+            if let Some(old_id) = self.selected_session_id.clone() {
                 let current_prompt = self.prompt_input.read(cx).text().to_string();
-                if current_prompt.is_empty() {
-                    self.drafts.remove(old_id);
-                } else {
-                    self.drafts.insert(old_id.clone(), current_prompt);
-                }
                 let tags = std::mem::take(&mut *self.mcp_tags.borrow_mut());
-                if tags.is_empty() {
-                    self.mcp_tag_drafts.remove(old_id);
+                if current_prompt.is_empty() && tags.is_empty() {
+                    // Nothing to keep: no state is made for a thread just visited.
+                    if let Some(thread) = self.threads.get_mut(&old_id) {
+                        thread.draft = None;
+                        thread.mcp_tags = None;
+                    }
                 } else {
-                    self.mcp_tag_drafts.insert(old_id.clone(), tags);
+                    let thread = self.thread_mut(&old_id);
+                    thread.draft = (!current_prompt.is_empty()).then_some(current_prompt);
+                    thread.mcp_tags = (!tags.is_empty()).then_some(tags);
                 }
             }
             // MonoCode closes the composer's pickers when the thread changes.
@@ -54,11 +55,11 @@ impl BenCodeApp {
             self.is_mention_picker_open = false;
             *self.mcp_tags.borrow_mut() = focused
                 .as_ref()
-                .and_then(|id| self.mcp_tag_drafts.remove(id))
+                .and_then(|id| self.threads.get_mut(id)?.mcp_tags.take())
                 .unwrap_or_default();
             let restored = focused
                 .as_ref()
-                .and_then(|id| self.drafts.get(id))
+                .and_then(|id| self.thread(id)?.draft.as_ref())
                 .cloned()
                 .unwrap_or_default();
             self.prompt_input.update(cx, |input, cx| {
@@ -411,22 +412,8 @@ impl BenCodeApp {
     /// longer exists (MonoCode `sessionRemoval`). Runs after
     /// `sync_selection`, which saves the old selection's draft.
     fn forget_thread_state(&mut self, id: &str) {
-        self.drafts.remove(id);
-        self.mcp_tag_drafts.remove(id);
-        self.prompt_queues.remove(id);
-        self.queue_held.remove(id);
-        self.queue_paused.remove(id);
-        self.composer_attachments.remove(id);
-        self.attaching.remove(id);
-        self.send_after_attach.remove(id);
-        self.plan_mode.remove(id);
-        self.draft_mode.remove(id);
-        self.usage_limits.remove(id);
-        self.edit_rewinding.remove(id);
+        self.threads.remove(id);
         self.new_worktrees.remove(id);
-        self.preparing_worktrees.remove(id);
-        self.composer_cards.remove(id);
-        self.question_ui.remove(id);
         self.transcripts.remove(id);
         if self.queue_editing.as_ref().is_some_and(|(sid, _)| sid == id) {
             self.queue_editing = None;

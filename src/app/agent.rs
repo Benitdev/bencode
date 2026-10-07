@@ -4,13 +4,14 @@
 //! `apply_event` is a pure reducer over `SessionRow` so transcript behaviour
 //! is unit-tested without GPUI; `BenCodeApp` methods are thin glue around it.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use gpui::{Context, Focusable};
 use serde_json::{Value, json};
 
 use crate::app::session_review::edit_paths;
+use crate::app::thread_state::ThreadState;
 use crate::app::{BenCodeApp, PermissionMode};
 use crate::db::{Block, SessionRow, TurnModel};
 use crate::harness::Attachment;
@@ -219,18 +220,17 @@ fn queue_dispatch(paused: bool, usage_limited: bool, editing_head: bool) -> Queu
     }
 }
 
-/// Takes the head of a thread's queue, dropping the emptied queue; an edit
-/// further down moves up with it.
+/// Takes the head of `session_id`'s queue; an edit further down moves up
+/// with it.
 fn pop_queue_head(
-    queues: &mut HashMap<String, Vec<TurnInput>>,
+    queue: &mut Vec<TurnInput>,
     editing: &mut Option<(String, usize)>,
     session_id: &str,
 ) -> Option<TurnInput> {
-    let queue = queues.get_mut(session_id)?;
-    let next = queue.remove(0);
     if queue.is_empty() {
-        queues.remove(session_id);
+        return None;
     }
+    let next = queue.remove(0);
     if let Some((sid, ix)) = editing
         && sid == session_id
     {
@@ -239,21 +239,14 @@ fn pop_queue_head(
     Some(next)
 }
 
-/// Takes the item at `ix`; an emptied queue is dropped and unpaused.
-fn take_queued(
-    queues: &mut HashMap<String, Vec<TurnInput>>,
-    paused: &mut HashSet<String>,
-    session_id: &str,
-    ix: usize,
-) -> Option<TurnInput> {
-    let queue = queues.get_mut(session_id)?;
-    if ix >= queue.len() {
+/// Takes the item at `ix`; an emptied queue is unpaused.
+fn take_queued(thread: &mut ThreadState, ix: usize) -> Option<TurnInput> {
+    if ix >= thread.queue.len() {
         return None;
     }
-    let input = queue.remove(ix);
-    if queue.is_empty() {
-        queues.remove(session_id);
-        paused.remove(session_id);
+    let input = thread.queue.remove(ix);
+    if thread.queue.is_empty() {
+        thread.queue_paused = false;
     }
     Some(input)
 }
@@ -306,20 +299,24 @@ impl BenCodeApp {
 
     /// Prompts waiting for this thread's current turn to end.
     pub fn queued_prompts(&self, session_id: &str) -> &[TurnInput] {
-        self.prompt_queues
-            .get(session_id)
-            .map_or(&[], |queue| queue.as_slice())
+        self.thread(session_id)
+            .map_or(&[], |thread| thread.queue.as_slice())
     }
 
     /// MonoCode's paused queue: the agent was stopped with messages waiting.
     pub fn queue_paused(&self, session_id: &str) -> bool {
-        self.queue_paused.contains(session_id) && !self.queued_prompts(session_id).is_empty()
+        self.thread(session_id)
+            .is_some_and(|thread| thread.queue_paused && !thread.queue.is_empty())
     }
 
     /// MonoCode `onResumeQueue`: the agent continues where it was stopped,
     /// then the queue drains after that turn.
     pub fn resume_queue(&mut self, session_id: &str, cx: &mut Context<Self>) {
-        if self.is_agent_running_in(session_id) || !self.queue_paused.remove(session_id) {
+        let was_paused = self
+            .threads
+            .get_mut(session_id)
+            .is_some_and(|thread| std::mem::take(&mut thread.queue_paused));
+        if self.is_agent_running_in(session_id) || !was_paused {
             return;
         }
         self.send_prompt(
@@ -352,9 +349,9 @@ impl BenCodeApp {
         };
         let text = self.queue_edit_input.read(cx).text().trim().to_string();
         if let Some(item) = self
-            .prompt_queues
+            .threads
             .get_mut(&session_id)
-            .and_then(|queue| queue.get_mut(ix))
+            .and_then(|thread| thread.queue.get_mut(ix))
         {
             if text.is_empty() && item.attachments.is_empty() {
                 return;
@@ -376,7 +373,11 @@ impl BenCodeApp {
     fn end_queue_edit(&mut self, session_id: &str, cx: &mut Context<Self>) {
         self.queue_editing = None;
         self.refocus_prompt(cx);
-        if self.queue_held.remove(session_id) {
+        let held = self
+            .threads
+            .get_mut(session_id)
+            .is_some_and(|thread| std::mem::take(&mut thread.queue_held));
+        if held {
             self.send_next_queued(session_id, cx);
         }
         cx.notify();
@@ -390,7 +391,11 @@ impl BenCodeApp {
         {
             self.queue_editing = None;
         }
-        if take_queued(&mut self.prompt_queues, &mut self.queue_paused, session_id, ix).is_some() {
+        let taken = self
+            .threads
+            .get_mut(session_id)
+            .and_then(|thread| take_queued(thread, ix));
+        if taken.is_some() {
             cx.notify();
         }
     }
@@ -402,7 +407,7 @@ impl BenCodeApp {
             return true;
         };
         !self.is_agent_running_in(id)
-            && !self.composer_cards.contains_key(id)
+            && !self.thread(id).is_some_and(|t| t.composer_card.is_some())
             && !self.sessions.iter().any(|s| {
                 s.id == id
                     && s.blocks
@@ -416,9 +421,7 @@ impl BenCodeApp {
         !self.prompt_input.read(cx).text().trim().is_empty()
             || self.has_composer_card()
             || self.selected_session_id.as_ref().is_some_and(|id| {
-                self.composer_attachments
-                    .get(id)
-                    .is_some_and(|files| !files.is_empty())
+                self.thread(id).is_some_and(|t| !t.attachments.is_empty())
             })
     }
 
@@ -504,8 +507,9 @@ impl BenCodeApp {
         }
         // An edited resend or a new worktree is still being prepared, or the
         // thread's worktree is gone (MonoCode `worktreeRemoved`).
-        if self.edit_rewinding.contains(&session_id)
-            || self.preparing_worktrees.contains(&session_id)
+        if self
+            .thread(&session_id)
+            .is_some_and(|t| t.edit_rewinding || t.preparing_worktree)
             || self.worktree_removed(&session_id)
         {
             return;
@@ -516,16 +520,22 @@ impl BenCodeApp {
             .find(|s| s.id == session_id)
             .is_some_and(|s| !s.blocks.iter().any(|b| b.role == "user"));
         let has_files = self
-            .composer_attachments
-            .get(&session_id)
-            .is_some_and(|files| !files.is_empty());
+            .thread(&session_id)
+            .is_some_and(|t| !t.attachments.is_empty());
+        let has_card = self
+            .thread(&session_id)
+            .is_some_and(|t| t.composer_card.is_some());
         // A card sends even without a message (MonoCode "Use this note.").
-        if text.is_empty() && !has_files && !self.composer_cards.contains_key(&session_id) {
+        if text.is_empty() && !has_files && !has_card {
             return;
         }
         // MonoCode `composeInboxMessage`: an Inbox card becomes the start of
         // the message the thread shows and the agent reads.
-        let (text, card) = match self.composer_cards.remove(&session_id) {
+        let card = self
+            .threads
+            .get_mut(&session_id)
+            .and_then(|t| t.composer_card.take());
+        let (text, card) = match card {
             Some(ComposerCard::Inbox(card)) => (
                 crate::ui::composer::inbox_card::compose_inbox_message(&card, &text),
                 None,
@@ -535,17 +545,21 @@ impl BenCodeApp {
         let input = TurnInput {
             text: self.take_mcp_context(text),
             attachments: self
-                .composer_attachments
-                .remove(&session_id)
+                .threads
+                .get_mut(&session_id)
+                .map(|t| std::mem::take(&mut t.attachments))
                 .unwrap_or_default(),
-            plan: self.plan_mode.contains(&session_id) || command == Some(ModeCommand::Plan),
+            plan: self.thread(&session_id).is_some_and(|t| t.plan_mode)
+                || command == Some(ModeCommand::Plan),
             card: card.map(Box::new),
             agent_prompt: None,
         };
         self.sync_prompt_placeholder(cx);
         self.prompt_input
             .update(cx, |input, cx| input.set_text("", cx));
-        self.drafts.remove(&session_id);
+        if let Some(thread) = self.threads.get_mut(&session_id) {
+            thread.draft = None;
+        }
         // MonoCode records the model on send too, so ⌘. offers threads that
         // never changed model.
         if let Some(model) = self
@@ -562,8 +576,10 @@ impl BenCodeApp {
         }
         // MonoCode clears Plan after each send; Draft stays chosen until a
         // draft is saved.
-        self.plan_mode.remove(&session_id);
-        let drafting = self.draft_mode.remove(&session_id) && can_draft;
+        let drafting = self.threads.get_mut(&session_id).is_some_and(|t| {
+            t.plan_mode = false;
+            std::mem::take(&mut t.draft_mode)
+        }) && can_draft;
         if drafting || command == Some(ModeCommand::Draft) {
             // A draft keeps the card in its text (MonoCode `onSaveDraft`).
             let input = TurnInput {
@@ -589,10 +605,7 @@ impl BenCodeApp {
             // MonoCode's default follow-up: steer into the running turn
             // (Plan waits for its own turn); harnesses that cannot, queue.
             if let Err(input) = self.steer(&session_id, input, cx) {
-                self.prompt_queues
-                    .entry(session_id)
-                    .or_default()
-                    .push(input);
+                self.thread_mut(&session_id).queue.push(input);
             }
             cx.notify();
             return;
@@ -631,8 +644,10 @@ impl BenCodeApp {
     /// The queue row's Steer: that message goes into the running turn now,
     /// or, with the agent idle, starts a turn of its own (MonoCode).
     pub fn steer_queued(&mut self, session_id: &str, ix: usize, cx: &mut Context<Self>) {
-        let Some(input) =
-            take_queued(&mut self.prompt_queues, &mut self.queue_paused, session_id, ix)
+        let Some(input) = self
+            .threads
+            .get_mut(session_id)
+            .and_then(|thread| take_queued(thread, ix))
         else {
             return;
         };
@@ -642,10 +657,7 @@ impl BenCodeApp {
             return;
         }
         if let Err(input) = self.steer(session_id, input, cx) {
-            self.prompt_queues
-                .entry(session_id.to_string())
-                .or_default()
-                .insert(ix, input);
+            self.thread_mut(session_id).queue.insert(ix, input);
         }
         cx.notify();
     }
@@ -679,10 +691,7 @@ impl BenCodeApp {
             return;
         };
         if self.is_agent_running_in(session_id) {
-            self.prompt_queues
-                .entry(session_id.to_string())
-                .or_default()
-                .push(input);
+            self.thread_mut(session_id).queue.push(input);
             cx.notify();
         } else {
             self.send_turn(session_id, input, cx);
@@ -753,7 +762,9 @@ impl BenCodeApp {
         if let (Some(card), Some(block)) = (&input.card, session.blocks.last_mut()) {
             card.stamp(block);
         }
-        self.usage_limits.remove(session_id);
+        if let Some(thread) = self.threads.get_mut(session_id) {
+            thread.usage_limit = None;
+        }
         // MonoCode `dismissNoticesForContinuedSession`.
         self.dismiss_due_reminder(session_id, cx);
         // Skill bodies are small SKILL.md files; read them as MonoCode does
@@ -1014,28 +1025,29 @@ impl BenCodeApp {
             .queue_editing
             .as_ref()
             .is_some_and(|(sid, ix)| sid == session_id && *ix == 0);
-        match queue_dispatch(
-            self.queue_paused.contains(session_id),
-            self.usage_limits.contains_key(session_id),
-            editing_head,
-        ) {
+        let (paused, usage_limited, queued) =
+            self.thread(session_id).map_or((false, false, false), |t| {
+                (t.queue_paused, t.usage_limit.is_some(), !t.queue.is_empty())
+            });
+        match queue_dispatch(paused, usage_limited, editing_head) {
             QueueDispatch::Wait => return,
             QueueDispatch::Hold => {
-                self.queue_held.insert(session_id.to_string());
+                self.thread_mut(session_id).queue_held = true;
                 return;
             }
             QueueDispatch::Send => {}
         }
         // The head stays queued; Resume sends it once the thread can run.
         if let Some(why) = self.turn_blocked(session_id) {
-            if self.prompt_queues.contains_key(session_id) {
+            if queued {
                 log::warn!("thread {session_id} {why}; queued prompt kept");
-                self.queue_paused.insert(session_id.to_string());
+                self.thread_mut(session_id).queue_paused = true;
             }
             return;
         }
-        let Some(next) = pop_queue_head(&mut self.prompt_queues, &mut self.queue_editing, session_id)
-        else {
+        let Some(next) = self.threads.get_mut(session_id).and_then(|thread| {
+            pop_queue_head(&mut thread.queue, &mut self.queue_editing, session_id)
+        }) else {
             return;
         };
         self.send_turn(session_id, next, cx);
@@ -1049,8 +1061,10 @@ impl BenCodeApp {
         };
         run.handle.cancel();
         self.close_automation_run(&run, "cancelled");
-        if !self.queued_prompts(session_id).is_empty() {
-            self.queue_paused.insert(session_id.to_string());
+        if let Some(thread) = self.threads.get_mut(session_id)
+            && !thread.queue.is_empty()
+        {
+            thread.queue_paused = true;
         }
         if let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id) {
             let now = now_ms();
@@ -1133,7 +1147,9 @@ impl BenCodeApp {
         if !run.handle.respond_permission(&request, allow) {
             log::warn!("harness rejected the answer to {}", request.request_id);
         }
-        self.question_ui.remove(session_id);
+        if let Some(thread) = self.threads.get_mut(session_id) {
+            thread.question_ui = None;
+        }
         cx.notify();
     }
 
@@ -1794,39 +1810,42 @@ mod tests {
 
     #[test]
     fn popping_the_head_drops_an_empty_queue_and_moves_the_edit_up() {
-        let mut queues = HashMap::from([("s1".to_string(), vec![queued("a"), queued("b")])]);
+        let mut queue = vec![queued("a"), queued("b")];
         let mut editing = Some(("s1".to_string(), 1));
-        let head = pop_queue_head(&mut queues, &mut editing, "s1").unwrap();
+        let head = pop_queue_head(&mut queue, &mut editing, "s1").unwrap();
         assert_eq!(head.text, "a");
         assert_eq!(editing, Some(("s1".to_string(), 0)));
-        assert_eq!(queues["s1"].len(), 1);
+        assert_eq!(queue.len(), 1);
 
-        let head = pop_queue_head(&mut queues, &mut editing, "s1").unwrap();
+        let head = pop_queue_head(&mut queue, &mut editing, "s1").unwrap();
         assert_eq!(head.text, "b");
-        assert!(!queues.contains_key("s1"));
+        assert!(queue.is_empty());
 
         let before = editing.clone();
-        assert!(pop_queue_head(&mut queues, &mut editing, "s1").is_none());
+        assert!(pop_queue_head(&mut queue, &mut editing, "s1").is_none());
         assert_eq!(editing, before);
 
         // An edit in another thread's queue stays where it is.
-        let mut queues = HashMap::from([("s1".to_string(), vec![queued("a")])]);
+        let mut queue = vec![queued("a")];
         let mut editing = Some(("other".to_string(), 2));
-        assert!(pop_queue_head(&mut queues, &mut editing, "s1").is_some());
+        assert!(pop_queue_head(&mut queue, &mut editing, "s1").is_some());
         assert_eq!(editing, Some(("other".to_string(), 2)));
     }
 
     #[test]
     fn taking_the_last_item_unpauses() {
-        let mut queues = HashMap::from([("s1".to_string(), vec![queued("a")])]);
-        let mut paused = HashSet::from(["s1".to_string()]);
-        assert!(take_queued(&mut queues, &mut paused, "s1", 5).is_none());
-        assert_eq!(queues["s1"].len(), 1);
-        assert!(paused.contains("s1"));
+        let mut thread = ThreadState {
+            queue: vec![queued("a")],
+            queue_paused: true,
+            ..Default::default()
+        };
+        assert!(take_queued(&mut thread, 5).is_none());
+        assert_eq!(thread.queue.len(), 1);
+        assert!(thread.queue_paused);
 
-        assert!(take_queued(&mut queues, &mut paused, "s1", 0).is_some());
-        assert!(queues.is_empty());
-        assert!(paused.is_empty());
+        assert!(take_queued(&mut thread, 0).is_some());
+        assert!(thread.queue.is_empty());
+        assert!(!thread.queue_paused);
     }
 
     #[test]

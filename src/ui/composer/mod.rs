@@ -391,7 +391,7 @@ impl BenCodeApp {
         } else {
             // Another pane's draft, as it was left.
             let draft = session
-                .and_then(|s| self.drafts.get(&s.id))
+                .and_then(|s| self.thread(&s.id)?.draft.as_ref())
                 .filter(|d| !d.is_empty());
             div()
                 .min_h(px(22.0))
@@ -673,7 +673,7 @@ impl BenCodeApp {
         let in_worktree = session.map_or(self.worktree_focus().is_some(), |s| {
             s.worktree_cwd.as_deref().is_some_and(|w| !w.is_empty())
         });
-        let preparing = session.is_some_and(|s| self.preparing_worktrees.contains(&s.id));
+        let preparing = session.is_some_and(|s| self.thread(&s.id).is_some_and(|t| t.preparing_worktree));
         let new_tree = can_switch && self.new_worktree_base().is_some();
         let (label, icon) = if preparing {
             ("Creating worktree…", TriggerIcon::FolderTree)
@@ -968,7 +968,7 @@ impl BenCodeApp {
         let drafting = self
             .selected_session_id
             .as_deref()
-            .is_some_and(|id| self.draft_mode.contains(id))
+            .is_some_and(|id| self.thread(id).is_some_and(|t| t.draft_mode))
             || mode_commands::leading_mode(self.prompt_input.read(cx).text())
                 .is_some_and(|(m, _)| m == mode_commands::ModeCommand::Draft);
         // MonoCode `ComposerAction` labels.
@@ -1233,9 +1233,9 @@ impl BenCodeApp {
         let sid = self.selected_session_id.clone().unwrap_or_default();
         let typed = mode_commands::leading_mode(self.prompt_input.read(cx).text()).map(|(m, _)| m);
         let plan_on =
-            self.plan_mode.contains(&sid) || typed == Some(mode_commands::ModeCommand::Plan);
+            self.thread(&sid).is_some_and(|t| t.plan_mode) || typed == Some(mode_commands::ModeCommand::Plan);
         let draft_on =
-            self.draft_mode.contains(&sid) || typed == Some(mode_commands::ModeCommand::Draft);
+            self.thread(&sid).is_some_and(|t| t.draft_mode) || typed == Some(mode_commands::ModeCommand::Draft);
         let upload: PlusAction = |this, cx| this.open_attachment_dialog(cx);
         let plan: PlusAction = |this, cx| this.toggle_mode(false, cx);
         let draft: PlusAction = |this, cx| this.toggle_mode(true, cx);

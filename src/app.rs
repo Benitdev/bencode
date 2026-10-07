@@ -19,12 +19,13 @@ pub mod session_list;
 mod surfaces;
 mod tab_history;
 mod tab_scope;
+pub mod thread_state;
 pub mod usage;
 mod workspace_nav;
 pub mod workspace_sync;
 pub mod worktree_lifecycle;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use crate::ui::composer::mcp_tags::McpTag;
 use crate::ui::composer::mentions::MentionIndex;
@@ -195,9 +196,6 @@ pub struct BenCodeApp {
     pub skill_draft: Option<crate::ui::composer::new_skill::SkillDraft>,
     pub skill_name_input: Entity<TextInput>,
     pub mcp_tags: std::rc::Rc<std::cell::RefCell<std::sync::Arc<Vec<McpTag>>>>,
-    /// Other threads' MCP tags, kept with their drafts (MonoCode
-    /// `getComposerMcpTags`).
-    pub mcp_tag_drafts: HashMap<String, std::sync::Arc<Vec<McpTag>>>,
     pub model_picker_index: usize,
     pub favorite_models: Vec<String>,
     /// MonoCode's sidebar folders, per project.
@@ -211,35 +209,23 @@ pub struct BenCodeApp {
     pub find_input: Entity<TextInput>,
     /// Every file of the project, for Go to File, `@` and Search.
     pub project_files: crate::app::project_files::ProjectFiles,
-    /// The agent's pending questions: each thread's form state, the
-    /// "Other" field, and the form's focus for its option keys.
-    pub question_ui: HashMap<String, crate::ui::composer::question::QuestionUi>,
+    /// The agent's pending question: its "Other" field (the form state is
+    /// in `threads`).
     pub question_custom_input: Entity<TextInput>,
     pub question_focus: gpui::FocusHandle,
     /// Where the prompt's `@`s are, for the file icons drawn over them.
     pub mention_marks: Vec<crate::ui::composer::MentionMark>,
-    /// Threads stopped by their provider's usage limit.
-    pub usage_limits: HashMap<String, crate::ui::composer::usage_limit::UsageLimit>,
     /// The image shown full-window (MonoCode `ImageLightbox`).
     pub lightbox: Option<std::path::PathBuf>,
     /// The composer's inline error (a failed paste or attach, an edit the
     /// provider refused), shown under the chips until the next edit.
     pub composer_error: Option<String>,
-    /// File reads in flight per thread, and threads whose send waits for them.
-    pub attaching: HashMap<String, usize>,
-    pub send_after_attach: HashSet<String>,
     /// MonoCode "Edit and resend": the thread whose last message the
-    /// composer holds, and threads whose provider is rewinding for a resend.
+    /// composer holds.
     pub editing_last_turn: Option<String>,
-    pub edit_rewinding: HashSet<String>,
     /// MonoCode "New worktree": the base chosen per not-yet-started thread
-    /// (`""` before the thread exists), and threads whose worktree is being
-    /// made for their first send.
+    /// (`""` before the thread exists).
     pub new_worktrees: HashMap<String, String>,
-    pub preparing_worktrees: HashSet<String>,
-    /// MonoCode's composer cards (note, handoff): what a thread's composer
-    /// carries until its next send.
-    pub composer_cards: HashMap<String, crate::ui::composer::cards::ComposerCard>,
     /// MonoCode `ComposerRunner`: the composer geometry the mascot runs on
     /// (measured by layout, read by `RunnerLayer`), and the setting.
     pub runner_geometry: crate::ui::composer::runner_view::RunnerGeometry,
@@ -270,14 +256,9 @@ pub struct BenCodeApp {
     pub dock_launch: Option<crate::ui::composer::DockLaunch>,
     /// A question just arrived for the focused thread; focus moves next frame.
     pub question_focus_wanted: bool,
-    /// The queued message being edited in place, its field, and threads
-    /// whose next message waits for that edit to end.
+    /// The queued message being edited in place, and its field.
     pub queue_editing: Option<(String, usize)>,
     pub queue_edit_input: Entity<TextInput>,
-    pub queue_held: std::collections::HashSet<String>,
-    /// MonoCode `queueStatus: "paused"`: threads stopped with messages
-    /// waiting; nothing is sent from their queue until Resume.
-    pub queue_paused: std::collections::HashSet<String>,
     /// Go to File (⌘P).
     pub quick_open: crate::ui::quick_open::QuickOpen,
     pub quick_open_input: Entity<TextInput>,
@@ -286,7 +267,6 @@ pub struct BenCodeApp {
     pub transcript_find: Option<crate::ui::transcript::find::FindState>,
     /// Keyboard focus and highlight of the composer's menus.
     pub composer_menus: crate::ui::composer::MenuState,
-    pub drafts: HashMap<String, String>,
     pub expanded_reasoning: std::collections::HashSet<String>,
     pub transcript_ui: crate::ui::transcript::TranscriptUiState,
     /// The text selected in a transcript, and the focus that takes ⌘C.
@@ -378,13 +358,8 @@ pub struct BenCodeApp {
     // Agent execution
     /// The running turn of each thread that has one, keyed by session id.
     pub runs: HashMap<String, AgentRun>,
-    /// Prompts sent while a thread was busy, oldest first.
-    pub prompt_queues: HashMap<String, Vec<agent::TurnInput>>,
-    /// Files attached in each thread's composer, not sent yet.
-    pub composer_attachments: HashMap<String, Vec<crate::harness::Attachment>>,
-    /// Threads whose composer has Plan mode / Draft on.
-    pub plan_mode: std::collections::HashSet<String>,
-    pub draft_mode: std::collections::HashSet<String>,
+    /// Each thread's composer and queue state; dropped when the thread is.
+    pub threads: HashMap<String, thread_state::ThreadState>,
     next_run_id: u64,
     pub prompt_input: Entity<TextInput>,
     pub search_input: Entity<TextInput>,
@@ -1142,7 +1117,6 @@ impl BenCodeApp {
             skill_draft: None,
             skill_name_input,
             mcp_tags,
-            mcp_tag_drafts: HashMap::new(),
             model_picker_index: 0,
             favorite_models: Vec::new(),
             session_folders: Default::default(),
@@ -1154,18 +1128,12 @@ impl BenCodeApp {
             transcript_find: None,
             title_strip: Default::default(),
             quick_open: Default::default(),
-            question_ui: HashMap::new(),
             question_custom_input,
             question_focus,
             question_focus_wanted: false,
             composer_error: None,
-            attaching: HashMap::new(),
-            send_after_attach: HashSet::new(),
             editing_last_turn: None,
-            edit_rewinding: HashSet::new(),
             new_worktrees: HashMap::new(),
-            preparing_worktrees: HashSet::new(),
-            composer_cards: HashMap::new(),
             runner_geometry: Default::default(),
             composer_mascot_off: false,
             sidebar_opacity: crate::ui::glass::OPACITY_DEFAULT,
@@ -1178,17 +1146,13 @@ impl BenCodeApp {
             body_glass: true,
             window_background: None,
             lightbox: None,
-            usage_limits: HashMap::new(),
             mention_marks: Vec::new(),
             dock_measure: Default::default(),
             dock_launch: None,
             queue_editing: None,
             queue_edit_input,
-            queue_held: Default::default(),
-            queue_paused: Default::default(),
             project_files: crate::app::project_files::ProjectFiles::new(mention_index),
             quick_open_input,
-            drafts: HashMap::new(),
             expanded_reasoning: std::collections::HashSet::new(),
             transcript_ui: Default::default(),
             transcript_selection: cx.new(|_| Default::default()),
@@ -1244,10 +1208,7 @@ impl BenCodeApp {
             rename_input,
             focus_handle: cx.focus_handle(),
             runs: HashMap::new(),
-            prompt_queues: HashMap::new(),
-            composer_attachments: HashMap::new(),
-            plan_mode: Default::default(),
-            draft_mode: Default::default(),
+            threads: HashMap::new(),
             next_run_id: 0,
             prompt_input,
             search_input,

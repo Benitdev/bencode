@@ -87,7 +87,7 @@ impl BenCodeApp {
         paths: Vec<std::path::PathBuf>,
         cx: &mut Context<Self>,
     ) {
-        *self.attaching.entry(session_id.clone()).or_default() += 1;
+        self.thread_mut(&session_id).attaching += 1;
         let stamp = now_ms();
         let paths_len = paths.len();
         let task = cx.background_executor().spawn(async move {
@@ -110,10 +110,7 @@ impl BenCodeApp {
             let files = task.await;
             let added = this.update(cx, |app, cx| {
                 let send_now = app.finish_attaching(&session_id);
-                let list = app
-                    .composer_attachments
-                    .entry(session_id.clone())
-                    .or_default();
+                let list = &mut app.thread_mut(&session_id).attachments;
                 let loaded = files.len();
                 let fresh: Vec<_> = files
                     .into_iter()
@@ -163,7 +160,7 @@ impl BenCodeApp {
             return false;
         }
         let stamp = now_ms();
-        *self.attaching.entry(session_id.clone()).or_default() += 1;
+        self.thread_mut(&session_id).attaching += 1;
         let task = cx.background_executor().spawn(async move {
             let dir = std::env::temp_dir().join("bencode-paste");
             if let Err(err) = std::fs::create_dir_all(&dir) {
@@ -185,7 +182,7 @@ impl BenCodeApp {
                 // The image save is done; the read below counts instead.
                 let send_now = app.finish_attaching(&session_id);
                 if send_now {
-                    app.send_after_attach.insert(session_id.clone());
+                    app.thread_mut(&session_id).send_after_attach = true;
                 }
                 app.attach_paths_to(session_id, paths, cx)
             });
@@ -200,28 +197,19 @@ impl BenCodeApp {
     /// One read for `session_id` ended; true when a send waited on the
     /// last one.
     fn finish_attaching(&mut self, session_id: &str) -> bool {
-        if let Some(count) = self.attaching.get_mut(session_id) {
-            *count = count.saturating_sub(1);
-            if *count > 0 {
-                return false;
-            }
-            self.attaching.remove(session_id);
-        }
-        self.send_after_attach.remove(session_id)
+        self.thread_mut(session_id).finish_attaching()
     }
 
     /// Send pressed while files are still being read: it goes once they land.
     pub fn defer_send_for_attachments(&mut self, session_id: &str) -> bool {
-        if self.attaching.get(session_id).is_some_and(|n| *n > 0) {
-            self.send_after_attach.insert(session_id.to_string());
-            return true;
-        }
-        false
+        self.threads
+            .get_mut(session_id)
+            .is_some_and(crate::app::thread_state::ThreadState::defer_send)
     }
 
     fn remove_attachment(&mut self, session_id: &str, id: &str, cx: &mut Context<Self>) {
-        if let Some(list) = self.composer_attachments.get_mut(session_id) {
-            list.retain(|f| f.id != id);
+        if let Some(thread) = self.threads.get_mut(session_id) {
+            thread.attachments.retain(|f| f.id != id);
         }
         // MonoCode clears the paste error with the chip.
         self.composer_error = None;
@@ -233,7 +221,7 @@ impl BenCodeApp {
     /// other files as a small chip with their icon.
     pub(super) fn render_attachment_chips(&self, cx: &Context<Self>) -> Option<AnyElement> {
         let session_id = self.selected_session_id.clone()?;
-        let files = self.composer_attachments.get(&session_id)?;
+        let files = &self.thread(&session_id)?.attachments;
         if files.is_empty() {
             return None;
         }
@@ -268,8 +256,8 @@ impl BenCodeApp {
         let on = |mode: ModeCommand| {
             typed == Some(mode)
                 || match mode {
-                    ModeCommand::Plan => self.plan_mode.contains(&session_id),
-                    ModeCommand::Draft => self.draft_mode.contains(&session_id),
+                    ModeCommand::Plan => self.thread(&session_id).is_some_and(|t| t.plan_mode),
+                    ModeCommand::Draft => self.thread(&session_id).is_some_and(|t| t.draft_mode),
                 }
         };
         [ModeCommand::Plan, ModeCommand::Draft]
@@ -336,8 +324,8 @@ impl BenCodeApp {
         let typed = mode_commands::leading_mode(self.prompt_input.read(cx).text()).map(|(m, _)| m);
         let on = typed == Some(mode)
             || match mode {
-                ModeCommand::Plan => self.plan_mode.contains(&sid),
-                ModeCommand::Draft => self.draft_mode.contains(&sid),
+                ModeCommand::Plan => self.thread(&sid).is_some_and(|t| t.plan_mode),
+                ModeCommand::Draft => self.thread(&sid).is_some_and(|t| t.draft_mode),
             };
         self.set_mode(mode, !on, cx);
     }
@@ -356,13 +344,13 @@ impl BenCodeApp {
             self.prompt_input
                 .update(cx, |input, cx| input.set_text(rest, cx));
         }
-        self.plan_mode.remove(&sid);
-        self.draft_mode.remove(&sid);
         if on {
-            match mode {
-                ModeCommand::Plan => self.plan_mode.insert(sid),
-                ModeCommand::Draft => self.draft_mode.insert(sid),
-            };
+            let thread = self.thread_mut(&sid);
+            thread.plan_mode = mode == ModeCommand::Plan;
+            thread.draft_mode = mode == ModeCommand::Draft;
+        } else if let Some(thread) = self.threads.get_mut(&sid) {
+            thread.plan_mode = false;
+            thread.draft_mode = false;
         }
         cx.notify();
     }

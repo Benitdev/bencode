@@ -165,14 +165,16 @@ impl BenCodeApp {
         self.persist_session(&id);
         self.tabs.open(&id);
         self.sync_selection(cx);
-        self.composer_cards.insert(id, card);
+        self.thread_mut(&id).composer_card = Some(card);
         self.sync_prompt_placeholder(cx);
         self.refocus_prompt(cx);
         cx.notify();
     }
 
     fn remove_composer_card(&mut self, session_id: &str, cx: &mut Context<Self>) {
-        self.composer_cards.remove(session_id);
+        if let Some(thread) = self.threads.get_mut(session_id) {
+            thread.composer_card = None;
+        }
         self.sync_prompt_placeholder(cx);
         cx.notify();
     }
@@ -181,7 +183,7 @@ impl BenCodeApp {
     pub fn has_composer_card(&self) -> bool {
         self.selected_session_id
             .as_ref()
-            .is_some_and(|id| self.composer_cards.contains_key(id))
+            .is_some_and(|id| self.thread(id).is_some_and(|t| t.composer_card.is_some()))
     }
 
     /// The placeholder follows the focused thread's card.
@@ -189,7 +191,7 @@ impl BenCodeApp {
         let placeholder = match self.selected_session_id.as_deref() {
             Some(id) if self.worktree_removed(id) => super::removed_worktree::REMOVED_PLACEHOLDER,
             id => id
-                .and_then(|id| self.composer_cards.get(id))
+                .and_then(|id| self.thread(id)?.composer_card.as_ref())
                 .map_or(super::PROMPT_PLACEHOLDER, ComposerCard::placeholder),
         };
         self.prompt_input.update(cx, |input, cx| {
@@ -205,7 +207,7 @@ impl BenCodeApp {
         session_id: &str,
         cx: &Context<Self>,
     ) -> Option<AnyElement> {
-        let card = self.composer_cards.get(session_id)?;
+        let card = self.thread(session_id)?.composer_card.as_ref()?;
         let sid = session_id.to_string();
         let dismiss: OnRemove = Rc::new(move |this, cx| this.remove_composer_card(&sid, cx));
         Some(

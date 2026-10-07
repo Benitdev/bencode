@@ -73,11 +73,8 @@ impl BenCodeApp {
     /// An idle thread: nothing running, queued or waiting on an answer.
     fn is_settled(&self, session_id: &str) -> bool {
         !self.is_agent_running_in(session_id)
-            && !self.edit_rewinding.contains(session_id)
-            && self
-                .prompt_queues
-                .get(session_id)
-                .is_none_or(|queue| queue.is_empty())
+            && !self.thread(session_id).is_some_and(|t| t.edit_rewinding)
+            && self.queued_prompts(session_id).is_empty()
             && self.pending_question(session_id).is_none()
     }
 
@@ -114,8 +111,7 @@ impl BenCodeApp {
         };
         self.editing_last_turn = Some(session_id.to_string());
         self.composer_error = None;
-        self.composer_attachments
-            .insert(session_id.to_string(), files);
+        self.thread_mut(session_id).attachments = files;
         self.prompt_input
             .update(cx, |input, cx| input.set_text(text, cx));
         self.refocus_prompt(cx);
@@ -128,7 +124,9 @@ impl BenCodeApp {
         let Some(session_id) = self.editing_last_turn.take() else {
             return;
         };
-        self.composer_attachments.remove(&session_id);
+        if let Some(thread) = self.threads.get_mut(&session_id) {
+            thread.attachments.clear();
+        }
         *self.mcp_tags.borrow_mut() = Default::default();
         self.prompt_input
             .update(cx, |input, cx| input.set_text("", cx));
@@ -196,14 +194,16 @@ impl BenCodeApp {
             session.provider_account_id.as_deref(),
         );
         let session_id = session_id.to_string();
-        self.edit_rewinding.insert(session_id.clone());
+        self.thread_mut(&session_id).edit_rewinding = true;
         let rewind = cx
             .background_executor()
             .spawn(async move { codex::rewind_last_turn(&thread, &cwd, account.as_ref()) });
         cx.spawn(async move |this, cx| {
             let result = rewind.await;
             let _ = this.update(cx, |app, cx| {
-                app.edit_rewinding.remove(&session_id);
+                if let Some(thread) = app.threads.get_mut(&session_id) {
+                    thread.edit_rewinding = false;
+                }
                 match result {
                     Ok(()) => app.replace_last_turn(&session_id, input, cx),
                     Err(err) => {
@@ -243,8 +243,7 @@ impl BenCodeApp {
         if focused && self.prompt_input.read(cx).text().is_empty() {
             self.prompt_input
                 .update(cx, |input, cx| input.set_text(typed, cx));
-            self.composer_attachments
-                .insert(session_id.to_string(), input.attachments);
+            self.thread_mut(session_id).attachments = input.attachments;
         }
         self.composer_error = Some(format!("Could not edit the last message: {err:#}"));
         cx.notify();

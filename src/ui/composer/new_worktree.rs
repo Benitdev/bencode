@@ -131,7 +131,7 @@ impl BenCodeApp {
             return;
         };
         let session_id = session_id.to_string();
-        self.preparing_worktrees.insert(session_id.clone());
+        self.thread_mut(&session_id).preparing_worktree = true;
         let branch = temporary_branch_name(random_seed());
         let create = cx.background_executor().spawn({
             let base = base.clone();
@@ -140,7 +140,9 @@ impl BenCodeApp {
         cx.spawn(async move |this, cx| {
             let created = create.await;
             let _ = this.update(cx, |app, cx| {
-                app.preparing_worktrees.remove(&session_id);
+                if let Some(thread) = app.threads.get_mut(&session_id) {
+                    thread.preparing_worktree = false;
+                }
                 match created {
                     Ok(tree) => {
                         if let Some(session) = app.sessions.iter_mut().find(|s| s.id == session_id)
@@ -160,8 +162,7 @@ impl BenCodeApp {
                         {
                             app.prompt_input
                                 .update(cx, |field, cx| field.set_text(typed, cx));
-                            app.composer_attachments
-                                .insert(session_id.clone(), input.attachments);
+                            app.thread_mut(&session_id).attachments = input.attachments;
                         }
                         app.composer_error =
                             Some(format!("Could not create the worktree: {err:#}"));

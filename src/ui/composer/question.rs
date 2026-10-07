@@ -233,8 +233,8 @@ impl BenCodeApp {
 
     /// The form state for the pending question, fresh for a new request.
     fn question_state(&self, session_id: &str, request_id: &str) -> QuestionUi {
-        self.question_ui
-            .get(session_id)
+        self.thread(session_id)
+            .and_then(|thread| thread.question_ui.as_ref())
             .filter(|ui| ui.request_id == request_id)
             .cloned()
             .unwrap_or_else(|| QuestionUi {
@@ -249,7 +249,7 @@ impl BenCodeApp {
         };
         let mut ui = self.question_state(session_id, &request_id);
         f(&mut ui, &questions);
-        self.question_ui.insert(session_id.to_string(), ui);
+        self.thread_mut(session_id).question_ui = Some(ui);
     }
 
     /// Picks option `id` of the current question (toggles when several apply).
@@ -275,8 +275,8 @@ impl BenCodeApp {
         });
         if is_custom_row {
             let typed = self
-                .question_ui
-                .get(session_id)
+                .thread(session_id)
+                .and_then(|thread| thread.question_ui.as_ref())
                 .and_then(|ui| {
                     let (_, questions, _) = self.pending_question(session_id)?;
                     ui.custom.get(&questions.get(ui.current)?.id).cloned()
@@ -321,7 +321,7 @@ impl BenCodeApp {
         if ui.current + 1 < questions.len() {
             ui.current += 1;
             ui.active = 0;
-            self.question_ui.insert(session_id.to_string(), ui);
+            self.thread_mut(session_id).question_ui = Some(ui);
             self.question_custom_input
                 .update(cx, |input, cx| input.set_text("", cx));
             cx.notify();
@@ -347,7 +347,7 @@ impl BenCodeApp {
         if ui.current + 1 < questions.len() {
             ui.current += 1;
             ui.active = 0;
-            self.question_ui.insert(session_id.to_string(), ui);
+            self.thread_mut(session_id).question_ui = Some(ui);
             self.question_custom_input
                 .update(cx, |input, cx| input.set_text("", cx));
             cx.notify();

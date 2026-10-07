@@ -94,22 +94,25 @@ pub fn format_reset(resets_at: i64, now: i64, tz: &TimeZone) -> String {
 
 impl BenCodeApp {
     pub fn record_usage_limit(&mut self, session_id: &str, resets_at: Option<i64>) {
-        self.usage_limits.insert(
-            session_id.to_string(),
-            UsageLimit {
-                resets_at,
-                resume_at_reset: false,
-            },
-        );
+        self.thread_mut(session_id).usage_limit = Some(UsageLimit {
+            resets_at,
+            resume_at_reset: false,
+        });
     }
 
     fn dismiss_usage_limit(&mut self, session_id: &str, cx: &mut Context<Self>) {
-        self.usage_limits.remove(session_id);
+        if let Some(thread) = self.threads.get_mut(session_id) {
+            thread.usage_limit = None;
+        }
         cx.notify();
     }
 
     fn arm_usage_resume(&mut self, session_id: &str, armed: bool, cx: &mut Context<Self>) {
-        if let Some(limit) = self.usage_limits.get_mut(session_id) {
+        if let Some(limit) = self
+            .threads
+            .get_mut(session_id)
+            .and_then(|thread| thread.usage_limit.as_mut())
+        {
             limit.resume_at_reset = armed;
         }
         cx.notify();
@@ -117,7 +120,13 @@ impl BenCodeApp {
 
     /// Resume: the continue turn now.
     fn resume_after_limit(&mut self, session_id: &str, cx: &mut Context<Self>) {
-        if self.is_agent_running_in(session_id) || self.usage_limits.remove(session_id).is_none() {
+        if self.is_agent_running_in(session_id)
+            || self
+                .threads
+                .get_mut(session_id)
+                .and_then(|thread| thread.usage_limit.take())
+                .is_none()
+        {
             return;
         }
         self.send_prompt(session_id, CONTINUE_PROMPT, cx);
@@ -128,15 +137,19 @@ impl BenCodeApp {
     pub fn tick_usage_limits(&mut self, cx: &mut Context<Self>) -> bool {
         let now = now_ms();
         let due: Vec<String> = self
-            .usage_limits
+            .threads
             .iter()
+            .filter_map(|(id, thread)| Some((id, thread.usage_limit.as_ref()?)))
             .filter(|(id, limit)| limit.resume_due(now, self.is_agent_running_in(id)))
             .map(|(id, _)| id.clone())
             .collect();
         for id in due {
             self.resume_after_limit(&id, cx);
         }
-        self.usage_limits.values().any(|limit| limit.waiting(now))
+        self.threads
+            .values()
+            .filter_map(|thread| thread.usage_limit.as_ref())
+            .any(|limit| limit.waiting(now))
     }
 
     pub(super) fn render_usage_limit(
@@ -144,7 +157,7 @@ impl BenCodeApp {
         session_id: &str,
         cx: &Context<Self>,
     ) -> Option<AnyElement> {
-        let limit = *self.usage_limits.get(session_id)?;
+        let limit = self.thread(session_id)?.usage_limit?;
         let colors = &cx.theme().colors;
         let now = now_ms();
         let waiting = limit.waiting(now);
