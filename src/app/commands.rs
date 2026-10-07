@@ -58,6 +58,9 @@ actions!(
         OutlineNext,
         OutlinePrevious,
         OutlineJump,
+        ZoomIn,
+        ZoomOut,
+        ZoomReset,
     ]
 );
 
@@ -94,6 +97,11 @@ fn keymap() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-shift-b", ToggleSessionSidebar, None),
         KeyBinding::new("cmd-[", GoBack, None),
         KeyBinding::new("cmd-]", GoForward, None),
+        // MonoCode "View: Zoom In" / "Zoom Out" / "Reset Zoom".
+        KeyBinding::new("cmd-=", ZoomIn, None),
+        KeyBinding::new("cmd-+", ZoomIn, None),
+        KeyBinding::new("cmd--", ZoomOut, None),
+        KeyBinding::new("cmd-0", ZoomReset, None),
         KeyBinding::new("cmd-j", ToggleTerminal, None),
         KeyBinding::new("cmd-`", NewTerminal, None),
         KeyBinding::new("cmd-d", SplitRight, None),
@@ -159,6 +167,10 @@ fn menus() -> Vec<Menu> {
             MenuItem::action("Split Pane Right", SplitRight),
             MenuItem::action("Split Pane Down", SplitDown),
             MenuItem::separator(),
+            MenuItem::action("Zoom In", ZoomIn),
+            MenuItem::action("Zoom Out", ZoomOut),
+            MenuItem::action("Reset Zoom", ZoomReset),
+            MenuItem::separator(),
             MenuItem::action("Notes", OpenNotes),
             MenuItem::action("Inbox", OpenInbox),
         ]),
@@ -217,6 +229,11 @@ impl BenCodeApp {
             this.open_settings(cx);
         }))
         .on_action(cx.listener(|this, _: &Search, _, cx| this.open_search_modal(cx)))
+        .on_action(cx.listener(|this, _: &ZoomIn, _, cx| this.step_ui_scale(1.0, cx)))
+        .on_action(cx.listener(|this, _: &ZoomOut, _, cx| this.step_ui_scale(-1.0, cx)))
+        .on_action(cx.listener(|this, _: &ZoomReset, _, cx| {
+            this.set_ui_scale(crate::ui::appearance::UI_SCALE_DEFAULT, cx)
+        }))
         .on_action(cx.listener(|this, _: &NewThread, _, cx| this.create_new_session(cx)))
         .on_action(cx.listener(|this, _: &CloseActive, _, cx| this.close_active(cx)))
         .on_action(cx.listener(|this, _: &Save, _, cx| {
@@ -227,6 +244,7 @@ impl BenCodeApp {
         // MonoCode: ⌘B toggles the project rail, ⇧⌘B the session sidebar.
         .on_action(cx.listener(|this, _: &ToggleSidebar, _, cx| {
             this.is_rail_open = !this.is_rail_open;
+            this.sidebar_drawer_open = false;
             // MonoCode dismisses the rail's menus when it hides.
             if !this.is_rail_open {
                 this.close_rail_menu(cx);
@@ -235,6 +253,7 @@ impl BenCodeApp {
         }))
         .on_action(cx.listener(|this, _: &ToggleSessionSidebar, _, cx| {
             this.is_sidebar_open = !this.is_sidebar_open;
+            this.sidebar_drawer_open = false;
             cx.notify();
         }))
         .on_action(cx.listener(|this, _: &OpenProject, _, cx| this.open_project_dialog(cx)))
@@ -285,6 +304,7 @@ impl BenCodeApp {
                 this.close_surface(cx);
             } else if !this.close_lightbox(cx)
                 && !this.close_quick_open(cx)
+                && !this.close_sidebar_drawer(cx)
                 && !this.close_mcp_picker(true, cx)
                 && !this.close_folder_picker(true, cx)
                 && !this.close_handoff_menu(cx)
@@ -343,7 +363,7 @@ mod tests {
 
     #[test]
     fn keymap_chords_are_unique_per_action() {
-        assert_eq!(keymap().len(), 51);
+        assert_eq!(keymap().len(), 55);
         assert_eq!(menus().len(), 4);
     }
 }

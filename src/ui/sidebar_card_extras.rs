@@ -6,7 +6,7 @@ use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, App, ClickEvent, Context, Hsla, InteractiveElement, IntoElement, MouseButton,
-    ParentElement, Render, SharedString, Styled, Window, div, prelude::*, px, rgb,
+    ParentElement, Render, SharedString, Styled, Window, div, prelude::*, rgb,
 };
 
 use crate::app::BenCodeApp;
@@ -14,6 +14,7 @@ use crate::app::session_list::LiveStates;
 use crate::db::{OrchestrationSummary, OrchestrationTask, SessionRow, TaskTone};
 use crate::harness::{HarnessKind, catalog};
 use crate::ui::provider_icon::HarnessIcon;
+use crate::ui::scale::px;
 
 const AMBER: u32 = 0xfbbf24;
 const EMERALD: u32 = 0x34d399;

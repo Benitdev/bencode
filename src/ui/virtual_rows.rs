@@ -35,9 +35,9 @@ impl Window {
 /// The window for a pane scrolled by `scroll`, whose rows start `lead`
 /// pixels into its content (its top padding).
 pub fn for_scroll(heights: &[Option<f32>], scroll: &ScrollHandle, lead: f32) -> Window {
-    let viewport = f32::from(scroll.bounds().size.height);
+    let viewport = crate::ui::scale::logical(scroll.bounds().size.height);
     let viewport = if viewport > 0.0 { viewport } else { FIRST_FRAME_VIEWPORT };
-    visible_window(heights, f32::from(-scroll.offset().y) - lead, viewport)
+    visible_window(heights, crate::ui::scale::logical(-scroll.offset().y) - lead, viewport)
 }
 
 /// The rows overlapping `scroll_top..scroll_top + viewport`, plus

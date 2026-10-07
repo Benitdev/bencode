@@ -10,8 +10,10 @@ use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, Context, Focusable, InteractiveElement, IntoElement, ListOffset, ParentElement,
-    Styled, div, prelude::*, px,
+    Styled, div, prelude::*,
 };
+
+use crate::ui::scale::px;
 use serde_json::Value;
 
 use super::turns::{self, Item, Row};

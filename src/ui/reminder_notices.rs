@@ -9,11 +9,12 @@ use std::rc::Rc;
 use gpui::{
     AnyElement, Bounds, Context, FontWeight, InteractiveElement, IntoElement, MouseButton,
     MouseDownEvent, ParentElement, Pixels, Point, SharedString, Styled, canvas, deferred, div,
-    prelude::*, px, relative, rgb,
+    prelude::*, relative, rgb,
 };
 
 use crate::app::BenCodeApp;
 use crate::app::reminders::format_reminder_time;
+use crate::ui::scale::px;
 use crate::ui::sidebar_menus::SidebarMenuKind;
 
 /// MonoCode: `min(320px, 100vw - 24px)` wide, `top-3 right-3`.

@@ -10,8 +10,10 @@ use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, Bounds, Context, Div, Hsla, InteractiveElement, IntoElement, MouseButton,
     MouseDownEvent, ParentElement, Pixels, Point, SharedString, Stateful, Styled, anchored,
-    canvas, deferred, div, img, prelude::*, px, relative, rgb,
+    canvas, deferred, div, img, prelude::*, relative, rgb,
 };
+
+use crate::ui::scale::px;
 
 use super::model::{self, mute_status, notification_id};
 use super::state::{MenuTarget, SubmenuKind};

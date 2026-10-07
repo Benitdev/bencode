@@ -6,8 +6,10 @@ use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::prelude::*;
 use gpui::{
     AnyElement, ClipboardItem, Context, Div, MouseMoveEvent, SharedString, Stateful, canvas,
-    deferred, div, point, px,
+    deferred, div, point,
 };
+
+use crate::ui::scale::px;
 
 use super::selection::SegCtx;
 use super::turns::{self, Item, Row};

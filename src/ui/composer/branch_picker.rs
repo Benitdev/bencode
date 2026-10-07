@@ -8,8 +8,10 @@ use ely_gpui_component::primitives::{Icon, IconName};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, App, Context, FontWeight, InteractiveElement, IntoElement, ParentElement,
-    SharedString, Styled, Window, anchored, deferred, div, prelude::*, px,
+    SharedString, Styled, Window, anchored, deferred, div, prelude::*,
 };
+
+use crate::ui::scale::px;
 
 use super::focus_later;
 use super::menus::popover_surface;

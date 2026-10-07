@@ -7,11 +7,12 @@ use ely_gpui_component::menus::{DropdownMenu, Menu, MenuItem};
 use ely_gpui_component::overlays::ConfirmDialog;
 use ely_gpui_component::primitives::IconName;
 use ely_gpui_component::theme::{ActiveTheme, ControlSize};
-use gpui::{AnyElement, Context, IntoElement, ParentElement, SharedString, Styled, div, px};
+use gpui::{AnyElement, Context, IntoElement, ParentElement, SharedString, Styled, div};
 
 use crate::app::BenCodeApp;
 use crate::github::{self, PrAction, WorkItem};
 use crate::ui::app_callback::app_callback;
+use crate::ui::scale::px;
 
 /// MonoCode `GITHUB_PR_MERGE_OPTIONS`.
 const MERGE_OPTIONS: [(PrAction, &str); 3] = [

@@ -4,7 +4,9 @@
 //! Claude, Codex (OpenAI), Antigravity, Cursor, OpenCode, Pi, Grok, Fx, Omp, Hermes.
 
 use ely_gpui_component::theme::ActiveTheme;
-use gpui::{App, Hsla, IntoElement, Pixels, RenderOnce, Styled, Window, px, svg};
+use gpui::{App, Hsla, IntoElement, Pixels, RenderOnce, Styled, Window, svg};
+
+use crate::ui::scale::px;
 
 const CLAUDE_SVG: &[u8] = include_bytes!("../../assets/providers/claude.svg");
 const CODEX_SVG: &[u8] = include_bytes!("../../assets/providers/codex.svg");

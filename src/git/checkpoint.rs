@@ -1,6 +1,6 @@
 //! What a session changed, and Keep / Undo for it. Ported from MonoCode
-//! (`src-tauri/src/checkpoint.rs`); the store is MonoCode's own, so a card
-//! shows the same files in both apps.
+//! (`src-tauri/src/checkpoint.rs`), manifest format included; the store is
+//! BenCode's own (`storage::checkpoints_dir`).
 //!
 //! A session's manifest records, per file, the contents before its first
 //! structured edit (`files`) and after its latest one (`after`). Review and
@@ -26,8 +26,6 @@ use super::{GitFileChange, GitFileStatus, MAX_UNTRACKED_READ_BYTES, run_git};
 const MAX_SNAPSHOT_FILES: usize = 500;
 /// MonoCode `MAX_TEXT_FILE_BYTES`: larger files are not snapshotted.
 const MAX_TEXT_FILE_BYTES: u64 = MAX_UNTRACKED_READ_BYTES;
-/// Relative to `$HOME`: MonoCode's app data directory.
-const STORE_RELATIVE_PATH: &str = "Library/Application Support/com.monocode.desktop/checkpoints";
 
 /// One file a session changed (MonoCode `CheckpointFile`).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -110,12 +108,9 @@ impl CheckpointStore {
         }
     }
 
-    /// MonoCode's store, or a local folder when `$HOME` is unknown.
+    /// BenCode's own store, or a local folder when `$HOME` is unknown.
     pub fn default_dir() -> PathBuf {
-        std::env::var_os("HOME").map(PathBuf::from).map_or_else(
-            || PathBuf::from(".bencode/checkpoints"),
-            |home| home.join(STORE_RELATIVE_PATH),
-        )
+        crate::storage::checkpoints_dir().unwrap_or_else(|| PathBuf::from(".bencode/checkpoints"))
     }
 
     /// One operation at a time, as MonoCode's `exclusive`.

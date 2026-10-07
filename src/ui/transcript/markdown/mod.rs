@@ -20,8 +20,10 @@ use gpui::prelude::*;
 use gpui::{
     AnyElement, App, ClickEvent, CursorStyle, ElementId, Font, FontStyle, FontWeight, Hsla,
     MouseMoveEvent, SharedString, StrikethroughStyle, StyledText, TextRun, UnderlineStyle, Window,
-    div, px, rgba,
+    div, rgba,
 };
+
+use crate::ui::scale::px;
 use pulldown_cmark::Alignment;
 use unicode_segmentation::UnicodeSegmentation;
 

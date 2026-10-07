@@ -21,13 +21,14 @@ use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
     AnyElement, Context, FontWeight, InteractiveElement, IntoElement, MouseButton, ParentElement,
-    SharedString, Styled, div, prelude::*, px, uniform_list,
+    SharedString, Styled, div, prelude::*, uniform_list,
 };
 
 use crate::app::{BenCodeApp, Surface};
 use crate::github::{self, Details, Kind, Status, WorkItem};
 use crate::ui::composer::cards::ComposerCard;
 use crate::ui::composer::inbox_card::{InboxCard, label_chip};
+use crate::ui::scale::px;
 
 pub use checks::{Repair, RepairForm};
 pub use comments::ReplyTarget;
@@ -630,7 +631,7 @@ impl BenCodeApp {
                 el.cursor_col_resize()
                     .on_mouse_move(cx.listener(|this, event: &gpui::MouseMoveEvent, _, cx| {
                         if let Some((start_x, start_width)) = this.inbox.resizing {
-                            let x = f32::from(event.position.x);
+                            let x = crate::ui::scale::logical(event.position.x);
                             this.inbox.list_width =
                                 (start_width + x - start_x).clamp(MIN_LIST_WIDTH, MAX_LIST_WIDTH);
                             cx.notify();
@@ -677,7 +678,7 @@ impl BenCodeApp {
                                         this.save_settings(cx);
                                     } else {
                                         this.inbox.resizing = Some((
-                                            f32::from(event.position.x),
+                                            crate::ui::scale::logical(event.position.x),
                                             this.inbox.list_width,
                                         ));
                                     }

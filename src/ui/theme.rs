@@ -2,8 +2,10 @@
 //! `cx.theme().colors` like every Ely component, so light/dark and Ely's
 //! own widgets stay consistent.
 
-use ely_gpui_component::theme::{Mode, Palette, Theme};
+use ely_gpui_component::theme::{ActiveTheme, Mode, Palette, Theme};
 use gpui::{App, Hsla, rgb, rgba};
+
+use crate::ui::appearance::{ThemeTint, mix};
 
 fn c(hex: u32) -> Hsla {
     rgb(hex).into()
@@ -16,32 +18,44 @@ fn a(hex_rgba: u32) -> Hsla {
 /// MonoCode `--color-accent: hsl(211 92% 62%)`, the same in both modes.
 const ACCENT: u32 = 0x459bf7;
 
-/// Registers MonoCode's palettes and applies the starting mode.
-pub fn install(mode: Mode, cx: &mut App) {
-    Theme::set_palette(Mode::Dark, Some(monocode_dark()), cx);
-    Theme::set_palette(Mode::Light, Some(monocode_light()), cx);
+/// Registers MonoCode's palettes for `tint` and applies the starting mode.
+pub fn install(mode: Mode, tint: &ThemeTint, cx: &mut App) {
+    set_tint(tint, cx);
     Theme::set_mode_now(mode, cx);
 }
 
-/// MonoCode's dark theme: a neutral grey (`--theme-hue: 240`,
-/// `--theme-saturation: 0%`) with the background at 9% lightness and text at
-/// 92%. Every fill is text laid over the background at a set strength
+/// Rebuilds both palettes for `tint` and shows them at once (a slider drag
+/// must not cross-fade on every step).
+pub fn set_tint(tint: &ThemeTint, cx: &mut App) {
+    Theme::set_palette(Mode::Dark, Some(monocode_dark(tint)), cx);
+    Theme::set_palette(Mode::Light, Some(monocode_light(tint)), cx);
+    let mode = cx.theme().mode();
+    Theme::set_mode_now(mode, cx);
+}
+
+/// MonoCode's dark theme: the background at `--theme-dark-lightness` (9%
+/// by default) and text at 92%, both in the tint's hue and saturation.
+/// Every fill is text laid over the background at a set strength
 /// (`--selection-strength: 10%`, hover 15%, stroke 7%…), so the solid
-/// colours below are those mixes.
-fn monocode_dark() -> Palette {
+/// colours below are those mixes; at the default tint they are the
+/// neutral greys `#171717`, `#1f1f1f`, `#2c2c2c`….
+fn monocode_dark(tint: &ThemeTint) -> Palette {
+    let bg = tint.color(tint.dark_lightness);
+    let fg = tint.color(92.0);
+    let ink = |amount: f32| mix(bg, fg, amount);
     let mut p = Palette::dark(false);
-    p.bg = c(0x171717);
-    p.surface = c(0x1f1f1f);
-    p.sunken = c(0x121212);
-    p.overlay = c(0x1f1f1f);
-    p.hover = c(0x222222);
-    p.active = c(0x2c2c2c);
-    p.border = a(0xebebeb1a);
-    p.border_strong = a(0xebebeb33);
-    p.fg = c(0xebebeb);
-    p.fg_muted = c(0x8a8a8a);
-    p.fg_subtle = c(0x6c6c6c);
-    p.fg_disabled = c(0x4a4a4a);
+    p.bg = bg;
+    p.surface = ink(0.04);
+    p.sunken = mix(bg, gpui::black(), 0.22);
+    p.overlay = p.surface;
+    p.hover = ink(0.05);
+    p.active = ink(0.10);
+    p.border = fg.opacity(0.10);
+    p.border_strong = fg.opacity(0.20);
+    p.fg = fg;
+    p.fg_muted = ink(0.5425);
+    p.fg_subtle = ink(0.40);
+    p.fg_disabled = ink(0.24);
     p.accent = c(ACCENT);
     p.accent_hover = c(0x5ea9f8);
     p.on_accent = c(0xffffff);
@@ -56,27 +70,31 @@ fn monocode_dark() -> Palette {
     p.warning_subtle = a(0xfbbf2426);
     p.danger_subtle = a(0xf8717126);
     p.info_subtle = a(0x38bdf826);
-    p.glass = a(0x171717d9);
-    p.tooltip_bg = c(0x2c2c2c);
-    p.tooltip_fg = c(0xebebeb);
+    p.glass = bg.opacity(0.85);
+    p.tooltip_bg = p.active;
+    p.tooltip_fg = fg;
     p
 }
 
 /// MonoCode's light theme: background at 97%, text at 18%, gentler fills
-/// (`--selection-strength: 6%`, hover 10%).
-fn monocode_light() -> Palette {
+/// (`--selection-strength: 6%`, hover 10%). Lightness is the dark theme's
+/// alone; hue and saturation tint both.
+fn monocode_light(tint: &ThemeTint) -> Palette {
+    let bg = tint.color(97.0);
+    let fg = tint.color(18.0);
+    let ink = |amount: f32| mix(bg, fg, amount);
     let mut p = Palette::light(false);
-    p.bg = c(0xf7f7f7);
-    p.surface = c(0xffffff);
-    p.sunken = c(0xefefef);
-    p.overlay = c(0xffffff);
-    p.hover = c(0xededed);
-    p.active = c(0xebebeb);
-    p.border = a(0x2e2e2e1a);
-    p.border_strong = a(0x2e2e2e33);
-    p.fg = c(0x2e2e2e);
-    p.fg_muted = c(0x8a8a8a);
-    p.fg_subtle = c(0xa3a3a3);
+    p.bg = bg;
+    p.surface = tint.color(100.0);
+    p.sunken = ink(0.04);
+    p.overlay = p.surface;
+    p.hover = ink(0.05);
+    p.active = ink(0.06);
+    p.border = fg.opacity(0.10);
+    p.border_strong = fg.opacity(0.20);
+    p.fg = fg;
+    p.fg_muted = ink(0.542);
+    p.fg_subtle = ink(0.418);
     p.accent = c(ACCENT);
     p.accent_hover = c(0x2f86e6);
     p.on_accent = c(0xffffff);
@@ -86,7 +104,7 @@ fn monocode_light() -> Palette {
     p.warning = c(0xd97706);
     p.danger = c(0xef4444);
     p.info = c(0x0284c7);
-    p.glass = a(0xf7f7f7d9);
+    p.glass = bg.opacity(0.85);
     p
 }
 
@@ -105,3 +123,40 @@ pub fn harness_color(id: &str, colors: &Palette) -> Hsla {
         colors.fg
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn hex(color: Hsla) -> u32 {
+        let c = gpui::Rgba::from(color);
+        let byte = |v: f32| (v * 255.0).round() as u32;
+        (byte(c.r) << 16) | (byte(c.g) << 8) | byte(c.b)
+    }
+
+    /// The default tint gives the greys BenCode has always drawn.
+    #[test]
+    fn default_tint_keeps_monocode_greys() {
+        let tint = ThemeTint::default();
+        let dark = monocode_dark(&tint);
+        let greys = [dark.bg, dark.surface, dark.sunken, dark.hover, dark.active, dark.fg, dark.fg_muted, dark.fg_subtle, dark.fg_disabled];
+        assert_eq!(
+            greys.map(hex),
+            [0x171717, 0x1f1f1f, 0x121212, 0x222222, 0x2c2c2c, 0xebebeb, 0x8a8a8a, 0x6c6c6c, 0x4a4a4a]
+        );
+        let light = monocode_light(&tint);
+        let greys = [light.bg, light.surface, light.sunken, light.hover, light.active, light.fg, light.fg_muted, light.fg_subtle];
+        assert_eq!(
+            greys.map(hex),
+            [0xf7f7f7, 0xffffff, 0xefefef, 0xededed, 0xebebeb, 0x2e2e2e, 0x8a8a8a, 0xa3a3a3]
+        );
+    }
+
+    #[test]
+    fn lightness_moves_only_the_dark_theme() {
+        let tint = ThemeTint { dark_lightness: 0.0, ..ThemeTint::default() };
+        assert_eq!(hex(monocode_dark(&tint).bg), 0x000000);
+        assert_eq!(hex(monocode_light(&tint).bg), 0xf7f7f7);
+    }
+}
+

@@ -9,8 +9,10 @@ use ely_gpui_component::primitives::Tooltip;
 use ely_gpui_component::theme::ActiveTheme;
 use gpui::{
     AnyElement, App, Context, Hsla, InteractiveElement, IntoElement, ParentElement, PathBuilder,
-    Pixels, Point, Styled, Window, anchored, canvas, deferred, div, point, prelude::*, px,
+    Pixels, Point, Styled, Window, anchored, canvas, deferred, div, point, prelude::*,
 };
+
+use crate::ui::scale::px;
 
 use super::menus::{popover_anchor, popover_surface};
 use crate::app::{BenCodeApp, can_compact};
@@ -18,8 +20,8 @@ use crate::db::SessionRow;
 use crate::ui::sidebar_popovers::popover_glass;
 use crate::ui::transcript::turns::format_metric_count;
 
-const SIZE: Pixels = px(14.0);
-const STROKE: Pixels = px(2.0);
+const SIZE: f32 = 14.0;
+const STROKE: f32 = 2.0;
 /// Segments in a full circle; the arc is drawn as a polyline.
 const SEGMENTS: f32 = 48.0;
 
@@ -37,7 +39,7 @@ pub fn ring_color(share: f32, cx: &App) -> Hsla {
 
 fn arc(center: Point<Pixels>, radius: Pixels, sweep: f32, color: Hsla, window: &mut Window) {
     let steps = ((SEGMENTS * sweep / TAU).ceil() as usize).max(2);
-    let mut path = PathBuilder::stroke(STROKE);
+    let mut path = PathBuilder::stroke(px(STROKE));
     for step in 0..=steps {
         let angle = -FRAC_PI_2 + sweep * step as f32 / steps as f32;
         let at = point(
@@ -61,12 +63,12 @@ pub fn context_ring(share: f32, cx: &App) -> impl IntoElement {
     let fill = ring_color(share, cx);
     let track = fill.opacity(0.25);
     let share = share.clamp(0.0, 1.0);
-    div().size(SIZE).flex_none().child(
+    div().size(px(SIZE)).flex_none().child(
         canvas(
             |_, _, _| {},
             move |bounds, _, window, _| {
                 let center = bounds.center();
-                let radius = bounds.size.width.min(bounds.size.height) / 2.0 - STROKE / 2.0;
+                let radius = bounds.size.width.min(bounds.size.height) / 2.0 - px(STROKE) / 2.0;
                 arc(center, radius, TAU, track, window);
                 if share > 0.0 {
                     arc(center, radius, TAU * share, fill, window);

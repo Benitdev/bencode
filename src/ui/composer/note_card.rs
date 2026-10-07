@@ -8,8 +8,10 @@ use ely_gpui_component::primitives::{Icon, IconName};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, Context, FontWeight, IntoElement, ParentElement, SharedString, Styled, div,
-    prelude::*, px,
+    prelude::*,
 };
+
+use crate::ui::scale::px;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 

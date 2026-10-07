@@ -33,7 +33,7 @@ mức ưu tiên. Phần đã xong chỉ được tóm tắt.
   với MonoCode).
 - **Surface**: Search, Inbox GitHub (checks, comment, merge, sửa CI), Notes,
   Automations (có scheduler 30 giây), Settings.
-- **Hạ tầng**: đọc ghi `monocode.db`, `settings.json`, terminal native theo
+- **Hạ tầng**: đọc ghi `bencode.db` (database riêng, cùng schema với MonoCode), `settings.json`, terminal native theo
   project, phát hiện MCP server.
 
 ---
@@ -74,7 +74,7 @@ mức ưu tiên. Phần đã xong chỉ được tóm tắt.
 - [ ] **Pane file**: lưu theo từng tab workspace và khôi phục khi mở lại; chia
   pane editor; menu chuột phải trên tab.
 - [ ] **Editor**: footer thay cho toolbar; xem trước ảnh và markdown.
-- [ ] **Phím tắt và menu**: menu Edit / Window / Help, ⌘1-9, ⌃Tab, ⇧⌘A, zoom,
+- [ ] **Phím tắt và menu**: menu Edit / Window / Help, ⌘1-9, ⌃Tab, ⇧⌘A,
   trang Keybindings.
 - [ ] **Search**: điều hướng bằng bàn phím, xếp hạng và phạm vi như MonoCode,
   mở file trong editor.

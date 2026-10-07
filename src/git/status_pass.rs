@@ -25,9 +25,6 @@ struct BranchHeader {
     head: Option<String>,
     /// `# branch.oid` was `(initial)`: no commit yet.
     unborn: bool,
-    /// `# branch.ab +ahead -behind`, present only with an upstream.
-    ahead: usize,
-    behind: usize,
 }
 
 impl StatusPass {
@@ -116,8 +113,6 @@ impl StatusPass {
             .collect();
         GitDetailedStatus {
             branch: self.branch_name(cwd),
-            ahead: self.branch.ahead,
-            behind: self.branch.behind,
             staged,
             unstaged,
         }
@@ -226,17 +221,6 @@ fn read_header(line: &str, branch: &mut BranchHeader) {
         branch.unborn = oid == "(initial)";
     } else if let Some(head) = line.strip_prefix("branch.head ") {
         branch.head = (head != "(detached)").then(|| head.to_string());
-    } else if let Some(ab) = line.strip_prefix("branch.ab ") {
-        let mut counts = ab.split_whitespace();
-        let mut count = |sign: char| {
-            counts
-                .next()
-                .and_then(|c| c.strip_prefix(sign))
-                .and_then(|c| c.parse().ok())
-                .unwrap_or(0)
-        };
-        branch.ahead = count('+');
-        branch.behind = count('-');
     }
 }
 
@@ -260,8 +244,6 @@ u UU N... 100644 100644 100644 100644 aaaa bbbb cccc both.txt\0\
             BranchHeader {
                 head: Some("main".into()),
                 unborn: false,
-                ahead: 2,
-                behind: 1,
             }
         );
         let summary: Vec<(char, char, &str, Option<&str>)> = entries
@@ -291,6 +273,5 @@ u UU N... 100644 100644 100644 100644 aaaa bbbb cccc both.txt\0\
 
         let (unborn, _) = parse_porcelain_v2(b"# branch.oid (initial)\0# branch.head main\0");
         assert!(unborn.unborn);
-        assert_eq!((unborn.ahead, unborn.behind), (0, 0));
     }
 }

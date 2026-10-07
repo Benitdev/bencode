@@ -6,7 +6,7 @@ use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString,
-    StatefulInteractiveElement, Styled, div, prelude::*, px,
+    StatefulInteractiveElement, Styled, div, prelude::*,
 };
 
 use crate::app::BenCodeApp;
@@ -14,6 +14,7 @@ use crate::app::session_review::{COLLAPSED_FILES, ReviewAction};
 use crate::git::checkpoint::CheckpointFile;
 use crate::ui::app_callback::app_callback;
 use crate::ui::icons::ExtraIcon;
+use crate::ui::scale::px;
 
 /// MonoCode `text-amber-300/80`, "Mixed changes".
 const MIXED: u32 = 0xfcd34d;
@@ -25,6 +26,7 @@ impl BenCodeApp {
         };
         let theme = cx.theme();
         let colors = &theme.colors;
+        let diff = crate::ui::appearance::diff_colors(cx);
         let fg = colors.fg;
         let files = &review.files;
         let count = files.len();
@@ -122,8 +124,8 @@ impl BenCodeApp {
                             .gap_1p5()
                             .text_size(px(11.0))
                             .font_weight(FontWeight::SEMIBOLD)
-                            .child(div().text_color(colors.success).child(format!("+{additions}")))
-                            .child(div().text_color(colors.danger).child(format!("-{deletions}"))),
+                            .child(div().text_color(diff.add_fg).child(format!("+{additions}")))
+                            .child(div().text_color(diff.del_fg).child(format!("-{deletions}"))),
                     ),
             )
             .child(
@@ -250,6 +252,7 @@ impl BenCodeApp {
     ) -> impl IntoElement {
         let theme = cx.theme();
         let colors = &theme.colors;
+        let diff = crate::ui::appearance::diff_colors(cx);
         let fg = colors.fg;
         let name = file.relative.rsplit('/').next().unwrap_or(&file.relative);
         let icon = crate::ui::file_tree::resolve_entry_icon(name, false, false);
@@ -287,8 +290,8 @@ impl BenCodeApp {
                     .gap_2()
                     .text_size(px(11.0))
                     .font_weight(FontWeight::SEMIBOLD)
-                    .child(div().text_color(colors.success).child(format!("+{}", file.additions)))
-                    .child(div().text_color(colors.danger).child(format!("-{}", file.deletions)))
+                    .child(div().text_color(diff.add_fg).child(format!("+{}", file.additions)))
+                    .child(div().text_color(diff.del_fg).child(format!("-{}", file.deletions)))
             } else {
                 div()
                     .flex_none()

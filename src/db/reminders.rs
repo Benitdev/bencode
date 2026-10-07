@@ -5,7 +5,7 @@
 use anyhow::{Result, bail};
 use rusqlite::{Transaction, TransactionBehavior, params};
 
-use super::MonoCodeDb;
+use super::AppDb;
 
 /// MonoCode `ensure_table`.
 pub(super) const REMINDERS_SQL: &str = "
@@ -32,7 +32,7 @@ pub struct Reminder {
     pub cwd: String,
 }
 
-impl MonoCodeDb {
+impl AppDb {
     /// MonoCode `reminder_list`: every project's reminders, soonest first.
     pub fn list_reminders(&self) -> Result<Vec<Reminder>> {
         let mut stmt = self.conn.prepare(
@@ -131,8 +131,8 @@ mod tests {
     use super::*;
     use crate::db::{Block, SessionRow};
 
-    fn db_with(ids: &[&str]) -> MonoCodeDb {
-        let db = MonoCodeDb::open_in_memory().unwrap();
+    fn db_with(ids: &[&str]) -> AppDb {
+        let db = AppDb::open_in_memory().unwrap();
         for id in ids {
             let session = SessionRow {
                 id: id.to_string(),

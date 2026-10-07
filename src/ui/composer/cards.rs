@@ -9,8 +9,10 @@ use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, Context, Div, InteractiveElement, IntoElement, ParentElement, SharedString, Styled,
-    div, prelude::*, px,
+    div, prelude::*,
 };
+
+use crate::ui::scale::px;
 
 use super::handoff::{HandoffCard, HandoffMeta, handoff_mini_card};
 use super::note_card::{NoteCard, note_mini_card};

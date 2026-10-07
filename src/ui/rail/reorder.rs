@@ -8,8 +8,10 @@ use ely_gpui_component::theme::ActiveTheme;
 use gpui::{
     Animation, AnimationExt, AnyElement, Context, DragMoveEvent, FontWeight, Hsla,
     InteractiveElement, IntoElement, MouseButton, MouseDownEvent, ParentElement, Render,
-    SharedString, Styled, Window, div, prelude::*, px, relative,
+    SharedString, Styled, Window, div, prelude::*, relative,
 };
+
+use crate::ui::scale::px;
 
 use super::model::{self, move_item, reorder_subset, resized_rail_width};
 use super::state::RailReorder;
@@ -101,8 +103,8 @@ impl BenCodeApp {
         let (start_x, start_width) = self.rail_ui.drag_origin;
         let width = resized_rail_width(
             start_width,
-            f32::from(event.event.position.x) - start_x,
-            f32::from(window.viewport_size().width),
+            crate::ui::scale::logical(event.event.position.x) - start_x,
+            crate::ui::scale::logical(window.viewport_size().width),
         );
         if self.rail_ui.drag_width != Some(width) {
             self.rail_ui.drag_width = Some(width);
@@ -158,7 +160,7 @@ impl BenCodeApp {
                         );
                         return;
                     }
-                    this.rail_ui.drag_origin = (f32::from(event.position.x), this.rail_width());
+                    this.rail_ui.drag_origin = (crate::ui::scale::logical(event.position.x), this.rail_width());
                 }),
             )
             .on_drag(RailResize, |drag, _, _, cx| cx.new(|_| drag.clone()))
@@ -177,7 +179,7 @@ impl BenCodeApp {
         if dragged.list != list || ids.len() < 2 {
             return;
         }
-        let y = f32::from(event.event.position.y - event.bounds.origin.y);
+        let y = crate::ui::scale::logical(event.event.position.y - event.bounds.origin.y);
         let to = ((y / ROW_PITCH).floor().max(0.0) as usize).min(ids.len() - 1);
         let next = RailReorder {
             list: list.to_string(),

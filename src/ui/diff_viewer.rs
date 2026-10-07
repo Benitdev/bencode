@@ -11,10 +11,11 @@ use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, Context, Hsla, InteractiveElement, IntoElement, ListAlignment, ListOffset,
     ListState, ParentElement, SharedString, StatefulInteractiveElement, Styled, div, list,
-    prelude::*, px,
+    prelude::*,
 };
 
 use crate::app::BenCodeApp;
+use crate::ui::scale::px;
 use crate::ui::scrollbar::{self, ScrollBar};
 use crate::app::file_pane::PaneTab;
 use crate::git::checkpoint::CheckpointStore;
@@ -99,6 +100,11 @@ pub struct DiffDoc {
 }
 
 impl DiffDoc {
+    /// Row heights changed without the rows changing (interface scale).
+    pub(crate) fn remeasure(&self) {
+        self.list.remeasure();
+    }
+
     fn new(focus: Option<DocFocus>) -> Self {
         Self {
             files: Vec::new(),
@@ -661,7 +667,7 @@ impl BenCodeApp {
                     .text_color(fg.opacity(0.7))
                     .child(if count == 1 { "1 file".to_string() } else { format!("{count} files") }),
             )
-            .child(diff_counts(additions, deletions, colors).text_size(px(11.0)))
+            .child(diff_counts(additions, deletions, crate::ui::appearance::diff_colors(cx)).text_size(px(11.0)))
             .child(
                 div()
                     .ml_auto()
@@ -765,7 +771,7 @@ impl BenCodeApp {
                                     .child(file.label.clone()),
                             )
                             .child(
-                                diff_counts(file.additions, file.deletions, colors)
+                                diff_counts(file.additions, file.deletions, crate::ui::appearance::diff_colors(cx))
                                     .flex_none()
                                     .text_size(px(11.0)),
                             ),
@@ -879,14 +885,17 @@ impl BenCodeApp {
     }
 }
 
-/// MonoCode `DiffLineRow`: a tinted gutter number, then the text.
+/// MonoCode `DiffLineRow`: a tinted gutter number, then the text, in the
+/// chosen diff palette (`bg-diff-*-bg`, `bg-diff-*-gutter`, `text-diff-*-fg`).
 fn render_line(line: &Line, cx: &gpui::App) -> AnyElement {
     let theme = cx.theme();
     let colors = &theme.colors;
     let fg = colors.fg;
-    let (tint, number_color): (Option<Hsla>, Hsla) = match line.kind {
-        LineKind::Add => (Some(colors.success), colors.success),
-        LineKind::Del => (Some(colors.danger), colors.danger),
+    let diff = crate::ui::appearance::diff_colors(cx);
+    // (row, gutter, number)
+    let (tint, number_color): (Option<(Hsla, Hsla)>, Hsla) = match line.kind {
+        LineKind::Add => (Some((diff.add_bg, diff.add_gutter)), diff.add_fg),
+        LineKind::Del => (Some((diff.del_bg, diff.del_gutter)), diff.del_fg),
         LineKind::Context => (None, fg.opacity(0.35)),
     };
     div()
@@ -895,7 +904,7 @@ fn render_line(line: &Line, cx: &gpui::App) -> AnyElement {
         .h(px(LINE_HEIGHT))
         .w_full()
         .overflow_hidden()
-        .when_some(tint, |el, tint| el.bg(tint.opacity(0.15)))
+        .when_some(tint, |el, (row, _)| el.bg(row))
         .font_family(theme.mono_family.clone())
         .child(
             div()
@@ -906,7 +915,11 @@ fn render_line(line: &Line, cx: &gpui::App) -> AnyElement {
                 .items_center()
                 .justify_end()
                 .pr_2()
-                .when_some(tint, |el, tint| el.bg(tint.opacity(0.10)))
+                // The gutter lies on the row's tint; together they make
+                // the gutter's own strength.
+                .when_some(tint, |el, (row, gutter)| {
+                    el.bg(gutter.opacity(1.0 - (1.0 - gutter.a) / (1.0 - row.a)))
+                })
                 .text_size(px(11.0))
                 .text_color(number_color)
                 .children(line.number().map(|n| n.to_string())),

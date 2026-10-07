@@ -53,8 +53,6 @@ pub struct AccountEditor {
 
 #[derive(Default)]
 pub struct AccountsState {
-    /// MonoCode's own accounts, read once at startup.
-    shared: Vec<ProviderAccount>,
     /// `(provider, id)` of the profile directories found on disk.
     on_disk: HashSet<(String, String)>,
     /// False until the startup read lands; nothing is called removed before.
@@ -83,30 +81,19 @@ impl AccountsState {
             .get(&(account.provider.clone(), account.id.clone()))?
             .as_ref()
     }
-
-    /// MonoCode lists the account, so its profile is MonoCode's to remove.
-    pub fn is_shared(&self, account: &ProviderAccount) -> bool {
-        self.shared
-            .iter()
-            .any(|shared| shared.provider == account.provider && shared.id == account.id)
-    }
 }
 
 impl BenCodeApp {
-    /// Reads MonoCode's account list and the profiles on disk, off the UI
-    /// thread.
-    pub(crate) fn load_shared_accounts(&mut self, cx: &mut Context<Self>) {
-        let task = cx.background_executor().spawn(async move {
-            (crate::db::monocode_accounts::load(), accounts::profiles_on_disk())
-        });
+    /// Reads the profiles on disk, off the UI thread.
+    pub(crate) fn load_account_profiles(&mut self, cx: &mut Context<Self>) {
+        let task = cx.background_executor().spawn(async move { accounts::profiles_on_disk() });
         cx.spawn(async move |this, cx| {
-            let (shared, on_disk) = task.await;
+            let on_disk = task.await;
             let landed = this.update(cx, |app, cx| {
-                app.accounts.shared = shared;
                 app.accounts.on_disk = on_disk.into_iter().collect();
                 app.accounts.loaded = true;
-                // Accounts only MonoCode lists show up now; a page already
-                // open reads them too, or they would stay "Checking…".
+                // Profiles no list names show up now; a page already open
+                // reads them too, or they would stay "Checking…".
                 if let Some(provider) = app.usage.popover {
                     app.load_account_details(provider, false, cx);
                 }
@@ -127,8 +114,7 @@ impl BenCodeApp {
     /// `provider`'s accounts, the default profile first. A profile found
     /// on disk that no list names still shows, so its threads keep running.
     pub fn provider_accounts(&self, provider: &str) -> Vec<ProviderAccount> {
-        let mut listed =
-            accounts::provider_accounts(provider, &self.settings.provider_accounts, &self.accounts.shared);
+        let mut listed = accounts::provider_accounts(provider, &self.settings.provider_accounts);
         let mut unnamed: Vec<&String> = self
             .accounts
             .on_disk
@@ -419,7 +405,7 @@ impl BenCodeApp {
 
     /// Remove asks first (MonoCode's warning dialog).
     pub fn request_remove_account(&mut self, account: ProviderAccount, cx: &mut Context<Self>) {
-        if account.is_default() || self.accounts.is_shared(&account) || self.accounts.working.is_some() {
+        if account.is_default() || self.accounts.working.is_some() {
             return;
         }
         self.accounts.pending_remove = Some(account);

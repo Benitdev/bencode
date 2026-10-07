@@ -46,7 +46,7 @@ Notes:
 - [~] P1 S Rail action rows styling; Inbox dot only when unread — `app/shell/RailAction.tsx`
 - [x] P1 M Resizable rail (180-360, def 200) and sidebar (260-560, def 260)
 - [x] P1 L Hand-rolled title-bar tab strip (224px tabs, harness icons, busy/done, meta line, hover close, tooltip, context menu, middle-click, overflow scroll; no "+"/split) — `TitleBar.tsx:202-1055`
-- [~] P1 M Shortcuts & menus: ⌘P, ⌘` and ⌘. done; still open: ⌘1-9, ⌃Tab, ⇧⌘A, zoom, Edit menu — `workspace/model/tabKeys.ts`, `src-tauri/src/menu.rs`
+- [~] P1 M Shortcuts & menus: ⌘P, ⌘` and ⌘. done; zoom (⌘= / ⌘- / ⌘0) done; still open: ⌘1-9, ⌃Tab, ⇧⌘A, Edit menu — `workspace/model/tabKeys.ts`, `src-tauri/src/menu.rs`
 - [ ] P1 S Sidebar header 40px (done), mode tabs 24px; search button = Go to File
 - [~] P1 M Session card live status (Need approval / Working... / Done / Draft), "3h 20m" times, drag onto pane — `Sidebar.tsx:3025-3306`
 - [~] P1 M Pinned sessions collapsible group
@@ -101,7 +101,7 @@ Notes:
 - [x] P0 S Theme System option (Ely `settings::ThemeSelector`)
 - [~] P0 M-L MCP: discovery reads Claude CLI, Claude Desktop, Cursor and project configs; still open: add / remove / sign-in / show config, Codex (`~/.codex/config.toml`) and OpenCode discovery
 - [~] P0 M Terminal per project + tabs + ⌘` done, exit handled; still open: links and find from `TerminalEvent`
-- [~] P1 M Settings nav groups (done, `ui/rail/settings_nav.rs`), remembered section, search; General/Chat/Keybindings/Appearance pages; CLI path override; terminal dock side/resize
+- [~] P1 M Settings nav groups (done, `ui/rail/settings_nav.rs`), remembered section, search; Appearance page done (`ui/settings_appearance.rs`) except blur radius; chat background (`app/chat_background.rs`) and the collapsed icon rail (`ui/rail/compact.rs`) done, without per-project backgrounds or the icon rail's searchable project picker; General/Chat/Keybindings pages; CLI path override; terminal dock side/resize
 - [ ] P2 macOS terminal keys, harness update notice
 
 ## Batch F — notes, automations, search, inbox

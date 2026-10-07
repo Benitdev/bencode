@@ -11,8 +11,10 @@ use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use ely_gpui_component::typography::ShimmerText;
 use gpui::{
     Animation, AnimationExt, AnyElement, App, Context, Hsla, InteractiveElement, IntoElement,
-    ParentElement, SharedString, Styled, div, prelude::*, px,
+    ParentElement, SharedString, Styled, div, prelude::*,
 };
+
+use crate::ui::scale::px;
 
 use super::blocks::markdown;
 use super::markdown::Tone;
@@ -23,7 +25,7 @@ use crate::ui::HarnessIcon;
 
 /// MonoCode fades a step in as it lands (`zen-step-in`).
 const STEP_ENTRANCE: Duration = Duration::from_millis(180);
-const ICON_BOX: gpui::Pixels = px(14.0);
+const ICON_BOX: f32 = 14.0;
 
 fn muted(color: Hsla, opacity: f32) -> Hsla {
     color.opacity(opacity)
@@ -54,7 +56,7 @@ fn icon_slot(icon: AnyElement, open: bool, expandable: bool, group: &str, cx: &A
     if open {
         return div()
             .flex_none()
-            .size(ICON_BOX)
+            .size(px(ICON_BOX))
             .child(small_icon(IconName::ChevronDown, chevron))
             .into_any_element();
     }
@@ -66,7 +68,7 @@ fn icon_slot(icon: AnyElement, open: bool, expandable: bool, group: &str, cx: &A
         .flex_none()
         .items_center()
         .justify_center()
-        .size(ICON_BOX)
+        .size(px(ICON_BOX))
         .child(
             div()
                 .when(expandable, |el| {
@@ -133,7 +135,7 @@ impl BenCodeApp {
             dim_label(settled_title(blocks, turn), &group, cx)
         };
         let harness = turn.harness(blocks).unwrap_or(&session.harness).to_string();
-        let icon = HarnessIcon::new(&harness).size(ICON_BOX).into_any_element();
+        let icon = HarnessIcon::new(&harness).size(px(ICON_BOX)).into_any_element();
         let row = div()
             .id(SharedString::from(group.clone()))
             .group(SharedString::from(group.clone()))

@@ -6,7 +6,7 @@ use anyhow::Result;
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 
-use super::MonoCodeDb;
+use super::AppDb;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -110,7 +110,7 @@ impl LinkedWorkItem {
     }
 }
 
-impl MonoCodeDb {
+impl AppDb {
     /// MonoCode `set_linked_work_item`; `None` unlinks.
     pub fn set_linked_work_item(&self, session_id: &str, item: Option<&LinkedWorkItem>) -> Result<()> {
         let json = item.map(serde_json::to_string).transpose()?;
@@ -152,7 +152,7 @@ mod tests {
 
     #[test]
     fn links_are_saved_and_cleared() {
-        let db = MonoCodeDb::open_in_memory().unwrap();
+        let db = AppDb::open_in_memory().unwrap();
         let session = crate::db::SessionRow {
             id: "s".into(),
             cwd: "/p".into(),

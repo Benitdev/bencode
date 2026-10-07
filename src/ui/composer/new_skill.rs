@@ -8,8 +8,10 @@ use ely_gpui_component::primitives::{Icon, IconName};
 use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
     AnyElement, Context, Focusable, InteractiveElement, IntoElement, ParentElement, SharedString,
-    Styled, Window, div, prelude::*, px,
+    Styled, Window, div, prelude::*,
 };
+
+use crate::ui::scale::px;
 
 use super::focus_later;
 use crate::app::BenCodeApp;

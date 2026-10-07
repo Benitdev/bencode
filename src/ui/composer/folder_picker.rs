@@ -6,8 +6,10 @@ use ely_gpui_component::primitives::{Icon, IconName};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, Context, Focusable, InteractiveElement, IntoElement, ParentElement, SharedString,
-    Styled, div, prelude::*, px,
+    Styled, div, prelude::*,
 };
+
+use crate::ui::scale::px;
 
 use super::focus_later;
 use super::search_popover::SearchPopover;
@@ -15,7 +17,7 @@ use crate::app::BenCodeApp;
 use crate::app::session_folders::{FolderTarget, picker_rows};
 
 /// MonoCode `max-h-[min(240px,40vh)]`.
-const LIST_MAX_HEIGHT: gpui::Pixels = px(240.0);
+const LIST_MAX_HEIGHT: f32 = 240.0;
 
 impl BenCodeApp {
     fn folder_rows(&self, cx: &Context<Self>) -> Vec<FolderTarget> {
@@ -118,7 +120,7 @@ impl BenCodeApp {
                 dismiss: |this, cx| {
                     this.close_folder_picker(true, cx);
                 },
-                list_max_height: LIST_MAX_HEIGHT,
+                list_max_height: px(LIST_MAX_HEIGHT),
                 empty,
                 rows,
                 footer: None,

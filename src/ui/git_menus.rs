@@ -7,12 +7,13 @@ use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::IconSize;
 use gpui::{
     AnyElement, Context, Div, Hsla, InteractiveElement, IntoElement, MouseButton, MouseDownEvent,
-    ParentElement, Pixels, Point, SharedString, Stateful, Styled, canvas, div, prelude::*, px,
+    ParentElement, Pixels, Point, SharedString, Stateful, Styled, canvas, div, prelude::*,
 };
 
 use crate::app::BenCodeApp;
 use crate::ui::explorer_menu::{self, MenuAction, MenuEntry, MenuPlace, MenuStyle, MenuView};
 use crate::ui::git_changes_panel::{Busy, PendingCommit};
+use crate::ui::scale::px;
 
 /// MonoCode `min-w-48` (Commit options) and `min-w-36` (Branch actions).
 const COMMIT_MENU_WIDTH: f32 = 192.0;

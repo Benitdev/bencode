@@ -5,10 +5,11 @@ use ely_gpui_component::primitives::{Icon, IconName};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
     Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString, Styled, div,
-    prelude::*, px, relative,
+    prelude::*, relative,
 };
 
 use crate::app::BenCodeApp;
+use crate::ui::scale::px;
 use crate::ui::settings_modal::{SETTINGS_GROUPS, SettingsTab};
 
 impl BenCodeApp {

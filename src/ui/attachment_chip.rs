@@ -9,8 +9,10 @@ use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, Context, InteractiveElement, IntoElement, ObjectFit, ParentElement, SharedString,
-    Styled, StyledImage, div, img, prelude::*, px,
+    Styled, StyledImage, div, img, prelude::*,
 };
+
+use crate::ui::scale::px;
 use serde_json::Value;
 
 use crate::app::BenCodeApp;

@@ -10,12 +10,13 @@ pub(crate) use account_views::{account_status_label, usage_meter};
 
 use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
-use gpui::{Context, IntoElement, ParentElement, Styled, div, prelude::*, px};
+use gpui::{Context, IntoElement, ParentElement, Styled, div, prelude::*};
 
 use crate::app::BenCodeApp;
 use crate::rate_limits::{RateLimitProvider, RateLimitStatus};
 use crate::ui::HarnessIcon;
 use crate::ui::git_changes_panel::spinning_icon;
+use crate::ui::scale::px;
 
 impl BenCodeApp {
     pub fn render_usage_footer(&mut self, cx: &mut Context<Self>) -> impl IntoElement {

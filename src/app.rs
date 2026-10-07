@@ -1,5 +1,6 @@
 pub mod accounts;
 mod agent;
+pub mod chat_background;
 pub mod commands;
 pub mod file_pane;
 mod integrations;
@@ -35,12 +36,12 @@ use gpui::{
 };
 
 pub use agent::{AgentRun, NEW_SESSION_TITLE, QUESTION_TOOL, TurnInput, can_compact, now_ms};
-pub use preferences::{is_dark_appearance, theme_mode};
+pub use preferences::{appearance_prefs, is_dark_appearance, theme_mode};
 pub use projects::{is_path_in_project, normalize_project_path, same_project_path};
 pub use surfaces::Surface;
 pub use workspace_sync::WorkspaceCache;
 
-use crate::db::{MonoCodeDb, SessionRow};
+use crate::db::{AppDb, SessionRow};
 use crate::harness::{HarnessInfo, HarnessResolver, catalog};
 use crate::ui::settings_modal::SettingsTab;
 
@@ -240,6 +241,20 @@ pub struct BenCodeApp {
     /// MonoCode Appearance › Translucency: the glass panes' tint over the
     /// blurred desktop, and whether the main pane takes it (`ui::glass`).
     pub sidebar_opacity: f32,
+    /// Keeps `settings.json` writes one at a time (`app/preferences.rs`).
+    pub settings_write: preferences::SettingsWrite,
+    /// Appearance › Theme, Color and Layout choices.
+    pub appearance: crate::ui::appearance::AppearancePrefs,
+    /// Appearance › Accent color: the custom colour picker is open.
+    pub accent_picker_open: bool,
+    /// Appearance › Chat background: the image as drawn behind the panes.
+    pub chat_background: chat_background::ChatBackground,
+    /// Each chat pane's place in the pane tree this frame, for the part of
+    /// the background it shows.
+    pub pane_rects: HashMap<String, crate::ui::layout::LayoutRect>,
+    /// The sidebar opened from the icon rail while collapsed (MonoCode's
+    /// drawer): the next press elsewhere closes it.
+    pub sidebar_drawer_open: bool,
     pub body_glass: bool,
     /// The window background last set, so the blur toggles only on change.
     pub window_background: Option<gpui::WindowBackgroundAppearance>,
@@ -410,7 +425,7 @@ pub struct BenCodeApp {
     /// Set while Back/Forward switches tabs, so the move is not recorded.
     navigating_history: bool,
     pub is_terminal_open: bool,
-    pub db: MonoCodeDb,
+    pub db: AppDb,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -443,9 +458,9 @@ impl BenCodeApp {
         saved: crate::settings::AppSettings,
         cx: &mut Context<Self>,
     ) -> Self {
-        let db = MonoCodeDb::open_default().unwrap_or_else(|err| {
-            log::warn!("MonoCode DB unavailable ({err:#}); using BenCode's local database");
-            MonoCodeDb::open_fallback()
+        let db = AppDb::open_default().unwrap_or_else(|err| {
+            log::error!("database unavailable ({err:#}); nothing will be saved this launch");
+            AppDb::open_fallback()
         });
 
         let sessions = db
@@ -1121,6 +1136,12 @@ impl BenCodeApp {
             runner_geometry: Default::default(),
             composer_mascot_off: false,
             sidebar_opacity: crate::ui::glass::OPACITY_DEFAULT,
+            settings_write: Default::default(),
+            appearance: Default::default(),
+            accent_picker_open: false,
+            chat_background: Default::default(),
+            pane_rects: HashMap::new(),
+            sidebar_drawer_open: false,
             body_glass: true,
             window_background: None,
             lightbox: None,
@@ -1239,7 +1260,7 @@ impl BenCodeApp {
         app.start_clock(cx);
         app.start_usage_clock(cx);
         app.start_process_monitor(cx);
-        app.load_shared_accounts(cx);
+        app.load_account_profiles(cx);
         app.refresh_installed_catalogs(cx);
         app.start_inbox_poll(cx);
         app
@@ -1599,6 +1620,8 @@ impl BenCodeApp {
 
 impl Render for BenCodeApp {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.apply_ui_scale(window);
+        self.sync_chat_background(!cx.theme().is_dark(), cx);
         if std::mem::take(&mut self.question_focus_wanted) {
             window.focus(&self.question_focus, cx);
         }
@@ -1619,6 +1642,8 @@ impl Render for BenCodeApp {
         // sidebar and the workspace column (MonoCode in-shell views).
         let surface = self.render_surface(cx);
         let workspace_visible = surface.is_none();
+        let compact_rail = self.compact_rail_active();
+        let title_bar_above = self.compact_title_bar();
 
         // Full size explicitly: the app is laid out inside `WindowRoot`'s
         // cached slot, not as the window's root.
@@ -1635,8 +1660,8 @@ impl Render for BenCodeApp {
                             };
                             let width = crate::ui::sidebar::resized_width(
                                 &drag,
-                                f32::from(event.event.position.x),
-                                f32::from(window.viewport_size().width),
+                                crate::ui::scale::logical(event.event.position.x),
+                                crate::ui::scale::logical(window.viewport_size().width),
                             );
                             if width != this.sidebar_width || !this.sidebar_resizing {
                                 this.sidebar_width = width;
@@ -1659,6 +1684,8 @@ impl Render for BenCodeApp {
                     .size_full()
                     .bg(glass.root(bg))
                     .text_color(fg)
+                    // MonoCode `compactTitleBar`: above the icon rail.
+                    .when(title_bar_above, |el| el.child(self.render_titlebar(window, cx)))
                     .child(
                         div()
                             .flex()
@@ -1666,13 +1693,29 @@ impl Render for BenCodeApp {
                             .size_full()
                             .min_h_0()
                             .overflow_hidden()
-                            // Column 1: Leftmost Project Rail
+                            // Column 1: Leftmost Project Rail, or its icons
                             .when(self.is_rail_open, |el| {
                                 el.child(self.render_project_rail(cx))
                             })
-                            // Column 2: Workspace Sidebar (when open)
-                            .when(self.is_sidebar_open && workspace_visible, |el| {
-                                el.child(self.render_sidebar(cx))
+                            .when(compact_rail, |el| el.child(self.render_compact_rail(cx)))
+                            // Column 2: Workspace Sidebar (when open, or
+                            // drawn out from the icon rail)
+                            .when(self.sidebar_shown() && workspace_visible, |el| {
+                                let drawer = self.sidebar_is_drawer();
+                                el.child(
+                                    div()
+                                        .flex()
+                                        .flex_none()
+                                        .h_full()
+                                        .when(drawer, |el| {
+                                            el.on_mouse_down_out(cx.listener(
+                                                |this, event: &gpui::MouseDownEvent, _, cx| {
+                                                    this.dismiss_sidebar_drawer(event, cx)
+                                                },
+                                            ))
+                                        })
+                                        .child(self.render_sidebar(cx)),
+                                )
                             })
                             // Column 3: Main Area (TitleBar + Views + Terminal Drawer + UsageFooter)
                             .when(workspace_visible, |el| {
@@ -1684,7 +1727,9 @@ impl Render for BenCodeApp {
                                         .h_full()
                                         .min_w_0()
                                         .overflow_hidden()
-                                        .child(self.render_titlebar(window, cx))
+                                        .when(!title_bar_above, |el| {
+                                            el.child(self.render_titlebar(window, cx))
+                                        })
                                         // MonoCode `body-glass`: the pane under
                                         // the title bar.
                                         .child(

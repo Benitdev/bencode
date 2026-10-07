@@ -9,11 +9,13 @@ use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
     Animation, AnimationExt, AnyElement, ClickEvent, Context, Div, FontWeight, Hsla,
     InteractiveElement, IntoElement, ParentElement, SharedString, Stateful, Styled, Window, div,
-    prelude::*, px, relative, rgb,
+    prelude::*, relative,
 };
+use crate::ui::appearance::DiffColors;
 
 use crate::app::BenCodeApp;
 use crate::ui::mascot::{Mascot, pixel_sprite};
+use crate::ui::scale::px;
 
 /// MonoCode `h-8`: every rail row.
 pub(super) const ROW_HEIGHT: f32 = 32.0;
@@ -33,15 +35,6 @@ pub(super) fn format_diff_number(n: usize) -> String {
         out.push(ch);
     }
     out
-}
-
-/// `text-diff-add-fg` / `text-diff-del-fg` from MonoCode's `index.css`.
-fn diff_colors(is_dark: bool) -> (Hsla, Hsla) {
-    if is_dark {
-        (rgb(0x6ee7b7).into(), rgb(0xfda4af).into())
-    } else {
-        (rgb(0x047857).into(), rgb(0xbe123c).into())
-    }
 }
 
 /// MonoCode `projectCardTitle`: name, path, "Working", then the changes.
@@ -64,9 +57,10 @@ pub(super) fn project_card_title(name: &str, path: &str, (additions, deletions):
 }
 
 /// MonoCode `ProjectDiffStat`: `flex gap-1 text-[11px] font-semibold
-/// tabular-nums`, in the diff colours.
-pub(super) fn project_diff_stat(additions: usize, deletions: usize, dark: bool) -> impl IntoElement {
-    let (add, del) = diff_colors(dark);
+/// tabular-nums`, in the chosen diff palette (`text-diff-add-fg` /
+/// `text-diff-del-fg`).
+pub(super) fn project_diff_stat(additions: usize, deletions: usize, diff: DiffColors) -> impl IntoElement {
+    let (add, del) = (diff.add_fg, diff.del_fg);
     div()
         .flex()
         .flex_none()

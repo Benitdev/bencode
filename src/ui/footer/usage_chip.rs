@@ -7,7 +7,7 @@ use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize, Palette};
 use gpui::{
     AnyElement, Context, FontWeight, Hsla, IntoElement, ParentElement, Styled, anchored, deferred,
-    div, point, prelude::*, px, relative,
+    div, point, prelude::*, relative,
 };
 
 use crate::app::accounts::SignIn;
@@ -22,6 +22,7 @@ use crate::rate_limits::{
 };
 use crate::ui::HarnessIcon;
 use crate::ui::git_changes_panel::spinning_icon;
+use crate::ui::scale::px;
 use crate::ui::sidebar_popovers::popover_frame;
 
 /// MonoCode's notice on the chip of a thread whose account is gone.

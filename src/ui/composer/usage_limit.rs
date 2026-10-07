@@ -7,8 +7,10 @@ use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, Context, InteractiveElement, IntoElement, ParentElement, SharedString, Styled, div,
-    prelude::*, px,
+    prelude::*,
 };
+
+use crate::ui::scale::px;
 use jiff::{Timestamp, tz::TimeZone};
 
 use crate::app::{BenCodeApp, now_ms};

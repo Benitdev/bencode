@@ -8,10 +8,11 @@ use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, Context, ElementId, Entity, InteractiveElement, IntoElement, ParentElement, Pixels,
-    SharedString, Styled, div, prelude::*, px,
+    SharedString, Styled, div, prelude::*,
 };
 
 use crate::app::BenCodeApp;
+use crate::ui::scale::px;
 
 type Action = fn(&mut BenCodeApp, &mut Context<BenCodeApp>);
 

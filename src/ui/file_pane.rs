@@ -111,7 +111,7 @@ impl BenCodeApp {
             return chat.into_any_element();
         }
         let theme = cx.theme();
-        let min = theme.pane_min().to_pixels(theme.base_rem());
+        let min = theme.pane_min().to_pixels(theme.base_rem() * crate::ui::scale::ui_scale());
         let weak = cx.entity().downgrade();
         let pane = div()
             .size_full()

@@ -8,10 +8,11 @@ use ely_gpui_component::primitives::{Icon, IconName};
 use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
     AnyElement, Context, FontWeight, IntoElement, ParentElement, Styled, div,
-    prelude::*, px,
+    prelude::*,
 };
 
 use crate::app::BenCodeApp;
+use crate::ui::scale::px;
 use crate::ui::window_drag::claim_press;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -124,12 +125,15 @@ impl BenCodeApp {
             .flex_none()
             .items_center()
             .gap_2()
-            .h(crate::ui::sidebar::TITLEBAR_HEIGHT) // MonoCode `h-10`
+            .h(crate::ui::scale::px(crate::ui::sidebar::TITLEBAR_HEIGHT)) // MonoCode `h-10`
             .px_3()
             .border_b_1()
             .border_color(colors.border)
+            // Beside the icon rail only what the traffic lights overhang
+            // it by (MonoCode `compactRail`: `w-4`).
             .when(!self.is_rail_open && cfg!(target_os = "macos"), |el| {
-                el.child(div().flex_none().w(px(72.0)))
+                let gap = if self.compact_rail_active() { 16.0 } else { 72.0 };
+                el.child(div().flex_none().w(gpui::px(gap)))
             })
             .child(
                 Icon::new(surface.icon())
@@ -143,6 +147,11 @@ impl BenCodeApp {
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(colors.fg)
                     .child(surface.title()),
+            )
+            .when(
+                surface == Surface::Settings
+                    && self.settings_tab == crate::ui::settings_modal::SettingsTab::Appearance,
+                |el| el.child(claim_press(div()).child(self.render_restore_appearance(cx))),
             )
             .child(
                 claim_press(div()).child(

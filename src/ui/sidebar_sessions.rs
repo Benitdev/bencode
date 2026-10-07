@@ -10,7 +10,7 @@ use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, Context, InteractiveElement, IntoElement, MouseButton, MouseDownEvent,
-    ParentElement, SharedString, Styled, div, prelude::*, px,
+    ParentElement, SharedString, Styled, div, prelude::*,
 };
 
 use crate::app::BenCodeApp;
@@ -20,6 +20,7 @@ use crate::app::session_list::{
 };
 use crate::db::SessionRow;
 use crate::ui::icons::ExtraIcon;
+use crate::ui::scale::px;
 use crate::ui::sidebar_folders::SessionGroup;
 
 /// MonoCode `SESSION_INSERT_WINDOW_MS`.

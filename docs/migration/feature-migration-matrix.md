@@ -62,7 +62,7 @@ MonoCode paths are relative to `reference/monocode/src`, BenCode paths to `src`.
 | Session reminders | `sessions/model/sessionReminders.ts` | `app/reminders.rs`, `db/reminders.rs`, `ui/reminder_notices.rs` | ✅ | |
 | Linked work items | `sessions/model/sessionWorkItem.ts` | `db/work_item.rs`, `ui/link_dialog.rs` | 🟡 | GitHub only |
 | In-shell views (surfaces) | `App.tsx` | `app/surfaces.rs` | ✅ | |
-| Menu bar, shortcuts | `src-tauri/src/menu.rs` | `app/commands.rs` | 🟡 | No Edit / Window / Help menus, ⌘1-9, ⌃Tab, ⇧⌘A, zoom |
+| Menu bar, shortcuts | `src-tauri/src/menu.rs` | `app/commands.rs` | 🟡 | No Edit / Window / Help menus, ⌘1-9, ⌃Tab, ⇧⌘A |
 | Tray icon, Dock badge | `src-tauri/src/tray.rs` | none | ⚪ | |
 
 ## 4. Files and source control

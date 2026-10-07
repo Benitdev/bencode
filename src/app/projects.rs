@@ -13,7 +13,7 @@ use gpui::{Context, PathPromptOptions};
 use crate::app::BenCodeApp;
 use crate::app::tab_scope::{ProjectReturn, plan_project_return};
 use crate::app::workspace_nav::WorkspaceRequest;
-use crate::db::{MonoCodeDb, SessionRow};
+use crate::db::{AppDb, SessionRow};
 
 /// MonoCode `recents.ts` `MAX`.
 const RECENT_PROJECT_LIMIT: usize = 20;
@@ -205,7 +205,7 @@ impl BenCodeApp {
             return;
         };
         let task = cx.background_executor().spawn(async move {
-            let db = MonoCodeDb::open_reader(&path)?;
+            let db = AppDb::open_reader(&path)?;
             Ok(read_sessions(&db, &request))
         });
         cx.spawn(async move |this, cx| {
@@ -264,7 +264,7 @@ struct LoadedSessions {
 }
 
 /// Failures are logged and leave that part out, as the UI-thread load did.
-fn read_sessions(db: &MonoCodeDb, request: &SessionsRequest) -> LoadedSessions {
+fn read_sessions(db: &AppDb, request: &SessionsRequest) -> LoadedSessions {
     let mut loaded = LoadedSessions::default();
     if let Some(cwd) = &request.project {
         match db.list_sessions_for_cwd(cwd, PROJECT_SESSION_LIMIT, &request.known) {

@@ -8,15 +8,18 @@ use ely_gpui_component::primitives::{DragGhost, Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::prelude::*;
 use gpui::{
-    AnyElement, Axis, Context, DragMoveEvent, FollowMode, IntoElement, ListState, ParentElement,
-    SharedString, Stateful, Styled, div, list, px,
+    AnyElement, Axis, Context, DragMoveEvent, FollowMode, IntoElement, ListState, ObjectFit,
+    ParentElement, SharedString, Stateful, Styled, div, img, list, relative,
 };
 
 use crate::app::BenCodeApp;
 use crate::db::SessionRow;
 use crate::ui::composer::DockProbe;
 use crate::ui::drag_drop::{DraggedFile, DraggedPane, DraggedSession, render_pane_drop_hint};
-use crate::ui::layout::{LayoutNode, SplitDir, leaf_count, pane_edge_from_point, split_shares};
+use crate::ui::layout::{
+    LayoutNode, SplitDir, layout_leaves, leaf_count, pane_edge_from_point, split_shares,
+};
+use crate::ui::scale::px;
 
 const UNTITLED: &str = "Untitled thread";
 
@@ -65,6 +68,11 @@ impl BenCodeApp {
             );
         };
         let in_split = leaf_count(&layout) > 1;
+        self.pane_rects.clear();
+        if self.appearance.chat_background.path.is_some() {
+            let leaves = layout_leaves(&layout, Default::default());
+            self.pane_rects.extend(leaves.into_iter().map(|leaf| (leaf.id, leaf.rect)));
+        }
         shell.child(self.render_layout_node(&layout, in_split, cx))
     }
 
@@ -106,7 +114,7 @@ impl BenCodeApp {
             SplitDir::Down => Axis::Vertical,
         };
         let theme = cx.theme();
-        let min = theme.pane_min().to_pixels(theme.base_rem());
+        let min = theme.pane_min().to_pixels(theme.base_rem() * crate::ui::scale::ui_scale());
         let weak = cx.entity().downgrade();
         let owned_id = split_id.to_string();
         let mut split = SplitPane::new(SharedString::from(owned_id.clone()), axis, min)
@@ -178,6 +186,7 @@ impl BenCodeApp {
         let empty = !session.blocks.iter().any(|b| b.role == "user");
         let frame = self
             .with_pane_listeners(frame, session_id, cx)
+            .children(self.render_chat_background(session_id, empty))
             .when(in_split, |el| {
                 el.child(self.render_pane_header(session, is_focused, cx))
             });
@@ -194,6 +203,37 @@ impl BenCodeApp {
                 el.child(render_pane_drop_hint(edge, cx))
             })
             .into_any_element()
+    }
+
+    /// MonoCode `.chat-pane-background::before`: the chat background behind
+    /// the pane. One image covers the whole pane tree, so each pane shows
+    /// the part under it (`--chat-background-left` / `-top` / `-width` /
+    /// `-height`).
+    fn render_chat_background(&self, session_id: &str, session_empty: bool) -> Option<AnyElement> {
+        let (image, opacity) = self.chat_background_for(session_empty)?;
+        let rect = self
+            .pane_rects
+            .get(session_id)
+            .copied()
+            .filter(|rect| rect.w > 0.0 && rect.h > 0.0)
+            .unwrap_or_default();
+        Some(
+            div()
+                .absolute()
+                .inset_0()
+                .overflow_hidden()
+                .child(
+                    img(image)
+                        .absolute()
+                        .left(relative(-rect.x / rect.w))
+                        .top(relative(-rect.y / rect.h))
+                        .w(relative(1.0 / rect.w))
+                        .h(relative(1.0 / rect.h))
+                        .object_fit(ObjectFit::Cover)
+                        .opacity(opacity),
+                )
+                .into_any_element(),
+        )
     }
 
     /// Focus on click, pane docking and file attachment drops. Drag-move

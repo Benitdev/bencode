@@ -11,8 +11,10 @@ use std::time::{Duration, Instant};
 
 use gpui::{
     AnyElement, App, Bounds, Context, Hsla, IntoElement, ParentElement, Pixels, Render, Styled,
-    WeakEntity, Window, anchored, canvas, deferred, div, point, px,
+    WeakEntity, Window, anchored, canvas, deferred, div, point,
 };
+
+use crate::ui::scale::px;
 
 use super::runner::{
     COIN_HOVER, COIN_SIZE, COLLECT_POP_MS, COLLECT_POP_PX, CRASH_STUN_MS, Coin, EXIT_MS, Facing,
@@ -49,10 +51,10 @@ pub struct RunnerGeometry {
 
 fn rect(bounds: Bounds<Pixels>) -> Rect {
     Rect {
-        left: f32::from(bounds.origin.x),
-        top: f32::from(bounds.origin.y),
-        right: f32::from(bounds.origin.x + bounds.size.width),
-        bottom: f32::from(bounds.origin.y + bounds.size.height),
+        left: crate::ui::scale::logical(bounds.origin.x),
+        top: crate::ui::scale::logical(bounds.origin.y),
+        right: crate::ui::scale::logical(bounds.origin.x + bounds.size.width),
+        bottom: crate::ui::scale::logical(bounds.origin.y + bounds.size.height),
     }
 }
 

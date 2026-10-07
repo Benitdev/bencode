@@ -24,20 +24,21 @@ use ely_gpui_component::theme::ActiveTheme;
 use gpui::{
     AnyElement, Context, FollowMode, FontWeight, InteractiveElement, IntoElement, ListAlignment,
     ListOffset, ListState, ParentElement, Pixels, SharedString, Styled, Window, canvas, div,
-    prelude::*, px,
+    prelude::*,
 };
 
 use crate::app::BenCodeApp;
 use crate::db::SessionRow;
 use crate::ui::motion::cubic_bezier;
+use crate::ui::scale::px;
 use blocks::MESSAGE_MAX_WIDTH;
 use turns::{Row, TurnLayout};
 
 /// Rows near the end that may still change height while an agent runs.
 const LIVE_TAIL_ROWS: usize = 3;
-const LIST_OVERDRAW: gpui::Pixels = px(600.0);
+const LIST_OVERDRAW: f32 = 600.0;
 /// The spacer under a sent prompt before the list has ever been laid out.
-const UNMEASURED_GAP: Pixels = px(2000.0);
+const UNMEASURED_GAP: f32 = 2000.0;
 
 /// MonoCode `riseIntoAnchor`: a sent prompt fades in while it slides from
 /// the upper viewport to its row, then the rest of its turn fades up.
@@ -46,9 +47,9 @@ const PROMPT_FADE: Duration = Duration::from_millis(480);
 const PROMPT_REVEAL: Duration = Duration::from_millis(320);
 /// Where the prompt starts, as a fraction of the viewport from the top.
 const PROMPT_RISE_FROM: f32 = 0.3;
-const PROMPT_REVEAL_LIFT: Pixels = px(10.0);
+const PROMPT_REVEAL_LIFT: f32 = 10.0;
 /// Fallback slide distance when the viewport hasn't been measured yet (~30% of a typical viewport).
-const PROMPT_FALLBACK_RISE: Pixels = px(160.0);
+const PROMPT_FALLBACK_RISE: f32 = 160.0;
 
 /// The heights of the last turn's rows as they were last painted.
 type RowHeights = Rc<RefCell<HashMap<usize, Pixels>>>;
@@ -72,7 +73,7 @@ impl AnchorProbe {
     fn gap(&self) -> Pixels {
         let viewport = self.list.viewport_bounds().size.height;
         if viewport <= px(0.0) {
-            return UNMEASURED_GAP;
+            return px(UNMEASURED_GAP);
         }
         self.last_viewport_height.set(viewport);
         let heights = self.heights.borrow();
@@ -131,7 +132,7 @@ const NEAR_END: f32 = 16.0;
 impl Default for TranscriptView {
     fn default() -> Self {
         Self {
-            list: ListState::new(0, ListAlignment::Bottom, LIST_OVERDRAW),
+            list: ListState::new(0, ListAlignment::Bottom, px(LIST_OVERDRAW)),
             session_id: None,
             turns: Vec::new(),
             rows: Vec::new(),
@@ -224,7 +225,7 @@ impl TranscriptView {
             let from = if vh > px(0.0) {
                 vh * PROMPT_RISE_FROM
             } else {
-                PROMPT_FALLBACK_RISE
+                px(PROMPT_FALLBACK_RISE)
             };
             let rise = cubic_bezier(0.22, 1.0, 0.36, 1.0)(progress(PROMPT_RISE));
             // The fade gets its own gentler curve (CSS `ease-out`).
@@ -238,7 +239,7 @@ impl TranscriptView {
         let reveal = cubic_bezier(0.22, 1.0, 0.36, 1.0)(
             (landed.as_secs_f32() / PROMPT_REVEAL.as_secs_f32()).min(1.0),
         );
-        Some((PROMPT_REVEAL_LIFT * (1.0 - reveal), reveal))
+        Some((px(PROMPT_REVEAL_LIFT) * (1.0 - reveal), reveal))
     }
 
     /// Asks for another frame when this one's paint changed what the
@@ -474,7 +475,7 @@ impl BenCodeApp {
             .child(
                 div()
                     .w_full()
-                    .max_w(MESSAGE_MAX_WIDTH)
+                    .max_w(px(MESSAGE_MAX_WIDTH))
                     .flex()
                     .flex_col()
                     .when(find_hit, |el| {

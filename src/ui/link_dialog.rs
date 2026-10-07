@@ -7,12 +7,13 @@ use ely_gpui_component::overlays::Dialog;
 use ely_gpui_component::theme::ActiveTheme;
 use gpui::{
     AnyElement, Context, FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement,
-    MouseButton, StatefulInteractiveElement, Styled, div, px, relative, rgb,
+    MouseButton, StatefulInteractiveElement, Styled, div, relative, rgb,
 };
 
 use crate::app::BenCodeApp;
 use crate::db::{LinkedWorkItem, WorkItemKind};
 use crate::ui::app_callback::app_callback;
+use crate::ui::scale::px;
 
 /// MonoCode `text-red-400`.
 const RED_400: u32 = 0xf87171;

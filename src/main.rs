@@ -6,10 +6,12 @@ mod github;
 mod harness;
 mod process_stats;
 pub mod mcp;
+mod monocode_import;
 mod rate_limits;
 mod schedule;
 mod settings;
 mod skills;
+mod storage;
 mod ui;
 mod workspace;
 
@@ -30,11 +32,23 @@ fn main() {
                 return;
             }
             app::commands::install(cx);
-            let saved = settings::settings_dir()
+            // Before the database opens: the first launch on its own data
+            // brings along what a MonoCode install held.
+            let imported = monocode_import::import_once();
+            let mut saved = settings::settings_dir()
                 .map(|dir| settings::load_from(&dir))
                 .unwrap_or_default();
+            if let Some(imported) = imported
+                && monocode_import::merge_accounts(&mut saved.provider_accounts, imported.accounts)
+                && let Some(dir) = settings::settings_dir()
+                && let Err(err) = settings::save_to(&dir, &saved)
+            {
+                log::error!("saving the imported account names: {err:#}");
+            }
             let system_dark = app::is_dark_appearance(cx.window_appearance());
-            ui::theme::install(app::theme_mode(saved.theme, system_dark), cx);
+            let appearance = app::appearance_prefs(&saved);
+            ui::theme::install(app::theme_mode(saved.theme, system_dark), &appearance.tint, cx);
+            ui::appearance::AppearanceTokens::set(appearance.tokens(), cx);
 
             let bounds = Bounds::centered(None, size(px(1200.0), px(780.0)), cx);
             let options = WindowOptions {

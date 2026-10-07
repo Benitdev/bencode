@@ -10,8 +10,10 @@ use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
     AnyElement, Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString,
-    Styled, anchored, deferred, div, prelude::*, px,
+    Styled, anchored, deferred, div, prelude::*,
 };
+
+use crate::ui::scale::px;
 
 use super::ci_repair::{Evidence, build_request};
 use crate::app::{BenCodeApp, TurnInput};

@@ -13,8 +13,7 @@ use ely_gpui_component::primitives::{Icon, IconName};
 use ely_gpui_component::settings::{SettingsRow, SettingsSection};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
-    AnyElement, Context, Hsla, IntoElement, ParentElement, SharedString, Styled, div, prelude::*,
-    px, relative,
+    AnyElement, Context, Hsla, IntoElement, ParentElement, SharedString, Styled, div, prelude::*, relative,
 };
 
 use crate::app::worktree_lifecycle::deletion_blocker;
@@ -23,6 +22,7 @@ use crate::git::Worktree;
 use crate::git::worktrees::default_worktrees_dir;
 use crate::ui::app_callback::{app_callback, app_callback_with};
 use crate::ui::icons::ExtraIcon;
+use crate::ui::scale::px;
 use crate::ui::sidebar_popovers::pretty_path;
 
 /// A `Select`'s `on_change` for a `BenCodeApp` method.

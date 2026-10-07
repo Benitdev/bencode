@@ -6,10 +6,11 @@ use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, ClickEvent, Context, FontWeight, InteractiveElement, IntoElement, ParentElement,
-    SharedString, Styled, Window, div, prelude::*, px, relative,
+    SharedString, Styled, Window, div, prelude::*, relative,
 };
 
 use crate::app::{BenCodeApp, SidebarMode};
+use crate::ui::scale::px;
 use crate::ui::window_drag::claim_press;
 use crate::ui::app_callback::app_callback;
 use crate::ui::diff_counts::diff_counts;
@@ -18,7 +19,7 @@ use crate::ui::diff_counts::diff_counts;
 pub const STROKE_OPACITY: f32 = 0.07;
 
 /// MonoCode's title bar and sidebar header are `h-10`.
-pub const TITLEBAR_HEIGHT: gpui::Pixels = px(40.0);
+pub const TITLEBAR_HEIGHT: f32 = 40.0;
 
 /// MonoCode `MIN_WIDTH` / `MAX_WIDTH` / `DEFAULT_WIDTH`; the sidebar never
 /// takes more than half the window.
@@ -117,7 +118,7 @@ impl BenCodeApp {
                     // MonoCode `DiffStat`: 11px semibold, gap-1.5; the
                     // label is `leading-label`.
                     if tab == SidebarMode::Changes && added + removed > 0 {
-                        el.child(diff_counts(added, removed, colors).gap_1p5().text_size(px(11.0)))
+                        el.child(diff_counts(added, removed, crate::ui::appearance::diff_colors(cx)).gap_1p5().text_size(px(11.0)))
                     } else {
                         el.child(div().min_w_0().truncate().line_height(px(12.0 * 1.4)).child(label))
                     }
@@ -195,7 +196,7 @@ impl BenCodeApp {
 
     /// MonoCode clears the search, the picks and the filter popover when
     /// the Sessions tab is left.
-    fn show_sidebar(&mut self, mode: SidebarMode, cx: &mut Context<Self>) {
+    pub(crate) fn show_sidebar(&mut self, mode: SidebarMode, cx: &mut Context<Self>) {
         if self.sidebar_mode == SidebarMode::Sessions && mode != SidebarMode::Sessions {
             self.search_input.update(cx, |input, cx| input.set_text("", cx));
             self.search_query.clear();
@@ -329,7 +330,7 @@ impl BenCodeApp {
                         this.sidebar_width = SIDEBAR_MIN_WIDTH;
                         cx.notify();
                     }
-                    this.sidebar_drag_x = f32::from(event.position.x);
+                    this.sidebar_drag_x = crate::ui::scale::logical(event.position.x);
                 }),
             )
             .on_drag(SidebarResize { start_x: 0.0, start_width: width }, |drag, _, _, cx| {
@@ -355,13 +356,14 @@ impl BenCodeApp {
             .flex_none()
             .items_center()
             .gap_1()
-            .h(TITLEBAR_HEIGHT)
+            .h(px(TITLEBAR_HEIGHT))
             .pl_3()
             .pr_1p5()
             .border_b_1()
             .border_color(colors.fg.opacity(STROKE_OPACITY))
-            .when(!self.is_rail_open && cfg!(target_os = "macos"), |el| {
-                el.child(div().flex_none().w(px(78.0))) // MonoCode `w-[78px]`
+            // The icon rail (or the title bar above it) holds that space.
+            .when(!self.is_rail_open && !self.compact_rail_active() && cfg!(target_os = "macos"), |el| {
+                el.child(div().flex_none().w(gpui::px(78.0))) // MonoCode `w-[78px]`
             })
             .child(
                 div().flex().flex_1().min_w_0().items_center().child(

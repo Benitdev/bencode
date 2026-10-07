@@ -266,7 +266,7 @@ impl BenCodeApp {
 
     pub(crate) fn render_automations_body(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let theme = cx.theme();
-        let min = theme.pane_min().to_pixels(theme.base_rem());
+        let min = theme.pane_min().to_pixels(theme.base_rem() * crate::ui::scale::ui_scale());
         div()
             .size_full()
             .child(MasterDetail::new(

@@ -10,7 +10,7 @@ use ely_gpui_component::settings::{SettingsRow, SettingsSection};
 use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
     AnyElement, Context, FontWeight, IntoElement, ParentElement, SharedString, Styled, div,
-    prelude::*, px, relative,
+    prelude::*, relative,
 };
 
 use crate::app::BenCodeApp;
@@ -21,6 +21,7 @@ use crate::ui::HarnessIcon;
 use crate::ui::app_callback::app_callback;
 use crate::ui::footer::{account_status_label, usage_meter};
 use crate::ui::git_changes_panel::spinning_icon;
+use crate::ui::scale::px;
 
 /// MonoCode `UsageMeter`'s `w-36`.
 const METER_WIDTH: f32 = 144.0;
@@ -161,7 +162,6 @@ impl BenCodeApp {
         let busy = self.accounts.working.is_some();
         let removing = self.accounts.working
             == Some(Working::Removing(account.provider.clone(), account.id.clone()));
-        let shared = self.accounts.is_shared(account);
         let identity = self.accounts.identity(account);
         let usage = self.usage.cached(provider, &account.id);
         let id = format!("{}-{}", provider.id(), account.id);
@@ -282,13 +282,8 @@ impl BenCodeApp {
                             IconButton::new(SharedString::from(format!("account-remove-{id}")), IconName::Trash2)
                                 .variant(ButtonVariant::Ghost)
                                 .size(ControlSize::Sm)
-                                // MonoCode's list is its own: BenCode only reads it.
-                                .tooltip(if shared {
-                                    "Added in MonoCode; remove it there"
-                                } else {
-                                    "Remove account"
-                                })
-                                .disabled(busy || shared)
+                                .tooltip("Remove account")
+                                .disabled(busy)
                                 .on_click(cx.listener(move |this, _, _, cx| {
                                     this.request_remove_account(remove_target.clone(), cx);
                                 })),

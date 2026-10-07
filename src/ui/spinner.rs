@@ -2,7 +2,9 @@
 
 use std::time::Duration;
 
-use gpui::{Animation, AnimationExt, Hsla, IntoElement, ParentElement, SharedString, Styled, div, px};
+use gpui::{Animation, AnimationExt, Hsla, IntoElement, ParentElement, SharedString, Styled, div};
+
+use crate::ui::scale::px;
 
 const FRAMES: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 

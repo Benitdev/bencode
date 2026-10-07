@@ -21,7 +21,7 @@ IPC layer.
 | UI ↔ backend | JSON over the Tauri IPC bridge | Direct function calls in one process |
 | Components | Tailwind, CodeMirror, xterm.js | Ely GPUI Components |
 | Agent output | Rust backend → WebView events | `mpsc` channel of `AgentEvent` → app entity |
-| Database | SQLite (`monocode.db`) | The same file |
+| Database | SQLite (`monocode.db`) | Its own `bencode.db`, same schema; MonoCode's is copied in once |
 | Preferences | WebView storage | `settings.json` |
 
 Performance targets (not yet measured): startup under 50ms, about 30MB of RAM.
@@ -182,9 +182,9 @@ position.
 
 | Store | Path | Written by | Notes |
 | :--- | :--- | :--- | :--- |
-| MonoCode database | `~/Library/Application Support/com.monocode.desktop/monocode.db` | `src/db/` | Shared with MonoCode. Unknown JSON fields and unmodelled columns must survive a write. |
+| Database | `~/Library/Application Support/BenCode/bencode.db` | `src/db/` | BenCode's own, in MonoCode's schema; a first launch copies MonoCode's in (`monocode_import`). Unknown JSON fields and unmodelled columns must survive a write. |
 | Settings | `~/Library/Application Support/BenCode/settings.json` | `settings.rs` via `app/preferences.rs` | Atomic write off the UI thread; unknown keys round-trip. Holds theme, defaults, rail order, folders, and other per-run UI state MonoCode keeps in WebView storage. |
-| Checkpoints | `~/Library/Application Support/com.monocode.desktop/checkpoints` | `git/checkpoint.rs` via `app/session_review.rs` | MonoCode's store and manifest format: per session, each edited file before its first edit (`files/`) and after its latest (`after/`). Written in order on one thread. |
+| Checkpoints | `~/Library/Application Support/BenCode/checkpoints` | `git/checkpoint.rs` via `app/session_review.rs` | BenCode's own store in MonoCode's manifest format: per session, each edited file before its first edit (`files/`) and after its latest (`after/`). Written in order on one thread. |
 
 ---
 
