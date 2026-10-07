@@ -94,7 +94,6 @@ impl BenCodeApp {
     /// The count, with the folded aggregate status before it.
     fn folder_count(
         &self,
-        key: &str,
         count: usize,
         open: bool,
         state: FolderState,
@@ -118,10 +117,7 @@ impl BenCodeApp {
                             .color(rgb(0xfbbf24)),
                     )
                 } else if state.busy {
-                    el.child(terminal_spinner(
-                        SharedString::from(format!("folder-spin-{key}")),
-                        colors.accent,
-                    ))
+                    el.child(terminal_spinner(colors.accent, cx))
                 } else if state.done {
                     el.child(
                         Icon::new(IconName::Check)
@@ -203,7 +199,7 @@ impl BenCodeApp {
                         .text_color(fg)
                         .child(SharedString::from(folder.name.clone())),
                 )
-                .child(self.folder_count(&folder.id, sessions.len(), open, state, cx))
+                .child(self.folder_count(sessions.len(), open, state, cx))
                 .into_any_element()
         };
         let (hover_id, drop_id, new_in) = (folder.id.clone(), folder.id.clone(), folder.id.clone());
@@ -334,7 +330,7 @@ impl BenCodeApp {
                     .text_color(fg)
                     .child(name),
             )
-            .child(self.folder_count(key, sessions.len(), open, folder_state(sessions, states), cx));
+            .child(self.folder_count(sessions.len(), open, folder_state(sessions, states), cx));
         div()
             .flex()
             .flex_col()

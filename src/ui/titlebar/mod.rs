@@ -562,10 +562,7 @@ impl BenCodeApp {
                     .justify_center()
                     .when(ix > 0, |el| el.ml(px(-2.0)));
                 if tab.busy.contains(harness) {
-                    slot.child(crate::ui::spinner::terminal_spinner(
-                        SharedString::from(format!("tab-spin-{}-{harness}", tab.id)),
-                        colors.accent,
-                    ))
+                    slot.child(crate::ui::spinner::terminal_spinner(colors.accent, cx))
                     .into_any_element()
                 } else if tab.done.contains(harness) {
                     slot.child(

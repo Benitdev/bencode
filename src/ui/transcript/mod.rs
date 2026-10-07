@@ -293,19 +293,36 @@ pub struct TranscriptUiState {
 const CLOCK_TICK: std::time::Duration = std::time::Duration::from_secs(1);
 
 impl BenCodeApp {
-    /// Redraws every second while any agent runs, so "working for 12s" ticks.
+    /// Redraws while any agent runs: every spinner frame (80ms) while the
+    /// workspace shows them, else every second so "working for 12s" ticks.
+    /// Usage-limit countdowns tick once a second.
     pub fn start_clock(&mut self, cx: &mut Context<Self>) {
         cx.spawn(async move |this, cx| {
+            let mut wait = CLOCK_TICK;
+            let mut last_second = Instant::now();
             loop {
-                cx.background_executor().timer(CLOCK_TICK).await;
+                cx.background_executor().timer(wait).await;
                 let ticked = this.update(cx, |app, cx| {
-                    let countdown = app.tick_usage_limits(cx);
-                    if app.is_agent_running() || countdown {
+                    let countdown = if last_second.elapsed() >= CLOCK_TICK {
+                        last_second = Instant::now();
+                        app.tick_usage_limits(cx)
+                    } else {
+                        false
+                    };
+                    let running = app.is_agent_running();
+                    if running || countdown {
                         cx.notify();
                     }
+                    // A surface covers the workspace and its spinners.
+                    if running && app.surface.is_none() {
+                        crate::ui::spinner::FRAME
+                    } else {
+                        CLOCK_TICK
+                    }
                 });
-                if ticked.is_err() {
-                    return;
+                match ticked {
+                    Ok(next) => wait = next,
+                    Err(_) => return,
                 }
             }
         })

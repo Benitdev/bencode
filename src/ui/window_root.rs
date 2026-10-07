@@ -1,4 +1,5 @@
-//! The window's root: the app, cached, under the composer runner's layer.
+//! The window's root: the app, cached, between the composer runner's layer
+//! and the process readout's.
 //! The runner redraws every frame of a turn; caching keeps those frames
 //! from re-rendering the whole app, which redraws only when it notifies
 //! (or an entity it read does).
@@ -11,10 +12,12 @@ use gpui::{
 use crate::app::BenCodeApp;
 use crate::settings::AppSettings;
 use crate::ui::composer::runner_view::RunnerLayer;
+use crate::ui::footer::ProcessLayer;
 
 pub struct WindowRoot {
     app: Entity<BenCodeApp>,
     runner: Entity<RunnerLayer>,
+    process: Entity<ProcessLayer>,
 }
 
 impl WindowRoot {
@@ -29,7 +32,13 @@ impl WindowRoot {
         let app = cx.new(|cx| BenCodeApp::new(window, saved, import_failed, cx));
         let weak = app.downgrade();
         let runner = cx.new(|_| RunnerLayer::new(weak));
-        Self { app, runner }
+        let slot = app.read(cx).process_slot.clone();
+        let process = cx.new(|cx| ProcessLayer::new(slot, window, cx));
+        Self {
+            app,
+            runner,
+            process,
+        }
     }
 }
 
@@ -48,5 +57,8 @@ impl Render for WindowRoot {
                     .clone()
                     .cached(StyleRefinement::default().size_full()),
             )
+            // After the app: it lays its readout out over the footer slot
+            // the app has just measured, and paints above it.
+            .child(self.process.clone())
     }
 }

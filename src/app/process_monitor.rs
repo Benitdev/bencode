@@ -1,15 +1,13 @@
 //! The footer's CPU and memory readout: BenCode's own process, sampled every
-//! few seconds off the UI thread.
+//! few seconds off the UI thread. The sampling loop and the drawing live in
+//! `ui/footer/process_layer.rs`.
 
 use std::time::{Duration, Instant};
 
-use gpui::Context;
-
-use crate::app::BenCodeApp;
 use crate::process_stats::{self, ProcessSample};
 
 /// How often the readout is sampled.
-const SAMPLE_EVERY: Duration = Duration::from_secs(2);
+pub(crate) const SAMPLE_EVERY: Duration = Duration::from_secs(2);
 
 #[derive(Default)]
 pub struct ProcessMonitor {
@@ -21,7 +19,7 @@ pub struct ProcessMonitor {
 
 impl ProcessMonitor {
     /// Folds a sample in; true when the text on screen changed.
-    fn record(&mut self, at: Instant, sample: ProcessSample) -> bool {
+    pub(crate) fn record(&mut self, at: Instant, sample: ProcessSample) -> bool {
         let cpu = self.last.map(|(then, previous)| {
             let percent =
                 process_stats::cpu_percent(previous.cpu_time, sample.cpu_time, at.duration_since(then));
@@ -33,34 +31,6 @@ impl ProcessMonitor {
         self.cpu = cpu;
         self.memory = memory;
         changed
-    }
-}
-
-impl BenCodeApp {
-    /// Samples the process for the footer and redraws only when its text
-    /// changes, so an idle app is not woken every tick.
-    pub(crate) fn start_process_monitor(&mut self, cx: &mut Context<Self>) {
-        cx.spawn(async move |this, cx| {
-            loop {
-                let sample = cx
-                    .background_executor()
-                    .spawn(async { process_stats::sample().map(|sample| (Instant::now(), sample)) })
-                    .await;
-                let Some((at, sample)) = sample else {
-                    return; // unsupported platform
-                };
-                let landed = this.update(cx, |app, cx| {
-                    if app.process_monitor.record(at, sample) {
-                        cx.notify();
-                    }
-                });
-                if landed.is_err() {
-                    return; // app dropped
-                }
-                cx.background_executor().timer(SAMPLE_EVERY).await;
-            }
-        })
-        .detach();
     }
 }
 

@@ -230,6 +230,9 @@ pub struct BenCodeApp {
     /// MonoCode `ComposerRunner`: the composer geometry the mascot runs on
     /// (measured by layout, read by `RunnerLayer`), and the setting.
     pub runner_geometry: crate::ui::composer::runner_view::RunnerGeometry,
+    /// The footer's slot for the CPU and memory readout, measured by layout
+    /// and drawn over by `ProcessLayer`.
+    pub process_slot: std::rc::Rc<std::cell::Cell<Option<crate::ui::composer::runner::Rect>>>,
     pub composer_mascot_off: bool,
     /// MonoCode Appearance › Translucency: the glass panes' tint over the
     /// blurred desktop, and whether the main pane takes it (`ui::glass`).
@@ -310,7 +313,6 @@ pub struct BenCodeApp {
     /// Provider usage for the footer (MonoCode `rateLimitsCache`).
     pub usage: usage::UsageState,
     /// The footer's CPU and memory readout for BenCode itself.
-    pub process_monitor: process_monitor::ProcessMonitor,
     /// Provider account profiles (MonoCode `providerAccounts`).
     pub accounts: accounts::AccountsState,
     /// The Add account form's name field.
@@ -1097,6 +1099,7 @@ impl BenCodeApp {
             editing_last_turn: None,
             new_worktrees: HashMap::new(),
             runner_geometry: Default::default(),
+            process_slot: Default::default(),
             composer_mascot_off: false,
             sidebar_opacity: crate::ui::glass::OPACITY_DEFAULT,
             settings_write: Default::default(),
@@ -1138,7 +1141,6 @@ impl BenCodeApp {
             workspace: WorkspaceCache::default(),
             project_stats: Default::default(),
             usage: Default::default(),
-            process_monitor: Default::default(),
             accounts: Default::default(),
             account_name_input,
             account_editor_input,
@@ -1197,7 +1199,6 @@ impl BenCodeApp {
         app.load_folder_members(cx);
         app.start_clock(cx);
         app.start_usage_clock(cx);
-        app.start_process_monitor(cx);
         app.load_account_profiles(cx);
         app.refresh_installed_catalogs(cx);
         app.start_inbox_poll(cx);
@@ -1365,6 +1366,8 @@ impl Render for BenCodeApp {
         self.sync_mention_marks(window, cx);
         // The runner layer reads what this layout measures.
         self.runner_geometry.clear();
+        // A footer that is not drawn leaves no readout behind.
+        self.process_slot.set(None);
         if !self.focus_handle.contains_focused(window, cx) && window.focused(cx).is_none() {
             window.focus(&self.focus_handle, cx);
         }

@@ -64,10 +64,7 @@ impl BenCodeApp {
         }
         if states.busy.contains(&session.id) {
             return row(colors.accent)
-                .child(terminal_spinner(
-                    SharedString::from(format!("card-spin-{}", session.id)),
-                    colors.accent,
-                ))
+                .child(terminal_spinner(colors.accent, cx))
                 .child("Working...")
                 .into_any_element();
         }

@@ -4,9 +4,11 @@
 //! the toggle.
 
 mod account_views;
+mod process_layer;
 mod usage_chip;
 
 pub(crate) use account_views::{account_status_label, usage_meter};
+pub use process_layer::ProcessLayer;
 
 use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
@@ -17,6 +19,9 @@ use crate::rate_limits::{RateLimitProvider, RateLimitStatus};
 use crate::ui::HarnessIcon;
 use crate::ui::git_changes_panel::spinning_icon;
 use crate::ui::scale::px;
+
+/// Room for "112%" and "1023 MB" with their icons.
+const PROCESS_SLOT_WIDTH: f32 = 124.0;
 
 impl BenCodeApp {
     pub fn render_usage_footer(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -98,7 +103,18 @@ impl BenCodeApp {
                 (None, None) => el,
             })
             .child(div().flex_1())
-            .children(self.render_process_stats(cx))
+            // BenCode's CPU and memory are drawn over this slot by
+            // `ProcessLayer`, which redraws on its own so a sample does not
+            // re-render the app.
+            .child(
+                div()
+                    .relative()
+                    .flex_none()
+                    .w(px(PROCESS_SLOT_WIDTH))
+                    .h(px(20.0))
+                    .child(crate::ui::composer::runner_view::measure(&self.process_slot)),
+            )
+            .child(div().flex_none().w(px(1.0)).h(px(12.0)).ml(px(10.0)).mr(px(6.0)).bg(colors.border))
             .child(
                 div()
                     .id("footer-terminal-toggle")
@@ -130,44 +146,5 @@ impl BenCodeApp {
                     }))
                     .child("Terminal"),
             )
-    }
-
-    /// BenCode's CPU and memory, with a divider before the terminal toggle.
-    fn render_process_stats(&self, cx: &Context<Self>) -> Option<impl IntoElement + use<>> {
-        let monitor = &self.process_monitor;
-        if monitor.cpu.is_none() && monitor.memory.is_none() {
-            return None;
-        }
-        let colors = &cx.theme().colors;
-        let icon_color = colors.fg.opacity(0.4);
-        let stat = |icon: IconName, text: String| {
-            div()
-                .flex()
-                .flex_none()
-                .items_center()
-                .gap(px(4.0))
-                .child(Icon::new(icon).size(IconSize::Xs).color(icon_color))
-                .child(text)
-        };
-        Some(
-            div()
-                .flex()
-                .flex_none()
-                .items_center()
-                .gap(px(6.0))
-                .mr(px(2.0))
-                .child(
-                    div()
-                        .id("footer-process-stats")
-                        .flex()
-                        .flex_none()
-                        .items_center()
-                        .gap(px(10.0))
-                        .children(monitor.cpu.clone().map(|cpu| stat(IconName::Cpu, cpu)))
-                        .children(monitor.memory.clone().map(|memory| stat(IconName::MemoryStick, memory)))
-                        .tooltip(Tooltip::text("BenCode CPU (one core is 100%) and memory")),
-                )
-                .child(div().w(px(1.0)).h(px(12.0)).mx(px(4.0)).bg(colors.border)),
-        )
     }
 }
