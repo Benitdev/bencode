@@ -1,47 +1,121 @@
-//! Lucide icons MonoCode uses that Ely does not ship, drawn from embedded
-//! SVGs in the text colour like Ely's own.
+//! Lucide icons MonoCode uses that Ely does not ship. [`Assets`] serves
+//! their embedded SVGs beside Ely's own, so [`ExtraIcon::icon`] is an Ely
+//! `Icon` with the theme's sizes, colours and hover.
 
-use gpui::{Hsla, IntoElement, Pixels, Styled, svg};
+use std::borrow::Cow;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ExtraIcon {
+use ely_gpui_component::primitives::Icon;
+use gpui::{AssetSource, Hsla, IntoElement, Pixels, SharedString, Styled, svg};
+
+macro_rules! extra_icons {
+    ($($(#[$doc:meta])* $variant:ident => $file:literal,)*) => {
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        pub enum ExtraIcon {
+            $($(#[$doc])* $variant,)*
+        }
+
+        impl ExtraIcon {
+            const ALL: &[ExtraIcon] = &[$(ExtraIcon::$variant,)*];
+
+            /// Where [`Assets`] serves it, clear of Ely's `icons/`.
+            fn path(self) -> &'static str {
+                match self {
+                    $(Self::$variant => concat!("bencode/icons/", $file, ".svg"),)*
+                }
+            }
+
+            fn data(self) -> &'static [u8] {
+                match self {
+                    $(Self::$variant => {
+                        include_bytes!(concat!("../../assets/icons/", $file, ".svg"))
+                    })*
+                }
+            }
+        }
+    };
+}
+
+extra_icons! {
     /// `folder-tree`: a worktree.
-    FolderTree,
+    FolderTree => "folder-tree",
     /// `replace`: a handoff.
-    Replace,
+    Replace => "replace",
     /// `file-diff`: Open All Changes.
-    FileDiff,
+    FileDiff => "file-diff",
     /// `list-filter`: Filter sessions.
-    ListFilter,
+    ListFilter => "list-filter",
     /// `fold-vertical`: the Explorer's Collapse All.
-    FoldVertical,
+    FoldVertical => "fold-vertical",
     /// `unfold-vertical`: a review's Expand all files.
-    UnfoldVertical,
+    UnfoldVertical => "unfold-vertical",
     /// `bell-off`: a project's muted notifications.
-    BellOff,
+    BellOff => "bell-off",
     /// `image-plus`: Add project logo.
-    ImagePlus,
+    ImagePlus => "image-plus",
+    /// Hugeicons `comment-add-01`: a transcript selection's Add to chat.
+    CommentAdd => "comment-add",
+    /// Hugeicons `file-plus-corner`: a transcript selection's Add to notes.
+    FilePlusCorner => "file-plus-corner",
 }
 
 impl ExtraIcon {
-    fn data(self) -> &'static [u8] {
-        match self {
-            Self::FolderTree => include_bytes!("../../assets/icons/folder-tree.svg"),
-            Self::Replace => include_bytes!("../../assets/icons/replace.svg"),
-            Self::FileDiff => include_bytes!("../../assets/icons/file-diff.svg"),
-            Self::ListFilter => include_bytes!("../../assets/icons/list-filter.svg"),
-            Self::FoldVertical => include_bytes!("../../assets/icons/fold-vertical.svg"),
-            Self::UnfoldVertical => include_bytes!("../../assets/icons/unfold-vertical.svg"),
-            Self::BellOff => include_bytes!("../../assets/icons/bell-off.svg"),
-            Self::ImagePlus => include_bytes!("../../assets/icons/image-plus.svg"),
-        }
+    pub fn icon(self) -> Icon {
+        Icon::from_path(self.path())
     }
 
+    #[allow(dead_code)]
     pub fn render(self, size: Pixels, color: Hsla) -> impl IntoElement {
         svg()
             .data(self.data())
             .size(size)
             .flex_none()
             .text_color(color)
+    }
+}
+
+/// Ely's assets plus BenCode's icons. Pass to `Application::with_assets`.
+pub struct Assets;
+
+impl AssetSource for Assets {
+    fn load(&self, path: &str) -> anyhow::Result<Option<Cow<'static, [u8]>>> {
+        match ExtraIcon::ALL.iter().find(|icon| icon.path() == path) {
+            Some(icon) => Ok(Some(Cow::Borrowed(icon.data()))),
+            None => ely_gpui_component::Assets.load(path),
+        }
+    }
+
+    fn list(&self, path: &str) -> anyhow::Result<Vec<SharedString>> {
+        let mut names = ely_gpui_component::Assets.list(path)?;
+        names.extend(
+            ExtraIcon::ALL
+                .iter()
+                .map(|icon| icon.path())
+                .filter(|name| name.starts_with(path))
+                .map(SharedString::from),
+        );
+        Ok(names)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use ely_gpui_component::primitives::IconName;
+    use gpui::AssetSource;
+
+    use super::{Assets, ExtraIcon};
+
+    #[test]
+    fn every_extra_icon_is_served() {
+        for icon in ExtraIcon::ALL {
+            let data = Assets.load(icon.path()).expect("the source loads");
+            assert_eq!(data.as_deref(), Some(icon.data()), "{icon:?}");
+        }
+    }
+
+    #[test]
+    fn elys_icons_still_load() {
+        let data = Assets.load(IconName::Check.path()).expect("the source loads");
+        assert!(data.is_some());
+        assert!(Assets.load("bencode/icons/missing.svg").expect("the source loads").is_none());
     }
 }

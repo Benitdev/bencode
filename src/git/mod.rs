@@ -664,6 +664,25 @@ mod tests {
             .unwrap_or_else(|| panic!("no change for {path} in {changes:?}"))
     }
 
+    #[test]
+    fn auto_fetch_reports_new_remote_commits_as_behind() {
+        let remote = TempRepo::new();
+        remote.write("a.txt", "one\n");
+        remote.commit_all("first");
+        let local = TempRepo::new();
+        local.git(&["remote", "add", "origin", remote.cwd()]);
+        local.git(&["fetch", "-q", "origin"]);
+        local.git(&["reset", "-q", "--hard", "origin/main"]);
+        local.git(&["branch", "-q", "--set-upstream-to=origin/main"]);
+        assert_eq!(sync::auto_fetch(local.cwd()), Ok(false));
+
+        remote.write("a.txt", "two\n");
+        remote.commit_all("second");
+        assert_eq!(sync::sync_info(local.cwd()).behind, 0);
+        assert_eq!(sync::auto_fetch(local.cwd()), Ok(true));
+        assert_eq!(sync::sync_info(local.cwd()).behind, 1);
+    }
+
     // --- pure parsers -----------------------------------------------------
 
     #[test]

@@ -410,14 +410,14 @@ impl BenCodeApp {
 
 /// Paints `query`'s hits in `text`; the current block's first hit stands out
 /// (MonoCode's `::highlight` match and current colours).
-pub fn highlighted_text(
+pub fn match_marks(
     text: &str,
     query: &str,
     current: bool,
     cx: &gpui::App,
-) -> gpui::StyledText {
+) -> Vec<(Range<usize>, gpui::Hsla)> {
     let colors = &cx.theme().colors;
-    let highlights = match_ranges(text, query)
+    match_ranges(text, query)
         .into_iter()
         .enumerate()
         .map(|(ix, range)| {
@@ -426,15 +426,9 @@ pub fn highlighted_text(
             } else {
                 colors.warning.opacity(0.46)
             };
-            (
-                range,
-                gpui::HighlightStyle {
-                    background_color: Some(color),
-                    ..Default::default()
-                },
-            )
-        });
-    gpui::StyledText::new(text.to_string()).with_highlights(highlights)
+            (range, color)
+        })
+        .collect()
 }
 
 #[cfg(test)]

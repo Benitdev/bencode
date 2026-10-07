@@ -446,7 +446,12 @@ impl BenCodeApp {
                                 .items_center()
                                 .justify_center()
                                 .tooltip(Tooltip::text(status))
-                                .child(crate::ui::icons::ExtraIcon::BellOff.render(px(14.0), rgb(AMBER_400).into())),
+                                .child(
+                                    crate::ui::icons::ExtraIcon::BellOff
+                                        .icon()
+                                        .size(IconSize::Sm)
+                                        .color(rgb(AMBER_400)),
+                                ),
                         )
                     }),
             )

@@ -39,6 +39,9 @@ actions!(
         ClearSessionSelection,
         TreeCopyPath,
         TreeCopy,
+        TranscriptCopy,
+        TranscriptSelectAll,
+        TranscriptClearSelection,
         TreeCut,
         TreePaste,
         TreeRename,
@@ -115,6 +118,10 @@ fn keymap() -> Vec<KeyBinding> {
         KeyBinding::new("backspace", TreeDelete, Some("FileTree")),
         KeyBinding::new("delete", TreeDelete, Some("FileTree")),
         KeyBinding::new("escape", TreeClearCut, Some("FileTree")),
+        // Transcript text the pointer selected (MonoCode's native ⌘C / ⌘A).
+        KeyBinding::new("cmd-c", TranscriptCopy, Some("Transcript")),
+        KeyBinding::new("cmd-a", TranscriptSelectAll, Some("Transcript")),
+        KeyBinding::new("escape", TranscriptClearSelection, Some("Transcript")),
     ]
 }
 
@@ -242,6 +249,18 @@ impl BenCodeApp {
         }))
         .on_action(cx.listener(|this, _: &TreeCopyPath, _, cx| this.tree_copy_path(cx)))
         .on_action(cx.listener(|this, _: &TreeCopy, _, cx| this.tree_clip(false, cx)))
+        .on_action(cx.listener(|this, _: &TranscriptCopy, _, cx| {
+            this.copy_transcript_selection(cx)
+        }))
+        .on_action(cx.listener(|this, _: &TranscriptSelectAll, _, cx| {
+            this.select_all_transcript(cx)
+        }))
+        .on_action(cx.listener(|this, _: &TranscriptClearSelection, _, cx| {
+            // Nothing selected: Esc does what it does elsewhere.
+            if !this.clear_transcript_selection(cx) {
+                cx.propagate();
+            }
+        }))
         .on_action(cx.listener(|this, _: &TreeCut, _, cx| this.tree_clip(true, cx)))
         .on_action(cx.listener(|this, _: &TreePaste, _, cx| this.tree_paste_selected(cx)))
         .on_action(cx.listener(|this, _: &TreeRename, _, cx| this.tree_rename_selected(cx)))
@@ -323,7 +342,7 @@ mod tests {
 
     #[test]
     fn keymap_chords_are_unique_per_action() {
-        assert_eq!(keymap().len(), 48);
+        assert_eq!(keymap().len(), 51);
         assert_eq!(menus().len(), 4);
     }
 }

@@ -131,7 +131,9 @@ impl BenCodeApp {
             list = list.child(row(
                 SharedString::from(format!("worktree-{}", tree.path)),
                 crate::ui::icons::ExtraIcon::FolderTree
-                    .render(px(14.0), muted)
+                    .icon()
+                    .size(IconSize::Sm)
+                    .color(muted)
                     .into_any_element(),
                 label,
                 pretty_path(&tree.path),

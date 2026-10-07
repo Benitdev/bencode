@@ -220,7 +220,14 @@ impl BenCodeApp {
                 let id = SharedString::from(format!("{}-fold-{ix}", session.id));
                 div()
                     .py_1()
-                    .child(markdown(id, &text, false, Tone::Fold, cx))
+                    .child(markdown(
+                        id,
+                        &text,
+                        false,
+                        Tone::Fold,
+                        self.seg_ctx(&session.id, *ix, false),
+                        cx,
+                    ))
                     .into_any_element()
             }
         };
@@ -427,6 +434,7 @@ impl BenCodeApp {
                         &body,
                         false,
                         Tone::Reasoning,
+                        self.seg_ctx(&session.id, ix, false),
                         cx,
                     )),
                 )

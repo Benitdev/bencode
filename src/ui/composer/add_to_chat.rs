@@ -1,7 +1,6 @@
 //! MonoCode "Add to chat" (`quoteDraft.ts`, `editorSelection.ts`): a code
 //! reference like `@src/app.rs (lines 4-9)` joins the prompt as its own
-//! paragraph. (MonoCode also quotes transcript selections with `> `;
-//! BenCode's transcript text cannot be selected yet.)
+//! paragraph, and text selected in the transcript joins it quoted with `> `.
 
 use gpui::Context;
 
@@ -27,6 +26,28 @@ pub fn append_to_draft(draft: &str, text: &str) -> String {
         "" => draft.to_string(),
         block => join_insert(draft, block),
     }
+}
+
+/// MonoCode `appendSelectionQuote`: every line behind `> ` (a blank one
+/// as a bare `>`).
+pub fn append_quote(draft: &str, text: &str) -> String {
+    let selected = text.replace("\r\n", "\n").replace('\r', "\n");
+    let selected = selected.trim();
+    if selected.is_empty() {
+        return draft.to_string();
+    }
+    let quote = selected
+        .split('\n')
+        .map(|line| {
+            if line.is_empty() {
+                ">".to_string()
+            } else {
+                format!("> {line}")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    join_insert(draft, &quote)
 }
 
 /// MonoCode `isMentionablePath`: short, relative, plain segments.
@@ -61,8 +82,22 @@ pub fn selection_reference(path: &str, start_line: usize, end_line: usize) -> St
 impl BenCodeApp {
     /// MonoCode `requestAddToChat`: into the focused thread's prompt.
     pub fn add_to_chat(&mut self, text: &str, cx: &mut Context<Self>) {
+        self.insert_into_prompt(text, append_to_draft, cx);
+    }
+
+    /// MonoCode `addSelectionToChat`: transcript text, quoted.
+    pub fn add_quote_to_chat(&mut self, text: &str, cx: &mut Context<Self>) {
+        self.insert_into_prompt(text, append_quote, cx);
+    }
+
+    fn insert_into_prompt(
+        &mut self,
+        text: &str,
+        join: fn(&str, &str) -> String,
+        cx: &mut Context<Self>,
+    ) {
         let draft = self.prompt_input.read(cx).text().to_string();
-        let next = append_to_draft(&draft, text);
+        let next = join(&draft, text);
         if next == draft {
             return;
         }
@@ -92,6 +127,13 @@ mod tests {
             "@a.rs (line 1)\n\n"
         );
         assert_eq!(append_to_draft("keep", "  "), "keep");
+    }
+
+    #[test]
+    fn selections_join_as_quotes() {
+        assert_eq!(append_quote("", " one\r\n\ntwo \n"), "> one\n>\n> two\n\n");
+        assert_eq!(append_quote("hi", "x"), "hi\n\n> x\n\n");
+        assert_eq!(append_quote("keep", " \n "), "keep");
     }
 
     #[test]

@@ -265,6 +265,9 @@ pub struct BenCodeApp {
     pub drafts: HashMap<String, String>,
     pub expanded_reasoning: std::collections::HashSet<String>,
     pub transcript_ui: crate::ui::transcript::TranscriptUiState,
+    /// The text selected in a transcript, and the focus that takes ⌘C.
+    pub transcript_selection: Entity<crate::ui::transcript::selection::TranscriptSelection>,
+    pub transcript_focus: gpui::FocusHandle,
     /// Each project's terminals (MonoCode project terminal docks).
     pub terminals: crate::ui::terminal_pane::TerminalDocks,
     pub settings_tab: SettingsTab,
@@ -275,6 +278,8 @@ pub struct BenCodeApp {
     pub notes: Vec<crate::db::Note>,
     pub selected_note_id: Option<String>,
     pub note_filter_query: String,
+    /// The notes list's scroll, for its scroll bar.
+    pub notes_scroll: gpui::UniformListScrollHandle,
     pub note_filter_input: Entity<TextInput>,
     pub note_title_input: Entity<TextInput>,
     pub note_body_input: Entity<TextInput>,
@@ -316,6 +321,8 @@ pub struct BenCodeApp {
     pub search_modal_input: Entity<TextInput>,
     pub search_scope: crate::ui::search_view::SearchScope,
     pub search_hits: Vec<crate::ui::search_view::SearchHit>,
+    /// The hit list's scroll, for its scroll bar.
+    pub search_scroll: gpui::UniformListScrollHandle,
     pub search_active_index: usize,
     // Inbox
     /// Rename/delete dialog opened from the thread list.
@@ -557,6 +564,7 @@ impl BenCodeApp {
                     this.refresh_file_tree(cx);
                     // MonoCode re-reads stale project stats on focus.
                     this.refresh_project_stats(cx);
+                    this.auto_fetch_on_focus(cx);
                 }
             }),
             cx.observe_window_appearance(window, |this, window, cx| {
@@ -1092,6 +1100,8 @@ impl BenCodeApp {
             drafts: HashMap::new(),
             expanded_reasoning: std::collections::HashSet::new(),
             transcript_ui: Default::default(),
+            transcript_selection: cx.new(|_| Default::default()),
+            transcript_focus: cx.focus_handle(),
             terminals: Default::default(),
             settings_tab: SettingsTab::Providers,
             surface: None,
@@ -1099,6 +1109,7 @@ impl BenCodeApp {
             notes,
             selected_note_id,
             note_filter_query: String::new(),
+            notes_scroll: Default::default(),
             note_filter_input,
             note_title_input,
             note_body_input,
@@ -1126,6 +1137,7 @@ impl BenCodeApp {
             search_modal_input,
             search_scope: crate::ui::search_view::SearchScope::All,
             search_hits: Vec::new(),
+            search_scroll: Default::default(),
             search_active_index: 0,
             session_dialog: None,
             window_drag_pressed: false,
@@ -1177,6 +1189,7 @@ impl BenCodeApp {
         };
         app.apply_settings(saved);
         app.start_git_poll(cx);
+        app.start_auto_fetch(cx);
         app.start_project_stats_poll(cx);
         app.start_session_age_tick(cx);
         app.start_reminder_poll(cx);

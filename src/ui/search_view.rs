@@ -283,7 +283,16 @@ impl BenCodeApp {
         });
         div()
             .h(height)
-            .child(uniform_list("search-hits", self.search_hits.len(), rows).size_full())
+            .flex()
+            .flex_col()
+            .child(crate::ui::scrollbar::framed(
+                "search-hits-scrollbar",
+                &self.search_scroll,
+                uniform_list("search-hits", self.search_hits.len(), rows)
+                    .track_scroll(&self.search_scroll)
+                    .size_full()
+                    .pr(crate::ui::scrollbar::gutter()),
+            ))
             .into_any_element()
     }
 

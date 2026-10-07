@@ -136,7 +136,7 @@ impl BenCodeApp {
             )
             .into_any_element(),
         };
-        div()
+        let detail = div()
             .id("inbox-detail")
             .size_full()
             .overflow_y_scroll()
@@ -199,8 +199,8 @@ impl BenCodeApp {
                         el.child(self.render_pr_checks(item, cx))
                     })
                     .child(self.render_inbox_conversation(item, cx)),
-            )
-            .into_any_element()
+            );
+        crate::ui::scrollbar::Scrolled::new("inbox-detail-scrollbar", detail).into_any_element()
     }
 
     /// MonoCode `InboxProjectPicker`: which rail project the agent works in.

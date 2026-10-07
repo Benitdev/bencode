@@ -22,6 +22,7 @@ use gpui::{
 };
 
 use crate::app::BenCodeApp;
+use crate::ui::scrollbar;
 use crate::app::file_pane::PaneTab;
 use crate::git::graph::{self, Cmd, Node};
 use crate::git::sync::{self as git_sync, BranchPr, HistoryCommit};
@@ -253,25 +254,6 @@ pub(crate) fn spinning_icon(
         .into_any_element()
 }
 
-/// An Explorer-style icon in `tint`, `fg` while `group` is hovered
-/// (MonoCode `hover:text-content`); [`ExtraIcon`] cannot change colour.
-fn extra_icon_hover(icon: ExtraIcon, size: f32, tint: Hsla, fg: Hsla, group: SharedString) -> AnyElement {
-    div()
-        .relative()
-        .size(px(size))
-        .flex_none()
-        .child(icon.render(px(size), tint))
-        .child(
-            div()
-                .absolute()
-                .top_0()
-                .left_0()
-                .invisible()
-                .group_hover(group, |s| s.visible())
-                .child(icon.render(px(size), fg)),
-        )
-        .into_any_element()
-}
 
 /// MonoCode `ChangeDir`: changed files nested under their folders, each
 /// folder with the status its files share (or none when they differ).
@@ -1318,14 +1300,19 @@ impl BenCodeApp {
                 .when(visible.below > 0.0, |el| el.child(div().h(px(visible.below))))
                 .into_any_element()
         };
-        div()
-            .id("git-changes-scroll")
-            .track_scroll(&self.changes_ui.scroll)
-            .flex_1()
-            .min_h_0()
-            .overflow_y_scroll()
-            .py(px(CHANGES_PAD_Y))
-            .child(body)
+        scrollbar::framed(
+            "git-changes-scrollbar",
+            &self.changes_ui.scroll,
+            div()
+                .id("git-changes-scroll")
+                .track_scroll(&self.changes_ui.scroll)
+                .flex_1()
+                .min_h_0()
+                .overflow_y_scroll()
+                .py(px(CHANGES_PAD_Y))
+                .pr(scrollbar::gutter())
+                .child(body),
+        )
     }
 
     /// MonoCode `FileSection`'s header: chevron, title, count pill and
@@ -1353,14 +1340,16 @@ impl BenCodeApp {
         // hover:bg-content/10 hover:text-content`, `size-3.5` icons.
         let tint = fg.opacity(0.55);
         let action_group = |key: &str| SharedString::from(format!("git-{id}-{key}"));
-        let named = |key: &str, icon: IconName| {
-            Icon::new(icon)
-                .size(IconSize::Sm)
+        // In `tint`, `fg` while its button is hovered (MonoCode
+        // `hover:text-content`).
+        let glyph = |key: &str, icon: Icon| {
+            icon.size(IconSize::Sm)
                 .color(tint)
                 .group_hover_color(action_group(key), fg)
                 .into_any_element()
         };
-        let extra = |key: &str, icon: ExtraIcon| extra_icon_hover(icon, 14.0, tint, fg, action_group(key));
+        let named = |key: &str, icon: IconName| glyph(key, Icon::new(icon));
+        let extra = |key: &str, icon: ExtraIcon| glyph(key, icon.icon());
         let action = |key: &str, icon: AnyElement, tip: &'static str| {
             let hover = fg.opacity(0.10);
             div()
@@ -1936,12 +1925,15 @@ impl BenCodeApp {
                     ),
             )
             .when(open, |el| {
-                el.child(
+                el.child(scrollbar::framed(
+                    "git-graph-scrollbar",
+                    &self.changes_ui.graph_scroll,
                     div()
                         .id("git-graph-rows")
                         .track_scroll(&self.changes_ui.graph_scroll)
                         .flex_1()
                         .min_h_0()
+                        .pr(scrollbar::gutter())
                         .overflow_y_scroll()
                         .overflow_x_hidden()
                         .map(|el| {
@@ -1968,7 +1960,7 @@ impl BenCodeApp {
                                     .when(visible.below > 0.0, |el| el.child(div().flex_none().h(px(visible.below))))
                             }
                         }),
-                )
+                ))
             })
     }
 

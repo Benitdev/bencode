@@ -52,6 +52,8 @@ pub struct TitleChange {
 pub struct SessionsUi {
     /// MonoCode `monocode.sessionSidebarFilters`, saved in settings.
     pub filters: SessionFilters,
+    /// The thread list's scroll, for its scroll bar.
+    pub scroll: gpui::ScrollHandle,
     pub selection: Selection,
     /// The card or folder showing an inline rename field.
     pub renaming_session: Option<String>,
@@ -262,19 +264,23 @@ impl BenCodeApp {
             .flex_1()
             .min_h_0()
             .child(self.render_session_search(cx))
-            .child(
+            .child(crate::ui::scrollbar::framed(
+                "thread-list-scrollbar",
+                &self.sessions_ui.scroll,
                 div()
                     .id("thread-list")
                     .key_context("SessionList")
                     .track_focus(&self.session_list_focus)
+                    .track_scroll(&self.sessions_ui.scroll)
                     .flex_1()
                     .w_full()
                     .min_h_0()
                     .min_w_0()
+                    .pr(crate::ui::scrollbar::gutter())
                     .overflow_y_scroll()
                     .overflow_x_hidden()
                     .child(body),
-            )
+            ))
             .into_any_element()
     }
 
@@ -333,7 +339,7 @@ impl BenCodeApp {
         // at half strength until hovered (`content/10`), opened or active
         // (`bg-selection`).
         let filter_group = SharedString::from("filter-sessions");
-        let filter_glyph = |color: gpui::Hsla| ExtraIcon::ListFilter.render(px(12.0), color);
+        let filter_glyph = |color: gpui::Hsla| ExtraIcon::ListFilter.icon().size(IconSize::Xs).color(color);
         div()
             .flex()
             .flex_none()

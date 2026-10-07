@@ -391,6 +391,21 @@ pub fn pull(cwd: &str) -> Result<(), String> {
     checked(cwd, &["pull", "--ff-only"])
 }
 
+/// VS Code `git.autofetch`: a quiet `git fetch` so ahead/behind see new
+/// remote commits. `Ok(true)` when a remote-tracking ref moved. Never
+/// prompts: no terminal, and `output()` gives git a null stdin.
+pub fn auto_fetch(cwd: &str) -> Result<bool, String> {
+    let remote_refs = || {
+        stdout(
+            cwd,
+            &["for-each-ref", "--format=%(refname) %(objectname)", "refs/remotes"],
+        )
+    };
+    let before = remote_refs();
+    checked(cwd, &["fetch", "--quiet"])?;
+    Ok(remote_refs() != before)
+}
+
 /// MonoCode `git_sync_changes_for`: pull then push, or publish.
 pub fn sync(cwd: &str) -> Result<(), String> {
     if stdout(cwd, &["rev-parse", "--abbrev-ref", "@{upstream}"]).is_some() {

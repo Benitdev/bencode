@@ -18,13 +18,16 @@ use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::prelude::*;
 use gpui::{
-    AnyElement, App, ClickEvent, ElementId, Font, FontStyle, FontWeight, Hsla, SharedString,
-    StrikethroughStyle, StyledText, TextRun, Window, div, px, rgba,
+    AnyElement, App, ClickEvent, CursorStyle, ElementId, Font, FontStyle, FontWeight, Hsla,
+    MouseMoveEvent, SharedString, StrikethroughStyle, StyledText, TextRun, UnderlineStyle, Window,
+    div, px, rgba,
 };
 use pulldown_cmark::Alignment;
 use unicode_segmentation::UnicodeSegmentation;
 
 pub use parse::{Block, Fence, Inline, Span, inline_file, parse};
+
+use super::selection::{Joint, SegCtx, restyle};
 
 /// Opens a file a reply names: its path as written and the line, if any.
 pub type OnOpenFile = Rc<dyn Fn(&str, Option<u64>, &mut Window, &mut App)>;
@@ -79,6 +82,7 @@ pub struct AgentMarkdown {
     live: bool,
     tone: Tone,
     on_open_file: Option<OnOpenFile>,
+    select: Option<SegCtx>,
 }
 
 impl AgentMarkdown {
@@ -89,7 +93,15 @@ impl AgentMarkdown {
             live: false,
             tone: Tone::Answer,
             on_open_file: None,
+            select: None,
         }
+    }
+
+    /// The text joins the transcript's selection (MonoCode `user-select:
+    /// text` on `.agent-transcript`).
+    pub fn selectable(mut self, ctx: SegCtx) -> Self {
+        self.select = Some(ctx);
+        self
     }
 
     /// While more may arrive: the text reveals at a steady pace and its
@@ -189,6 +201,8 @@ struct Look {
     body: Hsla,
     strong: Hsla,
     link: Hsla,
+    /// `hover:text-sky-300` (the theme's link blue on light).
+    link_hover: Hsla,
     chip: Hsla,
     shell_bg: Hsla,
     shell_border: Hsla,
@@ -213,6 +227,11 @@ impl Look {
         } else {
             theme.colors.link
         };
+        let link_hover = if theme.is_dark() {
+            rgba(0x7dd3fcff).into()
+        } else {
+            theme.colors.link
+        };
         let fold = tone != Tone::Answer;
         Self {
             tone,
@@ -220,6 +239,7 @@ impl Look {
             body: fg.opacity(body),
             strong: fg.opacity(strong),
             link,
+            link_hover,
             chip: fg.opacity(0.08),
             shell_bg: fg.opacity(if fold { 0.04 } else { 0.06 }),
             shell_border: fg.opacity(if fold { 0.08 } else { 0.10 }),
@@ -416,44 +436,98 @@ fn fade_tail(laid: &mut Laid, strength: f32) {
     laid.runs = runs;
 }
 
-/// Inline text as an element, clickable where it links. The click is the
-/// wrapping element's, not `InteractiveText`'s: that one waits for a
-/// repaint between mouse down and up, which the cached app view does not
-/// give it.
-fn inline_element(key: ElementId, laid: Laid, open: &Option<OnOpenFile>) -> AnyElement {
-    let Laid {
-        text,
-        runs,
-        targets,
-    } = laid;
-    let styled = StyledText::new(text).with_runs(runs);
-    if targets.is_empty() {
-        return styled.into_any_element();
+/// Opens what a click on a reply's link or file chip names.
+fn open_target(target: &Target, open: &Option<OnOpenFile>, window: &mut Window, cx: &mut App) {
+    match target {
+        Target::Url(url) if url.starts_with("http://") || url.starts_with("https://") => {
+            cx.open_url(url)
+        }
+        Target::Url(url) => log::debug!("markdown: ignoring link {url}"),
+        Target::File(path, line) => match open {
+            Some(open) => open(path, *line, window, cx),
+            None => log::debug!("markdown: no file opener for {path}"),
+        },
     }
-    let layout = styled.layout().clone();
-    let open = open.clone();
-    div()
-        .id(key)
-        .child(styled)
-        .on_click(move |event: &ClickEvent, window, cx| {
-            let Ok(ix) = layout.index_for_position(event.position()) else {
-                return;
-            };
-            let Some((_, target)) = targets.iter().find(|(range, _)| range.contains(&ix)) else {
-                return;
-            };
-            match target {
-                Target::Url(url) if url.starts_with("http://") || url.starts_with("https://") => {
-                    cx.open_url(url)
-                }
-                Target::Url(url) => log::debug!("markdown: ignoring link {url}"),
-                Target::File(path, line) => match &open {
-                    Some(open) => open(path, *line, window, cx),
-                    None => log::debug!("markdown: no file opener for {path}"),
-                },
-            }
-        })
-        .into_any_element()
+}
+
+/// The link under `position`, by its place in `targets`.
+fn target_at(
+    layout: &gpui::TextLayout,
+    targets: &[(Range<usize>, Target)],
+    position: gpui::Point<gpui::Pixels>,
+) -> Option<usize> {
+    let ix = layout.index_for_position(position).ok()?;
+    targets.iter().position(|(range, _)| range.contains(&ix))
+}
+
+/// MonoCode `hover:text-sky-300 hover:underline` on the hovered link.
+fn hover_link(runs: &mut Vec<TextRun>, range: &Range<usize>, color: Hsla) {
+    restyle(runs, range, |run| {
+        run.color = color;
+        run.underline = Some(UnderlineStyle {
+            thickness: px(1.0),
+            color: Some(color),
+            wavy: false,
+        });
+    });
+}
+
+/// Runs of `base` over `len` bytes, coloured where `highlights` say.
+fn highlighted_runs(
+    len: usize,
+    base: &TextRun,
+    highlights: impl IntoIterator<Item = (Range<usize>, Hsla)>,
+) -> Vec<TextRun> {
+    let mut runs = vec![TextRun {
+        len,
+        ..base.clone()
+    }];
+    if len == 0 {
+        return Vec::new();
+    }
+    for (range, color) in highlights {
+        let range = range.start.min(len)..range.end.min(len);
+        if !range.is_empty() {
+            restyle(&mut runs, &range, |run| run.color = color);
+        }
+    }
+    runs
+}
+
+/// How a run of inline text is drawn, and where it sits in a copy.
+#[derive(Clone, Copy)]
+struct Run {
+    ink: Hsla,
+    italic: bool,
+    /// How strongly the live edge fades (0 when settled).
+    fade: f32,
+    joint: Joint,
+    /// A table cell, side by side with others.
+    cell: bool,
+}
+
+impl Run {
+    fn new(ink: Hsla, joint: Joint) -> Self {
+        Self {
+            ink,
+            italic: false,
+            fade: 0.0,
+            joint,
+            cell: false,
+        }
+    }
+
+    fn italic(self, italic: bool) -> Self {
+        Self { italic, ..self }
+    }
+
+    fn fade(self, fade: f32) -> Self {
+        Self { fade, ..self }
+    }
+
+    fn cell(self) -> Self {
+        Self { cell: true, ..self }
+    }
 }
 
 /// Draws blocks with one id space, one look and one file opener.
@@ -461,7 +535,10 @@ struct Draw<'a> {
     id: &'a ElementId,
     look: &'a Look,
     open: &'a Option<OnOpenFile>,
+    select: Option<&'a SegCtx>,
     next: std::cell::Cell<usize>,
+    /// The next selectable run's place in the reply.
+    seq: std::cell::Cell<usize>,
 }
 
 impl Draw<'_> {
@@ -471,10 +548,85 @@ impl Draw<'_> {
         (self.id.clone(), format!("{what}-{at}")).into()
     }
 
-    fn text(&self, inline: &Inline, ink: Hsla, italic: bool, fade: f32) -> AnyElement {
-        let laid = lay_out(inline, ink, italic, fade, self.look);
-        inline_element(self.key("text"), laid, self.open)
+    fn next_seq(&self) -> usize {
+        let seq = self.seq.get();
+        self.seq.set(seq + 1);
+        seq
     }
+
+    /// Inline text, selectable with the transcript and clickable where it
+    /// links.
+    fn text(&self, inline: &Inline, run: Run, window: &mut Window, cx: &mut App) -> AnyElement {
+        let Laid {
+            text,
+            mut runs,
+            targets,
+        } = lay_out(inline, run.ink, run.italic, run.fade, self.look);
+        let key = self.key("text");
+        let seq = self.next_seq();
+        let hovered = (!targets.is_empty())
+            .then(|| window.use_keyed_state((key.clone(), "link"), cx, |_, _| None::<usize>));
+        let over = hovered.as_ref().and_then(|state| *state.read(cx));
+        if let Some((range, _)) = over.and_then(|ix| targets.get(ix)) {
+            hover_link(&mut runs, range, self.look.link_hover);
+        }
+        let (element, layout) = match self.select {
+            Some(ctx) => {
+                let selectable = ctx.text(seq, run.joint, run.cell, text, runs, cx);
+                (selectable.element, selectable.layout)
+            }
+            None => {
+                let styled = StyledText::new(text).with_runs(runs);
+                let layout = styled.layout().clone();
+                (div().id(key).child(styled), layout)
+            }
+        };
+        let Some(hovered) = hovered else {
+            return element.into_any_element();
+        };
+        let targets = Rc::new(targets);
+        let open = self.open.clone();
+        let selection = self.select.map(|ctx| ctx.selection.clone());
+        let (move_layout, move_targets) = (layout.clone(), targets.clone());
+        let hover_state = hovered.clone();
+        // The click is the wrapping element's, not `InteractiveText`'s: that
+        // one waits for a repaint between mouse down and up, which the
+        // cached app view does not give it.
+        element
+            .when(over.is_some(), |el| el.cursor(CursorStyle::PointingHand))
+            .on_mouse_move(move |event: &MouseMoveEvent, _, cx| {
+                let at = target_at(&move_layout, &move_targets, event.position);
+                hover_state.update(cx, |over, cx| {
+                    if *over != at {
+                        *over = at;
+                        cx.notify();
+                    }
+                });
+            })
+            .on_hover(move |inside, _, cx| {
+                if !*inside {
+                    hovered.update(cx, |over, cx| {
+                        if over.take().is_some() {
+                            cx.notify();
+                        }
+                    });
+                }
+            })
+            .on_click(move |event: &ClickEvent, window, cx| {
+                // A drag that selected text is not a click on its link.
+                if selection
+                    .as_ref()
+                    .is_some_and(|selection| selection.read(cx).has_selection())
+                {
+                    return;
+                }
+                if let Some(ix) = target_at(&layout, &targets, event.position()) {
+                    open_target(&targets[ix].1, &open, window, cx);
+                }
+            })
+            .into_any_element()
+    }
+
 
     /// Blocks in a column with Streamdown's spacing; `fade` reaches the
     /// last one.
@@ -483,6 +635,7 @@ impl Draw<'_> {
         blocks: &[Block],
         quote: bool,
         fade: f32,
+        first: Joint,
         window: &mut Window,
         cx: &mut App,
     ) -> Vec<AnyElement> {
@@ -498,6 +651,7 @@ impl Draw<'_> {
                 block,
                 quote,
                 if ix == last { fade } else { 0.0 },
+                if ix == 0 { first } else { Joint::Block },
                 window,
                 cx,
             );
@@ -517,12 +671,16 @@ impl Draw<'_> {
         block: &Block,
         quote: bool,
         fade: f32,
+        joint: Joint,
         window: &mut Window,
         cx: &mut App,
     ) -> AnyElement {
         let look = self.look;
         match block {
-            Block::Paragraph(inline) => self.text(inline, look.body, quote, fade),
+            Block::Paragraph(inline) => {
+                let run = Run::new(look.body, joint).italic(quote).fade(fade);
+                self.text(inline, run, window, cx)
+            }
             Block::Heading(level, inline) => {
                 let (size, leading) = match (look.tone, level) {
                     (Tone::Answer, 1) => (22.0, 30.0),
@@ -540,7 +698,7 @@ impl Draw<'_> {
                 div()
                     .text_size(px(size))
                     .line_height(px(leading))
-                    .child(self.text(&bold, ink, false, fade))
+                    .child(self.text(&bold, Run::new(ink, joint).fade(fade), window, cx))
                     .into_any_element()
             }
             Block::Quote(inner) => div()
@@ -549,9 +707,9 @@ impl Draw<'_> {
                 .pl_4()
                 .border_l_4()
                 .border_color(look.fg.opacity(0.2))
-                .children(self.blocks(inner, true, fade, window, cx))
+                .children(self.blocks(inner, true, fade, joint, window, cx))
                 .into_any_element(),
-            Block::Code(fence) => self.code(fence, window, cx),
+            Block::Code(fence) => self.code(fence, joint, window, cx),
             Block::List { start, items } => {
                 let last = items.len().saturating_sub(1);
                 div()
@@ -608,6 +766,7 @@ impl Draw<'_> {
                                         &item.blocks,
                                         quote,
                                         if ix == last { fade } else { 0.0 },
+                                        if ix == 0 { joint } else { Joint::Line },
                                         window,
                                         cx,
                                     )),
@@ -615,14 +774,16 @@ impl Draw<'_> {
                     }))
                     .into_any_element()
             }
-            Block::Table { aligns, head, rows } => self.table(aligns, head, rows),
+            Block::Table { aligns, head, rows } => {
+                self.table(aligns, head, rows, joint, window, cx)
+            }
             Block::Rule => div().h(px(1.0)).bg(look.fg.opacity(0.1)).into_any_element(),
         }
     }
 
     /// MonoCode `.markdown-code-shell`: language or path over the code,
     /// a copy button at the top right, line numbers down the side.
-    fn code(&self, fence: &Fence, window: &mut Window, cx: &mut App) -> AnyElement {
+    fn code(&self, fence: &Fence, joint: Joint, window: &mut Window, cx: &mut App) -> AnyElement {
         let look = self.look;
         let key = self.key("code");
         let label: SharedString = fence
@@ -722,18 +883,30 @@ impl Draw<'_> {
             .child(copy);
 
         let code = fence.code.trim_end_matches('\n');
-        let styles: Vec<(Range<usize>, gpui::HighlightStyle)> = code_highlights(code, cx)
-            .into_iter()
-            .map(|(range, highlight)| {
-                (
-                    range,
-                    gpui::HighlightStyle {
-                        color: Some(highlight.color),
-                        ..Default::default()
-                    },
-                )
-            })
-            .collect();
+        let ink = cx.theme().colors.syntax.variable;
+        let runs = highlighted_runs(
+            code.len(),
+            &TextRun {
+                len: 0,
+                font: look.mono.clone(),
+                color: ink,
+                background_color: None,
+                underline: None,
+                strikethrough: None,
+            },
+            code_highlights(code, cx)
+                .into_iter()
+                .map(|(range, highlight)| (range, highlight.color)),
+        );
+        let code_text: AnyElement = match self.select {
+            Some(ctx) => ctx
+                .text(self.next_seq(), joint, false, code.to_string(), runs, cx)
+                .element
+                .into_any_element(),
+            None => StyledText::new(code.to_string())
+                .with_runs(runs)
+                .into_any_element(),
+        };
         let lines = code.lines().count().max(1);
         let first = fence.start_line.unwrap_or(1).max(1);
         let numbers = fence.line_numbers.then(|| {
@@ -767,14 +940,9 @@ impl Draw<'_> {
             .font_family(look.mono.family.clone())
             .text_size(px(CODE_SIZE))
             .line_height(px(CODE_LEADING))
-            .text_color(cx.theme().colors.syntax.variable)
+            .text_color(ink)
             .children(numbers)
-            .child(
-                div()
-                    .flex_none()
-                    .whitespace_nowrap()
-                    .child(StyledText::new(code.to_string()).with_highlights(styles)),
-            );
+            .child(div().flex_none().whitespace_nowrap().child(code_text));
         div()
             .flex()
             .flex_col()
@@ -791,18 +959,32 @@ impl Draw<'_> {
 
     /// Streamdown's table in the code shell's frame: 12px cells, hairline
     /// rows.
-    fn table(&self, aligns: &[Alignment], head: &[Inline], rows: &[Vec<Inline>]) -> AnyElement {
+    fn table(
+        &self,
+        aligns: &[Alignment],
+        head: &[Inline],
+        rows: &[Vec<Inline>],
+        joint: Joint,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> AnyElement {
         let look = self.look;
         let cell_ink = if look.tone == Tone::Answer {
             look.body
         } else {
             look.fg.opacity(0.65)
         };
-        let cell = |inline: &Inline, column: usize, header: bool| {
+        // Cells go in reading order, so a copy reads row by row.
+        let cell = |inline: &Inline, row: usize, column: usize, window: &mut Window, cx: &mut App| {
             let mut inline = inline.clone();
-            if header {
+            if row == 0 {
                 inline.spans.insert(0, (0..inline.text.len(), Span::Strong));
             }
+            let joint = match (row, column) {
+                (0, 0) => joint,
+                (_, 0) => Joint::Line,
+                _ => Joint::Cell,
+            };
             div()
                 .flex_1()
                 .min_w(px(64.0))
@@ -815,8 +997,24 @@ impl Draw<'_> {
                 .when(aligns.get(column) == Some(&Alignment::Center), |el| {
                     el.justify_center()
                 })
-                .child(self.text(&inline, cell_ink, false, 0.0))
+                .child(self.text(&inline, Run::new(cell_ink, joint).cell(), window, cx))
         };
+        let mut lines = Vec::with_capacity(rows.len() + 1);
+        for (ix, row) in std::iter::once(head).chain(rows.iter().map(Vec::as_slice)).enumerate() {
+            let cells: Vec<_> = row
+                .iter()
+                .enumerate()
+                .map(|(column, inline)| cell(inline, ix, column, window, cx))
+                .collect();
+            lines.push(
+                div()
+                    .flex()
+                    .when(ix > 0, |el| {
+                        el.border_t_1().border_color(look.fg.opacity(0.05))
+                    })
+                    .children(cells),
+            );
+        }
         div()
             .flex()
             .flex_col()
@@ -827,24 +1025,7 @@ impl Draw<'_> {
             .overflow_hidden()
             .text_size(px(12.0))
             .line_height(px(18.0))
-            .child(
-                div().flex().children(
-                    head.iter()
-                        .enumerate()
-                        .map(|(column, inline)| cell(inline, column, true)),
-                ),
-            )
-            .children(rows.iter().map(|row| {
-                div()
-                    .flex()
-                    .border_t_1()
-                    .border_color(look.fg.opacity(0.05))
-                    .children(
-                        row.iter()
-                            .enumerate()
-                            .map(|(column, inline)| cell(inline, column, false)),
-                    )
-            }))
+            .children(lines)
             .into_any_element()
     }
 }
@@ -893,9 +1074,11 @@ impl RenderOnce for AgentMarkdown {
             id: &self.id,
             look: &look,
             open: &self.on_open_file,
+            select: self.select.as_ref(),
             next: std::cell::Cell::new(0),
+            seq: std::cell::Cell::new(0),
         };
-        let children = draw.blocks(&blocks, false, fade, window, cx);
+        let children = draw.blocks(&blocks, false, fade, Joint::Block, window, cx);
         div()
             .flex()
             .flex_col()
@@ -948,6 +1131,7 @@ mod layout_tests {
             body: gpui::white().opacity(0.78),
             strong: gpui::white(),
             link: gpui::blue(),
+            link_hover: gpui::blue(),
             chip: gpui::white().opacity(0.08),
             shell_bg: gpui::white().opacity(0.06),
             shell_border: gpui::white().opacity(0.1),

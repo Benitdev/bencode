@@ -134,13 +134,52 @@ impl BenCodeApp {
     /// workspace. The last such tab stays open, so closing never jumps to
     /// another project (MonoCode `planWorkspaceTabClose`).
     pub fn close_tab(&mut self, tab_id: &str, cx: &mut Context<Self>) {
-        let TabClosePlan::Close { next_active } =
-            plan_tab_close(self.tabs.tabs(), &self.sessions, tab_id)
-        else {
+        match plan_tab_close(self.tabs.tabs(), &self.sessions, tab_id) {
+            TabClosePlan::Close { next_active } => {
+                if self.tabs.close_tab(tab_id) {
+                    self.tabs.activate(&next_active);
+                    self.sync_selection(cx);
+                }
+            }
+            TabClosePlan::Keep => self.keep_last_tab(tab_id, cx),
+        }
+    }
+
+    /// The project's last tab stays on screen (MonoCode `onCloseTitleTab`):
+    /// a split loses its focused pane (`onClosePane`); a single thread is
+    /// swapped for a fresh one of the same kind, leaving the old one in the
+    /// history (`onClearTabSession`). An empty tab is already as clear as it
+    /// gets.
+    fn keep_last_tab(&mut self, tab_id: &str, cx: &mut Context<Self>) {
+        let Some(tab) = self.tabs.tabs().iter().find(|t| t.id == tab_id) else {
             return;
         };
-        if self.tabs.close_tab(tab_id) {
-            self.tabs.activate(&next_active);
+        if tab.layout != leaf(&tab.focused) {
+            let focused = tab.focused.clone();
+            if self.tabs.close_pane(&focused) {
+                self.sync_selection(cx);
+            }
+            return;
+        }
+        let Some(old) = self.sessions.iter().find(|s| s.id == tab.focused).cloned() else {
+            return;
+        };
+        if is_blank_session(&old, self.is_agent_running_in(&old.id)) {
+            return;
+        }
+        let fresh = self.create_session_row(&old.cwd);
+        if let Some(session) = self.sessions.iter_mut().find(|s| s.id == fresh) {
+            // The blank replacement keeps the thread's harness, model and
+            // worktree, so the tab stays where it was.
+            session.harness = old.harness.clone();
+            session.model = old.model.clone();
+            session.runtime_mode = old.runtime_mode.clone();
+            session.model_settings = old.model_settings.clone();
+            session.worktree_cwd = old.worktree_cwd.clone();
+            session.branch = old.branch.clone();
+        }
+        self.persist_session(&fresh);
+        if self.tabs.replace_pane(&old.id, &fresh) {
             self.sync_selection(cx);
         }
     }
