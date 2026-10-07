@@ -1,6 +1,7 @@
 //! Window status bar, MonoCode `app/shell/UsageFooter.tsx`: the active
 //! thread's provider usage (or just its harness) on the left, the terminal
-//! drawer toggle on the right.
+//! drawer toggle on the right. BenCode adds its own CPU and memory left of
+//! the toggle.
 
 mod account_views;
 mod usage_chip;
@@ -95,10 +96,11 @@ impl BenCodeApp {
                 ),
                 (None, None) => el,
             })
+            .child(div().flex_1())
+            .children(self.render_process_stats(cx))
             .child(
                 div()
                     .id("footer-terminal-toggle")
-                    .ml_auto()
                     .flex()
                     .flex_none()
                     .items_center()
@@ -127,5 +129,44 @@ impl BenCodeApp {
                     }))
                     .child("Terminal"),
             )
+    }
+
+    /// BenCode's CPU and memory, with a divider before the terminal toggle.
+    fn render_process_stats(&self, cx: &Context<Self>) -> Option<impl IntoElement + use<>> {
+        let monitor = &self.process_monitor;
+        if monitor.cpu.is_none() && monitor.memory.is_none() {
+            return None;
+        }
+        let colors = &cx.theme().colors;
+        let icon_color = colors.fg.opacity(0.4);
+        let stat = |icon: IconName, text: String| {
+            div()
+                .flex()
+                .flex_none()
+                .items_center()
+                .gap(px(4.0))
+                .child(Icon::new(icon).size(IconSize::Xs).color(icon_color))
+                .child(text)
+        };
+        Some(
+            div()
+                .flex()
+                .flex_none()
+                .items_center()
+                .gap(px(6.0))
+                .mr(px(2.0))
+                .child(
+                    div()
+                        .id("footer-process-stats")
+                        .flex()
+                        .flex_none()
+                        .items_center()
+                        .gap(px(10.0))
+                        .children(monitor.cpu.clone().map(|cpu| stat(IconName::Cpu, cpu)))
+                        .children(monitor.memory.clone().map(|memory| stat(IconName::MemoryStick, memory)))
+                        .tooltip(Tooltip::text("BenCode CPU (one core is 100%) and memory")),
+                )
+                .child(div().w(px(1.0)).h(px(12.0)).mx(px(4.0)).bg(colors.border)),
+        )
     }
 }

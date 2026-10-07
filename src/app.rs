@@ -6,6 +6,7 @@ mod integrations;
 mod model_catalog;
 mod panes;
 mod preferences;
+pub mod process_monitor;
 pub mod project_files;
 mod project_stats;
 mod projects;
@@ -316,6 +317,8 @@ pub struct BenCodeApp {
     pub project_stats: project_stats::ProjectStats,
     /// Provider usage for the footer (MonoCode `rateLimitsCache`).
     pub usage: usage::UsageState,
+    /// The footer's CPU and memory readout for BenCode itself.
+    pub process_monitor: process_monitor::ProcessMonitor,
     /// Provider account profiles (MonoCode `providerAccounts`).
     pub accounts: accounts::AccountsState,
     /// The Add account form's name field.
@@ -1166,6 +1169,7 @@ impl BenCodeApp {
             workspace: WorkspaceCache::default(),
             project_stats: Default::default(),
             usage: Default::default(),
+            process_monitor: Default::default(),
             accounts: Default::default(),
             account_name_input,
             account_editor_input,
@@ -1234,6 +1238,7 @@ impl BenCodeApp {
         app.load_folder_members(cx);
         app.start_clock(cx);
         app.start_usage_clock(cx);
+        app.start_process_monitor(cx);
         app.load_shared_accounts(cx);
         app.refresh_installed_catalogs(cx);
         app.start_inbox_poll(cx);

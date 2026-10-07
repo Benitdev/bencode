@@ -4,6 +4,7 @@ pub mod external_editor;
 mod git;
 mod github;
 mod harness;
+mod process_stats;
 pub mod mcp;
 mod rate_limits;
 mod schedule;
