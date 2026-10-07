@@ -44,8 +44,8 @@ fn str_field<'a>(rec: &'a Value, key: &str) -> Option<&'a str> {
 
 // ---- Claude ----------------------------------------------------------------
 
-const CLAUDE_INIT_ID: &str = "monocode_init";
-const CLAUDE_LIST_ID: &str = "monocode_list_models";
+const CLAUDE_INIT_ID: &str = "bencode_init";
+const CLAUDE_LIST_ID: &str = "bencode_list_models";
 
 fn discover_claude() -> Result<Vec<ModelOption>> {
     let program = HarnessResolver::resolve_claude().context("Claude Code is not installed")?;

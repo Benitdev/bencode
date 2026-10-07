@@ -78,7 +78,7 @@ pub fn skill_suggestions(
             let tag = match (s.scope, s.source) {
                 ("builtin", _) => "bencode",
                 ("user", _) => "personal",
-                (_, "agents" | "monocode") => "project",
+                (_, "agents" | "bencode") => "project",
                 (_, source) => source,
             };
             (s.name.clone(), s.description.clone(), tag)

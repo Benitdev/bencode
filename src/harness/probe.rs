@@ -130,7 +130,7 @@ impl AppServer {
         server.call(
             "initialize",
             json!({
-                "clientInfo": { "name": "monocode", "title": "MonoCode", "version": "0.1.0" },
+                "clientInfo": { "name": "bencode", "title": "BenCode", "version": "0.1.0" },
                 "capabilities": { "experimentalApi": true },
             }),
         )?;

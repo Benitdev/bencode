@@ -190,7 +190,7 @@ impl BenCodeApp {
                 MenuAction::new("copy-harness-session-id", "Copy harness session ID")
                     .disabled(harness_id.is_none()),
             ));
-            entries.push(item("copy-monocode-session-id", "Copy MonoCode session ID"));
+            entries.push(item("copy-bencode-session-id", "Copy BenCode session ID"));
             entries.push(item(
                 "link-work-item",
                 if targets.first().is_some_and(|s| s.linked_work_item.is_some()) {
@@ -311,7 +311,7 @@ impl BenCodeApp {
                     cx.write_to_clipboard(gpui::ClipboardItem::new_string(value));
                 }
             }
-            "copy-monocode-session-id" => {
+            "copy-bencode-session-id" => {
                 cx.write_to_clipboard(gpui::ClipboardItem::new_string(clicked.to_string()));
             }
             "folder-new" => {

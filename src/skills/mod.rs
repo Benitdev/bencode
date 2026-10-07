@@ -29,7 +29,7 @@ pub struct Skill {
     pub path: String,
     /// `project`, `user` or `builtin`.
     pub scope: &'static str,
-    /// Folder family it came from: `agents`, `claude`, `codex`, … or `monocode`.
+    /// Folder family it came from: `agents`, `claude`, `codex`, … or `bencode` for the built-in one.
     pub source: &'static str,
 }
 
@@ -40,7 +40,7 @@ impl Skill {
             description: "Create a skill as a SKILL.md in .agents/skills.".to_string(),
             path: String::new(),
             scope: "builtin",
-            source: "monocode",
+            source: "bencode",
         }
     }
 
