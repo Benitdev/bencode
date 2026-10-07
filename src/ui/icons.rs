@@ -56,6 +56,8 @@ extra_icons! {
     CommentAdd => "comment-add",
     /// Hugeicons `file-plus-corner`: a transcript selection's Add to notes.
     FilePlusCorner => "file-plus-corner",
+    /// `panel-top`: the terminal docked at the top.
+    PanelTop => "panel-top",
 }
 
 impl ExtraIcon {

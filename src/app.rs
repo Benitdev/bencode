@@ -1694,17 +1694,7 @@ impl Render for BenCodeApp {
                                                 .flex_1()
                                                 .min_h_0()
                                                 .bg(glass.body(bg))
-                                                .child(
-                                                    div()
-                                                        .flex()
-                                                        .flex_1()
-                                                        .min_h_0()
-                                                        .overflow_hidden()
-                                                        .child(self.render_workspace_split(cx)),
-                                                )
-                                                .when(self.is_terminal_open, |el| {
-                                                    el.child(self.render_terminal_drawer(cx))
-                                                })
+                                                .child(self.render_workspace_with_dock(window, cx))
                                                 .child(self.render_usage_footer(cx)),
                                         ),
                                 )
@@ -1714,6 +1704,7 @@ impl Render for BenCodeApp {
                     .children(self.render_sidebar_menu(cx))
                     .children(self.render_rail_overlays(cx))
                     .children(self.render_tree_menu(cx))
+                    .children(self.render_terminal_menu(cx))
                     .children(self.render_git_menu(cx))
                     .children(self.render_link_dialog(cx))
                     .children(self.render_reminder_notices(cx))

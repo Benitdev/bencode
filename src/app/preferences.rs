@@ -74,6 +74,7 @@ impl BenCodeApp {
         self.inbox.seen_seeded = saved.inbox_seen_seeded;
         self.inbox.repairs = saved.inbox_repairs.clone();
         self.changes_ui.tree = saved.changes_tree;
+        self.terminals.layouts = saved.terminal_docks.clone();
         if let Some(width) = saved.inbox_list_width {
             self.inbox.list_width = width;
         }
@@ -103,6 +104,7 @@ impl BenCodeApp {
             inbox_seen_seeded: self.inbox.seen_seeded,
             inbox_repairs: self.inbox.repairs.clone(),
             changes_tree: self.changes_ui.tree,
+            terminal_docks: self.terminals.layouts.clone(),
             inbox_list_width: Some(self.inbox.list_width)
                 .filter(|w| *w != crate::ui::inbox_view::DEFAULT_LIST_WIDTH),
             favorite_models: self.favorite_models.clone(),

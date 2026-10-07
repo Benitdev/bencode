@@ -129,6 +129,8 @@ impl BenCodeApp {
             self.rail_menu_key(key, cx)
         } else if self.tab_menu_open() {
             self.tab_menu_key(key, cx)
+        } else if self.terminal_menu_open() {
+            self.terminal_menu_key(key, cx)
         } else if self.composer_menus.handoff.is_some() {
             self.handoff_menu_key(key, cx)
         } else if self.composer_menus.workspace_menu.is_some() {

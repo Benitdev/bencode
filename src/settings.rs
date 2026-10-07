@@ -80,6 +80,10 @@ pub struct AppSettings {
     pub reminder_sessions_collapsed: std::collections::BTreeMap<String, bool>,
     /// MonoCode `monocode.sidebarTabOrder` (`sessions`, `files`, `changes`).
     pub sidebar_tab_order: Vec<String>,
+    /// Each project's terminal dock side and size (MonoCode keeps them on
+    /// its `ProjectTerminalDock`); projects with the default bottom dock
+    /// are left out.
+    pub terminal_docks: std::collections::BTreeMap<String, crate::ui::terminal_pane::DockLayout>,
     /// MonoCode `monocode.pinnedProjects`: projects on the rail's Pinned
     /// list, in rail order.
     pub pinned_projects: Vec<String>,
@@ -195,6 +199,13 @@ mod tests {
             pinned_sessions_collapsed: std::collections::BTreeMap::from([("/repo".to_string(), true)]),
             reminder_sessions_collapsed: std::collections::BTreeMap::from([("/repo".to_string(), true)]),
             sidebar_tab_order: vec!["files".into(), "sessions".into(), "changes".into()],
+            terminal_docks: std::collections::BTreeMap::from([(
+                "/repo".to_string(),
+                crate::ui::terminal_pane::DockLayout {
+                    side: crate::ui::terminal_pane::DockSide::Left,
+                    size: 400.0,
+                },
+            )]),
             pinned_projects: vec!["/repo".into()],
             provider_accounts: [(
                 "claude".to_string(),
