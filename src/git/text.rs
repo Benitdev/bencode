@@ -4,7 +4,7 @@
 //!
 //! Runs a process and blocks; use the background executor.
 
-use std::io::Read;
+use std::io::{Read, Write};
 use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -179,30 +179,58 @@ pub fn parse_pr_content(raw: &str) -> Option<(String, String)> {
     (!title.is_empty()).then(|| (title, field(&rec, "body").trim().to_string()))
 }
 
+/// MonoCode's isolated helper launch (`buildClaudeSpawnArgs({ isolated })`):
+/// no hooks, no MCP servers, no saved session. The prompt goes on stdin,
+/// so the staged diff never shows in `ps` or hits the argv limit.
+fn claude_text_args() -> Vec<String> {
+    let mcp = serde_json::json!({ "mcpServers": {} }).to_string();
+    let settings = serde_json::json!({ "disableAllHooks": true }).to_string();
+    [
+        "-p",
+        "--model",
+        TEXT_MODEL,
+        "--output-format",
+        "text",
+        "--max-turns",
+        "1",
+        "--disallowedTools",
+        "Bash,Edit,Write,Read,Glob,Grep,WebFetch,WebSearch",
+        "--no-session-persistence",
+        "--strict-mcp-config",
+        "--mcp-config",
+        &mcp,
+        "--settings",
+        &settings,
+    ]
+    .map(str::to_string)
+    .to_vec()
+}
+
 /// Runs `claude -p` in `cwd` until it answers, `cancel` is set, or the
 /// timeout passes.
 fn run_claude(cwd: &str, prompt: &str, cancel: &AtomicBool) -> Result<String, String> {
     let claude = crate::harness::resolver::HarnessResolver::resolve_claude()
         .ok_or_else(|| "Claude Code CLI not found. Install it to generate text.".to_string())?;
-    let mut child = Command::new(claude)
+    // Not per-thread (the Changes panel), so the default account, as in
+    // MonoCode's `generateCommitMessage`.
+    let mut child = Command::new(&claude)
         .current_dir(cwd)
-        .args([
-            "-p",
-            prompt,
-            "--model",
-            TEXT_MODEL,
-            "--output-format",
-            "text",
-            "--max-turns",
-            "1",
-            "--disallowedTools",
-            "Bash,Edit,Write,Read,Glob,Grep,WebFetch,WebSearch",
-        ])
-        .stdin(Stdio::null())
+        .args(claude_text_args())
+        .env("PATH", crate::harness::process::child_path(&claude))
+        .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|err| format!("Could not start Claude Code: {err}"))?;
+    // Written on its own thread: a prompt larger than the pipe buffer would
+    // otherwise block here past cancel and the timeout. Dropping the pipe
+    // when the write ends is Claude's end of input.
+    let mut stdin = child
+        .stdin
+        .take()
+        .ok_or("Claude Code's stdin is unavailable")?;
+    let input = prompt.to_owned();
+    let mut writer = Some(std::thread::spawn(move || stdin.write_all(input.as_bytes())));
     let started = Instant::now();
     loop {
         if cancel.load(Ordering::Relaxed) {
@@ -217,6 +245,13 @@ fn run_claude(cwd: &str, prompt: &str, cancel: &AtomicBool) -> Result<String, St
         }
         match child.try_wait().map_err(|err| err.to_string())? {
             Some(status) => {
+                match writer.take().map(std::thread::JoinHandle::join) {
+                    // A broken pipe when Claude left early; its exit status
+                    // and stderr say why.
+                    Some(Ok(Err(err))) => log::debug!("claude stdin: {err}"),
+                    Some(Err(_)) => log::error!("claude stdin writer panicked"),
+                    Some(Ok(Ok(()))) | None => {}
+                }
                 let mut out = String::new();
                 let mut err = String::new();
                 if let Some(mut stdout) = child.stdout.take() {
@@ -307,6 +342,36 @@ pub fn generate_pr_content(cwd: &str) -> Result<PrContent, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn value_after(args: &[String], flag: &str) -> Value {
+        let at = args.iter().position(|arg| arg == flag).unwrap();
+        serde_json::from_str(&args[at + 1]).unwrap()
+    }
+
+    #[test]
+    fn the_prompt_is_not_on_argv() {
+        let args = claude_text_args();
+        assert!(args.contains(&"-p".to_string()));
+        assert!(args.iter().all(|arg| arg.len() <= 200));
+    }
+
+    #[test]
+    fn helper_calls_run_no_hooks() {
+        let settings = value_after(&claude_text_args(), "--settings");
+        assert_eq!(settings["disableAllHooks"], true);
+    }
+
+    #[test]
+    fn helper_calls_load_no_mcp_servers() {
+        let args = claude_text_args();
+        assert_eq!(value_after(&args, "--mcp-config"), serde_json::json!({ "mcpServers": {} }));
+        assert!(args.contains(&"--strict-mcp-config".to_string()));
+    }
+
+    #[test]
+    fn helper_calls_save_no_session() {
+        assert!(claude_text_args().contains(&"--no-session-persistence".to_string()));
+    }
 
     #[test]
     fn commit_messages_parse_from_chatty_replies() {

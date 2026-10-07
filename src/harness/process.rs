@@ -210,7 +210,7 @@ async fn pump<P: LineParser>(mut ctx: PumpCtx<P>) {
 
 /// GUI apps launched from Finder inherit a minimal PATH. Make sure the
 /// harness can find its own siblings (node, git, rg, …).
-fn child_path(program: &std::path::Path) -> std::ffi::OsString {
+pub(crate) fn child_path(program: &std::path::Path) -> std::ffi::OsString {
     let mut dirs: Vec<PathBuf> = Vec::new();
     if let Some(parent) = program.parent().filter(|p| !p.as_os_str().is_empty()) {
         dirs.push(parent.to_path_buf());
