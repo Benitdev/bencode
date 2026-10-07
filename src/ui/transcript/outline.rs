@@ -37,8 +37,6 @@ const RIPPLE_STEP: Duration = Duration::from_millis(18);
 const TRANSITION: Duration = Duration::from_millis(200);
 /// MonoCode hides the rail in panes narrower than `58rem`.
 const MIN_PANE_WIDTH: f32 = 928.0;
-/// MonoCode `NEAR_END_PX`.
-const NEAR_END: f32 = 16.0;
 const RAIL_RIGHT: f32 = 16.0;
 const CARD_GAP: f32 = 10.0;
 
@@ -169,20 +167,6 @@ fn places(view: &TranscriptView, rows: &[Option<usize>]) -> Vec<Place> {
         .collect()
 }
 
-/// MonoCode's `distanceToEnd <= NEAR_END_PX`: the list follows its tail,
-/// holds the sent prompt, or its last row ends within 16px of the bottom.
-fn near_end(view: &TranscriptView) -> bool {
-    let list = &view.list;
-    if list.is_following_tail() || view.holds_prompt() {
-        return true;
-    }
-    let Some(last) = view.rows.len().checked_sub(1) else {
-        return true;
-    };
-    list.bounds_for_item(last)
-        .is_some_and(|b| b.bottom() <= list.viewport_bounds().bottom() + px(NEAR_END))
-}
-
 impl BenCodeApp {
     /// The rail over `session_id`'s transcript, when it has two prompts or
     /// more and the pane is wide enough.
@@ -207,7 +191,7 @@ impl BenCodeApp {
             return None;
         }
         let rows = prompt_rows(view, &prompts);
-        let near_end = near_end(view);
+        let near_end = view.near_end();
         let active = active_prompt(&places(view, &rows), near_end);
         let stack = bar_stack(
             ids.len(),

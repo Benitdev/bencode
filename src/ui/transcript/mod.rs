@@ -125,6 +125,9 @@ pub struct TranscriptView {
     pub outline: outline::OutlineState,
 }
 
+/// MonoCode `NEAR_END_PX`.
+const NEAR_END: f32 = 16.0;
+
 impl Default for TranscriptView {
     fn default() -> Self {
         Self {
@@ -159,10 +162,18 @@ impl TranscriptView {
         })
     }
 
-    /// Whether the prompt is held at the top, where the list is at its end
-    /// whatever a stale spacer says.
-    pub fn holds_prompt(&self) -> bool {
-        self.hold
+    /// MonoCode's `distanceToEnd <= NEAR_END_PX`: the list follows its tail,
+    /// holds the sent prompt, or its last row ends within 16px of the bottom.
+    pub fn near_end(&self) -> bool {
+        if self.list.is_following_tail() || self.hold {
+            return true;
+        }
+        let Some(last) = self.rows.len().checked_sub(1) else {
+            return true;
+        };
+        self.list
+            .bounds_for_item(last)
+            .is_some_and(|b| b.bottom() <= self.list.viewport_bounds().bottom() + px(NEAR_END))
     }
 
     /// Sizes the spacer and keeps the prompt at the top of the viewport
