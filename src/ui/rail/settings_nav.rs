@@ -60,11 +60,11 @@ impl BenCodeApp {
                     .flex_col()
                     .gap_5()
                     .overflow_y_scroll()
-                    .px_2()
-                    .pr(px(8.0) + crate::ui::scrollbar::gutter())
+                    .pl_2()
                     .py_3()
                     .children(groups),
-            ))
+            )
+            .gutter(px(8.0)))
             .child(
                 // `flex shrink-0 flex-col gap-px p-2`
                 div().flex().flex_none().flex_col().gap(px(1.0)).p_2().child(

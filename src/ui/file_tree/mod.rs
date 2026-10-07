@@ -374,7 +374,7 @@ impl BenCodeApp {
                     .w_full()
                     .min_h_0()
                     .min_w_0()
-                    .pr(crate::ui::scrollbar::gutter())
+                    .pr(crate::ui::scrollbar::gutter(&self.file_tree.scroll))
                     .overflow_y_scroll()
                     .overflow_x_hidden()
                     // Right-clicking empty space opens the root's menu.

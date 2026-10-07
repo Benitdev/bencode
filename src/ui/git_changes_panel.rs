@@ -1310,7 +1310,7 @@ impl BenCodeApp {
                 .min_h_0()
                 .overflow_y_scroll()
                 .py(px(CHANGES_PAD_Y))
-                .pr(scrollbar::gutter())
+                .pr(scrollbar::gutter(&self.changes_ui.scroll))
                 .child(body),
         )
     }
@@ -1933,7 +1933,7 @@ impl BenCodeApp {
                         .track_scroll(&self.changes_ui.graph_scroll)
                         .flex_1()
                         .min_h_0()
-                        .pr(scrollbar::gutter())
+                        .pr(scrollbar::gutter(&self.changes_ui.graph_scroll))
                         .overflow_y_scroll()
                         .overflow_x_hidden()
                         .map(|el| {

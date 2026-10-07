@@ -867,7 +867,7 @@ impl BenCodeApp {
                     .track_scroll(&self.inbox.scroll)
                     .size_full()
                     .p(px(6.0))
-                    .pr(px(6.0) + crate::ui::scrollbar::gutter()),
+                    .pr(px(6.0) + crate::ui::scrollbar::gutter(&self.inbox.scroll)),
             ))
             .into_any_element()
     }

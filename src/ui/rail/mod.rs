@@ -278,7 +278,6 @@ impl BenCodeApp {
         // `flex min-h-0 flex-1 flex-col overflow-y-auto pb-2`
         let projects = div()
             .id("rail-projects")
-            .pr(crate::ui::scrollbar::gutter())
             .flex()
             .flex_1()
             .min_h_0()
@@ -292,7 +291,7 @@ impl BenCodeApp {
                 el.child(self.render_groups_section(&sections.groups, cx))
             })
             .child(self.render_project_section("Projects", "projects", &sections.ungrouped, true, empty, cx));
-        crate::ui::scrollbar::Scrolled::new("rail-projects-scrollbar", projects)
+        crate::ui::scrollbar::Scrolled::new("rail-projects-scrollbar", projects).gutter(px(0.0))
     }
 
     /// MonoCode `AddProjectButton`, lit while its popover is open.
