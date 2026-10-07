@@ -506,22 +506,27 @@ pub fn thread(cwd: &Path, repo: &str, kind: Kind, number: i64) -> Result<Thread,
         Kind::Pr => PR_THREAD_QUERY,
         Kind::Issue => ISSUE_THREAD_QUERY,
     };
-    let json = gh(
-        cwd,
-        &[
-            "api",
-            "graphql",
-            "-f",
-            &format!("query={query}"),
-            "-F",
-            &format!("owner={owner}"),
-            "-F",
-            &format!("name={name}"),
-            "-F",
-            &format!("number={number}"),
-        ],
-    )?;
+    let args = thread_args(query, owner, name, number);
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    let json = gh(cwd, &args)?;
     parse_thread(&json, kind)
+}
+
+/// `gh api graphql` argv: `-f` sends strings as typed, `-F` would turn a
+/// repository named `2048` into a number.
+fn thread_args(query: &str, owner: &str, name: &str, number: i64) -> Vec<String> {
+    vec![
+        "api".into(),
+        "graphql".into(),
+        "-f".into(),
+        format!("query={query}"),
+        "-f".into(),
+        format!("owner={owner}"),
+        "-f".into(),
+        format!("name={name}"),
+        "-F".into(),
+        format!("number={number}"),
+    ]
 }
 
 #[derive(Deserialize, Default)]
@@ -859,7 +864,7 @@ pub fn post_comment(
                     "graphql",
                     "-f",
                     &format!("query={REVIEW_REPLY_MUTATION}"),
-                    "-F",
+                    "-f",
                     &format!("threadId={thread}"),
                     "-F",
                     &format!("body=@{path}"),
@@ -1249,6 +1254,15 @@ pub fn pr_action(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn thread_variables_keep_strings_as_strings() {
+        let args = thread_args("q", "2048", "true", 7);
+        let pair = |flag: &str, value: &str| args.windows(2).any(|w| w[0] == flag && w[1] == value);
+        assert!(pair("-f", "owner=2048"));
+        assert!(pair("-f", "name=true"));
+        assert!(pair("-F", "number=7"));
+    }
 
     #[test]
     fn repositories_include_a_forks_parent_once() {
