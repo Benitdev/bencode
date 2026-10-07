@@ -13,6 +13,7 @@ use jiff::Timestamp;
 use std::rc::Rc;
 
 use super::markdown::{AgentMarkdown, Tone};
+use super::selection::{PlainText, SegCtx};
 use super::turns::{self, TurnLayout};
 use crate::app::BenCodeApp;
 use crate::db::SessionRow;
@@ -36,12 +37,14 @@ pub fn markdown(
     text: &str,
     live: bool,
     tone: Tone,
+    select: SegCtx,
     cx: &Context<BenCodeApp>,
 ) -> AnyElement {
     let app = cx.entity().downgrade();
     AgentMarkdown::new(id, text.to_string())
         .live(live)
         .tone(tone)
+        .selectable(select)
         .on_open_file(Rc::new(move |path, _line, window, cx| {
             let opened = app.update(cx, |this, cx| this.open_file_in_editor(path, window, cx));
             if let Err(err) = opened {
@@ -182,8 +185,15 @@ impl BenCodeApp {
         let block = &session.blocks[ix];
         match block.role.as_str() {
             "user" => self.render_user_message(session, ix, cx),
-            "system" => notice(turns::text(block), cx),
-            _ => prose(session, ix, live, under_work, cx),
+            "system" => notice(turns::text(block), self.seg_ctx(&session.id, ix, false), cx),
+            _ => prose(
+                session,
+                ix,
+                live,
+                under_work,
+                self.seg_ctx(&session.id, ix, !live),
+                cx,
+            ),
         }
     }
 
@@ -232,6 +242,12 @@ impl BenCodeApp {
                 div()
                     .when(clamps && !expanded, |el| el.line_clamp(CLAMP_LINES))
                     .child(
+                        PlainText::new(self.seg_ctx(&session.id, ix, true), text.clone()).marks(
+                            query
+                                .map(|query| super::find::match_marks(&text, &query, current, cx))
+                                .unwrap_or_default(),
+                        ),
+                    ),
             )
             .when(clamps, |el| {
                 el.child(self.show_more_toggle(&key, expanded, cx))
@@ -623,6 +639,7 @@ fn prose(
     ix: usize,
     live: bool,
     under_work: bool,
+    select: SegCtx,
     cx: &Context<BenCodeApp>,
 ) -> AnyElement {
     let block = &session.blocks[ix];
@@ -631,18 +648,18 @@ fn prose(
         .px_4()
         .when(under_work, |el| el.pt_1())
         .when(!under_work, |el| el.pt_3())
-        .child(markdown(id, turns::text(block), live, Tone::Answer, cx))
+        .child(markdown(id, turns::text(block), live, Tone::Answer, select, cx))
         .into_any_element()
 }
 
 /// A notice the reader must not miss, as plain muted text (MonoCode).
-fn notice(text: &str, cx: &Context<BenCodeApp>) -> AnyElement {
+fn notice(text: &str, select: SegCtx, cx: &Context<BenCodeApp>) -> AnyElement {
     div()
         .px_4()
         .py_2()
         .text_size(px(14.0))
         .text_color(muted(cx.theme().colors.fg, 0.5))
-        .child(text.to_string())
+        .child(PlainText::new(select, text))
         .into_any_element()
 }
 

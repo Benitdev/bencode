@@ -318,16 +318,19 @@ impl BenCodeApp {
             .size_full()
             .into_any_element()
         };
-        div()
+        let body = div()
+            .id(SharedString::from(format!("transcript-body-{}", session.id)))
             .relative()
             .flex()
             .flex_col()
             .flex_1()
             .min_h_0()
-            .justify_center()
+            .justify_center();
+        self.with_transcript_selection(body, &session.id, focused, cx)
             .child(content)
             .children(view.and_then(|view| view.anchor_check()))
             .children(outline)
+            .children(self.render_selection_menu(&session.id, cx))
             .when(scrolled_up, |el| {
                 el.child(self.render_jump_to_latest(&session.id, focused, cx))
             })

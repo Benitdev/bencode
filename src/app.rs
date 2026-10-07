@@ -265,6 +265,9 @@ pub struct BenCodeApp {
     pub drafts: HashMap<String, String>,
     pub expanded_reasoning: std::collections::HashSet<String>,
     pub transcript_ui: crate::ui::transcript::TranscriptUiState,
+    /// The text selected in a transcript, and the focus that takes ⌘C.
+    pub transcript_selection: Entity<crate::ui::transcript::selection::TranscriptSelection>,
+    pub transcript_focus: gpui::FocusHandle,
     /// Each project's terminals (MonoCode project terminal docks).
     pub terminals: crate::ui::terminal_pane::TerminalDocks,
     pub settings_tab: SettingsTab,
@@ -1093,6 +1096,8 @@ impl BenCodeApp {
             drafts: HashMap::new(),
             expanded_reasoning: std::collections::HashSet::new(),
             transcript_ui: Default::default(),
+            transcript_selection: cx.new(|_| Default::default()),
+            transcript_focus: cx.focus_handle(),
             terminals: Default::default(),
             settings_tab: SettingsTab::Providers,
             surface: None,
