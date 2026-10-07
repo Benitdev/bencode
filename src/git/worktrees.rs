@@ -5,7 +5,6 @@
 //! and branches do not interfere with the user's primary working directory.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use anyhow::{Result, anyhow, bail};
 use serde::{Deserialize, Serialize};
@@ -29,13 +28,9 @@ pub struct Worktree {
 }
 
 fn git_cmd(root: &Path, args: &[&str]) -> Result<String> {
-    let mut command = Command::new("git");
-    let output = command
-        .arg("-C")
-        .arg(root)
+    let output = super::git_command(root)
         .args(args)
         .env("GIT_TERMINAL_PROMPT", "0")
-        .env("GIT_OPTIONAL_LOCKS", "0")
         .output()?;
     if !output.status.success() {
         let err = String::from_utf8_lossy(&output.stderr).trim().to_string();
@@ -323,6 +318,7 @@ pub fn prune_worktrees(cwd: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::process::Command;
 
     #[test]
     fn parse_porcelain_worktrees_output() {

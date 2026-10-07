@@ -7,7 +7,6 @@
 //! Every call runs git and blocks; use the background executor.
 
 use std::path::Path;
-use std::process::Command;
 
 use serde::Deserialize;
 
@@ -499,25 +498,9 @@ pub struct BranchPr {
     pub state: String,
 }
 
+/// The Inbox's runner (`github::gh`): finds `gh` on PATH first.
 fn gh(cwd: &str, args: &[&str]) -> Result<String, String> {
-    let program = ["/opt/homebrew/bin/gh", "/usr/local/bin/gh"]
-        .into_iter()
-        .find(|p| Path::new(p).is_file())
-        .unwrap_or("gh");
-    let output = Command::new(program)
-        .current_dir(cwd)
-        .args(args)
-        .env("GH_PROMPT_DISABLED", "1")
-        .env("GH_PAGER", "cat")
-        .env("GIT_TERMINAL_PROMPT", "0")
-        .output()
-        .map_err(|err| err.to_string())?;
-    let out = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if output.status.success() {
-        return Ok(out);
-    }
-    let err = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    Err(if err.is_empty() { out } else { err })
+    crate::github::gh(Path::new(cwd), args)
 }
 
 /// MonoCode `parse_gh_pr_list`: the open one, else the latest.

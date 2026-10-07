@@ -73,18 +73,20 @@ pub struct GitDetailedStatus {
 // Process helpers
 // ---------------------------------------------------------------------------
 
-pub(crate) fn git_command(cwd: &str) -> Command {
+/// `git` with BenCode's options, run where the caller says. For a launch
+/// outside any repository (`diff --no-index`); the others use `git_command`.
+pub(crate) fn git_base_command() -> Command {
     let mut cmd = Command::new("git");
-    cmd.args([
-        "-C",
-        cwd,
-        "-c",
-        "core.quotepath=false",
-        "-c",
-        "color.ui=never",
-    ])
-    // Status polling from the UI must not fight other git processes for index.lock.
-    .env("GIT_OPTIONAL_LOCKS", "0");
+    cmd.args(["-c", "core.quotepath=false", "-c", "color.ui=never"])
+        // Status polling from the UI must not fight other git processes for index.lock.
+        .env("GIT_OPTIONAL_LOCKS", "0");
+    cmd
+}
+
+/// `git -C cwd` with BenCode's options: every git launch starts here.
+pub(crate) fn git_command(cwd: impl AsRef<std::ffi::OsStr>) -> Command {
+    let mut cmd = git_base_command();
+    cmd.arg("-C").arg(cwd);
     cmd
 }
 

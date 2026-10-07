@@ -1,6 +1,6 @@
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 
 /// MonoCode `MAX_PROJECT_FILES`, `MAX_WALK_DIRS`, `MAX_LS_FILES_BYTES`.
 const MAX_PROJECT_FILES: usize = 20_000;
@@ -71,11 +71,8 @@ pub fn list_project_files(root: &Path) -> Vec<String> {
 /// `None` when this is not a repository or the listing ran past its cap; a
 /// partial listing would quietly hide files, so the walk takes over.
 fn git_ls_files(root: &Path) -> Option<Vec<String>> {
-    let mut child = Command::new("git")
-        .arg("-C")
-        .arg(root)
+    let mut child = crate::git::git_command(root)
         .args(["ls-files", "-co", "--exclude-standard", "-z"])
-        .env("GIT_OPTIONAL_LOCKS", "0")
         .env("GIT_TERMINAL_PROMPT", "0")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())

@@ -7,7 +7,7 @@ use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::FsEntry;
@@ -99,11 +99,8 @@ fn git_ignored_names(dir: &Path, names: &[&str]) -> Option<HashSet<String>> {
     if names.is_empty() {
         return Some(HashSet::new());
     }
-    let mut child = Command::new("git")
-        .arg("-C")
-        .arg(dir)
+    let mut child = crate::git::git_command(dir)
         .args(["check-ignore", "--stdin", "-z"])
-        .env("GIT_OPTIONAL_LOCKS", "0")
         .env("GIT_TERMINAL_PROMPT", "0")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

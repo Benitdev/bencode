@@ -14,7 +14,6 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
@@ -632,13 +631,12 @@ fn calculate_session_stats(dir: &Path, manifest: &Manifest, relative: &str) -> O
 
 /// `git diff --no-index` of two stored blobs; exit status 1 means they differ.
 fn diff_blobs(before: &Path, after: &Path, flags: &[&str]) -> Option<String> {
-    let output = Command::new("git")
+    let output = super::git_base_command()
         .args(["diff", "--no-index", "--no-ext-diff", "--no-color"])
         .args(flags)
         .arg("--")
         .arg(before)
         .arg(after)
-        .env("GIT_OPTIONAL_LOCKS", "0")
         .output()
         .ok()?;
     if !output.status.success() && output.status.code() != Some(1) {

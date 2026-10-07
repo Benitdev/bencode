@@ -107,7 +107,7 @@ fn gh_path() -> Option<PathBuf> {
 }
 
 /// MonoCode `gh_run`: stdout, or the CLI's own error text.
-fn gh(cwd: &Path, args: &[&str]) -> Result<String, String> {
+pub(crate) fn gh(cwd: &Path, args: &[&str]) -> Result<String, String> {
     let program = gh_path().ok_or_else(|| "GitHub CLI (`gh`) is not installed.".to_string())?;
     let output = Command::new(program)
         .current_dir(cwd)
