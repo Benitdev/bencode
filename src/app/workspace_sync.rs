@@ -8,7 +8,6 @@ use std::collections::HashMap;
 use std::thread::ScopedJoinHandle;
 use std::time::{Duration, Instant};
 
-use anyhow::Result;
 use gpui::Context;
 
 use crate::app::BenCodeApp;
@@ -131,11 +130,6 @@ impl BenCodeApp {
             return session.work_dir().to_string();
         }
         self.current_cwd.clone()
-    }
-
-    /// Kept for existing call sites; reloads the whole workspace snapshot.
-    pub fn refresh_git_status(&mut self, cx: &mut Context<Self>) {
-        self.refresh_workspace(cx);
     }
 
     pub fn refresh_workspace(&mut self, cx: &mut Context<Self>) {
@@ -320,29 +314,6 @@ impl BenCodeApp {
         if self.workspace.cwd != self.workspace_cwd() {
             self.refresh_workspace(cx);
         }
-    }
-
-    /// Runs a mutating git command off the UI thread, surfaces failures in
-    /// the Changes panel, then reloads the snapshot.
-    pub fn run_git_action(
-        &mut self,
-        label: &'static str,
-        action: impl FnOnce(&str) -> Result<()> + Send + 'static,
-        cx: &mut Context<Self>,
-    ) {
-        let cwd = self.workspace_cwd();
-        let task = cx.background_executor().spawn(async move { action(&cwd) });
-        cx.spawn(async move |this, cx| {
-            let result = task.await;
-            let _ = this.update(cx, |app, cx| {
-                app.workspace.git_error = result.err().map(|err| {
-                    log::error!("git {label} failed: {err:#}");
-                    format!("{label} failed: {err:#}")
-                });
-                app.refresh_workspace(cx);
-            });
-        })
-        .detach();
     }
 
     /// Checks out `target` off the UI thread (MonoCode `BranchPicker`).

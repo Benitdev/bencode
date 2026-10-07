@@ -36,9 +36,6 @@ const DEFAULT_BRANCH: &str = "main";
 const EMPTY_TREE_SHA1: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 /// Untracked files larger than this are not read to count lines.
 const MAX_UNTRACKED_READ_BYTES: u64 = 8 * 1024 * 1024;
-/// ASCII unit separator / record separator used for `git log` parsing.
-const FIELD_SEP: char = '\x1f';
-const RECORD_SEP: char = '\x1e';
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum GitFileStatus {
@@ -65,20 +62,9 @@ pub enum DiffLineKind {
     Context(String),
 }
 
-#[derive(Clone, Debug)]
-pub struct GitCommitInfo {
-    pub hash: String,
-    pub short_hash: String,
-    pub message: String,
-    pub author: String,
-    pub relative_time: String,
-}
-
 #[derive(Clone, Debug, Default)]
 pub struct GitDetailedStatus {
     pub branch: String,
-    pub ahead: usize,
-    pub behind: usize,
     pub staged: Vec<GitFileChange>,
     pub unstaged: Vec<GitFileChange>,
 }
@@ -444,35 +430,6 @@ fn parse_unified_diff(text: &str) -> Vec<DiffLineKind> {
     lines
 }
 
-pub fn get_recent_commits(cwd: &str, count: usize) -> Vec<GitCommitInfo> {
-    if count == 0 || !has_head(cwd) {
-        return Vec::new();
-    }
-    let format = "--format=%H%x1f%h%x1f%s%x1f%an%x1f%cr%x1e";
-    let limit = format!("-n{count}");
-    let Ok(stdout) = run_git_string(cwd, &["log", "--no-show-signature", &limit, format]) else {
-        return Vec::new();
-    };
-    stdout
-        .split(RECORD_SEP)
-        .map(|rec| rec.trim_matches(|c| c == '\n' || c == '\r'))
-        .filter(|rec| !rec.is_empty())
-        .filter_map(|rec| {
-            let parts: Vec<&str> = rec.split(FIELD_SEP).collect();
-            match parts.as_slice() {
-                [hash, short, message, author, time] => Some(GitCommitInfo {
-                    hash: hash.to_string(),
-                    short_hash: short.to_string(),
-                    message: message.to_string(),
-                    author: author.to_string(),
-                    relative_time: time.to_string(),
-                }),
-                _ => None,
-            }
-        })
-        .collect()
-}
-
 // ---------------------------------------------------------------------------
 // Mutations
 // ---------------------------------------------------------------------------
@@ -573,13 +530,6 @@ pub fn discard_all(cwd: &str) -> Result<()> {
         run_git(cwd, &["restore", "--worktree", "--", "."])?;
     }
     run_git(cwd, &["clean", "-f", "-d", "-q", "--", "."]).map(|_| ())
-}
-
-pub fn commit(cwd: &str, message: &str) -> Result<()> {
-    if message.trim().is_empty() {
-        bail!("commit message must not be empty");
-    }
-    run_git(cwd, &["commit", "-q", "-m", message]).map(|_| ())
 }
 
 #[cfg(test)]
@@ -922,7 +872,6 @@ mod tests {
             list_branches(repo.cwd()).is_empty(),
             "unborn branch has no ref yet"
         );
-        assert!(get_recent_commits(repo.cwd(), 5).is_empty());
         let diff = file_diff(repo.cwd(), "first.txt", &DiffSource::Staged).unwrap();
         assert_eq!(
             diff.lines
@@ -956,26 +905,6 @@ mod tests {
         );
     }
 
-    // --- commits ------------------------------------------------------------
-
-    #[test]
-    fn recent_commits_tolerate_pipes_in_messages() {
-        let repo = TempRepo::new();
-        repo.write("a.txt", "1\n");
-        repo.commit_all("first");
-        repo.write("a.txt", "2\n");
-        repo.commit_all("fix: a | b || c");
-
-        let commits = get_recent_commits(repo.cwd(), 10);
-
-        assert_eq!(commits.len(), 2);
-        assert_eq!(commits[0].message, "fix: a | b || c");
-        assert_eq!(commits[0].author, "BenCode Test");
-        assert_eq!(commits[0].hash.len(), 40);
-        assert!(commits[0].hash.starts_with(&commits[0].short_hash));
-        assert_eq!(commits[1].message, "first");
-    }
-
     // --- mutations ----------------------------------------------------------
 
     #[test]
@@ -984,9 +913,6 @@ mod tests {
         repo.write("a.txt", "1\n");
         repo.commit_all("init");
 
-        let err = commit(repo.cwd(), "nothing staged").expect_err("empty commit fails");
-        assert!(err.to_string().contains("git commit"), "{err}");
-        assert!(commit(repo.cwd(), "   ").is_err());
         let err = stage_file(repo.cwd(), "missing.txt").expect_err("missing path");
         assert!(err.to_string().contains("missing.txt"), "{err}");
         assert!(stage_all("/definitely/not/a/repo/bencode").is_err());
@@ -1009,10 +935,11 @@ mod tests {
         unstage_all(repo.cwd()).expect("unstage all");
         assert!(get_detailed_status(repo.cwd()).staged.is_empty());
         stage_all(repo.cwd()).expect("stage all again");
-        commit(repo.cwd(), "second").expect("commit");
+        sync::commit(repo.cwd(), "second", false).expect("commit");
 
         assert!(get_workspace_changes(repo.cwd()).is_empty());
-        assert_eq!(get_recent_commits(repo.cwd(), 1)[0].message, "second");
+        let subject = run_git_string(repo.cwd(), &["log", "-1", "--format=%s"]).expect("log");
+        assert_eq!(subject.trim(), "second");
     }
 
     #[test]
