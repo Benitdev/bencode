@@ -2,10 +2,12 @@
 //! `.body-glass` in `src/styles/index.css`, Appearance › Translucency).
 //!
 //! In dark mode on macOS the window is transparent and blurs the desktop
-//! behind it; the project rail, the sidebar and (with "Main pane glass") the
-//! main pane are tinted with the base background at the sidebar opacity, so
-//! the desktop shows through them. The title bar takes no tint at all, as
-//! MonoCode's does. Light mode and other platforms stay opaque.
+//! behind it. MonoCode tints the NSWindow itself with the base background at
+//! the sidebar opacity (`prepare_glass`), so one tint covers the whole window,
+//! title bar included, and its glass panes go clear over it
+//! (`has-native-glass-tint`); with "Main pane glass" off the main pane stays
+//! opaque. Here the root plays the NSWindow. Light mode and other platforms
+//! stay opaque.
 //!
 //! GPUI's `WindowBackgroundAppearance::Blurred` draws an `NSVisualEffectView`
 //! under the window's content, so the blur strength is the system's: MonoCode's
@@ -36,20 +38,21 @@ pub struct Glass {
 }
 
 impl Glass {
-    /// The window's own fill: nothing while the desktop shows through.
+    /// The window's own fill: under glass, MonoCode's NSWindow tint, the base
+    /// background at the opacity over the blur.
     pub fn root(&self, bg: Hsla) -> Hsla {
         if self.on {
-            gpui::transparent_black()
+            bg.opacity(self.opacity)
         } else {
             bg
         }
     }
 
     /// `.sidebar-glass` (the project rail): the base background darkened
-    /// 10% in dark mode, or tinted at the opacity over the blur.
+    /// 10% in dark mode, or clear over the window's tint.
     pub fn sidebar(&self, bg: Hsla, dark: bool) -> Hsla {
         if self.on {
-            bg.opacity(self.opacity)
+            gpui::transparent_black()
         } else if dark {
             bg.blend(gpui::black().opacity(0.1))
         } else {
@@ -58,10 +61,10 @@ impl Glass {
     }
 
     /// `.body-glass` (the sidebar and the main pane): the base background,
-    /// tinted at the opacity over the blur when "Main pane glass" is on.
+    /// or clear over the window's tint when "Main pane glass" is on.
     pub fn body(&self, bg: Hsla) -> Hsla {
         if self.on && self.body {
-            bg.opacity(self.opacity)
+            gpui::transparent_black()
         } else {
             bg
         }
@@ -139,10 +142,13 @@ mod tests {
         assert_eq!(off.root(bg), bg);
         assert_eq!(off.body(bg), bg);
         assert_eq!(off.fill(bg), bg);
+        // One tint, on the window; the glass panes over it stay clear so it
+        // is not compounded.
         let on = Glass { on: true, ..off };
-        assert_eq!(on.root(bg).a, 0.0);
-        assert_eq!(on.body(bg).a, 0.5);
-        assert_eq!(on.sidebar(bg, true).a, 0.5);
+        assert_eq!(on.root(bg).a, 0.5);
+        assert_eq!(on.body(bg).a, 0.0);
+        assert_eq!(on.sidebar(bg, true).a, 0.0);
+        assert_eq!(on.fill(bg).a, 0.0);
         assert_eq!(Glass { body: false, ..on }.body(bg), bg);
     }
 }
