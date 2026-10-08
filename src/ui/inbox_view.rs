@@ -255,28 +255,11 @@ impl InboxState {
     }
 }
 
-/// MonoCode `formatRelativeTime` (Intl, `numeric: "auto"`), in English.
+/// How long ago the ISO timestamp `iso` was (`relative_time::since`).
 pub fn relative_time(iso: &str, now_ms: i64) -> String {
-    let Ok(then) = iso.parse::<jiff::Timestamp>() else {
-        return String::new();
-    };
-    let secs = (now_ms - then.as_millisecond()) / 1000;
-    let ago = |n: i64, unit: &str| {
-        if n == 1 {
-            format!("1 {unit} ago")
-        } else {
-            format!("{n} {unit}s ago")
-        }
-    };
-    match secs {
-        i64::MIN..60 => "now".to_string(),
-        60..3600 => ago(secs / 60, "minute"),
-        3600..86_400 => ago(secs / 3600, "hour"),
-        86_400..172_800 => "yesterday".to_string(),
-        172_800..604_800 => ago(secs / 86_400, "day"),
-        604_800..2_629_800 => ago(secs / 604_800, "week"),
-        2_629_800..31_557_600 => ago(secs / 2_629_800, "month"),
-        _ => ago(secs / 31_557_600, "year"),
+    match iso.parse::<jiff::Timestamp>() {
+        Ok(then) => crate::ui::relative_time::since(then.as_millisecond(), now_ms),
+        Err(_) => String::new(),
     }
 }
 
@@ -905,20 +888,16 @@ impl BenCodeApp {
                             .disabled(!any_unseen)
                             .on_click(cx.listener(|this, _, _, cx| this.mark_inbox_read(cx))),
                     )
-                    .child(
-                        IconButton::new(
-                            "inbox-refresh",
-                            if self.inbox.loading {
-                                IconName::LoaderCircle
-                            } else {
-                                IconName::RefreshCw
-                            },
-                        )
-                        .variant(ButtonVariant::Ghost)
-                        .size(ControlSize::Sm)
-                        .tooltip("Refresh")
-                        .on_click(cx.listener(|this, _, _, cx| this.refresh_inbox(cx))),
-                    ),
+                    .child(if self.inbox.loading {
+                        refreshing("inbox-refreshing", cx)
+                    } else {
+                        IconButton::new("inbox-refresh", IconName::RefreshCw)
+                            .variant(ButtonVariant::Ghost)
+                            .size(ControlSize::Sm)
+                            .tooltip("Refresh")
+                            .on_click(cx.listener(|this, _, _, cx| this.refresh_inbox(cx)))
+                            .into_any_element()
+                    }),
             )
     }
 
@@ -1200,6 +1179,25 @@ impl BenCodeApp {
             }))
             .into_any_element()
     }
+}
+
+/// A Refresh button's place while its load runs: the spinner, in the
+/// button's footprint.
+pub(super) fn refreshing(id: &'static str, cx: &gpui::App) -> AnyElement {
+    let theme = cx.theme();
+    div()
+        .size(theme.control_height(ControlSize::Sm))
+        .flex()
+        .flex_none()
+        .items_center()
+        .justify_center()
+        .child(loading_icon(id, theme.colors.fg.opacity(0.5)))
+        .into_any_element()
+}
+
+/// MonoCode's `animate-spin` loader at the Inbox's small size.
+pub(super) fn loading_icon(id: &'static str, color: gpui::Hsla) -> AnyElement {
+    crate::ui::git_changes_panel::spinning_icon(id.into(), IconName::LoaderCircle, IconSize::Xs, color)
 }
 
 /// Loads `fetch` into `slot(inbox)[key]` off the UI thread, once at a time.

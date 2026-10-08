@@ -186,11 +186,7 @@ impl BenCodeApp {
                         .gap_2()
                         .text_size(px(12.0))
                         .text_color(fg.opacity(0.45))
-                        .child(
-                            Icon::new(IconName::LoaderCircle)
-                                .size(IconSize::Xs)
-                                .color(fg.opacity(0.45)),
-                        )
+                        .child(super::loading_icon("inbox-comments-loading", fg.opacity(0.45)))
                         .child("Loading comments"),
                 )
                 .into_any_element();
@@ -217,11 +213,7 @@ impl BenCodeApp {
                             el.child(format!("Latest comments · more on {}", item.provider.label()))
                         })
                         .when(loading, |el| {
-                            el.child(
-                                Icon::new(IconName::LoaderCircle)
-                                    .size(IconSize::Xs)
-                                    .color(fg.opacity(0.35)),
-                            )
+                            el.child(super::loading_icon("inbox-comments-reloading", fg.opacity(0.35)))
                         }),
                 )
                 .children(

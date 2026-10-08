@@ -325,22 +325,18 @@ impl BenCodeApp {
                             })),
                     )
                 })
-                .child(
-                    IconButton::new(
-                        "inbox-checks-refresh",
-                        if loading {
-                            IconName::LoaderCircle
-                        } else {
-                            IconName::RefreshCw
-                        },
-                    )
-                    .variant(ButtonVariant::Ghost)
-                    .size(ControlSize::Sm)
-                    .tooltip("Refresh checks")
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.load_pr_checks(&refresh_key, true, cx)
-                    })),
-                )
+                .child(if loading {
+                    super::refreshing("inbox-checks-refreshing", cx)
+                } else {
+                    IconButton::new("inbox-checks-refresh", IconName::RefreshCw)
+                        .variant(ButtonVariant::Ghost)
+                        .size(ControlSize::Sm)
+                        .tooltip("Refresh checks")
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.load_pr_checks(&refresh_key, true, cx)
+                        }))
+                        .into_any_element()
+                })
         };
         let section = div()
             .mt_4()
