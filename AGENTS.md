@@ -69,12 +69,17 @@ so `cargo run` is usable for real work.
 bencode/
 ├── AGENTS.md                 this file
 ├── README.md                 overview and quick start
+├── CHANGELOG.md              per-release notes; the release workflow publishes a version's section
+├── LICENSE                   MIT
 ├── Cargo.toml                dependencies and build profiles
 ├── assets/
 │   ├── icons/                Lucide SVGs Ely does not ship (ui/icons.rs)
 │   ├── file-icons/           Material Icon Theme SVGs and lookup tables (ui/file_tree/icons.rs)
 │   └── providers/            harness brand icons (ui/provider_icon.rs)
 ├── docs/migration/           parity backlog and migration notes
+├── docs/releasing.md         cutting a release; signing and notarization
+├── packaging/macos/          app icon, Info.plist, entitlements, bundle.sh (.app / .dmg)
+├── site/                     the landing page (GitHub Pages)
 ├── reference/monocode        symlink to the MonoCode source (git-ignored)
 ├── tests/fixtures/           recorded CLI output for parser tests
 └── src/
@@ -93,7 +98,8 @@ bencode/
     ├── skills/               SKILL.md discovery and `/skill` injection
     ├── schedule.rs           automation schedules (next run time)
     ├── settings.rs           BenCode's settings.json
-    ├── storage.rs            where BenCode keeps its data (database, checkpoints, account profiles)
+    ├── storage.rs            where BenCode keeps its data (database, checkpoints, account profiles, logs)
+    ├── logging.rs            log to the terminal, else to ~/Library/Logs/BenCode; the panic hook
     ├── monocode_import/      the one-time copy of a MonoCode install's data
     ├── external_editor.rs    finding and launching VS Code, Cursor, Zed, …
     └── workspace.rs          workspace file helpers
@@ -479,15 +485,26 @@ cargo test           # unit tests (parsers, models, git against temp repos)
 cargo run            # the app; this opens the user's real BenCode database
 RUST_BACKTRACE=1 cargo run   # when chasing a panic
 RUST_LOG=debug cargo run     # env_logger output
+packaging/macos/bundle.sh    # BenCode.app and BenCode.dmg in target/bundle
 ```
 
 - UI changes are not verified by `cargo check`. Run the app and exercise the
   change, including hover and the empty, loading and error states.
 - Tests must not touch the real database or the user's repositories; git tests
   build a `TempRepo`.
+- Run from Finder or the Dock, the app logs to
+  `~/Library/Logs/BenCode/bencode.log` (Help › Show Logs), warnings and up
+  unless `RUST_LOG` says otherwise.
 - Two tests are `#[ignore]`d because they are live: one calls the Claude CLI
   (`harness/claude.rs::live_permission_round_trip`), one reads the Keychain
   and Anthropic's usage endpoint (`rate_limits/claude.rs::live_usage_round_trip`).
+
+### Releasing
+
+Pushing a `vX.Y.Z` tag that matches `Cargo.toml` builds the universal
+`BenCode.dmg` and publishes a GitHub Release (`.github/workflows/release.yml`).
+Steps, and the secrets that turn on Developer ID signing and notarization, are
+in `docs/releasing.md`. Keep `CHANGELOG.md`'s section for the version current.
 
 ### Code style
 

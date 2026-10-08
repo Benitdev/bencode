@@ -5,7 +5,11 @@ Codex, Antigravity, OpenCode), viết 100% bằng **Rust** với **Zed GPUI** v�
 **[Ely GPUI Components](https://elygpui.com/)**.
 
 Đây là bản port native của **MonoCode** (Tauri + React): cùng tính năng, cùng
-giao diện, cùng cơ sở dữ liệu, nhưng không có WebView.
+giao diện, cùng schema cơ sở dữ liệu, nhưng không có WebView.
+
+**[Tải BenCode cho macOS](https://github.com/Benitdev/bencode/releases/latest/download/BenCode.dmg)**
+· [Trang giới thiệu](https://benitdev.github.io/bencode/)
+· [Releases](https://github.com/Benitdev/bencode/releases)
 
 ---
 
@@ -14,8 +18,9 @@ giao diện, cùng cơ sở dữ liệu, nhưng không có WebView.
 1. **Native hoàn toàn**: không Electron, không Chromium, không WebKit. Mọi thứ
    được GPUI vẽ trực tiếp bằng GPU (Metal trên macOS).
 2. **Nhanh và nhẹ**: mục tiêu khởi động dưới 50ms và dùng khoảng 30MB RAM.
-3. **Local-first, tương thích MonoCode**: đọc và ghi trực tiếp vào SQLite của
-   MonoCode, nên hai ứng dụng thấy cùng một danh sách thread.
+3. **Local-first, dữ liệu riêng**: thread, checkpoint và account nằm trong thư
+   mục của BenCode. Lần chạy đầu, dữ liệu của MonoCode (nếu có) được sao chép
+   sang một lần; sau đó hai ứng dụng độc lập.
 4. **Không tốn thêm token**: BenCode chỉ điều khiển CLI qua stdio và đọc luồng
    JSON chúng in ra.
 
@@ -43,20 +48,39 @@ chat; đóng tab cuối thì chat lấy lại toàn bộ chiều rộng.
 
 ---
 
-## Yêu cầu
+## Cài đặt
 
-- **macOS** (nền tảng chính; dùng Metal và API Cocoa).
-- **Rust** bản stable mới, hỗ trợ edition 2024, cùng Xcode Command Line Tools.
-- **git** trong `PATH`.
-- Ít nhất một agent CLI đã cài và đăng nhập: `claude`, `agy`, `codex` hoặc `opencode`.
-- Tuỳ chọn: **`gh`** (GitHub CLI) cho Inbox và pull request.
+1. Tải [`BenCode.dmg`](https://github.com/Benitdev/bencode/releases/latest/download/BenCode.dmg)
+   (một bản universal cho cả Apple Silicon và Intel, macOS 11 trở lên).
+2. Mở file và kéo **BenCode** vào **Applications**.
+3. Bản build chưa được Apple notarize, nên lần mở đầu macOS sẽ hỏi lại: mở
+   BenCode một lần, rồi vào **System Settings › Privacy & Security › Open
+   Anyway**. Nếu macOS báo app "is damaged", chạy:
+
+   ```bash
+   xattr -dr com.apple.quarantine /Applications/BenCode.app
+   ```
+
+Gặp lỗi? **Help › Show Logs** mở file log để đính kèm vào
+[issue](https://github.com/Benitdev/bencode/issues).
 
 ---
 
-## Chạy
+## Yêu cầu
+
+- **macOS 11** trở lên (nền tảng chính; dùng Metal và API Cocoa).
+- **git** trong `PATH`.
+- Ít nhất một agent CLI đã cài và đăng nhập: `claude`, `agy`, `codex` hoặc `opencode`.
+- Tuỳ chọn: **`gh`** (GitHub CLI) cho Inbox và pull request.
+- Chỉ khi build từ mã nguồn: **Rust** bản stable mới (edition 2024) cùng Xcode
+  Command Line Tools.
+
+---
+
+## Chạy từ mã nguồn
 
 ```bash
-git clone <repo> bencode
+git clone https://github.com/Benitdev/bencode.git
 cd bencode
 cargo run
 ```
@@ -68,12 +92,13 @@ cargo check                  # kiểm tra kiểu, nhanh
 cargo test                   # unit test
 cargo run                    # chạy ứng dụng
 cargo build --release        # bản tối ưu
+packaging/macos/bundle.sh    # đóng gói BenCode.app và BenCode.dmg (target/bundle)
 RUST_LOG=debug cargo run     # bật log
 RUST_BACKTRACE=1 cargo run   # in backtrace khi panic
 ```
 
-> **Lưu ý:** BenCode mở cơ sở dữ liệu thật của MonoCode. Thread, ghi chú và
-> automation bạn sửa trong BenCode cũng thay đổi trong MonoCode.
+> **Lưu ý:** `cargo run` mở dữ liệu thật của BenCode (`bencode.db` bên dưới),
+> giống bản đã cài. Thread, ghi chú và automation sửa ở đây là thật.
 
 ---
 
@@ -85,6 +110,7 @@ RUST_BACKTRACE=1 cargo run   # in backtrace khi panic
 | Thiết lập riêng của BenCode | `~/Library/Application Support/BenCode/settings.json` |
 | Checkpoint để xem lại và hoàn tác thay đổi của agent | `~/Library/Application Support/BenCode/checkpoints` |
 | Thư mục cấu hình của từng account provider | `~/Library/Application Support/BenCode/provider-accounts` |
+| Log (khi không chạy từ terminal) | `~/Library/Logs/BenCode/bencode.log` |
 
 BenCode không dùng chung dữ liệu nào với MonoCode. Lần chạy đầu tiên chưa có
 `bencode.db`, nó sao chép một lần database, checkpoints và account profiles của
@@ -123,8 +149,12 @@ Toàn bộ phím tắt và menu được khai báo ở `src/app/commands.rs`.
 bencode/
 ├── Cargo.toml
 ├── AGENTS.md            hướng dẫn chi tiết cho developer và AI agent
+├── CHANGELOG.md         thay đổi theo từng bản phát hành
 ├── assets/              icon SVG (Lucide bổ sung, logo provider)
 ├── docs/migration/      backlog so khớp với MonoCode
+├── docs/releasing.md    cách phát hành một bản mới
+├── packaging/macos/     icon app, Info.plist, script đóng gói .app / .dmg
+├── site/                landing page (GitHub Pages)
 ├── tests/fixtures/      output CLI ghi lại để test parser
 └── src/
     ├── main.rs          cửa sổ, theme, keymap
@@ -132,7 +162,7 @@ bencode/
     ├── app/             logic theo từng mảng (agent, pane, workspace, settings…)
     ├── ui/              toàn bộ view
     ├── harness/         điều khiển agent CLI qua stdio
-    ├── db/              SQLite của MonoCode
+    ├── db/              SQLite của BenCode (schema của MonoCode)
     ├── git/             git qua CLI (status, diff, sync, graph, worktree, checkpoint)
     ├── github.rs        GitHub qua `gh`
     ├── mcp/, skills/    MCP server và SKILL.md
@@ -158,7 +188,8 @@ Vài nguyên tắc cốt lõi:
 - **Tokio chỉ dành cho tiến trình harness** (`src/harness/runtime.rs`); executor
   của GPUI không có Tokio reactor.
 - **Dùng component của Ely** thay vì tự viết; màu lấy từ `cx.theme().colors`.
-- **Giữ nguyên dữ liệu không hiểu** khi ghi DB, vì đó là DB của MonoCode.
+- **Giữ nguyên dữ liệu không hiểu** khi ghi DB: dòng sao chép từ MonoCode mang
+  theo cả những cột BenCode chưa dùng.
 
 Chi tiết đầy đủ, kèm các quy tắc UI và lỗi thường gặp, nằm trong
 [`AGENTS.md`](AGENTS.md).
@@ -186,6 +217,14 @@ Chi tiết đầy đủ, kèm các quy tắc UI và lỗi thường gặp, nằm
 3. Chạy `cargo test`, rồi chạy ứng dụng và thử trực tiếp phần vừa sửa.
 4. Việc còn thiếu so với MonoCode được ghi ở `docs/migration/PARITY-BACKLOG.md`.
 
+## Phát hành
+
+Đẩy tag `vX.Y.Z` (trùng version trong `Cargo.toml`) là GitHub Actions build
+`BenCode.dmg` và tạo GitHub Release. Các bước, cùng cách bật ký và notarize khi
+có Apple Developer ID, nằm trong [`docs/releasing.md`](docs/releasing.md).
+
 ## Giấy phép
 
-MIT.
+MIT, xem [`LICENSE`](LICENSE). Icon Lucide trong `assets/icons` (ISC) và
+Material Icon Theme trong `assets/file-icons` (MIT) giữ giấy phép riêng ở thư
+mục của chúng; logo các provider thuộc về chủ sở hữu tương ứng.

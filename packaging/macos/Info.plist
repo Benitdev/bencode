@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- BenCode.app's Info.plist. bundle.sh fills in @VERSION@ (Cargo.toml) and
+     @BUILD@ (the commit count). The usage descriptions are for what agents
+     and terminal commands run from BenCode ask for: macOS attributes their
+     requests to the app that started them. -->
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleName</key>
+	<string>BenCode</string>
+	<key>CFBundleDisplayName</key>
+	<string>BenCode</string>
+	<key>CFBundleExecutable</key>
+	<string>bencode</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.benitdev.bencode</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>@VERSION@</string>
+	<key>CFBundleVersion</key>
+	<string>@BUILD@</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>11.0</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.developer-tools</string>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSSupportsAutomaticGraphicsSwitching</key>
+	<true/>
+	<key>NSHumanReadableCopyright</key>
+	<string>Copyright © 2026 Benitdev. MIT License.</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>A command run from BenCode wants to control another app.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>A command run from BenCode wants to use the camera.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>A command run from BenCode wants to use the microphone.</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>A command run from BenCode wants to use Bluetooth.</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>A command run from BenCode wants to read your calendars.</string>
+	<key>NSContactsUsageDescription</key>
+	<string>A command run from BenCode wants to read your contacts.</string>
+	<key>NSLocationUsageDescription</key>
+	<string>A command run from BenCode wants to use your location.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>A command run from BenCode wants to read your photos.</string>
+	<key>NSDesktopFolderUsageDescription</key>
+	<string>BenCode or an agent it runs wants to read files on your Desktop.</string>
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>BenCode or an agent it runs wants to read files in your Documents folder.</string>
+	<key>NSDownloadsFolderUsageDescription</key>
+	<string>BenCode or an agent it runs wants to read files in your Downloads folder.</string>
+	<key>NSNetworkVolumesUsageDescription</key>
+	<string>BenCode or an agent it runs wants to read files on a network volume.</string>
+	<key>NSRemovableVolumesUsageDescription</key>
+	<string>BenCode or an agent it runs wants to read files on a removable volume.</string>
+</dict>
+</plist>

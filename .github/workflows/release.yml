@@ -1,0 +1,125 @@
+name: Release
+
+# Pushing a tag `vX.Y.Z` (matching Cargo.toml's version) builds the universal
+# BenCode.dmg and publishes it as a GitHub Release, with that version's
+# CHANGELOG.md section as the notes. A tag with a hyphen (v0.2.0-beta.1) is
+# a pre-release. Running the workflow by hand only builds the dmg and keeps
+# it as a workflow artifact. Signing and notarization: docs/releasing.md.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    timeout-minutes: 120
+    env:
+      SIGNED: ${{ secrets.MACOS_CERTIFICATE != '' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The commit count is the bundle's build number.
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release
+      - name: Metal toolchain
+        run: xcrun -sdk macosx metal --version || xcodebuild -downloadComponent MetalToolchain
+
+      - name: Check the tag against Cargo.toml
+        id: version
+        run: |
+          version="$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)"
+          echo "version=$version" >>"$GITHUB_OUTPUT"
+          if [[ "$GITHUB_REF_TYPE" == tag && "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match Cargo.toml's version $version"
+            exit 1
+          fi
+
+      - name: Import the signing certificate
+        if: env.SIGNED == 'true'
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          keychain_password="$(openssl rand -hex 24)"
+          cert="$RUNNER_TEMP/certificate.p12"
+          echo "$MACOS_CERTIFICATE" | base64 --decode >"$cert"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$cert" -P "$MACOS_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$keychain"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain"
+          # shellcheck disable=SC2046
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          rm -f "$cert"
+          identity="$(security find-identity -v -p codesigning "$keychain" | sed -n 's/.*"\(Developer ID Application[^"]*\)".*/\1/p' | head -n 1)"
+          if [[ -z "$identity" ]]; then
+            echo "::error::No Developer ID Application identity in MACOS_CERTIFICATE"
+            exit 1
+          fi
+          echo "MACOS_SIGNING_IDENTITY=$identity" >>"$GITHUB_ENV"
+
+      - name: Build BenCode.dmg
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: packaging/macos/bundle.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BenCode-${{ steps.version.outputs.version }}
+          path: |
+            target/bundle/BenCode.dmg
+            target/bundle/BenCode.dmg.sha256
+          if-no-files-found: error
+
+      - name: Publish the release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          notes="$RUNNER_TEMP/notes.md"
+          # This version's section of CHANGELOG.md: from its "## [x.y.z]"
+          # heading to the next "## ".
+          awk -v v="[$VERSION]" '/^## /{ on = index($0, v) > 0; next } on' CHANGELOG.md >"$notes"
+          if [[ "$SIGNED" != true ]]; then
+            cat >>"$notes" <<'EOF'
+
+          ### First launch
+
+          This build is not notarized by Apple, so macOS asks you to confirm it once:
+          open BenCode, then go to **System Settings › Privacy & Security** and click
+          **Open Anyway**. If macOS says the app "is damaged", run:
+
+          ```sh
+          xattr -dr com.apple.quarantine /Applications/BenCode.app
+          ```
+          EOF
+          fi
+          flags=()
+          if [[ ! -s "$notes" ]]; then
+            # No CHANGELOG section: list the commits instead.
+            flags+=(--generate-notes)
+          fi
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+            flags+=(--prerelease)
+          fi
+          gh release create "$GITHUB_REF_NAME" \
+            target/bundle/BenCode.dmg target/bundle/BenCode.dmg.sha256 \
+            --title "BenCode $VERSION" --notes-file "$notes" --verify-tag "${flags[@]}"

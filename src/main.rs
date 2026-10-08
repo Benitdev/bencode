@@ -5,6 +5,7 @@ pub mod external_editor;
 mod git;
 mod github;
 mod harness;
+mod logging;
 mod process_stats;
 mod project_search;
 pub mod mcp;
@@ -26,7 +27,7 @@ use gpui::{
 use monocode_import::ImportOutcome;
 
 fn main() {
-    env_logger::init();
+    logging::init();
 
     gpui_platform::application()
         .with_assets(ui::icons::Assets)

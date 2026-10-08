@@ -26,3 +26,14 @@ pub fn checkpoints_dir() -> Option<PathBuf> {
 pub fn provider_accounts_dir() -> Option<PathBuf> {
     data_dir().map(|dir| dir.join("provider-accounts"))
 }
+
+/// `~/Library/Logs/BenCode` on macOS, where Console looks; beside the data
+/// elsewhere.
+pub fn logs_dir() -> Option<PathBuf> {
+    if cfg!(target_os = "macos") {
+        let home = PathBuf::from(std::env::var_os("HOME")?);
+        Some(home.join("Library/Logs/BenCode"))
+    } else {
+        data_dir().map(|dir| dir.join("logs"))
+    }
+}
