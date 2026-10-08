@@ -73,6 +73,7 @@ actions!(
         NextSessionInTab,
         PreviousProject,
         NextProject,
+        ShowLogs,
     ]
 );
 
@@ -184,6 +185,7 @@ pub fn install(cx: &mut App) {
     // With no window open the app's own handler is not on the dispatch
     // path; quitting still saves through `on_app_quit`.
     cx.on_action(|_: &Quit, cx| cx.quit());
+    cx.on_action(|_: &ShowLogs, cx| crate::logging::reveal(cx));
     cx.set_menus(menus());
 }
 
@@ -243,6 +245,7 @@ fn menus() -> Vec<Menu> {
             MenuItem::action("Focus Pane Up", FocusUp),
             MenuItem::action("Focus Pane Down", FocusDown),
         ]),
+        Menu::new("Help").items([MenuItem::action("Show Logs", ShowLogs)]),
     ]
 }
 

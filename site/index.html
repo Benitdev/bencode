@@ -1,0 +1,478 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BenCode</title>
+  <meta name="description" content="A native macOS app that runs Claude Code, Codex, Antigravity and OpenCode side by side, with your files, git, terminal and inbox around them.">
+  <meta name="theme-color" content="#0b0f1c">
+  <link rel="icon" type="image/svg+xml" href="icon.svg">
+  <link rel="apple-touch-icon" href="icon.png">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="BenCode: every coding agent, one native window">
+  <meta property="og:description" content="Run Claude Code, Codex, Antigravity and OpenCode side by side in a native macOS app. Rust + GPUI, no Electron.">
+  <meta property="og:url" content="https://benitdev.github.io/bencode/">
+  <meta property="og:image" content="https://benitdev.github.io/bencode/icon.png">
+  <meta name="twitter:card" content="summary">
+  <style>
+    :root {
+      --bg: #0b0f1c;
+      --bg-raised: #10162a;
+      --surface: #141b31;
+      --border: rgba(255, 255, 255, 0.08);
+      --border-strong: rgba(255, 255, 255, 0.16);
+      --fg: #e9edf5;
+      --fg-muted: #9aa4ba;
+      --fg-subtle: #6e7891;
+      --accent: #4a9ff5;
+      --accent-strong: #2e7cf2;
+      --accent-deep: #1b3fb8;
+      --accent-soft: rgba(74, 159, 245, 0.14);
+      --on-accent: #ffffff;
+      --glow: rgba(46, 124, 242, 0.35);
+      --code-bg: #0e1424;
+      --radius: 14px;
+      --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+      color-scheme: dark;
+    }
+    @media (prefers-color-scheme: light) {
+      :root:not([data-theme="dark"]) {
+        --bg: #f6f8fc;
+        --bg-raised: #eef2f9;
+        --surface: #ffffff;
+        --border: rgba(16, 24, 48, 0.09);
+        --border-strong: rgba(16, 24, 48, 0.18);
+        --fg: #121828;
+        --fg-muted: #4f5970;
+        --fg-subtle: #7a8399;
+        --accent: #2e7cf2;
+        --accent-strong: #1f6ae0;
+        --accent-soft: rgba(46, 124, 242, 0.1);
+        --glow: rgba(46, 124, 242, 0.22);
+        --code-bg: #eef2f9;
+        color-scheme: light;
+      }
+    }
+    :root[data-theme="light"] {
+      --bg: #f6f8fc;
+      --bg-raised: #eef2f9;
+      --surface: #ffffff;
+      --border: rgba(16, 24, 48, 0.09);
+      --border-strong: rgba(16, 24, 48, 0.18);
+      --fg: #121828;
+      --fg-muted: #4f5970;
+      --fg-subtle: #7a8399;
+      --accent: #2e7cf2;
+      --accent-strong: #1f6ae0;
+      --accent-soft: rgba(46, 124, 242, 0.1);
+      --glow: rgba(46, 124, 242, 0.22);
+      --code-bg: #eef2f9;
+      color-scheme: light;
+    }
+
+    * { box-sizing: border-box; }
+    html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+    @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--fg);
+      font: 16px/1.6 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", Roboto, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: inherit; }
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
+    .wrap { width: min(1120px, 100% - 32px); margin-inline: auto; }
+
+    /* Header */
+    header.top {
+      position: sticky; top: 0; z-index: 10;
+      background: color-mix(in srgb, var(--bg) 82%, transparent);
+      backdrop-filter: saturate(160%) blur(14px);
+      -webkit-backdrop-filter: saturate(160%) blur(14px);
+      border-bottom: 1px solid var(--border);
+    }
+    .top .wrap { display: flex; align-items: center; justify-content: space-between; height: 60px; }
+    .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; font-weight: 650; letter-spacing: -0.01em; }
+    .brand img { width: 30px; height: 30px; }
+    nav { display: flex; align-items: center; gap: 4px; }
+    nav a {
+      text-decoration: none; color: var(--fg-muted); font-size: 14.5px;
+      padding: 6px 12px; border-radius: 8px;
+    }
+    nav a:hover { color: var(--fg); background: var(--accent-soft); }
+
+    /* Hero */
+    .hero { position: relative; padding: 88px 0 56px; text-align: center; overflow: hidden; }
+    .hero::before {
+      content: ""; position: absolute; inset: -240px 0 auto; height: 720px; z-index: -1;
+      background: radial-gradient(60% 55% at 50% 45%, var(--glow), transparent 70%);
+    }
+    .hero-icon { display: block; width: 112px; height: 112px; margin: 0 auto 20px; filter: drop-shadow(0 18px 30px rgba(27, 63, 184, 0.35)); }
+    .eyebrow {
+      display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: center;
+      font-size: 13px; color: var(--fg-muted); margin-bottom: 18px;
+    }
+    .eyebrow span + span::before { content: "·"; margin-right: 8px; color: var(--fg-subtle); }
+    h1 {
+      font-size: clamp(36px, 6.4vw, 64px); line-height: 1.04; letter-spacing: -0.035em;
+      font-weight: 750; margin: 0 auto 20px; max-width: 14ch; text-wrap: balance;
+    }
+    h1 em { font-style: normal; background: linear-gradient(180deg, #8cc6ff, var(--accent-strong)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+    .lede { font-size: clamp(17px, 2.2vw, 19.5px); color: var(--fg-muted); max-width: 60ch; margin: 0 auto 32px; text-wrap: pretty; }
+    .actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+    .button {
+      display: inline-flex; align-items: center; gap: 10px; height: 48px; padding: 0 22px;
+      border-radius: 12px; font-weight: 600; font-size: 15.5px; text-decoration: none;
+      border: 1px solid var(--border-strong); color: var(--fg); background: var(--surface);
+      transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+    }
+    .button:hover { transform: translateY(-1px); }
+    .button.primary {
+      color: var(--on-accent); border-color: transparent;
+      background: linear-gradient(180deg, #5aa9fb, var(--accent-strong));
+      box-shadow: 0 10px 28px -8px rgba(46, 124, 242, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+    }
+    .button.primary:hover { box-shadow: 0 14px 34px -8px rgba(46, 124, 242, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.25); }
+    .button svg { width: 18px; height: 18px; flex: none; }
+    .release-meta { margin-top: 14px; font-size: 13.5px; color: var(--fg-subtle); min-height: 1.6em; }
+    .agents { margin-top: 40px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+    .agents .label { width: 100%; font-size: 12.5px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--fg-subtle); margin-bottom: 2px; }
+    .chip {
+      display: inline-flex; align-items: center; gap: 8px; font-size: 14px; color: var(--fg-muted);
+      padding: 6px 13px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface);
+    }
+    .chip i { width: 8px; height: 8px; border-radius: 50%; display: block; }
+
+    /* App window mock (always dark, like a screenshot) */
+    .shot { padding: 8px 0 96px; }
+    .window {
+      --w-bg: #171717; --w-surface: #1f1f1f; --w-raised: #262626; --w-border: rgba(235, 235, 235, 0.09);
+      --w-fg: #ebebeb; --w-muted: #9a9a9a; --w-subtle: #6c6c6c;
+      border-radius: 14px; overflow: hidden; background: var(--w-bg); color: var(--w-fg);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 50px 100px -30px rgba(5, 10, 30, 0.6), 0 0 0 1px rgba(0, 0, 0, 0.4);
+      font-size: 13px; line-height: 1.5; text-align: left;
+    }
+    .titlebar { height: 40px; display: flex; align-items: center; gap: 14px; padding: 0 14px; border-bottom: 1px solid var(--w-border); }
+    .lights { display: flex; gap: 8px; }
+    .lights i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+    .tabs { display: flex; gap: 6px; overflow: hidden; }
+    .tab { display: flex; align-items: center; gap: 7px; padding: 5px 12px; border-radius: 8px; color: var(--w-muted); white-space: nowrap; font-size: 12.5px; }
+    .tab.on { background: var(--w-raised); color: var(--w-fg); }
+    .tab i { width: 7px; height: 7px; border-radius: 50%; display: block; }
+    .body { display: grid; grid-template-columns: 52px 232px 1fr 300px; min-height: 470px; }
+    .rail { border-right: 1px solid var(--w-border); display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 12px 0; }
+    .proj { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; font-weight: 700; font-size: 12px; color: #fff; }
+    .proj.dim { opacity: 0.55; }
+    .sidebar { border-right: 1px solid var(--w-border); padding: 12px 10px; display: flex; flex-direction: column; gap: 6px; }
+    .side-tabs { display: flex; gap: 4px; margin-bottom: 6px; }
+    .side-tabs span { font-size: 12px; padding: 3px 9px; border-radius: 6px; color: var(--w-muted); }
+    .side-tabs span.on { background: var(--w-raised); color: var(--w-fg); }
+    .card { padding: 8px 10px; border-radius: 9px; }
+    .card.on { background: var(--w-raised); }
+    .card b { display: block; font-weight: 550; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .card small { color: var(--w-subtle); font-size: 11.5px; display: flex; align-items: center; gap: 6px; }
+    .card small i { width: 6px; height: 6px; border-radius: 50%; display: block; }
+    .chat { display: flex; flex-direction: column; min-width: 0; }
+    .transcript { flex: 1; padding: 18px 22px; display: flex; flex-direction: column; gap: 12px; }
+    .bubble { align-self: flex-end; max-width: 78%; background: #2e7cf2; color: #fff; padding: 8px 12px; border-radius: 12px 12px 4px 12px; }
+    .reply { color: var(--w-fg); }
+    .reply code, .tool code { font-family: var(--mono); font-size: 12px; background: var(--w-raised); padding: 1px 5px; border-radius: 5px; }
+    .tool { display: flex; align-items: center; gap: 8px; color: var(--w-muted); font-size: 12.5px; }
+    .tool .tick { color: #34d399; }
+    .add { color: #34d399; font-family: var(--mono); font-size: 12px; }
+    .del { color: #f87171; font-family: var(--mono); font-size: 12px; }
+    .review {
+      border: 1px solid var(--w-border); background: var(--w-surface); border-radius: 11px;
+      padding: 10px 12px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    }
+    .review b { font-weight: 600; margin-right: auto; }
+    .review span { font-size: 12px; padding: 3px 10px; border-radius: 7px; border: 1px solid var(--w-border); color: var(--w-muted); }
+    .review span.go { background: #2e7cf2; color: #fff; border-color: transparent; }
+    .composer { margin: 0 16px 14px; border: 1px solid var(--w-border); background: var(--w-surface); border-radius: 12px; padding: 10px 12px; }
+    .composer p { margin: 0 0 10px; color: var(--w-subtle); }
+    .composer div { display: flex; gap: 6px; align-items: center; }
+    .pill { font-size: 11.5px; padding: 2px 9px; border-radius: 999px; background: var(--w-raised); color: var(--w-muted); display: inline-flex; align-items: center; gap: 6px; }
+    .pill i { width: 6px; height: 6px; border-radius: 50%; display: block; }
+    .send { margin-left: auto; width: 26px; height: 26px; border-radius: 8px; background: #2e7cf2; display: grid; place-items: center; }
+    .pane { border-left: 1px solid var(--w-border); display: flex; flex-direction: column; min-width: 0; }
+    .pane-head { padding: 9px 12px; border-bottom: 1px solid var(--w-border); color: var(--w-muted); font-size: 12px; display: flex; justify-content: space-between; }
+    .diff { font-family: var(--mono); font-size: 11.5px; line-height: 1.75; padding: 8px 0; white-space: pre; overflow: hidden; }
+    .diff div { padding: 0 12px; }
+    .diff .a { background: rgba(52, 211, 153, 0.12); color: #a7f3d0; }
+    .diff .d { background: rgba(248, 113, 113, 0.12); color: #fecaca; }
+    .diff .c { color: var(--w-subtle); }
+    .statusbar { height: 28px; border-top: 1px solid var(--w-border); display: flex; align-items: center; gap: 14px; padding: 0 14px; color: var(--w-subtle); font-size: 11.5px; }
+    .meter { width: 60px; height: 5px; border-radius: 3px; background: var(--w-raised); overflow: hidden; display: inline-block; vertical-align: middle; margin-left: 6px; }
+    .meter b { display: block; height: 100%; width: 38%; background: #4a9ff5; }
+
+    @media (max-width: 1000px) { .body { grid-template-columns: 52px 210px 1fr; } .pane { display: none; } }
+    @media (max-width: 720px) { .body { grid-template-columns: 1fr; } .rail, .sidebar { display: none; } .titlebar .tabs .tab:not(.on) { display: none; } }
+
+    /* Sections */
+    section.block { padding: 88px 0; border-top: 1px solid var(--border); }
+    .section-head { max-width: 720px; margin-bottom: 44px; }
+    .kicker { color: var(--accent); font-weight: 600; font-size: 14px; margin-bottom: 8px; }
+    h2 { font-size: clamp(28px, 4vw, 40px); line-height: 1.12; letter-spacing: -0.025em; margin: 0 0 14px; text-wrap: balance; }
+    .section-head p { color: var(--fg-muted); margin: 0; font-size: 17px; }
+    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    @media (max-width: 900px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 600px) { .grid { grid-template-columns: 1fr; } }
+    .feature { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 22px; }
+    .feature .ico { width: 38px; height: 38px; border-radius: 10px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); margin-bottom: 14px; }
+    .feature .ico svg { width: 20px; height: 20px; }
+    .feature h3 { margin: 0 0 6px; font-size: 17px; letter-spacing: -0.01em; }
+    .feature p { margin: 0; color: var(--fg-muted); font-size: 15px; }
+    .feature kbd, .note kbd { font-family: var(--mono); font-size: 12.5px; padding: 1px 6px; border-radius: 6px; border: 1px solid var(--border-strong); background: var(--bg-raised); }
+
+    .install { display: grid; grid-template-columns: 1.25fr 1fr; gap: 24px; align-items: start; }
+    .install > *, ol.steps li { min-width: 0; }
+    @media (max-width: 860px) { .install { grid-template-columns: 1fr; } }
+    ol.steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; counter-reset: step; }
+    ol.steps li { counter-increment: step; position: relative; padding: 18px 20px 18px 66px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+    ol.steps li::before {
+      content: counter(step); position: absolute; left: 20px; top: 18px; width: 30px; height: 30px; border-radius: 50%;
+      display: grid; place-items: center; font-weight: 700; font-size: 14px; color: var(--on-accent);
+      background: linear-gradient(180deg, #5aa9fb, var(--accent-strong));
+    }
+    ol.steps b { display: block; margin-bottom: 2px; }
+    ol.steps p { margin: 0; color: var(--fg-muted); font-size: 15px; }
+    .cmd { margin-top: 12px; min-width: 0; display: flex; align-items: center; gap: 8px; background: var(--code-bg); border: 1px solid var(--border); border-radius: 10px; padding: 8px 8px 8px 14px; }
+    .cmd code { font-family: var(--mono); font-size: 13px; flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; }
+    .copy { font: inherit; font-size: 12.5px; color: var(--fg-muted); background: var(--surface); border: 1px solid var(--border-strong); border-radius: 7px; padding: 4px 10px; cursor: pointer; }
+    .copy:hover { color: var(--fg); }
+    .aside { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 22px; }
+    .aside h3 { margin: 0 0 12px; font-size: 17px; }
+    .aside ul { margin: 0 0 18px; padding-left: 18px; color: var(--fg-muted); font-size: 15px; }
+    .aside li { margin-bottom: 6px; }
+    .aside li code, .note code { font-family: var(--mono); font-size: 13px; color: var(--fg); }
+    .aside a { color: var(--accent); }
+    .note { font-size: 14px; color: var(--fg-subtle); margin: 0; }
+
+    footer { border-top: 1px solid var(--border); padding: 32px 0 48px; color: var(--fg-subtle); font-size: 14px; }
+    footer .wrap { display: flex; gap: 16px; justify-content: space-between; align-items: center; flex-wrap: wrap; }
+    footer nav a { font-size: 14px; }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <div class="wrap">
+      <a class="brand" href="#top"><img src="icon.svg" alt="" width="30" height="30">BenCode</a>
+      <nav aria-label="Main">
+        <a href="#features">Features</a>
+        <a href="#install">Install</a>
+        <a href="https://github.com/Benitdev/bencode">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="top">
+    <section class="hero">
+      <div class="wrap">
+        <img class="hero-icon" src="icon.svg" alt="BenCode app icon" width="112" height="112">
+        <div class="eyebrow"><span>Native macOS</span><span>Rust + GPUI</span><span>Open source</span></div>
+        <h1>Every coding agent, <em>one native window.</em></h1>
+        <p class="lede">BenCode runs Claude Code, Codex, Antigravity and OpenCode side by side, with your files, git, terminal and GitHub inbox around them. No Electron, no web view: every pixel is drawn on the GPU.</p>
+        <div class="actions">
+          <a class="button primary" id="download" href="https://github.com/Benitdev/bencode/releases/latest/download/BenCode.dmg">
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16.37 12.6c-.02-2.3 1.88-3.4 1.97-3.46-1.07-1.57-2.74-1.78-3.33-1.8-1.42-.14-2.77.83-3.49.83-.72 0-1.83-.81-3.01-.79-1.55.02-2.98.9-3.78 2.29-1.61 2.8-.41 6.94 1.16 9.21.77 1.11 1.68 2.36 2.88 2.31 1.16-.05 1.59-.75 2.99-.75 1.4 0 1.79.75 3.01.72 1.24-.02 2.03-1.13 2.79-2.25.88-1.29 1.24-2.53 1.26-2.6-.03-.01-2.42-.93-2.45-3.71zM14.08 5.84c.64-.77 1.07-1.85.95-2.92-.92.04-2.03.61-2.69 1.38-.59.68-1.1 1.77-.97 2.82 1.03.08 2.07-.52 2.71-1.28z"/></svg>
+            Download for macOS
+          </a>
+          <a class="button" href="https://github.com/Benitdev/bencode">
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.65.5.5 5.65.5 12a11.5 11.5 0 0 0 7.86 10.92c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.52-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.68 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.41-2.69 5.38-5.25 5.67.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5z"/></svg>
+            View on GitHub
+          </a>
+        </div>
+        <div class="release-meta" id="release-meta">Universal: Apple Silicon and Intel · macOS 11 or later</div>
+        <div class="agents" aria-label="Supported agents">
+          <div class="label">Works with the CLIs you already use</div>
+          <span class="chip"><i style="background:#d97757"></i>Claude Code</span>
+          <span class="chip"><i style="background:var(--fg-muted)"></i>Codex</span>
+          <span class="chip"><i style="background:#4285f4"></i>Antigravity</span>
+          <span class="chip"><i style="background:#fab283"></i>OpenCode</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="shot" aria-label="What BenCode looks like">
+      <div class="wrap">
+        <div class="window" role="img" aria-label="BenCode's window: projects, sessions, a chat with an agent, and a diff of its changes">
+          <div class="titlebar">
+            <div class="lights"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i></div>
+            <div class="tabs">
+              <span class="tab on"><i style="background:#d97757"></i>Add rate limiting</span>
+              <span class="tab"><i style="background:#e8e8e8"></i>Fix flaky test</span>
+              <span class="tab"><i style="background:#fab283"></i>Write release notes</span>
+            </div>
+          </div>
+          <div class="body">
+            <div class="rail">
+              <span class="proj" style="background:#2e7cf2">A</span>
+              <span class="proj dim" style="background:#8b5cf6">W</span>
+              <span class="proj dim" style="background:#10b981">S</span>
+            </div>
+            <div class="sidebar">
+              <div class="side-tabs"><span class="on">Sessions</span><span>Explorer</span><span>Changes</span></div>
+              <div class="card on"><b>Add rate limiting</b><small><i style="background:#4a9ff5"></i>Working… · Claude</small></div>
+              <div class="card"><b>Fix flaky test</b><small><i style="background:#34d399"></i>Done · Codex · 12m</small></div>
+              <div class="card"><b>Write release notes</b><small><i style="background:#fbbf24"></i>Need approval · OpenCode</small></div>
+              <div class="card"><b>Refactor auth module</b><small>2h 10m</small></div>
+            </div>
+            <div class="chat">
+              <div class="transcript">
+                <div class="bubble">Add rate limiting to the public API, 100 requests a minute per key.</div>
+                <div class="reply">I'll add a token-bucket limiter as middleware and cover it with tests.</div>
+                <div class="tool"><span class="tick">✓</span> Edited <code>src/middleware/rate_limit.rs</code> <span class="add">+64</span></div>
+                <div class="tool"><span class="tick">✓</span> Edited <code>src/server.rs</code> <span class="add">+3</span> <span class="del">−1</span></div>
+                <div class="tool"><span class="tick">✓</span> Ran <code>cargo test rate_limit</code> · 6 passed</div>
+                <div class="review"><b>Changed 3 files</b><span>Undo</span><span>Keep</span><span class="go">Review</span></div>
+              </div>
+              <div class="composer">
+                <p>Ask for a follow-up…</p>
+                <div>
+                  <span class="pill"><i style="background:#d97757"></i>claude:opus</span>
+                  <span class="pill">Auto-accept edits</span>
+                  <span class="pill">main</span>
+                  <span class="send" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg></span>
+                </div>
+              </div>
+            </div>
+            <div class="pane">
+              <div class="pane-head"><span>server.rs</span><span><span class="add">+3</span> <span class="del">−1</span></span></div>
+              <div class="diff"><div class="c">  let app = Router::new()</div><div class="c">      .route("/v1", api())</div><div class="d">-     .layer(cors());</div><div class="a">+     .layer(cors())</div><div class="a">+     .layer(RateLimit::per_minute(100))</div><div class="a">+     .layer(trace());</div><div class="c"> </div><div class="c">  serve(app).await</div></div>
+            </div>
+          </div>
+          <div class="statusbar"><span>Claude · 5h <span class="meter"><b></b></span></span><span>Weekly 21%</span><span style="margin-left:auto">Terminal</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="block" id="features">
+      <div class="wrap">
+        <div class="section-head">
+          <div class="kicker">Features</div>
+          <h2>The agent does the work. BenCode keeps you in charge of it.</h2>
+          <p>BenCode drives the agent CLIs you already have over stdio. It adds no API keys and no token cost of its own.</p>
+        </div>
+        <div class="grid">
+          <article class="feature">
+            <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/></svg></div>
+            <h3>Agents side by side</h3>
+            <p>One thread per task, each with its own agent, model and permission mode. Split panes, queue messages, hand a thread off to another agent.</p>
+          </article>
+          <article class="feature">
+            <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 11l3 3 8-8"/><path d="M20 12v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h9"/></svg></div>
+            <h3>Review every turn</h3>
+            <p>After a turn edits files, see exactly what that thread changed, then Keep it, Undo it, or open the diff.</p>
+          </article>
+          <article class="feature">
+            <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="8" r="2.5"/><path d="M6 8.5v7M18 10.5c0 4-6 3-10.5 6"/></svg></div>
+            <h3>Git built in</h3>
+            <p>Stage, commit, pull and push, open pull requests, browse the commit graph and work in worktrees, without leaving the chat.</p>
+          </article>
+          <article class="feature">
+            <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 17l6-6-6-6M12 19h8"/></svg></div>
+            <h3>Files and terminal</h3>
+            <p>An Explorer, a native code editor that notices when the agent changes a file, Go to File <kbd>⌘P</kbd>, and a terminal per project <kbd>⌘J</kbd>.</p>
+          </article>
+          <article class="feature">
+            <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg></div>
+            <h3>An inbox for your work</h3>
+            <p>GitHub issues and pull requests (with checks) and Nulab Backlog issues. Send one to an agent, or ask it to fix the failing CI.</p>
+          </article>
+          <article class="feature">
+            <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg></div>
+            <h3>Fast and local</h3>
+            <p>Rust and Zed's GPUI, so no browser engine sits in between. Threads, notes and checkpoints stay on your Mac.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="block" id="install">
+      <div class="wrap">
+        <div class="section-head">
+          <div class="kicker">Install</div>
+          <h2>Up and running in a minute.</h2>
+          <p>BenCode is a free download from GitHub Releases.</p>
+        </div>
+        <div class="install">
+          <ol class="steps">
+            <li><b>Download BenCode.dmg</b><p>One universal build for Apple Silicon and Intel Macs. <a href="https://github.com/Benitdev/bencode/releases/latest/download/BenCode.dmg" style="color:var(--accent)">Download</a></p></li>
+            <li><b>Drag BenCode to Applications</b><p>Open the disk image and drop the app onto the Applications folder.</p></li>
+            <!-- While builds are not notarized by Apple (docs/releasing.md), macOS
+                 asks users to confirm the first launch. Remove this step once
+                 releases are signed with a Developer ID. -->
+            <li id="first-launch"><b>Confirm the first launch</b><p>This early build is not yet notarized by Apple. Open BenCode once, then choose <b style="display:inline">System Settings › Privacy &amp; Security › Open Anyway</b>. If macOS says the app is damaged, run this in Terminal:</p>
+              <div class="cmd"><code id="xattr">xattr -dr com.apple.quarantine /Applications/BenCode.app</code><button class="copy" type="button" data-copy="xattr">Copy</button></div>
+            </li>
+          </ol>
+          <aside class="aside">
+            <h3>You will need</h3>
+            <ul>
+              <li>macOS 11 Big Sur or later</li>
+              <li>At least one agent CLI, installed and signed in: <code>claude</code>, <code>codex</code>, <code>agy</code> or <code>opencode</code></li>
+              <li><code>git</code></li>
+              <li>Optional: <code>gh</code> (GitHub CLI) for the Inbox and pull requests</li>
+            </ul>
+            <p class="note">Coming from MonoCode? Your threads, checkpoints and accounts are copied in on first launch. Something wrong? <b>Help › Show Logs</b> finds the log to attach to an <a href="https://github.com/Benitdev/bencode/issues">issue</a>.</p>
+          </aside>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">
+      <span>BenCode · MIT License</span>
+      <nav aria-label="Footer">
+        <a href="https://github.com/Benitdev/bencode/releases">Releases</a>
+        <a href="https://github.com/Benitdev/bencode/blob/main/CHANGELOG.md">Changelog</a>
+        <a href="https://github.com/Benitdev/bencode/issues">Report an issue</a>
+      </nav>
+    </div>
+  </footer>
+
+  <script>
+    // The latest release's version and size under the download button. With
+    // no release yet, the button leads to the Releases page instead.
+    (async () => {
+      const meta = document.getElementById('release-meta');
+      const button = document.getElementById('download');
+      try {
+        const res = await fetch('https://api.github.com/repos/Benitdev/bencode/releases/latest', {
+          headers: { Accept: 'application/vnd.github+json' },
+        });
+        if (res.status === 404) {
+          button.href = 'https://github.com/Benitdev/bencode/releases';
+          meta.textContent = 'The first release is on its way. Watch the repository to hear about it.';
+          return;
+        }
+        if (!res.ok) return;
+        const release = await res.json();
+        const dmg = (release.assets || []).find((a) => a.name === 'BenCode.dmg');
+        const parts = [release.tag_name];
+        if (dmg) parts.push(`${Math.round(dmg.size / 1048576)} MB`);
+        parts.push('Apple Silicon and Intel', 'macOS 11 or later');
+        meta.textContent = parts.join(' · ');
+      } catch (err) {
+        // Offline or rate-limited: keep the static line.
+      }
+    })();
+
+    document.querySelectorAll('[data-copy]').forEach((button) => {
+      button.addEventListener('click', async () => {
+        const text = document.getElementById(button.dataset.copy).textContent;
+        try {
+          await navigator.clipboard.writeText(text);
+          button.textContent = 'Copied';
+        } catch (err) {
+          button.textContent = 'Select and copy';
+        }
+        setTimeout(() => { button.textContent = 'Copy'; }, 1600);
+      });
+    });
+  </script>
+</body>
+</html>
