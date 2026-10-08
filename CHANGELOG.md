@@ -40,3 +40,5 @@ The first public build: a native macOS port of MonoCode.
   terminal (Help › Show Logs), panics included.
 - The window's close button hides BenCode, as ⌘H does, so running agents
   keep going; the Dock icon brings the window back and ⌘Q quits.
+- On macOS 26 and later the dark theme's window glass is Liquid Glass
+  (`NSGlassEffectView`); earlier macOS keeps the blur.

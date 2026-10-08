@@ -269,6 +269,10 @@ pub struct BenCodeApp {
     pub body_glass: bool,
     /// The window background last set, so the blur toggles only on change.
     pub window_background: Option<gpui::WindowBackgroundAppearance>,
+    /// The window's Liquid Glass while the glass is on (macOS 26 and later).
+    pub native_glass: Option<crate::ui::native_glass::NativeGlass>,
+    /// Liquid Glass could not be put in; GPUI's blur stands in for it.
+    pub native_glass_failed: bool,
     /// The centred composer's last measurements, and a send from it whose
     /// docked composer is still dropping into place.
     pub dock_measure: std::rc::Rc<crate::ui::composer::DockMeasure>,
@@ -1163,6 +1167,8 @@ impl BenCodeApp {
             sidebar_drawer_open: false,
             body_glass: true,
             window_background: None,
+            native_glass: None,
+            native_glass_failed: false,
             lightbox: None,
             mention_marks: Vec::new(),
             dock_measure: Default::default(),

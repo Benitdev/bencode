@@ -21,6 +21,7 @@ pub mod lightbox;
 pub mod link_dialog;
 pub mod mascot;
 pub mod motion;
+pub mod native_glass;
 pub mod notes;
 pub mod page_parts;
 pub mod pane_tree;

@@ -34,12 +34,6 @@
 	<string>NSApplication</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
-	<!-- Built with the macOS 26 SDK, AppKit draws with Tahoe's new design, and
-	     the window's blur (GPUI's NSVisualEffectView under the content) did
-	     not show. This keeps the earlier look, the one a build with an older
-	     SDK (as `cargo run` may be) gets. Only builds with the 26 SDK honor it. -->
-	<key>UIDesignRequiresCompatibility</key>
-	<true/>
 	<key>NSSupportsAutomaticGraphicsSwitching</key>
 	<true/>
 	<key>NSHumanReadableCopyright</key>

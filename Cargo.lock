@@ -607,6 +607,7 @@ dependencies = [
  "log",
  "objc",
  "pulldown-cmark",
+ "raw-window-handle",
  "rusqlite",
  "serde",
  "serde_json",
