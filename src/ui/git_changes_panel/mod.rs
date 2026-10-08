@@ -1077,11 +1077,12 @@ impl BenCodeApp {
                     .justify_center()
                     .rounded(px(4.0))
                     .when(busy, |el| el.opacity(0.4))
+                    // The row folds the folder; a press here is not for it.
+                    .on_click(|_, _, cx| cx.stop_propagation())
                     .when(!busy, |el| {
                         el.cursor_pointer()
                             .hover(move |s| s.bg(action_hover))
                             .on_click(cx.listener(move |this, _, _, cx| {
-                                cx.stop_propagation();
                                 this.folder_action(folder.clone(), side, cx)
                             }))
                     })
@@ -1113,6 +1114,14 @@ impl BenCodeApp {
             .text_color(fg)
             .hover(move |s| s.bg(hover))
             .on_hover(Self::row_hover(group.clone(), cx))
+            // The whole row folds the folder, as far as its hover reaches.
+            .cursor_pointer()
+            .on_click(cx.listener(move |this, _, _, cx| {
+                if !this.changes_ui.collapsed_dirs.remove(&key) {
+                    this.changes_ui.collapsed_dirs.insert(key.clone());
+                }
+                cx.notify();
+            }))
             .child(
                 // The toggle: `flex-1 gap-1.5`, a `size-4` chevron box,
                 // the 16px folder icon, `text-[13px] font-medium`.
@@ -1123,14 +1132,7 @@ impl BenCodeApp {
                     .min_w_0()
                     .items_center()
                     .gap_1p5()
-                    .cursor_pointer()
                     .tooltip(Tooltip::text(dir.path.clone()))
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        if !this.changes_ui.collapsed_dirs.remove(&key) {
-                            this.changes_ui.collapsed_dirs.insert(key.clone());
-                        }
-                        cx.notify();
-                    }))
                     .child(
                         div().size(px(16.0)).flex().flex_none().items_center().justify_center().child(
                             Icon::new(if open {
@@ -1200,6 +1202,8 @@ impl BenCodeApp {
                 .rounded(px(4.0))
                 .when(busy, |el| el.opacity(0.4))
                 .when(!busy, |el| el.cursor_pointer().hover(move |s| s.bg(action_hover)))
+                // The row opens the file; a press here is not for it.
+                .on_click(|_, _, cx| cx.stop_propagation())
                 .tooltip(Tooltip::text(tip))
                 .child(
                     Icon::new(icon)
@@ -1252,6 +1256,12 @@ impl BenCodeApp {
             .when(active, |el| el.bg(selection))
             .when(!active, |el| el.hover(move |s| s.bg(hover)))
             .on_hover(Self::row_hover(group.clone(), cx))
+            // The whole row opens the file, as far as its hover reaches:
+            // the padding and the status letter too.
+            .cursor_pointer()
+            .on_click(cx.listener(move |this, event: &gpui::ClickEvent, _, cx| {
+                this.open_change(open_path.clone(), side, event.click_count() == 2, cx)
+            }))
             .child(
                 div()
                     .id(SharedString::from(format!("{group}-open")))
@@ -1260,11 +1270,7 @@ impl BenCodeApp {
                     .min_w_0()
                     .items_center()
                     .gap_1p5()
-                    .cursor_pointer()
                     .tooltip(Tooltip::text(file.path.clone()))
-                    .on_click(cx.listener(move |this, event: &gpui::ClickEvent, _, cx| {
-                        this.open_change(open_path.clone(), side, event.click_count() == 2, cx)
-                    }))
                     .when(depth.is_some(), |el| el.child(div().size(px(16.0)).flex_none()))
                     // `FileTypeIcon size={16}`
                     .child(icon.size(IconSize::Md))
