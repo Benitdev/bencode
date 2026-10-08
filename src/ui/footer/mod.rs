@@ -46,7 +46,7 @@ impl BenCodeApp {
         let colors = &cx.theme().colors;
         let fg = colors.fg;
         let refreshing = self.usage.refreshing();
-        let terminal_open = self.is_terminal_open;
+        let terminal_open = self.is_terminal_open();
 
         div()
             .flex()
@@ -132,7 +132,7 @@ impl BenCodeApp {
                         if terminal_open { s } else { s.text_color(fg) }
                     })
                     .on_click(cx.listener(|this, _, _, cx| {
-                        this.set_terminal_open(!this.is_terminal_open, cx)
+                        this.set_terminal_open(!this.is_terminal_open(), cx)
                     }))
                     .tooltip(Tooltip::text(if terminal_open {
                         "Hide Terminal (⌘J)"

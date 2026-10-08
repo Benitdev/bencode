@@ -322,7 +322,7 @@ impl BenCodeApp {
         .on_action(cx.listener(|this, _: &GoForward, _, cx| this.go_forward(cx)))
         .on_action(cx.listener(|this, _: &NewTerminal, _, cx| this.new_terminal(cx)))
         .on_action(cx.listener(|this, _: &ToggleTerminal, _, cx| {
-            this.set_terminal_open(!this.is_terminal_open, cx)
+            this.set_terminal_open(!this.is_terminal_open(), cx)
         }))
         .on_action(
             cx.listener(|this, _: &SplitRight, _, cx| this.split_active_pane(SplitDir::Right, cx)),

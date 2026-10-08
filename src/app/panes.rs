@@ -83,7 +83,7 @@ impl BenCodeApp {
         self.selected_session_id = focused;
         self.sync_prompt_placeholder(cx);
         self.follow_focused_session_project();
-        if self.is_terminal_open {
+        if self.is_terminal_open() {
             // Each project has its own dock; a new one starts with a shell.
             self.ensure_project_terminal(cx);
         }

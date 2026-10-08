@@ -109,7 +109,6 @@ impl BenCodeApp {
             self.selected_model = model.to_string();
         }
         self.permission_mode = saved.permission_mode.into();
-        self.is_terminal_open = saved.terminal_open;
         self.theme_preference = saved.theme;
         self.claude_hooks_disabled = saved.claude_hooks_disabled;
         self.composer_mascot_off = saved.composer_mascot_off;
@@ -143,7 +142,6 @@ impl BenCodeApp {
             theme: self.theme_preference,
             default_model: Some(self.selected_model.clone()),
             permission_mode: self.permission_mode.into(),
-            terminal_open: self.is_terminal_open,
             claude_hooks_disabled: self.claude_hooks_disabled,
             composer_mascot_off: self.composer_mascot_off,
             sidebar_opacity: Some(self.sidebar_opacity)
@@ -358,15 +356,6 @@ impl BenCodeApp {
             .and_then(|s| s.runtime_mode.as_deref())
             .and_then(PermissionMode::from_id)
             .unwrap_or(self.permission_mode)
-    }
-
-    pub fn set_terminal_open(&mut self, open: bool, cx: &mut Context<Self>) {
-        self.is_terminal_open = open;
-        if open {
-            self.ensure_project_terminal(cx);
-        }
-        self.save_settings(cx);
-        cx.notify();
     }
 
     /// Light, Dark or System (MonoCode Appearance › Theme).

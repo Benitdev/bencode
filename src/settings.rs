@@ -40,7 +40,6 @@ pub struct AppSettings {
     /// Model key in `harness:model` form; `None` picks the first installed harness.
     pub default_model: Option<String>,
     pub permission_mode: PermissionPreference,
-    pub terminal_open: bool,
     /// MonoCode "Claude Code hooks" switched off: Claude runs with
     /// `disableAllHooks`. Hooks are on by default.
     pub claude_hooks_disabled: bool,
@@ -107,9 +106,9 @@ pub struct AppSettings {
     pub reminder_sessions_collapsed: std::collections::BTreeMap<String, bool>,
     /// MonoCode `monocode.sidebarTabOrder` (`sessions`, `files`, `changes`).
     pub sidebar_tab_order: Vec<String>,
-    /// Each project's terminal dock side and size (MonoCode keeps them on
-    /// its `ProjectTerminalDock`); projects with the default bottom dock
-    /// are left out.
+    /// Each project's terminal dock side, size and shown state (MonoCode
+    /// keeps them on its `ProjectTerminalDock`); projects with the default,
+    /// hidden bottom dock are left out.
     pub terminal_docks: std::collections::BTreeMap<String, crate::ui::terminal_pane::DockLayout>,
     /// MonoCode `monocode.pinnedProjects`: projects on the rail's Pinned
     /// list, in rail order.
@@ -186,7 +185,6 @@ mod tests {
             theme: ThemePreference::Light,
             default_model: Some("claude:opus".into()),
             permission_mode: PermissionPreference::AutoAcceptEdits,
-            terminal_open: true,
             claude_hooks_disabled: true,
             composer_mascot_off: true,
             sidebar_opacity: Some(0.6),
@@ -245,6 +243,7 @@ mod tests {
                 crate::ui::terminal_pane::DockLayout {
                     side: crate::ui::terminal_pane::DockSide::Left,
                     size: 400.0,
+                    open: true,
                 },
             )]),
             pinned_projects: vec!["/repo".into()],

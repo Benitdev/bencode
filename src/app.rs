@@ -383,7 +383,6 @@ pub struct BenCodeApp {
     pub tab_history: tab_history::TabHistory,
     /// Set while Back/Forward switches tabs, so the move is not recorded.
     navigating_history: bool,
-    pub is_terminal_open: bool,
     pub db: AppDb,
     /// Writes to `db`'s file in order, off the UI thread. `None` while `db` is
     /// the in-memory fallback, which a second connection cannot see.
@@ -1019,7 +1018,7 @@ impl BenCodeApp {
                 this.refresh_workspace(cx);
                 this.refresh_integrations(cx);
                 this.start_automation_scheduler(cx);
-                if this.is_terminal_open {
+                if this.is_terminal_open() {
                     this.ensure_project_terminal(cx);
                 }
             });
@@ -1185,7 +1184,6 @@ impl BenCodeApp {
             claude_hooks_disabled: false,
             tab_history: Default::default(),
             navigating_history: false,
-            is_terminal_open: true,
             db,
             db_writer,
             _subscriptions: subscriptions,

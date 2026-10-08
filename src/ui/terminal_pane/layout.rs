@@ -59,25 +59,28 @@ impl DockSide {
     }
 }
 
-/// One project's dock placement, saved in `settings.json` (MonoCode keeps
-/// `side` and `size` on its `ProjectTerminalDock`).
+/// One project's dock placement and whether it is shown, saved in
+/// `settings.json` (MonoCode keeps `side`, `size` and `open` on its
+/// `ProjectTerminalDock`). A project without one has a hidden bottom dock.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct DockLayout {
     pub side: DockSide,
     pub size: f32,
+    #[serde(default)]
+    pub open: bool,
 }
 
 impl Default for DockLayout {
     fn default() -> Self {
         let side = DockSide::default();
-        Self { side, size: side.default_size() }
+        Self { side, size: side.default_size(), open: false }
     }
 }
 
 impl DockLayout {
     /// MonoCode `withDockSide`: the size carries over, clamped for the new side.
     pub fn with_side(self, side: DockSide, viewport: (f32, f32)) -> Self {
-        Self { side, size: clamp_size(side, self.size, viewport) }
+        Self { side, size: clamp_size(side, self.size, viewport), ..self }
     }
 
     /// The size a sash drag from `start` to `point` gives: the dock grows
@@ -125,13 +128,13 @@ mod tests {
         assert_eq!(bottom.dragged(220.0, 500.0, 400.0, VIEWPORT).size, 320.0);
         assert_eq!(bottom.dragged(220.0, 500.0, 600.0, VIEWPORT).size, 120.0);
 
-        let top = DockLayout { side: DockSide::Top, size: 220.0 };
+        let top = DockLayout { side: DockSide::Top, size: 220.0, open: true };
         assert_eq!(top.dragged(220.0, 300.0, 400.0, VIEWPORT).size, 320.0);
 
-        let left = DockLayout { side: DockSide::Left, size: 360.0 };
+        let left = DockLayout { side: DockSide::Left, size: 360.0, open: true };
         assert_eq!(left.dragged(360.0, 400.0, 500.0, VIEWPORT).size, 460.0);
 
-        let right = DockLayout { side: DockSide::Right, size: 360.0 };
+        let right = DockLayout { side: DockSide::Right, size: 360.0, open: true };
         assert_eq!(right.dragged(360.0, 1000.0, 900.0, VIEWPORT).size, 460.0);
     }
 
@@ -148,17 +151,21 @@ mod tests {
 
     #[test]
     fn changing_side_keeps_the_size_when_it_fits() {
-        let bottom = DockLayout { side: DockSide::Bottom, size: 600.0 };
+        let bottom = DockLayout { side: DockSide::Bottom, size: 600.0, open: true };
         assert_eq!(bottom.with_side(DockSide::Left, VIEWPORT).size, 600.0);
+        assert!(bottom.with_side(DockSide::Left, VIEWPORT).open);
         assert_eq!(bottom.with_side(DockSide::Top, (1400.0, 500.0)).size, 350.0);
     }
 
     #[test]
     fn layout_round_trips_in_monocode_terms() {
-        let layout = DockLayout { side: DockSide::Right, size: 400.0 };
+        let layout = DockLayout { side: DockSide::Right, size: 400.0, open: true };
         let json = serde_json::to_string(&layout).unwrap();
-        assert_eq!(json, r#"{"side":"right","size":400.0}"#);
+        assert_eq!(json, r#"{"side":"right","size":400.0,"open":true}"#);
         assert_eq!(serde_json::from_str::<DockLayout>(&json).unwrap(), layout);
+        // Saved before docks remembered being shown: hidden.
+        let old = serde_json::from_str::<DockLayout>(r#"{"side":"left","size":300.0}"#).unwrap();
+        assert!(!old.open);
         assert_eq!(DockSide::from_id("top"), Some(DockSide::Top));
     }
 

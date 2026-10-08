@@ -2,7 +2,7 @@
 //! own terminals, opened in the project folder, under a tab strip with
 //! New Terminal (⌘`). Toggled from the footer or with ⌘J. It docks on any
 //! edge of the workspace (Move Terminal), the sash on its inner edge
-//! resizes it, and each project's side and size are saved.
+//! resizes it, and each project's side, size and shown state are saved.
 
 mod ime;
 mod layout;
@@ -51,8 +51,8 @@ pub struct TerminalDock {
 pub struct TerminalDocks {
     docks: HashMap<String, TerminalDock>,
     next_id: u64,
-    /// Each project's side and size, as saved; a project missing here has
-    /// the default bottom dock.
+    /// Each project's side, size and shown state, as saved; a project
+    /// missing here has the default, hidden bottom dock.
     pub layouts: BTreeMap<String, DockLayout>,
     /// The pointer (along the dock's axis) and the dock's size when the
     /// sash was pressed.
@@ -96,6 +96,12 @@ impl TerminalDocks {
         } else {
             self.layouts.insert(project.to_string(), layout);
         }
+    }
+
+    /// Shows or hides `project`'s dock (MonoCode `withDockOpen`).
+    fn set_open(&mut self, project: &str, open: bool) {
+        let layout = DockLayout { open, ..self.layout(project) };
+        self.set_layout(project, layout);
     }
 
     /// Whether a terminal was started inside `path` (MonoCode
@@ -149,6 +155,23 @@ fn hide_icon(side: DockSide) -> IconName {
 }
 
 impl BenCodeApp {
+    /// Whether the current project's dock is shown.
+    pub fn is_terminal_open(&self) -> bool {
+        self.terminals.layout(&self.current_cwd).open
+    }
+
+    /// Shows or hides the current project's dock; showing it starts a
+    /// shell when the project has none.
+    pub fn set_terminal_open(&mut self, open: bool, cx: &mut Context<Self>) {
+        let project = self.current_cwd.clone();
+        self.terminals.set_open(&project, open);
+        if open {
+            self.ensure_project_terminal(cx);
+        }
+        self.save_settings(cx);
+        cx.notify();
+    }
+
     /// Makes sure the current project has at least one terminal.
     pub fn ensure_project_terminal(&mut self, cx: &mut Context<Self>) {
         let has_tab = self
@@ -193,7 +216,7 @@ impl BenCodeApp {
             _events: events,
         });
         dock.active = id;
-        if !self.is_terminal_open {
+        if !self.is_terminal_open() {
             self.set_terminal_open(true, cx);
         }
         cx.notify();
@@ -211,6 +234,11 @@ impl BenCodeApp {
         if dock.active == id {
             let next = dock.tabs.get(ix).or_else(|| dock.tabs.last());
             dock.active = next.map_or(0, |t| t.id);
+        }
+        // MonoCode `closeTerminalInDock` drops an emptied dock, which hides it.
+        if dock.tabs.is_empty() && self.terminals.layout(project).open {
+            self.terminals.set_open(project, false);
+            self.save_settings(cx);
         }
         cx.notify();
     }
@@ -258,11 +286,11 @@ impl BenCodeApp {
             .min_h_0()
             .overflow_hidden()
             .child(self.render_workspace_split(cx));
-        if !self.is_terminal_open {
+        let layout = self.terminals.layout(&self.current_cwd);
+        if !layout.open {
             return main.into_any_element();
         }
         self.terminals.viewport = window_size(window);
-        let layout = self.terminals.layout(&self.current_cwd);
         let dock = self.render_terminal_dock(layout, self.terminals.viewport, cx);
         let frame = div().flex().flex_1().min_w_0().min_h_0().overflow_hidden();
         match layout.side {
