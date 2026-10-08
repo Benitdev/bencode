@@ -117,9 +117,14 @@ impl BenCodeApp {
         )
     }
 
+    /// MonoCode's view header: icon and title, with no close button. Beside
+    /// the rail its Back / Forward leave the view; with the rail closed the
+    /// header leads with `OverlayNav` (Back, Toggle Sidebar).
     fn render_surface_header(&self, surface: Surface, cx: &Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
         let colors = &theme.colors;
+        let compact = self.compact_rail_active();
+        let beside_rail = self.is_rail_open || compact;
         self.window_drag_region(div(), cx)
             .flex()
             .flex_none()
@@ -132,8 +137,33 @@ impl BenCodeApp {
             // Beside the icon rail only what the traffic lights overhang
             // it by (MonoCode `compactRail`: `w-4`).
             .when(!self.is_rail_open && cfg!(target_os = "macos"), |el| {
-                let gap = if self.compact_rail_active() { 16.0 } else { 72.0 };
+                let gap = if compact { 16.0 } else { 72.0 };
                 el.child(div().flex_none().w(gpui::px(gap)))
+            })
+            .when(!beside_rail, |el| {
+                el.child(
+                    claim_press(div())
+                        .flex()
+                        .flex_none()
+                        .items_center()
+                        .child(
+                            IconButton::new("surface-back", IconName::ChevronLeft)
+                                .size(ControlSize::Sm)
+                                .variant(ButtonVariant::Ghost)
+                                .tooltip("Back (⌘[)")
+                                .on_click(cx.listener(|this, _, _, cx| this.close_surface(cx))),
+                        )
+                        .child(
+                            IconButton::new("surface-toggle-projects", IconName::PanelLeft)
+                                .size(ControlSize::Sm)
+                                .variant(ButtonVariant::Ghost)
+                                .tooltip("Toggle Sidebar (⌘B)")
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.is_rail_open = true;
+                                    cx.notify();
+                                })),
+                        ),
+                )
             })
             .child(
                 Icon::new(surface.icon())
@@ -152,15 +182,6 @@ impl BenCodeApp {
                 surface == Surface::Settings
                     && self.settings_tab == crate::ui::settings_modal::SettingsTab::Appearance,
                 |el| el.child(claim_press(div()).child(self.render_restore_appearance(cx))),
-            )
-            .child(
-                claim_press(div()).child(
-                    IconButton::new("surface-close", IconName::X)
-                        .size(ControlSize::Sm)
-                        .variant(ButtonVariant::Ghost)
-                        .tooltip("Close (Esc)")
-                        .on_click(cx.listener(|this, _, _, cx| this.close_surface(cx))),
-                ),
             )
     }
 }

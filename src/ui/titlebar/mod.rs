@@ -327,6 +327,37 @@ impl BenCodeApp {
         self.switch_tab(keep, cx);
     }
 
+    /// MonoCode `onCloseOtherTabs` (⌥⌘T): every tab of the strip but the
+    /// active one.
+    pub(crate) fn close_other_tabs(&mut self, cx: &mut Context<Self>) {
+        let Some(active) = self.tabs.active_id().map(str::to_string) else {
+            return;
+        };
+        let tabs = self.title_tabs();
+        self.close_title_tabs(&close_ids(&tabs, &active, CloseMany::Others), &active, cx);
+    }
+
+    /// MonoCode `onCloseAllTabs` (⇧⌘W): the files open beside the chat
+    /// first; with none open, every tab of the strip.
+    pub(crate) fn close_all_tabs(&mut self, cx: &mut Context<Self>) {
+        if !self.file_pane.is_empty() {
+            let mut last = None;
+            while let Some(key) = self.file_pane.active_key().map(str::to_string) {
+                // A tab that stays (an unsaved file asking first) ends the pass.
+                if last.as_deref() == Some(key.as_str()) || !self.close_active_pane_tab(cx) {
+                    break;
+                }
+                last = Some(key);
+            }
+            return;
+        }
+        let Some(active) = self.tabs.active_id().map(str::to_string) else {
+            return;
+        };
+        self.close_other_tabs(cx);
+        self.close_tab(&active, cx);
+    }
+
     /// MonoCode `onArchiveTitleTab`: archives the tab's threads and closes it.
     fn archive_title_tab(&mut self, id: &str, cx: &mut Context<Self>) {
         let Some(sessions) = self

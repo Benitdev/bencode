@@ -252,7 +252,7 @@ impl BenCodeApp {
 
     /// The rail's projects in saved order (MonoCode `collectRailProjects`
     /// + `syncProjectRailOrder`): archived ones left out unless open.
-    pub(super) fn rail_order(&self) -> Vec<String> {
+    pub(crate) fn rail_order(&self) -> Vec<String> {
         let prefs = &self.settings.rail;
         let projects: Vec<String> = self
             .recent_projects
@@ -412,7 +412,7 @@ impl BenCodeApp {
     }
 
     /// Back / Forward over visited tabs (MonoCode `TabVisitNav`), dimmed
-    /// when there is nowhere to go.
+    /// when there is nowhere to go. Back also leaves an open view.
     pub fn history_buttons(&self, prefix: &str, cx: &Context<Self>) -> [AnyElement; 2] {
         let state = |enabled: bool| {
             if enabled {
@@ -426,7 +426,7 @@ impl BenCodeApp {
                 SharedString::from(format!("{prefix}-nav-back")),
                 IconName::ChevronLeft,
                 "Back (⌘[)",
-                state(self.tab_history.can_go_back()),
+                state(self.tab_history.can_go_back() || self.surface.is_some()),
                 cx,
                 |this, _, _, cx| this.go_back(cx),
             )

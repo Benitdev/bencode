@@ -106,6 +106,11 @@ impl BenCodeApp {
 
     /// MonoCode's Back (⌘[): the previously visited tab.
     pub fn go_back(&mut self, cx: &mut Context<Self>) {
+        // MonoCode `onRailBack`: Back leaves an open view first.
+        if self.surface.is_some() {
+            self.close_surface(cx);
+            return;
+        }
         if let Some(id) = self.tab_history.back() {
             self.visit_from_history(&id, cx);
         }
@@ -113,6 +118,11 @@ impl BenCodeApp {
 
     /// MonoCode's Forward (⌘]).
     pub fn go_forward(&mut self, cx: &mut Context<Self>) {
+        // MonoCode `onRailForward` closes every view; Settings closes onto
+        // the view it was opened from, hence the loop.
+        while self.surface.is_some() {
+            self.close_surface(cx);
+        }
         if let Some(id) = self.tab_history.forward() {
             self.visit_from_history(&id, cx);
         }

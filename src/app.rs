@@ -1438,11 +1438,12 @@ impl Render for BenCodeApp {
 
         // Full size explicitly: the app is laid out inside `WindowRoot`'s
         // cached slot, not as the window's root.
-        FocusScope::new(&self.focus_handle)
+        let app = FocusScope::new(&self.focus_handle)
             .root()
             .size_full()
             .child(
-                Self::bind_commands(div().id("bencode-root"), cx)
+                div()
+                    .id("bencode-root")
                     .on_drag_move::<crate::ui::sidebar::SidebarResize>(cx.listener(
                         |this, event: &gpui::DragMoveEvent<crate::ui::sidebar::SidebarResize>, window, cx| {
                             let drag = crate::ui::sidebar::SidebarResize {
@@ -1558,6 +1559,13 @@ impl Render for BenCodeApp {
                     .children(self.render_pr_action_confirm(cx))
                     .children(self.render_file_tree_dialog(cx))
                     .children(self.render_quit_confirm(cx)),
-            )
+            );
+        // The commands sit above the focus scope, not inside it: while the
+        // scope's own handle holds focus (nothing else has it), actions
+        // dispatch from the scope upward and never reach a child's handlers,
+        // so no shortcut or menu item would work.
+        Self::bind_commands(div().id("bencode-commands"), cx)
+            .size_full()
+            .child(app)
     }
 }

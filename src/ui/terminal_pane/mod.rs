@@ -183,6 +183,15 @@ impl BenCodeApp {
         }
     }
 
+    /// A terminal has the keyboard: its keys (Escape above all) are its own.
+    pub(crate) fn terminal_focused(&self, window: &gpui::Window, cx: &gpui::App) -> bool {
+        self.terminals
+            .docks
+            .values()
+            .flat_map(|dock| &dock.tabs)
+            .any(|tab| gpui::Focusable::focus_handle(tab.entity.read(cx), cx).is_focused(window))
+    }
+
     /// Opens another terminal for the current project and shows the dock.
     pub fn new_terminal(&mut self, cx: &mut Context<Self>) {
         let cwd = self.current_cwd.clone();

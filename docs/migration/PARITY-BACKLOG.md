@@ -46,7 +46,7 @@ Notes:
 - [~] P1 S Rail action rows styling; Inbox dot only when unread — `app/shell/RailAction.tsx`
 - [x] P1 M Resizable rail (180-360, def 200) and sidebar (260-560, def 260)
 - [x] P1 L Hand-rolled title-bar tab strip (224px tabs, harness icons, busy/done, meta line, hover close, tooltip, context menu, middle-click, overflow scroll; no "+"/split) — `TitleBar.tsx:202-1055`
-- [~] P1 M Shortcuts & menus: ⌘P, ⌘` and ⌘. done; zoom (⌘= / ⌘- / ⌘0) done; still open: ⌘1-9, ⌃Tab, ⇧⌘A, Edit menu — `workspace/model/tabKeys.ts`, `src-tauri/src/menu.rs`
+- [~] P1 M Shortcuts & menus: ⌘P, ⌘`, ⌘., zoom, ⌘1-9, ⌃Tab, ⌥⌘T, ⇧⌘W, ⇧⌘A, session / project stepping and Esc-stops-the-turn done; still open: ⇧⌘N New Window, ⇧⌘P Command Palette, Edit menu, rebindable keys — `workspace/model/tabKeys.ts`, `src-tauri/src/menu.rs`
 - [ ] P1 S Sidebar header 40px (done), mode tabs 24px; search button = Go to File
 - [~] P1 M Session card live status (Need approval / Working... / Done / Draft), "3h 20m" times, drag onto pane — `Sidebar.tsx:3025-3306`
 - [~] P1 M Pinned sessions collapsible group
@@ -110,7 +110,8 @@ Notes:
 - [x] P0 M Automation `triggers[]` as source of truth (`schedule.rs::time_triggers`)
 - [ ] P1 M Search keyboard nav; P1 L coverage/ranking; P1 M rows & open file in editor
 - [~] P1 M Notes: Add to chat (new session + note card) ✓; Preview/Source editor, tags, list rows, "Untitled"; save turn as note; `@note/` injection
-- [~] P1 M-L Automations (templates and Run now exist): template picker, list cards, editor header/tabs, trigger editor, session settings, run history table, Run now in parallel
+- [x] P1 M-L Automations: template picker, list cards with switches, editor header/tabs, time-trigger editor, model / access / session settings, run history table, Run now in the background — `automations/ui/AutomationsView.tsx`
+- [ ] P2 Automation event triggers (GitHub, Linear, Jira, GitLab, Azure DevOps) and their four templates; per-automation model settings — `automations/model/automationEvents.ts`
 - [x] P1 S Inbox honest empty state (no fake data)
 - [x] Inbox source: Nulab Backlog (`backlog.rs`; BenCode's own, MonoCode has none)
 - [ ] P2 Inbox sources MonoCode has: Jira, Linear, GitLab, Azure DevOps (add as `Provider` variants over `work_items.rs`)

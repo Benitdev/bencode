@@ -1,7 +1,9 @@
 //! App commands as GPUI actions: one keymap (MonoCode's shortcuts from
 //! `src-tauri/src/menu.rs`), the macOS menu bar, and the root handlers.
 
-use gpui::{App, Context, Div, InteractiveElement, KeyBinding, Menu, MenuItem, Stateful, actions};
+use gpui::{
+    App, Context, Div, InteractiveElement, KeyBinding, Menu, MenuItem, Stateful, Window, actions,
+};
 
 use crate::app::BenCodeApp;
 use crate::app::file_pane::PaneTab;
@@ -62,12 +64,28 @@ actions!(
         ZoomIn,
         ZoomOut,
         ZoomReset,
+        CloseOtherTabs,
+        CloseAllTabs,
+        ArchiveSession,
+        PreviousSession,
+        NextSession,
+        PreviousSessionInTab,
+        NextSessionInTab,
+        PreviousProject,
+        NextProject,
     ]
 );
 
-/// Shortcuts, matching MonoCode's menu accelerators.
+/// ⌘1 to ⌘8 show that tab of the strip (counted from 0); `None` (⌘9)
+/// shows the last one.
+#[derive(Clone, Debug, PartialEq, gpui::Action)]
+#[action(namespace = bencode, no_json)]
+pub struct ActivateTab(pub Option<usize>);
+
+/// Shortcuts, matching MonoCode's menu accelerators and its workspace keys
+/// (`workspace/model/tabKeys.ts`).
 fn keymap() -> Vec<KeyBinding> {
-    vec![
+    let mut keys = vec![
         KeyBinding::new("cmd-q", Quit, None),
         KeyBinding::new("cmd-,", OpenSettings, None),
         KeyBinding::new("cmd-k", Search, None),
@@ -103,9 +121,13 @@ fn keymap() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-=", ZoomIn, None),
         KeyBinding::new("cmd-+", ZoomIn, None),
         KeyBinding::new("cmd--", ZoomOut, None),
+        KeyBinding::new("cmd-shift-=", ZoomIn, None),
         KeyBinding::new("cmd-0", ZoomReset, None),
         KeyBinding::new("cmd-j", ToggleTerminal, None),
         KeyBinding::new("cmd-`", NewTerminal, None),
+        // MonoCode "Terminal: New Tab"; every BenCode terminal is a dock tab.
+        KeyBinding::new("cmd-shift-`", NewTerminal, None),
+        KeyBinding::new("cmd-~", NewTerminal, None),
         KeyBinding::new("cmd-d", SplitRight, None),
         KeyBinding::new("cmd-shift-d", SplitDown, None),
         KeyBinding::new("cmd-alt-left", FocusLeft, None),
@@ -114,6 +136,22 @@ fn keymap() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-alt-down", FocusDown, None),
         KeyBinding::new("cmd-shift-]", NextTab, None),
         KeyBinding::new("cmd-shift-[", PreviousTab, None),
+        // The same chords as the layout reports them with Shift held.
+        KeyBinding::new("cmd-}", NextTab, None),
+        KeyBinding::new("cmd-{", PreviousTab, None),
+        KeyBinding::new("ctrl-tab", NextTab, None),
+        KeyBinding::new("ctrl-shift-tab", PreviousTab, None),
+        KeyBinding::new("cmd-alt-t", CloseOtherTabs, None),
+        KeyBinding::new("cmd-shift-w", CloseAllTabs, None),
+        KeyBinding::new("cmd-shift-a", ArchiveSession, None),
+        // Stepping through the sidebar's threads and the rail's projects.
+        // A focused text field keeps these chords for its own caret moves.
+        KeyBinding::new("cmd-shift-up", PreviousSession, None),
+        KeyBinding::new("cmd-shift-down", NextSession, None),
+        KeyBinding::new("cmd-up", PreviousSessionInTab, None),
+        KeyBinding::new("cmd-down", NextSessionInTab, None),
+        KeyBinding::new("cmd-shift-left", PreviousProject, None),
+        KeyBinding::new("cmd-shift-right", NextProject, None),
         // MonoCode session cards: F2 renames, ⌫ deletes, Esc drops the picks.
         KeyBinding::new("f2", RenameSelectedSession, Some("SessionList")),
         KeyBinding::new("backspace", DeleteSelectedSessions, Some("SessionList")),
@@ -132,14 +170,19 @@ fn keymap() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-c", TranscriptCopy, Some("Transcript")),
         KeyBinding::new("cmd-a", TranscriptSelectAll, Some("Transcript")),
         KeyBinding::new("escape", TranscriptClearSelection, Some("Transcript")),
-    ]
+    ];
+    keys.extend((0..8).map(|slot| {
+        KeyBinding::new(&format!("cmd-{}", slot + 1), ActivateTab(Some(slot)), None)
+    }));
+    keys.push(KeyBinding::new("cmd-9", ActivateTab(None), None));
+    keys
 }
 
 /// Installs the keymap and the menu bar. Call once at startup.
 pub fn install(cx: &mut App) {
     cx.bind_keys(keymap());
-    // When nothing in the window has focus the app's own handler is not on
-    // the dispatch path; quitting still saves through `on_app_quit`.
+    // With no window open the app's own handler is not on the dispatch
+    // path; quitting still saves through `on_app_quit`.
     cx.on_action(|_: &Quit, cx| cx.quit());
     cx.set_menus(menus());
 }
@@ -159,6 +202,10 @@ fn menus() -> Vec<Menu> {
             MenuItem::separator(),
             MenuItem::action("Save", Save),
             MenuItem::action("Close", CloseActive),
+            MenuItem::action("Close Other Tabs", CloseOtherTabs),
+            MenuItem::action("Close All Tabs", CloseAllTabs),
+            MenuItem::separator(),
+            MenuItem::action("Archive Session", ArchiveSession),
         ]),
         Menu::new("View").items([
             MenuItem::action("Toggle Projects", ToggleSidebar),
@@ -186,6 +233,11 @@ fn menus() -> Vec<Menu> {
             MenuItem::action("Next Tab", NextTab),
             MenuItem::action("Previous Tab", PreviousTab),
             MenuItem::separator(),
+            MenuItem::action("Previous Session", PreviousSession),
+            MenuItem::action("Next Session", NextSession),
+            MenuItem::action("Previous Project", PreviousProject),
+            MenuItem::action("Next Project", NextProject),
+            MenuItem::separator(),
             MenuItem::action("Focus Pane Left", FocusLeft),
             MenuItem::action("Focus Pane Right", FocusRight),
             MenuItem::action("Focus Pane Up", FocusUp),
@@ -206,7 +258,95 @@ fn cycled_tab(ids: &[&str], active: Option<&str>, delta: isize) -> Option<String
     Some(ids[next].to_string())
 }
 
+/// MonoCode `adjacentItemId`: the id `delta` steps from `current`, wrapping;
+/// the first (or, going back, the last) when `current` is not listed.
+fn adjacent_id(ids: &[String], current: Option<&str>, delta: isize) -> Option<String> {
+    if ids.is_empty() {
+        return None;
+    }
+    let next = match current.and_then(|id| ids.iter().position(|other| other == id)) {
+        Some(ix) => (ix as isize + delta.signum()).rem_euclid(ids.len() as isize) as usize,
+        None if delta < 0 => ids.len() - 1,
+        None => 0,
+    };
+    ids.get(next).cloned()
+}
+
 impl BenCodeApp {
+    /// `ActivateTab`: tab `slot` of the strip, or the last one.
+    fn activate_tab_slot(&mut self, slot: Option<usize>, cx: &mut Context<Self>) {
+        let tabs = self.deck_tabs();
+        let tab = match slot {
+            Some(slot) => tabs.get(slot),
+            None => tabs.last(),
+        };
+        if let Some(id) = tab.map(|tab| tab.id.clone()) {
+            self.switch_tab(&id, cx);
+        }
+    }
+
+    /// The thread the keys act on: the focused pane's, unless a view covers
+    /// the workspace or the file pane or a terminal has the keyboard
+    /// (MonoCode `focusedBusyAgentSessionId` and its `surfaceOpen` guard).
+    fn keyboard_session(&self, window: &Window, cx: &App) -> Option<String> {
+        if self.surface.is_some() || self.file_pane_focused || self.terminal_focused(window, cx) {
+            return None;
+        }
+        self.selected_session_id.clone()
+    }
+
+    /// MonoCode `onArchiveFocusedSession` (⇧⌘A).
+    fn archive_focused_session(&mut self, window: &Window, cx: &mut Context<Self>) {
+        if let Some(id) = self.keyboard_session(window, cx) {
+            self.set_session_archived(&id, true, cx);
+        }
+    }
+
+    /// MonoCode `onNavigateSessionList`: the thread above or below in the
+    /// sidebar's order, in a tab of its own or (`in_tab`) in place of the
+    /// focused pane.
+    fn step_session(&mut self, delta: isize, in_tab: bool, window: &Window, cx: &mut Context<Self>) {
+        let Some(current) = self.keyboard_session(window, cx) else {
+            return;
+        };
+        let next = adjacent_id(&self.sessions_ui.order, Some(&current), delta);
+        let Some(next) = next.filter(|next| *next != current) else {
+            return;
+        };
+        if in_tab && self.tabs.replace_pane(&current, &next) {
+            self.sync_selection(cx);
+        } else {
+            self.open_session(next, cx);
+        }
+    }
+
+    /// MonoCode `onNavigateProjectList`: the rail's next or previous project.
+    fn step_project(&mut self, delta: isize, cx: &mut Context<Self>) {
+        if self.surface.is_some() {
+            return;
+        }
+        let order = self.rail_order();
+        let current = order
+            .iter()
+            .find(|path| crate::app::same_project_path(path, &self.current_cwd));
+        let next = adjacent_id(&order, current.map(String::as_str), delta);
+        if let Some(next) = next.filter(|next| !crate::app::same_project_path(next, &self.current_cwd)) {
+            self.switch_project(next, cx);
+        }
+    }
+
+    /// MonoCode's Escape on a working thread: stops its turn. Only reached
+    /// when nothing else on screen wanted the key.
+    fn stop_focused_turn(&mut self, window: &Window, cx: &mut Context<Self>) -> bool {
+        match self.keyboard_session(window, cx).filter(|id| self.is_agent_running_in(id)) {
+            Some(id) => {
+                self.stop_agent(&id, cx);
+                true
+            }
+            None => false,
+        }
+    }
+
     fn cycle_tab(&mut self, delta: isize, cx: &mut Context<Self>) {
         let ids: Vec<&str> = self.deck_tabs().iter().map(|t| t.id.as_str()).collect();
         if let Some(id) = cycled_tab(&ids, self.tabs.active_id(), delta) {
@@ -306,7 +446,7 @@ impl BenCodeApp {
         }))
         .on_action(cx.listener(|this, _: &OutlineJump, window, cx| this.open_outline_cursor(window, cx)))
         .on_action(cx.listener(|this, _: &InboxPrevious, _, cx| this.step_inbox_selection(-1, cx)))
-        .on_action(cx.listener(|this, _: &CloseView, _, cx| {
+        .on_action(cx.listener(|this, _: &CloseView, window, cx| {
             if this.surface.is_some() {
                 this.close_surface(cx);
             } else if !this.close_lightbox(cx)
@@ -319,6 +459,7 @@ impl BenCodeApp {
                 && !this.close_usage_popover(cx)
                 && !this.close_find(cx)
                 && !this.close_project_search(cx)
+                && !this.stop_focused_turn(window, cx)
             {
                 cx.propagate();
             }
@@ -349,6 +490,26 @@ impl BenCodeApp {
         .on_action(
             cx.listener(|this, _: &FocusDown, _, cx| this.focus_adjacent_pane(FocusDir::Down, cx)),
         )
+        .on_action(cx.listener(|this, _: &CloseOtherTabs, _, cx| this.close_other_tabs(cx)))
+        .on_action(cx.listener(|this, _: &CloseAllTabs, _, cx| this.close_all_tabs(cx)))
+        .on_action(cx.listener(|this, tab: &ActivateTab, _, cx| this.activate_tab_slot(tab.0, cx)))
+        .on_action(cx.listener(|this, _: &ArchiveSession, window, cx| {
+            this.archive_focused_session(window, cx)
+        }))
+        .on_action(cx.listener(|this, _: &PreviousSession, window, cx| {
+            this.step_session(-1, false, window, cx)
+        }))
+        .on_action(cx.listener(|this, _: &NextSession, window, cx| {
+            this.step_session(1, false, window, cx)
+        }))
+        .on_action(cx.listener(|this, _: &PreviousSessionInTab, window, cx| {
+            this.step_session(-1, true, window, cx)
+        }))
+        .on_action(cx.listener(|this, _: &NextSessionInTab, window, cx| {
+            this.step_session(1, true, window, cx)
+        }))
+        .on_action(cx.listener(|this, _: &PreviousProject, _, cx| this.step_project(-1, cx)))
+        .on_action(cx.listener(|this, _: &NextProject, _, cx| this.step_project(1, cx)))
         .on_action(cx.listener(|this, _: &NextTab, _, cx| this.cycle_tab(1, cx)))
         .on_action(cx.listener(|this, _: &PreviousTab, _, cx| this.cycle_tab(-1, cx)))
         .on_action(cx.listener(|this, _: &OpenNotes, _, cx| this.open_notes(cx)))
@@ -370,8 +531,25 @@ mod tests {
     }
 
     #[test]
-    fn keymap_chords_are_unique_per_action() {
-        assert_eq!(keymap().len(), 56);
-        assert_eq!(menus().len(), 4);
+    fn stepping_wraps_and_starts_from_an_end() {
+        let ids = ["a".to_string(), "b".to_string(), "c".to_string()];
+        assert_eq!(adjacent_id(&ids, Some("c"), 1).as_deref(), Some("a"));
+        assert_eq!(adjacent_id(&ids, Some("a"), -1).as_deref(), Some("c"));
+        assert_eq!(adjacent_id(&ids, Some("gone"), 1).as_deref(), Some("a"));
+        assert_eq!(adjacent_id(&ids, None, -1).as_deref(), Some("c"));
+        assert_eq!(adjacent_id(&[], None, 1), None);
+    }
+
+    #[test]
+    fn keymap_chords_are_unique_per_context() {
+        let keys = keymap();
+        // No chord is bound twice in one context: the later one would win
+        // silently.
+        let mut seen = std::collections::HashSet::new();
+        for binding in &keys {
+            let chord: Vec<String> = binding.keystrokes().iter().map(|k| k.to_string()).collect();
+            let context = binding.predicate().map(|p| format!("{p:?}"));
+            assert!(seen.insert((chord.clone(), context)), "{chord:?} bound twice");
+        }
     }
 }
