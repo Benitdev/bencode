@@ -231,7 +231,7 @@ impl BenCodeApp {
         let accent = crate::ui::appearance::user_accent(cx);
         let bubble = div()
             .min_w_0()
-            .max_w(px(USER_BUBBLE_MAX_WIDTH))
+            .max_w_full()
             .px_3()
             .py_2()
             .bg(muted(colors.fg, 0.1))
@@ -289,7 +289,20 @@ impl BenCodeApp {
             .pr_4()
             .pb_1()
             .pl(px(56.0))
-            .child(bubble)
+            // The width limit is this box's, not the bubble's: the bubble
+            // is then sized inside the width it ends up with. Limited
+            // itself, it was first sized in the whole row, and a long
+            // message could keep the lines wrapped for that width and run
+            // out of the bubble.
+            .child(
+                div()
+                    .w_full()
+                    .max_w(px(USER_BUBBLE_MAX_WIDTH))
+                    .flex()
+                    .flex_col()
+                    .items_end()
+                    .child(bubble),
+            )
             .child(if draft {
                 self.draft_actions(session, ix, cx).into_any_element()
             } else {
