@@ -115,6 +115,7 @@ bencode/
 | `thread_state.rs` | `ThreadState`: each thread's composer and queue state (draft, attachments, modes, card, question form, usage limit), dropped with the thread |
 | `composer_input.rs` | The prompt field: `/` and `@` tokens and pickers, inserting skills and mentions, the key interceptor, dropped files |
 | `session_flags.rs` | Pinning and archiving threads |
+| `live_agents.rs` | The Working agents card's list: threads in flight or finished unseen, across projects |
 | `source_control.rs` | The Changes panel's git and PR actions: stage, discard, commit, push, pull, sync, create / view PR |
 | `tab_scope.rs`, `tab_history.rs`, `workspace_nav.rs` | Which tabs belong to which project or worktree; Back / Forward |
 | `reminders.rs`, `model_catalog.rs` | Session reminders; live model catalogs |
@@ -128,7 +129,7 @@ bencode/
 | Path | View |
 | :--- | :--- |
 | `window_root.rs` | Window root: the app (cached) under the composer runner layer |
-| `rail/` | Project rail: projects, groups, menus, notifications, reorder; `compact.rs` is the icon rail it collapses to |
+| `rail/` | Project rail: projects, groups, menus, notifications, reorder; `compact.rs` is the icon rail it collapses to, `live_agents.rs` the Working agents card |
 | `sidebar*.rs` | Sidebar: Sessions tab (cards, folders, menus, popovers) |
 | `file_tree/` | Sidebar: Explorer tab |
 | `git_changes_panel/` (`tree.rs`, `graph.rs`, `confirm.rs`), `git_menus.rs` | Sidebar: Changes tab and commit graph |
@@ -230,6 +231,7 @@ only read that cache.
 | `features/settings/model/appearance.ts`, `uiScale.ts`, `AppearancePage` | `ui/settings_appearance.rs`, `ui/appearance.rs`, `ui/scale.rs`, `ui/theme.rs` | Tint, accent, diff palette, interface scale, excluded files |
 | `src-tauri/src/chat_background.rs`, `projects/model/chatBackground.ts`, `settings/model/newThreadBackgroundEffects*.ts` | `app/chat_background.rs`, `ui/background_effects.rs`, `ui/pane_tree.rs` | One image behind the chat panes, six effects (Haze is baked into the image); no per-project backgrounds |
 | `Sidebar.tsx` `CompactProjectRail`, `settings.ts` `CollapsedProjectRailMode` | `ui/rail/compact.rs` | Icon rail with the sidebar as a drawer; its project list has no search or per-project menu |
+| `sessions/model/liveAgents.ts`, `sessions/ui/LiveAgentsPreview.tsx` | `app/live_agents.rs`, `ui/rail/live_agents.rs` | "Working" card on the rail (the sidebar's foot while the rail is closed); toggle in Settings › General |
 | `ProjectRail`, `TitleBar.tsx`, `Sidebar.tsx` | `ui/rail/`, `ui/titlebar/`, `ui/sidebar*.rs` | Shell |
 | `app/shell/UsageFooter.tsx`, `UsageProviderChip.tsx`, `providers/model/rateLimits*.ts`, `src-tauri/src/rate_limits.rs` | `ui/footer/`, `app/usage.rs`, `rate_limits/` | 5h / weekly / monthly usage per account; HTTP through `curl` |
 | `providers/model/providerAccounts.ts`, `accountUsage.ts`, `harness/core/auth.ts`, `src-tauri/src/account_identity.rs` | `harness/accounts.rs`, `harness/login.rs`, `harness/account_identity.rs`, `app/accounts.rs` | Account profiles in BenCode's own `provider-accounts`; the list is in `settings.json` |

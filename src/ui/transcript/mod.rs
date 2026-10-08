@@ -3,7 +3,7 @@
 //! Only visible rows are laid out (`gpui::list`), and only the streaming tail
 //! is re-measured, so a long thread stays cheap while tokens arrive.
 
-mod activity;
+pub(crate) mod activity;
 pub mod blocks;
 pub mod find;
 pub mod markdown;

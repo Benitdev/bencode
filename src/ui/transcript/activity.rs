@@ -614,7 +614,7 @@ fn display_path(path: &str, cwd: &str) -> String {
 
 /// MonoCode `composeToolTitle` reduced to BenCode's tool kinds: the verb, the
 /// target, and the file to open when the target is one.
-fn tool_label(block: &Block, cwd: &str) -> (Option<&'static str>, String, Option<String>) {
+pub(crate) fn tool_label(block: &Block, cwd: &str) -> (Option<&'static str>, String, Option<String>) {
     let target = turns::tool_target(block);
     match turns::tool_kind_name(block) {
         "read" => (

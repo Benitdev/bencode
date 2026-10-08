@@ -301,9 +301,15 @@ impl BenCodeApp {
             .child(self.render_sidebar_mode_tabs(cx))
             .child(match self.sidebar_mode {
                 SidebarMode::Sessions => self.render_session_list(cx).into_any_element(),
+                SidebarMode::Files if self.project_search.open => {
+                    self.render_project_search(cx).into_any_element()
+                }
                 SidebarMode::Files => self.render_file_tree(cx).into_any_element(),
                 SidebarMode::Changes => self.render_git_changes_panel(cx).into_any_element(),
             })
+            // MonoCode `showSidebarFooter`: the rail carries the card
+            // while it is open.
+            .when(!self.is_rail_open, |el| el.children(self.render_live_agents(true, cx)))
             .child(self.render_sidebar_sash(cx))
     }
 

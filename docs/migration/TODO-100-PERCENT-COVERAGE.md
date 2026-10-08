@@ -102,8 +102,8 @@ mức ưu tiên. Phần đã xong chỉ được tóm tắt.
 - [ ] **MCP supervisor**: khởi chạy, giám sát server và JSON-RPC client.
 - [ ] **Tích hợp macOS**: icon trên menu bar, badge trên Dock, thông báo hệ
   thống. MonoCode: `src-tauri/src/tray.rs`, `notifications.rs`.
-- [ ] **Giao diện**: hình nền chat theo project (`chat_background.rs`), panel
-  "Working agents", thông báo cập nhật harness (`harness_updates.rs`).
+- [ ] **Giao diện**: hình nền chat theo project (`chat_background.rs`),
+  thông báo cập nhật harness (`harness_updates.rs`). Panel "Working agents" đã có.
 
 ---
 

@@ -6,6 +6,7 @@ mod composer_input;
 pub mod file_pane;
 mod ids;
 mod integrations;
+pub mod live_agents;
 mod model_catalog;
 mod panes;
 mod preferences;
@@ -235,6 +236,9 @@ pub struct BenCodeApp {
     /// and drawn over by `ProcessLayer`.
     pub process_slot: std::rc::Rc<std::cell::Cell<Option<crate::ui::composer::runner::Rect>>>,
     pub composer_mascot_off: bool,
+    /// MonoCode `LiveAgentsPreview`: the Working agents card and its setting.
+    pub live_agents_ui: crate::ui::rail::LiveAgentsUi,
+    pub live_agents_off: bool,
     /// MonoCode Appearance › Translucency: the glass panes' tint over the
     /// blurred desktop, and whether the main pane takes it (`ui::glass`).
     pub sidebar_opacity: f32,
@@ -1107,6 +1111,8 @@ impl BenCodeApp {
             runner_geometry: Default::default(),
             process_slot: Default::default(),
             composer_mascot_off: false,
+            live_agents_ui: Default::default(),
+            live_agents_off: false,
             sidebar_opacity: crate::ui::glass::OPACITY_DEFAULT,
             settings_write: Default::default(),
             appearance: Default::default(),
@@ -1362,6 +1368,7 @@ impl Render for BenCodeApp {
             }
         }
         self.apply_ui_scale(window);
+        self.live_agents_ui.window_height = crate::ui::scale::logical(window.viewport_size().height);
         self.sync_chat_background(!cx.theme().is_dark(), cx);
         if std::mem::take(&mut self.question_focus_wanted) {
             window.focus(&self.question_focus, cx);

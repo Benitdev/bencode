@@ -274,6 +274,26 @@ impl BenCodeApp {
                         ),
                     )
             })
+            .row({
+                let entity = cx.entity().downgrade();
+                SettingsRow::new("Working agents")
+                    .description(
+                        "When two or more chats are in flight, a card on the project rail lists \
+                         them so you can jump across projects. Finished turns stay until you \
+                         open that session.",
+                    )
+                    .control(
+                        Switch::new("working-agents", !self.live_agents_off).on_change(
+                            move |on, _, cx| {
+                                if let Err(err) =
+                                    entity.update(cx, |this, cx| this.set_live_agents(on, cx))
+                                {
+                                    log::debug!("working agents toggle after app drop: {err:#}");
+                                }
+                            },
+                        ),
+                    )
+            })
             .row(
                 SettingsRow::new("External editors")
                     .description(

@@ -7,6 +7,7 @@
 pub mod model;
 mod cards;
 mod compact;
+mod live_agents;
 mod menu;
 mod menu_view;
 mod notify;
@@ -29,6 +30,7 @@ use gpui::{
 
 use crate::ui::scale::px;
 
+pub use live_agents::LiveAgentsUi;
 pub use state::RailUi;
 
 use crate::app::session_folders::{palette_color, parse_hex};
@@ -136,6 +138,7 @@ impl BenCodeApp {
                 } else {
                     el.child(self.render_rail_actions(cx))
                         .child(self.render_rail_projects(cx))
+                        .children(self.render_live_agents(false, cx))
                         .child(
                             // `flex shrink-0 flex-col gap-px p-2`
                             div().flex().flex_none().flex_col().gap(px(1.0)).p_2().child(rail_action(

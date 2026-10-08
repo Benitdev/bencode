@@ -79,7 +79,12 @@ pub(super) fn project_diff_stat(additions: usize, deletions: usize, diff: DiffCo
 /// MonoCode `ProjectMascot className="size-3"`: the rest frame, or while
 /// busy (`mascot-active`) rest and talk swapped each beat with a 1px hop.
 pub(super) fn project_mascot_icon(mascot: &'static Mascot, color: Hsla, busy: bool, id: &str) -> AnyElement {
-    let size = px(12.0);
+    mascot_icon(mascot, color, busy, id, 12.0)
+}
+
+/// The mascot at `size` (the Working agents card draws it at `size-2`).
+pub(super) fn mascot_icon(mascot: &'static Mascot, color: Hsla, busy: bool, id: &str, size: f32) -> AnyElement {
+    let size = px(size);
     if !busy {
         return pixel_sprite(&mascot.rest, size, color, false);
     }
