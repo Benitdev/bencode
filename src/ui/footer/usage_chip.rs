@@ -174,7 +174,7 @@ impl BenCodeApp {
                     // The account is only named once there is more than one;
                     // Antigravity's is the one `agy` is signed in as.
                     let account = if provider == RateLimitProvider::Antigravity {
-                        self.agy_accounts.live_email.clone().map(|email| (email, 160.0))
+                        self.agy_live_label().map(|label| (label, 160.0))
                     } else {
                         chip_accounts
                             .active()

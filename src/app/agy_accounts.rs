@@ -81,6 +81,18 @@ impl BenCodeApp {
             .collect()
     }
 
+    /// The name of the account `agy` is signed in as, else its email when it
+    /// is not a saved one; None when signed out.
+    pub fn agy_live_label(&self) -> Option<String> {
+        let live = self.agy_accounts.live_email.as_ref()?;
+        let saved = self
+            .agy_accounts()
+            .into_iter()
+            .find(|(_, profile)| self.agy_accounts.is_active(profile))
+            .map(|(account, _)| account.label);
+        Some(saved.unwrap_or_else(|| live.clone()))
+    }
+
     fn agy_turn_running(&self) -> bool {
         self.runs
             .keys()
