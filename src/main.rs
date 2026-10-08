@@ -55,7 +55,12 @@ fn main() {
             }
             let system_dark = app::is_dark_appearance(cx.window_appearance());
             let appearance = app::appearance_prefs(&saved);
-            ui::theme::install(app::theme_mode(saved.theme, system_dark), &appearance.tint, cx);
+            ui::theme::install(
+                app::theme_mode(saved.theme, system_dark),
+                &appearance.tint,
+                appearance.user_accent(),
+                cx,
+            );
             ui::appearance::AppearanceTokens::set(appearance.tokens(), cx);
 
             let bounds = Bounds::centered(None, size(px(1200.0), px(780.0)), cx);

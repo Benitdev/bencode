@@ -403,7 +403,7 @@ impl BenCodeApp {
             return;
         }
         self.appearance.tint = tint;
-        crate::ui::theme::set_tint(&tint, cx);
+        self.apply_palettes(cx);
         self.save_settings(cx);
         cx.notify();
     }
@@ -414,7 +414,13 @@ impl BenCodeApp {
             .filter(|hex| appearance::parse_hex(hex).is_some())
             .map(|hex| hex.to_lowercase());
         self.appearance.accent_color = color;
+        self.apply_palettes(cx);
         self.apply_appearance_tokens(cx);
+    }
+
+    /// Rebuilds the palettes from the tint and the accent.
+    fn apply_palettes(&self, cx: &mut Context<Self>) {
+        crate::ui::theme::set_palettes(&self.appearance.tint, self.appearance.user_accent(), cx);
     }
 
     /// MonoCode `onDiffPalette`.

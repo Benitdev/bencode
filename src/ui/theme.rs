@@ -5,7 +5,7 @@
 use ely_gpui_component::theme::{ActiveTheme, Mode, Palette, Theme};
 use gpui::{App, Hsla, rgb, rgba};
 
-use crate::ui::appearance::{ThemeTint, mix};
+use crate::ui::appearance::{ThemeTint, UserAccent, mix};
 
 fn c(hex: u32) -> Hsla {
     rgb(hex).into()
@@ -18,17 +18,20 @@ fn a(hex_rgba: u32) -> Hsla {
 /// MonoCode `--color-accent: hsl(211 92% 62%)`, the same in both modes.
 const ACCENT: u32 = 0x459bf7;
 
-/// Registers MonoCode's palettes for `tint` and applies the starting mode.
-pub fn install(mode: Mode, tint: &ThemeTint, cx: &mut App) {
-    set_tint(tint, cx);
+/// Registers MonoCode's palettes for `tint` and `accent` and applies the
+/// starting mode.
+pub fn install(mode: Mode, tint: &ThemeTint, accent: Option<UserAccent>, cx: &mut App) {
+    set_palettes(tint, accent, cx);
     Theme::set_mode_now(mode, cx);
 }
 
-/// Rebuilds both palettes for `tint` and shows them at once (a slider drag
-/// must not cross-fade on every step).
-pub fn set_tint(tint: &ThemeTint, cx: &mut App) {
-    Theme::set_palette(Mode::Dark, Some(monocode_dark(tint)), cx);
-    Theme::set_palette(Mode::Light, Some(monocode_light(tint)), cx);
+/// Rebuilds both palettes and shows them at once (a slider drag must not
+/// cross-fade on every step).
+pub fn set_palettes(tint: &ThemeTint, accent: Option<UserAccent>, cx: &mut App) {
+    let dark = with_user_accent(monocode_dark(tint), accent, true);
+    let light = with_user_accent(monocode_light(tint), accent, false);
+    Theme::set_palette(Mode::Dark, Some(dark), cx);
+    Theme::set_palette(Mode::Light, Some(light), cx);
     let mode = cx.theme().mode();
     Theme::set_mode_now(mode, cx);
 }
@@ -108,6 +111,24 @@ fn monocode_light(tint: &ThemeTint) -> Palette {
     p
 }
 
+/// The accent the user picked, everywhere the palette's accent shows:
+/// buttons, badges, dots, the caret, focus rings and selections. MonoCode
+/// only tints its primary buttons, the user's bubble and the composer's
+/// selection with it and keeps its blue elsewhere; BenCode lets the choice
+/// colour the whole app. Links keep their blue so they still read as links.
+fn with_user_accent(mut p: Palette, accent: Option<UserAccent>, dark: bool) -> Palette {
+    let Some(accent) = accent else {
+        return p;
+    };
+    let color = accent.color;
+    p.accent = color;
+    p.accent_hover = mix(color, if dark { gpui::white() } else { gpui::black() }, 0.12);
+    p.on_accent = accent.foreground;
+    p.focus = color;
+    p.selection = color.opacity(if dark { 0.30 } else { 0.22 });
+    p
+}
+
 /// Brand color for a `sessions.harness` id matching MonoCode.
 pub fn harness_color(id: &str, colors: &Palette) -> Hsla {
     let key = id.split(':').next().unwrap_or(id).trim();
@@ -150,6 +171,17 @@ mod tests {
             greys.map(hex),
             [0xf7f7f7, 0xffffff, 0xefefef, 0xededed, 0xebebeb, 0x2e2e2e, 0x8a8a8a, 0xa3a3a3]
         );
+    }
+
+    #[test]
+    fn user_accent_replaces_the_blue_but_not_links() {
+        let tint = ThemeTint::default();
+        let accent = UserAccent::parse("#ec4899");
+        let dark = with_user_accent(monocode_dark(&tint), accent, true);
+        assert_eq!([dark.accent, dark.focus].map(hex), [0xec4899, 0xec4899]);
+        assert_eq!(hex(dark.link), 0x7dd3fc);
+        assert_eq!(dark.on_accent, accent.unwrap().foreground);
+        assert_eq!(with_user_accent(monocode_dark(&tint), None, true), monocode_dark(&tint));
     }
 
     #[test]

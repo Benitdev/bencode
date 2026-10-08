@@ -386,10 +386,11 @@ impl Default for AppearancePrefs {
 
 impl AppearancePrefs {
     pub fn tokens(&self) -> AppearanceTokens {
-        AppearanceTokens {
-            diff_palette: self.diff_palette,
-            user_accent: self.accent_color.as_deref().and_then(UserAccent::parse),
-        }
+        AppearanceTokens { diff_palette: self.diff_palette, user_accent: self.user_accent() }
+    }
+
+    pub fn user_accent(&self) -> Option<UserAccent> {
+        self.accent_color.as_deref().and_then(UserAccent::parse)
     }
 }
 
