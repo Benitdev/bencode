@@ -27,6 +27,8 @@ pub const MESSAGE_MAX_WIDTH: f32 = 896.0;
 const USER_BUBBLE_MAX_WIDTH: f32 = 576.0;
 /// Long messages clamp to this many lines until "Show more".
 const CLAMP_LINES: usize = 4;
+/// The user bubble's line height.
+const LINE_HEIGHT: f32 = 22.0;
 /// How long a copy button shows its check (MonoCode).
 const COPIED_FOR: std::time::Duration = std::time::Duration::from_secs(2);
 /// Rough characters per bubble line, to tell when a message needs the clamp.
@@ -231,7 +233,7 @@ impl BenCodeApp {
         let accent = crate::ui::appearance::user_accent(cx);
         let bubble = div()
             .min_w_0()
-            .max_w_full()
+            .max_w(px(USER_BUBBLE_MAX_WIDTH))
             .px_3()
             .py_2()
             .bg(muted(colors.fg, 0.1))
@@ -239,13 +241,19 @@ impl BenCodeApp {
             .when_some(accent, |el, accent| el.bg(accent.color.opacity(0.24)))
             .rounded(if single_line { px(18.0) } else { px(12.0) })
             .text_size(px(14.0))
-            .line_height(px(22.0))
+            .line_height(px(LINE_HEIGHT))
             .text_color(colors.fg)
             .children(note.map(|card| div().when(!text.is_empty(), |el| el.mb_2()).child(card)))
             .children(chips.map(|chips| div().when(!text.is_empty(), |el| el.mb_2()).child(chips)))
             .child(
                 div()
-                    .when(clamps && !expanded, |el| el.line_clamp(CLAMP_LINES))
+                    // Cut by height, not `line_clamp`: GPUI caches a line's
+                    // wrapping without the line limit it was wrapped under,
+                    // so the lines past the clamp stayed unwrapped once the
+                    // message was shown in full.
+                    .when(clamps && !expanded, |el| {
+                        el.max_h(px(LINE_HEIGHT * CLAMP_LINES as f32)).overflow_hidden()
+                    })
                     .child(
                         PlainText::new(self.seg_ctx(&session.id, ix, true), text.clone()).marks(
                             query
@@ -289,20 +297,7 @@ impl BenCodeApp {
             .pr_4()
             .pb_1()
             .pl(px(56.0))
-            // The width limit is this box's, not the bubble's: the bubble
-            // is then sized inside the width it ends up with. Limited
-            // itself, it was first sized in the whole row, and a long
-            // message could keep the lines wrapped for that width and run
-            // out of the bubble.
-            .child(
-                div()
-                    .w_full()
-                    .max_w(px(USER_BUBBLE_MAX_WIDTH))
-                    .flex()
-                    .flex_col()
-                    .items_end()
-                    .child(bubble),
-            )
+            .child(bubble)
             .child(if draft {
                 self.draft_actions(session, ix, cx).into_any_element()
             } else {
