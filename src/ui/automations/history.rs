@@ -9,7 +9,7 @@ use gpui::{AnyElement, Context, Div, FontWeight, Hsla, IntoElement, ParentElemen
 use jiff::tz::TimeZone;
 
 use super::format::{run_at, run_duration};
-use super::parts::{panel, section_title, tint};
+use crate::ui::page_parts::{panel, section_title, tint};
 use crate::app::{BenCodeApp, now_ms};
 use crate::db::{AutomationRow, AutomationRunRow, RunStatus, RunTrigger};
 use crate::schedule::schedule_label;

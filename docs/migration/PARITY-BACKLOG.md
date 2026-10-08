@@ -109,7 +109,8 @@ Notes:
 - [x] P0 L Automation scheduler (30s claim-due, recover stale runs)
 - [x] P0 M Automation `triggers[]` as source of truth (`schedule.rs::time_triggers`)
 - [ ] P1 M Search keyboard nav; P1 L coverage/ranking; P1 M rows & open file in editor
-- [~] P1 M Notes: Add to chat (new session + note card) ✓; Preview/Source editor, tags, list rows, "Untitled"; save turn as note; `@note/` injection
+- [x] P1 M Notes: list cards (project, age, preview, tags), resizable list, slug and project move, tags editor, Preview / Source, "Untitled" from the body, Add to chat, save turn as note — `notes/ui/NotesView.tsx`, `notes/notes.ts`
+- [ ] P2 Notes: images dropped into a note (`noteImages.ts`, and images in the markdown preview); line numbers in Source; `@note/` body injection on send (`applyNotesToTurn`)
 - [x] P1 M-L Automations: template picker, list cards with switches, editor header/tabs, time-trigger editor, model / access / session settings, run history table, Run now in the background — `automations/ui/AutomationsView.tsx`
 - [ ] P2 Automation event triggers (GitHub, Linear, Jira, GitLab, Azure DevOps) and their four templates; per-automation model settings — `automations/model/automationEvents.ts`
 - [x] P1 S Inbox honest empty state (no fake data)

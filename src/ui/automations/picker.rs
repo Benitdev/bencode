@@ -6,7 +6,7 @@ use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{AnyElement, Context, FontWeight, Hsla, IntoElement, ParentElement, Styled, div, prelude::*};
 
 use super::PAGE_WIDTH;
-use super::parts::tint;
+use crate::ui::page_parts::tint;
 use super::templates::{AutomationTemplate, TemplateCategory, templates_for};
 use crate::app::BenCodeApp;
 use crate::ui::scale::px;

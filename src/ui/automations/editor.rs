@@ -8,36 +8,18 @@ use ely_gpui_component::menus::{DropdownMenu, Menu, MenuItem, OverflowMenu};
 use ely_gpui_component::primitives::IconName;
 use ely_gpui_component::theme::{ActiveTheme, ControlSize};
 use gpui::{
-    AnyElement, Context, Div, FontWeight, Hsla, IntoElement, ParentElement, Stateful, Styled, div,
+    AnyElement, Context, Div, FontWeight, Hsla, IntoElement, ParentElement, Styled, div,
     prelude::*,
 };
 
 use super::PAGE_WIDTH;
-use super::parts::tint;
+use crate::ui::page_parts::{page_tab, tint};
 use crate::app::automations::{EditorTab, draft_is_valid};
 use crate::app::BenCodeApp;
 use crate::db::AutomationRow;
 use crate::ui::app_callback::app_callback;
 use crate::ui::scale::px;
 use crate::ui::scrollbar::Scrolled;
-
-/// MonoCode `PageTab`: a label with a 2px line under the open page.
-fn page_tab(id: &'static str, label: &'static str, selected: bool, fg: Hsla, muted: Hsla) -> Stateful<Div> {
-    div()
-        .id(id)
-        .relative()
-        .flex()
-        .items_center()
-        .h(px(36.0))
-        .text_size(px(12.0))
-        .cursor_pointer()
-        .text_color(if selected { fg } else { muted })
-        .hover(|style| style.text_color(fg))
-        .child(label)
-        .when(selected, |el| {
-            el.child(div().absolute().left_0().right_0().bottom_0().h(px(2.0)).bg(fg))
-        })
-}
 
 fn divider(fg: Hsla) -> Div {
     div().flex_none().w(px(1.0)).h(px(12.0)).bg(fg.opacity(tint::DIVIDER))

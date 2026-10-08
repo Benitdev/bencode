@@ -6,7 +6,6 @@ mod editor;
 mod format;
 mod history;
 mod list;
-mod parts;
 mod picker;
 mod settings;
 pub mod templates;

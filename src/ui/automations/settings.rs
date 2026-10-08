@@ -12,7 +12,7 @@ use jiff::tz::TimeZone;
 use serde_json::Value;
 
 use super::format::{gmt_offset_at, next_run_preview};
-use super::parts::{panel, rule, section_title, settings_row, tint};
+use crate::ui::page_parts::{panel, rule, section_title, settings_row, tint};
 use crate::app::automations::{MAX_TRIGGERS, WorkingCopy, access_mode, grace_minutes};
 use crate::app::{BenCodeApp, PermissionMode, now_ms};
 use crate::db::{AutomationRow, DEFAULT_GRACE_MINUTES};

@@ -1,13 +1,14 @@
-//! The pieces the automation pages share: MonoCode `SectionTitle`,
-//! `SettingsRow` and the bordered box its sections sit in.
+//! The pieces the Automations and Notes pages share: MonoCode's `content/N`
+//! tints, `SectionTitle`, `SettingsRow`, `PageTab` and the bordered box
+//! sections sit in.
 
-use gpui::{Div, FontWeight, Hsla, IntoElement, ParentElement, Styled, div};
+use gpui::{Div, FontWeight, Hsla, IntoElement, ParentElement, Stateful, Styled, div, prelude::*};
 
 use crate::ui::scale::px;
 
 /// MonoCode's `content/N` tints: how much of the foreground colour a
 /// line, a fill or a quieter text takes.
-pub(super) mod tint {
+pub mod tint {
     /// `border-content/10`: a box's outline.
     pub const STROKE: f32 = 0.10;
     pub const STROKE_HOVER: f32 = 0.16;
@@ -35,23 +36,25 @@ pub(super) mod tint {
     pub const QUIET: f32 = 0.45;
     pub const HINT: f32 = 0.4;
     pub const FAINT: f32 = 0.35;
+    /// `text-content/85`: markdown source.
+    pub const SOURCE: f32 = 0.85;
 }
 
 /// The width a row's control gets.
 const SELECT_WIDTH: f32 = 168.0;
 
 /// MonoCode `rounded-md border border-content/10`.
-pub(super) fn panel(fg: Hsla) -> Div {
+pub fn panel(fg: Hsla) -> Div {
     div().rounded(px(6.0)).border_1().border_color(fg.opacity(tint::STROKE))
 }
 
 /// The hairline between a panel's rows.
-pub(super) fn rule(fg: Hsla) -> Div {
+pub fn rule(fg: Hsla) -> Div {
     div().h(px(1.0)).bg(fg.opacity(tint::RULE))
 }
 
 /// MonoCode `SectionTitle`.
-pub(super) fn section_title(title: &'static str, muted: Hsla) -> Div {
+pub fn section_title(title: &'static str, muted: Hsla) -> Div {
     div()
         .px_1()
         .text_size(px(12.0))
@@ -61,7 +64,7 @@ pub(super) fn section_title(title: &'static str, muted: Hsla) -> Div {
 }
 
 /// MonoCode `SettingsRow`: a label and hint with the control at the right.
-pub(super) fn settings_row(label: &'static str, hint: &'static str, control: impl IntoElement, fg: Hsla) -> Div {
+pub fn settings_row(label: &'static str, hint: &'static str, control: impl IntoElement, fg: Hsla) -> Div {
     div()
         .flex()
         .items_center()
@@ -79,4 +82,22 @@ pub(super) fn settings_row(label: &'static str, hint: &'static str, control: imp
                 .child(div().text_size(px(11.0)).text_color(fg.opacity(tint::HINT)).child(hint)),
         )
         .child(div().flex_none().w(px(SELECT_WIDTH)).child(control))
+}
+
+/// MonoCode `PageTab`: a label with a 2px line under the open page.
+pub fn page_tab(id: &'static str, label: &'static str, selected: bool, fg: Hsla, muted: Hsla) -> Stateful<Div> {
+    div()
+        .id(id)
+        .relative()
+        .flex()
+        .items_center()
+        .h(px(36.0))
+        .text_size(px(12.0))
+        .cursor_pointer()
+        .text_color(if selected { fg } else { muted })
+        .hover(|style| style.text_color(fg))
+        .child(label)
+        .when(selected, |el| {
+            el.child(div().absolute().left_0().right_0().bottom_0().h(px(2.0)).bg(fg))
+        })
 }

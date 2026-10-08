@@ -10,6 +10,7 @@ pub mod file_pane;
 mod ids;
 mod integrations;
 pub mod live_agents;
+pub mod notes;
 mod model_catalog;
 mod panes;
 mod preferences;
@@ -59,7 +60,6 @@ use crate::ui::settings_modal::SettingsTab;
 
 const RECENT_SESSION_LIMIT: usize = 50;
 const INITIAL_OPEN_TABS: usize = 3;
-const NOTE_TITLE_CHARS: usize = 80;
 
 /// MonoCode's per-session access modes (`RuntimeMode`, `session.ts:368-390`),
 /// stored in `sessions.runtime_mode` by their MonoCode ids.
@@ -297,7 +297,7 @@ pub struct BenCodeApp {
     /// What Settings returns to when it closes.
     pub settings_return: Option<Surface>,
     /// The Notes surface: its notes, selection, fields and dialogs.
-    pub notes: crate::ui::notes_view::NotesState,
+    pub notes: notes::NotesState,
     /// The Automations surface: definitions, run history, fields and dialogs.
     pub automations: automations::AutomationsState,
     /// Explorer › Search in files.
@@ -522,7 +522,7 @@ impl BenCodeApp {
         let question_keys_focus = question_focus.clone();
         let queue_edit_input = text_input(window, cx, "Edit queued message");
         let queue_keys_input = queue_edit_input.clone();
-        let mut notes = crate::ui::notes_view::NotesState::new(window, cx);
+        let mut notes = notes::NotesState::new(window, cx);
         let mut automations = automations::AutomationsState::new(window, cx);
         let project_search = project_search::ProjectSearchState::new(window, cx);
         let git_commit_input = multiline_input(window, cx, "Message (⌘↩ to commit)", (1, 7));
@@ -697,11 +697,11 @@ impl BenCodeApp {
             cx.subscribe(&automations.prompt_input, Self::on_automation_input_event),
             cx.subscribe(&notes.title_input, Self::on_note_input_event),
             cx.subscribe(&notes.body_input, Self::on_note_input_event),
+            cx.subscribe(&notes.tag_input, Self::on_note_tag_input_event),
             cx.subscribe(
                 &notes.filter_input,
-                |this: &mut Self, input, event: &InputEvent, cx| {
+                |_: &mut Self, _, event: &InputEvent, cx| {
                     if *event == InputEvent::Changed {
-                        this.notes.filter_query = input.read(cx).text().to_string();
                         cx.notify();
                     }
                 },
@@ -1294,41 +1294,6 @@ impl BenCodeApp {
         cx.notify();
     }
 
-    /// Saves a turn as a note titled after its thread (or the text's first
-    /// line), linked to that thread and project, then opens it (MonoCode
-    /// `SessionPane` "Save as note").
-    pub fn save_turn_to_note(&mut self, text: &str, cx: &mut Context<Self>) {
-        let session = self.selected_session();
-        let title = session
-            .map(|s| s.title.clone())
-            .filter(|t| !t.is_empty() && t != NEW_SESSION_TITLE)
-            .or_else(|| {
-                text.lines()
-                    .map(str::trim)
-                    .find(|l| !l.is_empty())
-                    .map(str::to_string)
-            })
-            .unwrap_or_else(|| "Untitled".to_string());
-        let upsert = crate::db::NoteUpsert {
-            id: unique_id("note"),
-            title: title.chars().take(NOTE_TITLE_CHARS).collect(),
-            body: text.to_string(),
-            tags: Vec::new(),
-            source_session_id: session.map(|s| s.id.clone()),
-            source_cwd: session.map(|s| s.cwd.clone()).filter(|cwd| !cwd.is_empty()),
-        };
-        match self.db.upsert_note(&upsert) {
-            Ok(note) => {
-                let id = note.id.clone();
-                self.notes.items.insert(0, note);
-                self.open_notes(cx);
-                self.select_note(id, cx);
-            }
-            Err(err) => log::error!("failed to save turn as note: {err:#}"),
-        }
-        cx.notify();
-    }
-
     /// Runs `job` on the writer, or right here on the fallback database.
     pub(crate) fn db_write(
         &self,
@@ -1413,6 +1378,10 @@ impl Render for BenCodeApp {
         self.sync_chat_background(!cx.theme().is_dark(), cx);
         if std::mem::take(&mut self.question_focus_wanted) {
             window.focus(&self.question_focus, cx);
+        }
+        if std::mem::take(&mut self.notes.focus_source) {
+            let source = self.notes.body_input.read(cx).focus_handle(cx);
+            window.focus(&source, cx);
         }
         if let Some(path) = self.file_tree.pending_open.take() {
             self.open_file_in_editor(&path, window, cx);
