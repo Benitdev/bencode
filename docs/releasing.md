@@ -12,6 +12,7 @@ Silicon và Intel, macOS 11 trở lên).
 | Workflow phát hành (tag `v*`) | `.github/workflows/release.yml` |
 | Landing page | `site/index.html`, deploy bằng `.github/workflows/pages.yml` |
 | Ghi chú phát hành | `CHANGELOG.md` |
+| Tự cập nhật (app) | `src/updater.rs`, `src/app/updater.rs`, `src/ui/rail/update.rs` |
 
 ---
 
@@ -24,7 +25,9 @@ Silicon và Intel, macOS 11 trở lên).
 2. **Bundle ID** là `com.benitdev.bencode` (`packaging/macos/Info.plist`).
    Nếu muốn đổi thì đổi trước bản đầu tiên: macOS gắn các quyền đã cấp
    (Documents, Desktop…) theo bundle ID.
-3. **Ký và notarize** là tuỳ chọn, xem mục cuối.
+3. **Khoá cập nhật** để app tự cập nhật, xem mục "Tự cập nhật" bên dưới.
+   Chưa có khoá thì app vẫn chạy, chỉ là không tự cập nhật.
+4. **Ký và notarize** là tuỳ chọn, xem mục cuối.
 
 ---
 
@@ -75,6 +78,56 @@ open target/bundle/BenCode.dmg
 ```bash
 NODE_PATH="$(npm root -g)" node packaging/macos/render-icon.mjs   # cần playwright
 ```
+
+---
+
+## Tự cập nhật
+
+App kiểm tra bản mới một lần khi mở, và khi bấm **BenCode › Check for
+Updates…** hoặc Settings › About. Có bản mới thì rail hiện nút "Update to X".
+Bấm vào, app sẽ:
+
+1. tải `BenCode.app.tar.gz` từ Release mới nhất;
+2. kiểm tra chữ ký minisign bằng public key được nhúng lúc build;
+3. kiểm tra bundle ID, version và `codesign --verify`;
+4. thay `BenCode.app` đang chạy bằng bản mới rồi tự khởi động lại.
+
+Lần mở sau, rail hiện thẻ "Updated to X / What's new". Ghi chú lấy từ
+`CHANGELOG.md` được nhúng trong app.
+
+App đọc `https://github.com/Benitdev/bencode/releases/latest/download/latest.json`
+(định dạng `latest.json` của Tauri). `bundle.sh` sinh file này cùng archive
+và chữ ký; workflow Release đăng cả ba lên mỗi Release.
+
+**Tạo khoá (một lần, trên máy bạn):**
+
+```bash
+brew install minisign
+minisign -G -W -p bencode-update.pub -s bencode-update.key   # -W: không đặt mật khẩu
+```
+
+Rồi vào repo › Settings › Secrets and variables › Actions:
+
+| Loại | Tên | Giá trị |
+| :--- | :--- | :--- |
+| Variable | `BENCODE_UPDATE_PUBKEY` | dòng thứ hai của `bencode-update.pub` (chuỗi bắt đầu bằng `RW`) |
+| Secret | `MINISIGN_SECRET_KEY` | toàn bộ nội dung `bencode-update.key` |
+
+Phải đặt cả hai hoặc không đặt cái nào; đặt một nửa thì workflow dừng với
+lỗi. Cất `bencode-update.key` ở nơi an toàn (password manager) và đừng commit
+nó. Mất khoá thì các bản đã cài không còn nhận cập nhật được nữa, người dùng
+phải tải bản mới bằng tay.
+
+**Lưu ý:**
+
+- Chỉ bản build có `BENCODE_UPDATE_PUBKEY` mới tự cập nhật. `cargo run`
+  không có khoá: "Check for Updates…" báo build này không tự cập nhật và đưa
+  link Releases.
+- App phải nằm ở chỗ ghi được (thường là `/Applications`). Nếu macOS đang
+  chạy BenCode từ bản sao tạm (App Translocation, khi mở thẳng từ Downloads)
+  hoặc từ file dmg, app sẽ nhắc kéo vào Applications trước.
+- Bản tải bằng `curl` không bị gắn cờ quarantine, nên khi cập nhật không phải
+  bấm "Open Anyway" lại.
 
 ---
 

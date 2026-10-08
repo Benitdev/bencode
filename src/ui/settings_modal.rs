@@ -195,7 +195,7 @@ impl BenCodeApp {
             SettingsTab::Mcp => self.render_settings_mcp().into_any_element(),
             SettingsTab::Skills => self.render_settings_skills(cx).into_any_element(),
             SettingsTab::Appearance => self.render_settings_appearance(cx).into_any_element(),
-            SettingsTab::About => render_settings_about().into_any_element(),
+            SettingsTab::About => self.render_settings_about(cx).into_any_element(),
             SettingsTab::Archive => self.render_settings_archive(cx).into_any_element(),
             SettingsTab::Worktrees => self.render_settings_worktrees(cx).into_any_element(),
             SettingsTab::Integrations => self.render_settings_integrations(cx).into_any_element(),
@@ -420,11 +420,49 @@ fn provider_row(info: &HarnessInfo, _cx: &App) -> SettingsRow {
     )
 }
 
-fn render_settings_about() -> impl IntoElement {
-    SettingsSection::new("About BenCode")
-        .description(env!("CARGO_PKG_DESCRIPTION"))
-        .row(SettingsRow::new("Version").control(Badge::new(env!("CARGO_PKG_VERSION"))))
-        .row(SettingsRow::new("License").control(Badge::new(env!("CARGO_PKG_LICENSE"))))
+impl BenCodeApp {
+    /// About, with MonoCode's `UpdateRow`: the version, what the updater
+    /// last found, What's new, and Check for updates / Download (Restart
+    /// once an update waits for one).
+    fn render_settings_about(&self, cx: &Context<Self>) -> impl IntoElement {
+        use crate::app::updater::Phase;
+        let state = &self.updater;
+        let busy = matches!(state.phase, Phase::Checking | Phase::Downloading);
+        let (label, icon) = match state.phase {
+            Phase::Available => ("Download", IconName::Download),
+            Phase::Ready => ("Restart", IconName::RefreshCw),
+            _ => ("Check for updates", IconName::RefreshCw),
+        };
+        let current = state.current_version().to_string();
+        let controls = div()
+            .flex()
+            .items_center()
+            .gap_2()
+            .child(
+                ely_gpui_component::buttons::Button::new("about-whats-new", "What's new")
+                    .variant(ButtonVariant::Ghost)
+                    .on_click(cx.listener(move |this, _, _, cx| this.open_whats_new(current.clone(), cx))),
+            )
+            .child(
+                ely_gpui_component::buttons::Button::new("about-update", label)
+                    .variant(ButtonVariant::Secondary)
+                    .icon(icon)
+                    .loading(busy)
+                    .disabled(busy)
+                    .on_click(cx.listener(|this, _, window, cx| match this.updater.phase {
+                        Phase::Available | Phase::Ready => this.install_update(cx),
+                        _ => this.check_for_updates(window, cx),
+                    })),
+            );
+        SettingsSection::new("About BenCode")
+            .description(env!("CARGO_PKG_DESCRIPTION"))
+            .row(
+                SettingsRow::new(format!("Version {}", state.current_version()))
+                    .description(state.status_line())
+                    .control(controls),
+            )
+            .row(SettingsRow::new("License").control(Badge::new(env!("CARGO_PKG_LICENSE"))))
+    }
 }
 
 #[cfg(test)]

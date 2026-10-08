@@ -14,6 +14,12 @@
 #   APPLE_ID, APPLE_TEAM_ID, APPLE_APP_PASSWORD
 #                           With a signing identity, the dmg is notarized and
 #                           the ticket stapled to it.
+#   BENCODE_UPDATE_PUBKEY   The release key's public half (minisign). Built
+#                           into the app, which then updates itself.
+#   MINISIGN_SECRET_KEY     The release key's secret half (a `minisign -G -W`
+#                           key, no password). With it, the update archive
+#                           BenCode.app.tar.gz is signed and latest.json, the
+#                           release feed, is written beside it.
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -106,3 +112,56 @@ fi
 (cd "$out" && shasum -a 256 BenCode.dmg >BenCode.dmg.sha256)
 echo "==> $dmg"
 cat "$out/BenCode.dmg.sha256"
+
+if [[ -z "${MINISIGN_SECRET_KEY:-}" ]]; then
+  echo "No MINISIGN_SECRET_KEY: no update archive or release feed."
+  exit 0
+fi
+if [[ -z "${BENCODE_UPDATE_PUBKEY:-}" ]]; then
+  echo "MINISIGN_SECRET_KEY is set but BENCODE_UPDATE_PUBKEY is not: the app would not check the update." >&2
+  exit 1
+fi
+
+echo "==> Update archive"
+archive="$out/BenCode.app.tar.gz"
+# COPYFILE_DISABLE: no AppleDouble ._ files in the archive.
+(cd "$out" && COPYFILE_DISABLE=1 tar -czf BenCode.app.tar.gz BenCode.app)
+key_file="$(mktemp)"
+trap 'rm -f "$key_file"' EXIT
+printf '%s\n' "$MINISIGN_SECRET_KEY" >"$key_file"
+minisign -S -s "$key_file" -m "$archive" -x "$archive.minisig" -t "BenCode $version"
+rm -f "$key_file"
+# The public key built in must check what the secret one signed. It may be
+# the base64 line alone or the whole .pub file.
+public_key="$(printf '%s\n' "$BENCODE_UPDATE_PUBKEY" | grep -v '^untrusted comment:' | grep -v '^[[:space:]]*$' | tail -n 1)"
+minisign -V -P "$public_key" -m "$archive" -x "$archive.minisig"
+
+echo "==> Release feed"
+# Tauri's latest.json, with each build's size for the download's progress.
+platforms=()
+for arch in $(lipo -archs "$app/Contents/MacOS/bencode"); do
+  case "$arch" in
+    arm64) platforms+=(darwin-aarch64) ;;
+    x86_64) platforms+=(darwin-x86_64) ;;
+  esac
+done
+VERSION="$version" \
+  URL="https://github.com/Benitdev/bencode/releases/download/v$version/BenCode.app.tar.gz" \
+  SIGNATURE_FILE="$archive.minisig" \
+  SIZE="$(stat -f %z "$archive")" \
+  PLATFORMS="${platforms[*]}" \
+  python3 - >"$out/latest.json" <<'PY'
+import datetime, json, os
+entry = {
+    "url": os.environ["URL"],
+    "signature": open(os.environ["SIGNATURE_FILE"]).read(),
+    "size": int(os.environ["SIZE"]),
+}
+print(json.dumps({
+    "version": os.environ["VERSION"],
+    "notes": "BenCode " + os.environ["VERSION"],
+    "pub_date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    "platforms": {name: entry for name in os.environ["PLATFORMS"].split()},
+}, indent=2))
+PY
+cat "$out/latest.json"

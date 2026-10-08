@@ -58,6 +58,8 @@ extra_icons! {
     FilePlusCorner => "file-plus-corner",
     /// `panel-top`: the terminal docked at the top.
     PanelTop => "panel-top",
+    /// `circle-arrow-down`: Update to (MonoCode `ArrowDownCircle`).
+    CircleArrowDown => "circle-arrow-down",
 }
 
 impl ExtraIcon {

@@ -39,6 +39,7 @@ pub mod settings_integrations;
 pub mod settings_appearance;
 pub mod settings_modal;
 pub mod settings_worktrees;
+pub mod whats_new;
 pub mod window_drag;
 pub mod sidebar;
 pub mod sidebar_card_extras;

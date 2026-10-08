@@ -42,3 +42,7 @@ The first public build: a native macOS port of MonoCode.
   keep going; the Dock icon brings the window back and ⌘Q quits.
 - On macOS 26 and later the dark theme's window glass is Liquid Glass
   (`NSGlassEffectView`); earlier macOS keeps the blur.
+- Updates: BenCode checks the latest GitHub Release at launch and from
+  BenCode › Check for Updates… or Settings › About. "Update to X" on the
+  rail downloads it, checks its signature, puts it in place and restarts;
+  the next launch shows "Updated to X" and What's new.
