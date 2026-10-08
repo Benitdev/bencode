@@ -106,8 +106,8 @@ jobs:
           # A tag builds the universal, fully optimized release; a manual run
           # takes the inputs above.
           TARGETS: ${{ inputs.targets || 'aarch64-apple-darwin x86_64-apple-darwin' }}
-          CARGO_PROFILE_RELEASE_LTO: ${{ inputs.quick && 'thin' || 'fat' }}
-          CARGO_PROFILE_RELEASE_CODEGEN_UNITS: ${{ inputs.quick && '16' || '1' }}
+          CARGO_PROFILE_RELEASE_LTO: ${{ inputs.quick == false && 'fat' || 'thin' }}
+          CARGO_PROFILE_RELEASE_CODEGEN_UNITS: ${{ inputs.quick == false && '1' || '16' }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}

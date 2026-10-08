@@ -39,7 +39,10 @@ echo "==> BenCode $version ($build) for $targets"
 
 binaries=()
 for target in $targets; do
-  cargo build --release --locked --target "$target"
+  # The build runs every dependency's build script and proc macro: none of
+  # them gets the release key or the notarization password.
+  env -u MINISIGN_SECRET_KEY -u APPLE_ID -u APPLE_TEAM_ID -u APPLE_APP_PASSWORD \
+    cargo build --release --locked --target "$target"
   binaries+=("target/$target/release/bencode")
 done
 
@@ -133,7 +136,7 @@ minisign -S -s "$key_file" -m "$archive" -x "$archive.minisig" -t "BenCode $vers
 rm -f "$key_file"
 # The public key built in must check what the secret one signed. It may be
 # the base64 line alone or the whole .pub file.
-public_key="$(printf '%s\n' "$BENCODE_UPDATE_PUBKEY" | grep -v '^untrusted comment:' | grep -v '^[[:space:]]*$' | tail -n 1)"
+public_key="$(printf '%s\n' "$BENCODE_UPDATE_PUBKEY" | tr -d '\r' | grep -v '^untrusted comment:' | grep -v '^[[:space:]]*$' | tail -n 1 | tr -d '[:space:]')"
 minisign -V -P "$public_key" -m "$archive" -x "$archive.minisig"
 
 echo "==> Release feed"

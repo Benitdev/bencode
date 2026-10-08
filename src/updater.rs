@@ -297,6 +297,11 @@ fn download(url: &str, dest: &Path, progress: &Progress) -> Result<()> {
             "-q",
             "--fail",
             "--location",
+            // A redirect must not leave https.
+            "--proto",
+            "=https",
+            "--proto-redir",
+            "=https",
             "--silent",
             "--show-error",
             "--max-time",
