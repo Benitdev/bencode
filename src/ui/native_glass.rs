@@ -12,7 +12,7 @@
 /// An `NSGlassEffectView` under GPUI's view; dropping it takes it out.
 pub struct NativeGlass {
     #[cfg(target_os = "macos")]
-    view: cocoa::base::id,
+    view: *mut objc::runtime::Object,
     /// Whether the corner radius was taken in full screen, where the
     /// window has square corners.
     #[cfg(target_os = "macos")]
@@ -37,13 +37,13 @@ impl NativeGlass {
 #[allow(unexpected_cfgs)]
 mod macos {
     use cocoa::appkit::{NSView, NSViewHeightSizable, NSViewWidthSizable};
-    use cocoa::base::{id, nil};
-    use cocoa::foundation::{NSAutoreleasePool, NSString};
-    use objc::runtime::{BOOL, Class, NO};
+    use objc::runtime::{BOOL, Class, NO, Object};
     use objc::{class, msg_send, sel, sel_impl};
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
     use super::NativeGlass;
+
+    type Id = *mut Object;
 
     const CLASS: &str = "NSGlassEffectView";
     /// `NSGlassEffectViewStyleRegular`; `Clear` (1) blurs too little to
@@ -68,28 +68,31 @@ mod macos {
             let RawWindowHandle::AppKit(appkit) = handle.as_raw() else {
                 return None;
             };
-            let gpui_view = appkit.ns_view.as_ptr() as id;
+            let gpui_view = appkit.ns_view.as_ptr() as Id;
             // SAFETY: AppKit calls on the main thread, where GPUI renders.
             // `gpui_view` is GPUI's live NSView; `alloc` / `initWithFrame:`
             // give a +1 view this struct releases on drop, and the content
             // view retains it again as a subview.
             unsafe {
                 let content = gpui_view.superview();
-                if content == nil {
+                if content.is_null() {
                     return None;
                 }
-                let view: id = msg_send![class, alloc];
+                let view: Id = msg_send![class, alloc];
                 let view = view.initWithFrame_(content.bounds());
-                if view == nil {
+                if view.is_null() {
                     return None;
                 }
                 view.setAutoresizingMask_(NSViewWidthSizable | NSViewHeightSizable);
                 let _: () = msg_send![view, setStyle: STYLE_REGULAR];
                 // The glass is on only in BenCode's dark theme, which need
                 // not be the system's.
-                let name = NSString::alloc(nil).init_str("NSAppearanceNameDarkAqua").autorelease();
-                let dark: id = msg_send![class!(NSAppearance), appearanceNamed: name];
-                if dark != nil {
+                let name: Id = msg_send![
+                    class!(NSString),
+                    stringWithUTF8String: c"NSAppearanceNameDarkAqua".as_ptr()
+                ];
+                let dark: Id = msg_send![class!(NSAppearance), appearanceNamed: name];
+                if !dark.is_null() {
                     view.setAppearance(dark);
                 }
                 let _: () = msg_send![
@@ -125,8 +128,8 @@ mod macos {
             // SAFETY: main-thread AppKit calls on the live glass view and
             // its window; `_cornerRadius` returns a CGFloat when present.
             unsafe {
-                let window: id = msg_send![self.view, window];
-                if window == nil {
+                let window: Id = msg_send![self.view, window];
+                if window.is_null() {
                     return;
                 }
                 let radius = if fullscreen {
