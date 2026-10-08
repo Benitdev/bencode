@@ -3,10 +3,13 @@
 //! New Terminal (⌘`). Toggled from the footer or with ⌘J. It docks on any
 //! edge of the workspace (Move Terminal), the sash on its inner edge
 //! resizes it, and each project's side, size and shown state are saved.
+//! A tab is named for the job it runs or the folder its shell is in, and
+//! one whose shell ended stays open with MonoCode's `[process exited]`.
 
 mod ime;
 mod layout;
 mod menu;
+mod running;
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
@@ -23,6 +26,7 @@ use gpui::{
 use crate::ui::scale::px;
 
 pub use layout::{DockLayout, DockSide};
+pub use running::{POLL_EVERY, RunningTerminal, chip_label};
 
 use crate::app::BenCodeApp;
 use crate::ui::icons::ExtraIcon;
@@ -36,7 +40,30 @@ pub struct TerminalTab {
     view: Entity<ime::TerminalIme>,
     /// The folder its shell started in.
     pub cwd: String,
+    /// The process Ely started for it (`login` on macOS) until it ends.
+    process: Option<u32>,
+    /// The shell under `process`, once found.
+    shell: Option<u32>,
+    /// The job in its foreground other than the shell.
+    foreground: Option<crate::terminal_process::Foreground>,
+    /// The folder its shell is in now.
+    dir: Option<String>,
     _events: Subscription,
+}
+
+impl TerminalTab {
+    /// MonoCode `terminalTabLabel`: the running job, else the folder.
+    fn title(&self) -> String {
+        match &self.foreground {
+            Some(job) => job.process.clone(),
+            None => self.folder(),
+        }
+    }
+
+    /// MonoCode `defaultTerminalTitle` of the shell's folder.
+    fn folder(&self) -> String {
+        running::default_title(self.dir.as_deref().unwrap_or(&self.cwd))
+    }
 }
 
 /// One project's terminals.
@@ -60,6 +87,12 @@ pub struct TerminalDocks {
     /// A sash drag is under way, so the sash stays lit.
     resizing: bool,
     menu: Option<menu::TerminalMenu>,
+    /// Terminals waiting on "Close anyway?" because a job runs in them.
+    close_confirm: Option<running::CloseConfirm>,
+    /// The process poll is running (while any terminal's shell is).
+    polling: bool,
+    /// The footer chip's list was open when the chip was pressed.
+    pub(crate) running_menu_at_press: bool,
     /// The window's size at the last render, for picks made by key.
     viewport: (f32, f32),
 }
@@ -203,7 +236,12 @@ impl BenCodeApp {
     pub fn new_terminal_at(&mut self, cwd: &str, cx: &mut Context<Self>) {
         let project = self.current_cwd.clone();
         let cwd = cwd.to_string();
+        let before = crate::terminal_process::children();
         let entity = cx.new(|cx| spawn_shell(&cwd, cx));
+        let process = crate::terminal_process::spawned(&before);
+        if process.is_none() {
+            log::debug!("terminal in {cwd}: its process was not found; no job or folder in its tab");
+        }
         let view = cx.new(|_| ime::TerminalIme::new(entity.clone()));
         self.terminals.next_id += 1;
         let id = self.terminals.next_id;
@@ -211,8 +249,7 @@ impl BenCodeApp {
         let events = cx.subscribe(
             &entity,
             move |this, _, event: &TerminalEvent, cx| match event {
-                TerminalEvent::Exited(_) => this.close_terminal(&key, id, cx),
-                TerminalEvent::Title(_) => cx.notify(),
+                TerminalEvent::Exited(_) => this.terminal_exited(&key, id, cx),
                 _ => {}
             },
         );
@@ -222,12 +259,17 @@ impl BenCodeApp {
             entity,
             view,
             cwd,
+            process,
+            shell: None,
+            foreground: None,
+            dir: None,
             _events: events,
         });
         dock.active = id;
         if !self.is_terminal_open() {
             self.set_terminal_open(true, cx);
         }
+        self.start_terminal_poll(cx);
         cx.notify();
     }
 
@@ -252,11 +294,14 @@ impl BenCodeApp {
         cx.notify();
     }
 
-    /// MonoCode `onCloseOtherProjectTerminals`: keeps `id` and selects it.
-    fn close_other_terminals(&mut self, id: u64, cx: &mut Context<Self>) {
-        if let Some(dock) = self.terminals.docks.get_mut(&self.current_cwd) {
-            dock.tabs.retain(|tab| tab.id == id);
-            dock.active = id;
+    /// The end of MonoCode `onCloseOtherProjectTerminals`: closes `closing`
+    /// and selects `keep`.
+    fn close_terminals_but(&mut self, project: &str, closing: &[u64], keep: u64, cx: &mut Context<Self>) {
+        if let Some(dock) = self.terminals.docks.get_mut(project) {
+            dock.tabs.retain(|tab| !closing.contains(&tab.id));
+            if dock.tabs.iter().any(|tab| tab.id == keep) {
+                dock.active = keep;
+            }
             cx.notify();
         }
     }
@@ -322,9 +367,28 @@ impl BenCodeApp {
             .terminals
             .dock(&self.current_cwd)
             .and_then(|dock| dock.tabs.iter().find(|t| t.id == dock.active))
-            .map(|tab| tab.view.clone());
+            .map(|tab| (tab.view.clone(), tab.entity.read(cx).exit_status()));
         let body = match active {
-            Some(terminal) => div().flex_1().min_h_0().min_w_0().p_1().child(terminal),
+            Some((terminal, exited)) => div()
+                .flex()
+                .flex_col()
+                .flex_1()
+                .min_h_0()
+                .min_w_0()
+                .p_1()
+                .child(div().flex_1().min_h_0().min_w_0().child(terminal))
+                // MonoCode writes this line into the terminal; Ely's grid
+                // takes no text once its program is gone, so it sits under it.
+                .children(exited.map(|status| {
+                    div()
+                        .flex_none()
+                        .px_2()
+                        .pb_1()
+                        .font_family(cx.theme().mono_family.clone())
+                        .text_size(px(12.0))
+                        .text_color(colors.fg_muted)
+                        .child(running::exited_line(status.code()))
+                })),
             None => div()
                 .flex_1()
                 .flex()
@@ -506,12 +570,7 @@ impl BenCodeApp {
         cx: &Context<Self>,
     ) -> impl IntoElement + use<> {
         let colors = &cx.theme().colors;
-        let title = tab.entity.read(cx).title().clone();
-        let title = if title.is_empty() {
-            SharedString::from("Terminal")
-        } else {
-            title
-        };
+        let title = SharedString::from(tab.title());
         let (id, project) = (tab.id, self.current_cwd.clone());
         let close = IconButton::new(
             SharedString::from(format!("terminal-close-{id}")),
@@ -520,7 +579,7 @@ impl BenCodeApp {
         .size(ControlSize::Sm)
         .variant(ButtonVariant::Ghost)
         .tooltip("Close Terminal")
-        .on_click(cx.listener(move |this, _, _, cx| this.close_terminal(&project, id, cx)));
+        .on_click(cx.listener(move |this, _, _, cx| this.request_close_terminals(&project, vec![id], None, cx)));
         let ghost = title.clone();
         let edge = colors.accent;
         div()

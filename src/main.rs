@@ -14,6 +14,7 @@ mod schedule;
 mod settings;
 mod skills;
 mod storage;
+mod terminal_process;
 mod ui;
 mod work_items;
 mod workspace;

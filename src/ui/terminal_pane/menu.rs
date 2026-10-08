@@ -1,6 +1,7 @@
-//! The terminal dock's menus, both MonoCode `ExplorerMenu`s: a tab's right
-//! click (`surfaceTabMenuItems` for a terminal: Close, Close Others) and
-//! Move Terminal (`SIDE_ITEMS`).
+//! The terminal dock's menus: a tab's right click (`surfaceTabMenuItems`
+//! for a terminal: Close, Close Others) and Move Terminal (`SIDE_ITEMS`),
+//! both MonoCode `ExplorerMenu`s, and the footer's list of running
+//! terminals (`UsageFooter` `RunningTerminalChip`'s popover).
 
 use gpui::{AnyElement, Context, Pixels, Point};
 
@@ -9,6 +10,8 @@ use crate::app::BenCodeApp;
 use crate::ui::explorer_menu::{self, MenuAction, MenuEntry};
 
 const MENU_WIDTH: f32 = 180.0;
+/// MonoCode `min-w-[12rem]`.
+const RUNNING_MENU_WIDTH: f32 = 192.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum MenuTarget {
@@ -16,6 +19,8 @@ enum MenuTarget {
     Tab(u64),
     /// Move Terminal.
     Side,
+    /// The footer chip's running terminals, above the chip.
+    Running,
 }
 
 pub(super) struct TerminalMenu {
@@ -27,6 +32,10 @@ pub(super) struct TerminalMenu {
 impl TerminalMenu {
     pub(super) fn is_side(&self) -> bool {
         self.target == MenuTarget::Side
+    }
+
+    pub(crate) fn is_running(&self) -> bool {
+        self.target == MenuTarget::Running
     }
 }
 
@@ -49,6 +58,18 @@ impl BenCodeApp {
                     })
                     .collect()
             }
+            // MonoCode's rows: the job, its folder muted at the end.
+            MenuTarget::Running => self
+                .running_terminals()
+                .into_iter()
+                .map(|terminal| {
+                    MenuEntry::Item(
+                        MenuAction::new("running", terminal.process)
+                            .value(terminal.id.to_string())
+                            .shortcut(terminal.label),
+                    )
+                })
+                .collect(),
         }
     }
 
@@ -76,6 +97,19 @@ impl BenCodeApp {
         self.open_terminal_menu(MenuTarget::Side, position, cx);
     }
 
+    /// The footer chip's list: opens above the chip, or closes when open.
+    pub(crate) fn toggle_running_terminals_menu(&mut self, cx: &mut Context<Self>) {
+        if self.terminals.menu.as_ref().is_some_and(TerminalMenu::is_running) {
+            self.close_terminal_menu(cx);
+            return;
+        }
+        self.open_terminal_menu(MenuTarget::Running, Point::default(), cx);
+    }
+
+    pub(crate) fn running_terminals_menu_open(&self) -> bool {
+        self.terminals.menu.as_ref().is_some_and(TerminalMenu::is_running)
+    }
+
     pub fn terminal_menu_open(&self) -> bool {
         self.terminals.menu.is_some()
     }
@@ -94,17 +128,28 @@ impl BenCodeApp {
             return;
         };
         let entries = self.terminal_menu_entries(menu.target);
-        let Some(id) = explorer_menu::pick(&entries, index) else {
+        let Some(action) = explorer_menu::pick_action(&entries, index) else {
             self.terminals.menu = Some(menu);
             return;
         };
+        let (id, value) = (action.id, action.value.clone());
         self.refocus_prompt(cx);
+        let project = self.current_cwd.clone();
         match (menu.target, id) {
-            (MenuTarget::Tab(tab), "close") => {
-                let project = self.current_cwd.clone();
-                self.close_terminal(&project, tab, cx);
+            (MenuTarget::Tab(tab), "close") => self.request_close_terminals(&project, vec![tab], None, cx),
+            (MenuTarget::Tab(tab), "close-others") => {
+                let others = self
+                    .terminals
+                    .dock(&project)
+                    .map(|dock| dock.tabs.iter().map(|t| t.id).filter(|&id| id != tab).collect())
+                    .unwrap_or_default();
+                self.request_close_terminals(&project, others, Some(tab), cx);
             }
-            (MenuTarget::Tab(tab), "close-others") => self.close_other_terminals(tab, cx),
+            (MenuTarget::Running, _) => {
+                if let Some(id) = value.and_then(|value| value.parse().ok()) {
+                    self.toggle_running_terminal(id, cx);
+                }
+            }
             (MenuTarget::Side, id) => {
                 if let Some(side) = DockSide::from_id(id) {
                     self.set_dock_side(side, cx);
@@ -139,18 +184,34 @@ impl BenCodeApp {
         true
     }
 
+    /// The tab and Move Terminal menus, at the pointer.
     pub fn render_terminal_menu(&self, cx: &Context<Self>) -> Option<AnyElement> {
-        let menu = self.terminals.menu.as_ref()?;
+        let menu = self.terminals.menu.as_ref().filter(|menu| !menu.is_running())?;
+        Some(self.render_terminal_menu_at(menu, explorer_menu::MenuPlace::At(menu.position), cx))
+    }
+
+    /// The running terminals' list, placed in the footer chip.
+    pub(crate) fn render_running_terminals_menu(&self, cx: &Context<Self>) -> Option<AnyElement> {
+        let menu = self.terminals.menu.as_ref().filter(|menu| menu.is_running())?;
+        Some(self.render_terminal_menu_at(menu, explorer_menu::MenuPlace::Above, cx))
+    }
+
+    fn render_terminal_menu_at(
+        &self,
+        menu: &TerminalMenu,
+        place: explorer_menu::MenuPlace,
+        cx: &Context<Self>,
+    ) -> AnyElement {
         let entries = self.terminal_menu_entries(menu.target);
         let entity = cx.entity().downgrade();
         let (hover_app, pick_app, close_app) = (entity.clone(), entity.clone(), entity);
-        Some(explorer_menu::render_menu(
+        explorer_menu::render_menu(
             explorer_menu::MenuView {
                 id: "terminal-menu",
                 entries: &entries,
                 active: menu.active,
-                place: explorer_menu::MenuPlace::At(menu.position),
-                width: MENU_WIDTH,
+                place,
+                width: if menu.is_running() { RUNNING_MENU_WIDTH } else { MENU_WIDTH },
                 focus: &self.composer_menus.focus,
                 header: None,
             },
@@ -181,6 +242,6 @@ impl BenCodeApp {
                 }
             },
             cx,
-        ))
+        )
     }
 }

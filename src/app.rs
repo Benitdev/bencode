@@ -1547,6 +1547,7 @@ impl Render for BenCodeApp {
                     .children(self.render_branch_create_dialog(cx))
                     .children(self.render_pr_action_confirm(cx))
                     .children(self.render_file_tree_dialog(cx))
+                    .children(self.render_terminal_close_confirm(cx))
                     .children(self.render_quit_confirm(cx)),
             );
         // The commands sit above the focus scope, not inside it: while the

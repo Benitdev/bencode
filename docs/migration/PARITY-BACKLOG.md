@@ -56,7 +56,7 @@ Notes:
 - [x] P1 M Footer provider usage (Claude, Codex, OpenCode Go): chip, Refresh, details popover — `app/shell/UsageFooter.tsx`, `UsageProviderChip.tsx`, `src-tauri/src/rate_limits.rs`
 - [x] P1 L Provider accounts: account label and picker on the usage chip, Add account / sign-in, threads pinned to `provider_account_id`, CLIs run under the account's `CLAUDE_CONFIG_DIR` / `CODEX_HOME` — `providers/model/providerAccounts.ts`, `harness.rs:provider_account_dir`
 - [x] P1 M Settings › provider accounts: add, rename, remove (with Keychain cleanup), "Manage accounts…" from the picker — `settings/ui/SettingsView.tsx` `ProviderAccountsSettings`. Open: the account list is not shared both ways; accounts added here are not listed in MonoCode (its list lives in webview storage, which BenCode only reads), a rename here does not reach MonoCode, and accounts MonoCode lists can only be removed there
-- [ ] P2 S Usage popover extras: Codex banked resets, "show remaining" and email-masking preferences; running-terminal chip and the harness chip's "sign in" in the footer
+- [ ] P2 S Usage popover extras: Codex banked resets, "show remaining" and email-masking preferences; the harness chip's "sign in" in the footer
 - [x] P2 Working agents panel (`app/live_agents.rs`, `ui/rail/live_agents.rs`)
 - [ ] P2 Project colour from name (window title, tab→pane drop done)
 
@@ -101,7 +101,7 @@ Notes:
 - [x] P0 S Claude hooks toggle (`--settings {"disableAllHooks":true}`)
 - [x] P0 S Theme System option (Ely `settings::ThemeSelector`)
 - [~] P0 M-L MCP: discovery reads Claude CLI, Claude Desktop, Cursor and project configs; still open: add / remove / sign-in / show config, Codex (`~/.codex/config.toml`) and OpenCode discovery
-- [~] P0 M Terminal per project + tabs + ⌘` done, exit handled; still open: links and find from `TerminalEvent`
+- [~] P0 M Terminal per project + tabs + ⌘` done; tabs named for the running job or the shell's folder (read from the process, `terminal_process.rs`), the footer's running-terminal chip, "Close anyway?" for a running job, `[process exited]` with the tab kept; still open: links and find from `TerminalEvent`
 - [~] P1 M Settings nav groups (done, `ui/rail/settings_nav.rs`), remembered section, search; Appearance page done (`ui/settings_appearance.rs`) except blur radius; chat background (`app/chat_background.rs`) and the collapsed icon rail (`ui/rail/compact.rs`) done, without per-project backgrounds or the icon rail's searchable project picker; General/Chat/Keybindings pages; CLI path override; terminal dock side/resize
 - [ ] P2 macOS terminal keys, harness update notice
 

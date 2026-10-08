@@ -17,7 +17,7 @@ pub struct MenuAction {
     pub id: &'static str,
     pub label: String,
     pub description: Option<String>,
-    pub shortcut: Option<&'static str>,
+    pub shortcut: Option<SharedString>,
     pub disabled: bool,
     pub danger: bool,
     /// MonoCode `checked`: a check at the row's end.
@@ -77,8 +77,8 @@ impl MenuAction {
         self
     }
 
-    pub fn shortcut(mut self, keys: &'static str) -> Self {
-        self.shortcut = Some(keys);
+    pub fn shortcut(mut self, keys: impl Into<SharedString>) -> Self {
+        self.shortcut = Some(keys.into());
         self
     }
 
@@ -359,7 +359,7 @@ pub fn render_menu_styled(
                 // `ChevronRight size-3.5 shrink-0 text-content/50`
                 el.child(Icon::new(IconName::ChevronRight).size(IconSize::Sm).color(colors.fg.opacity(0.5)))
             })
-            .children(item.shortcut.filter(|_| !item.checked).map(|keys| {
+            .children(item.shortcut.clone().filter(|_| !item.checked).map(|keys| {
                 // `shrink-0 text-[11px] text-content/40`
                 div()
                     .flex_none()

@@ -1,10 +1,11 @@
 //! Window status bar, MonoCode `app/shell/UsageFooter.tsx`: the active
 //! thread's provider usage (or just its harness) on the left, the terminal
-//! drawer toggle on the right. BenCode adds its own CPU and memory left of
+//! drawer toggle on the right (the running jobs while there are). BenCode adds its own CPU and memory left of
 //! the toggle.
 
 mod account_views;
 mod process_layer;
+mod terminal_chip;
 mod usage_chip;
 
 pub(crate) use account_views::{account_status_label, usage_meter};
@@ -47,6 +48,7 @@ impl BenCodeApp {
         let fg = colors.fg;
         let refreshing = self.usage.refreshing();
         let terminal_open = self.is_terminal_open();
+        let running = self.running_terminals();
 
         div()
             .flex()
@@ -115,7 +117,9 @@ impl BenCodeApp {
                     .child(crate::ui::composer::runner_view::measure(&self.process_slot)),
             )
             .child(div().flex_none().w(px(1.0)).h(px(12.0)).ml(px(10.0)).mr(px(6.0)).bg(colors.border))
-            .child(
+            // MonoCode shows the running jobs in the Terminal button's place.
+            .when(!running.is_empty(), |el| el.child(self.render_running_terminal_chip(running.clone(), cx)))
+            .when(running.is_empty(), |el| el.child(
                 div()
                     .id("footer-terminal-toggle")
                     .flex()
@@ -145,6 +149,6 @@ impl BenCodeApp {
                         fg.opacity(0.4)
                     }))
                     .child("Terminal"),
-            )
+            ))
     }
 }
