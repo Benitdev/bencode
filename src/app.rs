@@ -1384,16 +1384,6 @@ impl BenCodeApp {
         })
         .detach();
     }
-
-    /// Waits for queued writes before a synchronous read or write of the
-    /// same rows on `db`. Short in practice: the queue is usually empty.
-    pub(crate) fn settle_db_writes(&self) {
-        if let Some(writer) = &self.db_writer
-            && !writer.flush(std::time::Duration::from_secs(2))
-        {
-            log::warn!("queued database writes are still running");
-        }
-    }
 }
 
 impl Render for BenCodeApp {

@@ -62,9 +62,7 @@ impl BenCodeApp {
         match LinkedWorkItem::parse_url(&text) {
             Some(item) => {
                 let id = dialog.session_id.clone();
-                if self.set_session_link(&id, Some(item), cx) {
-                    self.close_link_dialog(cx);
-                }
+                self.set_session_link(&id, Some(item), cx);
             }
             None => {
                 dialog.error = Some("Enter a valid GitHub issue or pull request URL.".into());
@@ -74,27 +72,37 @@ impl BenCodeApp {
     }
 
     /// MonoCode `onSetHistorySessionLinkedWorkItem`: saved at once; the
-    /// card follows only if the write succeeds.
-    /// Returns whether it was saved; a failure stays on the dialog.
+    /// card follows, and the dialog closes, only if the write succeeds. A
+    /// failure stays on the dialog.
     pub fn set_session_link(
         &mut self,
         session_id: &str,
         item: Option<LinkedWorkItem>,
         cx: &mut Context<Self>,
-    ) -> bool {
-        if let Err(err) = self.db.set_linked_work_item(session_id, item.as_ref()) {
-            log::error!("could not save the GitHub link of {session_id}: {err:#}");
-            if let Some(dialog) = self.link_dialog.as_mut() {
-                dialog.error = Some(err.to_string());
-            }
-            cx.notify();
-            return false;
-        }
-        if let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id) {
-            session.linked_work_item = item;
-        }
-        cx.notify();
-        true
+    ) {
+        let (id, row, saved) = (session_id.to_string(), session_id.to_string(), item.clone());
+        self.db_then(
+            cx,
+            move |db| db.set_linked_work_item(&row, saved.as_ref()),
+            move |this, written, cx| {
+                let dialog_open = this.link_dialog.as_ref().is_some_and(|d| d.session_id == id);
+                if let Err(err) = written {
+                    log::error!("could not save the GitHub link of {id}: {err:#}");
+                    if let Some(dialog) = this.link_dialog.as_mut().filter(|_| dialog_open) {
+                        dialog.error = Some(err.to_string());
+                    }
+                    cx.notify();
+                    return;
+                }
+                if let Some(session) = this.sessions.iter_mut().find(|s| s.id == id) {
+                    session.linked_work_item = item;
+                }
+                if dialog_open {
+                    this.close_link_dialog(cx);
+                }
+                cx.notify();
+            },
+        );
     }
 
     pub fn render_link_dialog(&self, cx: &Context<Self>) -> Option<AnyElement> {
@@ -156,10 +164,8 @@ impl BenCodeApp {
                     .child("Paste the full github.com URL. The linked item will appear on the session card."),
             });
         let remove = app_callback(cx, |this, cx| {
-            if let Some(id) = this.link_dialog.as_ref().map(|d| d.session_id.clone())
-                && this.set_session_link(&id, None, cx)
-            {
-                this.close_link_dialog(cx);
+            if let Some(id) = this.link_dialog.as_ref().map(|d| d.session_id.clone()) {
+                this.set_session_link(&id, None, cx);
             }
         });
         let submit = app_callback(cx, |this, cx| this.submit_link_dialog(cx));

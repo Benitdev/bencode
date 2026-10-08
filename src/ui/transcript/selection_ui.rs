@@ -186,8 +186,9 @@ impl BenCodeApp {
     }
 
     /// MonoCode `saveSelectionNote`: a note titled from the text, linked to
-    /// the thread, left closed.
-    fn save_selection_note(&mut self, text: &str, session_id: &str) -> anyhow::Result<()> {
+    /// the thread, left closed. The selection clears once it is saved; a
+    /// failure shows on the selection's menu.
+    fn save_selection_note(&mut self, text: &str, session_id: &str, cx: &mut Context<Self>) {
         let cwd = self
             .sessions
             .iter()
@@ -203,9 +204,23 @@ impl BenCodeApp {
             source_session_id: Some(session_id.to_string()),
             source_cwd: cwd,
         };
-        let note = self.db.upsert_note(&upsert)?;
-        self.notes.items.insert(0, note);
-        Ok(())
+        self.db_then(
+            cx,
+            move |db| db.upsert_note(&upsert),
+            |this, saved, cx| match saved {
+                Ok(note) => {
+                    this.notes.items.insert(0, note);
+                    this.clear_transcript_selection(cx);
+                }
+                Err(err) => {
+                    log::error!("failed to save selection as note: {err:#}");
+                    this.transcript_selection.update(cx, |selection, cx| {
+                        selection.set_note_error(Some(format!("{err:#}")));
+                        cx.notify();
+                    });
+                }
+            },
+        );
     }
 
     /// Gives the pane of `session_id` the transcript's focus and keys, and
@@ -332,18 +347,7 @@ impl BenCodeApp {
                     "Add to notes",
                 )
                 .on_click(cx.listener(move |this, _, _, cx| {
-                    match this.save_selection_note(&note_text, &sid) {
-                        Ok(()) => {
-                            this.clear_transcript_selection(cx);
-                        }
-                        Err(err) => {
-                            log::error!("failed to save selection as note: {err:#}");
-                            this.transcript_selection.update(cx, |selection, cx| {
-                                selection.set_note_error(Some(format!("{err:#}")));
-                                cx.notify();
-                            });
-                        }
-                    }
+                    this.save_selection_note(&note_text, &sid, cx);
                 })),
             )
             .children(error.map(|error| {

@@ -17,6 +17,7 @@ pub use orchestration::{OrchestrationSummary, OrchestrationTask, TaskTone};
 
 pub use reminders::Reminder;
 pub use work_item::{LinkedWorkItem, WorkItemKind};
+pub use worktree_removals::SessionBeforeRemoval;
 pub use writer::DbWriter;
 
 pub use schedule::DEFAULT_GRACE_MINUTES;

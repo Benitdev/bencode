@@ -31,22 +31,29 @@ impl BenCodeApp {
         worktree: Option<String>,
         cx: &mut Context<Self>,
     ) {
-        // A queued save of the thread would put its old worktree back.
-        self.settle_db_writes();
-        if let Err(err) = self.db.reattach_session(session_id, worktree.as_deref()) {
-            log::error!("could not move thread {session_id} to a working copy: {err:#}");
-            self.composer_error = Some(format!("Could not continue in that working copy: {err}"));
-            cx.notify();
-            return;
-        }
-        if let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id) {
-            session.worktree_removed = false;
-            session.worktree_cwd = worktree;
-        }
-        self.sync_prompt_placeholder(cx);
-        self.refresh_workspace(cx);
-        self.refocus_prompt(cx);
-        cx.notify();
+        let (id, row, target) = (session_id.to_string(), session_id.to_string(), worktree.clone());
+        self.db_then(
+            cx,
+            move |db| db.reattach_session(&row, target.as_deref()),
+            move |this, moved, cx| {
+                if let Err(err) = moved {
+                    log::error!("could not move thread {id} to a working copy: {err:#}");
+                    this.composer_error = Some(format!("Could not continue in that working copy: {err}"));
+                    cx.notify();
+                    return;
+                }
+                if let Some(session) = this.sessions.iter_mut().find(|s| s.id == id) {
+                    session.worktree_removed = false;
+                    session.worktree_cwd = worktree;
+                }
+                // A save queued while the move ran still named the old worktree.
+                this.persist_session(&id);
+                this.sync_prompt_placeholder(cx);
+                this.refresh_workspace(cx);
+                this.refocus_prompt(cx);
+                cx.notify();
+            },
+        );
     }
 
     /// MonoCode `WorktreePicker`: "No branch", opening the project folder

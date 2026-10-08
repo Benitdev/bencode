@@ -18,7 +18,7 @@ use gpui::Context;
 
 use crate::app::file_pane::PaneTab;
 use crate::app::{BenCodeApp, is_path_in_project, normalize_project_path, same_project_path};
-use crate::db::{AppDb, SessionRow};
+use crate::db::{AppDb, SessionBeforeRemoval, SessionRow};
 use crate::git::Worktree;
 use crate::git::worktrees::{create_worktree, list_worktrees, remove_worktree};
 use crate::git::{Branch, list_branches};
@@ -485,9 +485,46 @@ impl BenCodeApp {
                 cx,
             );
         }
-        // Queued saves decide which threads the database places here.
-        self.settle_db_writes();
-        let stored = match self.db.session_ids_in_worktree(&path) {
+        if let Some(d) = self.worktree_deletion.as_mut() {
+            d.busy = true;
+            d.error = None;
+        }
+        cx.notify();
+        // On the writer: queued saves decide which threads the database
+        // places here.
+        let listed = path.clone();
+        self.db_then(
+            cx,
+            move |db| db.session_ids_in_worktree(&listed),
+            move |this, stored, cx| {
+                this.detach_worktree_threads(stored, path, main, project, deletion.delete_sessions, cx)
+            },
+        );
+    }
+
+    /// The dialog is still waiting on the deletion of `path`.
+    fn deleting_worktree(&self, path: &str) -> bool {
+        self.worktree_deletion
+            .as_ref()
+            .is_some_and(|d| d.busy && d.tree.path == path)
+    }
+
+    /// Deletion, second step: with the threads the database places in
+    /// `path`, deletes them (if asked) and writes the journal entry that
+    /// detaches the ones kept.
+    fn detach_worktree_threads(
+        &mut self,
+        stored: Result<Vec<String>>,
+        path: String,
+        main: String,
+        project: String,
+        delete_sessions: bool,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.deleting_worktree(&path) {
+            return;
+        }
+        let stored = match stored {
             Ok(ids) => ids,
             Err(err) => return self.fail_worktree_deletion(format!("{err:#}"), cx),
         };
@@ -498,29 +535,59 @@ impl BenCodeApp {
                 cx,
             );
         }
-        let sessions_deleted = deletion.delete_sessions && !ids.is_empty();
+        let sessions_deleted = delete_sessions && !ids.is_empty();
         if sessions_deleted {
+            // Each delete is queued ahead of the journal entry below.
             for id in &ids {
                 self.delete_session(id, cx);
-            }
-            if self.sessions.iter().any(|s| ids.contains(&s.id))
-                || self
-                    .db
-                    .session_ids_in_worktree(&path)
-                    .map_or(true, |left| !left.is_empty())
-            {
-                return self.abandon_worktree_deletion(
-                    "Some sessions could not be deleted, so the worktree was kept.".into(),
-                    cx,
-                );
             }
         }
         let kept = if sessions_deleted { Vec::new() } else { ids };
         // Detach before git runs; the journal restores them on failure.
-        let journal = match self.db.prepare_worktree_removal(&path, &main, &kept) {
-            Ok(saved) => saved,
-            Err(err) => return self.fail_worktree_deletion(format!("{err:#}"), cx),
+        // `None`: a thread that was to be deleted is still here.
+        let job = {
+            let (path, main, kept) = (path.clone(), main.clone(), kept.clone());
+            move |db: &AppDb| {
+                if sessions_deleted
+                    && db
+                        .session_ids_in_worktree(&path)
+                        .map_or(true, |left| !left.is_empty())
+                {
+                    return Ok(None);
+                }
+                db.prepare_worktree_removal(&path, &main, &kept).map(Some)
+            }
         };
+        self.db_then(cx, job, move |this, journal, cx| {
+            if !this.deleting_worktree(&path) {
+                return;
+            }
+            match journal {
+                Ok(Some(journal)) => {
+                    this.remove_detached_worktree(path, main, project, kept, journal, sessions_deleted, cx)
+                }
+                Ok(None) => this.abandon_worktree_deletion(
+                    "Some sessions could not be deleted, so the worktree was kept.".into(),
+                    cx,
+                ),
+                Err(err) => this.fail_worktree_deletion(format!("{err:#}"), cx),
+            }
+        });
+    }
+
+    /// Deletion, last step: the kept threads are detached in the database;
+    /// detaches them here and runs `git worktree remove --force`.
+    #[allow(clippy::too_many_arguments)]
+    fn remove_detached_worktree(
+        &mut self,
+        path: String,
+        main: String,
+        project: String,
+        kept: Vec<String>,
+        journal: Vec<SessionBeforeRemoval>,
+        sessions_deleted: bool,
+        cx: &mut Context<Self>,
+    ) {
         let before: Vec<SessionRow> = self
             .sessions
             .iter()
@@ -530,9 +597,9 @@ impl BenCodeApp {
         for session in self.sessions.iter_mut().filter(|s| kept.contains(&s.id)) {
             detach_session(session, &path, &main);
         }
-        if let Some(d) = self.worktree_deletion.as_mut() {
-            d.busy = true;
-            d.error = None;
+        // A save queued while the journal was written still named the worktree.
+        for session in &before {
+            self.persist_session(&session.id);
         }
         cx.notify();
         let task = cx.background_executor().spawn({
@@ -545,35 +612,45 @@ impl BenCodeApp {
                 Ok(()) => {
                     // The threads are already durably detached; a leftover
                     // journal entry is settled on the next launch.
-                    if let Err(err) = this.db.finish_worktree_removal(&path, &[]) {
-                        log::error!("worktree {path} deleted; journal cleanup retries on restart: {err:#}");
-                    }
+                    let done = path.clone();
+                    this.db_write("worktree journal cleanup (retries on restart)", move |db| {
+                        db.finish_worktree_removal(&done, &[])
+                    });
                     this.worktree_deletion = None;
                     this.worktree_deleted(&path, &main, cx);
                 }
                 Err(err) => {
                     log::warn!("delete worktree {path}: {err:#}");
                     let mut message = format!("{err:#}");
-                    match this.db.finish_worktree_removal(&path, &journal) {
-                        Ok(()) => {
-                            for before in &before {
-                                if let Some(s) = this.sessions.iter_mut().find(|s| s.id == before.id) {
-                                    restore_session(s, before);
+                    let kept_path = path.clone();
+                    this.db_then(
+                        cx,
+                        move |db| db.finish_worktree_removal(&kept_path, &journal),
+                        move |this, restored, cx| {
+                            match restored {
+                                Ok(()) => {
+                                    for before in &before {
+                                        if let Some(s) = this.sessions.iter_mut().find(|s| s.id == before.id) {
+                                            restore_session(s, before);
+                                        }
+                                        // As above: what the database holds is this again.
+                                        this.persist_session(&before.id);
+                                    }
+                                }
+                                Err(restore) => {
+                                    log::error!("could not restore the threads of {path}: {restore:#}");
+                                    message = format!(
+                                        "{message}. Sessions remain detached until recovery on restart: {restore:#}"
+                                    );
                                 }
                             }
-                        }
-                        Err(restore) => {
-                            log::error!("could not restore the threads of {path}: {restore:#}");
-                            message = format!(
-                                "{message}. Sessions remain detached until recovery on restart: {restore:#}"
-                            );
-                        }
-                    }
-                    if sessions_deleted {
-                        message = format!("The sessions were deleted, but the worktree was kept. {message}");
-                    }
-                    this.abandon_worktree_deletion(message, cx);
-                    this.sync_prompt_placeholder(cx);
+                            if sessions_deleted {
+                                message = format!("The sessions were deleted, but the worktree was kept. {message}");
+                            }
+                            this.abandon_worktree_deletion(message, cx);
+                            this.sync_prompt_placeholder(cx);
+                        },
+                    );
                 }
             });
             if let Err(err) = landed {

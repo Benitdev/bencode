@@ -428,16 +428,23 @@ impl BenCodeApp {
 
     /// "See details": the worker thread (hidden from the list) opens.
     fn open_worker_session(&mut self, worker: &str, cx: &mut Context<Self>) {
-        if !self.sessions.iter().any(|s| s.id == worker) {
-            match self.db.get_session(worker) {
-                Ok(Some(row)) => self.sessions.push(row),
-                Ok(None) => return,
-                Err(err) => {
-                    log::error!("could not load agent thread {worker}: {err:#}");
-                    return;
-                }
-            }
+        if self.sessions.iter().any(|s| s.id == worker) {
+            return self.open_session(worker.to_string(), cx);
         }
-        self.open_session(worker.to_string(), cx);
+        let (id, row) = (worker.to_string(), worker.to_string());
+        self.db_then(
+            cx,
+            move |db| db.get_session(&row),
+            move |this, loaded, cx| match loaded {
+                Ok(Some(row)) => {
+                    if !this.sessions.iter().any(|s| s.id == id) {
+                        this.sessions.push(row);
+                    }
+                    this.open_session(id, cx);
+                }
+                Ok(None) => {}
+                Err(err) => log::error!("could not load agent thread {id}: {err:#}"),
+            },
+        );
     }
 }

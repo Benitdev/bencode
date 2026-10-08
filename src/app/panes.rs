@@ -352,13 +352,7 @@ impl BenCodeApp {
             return;
         }
         if blank {
-            // Queued saves of the thread land first, or they would bring it back.
-            self.settle_db_writes();
-            if let Err(err) = self.db.delete_session(to_id) {
-                log::error!("failed to drop replaced blank thread {to_id}: {err:#}");
-            }
-            self.sessions.retain(|s| s.id != to_id);
-            self.transcripts.remove(to_id);
+            self.discard_blank_session(to_id);
         }
         self.sync_selection(cx);
         if blank {
@@ -402,19 +396,36 @@ impl BenCodeApp {
             log::warn!("refusing to delete session {id} while its agent is running");
             return;
         }
-        // Queued saves of the thread land first, or they would bring it back.
-        self.settle_db_writes();
-        if let Err(err) = self.db.delete_session(id) {
-            log::error!("failed to delete session {id}: {err:#}");
-            return;
-        }
         self.vacate_pane(id);
-        self.sessions.retain(|s| s.id != id);
+        // Out of the list first, so nothing saves the thread again; the
+        // delete then runs behind its queued saves, which would otherwise
+        // bring it back.
+        let removed = self
+            .sessions
+            .iter()
+            .position(|s| s.id == id)
+            .map(|ix| self.sessions.remove(ix));
         self.transcripts.remove(id);
-        self.checkpoints.forget(id);
-        self.forget_folder_session(id, cx);
         self.sync_selection(cx);
         self.forget_thread_state(id);
+        let row = id.to_string();
+        let id = id.to_string();
+        self.db_then(
+            cx,
+            move |db| db.delete_session(&row),
+            move |this, deleted, cx| match deleted {
+                Ok(()) => {
+                    this.checkpoints.forget(&id);
+                    this.forget_folder_session(&id, cx);
+                }
+                Err(err) => {
+                    log::error!("failed to delete session {id}: {err:#}");
+                    // Still in the database: back in the list it goes.
+                    this.sessions.extend(removed);
+                    cx.notify();
+                }
+            },
+        );
     }
 
     /// Drops what the composer and the queue kept for a thread that no
@@ -467,9 +478,8 @@ impl BenCodeApp {
         if !self.tabs.focus(&id) {
             match self.blank_pane_in_active_tab().filter(|blank| *blank != id) {
                 Some(blank) if self.tabs.replace_pane(&blank, &id) => {
-                    if self.discard_blank_session(&blank) {
-                        discarded = Some(blank);
-                    }
+                    self.discard_blank_session(&blank);
+                    discarded = Some(blank);
                 }
                 _ => {
                     self.tabs.open(&id);
@@ -499,17 +509,13 @@ impl BenCodeApp {
     }
 
     /// Drops a replaced thread that never received a prompt; MonoCode does
-    /// not keep those either. True when the row was dropped.
-    fn discard_blank_session(&mut self, id: &str) -> bool {
-        // Queued saves of the thread land first, or they would bring it back.
-        self.settle_db_writes();
-        if let Err(err) = self.db.delete_session(id) {
-            log::error!("failed to drop empty session {id}: {err:#}");
-            return false;
-        }
+    /// not keep those either.
+    fn discard_blank_session(&mut self, id: &str) {
         self.sessions.retain(|s| s.id != id);
         self.transcripts.remove(id);
-        true
+        // Behind the thread's queued saves, which would bring it back.
+        let row = id.to_string();
+        self.db_write("drop empty session", move |db| db.delete_session(&row));
     }
 
     /// Creates and persists a new session row with the welcome block.

@@ -232,27 +232,40 @@ impl BenCodeApp {
     /// MonoCode `schedule`: sets (or moves) the threads' reminder and opens
     /// the Reminders group.
     pub fn schedule_reminders(&mut self, session_ids: &[String], due_at: i64, cx: &mut Context<Self>) {
-        // A thread saved a moment ago must be in the table first.
-        self.settle_db_writes();
-        if let Err(err) = self.db.set_reminders(session_ids, due_at, now_ms()) {
-            self.reminder_failure = Some(err.to_string());
-            log::warn!("could not set reminder: {err:#}");
-        } else {
-            let project = self.current_cwd.clone();
-            if self.sessions_ui.reminders_collapsed.remove(&project).is_some() {
-                self.save_settings(cx);
-            }
-        }
-        self.refresh_reminders(cx);
+        let ids = session_ids.to_vec();
+        // On the writer, so a thread saved a moment ago is in the table first.
+        self.db_then(
+            cx,
+            move |db| db.set_reminders(&ids, due_at, now_ms()),
+            |this, set, cx| {
+                if let Err(err) = set {
+                    this.reminder_failure = Some(err.to_string());
+                    log::warn!("could not set reminder: {err:#}");
+                } else {
+                    let project = this.current_cwd.clone();
+                    if this.sessions_ui.reminders_collapsed.remove(&project).is_some() {
+                        this.save_settings(cx);
+                    }
+                }
+                this.refresh_reminders(cx);
+            },
+        );
     }
 
     /// MonoCode `cancel`.
     pub fn cancel_reminders(&mut self, session_ids: &[String], expected_due_at: Option<i64>, cx: &mut Context<Self>) {
-        if let Err(err) = self.db.clear_reminders(session_ids, expected_due_at) {
-            self.reminder_failure = Some(err.to_string());
-            log::warn!("could not cancel reminder: {err:#}");
-        }
-        self.refresh_reminders(cx);
+        let ids = session_ids.to_vec();
+        self.db_then(
+            cx,
+            move |db| db.clear_reminders(&ids, expected_due_at),
+            |this, cleared, cx| {
+                if let Err(err) = cleared {
+                    this.reminder_failure = Some(err.to_string());
+                    log::warn!("could not cancel reminder: {err:#}");
+                }
+                this.refresh_reminders(cx);
+            },
+        );
     }
 
     /// MonoCode `dismissDue`: continuing a thread clears its due reminder
@@ -280,21 +293,35 @@ impl BenCodeApp {
         {
             self.switch_project(cwd, cx);
         }
-        if !self.sessions.iter().any(|s| s.id == session_id) {
-            match self.db.get_session(session_id) {
-                Ok(Some(row)) => self.sessions.push(row),
+        if self.sessions.iter().any(|s| s.id == session_id) {
+            return self.show_reminder_thread(session_id, due_at, cx);
+        }
+        // A thread of another project is not in memory yet.
+        let (id, row) = (session_id.to_string(), session_id.to_string());
+        self.db_then(
+            cx,
+            move |db| db.get_session(&row),
+            move |this, loaded, cx| match loaded {
+                Ok(Some(row)) => {
+                    if !this.sessions.iter().any(|s| s.id == id) {
+                        this.sessions.push(row);
+                    }
+                    this.show_reminder_thread(&id, due_at, cx);
+                }
                 Ok(None) => {
-                    self.reminder_failure = Some("This conversation is no longer available.".into());
-                    self.cancel_reminders(&[session_id.to_string()], Some(due_at), cx);
-                    return;
+                    this.reminder_failure = Some("This conversation is no longer available.".into());
+                    this.cancel_reminders(&[id], Some(due_at), cx);
                 }
                 Err(err) => {
-                    self.reminder_failure = Some(err.to_string());
+                    this.reminder_failure = Some(err.to_string());
                     cx.notify();
-                    return;
                 }
-            }
-        }
+            },
+        );
+    }
+
+    /// Opens a reminder's thread, now in `self.sessions`, and clears it.
+    fn show_reminder_thread(&mut self, session_id: &str, due_at: i64, cx: &mut Context<Self>) {
         self.sidebar_mode = crate::app::SidebarMode::Sessions;
         self.open_session(session_id.to_string(), cx);
         self.cancel_reminders(&[session_id.to_string()], Some(due_at), cx);
