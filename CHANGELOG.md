@@ -4,6 +4,15 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
+## [0.1.2] - 2026-10-08
+
+- Downloads are now one disk image per architecture, `BenCode-arm64.dmg`
+  (Apple Silicon) and `BenCode-x86_64.dmg` (Intel), each about half the size
+  of the universal build. Installed copies update to the right one on their
+  own.
+- More database work moved off the UI thread, so the window stays
+  responsive.
+
 ## [0.1.1] - 2026-10-08
 
 The first public build: a native macOS port of MonoCode.

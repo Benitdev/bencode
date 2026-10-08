@@ -1,12 +1,12 @@
 name: Release
 
-# Pushing a tag `vX.Y.Z` (matching Cargo.toml's version) builds the universal
-# BenCode.dmg and publishes it as a GitHub Release, with that version's
-# CHANGELOG.md section as the notes. A tag with a hyphen (v0.2.0-beta.1) is
-# a pre-release. Running the workflow by hand only builds the dmg and keeps
-# it as a workflow artifact; by default that test build is Apple Silicon only
-# with thin LTO, so it finishes much sooner. Signing and notarization:
-# docs/releasing.md.
+# Pushing a tag `vX.Y.Z` (matching Cargo.toml's version) builds
+# BenCode-arm64.dmg and BenCode-x86_64.dmg and publishes them as a GitHub
+# Release, with that version's CHANGELOG.md section as the notes. A tag with
+# a hyphen (v0.2.0-beta.1) is a pre-release. Running the workflow by hand only
+# builds the dmg and keeps it as a workflow artifact; by default that test
+# build is Apple Silicon only with thin LTO, so it finishes much sooner.
+# Signing and notarization: docs/releasing.md.
 
 on:
   push:
@@ -99,11 +99,11 @@ jobs:
           fi
           brew list minisign >/dev/null 2>&1 || brew install minisign
 
-      - name: Build BenCode.dmg
+      - name: Build the disk images
         env:
           BENCODE_UPDATE_PUBKEY: ${{ vars.BENCODE_UPDATE_PUBKEY }}
           MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
-          # A tag builds the universal, fully optimized release; a manual run
+          # A tag builds both architectures, fully optimized; a manual run
           # takes the inputs above.
           TARGETS: ${{ inputs.targets || 'aarch64-apple-darwin x86_64-apple-darwin' }}
           CARGO_PROFILE_RELEASE_LTO: ${{ inputs.quick == false && 'fat' || 'thin' }}
@@ -117,10 +117,10 @@ jobs:
         with:
           name: BenCode-${{ steps.version.outputs.version }}
           path: |
-            target/bundle/BenCode.dmg
-            target/bundle/BenCode.dmg.sha256
-            target/bundle/BenCode.app.tar.gz
-            target/bundle/BenCode.app.tar.gz.minisig
+            target/bundle/BenCode-*.dmg
+            target/bundle/BenCode-*.dmg.sha256
+            target/bundle/BenCode-*.app.tar.gz
+            target/bundle/BenCode-*.app.tar.gz.minisig
             target/bundle/latest.json
           if-no-files-found: error
 
@@ -134,6 +134,18 @@ jobs:
           # This version's section of CHANGELOG.md: from its "## [x.y.z]"
           # heading to the next "## ".
           awk -v v="[$VERSION]" '/^## /{ on = index($0, v) > 0; next } on' CHANGELOG.md >"$notes"
+          flags=()
+          if [[ ! -s "$notes" ]]; then
+            # No CHANGELOG section: list the commits instead.
+            flags+=(--generate-notes)
+          fi
+          cat >>"$notes" <<'EOF'
+
+          ### Downloads
+
+          - **Apple Silicon** (M1 and later): `BenCode-arm64.dmg`
+          - **Intel**: `BenCode-x86_64.dmg`
+          EOF
           if [[ "$SIGNED" != true ]]; then
             cat >>"$notes" <<'EOF'
 
@@ -148,19 +160,14 @@ jobs:
           ```
           EOF
           fi
-          flags=()
-          if [[ ! -s "$notes" ]]; then
-            # No CHANGELOG section: list the commits instead.
-            flags+=(--generate-notes)
-          fi
           if [[ "$GITHUB_REF_NAME" == *-* ]]; then
             flags+=(--prerelease)
           fi
-          assets=(target/bundle/BenCode.dmg target/bundle/BenCode.dmg.sha256)
-          # The update archive and the feed the app checks (latest.json is
+          assets=(target/bundle/BenCode-*.dmg target/bundle/BenCode-*.dmg.sha256)
+          # The update archives and the feed the app checks (latest.json is
           # read from the newest release, so it ships with every one).
           if [[ "$UPDATES" == true ]]; then
-            assets+=(target/bundle/BenCode.app.tar.gz target/bundle/BenCode.app.tar.gz.minisig target/bundle/latest.json)
+            assets+=(target/bundle/BenCode-*.app.tar.gz target/bundle/BenCode-*.app.tar.gz.minisig target/bundle/latest.json)
           fi
           gh release create "$GITHUB_REF_NAME" "${assets[@]}" \
             --title "BenCode $VERSION" --notes-file "$notes" --verify-tag "${flags[@]}"

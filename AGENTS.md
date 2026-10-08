@@ -502,7 +502,7 @@ cargo test           # unit tests (parsers, models, git against temp repos)
 cargo run            # the app; this opens the user's real BenCode database
 RUST_BACKTRACE=1 cargo run   # when chasing a panic
 RUST_LOG=debug cargo run     # env_logger output
-packaging/macos/bundle.sh    # BenCode.app and BenCode.dmg in target/bundle
+packaging/macos/bundle.sh    # BenCode.app and a dmg per architecture in target/bundle
 ```
 
 - UI changes are not verified by `cargo check`. Run the app and exercise the
@@ -519,8 +519,8 @@ packaging/macos/bundle.sh    # BenCode.app and BenCode.dmg in target/bundle
 
 ### Releasing
 
-Pushing a `vX.Y.Z` tag that matches `Cargo.toml` builds the universal
-`BenCode.dmg` and publishes a GitHub Release (`.github/workflows/release.yml`).
+Pushing a `vX.Y.Z` tag that matches `Cargo.toml` builds
+`BenCode-arm64.dmg` and `BenCode-x86_64.dmg` and publishes a GitHub Release (`.github/workflows/release.yml`).
 Steps, and the secrets that turn on Developer ID signing and notarization, are
 in `docs/releasing.md`. Keep `CHANGELOG.md`'s section for the version current.
 

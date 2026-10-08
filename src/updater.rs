@@ -4,9 +4,10 @@
 //!
 //! A release publishes `latest.json` (Tauri's shape: `version`, `notes`,
 //! `pub_date` and a `darwin-<arch>` entry with the archive's `url` and its
-//! minisign `signature`, plus its `size`) beside `BenCode.app.tar.gz`. The
-//! archive is checked against the release key built in at
-//! `BENCODE_UPDATE_PUBKEY`; a build without one does not update itself.
+//! minisign `signature`, plus its `size`) beside each architecture's
+//! `BenCode-<arch>.app.tar.gz`. The archive is checked against the release
+//! key built in at `BENCODE_UPDATE_PUBKEY`; a build without one does not
+//! update itself.
 //!
 //! Everything here blocks; the app runs it on the background executor.
 

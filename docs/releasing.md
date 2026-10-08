@@ -1,8 +1,9 @@
 # Releasing BenCode
 
 BenCode ships through **GitHub Releases** and a **landing page** on GitHub
-Pages, not the App Store. Each release is one universal `BenCode.dmg` (Apple
-Silicon and Intel, macOS 11 or later).
+Pages, not the App Store. Each release has one disk image per
+architecture, `BenCode-arm64.dmg` (Apple Silicon) and `BenCode-x86_64.dmg`
+(Intel), for macOS 11 or later.
 
 | Piece | Where |
 | :--- | :--- |
@@ -48,7 +49,7 @@ Silicon and Intel, macOS 11 or later).
 
 5. Watch **Actions › Release**. The workflow builds both architectures with
    LTO, so it takes about 30 to 60 minutes. When it finishes, Release `v0.1.0`
-   has `BenCode.dmg` and `BenCode.dmg.sha256`.
+   has `BenCode-arm64.dmg` and `BenCode-x86_64.dmg`, each with its `.sha256`.
 6. Test on another machine (or a fresh macOS user): download from the landing
    page, drag into Applications, launch for the first time, run a turn with an
    agent, open the terminal, Help › Show Logs.
@@ -57,8 +58,8 @@ The workflow stops immediately if the tag does not match the version in
 `Cargo.toml`.
 
 **Pre-releases:** a tag with a hyphen (`v0.2.0-beta.1`) is marked as a
-pre-release. The landing page's `releases/latest/download/BenCode.dmg` link
-skips pre-releases, so it keeps pointing at the latest stable build.
+pre-release. The landing page's `releases/latest/download/BenCode-<arch>.dmg`
+links skip pre-releases, so they keep pointing at the latest stable build.
 
 **Trial build without releasing:** Actions › Release › Run workflow. By default
 a trial run builds Apple Silicon only and turns on *Quick build* (thin LTO,
@@ -70,9 +71,9 @@ run's *Artifacts*.
 
 ```bash
 rustup target add aarch64-apple-darwin x86_64-apple-darwin
-packaging/macos/bundle.sh                              # universal
+packaging/macos/bundle.sh                              # both architectures
 TARGETS=aarch64-apple-darwin packaging/macos/bundle.sh # Apple Silicon only, faster
-open target/bundle/BenCode.dmg
+open target/bundle/BenCode-arm64.dmg
 ```
 
 **Changing the icon:** the icon ("Ember Bronze") is drawn in code, in
@@ -94,7 +95,8 @@ The app checks for a new version once at launch, and whenever you choose
 **BenCode › Check for Updates…** or Settings › About. When one is available the
 rail shows an "Update to X" button. Clicking it makes the app:
 
-1. download `BenCode.app.tar.gz` from the latest Release;
+1. download its architecture's archive (`BenCode-arm64.app.tar.gz` or
+   `BenCode-x86_64.app.tar.gz`) from the latest Release;
 2. verify its minisign signature against the public key embedded at build time;
 3. check the bundle ID, the version and `codesign --verify`;
 4. replace the running `BenCode.app` with the new one and relaunch.
@@ -104,8 +106,8 @@ notes come from the `CHANGELOG.md` embedded in the app.
 
 The app reads `https://github.com/Benitdev/bencode/releases/latest/download/latest.json`
 (Tauri's `latest.json` format). `bundle.sh` generates that file together with
-the archive and its signature; the Release workflow uploads all three to every
-Release.
+each architecture's archive and signature; the Release workflow uploads them
+all to every Release.
 
 **Generating the keys (once, on your machine):**
 
@@ -172,7 +174,7 @@ downloaded from the web.
    | `APPLE_APP_PASSWORD` | the app-specific password from step 2 |
 
 4. From the next release on, the workflow signs the app with the hardened
-   runtime and `packaging/macos/entitlements.plist`, notarizes and staples the
+   runtime and `packaging/macos/entitlements.plist`, notarizes and staples each
    dmg, and drops the "First launch" section from the release notes.
 5. Remove the "Confirm the first launch" step from the landing page
    (`#first-launch` in `site/index.html`) and step 3 of Install in the README.
