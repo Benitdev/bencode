@@ -56,8 +56,10 @@ Workflow dừng ngay nếu tag không khớp version trong `Cargo.toml`.
 Link `releases/latest/download/BenCode.dmg` trên landing page bỏ qua
 pre-release, nên vẫn trỏ tới bản ổn định mới nhất.
 
-**Build thử mà không phát hành:** Actions › Release › Run workflow. File dmg
-nằm trong mục *Artifacts* của lần chạy đó.
+**Build thử mà không phát hành:** Actions › Release › Run workflow. Mặc định
+bản thử chỉ build Apple Silicon và bật *Quick build* (thin LTO, compile song
+song), nên xong nhanh hơn nhiều; chọn cả hai kiến trúc và bỏ *Quick build* để
+build y như bản phát hành. File dmg nằm trong mục *Artifacts* của lần chạy đó.
 
 **Build trên máy:**
 
