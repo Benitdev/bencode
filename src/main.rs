@@ -30,8 +30,18 @@ use monocode_import::ImportOutcome;
 fn main() {
     logging::init();
 
-    gpui_platform::application()
-        .with_assets(ui::icons::Assets)
+    let application = gpui_platform::application().with_assets(ui::icons::Assets);
+    // The Dock icon with no window on screen (hidden or minimized): bring
+    // BenCode's window back.
+    application.on_reopen(|cx| {
+        cx.activate(true);
+        for window in cx.windows() {
+            if let Err(err) = window.update(cx, |_, window, _| window.activate_window()) {
+                log::warn!("could not show the window: {err:#}");
+            }
+        }
+    });
+    application
         .run(|cx: &mut App| {
             // Without Ely's assets and fonts nothing can be drawn.
             if let Err(err) = ely_gpui_component::init(cx) {
@@ -90,6 +100,19 @@ fn main() {
                     cx.new(|cx| ui::window_root::WindowRoot::new(window, saved, import_failed, cx))
                 })
                 .expect("Failed to open BenCode window");
+            // BenCode's state, running agents included, lives in its one
+            // window, and macOS keeps the app running when it closes. So the
+            // close button hides the app, as ⌘H does, and the Dock icon brings
+            // it back; ⌘Q quits.
+            let hide_on_close = window.update(cx, |_, window, cx| {
+                window.on_window_should_close(cx, |_, cx| {
+                    cx.hide();
+                    false
+                });
+            });
+            if let Err(err) = hide_on_close {
+                log::error!("could not make the close button hide BenCode: {err:#}");
+            }
             if let Some(err) = import_error {
                 let detail = format!(
                     "{err}\n\nNothing will be saved this launch. BenCode will try the import again next time it starts."

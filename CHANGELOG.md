@@ -38,3 +38,5 @@ The first public build: a native macOS port of MonoCode.
   copied into BenCode's own data folder; MonoCode's files are only read.
 - Logs go to `~/Library/Logs/BenCode` when BenCode is not started from a
   terminal (Help › Show Logs), panics included.
+- The window's close button hides BenCode, as ⌘H does, so running agents
+  keep going; the Dock icon brings the window back and ⌘Q quits.
