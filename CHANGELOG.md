@@ -4,7 +4,7 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
-## [0.1.0] - Unreleased
+## [0.1.1] - 2026-10-08
 
 The first public build: a native macOS port of MonoCode.
 
