@@ -7,7 +7,8 @@ and **[Ely GPUI Components](https://elygpui.com/)**.
 It is a native port of **MonoCode** (Tauri + React): the same features, the same
 interface, the same database schema, and no WebView.
 
-**[Download BenCode for macOS](https://github.com/Benitdev/bencode/releases/latest/download/BenCode.dmg)**
+**Download BenCode for macOS: [Apple Silicon](https://github.com/Benitdev/bencode/releases/latest/download/BenCode-arm64.dmg)
+· [Intel](https://github.com/Benitdev/bencode/releases/latest/download/BenCode-x86_64.dmg)**
 · [Website](https://benitdev.github.io/bencode/)
 · [Releases](https://github.com/Benitdev/bencode/releases)
 
@@ -50,8 +51,11 @@ its right; close the last tab and the chat takes back the full width.
 
 ## Install
 
-1. Download [`BenCode.dmg`](https://github.com/Benitdev/bencode/releases/latest/download/BenCode.dmg)
-   (one universal build for Apple Silicon and Intel, macOS 11 or later).
+1. Download the build for your Mac (macOS 11 or later):
+   [`BenCode-arm64.dmg`](https://github.com/Benitdev/bencode/releases/latest/download/BenCode-arm64.dmg)
+   for Apple Silicon (M1 and later), or
+   [`BenCode-x86_64.dmg`](https://github.com/Benitdev/bencode/releases/latest/download/BenCode-x86_64.dmg)
+   for Intel.
 2. Open it and drag **BenCode** into **Applications**.
 3. The build is not notarized by Apple yet, so macOS asks for confirmation on
    first launch: open BenCode once, then go to **System Settings › Privacy &
@@ -96,7 +100,7 @@ cargo check                  # fast type check
 cargo test                   # unit tests
 cargo run                    # run the app
 cargo build --release        # optimized build
-packaging/macos/bundle.sh    # package BenCode.app and BenCode.dmg (target/bundle)
+packaging/macos/bundle.sh    # package BenCode.app and a dmg per architecture (target/bundle)
 RUST_LOG=debug cargo run     # turn on logging
 RUST_BACKTRACE=1 cargo run   # print a backtrace on panic
 ```
@@ -229,7 +233,7 @@ The full details, including the UI rules and common pitfalls, are in
 ## Releasing
 
 Pushing a `vX.Y.Z` tag (matching the version in `Cargo.toml`) makes GitHub
-Actions build `BenCode.dmg` and publish a GitHub Release. The steps, and how to
+Actions build `BenCode-arm64.dmg` and `BenCode-x86_64.dmg` and publish a GitHub Release. The steps, and how to
 turn on signing and notarization once there is an Apple Developer ID, are in
 [`docs/releasing.md`](docs/releasing.md).
 
