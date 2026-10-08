@@ -6,7 +6,7 @@ Silicon và Intel, macOS 11 trở lên).
 
 | Thành phần | Ở đâu |
 | :--- | :--- |
-| Icon app (nguồn SVG và PNG 1024) | `packaging/macos/icon.svg`, `icon-1024.png` |
+| Icon app (nguồn: `icon.mjs`; sinh ra SVG và PNG 1024) | `packaging/macos/icon.mjs`, `icon.svg`, `icon-1024.png` |
 | `Info.plist`, entitlements | `packaging/macos/` |
 | Script đóng gói `.app` / `.dmg` | `packaging/macos/bundle.sh` |
 | Workflow phát hành (tag `v*`) | `.github/workflows/release.yml` |
@@ -73,11 +73,16 @@ TARGETS=aarch64-apple-darwin packaging/macos/bundle.sh # chỉ Apple Silicon, nh
 open target/bundle/BenCode.dmg
 ```
 
-**Đổi icon:** sửa `packaging/macos/icon.svg`, rồi render lại PNG:
+**Đổi icon:** icon ("Ember Bronze") được vẽ bằng code trong
+`packaging/macos/icon.mjs`. Sửa file đó rồi chạy:
 
 ```bash
-NODE_PATH="$(npm root -g)" node packaging/macos/render-icon.mjs   # cần playwright
+NODE_PATH="$(npm root -g)" node packaging/macos/icon.mjs   # cần playwright
 ```
+
+Lệnh này ghi lại `icon.svg` (landing page cũng dùng), `icon-1024.png` (để
+`bundle.sh` dựng `AppIcon.icns`) và `assets/app-icon.png` (thẻ "Updated to"
+trên rail). Đừng sửa tay ba file đó.
 
 ---
 
