@@ -1,134 +1,148 @@
-# BenCode: lộ trình đạt 100% tính năng của MonoCode
+# BenCode: the road to 100% of MonoCode's features
 
-Tài liệu này ghi **những gì còn lại** để BenCode ngang bằng MonoCode, xếp theo
-mức ưu tiên. Phần đã xong chỉ được tóm tắt.
+This document records **what is left** before BenCode is on par with MonoCode,
+in priority order. Finished work is only summarized.
 
-- Trạng thái theo từng mảng: [`feature-migration-matrix.md`](feature-migration-matrix.md)
-- Danh sách chi tiết từng mục: [`PARITY-BACKLOG.md`](PARITY-BACKLOG.md)
+- Status by area: [`feature-migration-matrix.md`](feature-migration-matrix.md)
+- The item-by-item list: [`PARITY-BACKLOG.md`](PARITY-BACKLOG.md)
 
-Đối chiếu với code lần cuối: 2026-10-06.
-
----
-
-## 1. Đã hoàn thành
-
-- **Agent**: chạy lượt thật qua stdio cho Claude Code, Antigravity, Codex,
-  OpenCode; stream token và tool call; dừng lượt; hỏi quyền chạy tool; mỗi
-  thread chạy độc lập, có hàng đợi tin nhắn; catalog model lấy trực tiếp từ CLI.
-- **Chat**: transcript theo lượt, gập phần "đã làm việc", tìm trong hội thoại,
-  thanh mục lục prompt ở mép phải (prompt outline);
-  composer với model picker, chế độ quyền, `@` file, `/` skill, `/mcp`, đính kèm,
-  handoff, câu hỏi làm rõ, thông báo giới hạn sử dụng, `/compact`.
-- **Shell**: rail project (nhóm, ghim, menu, kéo thả, đổi kích thước), title
-  bar với tab workspace, Back / Forward, sidebar Sessions (thư mục, bộ lọc,
-  nhắc việc), chia pane và dock bằng kéo thả, menu bar và phím tắt chính.
-- **File**: Explorer đầy đủ thao tác, trình soạn code native (lưu atomic, phát
-  hiện file đổi trên đĩa), Go to File, mở bằng editor ngoài.
-- **Git**: Changes panel (stage, unstage, discard, commit, amend, sync, PR), đồ
-  thị commit, branch picker, tạo worktree khi gửi tin đầu tiên.
-- **Review**: diff working tree và commit theo kiểu `UnifiedDiffView`, mở thành
-  tab bên phải chat.
-- **Session review**: card "Changed N files" sau mỗi lượt có sửa file, với
-  Undo, Keep và Review thay đổi của riêng thread đó (dùng chung kho checkpoint
-  với MonoCode).
-- **Surface**: Search, Inbox GitHub (checks, comment, merge, sửa CI), Notes,
-  Automations (có scheduler 30 giây), Settings.
-- **Hạ tầng**: đọc ghi `bencode.db` (database riêng, cùng schema với MonoCode), `settings.json`, terminal native theo
-  project, phát hiện MCP server.
+Last checked against the code: 2026-10-06.
 
 ---
 
-## 2. Việc còn lại
+## 1. Done
 
-### P0 — Thiếu chức năng cốt lõi
+- **Agents**: real turns over stdio for Claude Code, Antigravity, Codex and
+  OpenCode; streamed tokens and tool calls; stopping a turn; tool permission
+  prompts; every thread runs independently with its own message queue; model
+  catalogs read straight from the CLIs.
+- **Chat**: a turn-by-turn transcript, folded "worked for" activity, find in
+  conversation, the prompt outline along the right edge;
+  a composer with the model picker, permission modes, `@` files, `/` skills,
+  `/mcp`, attachments, handoff, clarifying questions, the usage-limit notice,
+  `/compact`.
+- **Shell**: the project rail (groups, pins, menus, drag and drop, resizing),
+  the title bar with workspace tabs, Back / Forward, the Sessions sidebar
+  (folders, filters, reminders), splitting and docking panes by drag and drop,
+  the menu bar and the main shortcuts.
+- **Files**: an Explorer with every file operation, the native code editor
+  (atomic saves, on-disk change detection), Go to File, open in an external
+  editor.
+- **Git**: the Changes panel (stage, unstage, discard, commit, amend, sync, PR),
+  the commit graph, the branch picker, creating a worktree when the first
+  message is sent.
+- **Review**: working-tree and commit diffs in the style of `UnifiedDiffView`,
+  opened as tabs to the right of the chat.
+- **Session review**: a "Changed N files" card after every turn that edits
+  files, with Undo, Keep and Review for that thread's own changes (sharing its
+  checkpoint store with MonoCode).
+- **Surfaces**: Search, the GitHub Inbox (checks, comments, merge, CI repair),
+  Notes, Automations (with the 30-second scheduler), Settings.
+- **Infrastructure**: reading and writing `bencode.db` (its own database, in
+  MonoCode's schema) and `settings.json`, a native terminal per project, MCP
+  server discovery.
 
-- [~] **Vòng đời worktree**
-  - Đã có: liệt kê, tạo worktree khi gửi tin đầu (`ui/composer/new_worktree.rs`);
-    trang Settings › Worktrees (`ui/settings_worktrees.rs`) liệt kê worktree
-    của một project, Reveal, và dialog "Delete worktree?" như MonoCode:
-    luôn xoá ép buộc sau một lần xác nhận, tuỳ chọn "Also delete associated
-    sessions"; thread được giữ lại bị tách khỏi worktree (`worktree_removed`)
-    và chờ chọn working copy mới. Không xoá được worktree bị khoá, detached,
-    hoặc đang có file, terminal, agent dùng.
-    Trang có ô chọn project (đang mở, gần đây, đã lưu trữ) và dialog
-    "Create worktree". Thread được tách qua journal `worktree_removals` của
-    MonoCode trước khi git xoá: xoá lỗi thì khôi phục, bị gián đoạn thì xử lý
-    ở lần mở database kế tiếp (`db/worktree_removals.rs`).
-  - Cần: đổi tên nhánh theo tin nhắn đầu.
+---
+
+## 2. What is left
+
+### P0 — Missing core functionality
+
+- [~] **Worktree lifecycle**
+  - Done: listing, and creating a worktree when the first message is sent
+    (`ui/composer/new_worktree.rs`); the Settings › Worktrees page
+    (`ui/settings_worktrees.rs`) lists a project's worktrees, with Reveal and
+    MonoCode's "Delete worktree?" dialog: always a forced delete after a single
+    confirmation, with the "Also delete associated sessions" option; threads
+    that are kept are detached from the worktree (`worktree_removed`) and wait
+    for a new working copy to be picked. A worktree that is locked, detached,
+    or in use by a file, a terminal or an agent cannot be deleted.
+    The page has a project picker (open, recent, archived) and a "Create
+    worktree" dialog. Threads are detached through MonoCode's
+    `worktree_removals` journal before git deletes anything: a failed delete is
+    rolled back, and an interrupted one is settled the next time the database
+    opens (`db/worktree_removals.rs`).
+  - To do: renaming the branch after the first message.
   - MonoCode: `source-control/ui/WorktreesPage.tsx`, `DeleteWorktreeDialog.tsx`,
     `src-tauri/src/worktrees.rs`, `worktree_lifecycle.rs`.
-- [ ] **Cài đặt provider**: model mặc định theo provider, "Use by default",
-  "Show in picker", ghi đè đường dẫn CLI.
-- [ ] **Skills**: trang Skills trong Settings, bật tắt từng skill.
-- [ ] **MCP**: thêm, xoá, đăng nhập, xem cấu hình; đọc cấu hình Codex
-  (`~/.codex/config.toml`) và OpenCode. Hiện chỉ có phần phát hiện.
+- [ ] **Provider settings**: a default model per provider, "Use by default",
+  "Show in picker", overriding the CLI path.
+- [ ] **Skills**: a Skills page in Settings, with a toggle per skill.
+- [ ] **MCP**: add, remove, sign in, view configuration; read the Codex
+  (`~/.codex/config.toml`) and OpenCode configuration. Only discovery exists
+  today.
 
-### P1 — Khác biệt thấy được
+### P1 — Visible differences
 
 - [ ] **Review**
-  - Tô màu cú pháp trong diff.
-  - Chế độ diff hai cột trong editor, mặc định của MonoCode
+  - Syntax highlighting in diffs.
+  - The side-by-side diff mode in the editor, MonoCode's default
     (`DIFF_VIEWER_DEFAULT = "editor"`).
-- [ ] **Session review**: Keep / Undo cho từng file (engine đã hỗ trợ), tích
-  hợp thay đổi của worker khi có orchestration (`session_checkpoint_apply`).
-- [ ] **Pane file**: lưu theo từng tab workspace và khôi phục khi mở lại; chia
-  pane editor; menu chuột phải trên tab.
-- [ ] **Editor**: footer thay cho toolbar; xem trước ảnh và markdown.
-- [ ] **Phím tắt và menu**: menu Edit / Window / Help, ⌘1-9, ⌃Tab, ⇧⌘A,
-  trang Keybindings.
-- [ ] **Search**: điều hướng bằng bàn phím, xếp hạng và phạm vi như MonoCode,
-  mở file trong editor.
-- [ ] **Notes**: chuyển Preview / Source, giao diện tag, lưu một lượt thành
-  ghi chú, chèn `@note/`.
-- [ ] **Automations**: trình sửa trigger, cài đặt session, bảng lịch sử chạy,
-  Run now chạy song song.
-- [ ] **Terminal**: link và tìm kiếm trong terminal; vị trí và kích thước dock.
-- [ ] **Quick Composer**: cửa sổ nổi mở bằng phím tắt toàn hệ thống, đính kèm
-  ảnh chụp màn hình. MonoCode: `features/quick-composer/`,
+- [ ] **Session review**: Keep / Undo per file (the engine already supports
+  it), and integrating worker changes under orchestration
+  (`session_checkpoint_apply`).
+- [ ] **File pane**: saved per workspace tab and restored on reopen; split
+  editor panes; a context menu on tabs.
+- [ ] **Editor**: a footer instead of the toolbar; image and markdown previews.
+- [ ] **Shortcuts and menus**: the Edit / Window / Help menus, ⌘1-9, ⌃Tab,
+  ⇧⌘A, a Keybindings page.
+- [ ] **Search**: keyboard navigation, MonoCode's ranking and scopes, opening
+  files in the editor.
+- [ ] **Notes**: the Preview / Source switch, the tag UI, saving a turn as a
+  note, inserting `@note/`.
+- [ ] **Automations**: the trigger editor, session settings, the run history
+  table, Run now in parallel.
+- [ ] **Terminal**: links and search in the terminal; the dock's position and
+  size.
+- [ ] **Quick Composer**: a floating window opened by a system-wide shortcut,
+  with screenshot attachments. MonoCode: `features/quick-composer/`,
   `src-tauri/src/quick_composer.rs`.
 
-### P2 — Mở rộng
+### P2 — Extensions
 
-- [ ] **Thêm harness**: Pi, OMP, Cursor, Grok, Hermes (MonoCode có trong
-  `integrations/harness/providers/`; BenCode mới có icon).
-- [ ] **OpenCode rewind**: cần chạy qua `opencode serve` thay cho `opencode run`.
-- [ ] **Orchestration nhiều agent**: BenCode chỉ đọc bản ghi của MonoCode để
-  hiện badge trên card; chưa có orchestrator và đồ thị subagent.
+- [ ] **More harnesses**: Pi, OMP, Cursor, Grok, Hermes (MonoCode has them in
+  `integrations/harness/providers/`; BenCode only has their icons so far).
+- [ ] **OpenCode rewind**: needs to run through `opencode serve` instead of
+  `opencode run`.
+- [ ] **Multi-agent orchestration**: BenCode only reads MonoCode's records to
+  show a badge on the card; there is no orchestrator or subagent graph yet.
   MonoCode: `features/orchestration/`.
-- [ ] **Issue tracker khác GitHub**: GitLab, Linear, Jira, Azure DevOps.
+- [ ] **Issue trackers other than GitHub**: GitLab, Linear, Jira, Azure DevOps.
   MonoCode: `src-tauri/src/{gitlab,linear,jira,azure_devops}.rs`.
-- [ ] **Remote workspace qua SSH**. MonoCode: `src-tauri/src/remote_ssh.rs`,
+- [ ] **Remote workspaces over SSH**. MonoCode: `src-tauri/src/remote_ssh.rs`,
   `remote.rs`.
-- [ ] **MCP supervisor**: khởi chạy, giám sát server và JSON-RPC client.
-- [ ] **Tích hợp macOS**: icon trên menu bar, badge trên Dock, thông báo hệ
-  thống. MonoCode: `src-tauri/src/tray.rs`, `notifications.rs`.
-- [ ] **Giao diện**: hình nền chat theo project (`chat_background.rs`),
-  thông báo cập nhật harness (`harness_updates.rs`). Panel "Working agents" đã có.
+- [ ] **MCP supervisor**: launching and supervising servers, and a JSON-RPC
+  client.
+- [ ] **macOS integration**: a menu bar icon, a Dock badge, system
+  notifications. MonoCode: `src-tauri/src/tray.rs`, `notifications.rs`.
+- [ ] **Appearance**: per-project chat backgrounds (`chat_background.rs`),
+  harness update notices (`harness_updates.rs`). The "Working agents" panel is
+  done.
 
 ---
 
-## 3. Bảng đối chiếu file cho phần chưa xong
+## 3. File map for unfinished work
 
-| Tính năng | MonoCode | BenCode | Trạng thái |
+| Feature | MonoCode | BenCode | Status |
 | :--- | :--- | :--- | :--- |
-| Vòng đời worktree | `src-tauri/src/worktree_lifecycle.rs` | `src/git/worktrees.rs`, `src/app/worktree_lifecycle.rs`, `src/ui/settings_worktrees.rs` | 🟡 Thiếu đổi tên nhánh |
-| MCP | `src-tauri/src/mcp.rs` | `src/mcp/mod.rs` | 🟡 Chỉ phát hiện |
-| Menu macOS | `src-tauri/src/menu.rs` | `src/app/commands.rs` | 🟡 Thiếu Edit / Window / Help |
-| Review hai cột | `@codemirror/merge` | `src/ui/diff_viewer.rs` | 🟡 Chỉ có unified |
-| Orchestration | `features/orchestration/` | `src/db/orchestration.rs` | 🟡 Chỉ đọc |
-| Quick Composer | `src-tauri/src/quick_composer.rs` | chưa có | ⚪ |
-| Tracker khác | `src-tauri/src/{gitlab,linear,jira,azure_devops}.rs` | chưa có | ⚪ |
-| Remote SSH | `src-tauri/src/remote_ssh.rs` | chưa có | ⚪ |
-| Tray, Dock badge | `src-tauri/src/tray.rs` | chưa có | ⚪ |
-| Hình nền chat | `src-tauri/src/chat_background.rs` | chưa có | ⚪ |
+| Worktree lifecycle | `src-tauri/src/worktree_lifecycle.rs` | `src/git/worktrees.rs`, `src/app/worktree_lifecycle.rs`, `src/ui/settings_worktrees.rs` | 🟡 Branch rename missing |
+| MCP | `src-tauri/src/mcp.rs` | `src/mcp/mod.rs` | 🟡 Discovery only |
+| macOS menus | `src-tauri/src/menu.rs` | `src/app/commands.rs` | 🟡 Edit / Window / Help missing |
+| Side-by-side review | `@codemirror/merge` | `src/ui/diff_viewer.rs` | 🟡 Unified only |
+| Orchestration | `features/orchestration/` | `src/db/orchestration.rs` | 🟡 Read-only |
+| Quick Composer | `src-tauri/src/quick_composer.rs` | not yet | ⚪ |
+| Other trackers | `src-tauri/src/{gitlab,linear,jira,azure_devops}.rs` | not yet | ⚪ |
+| Remote SSH | `src-tauri/src/remote_ssh.rs` | not yet | ⚪ |
+| Tray, Dock badge | `src-tauri/src/tray.rs` | not yet | ⚪ |
+| Chat background | `src-tauri/src/chat_background.rs` | not yet | ⚪ |
 
 ---
 
-## 4. Cách làm một mục
+## 4. How to take on an item
 
-1. Đọc model và component tương ứng trong `reference/monocode`.
-2. Port phần logic thành hàm thuần có test trước, rồi mới dựng view.
-3. Tuân theo quy tắc trong [`AGENTS.md`](../../AGENTS.md).
-4. Chạy `cargo test`, chạy app và thử trực tiếp.
-5. Đánh dấu mục ở đây và trong `PARITY-BACKLOG.md`, cập nhật trạng thái trong
+1. Read the matching model and component in `reference/monocode`.
+2. Port the logic into pure, tested functions first, then build the view.
+3. Follow the rules in [`AGENTS.md`](../../AGENTS.md).
+4. Run `cargo test`, then run the app and exercise the change.
+5. Tick the item here and in `PARITY-BACKLOG.md`, and update its status in
    `feature-migration-matrix.md`.

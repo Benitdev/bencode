@@ -1,86 +1,86 @@
 # BenCode ⚡
 
-**BenCode** là control plane dạng desktop cho các coding agent CLI (Claude Code,
-Codex, Antigravity, OpenCode), viết 100% bằng **Rust** với **Zed GPUI** và
-**[Ely GPUI Components](https://elygpui.com/)**.
+**BenCode** is a desktop control plane for coding-agent CLIs (Claude Code,
+Codex, Antigravity, OpenCode), written entirely in **Rust** with **Zed's GPUI**
+and **[Ely GPUI Components](https://elygpui.com/)**.
 
-Đây là bản port native của **MonoCode** (Tauri + React): cùng tính năng, cùng
-giao diện, cùng schema cơ sở dữ liệu, nhưng không có WebView.
+It is a native port of **MonoCode** (Tauri + React): the same features, the same
+interface, the same database schema, and no WebView.
 
-**[Tải BenCode cho macOS](https://github.com/Benitdev/bencode/releases/latest/download/BenCode.dmg)**
-· [Trang giới thiệu](https://benitdev.github.io/bencode/)
+**[Download BenCode for macOS](https://github.com/Benitdev/bencode/releases/latest/download/BenCode.dmg)**
+· [Website](https://benitdev.github.io/bencode/)
 · [Releases](https://github.com/Benitdev/bencode/releases)
 
 ---
 
-## Mục tiêu
+## Goals
 
-1. **Native hoàn toàn**: không Electron, không Chromium, không WebKit. Mọi thứ
-   được GPUI vẽ trực tiếp bằng GPU (Metal trên macOS).
-2. **Nhanh và nhẹ**: mục tiêu khởi động dưới 50ms và dùng khoảng 30MB RAM.
-3. **Local-first, dữ liệu riêng**: thread, checkpoint và account nằm trong thư
-   mục của BenCode. Lần chạy đầu, dữ liệu của MonoCode (nếu có) được sao chép
-   sang một lần; sau đó hai ứng dụng độc lập.
-4. **Không tốn thêm token**: BenCode chỉ điều khiển CLI qua stdio và đọc luồng
-   JSON chúng in ra.
+1. **Fully native**: no Electron, no Chromium, no WebKit. GPUI draws everything
+   on the GPU (Metal on macOS).
+2. **Fast and small**: the targets are a sub-50ms startup and about 30MB of RAM.
+3. **Local-first, with its own data**: threads, checkpoints and accounts live in
+   BenCode's own folder. On first launch, MonoCode's data (if any) is copied
+   over once; from then on the two apps are independent.
+4. **No extra token cost**: BenCode only drives the CLIs over stdio and reads
+   the JSON stream they print.
 
 ---
 
-## Tính năng
+## Features
 
-| Khu vực | Có gì |
+| Area | What you get |
 | :--- | :--- |
-| **Chat** | Transcript theo lượt (câu trả lời, reasoning, tool call), nhiều pane chia đôi, tìm trong hội thoại (⌘F) |
-| **Composer** | Chọn model, chế độ quyền, nhánh / worktree; `@` nhắc file, `/` gọi skill, `/mcp`; đính kèm file; handoff sang agent khác; sửa và gửi lại lượt cuối |
-| **Agent** | Claude Code, Antigravity (`agy`), Codex, OpenCode; hỏi quyền chạy tool ngay trong transcript; theo dõi token và giới hạn sử dụng |
-| **File** | Explorer (tạo, đổi tên, copy, cut, paste, xoá), trình soạn code có lưu atomic và phát hiện file đổi trên đĩa, Go to File (⌘P) |
-| **Git** | Staged / unstaged, commit, sinh commit message, fetch / pull / push, tạo PR, đồ thị commit, worktree |
-| **Session review** | Sau mỗi lượt có sửa file: card "Changed N files" với Undo, Keep và Review riêng cho thay đổi của thread đó |
-| **Review** | Diff của working tree và của commit: các file xếp chồng, header dính, gập đoạn không đổi, stage / discard ngay trên header |
-| **Terminal** | Terminal native theo từng project (⌘J) |
-| **Inbox** | Issue và pull request GitHub qua `gh`: checks, comment, merge, nhờ agent sửa CI. Issue Nulab Backlog qua API key (Settings › Integrations): comment, đổi status, giao cho agent |
-| **Notes** | Ghi chú markdown, tag, gắn với thread |
-| **Automations** | Prompt chạy theo lịch, lịch sử chạy |
-| **Khác** | Tìm kiếm toàn cục (⌘K), nhắc việc theo thread, thư mục thread, MCP server, mở bằng editor ngoài |
+| **Chat** | A turn-by-turn transcript (answers, reasoning, tool calls), split panes, find in conversation (⌘F) |
+| **Composer** | Model, permission mode and branch / worktree pickers; `@` to mention files, `/` to run skills, `/mcp`; file attachments; handoff to another agent; edit and resend the last turn |
+| **Agents** | Claude Code, Antigravity (`agy`), Codex, OpenCode; tool permission prompts right in the transcript; token and usage-limit tracking |
+| **Files** | Explorer (create, rename, copy, cut, paste, delete), a code editor with atomic saves and on-disk change detection, Go to File (⌘P) |
+| **Git** | Staged / unstaged changes, commit, generated commit messages, fetch / pull / push, pull request creation, commit graph, worktrees |
+| **Session review** | After every turn that edits files: a "Changed N files" card with Undo, Keep and Review, scoped to that thread's changes |
+| **Review** | Working-tree and commit diffs: stacked files, sticky headers, folded unchanged regions, stage / discard from the header |
+| **Terminal** | A native terminal per project (⌘J) |
+| **Inbox** | GitHub issues and pull requests through `gh`: checks, comments, merge, ask an agent to fix CI. Nulab Backlog issues through an API key (Settings › Integrations): comments, status changes, send to an agent |
+| **Notes** | Markdown notes with tags, linked to threads |
+| **Automations** | Scheduled prompts and their run history |
+| **More** | Universal search (⌘K), per-thread reminders, thread folders, MCP servers, open in an external editor |
 
-Chat luôn hiển thị. File, diff và commit mở thành tab trong một pane bên phải
-chat; đóng tab cuối thì chat lấy lại toàn bộ chiều rộng.
+The chat is always visible. Files, diffs and commits open as tabs in a pane to
+its right; close the last tab and the chat takes back the full width.
 
 ---
 
-## Cài đặt
+## Install
 
-1. Tải [`BenCode.dmg`](https://github.com/Benitdev/bencode/releases/latest/download/BenCode.dmg)
-   (một bản universal cho cả Apple Silicon và Intel, macOS 11 trở lên).
-2. Mở file và kéo **BenCode** vào **Applications**.
-3. Bản build chưa được Apple notarize, nên lần mở đầu macOS sẽ hỏi lại: mở
-   BenCode một lần, rồi vào **System Settings › Privacy & Security › Open
-   Anyway**. Nếu macOS báo app "is damaged", chạy:
+1. Download [`BenCode.dmg`](https://github.com/Benitdev/bencode/releases/latest/download/BenCode.dmg)
+   (one universal build for Apple Silicon and Intel, macOS 11 or later).
+2. Open it and drag **BenCode** into **Applications**.
+3. The build is not notarized by Apple yet, so macOS asks for confirmation on
+   first launch: open BenCode once, then go to **System Settings › Privacy &
+   Security › Open Anyway**. If macOS says the app "is damaged", run:
 
    ```bash
    xattr -dr com.apple.quarantine /Applications/BenCode.app
    ```
 
-Sau đó BenCode tự cập nhật: có bản mới thì rail hiện nút "Update to X"
-(hoặc vào **BenCode › Check for Updates…**).
+After that BenCode keeps itself up to date: when a new version is out, the rail
+shows an "Update to X" button (or use **BenCode › Check for Updates…**).
 
-Gặp lỗi? **Help › Show Logs** mở file log để đính kèm vào
-[issue](https://github.com/Benitdev/bencode/issues).
-
----
-
-## Yêu cầu
-
-- **macOS 11** trở lên (nền tảng chính; dùng Metal và API Cocoa).
-- **git** trong `PATH`.
-- Ít nhất một agent CLI đã cài và đăng nhập: `claude`, `agy`, `codex` hoặc `opencode`.
-- Tuỳ chọn: **`gh`** (GitHub CLI) cho Inbox và pull request.
-- Chỉ khi build từ mã nguồn: **Rust** bản stable mới (edition 2024) cùng Xcode
-  Command Line Tools.
+Hit a problem? **Help › Show Logs** opens the log file so you can attach it to
+an [issue](https://github.com/Benitdev/bencode/issues).
 
 ---
 
-## Chạy từ mã nguồn
+## Requirements
+
+- **macOS 11** or later (the primary platform; BenCode uses Metal and the Cocoa APIs).
+- **git** on your `PATH`.
+- At least one agent CLI, installed and signed in: `claude`, `agy`, `codex` or `opencode`.
+- Optional: **`gh`** (the GitHub CLI) for the Inbox and pull requests.
+- Only when building from source: a recent stable **Rust** (2024 edition) and
+  the Xcode Command Line Tools.
+
+---
+
+## Running from source
 
 ```bash
 git clone https://github.com/Benitdev/bencode.git
@@ -88,146 +88,153 @@ cd bencode
 cargo run
 ```
 
-Lần build đầu mất vài phút vì phải biên dịch GPUI. Các lệnh hay dùng:
+The first build takes a few minutes because GPUI has to compile. Commands you
+will use often:
 
 ```bash
-cargo check                  # kiểm tra kiểu, nhanh
-cargo test                   # unit test
-cargo run                    # chạy ứng dụng
-cargo build --release        # bản tối ưu
-packaging/macos/bundle.sh    # đóng gói BenCode.app và BenCode.dmg (target/bundle)
-RUST_LOG=debug cargo run     # bật log
-RUST_BACKTRACE=1 cargo run   # in backtrace khi panic
+cargo check                  # fast type check
+cargo test                   # unit tests
+cargo run                    # run the app
+cargo build --release        # optimized build
+packaging/macos/bundle.sh    # package BenCode.app and BenCode.dmg (target/bundle)
+RUST_LOG=debug cargo run     # turn on logging
+RUST_BACKTRACE=1 cargo run   # print a backtrace on panic
 ```
 
-> **Lưu ý:** `cargo run` mở dữ liệu thật của BenCode (`bencode.db` bên dưới),
-> giống bản đã cài. Thread, ghi chú và automation sửa ở đây là thật.
+> **Note:** `cargo run` opens BenCode's real data (the `bencode.db` below), just
+> like the installed app. Threads, notes and automations you change here are
+> the real ones.
 
 ---
 
-## Dữ liệu nằm ở đâu
+## Where your data lives
 
-| Dữ liệu | Đường dẫn |
+| Data | Path |
 | :--- | :--- |
-| Thread, block, ghi chú, automation, nhắc việc | `~/Library/Application Support/BenCode/bencode.db` |
-| Thiết lập riêng của BenCode | `~/Library/Application Support/BenCode/settings.json` |
-| Checkpoint để xem lại và hoàn tác thay đổi của agent | `~/Library/Application Support/BenCode/checkpoints` |
-| Thư mục cấu hình của từng account provider | `~/Library/Application Support/BenCode/provider-accounts` |
-| Log (khi không chạy từ terminal) | `~/Library/Logs/BenCode/bencode.log` |
+| Threads, blocks, notes, automations, reminders | `~/Library/Application Support/BenCode/bencode.db` |
+| BenCode's own settings | `~/Library/Application Support/BenCode/settings.json` |
+| Checkpoints for reviewing and undoing an agent's changes | `~/Library/Application Support/BenCode/checkpoints` |
+| Each provider account's config directory | `~/Library/Application Support/BenCode/provider-accounts` |
+| Logs (when not run from a terminal) | `~/Library/Logs/BenCode/bencode.log` |
 
-BenCode không dùng chung dữ liệu nào với MonoCode. Lần chạy đầu tiên chưa có
-`bencode.db`, nó sao chép một lần database, checkpoints và account profiles của
-MonoCode (nếu có) sang thư mục trên; MonoCode chỉ bị đọc, không bị sửa.
+BenCode shares no data with MonoCode. On the very first launch, when there is no
+`bencode.db` yet, it copies MonoCode's database, checkpoints and account
+profiles (if any) into the folder above, once. MonoCode's files are only read,
+never modified.
 
 ---
 
-## Phím tắt
+## Keyboard shortcuts
 
-| Phím | Tác dụng |
+| Key | Action |
 | :--- | :--- |
-| ⌘T | Thread mới |
-| ⌘O | Mở project |
-| ⌘K | Tìm kiếm |
+| ⌘T | New thread |
+| ⌘O | Open project |
+| ⌘K | Search |
 | ⌘P | Go to File |
-| ⌘F / ⌘G / ⇧⌘G | Tìm trong hội thoại / kết quả sau / trước |
-| ⌘. | Đổi model |
-| ⌘S | Lưu file đang mở |
-| ⌘W | Đóng tab của pane file (nếu đang thao tác ở đó), nếu không thì đóng thread |
-| ⌘B / ⇧⌘B | Ẩn hiện rail project / sidebar |
-| ⌘J / ⌘` | Ẩn hiện terminal / terminal mới |
-| ⌘D / ⇧⌘D | Chia pane sang phải / xuống dưới |
-| ⌥⌘←→↑↓ | Chuyển focus giữa các pane |
-| ⇧⌘] / ⇧⌘[ | Tab kế tiếp / trước |
-| ⌘] / ⌘[ | Tới / lui theo lịch sử tab |
+| ⌘F / ⌘G / ⇧⌘G | Find in conversation / next / previous match |
+| ⌘. | Switch model |
+| ⌘S | Save the open file |
+| ⌘W | Close the file pane's tab (when that pane has focus), otherwise close the thread |
+| ⌘B / ⇧⌘B | Toggle the project rail / sidebar |
+| ⌘J / ⌘` | Toggle the terminal / new terminal |
+| ⌘D / ⇧⌘D | Split the pane right / down |
+| ⌥⌘←→↑↓ | Move focus between panes |
+| ⇧⌘] / ⇧⌘[ | Next / previous tab |
+| ⌘] / ⌘[ | Forward / back through tab history |
 | ⌘, | Settings |
-| Esc | Đóng view đang mở |
+| Esc | Close the open view |
 
-Toàn bộ phím tắt và menu được khai báo ở `src/app/commands.rs`.
+Every shortcut and menu is declared in `src/app/commands.rs`.
 
 ---
 
-## Kiến trúc
+## Architecture
 
 ```
 bencode/
 ├── Cargo.toml
-├── AGENTS.md            hướng dẫn chi tiết cho developer và AI agent
-├── CHANGELOG.md         thay đổi theo từng bản phát hành
-├── assets/              icon SVG (Lucide bổ sung, logo provider)
-├── docs/migration/      backlog so khớp với MonoCode
-├── docs/releasing.md    cách phát hành một bản mới
-├── packaging/macos/     icon app, Info.plist, script đóng gói .app / .dmg
+├── AGENTS.md            the detailed guide for developers and AI agents
+├── CHANGELOG.md         changes in each release
+├── assets/              SVG icons (extra Lucide icons, provider logos)
+├── docs/migration/      the MonoCode parity backlog
+├── docs/releasing.md    how to cut a release
+├── packaging/macos/     app icon, Info.plist, the .app / .dmg bundling script
 ├── site/                landing page (GitHub Pages)
-├── tests/fixtures/      output CLI ghi lại để test parser
+├── tests/fixtures/      recorded CLI output for parser tests
 └── src/
-    ├── main.rs          cửa sổ, theme, keymap
-    ├── app.rs           BenCodeApp: entity duy nhất giữ state
-    ├── app/             logic theo từng mảng (agent, pane, workspace, settings…)
-    ├── ui/              toàn bộ view
-    ├── harness/         điều khiển agent CLI qua stdio
-    ├── db/              SQLite của BenCode (schema của MonoCode)
-    ├── git/             git qua CLI (status, diff, sync, graph, worktree, checkpoint)
-    ├── github.rs        GitHub qua `gh`
-    ├── mcp/, skills/    MCP server và SKILL.md
-    ├── schedule.rs      lịch chạy automation
+    ├── main.rs          window, theme, keymap
+    ├── app.rs           BenCodeApp: the single entity that holds state
+    ├── app/             logic by concern (agent, panes, workspace, settings…)
+    ├── ui/              every view
+    ├── harness/         driving agent CLIs over stdio
+    ├── db/              BenCode's SQLite database (MonoCode's schema)
+    ├── git/             git through the CLI (status, diff, sync, graph, worktrees, checkpoints)
+    ├── github.rs        GitHub through `gh`
+    ├── mcp/, skills/    MCP servers and SKILL.md
+    ├── schedule.rs      automation schedules
     └── settings.rs      settings.json
 ```
 
-Luồng một lượt chat:
+How a chat turn flows:
 
 ```
-prompt ─► app/agent.rs ─► harness::spawn ─► tiến trình CLI
-                                               │ stdout (JSON từng dòng)
+prompt ─► app/agent.rs ─► harness::spawn ─► CLI process
+                                               │ stdout (JSON lines)
                                                ▼
                                LineParser ─► AgentEvent
                                                │
               transcript ◄── session.blocks ◄──┘──► SQLite
 ```
 
-Vài nguyên tắc cốt lõi:
+A few core principles:
 
-- **Không IO trong `render()`** và không chặn UI thread: git, đĩa, SQLite chạy
-  trên background executor của GPUI; view chỉ đọc cache (`self.workspace`).
-- **Tokio chỉ dành cho tiến trình harness** (`src/harness/runtime.rs`); executor
-  của GPUI không có Tokio reactor.
-- **Dùng component của Ely** thay vì tự viết; màu lấy từ `cx.theme().colors`.
-- **Giữ nguyên dữ liệu không hiểu** khi ghi DB: dòng sao chép từ MonoCode mang
-  theo cả những cột BenCode chưa dùng.
+- **No IO in `render()`**, and nothing blocks the UI thread: git, disk and
+  SQLite work runs on GPUI's background executor, and views only read a cache
+  (`self.workspace`).
+- **Tokio is for harness processes only** (`src/harness/runtime.rs`); GPUI's
+  executor has no Tokio reactor.
+- **Use Ely's components** instead of hand-rolling them; colours come from
+  `cx.theme().colors`.
+- **Preserve data BenCode does not understand** when writing to the database:
+  rows copied from MonoCode carry columns BenCode does not use yet.
 
-Chi tiết đầy đủ, kèm các quy tắc UI và lỗi thường gặp, nằm trong
+The full details, including the UI rules and common pitfalls, are in
 [`AGENTS.md`](AGENTS.md).
 
 ---
 
 ## Stack
 
-| Thành phần | Công nghệ |
+| Layer | Technology |
 | :--- | :--- |
-| Ngôn ngữ | Rust (edition 2024) |
-| UI | [GPUI](https://www.gpui.rs/) của Zed |
-| Component | [Ely GPUI Components](https://github.com/ZacharyZhang-NY/Ely-GPUI-Components) |
-| Cơ sở dữ liệu | SQLite qua `rusqlite` (bundled) |
-| Tiến trình agent | Tokio |
-| Thời gian, băm, JSON | `jiff`, `sha2`, `serde_json` |
+| Language | Rust (2024 edition) |
+| UI | Zed's [GPUI](https://www.gpui.rs/) |
+| Components | [Ely GPUI Components](https://github.com/ZacharyZhang-NY/Ely-GPUI-Components) |
+| Database | SQLite via `rusqlite` (bundled) |
+| Agent processes | Tokio |
+| Time, hashing, JSON | `jiff`, `sha2`, `serde_json` |
 
 ---
 
-## Đóng góp
+## Contributing
 
-1. Đọc [`AGENTS.md`](AGENTS.md) trước khi sửa code.
-2. Khi port một tính năng, đối chiếu mã nguồn MonoCode trong `reference/monocode`
-   (symlink, không nằm trong git).
-3. Chạy `cargo test`, rồi chạy ứng dụng và thử trực tiếp phần vừa sửa.
-4. Việc còn thiếu so với MonoCode được ghi ở `docs/migration/PARITY-BACKLOG.md`.
+1. Read [`AGENTS.md`](AGENTS.md) before changing code.
+2. When porting a feature, check it against the MonoCode source in
+   `reference/monocode` (a symlink, not tracked in git).
+3. Run `cargo test`, then run the app and exercise what you changed.
+4. What is still missing compared to MonoCode is tracked in
+   `docs/migration/PARITY-BACKLOG.md`.
 
-## Phát hành
+## Releasing
 
-Đẩy tag `vX.Y.Z` (trùng version trong `Cargo.toml`) là GitHub Actions build
-`BenCode.dmg` và tạo GitHub Release. Các bước, cùng cách bật ký và notarize khi
-có Apple Developer ID, nằm trong [`docs/releasing.md`](docs/releasing.md).
+Pushing a `vX.Y.Z` tag (matching the version in `Cargo.toml`) makes GitHub
+Actions build `BenCode.dmg` and publish a GitHub Release. The steps, and how to
+turn on signing and notarization once there is an Apple Developer ID, are in
+[`docs/releasing.md`](docs/releasing.md).
 
-## Giấy phép
+## License
 
-MIT, xem [`LICENSE`](LICENSE). Icon Lucide trong `assets/icons` (ISC) và
-Material Icon Theme trong `assets/file-icons` (MIT) giữ giấy phép riêng ở thư
-mục của chúng; logo các provider thuộc về chủ sở hữu tương ứng.
+MIT, see [`LICENSE`](LICENSE). The Lucide icons in `assets/icons` (ISC) and the
+Material Icon Theme in `assets/file-icons` (MIT) keep their own licenses in
+their folders; provider logos belong to their respective owners.
