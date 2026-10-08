@@ -8,7 +8,7 @@ use anyhow::Result;
 use rusqlite::params;
 use serde_json::Value;
 
-use super::{AutomationRunRow, AppDb};
+use super::{AppDb, AutomationRunRow, RunStatus, RunTrigger};
 
 /// MonoCode's default `missedRunGraceMinutes`.
 pub const DEFAULT_GRACE_MINUTES: i64 = 720;
@@ -48,12 +48,12 @@ impl AppDb {
         let run = AutomationRunRow {
             id: format!("run-{now}-{id}"),
             automation_id: id.to_string(),
-            trigger: "scheduled".to_string(),
+            trigger: RunTrigger::Scheduled,
             scheduled_for: expected_next,
             created_at: now,
             started_at: None,
             completed_at: missed.then_some(now),
-            status: if missed { "skipped" } else { "pending" }.to_string(),
+            status: if missed { RunStatus::Skipped } else { RunStatus::Pending },
             session_id: None,
             error: missed.then(|| MISSED.to_string()),
         };
@@ -71,13 +71,23 @@ impl AppDb {
         Ok(Some(run))
     }
 
-    /// Marks a pending run as started in `session_id`.
+    /// Marks a pending run as started in `session_id`, which the
+    /// automation remembers for "Continue last".
     pub fn start_automation_run(&self, run_id: &str, session_id: &str, now: i64) -> Result<()> {
         self.patch_run(run_id, |fields| {
-            fields.insert("status".into(), Value::from("running"));
+            fields.insert("status".into(), Value::from(RunStatus::Running.id()));
             fields.insert("startedAt".into(), Value::from(now));
             fields.insert("sessionId".into(), Value::from(session_id));
-        })
+        })?;
+        self.note_last_run(run_id, RunStatus::Running, None, now)?;
+        self.conn.execute(
+            "UPDATE automations
+             SET definition_json = json_set(definition_json, '$.lastSessionId', ?1)
+             WHERE id = (SELECT automation_id FROM automation_runs WHERE id = ?2)
+               AND json_valid(definition_json)",
+            params![session_id, run_id],
+        )?;
+        Ok(())
     }
 
     /// Closes runs a previous BenCode left `running` or `pending`. Returns
@@ -93,13 +103,13 @@ impl AppDb {
             .query_map([started_before], |row| Ok((row.get(0)?, row.get(1)?)))?
             .collect::<rusqlite::Result<_>>()?;
         for (id, status) in &stale {
-            let (status, error) = if status == "running" {
-                ("cancelled", INTERRUPTED)
+            let (status, error) = if status == RunStatus::Running.id() {
+                (RunStatus::Cancelled, INTERRUPTED)
             } else {
-                ("skipped", NOT_STARTED)
+                (RunStatus::Skipped, NOT_STARTED)
             };
             self.patch_run(id, |fields| {
-                fields.insert("status".into(), Value::from(status));
+                fields.insert("status".into(), Value::from(status.id()));
                 fields.insert("completedAt".into(), Value::from(now));
                 fields.insert("error".into(), Value::from(error));
             })?;
@@ -151,7 +161,7 @@ mod tests {
         let db = monocode_db();
         insert_automation(&db, "a", 1_000);
         let run = db.claim_due_automation("a", 1_000, 2_000, 1_500, 720);
-        assert_eq!(run.unwrap().unwrap().status, "pending");
+        assert_eq!(run.unwrap().unwrap().status, RunStatus::Pending);
         let again = db.claim_due_automation("a", 1_000, 2_000, 1_600, 720);
         assert!(again.unwrap().is_none());
         let early = db.claim_due_automation("a", 2_000, 3_000, 1_700, 720);
@@ -166,7 +176,7 @@ mod tests {
             .claim_due_automation("a", 1, 100_000_000, 31 * 60_000, 30)
             .unwrap()
             .unwrap();
-        assert_eq!(run.status, "skipped");
+        assert_eq!(run.status, RunStatus::Skipped);
     }
 
     #[test]
@@ -178,9 +188,16 @@ mod tests {
             .unwrap()
             .unwrap();
         db.start_automation_run(&run.id, "s1", 1_500).unwrap();
+        let started: String = db
+            .conn
+            .query_row("SELECT definition_json FROM automations WHERE id = 'a'", [], |r| r.get(0))
+            .unwrap();
+        let started: Value = serde_json::from_str(&started).unwrap();
+        assert_eq!(started["lastSessionId"], "s1");
+        assert_eq!(started["lastRunStatus"], "running");
         assert_eq!(db.recover_automation_runs(1_500, 9_000).unwrap(), 1);
         let runs = db.list_automation_runs("a").unwrap();
-        assert_eq!(runs[0].status, "cancelled");
+        assert_eq!(runs[0].status, RunStatus::Cancelled);
         assert_eq!(db.recover_automation_runs(1_500, 9_000).unwrap(), 0);
     }
 }

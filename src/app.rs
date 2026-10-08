@@ -1,6 +1,8 @@
 pub mod accounts;
 pub mod backlog;
 mod agent;
+mod automation_runs;
+pub mod automations;
 pub mod chat_background;
 pub mod commands;
 mod composer_input;
@@ -297,7 +299,7 @@ pub struct BenCodeApp {
     /// The Notes surface: its notes, selection, fields and dialogs.
     pub notes: crate::ui::notes_view::NotesState,
     /// The Automations surface: definitions, run history, fields and dialogs.
-    pub automations: crate::ui::automations::AutomationsState,
+    pub automations: automations::AutomationsState,
     /// Explorer › Search in files.
     pub project_search: project_search::ProjectSearchState,
     // Workspace & Projects
@@ -521,7 +523,7 @@ impl BenCodeApp {
         let queue_edit_input = text_input(window, cx, "Edit queued message");
         let queue_keys_input = queue_edit_input.clone();
         let mut notes = crate::ui::notes_view::NotesState::new(window, cx);
-        let mut automations = crate::ui::automations::AutomationsState::new(window, cx);
+        let mut automations = automations::AutomationsState::new(window, cx);
         let project_search = project_search::ProjectSearchState::new(window, cx);
         let git_commit_input = multiline_input(window, cx, "Message (⌘↩ to commit)", (1, 7));
         let search_modal_input =
@@ -690,6 +692,9 @@ impl BenCodeApp {
             cx.subscribe_in(&project_search.query_input, window, Self::on_project_search_input),
             cx.subscribe_in(&project_search.include_input, window, Self::on_project_search_input),
             cx.subscribe_in(&project_search.exclude_input, window, Self::on_project_search_input),
+            cx.subscribe(&automations.filter_input, Self::on_automation_input_event),
+            cx.subscribe(&automations.name_input, Self::on_automation_input_event),
+            cx.subscribe(&automations.prompt_input, Self::on_automation_input_event),
             cx.subscribe(&notes.title_input, Self::on_note_input_event),
             cx.subscribe(&notes.body_input, Self::on_note_input_event),
             cx.subscribe(
@@ -1357,6 +1362,27 @@ impl BenCodeApp {
                 result
             }
         }
+    }
+
+    /// Runs `job` on the database thread (after every queued write) and
+    /// hands its result to `land` back on the app, so nothing waits on the
+    /// UI thread.
+    pub(crate) fn db_then<T: Send + 'static>(
+        &self,
+        cx: &mut Context<Self>,
+        job: impl FnOnce(&AppDb) -> anyhow::Result<T> + Send + 'static,
+        land: impl FnOnce(&mut Self, anyhow::Result<T>, &mut Context<Self>) + 'static,
+    ) {
+        let result = self.db_read(job);
+        cx.spawn(async move |this, cx| {
+            let result = result
+                .await
+                .unwrap_or_else(|_| Err(anyhow::anyhow!("the database writer stopped")));
+            if let Err(err) = this.update(cx, |this, cx| land(this, result, cx)) {
+                log::debug!("database result after app drop: {err:#}");
+            }
+        })
+        .detach();
     }
 
     /// Waits for queued writes before a synchronous read or write of the

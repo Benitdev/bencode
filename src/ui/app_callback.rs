@@ -25,3 +25,16 @@ pub fn app_callback_with<T: 'static>(
         }
     }
 }
+
+/// A `Select`'s `on_change` for a `BenCodeApp` method.
+pub fn on_value(
+    cx: &Context<BenCodeApp>,
+    f: impl Fn(&mut BenCodeApp, &str, &mut Context<BenCodeApp>) + 'static,
+) -> impl Fn(&gpui::SharedString, &mut Window, &mut App) + 'static {
+    let entity = cx.entity().downgrade();
+    move |value, _, cx| {
+        if let Err(err) = entity.update(cx, |this, cx| f(this, value, cx)) {
+            log::debug!("select after app drop: {err:#}");
+        }
+    }
+}

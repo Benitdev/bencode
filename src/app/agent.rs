@@ -13,7 +13,7 @@ use serde_json::{Value, json};
 use crate::app::session_review::edit_paths;
 use crate::app::thread_state::ThreadState;
 use crate::app::{BenCodeApp, PermissionMode};
-use crate::db::{Block, SessionRow, TurnModel};
+use crate::db::{Block, RunStatus, SessionRow, TurnModel};
 use crate::harness::Attachment;
 use crate::harness::accounts::AccountProfile;
 use crate::harness::events::TurnMetrics;
@@ -106,11 +106,11 @@ pub fn can_compact(harness: &str) -> bool {
 }
 
 /// MonoCode's terminal automation-run status for a turn outcome.
-fn automation_status(outcome: Option<DoneStatus>) -> &'static str {
+fn automation_status(outcome: Option<DoneStatus>) -> RunStatus {
     match outcome {
-        Some(DoneStatus::Completed) => "succeeded",
-        Some(DoneStatus::Cancelled) => "cancelled",
-        Some(DoneStatus::Failed) | None => "failed",
+        Some(DoneStatus::Completed) => RunStatus::Succeeded,
+        Some(DoneStatus::Cancelled) => RunStatus::Cancelled,
+        Some(DoneStatus::Failed) | None => RunStatus::Failed,
     }
 }
 
@@ -1060,7 +1060,7 @@ impl BenCodeApp {
             return;
         };
         run.handle.cancel();
-        self.close_automation_run(&run, "cancelled");
+        self.close_automation_run(&run, RunStatus::Cancelled);
         if let Some(thread) = self.threads.get_mut(session_id)
             && !thread.queue.is_empty()
         {
@@ -1100,7 +1100,7 @@ impl BenCodeApp {
         let runs: Vec<(String, AgentRun)> = self.runs.drain().collect();
         for (session_id, run) in &runs {
             run.handle.cancel();
-            self.close_automation_run(run, "cancelled");
+            self.close_automation_run(run, RunStatus::Cancelled);
             if let Some(session) = self.sessions.iter_mut().find(|s| &s.id == session_id) {
                 mark_turn_interrupted(session, now_ms());
             }
@@ -1114,14 +1114,14 @@ impl BenCodeApp {
         }
     }
 
-    fn close_automation_run(&self, run: &AgentRun, status: &str) {
+    fn close_automation_run(&self, run: &AgentRun, status: RunStatus) {
         let Some(run_id) = &run.automation_run_id else {
             return;
         };
-        let error = (status == "failed").then_some("The agent turn failed.");
-        let (run_id, status) = (run_id.clone(), status.to_string());
+        let error = (status == RunStatus::Failed).then_some("The agent turn failed.");
+        let run_id = run_id.clone();
         self.db_write("close automation run", move |db| {
-            db.finish_automation_run(&run_id, &status, error)
+            db.finish_automation_run(&run_id, status, error)
         });
     }
 
@@ -1607,9 +1607,9 @@ mod tests {
 
     #[test]
     fn automation_status_maps_turn_outcomes() {
-        assert_eq!(automation_status(Some(DoneStatus::Completed)), "succeeded");
-        assert_eq!(automation_status(Some(DoneStatus::Cancelled)), "cancelled");
-        assert_eq!(automation_status(None), "failed");
+        assert_eq!(automation_status(Some(DoneStatus::Completed)), RunStatus::Succeeded);
+        assert_eq!(automation_status(Some(DoneStatus::Cancelled)), RunStatus::Cancelled);
+        assert_eq!(automation_status(None), RunStatus::Failed);
     }
 
     #[test]

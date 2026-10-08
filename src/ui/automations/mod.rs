@@ -1,312 +1,62 @@
-//! Automations: scheduled prompt runners stored in MonoCode's automations table.
+//! MonoCode `AutomationsView.tsx`: the automations list beside either the
+//! New automation page or the editor of one automation (Settings and Run
+//! history). State and logic: `app/automations.rs`, `app/automation_runs.rs`.
 
 mod editor;
+mod format;
+mod history;
 mod list;
-mod scheduler;
-mod templates;
+mod parts;
+mod picker;
+mod settings;
+pub mod templates;
 
-use ely_gpui_component::data_display::Tone;
-use ely_gpui_component::layout::MasterDetail;
 use ely_gpui_component::overlays::ConfirmDialog;
 use ely_gpui_component::theme::ActiveTheme;
-use ely_gpui_component::forms::TextInput;
-use gpui::{AnyElement, Context, Entity, IntoElement, ParentElement, Styled, Window, div};
+use gpui::{AnyElement, Context, IntoElement, ParentElement, Styled, div};
 
-use jiff::tz::TimeZone;
-
-use crate::app::{BenCodeApp, Surface, multiline_input, now_ms, text_input};
-use crate::db::{AutomationRow, AutomationRunRow};
-use crate::schedule;
+use crate::app::BenCodeApp;
 use crate::ui::app_callback::app_callback;
-use templates::{AutomationTemplate, BLANK_AUTOMATION};
+use crate::ui::scale::px;
 
-/// MonoCode `harness:model` key used for newly created automations.
-const DEFAULT_AUTOMATION_MODEL: &str = "claude:sonnet";
-const HOUR_MS: i64 = 3_600_000;
-const DAY_MS: i64 = 24 * HOUR_MS;
-
-/// The Automations surface's data, selection, fields and pending dialogs.
-pub struct AutomationsState {
-    pub items: Vec<AutomationRow>,
-    pub selected_id: Option<String>,
-    /// The selected automation's run history.
-    pub runs: Vec<AutomationRunRow>,
-    pub name_input: Entity<TextInput>,
-    pub prompt_input: Entity<TextInput>,
-    pub time_input: Entity<TextInput>,
-    /// Validation message for the automation time field.
-    pub time_error: Option<String>,
-    /// Automation id awaiting delete confirmation.
-    pub pending_delete: Option<String>,
-}
-
-impl AutomationsState {
-    /// The fields, with no automations loaded yet.
-    pub fn new(window: &mut Window, cx: &mut Context<BenCodeApp>) -> Self {
-        Self {
-            items: Vec::new(),
-            selected_id: None,
-            runs: Vec::new(),
-            name_input: text_input(window, cx, "Automation name..."),
-            prompt_input: multiline_input(window, cx, "Automation prompt...", (3, 10)),
-            time_input: text_input(window, cx, "09:00"),
-            time_error: None,
-            pending_delete: None,
-        }
-    }
-}
-
-/// A prompt to run in a fresh thread.
-pub struct ThreadRequest {
-    pub title: String,
-    pub prompt: String,
-    pub cwd: Option<String>,
-    pub model: Option<String>,
-    pub pinned: bool,
-}
-
-/// Tone for a MonoCode run status (pending, running, succeeded, failed, skipped, cancelled).
-fn run_status_tone(status: &str) -> Tone {
-    match status {
-        "succeeded" => Tone::Success,
-        "failed" => Tone::Danger,
-        "pending" | "running" => Tone::Info,
-        _ => Tone::Neutral,
-    }
-}
-
-fn new_automation(draft: &AutomationTemplate, cwd: String, now: i64) -> AutomationRow {
-    let delay = if draft.schedule == "hourly" {
-        HOUR_MS
-    } else {
-        DAY_MS
-    };
-    let next_run_at =
-        schedule::next_run_at(draft.schedule, 0, draft.time, 1, now, &TimeZone::system())
-            .unwrap_or(now + delay);
-    AutomationRow {
-        id: crate::app::unique_id("auto"),
-        name: draft.name.to_string(),
-        prompt: draft.prompt.to_string(),
-        harness: "claude".to_string(),
-        model: DEFAULT_AUTOMATION_MODEL.to_string(),
-        cwd,
-        schedule_kind: draft.schedule.to_string(),
-        time: draft.time.to_string(),
-        day_of_week: 1,
-        enabled: true,
-        next_run_at,
-        created_at: now,
-        updated_at: now,
-        ..Default::default()
-    }
-}
-
-/// `fallback` when the field was cleared.
-fn non_empty(text: &str, fallback: &str) -> String {
-    let text = text.trim();
-    if text.is_empty() {
-        fallback.to_string()
-    } else {
-        text.to_string()
-    }
-}
+/// MonoCode `<aside className="w-[280px]">`.
+const LIST_WIDTH: f32 = 280.0;
+/// MonoCode `max-w-5xl` with `px-8`: the column the pages are laid out in.
+const PAGE_WIDTH: f32 = 1024.0;
 
 impl BenCodeApp {
-    pub fn open_automations(&mut self, cx: &mut Context<Self>) {
-        self.show_surface(Surface::Automations, cx);
-        self.refresh_automations(cx);
-        cx.notify();
-    }
-
-    fn close_automations(&mut self, cx: &mut Context<Self>) {
-        if self.surface_open(Surface::Automations) {
-            self.close_surface(cx);
-        }
-    }
-
-    fn refresh_automations(&mut self, cx: &mut Context<Self>) {
-        match self.db.list_automations() {
-            Ok(automations) => self.automations.items = automations,
-            Err(err) => log::error!("list_automations failed: {err:#}"),
-        }
-        let selected_exists = self.selected_automation().is_some();
-        match self.automations.items.first().map(|a| a.id.clone()) {
-            Some(first) if !selected_exists => self.select_automation(&first, cx),
-            Some(_) => {}
-            None => self.automations.selected_id = None,
-        }
-    }
-
-    fn selected_automation(&self) -> Option<&AutomationRow> {
-        let id = self.automations.selected_id.as_deref()?;
-        self.automations.items.iter().find(|a| a.id == id)
-    }
-
-    fn select_automation(&mut self, id: &str, cx: &mut Context<Self>) {
-        self.automations.selected_id = Some(id.to_string());
-        self.automations.time_error = None;
-        if let Some(auto) = self.selected_automation() {
-            let (name, prompt, time) = (auto.name.clone(), auto.prompt.clone(), auto.time.clone());
-            self.automations.name_input
-                .update(cx, |input, cx| input.set_text(name, cx));
-            self.automations.prompt_input
-                .update(cx, |input, cx| input.set_text(prompt, cx));
-            self.automations.time_input
-                .update(cx, |input, cx| input.set_text(time, cx));
-        }
-        self.load_automation_runs(id);
-        cx.notify();
-    }
-
-    fn load_automation_runs(&mut self, id: &str) {
-        match self.db.list_automation_runs(id) {
-            Ok(runs) => self.automations.runs = runs,
-            Err(err) => {
-                log::error!("list_automation_runs failed: {err:#}");
-                self.automations.runs.clear();
-            }
-        }
-    }
-
-    fn insert_automation(&mut self, draft: &AutomationTemplate, cx: &mut Context<Self>) {
-        let cwd = self
-            .selected_session()
-            .map_or_else(|| self.current_cwd.clone(), |s| s.cwd.clone());
-        let auto = new_automation(draft, cwd, now_ms());
-        if let Err(err) = self.db.save_automation(&auto) {
-            log::error!("save_automation failed: {err:#}");
-            return;
-        }
-        self.refresh_automations(cx);
-        self.select_automation(&auto.id, cx);
-    }
-
-    fn create_new_automation(&mut self, cx: &mut Context<Self>) {
-        self.insert_automation(&BLANK_AUTOMATION, cx);
-    }
-
-    fn save_selected_automation(&mut self, cx: &mut Context<Self>) {
-        let Some(auto) = self.selected_automation() else {
-            return;
-        };
-        let time = non_empty(self.automations.time_input.read(cx).text(), &auto.time);
-        let now = now_ms();
-        // MonoCode reads `triggers`; the edit lands on the first time trigger.
-        let retimed = schedule::with_time(auto, &time);
-        let valid = schedule::parse_time(&time).is_some();
-        let next = schedule::next_automation_run_at(&retimed, now, &TimeZone::system());
-        let Some(next_run_at) = next.filter(|_| valid) else {
-            self.automations.time_error = Some(format!(
-                "“{time}” is not a valid 24-hour time such as 09:00."
-            ));
-            cx.notify();
-            return;
-        };
-        let updated = AutomationRow {
-            name: non_empty(self.automations.name_input.read(cx).text(), &retimed.name),
-            prompt: self.automations.prompt_input.read(cx).text().to_string(),
-            next_run_at,
-            updated_at: now,
-            ..retimed
-        };
-        self.automations.time_error = None;
-        if let Err(err) = self.db.save_automation(&updated) {
-            log::error!("save_automation failed: {err:#}");
-        }
-        self.refresh_automations(cx);
-    }
-
-    fn delete_automation(&mut self, id: &str, cx: &mut Context<Self>) {
-        if let Err(err) = self.db.delete_automation(id) {
-            log::error!("delete_automation failed: {err:#}");
-            return;
-        }
-        if self.automations.selected_id.as_deref() == Some(id) {
-            self.automations.selected_id = None;
-            self.automations.runs.clear();
-        }
-        self.refresh_automations(cx);
-        cx.notify();
-    }
-
-    fn set_automation_enabled(&mut self, id: &str, enabled: bool, cx: &mut Context<Self>) {
-        if let Err(err) = self.db.toggle_automation(id, enabled) {
-            log::error!("toggle_automation failed: {err:#}");
-        }
-        self.refresh_automations(cx);
-        cx.notify();
-    }
-
-    /// Runs the automation's prompt in a new thread and records a manual run linked to it.
-    fn run_selected_automation_now(&mut self, cx: &mut Context<Self>) {
-        let Some(auto) = self.selected_automation().cloned() else {
-            return;
-        };
-        let request = ThreadRequest {
-            title: auto.name.clone(),
-            prompt: auto.prompt.clone(),
-            cwd: Some(auto.cwd.clone()),
-            model: Some(auto.model.clone()),
-            pinned: false,
-        };
-        let Some(session_id) = self.run_in_new_thread(request, cx) else {
-            return;
-        };
-        let now = now_ms();
-        let run = AutomationRunRow {
-            id: crate::app::unique_id("run"),
-            automation_id: auto.id.clone(),
-            trigger: "manual".to_string(),
-            scheduled_for: now,
-            created_at: now,
-            started_at: Some(now),
-            completed_at: None,
-            status: "running".to_string(),
-            session_id: Some(session_id.clone()),
-            error: None,
-        };
-        match self.db.create_automation_run(&run) {
-            Ok(()) => self.attach_automation_run(&session_id, run.id),
-            Err(err) => log::error!("create_automation_run failed: {err:#}"),
-        }
-        self.close_automations(cx);
-    }
-
-    /// Opens a new thread and starts `request.prompt` in it, alongside any
-    /// other running threads. `None` if the thread could not be created.
-    pub fn run_in_new_thread(
-        &mut self,
-        request: ThreadRequest,
-        cx: &mut Context<Self>,
-    ) -> Option<String> {
-        self.create_new_session(cx);
-        if let Some(model) = &request.model {
-            self.set_session_model(model, cx);
-        }
-        let session = self.selected_session_mut()?;
-        session.title = request.title;
-        session.pinned = request.pinned;
-        if let Some(cwd) = request.cwd {
-            session.cwd = cwd;
-        }
-        let id = session.id.clone();
-        self.refresh_workspace_if_moved(cx);
-        self.send_prompt(&id, &request.prompt, cx);
-        Some(id)
-    }
-
     pub(crate) fn render_automations_body(&mut self, cx: &mut Context<Self>) -> AnyElement {
-        let theme = cx.theme();
-        let min = theme.pane_min().to_pixels(theme.base_rem() * crate::ui::scale::ui_scale());
+        let colors = &cx.theme().colors;
+        let main = if self.automations.picker_open || self.automations.draft.is_none() {
+            self.render_automation_picker(cx)
+        } else {
+            self.render_automation_editor(cx)
+        };
         div()
+            .flex()
             .size_full()
-            .child(MasterDetail::new(
-                "automations-split",
-                self.render_automation_master(cx),
-                self.render_automation_detail(cx),
-                min,
-            ))
+            .min_w_0()
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .flex_none()
+                    .w(px(LIST_WIDTH))
+                    .h_full()
+                    .border_r_1()
+                    .border_color(colors.border)
+                    .child(self.render_automation_list(cx)),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .flex_1()
+                    .min_w_0()
+                    .h_full()
+                    .children(self.render_automation_error(cx))
+                    .child(main),
+            )
             .children(self.render_automation_delete_confirm(cx))
             .into_any_element()
     }
@@ -328,81 +78,12 @@ impl BenCodeApp {
             ConfirmDialog::new(
                 "automation-delete-confirm",
                 "Delete automation?",
-                format!("“{name}” and its schedule will be removed."),
+                format!("“{name}” and its run history will be removed."),
                 close,
             )
             .confirm("Delete")
             .destructive()
             .on_confirm(delete),
         )
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn row(kind: &str, time: &str, minute: i64, day: i64) -> AutomationRow {
-        AutomationRow {
-            schedule_kind: kind.into(),
-            time: time.into(),
-            minute,
-            day_of_week: day,
-            ..Default::default()
-        }
-    }
-
-    #[test]
-    fn schedule_labels_follow_monocode() {
-        assert_eq!(
-            schedule::schedule_label(&row("hourly", "", 5, 0)),
-            "Hourly at :05"
-        );
-        assert_eq!(
-            schedule::schedule_label(&row("daily", "09:00", 0, 0)),
-            "Daily at 09:00"
-        );
-        assert_eq!(
-            schedule::schedule_label(&row("weekdays", "08:30", 0, 0)),
-            "Weekdays at 08:30"
-        );
-        assert_eq!(
-            schedule::schedule_label(&row("weekly", "10:00", 0, 1)),
-            "Monday at 10:00"
-        );
-        assert_eq!(
-            schedule::schedule_label(&row("weekly", "10:00", 0, 9)),
-            "Weekly at 10:00"
-        );
-    }
-
-    #[test]
-    fn run_status_tones() {
-        assert_eq!(run_status_tone("succeeded"), Tone::Success);
-        assert_eq!(run_status_tone("failed"), Tone::Danger);
-        assert_eq!(run_status_tone("running"), Tone::Info);
-        assert_eq!(run_status_tone("cancelled"), Tone::Neutral);
-    }
-
-    #[test]
-    fn new_automation_uses_draft_and_next_scheduled_run() {
-        let hourly = &templates::BUILTIN_TEMPLATES[4];
-        let auto = new_automation(hourly, "/repo".into(), 1_000);
-        assert!(auto.id.starts_with("auto-"), "{}", auto.id);
-        assert_eq!(auto.schedule_kind, "hourly");
-        // Hourly at :00 → the top of the next hour.
-        assert_eq!(auto.next_run_at, HOUR_MS);
-        let daily = new_automation(&BLANK_AUTOMATION, "/r".into(), 0).next_run_at;
-        assert!(
-            daily > 0 && daily <= DAY_MS,
-            "next daily run within a day: {daily}"
-        );
-        assert!(auto.enabled && auto.cwd == "/repo");
-    }
-
-    #[test]
-    fn non_empty_falls_back_on_blank() {
-        assert_eq!(non_empty("  ", "keep"), "keep");
-        assert_eq!(non_empty(" new ", "keep"), "new");
     }
 }

@@ -20,23 +20,10 @@ use crate::app::worktree_lifecycle::deletion_blocker;
 use crate::app::{BenCodeApp, same_project_path};
 use crate::git::Worktree;
 use crate::git::worktrees::default_worktrees_dir;
-use crate::ui::app_callback::{app_callback, app_callback_with};
+use crate::ui::app_callback::{app_callback, app_callback_with, on_value};
 use crate::ui::icons::ExtraIcon;
 use crate::ui::scale::px;
 use crate::ui::sidebar_popovers::pretty_path;
-
-/// A `Select`'s `on_change` for a `BenCodeApp` method.
-fn on_value(
-    cx: &Context<BenCodeApp>,
-    f: impl Fn(&mut BenCodeApp, &str, &mut Context<BenCodeApp>) + 'static,
-) -> impl Fn(&SharedString, &mut gpui::Window, &mut gpui::App) + 'static {
-    let entity = cx.entity().downgrade();
-    move |value, _, cx| {
-        if let Err(err) = entity.update(cx, |this, cx| f(this, value, cx)) {
-            log::debug!("select after app drop: {err:#}");
-        }
-    }
-}
 
 fn plural(n: usize, one: &str, many: &str) -> String {
     format!("{n} {}", if n == 1 { one } else { many })

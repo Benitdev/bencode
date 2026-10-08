@@ -18,7 +18,7 @@ pub(crate) mod menus;
 pub mod mode_commands;
 mod model_picker;
 pub mod new_skill;
-mod new_worktree;
+pub mod new_worktree;
 pub mod note_card;
 pub mod prompt_marks;
 pub mod question;
@@ -266,7 +266,7 @@ const PERMISSION_MODES: [(PermissionMode, &str, &str, IconName); 4] = [
     ),
 ];
 
-fn permission_entry(mode: PermissionMode) -> (&'static str, IconName) {
+pub(crate) fn permission_entry(mode: PermissionMode) -> (&'static str, IconName) {
     PERMISSION_MODES
         .iter()
         .find(|(m, ..)| *m == mode)

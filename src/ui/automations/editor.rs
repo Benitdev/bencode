@@ -1,168 +1,238 @@
-//! Right pane: the selected automation's fields, actions and run history.
+//! MonoCode `AutomationEditor`'s frame: the name, Save and Run now, the
+//! Active switch, project and Delete, and the Settings / Run history tabs.
+//! The Settings page itself is in `settings.rs`.
 
-use ely_gpui_component::buttons::{Button, ButtonVariant, IconButton};
-use ely_gpui_component::data_display::{Badge, Tag};
-use ely_gpui_component::feedback::EmptyState;
-use ely_gpui_component::forms::{FormField, Input, Switch};
-use ely_gpui_component::layout::{ScrollArea, Section};
-use ely_gpui_component::lists::ListItem;
+use ely_gpui_component::buttons::{Button, ButtonVariant};
+use ely_gpui_component::forms::Switch;
+use ely_gpui_component::menus::{DropdownMenu, Menu, MenuItem, OverflowMenu};
 use ely_gpui_component::primitives::IconName;
-use ely_gpui_component::typography::Caption;
-use gpui::{AnyElement, Context, IntoElement, ParentElement, Styled, div};
-use jiff::Timestamp;
+use ely_gpui_component::theme::{ActiveTheme, ControlSize};
+use gpui::{
+    AnyElement, Context, Div, FontWeight, Hsla, IntoElement, ParentElement, Stateful, Styled, div,
+    prelude::*,
+};
 
-use super::run_status_tone;
+use super::PAGE_WIDTH;
+use super::parts::tint;
+use crate::app::automations::{EditorTab, draft_is_valid};
 use crate::app::BenCodeApp;
-use crate::db::{AutomationRow, AutomationRunRow};
-use crate::schedule::schedule_label;
+use crate::db::AutomationRow;
+use crate::ui::app_callback::app_callback;
+use crate::ui::scale::px;
+use crate::ui::scrollbar::Scrolled;
 
-fn run_time(millis: i64) -> String {
-    Timestamp::from_millisecond(millis).map_or_else(
-        |_| "unknown time".to_string(),
-        |at| at.strftime("%Y-%m-%d %H:%M UTC").to_string(),
-    )
+/// MonoCode `PageTab`: a label with a 2px line under the open page.
+fn page_tab(id: &'static str, label: &'static str, selected: bool, fg: Hsla, muted: Hsla) -> Stateful<Div> {
+    div()
+        .id(id)
+        .relative()
+        .flex()
+        .items_center()
+        .h(px(36.0))
+        .text_size(px(12.0))
+        .cursor_pointer()
+        .text_color(if selected { fg } else { muted })
+        .hover(|style| style.text_color(fg))
+        .child(label)
+        .when(selected, |el| {
+            el.child(div().absolute().left_0().right_0().bottom_0().h(px(2.0)).bg(fg))
+        })
+}
+
+fn divider(fg: Hsla) -> Div {
+    div().flex_none().w(px(1.0)).h(px(12.0)).bg(fg.opacity(tint::DIVIDER))
 }
 
 impl BenCodeApp {
-    pub(super) fn render_automation_detail(&self, cx: &Context<Self>) -> AnyElement {
-        let Some(auto) = self.selected_automation() else {
-            return EmptyState::new("automation-none", IconName::Zap, "No automation selected")
-                .body("Select one on the left, or start from a template.")
-                .into_any_element();
+    pub(super) fn render_automation_editor(&self, cx: &Context<Self>) -> AnyElement {
+        let Some(draft) = self.editor_draft(cx) else {
+            return div().into_any_element();
         };
-        ScrollArea::new("automation-detail")
+        let stored = self.edited_automation().is_some();
+        let history = stored && self.automations.tab == EditorTab::History;
+        let page = if history {
+            self.render_automation_history(&draft, cx)
+        } else {
+            self.render_automation_settings(&draft, cx)
+        };
+        let body = div()
+            .id("automation-editor")
             .size_full()
+            .overflow_y_scroll()
             .child(
                 div()
-                    .flex()
-                    .flex_col()
-                    .gap_6()
-                    .pl_4()
-                    .child(self.render_automation_actions(auto, cx))
-                    .child(self.render_automation_fields(auto))
-                    .child(self.render_automation_runs()),
+                    .mx_auto()
+                    .w_full()
+                    .max_w(px(PAGE_WIDTH))
+                    .px_8()
+                    .pt_5()
+                    .pb_10()
+                    .child(page),
+            );
+        div()
+            .flex()
+            .flex_col()
+            .flex_1()
+            .min_h_0()
+            .child(self.render_automation_header(&draft, stored, history, cx))
+            .child(
+                div()
+                    .flex_1()
+                    .min_h_0()
+                    .child(Scrolled::new("automation-editor-scrollbar", body)),
             )
             .into_any_element()
     }
 
-    fn render_automation_actions(
+    fn render_automation_header(
         &self,
-        auto: &AutomationRow,
+        draft: &AutomationRow,
+        stored: bool,
+        history: bool,
         cx: &Context<Self>,
     ) -> impl IntoElement {
-        let (toggle_id, delete_id) = (auto.id.clone(), auto.id.clone());
-        let toggle = cx.listener(move |this, on: &bool, _, cx| {
-            this.set_automation_enabled(&toggle_id, *on, cx)
-        });
-        div()
+        let colors = &cx.theme().colors;
+        let (fg, muted) = (colors.fg, colors.fg_muted);
+        let dirty = self.automation_dirty(cx);
+        let actions = div()
             .flex()
-            .flex_wrap()
+            .flex_none()
             .items_center()
-            .gap_3()
-            .child(
-                Switch::new("automation-enabled", auto.enabled)
-                    .label("Enabled")
-                    .on_change(move |on, window, cx| toggle(&on, window, cx)),
-            )
-            .child(div().flex_1())
-            .child(
-                Button::new("automation-run", "Run now")
-                    .primary()
-                    .icon(IconName::Play)
-                    .on_click(cx.listener(|this, _, _, cx| this.run_selected_automation_now(cx))),
-            )
-            .child(
-                Button::new("automation-save", "Save")
-                    .variant(ButtonVariant::Secondary)
-                    .icon(IconName::Save)
-                    .on_click(cx.listener(|this, _, _, cx| this.save_selected_automation(cx))),
-            )
-            .child(
-                IconButton::new("automation-delete", IconName::Trash2)
-                    .variant(ButtonVariant::Ghost)
-                    .tooltip("Delete automation")
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.automations.pending_delete = Some(delete_id.clone());
-                        cx.notify();
-                    })),
-            )
-    }
-
-    fn render_automation_fields(&self, auto: &AutomationRow) -> impl IntoElement {
-        div()
-            .flex()
-            .flex_col()
-            .gap_4()
-            .child(
-                FormField::new("automation-name", "Name")
-                    .child(Input::new(&self.automations.name_input)),
-            )
-            .child({
-                let field = FormField::new("automation-time", "Time (HH:MM, 24-hour)")
-                    .description(schedule_label(auto));
-                match self.automations.time_error.clone() {
-                    Some(error) => field.error(error),
-                    None => field,
-                }
-                .child(Input::new(&self.automations.time_input))
+            .gap_2()
+            .when(dirty, |el| {
+                el.child(
+                    Button::new("automation-discard", if stored { "Reset" } else { "Cancel" })
+                        .variant(ButtonVariant::Outline)
+                        .size(ControlSize::Sm)
+                        .on_click(cx.listener(|this, _, _, cx| this.discard_automation_edits(cx))),
+                )
+            })
+            .when(stored, |el| {
+                el.child(
+                    Button::new("automation-run", "Run now")
+                        .variant(ButtonVariant::Outline)
+                        .size(ControlSize::Sm)
+                        .icon(IconName::Play)
+                        .on_click(cx.listener(|this, _, _, cx| this.run_automation_now(cx))),
+                )
             })
             .child(
-                FormField::new("automation-workspace", "Workspace").child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap_2()
-                        .child(Caption::new(auto.cwd.clone()))
-                        .child(
-                            Tag::new("automation-harness", auto.harness.clone())
-                                .icon(IconName::Terminal),
-                        ),
-                ),
-            )
+                Button::new("automation-save", if stored { "Save" } else { "Create" })
+                    .primary()
+                    .size(ControlSize::Sm)
+                    .disabled(!draft_is_valid(draft) || !dirty)
+                    .loading(self.automations.saving)
+                    .on_click(cx.listener(|this, _, _, cx| this.save_automation_draft(cx))),
+            );
+        let enable = cx.listener(|this, on: &bool, _, cx| {
+            let on = *on;
+            this.edit_automation(cx, |draft| draft.enabled = on);
+        });
+        let status = div()
+            .flex()
+            .items_center()
+            .gap_2()
+            .min_w_0()
+            .text_size(px(12.0))
+            .text_color(muted)
             .child(
-                FormField::new("automation-prompt", "Prompt")
-                    .child(Input::new(&self.automations.prompt_input)),
+                Switch::new("automation-enabled", draft.enabled)
+                    .on_change(move |on, window, cx| enable(&on, window, cx)),
             )
-    }
-
-    fn render_automation_runs(&self) -> impl IntoElement {
-        let runs: AnyElement = if self.automations.runs.is_empty() {
-            Caption::new("No runs recorded yet.").into_any_element()
-        } else {
+            .child(div().flex_none().child(if draft.enabled { "Active" } else { "Inactive" }))
+            .child(divider(fg).ml_2())
+            .child(self.render_automation_project(draft, cx))
+            .when(stored, |el| {
+                let id = draft.id.clone();
+                let delete = app_callback(cx, move |this, cx| {
+                    this.automations.pending_delete = Some(id.clone());
+                    cx.notify();
+                });
+                let menu = Menu::new().item(
+                    MenuItem::new("Delete automation")
+                        .icon(IconName::Trash2)
+                        .on_click(delete),
+                );
+                el.child(divider(fg)).child(
+                    OverflowMenu::new("automation-actions", menu).tooltip("Automation actions"),
+                )
+            });
+        let tabs = stored.then(|| {
+            div()
+                .flex()
+                .gap_4()
+                .child(
+                    page_tab("automation-tab-settings", "Settings", !history, fg, muted).on_click(
+                        cx.listener(|this, _, _, cx| this.show_automation_tab(EditorTab::Settings, cx)),
+                    ),
+                )
+                .child(
+                    page_tab("automation-tab-history", "Run history", history, fg, muted).on_click(
+                        cx.listener(|this, _, _, cx| this.show_automation_tab(EditorTab::History, cx)),
+                    ),
+                )
+        });
+        div().flex_none().border_b_1().border_color(colors.border).child(
             div()
                 .flex()
                 .flex_col()
-                .gap_1()
-                .children(
-                    self.automations.runs
-                        .iter()
-                        .enumerate()
-                        .map(|(ix, run)| render_run(ix, run)),
+                .gap(px(10.0))
+                .mx_auto()
+                .w_full()
+                .max_w(px(PAGE_WIDTH))
+                .px_8()
+                .pt_5()
+                .when(!stored, |el| el.pb_5())
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap_6()
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .text_size(px(20.0))
+                                .font_weight(FontWeight::SEMIBOLD)
+                                .text_color(fg)
+                                .child(self.automations.name_input.clone()),
+                        )
+                        .child(actions),
                 )
-                .into_any_element()
-        };
-        Section::new("Recent runs")
-            .description(format!("{} recorded", self.automations.runs.len()))
-            .child(runs)
+                .child(status)
+                .children(tabs),
+        )
     }
-}
 
-fn render_run(ix: usize, run: &AutomationRunRow) -> ListItem {
-    let detail = run
-        .error
-        .clone()
-        .unwrap_or_else(|| run_time(run.started_at.unwrap_or(run.created_at)));
-    ListItem::new(("automation-run", ix), format!("Trigger: {}", run.trigger))
-        .description(detail)
-        .trailing(Badge::new(run.status.clone()).tone(run_status_tone(&run.status)))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn run_time_formats_utc() {
-        assert_eq!(run_time(0), "1970-01-01 00:00 UTC");
+    /// MonoCode `SearchableProjectPicker`: the project runs happen in.
+    fn render_automation_project(&self, draft: &AutomationRow, cx: &Context<Self>) -> impl IntoElement {
+        let mut projects = self.worktree_project_choices();
+        if !draft.cwd.is_empty() && !projects.contains(&draft.cwd) {
+            projects.insert(0, draft.cwd.clone());
+        }
+        let menu = projects.into_iter().fold(Menu::new(), |menu, path| {
+            let pick = app_callback(cx, {
+                let path = path.clone();
+                move |this, cx| {
+                    let path = path.clone();
+                    // Folders belong to a project.
+                    this.edit_automation(cx, |draft| {
+                        draft.cwd = path;
+                        draft.session_folder_id = Some(String::new());
+                    });
+                }
+            });
+            menu.item(
+                MenuItem::radio(self.rail_project_label(&path), path == draft.cwd).on_click(pick),
+            )
+        });
+        let label = if draft.cwd.is_empty() {
+            "Choose a project".to_string()
+        } else {
+            self.rail_project_label(&draft.cwd)
+        };
+        DropdownMenu::new("automation-project", label, menu)
+            .icon(IconName::Folder)
+            .variant(ButtonVariant::Ghost)
     }
 }

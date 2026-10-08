@@ -100,7 +100,7 @@ impl BenCodeApp {
     }
 
     /// A project's mascot: its saved pick, else hashed from its name.
-    pub(super) fn project_mascot(&self, path: &str) -> &'static Mascot {
+    pub(crate) fn project_mascot(&self, path: &str) -> &'static Mascot {
         let pick = self.settings.rail.tab_group_mascots.get(&path_key(path));
         mascot_for(project_name(path), pick.map(String::as_str))
     }

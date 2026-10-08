@@ -8,7 +8,7 @@ use crate::db::AutomationRow;
 
 /// MonoCode `nextTriggersRunAt` with no time trigger: a year out.
 const YEAR_MS: i64 = 365 * 24 * 60 * 60 * 1000;
-const WEEKDAYS: [&str; 7] = [
+pub const WEEKDAYS: [&str; 7] = [
     "Sunday",
     "Monday",
     "Tuesday",
@@ -17,6 +17,42 @@ const WEEKDAYS: [&str; 7] = [
     "Friday",
     "Saturday",
 ];
+
+/// MonoCode `AutomationScheduleKind`, by its stored name.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ScheduleKind {
+    Hourly,
+    Daily,
+    Weekdays,
+    Weekly,
+}
+
+impl ScheduleKind {
+    pub const ALL: [Self; 4] = [Self::Hourly, Self::Daily, Self::Weekdays, Self::Weekly];
+
+    pub fn parse(id: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|kind| kind.id() == id)
+    }
+
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::Hourly => "hourly",
+            Self::Daily => "daily",
+            Self::Weekdays => "weekdays",
+            Self::Weekly => "weekly",
+        }
+    }
+
+    /// The name in the Add Trigger menu.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Hourly => "Hourly",
+            Self::Daily => "Daily",
+            Self::Weekdays => "Weekdays",
+            Self::Weekly => "Weekly",
+        }
+    }
+}
 
 /// `HH:MM`, 24-hour, exactly as MonoCode's backend accepts it.
 pub fn parse_time(value: &str) -> Option<(i8, i8)> {
@@ -32,11 +68,10 @@ fn is_weekend(day: &Zoned) -> bool {
     matches!(day.weekday(), Weekday::Saturday | Weekday::Sunday)
 }
 
-/// The next run strictly after `after_ms`, in epoch ms, for MonoCode's
-/// `scheduleKind` (`hourly`, `daily`, `weekdays`, `weekly`). `day_of_week`
+/// The next run strictly after `after_ms`, in epoch ms. `day_of_week`
 /// counts from Sunday = 0, like JavaScript's `getDay`.
 pub fn next_run_at(
-    kind: &str,
+    kind: ScheduleKind,
     minute: i64,
     time: &str,
     day_of_week: i64,
@@ -47,39 +82,42 @@ pub fn next_run_at(
         .ok()?
         .to_zoned(tz.clone());
     let start = after.with().second(0).subsec_nanosecond(0).build().ok()?;
-    let candidate = if kind == "hourly" {
-        let at = start
-            .with()
-            .minute(minute.clamp(0, 59) as i8)
-            .build()
-            .ok()?;
-        if at <= after {
-            at.checked_add(1.hour()).ok()?
-        } else {
-            at
-        }
-    } else {
+    // The run of the day: today at `time`.
+    let today = || {
         let (hour, min) = parse_time(time)?;
-        let mut at = start.with().hour(hour).minute(min).build().ok()?;
-        match kind {
-            "daily" | "weekdays" => {
-                if at <= after {
-                    at = at.checked_add(1.day()).ok()?;
-                }
-                while kind == "weekdays" && is_weekend(&at) {
-                    at = at.checked_add(1.day()).ok()?;
-                }
+        start.with().hour(hour).minute(min).build().ok()
+    };
+    let candidate = match kind {
+        ScheduleKind::Hourly => {
+            let at = start
+                .with()
+                .minute(minute.clamp(0, 59) as i8)
+                .build()
+                .ok()?;
+            if at <= after {
+                at.checked_add(1.hour()).ok()?
+            } else {
                 at
             }
-            "weekly" => {
-                let today = i64::from(at.weekday().to_sunday_zero_offset());
-                let mut days = (day_of_week.clamp(0, 6) - today).rem_euclid(7);
-                if days == 0 && at <= after {
-                    days = 7;
-                }
-                at.checked_add(days.days()).ok()?
+        }
+        ScheduleKind::Daily | ScheduleKind::Weekdays => {
+            let mut at = today()?;
+            if at <= after {
+                at = at.checked_add(1.day()).ok()?;
             }
-            _ => return None,
+            while kind == ScheduleKind::Weekdays && is_weekend(&at) {
+                at = at.checked_add(1.day()).ok()?;
+            }
+            at
+        }
+        ScheduleKind::Weekly => {
+            let at = today()?;
+            let weekday = i64::from(at.weekday().to_sunday_zero_offset());
+            let mut days = (day_of_week.clamp(0, 6) - weekday).rem_euclid(7);
+            if days == 0 && at <= after {
+                days = 7;
+            }
+            at.checked_add(days.days()).ok()?
         }
     };
     Some(candidate.timestamp().as_millisecond())
@@ -88,13 +126,19 @@ pub fn next_run_at(
 /// When a time trigger fires: `scheduleKind`, `minute`, `time`, `dayOfWeek`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TimeTrigger {
-    pub schedule_kind: String,
+    /// `None` for a kind this version does not know: it never comes due.
+    pub kind: Option<ScheduleKind>,
     pub minute: i64,
     pub time: String,
     pub day_of_week: i64,
 }
 
-fn time_trigger(fields: &serde_json::Map<String, Value>) -> Option<TimeTrigger> {
+/// One entry of an automation's `triggers` (MonoCode `AutomationTrigger`),
+/// kept as JSON so keys BenCode does not model survive.
+pub type Trigger = serde_json::Map<String, Value>;
+
+/// `fields` as a time trigger; `None` for an event trigger.
+pub fn time_trigger(fields: &Trigger) -> Option<TimeTrigger> {
     if fields.get("kind").and_then(Value::as_str) != Some("time") {
         return None;
     }
@@ -107,7 +151,7 @@ fn time_trigger(fields: &serde_json::Map<String, Value>) -> Option<TimeTrigger> 
     };
     let number = |key: &str| fields.get(key).and_then(Value::as_i64).unwrap_or(0);
     Some(TimeTrigger {
-        schedule_kind: text("scheduleKind"),
+        kind: ScheduleKind::parse(&text("scheduleKind")),
         minute: number("minute"),
         time: text("time"),
         day_of_week: number("dayOfWeek"),
@@ -120,7 +164,7 @@ pub fn time_triggers(auto: &AutomationRow) -> Vec<TimeTrigger> {
     match &auto.triggers {
         Some(triggers) => triggers.iter().filter_map(time_trigger).collect(),
         None => vec![TimeTrigger {
-            schedule_kind: auto.schedule_kind.clone(),
+            kind: ScheduleKind::parse(&auto.schedule_kind),
             minute: auto.minute,
             time: auto.time.clone(),
             day_of_week: auto.day_of_week,
@@ -138,28 +182,26 @@ pub fn next_automation_run_at(auto: &AutomationRow, after_ms: i64, tz: &TimeZone
     }
     triggers
         .iter()
-        .map(|t| {
-            next_run_at(
-                &t.schedule_kind,
-                t.minute,
-                &t.time,
-                t.day_of_week,
-                after_ms,
-                tz,
-            )
-        })
+        .map(|t| t.next_run(after_ms, tz))
         .collect::<Option<Vec<_>>>()?
         .into_iter()
         .min()
 }
 
+impl TimeTrigger {
+    /// When this trigger next fires after `after_ms`.
+    pub fn next_run(&self, after_ms: i64, tz: &TimeZone) -> Option<i64> {
+        next_run_at(self.kind?, self.minute, &self.time, self.day_of_week, after_ms, tz)
+    }
+}
+
 fn trigger_label(trigger: &TimeTrigger) -> String {
     let time = &trigger.time;
-    match trigger.schedule_kind.as_str() {
-        "hourly" => format!("Hourly at :{:02}", trigger.minute),
-        "daily" => format!("Daily at {time}"),
-        "weekdays" => format!("Weekdays at {time}"),
-        _ => {
+    match trigger.kind {
+        Some(ScheduleKind::Hourly) => format!("Hourly at :{:02}", trigger.minute),
+        Some(ScheduleKind::Daily) => format!("Daily at {time}"),
+        Some(ScheduleKind::Weekdays) => format!("Weekdays at {time}"),
+        Some(ScheduleKind::Weekly) | None => {
             let day = usize::try_from(trigger.day_of_week)
                 .ok()
                 .and_then(|d| WEEKDAYS.get(d));
@@ -171,28 +213,73 @@ fn trigger_label(trigger: &TimeTrigger) -> String {
 /// MonoCode `triggerLabel`: the first trigger, plus " +N" for the rest.
 pub fn schedule_label(auto: &AutomationRow) -> String {
     let all = auto.triggers.as_ref().map_or(1, Vec::len);
+    if all == 0 {
+        return "No trigger".to_string();
+    }
     let Some(first) = time_triggers(auto).into_iter().next() else {
         return "On event".to_string();
     };
     match all {
-        0 | 1 => trigger_label(&first),
+        1 => trigger_label(&first),
         n => format!("{} +{}", trigger_label(&first), n - 1),
     }
 }
 
-/// `auto` with its first time trigger (and the legacy fields) set to run at
-/// `time`; other triggers are kept as they are.
-pub fn with_time(auto: &AutomationRow, time: &str) -> AutomationRow {
-    let mut next = AutomationRow {
-        time: time.to_string(),
-        ..auto.clone()
-    };
-    if let Some(triggers) = next.triggers.as_mut()
-        && let Some(first) = triggers.iter_mut().find(|t| time_trigger(t).is_some())
-    {
-        first.insert("time".into(), Value::from(time));
+/// MonoCode `createAutomationTrigger` for a schedule kind: 09:00, Monday,
+/// on the hour.
+pub fn new_time_trigger(id: String, kind: ScheduleKind) -> Trigger {
+    let trigger = serde_json::json!({
+        "id": id, "kind": "time", "event": kind.id(), "scheduleKind": kind.id(),
+        "minute": 0, "time": "09:00", "dayOfWeek": 1,
+        "repos": [], "repo": "", "branch": "", "actor": "anyone"
+    });
+    match trigger {
+        Value::Object(fields) => fields,
+        _ => Trigger::new(),
     }
-    next
+}
+
+/// MonoCode `automationTriggers`: the `triggers` list, else one trigger
+/// built from the legacy fields.
+pub fn triggers_of(auto: &AutomationRow) -> Vec<Trigger> {
+    if let Some(triggers) = &auto.triggers {
+        return triggers.clone();
+    }
+    let kind = ScheduleKind::parse(&auto.schedule_kind).unwrap_or(ScheduleKind::Weekdays);
+    let mut legacy = new_time_trigger(format!("{}:legacy", auto.id), kind);
+    legacy.insert("minute".into(), Value::from(auto.minute));
+    legacy.insert("time".into(), Value::from(auto.time.clone()));
+    legacy.insert("dayOfWeek".into(), Value::from(auto.day_of_week));
+    vec![legacy]
+}
+
+/// MonoCode `applyTriggers`: stores `triggers` and mirrors the primary one
+/// (the first time trigger, else the first) into the legacy fields.
+pub fn apply_triggers(auto: &mut AutomationRow, triggers: Vec<Trigger>) {
+    let primary = triggers
+        .iter()
+        .find(|t| time_trigger(t).is_some())
+        .or(triggers.first());
+    let text = |key: &str, fallback: &str| {
+        primary
+            .and_then(|t| t.get(key))
+            .and_then(Value::as_str)
+            .unwrap_or(fallback)
+            .to_string()
+    };
+    let number = |key: &str, fallback: i64| {
+        primary
+            .and_then(|t| t.get(key))
+            .and_then(Value::as_i64)
+            .unwrap_or(fallback)
+    };
+    auto.trigger_kind = Some(text("kind", "time"));
+    auto.trigger_event = Some(text("event", ""));
+    auto.schedule_kind = text("scheduleKind", "weekdays");
+    auto.minute = number("minute", 0);
+    auto.time = text("time", "09:00");
+    auto.day_of_week = number("dayOfWeek", 1);
+    auto.triggers = Some(triggers);
 }
 
 #[cfg(test)]
@@ -204,6 +291,7 @@ mod tests {
     }
 
     fn next(kind: &str, minute: i64, time: &str, dow: i64, after: &str) -> i64 {
+        let kind = ScheduleKind::parse(kind).unwrap();
         next_run_at(kind, minute, time, dow, ms(after), &TimeZone::UTC).unwrap()
     }
 
@@ -245,7 +333,7 @@ mod tests {
         );
     }
 
-    fn trigger(kind: &str, schedule: &str, time: &str) -> serde_json::Map<String, Value> {
+    fn trigger(kind: &str, schedule: &str, time: &str) -> Trigger {
         let value = serde_json::json!({
             "id": "t", "kind": kind, "scheduleKind": schedule, "minute": 0,
             "time": time, "dayOfWeek": 1, "repos": [], "customKey": "kept"
@@ -272,12 +360,39 @@ mod tests {
             "earliest trigger wins"
         );
         assert_eq!(schedule_label(&auto), "Daily at 17:00 +2");
+    }
 
-        let moved = with_time(&auto, "08:30");
-        let first = &moved.triggers.as_ref().unwrap()[0];
-        assert_eq!(first["time"], "08:30");
-        assert_eq!(first["customKey"], "kept");
-        assert_eq!(moved.triggers.as_ref().unwrap()[1]["time"], "12:00");
+    #[test]
+    fn applying_triggers_mirrors_the_first_time_trigger() {
+        let mut auto = AutomationRow::default();
+        let mut weekly = new_time_trigger("b".into(), ScheduleKind::Weekly);
+        weekly.insert("time".into(), Value::from("16:00"));
+        weekly.insert("dayOfWeek".into(), Value::from(5));
+        apply_triggers(&mut auto, vec![trigger("github", "", ""), weekly]);
+        assert_eq!(auto.trigger_kind.as_deref(), Some("time"));
+        assert_eq!(auto.trigger_event.as_deref(), Some("weekly"));
+        assert_eq!((auto.schedule_kind.as_str(), auto.day_of_week), ("weekly", 5));
+        assert_eq!(schedule_label(&auto), "Friday at 16:00 +1");
+        // Unknown keys of a trigger are kept.
+        assert_eq!(auto.triggers.as_ref().unwrap()[0]["customKey"], "kept");
+
+        apply_triggers(&mut auto, Vec::new());
+        assert_eq!((auto.schedule_kind.as_str(), auto.time.as_str()), ("weekdays", "09:00"));
+        assert_eq!(schedule_label(&auto), "No trigger");
+    }
+
+    #[test]
+    fn legacy_rows_hydrate_to_one_trigger() {
+        let legacy = AutomationRow {
+            id: "a".into(),
+            schedule_kind: "hourly".into(),
+            minute: 15,
+            ..Default::default()
+        };
+        let triggers = triggers_of(&legacy);
+        assert_eq!(triggers.len(), 1);
+        assert_eq!(triggers[0]["id"], "a:legacy");
+        assert_eq!(time_trigger(&triggers[0]).unwrap().minute, 15);
     }
 
     #[test]
@@ -302,10 +417,18 @@ mod tests {
 
     #[test]
     fn invalid_input_yields_none() {
-        assert_eq!(next_run_at("daily", 0, "9am", 0, 0, &TimeZone::UTC), None);
-        assert_eq!(
-            next_run_at("monthly", 0, "09:00", 0, 0, &TimeZone::UTC),
-            None
-        );
+        let daily = ScheduleKind::Daily;
+        assert_eq!(next_run_at(daily, 0, "9am", 0, 0, &TimeZone::UTC), None);
+        assert_eq!(ScheduleKind::parse("monthly"), None);
+        // A trigger of an unknown kind never comes due.
+        let monthly = AutomationRow {
+            schedule_kind: "monthly".into(),
+            time: "09:00".into(),
+            ..Default::default()
+        };
+        assert_eq!(next_automation_run_at(&monthly, 0, &TimeZone::UTC), None);
+        for kind in ScheduleKind::ALL {
+            assert_eq!(ScheduleKind::parse(kind.id()), Some(kind));
+        }
     }
 }

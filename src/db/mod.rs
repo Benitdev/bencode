@@ -88,9 +88,72 @@ pub struct AutomationRow {
     /// triggers existed: then the legacy fields above apply.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub triggers: Option<Vec<Map<String, Value>>>,
-    /// Every MonoCode field BenCode does not model (workspaceMode, ...).
+    /// The primary trigger's kind and event, kept beside `triggers` as
+    /// MonoCode's `applyTriggers` does. `None` on these fields leaves the
+    /// stored value alone on save.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trigger_kind: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trigger_event: Option<String>,
+    /// MonoCode `workspaceMode`: `current` or `worktree`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_mode: Option<String>,
+    /// Continue the last run's thread instead of starting a new one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reuse_session: Option<bool>,
+    /// The sidebar folder runs are filed in; empty for none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_folder_id: Option<String>,
+    /// The access mode runs start with (`PermissionMode` ids).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runtime_mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub missed_run_grace_minutes: Option<i64>,
+    /// The thread of the last run, for `reuse_session`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_session_id: Option<String>,
+    /// Every MonoCode field BenCode does not model (modelSettings, ...).
     #[serde(flatten, default)]
     pub extra: Map<String, Value>,
+}
+
+/// MonoCode `AutomationRunStatus`, by its stored name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RunStatus {
+    Pending,
+    Running,
+    Succeeded,
+    Failed,
+    Skipped,
+    Cancelled,
+}
+
+impl RunStatus {
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Running => "running",
+            Self::Succeeded => "succeeded",
+            Self::Failed => "failed",
+            Self::Skipped => "skipped",
+            Self::Cancelled => "cancelled",
+        }
+    }
+
+    /// Not finished yet: its duration is still counting.
+    pub fn is_live(self) -> bool {
+        matches!(self, Self::Pending | Self::Running)
+    }
+}
+
+/// MonoCode `AutomationRunTrigger`: what started a run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RunTrigger {
+    Scheduled,
+    Manual,
+    Event,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -98,14 +161,14 @@ pub struct AutomationRow {
 pub struct AutomationRunRow {
     pub id: String,
     pub automation_id: String,
-    pub trigger: String,
+    pub trigger: RunTrigger,
     pub scheduled_for: i64,
     pub created_at: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub started_at: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub completed_at: Option<i64>,
-    pub status: String,
+    pub status: RunStatus,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -811,7 +874,7 @@ impl AppDb {
     pub fn finish_automation_run(
         &self,
         run_id: &str,
-        status: &str,
+        status: RunStatus,
         error: Option<&str>,
     ) -> Result<()> {
         let json: String = self.conn.query_row(
@@ -824,7 +887,7 @@ impl AppDb {
         let Some(fields) = run.as_object_mut() else {
             bail!("automation run {run_id} is not a JSON object")
         };
-        fields.insert("status".into(), Value::from(status));
+        fields.insert("status".into(), Value::from(status.id()));
         fields.insert("completedAt".into(), Value::from(now_millis()));
         match error {
             Some(message) => fields.insert("error".into(), Value::from(message)),
@@ -833,6 +896,30 @@ impl AppDb {
         self.conn.execute(
             "UPDATE automation_runs SET run_json = ?1 WHERE id = ?2",
             params![run.to_string(), run_id],
+        )?;
+        self.note_last_run(run_id, status, error, now_millis())
+    }
+
+    /// MonoCode `automation_run_update`: the automation remembers how its
+    /// latest run stands (the list shows when it last ran).
+    pub(super) fn note_last_run(
+        &self,
+        run_id: &str,
+        status: RunStatus,
+        error: Option<&str>,
+        now: i64,
+    ) -> Result<()> {
+        self.conn.execute(
+            "UPDATE automations
+             SET definition_json = CASE WHEN ?3 IS NULL
+                 THEN json_remove(
+                     json_set(definition_json, '$.lastRunAt', ?1, '$.lastRunStatus', ?2),
+                     '$.lastRunError')
+                 ELSE json_set(definition_json,
+                     '$.lastRunAt', ?1, '$.lastRunStatus', ?2, '$.lastRunError', ?3) END
+             WHERE id = (SELECT automation_id FROM automation_runs WHERE id = ?4)
+               AND json_valid(definition_json)",
+            params![now, status.id(), error, run_id],
         )?;
         Ok(())
     }
@@ -1199,7 +1286,8 @@ mod tests {
         assert_eq!(saved, expected);
 
         let listed = db.list_automations().unwrap();
-        assert_eq!(listed[0].extra["workspaceMode"], json!("existing"));
+        assert_eq!(listed[0].workspace_mode.as_deref(), Some("existing"));
+        assert_eq!(listed[0].extra["modelSettings"], json!({"effort": "high"}));
     }
 
     #[test]
@@ -1281,7 +1369,7 @@ mod tests {
         db.toggle_automation("a1", false).unwrap();
         let auto = &db.list_automations().unwrap()[0];
         assert!(!auto.enabled);
-        assert_eq!(auto.extra["lastSessionId"], json!("s9"));
+        assert_eq!(auto.last_session_id.as_deref(), Some("s9"));
     }
 
     #[test]
@@ -1296,12 +1384,12 @@ mod tests {
         let run = AutomationRunRow {
             id: "r1".into(),
             automation_id: "a1".into(),
-            trigger: "manual".into(),
+            trigger: RunTrigger::Manual,
             scheduled_for: 1,
             created_at: 1,
             started_at: None,
             completed_at: None,
-            status: "queued".into(),
+            status: RunStatus::Pending,
             session_id: None,
             error: None,
         };
@@ -1310,6 +1398,13 @@ mod tests {
             .execute(
                 "INSERT INTO automation_runs VALUES ('r2', 'a1', 2, '{bad')",
                 [],
+            )
+            .unwrap();
+        // A status this version does not know is not guessed at.
+        db.conn
+            .execute(
+                "INSERT INTO automation_runs VALUES ('r3', 'a1', 3, ?1)",
+                [r#"{"id":"r3","automationId":"a1","trigger":"manual","scheduledFor":1,"createdAt":3,"status":"paused"}"#],
             )
             .unwrap();
         let runs = db.list_automation_runs("a1").unwrap();
@@ -1587,7 +1682,7 @@ mod tests {
                 params![r#"{"id":"r1","automationId":"a1","trigger":"manual","scheduledFor":1,"createdAt":1,"status":"running","futureField":7}"#],
             )
             .unwrap();
-        db.finish_automation_run("r1", "failed", Some("boom"))
+        db.finish_automation_run("r1", RunStatus::Failed, Some("boom"))
             .unwrap();
         let json: String = db
             .conn
@@ -1601,6 +1696,10 @@ mod tests {
         assert_eq!(run["status"], "failed");
         assert_eq!(run["error"], "boom");
         assert_eq!(run["futureField"], 7);
+        let auto = &db.list_automations().unwrap()[0];
+        assert_eq!(auto.last_run_status.as_deref(), Some("failed"));
+        assert_eq!(auto.extra["lastRunError"], "boom");
+        assert!(auto.last_run_at.is_some());
         assert!(run["completedAt"].as_i64().is_some());
     }
 }

@@ -31,7 +31,7 @@ copy, unless there is a stated reason to differ.
 
 ## 2. Reference codebase: MonoCode
 
-- System path: `/Users/benit/Documents/personal/monocode`
+- System path: `/Users/benit/Documents/sources/monocode`
 - In-repo symlink: `reference/monocode` (git-ignored)
 
 When porting, read the TypeScript model and the React component in
@@ -124,6 +124,7 @@ bencode/
 | `usage.rs` | Provider usage snapshots for the footer, per account: load once, Refresh, the 30s countdown tick |
 | `backlog.rs` | The Backlog connection: connect / disconnect, which projects the Inbox lists, each project's start folder, status changes |
 | `accounts.rs` | Provider accounts: a thread's account, switching, Add account / sign-in, rename, remove, identities |
+| `automations.rs`, `automation_runs.rs` | Automations: the surface's state and the editor's draft, loading and saving off the UI thread; the 30s scheduler, Run now, and the thread, worktree and folder a run gets |
 | `worktree_lifecycle.rs` | Settings › Worktrees: project picker, create, delete (with the removal journal) |
 | `chat_background.rs` | Appearance › Chat background: the saved copy of the image, decoding and effects off the UI thread, the image the panes draw |
 
@@ -227,7 +228,7 @@ only read that cache.
 | `sessions/ui/SessionReview.tsx`, `sessions/model/checkpoint.ts`, `source-control/ui/SessionChangesDiff.tsx` | `ui/transcript/review_card.rs`, `app/session_review.rs`, `git/checkpoint.rs` | "Changed N files" card with Undo / Keep / Review |
 | `features/terminal/` | `ui/terminal_pane.rs` | Ely PTY terminal, one dock per project |
 | `features/notes/` | `ui/notes_view.rs`, `db/mod.rs` | Markdown notes, tags, session links |
-| `features/automations/` | `ui/automations/`, `schedule.rs`, `db/schedule.rs` | Scheduled prompts, run history, 30s scheduler |
+| `features/automations/` | `ui/automations/`, `app/automations.rs`, `app/automation_runs.rs`, `schedule.rs`, `db/schedule.rs` | Templates, time triggers, session settings, run history, 30s scheduler. No event triggers |
 | `features/inbox/` | `ui/inbox_view*`, `github.rs`, `work_items.rs` | GitHub issues and PRs, checks, CI repair, comments |
 | `features/inbox/model/jira.ts`, `src-tauri/src/jira.rs` (as the pattern) | `backlog.rs`, `app/backlog.rs`, `ui/settings_integrations.rs` | Nulab Backlog issues in the Inbox: comments, status change, Send to agent. BenCode's own; MonoCode has Jira, Linear, GitLab and Azure DevOps instead |
 | `features/search/` | `ui/search_view.rs`, `ui/quick_open.rs` | Universal search; Go to File (⌘P) |
@@ -333,6 +334,9 @@ cx.notify(); // without this the cached app view does not redraw
 ### Background work
 
 - **Never block the UI thread** with disk IO, git commands or SQLite queries.
+- **SQLite goes through `db_then(cx, job, land)`** (`app.rs`): `job` runs on the
+  database thread after every queued write, `land` gets its result back on the
+  app. `db_write` queues a write nobody waits for.
 - **Never do IO inside `render()`.** GPUI re-renders on every streamed token.
   Read from `self.workspace` and call `refresh_workspace(cx)` when data must change.
 - **GPUI's executor has no Tokio reactor.** `tokio::spawn`, `tokio::process` and
