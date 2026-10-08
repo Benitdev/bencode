@@ -10,8 +10,8 @@ use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, Context, Hsla, InteractiveElement, IntoElement, ListAlignment, ListOffset,
-    ListState, ParentElement, SharedString, StatefulInteractiveElement, Styled, div, list,
-    prelude::*,
+    ListState, ParentElement, Pixels, ScrollWheelEvent, SharedString, StatefulInteractiveElement,
+    Styled, Window, div, list, prelude::*,
 };
 
 use crate::app::BenCodeApp;
@@ -28,6 +28,8 @@ use crate::ui::icons::ExtraIcon;
 /// MonoCode `UNIFIED_LINE_PX` / `UNIFIED_FOLD_PX`.
 const LINE_HEIGHT: f32 = 20.0;
 const FOLD_HEIGHT: f32 = 32.0;
+/// A line's `text-[12px]`.
+const LINE_TEXT: f32 = 12.0;
 /// MonoCode `DIFF_LOAD_CONCURRENCY`.
 const LOAD_THREADS: usize = 4;
 
@@ -111,6 +113,9 @@ pub struct DiffDoc {
     /// Each file's first row, then the row count.
     starts: Vec<usize>,
     list: ListState,
+    /// How far each file's lines are scrolled sideways, by file id
+    /// (MonoCode's `overflow-x-auto` code lane).
+    side_scroll: HashMap<String, Pixels>,
     focus: Option<DocFocus>,
     generation: u64,
 }
@@ -130,6 +135,7 @@ impl DiffDoc {
             rows: Vec::new(),
             starts: vec![0],
             list: ListState::new(0, ListAlignment::Top, px(600.0)),
+            side_scroll: HashMap::new(),
             focus,
             generation: 0,
         }
@@ -181,6 +187,23 @@ impl DiffDoc {
         }
         self.list.reset(self.rows.len());
         self.list.scroll_to(top);
+        let files = &self.files;
+        self.side_scroll.retain(|id, _| files.iter().any(|file| &file.id == id));
+    }
+
+    /// The longest line file `ix` shows, in characters.
+    fn widest_line(&self, ix: usize) -> usize {
+        let Some((from, to)) = self.starts.get(ix).zip(self.starts.get(ix + 1)) else {
+            return 0;
+        };
+        self.rows[*from..*to]
+            .iter()
+            .filter_map(|row| match row {
+                DocRow::Line(_, line) => Some(line.text.chars().count()),
+                _ => None,
+            })
+            .max()
+            .unwrap_or(0)
     }
 
     /// Rebuilds one file's rows in place, so the list keeps its scroll.
@@ -559,6 +582,36 @@ impl BenCodeApp {
         });
     }
 
+    /// Scrolls the lines of file `ix` sideways by `by`, as far as its
+    /// longest line reaches.
+    fn scroll_diff_file_sideways(&mut self, key: &str, ix: usize, by: Pixels, window: &Window, cx: &mut Context<Self>) {
+        let Some(doc) = self.diff_docs.get_mut(key) else {
+            return;
+        };
+        let Some(id) = doc.files.get(ix).map(|file| file.id.clone()) else {
+            return;
+        };
+        let text_system = window.text_system();
+        let font = text_system.resolve_font(&gpui::font(cx.theme().mono_family.clone()));
+        let advance = match text_system.em_advance(font, px(LINE_TEXT)) {
+            Ok(advance) => advance,
+            Err(err) => {
+                log::debug!("diff: no advance for the code font: {err:#}");
+                return;
+            }
+        };
+        // The row less its `w-12` gutter and the text's `px-3` on each side.
+        let rem = window.rem_size();
+        let room = doc.list.viewport_bounds().size.width - scrollbar::gutter(&doc.list) - rem * 4.5;
+        let reach = (advance * doc.widest_line(ix) as f32 - room).max(Pixels::ZERO);
+        let before = doc.side_scroll.get(&id).copied().unwrap_or_default();
+        let after = (before + by).clamp(Pixels::ZERO, reach);
+        if after != before {
+            doc.side_scroll.insert(id, after);
+            cx.notify();
+        }
+    }
+
     /// The review of the active tab, or its loading / error state.
     pub(crate) fn render_diff_doc(&self, key: &str, cx: &Context<Self>) -> AnyElement {
         let theme = cx.theme();
@@ -725,7 +778,20 @@ impl BenCodeApp {
         };
         match row {
             DocRow::Header(f) => self.render_doc_header(key, doc, *f, false, cx).into_any_element(),
-            DocRow::Line(_, line) => render_line(line, cx),
+            DocRow::Line(f, line) => {
+                let scrolled = doc.side_scroll.get(&doc.files[*f].id).copied().unwrap_or_default();
+                let (key, file) = (key.to_string(), *f);
+                render_line(line, scrolled, cx)
+                    .on_scroll_wheel(cx.listener(move |this, event: &ScrollWheelEvent, window, cx| {
+                        let delta = event.delta.pixel_delta(window.line_height());
+                        // An up-and-down gesture is the list's.
+                        if delta.x.abs() > delta.y.abs() {
+                            cx.stop_propagation();
+                            this.scroll_diff_file_sideways(&key, file, -delta.x, window, cx);
+                        }
+                    }))
+                    .into_any_element()
+            }
             DocRow::Fold { file, id, hidden } => self.render_fold(key, *file, *id, *hidden, cx),
             DocRow::Message(_, text) => div()
                 .px_3()
@@ -911,7 +977,8 @@ impl BenCodeApp {
 
 /// MonoCode `DiffLineRow`: a tinted gutter number, then the text, in the
 /// chosen diff palette (`bg-diff-*-bg`, `bg-diff-*-gutter`, `text-diff-*-fg`).
-fn render_line(line: &Line, cx: &gpui::App) -> AnyElement {
+/// The text starts `scrolled` to the left of its lane; the gutter stays.
+fn render_line(line: &Line, scrolled: Pixels, cx: &gpui::App) -> gpui::Div {
     let theme = cx.theme();
     let colors = &theme.colors;
     let fg = colors.fg;
@@ -955,14 +1022,13 @@ fn render_line(line: &Line, cx: &gpui::App) -> AnyElement {
                 .px_3()
                 .whitespace_nowrap()
                 .overflow_hidden()
-                .text_size(px(12.0))
+                .text_size(px(LINE_TEXT))
                 .text_color(fg.opacity(if line.kind == LineKind::Context { 0.56 } else { 0.8 }))
                 .when(line.text.is_empty(), |el| el.child(" "))
                 .when(!line.text.is_empty(), |el| {
-                    el.child(SharedString::from(line.text.clone()))
+                    el.child(div().ml(-scrolled).child(SharedString::from(line.text.clone())))
                 }),
         )
-        .into_any_element()
 }
 
 #[cfg(test)]

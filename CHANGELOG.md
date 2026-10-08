@@ -10,6 +10,9 @@ tagging (`docs/releasing.md`).
   (Apple Silicon) and `BenCode-x86_64.dmg` (Intel), each about half the size
   of the universal build. Installed copies update to the right one on their
   own.
+- Terminals side by side: drag a terminal's tab onto an edge of another
+  terminal to split the dock.
+- Review: a file's long lines scroll sideways.
 - More database work moved off the UI thread, so the window stays
   responsive.
 
