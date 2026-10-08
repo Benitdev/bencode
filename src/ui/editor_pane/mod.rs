@@ -79,6 +79,39 @@ pub struct EditorState {
     reloading: HashSet<String>,
     /// The active file's selected lines, if any.
     pub selection: Option<EditorSelection>,
+    /// Where to put the cursor once this file is open (search results).
+    reveal: Option<Reveal>,
+}
+
+/// A spot in a file: line and byte column from one, and how many bytes
+/// to select from there.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Reveal {
+    path: String,
+    line: u32,
+    column: u32,
+    len: usize,
+}
+
+/// The byte range of `reveal` in `text`, kept inside the line and on
+/// character boundaries.
+fn reveal_range(text: &str, line: u32, column: u32, len: usize) -> std::ops::Range<usize> {
+    let start_of_line = text
+        .split_inclusive('\n')
+        .take(line.saturating_sub(1) as usize)
+        .map(str::len)
+        .sum::<usize>();
+    let line_text = text[start_of_line..].split('\n').next().unwrap_or_default();
+    let floor = |at: usize| {
+        let mut at = at.min(line_text.len());
+        while !line_text.is_char_boundary(at) {
+            at -= 1;
+        }
+        at
+    };
+    let from = floor(column.saturating_sub(1) as usize);
+    let to = floor(from + len);
+    start_of_line + from..start_of_line + to
 }
 
 impl EditorState {
@@ -113,6 +146,40 @@ impl BenCodeApp {
             body: body.into(),
         });
         cx.notify();
+    }
+
+    /// Opens a file with the cursor at `line`:`column` (from one) and
+    /// `len` bytes from there selected.
+    pub fn open_file_at(
+        &mut self,
+        path: &str,
+        line: u32,
+        column: u32,
+        len: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.editor.reveal = Some(Reveal { path: path.to_string(), line, column, len });
+        self.open_file_in_editor(path, window, cx);
+        // Already open: the editor is there to move now.
+        self.apply_reveal(path, cx);
+    }
+
+    /// Moves `path`'s editor to the pending reveal, if it is for this file.
+    fn apply_reveal(&mut self, path: &str, cx: &mut Context<Self>) {
+        if self.editor.reveal.as_ref().is_none_or(|r| r.path != path) {
+            return;
+        }
+        let Some(entity) = self.editor.files.get(path).map(|f| f.handle.entity.clone()) else {
+            return;
+        };
+        let Some(reveal) = self.editor.reveal.take() else {
+            return;
+        };
+        entity.update(cx, |editor, cx| {
+            let range = reveal_range(editor.text(), reveal.line, reveal.column, reveal.len);
+            editor.select([range], cx);
+        });
     }
 
     /// Opens a workspace-relative or absolute file, reading it off the UI thread.
@@ -168,6 +235,7 @@ impl BenCodeApp {
                 if requested {
                     self.editor.files.activate(&path);
                 }
+                self.apply_reveal(&path, cx);
                 cx.notify();
             }
         }
@@ -324,7 +392,16 @@ impl BenCodeApp {
 
 #[cfg(test)]
 mod tests {
-    use super::selected_lines;
+    use super::{reveal_range, selected_lines};
+
+    #[test]
+    fn reveal_range_stays_on_its_line() {
+        let text = "ab\nconst néedle = 1;\nend";
+        assert_eq!(&text[reveal_range(text, 2, 7, 7)], "néedle");
+        // Past the line's end, and inside a character.
+        assert_eq!(reveal_range(text, 3, 9, 4), 25..25);
+        assert_eq!(&text[reveal_range(text, 2, 9, 1)], "");
+    }
 
     #[test]
     fn selections_name_their_lines() {

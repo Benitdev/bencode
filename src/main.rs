@@ -5,6 +5,7 @@ mod git;
 mod github;
 mod harness;
 mod process_stats;
+mod project_search;
 pub mod mcp;
 mod monocode_import;
 mod rate_limits;

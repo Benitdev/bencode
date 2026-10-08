@@ -11,6 +11,7 @@ mod panes;
 mod preferences;
 pub mod process_monitor;
 pub mod project_files;
+pub mod project_search;
 mod project_stats;
 mod projects;
 pub mod session_review;
@@ -287,6 +288,8 @@ pub struct BenCodeApp {
     pub notes: crate::ui::notes_view::NotesState,
     /// The Automations surface: definitions, run history, fields and dialogs.
     pub automations: crate::ui::automations::AutomationsState,
+    /// Explorer › Search in files.
+    pub project_search: project_search::ProjectSearchState,
     // Workspace & Projects
     pub current_cwd: String,
     /// Worktree each project's workspace is narrowed to, keyed by project.
@@ -507,6 +510,7 @@ impl BenCodeApp {
         let queue_keys_input = queue_edit_input.clone();
         let mut notes = crate::ui::notes_view::NotesState::new(window, cx);
         let mut automations = crate::ui::automations::AutomationsState::new(window, cx);
+        let project_search = project_search::ProjectSearchState::new(window, cx);
         let git_commit_input = multiline_input(window, cx, "Message (⌘↩ to commit)", (1, 7));
         let search_modal_input =
             text_input(window, cx, "Search conversations, files, projects... (⌘K)");
@@ -669,6 +673,9 @@ impl BenCodeApp {
                     _ => {}
                 },
             ),
+            cx.subscribe_in(&project_search.query_input, window, Self::on_project_search_input),
+            cx.subscribe_in(&project_search.include_input, window, Self::on_project_search_input),
+            cx.subscribe_in(&project_search.exclude_input, window, Self::on_project_search_input),
             cx.subscribe(&notes.title_input, Self::on_note_input_event),
             cx.subscribe(&notes.body_input, Self::on_note_input_event),
             cx.subscribe(
@@ -1127,6 +1134,7 @@ impl BenCodeApp {
             settings_return: None,
             notes,
             automations,
+            project_search,
             current_cwd,
             worktree_focuses: HashMap::new(),
             project_return: HashMap::new(),

@@ -8,6 +8,7 @@ mod fs;
 mod icons;
 mod menu;
 mod name;
+mod search;
 mod ops;
 mod tints;
 
@@ -532,7 +533,7 @@ impl BenCodeApp {
                     "Search in files (⌘Shift+F)",
                     icon("tree-toolbar-search", IconName::Search),
                 )
-                .on_click(cx.listener(|this, _, _, cx| this.open_search_modal(cx))),
+                .on_click(cx.listener(|this, _, _, cx| this.open_project_search(cx))),
             )
     }
 
