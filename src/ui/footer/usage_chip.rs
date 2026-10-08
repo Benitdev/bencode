@@ -15,7 +15,7 @@ use crate::app::usage::{UsageTarget, UsageView};
 use crate::app::{BenCodeApp, now_ms};
 use crate::harness::accounts::{ProviderAccount, supports_accounts};
 use crate::rate_limits::{
-    AccountTone, ProviderRateLimits, RateLimitProvider, RateLimitStatus, RateLimitWindow,
+    antigravity, AccountTone, ProviderRateLimits, RateLimitProvider, RateLimitStatus, RateLimitWindow,
     WindowKind, account_status, best_alternative, chip_label, clamp_used_percent,
     format_reset_countdown, format_usage_percent, format_window_label, needs_provider_login,
     updated_label, window_tooltip,
@@ -171,15 +171,18 @@ impl BenCodeApp {
                         .iter()
                         .map(|(_, window)| window.used_percent)
                         .fold(0.0, f64::max);
-                    // The account is only named once there is more than one.
-                    el.when_some(chip_accounts.active().filter(|_| accounts.len() > 1), |el, active| {
-                        el.child(
-                            div()
-                                .max_w(px(96.0))
-                                .truncate()
-                                .text_color(fg.opacity(0.45))
-                                .child(active.label.clone()),
-                        )
+                    // The account is only named once there is more than one;
+                    // Antigravity's is the one `agy` is signed in as.
+                    let account = if provider == RateLimitProvider::Antigravity {
+                        self.agy_accounts.live_email.clone().map(|email| (email, 160.0))
+                    } else {
+                        chip_accounts
+                            .active()
+                            .filter(|_| accounts.len() > 1)
+                            .map(|active| (active.label.clone(), 96.0))
+                    };
+                    el.when_some(account, |el, (label, width)| {
+                        el.child(div().max_w(px(width)).truncate().text_color(fg.opacity(0.45)).child(label))
                     })
                     .child(usage_bar(tightest, 4.0, colors).w(px(32.0)).flex_none())
                     .child(div().flex().items_center().gap_1().children(
@@ -409,6 +412,25 @@ impl BenCodeApp {
                             .child(error),
                     )
                 })
+        } else if provider == RateLimitProvider::Antigravity {
+            // Each model group has its own limits; the thread's comes first.
+            let mut groups = antigravity::GROUPS;
+            groups.sort_by_key(|group| *group != chip.active_id);
+            div().flex().flex_col().gap(px(6.0)).children(groups.into_iter().flat_map(|group| {
+                let windows = self.usage.limits(provider, group).windows();
+                let title = div()
+                    .px_1()
+                    .pt_1()
+                    .text_size(px(10.0))
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(fg.opacity(0.4))
+                    .child(antigravity::group_title(group));
+                (!windows.is_empty())
+                    .then_some(title)
+                    .into_iter()
+                    .chain(windows.into_iter().map(|(kind, window)| card(usage_window_card(kind, window, now, colors))))
+                    .collect::<Vec<_>>()
+            }))
         } else {
             div().flex().flex_col().gap(px(6.0)).children(
                 windows

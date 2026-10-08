@@ -997,6 +997,13 @@ impl BenCodeApp {
         let Some(run) = self.runs.remove(session_id) else {
             return;
         };
+        if self
+            .sessions
+            .iter()
+            .any(|s| s.id == session_id && s.harness == crate::harness::agy_accounts::PROVIDER)
+        {
+            self.reload_antigravity_usage(cx);
+        }
         if run.purpose == RunPurpose::Compact
             && let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id)
         {

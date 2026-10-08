@@ -43,6 +43,11 @@ impl BenCodeApp {
             self.usage.view = Default::default();
         }
 
+        // Antigravity's chip names the account `agy` is signed in as.
+        if harness.as_deref() == Some(crate::harness::agy_accounts::PROVIDER) {
+            self.ensure_agy_accounts(cx);
+        }
+
         let glass = self.glass(cx);
         let colors = &cx.theme().colors;
         let fg = colors.fg;

@@ -245,7 +245,7 @@ fn call(
     form: &[(&str, &str)],
 ) -> Result<Value, String> {
     let url = api_url(config, path, query);
-    let response = http::send(&url, &[], http::Send { method, form }, TIMEOUT)
+    let response = http::send(&url, &[], http::Send { method, form, body: None }, TIMEOUT)
         // curl names the host at most, never the query.
         .map_err(|err| format!("Could not reach Backlog: {err}"))?;
     if (200..300).contains(&response.status) {

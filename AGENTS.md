@@ -100,6 +100,7 @@ bencode/
     ├── settings.rs           BenCode's settings.json
     ├── storage.rs            where BenCode keeps its data (database, checkpoints, account profiles, logs)
     ├── logging.rs            log to the terminal, else to ~/Library/Logs/BenCode; the panic hook
+    ├── keychain.rs           the macOS `security` tool (Claude's usage token, Antigravity's sign-in)
     ├── monocode_import/      the one-time copy of a MonoCode install's data
     ├── external_editor.rs    finding and launching VS Code, Cursor, Zed, …
     └── workspace.rs          workspace file helpers
@@ -130,6 +131,7 @@ bencode/
 | `usage.rs` | Provider usage snapshots for the footer, per account: load once, Refresh, the 30s countdown tick |
 | `backlog.rs` | The Backlog connection: connect / disconnect, which projects the Inbox lists, each project's start folder, status changes |
 | `accounts.rs` | Provider accounts: a thread's account, switching, Add account / sign-in, rename, remove, identities |
+| `agy_accounts.rs` | Antigravity accounts: the saved sign-ins, which one `agy` uses, Switch, Add account (its sign-in in the terminal dock), rename, remove |
 | `notes.rs`, `note_images.rs` | Notes: titles, previews and tags (`notes.ts`), the open note's fields, autosave, create / move / delete off the UI thread, `@note/slug` bodies for a turn; images dropped into a note (`note-assets/` in the data folder) |
 | `automations.rs`, `automation_runs.rs` | Automations: the surface's state and the editor's draft, loading and saving off the UI thread; the 30s scheduler, Run now, and the thread, worktree and folder a run gets |
 | `worktree_lifecycle.rs` | Settings › Worktrees: project picker, create, delete (with the removal journal) |
@@ -155,7 +157,7 @@ bencode/
 | `footer/` | Status bar: provider usage chip, its details popover and account pages, terminal toggle |
 | `inbox_view*`, `notes/`, `automations/`, `search_view.rs`, `settings_modal.rs` | The five surfaces |
 | `page_parts.rs`, `relative_time.rs` | What the Notes and Automations pages share: `content/N` tints, section titles, page tabs, boxed rows; "5 minutes ago" |
-| `settings_accounts.rs`, `settings_appearance.rs`, `settings_worktrees.rs`, `settings_integrations.rs` | Settings pages: provider accounts, appearance, worktrees, integrations (Backlog) |
+| `settings_accounts.rs`, `settings_agy_accounts.rs`, `settings_appearance.rs`, `settings_worktrees.rs`, `settings_integrations.rs` | Settings pages: provider accounts, appearance, worktrees, integrations (Backlog) |
 | `quick_open.rs`, `lightbox.rs`, `link_dialog.rs`, `reminder_notices.rs` | Overlays |
 | `theme.rs`, `appearance.rs`, `scale.rs`, `background_effects.rs`, `icons.rs`, `provider_icon.rs`, `mascot.rs`, `motion.rs`, `spinner.rs` | Look and shared drawing: palettes, tint / accent / diff colours, interface scale, chat background effects |
 | `app_callback.rs`, `virtual_rows.rs`, `explorer_menu.rs`, `drag_drop.rs` | Shared helpers |
@@ -248,6 +250,7 @@ only read that cache.
 | `ProjectRail`, `TitleBar.tsx`, `Sidebar.tsx` | `ui/rail/`, `ui/titlebar/`, `ui/sidebar*.rs` | Shell |
 | `app/shell/UsageFooter.tsx`, `UsageProviderChip.tsx`, `providers/model/rateLimits*.ts`, `src-tauri/src/rate_limits.rs` | `ui/footer/`, `app/usage.rs`, `rate_limits/` | 5h / weekly / monthly usage per account; HTTP through `curl` |
 | `providers/model/providerAccounts.ts`, `accountUsage.ts`, `harness/core/auth.ts`, `src-tauri/src/account_identity.rs` | `harness/accounts.rs`, `harness/login.rs`, `harness/account_identity.rs`, `app/accounts.rs` | Account profiles in BenCode's own `provider-accounts`; the list is in `settings.json` |
+| the user's `agy-save` / `agy-switch` scripts | `harness/agy_accounts.rs`, `app/agy_accounts.rs`, `ui/settings_agy_accounts.rs`, `keychain.rs` | Antigravity accounts. BenCode's own; one sign-in for the whole machine, not one per thread |
 | `shared/ui/` (buttons, dialogs) | Ely components directly | No local component library |
 | `integrations/harness/` | `harness/` | Argv builders and stdout parsers |
 | `src-tauri/src/` (`checkpoint.rs`, `reminders.rs`, `fs.rs`, …) | `git/checkpoint.rs`, `db/`, `ui/file_tree/fs.rs` | In-process calls, no IPC |
@@ -407,6 +410,17 @@ div()
   the profile directory under BenCode's `provider-accounts` (`storage.rs`); `SpawnRequest.account`
   (and `AppServer::open`'s `account`) point the CLI at it. Any new place that
   starts Claude or Codex for a thread must pass the thread's `AccountProfile`.
+- **Antigravity has one sign-in for the machine** (`agy_accounts.rs`): `agy`
+  reads a single Keychain item and cannot be pointed at another, so its
+  accounts are saved copies of that item and switching writes one back. It is
+  not in `supports_accounts`; threads carry no Antigravity account, and the
+  account does not change while an Antigravity turn runs. The token goes to
+  `security -i` on stdin, never on an argv.
+- **Antigravity's usage** (`rate_limits/antigravity.rs`) comes from the
+  endpoint `agy` itself calls, with the Keychain's access token. Its usage
+  key's account id is a model group (`gemini`, `3p`), not an account.
+  BenCode never refreshes that token: an expired one keeps the last
+  snapshot until the next Antigravity turn.
 - `AgentEvent` is the whole contract with the UI: `SessionStarted`, `TextDelta`,
   `ThinkingDelta`, `ToolCallStart` / `ToolCallFinish`, `PermissionRequest`,
   `Usage`, `TurnMetrics`, `UsageLimited`, `Compacted`, `Done`, `Error`.
@@ -495,9 +509,10 @@ packaging/macos/bundle.sh    # BenCode.app and BenCode.dmg in target/bundle
 - Run from Finder or the Dock, the app logs to
   `~/Library/Logs/BenCode/bencode.log` (Help › Show Logs), warnings and up
   unless `RUST_LOG` says otherwise.
-- Two tests are `#[ignore]`d because they are live: one calls the Claude CLI
-  (`harness/claude.rs::live_permission_round_trip`), one reads the Keychain
-  and Anthropic's usage endpoint (`rate_limits/claude.rs::live_usage_round_trip`).
+- Three tests are `#[ignore]`d because they are live: one calls the Claude CLI
+  (`harness/claude.rs::live_permission_round_trip`), two read the Keychain
+  and a usage endpoint (`rate_limits/claude.rs::live_usage_round_trip`,
+  `rate_limits/antigravity.rs::live_usage_round_trip`).
 
 ### Releasing
 

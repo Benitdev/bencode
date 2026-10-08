@@ -122,16 +122,12 @@ fn token_expired(expires_at_ms: Option<i64>, now_ms: i64) -> bool {
 
 #[cfg(target_os = "macos")]
 mod keychain {
-    use std::io::Read;
     use std::path::Path;
-    use std::process::{Command, Stdio};
-    use std::time::{Duration, Instant};
 
     use sha2::{Digest, Sha256};
 
     use super::{Credentials, credentials_from_blob};
 
-    const TIMEOUT: Duration = Duration::from_secs(5);
     const SERVICE: &str = "Claude Code-credentials";
     const FALLBACK_USER: &str = "claude-code-user";
 
@@ -182,62 +178,20 @@ mod keychain {
         let failed = |detail: String| {
             format!("Could not remove the Claude credentials from Keychain ({service}): {detail}")
         };
-        let (ok, _, stderr) =
-            run(&["delete-generic-password", "-s", service.as_str()]).map_err(failed)?;
-        if ok || stderr.contains("could not be found") {
+        let output =
+            crate::keychain::run(&["delete-generic-password", "-s", service.as_str()]).map_err(failed)?;
+        if output.ok || crate::keychain::not_found(&output) {
             Ok(())
         } else {
-            Err(failed(stderr))
+            Err(failed(output.stderr))
         }
     }
 
     /// `security`'s stdout, or None when it fails or hangs on a locked
     /// Keychain past the timeout.
     fn security(args: &[&str]) -> Option<String> {
-        let (ok, out, _) = run(args).ok()?;
-        (ok && !out.is_empty()).then_some(out)
-    }
-
-    /// Runs `security`: whether it succeeded, then its trimmed stdout and
-    /// stderr. Fails when it cannot start or outlives the timeout.
-    fn run(args: &[&str]) -> Result<(bool, String, String), String> {
-        let mut child = Command::new("security")
-            .args(args)
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|err| err.to_string())?;
-        let started = Instant::now();
-        loop {
-            match child.try_wait() {
-                Ok(Some(status)) => {
-                    let (mut out, mut err) = (String::new(), String::new());
-                    if let Some(mut stdout) = child.stdout.take()
-                        && let Err(read) = stdout.read_to_string(&mut out)
-                    {
-                        log::debug!("security stdout: {read}");
-                    }
-                    if let Some(mut stderr) = child.stderr.take()
-                        && let Err(read) = stderr.read_to_string(&mut err)
-                    {
-                        log::debug!("security stderr: {read}");
-                    }
-                    return Ok((status.success(), out.trim().to_string(), err.trim().to_string()));
-                }
-                Ok(None) if started.elapsed() > TIMEOUT => {
-                    if let Err(err) = child.kill() {
-                        log::debug!("security already exited: {err}");
-                    }
-                    if let Err(err) = child.wait() {
-                        log::debug!("security wait: {err}");
-                    }
-                    return Err("the Keychain did not answer".into());
-                }
-                Ok(None) => std::thread::sleep(Duration::from_millis(40)),
-                Err(err) => return Err(err.to_string()),
-            }
-        }
+        let output = crate::keychain::run(args).ok()?;
+        (output.ok && !output.stdout.is_empty()).then_some(output.stdout)
     }
 }
 

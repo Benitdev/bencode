@@ -92,6 +92,14 @@ impl BenCodeApp {
     pub fn usage_target(&self) -> Option<UsageTarget> {
         let session = self.selected_session()?;
         let provider = RateLimitProvider::from_harness(&session.harness)?;
+        if provider == RateLimitProvider::Antigravity {
+            // One sign-in for the machine; the limits are the model group's.
+            return Some(UsageTarget {
+                provider,
+                account_id: rate_limits::antigravity::group_of(&session.model).into(),
+                available: true,
+            });
+        }
         if !supports_accounts(&session.harness) {
             return Some(UsageTarget {
                 provider,
@@ -125,9 +133,10 @@ impl BenCodeApp {
         self.usage.snapshots.insert(key.clone(), fetching);
         self.usage.pending.insert(key.clone(), force);
         let profile = AccountProfile::resolve(provider.id(), Some(account_id));
+        let account_id = account_id.to_string();
         let task = cx
             .background_executor()
-            .spawn(async move { rate_limits::fetch(provider, profile.as_ref(), now_ms()) });
+            .spawn(async move { rate_limits::fetch(provider, profile.as_ref(), &account_id, now_ms()) });
         cx.spawn(async move |this, cx| {
             let fetched = task.await;
             let landed = this.update(cx, |app, cx| {
@@ -162,6 +171,12 @@ impl BenCodeApp {
         }
         self.usage.popover = Some(provider);
         self.load_account_details(provider, false, cx);
+        if provider == RateLimitProvider::Antigravity {
+            // The popover shows both groups.
+            for group in rate_limits::antigravity::GROUPS {
+                self.load_rate_limits(provider, group, false, cx);
+            }
+        }
         cx.notify();
     }
 
@@ -190,6 +205,16 @@ impl BenCodeApp {
             cx.notify();
         }
         open
+    }
+
+    /// Antigravity's usage again: after a turn (which spent some and
+    /// refreshed the token), and for another account after a switch.
+    pub(crate) fn reload_antigravity_usage(&mut self, cx: &mut Context<Self>) {
+        for group in rate_limits::antigravity::GROUPS {
+            if self.usage.cached(RateLimitProvider::Antigravity, group).is_some() {
+                self.load_rate_limits(RateLimitProvider::Antigravity, group, true, cx);
+            }
+        }
     }
 
     /// Redraws the footer's countdowns while it shows usage.

@@ -323,6 +323,11 @@ impl BenCodeApp {
         for provider in ACCOUNT_PROVIDERS {
             self.load_account_details(provider, force, cx);
         }
+        if force {
+            self.load_agy_accounts(cx);
+        } else {
+            self.ensure_agy_accounts(cx);
+        }
     }
 
     /// Who each of `provider`'s accounts is, and the usage of the ones not
@@ -349,6 +354,7 @@ impl BenCodeApp {
             return;
         }
         self.accounts.error = None;
+        self.agy_accounts.renaming = None;
         self.accounts.editor = Some(AccountEditor {
             provider,
             account_id: account.map(|account| account.id.clone()),
@@ -368,11 +374,15 @@ impl BenCodeApp {
         }
         self.accounts.editor = None;
         self.accounts.error = None;
+        self.agy_accounts.renaming = None;
         cx.notify();
     }
 
     /// The name field's Save, or Sign in and add.
     pub fn submit_account_editor(&mut self, cx: &mut Context<Self>) {
+        if self.submit_agy_rename(cx) {
+            return;
+        }
         let Some(editor) = self.accounts.editor.clone() else {
             return;
         };

@@ -26,8 +26,58 @@ use crate::ui::scale::px;
 /// MonoCode `UsageMeter`'s `w-36`.
 const METER_WIDTH: f32 = 144.0;
 
-fn plural_accounts(n: usize) -> String {
+pub(crate) fn plural_accounts(n: usize) -> String {
     format!("{n} {}", if n == 1 { "account" } else { "accounts" })
+}
+
+/// A provider's header on the page: its icon, name and `detail`, then
+/// `action` (Add account).
+pub(crate) fn provider_header(
+    harness: &str,
+    title: &'static str,
+    detail: String,
+    fg: gpui::Hsla,
+    action: impl IntoElement,
+) -> gpui::Div {
+    div()
+        .flex()
+        .items_center()
+        .gap_4()
+        .py(px(14.0))
+        .child(
+            div()
+                .flex()
+                .flex_1()
+                .min_w_0()
+                .items_center()
+                .gap(px(10.0))
+                .child(
+                    div()
+                        .flex()
+                        .flex_none()
+                        .items_center()
+                        .justify_center()
+                        .size(px(28.0))
+                        .rounded(px(8.0))
+                        .bg(fg.opacity(0.05))
+                        .border_1()
+                        .border_color(fg.opacity(0.06))
+                        .child(HarnessIcon::new(harness).size(px(16.0))),
+                )
+                .child(
+                    div()
+                        .min_w_0()
+                        .child(div().text_size(px(13.0)).font_weight(FontWeight::MEDIUM).child(title))
+                        .child(
+                            div()
+                                .mt(px(2.0))
+                                .text_size(px(11.0))
+                                .text_color(fg.opacity(0.4))
+                                .child(detail),
+                        ),
+                ),
+        )
+        .child(action)
 }
 
 impl BenCodeApp {
@@ -52,8 +102,10 @@ impl BenCodeApp {
             );
         let section = ACCOUNT_PROVIDERS
             .iter()
-            .fold(section, |section, provider| section.row(self.render_provider_accounts(*provider, cx)));
-        div().flex().flex_col().child(section).children(self.accounts.error.clone().map(|error| {
+            .fold(section, |section, provider| section.row(self.render_provider_accounts(*provider, cx)))
+            .row(self.render_agy_accounts(cx));
+        let error = self.accounts.error.clone().or_else(|| self.agy_accounts.error.clone());
+        div().flex().flex_col().child(section).children(error.map(|error| {
             div()
                 .pt_2()
                 .text_size(px(11.0))
@@ -72,62 +124,23 @@ impl BenCodeApp {
         let editor = self.accounts.editor.as_ref().filter(|editor| editor.provider == provider);
         let adding = editor.is_some_and(|editor| editor.account_id.is_none());
 
-        let header = div()
-            .flex()
-            .items_center()
-            .gap_4()
-            .py(px(14.0))
-            .child(
-                div()
-                    .flex()
-                    .flex_1()
-                    .min_w_0()
-                    .items_center()
-                    .gap(px(10.0))
-                    .child(
-                        div()
-                            .flex()
-                            .flex_none()
-                            .items_center()
-                            .justify_center()
-                            .size(px(28.0))
-                            .rounded(px(8.0))
-                            .bg(fg.opacity(0.05))
-                            .border_1()
-                            .border_color(fg.opacity(0.06))
-                            .child(HarnessIcon::new(provider.id()).size(px(16.0))),
-                    )
-                    .child(
-                        div()
-                            .min_w_0()
-                            .child(
-                                div()
-                                    .text_size(px(13.0))
-                                    .font_weight(FontWeight::MEDIUM)
-                                    .child(provider.title()),
-                            )
-                            .child(
-                                div()
-                                    .mt(px(2.0))
-                                    .text_size(px(11.0))
-                                    .text_color(fg.opacity(0.4))
-                                    .child(plural_accounts(accounts.len())),
-                            ),
-                    ),
-            )
-            .child(
-                Button::new(SharedString::from(format!("accounts-add-{}", provider.id())), "Add account")
-                    .icon(IconName::Plus)
-                    .variant(ButtonVariant::Outline)
-                    .size(ControlSize::Sm)
-                    .disabled(busy)
-                    .on_click(cx.listener(move |this, _, _, cx| this.open_account_editor(provider, None, cx))),
-            );
+        let header = provider_header(
+            provider.id(),
+            provider.title(),
+            plural_accounts(accounts.len()),
+            fg,
+            Button::new(SharedString::from(format!("accounts-add-{}", provider.id())), "Add account")
+                .icon(IconName::Plus)
+                .variant(ButtonVariant::Outline)
+                .size(ControlSize::Sm)
+                .disabled(busy)
+                .on_click(cx.listener(move |this, _, _, cx| this.open_account_editor(provider, None, cx))),
+        );
 
         let rows = accounts.iter().map(|account| {
             let editing = editor.is_some_and(|editor| editor.account_id.as_deref() == Some(account.id.as_str()));
             if editing {
-                self.render_account_editor(provider, false, cx)
+                self.render_account_editor(provider.id(), false, cx)
             } else {
                 self.render_account_row(provider, account, cx)
             }
@@ -143,7 +156,7 @@ impl BenCodeApp {
                     .border_t_1()
                     .border_color(fg.opacity(0.05))
                     .children(rows)
-                    .when(adding, |el| el.child(self.render_account_editor(provider, true, cx))),
+                    .when(adding, |el| el.child(self.render_account_editor(provider.id(), true, cx))),
             )
             .into_any_element()
     }
@@ -295,7 +308,7 @@ impl BenCodeApp {
 
     /// MonoCode `ProviderAccountEditor`: the name field with Cancel and
     /// Save, or Sign in and add for a new account.
-    fn render_account_editor(&self, provider: RateLimitProvider, adding: bool, cx: &Context<Self>) -> AnyElement {
+    pub(crate) fn render_account_editor(&self, provider: &str, adding: bool, cx: &Context<Self>) -> AnyElement {
         let colors = &cx.theme().colors;
         let fg = colors.fg;
         let working = self.accounts.working.is_some();
@@ -306,7 +319,7 @@ impl BenCodeApp {
             (false, _) => "Save",
         };
         div()
-            .id(SharedString::from(format!("account-editor-{}", provider.id())))
+            .id(SharedString::from(format!("account-editor-{provider}")))
             .flex()
             .items_center()
             .h(px(48.0))

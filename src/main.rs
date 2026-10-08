@@ -5,6 +5,7 @@ pub mod external_editor;
 mod git;
 mod github;
 mod harness;
+mod keychain;
 mod logging;
 mod process_stats;
 mod project_search;

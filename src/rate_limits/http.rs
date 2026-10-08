@@ -21,6 +21,8 @@ pub struct Send<'a> {
     pub method: Option<&'a str>,
     /// Sent URL-encoded as the body.
     pub form: &'a [(&'a str, &'a str)],
+    /// Sent as written (JSON); the caller names its content type.
+    pub body: Option<&'a str>,
 }
 
 /// Blocking; `timeout` bounds the whole transfer.
@@ -68,6 +70,10 @@ fn request_config(url: &str, headers: &[(&str, &str)], send: Send, timeout: Dura
     for (name, value) in send.form {
         // `name=content`: curl encodes the content, not the name.
         config.push_str(&format!("data-urlencode = {}\n", quoted_data(&format!("{name}={value}"))));
+    }
+    if let Some(body) = send.body {
+        // data-raw: a leading `@` is not a file name.
+        config.push_str(&format!("data-raw = {}\n", quoted_data(body)));
     }
     config
 }
@@ -143,11 +149,22 @@ mod tests {
             Send {
                 method: Some("PATCH"),
                 form: &[("content", "a \"b\"\nc")],
+                body: None,
             },
             Duration::from_secs(5),
         );
         assert!(config.contains("request = \"PATCH\"\n"));
         assert!(config.ends_with("data-urlencode = \"content=a \\\"b\\\"\\nc\"\n"));
+    }
+
+    #[test]
+    fn a_json_body_is_sent_as_written() {
+        let send = Send {
+            body: Some("{\"project\":\"p\"}"),
+            ..Default::default()
+        };
+        let config = request_config("https://example.com/q", &[], send, Duration::from_secs(5));
+        assert!(config.ends_with("data-raw = \"{\\\"project\\\":\\\"p\\\"}\"\n"));
     }
 
     #[test]

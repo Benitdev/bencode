@@ -4,6 +4,7 @@
 //! submodules and block, so they run on a background executor.
 
 mod account_status;
+pub mod antigravity;
 mod claude;
 mod codex;
 pub(crate) mod http;
@@ -30,6 +31,8 @@ pub enum RateLimitProvider {
     Claude,
     Codex,
     OpenCode,
+    /// BenCode's own; its account id is a limit group (`antigravity`).
+    Antigravity,
 }
 
 impl RateLimitProvider {
@@ -39,6 +42,7 @@ impl RateLimitProvider {
             "claude" => Some(Self::Claude),
             "codex" => Some(Self::Codex),
             "opencode" => Some(Self::OpenCode),
+            "antigravity" => Some(Self::Antigravity),
             _ => None,
         }
     }
@@ -48,6 +52,7 @@ impl RateLimitProvider {
             Self::Claude => "claude",
             Self::Codex => "codex",
             Self::OpenCode => "opencode",
+            Self::Antigravity => "antigravity",
         }
     }
 
@@ -57,6 +62,7 @@ impl RateLimitProvider {
             Self::Claude => "Claude Code",
             Self::Codex => "Codex",
             Self::OpenCode => "OpenCode",
+            Self::Antigravity => "Antigravity",
         }
     }
 }
@@ -193,11 +199,18 @@ impl Fetched {
     }
 }
 
-/// Reads `provider`'s usage for `account` (None is the default profile).
+/// Reads `provider`'s usage for `account` (None is the default profile);
+/// `account_id` is the usage key's, which names Antigravity's limit group.
 /// Blocking (Keychain, network, or a CLI child): call it on a background
 /// executor.
-pub fn fetch(provider: RateLimitProvider, account: Option<&AccountProfile>, now: i64) -> Fetched {
+pub fn fetch(
+    provider: RateLimitProvider,
+    account: Option<&AccountProfile>,
+    account_id: &str,
+    now: i64,
+) -> Fetched {
     match provider {
+        RateLimitProvider::Antigravity => antigravity::fetch(account_id, now),
         RateLimitProvider::Claude => claude::fetch(account, now),
         RateLimitProvider::Codex => codex::fetch(account, now),
         RateLimitProvider::OpenCode => opencode::fetch(now),

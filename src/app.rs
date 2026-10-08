@@ -1,4 +1,5 @@
 pub mod accounts;
+pub mod agy_accounts;
 pub mod backlog;
 mod agent;
 mod automation_runs;
@@ -331,6 +332,7 @@ pub struct BenCodeApp {
     /// The footer's CPU and memory readout for BenCode itself.
     /// Provider account profiles (MonoCode `providerAccounts`).
     pub accounts: accounts::AccountsState,
+    pub agy_accounts: agy_accounts::AgyAccountsState,
     /// The Add account form's name field.
     pub account_name_input: Entity<TextInput>,
     /// Settings › Accounts' name field, for adding and renaming.
@@ -1194,6 +1196,7 @@ impl BenCodeApp {
             project_stats: Default::default(),
             usage: Default::default(),
             accounts: Default::default(),
+            agy_accounts: Default::default(),
             account_name_input,
             account_editor_input,
             file_tree: Default::default(),
@@ -1537,6 +1540,7 @@ impl Render for BenCodeApp {
                     .children(self.render_session_dialog(cx))
                     .children(self.render_worktree_deletion(cx))
                     .children(self.render_account_removal(cx))
+                    .children(self.render_agy_account_removal(cx))
                     .children(self.render_backlog_disconnect(cx))
                     .children(self.render_worktree_creation(cx))
                     .children(self.render_quick_open(cx))

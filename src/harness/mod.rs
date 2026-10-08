@@ -3,6 +3,7 @@
 
 pub mod account_identity;
 pub mod accounts;
+pub mod agy_accounts;
 pub mod attachments;
 pub use attachments::Attachment;
 pub mod antigravity;
