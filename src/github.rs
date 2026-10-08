@@ -43,10 +43,21 @@ fn gh_path() -> Option<PathBuf> {
         .find(|candidate| candidate.is_file())
 }
 
-/// MonoCode `gh_run`: stdout, or the CLI's own error text.
+/// MonoCode `gh_run`: stdout, or the CLI's own error text. Runs as the
+/// account the project in `cwd` uses (`github_accounts`).
 pub(crate) fn gh(cwd: &Path, args: &[&str]) -> Result<String, String> {
+    let token = crate::github_accounts::token_for(cwd);
+    run_gh(cwd, args, token.as_deref())
+}
+
+/// `gh` as the account `token` belongs to, or as its active account.
+pub(crate) fn run_gh(cwd: &Path, args: &[&str], token: Option<&str>) -> Result<String, String> {
     let program = gh_path().ok_or_else(|| "GitHub CLI (`gh`) is not installed.".to_string())?;
-    let output = Command::new(program)
+    let mut command = Command::new(program);
+    if let Some(token) = token {
+        command.env("GH_TOKEN", token);
+    }
+    let output = command
         .current_dir(cwd)
         .args(args)
         .env("GIT_TERMINAL_PROMPT", "0")

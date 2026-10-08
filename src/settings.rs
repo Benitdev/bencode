@@ -65,6 +65,9 @@ pub struct AppSettings {
     pub backlog_hidden_projects: Vec<String>,
     /// The folder "Send to agent" starts in, by Backlog project key.
     pub backlog_project_folders: std::collections::BTreeMap<String, String>,
+    /// The `gh` account a project's GitHub commands run as, by project
+    /// folder; a project left out is on Automatic.
+    pub github_accounts: std::collections::BTreeMap<String, String>,
     /// MonoCode `monocode.themeHue` / `themeSaturation` /
     /// `themeDarkLightness`; `None` is the default.
     pub theme_hue: Option<f32>,
@@ -202,6 +205,7 @@ mod tests {
             inbox_list_width: Some(400.0),
             backlog_hidden_projects: vec!["12".to_string()],
             backlog_project_folders: std::collections::BTreeMap::from([("WEB".to_string(), "/p".to_string())]),
+            github_accounts: std::collections::BTreeMap::from([("/p".to_string(), "work-me".to_string())]),
             changes_tree: true,
             theme_hue: Some(210.0),
             theme_saturation: Some(12.0),

@@ -1,6 +1,7 @@
 pub mod accounts;
 pub mod agy_accounts;
 pub mod backlog;
+pub mod github_accounts;
 mod agent;
 mod automation_runs;
 pub mod automations;
@@ -179,6 +180,8 @@ pub struct BenCodeApp {
     pub inbox_comment_input: Entity<TextInput>,
     /// Settings › Integrations: the Backlog connection and its form.
     pub backlog: backlog::BacklogState,
+    /// Settings › Integrations: the `gh` accounts and each project's.
+    pub github: github_accounts::GithubAccountsState,
     pub backlog_space_input: Entity<TextInput>,
     pub backlog_key_input: Entity<TextInput>,
     pub backlog_disconnect_open: bool,
@@ -1119,6 +1122,7 @@ impl BenCodeApp {
             inbox_search_input,
             inbox_comment_input,
             backlog: Default::default(),
+            github: Default::default(),
             backlog_space_input,
             backlog_key_input,
             backlog_disconnect_open: false,

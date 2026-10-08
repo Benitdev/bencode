@@ -1,11 +1,13 @@
-//! Settings › Integrations: trackers the Inbox reads besides GitHub. For
-//! now Nulab Backlog (shaped after MonoCode's `JiraSettings.tsx`): connect
-//! with the space's address and a personal API key, pick which projects
-//! the Inbox lists, disconnect behind one confirmation. State and logic:
-//! `app/backlog.rs`.
+//! Settings › Integrations. GitHub: the accounts `gh` is signed in with
+//! and the one each project runs as (BenCode's own; state and logic in
+//! `app/github_accounts.rs`). Nulab Backlog (shaped after MonoCode's
+//! `JiraSettings.tsx`): connect with the space's address and a personal
+//! API key, pick which projects the Inbox lists, disconnect behind one
+//! confirmation. State and logic: `app/backlog.rs`.
 
 use ely_gpui_component::buttons::{Button, ButtonVariant};
 use ely_gpui_component::forms::{Input, PasswordInput, Switch};
+use ely_gpui_component::menus::{DropdownMenu, Menu, MenuItem};
 use ely_gpui_component::overlays::Dialog;
 use ely_gpui_component::settings::{SettingsRow, SettingsSection};
 use ely_gpui_component::theme::ActiveTheme;
@@ -21,13 +23,70 @@ const FIELD_WIDTH: f32 = 280.0;
 
 impl BenCodeApp {
     pub(crate) fn render_settings_integrations(&self, cx: &Context<Self>) -> impl IntoElement {
-        let page = div().flex().flex_col().gap_6();
+        let page = div()
+            .flex()
+            .flex_col()
+            .gap_6()
+            .child(self.render_github_accounts())
+            .children(self.render_github_projects(cx));
         match &self.backlog.account {
             Some(account) => page
                 .child(self.render_backlog_connection(account, cx))
                 .child(self.render_backlog_projects(cx)),
             None => page.child(self.render_backlog_form(cx)),
         }
+    }
+
+    /// The accounts `gh` is signed in with.
+    fn render_github_accounts(&self) -> SettingsSection {
+        let section = SettingsSection::new("GitHub").description(
+            "The accounts the GitHub CLI is signed in with. Add one with `gh auth login` in a \
+             terminal; BenCode keeps no token of its own.",
+        );
+        match &self.github.accounts {
+            None => section.row(SettingsRow::new("Reading accounts…")),
+            Some(Err(err)) => section.row(SettingsRow::new("Could not read gh's accounts").description(err.clone())),
+            Some(Ok(accounts)) if accounts.is_empty() => section.row(
+                SettingsRow::new("Not signed in").description("Run `gh auth login` in a terminal to connect GitHub."),
+            ),
+            Some(Ok(accounts)) => accounts.iter().fold(section, |section, account| {
+                let row = SettingsRow::new(account.login.clone());
+                section.row(if account.active {
+                    row.description("Active in gh: what a project on Automatic uses first.")
+                } else {
+                    row
+                })
+            }),
+        }
+    }
+
+    /// Each rail project's account, once there are two to pick from.
+    fn render_github_projects(&self, cx: &Context<Self>) -> Option<SettingsSection> {
+        let accounts = self.github.accounts.as_ref()?.as_ref().ok().filter(|accounts| accounts.len() > 1)?;
+        let section = SettingsSection::new("GitHub account by project").description(
+            "The account a project's Inbox, pull requests, comments and merges run as. Automatic \
+             uses the active account, or another one when the active one cannot see the repository.",
+        );
+        Some(self.rail_order().into_iter().enumerate().fold(section, |section, (ix, project)| {
+            let chosen = self.github.choices.get(&project).cloned();
+            let pick = |login: Option<String>| {
+                let project = project.clone();
+                app_callback(cx, move |this, cx| this.set_project_github_account(&project, login.clone(), cx))
+            };
+            let menu = accounts.iter().fold(
+                Menu::new().item(MenuItem::radio("Automatic", chosen.is_none()).on_click(pick(None))),
+                |menu, account| {
+                    let on = chosen.as_deref() == Some(account.login.as_str());
+                    menu.item(MenuItem::radio(account.login.clone(), on).on_click(pick(Some(account.login.clone()))))
+                },
+            );
+            let label = chosen.unwrap_or_else(|| "Automatic".to_string());
+            section.row(
+                SettingsRow::new(self.rail_project_label(&project))
+                    .description(project.clone())
+                    .control(DropdownMenu::new(("github-project-account", ix), label, menu).variant(ButtonVariant::Outline)),
+            )
+        }))
     }
 
     fn backlog_section(&self) -> SettingsSection {

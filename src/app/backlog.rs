@@ -75,6 +75,7 @@ impl BenCodeApp {
 
     /// Settings › Integrations opened: the projects are listed again.
     pub fn open_integrations_page(&mut self, cx: &mut Context<Self>) {
+        self.load_github_accounts(cx);
         self.backlog.error = None;
         if self.backlog.account.is_some() {
             self.load_backlog_projects(cx);

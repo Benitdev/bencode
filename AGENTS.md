@@ -91,6 +91,7 @@ bencode/
     ├── harness/              agent CLIs over stdio
     ├── ui/                   every view (render functions on BenCodeApp)
     ├── github.rs             GitHub through `gh` (Inbox, PR actions)
+    ├── github_accounts.rs    the accounts `gh` is signed in with; the one a project's `gh` runs as
     ├── backlog.rs            Nulab Backlog through its REST API (Inbox issues, comments, status)
     ├── work_items.rs         the Inbox's items, whichever tracker they come from
     ├── mcp/                  MCP server discovery
@@ -131,6 +132,7 @@ bencode/
 | `reminders.rs`, `model_catalog.rs` | Session reminders; live model catalogs |
 | `usage.rs` | Provider usage snapshots for the footer, per account: load once, Refresh, the 30s countdown tick |
 | `backlog.rs` | The Backlog connection: connect / disconnect, which projects the Inbox lists, each project's start folder, status changes |
+| `github_accounts.rs` | GitHub accounts: `gh`'s sign-ins as listed in Settings › Integrations, the account picked for each project |
 | `accounts.rs` | Provider accounts: a thread's account, switching, Add account / sign-in, rename, remove, identities |
 | `agy_accounts.rs` | Antigravity accounts: the saved sign-ins, which one `agy` uses, Switch, Add account (its sign-in in the terminal dock), rename, remove |
 | `notes.rs`, `note_images.rs` | Notes: titles, previews and tags (`notes.ts`), the open note's fields, autosave, create / move / delete off the UI thread, `@note/slug` bodies for a turn; images dropped into a note (`note-assets/` in the data folder) |
@@ -159,7 +161,7 @@ bencode/
 | `footer/` | Status bar: provider usage chip, its details popover and account pages, terminal toggle |
 | `inbox_view*`, `notes/`, `automations/`, `search_view.rs`, `settings_modal.rs` | The five surfaces |
 | `page_parts.rs`, `relative_time.rs` | What the Notes and Automations pages share: `content/N` tints, section titles, page tabs, boxed rows; "5 minutes ago" |
-| `settings_accounts.rs`, `settings_agy_accounts.rs`, `settings_appearance.rs`, `settings_worktrees.rs`, `settings_integrations.rs` | Settings pages: provider accounts, appearance, worktrees, integrations (Backlog) |
+| `settings_accounts.rs`, `settings_agy_accounts.rs`, `settings_appearance.rs`, `settings_worktrees.rs`, `settings_integrations.rs` | Settings pages: provider accounts, appearance, worktrees, integrations (GitHub accounts, Backlog) |
 | `quick_open.rs`, `lightbox.rs`, `link_dialog.rs`, `reminder_notices.rs`, `whats_new.rs` | Overlays |
 | `theme.rs`, `appearance.rs`, `scale.rs`, `background_effects.rs`, `icons.rs`, `provider_icon.rs`, `mascot.rs`, `motion.rs`, `spinner.rs` | Look and shared drawing: palettes, tint / accent / diff colours, interface scale, chat background effects |
 | `app_callback.rs`, `virtual_rows.rs`, `explorer_menu.rs`, `drag_drop.rs` | Shared helpers |
@@ -242,6 +244,7 @@ only read that cache.
 | `features/notes/` | `ui/notes/`, `app/notes.rs`, `db/mod.rs` | Cards, tags, project, Preview / Source, dropped images, autosave, Add to chat. Source has no line numbers |
 | `features/automations/` | `ui/automations/`, `app/automations.rs`, `app/automation_runs.rs`, `schedule.rs`, `db/schedule.rs` | Templates, time triggers, session settings, run history, 30s scheduler. No event triggers |
 | `features/inbox/` | `ui/inbox_view*`, `github.rs`, `work_items.rs` | GitHub issues and PRs, checks, CI repair, comments |
+| none (MonoCode runs `gh` as its active account) | `github_accounts.rs`, `app/github_accounts.rs`, `ui/settings_integrations.rs` | A `gh` account per project. BenCode's own: Automatic falls back to another signed-in account when the active one cannot see the repository |
 | `features/inbox/model/jira.ts`, `src-tauri/src/jira.rs` (as the pattern) | `backlog.rs`, `app/backlog.rs`, `ui/settings_integrations.rs` | Nulab Backlog issues in the Inbox: comments, status change, Send to agent. BenCode's own; MonoCode has Jira, Linear, GitLab and Azure DevOps instead |
 | `features/search/` | `ui/search_view.rs`, `ui/quick_open.rs` | Universal search; Go to File (⌘P) |
 | `features/settings/` | `ui/settings_modal.rs`, `settings.rs` | Providers, MCP, skills |
@@ -476,6 +479,10 @@ div()
   tests) plus a `Provider` variant; the views branch on `item.provider` only
   where trackers differ. HTTP goes through `rate_limits::http` (`curl`, with
   the secret on stdin); a key never appears in a URL that is logged or shown.
+- **Every `gh` command goes through `github::gh(cwd, ..)`**, which runs it
+  as the project's account (`github_accounts.rs`). BenCode stores no GitHub
+  token: the account's comes from `gh auth token` and reaches the command
+  in `GH_TOKEN`, never on an argv or in a log.
 - **Discovery that touches PATH or config files** (external editors, MCP servers)
   is cached in `self.integrations`; never call the discovery functions from
   render or per click.

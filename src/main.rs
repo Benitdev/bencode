@@ -1,5 +1,6 @@
 mod app;
 mod backlog;
+mod github_accounts;
 mod db;
 pub mod external_editor;
 mod git;
