@@ -1,7 +1,7 @@
 //! MonoCode `NoteDetail` / `NoteEditor`: the open note's slug and project,
 //! title, tags, Add to chat and Delete, then its body as Preview or
-//! Source. The Source field wraps as MonoCode's does; it has no line
-//! numbers, and images cannot be dropped into it.
+//! Source, where images can be dropped. The Source field wraps as
+//! MonoCode's does; it has no line numbers.
 
 use ely_gpui_component::buttons::{Button, ButtonVariant, IconButton};
 use ely_gpui_component::menus::{DropdownMenu, Menu, MenuItem};
@@ -91,9 +91,45 @@ impl BenCodeApp {
                     .p_8()
                     .child(self.render_note_header(&note, cx))
                     .child(tabs)
-                    .child(div().min_h(px(BODY_MIN_HEIGHT)).child(body)),
+                    .child(self.render_note_body(body, cx)),
             );
         Scrolled::new("note-detail-scrollbar", page).into_any_element()
+    }
+
+    /// The body and MonoCode's drop zone around it: images dropped here are
+    /// copied into the note.
+    fn render_note_body(&self, body: AnyElement, cx: &Context<Self>) -> impl IntoElement {
+        let colors = &cx.theme().colors;
+        let (accent, bg) = (colors.accent, colors.bg);
+        div()
+            .id("note-body")
+            .relative()
+            .min_h(px(BODY_MIN_HEIGHT))
+            .rounded(px(8.0))
+            .border_1()
+            .border_color(gpui::transparent_black())
+            .drag_over::<gpui::ExternalPaths>(move |style, _, _, _| {
+                style.border_color(accent.opacity(0.6)).bg(accent.opacity(tint::HOVER))
+            })
+            .on_drop(cx.listener(|this, paths: &gpui::ExternalPaths, _, cx| {
+                this.drop_note_images(paths.paths().to_vec(), cx);
+            }))
+            .child(body)
+            .when(self.notes.adding_images, |el| {
+                el.child(
+                    div()
+                        .absolute()
+                        .inset_0()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .rounded(px(8.0))
+                        .bg(bg.opacity(0.8))
+                        .text_size(px(12.0))
+                        .text_color(colors.fg.opacity(tint::BODY))
+                        .child("Adding images…"),
+                )
+            })
     }
 
     fn render_note_header(&self, note: &Note, cx: &Context<Self>) -> impl IntoElement {

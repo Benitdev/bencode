@@ -45,6 +45,55 @@ fn image_ext(format: ImageFormat) -> &'static str {
     }
 }
 
+/// The files a clipboard item holds: paths copied in Finder, and images
+/// copied as data with the extension to save them under.
+pub(crate) struct PastedFiles {
+    pub paths: Vec<std::path::PathBuf>,
+    pub images: Vec<(Vec<u8>, &'static str)>,
+}
+
+/// `None` when `item` holds only text.
+pub(crate) fn pasted_files(item: &gpui::ClipboardItem) -> Option<PastedFiles> {
+    let mut files = PastedFiles {
+        paths: Vec::new(),
+        images: Vec::new(),
+    };
+    for entry in item.entries() {
+        match entry {
+            ClipboardEntry::Image(image) => {
+                files.images.push((image.bytes.clone(), image_ext(image.format)))
+            }
+            ClipboardEntry::ExternalPaths(external) => {
+                files.paths.extend(external.paths().iter().cloned())
+            }
+            ClipboardEntry::String(_) => {}
+        }
+    }
+    (!files.paths.is_empty() || !files.images.is_empty()).then_some(files)
+}
+
+/// Writes images copied as data to temporary files (`stamp` keeps pastes
+/// apart). Blocking: for the background executor.
+pub(crate) fn write_pasted_images(
+    images: Vec<(Vec<u8>, &'static str)>,
+    stamp: i64,
+) -> Vec<std::path::PathBuf> {
+    let dir = std::env::temp_dir().join("bencode-paste");
+    if let Err(err) = std::fs::create_dir_all(&dir) {
+        log::error!("could not save pasted image: {err}");
+        return Vec::new();
+    }
+    let mut files = Vec::new();
+    for (ix, (bytes, ext)) in images.into_iter().enumerate() {
+        let file = dir.join(format!("pasted-{stamp}-{ix}.{ext}"));
+        match std::fs::write(&file, bytes) {
+            Ok(()) => files.push(file),
+            Err(err) => log::error!("could not save pasted image: {err}"),
+        }
+    }
+    files
+}
+
 impl BenCodeApp {
     /// "+" › Upload file: pick files for the focused thread.
     pub fn open_attachment_dialog(&mut self, cx: &mut Context<Self>) {
@@ -143,37 +192,13 @@ impl BenCodeApp {
         let Some(session_id) = self.selected_session_id.clone() else {
             return false;
         };
-        let mut paths: Vec<std::path::PathBuf> = Vec::new();
-        let mut images: Vec<(Vec<u8>, &'static str)> = Vec::new();
-        for entry in item.entries() {
-            match entry {
-                ClipboardEntry::Image(image) => {
-                    images.push((image.bytes.clone(), image_ext(image.format)))
-                }
-                ClipboardEntry::ExternalPaths(external) => {
-                    paths.extend(external.paths().iter().cloned())
-                }
-                ClipboardEntry::String(_) => {}
-            }
-        }
-        if paths.is_empty() && images.is_empty() {
+        let Some(PastedFiles { mut paths, images }) = pasted_files(&item) else {
             return false;
-        }
+        };
         let stamp = now_ms();
         self.thread_mut(&session_id).attaching += 1;
         let task = cx.background_executor().spawn(async move {
-            let dir = std::env::temp_dir().join("bencode-paste");
-            if let Err(err) = std::fs::create_dir_all(&dir) {
-                log::error!("could not save pasted image: {err}");
-                return paths;
-            }
-            for (ix, (bytes, ext)) in images.into_iter().enumerate() {
-                let file = dir.join(format!("pasted-{stamp}-{ix}.{ext}"));
-                match std::fs::write(&file, bytes) {
-                    Ok(()) => paths.push(file),
-                    Err(err) => log::error!("could not save pasted image: {err}"),
-                }
-            }
+            paths.extend(write_pasted_images(images, stamp));
             paths
         });
         cx.spawn(async move |this, cx| {

@@ -10,6 +10,7 @@ pub mod file_pane;
 mod ids;
 mod integrations;
 pub mod live_agents;
+pub mod note_images;
 pub mod notes;
 mod model_catalog;
 mod panes;
@@ -523,6 +524,8 @@ impl BenCodeApp {
         let queue_edit_input = text_input(window, cx, "Edit queued message");
         let queue_keys_input = queue_edit_input.clone();
         let mut notes = notes::NotesState::new(window, cx);
+        let note_tag_keys_input = notes.tag_input.clone();
+        let note_body_keys_input = notes.body_input.clone();
         let mut automations = automations::AutomationsState::new(window, cx);
         let project_search = project_search::ProjectSearchState::new(window, cx);
         let git_commit_input = multiline_input(window, cx, "Message (⌘↩ to commit)", (1, 7));
@@ -803,6 +806,23 @@ impl BenCodeApp {
             if pasting && composer_input.read(cx).focus_handle(cx).is_focused(window) {
                 let attached = weak_app.update(cx, |this, cx| this.paste_into_composer(cx));
                 if matches!(attached, Ok(true)) {
+                    cx.stop_propagation();
+                }
+                return;
+            }
+            // Images on the clipboard go into the note as files of its own.
+            if pasting && note_body_keys_input.read(cx).focus_handle(cx).is_focused(window) {
+                if matches!(weak_app.update(cx, |this, cx| this.paste_into_note(cx)), Ok(true)) {
+                    cx.stop_propagation();
+                }
+                return;
+            }
+            // MonoCode `NoteTagsEditor`: Backspace in the empty field takes
+            // the last tag.
+            if event.keystroke.key == "backspace"
+                && note_tag_keys_input.read(cx).focus_handle(cx).is_focused(window)
+            {
+                if matches!(weak_app.update(cx, |this, cx| this.pop_note_tag(cx)), Ok(true)) {
                     cx.stop_propagation();
                 }
                 return;

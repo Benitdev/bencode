@@ -785,6 +785,8 @@ impl BenCodeApp {
         } else {
             agent_prompt
         };
+        // MonoCode `applyNotesToTurn`: `@note/slug` brings the note along.
+        let agent_prompt = super::notes::apply_notes_to_turn(&agent_prompt, &self.notes.items);
         self.persist_session(session_id);
         let request = RunRequest {
             prompt: agent_prompt,

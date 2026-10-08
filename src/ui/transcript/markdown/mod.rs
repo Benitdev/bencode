@@ -817,6 +817,20 @@ impl Draw<'_> {
                 self.table(aligns, head, rows, joint, window, cx)
             }
             Block::Rule => div().h(px(1.0)).bg(look.fg.opacity(0.1)).into_any_element(),
+            Block::Image { src, alt } => {
+                let file = crate::storage::data_dir()
+                    .and_then(|dir| crate::app::note_images::note_image_file(&dir, src));
+                match file {
+                    Some(file) => gpui::img(file)
+                        .max_w_full()
+                        .rounded(px(6.0))
+                        .into_any_element(),
+                    None => div()
+                        .text_color(look.fg.opacity(0.5))
+                        .child(alt.clone())
+                        .into_any_element(),
+                }
+            }
         }
     }
 

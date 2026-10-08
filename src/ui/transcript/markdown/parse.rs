@@ -6,6 +6,8 @@ use std::ops::Range;
 
 use pulldown_cmark::{Alignment, CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 
+use crate::app::note_images::NOTE_IMAGE_PREFIX;
+
 /// How a stretch of inline text prints.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Span {
@@ -60,6 +62,11 @@ pub enum Block {
         rows: Vec<Vec<Inline>>,
     },
     Rule,
+    /// One of a note's own images (`/note-assets/…`), with its alt text.
+    Image {
+        src: String,
+        alt: String,
+    },
 }
 
 enum Frame {
@@ -81,6 +88,10 @@ struct Builder {
     table: Option<(Vec<Alignment>, Vec<Inline>, Vec<Vec<Inline>>)>,
     row: Vec<Inline>,
     in_head: bool,
+    /// A note image being read: its path and where its alt text starts.
+    image: Option<(String, usize)>,
+    /// The next text opens the paragraph after an image: no leading space.
+    after_image: bool,
 }
 
 impl Builder {
@@ -114,6 +125,11 @@ impl Builder {
     }
 
     fn text(&mut self, text: &str) {
+        let text = if std::mem::take(&mut self.after_image) && self.code.is_none() {
+            text.trim_start()
+        } else {
+            text
+        };
         match &mut self.code {
             Some(fence) => fence.code.push_str(text),
             None => self.inline.text.push_str(text),
@@ -232,6 +248,26 @@ impl Builder {
             Event::Start(Tag::Emphasis) => self.open(Span::Emphasis),
             Event::Start(Tag::Strong) => self.open(Span::Strong),
             Event::Start(Tag::Strikethrough) => self.open(Span::Strike),
+            // MonoCode `MarkdownImage` draws a note's own images; any other
+            // image stays a link.
+            Event::Start(Tag::Image { dest_url, .. })
+                if dest_url.starts_with(NOTE_IMAGE_PREFIX) && self.open.is_empty() =>
+            {
+                self.image = Some((dest_url.to_string(), self.inline.text.len()));
+            }
+            Event::End(TagEnd::Image) if self.image.is_some() => {
+                if let Some((src, alt_from)) = self.image.take() {
+                    let alt = self.inline.text.split_off(alt_from);
+                    // The text before it is a paragraph of its own, and so
+                    // is the text after.
+                    let before = self.take_inline();
+                    if !before.text.is_empty() {
+                        self.push(Block::Paragraph(before));
+                    }
+                    self.push(Block::Image { src, alt });
+                    self.after_image = true;
+                }
+            }
             Event::Start(Tag::Link { dest_url, .. })
             | Event::Start(Tag::Image { dest_url, .. }) => {
                 self.open(Span::Link(dest_url.to_string()))
@@ -484,6 +520,24 @@ mod tests {
                 (12..16, Span::Link("https://x.dev".into())),
             ]
         );
+    }
+
+    #[test]
+    fn a_notes_own_image_is_a_block_and_others_stay_links() {
+        let blocks = parse("before ![my shot](/note-assets/n1/1-a.png) after\n\n![x](https://x.dev/a.png)");
+        assert_eq!(blocks[0], para("before"));
+        assert_eq!(
+            blocks[1],
+            Block::Image {
+                src: "/note-assets/n1/1-a.png".into(),
+                alt: "my shot".into()
+            }
+        );
+        assert_eq!(blocks[2], para("after"));
+        let Block::Paragraph(link) = &blocks[3] else {
+            panic!("a paragraph: {blocks:?}");
+        };
+        assert_eq!(link.spans, [(0..1, Span::Link("https://x.dev/a.png".into()))]);
     }
 
     #[test]

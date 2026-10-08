@@ -3,7 +3,7 @@
 //! 100% faithful to MonoCode Composer layout.
 
 pub mod add_to_chat;
-mod attachments;
+pub mod attachments;
 pub mod branch_picker;
 pub mod cards;
 mod context_ring;

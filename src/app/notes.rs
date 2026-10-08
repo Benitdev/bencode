@@ -4,13 +4,18 @@
 //! `features/notes/ui/NotesView.tsx`. The views are in `ui/notes/`.
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::time::Duration;
 
 use ely_gpui_component::forms::{InputEvent, TextInput};
 use gpui::{App, AppContext, Context, Entity, Window};
 
+use super::note_images::{
+    insert_images_markdown, is_note_image, remove_note_images, save_note_images,
+};
 use super::{BenCodeApp, NEW_SESSION_TITLE, Surface, now_ms, text_input, unique_id};
 use crate::db::{Note, NoteUpsert};
+use crate::ui::composer::attachments::{pasted_files, write_pasted_images};
 use crate::ui::page_parts::tint;
 
 pub const UNTITLED_NOTE: &str = "Untitled";
@@ -51,6 +56,8 @@ pub struct NotesState {
     pub creating: bool,
     /// The Source field takes the keyboard on the next frame (a new note).
     pub focus_source: bool,
+    /// Dropped images are being copied into the note.
+    pub adding_images: bool,
     /// Note id awaiting delete confirmation.
     pub pending_delete: Option<String>,
     /// Last failed save of the open note, shown with a Retry action.
@@ -85,6 +92,7 @@ impl NotesState {
             shares: [0.24, 0.76],
             creating: false,
             focus_source: false,
+            adding_images: false,
             pending_delete: None,
             save_error: None,
             load_error: None,
@@ -291,6 +299,51 @@ pub fn note_matches(note: &Note, query: &str) -> bool {
             .any(|text| text.to_lowercase().contains(query))
         || note.tags.iter().any(|t| t.contains(tag))
         || note_project(note).is_some_and(|p| p.to_lowercase().contains(query))
+}
+
+/// MonoCode `noteSlugsInText`: the slugs of `@note/slug` mentions, each
+/// once, in order. A mention starts the text or follows white space.
+fn note_slugs_in_text(text: &str) -> Vec<&str> {
+    let mut slugs: Vec<&str> = Vec::new();
+    for (at, _) in text.match_indices("@note/") {
+        if text[..at].chars().next_back().is_some_and(|c| !c.is_whitespace()) {
+            continue;
+        }
+        let rest = &text[at + "@note/".len()..];
+        let end = rest
+            .find(|c: char| !(c.is_ascii_alphanumeric() || matches!(c, '_' | '-')))
+            .unwrap_or(rest.len());
+        let slug = &rest[..end];
+        if !slug.is_empty() && !slugs.contains(&slug) {
+            slugs.push(slug);
+        }
+    }
+    slugs
+}
+
+/// MonoCode `applyNotesToTurn`: `text` followed by the body of every note
+/// it mentions as `@note/slug`, so the agent can read them.
+pub fn apply_notes_to_turn(text: &str, notes: &[Note]) -> String {
+    let mut picked: Vec<&Note> = Vec::new();
+    for slug in note_slugs_in_text(text) {
+        if let Some(note) = notes.iter().find(|note| note.slug == slug)
+            && !picked.iter().any(|seen| seen.id == note.id)
+        {
+            picked.push(note);
+        }
+    }
+    if picked.is_empty() {
+        return text.to_string();
+    }
+    let mut prompt = format!("{}\n\n---", text.trim_end());
+    for note in picked {
+        let heading = match note.title.trim() {
+            "" => UNTITLED_NOTE,
+            title => title,
+        };
+        prompt.push_str(&format!("\nReferenced note \"{heading}\":\n\n{}", note.body.trim()));
+    }
+    prompt
 }
 
 /// The title a note is saved under: what was typed, else `note_title`.
@@ -519,6 +572,108 @@ impl BenCodeApp {
         self.set_note_tags(tags, cx);
     }
 
+    /// Backspace in the empty tag field removes the last tag (MonoCode
+    /// `NoteTagsEditor`). False when the key is the field's own.
+    pub(crate) fn pop_note_tag(&mut self, cx: &mut Context<Self>) -> bool {
+        if !self.notes.tag_input.read(cx).text().is_empty() || self.notes.tags.is_empty() {
+            return false;
+        }
+        let mut tags = self.notes.tags.clone();
+        tags.pop();
+        self.set_note_tags(tags, cx);
+        true
+    }
+
+    /// MonoCode `addDroppedImages`: copies the images among `paths` into
+    /// the open note and puts their markdown where the Source cursor is
+    /// (at the end while the Preview is shown).
+    pub(crate) fn drop_note_images(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
+        self.add_note_images(paths, Vec::new(), cx);
+    }
+
+    /// ⌘V in the Source field: images on the clipboard (copied as data, or
+    /// as files in Finder) go into the note. False when the clipboard holds
+    /// none, so the paste stays the field's own.
+    pub(crate) fn paste_into_note(&mut self, cx: &mut Context<Self>) -> bool {
+        let Some(files) = cx.read_from_clipboard().as_ref().and_then(pasted_files) else {
+            return false;
+        };
+        let paths: Vec<PathBuf> = files.paths.into_iter().filter(|p| is_note_image(p)).collect();
+        if paths.is_empty() && files.images.is_empty() {
+            return false;
+        }
+        self.add_note_images(paths, files.images, cx);
+        true
+    }
+
+    /// Copies image files, and `pasted` image data, into the open note,
+    /// then inserts their markdown.
+    fn add_note_images(
+        &mut self,
+        paths: Vec<PathBuf>,
+        pasted: Vec<(Vec<u8>, &'static str)>,
+        cx: &mut Context<Self>,
+    ) {
+        let (Some(note_id), Some(data_dir)) =
+            (self.notes.selected_id.clone(), crate::storage::data_dir())
+        else {
+            return;
+        };
+        if self.notes.adding_images {
+            return;
+        }
+        let field = self.notes.body_input.read(cx);
+        let range = match self.notes.mode() {
+            NoteMode::Source => field.selection(),
+            NoteMode::Preview => field.text().len()..field.text().len(),
+        };
+        self.notes.adding_images = true;
+        let stamp = now_ms();
+        let save = cx.background_executor().spawn({
+            let note_id = note_id.clone();
+            async move {
+                // Pasted data passes through temporary files: the note
+                // keeps its own copy.
+                let temporary = write_pasted_images(pasted, stamp);
+                let all: Vec<PathBuf> = paths.into_iter().chain(temporary.iter().cloned()).collect();
+                let saved = save_note_images(&data_dir, &note_id, &all);
+                for file in temporary {
+                    if let Err(err) = std::fs::remove_file(&file) {
+                        log::debug!("pasted image {} not removed: {err}", file.display());
+                    }
+                }
+                saved
+            }
+        });
+        cx.spawn(async move |this, cx| {
+            let saved = save.await;
+            let landed = this.update(cx, |this, cx| {
+                this.notes.adding_images = false;
+                match saved {
+                    // The note is still the open one: its field takes them.
+                    Ok(images) if this.notes.selected_id.as_deref() == Some(note_id.as_str()) => {
+                        this.notes.body_input.update(cx, |field, cx| {
+                            let (value, cursor) =
+                                insert_images_markdown(field.text(), range.start, range.end, &images);
+                            field.set_text(value, cx);
+                            field.select(cursor..cursor, cx);
+                        });
+                        this.notes.save_error = None;
+                        this.save_note_if_dirty(cx);
+                    }
+                    Ok(_) => {}
+                    Err(err) => this.notes.save_error = Some(err.to_string()),
+                }
+                cx.notify();
+            });
+            if let Err(err) = landed {
+                log::debug!("note images after app drop: {err:#}");
+            }
+        })
+        .detach();
+        cx.notify();
+    }
+
     fn set_note_tags(&mut self, tags: Vec<String>, cx: &mut Context<Self>) {
         if tags != self.notes.tags {
             self.notes.tags = tags;
@@ -633,6 +788,12 @@ impl BenCodeApp {
             cx,
             move |db| {
                 db.delete_note(&id)?;
+                // The note is gone either way; its images are only tidied up.
+                if let Some(dir) = crate::storage::data_dir()
+                    && let Err(err) = remove_note_images(&dir, &id)
+                {
+                    log::warn!("could not remove the images of note {id}: {err:#}");
+                }
                 db.list_notes()
             },
             move |this, listed, cx| match listed {
@@ -735,6 +896,20 @@ mod tests {
         assert_eq!(saved_title("  ", "# From body"), "From body");
         assert_eq!(saved_title(" Typed ", "# From body"), "Typed");
         assert_eq!(saved_title("", ""), "Untitled");
+    }
+
+    #[test]
+    fn mentioned_notes_follow_the_prompt() {
+        let plan = note("Release", "  Ship on Friday.\n", &[]);
+        let other = Note { id: "o".into(), slug: "other".into(), title: " ".into(), body: "B".into(), ..Default::default() };
+        let notes = [plan, other];
+        assert_eq!(
+            apply_notes_to_turn("check @note/release-plan, then @note/other \n", &notes),
+            "check @note/release-plan, then @note/other\n\n---\nReferenced note \"Release\":\n\nShip on Friday.\nReferenced note \"Untitled\":\n\nB"
+        );
+        // Unknown slugs, repeats and mid-word marks add nothing.
+        assert_eq!(apply_notes_to_turn("see @note/missing", &notes), "see @note/missing");
+        assert_eq!(note_slugs_in_text("@note/a @note/a x@note/b @note/ (@note/c)"), ["a"]);
     }
 
     #[test]
