@@ -15,6 +15,7 @@ mod remove;
 mod reorder;
 mod settings_nav;
 mod state;
+mod update;
 mod widgets;
 
 use std::cell::Cell;
@@ -139,6 +140,7 @@ impl BenCodeApp {
                     el.child(self.render_rail_actions(cx))
                         .child(self.render_rail_projects(cx))
                         .children(self.render_live_agents(false, cx))
+                        .children(self.render_update_footer(false, cx))
                         .child(
                             // `flex shrink-0 flex-col gap-px p-2`
                             div().flex().flex_none().flex_col().gap(px(1.0)).p_2().child(rail_action(

@@ -9,14 +9,17 @@
 //! opaque. Here the root plays the NSWindow. Light mode and other platforms
 //! stay opaque.
 //!
-//! GPUI's `WindowBackgroundAppearance::Blurred` draws an `NSVisualEffectView`
-//! under the window's content, so the blur strength is the system's: MonoCode's
-//! "Blur radius" slider has no counterpart.
+//! On macOS 26 and later the blur is Liquid Glass under GPUI's view
+//! (`ui/native_glass.rs`); before that, GPUI's
+//! `WindowBackgroundAppearance::Blurred` draws an `NSVisualEffectView` under
+//! the window's content. Either way the blur strength is the system's:
+//! MonoCode's "Blur radius" slider has no counterpart.
 
 use ely_gpui_component::theme::ActiveTheme;
 use gpui::{App, Hsla, Window, WindowBackgroundAppearance};
 
 use crate::app::BenCodeApp;
+use crate::ui::native_glass::NativeGlass;
 
 /// MonoCode `SIDEBAR_OPACITY_MIN` / `MAX` / `DEFAULT`.
 pub const OPACITY_MIN: f32 = 0.15;
@@ -79,14 +82,6 @@ impl Glass {
             bg
         }
     }
-
-    fn window_background(&self) -> WindowBackgroundAppearance {
-        if self.on {
-            WindowBackgroundAppearance::Blurred
-        } else {
-            WindowBackgroundAppearance::Opaque
-        }
-    }
 }
 
 /// `value` within MonoCode's opacity range.
@@ -109,9 +104,32 @@ impl BenCodeApp {
     }
 
     /// Turns the window's blur on or off when the glass changes (MonoCode
-    /// `set_window_glass_enabled`, which also waits for the first paint).
+    /// `set_window_glass_enabled`, which also waits for the first paint):
+    /// Liquid Glass where macOS has it, else GPUI's blur.
     pub fn sync_window_glass(&mut self, window: &mut Window, cx: &App) {
-        let wanted = self.glass(cx).window_background();
+        let on = self.glass(cx).on;
+        if !on {
+            self.native_glass = None;
+        } else if self.native_glass.is_none()
+            && !self.native_glass_failed
+            && NativeGlass::available()
+        {
+            self.native_glass = NativeGlass::install(window);
+            if self.native_glass.is_none() {
+                log::warn!("could not put Liquid Glass under the window; using GPUI's blur");
+                self.native_glass_failed = true;
+            }
+        }
+        if let Some(glass) = &mut self.native_glass {
+            glass.sync(window);
+        }
+        let wanted = match (on, self.native_glass.is_some()) {
+            (false, _) => WindowBackgroundAppearance::Opaque,
+            // GPUI clears the window and drops its own blur view; the glass
+            // under its view does the blurring.
+            (true, true) => WindowBackgroundAppearance::Transparent,
+            (true, false) => WindowBackgroundAppearance::Blurred,
+        };
         if self.window_background != Some(wanted) {
             window.set_background_appearance(wanted);
             self.window_background = Some(wanted);

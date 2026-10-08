@@ -8,12 +8,13 @@ use crate::app::BenCodeApp;
 use crate::ui::app_callback::app_callback;
 
 /// MonoCode's message without its "resume when you reopen" sentence:
-/// BenCode does not resume interrupted turns.
-fn quit_while_busy_message(count: usize) -> String {
+/// BenCode does not resume interrupted turns. `verb` is Quit, or Restart
+/// for an update.
+fn quit_while_busy_message(count: usize, verb: &str) -> String {
     if count == 1 {
-        "1 chat is still running. Quit anyway?".to_string()
+        format!("1 chat is still running. {verb} anyway?")
     } else {
-        format!("{count} chats are still running. Quit anyway?")
+        format!("{count} chats are still running. {verb} anyway?")
     }
 }
 
@@ -22,18 +23,25 @@ impl BenCodeApp {
         if !self.quit_confirm_open {
             return None;
         }
-        let message = quit_while_busy_message(self.runs.len());
+        let restart = self.updater.restart_on_quit;
+        let verb = if restart { "Restart" } else { "Quit" };
+        let message = quit_while_busy_message(self.runs.len(), verb);
         let cancel = app_callback(cx, |this, cx| {
             this.quit_confirm_open = false;
+            this.updater.restart_on_quit = false;
             cx.notify();
         });
-        let quit = app_callback(cx, |this, cx| {
+        let quit = app_callback(cx, move |this, cx| {
             this.quit_confirm_open = false;
-            cx.quit();
+            if restart {
+                this.relaunch_now(cx);
+            } else {
+                cx.quit();
+            }
         });
         Some(
             ConfirmDialog::new("quit-confirm", "BenCode", message, cancel)
-                .confirm("Quit")
+                .confirm(verb)
                 .destructive()
                 .on_confirm(quit)
                 .into_any_element(),
@@ -47,11 +55,15 @@ mod tests {
 
     #[test]
     fn one_chat_is_singular() {
-        assert_eq!(quit_while_busy_message(1), "1 chat is still running. Quit anyway?");
+        assert_eq!(quit_while_busy_message(1, "Quit"), "1 chat is still running. Quit anyway?");
     }
 
     #[test]
     fn several_chats_are_plural() {
-        assert_eq!(quit_while_busy_message(3), "3 chats are still running. Quit anyway?");
+        assert_eq!(quit_while_busy_message(3, "Quit"), "3 chats are still running. Quit anyway?");
+        assert_eq!(
+            quit_while_busy_message(2, "Restart"),
+            "2 chats are still running. Restart anyway?"
+        );
     }
 }

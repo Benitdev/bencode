@@ -61,6 +61,9 @@ chat; đóng tab cuối thì chat lấy lại toàn bộ chiều rộng.
    xattr -dr com.apple.quarantine /Applications/BenCode.app
    ```
 
+Sau đó BenCode tự cập nhật: có bản mới thì rail hiện nút "Update to X"
+(hoặc vào **BenCode › Check for Updates…**).
+
 Gặp lỗi? **Help › Show Logs** mở file log để đính kèm vào
 [issue](https://github.com/Benitdev/bencode/issues).
 

@@ -38,6 +38,9 @@ jobs:
     timeout-minutes: 120
     env:
       SIGNED: ${{ secrets.MACOS_CERTIFICATE != '' }}
+      # Auto-update: the release key's two halves (docs/releasing.md).
+      UPDATES: ${{ secrets.MINISIGN_SECRET_KEY != '' }}
+      HAS_UPDATE_PUBKEY: ${{ vars.BENCODE_UPDATE_PUBKEY != '' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -87,8 +90,19 @@ jobs:
           fi
           echo "MACOS_SIGNING_IDENTITY=$identity" >>"$GITHUB_ENV"
 
+      - name: Check the update key
+        if: env.UPDATES == 'true' || env.HAS_UPDATE_PUBKEY == 'true'
+        run: |
+          if [[ "$UPDATES" != true || "$HAS_UPDATE_PUBKEY" != true ]]; then
+            echo "::error::Set both the MINISIGN_SECRET_KEY secret and the BENCODE_UPDATE_PUBKEY variable, or neither"
+            exit 1
+          fi
+          brew list minisign >/dev/null 2>&1 || brew install minisign
+
       - name: Build BenCode.dmg
         env:
+          BENCODE_UPDATE_PUBKEY: ${{ vars.BENCODE_UPDATE_PUBKEY }}
+          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
           # A tag builds the universal, fully optimized release; a manual run
           # takes the inputs above.
           TARGETS: ${{ inputs.targets || 'aarch64-apple-darwin x86_64-apple-darwin' }}
@@ -105,6 +119,9 @@ jobs:
           path: |
             target/bundle/BenCode.dmg
             target/bundle/BenCode.dmg.sha256
+            target/bundle/BenCode.app.tar.gz
+            target/bundle/BenCode.app.tar.gz.minisig
+            target/bundle/latest.json
           if-no-files-found: error
 
       - name: Publish the release
@@ -139,6 +156,11 @@ jobs:
           if [[ "$GITHUB_REF_NAME" == *-* ]]; then
             flags+=(--prerelease)
           fi
-          gh release create "$GITHUB_REF_NAME" \
-            target/bundle/BenCode.dmg target/bundle/BenCode.dmg.sha256 \
+          assets=(target/bundle/BenCode.dmg target/bundle/BenCode.dmg.sha256)
+          # The update archive and the feed the app checks (latest.json is
+          # read from the newest release, so it ships with every one).
+          if [[ "$UPDATES" == true ]]; then
+            assets+=(target/bundle/BenCode.app.tar.gz target/bundle/BenCode.app.tar.gz.minisig target/bundle/latest.json)
+          fi
+          gh release create "$GITHUB_REF_NAME" "${assets[@]}" \
             --title "BenCode $VERSION" --notes-file "$notes" --verify-tag "${flags[@]}"

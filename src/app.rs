@@ -22,6 +22,7 @@ pub mod project_search;
 mod project_stats;
 mod projects;
 pub mod session_review;
+pub mod release_notes;
 pub mod reminders;
 mod session_flags;
 pub mod session_folders;
@@ -31,6 +32,7 @@ mod surfaces;
 mod tab_history;
 mod tab_scope;
 pub mod thread_state;
+pub mod updater;
 pub mod usage;
 mod workspace_nav;
 pub mod workspace_sync;
@@ -122,6 +124,8 @@ pub struct BenCodeApp {
     pub checkpoints: session_review::Checkpoints,
     /// The Quit confirmation is open (agents are running).
     pub quit_confirm_open: bool,
+    /// The release feed, the update in progress, and the "Updated to" note.
+    pub updater: updater::UpdaterState,
     /// The loaded review of each diff tab in `file_pane`, by tab key.
     pub diff_docs: HashMap<String, crate::ui::diff_viewer::DiffDoc>,
     /// Whether ⌘W closes a tab of `file_pane` rather than the thread.
@@ -269,6 +273,10 @@ pub struct BenCodeApp {
     pub body_glass: bool,
     /// The window background last set, so the blur toggles only on change.
     pub window_background: Option<gpui::WindowBackgroundAppearance>,
+    /// The window's Liquid Glass while the glass is on (macOS 26 and later).
+    pub native_glass: Option<crate::ui::native_glass::NativeGlass>,
+    /// Liquid Glass could not be put in; GPUI's blur stands in for it.
+    pub native_glass_failed: bool,
     /// The centred composer's last measurements, and a send from it whose
     /// docked composer is still dropping into place.
     pub dock_measure: std::rc::Rc<crate::ui::composer::DockMeasure>,
@@ -1163,6 +1171,8 @@ impl BenCodeApp {
             sidebar_drawer_open: false,
             body_glass: true,
             window_background: None,
+            native_glass: None,
+            native_glass_failed: false,
             lightbox: None,
             mention_marks: Vec::new(),
             dock_measure: Default::default(),
@@ -1232,6 +1242,7 @@ impl BenCodeApp {
             search_focus_pending: false,
             search_submit: None,
             quit_confirm_open: false,
+            updater: Default::default(),
             editor: Default::default(),
             is_sidebar_open: true,
             is_rail_open: true,
@@ -1257,6 +1268,7 @@ impl BenCodeApp {
         app.refresh_installed_catalogs(cx);
         app.load_backlog_account(cx);
         app.start_inbox_poll(cx);
+        app.start_update_probe(cx);
         app
     }
 
@@ -1552,6 +1564,7 @@ impl Render for BenCodeApp {
                     .children(self.render_pr_action_confirm(cx))
                     .children(self.render_file_tree_dialog(cx))
                     .children(self.render_terminal_close_confirm(cx))
+                    .children(self.render_whats_new(cx))
                     .children(self.render_quit_confirm(cx)),
             );
         // The commands sit above the focus scope, not inside it: while the

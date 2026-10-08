@@ -74,6 +74,7 @@ actions!(
         PreviousProject,
         NextProject,
         ShowLogs,
+        CheckForUpdates,
     ]
 );
 
@@ -193,6 +194,8 @@ fn menus() -> Vec<Menu> {
     vec![
         Menu::new("BenCode").items([
             MenuItem::action("Settings…", OpenSettings),
+            // MonoCode `check_for_updates`, under Settings.
+            MenuItem::action("Check for Updates…", CheckForUpdates),
             MenuItem::separator(),
             MenuItem::action("Quit BenCode", Quit),
         ]),
@@ -377,6 +380,9 @@ impl BenCodeApp {
             this.open_settings(cx);
         }))
         .on_action(cx.listener(|this, _: &Quit, _, cx| this.request_quit(cx)))
+        .on_action(cx.listener(|this, _: &CheckForUpdates, window, cx| {
+            this.check_for_updates(window, cx)
+        }))
         .on_action(cx.listener(|this, _: &Search, _, cx| this.open_search_modal(cx)))
         .on_action(cx.listener(|this, _: &ZoomIn, _, cx| this.step_ui_scale(1.0, cx)))
         .on_action(cx.listener(|this, _: &ZoomOut, _, cx| this.step_ui_scale(-1.0, cx)))

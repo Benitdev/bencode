@@ -100,6 +100,7 @@ bencode/
     ├── settings.rs           BenCode's settings.json
     ├── storage.rs            where BenCode keeps its data (database, checkpoints, account profiles, logs)
     ├── logging.rs            log to the terminal, else to ~/Library/Logs/BenCode; the panic hook
+    ├── updater.rs            self-update: the release feed, the signed archive, the swap and restart
     ├── keychain.rs           the macOS `security` tool (Claude's usage token, Antigravity's sign-in)
     ├── monocode_import/      the one-time copy of a MonoCode install's data
     ├── external_editor.rs    finding and launching VS Code, Cursor, Zed, …
@@ -136,6 +137,7 @@ bencode/
 | `automations.rs`, `automation_runs.rs` | Automations: the surface's state and the editor's draft, loading and saving off the UI thread; the 30s scheduler, Run now, and the thread, worktree and folder a run gets |
 | `worktree_lifecycle.rs` | Settings › Worktrees: project picker, create, delete (with the removal journal) |
 | `chat_background.rs` | Appearance › Chat background: the saved copy of the image, decoding and effects off the UI thread, the image the panes draw |
+| `updater.rs`, `release_notes.rs` | Updates: the probe at launch, Check for Updates…, install and restart, the "Updated to" note; a version's CHANGELOG section for What's new |
 
 ### `src/ui/` — views
 
@@ -158,7 +160,7 @@ bencode/
 | `inbox_view*`, `notes/`, `automations/`, `search_view.rs`, `settings_modal.rs` | The five surfaces |
 | `page_parts.rs`, `relative_time.rs` | What the Notes and Automations pages share: `content/N` tints, section titles, page tabs, boxed rows; "5 minutes ago" |
 | `settings_accounts.rs`, `settings_agy_accounts.rs`, `settings_appearance.rs`, `settings_worktrees.rs`, `settings_integrations.rs` | Settings pages: provider accounts, appearance, worktrees, integrations (Backlog) |
-| `quick_open.rs`, `lightbox.rs`, `link_dialog.rs`, `reminder_notices.rs` | Overlays |
+| `quick_open.rs`, `lightbox.rs`, `link_dialog.rs`, `reminder_notices.rs`, `whats_new.rs` | Overlays |
 | `theme.rs`, `appearance.rs`, `scale.rs`, `background_effects.rs`, `icons.rs`, `provider_icon.rs`, `mascot.rs`, `motion.rs`, `spinner.rs` | Look and shared drawing: palettes, tint / accent / diff colours, interface scale, chat background effects |
 | `app_callback.rs`, `virtual_rows.rs`, `explorer_menu.rs`, `drag_drop.rs` | Shared helpers |
 
@@ -247,6 +249,7 @@ only read that cache.
 | `src-tauri/src/chat_background.rs`, `projects/model/chatBackground.ts`, `settings/model/newThreadBackgroundEffects*.ts` | `app/chat_background.rs`, `ui/background_effects.rs`, `ui/pane_tree.rs` | One image behind the chat panes, six effects (Haze is baked into the image); no per-project backgrounds |
 | `Sidebar.tsx` `CompactProjectRail`, `settings.ts` `CollapsedProjectRailMode` | `ui/rail/compact.rs` | Icon rail with the sidebar as a drawer; its project list has no search or per-project menu |
 | `sessions/model/liveAgents.ts`, `sessions/ui/LiveAgentsPreview.tsx` | `app/live_agents.rs`, `ui/rail/live_agents.rs` | "Working" card on the rail (the sidebar's foot while the rail is closed); toggle in Settings › General |
+| `app/model/updater.ts`, `updateNotice.ts`, `releaseNotes.ts`, `shell/SidebarUpdate.tsx`, `UpdateRailCard.tsx`, `WhatsNewDialog.tsx`, `tauri-plugin-updater` | `updater.rs`, `app/updater.rs`, `app/release_notes.rs`, `ui/rail/update.rs`, `ui/whats_new.rs` | Self-update from GitHub Releases (Tauri's `latest.json`, minisign); Check for Updates… in the BenCode menu and Settings › About. No update sound |
 | `ProjectRail`, `TitleBar.tsx`, `Sidebar.tsx` | `ui/rail/`, `ui/titlebar/`, `ui/sidebar*.rs` | Shell |
 | `app/shell/UsageFooter.tsx`, `UsageProviderChip.tsx`, `providers/model/rateLimits*.ts`, `src-tauri/src/rate_limits.rs` | `ui/footer/`, `app/usage.rs`, `rate_limits/` | 5h / weekly / monthly usage per account; HTTP through `curl` |
 | `providers/model/providerAccounts.ts`, `accountUsage.ts`, `harness/core/auth.ts`, `src-tauri/src/account_identity.rs` | `harness/accounts.rs`, `harness/login.rs`, `harness/account_identity.rs`, `app/accounts.rs` | Account profiles in BenCode's own `provider-accounts`; the list is in `settings.json` |

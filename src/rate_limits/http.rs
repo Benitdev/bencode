@@ -23,6 +23,8 @@ pub struct Send<'a> {
     pub form: &'a [(&'a str, &'a str)],
     /// Sent as written (JSON); the caller names its content type.
     pub body: Option<&'a str>,
+    /// Follow redirects (GitHub's release download links redirect).
+    pub follow_redirects: bool,
 }
 
 /// Blocking; `timeout` bounds the whole transfer.
@@ -63,6 +65,9 @@ fn request_config(url: &str, headers: &[(&str, &str)], send: Send, timeout: Dura
     );
     for (name, value) in headers {
         config.push_str(&format!("header = {}\n", quoted(&format!("{name}: {value}"))));
+    }
+    if send.follow_redirects {
+        config.push_str("location\n");
     }
     if let Some(method) = send.method {
         config.push_str(&format!("request = {}\n", quoted(method)));
@@ -150,11 +155,24 @@ mod tests {
                 method: Some("PATCH"),
                 form: &[("content", "a \"b\"\nc")],
                 body: None,
+                follow_redirects: false,
             },
             Duration::from_secs(5),
         );
         assert!(config.contains("request = \"PATCH\"\n"));
         assert!(config.ends_with("data-urlencode = \"content=a \\\"b\\\"\\nc\"\n"));
+    }
+
+    #[test]
+    fn redirects_are_followed_when_asked() {
+        let follow = Send {
+            follow_redirects: true,
+            ..Default::default()
+        };
+        let config = request_config("https://example.com/f", &[], follow, Duration::from_secs(5));
+        assert!(config.contains("\nlocation\n"));
+        let plain = request_config("https://example.com/f", &[], Send::default(), Duration::from_secs(5));
+        assert!(!plain.contains("location"));
     }
 
     #[test]

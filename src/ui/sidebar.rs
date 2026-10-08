@@ -309,7 +309,10 @@ impl BenCodeApp {
             })
             // MonoCode `showSidebarFooter`: the rail carries the card
             // while it is open.
-            .when(!self.is_rail_open, |el| el.children(self.render_live_agents(true, cx)))
+            .when(!self.is_rail_open, |el| {
+                el.children(self.render_live_agents(true, cx))
+                    .children(self.render_update_footer(true, cx))
+            })
             .child(self.render_sidebar_sash(cx))
     }
 

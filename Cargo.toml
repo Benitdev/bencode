@@ -38,9 +38,16 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 # The footer's CPU and memory readout (getrusage, proc_pid_rusage)
 libc = "0.2"
 
+# Checks an update's signature against the release key (updater.rs); what
+# tauri-plugin-updater uses for MonoCode, with no dependencies of its own.
+minisign-verify = "0.2"
+
 [target.'cfg(target_os = "macos")'.dependencies]
 cocoa = "0.26"
 objc = "0.2"
+# The window's NSView, for the Liquid Glass under it (ui/native_glass.rs);
+# the version GPUI already builds.
+raw-window-handle = "0.6"
 
 # The shipped binary: whole-program LTO and no symbols take it from 33 MB to
 # about 22 MB at the same speed, for a release build about twice as long.
