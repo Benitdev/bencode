@@ -19,6 +19,7 @@ const HTTP_TIMEOUT: Duration = Duration::from_secs(10);
 struct Credentials {
     access_token: String,
     expires_at_ms: Option<i64>,
+    has_refresh_token: bool,
 }
 
 pub fn fetch(account: Option<&AccountProfile>, now: i64) -> Fetched {
@@ -30,7 +31,7 @@ pub fn fetch(account: Option<&AccountProfile>, now: i64) -> Fetched {
     // race a live CLI (or MonoCode) and leave one process with a spent
     // refresh token, which forces the user through sign-in again.
     if token_expired(creds.expires_at_ms, now) {
-        return Fetched::Error(status_error(401));
+        return Fetched::Error(expired_token_error(creds.has_refresh_token));
     }
     let response = http::get(
         OAUTH_USAGE_URL,
@@ -58,6 +59,17 @@ fn status_error(status: u16) -> String {
         401 => "Claude sign-in expired".into(),
         403 => "Claude usage is unavailable for this account".into(),
         status => format!("Claude usage request failed ({status})"),
+    }
+}
+
+/// An expired access token the CLI can still refresh is not a lost sign-in:
+/// the account's next turn renews it, so the footer must not offer to sign
+/// in (the text avoids the words `needs_provider_login` looks for).
+fn expired_token_error(has_refresh_token: bool) -> String {
+    if has_refresh_token {
+        "Claude token renews on this account's next turn".into()
+    } else {
+        status_error(401)
     }
 }
 
@@ -91,9 +103,13 @@ fn credentials_from_blob(raw: &str) -> Option<Credentials> {
         Value::String(text) => text.trim().parse().ok(),
         _ => None,
     });
+    let has_refresh_token = field("refreshToken")
+        .and_then(Value::as_str)
+        .is_some_and(|token| !token.trim().is_empty());
     Some(Credentials {
         access_token: access_token.to_string(),
         expires_at_ms,
+        has_refresh_token,
     })
 }
 
@@ -238,6 +254,7 @@ pub fn delete_credentials(config_dir: &Path) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::rate_limits::{ProviderRateLimits, needs_provider_login};
 
     #[test]
     fn credentials_read_nested_and_flat_blobs() {
@@ -286,6 +303,21 @@ mod tests {
         let fetched = fetch(None, now);
         println!("{fetched:?}");
         assert!(matches!(fetched, Fetched::Limits(_)), "{fetched:?}");
+    }
+
+    #[test]
+    fn expired_token_with_refresh_token_does_not_ask_to_sign_in() {
+        let creds = credentials_from_blob(
+            r#"{"claudeAiOauth":{"accessToken":"a","refreshToken":"r","expiresAt":1}}"#,
+        )
+        .unwrap();
+        assert!(creds.has_refresh_token);
+        let pending = ProviderRateLimits::error(expired_token_error(true), None, 0);
+        assert!(!needs_provider_login(&pending));
+
+        let creds = credentials_from_blob(r#"{"accessToken":"a","expiresAt":1}"#).unwrap();
+        assert!(!creds.has_refresh_token);
+        assert_eq!(expired_token_error(false), "Claude sign-in expired");
     }
 
     #[test]
