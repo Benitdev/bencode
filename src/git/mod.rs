@@ -34,8 +34,11 @@ pub mod checkpoint;
 const DEFAULT_BRANCH: &str = "main";
 /// Well-known SHA-1 empty tree; used only if `git hash-object` fails.
 const EMPTY_TREE_SHA1: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
-/// Untracked files larger than this are not read to count lines.
+/// Untracked files larger than this are not read for their diff.
 const MAX_UNTRACKED_READ_BYTES: u64 = 8 * 1024 * 1024;
+/// MonoCode `MAX_UNTRACKED_BYTES`: larger untracked files count no lines
+/// in the +N figures, so the rail and Changes match MonoCode's.
+const MAX_UNTRACKED_COUNT_BYTES: u64 = 1024 * 1024;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum GitFileStatus {
@@ -270,7 +273,7 @@ fn count_untracked_lines(cwd: &str, file: &str) -> usize {
     let Ok(meta) = std::fs::metadata(&full) else {
         return 0;
     };
-    if !meta.is_file() || meta.len() > MAX_UNTRACKED_READ_BYTES {
+    if !meta.is_file() || meta.len() > MAX_UNTRACKED_COUNT_BYTES {
         return 0;
     }
     let Ok(bytes) = std::fs::read(&full) else {
@@ -801,6 +804,16 @@ mod tests {
 
         // a.txt: +2 -1; new.txt: +3.
         assert_eq!(diff_stats(repo.cwd()), Some((5, 1)));
+    }
+
+    #[test]
+    fn untracked_files_over_a_mebibyte_count_no_lines() {
+        let repo = TempRepo::new();
+        repo.write("a.txt", "1\n");
+        repo.commit_all("init");
+        repo.write("big.xml", &"line\n".repeat(300_000));
+        repo.write("small.txt", "x\ny\n");
+        assert_eq!(diff_stats(repo.cwd()), Some((2, 0)));
     }
 
     #[test]
