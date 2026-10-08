@@ -3,10 +3,10 @@
 //! through `gh`, then the item is read back into the list.
 
 use ely_gpui_component::buttons::{Button, ButtonVariant};
-use ely_gpui_component::menus::{DropdownMenu, Menu, MenuItem};
+use ely_gpui_component::menus::{Menu, MenuItem, SplitButton};
 use ely_gpui_component::overlays::ConfirmDialog;
 use ely_gpui_component::primitives::IconName;
-use ely_gpui_component::theme::{ActiveTheme, ControlSize};
+use ely_gpui_component::theme::ActiveTheme;
 use gpui::{AnyElement, Context, IntoElement, ParentElement, SharedString, Styled, div};
 
 use crate::app::BenCodeApp;
@@ -187,8 +187,7 @@ impl BenCodeApp {
         let button = |id: &'static str, label: &'static str, icon: IconName, action: PrAction| {
             let key = key.clone();
             Button::new(id, label)
-                .variant(ButtonVariant::Secondary)
-                .size(ControlSize::Sm)
+                .variant(ButtonVariant::Ghost)
                 .icon(icon)
                 .disabled(busy)
                 .on_click(cx.listener(move |this, _, _, cx| this.ask_pr_action(&key, action, cx)))
@@ -203,17 +202,6 @@ impl BenCodeApp {
                 _ => "Rebase and merge",
             };
             let merge_key = key.clone();
-            out.push(
-                Button::new("inbox-pr-merge", label)
-                    .primary()
-                    .size(ControlSize::Sm)
-                    .icon(IconName::GitMerge)
-                    .disabled(busy)
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.ask_pr_action(&merge_key, this.inbox.pr.merge_method, cx)
-                    }))
-                    .into_any_element(),
-            );
             let methods = MERGE_OPTIONS
                 .iter()
                 .fold(Menu::new(), |menu, (action, label)| {
@@ -228,9 +216,14 @@ impl BenCodeApp {
                         )),
                     )
                 });
+            // The method sits under the merge button's arrow, as on GitHub;
+            // a press while busy is ignored by `ask_pr_action`.
             out.push(
-                DropdownMenu::new("inbox-pr-merge-method", "", methods)
-                    .variant(ButtonVariant::Secondary)
+                SplitButton::new("inbox-pr-merge", label, methods)
+                    .variant(ButtonVariant::Primary)
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.ask_pr_action(&merge_key, this.inbox.pr.merge_method, cx)
+                    }))
                     .into_any_element(),
             );
             out.push(button(

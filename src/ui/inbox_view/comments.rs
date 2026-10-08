@@ -7,8 +7,8 @@ use ely_gpui_component::documents::MarkdownRenderer;
 use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
-    AnyElement, Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString,
-    Styled, div, prelude::*,
+    AnyElement, Context, Div, FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement,
+    SharedString, Styled, div, prelude::*,
 };
 
 use crate::ui::scale::px;
@@ -33,6 +33,53 @@ fn review_label(state: &str) -> &'static str {
         "DISMISSED" => "Dismissed",
         _ => "",
     }
+}
+
+/// The colour of a review state (a comment's, or a pull request's
+/// decision); `None` keeps the row's muted text.
+pub(super) fn review_tint(state: &str, colors: &ely_gpui_component::theme::Palette) -> Option<Hsla> {
+    match state {
+        "APPROVED" => Some(colors.success),
+        "CHANGES_REQUESTED" => Some(colors.danger),
+        _ => None,
+    }
+}
+
+/// The `·` between the parts of a byline.
+pub(super) fn byline_dot(fg: Hsla) -> Div {
+    div().text_color(fg.opacity(0.35)).child("·")
+}
+
+/// A byline: muted 12px parts in a wrapping row.
+pub(super) fn byline(fg: Hsla) -> Div {
+    div()
+        .flex()
+        .flex_wrap()
+        .min_w_0()
+        .items_center()
+        .gap_x_2()
+        .gap_y_1()
+        .text_size(px(12.0))
+        .text_color(fg.opacity(0.5))
+}
+
+/// Who wrote it, stronger than the rest of the byline.
+pub(super) fn author_name(name: impl Into<SharedString>, fg: Hsla) -> Div {
+    div()
+        .text_color(fg.opacity(0.8))
+        .font_weight(FontWeight::MEDIUM)
+        .child(name.into())
+}
+
+/// The bordered card a comment (and the description) sits in.
+pub(super) fn comment_card(fg: Hsla) -> Div {
+    div()
+        .rounded(px(6.0))
+        .border_1()
+        .border_color(fg.opacity(0.10))
+        .bg(fg.opacity(0.02))
+        .flex()
+        .flex_col()
 }
 
 impl BenCodeApp {
@@ -204,32 +251,19 @@ impl BenCodeApp {
             (false, Some(line)) => format!("{}:{line}", comment.path),
             (false, None) => comment.path.clone(),
         };
-        let dot = || div().text_color(fg.opacity(0.35)).child("·");
-        let mut header = div()
-            .flex()
-            .flex_wrap()
-            .min_w_0()
-            .items_center()
-            .gap_2()
-            .text_size(px(12.0))
-            .text_color(fg.opacity(0.5))
+        let dot = || byline_dot(fg);
+        let mut header = byline(fg)
             .when(!nested, |el| el.px_3().py_2())
-            .child(
-                div()
-                    .text_color(fg.opacity(0.8))
-                    .font_weight(FontWeight::MEDIUM)
-                    .child(if comment.author.is_empty() {
-                        "ghost".to_string()
-                    } else {
-                        comment.author.clone()
-                    }),
-            );
+            .child(author_name(
+                if comment.author.is_empty() {
+                    "ghost".to_string()
+                } else {
+                    comment.author.clone()
+                },
+                fg,
+            ));
         if !review.is_empty() {
-            let tint = match comment.state.as_str() {
-                "APPROVED" => colors.success,
-                "CHANGES_REQUESTED" => colors.danger,
-                _ => fg.opacity(0.5),
-            };
+            let tint = review_tint(&comment.state, colors).unwrap_or(fg.opacity(0.5));
             header = header
                 .child(dot())
                 .child(div().text_color(tint).child(review));
@@ -319,13 +353,7 @@ impl BenCodeApp {
                 .children(body)
                 .into_any_element();
         }
-        div()
-            .rounded(px(6.0))
-            .border_1()
-            .border_color(fg.opacity(0.10))
-            .bg(fg.opacity(0.02))
-            .flex()
-            .flex_col()
+        comment_card(fg)
             .child(header.when(has_body || replies.is_some(), |el| {
                 el.border_b_1().border_color(colors.border)
             }))
