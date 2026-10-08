@@ -4,12 +4,26 @@ name: Release
 # BenCode.dmg and publishes it as a GitHub Release, with that version's
 # CHANGELOG.md section as the notes. A tag with a hyphen (v0.2.0-beta.1) is
 # a pre-release. Running the workflow by hand only builds the dmg and keeps
-# it as a workflow artifact. Signing and notarization: docs/releasing.md.
+# it as a workflow artifact; by default that test build is Apple Silicon only
+# with thin LTO, so it finishes much sooner. Signing and notarization:
+# docs/releasing.md.
 
 on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      targets:
+        description: Architectures to build
+        type: choice
+        options:
+          - aarch64-apple-darwin
+          - aarch64-apple-darwin x86_64-apple-darwin
+        default: aarch64-apple-darwin
+      quick:
+        description: Quick build (thin LTO, parallel codegen; a little bigger and slower)
+        type: boolean
+        default: true
 
 permissions:
   contents: write
@@ -75,6 +89,11 @@ jobs:
 
       - name: Build BenCode.dmg
         env:
+          # A tag builds the universal, fully optimized release; a manual run
+          # takes the inputs above.
+          TARGETS: ${{ inputs.targets || 'aarch64-apple-darwin x86_64-apple-darwin' }}
+          CARGO_PROFILE_RELEASE_LTO: ${{ inputs.quick && 'thin' || 'fat' }}
+          CARGO_PROFILE_RELEASE_CODEGEN_UNITS: ${{ inputs.quick && '16' || '1' }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
