@@ -16,6 +16,7 @@ use crate::ui::scale::px;
 use super::relative_time;
 use crate::app::BenCodeApp;
 use crate::github::{self, Comment, Kind, WorkItem};
+use crate::work_items::Provider;
 
 /// The review thread a reply goes to (MonoCode `InboxReplyTarget`).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -102,14 +103,17 @@ impl BenCodeApp {
         self.inbox.comment_posting = true;
         self.inbox.comment_error = None;
         let task = cx.background_executor().spawn(async move {
-            github::post_comment(
-                std::path::Path::new(&item.project),
-                &item.repo,
-                item.kind,
-                item.number,
-                &body,
-                reply.as_deref(),
-            )
+            match item.provider {
+                Provider::GitHub => github::post_comment(
+                    std::path::Path::new(&item.project),
+                    &item.repo,
+                    item.kind,
+                    item.number,
+                    &body,
+                    reply.as_deref(),
+                ),
+                Provider::Backlog => crate::backlog::post_comment(&item.identifier, &body),
+            }
             .map(|_| item.key())
         });
         cx.spawn(async move |this, cx| {
@@ -118,6 +122,8 @@ impl BenCodeApp {
                 app.inbox.comment_posting = false;
                 match result {
                     Ok(key) => {
+                        // The user's own comment is not news to them.
+                        app.mark_inbox_key_seen(&key, cx);
                         app.inbox.reply_to = None;
                         app.inbox_comment_input
                             .update(cx, |input, cx| input.set_text("", cx));
@@ -208,7 +214,7 @@ impl BenCodeApp {
                         .text_color(fg.opacity(0.5))
                         .child(div().text_color(fg.opacity(0.7)).child(label))
                         .when(thread.truncated, |el| {
-                            el.child("Latest comments · more on GitHub")
+                            el.child(format!("Latest comments · more on {}", item.provider.label()))
                         })
                         .when(loading, |el| {
                             el.child(

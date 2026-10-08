@@ -86,6 +86,8 @@ bencode/
     ├── harness/              agent CLIs over stdio
     ├── ui/                   every view (render functions on BenCodeApp)
     ├── github.rs             GitHub through `gh` (Inbox, PR actions)
+    ├── backlog.rs            Nulab Backlog through its REST API (Inbox issues, comments, status)
+    ├── work_items.rs         the Inbox's items, whichever tracker they come from
     ├── mcp/                  MCP server discovery
     ├── rate_limits/          provider usage windows (footer): parsers and fetchers
     ├── skills/               SKILL.md discovery and `/skill` injection
@@ -120,6 +122,7 @@ bencode/
 | `tab_scope.rs`, `tab_history.rs`, `workspace_nav.rs` | Which tabs belong to which project or worktree; Back / Forward |
 | `reminders.rs`, `model_catalog.rs` | Session reminders; live model catalogs |
 | `usage.rs` | Provider usage snapshots for the footer, per account: load once, Refresh, the 30s countdown tick |
+| `backlog.rs` | The Backlog connection: connect / disconnect, which projects the Inbox lists, each project's start folder, status changes |
 | `accounts.rs` | Provider accounts: a thread's account, switching, Add account / sign-in, rename, remove, identities |
 | `worktree_lifecycle.rs` | Settings › Worktrees: project picker, create, delete (with the removal journal) |
 | `chat_background.rs` | Appearance › Chat background: the saved copy of the image, decoding and effects off the UI thread, the image the panes draw |
@@ -143,7 +146,7 @@ bencode/
 | `terminal_pane.rs` | Terminal dock |
 | `footer/` | Status bar: provider usage chip, its details popover and account pages, terminal toggle |
 | `inbox_view*`, `notes_view.rs`, `automations/`, `search_view.rs`, `settings_modal.rs` | The five surfaces |
-| `settings_accounts.rs`, `settings_appearance.rs`, `settings_worktrees.rs` | Settings pages: provider accounts, appearance, worktrees |
+| `settings_accounts.rs`, `settings_appearance.rs`, `settings_worktrees.rs`, `settings_integrations.rs` | Settings pages: provider accounts, appearance, worktrees, integrations (Backlog) |
 | `quick_open.rs`, `lightbox.rs`, `link_dialog.rs`, `reminder_notices.rs` | Overlays |
 | `theme.rs`, `appearance.rs`, `scale.rs`, `background_effects.rs`, `icons.rs`, `provider_icon.rs`, `mascot.rs`, `motion.rs`, `spinner.rs` | Look and shared drawing: palettes, tint / accent / diff colours, interface scale, chat background effects |
 | `app_callback.rs`, `virtual_rows.rs`, `explorer_menu.rs`, `drag_drop.rs` | Shared helpers |
@@ -225,7 +228,8 @@ only read that cache.
 | `features/terminal/` | `ui/terminal_pane.rs` | Ely PTY terminal, one dock per project |
 | `features/notes/` | `ui/notes_view.rs`, `db/mod.rs` | Markdown notes, tags, session links |
 | `features/automations/` | `ui/automations/`, `schedule.rs`, `db/schedule.rs` | Scheduled prompts, run history, 30s scheduler |
-| `features/inbox/` | `ui/inbox_view*`, `github.rs` | GitHub issues and PRs, checks, CI repair, comments |
+| `features/inbox/` | `ui/inbox_view*`, `github.rs`, `work_items.rs` | GitHub issues and PRs, checks, CI repair, comments |
+| `features/inbox/model/jira.ts`, `src-tauri/src/jira.rs` (as the pattern) | `backlog.rs`, `app/backlog.rs`, `ui/settings_integrations.rs` | Nulab Backlog issues in the Inbox: comments, status change, Send to agent. BenCode's own; MonoCode has Jira, Linear, GitLab and Azure DevOps instead |
 | `features/search/` | `ui/search_view.rs`, `ui/quick_open.rs` | Universal search; Go to File (⌘P) |
 | `features/settings/` | `ui/settings_modal.rs`, `settings.rs` | Providers, MCP, skills |
 | `features/settings/model/appearance.ts`, `uiScale.ts`, `AppearancePage` | `ui/settings_appearance.rs`, `ui/appearance.rs`, `ui/scale.rs`, `ui/theme.rs` | Tint, accent, diff palette, interface scale, excluded files |
@@ -302,7 +306,11 @@ in prepaint and paint: the children of a `display: none` element are skipped in
 prepaint, then painted once the hover applies, and the app aborts with
 `must call prepaint before paint`.
 
-Use one of these instead:
+**A hover style needs an `.id(...)` on the same element.** GPUI redraws on
+hover only for an element that keeps state; without an id the style is applied
+late, on whatever redraw comes next, and the row looks stuck or laggy.
+
+Use one of these instead of toggling `display`:
 
 - `.invisible().group_hover(.., |s| s.visible())` when the element may keep its
   room (make it `.absolute()` if it must not take any).
@@ -434,6 +442,11 @@ div()
   `set_terminal_open`, `set_theme_mode`, `save_settings`) into
   `~/Library/Application Support/BenCode/settings.json`. Do not write those
   fields directly. Unknown keys in the file round-trip.
+- **Inbox sources fill `work_items.rs` types.** A new tracker is a module like
+  `backlog.rs` (blocking calls for the background executor, pure parsers with
+  tests) plus a `Provider` variant; the views branch on `item.provider` only
+  where trackers differ. HTTP goes through `rate_limits::http` (`curl`, with
+  the secret on stdin); a key never appears in a URL that is logged or shown.
 - **Discovery that touches PATH or config files** (external editors, MCP servers)
   is cached in `self.integrations`; never call the discovery functions from
   render or per click.

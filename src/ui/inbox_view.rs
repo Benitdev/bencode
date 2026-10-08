@@ -1,5 +1,6 @@
-//! Inbox: MonoCode's review queue, GitHub source only. Open issues and pull
-//! requests of the rail's projects come from the `gh` CLI; the list sits
+//! Inbox: MonoCode's review queue. Open issues and pull requests of the
+//! rail's projects come from the `gh` CLI, and a connected Backlog space's
+//! open issues from its REST API (`backlog.rs`); the list sits
 //! left (resizable, with read state), the selected item right
 //! (`detail`): its body, pull request checks and CI repair (`checks`),
 //! merge and state actions (`pr_actions`), the conversation and a comment
@@ -17,6 +18,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::time::{Duration, Instant};
 
 use ely_gpui_component::buttons::{ButtonVariant, IconButton, SegmentedControl};
+use ely_gpui_component::menus::{DropdownMenu, Menu, MenuItem};
 use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
@@ -25,9 +27,12 @@ use gpui::{
 };
 
 use crate::app::{BenCodeApp, Surface};
+use crate::backlog;
 use crate::github::{self, Details, Kind, Status, WorkItem};
+use crate::work_items::Provider;
 use crate::ui::composer::cards::ComposerCard;
 use crate::ui::composer::inbox_card::{InboxCard, label_chip};
+use crate::ui::app_callback::app_callback;
 use crate::ui::scale::px;
 
 pub use checks::{Repair, RepairForm};
@@ -119,6 +124,8 @@ impl<T> Loaded<T> {
 pub struct InboxState {
     /// `None` until the first fetch answers.
     pub status: Option<Status>,
+    /// The last fetch found a Backlog connection.
+    pub backlog_connected: bool,
     pub items: Vec<WorkItem>,
     pub errors: Vec<String>,
     pub loading: bool,
@@ -127,6 +134,10 @@ pub struct InboxState {
     pub fetched_at: Option<Instant>,
     pub selected: Option<String>,
     pub kind: KindFilter,
+    /// The one tracker shown; `None` is all of them.
+    pub source: Option<Provider>,
+    /// The statuses shown, by name; empty is all of them.
+    pub statuses: Vec<String>,
     pub assigned_to_me: bool,
     pub details: Loaded<Details>,
     pub threads: Loaded<github::Thread>,
@@ -161,6 +172,7 @@ impl Default for InboxState {
     fn default() -> Self {
         Self {
             status: None,
+            backlog_connected: false,
             items: Vec::new(),
             errors: Vec::new(),
             loading: false,
@@ -168,6 +180,8 @@ impl Default for InboxState {
             fetched_at: None,
             selected: None,
             kind: KindFilter::All,
+            source: None,
+            statuses: Vec::new(),
             assigned_to_me: false,
             details: Loaded::default(),
             threads: Loaded::default(),
@@ -200,6 +214,11 @@ pub fn updated_ms(item: &WorkItem) -> i64 {
 }
 
 impl InboxState {
+    /// The source filter in force: none while GitHub is the only source.
+    fn source_filter(&self) -> Option<Provider> {
+        self.source.filter(|_| self.backlog_connected)
+    }
+
     pub fn item(&self, key: &str) -> Option<&WorkItem> {
         self.items.iter().find(|i| i.key() == key)
     }
@@ -261,11 +280,47 @@ pub fn relative_time(iso: &str, now_ms: i64) -> String {
     }
 }
 
-/// MonoCode `inboxStatusMark`: the glyph and its tint.
-pub fn status_mark(item: &WorkItem, cx: &gpui::App) -> (IconName, gpui::Hsla, &'static str) {
+/// The item's state as the list and the status filter name it: Backlog's
+/// own status, or GitHub's Open / Draft / Merged / Closed.
+pub fn status_name(item: &WorkItem) -> &str {
+    if item.provider == Provider::Backlog {
+        return if item.state.is_empty() { "Open" } else { item.state.as_str() };
+    }
+    match (item.kind, item.state.to_uppercase().as_str()) {
+        (Kind::Pr, "MERGED") => "Merged",
+        (_, "CLOSED") => "Closed",
+        (Kind::Pr, _) if item.draft => "Draft",
+        _ => "Open",
+    }
+}
+
+/// The statuses the filter offers: those of `items`, in a workflow's
+/// order where Backlog gave one (`ordered`), the rest after.
+pub fn status_choices(items: &[&WorkItem], ordered: &[String]) -> Vec<String> {
+    let mut found: Vec<String> = Vec::new();
+    for item in items {
+        let name = status_name(item);
+        if !found.iter().any(|f| f == name) {
+            found.push(name.to_string());
+        }
+    }
+    let rank = |name: &String| ordered.iter().position(|o| o == name).unwrap_or(usize::MAX);
+    found.sort_by_key(rank);
+    found
+}
+
+/// MonoCode `inboxStatusMark`: the glyph, its tint and the state's name.
+pub fn status_mark(item: &WorkItem, cx: &gpui::App) -> (IconName, gpui::Hsla, SharedString) {
     let colors = &cx.theme().colors;
+    if item.provider == Provider::Backlog {
+        // Backlog's statuses are the project's own, each with its colour.
+        let tint = crate::ui::composer::inbox_card::label_color(&item.state_color)
+            .unwrap_or(if item.closed { colors.accent } else { colors.success });
+        let icon = if item.closed { IconName::CircleCheck } else { IconName::CircleDot };
+        return (icon, tint, SharedString::from(status_name(item).to_string()));
+    }
     let state = item.state.to_uppercase();
-    match (item.kind, state.as_str()) {
+    let (icon, tint, name) = match (item.kind, state.as_str()) {
         (Kind::Pr, "MERGED") => (IconName::GitMerge, colors.accent, "Merged"),
         (Kind::Pr, "CLOSED") => (IconName::GitPullRequestClosed, colors.danger, "Closed"),
         (Kind::Pr, _) if item.draft => (
@@ -279,6 +334,16 @@ pub fn status_mark(item: &WorkItem, cx: &gpui::App) -> (IconName, gpui::Hsla, &'
         }
         (Kind::Issue, "CLOSED") => (IconName::CircleX, colors.danger, "Closed"),
         (Kind::Issue, _) => (IconName::CircleDot, colors.success, "Open"),
+    };
+    (icon, tint, name.into())
+}
+
+/// Where the item lives, as a row's last line: `owner/name`, or
+/// `Backlog · PROJ`.
+pub fn source_label(item: &WorkItem) -> String {
+    match item.provider {
+        Provider::GitHub => item.repo.clone(),
+        provider => format!("{} · {}", provider.label(), item.repo),
     }
 }
 
@@ -376,6 +441,7 @@ impl BenCodeApp {
     fn fetch_inbox(&mut self, quiet: bool, cx: &mut Context<Self>) {
         let projects = self.inbox_projects();
         let assigned = self.inbox.assigned_to_me;
+        let hidden = self.backlog.hidden_projects.clone();
         self.inbox.fetching = true;
         self.inbox.list_generation += 1;
         let list_generation = self.inbox.list_generation;
@@ -384,19 +450,32 @@ impl BenCodeApp {
             self.inbox.generation += 1;
         }
         let task = cx.background_executor().spawn(async move {
-            match github::status() {
-                Status::Ready => (Status::Ready, github::inbox(&projects, assigned)),
-                other => (other, github::InboxList::default()),
+            let status = github::status();
+            let mut list = match status {
+                Status::Ready => github::inbox(&projects, assigned),
+                _ => github::InboxList::default(),
+            };
+            let backlog = backlog::inbox(&hidden, assigned);
+            let statuses = backlog.as_ref().map(|found| found.statuses.clone());
+            if let Some(found) = backlog {
+                list.items.extend(found.items);
+                list.errors.extend(found.errors);
+                list.items.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
             }
+            (status, list, statuses)
         });
         cx.spawn(async move |this, cx| {
-            let (status, list) = task.await;
+            let (status, list, backlog_statuses) = task.await;
             let updated = this.update(cx, |app, cx| {
                 if app.inbox.list_generation != list_generation {
                     return;
                 }
+                // A fresh Backlog connection: its first list counts as read.
+                let seed_backlog = std::mem::take(&mut app.backlog.seed_seen) && backlog_statuses.is_some();
+                app.backlog.statuses = backlog_statuses.clone().unwrap_or_default();
                 let inbox = &mut app.inbox;
                 inbox.status = Some(status);
+                inbox.backlog_connected = backlog_statuses.is_some();
                 // A linked thread's item opened before the list landed
                 // stays, even when the list does not include it.
                 let kept = inbox
@@ -417,7 +496,14 @@ impl BenCodeApp {
                     inbox.checks.clear();
                     inbox.jobs.clear();
                 }
-                let seeded = inbox.seed_seen();
+                let mut seeded = inbox.seed_seen();
+                if seed_backlog {
+                    for item in inbox.items.clone() {
+                        if item.provider == Provider::Backlog {
+                            seeded |= inbox.mark_seen(&item);
+                        }
+                    }
+                }
                 let gone = inbox
                     .selected
                     .as_ref()
@@ -450,15 +536,22 @@ impl BenCodeApp {
             .trim()
             .to_lowercase();
         let number = query.trim_start_matches('#');
+        let source = self.inbox.source_filter();
         self.inbox
             .items
             .iter()
             .enumerate()
             .filter(|(_, item)| self.inbox.kind.admits(item.kind))
+            .filter(|(_, item)| source.is_none_or(|only| item.provider == only))
+            .filter(|(_, item)| {
+                self.inbox.statuses.is_empty()
+                    || self.inbox.statuses.iter().any(|s| s == status_name(item))
+            })
             .filter(|(_, item)| {
                 query.is_empty()
                     || item.title.to_lowercase().contains(&query)
                     || item.repo.to_lowercase().contains(&query)
+                    || item.identifier.to_lowercase().contains(&query)
                     || item.number.to_string() == number
                     || item
                         .labels
@@ -481,6 +574,7 @@ impl BenCodeApp {
             self.inbox.comment_error = None;
             self.inbox.pr = PrActionUi::default();
             self.inbox.repair = None;
+            self.backlog.status_error = None;
         }
         self.inbox.selected = Some(key.clone());
         if let Some(item) = self.inbox.item(&key).cloned()
@@ -490,6 +584,15 @@ impl BenCodeApp {
         }
         self.load_inbox_item(&key, cx);
         cx.notify();
+    }
+
+    /// Counts item `key` as read as it stands now.
+    pub(crate) fn mark_inbox_key_seen(&mut self, key: &str, cx: &mut Context<Self>) {
+        if let Some(item) = self.inbox.item(key).cloned()
+            && self.inbox.mark_seen(&item)
+        {
+            self.save_settings(cx);
+        }
     }
 
     /// ↑/↓ (and j/k) in the focused list: the next item opens and the list
@@ -544,13 +647,14 @@ impl BenCodeApp {
             key,
             {
                 let item = item.clone();
-                move || {
-                    github::details(
+                move || match item.provider {
+                    Provider::GitHub => github::details(
                         std::path::Path::new(&item.project),
                         &item.repo,
                         item.kind,
                         item.number,
-                    )
+                    ),
+                    Provider::Backlog => backlog::details(&item.identifier),
                 }
             },
             cx,
@@ -572,25 +676,30 @@ impl BenCodeApp {
             self,
             |inbox| &mut inbox.threads,
             key,
-            move || {
-                github::thread(
+            move || match item.provider {
+                Provider::GitHub => github::thread(
                     std::path::Path::new(&item.project),
                     &item.repo,
                     item.kind,
                     item.number,
-                )
+                ),
+                Provider::Backlog => backlog::thread(&item.identifier),
             },
             cx,
         );
     }
 
     /// MonoCode `onStartInboxItem`: a thread in the chosen project titled
-    /// "#42 Title", its composer holding the issue card.
+    /// "#42 Title", its composer holding the issue card. A Backlog issue's
+    /// card carries the description too: the agent cannot open its URL.
     fn start_inbox_item(&mut self, key: &str, cx: &mut Context<Self>) {
         let Some(item) = self.inbox.item(key).cloned() else {
             return;
         };
-        let title = format!("#{} {}", item.number, item.title.trim());
+        let title = format!("{} {}", item.identifier, item.title.trim());
+        let body = (item.provider == Provider::Backlog)
+            .then(|| self.inbox.details.get(key)?.as_ref().ok().map(|d| d.body.clone()))
+            .flatten();
         let cwd = self.inbox_start_project(&item);
         if !crate::app::same_project_path(&cwd, &self.current_cwd) {
             self.switch_project(cwd.clone(), cx);
@@ -599,7 +708,7 @@ impl BenCodeApp {
         self.open_thread_with_card(
             &cwd,
             move |session| session.title = title,
-            ComposerCard::Inbox(InboxCard::from_item(&item)),
+            ComposerCard::Inbox(InboxCard::from_item_with_body(&item, body.as_deref())),
             cx,
         );
     }
@@ -611,6 +720,13 @@ impl BenCodeApp {
             .get(&item.key())
             .cloned()
             .filter(|p| std::path::Path::new(p).is_dir())
+            // A Backlog project's threads start where the last one did.
+            .or_else(|| {
+                (item.provider == Provider::Backlog)
+                    .then(|| self.backlog.project_folders.get(&item.repo).cloned())
+                    .flatten()
+                    .filter(|p| std::path::Path::new(p).is_dir())
+            })
             .or_else(|| Some(item.project.clone()).filter(|p| std::path::Path::new(p).is_dir()))
             .unwrap_or_else(|| self.current_cwd.clone())
     }
@@ -780,6 +896,7 @@ impl BenCodeApp {
                             .text_size(px(12.0))
                             .child(self.inbox_search_input.clone()),
                     )
+                    .child(self.render_inbox_filter_menu(cx))
                     .child(
                         IconButton::new("inbox-mark-read", IconName::CheckCheck)
                             .variant(ButtonVariant::Ghost)
@@ -805,6 +922,92 @@ impl BenCodeApp {
             )
     }
 
+    /// The statuses the filter lists: those of the items the other
+    /// filters leave, Backlog's in their workflow's order.
+    fn inbox_status_choices(&self) -> Vec<String> {
+        let source = self.inbox.source_filter();
+        let items: Vec<&WorkItem> = self
+            .inbox
+            .items
+            .iter()
+            .filter(|item| self.inbox.kind.admits(item.kind))
+            .filter(|item| source.is_none_or(|only| item.provider == only))
+            .collect();
+        let mut ordered: Vec<String> = Vec::new();
+        for item in &items {
+            for status in self.backlog.statuses.get(&item.container_id).into_iter().flatten() {
+                if !ordered.contains(&status.name) {
+                    ordered.push(status.name.clone());
+                }
+            }
+        }
+        let mut choices = status_choices(&items, &ordered);
+        // A picked status stays listed, so it can be unpicked.
+        for picked in &self.inbox.statuses {
+            if !choices.contains(picked) {
+                choices.push(picked.clone());
+            }
+        }
+        choices
+    }
+
+    /// MonoCode `InboxFiltersMenu`: the source (once there is more than
+    /// GitHub) and the statuses to show.
+    fn render_inbox_filter_menu(&self, cx: &Context<Self>) -> impl IntoElement + use<> {
+        let source = self.inbox.source_filter();
+        let mut menu = Menu::new();
+        if self.inbox.backlog_connected {
+            let choices = [
+                (None, "All sources"),
+                (Some(Provider::GitHub), Provider::GitHub.label()),
+                (Some(Provider::Backlog), Provider::Backlog.label()),
+            ];
+            for (choice, label) in choices {
+                menu = menu.item(MenuItem::radio(label, source == choice).on_click(app_callback(
+                    cx,
+                    move |this, cx| {
+                        this.inbox.source = choice;
+                        cx.notify();
+                    },
+                )));
+            }
+            menu = menu.separator();
+        }
+        let picked = &self.inbox.statuses;
+        menu = menu.item(MenuItem::radio("All statuses", picked.is_empty()).on_click(app_callback(
+            cx,
+            |this, cx| {
+                this.inbox.statuses.clear();
+                cx.notify();
+            },
+        )));
+        for status in self.inbox_status_choices() {
+            let on = picked.contains(&status);
+            menu = menu.item(MenuItem::check(status.clone(), on).on_click(app_callback(
+                cx,
+                move |this, cx| {
+                    let statuses = &mut this.inbox.statuses;
+                    match statuses.iter().position(|s| *s == status) {
+                        Some(ix) => {
+                            statuses.remove(ix);
+                        }
+                        None => statuses.push(status.clone()),
+                    }
+                    cx.notify();
+                },
+            )));
+        }
+        let active = usize::from(source.is_some()) + picked.len();
+        let label = if active == 0 {
+            "Filter".to_string()
+        } else {
+            format!("Filter · {active}")
+        };
+        DropdownMenu::new("inbox-filters", label, menu)
+            .variant(ButtonVariant::Ghost)
+            .icon(IconName::Filter)
+    }
+
     fn render_inbox_list(&self, cx: &Context<Self>) -> AnyElement {
         let fg = cx.theme().colors.fg;
         let message = |text: String| {
@@ -816,28 +1019,34 @@ impl BenCodeApp {
                 .child(text)
                 .into_any_element()
         };
+        // Backlog alone fills the list too; GitHub's setup hint shows
+        // only while nothing is connected.
         match self.inbox.status {
             None => return message("Loading…".into()),
-            Some(Status::NotInstalled) => {
+            Some(Status::NotInstalled) if !self.inbox.backlog_connected => {
                 return message(
-                    "Install the GitHub CLI (`brew install gh`) to fill the Inbox.".into(),
+                    "Install the GitHub CLI (`brew install gh`) to fill the Inbox, or connect Backlog in Settings › Integrations.".into(),
                 );
             }
-            Some(Status::SignedOut) => {
-                return message("Run `gh auth login` in a terminal to connect GitHub.".into());
+            Some(Status::SignedOut) if !self.inbox.backlog_connected => {
+                return message(
+                    "Run `gh auth login` in a terminal to connect GitHub, or connect Backlog in Settings › Integrations.".into(),
+                );
             }
-            Some(Status::Ready) => {}
+            Some(_) => {}
         }
         let shown = self.shown_inbox_items(cx);
         if shown.is_empty() {
             let narrowed = !self.inbox_search_input.read(cx).text().trim().is_empty()
                 || self.inbox.kind != KindFilter::All
+                || self.inbox.source_filter().is_some()
+                || !self.inbox.statuses.is_empty()
                 || self.inbox.assigned_to_me;
             let text = if self.inbox.loading {
                 "Loading…".to_string()
             } else if let Some(error) = self.inbox.errors.first() {
                 error.clone()
-            } else if self.inbox_projects().is_empty() {
+            } else if self.inbox_projects().is_empty() && !self.inbox.backlog_connected {
                 "Open a project to fill the inbox".to_string()
             } else if narrowed {
                 "No issues or pull requests match these filters".to_string()
@@ -897,6 +1106,9 @@ impl BenCodeApp {
             .pb_0p5()
             .child(
                 div()
+                    // Its own id: GPUI redraws on hover only for an
+                    // element that keeps state.
+                    .id(SharedString::from(format!("inbox-row-card-{key}")))
                     .size_full()
                     .flex()
                     .flex_col()
@@ -919,7 +1131,7 @@ impl BenCodeApp {
                                     .truncate()
                                     .text_size(px(11.0))
                                     .text_color(fg.opacity(0.5))
-                                    .child(format!("{} · #{}", kind_label(item.kind), item.number)),
+                                    .child(format!("{} · {}", kind_label(item.kind), item.identifier)),
                             )
                             .when(repairs > 0, |el| {
                                 el.child(
@@ -976,7 +1188,7 @@ impl BenCodeApp {
                                     .truncate()
                                     .text_size(px(11.0))
                                     .text_color(fg.opacity(0.45))
-                                    .child(SharedString::from(item.repo.clone())),
+                                    .child(SharedString::from(source_label(item))),
                             )
                             .children(item.labels.iter().take(2).map(|l| label_chip(l, cx))),
                     ),
@@ -1031,6 +1243,35 @@ fn load<T: Send + 'static>(
 mod tests {
     use super::*;
 
+    #[test]
+    fn statuses_are_named_per_tracker_and_follow_the_workflow() {
+        let github = |kind, state: &str, draft| WorkItem {
+            kind,
+            state: state.into(),
+            draft,
+            ..Default::default()
+        };
+        let backlog = |state: &str| WorkItem {
+            provider: Provider::Backlog,
+            state: state.into(),
+            ..Default::default()
+        };
+        assert_eq!(status_name(&github(Kind::Pr, "OPEN", true)), "Draft");
+        assert_eq!(status_name(&github(Kind::Issue, "OPEN", false)), "Open");
+        assert_eq!(status_name(&github(Kind::Pr, "MERGED", false)), "Merged");
+        assert_eq!(status_name(&backlog("In Progress")), "In Progress");
+
+        let items = [
+            backlog("Resolved"),
+            github(Kind::Pr, "OPEN", true),
+            backlog("Open"),
+            backlog("Resolved"),
+        ];
+        let refs: Vec<&WorkItem> = items.iter().collect();
+        let workflow = ["Open".to_string(), "In Progress".to_string(), "Resolved".to_string()];
+        assert_eq!(status_choices(&refs, &workflow), ["Open", "Resolved", "Draft"]);
+    }
+
     fn item(updated: &str) -> WorkItem {
         WorkItem {
             kind: Kind::Issue,
@@ -1046,6 +1287,7 @@ mod tests {
             draft: false,
             repo: "o/r".into(),
             project: "/p".into(),
+            ..Default::default()
         }
     }
 

@@ -112,6 +112,8 @@ Notes:
 - [~] P1 M Notes: Add to chat (new session + note card) ✓; Preview/Source editor, tags, list rows, "Untitled"; save turn as note; `@note/` injection
 - [~] P1 M-L Automations (templates and Run now exist): template picker, list cards, editor header/tabs, trigger editor, session settings, run history table, Run now in parallel
 - [x] P1 S Inbox honest empty state (no fake data)
+- [x] Inbox source: Nulab Backlog (`backlog.rs`; BenCode's own, MonoCode has none)
+- [ ] P2 Inbox sources MonoCode has: Jira, Linear, GitLab, Azure DevOps (add as `Provider` variants over `work_items.rs`)
 - [ ] P1 L Quick Composer
 
 ## Batch G — composer parity (2026-10-04)

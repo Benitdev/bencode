@@ -1,7 +1,7 @@
-//! MonoCode `InboxComposerCard` / `InboxMiniCard`: the GitHub issue a
-//! thread started from in the Inbox. It waits above the prompt; on send its
-//! prompt ("Work on this GitHub issue: …") goes first and the typed note
-//! after it (`composeInboxMessage`).
+//! MonoCode `InboxComposerCard` / `InboxMiniCard`: the GitHub or Backlog
+//! issue a thread started from in the Inbox. It waits above the prompt; on
+//! send its prompt ("Work on this GitHub issue: …") goes first and the
+//! typed note after it (`composeInboxMessage`).
 
 use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
@@ -15,15 +15,19 @@ use crate::ui::scale::px;
 use super::cards::card_frame;
 use crate::app::BenCodeApp;
 use crate::github::{Kind, Label, WorkItem};
+use crate::work_items::Provider;
 use crate::ui::attachment_chip::OnRemove;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct InboxCard {
+    pub provider: Provider,
     pub kind: Kind,
+    /// `#42`, `PROJ-42`.
+    pub identifier: String,
     pub number: i64,
     pub title: String,
     pub url: String,
-    /// `owner/name`.
+    /// `owner/name`, or the Backlog project key.
     pub repo: String,
     /// At most two, as MonoCode shows.
     pub labels: Vec<Label>,
@@ -33,19 +37,28 @@ pub struct InboxCard {
 
 impl InboxCard {
     /// MonoCode `inboxComposerCard`.
+    #[cfg(test)]
     pub fn from_item(item: &WorkItem) -> Self {
+        Self::from_item_with_body(item, None)
+    }
+
+    /// The card with the issue's description in its prompt, for a tracker
+    /// whose pages the agent cannot open.
+    pub fn from_item_with_body(item: &WorkItem, body: Option<&str>) -> Self {
         Self {
+            provider: item.provider,
             kind: item.kind,
+            identifier: item.identifier.clone(),
             number: item.number,
             title: if item.title.trim().is_empty() {
-                format!("#{}", item.number)
+                item.identifier.clone()
             } else {
                 item.title.trim().to_string()
             },
             url: item.url.trim().to_string(),
             repo: item.repo.clone(),
             labels: item.labels.iter().take(2).cloned().collect(),
-            prompt: start_draft(item).trim_end().to_string(),
+            prompt: start_draft(item, body).trim_end().to_string(),
         }
     }
 
@@ -57,24 +70,29 @@ impl InboxCard {
     }
 }
 
-/// MonoCode `inboxStartDraft` for GitHub.
-pub fn start_draft(item: &WorkItem) -> String {
+/// MonoCode `inboxStartDraft`: what the item is, its title and its URL,
+/// then `body` (the description) when there is one to give.
+pub fn start_draft(item: &WorkItem, body: Option<&str>) -> String {
     let kind = match item.kind {
         Kind::Pr => "pull request",
         Kind::Issue => "issue",
     };
+    let source = item.provider.label();
     let title = match item.title.trim() {
-        "" => format!("GitHub {kind} #{}", item.number),
+        "" => format!("{source} {kind} {}", item.identifier),
         title => title.to_string(),
     };
     let mut lines = vec![
-        format!("Work on this GitHub {kind}:"),
+        format!("Work on this {source} {kind}:"),
         String::new(),
-        format!("#{} {title}", item.number),
+        format!("{} {title}", item.identifier),
     ];
     let url = item.url.trim();
     if !url.is_empty() {
         lines.push(url.to_string());
+    }
+    if let Some(body) = body.map(str::trim).filter(|body| !body.is_empty()) {
+        lines.extend([String::new(), "Description:".to_string(), body.to_string()]);
     }
     format!("{}\n", lines.join("\n"))
 }
@@ -125,7 +143,8 @@ pub fn label_chip(label: &Label, cx: &gpui::App) -> impl IntoElement {
         )
 }
 
-/// MonoCode `InboxMiniCard` above the prompt; a click opens it on GitHub.
+/// MonoCode `InboxMiniCard` above the prompt; a click opens it on its
+/// tracker.
 pub fn inbox_mini_card(
     card: &InboxCard,
     on_dismiss: Option<OnRemove>,
@@ -137,6 +156,11 @@ pub fn inbox_mini_card(
         Kind::Pr => IconName::GitPullRequest,
         Kind::Issue => IconName::CircleDot,
     };
+    let open_tip = format!("Open in {}", card.provider.label());
+    let source = match card.provider {
+        Provider::GitHub => card.repo.clone(),
+        provider => format!("{} · {}", provider.label(), card.repo),
+    };
     card_frame(&format!("inbox-{}", card.number), on_dismiss, cx)
         .child(
             div()
@@ -145,7 +169,7 @@ pub fn inbox_mini_card(
                 .flex_col()
                 .when(!url.is_empty(), |el| {
                     el.cursor_pointer()
-                        .tooltip(Tooltip::text("Open in GitHub"))
+                        .tooltip(Tooltip::text(open_tip))
                         .on_click(move |_, _, cx| cx.open_url(&url))
                 })
                 .child(
@@ -165,7 +189,7 @@ pub fn inbox_mini_card(
                                 .truncate()
                                 .text_size(px(11.0))
                                 .text_color(fg.opacity(0.5))
-                                .child(format!("{} · #{}", card.kind_label(), card.number)),
+                                .child(format!("{} · {}", card.kind_label(), card.identifier)),
                         ),
                 )
                 .child(
@@ -191,7 +215,7 @@ pub fn inbox_mini_card(
                                 .truncate()
                                 .text_size(px(11.0))
                                 .text_color(fg.opacity(0.45))
-                                .child(SharedString::from(card.repo.clone())),
+                                .child(SharedString::from(source)),
                         )
                         .children(card.labels.iter().map(|label| label_chip(label, cx))),
                 ),
@@ -206,6 +230,7 @@ mod tests {
     fn item() -> WorkItem {
         WorkItem {
             kind: Kind::Issue,
+            identifier: "#42".into(),
             number: 42,
             title: " Crash on save ".into(),
             url: "https://github.com/o/r/issues/42".into(),
@@ -231,6 +256,7 @@ mod tests {
             draft: false,
             repo: "o/r".into(),
             project: "/p".into(),
+            ..Default::default()
         }
     }
 
@@ -243,6 +269,25 @@ mod tests {
         );
         assert_eq!(card.labels.len(), 2);
         assert_eq!(card.title, "Crash on save");
+    }
+
+    #[test]
+    fn a_backlog_card_carries_the_description_the_agent_cannot_fetch() {
+        let item = WorkItem {
+            provider: Provider::Backlog,
+            identifier: "WEB-42".into(),
+            number: 42,
+            title: "Login fails".into(),
+            url: "https://acme.backlog.com/view/WEB-42".into(),
+            repo: "WEB".into(),
+            ..Default::default()
+        };
+        let card = InboxCard::from_item_with_body(&item, Some("  Steps…  "));
+        assert_eq!(
+            card.prompt,
+            "Work on this Backlog issue:\n\nWEB-42 Login fails\nhttps://acme.backlog.com/view/WEB-42\n\nDescription:\nSteps…"
+        );
+        assert_eq!(InboxCard::from_item_with_body(&item, Some(" ")).prompt.lines().count(), 4);
     }
 
     #[test]

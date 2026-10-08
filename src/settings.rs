@@ -61,6 +61,10 @@ pub struct AppSettings {
     pub inbox_list_width: Option<f32>,
     /// CI repairs sent from the Inbox, oldest first.
     pub inbox_repairs: Vec<crate::ui::inbox_view::Repair>,
+    /// Backlog project ids left out of the Inbox.
+    pub backlog_hidden_projects: Vec<String>,
+    /// The folder "Send to agent" starts in, by Backlog project key.
+    pub backlog_project_folders: std::collections::BTreeMap<String, String>,
     /// MonoCode `monocode.themeHue` / `themeSaturation` /
     /// `themeDarkLightness`; `None` is the default.
     pub theme_hue: Option<f32>,
@@ -196,6 +200,8 @@ mod tests {
             inbox_seen: std::collections::BTreeMap::from([("o/r:issue:1".to_string(), 5)]),
             inbox_seen_seeded: true,
             inbox_list_width: Some(400.0),
+            backlog_hidden_projects: vec!["12".to_string()],
+            backlog_project_folders: std::collections::BTreeMap::from([("WEB".to_string(), "/p".to_string())]),
             changes_tree: true,
             theme_hue: Some(210.0),
             theme_saturation: Some(12.0),

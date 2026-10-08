@@ -81,6 +81,7 @@ impl BenCodeApp {
             // MonoCode's page starts on the open project, freshly listed.
             SettingsTab::Worktrees => self.open_worktrees_page(cx),
             SettingsTab::Providers => self.load_accounts_page(false, cx),
+            SettingsTab::Integrations => self.open_integrations_page(cx),
             _ => {}
         }
         cx.notify();

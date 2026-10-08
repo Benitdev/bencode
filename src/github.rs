@@ -9,84 +9,21 @@ use std::process::Command;
 
 use serde::Deserialize;
 
+pub use crate::work_items::{Comment, Commit, Details, Kind, Label, Thread, WorkItem};
+use crate::work_items::Provider;
+
+/// The `gh --json` fields listed for each kind.
+fn list_fields(kind: Kind) -> &'static str {
+    match kind {
+        Kind::Issue => "number,title,url,state,stateReason,createdAt,updatedAt,labels,assignees",
+        Kind::Pr => "number,title,url,state,createdAt,updatedAt,labels,assignees,isDraft",
+    }
+}
+
 /// MonoCode's default page of a project's items.
 const ITEM_LIMIT: &str = "40";
 /// Where `gh` lives when the app starts from Finder without a shell PATH.
 const GH_DIRS: [&str; 3] = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"];
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Kind {
-    Issue,
-    Pr,
-}
-
-impl Kind {
-    fn arg(self) -> &'static str {
-        match self {
-            Self::Issue => "issue",
-            Self::Pr => "pr",
-        }
-    }
-
-    fn fields(self) -> &'static str {
-        match self {
-            Self::Issue => {
-                "number,title,url,state,stateReason,createdAt,updatedAt,labels,assignees"
-            }
-            Self::Pr => "number,title,url,state,createdAt,updatedAt,labels,assignees,isDraft",
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
-pub struct Label {
-    pub name: String,
-    #[serde(default)]
-    pub color: String,
-}
-
-/// MonoCode `InboxItem` for the GitHub source.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct WorkItem {
-    pub kind: Kind,
-    pub number: i64,
-    pub title: String,
-    pub url: String,
-    /// `OPEN`, `CLOSED` or `MERGED`.
-    pub state: String,
-    pub state_reason: String,
-    pub created_at: String,
-    pub updated_at: String,
-    pub labels: Vec<Label>,
-    pub assignees: Vec<String>,
-    pub draft: bool,
-    /// `owner/name`.
-    pub repo: String,
-    /// The project folder it was listed for.
-    pub project: String,
-}
-
-impl WorkItem {
-    /// Unique across repositories and kinds.
-    pub fn key(&self) -> String {
-        format!(
-            "{}:{}:{}",
-            self.repo.to_lowercase(),
-            self.kind.arg(),
-            self.number
-        )
-    }
-}
-
-/// MonoCode `GithubWorkItemDetails`.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct Details {
-    pub body: String,
-    pub author: String,
-    pub base_ref: String,
-    pub head_ref: String,
-    pub review_decision: String,
-}
 
 /// Whether `gh` is there and signed in to github.com.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -203,7 +140,7 @@ pub fn work_items(
         "--repo",
         repo,
         "--json",
-        kind.fields(),
+        list_fields(kind),
     ];
     if assigned_to_me {
         args.extend(["--assignee", "@me"]);
@@ -255,7 +192,10 @@ fn parse_work_items(
     Ok(rows
         .into_iter()
         .map(|row| WorkItem {
+            provider: Provider::GitHub,
             kind,
+            identifier: format!("#{}", row.number),
+            closed: !row.state.eq_ignore_ascii_case("OPEN"),
             number: row.number,
             title: row.title,
             url: row.url,
@@ -268,6 +208,7 @@ fn parse_work_items(
             draft: row.is_draft,
             repo: repo.to_string(),
             project: project.to_string(),
+            ..Default::default()
         })
         .collect())
 }
@@ -442,44 +383,6 @@ mutation InboxReviewReply($threadId: ID!, $body: String!) {
   }
 }
 "#;
-
-/// MonoCode `GitHubWorkItemComment`: a comment, a review, or a review
-/// thread (its first comment, the rest as `replies`).
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct Comment {
-    pub id: String,
-    /// `comment`, `review` or `review_comment`.
-    pub kind: String,
-    pub author: String,
-    pub body: String,
-    pub created_at: String,
-    pub url: String,
-    /// A review's `APPROVED`, `CHANGES_REQUESTED`, `COMMENTED`, …
-    pub state: String,
-    pub path: String,
-    pub line: Option<i64>,
-    pub resolved: bool,
-    /// The review thread a reply goes to.
-    pub thread_id: String,
-    pub replies: Vec<Comment>,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct Commit {
-    pub oid: String,
-    pub headline: String,
-    pub author: String,
-    pub committed_at: String,
-    pub url: String,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct Thread {
-    pub comments: Vec<Comment>,
-    pub commits: Vec<Commit>,
-    /// GitHub has more than the latest page shown.
-    pub truncated: bool,
-}
 
 fn split_repo(repo: &str) -> Result<(&str, &str), String> {
     let (owner, name) = repo
@@ -1223,7 +1126,7 @@ pub fn work_item(cwd: &Path, repo: &str, kind: Kind, number: i64) -> Result<Work
             "--repo",
             repo,
             "--json",
-            kind.fields(),
+            list_fields(kind),
         ],
     )?;
     parse_work_items(&format!("[{json}]"), kind, repo, &cwd.to_string_lossy())?

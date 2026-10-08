@@ -1,6 +1,7 @@
 //! MonoCode `InboxDetail`: identity, title, people and times, the actions
-//! (Send to agent with its project, pull request actions, Open in GitHub),
-//! labels, the body, then a pull request's checks and the conversation.
+//! (Send to agent with its project, pull request actions or a Backlog
+//! issue's status, Open in its tracker), labels, the body, then a pull
+//! request's checks and the conversation.
 
 use ely_gpui_component::buttons::{Button, ButtonVariant, IconButton};
 use ely_gpui_component::documents::MarkdownRenderer;
@@ -16,9 +17,10 @@ use gpui::{
 use crate::ui::scale::px;
 
 use super::comments::{author_name, byline, byline_dot, comment_card, review_tint};
-use super::{kind_label, project_name, relative_time, status_mark};
+use super::{kind_label, project_name, relative_time, source_label, status_mark};
 use crate::app::BenCodeApp;
 use crate::github::Kind;
+use crate::work_items::Provider;
 use crate::ui::app_callback::app_callback;
 use crate::ui::composer::inbox_card::label_chip;
 
@@ -66,14 +68,14 @@ impl BenCodeApp {
                 div()
                     .min_w_0()
                     .truncate()
-                    .child(format!("#{} · {}", item.number, item.repo)),
+                    .child(format!("{} · {}", item.identifier, source_label(item))),
             )
             .child(div().flex_1())
             .child(
                 IconButton::new("inbox-open", IconName::ExternalLink)
                     .variant(ButtonVariant::Ghost)
                     .size(ControlSize::Sm)
-                    .tooltip("Open in GitHub")
+                    .tooltip(format!("Open in {}", item.provider.label()))
                     .disabled(url.is_empty())
                     .on_click(move |_, _, cx| cx.open_url(&url)),
             );
@@ -92,6 +94,12 @@ impl BenCodeApp {
             meta = meta
                 .child(dot())
                 .child(format!("assigned to {}", item.assignees.join(", ")));
+        }
+        if !item.priority.is_empty() {
+            meta = meta.child(dot()).child(format!("priority {}", item.priority.to_lowercase()));
+        }
+        if !item.due_date.is_empty() {
+            meta = meta.child(dot()).child(format!("due {}", item.due_date));
         }
         let decision = loaded.map_or("", |d| d.review_decision.as_str());
         let review = match decision {
@@ -137,6 +145,9 @@ impl BenCodeApp {
                         })),
                 )
                 .child(self.render_inbox_project_picker(item, cx))
+            })
+            .when(item.provider == Provider::Backlog, |el| {
+                el.children(self.render_backlog_status_picker(item, cx))
             })
             .when(item.kind == Kind::Pr, |el| {
                 el.children(self.render_pr_actions(item, &base, &head, cx))
@@ -222,6 +233,18 @@ impl BenCodeApp {
                     )
                     .child(actions)
                     .children(self.render_pr_action_status(cx))
+                    .children(
+                        self.backlog
+                            .status_error
+                            .clone()
+                            .filter(|_| item.provider == Provider::Backlog)
+                            .map(|err| {
+                                div()
+                                    .text_size(px(12.0))
+                                    .text_color(colors.danger.opacity(0.9))
+                                    .child(SharedString::from(err))
+                            }),
+                    )
                     .child(description)
                     .when(item.kind == Kind::Pr, |el| {
                         el.child(self.render_pr_checks(item, cx))
@@ -239,11 +262,14 @@ impl BenCodeApp {
     ) -> impl IntoElement {
         let chosen = self.inbox_start_project(item);
         let key = item.key();
+        // A Backlog project keeps the folder picked for one of its issues.
+        let backlog_project = (item.provider == Provider::Backlog).then(|| item.repo.clone());
         let menu = self
             .inbox_projects()
             .into_iter()
             .fold(Menu::new(), |menu, path| {
                 let (key, target) = (key.clone(), path.clone());
+                let backlog_project = backlog_project.clone();
                 menu.item(
                     MenuItem::radio(
                         project_name(&path),
@@ -251,6 +277,9 @@ impl BenCodeApp {
                     )
                     .on_click(app_callback(cx, move |this, cx| {
                         this.inbox.start_project.insert(key.clone(), target.clone());
+                        if let Some(project) = &backlog_project {
+                            this.set_backlog_project_folder(project, &target, cx);
+                        }
                         cx.notify();
                     })),
                 )
@@ -259,9 +288,41 @@ impl BenCodeApp {
             .variant(ButtonVariant::Secondary)
             .icon(IconName::Folder)
     }
+
+    /// A Backlog issue's status, as a menu of its project's workflow.
+    fn render_backlog_status_picker(
+        &self,
+        item: &crate::github::WorkItem,
+        cx: &Context<Self>,
+    ) -> Option<impl IntoElement + use<>> {
+        let statuses = self.backlog.statuses.get(&item.container_id)?;
+        let key = item.key();
+        let busy = self.backlog.status_busy.is_some();
+        let menu = statuses.iter().fold(Menu::new(), |menu, status| {
+            let (key, id) = (key.clone(), status.id);
+            menu.item(
+                MenuItem::radio(status.name.clone(), status.name == item.state)
+                    .disabled(busy)
+                    .on_click(app_callback(cx, move |this, cx| {
+                        this.set_backlog_status(&key, id, cx)
+                    })),
+            )
+        });
+        let label = if self.backlog.status_busy.as_deref() == Some(key.as_str()) {
+            "Updating…".to_string()
+        } else {
+            item.state.clone()
+        };
+        Some(
+            DropdownMenu::new("inbox-backlog-status", label, menu)
+                .variant(ButtonVariant::Secondary)
+                .icon(IconName::CircleDot),
+        )
+    }
 }
 
-/// The item's state as GitHub shows it: icon and word on a tinted pill.
+/// The item's state as its tracker shows it: icon and word on a tinted
+/// pill. Backlog's status names stand alone.
 fn state_pill(item: &crate::github::WorkItem, cx: &gpui::App) -> impl IntoElement {
     let (icon, tint, status) = status_mark(item, cx);
     div()
@@ -276,7 +337,10 @@ fn state_pill(item: &crate::github::WorkItem, cx: &gpui::App) -> impl IntoElemen
         .text_color(tint)
         .font_weight(FontWeight::MEDIUM)
         .child(Icon::new(icon).size(IconSize::Xs).color(tint))
-        .child(format!("{status} {}", kind_label(item.kind).to_lowercase()))
+        .child(match item.provider {
+            Provider::GitHub => format!("{status} {}", kind_label(item.kind).to_lowercase()),
+            Provider::Backlog => status.to_string(),
+        })
 }
 
 /// A branch name in code type, cut short when the row is narrow.

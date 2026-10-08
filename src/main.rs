@@ -1,4 +1,5 @@
 mod app;
+mod backlog;
 mod db;
 pub mod external_editor;
 mod git;
@@ -14,6 +15,7 @@ mod settings;
 mod skills;
 mod storage;
 mod ui;
+mod work_items;
 mod workspace;
 
 use gpui::{

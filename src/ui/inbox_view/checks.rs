@@ -455,6 +455,9 @@ impl BenCodeApp {
                 .into_any_element(),
         };
         let row = div()
+            // Its own id: GPUI redraws on hover only for an element that
+            // keeps state.
+            .id(("check-row", ix))
             .flex()
             .items_center()
             .gap_2()

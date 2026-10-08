@@ -1,4 +1,5 @@
 pub mod accounts;
+pub mod backlog;
 mod agent;
 pub mod chat_background;
 pub mod commands;
@@ -168,6 +169,11 @@ pub struct BenCodeApp {
     pub inbox: crate::ui::inbox_view::InboxState,
     pub inbox_search_input: Entity<TextInput>,
     pub inbox_comment_input: Entity<TextInput>,
+    /// Settings › Integrations: the Backlog connection and its form.
+    pub backlog: backlog::BacklogState,
+    pub backlog_space_input: Entity<TextInput>,
+    pub backlog_key_input: Entity<TextInput>,
+    pub backlog_disconnect_open: bool,
     /// The Inbox list's focus, for its ↑/↓ keys.
     pub inbox_focus: gpui::FocusHandle,
     /// A branch switch git refused because of local changes, awaiting "Stash & switch".
@@ -501,6 +507,8 @@ impl BenCodeApp {
         let branch_create_input = text_input(window, cx, "feature/my-branch");
         let inbox_search_input = text_input(window, cx, "Filter inbox");
         let inbox_comment_input = multiline_input(window, cx, "Leave a comment (⌘↩)", (2, 8));
+        let backlog_space_input = text_input(window, cx, "yourspace.backlog.com");
+        let backlog_key_input = cx.new(|cx| TextInput::new(window, cx).placeholder("API key").masked());
         let skill_name_input = text_input(window, cx, "skill-name");
         let skill_keys_input = skill_name_input.clone();
         let find_input = text_input(window, cx, "Find in conversation");
@@ -603,6 +611,8 @@ impl BenCodeApp {
                     }
                 },
             ),
+            cx.subscribe(&backlog_space_input, Self::on_backlog_form_input),
+            cx.subscribe(&backlog_key_input, Self::on_backlog_form_input),
             cx.subscribe(
                 &inbox_search_input,
                 |_: &mut Self, _, event: &InputEvent, cx| {
@@ -1073,6 +1083,10 @@ impl BenCodeApp {
             inbox: Default::default(),
             inbox_search_input,
             inbox_comment_input,
+            backlog: Default::default(),
+            backlog_space_input,
+            backlog_key_input,
+            backlog_disconnect_open: false,
             inbox_focus: cx.focus_handle(),
             blocked_branch_switch: None,
             token_picker: None,
@@ -1213,6 +1227,7 @@ impl BenCodeApp {
         app.start_usage_clock(cx);
         app.load_account_profiles(cx);
         app.refresh_installed_catalogs(cx);
+        app.load_backlog_account(cx);
         app.start_inbox_poll(cx);
         app
     }
@@ -1506,6 +1521,7 @@ impl Render for BenCodeApp {
                     .children(self.render_session_dialog(cx))
                     .children(self.render_worktree_deletion(cx))
                     .children(self.render_account_removal(cx))
+                    .children(self.render_backlog_disconnect(cx))
                     .children(self.render_worktree_creation(cx))
                     .children(self.render_quick_open(cx))
                     .children(self.render_lightbox(cx))

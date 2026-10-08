@@ -120,6 +120,8 @@ impl BenCodeApp {
         self.inbox.seen = saved.inbox_seen.clone();
         self.inbox.seen_seeded = saved.inbox_seen_seeded;
         self.inbox.repairs = saved.inbox_repairs.clone();
+        self.backlog.hidden_projects = saved.backlog_hidden_projects.clone();
+        self.backlog.project_folders = saved.backlog_project_folders.clone();
         self.changes_ui.tree = saved.changes_tree;
         self.terminals.layouts = saved.terminal_docks.clone();
         if let Some(width) = saved.inbox_list_width {
@@ -152,6 +154,8 @@ impl BenCodeApp {
             inbox_seen: self.inbox.seen.clone(),
             inbox_seen_seeded: self.inbox.seen_seeded,
             inbox_repairs: self.inbox.repairs.clone(),
+            backlog_hidden_projects: self.backlog.hidden_projects.clone(),
+            backlog_project_folders: self.backlog.project_folders.clone(),
             changes_tree: self.changes_ui.tree,
             theme_hue: Some(self.appearance.tint.hue).filter(|v| *v != appearance::HUE_DEFAULT),
             theme_saturation: Some(self.appearance.tint.saturation)

@@ -31,6 +31,7 @@ pub mod reminder_notices;
 pub mod scrollbar;
 pub mod search_view;
 pub mod settings_accounts;
+pub mod settings_integrations;
 pub mod settings_appearance;
 pub mod settings_modal;
 pub mod settings_worktrees;

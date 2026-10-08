@@ -6,7 +6,7 @@
 mod account_status;
 mod claude;
 mod codex;
-mod http;
+pub(crate) mod http;
 mod opencode;
 
 use serde_json::Value;

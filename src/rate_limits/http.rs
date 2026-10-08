@@ -1,6 +1,7 @@
-//! One authenticated GET for the usage endpoints, through the system `curl`
-//! (MonoCode uses `ureq`; BenCode keeps no HTTP client of its own). The
-//! request, token included, travels on curl's stdin, never on argv.
+//! One authenticated request for the usage endpoints and the trackers'
+//! REST APIs, through the system `curl` (MonoCode uses `ureq`; BenCode
+//! keeps no HTTP client of its own). The request, token included, travels
+//! on curl's stdin, never on argv.
 
 use std::io::Write;
 use std::process::{Command, Stdio};
@@ -13,8 +14,22 @@ pub struct Response {
     pub body: String,
 }
 
+/// What to send besides a plain GET.
+#[derive(Clone, Copy, Default)]
+pub struct Send<'a> {
+    /// `None` is GET (or POST once there is a form).
+    pub method: Option<&'a str>,
+    /// Sent URL-encoded as the body.
+    pub form: &'a [(&'a str, &'a str)],
+}
+
 /// Blocking; `timeout` bounds the whole transfer.
 pub fn get(url: &str, headers: &[(&str, &str)], timeout: Duration) -> Result<Response> {
+    send(url, headers, Send::default(), timeout)
+}
+
+/// Blocking; `timeout` bounds the whole transfer.
+pub fn send(url: &str, headers: &[(&str, &str)], send: Send, timeout: Duration) -> Result<Response> {
     let mut child = Command::new("curl")
         // -q: no ~/.curlrc, so nothing there can reshape the output.
         .args(["-q", "--silent", "--show-error", "--config", "-"])
@@ -23,7 +38,7 @@ pub fn get(url: &str, headers: &[(&str, &str)], timeout: Duration) -> Result<Res
         .stderr(Stdio::piped())
         .spawn()
         .context("could not start curl")?;
-    let config = request_config(url, headers, timeout);
+    let config = request_config(url, headers, send, timeout);
     child
         .stdin
         .take()
@@ -37,16 +52,44 @@ pub fn get(url: &str, headers: &[(&str, &str)], timeout: Duration) -> Result<Res
     split_status(&String::from_utf8_lossy(&output.stdout)).context("curl reported no HTTP status")
 }
 
-fn request_config(url: &str, headers: &[(&str, &str)], timeout: Duration) -> String {
+fn request_config(url: &str, headers: &[(&str, &str)], send: Send, timeout: Duration) -> String {
+    // globoff: `[` and `{` in a URL are sent as written.
     let mut config = format!(
-        "url = {}\nmax-time = {}\nwrite-out = \"\\n%{{http_code}}\"\n",
+        "globoff\nurl = {}\nmax-time = {}\nwrite-out = \"\\n%{{http_code}}\"\n",
         quoted(url),
         timeout.as_secs().max(1)
     );
     for (name, value) in headers {
         config.push_str(&format!("header = {}\n", quoted(&format!("{name}: {value}"))));
     }
+    if let Some(method) = send.method {
+        config.push_str(&format!("request = {}\n", quoted(method)));
+    }
+    for (name, value) in send.form {
+        // `name=content`: curl encodes the content, not the name.
+        config.push_str(&format!("data-urlencode = {}\n", quoted_data(&format!("{name}={value}"))));
+    }
     config
+}
+
+/// A form value in a curl config: like [`quoted`], but line breaks and
+/// tabs are kept as curl's escapes rather than dropped.
+fn quoted_data(value: &str) -> String {
+    let mut out = String::with_capacity(value.len() + 2);
+    out.push('"');
+    for ch in value.chars() {
+        match ch {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            ch if ch.is_control() => {}
+            ch => out.push(ch),
+        }
+    }
+    out.push('"');
+    out
 }
 
 /// A curl config value: double-quoted, with `\` and `"` escaped. Control
@@ -82,13 +125,29 @@ mod tests {
         let config = request_config(
             "https://example.com/usage",
             &[("Authorization", "Bearer a\"b\\c\nd")],
+            Send::default(),
             Duration::from_secs(10),
         );
         assert_eq!(
             config,
-            "url = \"https://example.com/usage\"\nmax-time = 10\nwrite-out = \"\\n%{http_code}\"\n\
+            "globoff\nurl = \"https://example.com/usage\"\nmax-time = 10\nwrite-out = \"\\n%{http_code}\"\n\
              header = \"Authorization: Bearer a\\\"b\\\\cd\"\n"
         );
+    }
+
+    #[test]
+    fn forms_are_url_encoded_with_their_line_breaks() {
+        let config = request_config(
+            "https://example.com/c",
+            &[],
+            Send {
+                method: Some("PATCH"),
+                form: &[("content", "a \"b\"\nc")],
+            },
+            Duration::from_secs(5),
+        );
+        assert!(config.contains("request = \"PATCH\"\n"));
+        assert!(config.ends_with("data-urlencode = \"content=a \\\"b\\\"\\nc\"\n"));
     }
 
     #[test]

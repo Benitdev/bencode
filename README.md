@@ -33,7 +33,7 @@ giao diện, cùng cơ sở dữ liệu, nhưng không có WebView.
 | **Session review** | Sau mỗi lượt có sửa file: card "Changed N files" với Undo, Keep và Review riêng cho thay đổi của thread đó |
 | **Review** | Diff của working tree và của commit: các file xếp chồng, header dính, gập đoạn không đổi, stage / discard ngay trên header |
 | **Terminal** | Terminal native theo từng project (⌘J) |
-| **Inbox** | Issue và pull request GitHub qua `gh`: checks, comment, merge, nhờ agent sửa CI |
+| **Inbox** | Issue và pull request GitHub qua `gh`: checks, comment, merge, nhờ agent sửa CI. Issue Nulab Backlog qua API key (Settings › Integrations): comment, đổi status, giao cho agent |
 | **Notes** | Ghi chú markdown, tag, gắn với thread |
 | **Automations** | Prompt chạy theo lịch, lịch sử chạy |
 | **Khác** | Tìm kiếm toàn cục (⌘K), nhắc việc theo thread, thư mục thread, MCP server, mở bằng editor ngoài |

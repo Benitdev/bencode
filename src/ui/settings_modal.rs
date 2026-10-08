@@ -1,4 +1,5 @@
-//! Settings: general defaults, provider CLIs, MCP, skills, appearance, about.
+//! Settings: general defaults, provider CLIs, MCP, skills, integrations,
+//! appearance, about.
 
 use ely_gpui_component::buttons::{ButtonVariant, IconButton};
 use ely_gpui_component::data_display::{Badge, Tone};
@@ -29,9 +30,11 @@ pub enum SettingsTab {
     Archive,
     /// MonoCode Settings › Worktrees (`ui/settings_worktrees.rs`).
     Worktrees,
+    /// Trackers the Inbox reads (`ui/settings_integrations.rs`).
+    Integrations,
 }
 
-const SECTIONS: [(SettingsTab, &str, &str, IconName); 8] = [
+const SECTIONS: [(SettingsTab, &str, &str, IconName); 9] = [
     (
         SettingsTab::General,
         "general",
@@ -66,6 +69,12 @@ const SECTIONS: [(SettingsTab, &str, &str, IconName); 8] = [
         "Worktrees",
         IconName::GitBranch,
     ),
+    (
+        SettingsTab::Integrations,
+        "integrations",
+        "Integrations",
+        IconName::Inbox,
+    ),
 ];
 
 /// MonoCode `SETTINGS_GROUPS` with BenCode's sections in them (About is
@@ -79,7 +88,10 @@ pub(crate) const SETTINGS_GROUPS: [(&str, &[SettingsTab]); 3] = [
         "Agents",
         &[SettingsTab::Providers, SettingsTab::Mcp, SettingsTab::Skills],
     ),
-    ("Workspace", &[SettingsTab::Archive, SettingsTab::Worktrees]),
+    (
+        "Workspace",
+        &[SettingsTab::Archive, SettingsTab::Worktrees, SettingsTab::Integrations],
+    ),
 ];
 
 impl SettingsTab {
@@ -186,6 +198,7 @@ impl BenCodeApp {
             SettingsTab::About => render_settings_about().into_any_element(),
             SettingsTab::Archive => self.render_settings_archive(cx).into_any_element(),
             SettingsTab::Worktrees => self.render_settings_worktrees(cx).into_any_element(),
+            SettingsTab::Integrations => self.render_settings_integrations(cx).into_any_element(),
         }
     }
 
