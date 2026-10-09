@@ -126,6 +126,16 @@ impl HarnessResolver {
         pick.clone()
     }
 
+    /// Whether `path` is the Codex an app bundles. That app keeps it
+    /// current; the CLI's own updater has no way to (`codex doctor` calls
+    /// its update action "manual or unknown").
+    pub fn is_bundled_codex(path: &Path) -> bool {
+        // PATH may hold a link into the app.
+        let real = path.canonicalize();
+        let path = real.as_deref().unwrap_or(path);
+        CODEX.bundled.iter().any(|bundled| path.ends_with(bundled))
+    }
+
     /// The copy `resolve_codex` last picked. Does no IO.
     pub fn resolved_codex() -> Option<PathBuf> {
         CODEX_PICK
@@ -284,6 +294,19 @@ mod tests {
             Some(path("/only/codex"))
         );
         assert_eq!(newest([]), None);
+    }
+
+    #[test]
+    fn a_bundled_codex_is_told_from_an_installed_one() {
+        for bundled in [
+            "/Applications/ChatGPT.app/Contents/Resources/codex",
+            "/Users/me/Applications/Codex.app/Contents/Resources/codex",
+        ] {
+            assert!(HarnessResolver::is_bundled_codex(Path::new(bundled)));
+        }
+        for installed in ["/opt/homebrew/bin/codex", "/Users/me/.volta/bin/codex"] {
+            assert!(!HarnessResolver::is_bundled_codex(Path::new(installed)));
+        }
     }
 
     #[test]

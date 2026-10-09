@@ -55,6 +55,8 @@ impl HarnessUpdates {
 }
 
 impl BenCodeApp {
+    /// Where startup found `kind`'s CLI. `updates` works out from it the
+    /// copy turns run, off the UI thread.
     fn harness_program(&self, kind: HarnessKind) -> Option<PathBuf> {
         self.harnesses
             .iter()
