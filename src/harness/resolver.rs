@@ -113,13 +113,17 @@ impl HarnessResolver {
     /// its newest models only to recent CLIs, and an old one lists models a
     /// ChatGPT account can no longer run, so the newest copy wins; on a tie,
     /// the earlier one (PATH first, the app bundles last, as in MonoCode).
-    /// Asking each copy its version can take a few hundred ms, so the pick
-    /// is kept for the session; the startup model probe makes it off the UI
-    /// thread.
+    /// Asking each copy its version can take a few hundred ms, so a lone
+    /// copy is used without asking, and the pick is kept for the session;
+    /// the startup model probe makes it off the UI thread.
     pub fn resolve_codex() -> Option<PathBuf> {
         CODEX_PICK
             .get_or_init(|| {
-                let found = candidates(&CODEX)
+                let found = candidates(&CODEX);
+                if found.len() < 2 {
+                    return found.into_iter().next();
+                }
+                let found = found
                     .into_iter()
                     .map(|path| {
                         let version = cli_version(&path);
@@ -127,9 +131,7 @@ impl HarnessResolver {
                     })
                     .collect::<Vec<_>>();
                 let pick = newest(found.iter().cloned());
-                if found.len() > 1 {
-                    log::info!("Codex copies {found:?}, using {pick:?}");
-                }
+                log::info!("Codex copies {found:?}, using {pick:?}");
                 pick
             })
             .clone()
