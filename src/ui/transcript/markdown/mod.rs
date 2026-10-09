@@ -58,6 +58,8 @@ impl Tone {
 
 /// Streamdown's `text-sm leading-6`.
 const BODY_SIZE: f32 = 14.0;
+/// The widest a note's image is drawn (the transcript's column).
+const NOTE_IMAGE: f32 = 800.0;
 const BODY_LEADING: f32 = 24.0;
 /// The code shell's body: 12px on 20px lines.
 const CODE_SIZE: f32 = 12.0;
@@ -821,7 +823,7 @@ impl Draw<'_> {
                 let file = crate::storage::data_dir()
                     .and_then(|dir| crate::app::note_images::note_image_file(&dir, src));
                 match file {
-                    Some(file) => gpui::img(file)
+                    Some(file) => crate::ui::thumbnail::thumbnail(file, NOTE_IMAGE)
                         .max_w_full()
                         .rounded(px(6.0))
                         .into_any_element(),

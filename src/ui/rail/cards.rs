@@ -10,10 +10,11 @@ use ely_gpui_component::typography::ShimmerText;
 use gpui::{
     AnyElement, Bounds, Context, DragMoveEvent, FontWeight, InteractiveElement, IntoElement,
     MouseButton, MouseDownEvent, ParentElement, Pixels, Point, SharedString, Styled, canvas, div,
-    img, prelude::*, relative, rgb,
+    prelude::*, relative, rgb,
 };
 
 use crate::ui::scale::px;
+use crate::ui::thumbnail::{LOGO, thumbnail};
 
 use super::group_color;
 use super::model::{ProjectGroup, mute_status, notification_id, path_key};
@@ -357,7 +358,7 @@ impl BenCodeApp {
         };
         let icon = match logo.filter(|_| !card.busy) {
             // `ProjectLogoIcon className="size-4 rounded-sm"`
-            Some(file) => img(std::path::PathBuf::from(file))
+            Some(file) => thumbnail(file, LOGO)
                 .size_4()
                 .rounded(px(4.0))
                 .into_any_element(),

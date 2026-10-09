@@ -10,7 +10,7 @@ use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, ClickEvent, Context, Div, IntoElement, MouseButton, MouseDownEvent, ParentElement,
-    Pixels, Point, SharedString, Stateful, Styled, anchored, canvas, deferred, div, img,
+    Pixels, Point, SharedString, Stateful, Styled, anchored, canvas, deferred, div,
     prelude::*,
 };
 
@@ -19,6 +19,7 @@ use super::{STROKE_OPACITY, TITLEBAR_HEIGHT, path_key};
 use crate::app::{BenCodeApp, SidebarMode, Surface, same_project_path};
 use crate::ui::appearance::CollapsedRailMode;
 use crate::ui::scale::px;
+use crate::ui::thumbnail::{LOGO, thumbnail};
 use crate::ui::sidebar_menus::SidebarMenuKind;
 
 /// MonoCode `w-12`.
@@ -272,7 +273,7 @@ impl BenCodeApp {
             .any(|s| crate::app::is_path_in_project(&s.cwd, path));
         match self.settings.rail.tab_group_logos.get(&path_key(path)).filter(|_| !busy) {
             // `ProjectLogoIcon className="size-4 rounded-sm"`
-            Some(file) => img(std::path::PathBuf::from(file)).size_4().rounded(px(4.0)).into_any_element(),
+            Some(file) => thumbnail(file, LOGO).size_4().rounded(px(4.0)).into_any_element(),
             None => project_mascot_icon(self.project_mascot(path), self.project_color(path), busy, id),
         }
     }

@@ -56,6 +56,7 @@ pub mod appearance;
 pub mod background_effects;
 pub mod scale;
 pub mod theme;
+pub mod thumbnail;
 pub mod titlebar;
 pub mod transcript;
 pub mod virtual_rows;

@@ -10,10 +10,11 @@ use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, Bounds, Context, Div, Hsla, InteractiveElement, IntoElement, MouseButton,
     MouseDownEvent, ParentElement, Pixels, Point, SharedString, Stateful, Styled, anchored,
-    canvas, deferred, div, img, prelude::*, relative, rgb,
+    canvas, deferred, div, prelude::*, relative, rgb,
 };
 
 use crate::ui::scale::px;
+use crate::ui::thumbnail::{LOGO, thumbnail};
 
 use super::model::{self, mute_status, notification_id};
 use super::state::{MenuTarget, SubmenuKind};
@@ -330,7 +331,7 @@ impl BenCodeApp {
                     }))
                     .on_click(cx.listener(move |this, _, _, cx| this.pick_project_logo(&pick_path, cx)))
                     .child(match logo {
-                        Some(file) => img(std::path::PathBuf::from(file)).size_5().into_any_element(),
+                        Some(file) => thumbnail(file, LOGO).size_5().into_any_element(),
                         None => ExtraIcon::ImagePlus
                             .icon()
                             .size(IconSize::Lg)

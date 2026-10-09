@@ -9,7 +9,7 @@ use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, Context, InteractiveElement, IntoElement, ObjectFit, ParentElement, SharedString,
-    Styled, StyledImage, div, img, prelude::*,
+    Styled, StyledImage, div, prelude::*,
 };
 
 use crate::ui::scale::px;
@@ -18,6 +18,10 @@ use serde_json::Value;
 use crate::app::BenCodeApp;
 use crate::harness::Attachment;
 use crate::ui::file_tree::resolve_entry_icon;
+use crate::ui::thumbnail::thumbnail;
+
+/// An image chip's side.
+const CHIP: f32 = 36.0;
 
 /// What a chip shows of an attached file.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -102,14 +106,14 @@ pub fn attachment_chip(
         return div()
             .id(id)
             .relative()
-            .size(px(36.0))
+            .size(px(CHIP))
             .flex_none()
             .cursor_pointer()
             .tooltip(Tooltip::text(file.path.clone()))
             .on_click(cx.listener(move |this, _, _, cx| this.open_lightbox(preview.clone(), cx)))
             .child(
                 div().size_full().rounded(px(8.0)).overflow_hidden().child(
-                    img(PathBuf::from(&file.path))
+                    thumbnail(&file.path, CHIP)
                         .size_full()
                         .object_fit(ObjectFit::Cover),
                 ),

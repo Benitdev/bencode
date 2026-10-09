@@ -10,6 +10,9 @@ tagging (`docs/releasing.md`).
   next launch lists them and resumes the ones you pick, asking each agent to
   check its last step first. Settings › General can resume them without
   asking.
+- Much less memory with screenshots in a thread: image attachments, note
+  images and project logos are kept as small thumbnails rather than the
+  full picture, and the image preview lets the full one go when it closes.
 
 ## [0.1.3] - 2026-10-09
 

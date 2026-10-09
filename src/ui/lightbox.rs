@@ -8,25 +8,34 @@ use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::IconSize;
 use gpui::{
     AnyElement, Context, InteractiveElement, IntoElement, MouseButton, ObjectFit, ParentElement,
-    Styled, StyledImage, deferred, div, img, prelude::*, rgba,
+    Styled, StyledImage, deferred, div, prelude::*, rgba,
 };
 
 use crate::app::BenCodeApp;
 use crate::ui::scale::px;
 
+/// The largest the preview may be drawn, in logical pixels: a window's
+/// width, so a screenshot keeps its full resolution.
+const LIGHTBOX: f32 = 2048.0;
+
 impl BenCodeApp {
     pub fn open_lightbox(&mut self, path: PathBuf, cx: &mut Context<Self>) {
-        self.lightbox = Some(path);
+        if let Some(shown) = self.lightbox.replace(path)
+            && self.lightbox.as_ref() != Some(&shown)
+        {
+            crate::ui::thumbnail::release(shown, LIGHTBOX, cx);
+        }
         cx.notify();
     }
 
-    /// True when a preview was open.
+    /// True when a preview was open. The full-size image is let go.
     pub fn close_lightbox(&mut self, cx: &mut Context<Self>) -> bool {
-        let was_open = self.lightbox.take().is_some();
-        if was_open {
-            cx.notify();
-        }
-        was_open
+        let Some(path) = self.lightbox.take() else {
+            return false;
+        };
+        crate::ui::thumbnail::release(path, LIGHTBOX, cx);
+        cx.notify();
+        true
     }
 
     pub fn render_lightbox(&self, cx: &Context<Self>) -> Option<AnyElement> {
@@ -81,7 +90,7 @@ impl BenCodeApp {
                             .max_h_full()
                             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                             .child(
-                                img(path)
+                                crate::ui::thumbnail::thumbnail(path, LIGHTBOX)
                                     .max_w_full()
                                     .max_h_full()
                                     .object_fit(ObjectFit::Contain)
