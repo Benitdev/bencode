@@ -45,7 +45,12 @@ pub enum Cmd {
     Move(f32, f32),
     Line(f32, f32),
     /// `A r r 0 0 sweep x y`.
-    Arc { r: f32, sweep: bool, x: f32, y: f32 },
+    Arc {
+        r: f32,
+        sweep: bool,
+        x: f32,
+        y: f32,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -86,7 +91,8 @@ fn current_refs(commits: &[HistoryCommit]) -> (Option<String>, Option<String>) {
         return (None, None);
     };
     let remote = head.refs.iter().find(|r| {
-        r.kind == "remote" && (r.name == local.name || r.name.ends_with(&format!("/{}", local.name)))
+        r.kind == "remote"
+            && (r.name == local.name || r.name.ends_with(&format!("/{}", local.name)))
     });
     (Some(ref_id(local)), remote.map(ref_id))
 }
@@ -106,13 +112,21 @@ pub fn layout(commits: &[HistoryCommit]) -> Vec<Row> {
             colors.entry(ref_id(r)).or_insert(None);
         }
     }
-    let label_color = |refs: &[HistoryRef]| refs.iter().find_map(|r| colors.get(&ref_id(r)).copied().flatten());
+    let label_color = |refs: &[HistoryRef]| {
+        refs.iter()
+            .find_map(|r| colors.get(&ref_id(r)).copied().flatten())
+    };
     let mut color_index: isize = -1;
     let mut rows: Vec<Row> = Vec::with_capacity(commits.len());
     for commit in commits {
         let input: Vec<Swimlane> = rows.last().map_or_else(Vec::new, |r| r.output.clone());
         let mut output: Vec<Swimlane> = Vec::new();
-        let parents: Vec<String> = commit.parents.iter().filter(|p| !p.is_empty()).cloned().collect();
+        let parents: Vec<String> = commit
+            .parents
+            .iter()
+            .filter(|p| !p.is_empty())
+            .cloned()
+            .collect();
         let mut first_parent_added = false;
         if !parents.is_empty() {
             for node in &input {
@@ -129,7 +143,11 @@ pub fn layout(commits: &[HistoryCommit]) -> Vec<Row> {
                 output.push(node.clone());
             }
         }
-        for (i, parent) in parents.iter().enumerate().skip(usize::from(first_parent_added)) {
+        for (i, parent) in parents
+            .iter()
+            .enumerate()
+            .skip(usize::from(first_parent_added))
+        {
             let color = if i == 0 {
                 label_color(&commit.refs)
             } else {
@@ -340,12 +358,23 @@ mod tests {
     #[test]
     fn a_line_stays_in_one_lane_in_the_branch_colour() {
         let commits = [
-            commit("c", &["b"], &[("main", "local"), ("origin/main", "remote")], true),
+            commit(
+                "c",
+                &["b"],
+                &[("main", "local"), ("origin/main", "remote")],
+                true,
+            ),
             commit("b", &["a"], &[], false),
             commit("a", &[], &[], false),
         ];
         let rows = layout(&commits);
-        assert_eq!(rows[0].output, [Swimlane { id: "b".into(), color: REF_COLOR }]);
+        assert_eq!(
+            rows[0].output,
+            [Swimlane {
+                id: "b".into(),
+                color: REF_COLOR
+            }]
+        );
         assert_eq!(rows[1].output[0].color, REF_COLOR);
         assert!(rows[2].output.is_empty());
         assert_eq!(rows[0].refs[0].name, "main");

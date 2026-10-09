@@ -33,24 +33,49 @@ impl BenCodeApp {
     }
 
     /// MonoCode `projectMenu.open`: the name field takes focus, selected.
-    pub(crate) fn open_rail_project_menu(&mut self, path: &str, at: Point<Pixels>, cx: &mut Context<Self>) {
+    pub(crate) fn open_rail_project_menu(
+        &mut self,
+        path: &str,
+        at: Point<Pixels>,
+        cx: &mut Context<Self>,
+    ) {
         let label = self.rail_project_label(path);
         self.open_rail_menu(MenuTarget::Project(path.to_string()), label, at, cx);
     }
 
-    pub(crate) fn open_rail_group_menu(&mut self, id: &str, at: Point<Pixels>, cx: &mut Context<Self>) {
-        let Some(group) = self.settings.rail.project_groups.iter().find(|g| g.id == id) else {
+    pub(crate) fn open_rail_group_menu(
+        &mut self,
+        id: &str,
+        at: Point<Pixels>,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(group) = self
+            .settings
+            .rail
+            .project_groups
+            .iter()
+            .find(|g| g.id == id)
+        else {
             return;
         };
         let name = group.name.clone();
         self.open_rail_menu(MenuTarget::Group(id.to_string()), name, at, cx);
     }
 
-    fn open_rail_menu(&mut self, target: MenuTarget, name: String, at: Point<Pixels>, cx: &mut Context<Self>) {
+    fn open_rail_menu(
+        &mut self,
+        target: MenuTarget,
+        name: String,
+        at: Point<Pixels>,
+        cx: &mut Context<Self>,
+    ) {
         self.close_rail_menu(cx);
         self.close_sidebar_menu(cx);
         let rail = &mut self.rail_ui;
-        rail.menu = Some(RailMenu { target, position: at });
+        rail.menu = Some(RailMenu {
+            target,
+            position: at,
+        });
         rail.custom_color_open = false;
         rail.menu_error = None;
         let len = name.len();
@@ -65,7 +90,12 @@ impl BenCodeApp {
 
     /// MonoCode `projectMenu.createGroup`: a new group, `project` moved
     /// into it, and the group's menu open where the click was.
-    pub(crate) fn create_rail_group(&mut self, at: Point<Pixels>, project: Option<String>, cx: &mut Context<Self>) {
+    pub(crate) fn create_rail_group(
+        &mut self,
+        at: Point<Pixels>,
+        project: Option<String>,
+        cx: &mut Context<Self>,
+    ) {
         let id = format!(
             "group-{:x}-{:x}",
             crate::app::now_ms(),
@@ -150,20 +180,30 @@ impl BenCodeApp {
         }
         if let Some(submenu) = self.rail_ui.submenu.clone() {
             let entries = self.rail_submenu_entries(submenu.kind);
-            return self.step_or_pick(key, &entries, submenu.active, cx, |this, ix, cx| {
-                this.pick_rail_submenu(ix, cx)
-            }, |this, ix| {
-                if let Some(s) = this.rail_ui.submenu.as_mut() {
-                    s.active = ix;
-                }
-            });
+            return self.step_or_pick(
+                key,
+                &entries,
+                submenu.active,
+                cx,
+                |this, ix, cx| this.pick_rail_submenu(ix, cx),
+                |this, ix| {
+                    if let Some(s) = this.rail_ui.submenu.as_mut() {
+                        s.active = ix;
+                    }
+                },
+            );
         }
         if self.rail_ui.inbox_menu.is_some() {
             let entries = self.inbox_menu_entries();
             let active = self.rail_ui.inbox_active;
-            return self.step_or_pick(key, &entries, active, cx, |this, ix, cx| {
-                this.pick_inbox_menu(ix, cx)
-            }, |this, ix| this.rail_ui.inbox_active = ix);
+            return self.step_or_pick(
+                key,
+                &entries,
+                active,
+                cx,
+                |this, ix, cx| this.pick_inbox_menu(ix, cx),
+                |this, ix| this.rail_ui.inbox_active = ix,
+            );
         }
         false
     }
@@ -191,7 +231,10 @@ impl BenCodeApp {
 
     /// MonoCode `resolveTabGroupLabel` with the folder name as fallback.
     pub(crate) fn rail_project_label(&self, path: &str) -> String {
-        self.settings.rail.label(path, project_name(path)).to_string()
+        self.settings
+            .rail
+            .label(path, project_name(path))
+            .to_string()
     }
 
     /// MonoCode `projectMenuExtraItems`. Background image and Notification
@@ -223,7 +266,11 @@ impl BenCodeApp {
             ExtraItem {
                 submenu: Some(SubmenuKind::Mute),
                 sep_before: true,
-                ..ExtraItem::new("notifications-mute", "Mute notifications", ExtraIcon::BellOff)
+                ..ExtraItem::new(
+                    "notifications-mute",
+                    "Mute notifications",
+                    ExtraIcon::BellOff,
+                )
             },
             ExtraItem {
                 sep_before: true,
@@ -256,7 +303,10 @@ impl BenCodeApp {
                 let prefs = &self.settings.rail;
                 let current = prefs.group_of(&path).map(|g| g.id.clone());
                 let groups = &prefs.project_groups;
-                let mut entries = vec![MenuEntry::Item(MenuAction::new("project-group:new", "New group…"))];
+                let mut entries = vec![MenuEntry::Item(MenuAction::new(
+                    "project-group:new",
+                    "New group…",
+                ))];
                 if !groups.is_empty() {
                     entries.push(MenuEntry::Separator);
                 }
@@ -277,14 +327,18 @@ impl BenCodeApp {
             }
             SubmenuKind::Editor => match &self.integrations.editors {
                 None => vec![MenuEntry::Item(
-                    MenuAction::new("external-editor:loading", "Looking for editors…").disabled(true),
+                    MenuAction::new("external-editor:loading", "Looking for editors…")
+                        .disabled(true),
                 )],
                 Some(editors) if editors.is_empty() => vec![MenuEntry::Item(
-                    MenuAction::new("external-editor:none", "No supported editors found").disabled(true),
+                    MenuAction::new("external-editor:none", "No supported editors found")
+                        .disabled(true),
                 )],
                 Some(editors) => editors
                     .iter()
-                    .map(|e| MenuEntry::Item(MenuAction::new("external-editor", e.name).value(e.id)))
+                    .map(|e| {
+                        MenuEntry::Item(MenuAction::new("external-editor", e.name).value(e.id))
+                    })
                     .collect(),
             },
             SubmenuKind::Mute | SubmenuKind::InboxMute => mute_actions(crate::app::now_ms())
@@ -294,7 +348,12 @@ impl BenCodeApp {
         }
     }
 
-    pub(super) fn open_rail_submenu(&mut self, kind: SubmenuKind, position: Point<Pixels>, cx: &mut Context<Self>) {
+    pub(super) fn open_rail_submenu(
+        &mut self,
+        kind: SubmenuKind,
+        position: Point<Pixels>,
+        cx: &mut Context<Self>,
+    ) {
         if self
             .rail_ui
             .submenu
@@ -304,7 +363,11 @@ impl BenCodeApp {
             return;
         }
         let active = explorer_menu::first_item(&self.rail_submenu_entries(kind));
-        self.rail_ui.submenu = Some(RailSubmenu { kind, position, active });
+        self.rail_ui.submenu = Some(RailSubmenu {
+            kind,
+            position,
+            active,
+        });
         cx.notify();
     }
 
@@ -379,7 +442,12 @@ impl BenCodeApp {
     }
 
     /// MonoCode `onExtraPick`; returns whether the menu stays open.
-    pub(super) fn pick_rail_extra(&mut self, id: &'static str, anchor: Option<Bounds<Pixels>>, cx: &mut Context<Self>) {
+    pub(super) fn pick_rail_extra(
+        &mut self,
+        id: &'static str,
+        anchor: Option<Bounds<Pixels>>,
+        cx: &mut Context<Self>,
+    ) {
         let Some(menu) = self.rail_ui.menu.clone() else {
             return;
         };
@@ -428,7 +496,12 @@ impl BenCodeApp {
         self.close_rail_menu(cx);
     }
 
-    fn open_project_in_named_editor(&mut self, path: &str, editor_id: &str, cx: &mut Context<Self>) {
+    fn open_project_in_named_editor(
+        &mut self,
+        path: &str,
+        editor_id: &str,
+        cx: &mut Context<Self>,
+    ) {
         let Some(editor) = self
             .integrations
             .editors
@@ -495,7 +568,12 @@ impl BenCodeApp {
         .detach();
     }
 
-    pub(super) fn set_rail_color(&mut self, target: &MenuTarget, index: Option<usize>, cx: &mut Context<Self>) {
+    pub(super) fn set_rail_color(
+        &mut self,
+        target: &MenuTarget,
+        index: Option<usize>,
+        cx: &mut Context<Self>,
+    ) {
         match target {
             MenuTarget::Project(path) => self.update_rail_prefs(|p| p.with_color(path, index), cx),
             MenuTarget::Group(id) => self.update_rail_prefs(
@@ -511,9 +589,16 @@ impl BenCodeApp {
         }
     }
 
-    pub(super) fn set_rail_custom_color(&mut self, target: &MenuTarget, hex: &str, cx: &mut Context<Self>) {
+    pub(super) fn set_rail_custom_color(
+        &mut self,
+        target: &MenuTarget,
+        hex: &str,
+        cx: &mut Context<Self>,
+    ) {
         match target {
-            MenuTarget::Project(path) => self.update_rail_prefs(|p| p.with_custom_color(path, hex), cx),
+            MenuTarget::Project(path) => {
+                self.update_rail_prefs(|p| p.with_custom_color(path, hex), cx)
+            }
             MenuTarget::Group(id) => self.update_rail_prefs(
                 |p| {
                     p.with_group(id, |g| ProjectGroup {
@@ -527,9 +612,16 @@ impl BenCodeApp {
         }
     }
 
-    pub(super) fn set_rail_mascot(&mut self, target: &MenuTarget, name: &str, cx: &mut Context<Self>) {
+    pub(super) fn set_rail_mascot(
+        &mut self,
+        target: &MenuTarget,
+        name: &str,
+        cx: &mut Context<Self>,
+    ) {
         match target {
-            MenuTarget::Project(path) => self.update_rail_prefs(|p| p.with_mascot(path, Some(name)), cx),
+            MenuTarget::Project(path) => {
+                self.update_rail_prefs(|p| p.with_mascot(path, Some(name)), cx)
+            }
             MenuTarget::Group(id) => self.update_rail_prefs(
                 |p| {
                     p.with_group(id, |g| ProjectGroup {
@@ -541,5 +633,4 @@ impl BenCodeApp {
             ),
         }
     }
-
 }

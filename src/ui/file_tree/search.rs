@@ -23,8 +23,15 @@ const FILE_ROW: f32 = 44.0;
 const MATCH_ROW: f32 = 22.0;
 
 enum Row<'a> {
-    File { name: &'a str, relative: &'a str, count: usize },
-    Match { index: usize, hit: &'a SearchMatch },
+    File {
+        name: &'a str,
+        relative: &'a str,
+        count: usize,
+    },
+    Match {
+        index: usize,
+        hit: &'a SearchMatch,
+    },
 }
 
 impl Row<'_> {
@@ -42,7 +49,11 @@ fn rows(matches: &[SearchMatch]) -> Vec<Row<'_>> {
     let mut start = 0;
     while start < matches.len() {
         let relative = matches[start].relative.as_str();
-        let end = start + matches[start..].iter().take_while(|m| m.relative == relative).count();
+        let end = start
+            + matches[start..]
+                .iter()
+                .take_while(|m| m.relative == relative)
+                .count();
         // git grep lists a file's lines together; a stray later line of the
         // same file still lands under its own header.
         rows.push(Row::File {
@@ -50,7 +61,10 @@ fn rows(matches: &[SearchMatch]) -> Vec<Row<'_>> {
             relative,
             count: end - start,
         });
-        rows.extend((start..end).map(|index| Row::Match { index, hit: &matches[index] }));
+        rows.extend((start..end).map(|index| Row::Match {
+            index,
+            hit: &matches[index],
+        }));
         start = end;
     }
     rows
@@ -61,7 +75,10 @@ fn summary(matches: &[SearchMatch], truncated: bool) -> String {
     if matches.is_empty() {
         return "No results".into();
     }
-    let files = rows(matches).iter().filter(|r| matches!(r, Row::File { .. })).count();
+    let files = rows(matches)
+        .iter()
+        .filter(|r| matches!(r, Row::File { .. }))
+        .count();
     let plural = |n: usize, word: &str| format!("{n} {word}{}", if n == 1 { "" } else { "s" });
     format!(
         "{} in {}{}",
@@ -158,13 +175,19 @@ impl BenCodeApp {
             .into_any_element()
     }
 
-    fn render_project_search_toggle(&self, toggle: SearchToggle, cx: &Context<Self>) -> impl IntoElement {
+    fn render_project_search_toggle(
+        &self,
+        toggle: SearchToggle,
+        cx: &Context<Self>,
+    ) -> impl IntoElement {
         let colors = &cx.theme().colors;
         let fg = colors.fg;
         let on = self.project_search.is_on(toggle);
         let (id, icon, tip) = match toggle {
             SearchToggle::MatchCase => ("search-match-case", IconName::CaseSensitive, "Match case"),
-            SearchToggle::WholeWord => ("search-whole-word", IconName::WholeWord, "Match whole word"),
+            SearchToggle::WholeWord => {
+                ("search-whole-word", IconName::WholeWord, "Match whole word")
+            }
             SearchToggle::Regex => ("search-regex", IconName::Regex, "Use regular expression"),
         };
         div()
@@ -179,9 +202,9 @@ impl BenCodeApp {
             .when(on, |el| el.bg(colors.active))
             .when(!on, |el| el.hover(move |s| s.bg(fg.opacity(0.10))))
             .tooltip(Tooltip::text(tip))
-            .on_click(cx.listener(move |this, _, _, cx| {
-                this.toggle_project_search_option(toggle, cx)
-            }))
+            .on_click(
+                cx.listener(move |this, _, _, cx| this.toggle_project_search_option(toggle, cx)),
+            )
             .child(
                 Icon::new(icon)
                     .size(GLYPH)
@@ -206,7 +229,11 @@ impl BenCodeApp {
             .text_color(fg.opacity(0.45));
         if search.loading {
             return line
-                .child(Icon::new(IconName::LoaderCircle).size(IconSize::Xs).color(fg.opacity(0.45)))
+                .child(
+                    Icon::new(IconName::LoaderCircle)
+                        .size(IconSize::Xs)
+                        .color(fg.opacity(0.45)),
+                )
                 .child("Searching…");
         }
         if let Some(error) = &search.error {
@@ -232,9 +259,11 @@ impl BenCodeApp {
         let built: Vec<AnyElement> = rows[visible.range.clone()]
             .iter()
             .map(|row| match row {
-                Row::File { name, relative, count } => {
-                    render_file_row(name, relative, *count, cx).into_any_element()
-                }
+                Row::File {
+                    name,
+                    relative,
+                    count,
+                } => render_file_row(name, relative, *count, cx).into_any_element(),
                 Row::Match { index, hit } => self.render_match_row(*index, hit, cx),
             })
             .collect();
@@ -263,11 +292,15 @@ impl BenCodeApp {
         let fg = theme.colors.fg;
         let searched = &self.project_search.searched;
         // A regex's match length is unknown here; it is not marked.
-        let len = if searched.regex { 0 } else { searched.query.len() };
+        let len = if searched.regex {
+            0
+        } else {
+            searched.query.len()
+        };
         let preview = hit.preview.trim_end();
         let start = (hit.column as usize).saturating_sub(1);
-        let mark = (len > 0 && preview.get(start..start + len).is_some())
-            .then(|| start..start + len);
+        let mark =
+            (len > 0 && preview.get(start..start + len).is_some()).then(|| start..start + len);
         let style = HighlightStyle {
             background_color: Some(theme.colors.accent.opacity(0.35)),
             color: Some(fg),
@@ -283,9 +316,9 @@ impl BenCodeApp {
             .h(px(MATCH_ROW))
             .px_2()
             .hover(move |s| s.bg(fg.opacity(0.05)))
-            .on_click(cx.listener(move |this, _, window, cx| {
-                this.open_search_match(&hit, window, cx)
-            }))
+            .on_click(
+                cx.listener(move |this, _, window, cx| this.open_search_match(&hit, window, cx)),
+            )
             .font_family(theme.mono_family.clone())
             .text_size(px(11.0))
             .child(
@@ -381,7 +414,12 @@ mod tests {
     use super::*;
 
     fn hit(relative: &str, line: u32) -> SearchMatch {
-        SearchMatch { relative: relative.into(), line, column: 1, preview: String::new() }
+        SearchMatch {
+            relative: relative.into(),
+            line,
+            column: 1,
+            preview: String::new(),
+        }
     }
 
     #[test]

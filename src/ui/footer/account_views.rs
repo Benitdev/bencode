@@ -54,7 +54,13 @@ pub(crate) fn account_status_label(status: &AccountStatus, colors: &Palette) -> 
                 .child(status.label.clone()),
         )
         .when_some(status.detail.clone(), |el, detail| {
-            el.child(div().min_w_0().truncate().text_color(fg.opacity(0.4)).child(detail))
+            el.child(
+                div()
+                    .min_w_0()
+                    .truncate()
+                    .text_color(fg.opacity(0.4))
+                    .child(detail),
+            )
         })
 }
 
@@ -118,7 +124,11 @@ fn page_header(back: gpui::Stateful<gpui::Div>, title: String, fg: Hsla) -> gpui
                 .size(px(24.0))
                 .rounded(px(6.0))
                 .hover(move |s| s.bg(fg.opacity(0.10)))
-                .child(Icon::new(IconName::ArrowLeft).size(IconSize::Sm).color(fg.opacity(0.45))),
+                .child(
+                    Icon::new(IconName::ArrowLeft)
+                        .size(IconSize::Sm)
+                        .color(fg.opacity(0.45)),
+                ),
         )
         .child(
             div()
@@ -158,7 +168,11 @@ fn solid_button(id: impl Into<SharedString>, colors: &Palette) -> gpui::Stateful
 impl BenCodeApp {
     /// MonoCode `ProviderAccountPicker`: every account with its status and
     /// meters, then Add account.
-    pub(super) fn render_account_picker(&self, chip: &ChipAccounts, cx: &Context<Self>) -> AnyElement {
+    pub(super) fn render_account_picker(
+        &self,
+        chip: &ChipAccounts,
+        cx: &Context<Self>,
+    ) -> AnyElement {
         let colors = &cx.theme().colors;
         let fg = colors.fg;
         let (provider, now) = (chip.provider, chip.now);
@@ -221,17 +235,26 @@ impl BenCodeApp {
                                 .items_baseline()
                                 .gap(px(6.0))
                                 .min_w_0()
-                                .child(div().flex_none().max_w(px(150.0)).truncate().child(account.label.clone()))
-                                .when_some(identity.and_then(|identity| identity.subtitle()), |el, subtitle| {
-                                    el.child(
-                                        div()
-                                            .min_w_0()
-                                            .truncate()
-                                            .text_size(px(10.0))
-                                            .text_color(fg.opacity(0.35))
-                                            .child(subtitle),
-                                    )
-                                })
+                                .child(
+                                    div()
+                                        .flex_none()
+                                        .max_w(px(150.0))
+                                        .truncate()
+                                        .child(account.label.clone()),
+                                )
+                                .when_some(
+                                    identity.and_then(|identity| identity.subtitle()),
+                                    |el, subtitle| {
+                                        el.child(
+                                            div()
+                                                .min_w_0()
+                                                .truncate()
+                                                .text_size(px(10.0))
+                                                .text_color(fg.opacity(0.35))
+                                                .child(subtitle),
+                                        )
+                                    },
+                                )
                                 .when_some(
                                     identity.and_then(|identity| identity.organization_tag()),
                                     |el, tag| {
@@ -265,17 +288,32 @@ impl BenCodeApp {
                                         .when(!meters.is_empty(), |el| el.flex_none()),
                                 )
                                 .when(!meters.is_empty(), |el| {
-                                    el.child(div().flex().flex_1().min_w_0().gap(px(10.0)).children(meters))
+                                    el.child(
+                                        div()
+                                            .flex()
+                                            .flex_1()
+                                            .min_w_0()
+                                            .gap(px(10.0))
+                                            .children(meters),
+                                    )
                                 }),
                         ),
                 )
                 .when(selected, |el| {
-                    el.child(Icon::new(IconName::Check).size(IconSize::Sm).color(colors.accent))
+                    el.child(
+                        Icon::new(IconName::Check)
+                            .size(IconSize::Sm)
+                            .color(colors.accent),
+                    )
                 })
         });
 
         div()
-            .child(page_header(back, format!("{} accounts", provider.title()), fg))
+            .child(page_header(
+                back,
+                format!("{} accounts", provider.title()),
+                fg,
+            ))
             .child(page_hint(
                 "Each conversation stays pinned to the account that started it.",
                 fg,
@@ -296,7 +334,11 @@ impl BenCodeApp {
                     .cursor_pointer()
                     .hover(move |s| s.bg(fg.opacity(0.07)).text_color(fg))
                     .on_click(cx.listener(|this, _, _, cx| this.set_usage_view(UsageView::Add, cx)))
-                    .child(Icon::new(IconName::Plus).size(IconSize::Sm).color(fg.opacity(0.55)))
+                    .child(
+                        Icon::new(IconName::Plus)
+                            .size(IconSize::Sm)
+                            .color(fg.opacity(0.55)),
+                    )
                     .child("Add account"),
             )
             .child(
@@ -320,18 +362,26 @@ impl BenCodeApp {
 
     /// MonoCode `AddProviderAccount`: a local name, then the provider's
     /// browser sign-in.
-    pub(super) fn render_add_account(&self, provider: RateLimitProvider, cx: &Context<Self>) -> AnyElement {
+    pub(super) fn render_add_account(
+        &self,
+        provider: RateLimitProvider,
+        cx: &Context<Self>,
+    ) -> AnyElement {
         let colors = &cx.theme().colors;
         let fg = colors.fg;
         let running = self.usage.adding;
         let named = !self.account_name_input.read(cx).text().trim().is_empty();
         let back = div().id("usage-add-back").when(!running, |el| {
-            el.cursor_pointer()
-                .on_click(cx.listener(|this, _, _, cx| this.set_usage_view(UsageView::Accounts, cx)))
+            el.cursor_pointer().on_click(
+                cx.listener(|this, _, _, cx| this.set_usage_view(UsageView::Accounts, cx)),
+            )
         });
 
         div()
-            .child(page_header(back, format!("Add {} account", provider.title()), fg).when(running, |el| el.opacity(0.6)))
+            .child(
+                page_header(back, format!("Add {} account", provider.title()), fg)
+                    .when(running, |el| el.opacity(0.6)),
+            )
             .child(page_hint(
                 "Give this account a local name, then finish sign-in in your browser.",
                 fg,
@@ -357,7 +407,12 @@ impl BenCodeApp {
                     .bg(fg.opacity(0.04))
                     .text_size(px(11.0))
                     .when(running, |el| el.opacity(0.55))
-                    .child(div().flex_1().min_w_0().child(self.account_name_input.clone())),
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .child(self.account_name_input.clone()),
+                    ),
             )
             .child(
                 solid_button("usage-add-submit", colors)
@@ -376,7 +431,9 @@ impl BenCodeApp {
                             ))
                         } else if named {
                             el.cursor_pointer()
-                                .on_click(cx.listener(move |this, _, _, cx| this.add_provider_account(provider, cx)))
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    this.add_provider_account(provider, cx)
+                                }))
                         } else {
                             el.opacity(0.45)
                         }
@@ -422,16 +479,31 @@ impl BenCodeApp {
                     .text_size(px(11.0))
                     .cursor_pointer()
                     .hover(move |s| s.bg(fg.opacity(0.08)))
-                    .on_click(cx.listener(|this, _, _, cx| this.set_usage_view(UsageView::Accounts, cx)))
+                    .on_click(
+                        cx.listener(|this, _, _, cx| this.set_usage_view(UsageView::Accounts, cx)),
+                    )
                     .child(div().flex_1().min_w_0().truncate().child(label.to_string()))
-                    .child(div().text_size(px(10.0)).text_color(fg.opacity(0.4)).child("Switch"))
-                    .child(Icon::new(IconName::ChevronRight).size(IconSize::Xs).color(fg.opacity(0.35))),
+                    .child(
+                        div()
+                            .text_size(px(10.0))
+                            .text_color(fg.opacity(0.4))
+                            .child("Switch"),
+                    )
+                    .child(
+                        Icon::new(IconName::ChevronRight)
+                            .size(IconSize::Xs)
+                            .color(fg.opacity(0.35)),
+                    ),
             )
             .into_any_element()
     }
 
     /// MonoCode `ProviderSignInPanel`.
-    pub(super) fn render_sign_in_panel(&self, provider: RateLimitProvider, cx: &Context<Self>) -> AnyElement {
+    pub(super) fn render_sign_in_panel(
+        &self,
+        provider: RateLimitProvider,
+        cx: &Context<Self>,
+    ) -> AnyElement {
         let colors = &cx.theme().colors;
         let fg = colors.fg;
         let title = provider.title();
@@ -501,7 +573,11 @@ impl BenCodeApp {
                             .child("Waiting for browser…"),
                         SignIn::Complete => el
                             .opacity(0.55)
-                            .child(Icon::new(IconName::Check).size(IconSize::Sm).color(colors.bg))
+                            .child(
+                                Icon::new(IconName::Check)
+                                    .size(IconSize::Sm)
+                                    .color(colors.bg),
+                            )
                             .child("Signed in"),
                         SignIn::Idle | SignIn::Failed(_) => el
                             .cursor_pointer()

@@ -122,7 +122,11 @@ fn with_user_accent(mut p: Palette, accent: Option<UserAccent>, dark: bool) -> P
     };
     let color = accent.color;
     p.accent = color;
-    p.accent_hover = mix(color, if dark { gpui::white() } else { gpui::black() }, 0.12);
+    p.accent_hover = mix(
+        color,
+        if dark { gpui::white() } else { gpui::black() },
+        0.12,
+    );
     p.on_accent = accent.foreground;
     p.focus = color;
     p.selection = color.opacity(if dark { 0.30 } else { 0.22 });
@@ -160,16 +164,40 @@ mod tests {
     fn default_tint_keeps_monocode_greys() {
         let tint = ThemeTint::default();
         let dark = monocode_dark(&tint);
-        let greys = [dark.bg, dark.surface, dark.sunken, dark.hover, dark.active, dark.fg, dark.fg_muted, dark.fg_subtle, dark.fg_disabled];
+        let greys = [
+            dark.bg,
+            dark.surface,
+            dark.sunken,
+            dark.hover,
+            dark.active,
+            dark.fg,
+            dark.fg_muted,
+            dark.fg_subtle,
+            dark.fg_disabled,
+        ];
         assert_eq!(
             greys.map(hex),
-            [0x171717, 0x1f1f1f, 0x121212, 0x222222, 0x2c2c2c, 0xebebeb, 0x8a8a8a, 0x6c6c6c, 0x4a4a4a]
+            [
+                0x171717, 0x1f1f1f, 0x121212, 0x222222, 0x2c2c2c, 0xebebeb, 0x8a8a8a, 0x6c6c6c,
+                0x4a4a4a
+            ]
         );
         let light = monocode_light(&tint);
-        let greys = [light.bg, light.surface, light.sunken, light.hover, light.active, light.fg, light.fg_muted, light.fg_subtle];
+        let greys = [
+            light.bg,
+            light.surface,
+            light.sunken,
+            light.hover,
+            light.active,
+            light.fg,
+            light.fg_muted,
+            light.fg_subtle,
+        ];
         assert_eq!(
             greys.map(hex),
-            [0xf7f7f7, 0xffffff, 0xefefef, 0xededed, 0xebebeb, 0x2e2e2e, 0x8a8a8a, 0xa3a3a3]
+            [
+                0xf7f7f7, 0xffffff, 0xefefef, 0xededed, 0xebebeb, 0x2e2e2e, 0x8a8a8a, 0xa3a3a3
+            ]
         );
     }
 
@@ -181,14 +209,19 @@ mod tests {
         assert_eq!([dark.accent, dark.focus].map(hex), [0xec4899, 0xec4899]);
         assert_eq!(hex(dark.link), 0x7dd3fc);
         assert_eq!(dark.on_accent, accent.unwrap().foreground);
-        assert_eq!(with_user_accent(monocode_dark(&tint), None, true), monocode_dark(&tint));
+        assert_eq!(
+            with_user_accent(monocode_dark(&tint), None, true),
+            monocode_dark(&tint)
+        );
     }
 
     #[test]
     fn lightness_moves_only_the_dark_theme() {
-        let tint = ThemeTint { dark_lightness: 0.0, ..ThemeTint::default() };
+        let tint = ThemeTint {
+            dark_lightness: 0.0,
+            ..ThemeTint::default()
+        };
         assert_eq!(hex(monocode_dark(&tint).bg), 0x000000);
         assert_eq!(hex(monocode_light(&tint).bg), 0xf7f7f7);
     }
 }
-

@@ -236,7 +236,9 @@ pub fn create_worktree(
     list_worktrees(cwd)?
         .into_iter()
         .find(|t| same_path(Path::new(&t.path), &target_path))
-        .ok_or_else(|| anyhow!("Worktree created, but could not be found. Refresh the working copies."))
+        .ok_or_else(|| {
+            anyhow!("Worktree created, but could not be found. Refresh the working copies.")
+        })
 }
 
 fn branch_slug(branch: &str) -> String {

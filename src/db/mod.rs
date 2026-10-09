@@ -252,9 +252,9 @@ impl SessionRow {
 
     /// MonoCode `draft`: a user block still saved as a draft.
     pub fn is_draft(&self) -> bool {
-        self.blocks
-            .iter()
-            .any(|b| b.role == "user" && b.extra.get("draft").and_then(Value::as_bool) == Some(true))
+        self.blocks.iter().any(|b| {
+            b.role == "user" && b.extra.get("draft").and_then(Value::as_bool) == Some(true)
+        })
     }
 }
 
@@ -1011,7 +1011,9 @@ fn session_from_row(row: &Row<'_>) -> rusqlite::Result<SessionRow> {
         archived: row.get::<_, i64>(12)? != 0,
         blocks,
         provider_session_id: row.get(13)?,
-        provider_account_id: row.get::<_, Option<String>>(21)?.filter(|id| !id.is_empty()),
+        provider_account_id: row
+            .get::<_, Option<String>>(21)?
+            .filter(|id| !id.is_empty()),
         runtime_mode: row.get(14)?,
         worktree_cwd: row.get(15)?,
         model_settings: row
@@ -1022,7 +1024,9 @@ fn session_from_row(row: &Row<'_>) -> rusqlite::Result<SessionRow> {
                 _ => None,
             }),
         worktree_removed: row.get::<_, Option<i64>>(17)?.unwrap_or(0) != 0,
-        automation_id: row.get::<_, Option<String>>(18)?.filter(|id| !id.is_empty()),
+        automation_id: row
+            .get::<_, Option<String>>(18)?
+            .filter(|id| !id.is_empty()),
         linked_work_item: row
             .get::<_, Option<String>>(19)?
             .as_deref()
@@ -1601,7 +1605,9 @@ mod tests {
         assert!(ids.contains(&"s2".to_string()));
         assert!(!ids.contains(&"s3".to_string()));
 
-        let other_sessions = db.list_sessions_for_cwd("/projects/other", 10, &[]).unwrap();
+        let other_sessions = db
+            .list_sessions_for_cwd("/projects/other", 10, &[])
+            .unwrap();
         assert_eq!(other_sessions.len(), 1);
         assert_eq!(other_sessions[0].id, "s3");
     }
@@ -1637,7 +1643,13 @@ mod tests {
 
         let reader = AppDb::open_reader(&db.file_path().unwrap()).unwrap();
 
-        assert_eq!(reader.list_sessions_for_cwd("/projects/app", 5, &[]).unwrap().len(), 1);
+        assert_eq!(
+            reader
+                .list_sessions_for_cwd("/projects/app", 5, &[])
+                .unwrap()
+                .len(),
+            1
+        );
         assert!(AppDb::open_in_memory().unwrap().file_path().is_none());
         drop((reader, db));
         std::fs::remove_dir_all(&dir).unwrap();

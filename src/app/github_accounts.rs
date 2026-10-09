@@ -26,7 +26,9 @@ impl BenCodeApp {
     pub fn load_github_accounts(&mut self, cx: &mut Context<Self>) {
         self.github.generation += 1;
         let generation = self.github.generation;
-        let task = cx.background_executor().spawn(async move { github_accounts::list() });
+        let task = cx
+            .background_executor()
+            .spawn(async move { github_accounts::list() });
         cx.spawn(async move |this, cx| {
             let accounts = task.await;
             let landed = this.update(cx, |app, cx| {
@@ -44,7 +46,12 @@ impl BenCodeApp {
 
     /// Picks the account `project`'s GitHub commands run as (`None` is
     /// Automatic) and reads the Inbox again as it.
-    pub fn set_project_github_account(&mut self, project: &str, login: Option<String>, cx: &mut Context<Self>) {
+    pub fn set_project_github_account(
+        &mut self,
+        project: &str,
+        login: Option<String>,
+        cx: &mut Context<Self>,
+    ) {
         let before = self.github.choices.get(project).cloned();
         if before == login {
             return;

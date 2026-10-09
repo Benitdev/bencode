@@ -17,10 +17,10 @@ use serde_json::{Map, Value};
 use super::HARNESS_ORDER;
 use super::menus::popover_surface;
 use crate::app::BenCodeApp;
-use crate::ui::composer::ComposerPopover;
 use crate::harness::HarnessKind;
 use crate::harness::catalog::{self, ModelOption, ModelSetting, SettingKind};
 use crate::ui::HarnessIcon;
+use crate::ui::composer::ComposerPopover;
 use crate::ui::sidebar_popovers::popover_glass;
 
 /// MonoCode `MENU_WIDTH`, `MODEL_MENU_WIDTH`, `SETTING_MENU_WIDTH`.

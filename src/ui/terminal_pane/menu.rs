@@ -43,10 +43,15 @@ impl BenCodeApp {
     fn terminal_menu_entries(&self, target: MenuTarget) -> Vec<MenuEntry> {
         match target {
             MenuTarget::Tab(_) => {
-                let tabs = self.terminals.dock(&self.current_cwd).map_or(0, |dock| dock.tabs.len());
+                let tabs = self
+                    .terminals
+                    .dock(&self.current_cwd)
+                    .map_or(0, |dock| dock.tabs.len());
                 vec![
                     MenuEntry::Item(MenuAction::new("close", "Close")),
-                    MenuEntry::Item(MenuAction::new("close-others", "Close Others").disabled(tabs < 2)),
+                    MenuEntry::Item(
+                        MenuAction::new("close-others", "Close Others").disabled(tabs < 2),
+                    ),
                 ]
             }
             MenuTarget::Side => {
@@ -54,7 +59,9 @@ impl BenCodeApp {
                 DockSide::ALL
                     .into_iter()
                     .map(|side| {
-                        MenuEntry::Item(MenuAction::new(side.id(), side.label()).checked(side == current))
+                        MenuEntry::Item(
+                            MenuAction::new(side.id(), side.label()).checked(side == current),
+                        )
                     })
                     .collect()
             }
@@ -73,7 +80,12 @@ impl BenCodeApp {
         }
     }
 
-    fn open_terminal_menu(&mut self, target: MenuTarget, position: Point<Pixels>, cx: &mut Context<Self>) {
+    fn open_terminal_menu(
+        &mut self,
+        target: MenuTarget,
+        position: Point<Pixels>,
+        cx: &mut Context<Self>,
+    ) {
         let entries = self.terminal_menu_entries(target);
         self.terminals.menu = Some(TerminalMenu {
             target,
@@ -84,13 +96,27 @@ impl BenCodeApp {
         cx.notify();
     }
 
-    pub(super) fn open_terminal_tab_menu(&mut self, id: u64, position: Point<Pixels>, cx: &mut Context<Self>) {
+    pub(super) fn open_terminal_tab_menu(
+        &mut self,
+        id: u64,
+        position: Point<Pixels>,
+        cx: &mut Context<Self>,
+    ) {
         self.open_terminal_menu(MenuTarget::Tab(id), position, cx);
     }
 
     /// Move Terminal: opens under the pointer, or closes when it is open.
-    pub(super) fn toggle_dock_side_menu(&mut self, position: Point<Pixels>, cx: &mut Context<Self>) {
-        if self.terminals.menu.as_ref().is_some_and(TerminalMenu::is_side) {
+    pub(super) fn toggle_dock_side_menu(
+        &mut self,
+        position: Point<Pixels>,
+        cx: &mut Context<Self>,
+    ) {
+        if self
+            .terminals
+            .menu
+            .as_ref()
+            .is_some_and(TerminalMenu::is_side)
+        {
             self.close_terminal_menu(cx);
             return;
         }
@@ -99,7 +125,12 @@ impl BenCodeApp {
 
     /// The footer chip's list: opens above the chip, or closes when open.
     pub(crate) fn toggle_running_terminals_menu(&mut self, cx: &mut Context<Self>) {
-        if self.terminals.menu.as_ref().is_some_and(TerminalMenu::is_running) {
+        if self
+            .terminals
+            .menu
+            .as_ref()
+            .is_some_and(TerminalMenu::is_running)
+        {
             self.close_terminal_menu(cx);
             return;
         }
@@ -107,7 +138,10 @@ impl BenCodeApp {
     }
 
     pub(crate) fn running_terminals_menu_open(&self) -> bool {
-        self.terminals.menu.as_ref().is_some_and(TerminalMenu::is_running)
+        self.terminals
+            .menu
+            .as_ref()
+            .is_some_and(TerminalMenu::is_running)
     }
 
     pub fn terminal_menu_open(&self) -> bool {
@@ -136,12 +170,20 @@ impl BenCodeApp {
         self.refocus_prompt(cx);
         let project = self.current_cwd.clone();
         match (menu.target, id) {
-            (MenuTarget::Tab(tab), "close") => self.request_close_terminals(&project, vec![tab], None, cx),
+            (MenuTarget::Tab(tab), "close") => {
+                self.request_close_terminals(&project, vec![tab], None, cx)
+            }
             (MenuTarget::Tab(tab), "close-others") => {
                 let others = self
                     .terminals
                     .dock(&project)
-                    .map(|dock| dock.tabs.iter().map(|t| t.id).filter(|&id| id != tab).collect())
+                    .map(|dock| {
+                        dock.tabs
+                            .iter()
+                            .map(|t| t.id)
+                            .filter(|&id| id != tab)
+                            .collect()
+                    })
                     .unwrap_or_default();
                 self.request_close_terminals(&project, others, Some(tab), cx);
             }
@@ -186,13 +228,21 @@ impl BenCodeApp {
 
     /// The tab and Move Terminal menus, at the pointer.
     pub fn render_terminal_menu(&self, cx: &Context<Self>) -> Option<AnyElement> {
-        let menu = self.terminals.menu.as_ref().filter(|menu| !menu.is_running())?;
+        let menu = self
+            .terminals
+            .menu
+            .as_ref()
+            .filter(|menu| !menu.is_running())?;
         Some(self.render_terminal_menu_at(menu, explorer_menu::MenuPlace::At(menu.position), cx))
     }
 
     /// The running terminals' list, placed in the footer chip.
     pub(crate) fn render_running_terminals_menu(&self, cx: &Context<Self>) -> Option<AnyElement> {
-        let menu = self.terminals.menu.as_ref().filter(|menu| menu.is_running())?;
+        let menu = self
+            .terminals
+            .menu
+            .as_ref()
+            .filter(|menu| menu.is_running())?;
         Some(self.render_terminal_menu_at(menu, explorer_menu::MenuPlace::Above, cx))
     }
 
@@ -211,7 +261,11 @@ impl BenCodeApp {
                 entries: &entries,
                 active: menu.active,
                 place,
-                width: if menu.is_running() { RUNNING_MENU_WIDTH } else { MENU_WIDTH },
+                width: if menu.is_running() {
+                    RUNNING_MENU_WIDTH
+                } else {
+                    MENU_WIDTH
+                },
                 focus: &self.composer_menus.focus,
                 header: None,
             },

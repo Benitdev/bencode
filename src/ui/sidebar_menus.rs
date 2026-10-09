@@ -21,13 +21,18 @@ const FOLDER_MENU_WIDTH: f32 = 260.0;
 #[derive(Clone, Debug, PartialEq)]
 pub enum SidebarMenuKind {
     /// A card's menu; `ids` are its targets in list order.
-    Session { clicked: String, ids: Vec<String> },
+    Session {
+        clicked: String,
+        ids: Vec<String>,
+    },
     Folder(String),
     Filter,
     /// MonoCode `SidebarWorktreeSwitcher`'s list of working copies.
     Worktrees,
     /// MonoCode's "Remind me" presets (also the reminder panel's Snooze).
-    Remind { ids: Vec<String> },
+    Remind {
+        ids: Vec<String>,
+    },
     /// The rail's "Open project" popover.
     AddProject,
     /// The icon rail's project list.
@@ -70,7 +75,12 @@ impl BenCodeApp {
         true
     }
 
-    pub(crate) fn open_sidebar_menu(&mut self, kind: SidebarMenuKind, position: Point<Pixels>, cx: &mut Context<Self>) {
+    pub(crate) fn open_sidebar_menu(
+        &mut self,
+        kind: SidebarMenuKind,
+        position: Point<Pixels>,
+        cx: &mut Context<Self>,
+    ) {
         self.cancel_inline_rename(cx);
         let mut menu = SidebarMenu {
             kind,
@@ -85,7 +95,12 @@ impl BenCodeApp {
 
     /// Right-click on a card: an unpicked card becomes the lone pick for
     /// the menu's life (MonoCode `onSessionContextMenu`).
-    pub(crate) fn open_session_menu(&mut self, id: &str, position: Point<Pixels>, cx: &mut Context<Self>) {
+    pub(crate) fn open_session_menu(
+        &mut self,
+        id: &str,
+        position: Point<Pixels>,
+        cx: &mut Context<Self>,
+    ) {
         self.close_sidebar_menu(cx);
         let selection = &mut self.sessions_ui.selection;
         if !selection.ids.contains(id) {
@@ -101,7 +116,12 @@ impl BenCodeApp {
         self.open_sidebar_menu(kind, position, cx);
     }
 
-    pub(crate) fn open_folder_menu(&mut self, folder_id: &str, position: Point<Pixels>, cx: &mut Context<Self>) {
+    pub(crate) fn open_folder_menu(
+        &mut self,
+        folder_id: &str,
+        position: Point<Pixels>,
+        cx: &mut Context<Self>,
+    ) {
         self.close_sidebar_menu(cx);
         // A folder with a custom colour opens with its picker showing.
         self.sessions_ui.folder_color_picker = self
@@ -184,7 +204,9 @@ impl BenCodeApp {
         }
         entries.push(item("pin", if all_pinned { "Unpin" } else { "Pin" }));
         if !many {
-            entries.push(MenuEntry::Item(MenuAction::new("rename", "Rename").shortcut("F2")));
+            entries.push(MenuEntry::Item(
+                MenuAction::new("rename", "Rename").shortcut("F2"),
+            ));
             let harness_id = targets.first().and_then(|s| s.provider_session_id.clone());
             entries.push(MenuEntry::Item(
                 MenuAction::new("copy-harness-session-id", "Copy harness session ID")
@@ -193,7 +215,10 @@ impl BenCodeApp {
             entries.push(item("copy-bencode-session-id", "Copy BenCode session ID"));
             entries.push(item(
                 "link-work-item",
-                if targets.first().is_some_and(|s| s.linked_work_item.is_some()) {
+                if targets
+                    .first()
+                    .is_some_and(|s| s.linked_work_item.is_some())
+                {
                     "Edit GitHub issue or PR link…"
                 } else {
                     "Link GitHub issue or PR…"
@@ -202,7 +227,9 @@ impl BenCodeApp {
         }
         // MonoCode only reminds about a thread that was sent.
         let unsent = targets.iter().any(|s| !s.has_user_message());
-        entries.push(MenuEntry::Item(MenuAction::new("reminder", "Remind me…").disabled(unsent)));
+        entries.push(MenuEntry::Item(
+            MenuAction::new("reminder", "Remind me…").disabled(unsent),
+        ));
         entries.push(MenuEntry::Separator);
         entries.push(item("folder-new", "New folder"));
         if !folders.is_empty() {
@@ -231,7 +258,10 @@ impl BenCodeApp {
             ));
         }
         entries.push(MenuEntry::Separator);
-        entries.push(item("archive", if all_archived { "Unarchive" } else { "Archive" }));
+        entries.push(item(
+            "archive",
+            if all_archived { "Unarchive" } else { "Archive" },
+        ));
         entries.push(MenuEntry::Item(
             MenuAction::new("delete", "Delete").shortcut("⌫").danger(),
         ));
@@ -376,8 +406,12 @@ impl BenCodeApp {
         let menu = self.sidebar_menu.as_ref()?;
         match menu.kind {
             SidebarMenuKind::Filter => return Some(self.render_filter_menu(menu.position, cx)),
-            SidebarMenuKind::Worktrees => return Some(self.render_worktree_menu(menu.position, cx)),
-            SidebarMenuKind::AddProject => return Some(self.render_add_project_menu(menu.position, cx)),
+            SidebarMenuKind::Worktrees => {
+                return Some(self.render_worktree_menu(menu.position, cx));
+            }
+            SidebarMenuKind::AddProject => {
+                return Some(self.render_add_project_menu(menu.position, cx));
+            }
             SidebarMenuKind::CompactProjects => {
                 return Some(self.render_compact_projects_menu(menu.position, cx));
             }

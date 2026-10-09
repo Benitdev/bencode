@@ -6,7 +6,9 @@ use ely_gpui_component::layout::SplitPane;
 use ely_gpui_component::navigation::{EditorTab, EditorTabs};
 use ely_gpui_component::primitives::IconName;
 use ely_gpui_component::theme::ActiveTheme;
-use gpui::{AnyElement, Axis, Context, IntoElement, ParentElement, SharedString, Styled, div, prelude::*};
+use gpui::{
+    AnyElement, Axis, Context, IntoElement, ParentElement, SharedString, Styled, div, prelude::*,
+};
 
 use crate::app::BenCodeApp;
 use crate::app::file_pane::PaneTab;
@@ -56,7 +58,8 @@ impl BenCodeApp {
     /// After tabs opened, closed or changed: reviews of closed tabs go, and
     /// the editor follows the active file.
     fn settle_file_pane(&mut self) {
-        self.diff_docs.retain(|key, _| self.file_pane.get(key).is_some());
+        self.diff_docs
+            .retain(|key, _| self.file_pane.get(key).is_some());
         if let Some(PaneTab::File { path }) = self.file_pane.active() {
             self.editor.requested = Some(path.clone());
             self.editor.files.activate(path);
@@ -111,7 +114,9 @@ impl BenCodeApp {
             return chat.into_any_element();
         }
         let theme = cx.theme();
-        let min = theme.pane_min().to_pixels(theme.base_rem() * crate::ui::scale::ui_scale());
+        let min = theme
+            .pane_min()
+            .to_pixels(theme.base_rem() * crate::ui::scale::ui_scale());
         let weak = cx.entity().downgrade();
         let pane = div()
             .size_full()
@@ -151,9 +156,19 @@ impl BenCodeApp {
             .bg(glass.fill(colors.bg))
             .border_l_1()
             .border_color(colors.border)
-            .when(!self.file_pane.is_empty(), |el| el.child(self.render_pane_tabs(cx)))
+            .when(!self.file_pane.is_empty(), |el| {
+                el.child(self.render_pane_tabs(cx))
+            })
             .children(self.render_editor_notice(cx))
-            .child(div().flex().flex_col().flex_1().min_h_0().overflow_hidden().child(body))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .flex_1()
+                    .min_h_0()
+                    .overflow_hidden()
+                    .child(body),
+            )
             .children(self.render_editor_close_confirm(cx))
     }
 
@@ -163,9 +178,9 @@ impl BenCodeApp {
             let (icon, dirty) = match &entry.tab {
                 PaneTab::File { path } => (IconName::FileCode, self.editor.files.is_dirty(path)),
                 PaneTab::Commit { .. } => (IconName::GitCommitHorizontal, false),
-                PaneTab::Review { .. } | PaneTab::Changes { .. } | PaneTab::SessionChanges { .. } => {
-                    (IconName::GitBranch, false)
-                }
+                PaneTab::Review { .. }
+                | PaneTab::Changes { .. }
+                | PaneTab::SessionChanges { .. } => (IconName::GitBranch, false),
             };
             EditorTab::new(entry.tab.key(), label)
                 .icon(icon)
@@ -174,9 +189,9 @@ impl BenCodeApp {
         });
         let strip = EditorTabs::new("file-pane-tabs", tabs)
             .on_select(cx.listener(|this, key: &SharedString, _, cx| this.select_pane_tab(key, cx)))
-            .on_close(cx.listener(|this, key: &SharedString, _, cx| {
-                this.request_close_pane_tab(key, cx)
-            }))
+            .on_close(
+                cx.listener(|this, key: &SharedString, _, cx| this.request_close_pane_tab(key, cx)),
+            )
             .on_keep(cx.listener(|this, key: &SharedString, _, cx| {
                 this.file_pane.keep(key);
                 cx.notify();

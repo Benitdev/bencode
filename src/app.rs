@@ -1,21 +1,21 @@
 pub mod accounts;
-pub mod agy_accounts;
-pub mod backlog;
-pub mod github_accounts;
 mod agent;
+pub mod agy_accounts;
 mod automation_runs;
 pub mod automations;
+pub mod backlog;
 pub mod chat_background;
 pub mod commands;
 mod composer_input;
 pub mod file_pane;
+pub mod github_accounts;
 mod ids;
 pub mod in_flight;
 mod integrations;
 pub mod live_agents;
+mod model_catalog;
 pub mod note_images;
 pub mod notes;
-mod model_catalog;
 mod panes;
 mod preferences;
 pub mod process_monitor;
@@ -23,13 +23,13 @@ pub mod project_files;
 pub mod project_search;
 mod project_stats;
 mod projects;
-pub mod session_review;
 pub mod release_notes;
 pub mod reminders;
 mod session_flags;
 pub mod session_folders;
-mod source_control;
 pub mod session_list;
+pub mod session_review;
+mod source_control;
 mod surfaces;
 mod tab_history;
 mod tab_scope;
@@ -43,8 +43,8 @@ pub mod worktree_lifecycle;
 use std::collections::HashMap;
 
 use crate::ui::composer::mcp_tags::McpTag;
-use crate::ui::composer::{ComposerPopover, TokenPicker};
 use crate::ui::composer::mentions::MentionIndex;
+use crate::ui::composer::{ComposerPopover, TokenPicker};
 use ely_gpui_component::forms::{InputEvent, TextInput};
 use ely_gpui_component::primitives::FocusScope;
 use ely_gpui_component::theme::ActiveTheme;
@@ -529,7 +529,8 @@ impl BenCodeApp {
         let inbox_search_input = text_input(window, cx, "Filter inbox");
         let inbox_comment_input = multiline_input(window, cx, "Leave a comment (⌘↩)", (2, 8));
         let backlog_space_input = text_input(window, cx, "yourspace.backlog.com");
-        let backlog_key_input = cx.new(|cx| TextInput::new(window, cx).placeholder("API key").masked());
+        let backlog_key_input =
+            cx.new(|cx| TextInput::new(window, cx).placeholder("API key").masked());
         let skill_name_input = text_input(window, cx, "skill-name");
         let skill_keys_input = skill_name_input.clone();
         let find_input = text_input(window, cx, "Find in conversation");
@@ -710,9 +711,21 @@ impl BenCodeApp {
                     _ => {}
                 },
             ),
-            cx.subscribe_in(&project_search.query_input, window, Self::on_project_search_input),
-            cx.subscribe_in(&project_search.include_input, window, Self::on_project_search_input),
-            cx.subscribe_in(&project_search.exclude_input, window, Self::on_project_search_input),
+            cx.subscribe_in(
+                &project_search.query_input,
+                window,
+                Self::on_project_search_input,
+            ),
+            cx.subscribe_in(
+                &project_search.include_input,
+                window,
+                Self::on_project_search_input,
+            ),
+            cx.subscribe_in(
+                &project_search.exclude_input,
+                window,
+                Self::on_project_search_input,
+            ),
             cx.subscribe(&automations.filter_input, Self::on_automation_input_event),
             cx.subscribe(&automations.name_input, Self::on_automation_input_event),
             cx.subscribe(&automations.prompt_input, Self::on_automation_input_event),
@@ -829,8 +842,16 @@ impl BenCodeApp {
                 return;
             }
             // Images on the clipboard go into the note as files of its own.
-            if pasting && note_body_keys_input.read(cx).focus_handle(cx).is_focused(window) {
-                if matches!(weak_app.update(cx, |this, cx| this.paste_into_note(cx)), Ok(true)) {
+            if pasting
+                && note_body_keys_input
+                    .read(cx)
+                    .focus_handle(cx)
+                    .is_focused(window)
+            {
+                if matches!(
+                    weak_app.update(cx, |this, cx| this.paste_into_note(cx)),
+                    Ok(true)
+                ) {
                     cx.stop_propagation();
                 }
                 return;
@@ -838,9 +859,15 @@ impl BenCodeApp {
             // MonoCode `NoteTagsEditor`: Backspace in the empty field takes
             // the last tag.
             if event.keystroke.key == "backspace"
-                && note_tag_keys_input.read(cx).focus_handle(cx).is_focused(window)
+                && note_tag_keys_input
+                    .read(cx)
+                    .focus_handle(cx)
+                    .is_focused(window)
             {
-                if matches!(weak_app.update(cx, |this, cx| this.pop_note_tag(cx)), Ok(true)) {
+                if matches!(
+                    weak_app.update(cx, |this, cx| this.pop_note_tag(cx)),
+                    Ok(true)
+                ) {
                     cx.stop_propagation();
                 }
                 return;
@@ -861,7 +888,10 @@ impl BenCodeApp {
             }
             // MonoCode's inline renames: Esc cancels.
             if event.keystroke.key == "escape"
-                && rename_keys_input.read(cx).focus_handle(cx).is_focused(window)
+                && rename_keys_input
+                    .read(cx)
+                    .focus_handle(cx)
+                    .is_focused(window)
             {
                 let cancelled = weak_app.update(cx, |this, cx| {
                     let active = this.inline_rename_active();
@@ -1094,9 +1124,11 @@ impl BenCodeApp {
             selected_session_id,
             tabs,
             file_pane: Default::default(),
-            checkpoints: session_review::Checkpoints::new(crate::git::checkpoint::CheckpointStore::new(
-                crate::git::checkpoint::CheckpointStore::default_dir(),
-            )),
+            checkpoints: session_review::Checkpoints::new(
+                crate::git::checkpoint::CheckpointStore::new(
+                    crate::git::checkpoint::CheckpointStore::default_dir(),
+                ),
+            ),
             diff_docs: HashMap::new(),
             file_pane_focused: false,
             file_pane_shares: [1.0, 1.0],
@@ -1412,7 +1444,8 @@ impl Render for BenCodeApp {
             }
         }
         self.apply_ui_scale(window);
-        self.live_agents_ui.window_height = crate::ui::scale::logical(window.viewport_size().height);
+        self.live_agents_ui.window_height =
+            crate::ui::scale::logical(window.viewport_size().height);
         self.sync_chat_background(!cx.theme().is_dark(), cx);
         if std::mem::take(&mut self.question_focus_wanted) {
             window.focus(&self.question_focus, cx);
@@ -1452,7 +1485,10 @@ impl Render for BenCodeApp {
                 div()
                     .id("bencode-root")
                     .on_drag_move::<crate::ui::sidebar::SidebarResize>(cx.listener(
-                        |this, event: &gpui::DragMoveEvent<crate::ui::sidebar::SidebarResize>, window, cx| {
+                        |this,
+                         event: &gpui::DragMoveEvent<crate::ui::sidebar::SidebarResize>,
+                         window,
+                         cx| {
                             let drag = crate::ui::sidebar::SidebarResize {
                                 start_x: this.sidebar_drag_x,
                                 ..event.drag(cx).clone()
@@ -1484,7 +1520,9 @@ impl Render for BenCodeApp {
                     .bg(glass.root(bg))
                     .text_color(fg)
                     // MonoCode `compactTitleBar`: above the icon rail.
-                    .when(title_bar_above, |el| el.child(self.render_titlebar(window, cx)))
+                    .when(title_bar_above, |el| {
+                        el.child(self.render_titlebar(window, cx))
+                    })
                     .child(
                         div()
                             .flex()

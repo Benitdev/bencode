@@ -54,13 +54,17 @@ impl BenCodeApp {
             GitMenuKind::Commit => {
                 let (push, push_pr) = self.commit_push_allowed(cx);
                 vec![
-                    MenuEntry::Item(MenuAction::new("commit-push", "Commit & Push").disabled(!push)),
                     MenuEntry::Item(
-                        MenuAction::new("commit-push-pr", "Commit, Push & Create PR").disabled(!push_pr),
+                        MenuAction::new("commit-push", "Commit & Push").disabled(!push),
+                    ),
+                    MenuEntry::Item(
+                        MenuAction::new("commit-push-pr", "Commit, Push & Create PR")
+                            .disabled(!push_pr),
                     ),
                     MenuEntry::Separator,
                     MenuEntry::Item(
-                        MenuAction::new("amend", "Amend Last Commit").checked(self.changes_ui.amend.is_some()),
+                        MenuAction::new("amend", "Amend Last Commit")
+                            .checked(self.changes_ui.amend.is_some()),
                     ),
                 ]
             }
@@ -69,9 +73,14 @@ impl BenCodeApp {
                 let can_pull = sync.remote.is_some() && sync.upstream.is_some();
                 let pulling = self.changes_ui.busy == Some(Busy::Pull);
                 // MonoCode's `title` on the disabled row.
-                let why = (!can_pull)
-                    .then(|| "This branch needs a remote and upstream before it can pull".to_string());
-                let icon = if pulling { IconName::LoaderCircle } else { IconName::RefreshCw };
+                let why = (!can_pull).then(|| {
+                    "This branch needs a remote and upstream before it can pull".to_string()
+                });
+                let icon = if pulling {
+                    IconName::LoaderCircle
+                } else {
+                    IconName::RefreshCw
+                };
                 vec![MenuEntry::Item(
                     MenuAction::new("pull", if pulling { "Pulling…" } else { "Pull" })
                         .icon(icon, pulling)
@@ -86,7 +95,12 @@ impl BenCodeApp {
     /// `absolute top-full right-0`; a second press closes it.
     fn toggle_git_menu(&mut self, kind: GitMenuKind, at: Point<Pixels>, cx: &mut Context<Self>) {
         self.changes_ui.menu_trigger_hit = true;
-        if self.changes_ui.menu.as_ref().is_some_and(|m| m.kind == kind) {
+        if self
+            .changes_ui
+            .menu
+            .as_ref()
+            .is_some_and(|m| m.kind == kind)
+        {
             self.changes_ui.menu = None;
             cx.notify();
             return;
@@ -123,8 +137,24 @@ impl BenCodeApp {
         self.changes_ui.menu = None;
         self.refocus_prompt(cx);
         match id {
-            "commit-push" => self.commit_from_panel(PendingCommit { push: true, pr: false }, false, false, cx),
-            "commit-push-pr" => self.commit_from_panel(PendingCommit { push: true, pr: true }, false, false, cx),
+            "commit-push" => self.commit_from_panel(
+                PendingCommit {
+                    push: true,
+                    pr: false,
+                },
+                false,
+                false,
+                cx,
+            ),
+            "commit-push-pr" => self.commit_from_panel(
+                PendingCommit {
+                    push: true,
+                    pr: true,
+                },
+                false,
+                false,
+                cx,
+            ),
             "amend" => self.toggle_amend(cx),
             "pull" => self.pull_changes(cx),
             _ => {}
@@ -219,7 +249,11 @@ impl BenCodeApp {
         enabled: bool,
         cx: &Context<Self>,
     ) -> Stateful<Div> {
-        let open = self.changes_ui.menu.as_ref().is_some_and(|m| m.kind == kind);
+        let open = self
+            .changes_ui
+            .menu
+            .as_ref()
+            .is_some_and(|m| m.kind == kind);
         let (id, tip) = match kind {
             GitMenuKind::Commit => ("git-commit-options", "Commit options"),
             GitMenuKind::Branch => ("git-branch-actions", "Branch actions"),
@@ -264,9 +298,12 @@ impl BenCodeApp {
                     )
             })
             .child(
-                canvas(move |bounds, _, _| anchor.set(Some(bounds)), |_, _, _, _| {})
-                    .absolute()
-                    .size_full(),
+                canvas(
+                    move |bounds, _, _| anchor.set(Some(bounds)),
+                    |_, _, _, _| {},
+                )
+                .absolute()
+                .size_full(),
             )
             .child(icon)
     }
@@ -289,4 +326,3 @@ pub(crate) struct TriggerLook {
     /// taking the pointer).
     pub dim_disabled: bool,
 }
-

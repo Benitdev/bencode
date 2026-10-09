@@ -6,10 +6,7 @@
 use ely_gpui_component::buttons::{ButtonVariant, IconButton};
 use ely_gpui_component::primitives::{Icon, IconName};
 use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
-use gpui::{
-    AnyElement, Context, FontWeight, IntoElement, ParentElement, Styled, div,
-    prelude::*,
-};
+use gpui::{AnyElement, Context, FontWeight, IntoElement, ParentElement, Styled, div, prelude::*};
 
 use crate::app::BenCodeApp;
 use crate::ui::scale::px;
@@ -63,7 +60,9 @@ impl BenCodeApp {
             self.settings_return = self.surface;
             match self.settings_tab {
                 crate::ui::settings_modal::SettingsTab::Worktrees => self.open_worktrees_page(cx),
-                crate::ui::settings_modal::SettingsTab::Providers => self.load_accounts_page(false, cx),
+                crate::ui::settings_modal::SettingsTab::Providers => {
+                    self.load_accounts_page(false, cx)
+                }
                 _ => {}
             }
         }
@@ -185,9 +184,13 @@ impl BenCodeApp {
                             return el.child(surface.title());
                         }
                         // MonoCode's `Settings / <page>` crumb.
-                        el.child(div().text_color(colors.fg.opacity(0.45)).child(surface.title()))
-                            .child(div().text_color(colors.fg.opacity(0.25)).child("/"))
-                            .child(div().truncate().child(self.settings_tab.label_icon().0))
+                        el.child(
+                            div()
+                                .text_color(colors.fg.opacity(0.45))
+                                .child(surface.title()),
+                        )
+                        .child(div().text_color(colors.fg.opacity(0.25)).child("/"))
+                        .child(div().truncate().child(self.settings_tab.label_icon().0))
                     }),
             )
             .when(

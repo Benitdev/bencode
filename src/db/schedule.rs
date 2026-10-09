@@ -53,7 +53,11 @@ impl AppDb {
             created_at: now,
             started_at: None,
             completed_at: missed.then_some(now),
-            status: if missed { RunStatus::Skipped } else { RunStatus::Pending },
+            status: if missed {
+                RunStatus::Skipped
+            } else {
+                RunStatus::Pending
+            },
             session_id: None,
             error: missed.then(|| MISSED.to_string()),
         };
@@ -190,7 +194,11 @@ mod tests {
         db.start_automation_run(&run.id, "s1", 1_500).unwrap();
         let started: String = db
             .conn
-            .query_row("SELECT definition_json FROM automations WHERE id = 'a'", [], |r| r.get(0))
+            .query_row(
+                "SELECT definition_json FROM automations WHERE id = 'a'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         let started: Value = serde_json::from_str(&started).unwrap();
         assert_eq!(started["lastSessionId"], "s1");

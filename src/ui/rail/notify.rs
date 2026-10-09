@@ -73,7 +73,9 @@ impl BenCodeApp {
     /// BenCode has no such page).
     pub(super) fn inbox_menu_entries(&self) -> Vec<MenuEntry> {
         vec![
-            MenuEntry::Item(MenuAction::new("read-all", "Mark all as read").disabled(!self.inbox_has_unseen())),
+            MenuEntry::Item(
+                MenuAction::new("read-all", "Mark all as read").disabled(!self.inbox_has_unseen()),
+            ),
             MenuEntry::Separator,
             MenuEntry::Item(
                 MenuAction::new("mute", "Mute all projects")
@@ -112,13 +114,19 @@ impl BenCodeApp {
         let entries = self.inbox_menu_entries();
         let on_mute = matches!(
             entries.get(ix),
-            Some(MenuEntry::Item(MenuAction { id: "mute", disabled: false, .. }))
+            Some(MenuEntry::Item(MenuAction {
+                id: "mute",
+                disabled: false,
+                ..
+            }))
         );
         match (on_mute, self.inbox_mute_row()) {
             (true, Some(row)) => {
                 let position = Point::new(row.right() + px(4.0), row.top() - px(MENU_INSET));
                 if self.rail_ui.submenu.is_none() {
-                    let active = explorer_menu::first_item(&self.rail_submenu_entries(SubmenuKind::InboxMute));
+                    let active = explorer_menu::first_item(
+                        &self.rail_submenu_entries(SubmenuKind::InboxMute),
+                    );
                     self.rail_ui.submenu = Some(super::state::RailSubmenu {
                         kind: SubmenuKind::InboxMute,
                         position,
@@ -181,7 +189,8 @@ impl BenCodeApp {
                 let pointer = window.mouse_position();
                 let closed = close_app.update(cx, |this, cx| {
                     let in_submenu = this.rail_ui.submenu.as_ref().is_some_and(|s| {
-                        submenu_bounds(&this.rail_submenu_entries(s.kind), s.position).contains(&pointer)
+                        submenu_bounds(&this.rail_submenu_entries(s.kind), s.position)
+                            .contains(&pointer)
                     });
                     if !in_submenu {
                         this.close_rail_menu(cx);
@@ -337,9 +346,14 @@ impl BenCodeApp {
                     ),
             );
         Some(
-            deferred(anchored().position(picker.position).snap_to_window().child(frame))
-                .with_priority(3)
-                .into_any_element(),
+            deferred(
+                anchored()
+                    .position(picker.position)
+                    .snap_to_window()
+                    .child(frame),
+            )
+            .with_priority(3)
+            .into_any_element(),
         )
     }
 }

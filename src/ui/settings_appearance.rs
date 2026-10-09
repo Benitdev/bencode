@@ -9,8 +9,8 @@ use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::settings::{Appearance, ThemeSelector};
 use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
-    Anchor, Context, Hsla, IntoElement, MouseButton, ObjectFit, ParentElement, SharedString, Styled,
-    anchored, deferred, div, img, point, prelude::*,
+    Anchor, Context, Hsla, IntoElement, MouseButton, ObjectFit, ParentElement, SharedString,
+    Styled, anchored, deferred, div, img, point, prelude::*,
 };
 
 use crate::app::BenCodeApp;
@@ -72,28 +72,31 @@ impl BenCodeApp {
             ThemePreference::Light => Appearance::Light,
             ThemePreference::System => Appearance::System,
         };
-        let theme = ThemeSelector::new("appearance-theme", appearance).on_change(app_callback_with(
-            cx,
-            |this, picked: Appearance, cx| {
+        let theme = ThemeSelector::new("appearance-theme", appearance).on_change(
+            app_callback_with(cx, |this, picked: Appearance, cx| {
                 let pref = match picked {
                     Appearance::Dark => ThemePreference::Dark,
                     Appearance::Light => ThemePreference::Light,
                     Appearance::System => ThemePreference::System,
                 };
                 this.set_theme_preference(pref, cx);
-            },
-        ));
-        let mut diff = SegmentedControl::new("appearance-diff-palette", self.appearance.diff_palette.key())
-            .size(ControlSize::Sm);
+            }),
+        );
+        let mut diff = SegmentedControl::new(
+            "appearance-diff-palette",
+            self.appearance.diff_palette.key(),
+        )
+        .size(ControlSize::Sm);
         for palette in DiffPalette::ALL {
             diff = diff.segment(palette.key(), palette.label(), None);
         }
-        let diff = diff.on_change(cx.listener(|this, key: &SharedString, _, cx| {
-            match DiffPalette::from_key(key) {
-                Some(palette) => this.set_diff_palette(palette, cx),
-                None => log::warn!("unknown diff palette {key}"),
-            }
-        }));
+        let diff =
+            diff.on_change(cx.listener(
+                |this, key: &SharedString, _, cx| match DiffPalette::from_key(key) {
+                    Some(palette) => this.set_diff_palette(palette, cx),
+                    None => log::warn!("unknown diff palette {key}"),
+                },
+            ));
         SettingsGroup::new("Theme")
             .description(
                 "Dark and light share the same tint, so the color settings below apply to both.",
@@ -154,79 +157,103 @@ impl BenCodeApp {
                         })),
                 )
         };
-        let presets = std::iter::once(("Default", None)).chain(ACCENT_PRESETS.iter().map(|(name, hex)| (*name, Some(*hex))));
-        let mut row = div().flex().items_center().justify_between().gap_1().px(px(2.0));
+        let presets = std::iter::once(("Default", None))
+            .chain(ACCENT_PRESETS.iter().map(|(name, hex)| (*name, Some(*hex))));
+        let mut row = div()
+            .flex()
+            .items_center()
+            .justify_between()
+            .gap_1()
+            .px(px(2.0));
         for (ix, (name, hex)) in presets.enumerate() {
             let color = hex.and_then(parse_hex).map_or(fg, Into::into);
             row = row.child(
-                swatch(SharedString::from(format!("accent-color-{ix}")), Some(color), value == hex)
-                    .tooltip(Tooltip::text(name))
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.accent_picker_open = false;
-                        this.set_accent_color(hex.map(str::to_string), cx);
-                    })),
+                swatch(
+                    SharedString::from(format!("accent-color-{ix}")),
+                    Some(color),
+                    value == hex,
+                )
+                .tooltip(Tooltip::text(name))
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.accent_picker_open = false;
+                    this.set_accent_color(hex.map(str::to_string), cx);
+                })),
             );
         }
         let row = row.child(
-            swatch(SharedString::from("accent-color-custom"), custom, custom.is_some() || picker_open)
-                .tooltip(Tooltip::text("Custom color"))
-                // On the press, not the click: the picker's own outside-press
-                // has closed it by then, and the click would open it again.
-                .on_mouse_down(
-                    MouseButton::Left,
-                    cx.listener(move |this, _, _, cx| {
-                        this.accent_picker_open = !picker_open;
-                        cx.notify();
-                    }),
-                )
-                .when(custom.is_none(), |el| {
-                    el.child(
-                        div()
-                            .absolute()
-                            .child(Icon::new(IconName::Pipette).size(IconSize::Xs).color(fg.opacity(0.6))),
-                    )
+            swatch(
+                SharedString::from("accent-color-custom"),
+                custom,
+                custom.is_some() || picker_open,
+            )
+            .tooltip(Tooltip::text("Custom color"))
+            // On the press, not the click: the picker's own outside-press
+            // has closed it by then, and the click would open it again.
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |this, _, _, cx| {
+                    this.accent_picker_open = !picker_open;
+                    cx.notify();
                 }),
+            )
+            .when(custom.is_none(), |el| {
+                el.child(
+                    div().absolute().child(
+                        Icon::new(IconName::Pipette)
+                            .size(IconSize::Xs)
+                            .color(fg.opacity(0.6)),
+                    ),
+                )
+            }),
         );
         let current: Hsla = value
             .or(Some(ACCENT_PRESETS[0].1))
             .and_then(parse_hex)
             .map_or(fg, Into::into);
         // MonoCode `w-48`, the popover `side="bottom" align="end"`.
-        div().relative().w(px(192.0)).child(row).when(picker_open, |el| {
-            let popover = crate::ui::sidebar_popovers::popover_frame(cx)
-                .id("accent-color-picker-popover")
-                .occlude()
-                .w(px(ACCENT_PICKER_WIDTH))
-                .p_2()
-                .on_mouse_down_out(cx.listener(|this, _, _, cx| {
-                    this.accent_picker_open = false;
-                    cx.notify();
-                }))
-                .child(ColorPicker::new("accent-color-picker", current).opaque().on_change(
-                    app_callback_with(cx, |this, color: Hsla, cx| {
-                        this.set_accent_color(Some(to_hex(color)), cx);
-                    }),
-                ));
-            el.child(
-                div().absolute().bottom_0().right_0().child(
-                    deferred(
-                        anchored()
-                            .anchor(Anchor::TopRight)
-                            .offset(point(px(0.0), px(6.0)))
-                            .snap_to_window()
-                            .child(popover),
-                    )
-                    .with_priority(3),
-                ),
-            )
-        })
+        div()
+            .relative()
+            .w(px(192.0))
+            .child(row)
+            .when(picker_open, |el| {
+                let popover = crate::ui::sidebar_popovers::popover_frame(cx)
+                    .id("accent-color-picker-popover")
+                    .occlude()
+                    .w(px(ACCENT_PICKER_WIDTH))
+                    .p_2()
+                    .on_mouse_down_out(cx.listener(|this, _, _, cx| {
+                        this.accent_picker_open = false;
+                        cx.notify();
+                    }))
+                    .child(
+                        ColorPicker::new("accent-color-picker", current)
+                            .opaque()
+                            .on_change(app_callback_with(cx, |this, color: Hsla, cx| {
+                                this.set_accent_color(Some(to_hex(color)), cx);
+                            })),
+                    );
+                el.child(
+                    div().absolute().bottom_0().right_0().child(
+                        deferred(
+                            anchored()
+                                .anchor(Anchor::TopRight)
+                                .offset(point(px(0.0), px(6.0)))
+                                .snap_to_window()
+                                .child(popover),
+                        )
+                        .with_priority(3),
+                    ),
+                )
+            })
     }
 
     fn render_appearance_color(&self, cx: &Context<Self>) -> impl IntoElement {
         let tint = self.appearance.tint;
         let light = !cx.theme().is_dark();
         SettingsGroup::new("Color")
-            .description("Hue and saturation tint every surface. Lightness only moves the dark theme.")
+            .description(
+                "Hue and saturation tint every surface. Lightness only moves the dark theme.",
+            )
             .row(
                 SettingsRow::new("Hue")
                     .description("Base hue for accents and tinted surfaces.")
@@ -271,7 +298,13 @@ impl BenCodeApp {
                         light,
                         cx,
                         move |this, dark_lightness, cx| {
-                            this.set_theme_tint(ThemeTint { dark_lightness, ..tint }, cx)
+                            this.set_theme_tint(
+                                ThemeTint {
+                                    dark_lightness,
+                                    ..tint
+                                },
+                                cx,
+                            )
                         },
                     )),
             )
@@ -293,7 +326,10 @@ impl BenCodeApp {
         let opacity = slider(
             "glass-opacity",
             percent,
-            (crate::ui::glass::OPACITY_MIN * 100.0, crate::ui::glass::OPACITY_MAX * 100.0),
+            (
+                crate::ui::glass::OPACITY_MIN * 100.0,
+                crate::ui::glass::OPACITY_MAX * 100.0,
+            ),
             format!("{percent}%"),
             disabled,
             cx,
@@ -301,7 +337,9 @@ impl BenCodeApp {
         );
         let body = Switch::new("glass-body", self.body_glass)
             .disabled(disabled)
-            .on_change(app_callback_with(cx, |this, on, cx| this.set_body_glass(on, cx)));
+            .on_change(app_callback_with(cx, |this, on, cx| {
+                this.set_body_glass(on, cx)
+            }));
         SettingsGroup::new("Translucency")
             .description(description)
             .row(
@@ -379,10 +417,19 @@ impl BenCodeApp {
                         .on_click(cx.listener(|this, _, _, cx| this.choose_chat_background(cx)))
                 })
                 .child(if busy {
-                    spinning_icon("chat-background-busy".into(), IconName::LoaderCircle, IconSize::Lg, fg.opacity(0.4))
-                        .into_any_element()
+                    spinning_icon(
+                        "chat-background-busy".into(),
+                        IconName::LoaderCircle,
+                        IconSize::Lg,
+                        fg.opacity(0.4),
+                    )
+                    .into_any_element()
                 } else {
-                    ExtraIcon::ImagePlus.icon().size(IconSize::Lg).color(fg.opacity(0.4)).into_any_element()
+                    ExtraIcon::ImagePlus
+                        .icon()
+                        .size(IconSize::Lg)
+                        .color(fg.opacity(0.4))
+                        .into_any_element()
                 })
                 .child("Choose an image")
         };
@@ -404,20 +451,28 @@ impl BenCodeApp {
                                 .size(ControlSize::Sm)
                                 .loading(busy)
                                 .disabled(busy)
-                                .on_click(cx.listener(|this, _, _, cx| this.choose_chat_background(cx))),
+                                .on_click(
+                                    cx.listener(|this, _, _, cx| this.choose_chat_background(cx)),
+                                ),
                         )
                         .child(
                             Button::new("chat-background-remove", "Remove")
                                 .size(ControlSize::Sm)
                                 .variant(ButtonVariant::Danger)
                                 .disabled(busy)
-                                .on_click(cx.listener(|this, _, _, cx| this.clear_chat_background(cx))),
+                                .on_click(
+                                    cx.listener(|this, _, _, cx| this.clear_chat_background(cx)),
+                                ),
                         ),
                 )
             })
             .children(state.error.clone().map(|error| {
                 // `mt-2 text-[12px] text-red-400`
-                div().mt_2().text_size(px(12.0)).text_color(colors.danger).child(error)
+                div()
+                    .mt_2()
+                    .text_size(px(12.0))
+                    .text_color(colors.danger)
+                    .child(error)
             }));
         let section = SettingsGroup::new("Chat background")
             .description("An image behind your chat panes. It stays on this device.")
@@ -425,7 +480,8 @@ impl BenCodeApp {
         if !has_image {
             return section;
         }
-        let mut effect = SegmentedControl::new("chat-background-effect", prefs.effect.key()).size(ControlSize::Sm);
+        let mut effect = SegmentedControl::new("chat-background-effect", prefs.effect.key())
+            .size(ControlSize::Sm);
         for choice in BackgroundEffect::ALL {
             effect = effect.segment(choice.key(), choice.label(), None);
         }
@@ -435,7 +491,8 @@ impl BenCodeApp {
                 None => log::warn!("unknown background effect {key}"),
             }
         }));
-        let mut scope = SegmentedControl::new("chat-background-scope", prefs.scope.key()).size(ControlSize::Sm);
+        let mut scope =
+            SegmentedControl::new("chat-background-scope", prefs.scope.key()).size(ControlSize::Sm);
         for choice in ChatBackgroundScope::ALL {
             scope = scope.segment(choice.key(), choice.label(), None);
         }
@@ -445,7 +502,10 @@ impl BenCodeApp {
                 None => log::warn!("unknown background scope {key}"),
             }
         }));
-        let range = (CHAT_BACKGROUND_OPACITY_MIN * 100.0, CHAT_BACKGROUND_OPACITY_MAX * 100.0);
+        let range = (
+            CHAT_BACKGROUND_OPACITY_MIN * 100.0,
+            CHAT_BACKGROUND_OPACITY_MAX * 100.0,
+        );
         section
             .row(
                 SettingsRow::new("Background effect")
@@ -480,14 +540,19 @@ impl BenCodeApp {
                         format!("{session_percent}%"),
                         false,
                         cx,
-                        |this, value, cx| this.set_chat_background_opacity(false, value / 100.0, cx),
+                        |this, value, cx| {
+                            this.set_chat_background_opacity(false, value / 100.0, cx)
+                        },
                     )),
             )
     }
 
     fn render_appearance_layout(&self, cx: &Context<Self>) -> impl IntoElement {
-        let mut rail = SegmentedControl::new("appearance-collapsed-rail", self.appearance.collapsed_rail.key())
-            .size(ControlSize::Sm);
+        let mut rail = SegmentedControl::new(
+            "appearance-collapsed-rail",
+            self.appearance.collapsed_rail.key(),
+        )
+        .size(ControlSize::Sm);
         for mode in CollapsedRailMode::ALL {
             rail = rail.segment(mode.key(), mode.label(), None);
         }
@@ -500,16 +565,24 @@ impl BenCodeApp {
         let percent = (self.appearance.ui_scale * 100.0).round() as u32;
         let scale = Select::new(
             "appearance-ui-scale",
-            ui_scale_percents().map(|percent| Choice::new(percent.to_string(), format!("{percent}%"))),
+            ui_scale_percents()
+                .map(|percent| Choice::new(percent.to_string(), format!("{percent}%"))),
         )
         .label("Interface scale")
         .selected(percent.to_string())
-        .on_change(cx.listener(|this, value: &SharedString, _, cx| match value.parse::<f32>() {
-            Ok(percent) => this.set_ui_scale(percent / 100.0, cx),
-            Err(err) => log::warn!("interface scale {value}: {err}"),
+        .on_change(cx.listener(
+            |this, value: &SharedString, _, cx| match value.parse::<f32>() {
+                Ok(percent) => this.set_ui_scale(percent / 100.0, cx),
+                Err(err) => log::warn!("interface scale {value}: {err}"),
+            },
+        ));
+        let excluded = Switch::new(
+            "appearance-show-excluded",
+            self.appearance.show_excluded_files,
+        )
+        .on_change(app_callback_with(cx, |this, on, cx| {
+            this.set_show_excluded_files(on, cx)
         }));
-        let excluded = Switch::new("appearance-show-excluded", self.appearance.show_excluded_files)
-            .on_change(app_callback_with(cx, |this, on, cx| this.set_show_excluded_files(on, cx)));
         SettingsGroup::new("Layout")
             .row(
                 SettingsRow::new("Collapsed project rail")

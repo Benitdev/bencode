@@ -64,7 +64,13 @@ impl Render for DraggedRailProject {
                     .justify_center()
                     .child(pixel_sprite(&self.mascot.rest, px(12.0), self.color, false)),
             )
-            .child(div().min_w_0().flex_1().truncate().child(self.label.clone()))
+            .child(
+                div()
+                    .min_w_0()
+                    .flex_1()
+                    .truncate()
+                    .child(self.label.clone()),
+            )
     }
 }
 
@@ -79,7 +85,11 @@ impl Render for RailResize {
 }
 
 /// `list` as shown while `reorder` holds one of its rows over a slot.
-pub(super) fn preview_order(list: &str, ids: &[String], reorder: Option<&RailReorder>) -> Vec<String> {
+pub(super) fn preview_order(
+    list: &str,
+    ids: &[String],
+    reorder: Option<&RailReorder>,
+) -> Vec<String> {
     match reorder.filter(|r| r.list == list) {
         Some(r) => match ids.iter().position(|id| *id == r.path) {
             Some(from) => move_item(ids, from, r.to),
@@ -99,7 +109,12 @@ impl BenCodeApp {
 
     /// Follows the sash (registered on the rail; drag moves reach it
     /// wherever the pointer is).
-    pub(super) fn track_rail_resize(&mut self, event: &DragMoveEvent<RailResize>, window: &Window, cx: &mut Context<Self>) {
+    pub(super) fn track_rail_resize(
+        &mut self,
+        event: &DragMoveEvent<RailResize>,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) {
         let (start_x, start_width) = self.rail_ui.drag_origin;
         let width = resized_rail_width(
             start_width,
@@ -160,7 +175,10 @@ impl BenCodeApp {
                         );
                         return;
                     }
-                    this.rail_ui.drag_origin = (crate::ui::scale::logical(event.position.x), this.rail_width());
+                    this.rail_ui.drag_origin = (
+                        crate::ui::scale::logical(event.position.x),
+                        this.rail_width(),
+                    );
                 }),
             )
             .on_drag(RailResize, |drag, _, _, cx| cx.new(|_| drag.clone()))
@@ -199,10 +217,14 @@ impl BenCodeApp {
             if old_ix != new_ix && *id != next.path {
                 self.rail_ui.slide_seq += 1;
                 let offset = (old_ix as f32 - new_ix as f32) * ROW_PITCH;
-                self.rail_ui.slides.insert(id.clone(), (offset, self.rail_ui.slide_seq, now));
+                self.rail_ui
+                    .slides
+                    .insert(id.clone(), (offset, self.rail_ui.slide_seq, now));
             }
         }
-        self.rail_ui.slides.retain(|_, (_, _, at)| at.elapsed() < REORDER_MOTION);
+        self.rail_ui
+            .slides
+            .retain(|_, (_, _, at)| at.elapsed() < REORDER_MOTION);
         self.rail_ui.reorder = Some(next);
         cx.notify();
     }

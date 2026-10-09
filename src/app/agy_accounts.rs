@@ -94,9 +94,11 @@ impl BenCodeApp {
     }
 
     fn agy_turn_running(&self) -> bool {
-        self.runs
-            .keys()
-            .any(|id| self.sessions.iter().any(|session| &session.id == id && session.harness == PROVIDER))
+        self.runs.keys().any(|id| {
+            self.sessions
+                .iter()
+                .any(|session| &session.id == id && session.harness == PROVIDER)
+        })
     }
 
     /// Whether the account may change now; says why not otherwise.
@@ -174,7 +176,12 @@ impl BenCodeApp {
         if !snapshot.imported.is_empty() {
             // The script profiles keep the names their folders had.
             self.update_provider_accounts(
-                |stored, _| stored.entry(PROVIDER.into()).or_default().extend(snapshot.imported),
+                |stored, _| {
+                    stored
+                        .entry(PROVIDER.into())
+                        .or_default()
+                        .extend(snapshot.imported)
+                },
                 cx,
             );
         }
@@ -187,7 +194,11 @@ impl BenCodeApp {
         }
         let id = id.to_string();
         let target = id.clone();
-        self.run_agy_job(Some(AgyWork::Switching(id)), move || agy_accounts::activate(&target), cx);
+        self.run_agy_job(
+            Some(AgyWork::Switching(id)),
+            move || agy_accounts::activate(&target),
+            cx,
+        );
     }
 
     /// Add account: signs `agy` out (keeping the account it had), then runs
@@ -228,7 +239,8 @@ impl BenCodeApp {
             loop {
                 cx.background_executor().timer(SIGN_IN_POLL).await;
                 let waiting = this.update(cx, |app, _| {
-                    app.agy_accounts.working == Some(AgyWork::SigningIn) && app.agy_accounts.sign_in_run == run
+                    app.agy_accounts.working == Some(AgyWork::SigningIn)
+                        && app.agy_accounts.sign_in_run == run
                 });
                 if !matches!(waiting, Ok(true)) {
                     return; // cancelled, or the app is gone
@@ -242,7 +254,8 @@ impl BenCodeApp {
                     Ok(None) if Instant::now() < deadline => continue,
                     Ok(None) => this.update(cx, |app, cx| {
                         app.cancel_agy_sign_in(cx);
-                        app.agy_accounts.error = Some("The Antigravity sign-in was not finished.".into());
+                        app.agy_accounts.error =
+                            Some("The Antigravity sign-in was not finished.".into());
                     }),
                     Ok(Some(_)) => this.update(cx, |app, cx| {
                         app.agy_accounts.working = None;
@@ -276,14 +289,22 @@ impl BenCodeApp {
             .iter()
             .find(|info| info.id == PROVIDER)
             .and_then(|info| info.binary_path.as_ref())
-            .map_or_else(|| "agy".to_string(), |path| path.to_string_lossy().into_owned());
+            .map_or_else(
+                || "agy".to_string(),
+                |path| path.to_string_lossy().into_owned(),
+            );
         self.new_terminal(cx);
-        let Some(tab) = self.terminals.dock(&self.current_cwd).and_then(|dock| dock.tabs.last()) else {
+        let Some(tab) = self
+            .terminals
+            .dock(&self.current_cwd)
+            .and_then(|dock| dock.tabs.last())
+        else {
             return;
         };
         // The shell reads this once it is up.
         let line = format!("'{}'\n", program.replace('\'', "'\\''"));
-        tab.entity.update(cx, |terminal, _| terminal.write(line.into_bytes()));
+        tab.entity
+            .update(cx, |terminal, _| terminal.write(line.into_bytes()));
     }
 
     /// Gives a sign-in up: `agy` is signed back in as it was.
@@ -293,7 +314,11 @@ impl BenCodeApp {
         }
         self.agy_accounts.working = None;
         let previous = self.agy_accounts.previous.take();
-        self.run_agy_job(None, move || agy_accounts::cancel_sign_in(previous.as_deref()), cx);
+        self.run_agy_job(
+            None,
+            move || agy_accounts::cancel_sign_in(previous.as_deref()),
+            cx,
+        );
         cx.notify();
     }
 
@@ -306,7 +331,8 @@ impl BenCodeApp {
         self.agy_accounts.error = None;
         self.agy_accounts.renaming = Some(account.id.clone());
         let label = account.label.clone();
-        self.account_editor_input.update(cx, |input, cx| input.set_text(label, cx));
+        self.account_editor_input
+            .update(cx, |input, cx| input.set_text(label, cx));
         crate::ui::composer::menus::focus_later(
             gpui::Focusable::focus_handle(self.account_editor_input.read(cx), cx),
             cx,
@@ -371,6 +397,10 @@ impl BenCodeApp {
             cx,
         );
         let target = id.clone();
-        self.run_agy_job(Some(AgyWork::Removing(id)), move || agy_accounts::remove(&target), cx);
+        self.run_agy_job(
+            Some(AgyWork::Removing(id)),
+            move || agy_accounts::remove(&target),
+            cx,
+        );
     }
 }

@@ -122,7 +122,10 @@ pub fn mute_status(pref: Option<&NotificationPreference>, now: i64) -> Option<St
 fn format_mute_deadline(ms: i64) -> String {
     jiff::Timestamp::from_millisecond(ms)
         .map(|t| t.to_zoned(jiff::tz::TimeZone::system()))
-        .map_or_else(|_| String::new(), |z| z.strftime("%b %-d, %Y, %-I:%M %p").to_string())
+        .map_or_else(
+            |_| String::new(),
+            |z| z.strftime("%b %-d, %Y, %-I:%M %p").to_string(),
+        )
 }
 
 /// MonoCode `localNotificationProject` id: BenCode knows no hosted
@@ -147,7 +150,11 @@ pub fn mute_actions(now: i64) -> Vec<MuteAction> {
         .zip(ids)
         .map(|(hours, id)| {
             let until = now + hours * HOUR_MS;
-            let day = if local_date(until) == today { "" } else { "Tomorrow, " };
+            let day = if local_date(until) == today {
+                ""
+            } else {
+                "Tomorrow, "
+            };
             let unit = if *hours == 1 { "hour" } else { "hours" };
             MuteAction {
                 id,
@@ -172,7 +179,9 @@ pub fn mute_deadline(id: &str, now: i64) -> Option<Option<i64>> {
         return Some(None);
     }
     let hours: i64 = id.strip_prefix("mute:")?.parse().ok()?;
-    MUTE_HOURS.contains(&hours).then_some(Some(now + hours * HOUR_MS))
+    MUTE_HOURS
+        .contains(&hours)
+        .then_some(Some(now + hours * HOUR_MS))
 }
 
 fn local_date(ms: i64) -> Option<jiff::civil::Date> {
@@ -184,7 +193,10 @@ fn local_date(ms: i64) -> Option<jiff::civil::Date> {
 fn clock_time(ms: i64) -> String {
     jiff::Timestamp::from_millisecond(ms)
         .map(|t| t.to_zoned(jiff::tz::TimeZone::system()))
-        .map_or_else(|_| String::new(), |z| format!("{}:{:02}", z.hour(), z.minute()))
+        .map_or_else(
+            |_| String::new(),
+            |z| format!("{}:{:02}", z.hour(), z.minute()),
+        )
 }
 
 impl RailPrefs {
@@ -199,7 +211,11 @@ impl RailPrefs {
                 id.clone(),
                 NotificationPreference {
                     muted_until,
-                    resumed_at: if resuming { Some(now) } else { previous.resumed_at },
+                    resumed_at: if resuming {
+                        Some(now)
+                    } else {
+                        previous.resumed_at
+                    },
                     ..previous
                 },
             );
@@ -222,7 +238,12 @@ impl RailPrefs {
             path: path.clone(),
             archived_at: now,
         })
-        .chain(self.archived_projects.iter().filter(|a| !same(&a.path, &path)).cloned())
+        .chain(
+            self.archived_projects
+                .iter()
+                .filter(|a| !same(&a.path, &path))
+                .cloned(),
+        )
         .collect();
         Self {
             archived_projects: archived,
@@ -335,7 +356,12 @@ impl RailPrefs {
     /// MonoCode `deleteProjectGroup`: its projects become ungrouped.
     pub fn without_group(&self, id: &str) -> Self {
         Self {
-            project_groups: self.project_groups.iter().filter(|g| g.id != id).cloned().collect(),
+            project_groups: self
+                .project_groups
+                .iter()
+                .filter(|g| g.id != id)
+                .cloned()
+                .collect(),
             project_group_assignments: self
                 .project_group_assignments
                 .iter()
@@ -421,7 +447,11 @@ impl RailPrefs {
     }
 }
 
-fn with_entry(map: &BTreeMap<String, String>, key: &str, value: Option<&str>) -> BTreeMap<String, String> {
+fn with_entry(
+    map: &BTreeMap<String, String>,
+    key: &str,
+    value: Option<&str>,
+) -> BTreeMap<String, String> {
     let mut next = map.clone();
     match value {
         Some(value) => next.insert(key.to_string(), value.to_string()),
@@ -445,7 +475,11 @@ pub fn path_key(path: &str) -> String {
 
 /// MonoCode `nextProjectGroupName`.
 pub fn next_group_name(groups: &[ProjectGroup]) -> String {
-    let taken = |name: &str| groups.iter().any(|g| g.name.to_lowercase() == name.to_lowercase());
+    let taken = |name: &str| {
+        groups
+            .iter()
+            .any(|g| g.name.to_lowercase() == name.to_lowercase())
+    };
     if !taken("New group") {
         return "New group".into();
     }
@@ -487,8 +521,11 @@ pub struct RailSections {
 
 pub fn rail_sections(order: &[String], pinned: &[String], prefs: &RailPrefs) -> RailSections {
     let is_pinned = |path: &str| pinned.iter().any(|p| same(p, path));
-    let mut groups: Vec<(ProjectGroup, Vec<String>)> =
-        prefs.project_groups.iter().map(|g| (g.clone(), Vec::new())).collect();
+    let mut groups: Vec<(ProjectGroup, Vec<String>)> = prefs
+        .project_groups
+        .iter()
+        .map(|g| (g.clone(), Vec::new()))
+        .collect();
     let mut sections = RailSections::default();
     for path in order {
         if is_pinned(path) {
@@ -551,7 +588,10 @@ mod tests {
     fn saved_order_comes_first_then_newcomers() {
         let order = paths(&["/b", "/gone", "/a/"]);
         let projects = paths(&["/c", "/a", "/b"]);
-        assert_eq!(sync_rail_order(&order, &projects), paths(&["/b", "/a", "/c"]));
+        assert_eq!(
+            sync_rail_order(&order, &projects),
+            paths(&["/b", "/a", "/c"])
+        );
     }
 
     #[test]
@@ -572,7 +612,10 @@ mod tests {
         let full = paths(&["/a", "/x", "/b", "/c"]);
         let next = reorder_subset(&full, &paths(&["/c", "/a", "/b"]));
         assert_eq!(next, paths(&["/c", "/x", "/a", "/b"]));
-        assert_eq!(move_item(&paths(&["a", "b", "c"]), 0, 2), paths(&["b", "c", "a"]));
+        assert_eq!(
+            move_item(&paths(&["a", "b", "c"]), 0, 2),
+            paths(&["b", "c", "a"])
+        );
     }
 
     #[test]
@@ -620,9 +663,15 @@ mod tests {
         let pref = &parsed["local:/a"];
         assert_eq!(pref.muted_until, Some(None));
         assert!(pref.is_muted(0));
-        assert_eq!(mute_status(Some(pref), 0).as_deref(), Some("Muted until resumed"));
+        assert_eq!(
+            mute_status(Some(pref), 0).as_deref(),
+            Some("Muted until resumed")
+        );
         let back = serde_json::to_string(&parsed).unwrap();
-        assert!(back.contains("\"mutedUntil\":null") && back.contains("enabledAfter"), "{back}");
+        assert!(
+            back.contains("\"mutedUntil\":null") && back.contains("enabledAfter"),
+            "{back}"
+        );
 
         let prefs = RailPrefs {
             project_notifications: parsed,
@@ -641,7 +690,11 @@ mod tests {
         assert_eq!(mute_deadline("mute:3", 0), None);
         let actions = mute_actions(0);
         assert_eq!(actions.len(), 5);
-        assert!(actions[0].label.starts_with("1 hour ("), "{}", actions[0].label);
+        assert!(
+            actions[0].label.starts_with("1 hour ("),
+            "{}",
+            actions[0].label
+        );
         assert_eq!(actions[4].id, "mute:custom");
     }
 

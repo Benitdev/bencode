@@ -24,7 +24,8 @@ impl BenCodeApp {
         let count = self.resume.offers.len();
         let picked = self.resume.picked.len();
         let rows = self.resume.offers.iter().enumerate().map(|(ix, offer)| {
-            let harness = HarnessKind::from_id(&offer.harness).map_or(offer.harness.as_str(), |k| k.label());
+            let harness =
+                HarnessKind::from_id(&offer.harness).map_or(offer.harness.as_str(), |k| k.label());
             let id = offer.session_id.clone();
             Checkbox::new(
                 SharedString::from(format!("resume-interrupted-{ix}")),
@@ -73,7 +74,11 @@ impl BenCodeApp {
             .action(move |_| {
                 Button::new(
                     "resume-interrupted-confirm",
-                    if picked == count { "Resume".to_string() } else { format!("Resume {picked}") },
+                    if picked == count {
+                        "Resume".to_string()
+                    } else {
+                        format!("Resume {picked}")
+                    },
                 )
                 .primary()
                 .disabled(picked == 0)

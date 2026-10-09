@@ -38,7 +38,10 @@ fn review_label(state: &str) -> &'static str {
 
 /// The colour of a review state (a comment's, or a pull request's
 /// decision); `None` keeps the row's muted text.
-pub(super) fn review_tint(state: &str, colors: &ely_gpui_component::theme::Palette) -> Option<Hsla> {
+pub(super) fn review_tint(
+    state: &str,
+    colors: &ely_gpui_component::theme::Palette,
+) -> Option<Hsla> {
     match state {
         "APPROVED" => Some(colors.success),
         "CHANGES_REQUESTED" => Some(colors.danger),
@@ -186,7 +189,10 @@ impl BenCodeApp {
                         .gap_2()
                         .text_size(px(12.0))
                         .text_color(fg.opacity(0.45))
-                        .child(super::loading_icon("inbox-comments-loading", fg.opacity(0.45)))
+                        .child(super::loading_icon(
+                            "inbox-comments-loading",
+                            fg.opacity(0.45),
+                        ))
                         .child("Loading comments"),
                 )
                 .into_any_element();
@@ -210,10 +216,16 @@ impl BenCodeApp {
                         .text_color(fg.opacity(0.5))
                         .child(div().text_color(fg.opacity(0.7)).child(label))
                         .when(thread.truncated, |el| {
-                            el.child(format!("Latest comments · more on {}", item.provider.label()))
+                            el.child(format!(
+                                "Latest comments · more on {}",
+                                item.provider.label()
+                            ))
                         })
                         .when(loading, |el| {
-                            el.child(super::loading_icon("inbox-comments-reloading", fg.opacity(0.35)))
+                            el.child(super::loading_icon(
+                                "inbox-comments-reloading",
+                                fg.opacity(0.35),
+                            ))
                         }),
                 )
                 .children(

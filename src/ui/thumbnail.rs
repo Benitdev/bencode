@@ -93,9 +93,13 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("bencode-thumb-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let large = dir.join("large.png");
-        image::RgbaImage::from_pixel(400, 200, image::Rgba([255, 0, 0, 255])).save(&large).unwrap();
+        image::RgbaImage::from_pixel(400, 200, image::Rgba([255, 0, 0, 255]))
+            .save(&large)
+            .unwrap();
         let small = dir.join("small.png");
-        image::RgbaImage::from_pixel(20, 10, image::Rgba([255, 0, 0, 255])).save(&small).unwrap();
+        image::RgbaImage::from_pixel(20, 10, image::Rgba([255, 0, 0, 255]))
+            .save(&small)
+            .unwrap();
 
         let thumb = decode(&large, 100).unwrap();
         let size = thumb.size(0);

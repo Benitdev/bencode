@@ -124,7 +124,10 @@ impl Render for ProcessLayer {
                     .into_any_element();
                 readout.prepaint_as_root(
                     point(px(slot.left), px(slot.top)),
-                    size(AvailableSpace::Definite(width), AvailableSpace::Definite(px(HEIGHT))),
+                    size(
+                        AvailableSpace::Definite(width),
+                        AvailableSpace::Definite(px(HEIGHT)),
+                    ),
                     window,
                     cx,
                 );

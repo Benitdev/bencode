@@ -74,7 +74,11 @@ impl BenCodeApp {
 
     /// MonoCode's rows: the project folder ("all sessions"), then each
     /// worktree by branch with its folder, the focused one checked.
-    pub(crate) fn render_worktree_menu(&self, position: Point<Pixels>, cx: &Context<Self>) -> AnyElement {
+    pub(crate) fn render_worktree_menu(
+        &self,
+        position: Point<Pixels>,
+        cx: &Context<Self>,
+    ) -> AnyElement {
         let colors = &cx.theme().colors;
         let fg = colors.fg;
         let focus = self.worktree_focus().map(|f| f.path.clone());
@@ -105,7 +109,13 @@ impl BenCodeApp {
                     div()
                         .flex_1()
                         .min_w_0()
-                        .child(div().truncate().text_size(px(12.0)).text_color(fg).child(label))
+                        .child(
+                            div()
+                                .truncate()
+                                .text_size(px(12.0))
+                                .text_color(fg)
+                                .child(label),
+                        )
                         .child(
                             div()
                                 .truncate()
@@ -121,7 +131,10 @@ impl BenCodeApp {
         let muted = fg.opacity(0.5);
         let mut list = div().flex().flex_col().child(row(
             "worktree-default".into(),
-            Icon::new(IconName::GitBranch).size(IconSize::Sm).color(muted).into_any_element(),
+            Icon::new(IconName::GitBranch)
+                .size(IconSize::Sm)
+                .color(muted)
+                .into_any_element(),
             main.and_then(|m| m.branch.clone())
                 .unwrap_or_else(|| "Project folder".into()),
             "Project folder · all sessions".into(),
@@ -129,10 +142,9 @@ impl BenCodeApp {
             None,
         ));
         for tree in trees.iter().filter(|t| !t.is_main && !t.missing) {
-            let label = tree
-                .branch
-                .clone()
-                .unwrap_or_else(|| format!("Detached {}", tree.head.chars().take(7).collect::<String>()));
+            let label = tree.branch.clone().unwrap_or_else(|| {
+                format!("Detached {}", tree.head.chars().take(7).collect::<String>())
+            });
             let selected = focus
                 .as_deref()
                 .is_some_and(|f| crate::app::same_project_path(f, &tree.path));
@@ -174,7 +186,11 @@ impl BenCodeApp {
 
     /// MonoCode `FolderColorSwatches`: the palette (the first clears the
     /// tint), a custom colour button, and its picker once opened.
-    pub(crate) fn render_folder_swatches(&self, folder_id: &str, cx: &Context<Self>) -> Option<AnyElement> {
+    pub(crate) fn render_folder_swatches(
+        &self,
+        folder_id: &str,
+        cx: &Context<Self>,
+    ) -> Option<AnyElement> {
         let folder = self.project_folders().iter().find(|f| f.id == folder_id)?;
         let fg = cx.theme().colors.fg;
         let custom = folder.custom_color.as_deref().and_then(parse_hex);
@@ -197,7 +213,12 @@ impl BenCodeApp {
                         .when(selected, |el| el.border_2().border_color(fg.opacity(0.8))),
                 )
         };
-        let mut row = div().flex().items_center().justify_between().gap_1().px(px(2.0));
+        let mut row = div()
+            .flex()
+            .items_center()
+            .justify_between()
+            .gap_1()
+            .px(px(2.0));
         for (ix, _) in FOLDER_COLORS.iter().enumerate() {
             let selected = custom.is_none()
                 && (folder.color_index == Some(ix) || (folder.color_index.is_none() && ix == 0));
@@ -242,7 +263,11 @@ impl BenCodeApp {
                         el.bg(color).border_2().border_color(fg.opacity(0.8))
                     })
                     .when(custom.is_none(), |el| {
-                        el.child(Icon::new(IconName::Pipette).size(IconSize::Xs).color(fg.opacity(0.6)))
+                        el.child(
+                            Icon::new(IconName::Pipette)
+                                .size(IconSize::Xs)
+                                .color(fg.opacity(0.6)),
+                        )
                     }),
             );
         row = row.child(custom_dot);
@@ -263,9 +288,12 @@ impl BenCodeApp {
                     el.child(
                         ely_gpui_component::forms::ColorPicker::new("folder-color-picker", value)
                             .opaque()
-                            .on_change(crate::ui::app_callback::app_callback_with(cx, move |this, color: gpui::Hsla, cx| {
-                                this.preview_folder_custom_color(&target, to_hex(color), cx);
-                            })),
+                            .on_change(crate::ui::app_callback::app_callback_with(
+                                cx,
+                                move |this, color: gpui::Hsla, cx| {
+                                    this.preview_folder_custom_color(&target, to_hex(color), cx);
+                                },
+                            )),
                     )
                 })
                 .child(div().my_1().h(px(1.0)).bg(fg.opacity(0.1)))
@@ -281,7 +309,11 @@ impl BenCodeApp {
 
     /// MonoCode `SessionFiltersMenu`: Archived, Status, Time, Provider,
     /// and Clear filters once anything is set.
-    pub(crate) fn render_filter_menu(&self, position: Point<Pixels>, cx: &Context<Self>) -> AnyElement {
+    pub(crate) fn render_filter_menu(
+        &self,
+        position: Point<Pixels>,
+        cx: &Context<Self>,
+    ) -> AnyElement {
         let colors = &cx.theme().colors;
         let fg = colors.fg;
         let filters = self.sessions_ui.filters.clone();
@@ -394,24 +426,26 @@ impl BenCodeApp {
             }
         }
         if filters.is_active() {
-            body = body.child(div().my_1().h(px(1.0)).bg(fg.opacity(0.1))).child(
-                div()
-                    .id("filter-clear")
-                    .flex()
-                    .items_center()
-                    .h(px(28.0))
-                    .px_2()
-                    .rounded(px(8.0))
-                    .text_size(px(13.0))
-                    .line_height(relative(1.0))
-                    .text_color(fg.opacity(0.7))
-                    .cursor_pointer()
-                    .hover(move |s| s.bg(fg.opacity(0.05)).text_color(fg))
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.set_session_filters(SessionFilters::default(), cx)
-                    }))
-                    .child("Clear filters"),
-            );
+            body = body
+                .child(div().my_1().h(px(1.0)).bg(fg.opacity(0.1)))
+                .child(
+                    div()
+                        .id("filter-clear")
+                        .flex()
+                        .items_center()
+                        .h(px(28.0))
+                        .px_2()
+                        .rounded(px(8.0))
+                        .text_size(px(13.0))
+                        .line_height(relative(1.0))
+                        .text_color(fg.opacity(0.7))
+                        .cursor_pointer()
+                        .hover(move |s| s.bg(fg.opacity(0.05)).text_color(fg))
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.set_session_filters(SessionFilters::default(), cx)
+                        }))
+                        .child("Clear filters"),
+                );
         }
         let menu = popover_frame(cx)
             .id("filter-sessions-menu")
@@ -439,7 +473,9 @@ impl BenCodeApp {
 /// MonoCode `prettyCwd`: the home folder as `~`.
 pub(crate) fn pretty_path(path: &str) -> String {
     match std::env::var("HOME") {
-        Ok(home) if !home.is_empty() && path.starts_with(&home) => format!("~{}", &path[home.len()..]),
+        Ok(home) if !home.is_empty() && path.starts_with(&home) => {
+            format!("~{}", &path[home.len()..])
+        }
         _ => path.to_string(),
     }
 }

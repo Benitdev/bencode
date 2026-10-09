@@ -9,8 +9,8 @@ use std::process::Command;
 
 use serde::Deserialize;
 
-pub use crate::work_items::{Comment, Commit, Details, Kind, Label, Thread, WorkItem};
 use crate::work_items::Provider;
+pub use crate::work_items::{Comment, Commit, Details, Kind, Label, Thread, WorkItem};
 
 /// The `gh --json` fields listed for each kind.
 fn list_fields(kind: Kind) -> &'static str {

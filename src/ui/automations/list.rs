@@ -13,15 +13,21 @@ use crate::db::AutomationRow;
 use crate::harness::catalog;
 use crate::schedule::schedule_label;
 use crate::ui::mascot::pixel_sprite;
-use crate::ui::relative_time;
 use crate::ui::provider_icon::HarnessIcon;
+use crate::ui::relative_time;
 use crate::ui::scale::px;
 use crate::ui::scrollbar::Scrolled;
 
 impl BenCodeApp {
     pub(super) fn render_automation_list(&self, cx: &Context<Self>) -> impl IntoElement {
         let colors = &cx.theme().colors;
-        let query = self.automations.filter_input.read(cx).text().trim().to_lowercase();
+        let query = self
+            .automations
+            .filter_input
+            .read(cx)
+            .text()
+            .trim()
+            .to_lowercase();
         let now = now_ms();
         let cards: Vec<AnyElement> = self
             .automations
@@ -73,7 +79,11 @@ impl BenCodeApp {
                     .pr_2()
                     .border_b_1()
                     .border_color(colors.border)
-                    .child(Icon::new(IconName::Search).size(IconSize::Xs).color(colors.fg_muted))
+                    .child(
+                        Icon::new(IconName::Search)
+                            .size(IconSize::Xs)
+                            .color(colors.fg_muted),
+                    )
                     .child(
                         div()
                             .flex_1()
@@ -86,7 +96,9 @@ impl BenCodeApp {
                             .size(ControlSize::Sm)
                             .variant(ButtonVariant::Ghost)
                             .tooltip("New automation")
-                            .on_click(cx.listener(|this, _, _, cx| this.show_automation_picker(cx))),
+                            .on_click(
+                                cx.listener(|this, _, _, cx| this.show_automation_picker(cx)),
+                            ),
                     ),
             )
             .child(div().flex_1().min_h_0().child(list))
@@ -120,7 +132,12 @@ impl BenCodeApp {
                 self.project_color(&auto.cwd),
                 false,
             ))
-            .child(div().min_w_0().truncate().child(self.rail_project_label(&auto.cwd)))
+            .child(
+                div()
+                    .min_w_0()
+                    .truncate()
+                    .child(self.rail_project_label(&auto.cwd)),
+            )
             .when_some(auto.last_run_at, |el, at| {
                 el.child(div().flex_none().child("·"))
                     .child(div().flex_none().child(relative_time::since(at, now)))
@@ -154,7 +171,9 @@ impl BenCodeApp {
                     .px(px(10.0))
                     .py_2()
                     .cursor_pointer()
-                    .on_click(cx.listener(move |this, _, _, cx| this.select_automation(&open_id, cx)))
+                    .on_click(
+                        cx.listener(move |this, _, _, cx| this.select_automation(&open_id, cx)),
+                    )
                     .child(
                         div()
                             .flex()
@@ -179,10 +198,15 @@ impl BenCodeApp {
             )
             .child(
                 // Above the card, so a press on the switch does not open it.
-                div().absolute().top(px(6.0)).right(px(8.0)).occlude().child(
-                    Switch::new(("automation-card-enabled", ix), auto.enabled)
-                        .on_change(move |on, window, cx| toggle(&on, window, cx)),
-                ),
+                div()
+                    .absolute()
+                    .top(px(6.0))
+                    .right(px(8.0))
+                    .occlude()
+                    .child(
+                        Switch::new(("automation-card-enabled", ix), auto.enabled)
+                            .on_change(move |on, window, cx| toggle(&on, window, cx)),
+                    ),
             )
             .into_any_element()
     }

@@ -102,14 +102,17 @@ impl RailUi {
         let subscriptions = vec![
             // MonoCode: Enter commits the name and closes; leaving the field
             // commits it.
-            cx.subscribe(&name_input, |this: &mut BenCodeApp, _, event: &InputEvent, cx| match event {
-                InputEvent::Submit => {
-                    this.commit_rail_menu_name(cx);
-                    this.close_rail_menu(cx);
-                }
-                InputEvent::Blur => this.commit_rail_menu_name(cx),
-                _ => {}
-            }),
+            cx.subscribe(
+                &name_input,
+                |this: &mut BenCodeApp, _, event: &InputEvent, cx| match event {
+                    InputEvent::Submit => {
+                        this.commit_rail_menu_name(cx);
+                        this.close_rail_menu(cx);
+                    }
+                    InputEvent::Blur => this.commit_rail_menu_name(cx),
+                    _ => {}
+                },
+            ),
             // Esc in the name field closes the menu (MonoCode `Popover`
             // `onDismiss("escape")`), a submenu first.
             cx.intercept_keystrokes(move |event, window, cx| {

@@ -435,7 +435,11 @@ impl BenCodeApp {
         self.threads.remove(id);
         self.new_worktrees.remove(id);
         self.transcripts.remove(id);
-        if self.queue_editing.as_ref().is_some_and(|(sid, _)| sid == id) {
+        if self
+            .queue_editing
+            .as_ref()
+            .is_some_and(|(sid, _)| sid == id)
+        {
             self.queue_editing = None;
         }
     }

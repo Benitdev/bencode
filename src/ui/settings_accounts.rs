@@ -56,7 +56,12 @@ pub(crate) fn provider_header(
                 .child(
                     div()
                         .min_w_0()
-                        .child(div().text_size(px(13.0)).font_weight(FontWeight::MEDIUM).child(title))
+                        .child(
+                            div()
+                                .text_size(px(13.0))
+                                .font_weight(FontWeight::MEDIUM)
+                                .child(title),
+                        )
                         .child(
                             div()
                                 .mt(px(2.0))
@@ -86,23 +91,39 @@ impl BenCodeApp {
                     .disabled(refreshing)
                     .on_click(cx.listener(|this, _, _, cx| this.load_accounts_page(true, cx))),
             );
-        let error = self.accounts.error.clone().or_else(|| self.agy_accounts.error.clone());
+        let error = self
+            .accounts
+            .error
+            .clone()
+            .or_else(|| self.agy_accounts.error.clone());
         let group = match error {
             Some(error) => group.row(SettingsRow::new("Something went wrong").error(error)),
             None => group,
         };
         group
-            .rows(ACCOUNT_PROVIDERS.iter().map(|provider| self.render_provider_accounts(*provider, cx)))
+            .rows(
+                ACCOUNT_PROVIDERS
+                    .iter()
+                    .map(|provider| self.render_provider_accounts(*provider, cx)),
+            )
             .row(self.render_agy_accounts(cx))
     }
 
     /// One provider: its header with Add account, then its accounts.
-    fn render_provider_accounts(&self, provider: RateLimitProvider, cx: &Context<Self>) -> AnyElement {
+    fn render_provider_accounts(
+        &self,
+        provider: RateLimitProvider,
+        cx: &Context<Self>,
+    ) -> AnyElement {
         let colors = &cx.theme().colors;
         let fg = colors.fg;
         let accounts = self.provider_accounts(provider.id());
         let busy = self.accounts.working.is_some();
-        let editor = self.accounts.editor.as_ref().filter(|editor| editor.provider == provider);
+        let editor = self
+            .accounts
+            .editor
+            .as_ref()
+            .filter(|editor| editor.provider == provider);
         let adding = editor.is_some_and(|editor| editor.account_id.is_none());
 
         let header = provider_header(
@@ -110,16 +131,22 @@ impl BenCodeApp {
             provider.title(),
             plural_accounts(accounts.len()),
             fg,
-            Button::new(SharedString::from(format!("accounts-add-{}", provider.id())), "Add account")
-                .icon(IconName::Plus)
-                .variant(ButtonVariant::Outline)
-                .size(ControlSize::Sm)
-                .disabled(busy)
-                .on_click(cx.listener(move |this, _, _, cx| this.open_account_editor(provider, None, cx))),
+            Button::new(
+                SharedString::from(format!("accounts-add-{}", provider.id())),
+                "Add account",
+            )
+            .icon(IconName::Plus)
+            .variant(ButtonVariant::Outline)
+            .size(ControlSize::Sm)
+            .disabled(busy)
+            .on_click(
+                cx.listener(move |this, _, _, cx| this.open_account_editor(provider, None, cx)),
+            ),
         );
 
         let rows = accounts.iter().map(|account| {
-            let editing = editor.is_some_and(|editor| editor.account_id.as_deref() == Some(account.id.as_str()));
+            let editing = editor
+                .is_some_and(|editor| editor.account_id.as_deref() == Some(account.id.as_str()));
             if editing {
                 self.render_account_editor(provider.id(), false, cx)
             } else {
@@ -135,7 +162,9 @@ impl BenCodeApp {
                     .border_t_1()
                     .border_color(fg.opacity(0.05))
                     .children(rows)
-                    .when(adding, |el| el.child(self.render_account_editor(provider.id(), true, cx))),
+                    .when(adding, |el| {
+                        el.child(self.render_account_editor(provider.id(), true, cx))
+                    }),
             )
             .into_any_element()
     }
@@ -153,7 +182,10 @@ impl BenCodeApp {
         let now = crate::app::now_ms();
         let busy = self.accounts.working.is_some();
         let removing = self.accounts.working
-            == Some(Working::Removing(account.provider.clone(), account.id.clone()));
+            == Some(Working::Removing(
+                account.provider.clone(),
+                account.id.clone(),
+            ));
         let identity = self.accounts.identity(account);
         let usage = self.usage.cached(provider, &account.id);
         let id = format!("{}-{}", provider.id(), account.id);
@@ -162,15 +194,22 @@ impl BenCodeApp {
             .map(ProviderRateLimits::windows)
             .unwrap_or_default()
             .into_iter()
-            .map(|(_, window)| div().flex_none().w(px(METER_WIDTH)).child(usage_meter(window, now, colors)))
+            .map(|(_, window)| {
+                div()
+                    .flex_none()
+                    .w(px(METER_WIDTH))
+                    .child(usage_meter(window, now, colors))
+            })
             .collect();
-        let subtitle = identity.and_then(|identity| identity.subtitle()).unwrap_or_else(|| {
-            if account.is_default() {
-                "Provider CLI profile".into()
-            } else {
-                "Isolated profile".into()
-            }
-        });
+        let subtitle = identity
+            .and_then(|identity| identity.subtitle())
+            .unwrap_or_else(|| {
+                if account.is_default() {
+                    "Provider CLI profile".into()
+                } else {
+                    "Isolated profile".into()
+                }
+            });
 
         let rename_target = account.clone();
         let remove_target = account.clone();
@@ -202,21 +241,24 @@ impl BenCodeApp {
                                     .text_color(fg.opacity(0.85))
                                     .child(account.label.clone()),
                             )
-                            .when_some(identity.and_then(|identity| identity.organization_tag()), |el, tag| {
-                                el.child(
-                                    div()
-                                        .flex_none()
-                                        .max_w(px(128.0))
-                                        .truncate()
-                                        .px_1()
-                                        .rounded(px(4.0))
-                                        .bg(fg.opacity(0.07))
-                                        .text_size(px(9.0))
-                                        .line_height(px(16.0))
-                                        .text_color(fg.opacity(0.5))
-                                        .child(tag.to_string()),
-                                )
-                            }),
+                            .when_some(
+                                identity.and_then(|identity| identity.organization_tag()),
+                                |el, tag| {
+                                    el.child(
+                                        div()
+                                            .flex_none()
+                                            .max_w(px(128.0))
+                                            .truncate()
+                                            .px_1()
+                                            .rounded(px(4.0))
+                                            .bg(fg.opacity(0.07))
+                                            .text_size(px(9.0))
+                                            .line_height(px(16.0))
+                                            .text_color(fg.opacity(0.5))
+                                            .child(tag.to_string()),
+                                    )
+                                },
+                            ),
                     )
                     .child(
                         div()
@@ -226,8 +268,17 @@ impl BenCodeApp {
                             .min_w_0()
                             .mt(px(2.0))
                             .text_size(px(10.0))
-                            .child(account_status_label(&account_status(usage, now), colors).flex_none())
-                            .child(div().min_w_0().truncate().text_color(fg.opacity(0.3)).child(subtitle)),
+                            .child(
+                                account_status_label(&account_status(usage, now), colors)
+                                    .flex_none(),
+                            )
+                            .child(
+                                div()
+                                    .min_w_0()
+                                    .truncate()
+                                    .text_color(fg.opacity(0.3))
+                                    .child(subtitle),
+                            ),
                     ),
             )
             .child(div().flex().flex_none().gap_4().children(meters))
@@ -250,35 +301,48 @@ impl BenCodeApp {
                         )
                     })
                     .child(
-                        IconButton::new(SharedString::from(format!("account-rename-{id}")), IconName::Pencil)
-                            .variant(ButtonVariant::Ghost)
-                            .size(ControlSize::Sm)
-                            .tooltip("Rename account")
-                            .disabled(busy)
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.open_account_editor(provider, Some(&rename_target), cx);
-                            })),
+                        IconButton::new(
+                            SharedString::from(format!("account-rename-{id}")),
+                            IconName::Pencil,
+                        )
+                        .variant(ButtonVariant::Ghost)
+                        .size(ControlSize::Sm)
+                        .tooltip("Rename account")
+                        .disabled(busy)
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.open_account_editor(provider, Some(&rename_target), cx);
+                        })),
                     )
                     .when(!account.is_default(), |el| {
                         if removing {
                             return el.child(
-                                div().flex().size(px(28.0)).items_center().justify_center().child(spinning_icon(
-                                    SharedString::from(format!("account-removing-{id}")),
-                                    IconName::RefreshCw,
-                                    IconSize::Sm,
-                                    fg.opacity(0.5),
-                                )),
+                                div()
+                                    .flex()
+                                    .size(px(28.0))
+                                    .items_center()
+                                    .justify_center()
+                                    .child(spinning_icon(
+                                        SharedString::from(format!("account-removing-{id}")),
+                                        IconName::RefreshCw,
+                                        IconSize::Sm,
+                                        fg.opacity(0.5),
+                                    )),
                             );
                         }
                         el.child(
-                            IconButton::new(SharedString::from(format!("account-remove-{id}")), IconName::Trash2)
-                                .variant(ButtonVariant::Ghost)
-                                .size(ControlSize::Sm)
-                                .tooltip("Remove account")
-                                .disabled(busy)
-                                .on_click(cx.listener(move |this, _, _, cx| {
+                            IconButton::new(
+                                SharedString::from(format!("account-remove-{id}")),
+                                IconName::Trash2,
+                            )
+                            .variant(ButtonVariant::Ghost)
+                            .size(ControlSize::Sm)
+                            .tooltip("Remove account")
+                            .disabled(busy)
+                            .on_click(cx.listener(
+                                move |this, _, _, cx| {
                                     this.request_remove_account(remove_target.clone(), cx);
-                                })),
+                                },
+                            )),
                         )
                     }),
             )
@@ -287,7 +351,12 @@ impl BenCodeApp {
 
     /// MonoCode `ProviderAccountEditor`: the name field with Cancel and
     /// Save, or Sign in and add for a new account.
-    pub(crate) fn render_account_editor(&self, provider: &str, adding: bool, cx: &Context<Self>) -> AnyElement {
+    pub(crate) fn render_account_editor(
+        &self,
+        provider: &str,
+        adding: bool,
+        cx: &Context<Self>,
+    ) -> AnyElement {
         let colors = &cx.theme().colors;
         let fg = colors.fg;
         let working = self.accounts.working.is_some();
@@ -360,24 +429,28 @@ impl BenCodeApp {
              you switch accounts.",
             account.label
         );
-        let dialog = Dialog::new("account-remove", format!("Remove {} account", provider.title()), close)
-            .child(
-                div()
-                    .text_size(px(13.0))
-                    .line_height(relative(1.5))
-                    .text_color(cx.theme().colors.fg_muted)
-                    .child(message),
-            )
-            .action(|close| {
-                Button::new("account-remove-cancel", "Cancel")
-                    .variant(ButtonVariant::Ghost)
-                    .on_click(move |_, window, cx| close(window, cx))
-            })
-            .action(move |_| {
-                Button::new("account-remove-confirm", "Remove account")
-                    .variant(ButtonVariant::Danger)
-                    .on_click(move |_, window, cx| confirm(window, cx))
-            });
+        let dialog = Dialog::new(
+            "account-remove",
+            format!("Remove {} account", provider.title()),
+            close,
+        )
+        .child(
+            div()
+                .text_size(px(13.0))
+                .line_height(relative(1.5))
+                .text_color(cx.theme().colors.fg_muted)
+                .child(message),
+        )
+        .action(|close| {
+            Button::new("account-remove-cancel", "Cancel")
+                .variant(ButtonVariant::Ghost)
+                .on_click(move |_, window, cx| close(window, cx))
+        })
+        .action(move |_| {
+            Button::new("account-remove-confirm", "Remove account")
+                .variant(ButtonVariant::Danger)
+                .on_click(move |_, window, cx| confirm(window, cx))
+        });
         Some(dialog.into_any_element())
     }
 }

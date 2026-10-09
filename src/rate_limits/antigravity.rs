@@ -52,7 +52,11 @@ pub fn fetch(group: &str, now: i64) -> Fetched {
     if token.expires_at.is_some_and(|at| at <= now) {
         return Fetched::Error(TOKEN_EXPIRED.into());
     }
-    let project = match post(&token.access_token, "loadCodeAssist", r#"{"metadata":{"ideType":"ANTIGRAVITY"}}"#) {
+    let project = match post(
+        &token.access_token,
+        "loadCodeAssist",
+        r#"{"metadata":{"ideType":"ANTIGRAVITY"}}"#,
+    ) {
         Ok(body) => body
             .get("cloudaicompanionProject")
             .and_then(Value::as_str)
@@ -63,7 +67,11 @@ pub fn fetch(group: &str, now: i64) -> Fetched {
         Some(project) => serde_json::json!({ "project": project }),
         None => serde_json::json!({}),
     };
-    match post(&token.access_token, "retrieveUserQuotaSummary", &request.to_string()) {
+    match post(
+        &token.access_token,
+        "retrieveUserQuotaSummary",
+        &request.to_string(),
+    ) {
         Ok(body) => {
             let limits = parse_quota_summary(&body, group, now);
             if limits.has_windows() {
@@ -93,10 +101,15 @@ fn post(token: &str, method: &str, body: &str) -> Result<Value, String> {
         HTTP_TIMEOUT,
     );
     match response {
-        Ok(response) if (200..300).contains(&response.status) => serde_json::from_str(&response.body)
-            .map_err(|_| "Antigravity usage response was not JSON".to_string()),
+        Ok(response) if (200..300).contains(&response.status) => {
+            serde_json::from_str(&response.body)
+                .map_err(|_| "Antigravity usage response was not JSON".to_string())
+        }
         Ok(response) if response.status == 401 => Err(TOKEN_EXPIRED.into()),
-        Ok(response) => Err(format!("Antigravity usage request failed ({})", response.status)),
+        Ok(response) => Err(format!(
+            "Antigravity usage request failed ({})",
+            response.status
+        )),
         Err(error) => Err(format!("Antigravity usage request failed: {error:#}")),
     }
 }
@@ -124,7 +137,9 @@ fn parse_quota_summary(body: &Value, group: &str, now: i64) -> ProviderRateLimit
             .iter()
             .find(|bucket| bucket.get("window").and_then(Value::as_str) == Some(name))?;
         Some(RateLimitWindow {
-            used_percent: clamp_used_percent((1.0 - number_field(bucket, "remainingFraction")?) * 100.0),
+            used_percent: clamp_used_percent(
+                (1.0 - number_field(bucket, "remainingFraction")?) * 100.0,
+            ),
             window_minutes,
             resets_at: bucket.get("resetTime").and_then(parse_reset_timestamp),
         })
@@ -181,7 +196,10 @@ mod tests {
         for group in GROUPS {
             match fetch(group, now) {
                 Fetched::Limits(limits) => {
-                    assert!(limits.session.is_some() && limits.weekly.is_some(), "{limits:?}");
+                    assert!(
+                        limits.session.is_some() && limits.weekly.is_some(),
+                        "{limits:?}"
+                    );
                     println!("{group}: {limits:?}");
                 }
                 other => panic!("{group}: {other:?}"),

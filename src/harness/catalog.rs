@@ -438,9 +438,14 @@ pub fn display_label(harness_id: &str, key: &str) -> String {
         if !seeded_alias && let Some(hit) = available.iter().find(|m| native_of(m) == slug) {
             return hit.label.clone();
         }
-        if seeded_alias || (harness == HarnessKind::Claude && matches!(slug, "opus" | "sonnet" | "haiku")) {
+        if seeded_alias
+            || (harness == HarnessKind::Claude && matches!(slug, "opus" | "sonnet" | "haiku"))
+        {
             let mut chars = slug.chars();
-            let first = chars.next().map(|c| c.to_ascii_uppercase()).unwrap_or_default();
+            let first = chars
+                .next()
+                .map(|c| c.to_ascii_uppercase())
+                .unwrap_or_default();
             return format!("Claude {first}{}", chars.as_str());
         }
         let comparable = comparable_native(harness, slug);
@@ -478,7 +483,10 @@ pub fn display_label(harness_id: &str, key: &str) -> String {
         if harness == HarnessKind::Claude
             && let Some(rest) = key.strip_prefix("claude:")
             && rest.starts_with(|c: char| c.is_ascii_lowercase())
-            && rest.split('-').skip(1).any(|part| part.starts_with(|c: char| c.is_ascii_digit()))
+            && rest
+                .split('-')
+                .skip(1)
+                .any(|part| part.starts_with(|c: char| c.is_ascii_digit()))
         {
             return format!("claude-{rest}");
         }
@@ -489,7 +497,10 @@ pub fn display_label(harness_id: &str, key: &str) -> String {
         if native.is_empty() {
             let id = harness.id();
             let mut chars = id.chars();
-            let first = chars.next().map(|c| c.to_ascii_uppercase()).unwrap_or_default();
+            let first = chars
+                .next()
+                .map(|c| c.to_ascii_uppercase())
+                .unwrap_or_default();
             return format!("{first}{}", chars.as_str());
         }
         return prettify_slug(native);
@@ -501,7 +512,10 @@ pub fn display_label(harness_id: &str, key: &str) -> String {
 /// `GPT-5.4-Codex`.
 fn prettify_slug(native: &str) -> String {
     let mut out = String::with_capacity(native.len());
-    let rest = if native.get(..3).is_some_and(|p| p.eq_ignore_ascii_case("gpt")) {
+    let rest = if native
+        .get(..3)
+        .is_some_and(|p| p.eq_ignore_ascii_case("gpt"))
+    {
         out.push_str("GPT");
         &native[3..]
     } else {
@@ -565,11 +579,20 @@ mod tests {
 
     #[test]
     fn card_labels_follow_monocode_resolve_model() {
-        assert_eq!(display_label("antigravity", "antigravity:gemini-3.8-flash-high"), "Gemini 3.8 Flash (High)");
+        assert_eq!(
+            display_label("antigravity", "antigravity:gemini-3.8-flash-high"),
+            "Gemini 3.8 Flash (High)"
+        );
         assert_eq!(display_label("claude", "claude:opus"), "Claude Opus");
         assert_eq!(display_label("claude", "claude:haiku"), "Claude Haiku");
-        assert_eq!(display_label("claude", "claude:opus-9-1"), "claude-opus-9-1");
-        assert_eq!(display_label("codex", "codex:gpt-5.4-codex"), "GPT-5.4-Codex");
+        assert_eq!(
+            display_label("claude", "claude:opus-9-1"),
+            "claude-opus-9-1"
+        );
+        assert_eq!(
+            display_label("codex", "codex:gpt-5.4-codex"),
+            "GPT-5.4-Codex"
+        );
         assert_eq!(display_label("codex", ""), "Codex");
         assert_eq!(prettify_slug("o3-mini"), "o3-Mini");
         assert_eq!(prettify_slug("éé"), "éé", "multibyte ids never panic");

@@ -26,7 +26,11 @@ pub fn run(args: &[&str]) -> Result<Output, String> {
 pub fn run_with_input(args: &[&str], input: Option<&str>) -> Result<Output, String> {
     let mut child = Command::new("security")
         .args(args)
-        .stdin(if input.is_some() { Stdio::piped() } else { Stdio::null() })
+        .stdin(if input.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()

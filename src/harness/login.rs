@@ -30,7 +30,9 @@ fn login_args(harness: HarnessKind) -> Option<&'static [&'static str]> {
 pub fn login(harness: HarnessKind, account: Option<&AccountProfile>) -> Result<(), String> {
     let title = harness.label();
     let (Some(args), Some(program)) = (login_args(harness), resolve(harness)) else {
-        return Err(format!("{title} does not offer a single browser sign-in flow."));
+        return Err(format!(
+            "{title} does not offer a single browser sign-in flow."
+        ));
     };
     let home = std::env::var_os("HOME").map_or_else(|| PathBuf::from("/"), PathBuf::from);
     let mut command = Command::new(program);
@@ -50,7 +52,10 @@ pub fn login(harness: HarnessKind, account: Option<&AccountProfile>) -> Result<(
     let stderr = child.stderr.take();
     let last_line = std::thread::spawn(move || {
         let mut last = String::new();
-        for line in stderr.into_iter().flat_map(|stderr| BufReader::new(stderr).lines()) {
+        for line in stderr
+            .into_iter()
+            .flat_map(|stderr| BufReader::new(stderr).lines())
+        {
             match line {
                 Ok(line) if !line.trim().is_empty() => last = line.trim().to_string(),
                 Ok(_) => {}
@@ -128,11 +133,17 @@ mod tests {
 
     #[test]
     fn only_claude_and_codex_sign_in_from_one_command() {
-        assert_eq!(login_args(HarnessKind::Claude), Some(&["auth", "login"][..]));
+        assert_eq!(
+            login_args(HarnessKind::Claude),
+            Some(&["auth", "login"][..])
+        );
         assert_eq!(login_args(HarnessKind::Codex), Some(&["login"][..]));
         assert!(login_args(HarnessKind::OpenCode).is_none());
         let refused = login(HarnessKind::OpenCode, None).unwrap_err();
-        assert_eq!(refused, "OpenCode does not offer a single browser sign-in flow.");
+        assert_eq!(
+            refused,
+            "OpenCode does not offer a single browser sign-in flow."
+        );
     }
 
     #[test]

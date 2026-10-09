@@ -36,7 +36,11 @@ impl BenCodeApp {
         let locked = self.session_undo_locked(session_id);
         let can_undo = !locked && files.iter().all(|f| f.undoable);
         let acting = review.acting;
-        let shown = if review.expanded { count } else { count.min(COLLAPSED_FILES) };
+        let shown = if review.expanded {
+            count
+        } else {
+            count.min(COLLAPSED_FILES)
+        };
         let hidden = count - shown;
 
         // `h-7 rounded-md px-2.5 text-[11px] text-content/50
@@ -100,7 +104,12 @@ impl BenCodeApp {
                     .justify_center()
                     .rounded(px(8.0))
                     .bg(fg.opacity(0.08))
-                    .child(ExtraIcon::FileDiff.icon().size(IconSize::Md).color(fg.opacity(0.55))),
+                    .child(
+                        ExtraIcon::FileDiff
+                            .icon()
+                            .size(IconSize::Md)
+                            .color(fg.opacity(0.55)),
+                    ),
             )
             .child(
                 div()
@@ -134,17 +143,15 @@ impl BenCodeApp {
                     .flex_none()
                     .items_center()
                     .gap_0p5()
-                    .child(
-                        button("undo", "Undo", undo_tip, can_undo && !acting).when(
-                            can_undo && !acting,
-                            |el| {
-                                el.on_click(cx.listener(move |this, _, _, cx| {
-                                    this.checkpoints.confirm_undo = Some(undo_id.clone());
-                                    cx.notify();
-                                }))
-                            },
-                        ),
-                    )
+                    .child(button("undo", "Undo", undo_tip, can_undo && !acting).when(
+                        can_undo && !acting,
+                        |el| {
+                            el.on_click(cx.listener(move |this, _, _, cx| {
+                                this.checkpoints.confirm_undo = Some(undo_id.clone());
+                                cx.notify();
+                            }))
+                        },
+                    ))
                     .child(
                         button(
                             "keep",
@@ -159,9 +166,9 @@ impl BenCodeApp {
                         }),
                     )
                     .child(
-                        button("open", "Review", "Review changes", true).on_click(cx.listener(move |this, _, _, cx| {
-                                this.open_session_changes(&review_id, None, cx)
-                            })),
+                        button("open", "Review", "Review changes", true).on_click(cx.listener(
+                            move |this, _, _, cx| this.open_session_changes(&review_id, None, cx),
+                        )),
                     ),
             );
 
@@ -175,7 +182,9 @@ impl BenCodeApp {
             .py_1()
             .border_t_1()
             .border_color(fg.opacity(0.07))
-            .when(review.expanded, |el| el.max_h(px(256.0)).overflow_y_scroll())
+            .when(review.expanded, |el| {
+                el.max_h(px(256.0)).overflow_y_scroll()
+            })
             .children(rows);
 
         div()
@@ -258,7 +267,10 @@ impl BenCodeApp {
         let icon = crate::ui::file_tree::resolve_entry_icon(name, false, false);
         let (open_id, focus) = (session_id.to_string(), file.relative.clone());
         div()
-            .id(SharedString::from(format!("review-file-{session_id}-{}", file.relative)))
+            .id(SharedString::from(format!(
+                "review-file-{session_id}-{}",
+                file.relative
+            )))
             .flex()
             .flex_none()
             .min_w_0()
@@ -290,8 +302,16 @@ impl BenCodeApp {
                     .gap_2()
                     .text_size(px(11.0))
                     .font_weight(FontWeight::SEMIBOLD)
-                    .child(div().text_color(diff.add_fg).child(format!("+{}", file.additions)))
-                    .child(div().text_color(diff.del_fg).child(format!("-{}", file.deletions)))
+                    .child(
+                        div()
+                            .text_color(diff.add_fg)
+                            .child(format!("+{}", file.additions)),
+                    )
+                    .child(
+                        div()
+                            .text_color(diff.del_fg)
+                            .child(format!("-{}", file.deletions)),
+                    )
             } else {
                 div()
                     .flex_none()

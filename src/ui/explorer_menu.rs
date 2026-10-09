@@ -269,7 +269,11 @@ pub fn render_menu_styled(
         let highlighted = ix == active;
         let red_300: Hsla = rgb(RED_300).into();
         let red_500: Hsla = rgb(RED_500).into();
-        let hover_bg = if item.danger { red_500.opacity(0.15) } else { look.hover };
+        let hover_bg = if item.danger {
+            red_500.opacity(0.15)
+        } else {
+            look.hover
+        };
         let (hover, pick) = (on_hover.clone(), on_pick.clone());
         div()
             .id(SharedString::from(format!("{id}-row-{ix}")))
@@ -322,9 +326,15 @@ pub fn render_menu_styled(
                 el.cursor_pointer()
                     .on_click(move |_, window, cx| pick(ix, window, cx))
             })
-            .when_some(item.tooltip.clone(), |el, tip| el.tooltip(Tooltip::text(tip)))
+            .when_some(item.tooltip.clone(), |el, tip| {
+                el.tooltip(Tooltip::text(tip))
+            })
             .children(item.icon.map(|icon| {
-                let color = if item.disabled { look.disabled } else { colors.fg };
+                let color = if item.disabled {
+                    look.disabled
+                } else {
+                    colors.fg
+                };
                 if item.spin {
                     crate::ui::git_changes_panel::spinning_icon(
                         SharedString::from(format!("{id}-icon-{ix}")),
@@ -333,7 +343,10 @@ pub fn render_menu_styled(
                         color,
                     )
                 } else {
-                    Icon::new(icon).size(IconSize::Sm).color(color).into_any_element()
+                    Icon::new(icon)
+                        .size(IconSize::Sm)
+                        .color(color)
+                        .into_any_element()
                 }
             }))
             .child(
@@ -353,11 +366,19 @@ pub fn render_menu_styled(
             )
             .when(item.checked, |el| {
                 // `Check size-3.5`
-                el.child(Icon::new(IconName::Check).size(IconSize::Sm).color(colors.fg))
+                el.child(
+                    Icon::new(IconName::Check)
+                        .size(IconSize::Sm)
+                        .color(colors.fg),
+                )
             })
             .when(item.submenu, |el| {
                 // `ChevronRight size-3.5 shrink-0 text-content/50`
-                el.child(Icon::new(IconName::ChevronRight).size(IconSize::Sm).color(colors.fg.opacity(0.5)))
+                el.child(
+                    Icon::new(IconName::ChevronRight)
+                        .size(IconSize::Sm)
+                        .color(colors.fg.opacity(0.5)),
+                )
             })
             .children(item.shortcut.clone().filter(|_| !item.checked).map(|keys| {
                 // `shrink-0 text-[11px] text-content/40`
@@ -425,7 +446,9 @@ pub fn render_menu_styled(
     };
     let anchored = match place {
         MenuPlace::At(position) => anchored().position(position),
-        MenuPlace::UnderRight(position) => anchored().anchor(gpui::Anchor::TopRight).position(position),
+        MenuPlace::UnderRight(position) => {
+            anchored().anchor(gpui::Anchor::TopRight).position(position)
+        }
         MenuPlace::Above => anchored()
             .anchor(gpui::Anchor::BottomLeft)
             .offset(gpui::point(px(0.0), px(-4.0))),

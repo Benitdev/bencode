@@ -173,9 +173,11 @@ fn keymap() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-a", TranscriptSelectAll, Some("Transcript")),
         KeyBinding::new("escape", TranscriptClearSelection, Some("Transcript")),
     ];
-    keys.extend((0..8).map(|slot| {
-        KeyBinding::new(&format!("cmd-{}", slot + 1), ActivateTab(Some(slot)), None)
-    }));
+    keys.extend(
+        (0..8).map(|slot| {
+            KeyBinding::new(&format!("cmd-{}", slot + 1), ActivateTab(Some(slot)), None)
+        }),
+    );
     keys.push(KeyBinding::new("cmd-9", ActivateTab(None), None));
     keys
 }
@@ -311,7 +313,13 @@ impl BenCodeApp {
     /// MonoCode `onNavigateSessionList`: the thread above or below in the
     /// sidebar's order, in a tab of its own or (`in_tab`) in place of the
     /// focused pane.
-    fn step_session(&mut self, delta: isize, in_tab: bool, window: &Window, cx: &mut Context<Self>) {
+    fn step_session(
+        &mut self,
+        delta: isize,
+        in_tab: bool,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) {
         let Some(current) = self.keyboard_session(window, cx) else {
             return;
         };
@@ -336,7 +344,9 @@ impl BenCodeApp {
             .iter()
             .find(|path| crate::app::same_project_path(path, &self.current_cwd));
         let next = adjacent_id(&order, current.map(String::as_str), delta);
-        if let Some(next) = next.filter(|next| !crate::app::same_project_path(next, &self.current_cwd)) {
+        if let Some(next) =
+            next.filter(|next| !crate::app::same_project_path(next, &self.current_cwd))
+        {
             self.switch_project(next, cx);
         }
     }
@@ -344,7 +354,10 @@ impl BenCodeApp {
     /// MonoCode's Escape on a working thread: stops its turn. Only reached
     /// when nothing else on screen wanted the key.
     fn stop_focused_turn(&mut self, window: &Window, cx: &mut Context<Self>) -> bool {
-        match self.keyboard_session(window, cx).filter(|id| self.is_agent_running_in(id)) {
+        match self
+            .keyboard_session(window, cx)
+            .filter(|id| self.is_agent_running_in(id))
+        {
             Some(id) => {
                 self.stop_agent(&id, cx);
                 true
@@ -380,9 +393,9 @@ impl BenCodeApp {
             this.open_settings(cx);
         }))
         .on_action(cx.listener(|this, _: &Quit, _, cx| this.request_quit(cx)))
-        .on_action(cx.listener(|this, _: &CheckForUpdates, window, cx| {
-            this.check_for_updates(window, cx)
-        }))
+        .on_action(
+            cx.listener(|this, _: &CheckForUpdates, window, cx| this.check_for_updates(window, cx)),
+        )
         .on_action(cx.listener(|this, _: &Search, _, cx| this.open_search_modal(cx)))
         .on_action(cx.listener(|this, _: &ZoomIn, _, cx| this.step_ui_scale(1.0, cx)))
         .on_action(cx.listener(|this, _: &ZoomOut, _, cx| this.step_ui_scale(-1.0, cx)))
@@ -416,20 +429,22 @@ impl BenCodeApp {
         .on_action(cx.listener(|this, _: &FindInConversation, _, cx| this.open_find(cx)))
         .on_action(cx.listener(|this, _: &FindInProject, _, cx| this.open_project_search(cx)))
         .on_action(cx.listener(|this, _: &GoToFile, _, cx| this.open_quick_open(cx)))
-        .on_action(cx.listener(|this, _: &RenameSelectedSession, _, cx| {
-            this.rename_selected_session(cx)
-        }))
-        .on_action(cx.listener(|this, _: &DeleteSelectedSessions, _, cx| {
-            this.delete_selected_sessions(cx)
-        }))
+        .on_action(
+            cx.listener(|this, _: &RenameSelectedSession, _, cx| this.rename_selected_session(cx)),
+        )
+        .on_action(
+            cx.listener(|this, _: &DeleteSelectedSessions, _, cx| {
+                this.delete_selected_sessions(cx)
+            }),
+        )
         .on_action(cx.listener(|this, _: &TreeCopyPath, _, cx| this.tree_copy_path(cx)))
         .on_action(cx.listener(|this, _: &TreeCopy, _, cx| this.tree_clip(false, cx)))
-        .on_action(cx.listener(|this, _: &TranscriptCopy, _, cx| {
-            this.copy_transcript_selection(cx)
-        }))
-        .on_action(cx.listener(|this, _: &TranscriptSelectAll, _, cx| {
-            this.select_all_transcript(cx)
-        }))
+        .on_action(
+            cx.listener(|this, _: &TranscriptCopy, _, cx| this.copy_transcript_selection(cx)),
+        )
+        .on_action(
+            cx.listener(|this, _: &TranscriptSelectAll, _, cx| this.select_all_transcript(cx)),
+        )
         .on_action(cx.listener(|this, _: &TranscriptClearSelection, _, cx| {
             // Nothing selected: Esc does what it does elsewhere.
             if !this.clear_transcript_selection(cx) {
@@ -449,11 +464,15 @@ impl BenCodeApp {
         .on_action(cx.listener(|this, _: &FindPrevious, _, cx| this.step_find(-1, cx)))
         .on_action(cx.listener(|this, _: &ToggleWorkspaceMode, _, cx| this.toggle_new_worktree(cx)))
         .on_action(cx.listener(|this, _: &InboxNext, _, cx| this.step_inbox_selection(1, cx)))
-        .on_action(cx.listener(|this, _: &OutlineNext, window, cx| this.step_outline(1, window, cx)))
-        .on_action(cx.listener(|this, _: &OutlinePrevious, window, cx| {
-            this.step_outline(-1, window, cx)
-        }))
-        .on_action(cx.listener(|this, _: &OutlineJump, window, cx| this.open_outline_cursor(window, cx)))
+        .on_action(
+            cx.listener(|this, _: &OutlineNext, window, cx| this.step_outline(1, window, cx)),
+        )
+        .on_action(
+            cx.listener(|this, _: &OutlinePrevious, window, cx| this.step_outline(-1, window, cx)),
+        )
+        .on_action(
+            cx.listener(|this, _: &OutlineJump, window, cx| this.open_outline_cursor(window, cx)),
+        )
         .on_action(cx.listener(|this, _: &InboxPrevious, _, cx| this.step_inbox_selection(-1, cx)))
         .on_action(cx.listener(|this, _: &CloseView, window, cx| {
             if this.surface.is_some() {
@@ -508,9 +527,11 @@ impl BenCodeApp {
         .on_action(cx.listener(|this, _: &PreviousSession, window, cx| {
             this.step_session(-1, false, window, cx)
         }))
-        .on_action(cx.listener(|this, _: &NextSession, window, cx| {
-            this.step_session(1, false, window, cx)
-        }))
+        .on_action(
+            cx.listener(|this, _: &NextSession, window, cx| {
+                this.step_session(1, false, window, cx)
+            }),
+        )
         .on_action(cx.listener(|this, _: &PreviousSessionInTab, window, cx| {
             this.step_session(-1, true, window, cx)
         }))
@@ -558,7 +579,10 @@ mod tests {
         for binding in &keys {
             let chord: Vec<String> = binding.keystrokes().iter().map(|k| k.to_string()).collect();
             let context = binding.predicate().map(|p| format!("{p:?}"));
-            assert!(seen.insert((chord.clone(), context)), "{chord:?} bound twice");
+            assert!(
+                seen.insert((chord.clone(), context)),
+                "{chord:?} bound twice"
+            );
         }
     }
 }

@@ -22,13 +22,13 @@ use gpui::{
 };
 
 use crate::app::{BenCodeApp, NEW_SESSION_TITLE};
-use crate::ui::scale::px;
-use crate::ui::window_drag::claim_press;
 use crate::ui::HarnessIcon;
 use crate::ui::drag_drop::DraggedPane;
 use crate::ui::explorer_menu::{self, MenuAction, MenuEntry};
 use crate::ui::layout::WorkspaceTab;
+use crate::ui::scale::px;
 use crate::ui::sidebar::SessionDialog;
+use crate::ui::window_drag::claim_press;
 use tabs::{
     CloseMany, TitleTab, closable, close_ids, next_unseen_finished, strip_overflow, tab_copy,
 };
@@ -594,7 +594,7 @@ impl BenCodeApp {
                     .when(ix > 0, |el| el.ml(px(-2.0)));
                 if tab.busy.contains(harness) {
                     slot.child(crate::ui::spinner::terminal_spinner(colors.accent, cx))
-                    .into_any_element()
+                        .into_any_element()
                 } else if tab.done.contains(harness) {
                     slot.child(
                         Icon::new(IconName::CircleCheck)
@@ -799,7 +799,9 @@ impl BenCodeApp {
             let count = self.deck_tabs().len();
             let width = self.title_tab_width(count);
             let scroll = crate::ui::scale::logical(self.title_strip.scroll.offset().x);
-            let x = crate::ui::scale::logical(event.event.position.x - event.bounds.origin.x) - 6.0 - scroll;
+            let x = crate::ui::scale::logical(event.event.position.x - event.bounds.origin.x)
+                - 6.0
+                - scroll;
             (id, tabs::slot_at(x, width, TAB_GAP, count))
         });
         if next != self.title_strip.reorder {
@@ -940,7 +942,8 @@ impl BenCodeApp {
                         let visible = crate::ui::scale::logical(scroll.bounds().size.width);
                         let step = (visible * 0.6).max(112.0) * if left { 1.0 } else { -1.0 };
                         let max = crate::ui::scale::logical(scroll.max_offset().x);
-                        let x = (crate::ui::scale::logical(scroll.offset().x) + step).clamp(-max, 0.0);
+                        let x =
+                            (crate::ui::scale::logical(scroll.offset().x) + step).clamp(-max, 0.0);
                         scroll.set_offset(point(px(x), px(0.0)));
                         cx.notify();
                     }))
@@ -999,10 +1002,15 @@ impl BenCodeApp {
                 let delta = event.delta.pixel_delta(px(16.0));
                 let scroll = &this.title_strip.scroll;
                 let max = crate::ui::scale::logical(scroll.max_offset().x);
-                if max <= 0.0 || crate::ui::scale::logical(delta.x) != 0.0 || crate::ui::scale::logical(delta.y) == 0.0 {
+                if max <= 0.0
+                    || crate::ui::scale::logical(delta.x) != 0.0
+                    || crate::ui::scale::logical(delta.y) == 0.0
+                {
                     return;
                 }
-                let x = (crate::ui::scale::logical(scroll.offset().x) + crate::ui::scale::logical(delta.y)).clamp(-max, 0.0);
+                let x = (crate::ui::scale::logical(scroll.offset().x)
+                    + crate::ui::scale::logical(delta.y))
+                .clamp(-max, 0.0);
                 scroll.set_offset(point(px(x), px(0.0)));
                 cx.notify();
             }))
@@ -1070,7 +1078,8 @@ impl BenCodeApp {
             .gap_0p5()
             .when(rail_hidden || sidebar_hidden, |el| el.px_1p5())
             .when(self.compact_title_bar(), |el| {
-                el.pl(gpui::px(70.0)).children(self.history_buttons("titlebar", cx))
+                el.pl(gpui::px(70.0))
+                    .children(self.history_buttons("titlebar", cx))
             })
             .when(
                 rail_hidden && sidebar_hidden && cfg!(target_os = "macos"),
@@ -1116,7 +1125,12 @@ impl BenCodeApp {
                 .variant(ButtonVariant::Ghost)
                 .tooltip(tip)
         };
-        let row = claim_press(div()).flex().flex_none().items_center().gap_0p5().px_2();
+        let row = claim_press(div())
+            .flex()
+            .flex_none()
+            .items_center()
+            .gap_0p5()
+            .px_2();
         Some(
             if projectless {
                 row.child(

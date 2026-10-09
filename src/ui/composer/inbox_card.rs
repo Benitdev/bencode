@@ -15,8 +15,8 @@ use crate::ui::scale::px;
 use super::cards::card_frame;
 use crate::app::BenCodeApp;
 use crate::github::{Kind, Label, WorkItem};
-use crate::work_items::Provider;
 use crate::ui::attachment_chip::OnRemove;
+use crate::work_items::Provider;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct InboxCard {
@@ -287,7 +287,13 @@ mod tests {
             card.prompt,
             "Work on this Backlog issue:\n\nWEB-42 Login fails\nhttps://acme.backlog.com/view/WEB-42\n\nDescription:\nSteps…"
         );
-        assert_eq!(InboxCard::from_item_with_body(&item, Some(" ")).prompt.lines().count(), 4);
+        assert_eq!(
+            InboxCard::from_item_with_body(&item, Some(" "))
+                .prompt
+                .lines()
+                .count(),
+            4
+        );
     }
 
     #[test]

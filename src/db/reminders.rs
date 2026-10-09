@@ -83,7 +83,11 @@ impl AppDb {
 
     /// MonoCode `reminder_clear`; with `expected_due_at`, only that
     /// occurrence goes (an old alert cannot clear a newer reminder).
-    pub fn clear_reminders(&self, session_ids: &[String], expected_due_at: Option<i64>) -> Result<()> {
+    pub fn clear_reminders(
+        &self,
+        session_ids: &[String],
+        expected_due_at: Option<i64>,
+    ) -> Result<()> {
         let tx = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
         for id in session_ids {
             tx.execute(
@@ -151,15 +155,23 @@ mod tests {
     fn reminders_set_reschedule_claim_and_clear() {
         let db = db_with(&["a", "b"]);
         assert!(db.set_reminders(&["a".into()], 100, 200).is_err(), "past");
-        db.set_reminders(&["a".into(), "b".into()], 500, 200).unwrap();
+        db.set_reminders(&["a".into(), "b".into()], 500, 200)
+            .unwrap();
         assert_eq!(db.list_reminders().unwrap().len(), 2);
         let claimed = db.take_due_reminders(600).unwrap();
         assert_eq!(claimed.len(), 2);
-        assert!(db.take_due_reminders(700).unwrap().is_empty(), "claimed once");
+        assert!(
+            db.take_due_reminders(700).unwrap().is_empty(),
+            "claimed once"
+        );
         db.set_reminders(&["a".into()], 900, 700).unwrap();
         assert_eq!(db.list_reminders().unwrap()[1].fired_at, None, "re-armed");
         db.clear_reminders(&["a".into()], Some(500)).unwrap();
-        assert_eq!(db.list_reminders().unwrap().len(), 2, "stale clear is ignored");
+        assert_eq!(
+            db.list_reminders().unwrap().len(),
+            2,
+            "stale clear is ignored"
+        );
         db.clear_reminders(&["a".into(), "b".into()], None).unwrap();
         assert!(db.list_reminders().unwrap().is_empty());
     }
@@ -174,7 +186,9 @@ mod tests {
             ..Default::default()
         };
         db.upsert_session(&blank).unwrap();
-        let err = db.set_reminders(&["a".into(), "blank".into()], 500, 1).unwrap_err();
+        let err = db
+            .set_reminders(&["a".into(), "blank".into()], 500, 1)
+            .unwrap_err();
         assert!(err.to_string().contains("must be saved"));
         assert!(db.list_reminders().unwrap().is_empty(), "all or nothing");
     }

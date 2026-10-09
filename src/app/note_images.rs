@@ -24,7 +24,10 @@ pub struct NoteImage {
 
 /// Ids land in a path: letters, digits, `-` and `_` only.
 fn valid_id(id: &str) -> bool {
-    !id.is_empty() && id.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_'))
+    !id.is_empty()
+        && id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_'))
 }
 
 /// MonoCode `note_image_names`: the file's own name for the alt text, and
@@ -39,7 +42,13 @@ fn image_names(source: &Path) -> Option<(String, String)> {
         .file_stem()?
         .to_string_lossy()
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || matches!(c, '-' | '_') { c } else { '-' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '-' | '_') {
+                c
+            } else {
+                '-'
+            }
+        })
         .take(80)
         .collect();
     let stem = match stem.trim_matches('-') {
@@ -68,7 +77,10 @@ fn save_note_image(data_dir: &Path, note_id: &str, source: &Path) -> Result<Note
         bail!("Not a file");
     }
     if meta.len() > IMAGE_MAX_BYTES {
-        bail!("Image is too large (maximum {} MB).", IMAGE_MAX_BYTES / 1024 / 1024);
+        bail!(
+            "Image is too large (maximum {} MB).",
+            IMAGE_MAX_BYTES / 1024 / 1024
+        );
     }
     let dir = data_dir.join(NOTE_ASSET_DIR).join(note_id);
     std::fs::create_dir_all(&dir).with_context(|| dir.display().to_string())?;
@@ -87,8 +99,15 @@ fn save_note_image(data_dir: &Path, note_id: &str, source: &Path) -> Result<Note
 
 /// MonoCode `saveNoteImageAttachments`: stores the images among `paths`.
 /// An error when none of them could be added.
-pub fn save_note_images(data_dir: &Path, note_id: &str, paths: &[PathBuf]) -> Result<Vec<NoteImage>> {
-    let images: Vec<&PathBuf> = paths.iter().filter(|path| image_names(path).is_some()).collect();
+pub fn save_note_images(
+    data_dir: &Path,
+    note_id: &str,
+    paths: &[PathBuf],
+) -> Result<Vec<NoteImage>> {
+    let images: Vec<&PathBuf> = paths
+        .iter()
+        .filter(|path| image_names(path).is_some())
+        .collect();
     if images.is_empty() {
         bail!(NOT_AN_IMAGE);
     }
@@ -123,7 +142,9 @@ pub fn remove_note_images(data_dir: &Path, note_id: &str) -> Result<()> {
 pub fn note_image_file(data_dir: &Path, markdown_path: &str) -> Option<PathBuf> {
     let relative = Path::new(markdown_path.strip_prefix('/')?);
     let parts: Vec<Component> = relative.components().collect();
-    let plain = parts.iter().all(|part| matches!(part, Component::Normal(_)));
+    let plain = parts
+        .iter()
+        .all(|part| matches!(part, Component::Normal(_)));
     let ours = parts.first() == Some(&Component::Normal(NOTE_ASSET_DIR.as_ref()));
     (plain && ours && parts.len() == 3).then(|| data_dir.join(relative))
 }
@@ -179,7 +200,11 @@ pub fn insert_images_markdown(
         return (value.to_string(), from);
     }
     let (before, after) = (&value[..from], &value[to..]);
-    let block = images.iter().map(image_markdown).collect::<Vec<_>>().join("\n\n");
+    let block = images
+        .iter()
+        .map(image_markdown)
+        .collect::<Vec<_>>()
+        .join("\n\n");
     let head = format!("{before}{}{block}", padding(before, true));
     let cursor = head.len() + padding(after, false).len();
     (format!("{head}{}{after}", padding(after, false)), cursor)
@@ -190,7 +215,8 @@ mod tests {
     use super::*;
 
     fn temp_dir(tag: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("bencode-note-images-{tag}-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("bencode-note-images-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir
@@ -206,8 +232,14 @@ mod tests {
     #[test]
     fn names_are_safe_and_keep_supported_extensions() {
         let names = image_names(Path::new("/tmp/My shot (1).PNG")).unwrap();
-        assert_eq!(names, ("My shot (1).PNG".to_string(), "My-shot--1.png".to_string()));
-        assert_eq!(image_names(Path::new("/tmp/---.jpg")).unwrap().1, "image.jpg");
+        assert_eq!(
+            names,
+            ("My shot (1).PNG".to_string(), "My-shot--1.png".to_string())
+        );
+        assert_eq!(
+            image_names(Path::new("/tmp/---.jpg")).unwrap().1,
+            "image.jpg"
+        );
         assert_eq!(image_names(Path::new("/tmp/notes.txt")), None);
         assert_eq!(image_names(Path::new("/tmp/noext")), None);
     }
@@ -260,7 +292,10 @@ mod tests {
     fn images_land_as_a_block_of_their_own() {
         let one = [image("a.png")];
         let md = "![a.png](/note-assets/n1/a.png)";
-        assert_eq!(insert_images_markdown("", 0, 0, &one), (md.to_string(), md.len()));
+        assert_eq!(
+            insert_images_markdown("", 0, 0, &one),
+            (md.to_string(), md.len())
+        );
         let (value, cursor) = insert_images_markdown("before after", 7, 7, &one);
         assert_eq!(value, format!("before \n\n{md}\n\nafter"));
         assert_eq!(&value[cursor..], "after");
@@ -269,7 +304,10 @@ mod tests {
         assert_eq!(value, format!("top\n\n{md}\n\nend"));
         let two = [image("a.png"), image("b [1].png")];
         let (value, _) = insert_images_markdown("x", 99, 99, &two);
-        assert!(value.ends_with("\n\n![b \\[1\\].png](/note-assets/n1/b [1].png)"), "{value}");
+        assert!(
+            value.ends_with("\n\n![b \\[1\\].png](/note-assets/n1/b [1].png)"),
+            "{value}"
+        );
         assert_eq!(insert_images_markdown("é", 1, 1, &[]), ("é".to_string(), 0));
     }
 }

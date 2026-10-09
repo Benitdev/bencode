@@ -8,8 +8,8 @@ mod fs;
 mod icons;
 mod menu;
 mod name;
-mod search;
 mod ops;
+mod search;
 mod tints;
 
 use std::collections::{HashMap, HashSet};
@@ -281,7 +281,8 @@ impl BenCodeApp {
         if self.file_tree.root != cwd {
             self.file_tree.switch_root(&cwd);
             self.refresh_file_tree(cx);
-        } else if !self.file_tree.dir_cache.contains_key("") && !self.file_tree.loading.contains("") {
+        } else if !self.file_tree.dir_cache.contains_key("") && !self.file_tree.loading.contains("")
+        {
             self.refresh_file_tree(cx);
         }
         cwd
@@ -302,7 +303,10 @@ impl BenCodeApp {
             });
         }
         if creating == Some(true) {
-            out.push(Row::Name { depth, is_dir: true });
+            out.push(Row::Name {
+                depth,
+                is_dir: true,
+            });
         }
         let entries = tree.dir_cache.get(rel_dir);
         if entries.is_none() && !tree.dir_errors.contains_key(rel_dir) {
@@ -313,8 +317,11 @@ impl BenCodeApp {
         }
         // MonoCode `TreeChildren`: excluded entries only with "Show excluded files".
         let show_excluded = self.appearance.show_excluded_files;
-        let visible: Vec<&FsEntry> =
-            entries.into_iter().flatten().filter(|e| show_excluded || !e.ignored).collect();
+        let visible: Vec<&FsEntry> = entries
+            .into_iter()
+            .flatten()
+            .filter(|e| show_excluded || !e.ignored)
+            .collect();
         for entry in visible.iter().filter(|e| e.is_dir) {
             self.push_entry(entry, depth, out);
         }
@@ -439,9 +446,13 @@ impl BenCodeApp {
                                 .child(error),
                         )
                     })
-                    .when(visible.above > 0.0, |el| el.child(div().flex_none().h(px(visible.above))))
+                    .when(visible.above > 0.0, |el| {
+                        el.child(div().flex_none().h(px(visible.above)))
+                    })
                     .children(rendered)
-                    .when(visible.below > 0.0, |el| el.child(div().flex_none().h(px(visible.below)))),
+                    .when(visible.below > 0.0, |el| {
+                        el.child(div().flex_none().h(px(visible.below)))
+                    }),
             ))
             .into_any_element()
     }
@@ -509,7 +520,7 @@ impl BenCodeApp {
                     "New File",
                     icon("tree-toolbar-new-file", IconName::FilePlus),
                 )
-                    .on_click(cx.listener(|this, _, _, cx| this.start_tree_create(false, None, cx))),
+                .on_click(cx.listener(|this, _, _, cx| this.start_tree_create(false, None, cx))),
             )
             .child(
                 button(
@@ -517,13 +528,17 @@ impl BenCodeApp {
                     "New Folder",
                     icon("tree-toolbar-new-folder", IconName::FolderPlus),
                 )
-                    .on_click(cx.listener(|this, _, _, cx| this.start_tree_create(true, None, cx))),
+                .on_click(cx.listener(|this, _, _, cx| this.start_tree_create(true, None, cx))),
             )
             .child(
                 button(
                     "tree-toolbar-collapse-all",
                     "Collapse All",
-                    ExtraIcon::FoldVertical.icon().size(IconSize::Sm).color(muted).into_any_element(),
+                    ExtraIcon::FoldVertical
+                        .icon()
+                        .size(IconSize::Sm)
+                        .color(muted)
+                        .into_any_element(),
                 )
                 .on_click(cx.listener(|this, _, _, cx| this.collapse_all_folders(cx))),
             )
@@ -588,15 +603,21 @@ impl BenCodeApp {
                 this.drop_external_files(paths.paths().to_vec(), "", cx);
             }))
             .child(
-                div().flex_none().size(px(16.0)).flex().items_center().justify_center().child(
-                    Icon::new(if open {
-                        IconName::ChevronDown
-                    } else {
-                        IconName::ChevronRight
-                    })
-                    .size(GLYPH)
-                    .color(fg.opacity(0.5)),
-                ),
+                div()
+                    .flex_none()
+                    .size(px(16.0))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .child(
+                        Icon::new(if open {
+                            IconName::ChevronDown
+                        } else {
+                            IconName::ChevronRight
+                        })
+                        .size(GLYPH)
+                        .color(fg.opacity(0.5)),
+                    ),
             )
             .child(
                 div()
@@ -617,7 +638,9 @@ impl BenCodeApp {
             self.selected_session_id
                 .as_deref()
                 .and_then(|id| self.sessions.iter().find(|s| s.id == id))
-                .filter(|s| s.worktree_cwd.as_deref().is_some_and(|w| !w.is_empty()) && !s.worktree_removed)
+                .filter(|s| {
+                    s.worktree_cwd.as_deref().is_some_and(|w| !w.is_empty()) && !s.worktree_removed
+                })
                 .map(|s| s.branch.clone())
         });
         worktree
@@ -651,10 +674,13 @@ impl BenCodeApp {
         let name_color = if entry.ignored {
             fg.opacity(0.5)
         } else {
-            tints.color(&rel, is_dir, crate::ui::appearance::diff_colors(cx)).unwrap_or(fg)
+            tints
+                .color(&rel, is_dir, crate::ui::appearance::diff_colors(cx))
+                .unwrap_or(fg)
         };
         let selection = colors.active;
-        let (click_rel, menu_rel, hover_rel, drop_rel) = (rel.clone(), rel.clone(), rel.clone(), rel.clone());
+        let (click_rel, menu_rel, hover_rel, drop_rel) =
+            (rel.clone(), rel.clone(), rel.clone(), rel.clone());
         let mut row = div()
             .id(SharedString::from(format!("tree-item-{rel}")))
             .flex()
@@ -708,11 +734,13 @@ impl BenCodeApp {
                     this.set_tree_drop(target, inside, cx);
                 },
             ))
-            .on_drop(cx.listener(move |this, paths: &gpui::ExternalPaths, _, cx| {
-                cx.stop_propagation();
-                let target = this.file_tree.create_parent_of(Some(&drop_rel));
-                this.drop_external_files(paths.paths().to_vec(), &target, cx);
-            }))
+            .on_drop(
+                cx.listener(move |this, paths: &gpui::ExternalPaths, _, cx| {
+                    cx.stop_propagation();
+                    let target = this.file_tree.create_parent_of(Some(&drop_rel));
+                    this.drop_external_files(paths.paths().to_vec(), &target, cx);
+                }),
+            )
             .child(
                 div()
                     .flex_none()
@@ -799,9 +827,19 @@ impl BenCodeApp {
                     .pr_2()
                     .bg(fg.opacity(0.10))
                     .child(
-                        div().size(px(16.0)).flex().flex_none().items_center().justify_center().when(is_dir, |el| {
-                            el.child(Icon::new(IconName::ChevronRight).size(GLYPH).color(fg.opacity(0.5)))
-                        }),
+                        div()
+                            .size(px(16.0))
+                            .flex()
+                            .flex_none()
+                            .items_center()
+                            .justify_center()
+                            .when(is_dir, |el| {
+                                el.child(
+                                    Icon::new(IconName::ChevronRight)
+                                        .size(GLYPH)
+                                        .color(fg.opacity(0.5)),
+                                )
+                            }),
                     )
                     .child(
                         div()

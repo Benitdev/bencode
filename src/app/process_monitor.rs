@@ -21,8 +21,11 @@ impl ProcessMonitor {
     /// Folds a sample in; true when the text on screen changed.
     pub(crate) fn record(&mut self, at: Instant, sample: ProcessSample) -> bool {
         let cpu = self.last.map(|(then, previous)| {
-            let percent =
-                process_stats::cpu_percent(previous.cpu_time, sample.cpu_time, at.duration_since(then));
+            let percent = process_stats::cpu_percent(
+                previous.cpu_time,
+                sample.cpu_time,
+                at.duration_since(then),
+            );
             process_stats::format_percent(percent)
         });
         let memory = sample.memory_bytes.map(process_stats::format_bytes);

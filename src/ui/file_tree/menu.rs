@@ -61,14 +61,23 @@ impl BenCodeApp {
             MenuEntry::Separator,
             MenuEntry::Item(item("cut", "Cut").shortcut("⌘X").disabled(root)),
             MenuEntry::Item(item("copy", "Copy").shortcut("⌘C").disabled(root)),
-            MenuEntry::Item(item("paste", "Paste").shortcut("⌘V").disabled(paste_blocked)),
+            MenuEntry::Item(
+                item("paste", "Paste")
+                    .shortcut("⌘V")
+                    .disabled(paste_blocked),
+            ),
             MenuEntry::Item(item("duplicate", "Duplicate").disabled(root)),
             MenuEntry::Separator,
             MenuEntry::Item(item("copy-path", "Copy Path").shortcut("⌘⇧C")),
             MenuEntry::Item(item("copy-relative-path", "Copy Relative Path")),
             MenuEntry::Separator,
             MenuEntry::Item(item("rename", "Rename").shortcut("F2").disabled(root)),
-            MenuEntry::Item(item("delete", "Delete").shortcut("⌫").disabled(root).danger()),
+            MenuEntry::Item(
+                item("delete", "Delete")
+                    .shortcut("⌫")
+                    .disabled(root)
+                    .danger(),
+            ),
             MenuEntry::Separator,
             MenuEntry::Item(item("open-terminal", "Open in Terminal")),
         ];
@@ -113,7 +122,10 @@ impl BenCodeApp {
             "paste" => self.paste_in_tree(&target.path, cx),
             "duplicate" => self.duplicate_in_tree(&target.path, cx),
             "copy-path" => {
-                let text = self.tree_abs_path(&target.path).to_string_lossy().into_owned();
+                let text = self
+                    .tree_abs_path(&target.path)
+                    .to_string_lossy()
+                    .into_owned();
                 cx.write_to_clipboard(gpui::ClipboardItem::new_string(text));
             }
             "copy-relative-path" => {

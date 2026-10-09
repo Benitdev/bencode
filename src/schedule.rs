@@ -191,7 +191,14 @@ pub fn next_automation_run_at(auto: &AutomationRow, after_ms: i64, tz: &TimeZone
 impl TimeTrigger {
     /// When this trigger next fires after `after_ms`.
     pub fn next_run(&self, after_ms: i64, tz: &TimeZone) -> Option<i64> {
-        next_run_at(self.kind?, self.minute, &self.time, self.day_of_week, after_ms, tz)
+        next_run_at(
+            self.kind?,
+            self.minute,
+            &self.time,
+            self.day_of_week,
+            after_ms,
+            tz,
+        )
     }
 }
 
@@ -371,13 +378,19 @@ mod tests {
         apply_triggers(&mut auto, vec![trigger("github", "", ""), weekly]);
         assert_eq!(auto.trigger_kind.as_deref(), Some("time"));
         assert_eq!(auto.trigger_event.as_deref(), Some("weekly"));
-        assert_eq!((auto.schedule_kind.as_str(), auto.day_of_week), ("weekly", 5));
+        assert_eq!(
+            (auto.schedule_kind.as_str(), auto.day_of_week),
+            ("weekly", 5)
+        );
         assert_eq!(schedule_label(&auto), "Friday at 16:00 +1");
         // Unknown keys of a trigger are kept.
         assert_eq!(auto.triggers.as_ref().unwrap()[0]["customKey"], "kept");
 
         apply_triggers(&mut auto, Vec::new());
-        assert_eq!((auto.schedule_kind.as_str(), auto.time.as_str()), ("weekdays", "09:00"));
+        assert_eq!(
+            (auto.schedule_kind.as_str(), auto.time.as_str()),
+            ("weekdays", "09:00")
+        );
         assert_eq!(schedule_label(&auto), "No trigger");
     }
 

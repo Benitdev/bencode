@@ -4,12 +4,12 @@
 //! take the rail's body. Rows drag to reorder and the right edge drags to
 //! resize. The saved state lives in [`model`].
 
-pub mod model;
 mod cards;
 mod compact;
 mod live_agents;
 mod menu;
 mod menu_view;
+pub mod model;
 mod notify;
 mod remove;
 mod reorder;
@@ -24,9 +24,9 @@ use std::rc::Rc;
 use ely_gpui_component::primitives::{Icon, IconName};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
-    AnyElement, Bounds, Context, DragMoveEvent, Hsla, InteractiveElement, IntoElement,
-    MouseButton, MouseDownEvent, ParentElement, Pixels, Point, SharedString, Styled,
-    anchored, canvas, deferred, div, prelude::*, relative,
+    AnyElement, Bounds, Context, DragMoveEvent, Hsla, InteractiveElement, IntoElement, MouseButton,
+    MouseDownEvent, ParentElement, Pixels, Point, SharedString, Styled, anchored, canvas, deferred,
+    div, prelude::*, relative,
 };
 
 use crate::ui::scale::px;
@@ -36,13 +36,15 @@ pub use state::RailUi;
 
 use crate::app::session_folders::{palette_color, parse_hex};
 use crate::app::{BenCodeApp, Surface, same_project_path};
-use crate::ui::window_drag::claim_press;
 use crate::ui::mascot::{Mascot, mascot_for};
 use crate::ui::sidebar::TITLEBAR_HEIGHT;
 use crate::ui::sidebar_menus::SidebarMenuKind;
+use crate::ui::window_drag::claim_press;
 use model::{ProjectGroup, RailSections, path_key, rail_sections, sync_rail_order};
 use reorder::RailResize;
-use widgets::{RailTrailing, TitleButtonState, rail_action, rail_search, section_button, title_icon_button};
+use widgets::{
+    RailTrailing, TitleButtonState, rail_action, rail_search, section_button, title_icon_button,
+};
 
 /// MonoCode `w-[78px]`: room for the traffic lights.
 const TRAFFIC_LIGHT_SPACE: f32 = 78.0;
@@ -55,15 +57,18 @@ const ADD_PROJECT_WIDTH: f32 = 230.0;
 /// MonoCode `projectName`: the folder's last segment.
 pub(super) fn project_name(path: &str) -> &str {
     let trimmed = path.trim_end_matches('/');
-    trimmed.rsplit('/').find(|s| !s.is_empty()).unwrap_or(trimmed)
+    trimmed
+        .rsplit('/')
+        .find(|s| !s.is_empty())
+        .unwrap_or(trimmed)
 }
 
 /// MonoCode `tabGroupColor`: a palette colour other than the untinted
 /// first, by a hash of `seed`.
 fn tab_group_color(seed: &str) -> Hsla {
-    let hash = seed
-        .encode_utf16()
-        .fold(0u32, |hash, unit| hash.wrapping_mul(31).wrapping_add(u32::from(unit)));
+    let hash = seed.encode_utf16().fold(0u32, |hash, unit| {
+        hash.wrapping_mul(31).wrapping_add(u32::from(unit))
+    });
     let count = crate::app::session_folders::FOLDER_COLORS.len() as u32;
     let index = (hash % (count - 1) + 1) as usize;
     palette_color(index).unwrap_or_default()
@@ -96,7 +101,12 @@ impl BenCodeApp {
             .tab_group_custom_colors
             .get(&key)
             .and_then(|hex| parse_hex(hex))
-            .or_else(|| prefs.tab_group_colors.get(&key).and_then(|ix| palette_color(*ix)))
+            .or_else(|| {
+                prefs
+                    .tab_group_colors
+                    .get(&key)
+                    .and_then(|ix| palette_color(*ix))
+            })
             .unwrap_or_else(|| tab_group_color(project_name(cwd)))
     }
 
@@ -127,11 +137,19 @@ impl BenCodeApp {
             .border_color(fg.opacity(STROKE_OPACITY))
             .text_color(fg)
             .line_height(relative(1.5))
-            .on_drag_move::<RailResize>(cx.listener(|this, event: &DragMoveEvent<RailResize>, window, cx| {
-                this.track_rail_resize(event, window, cx);
-            }))
-            .on_mouse_up(MouseButton::Left, cx.listener(|this, _, _, cx| this.finish_rail_drags(cx)))
-            .on_mouse_up_out(MouseButton::Left, cx.listener(|this, _, _, cx| this.finish_rail_drags(cx)))
+            .on_drag_move::<RailResize>(cx.listener(
+                |this, event: &DragMoveEvent<RailResize>, window, cx| {
+                    this.track_rail_resize(event, window, cx);
+                },
+            ))
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(|this, _, _, cx| this.finish_rail_drags(cx)),
+            )
+            .on_mouse_up_out(
+                MouseButton::Left,
+                cx.listener(|this, _, _, cx| this.finish_rail_drags(cx)),
+            )
             .child(self.render_rail_top_strip(settings_open, cx))
             .map(|el| {
                 if settings_open {
@@ -143,15 +161,21 @@ impl BenCodeApp {
                         .children(self.render_update_footer(false, cx))
                         .child(
                             // `flex shrink-0 flex-col gap-px p-2`
-                            div().flex().flex_none().flex_col().gap(px(1.0)).p_2().child(rail_action(
-                                "rail-settings",
-                                IconName::Settings,
-                                "Settings",
-                                false,
-                                RailTrailing::Shortcut("⌘,"),
-                                cx,
-                                |this, _, _, cx| this.open_settings(cx),
-                            )),
+                            div()
+                                .flex()
+                                .flex_none()
+                                .flex_col()
+                                .gap(px(1.0))
+                                .p_2()
+                                .child(rail_action(
+                                    "rail-settings",
+                                    IconName::Settings,
+                                    "Settings",
+                                    false,
+                                    RailTrailing::Shortcut("⌘,"),
+                                    cx,
+                                    |this, _, _, cx| this.open_settings(cx),
+                                )),
                         )
                 }
             })
@@ -273,7 +297,9 @@ impl BenCodeApp {
     fn render_rail_projects(&self, cx: &Context<Self>) -> impl IntoElement {
         let order = self.rail_order();
         let sections = self.rail_sections_for(&order);
-        let empty = sections.ungrouped.is_empty() && sections.groups.is_empty() && sections.pinned.is_empty();
+        let empty = sections.ungrouped.is_empty()
+            && sections.groups.is_empty()
+            && sections.pinned.is_empty();
         let pinned = sections.pinned;
         // `flex min-h-0 flex-1 flex-col overflow-y-auto pb-2`
         let projects = div()
@@ -290,7 +316,14 @@ impl BenCodeApp {
             .when(!sections.groups.is_empty(), |el| {
                 el.child(self.render_groups_section(&sections.groups, cx))
             })
-            .child(self.render_project_section("Projects", "projects", &sections.ungrouped, true, empty, cx));
+            .child(self.render_project_section(
+                "Projects",
+                "projects",
+                &sections.ungrouped,
+                true,
+                empty,
+                cx,
+            ));
         crate::ui::scrollbar::Scrolled::new("rail-projects-scrollbar", projects).gutter(px(0.0))
     }
 
@@ -304,7 +337,14 @@ impl BenCodeApp {
         let anchor: Anchor = Rc::default();
         let button_anchor = anchor.clone();
         section_button("rail-add-project", IconName::Plus, "Open project", open, fg)
-            .child(canvas(move |bounds, _, _| button_anchor.set(Some(bounds)), |_, _, _, _| {}).absolute().size_full())
+            .child(
+                canvas(
+                    move |bounds, _, _| button_anchor.set(Some(bounds)),
+                    |_, _, _, _| {},
+                )
+                .absolute()
+                .size_full(),
+            )
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(move |this, event: &MouseDownEvent, _, cx| {
@@ -335,7 +375,11 @@ impl BenCodeApp {
     /// The "Open project" popover: `Popover width={230} className="p-1"`.
     /// MonoCode's "Open folder on a machine…" needs its remote machines,
     /// which BenCode does not have.
-    pub(crate) fn render_add_project_menu(&self, position: Point<Pixels>, cx: &Context<Self>) -> AnyElement {
+    pub(crate) fn render_add_project_menu(
+        &self,
+        position: Point<Pixels>,
+        cx: &Context<Self>,
+    ) -> AnyElement {
         let fg = cx.theme().colors.fg;
         // `flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5
         // text-[13px] text-content/80 hover:bg-content/8 hover:text-content`
@@ -386,9 +430,15 @@ impl BenCodeApp {
     pub(super) fn toggle_project_pin(&mut self, path: &str, cx: &mut Context<Self>) {
         let pins = &self.settings.pinned_projects;
         let next: Vec<String> = if pins.iter().any(|p| same_project_path(p, path)) {
-            pins.iter().filter(|p| !same_project_path(p, path)).cloned().collect()
+            pins.iter()
+                .filter(|p| !same_project_path(p, path))
+                .cloned()
+                .collect()
         } else {
-            pins.iter().cloned().chain(std::iter::once(path.to_string())).collect()
+            pins.iter()
+                .cloned()
+                .chain(std::iter::once(path.to_string()))
+                .collect()
         };
         self.set_pinned_projects(next, cx);
     }

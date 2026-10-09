@@ -55,7 +55,12 @@ pub struct SignInStart {
 fn decode_item(item: &str) -> Option<Value> {
     let item = item.trim();
     let json = match item.strip_prefix(KEYRING_PREFIX) {
-        Some(encoded) => String::from_utf8(base64::engine::general_purpose::STANDARD.decode(encoded).ok()?).ok()?,
+        Some(encoded) => String::from_utf8(
+            base64::engine::general_purpose::STANDARD
+                .decode(encoded)
+                .ok()?,
+        )
+        .ok()?,
         None => item.to_string(),
     };
     serde_json::from_str(&json).ok()
@@ -79,9 +84,12 @@ pub fn email_of(item: &str) -> Option<String> {
 
 /// The saved accounts signed in as `email`.
 fn matching<'a>(profiles: &'a [AgyProfile], email: &str) -> impl Iterator<Item = &'a AgyProfile> {
-    profiles
-        .iter()
-        .filter(move |profile| profile.email.as_deref().is_some_and(|known| known.eq_ignore_ascii_case(email)))
+    profiles.iter().filter(move |profile| {
+        profile
+            .email
+            .as_deref()
+            .is_some_and(|known| known.eq_ignore_ascii_case(email))
+    })
 }
 
 /// The saved accounts, on disk under `root`.
@@ -163,7 +171,13 @@ impl Store {
             return Ok((first, false));
         }
         self.write(new_id, item)?;
-        Ok((AgyProfile { id: new_id.to_string(), email: Some(email) }, true))
+        Ok((
+            AgyProfile {
+                id: new_id.to_string(),
+                email: Some(email),
+            },
+            true,
+        ))
     }
 
     /// The profiles `agy-save` left in `dir`, copied in under new ids and
@@ -176,7 +190,10 @@ impl Store {
             .flatten()
             .filter_map(|entry| {
                 let item = std::fs::read_to_string(entry.path().join(TOKEN_FILE)).ok()?;
-                Some((entry.file_name().to_string_lossy().into_owned(), item.trim().to_string()))
+                Some((
+                    entry.file_name().to_string_lossy().into_owned(),
+                    item.trim().to_string(),
+                ))
             })
             .collect();
         // `agy-save` users keep a `current` copy of another profile; the
@@ -223,14 +240,18 @@ fn write_private(path: &Path, contents: &str) -> std::io::Result<()> {
 
 /// The item `agy` signs in with now; None when it is signed out.
 fn read_live() -> Result<Option<String>, String> {
-    let output = crate::keychain::run(&["find-generic-password", "-s", SERVICE, "-a", ACCOUNT, "-w"])
-        .map_err(|err| format!("Could not read the Antigravity sign-in: {err}"))?;
+    let output =
+        crate::keychain::run(&["find-generic-password", "-s", SERVICE, "-a", ACCOUNT, "-w"])
+            .map_err(|err| format!("Could not read the Antigravity sign-in: {err}"))?;
     if output.ok && !output.stdout.is_empty() {
         Ok(Some(output.stdout))
     } else if crate::keychain::not_found(&output) || output.ok {
         Ok(None)
     } else {
-        Err(format!("Could not read the Antigravity sign-in: {}", output.stderr))
+        Err(format!(
+            "Could not read the Antigravity sign-in: {}",
+            output.stderr
+        ))
     }
 }
 
@@ -253,13 +274,20 @@ pub fn live_access_token() -> Result<Option<AccessToken>, String> {
 fn access_token_of(item: &str) -> Option<AccessToken> {
     let json = decode_item(item)?;
     let token = json.get("token")?;
-    let access_token = token.get("access_token")?.as_str().filter(|t| !t.is_empty())?.to_string();
+    let access_token = token
+        .get("access_token")?
+        .as_str()
+        .filter(|t| !t.is_empty())?
+        .to_string();
     let expires_at = token
         .get("expiry")
         .and_then(Value::as_str)
         .and_then(|expiry| expiry.parse::<jiff::Timestamp>().ok())
         .map(|expiry| expiry.as_millisecond());
-    Some(AccessToken { access_token, expires_at })
+    Some(AccessToken {
+        access_token,
+        expires_at,
+    })
 }
 
 /// Makes `item` the one `agy` signs in with.
@@ -267,14 +295,21 @@ fn write_live(item: &str) -> Result<(), String> {
     let item = item.trim();
     // `security -i` splits its commands on whitespace and quotes; a
     // go-keyring item is base64 and never holds either.
-    if item.is_empty() || item.chars().any(|ch| ch.is_whitespace() || ch == '"' || ch == '\\') {
+    if item.is_empty()
+        || item
+            .chars()
+            .any(|ch| ch.is_whitespace() || ch == '"' || ch == '\\')
+    {
         return Err("The saved Antigravity account is not a Keychain item.".into());
     }
     let command = format!("add-generic-password -U -s {SERVICE} -a {ACCOUNT} -w \"{item}\"\n");
     let output = crate::keychain::run_with_input(&["-i"], Some(&command))
         .map_err(|err| format!("Could not switch the Antigravity account: {err}"))?;
     if !output.ok || !output.stderr.is_empty() {
-        return Err(format!("Could not switch the Antigravity account: {}", output.stderr));
+        return Err(format!(
+            "Could not switch the Antigravity account: {}",
+            output.stderr
+        ));
     }
     sync_jetski_token(item);
     Ok(())
@@ -294,7 +329,8 @@ fn delete_live() -> Result<(), String> {
 /// Keeps `~/.gemini/jetski-standalone-oauth-token` (the decoded item) in
 /// step, as `agy-switch` did, when something already keeps one.
 fn sync_jetski_token(item: &str) {
-    let Some(path) = std::env::var_os("HOME").map(|home| PathBuf::from(home).join(JETSKI_TOKEN)) else {
+    let Some(path) = std::env::var_os("HOME").map(|home| PathBuf::from(home).join(JETSKI_TOKEN))
+    else {
         return;
     };
     if !path.exists() {
@@ -446,7 +482,9 @@ mod tests {
 
     #[test]
     fn keeping_an_item_updates_the_same_person_or_adds_one() {
-        let store = Store { root: temp_root("keep") };
+        let store = Store {
+            root: temp_root("keep"),
+        };
         let (first, created) = store.keep(&item("a@x.com", "r1"), "account-1").unwrap();
         assert!(created);
         assert_eq!(first.email.as_deref(), Some("a@x.com"));
@@ -470,13 +508,24 @@ mod tests {
     #[test]
     fn script_profiles_import_once_per_person() {
         let scripts = temp_root("scripts");
-        for (name, email) in [("work", "w@x.com"), ("current", "w@x.com"), ("home", "h@x.com"), ("broken", "")] {
+        for (name, email) in [
+            ("work", "w@x.com"),
+            ("current", "w@x.com"),
+            ("home", "h@x.com"),
+            ("broken", ""),
+        ] {
             let dir = scripts.join(name);
             std::fs::create_dir_all(&dir).unwrap();
-            let token = if email.is_empty() { "nope".to_string() } else { item(email, name) };
+            let token = if email.is_empty() {
+                "nope".to_string()
+            } else {
+                item(email, name)
+            };
             std::fs::write(dir.join(TOKEN_FILE), format!("{token}\n")).unwrap();
         }
-        let store = Store { root: temp_root("import") };
+        let store = Store {
+            root: temp_root("import"),
+        };
         let imported = store.import_from(&scripts);
         let labels: Vec<_> = imported.iter().map(|a| a.label.as_str()).collect();
         // `current` duplicates `work`, which keeps its name.

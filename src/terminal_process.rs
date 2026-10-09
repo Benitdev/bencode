@@ -35,7 +35,11 @@ pub fn probe(root: u32, shell: Option<u32>, last: Option<&Foreground>) -> Probe 
             .filter(|name| !is_shell_name(name))
             .map(|process| Foreground { pgid, process }),
     });
-    Probe { shell: Some(shell), foreground, cwd: sys::cwd(shell) }
+    Probe {
+        shell: Some(shell),
+        foreground,
+        cwd: sys::cwd(shell),
+    }
 }
 
 /// The job in the foreground of `shell`'s terminal now, without running
@@ -81,11 +85,16 @@ pub fn command_label(args: &str) -> Option<String> {
 }
 
 fn file_name(path: &str) -> Option<&str> {
-    std::path::Path::new(path).file_name().and_then(|name| name.to_str())
+    std::path::Path::new(path)
+        .file_name()
+        .and_then(|name| name.to_str())
 }
 
 fn is_interpreter(name: &str) -> bool {
-    matches!(name, "node" | "nodejs" | "python" | "python3" | "ruby" | "deno" | "bun")
+    matches!(
+        name,
+        "node" | "nodejs" | "python" | "python3" | "ruby" | "deno" | "bun"
+    )
 }
 
 /// MonoCode `is_shell_name`, plus `login` (the process macOS runs the shell
@@ -108,7 +117,13 @@ mod sys {
         let mut info: libc::proc_bsdinfo = unsafe { zeroed() };
         let size = size_of::<libc::proc_bsdinfo>() as libc::c_int;
         let read = unsafe {
-            libc::proc_pidinfo(pid as libc::c_int, libc::PROC_PIDTBSDINFO, 0, (&mut info as *mut libc::proc_bsdinfo).cast(), size)
+            libc::proc_pidinfo(
+                pid as libc::c_int,
+                libc::PROC_PIDTBSDINFO,
+                0,
+                (&mut info as *mut libc::proc_bsdinfo).cast(),
+                size,
+            )
         };
         (read == size).then_some(info)
     }
@@ -128,7 +143,10 @@ mod sys {
             return Vec::new();
         }
         pids.truncate(count as usize);
-        pids.into_iter().filter(|&pid| pid > 0).map(|pid| pid as u32).collect()
+        pids.into_iter()
+            .filter(|&pid| pid > 0)
+            .map(|pid| pid as u32)
+            .collect()
     }
 
     /// The device of `pid`'s controlling terminal, if it has one.
@@ -140,14 +158,24 @@ mod sys {
     pub fn name(pid: u32) -> Option<String> {
         let mut buf = [0u8; 2 * libc::MAXCOMLEN + 1];
         // SAFETY: `proc_name` writes at most `buf.len()` bytes.
-        let len = unsafe { libc::proc_name(pid as libc::c_int, buf.as_mut_ptr().cast(), buf.len() as u32) };
+        let len = unsafe {
+            libc::proc_name(
+                pid as libc::c_int,
+                buf.as_mut_ptr().cast(),
+                buf.len() as u32,
+            )
+        };
         (len > 0).then(|| String::from_utf8_lossy(&buf[..len as usize]).into_owned())
     }
 
     /// The shell under `root`: macOS starts it through `login`, which
     /// waits on it as its one child.
     pub fn shell(root: u32) -> Option<u32> {
-        if name(root)? == "login" { children(root).first().copied() } else { Some(root) }
+        if name(root)? == "login" {
+            children(root).first().copied()
+        } else {
+            Some(root)
+        }
     }
 
     /// The process group in the foreground of `shell`'s terminal, unless it
@@ -225,8 +253,14 @@ mod tests {
 
     #[test]
     fn command_label_prefers_the_script_over_its_interpreter() {
-        assert_eq!(command_label("node /usr/local/bin/npm run build"), Some("npm".into()));
-        assert_eq!(command_label("python3 -u manage.py runserver"), Some("manage.py".into()));
+        assert_eq!(
+            command_label("node /usr/local/bin/npm run build"),
+            Some("npm".into())
+        );
+        assert_eq!(
+            command_label("python3 -u manage.py runserver"),
+            Some("manage.py".into())
+        );
         assert_eq!(command_label("/usr/bin/cargo build"), Some("cargo".into()));
         assert_eq!(command_label("node"), Some("node".into()));
         assert_eq!(command_label(""), None);

@@ -23,7 +23,10 @@ pub struct TerminalIme {
 
 impl TerminalIme {
     pub fn new(terminal: Entity<Terminal>) -> Self {
-        Self { terminal, marked: String::new() }
+        Self {
+            terminal,
+            marked: String::new(),
+        }
     }
 
     fn marked_len_utf16(&self) -> usize {
@@ -51,10 +54,20 @@ fn paint_marked(marked: String, cursor: Bounds<Pixels>, window: &mut Window, cx:
     let text_size = theme.text_size(TextSize::Sm).to_pixels(window.rem_size());
     // The terminal's own ground, so the cells under the text are covered.
     let ground = theme.colors.surface;
-    let shaped = window.text_system().shape_line(marked.into(), text_size, &[run], Some(cell.width));
+    let shaped =
+        window
+            .text_system()
+            .shape_line(marked.into(), text_size, &[run], Some(cell.width));
     let extent = size(shaped.width.max(cell.width), cell.height);
     window.paint_quad(fill(Bounds::new(cursor.origin, extent), ground));
-    if let Err(err) = shaped.paint(cursor.origin, cell.height, TextAlign::Left, None, window, cx) {
+    if let Err(err) = shaped.paint(
+        cursor.origin,
+        cell.height,
+        TextAlign::Left,
+        None,
+        window,
+        cx,
+    ) {
         log::error!("terminal: composing text failed to paint: {err:#}");
     }
 }
@@ -84,7 +97,11 @@ impl Render for TerminalIme {
         )
         .absolute()
         .inset_0();
-        div().relative().size_full().child(self.terminal.clone()).child(overlay)
+        div()
+            .relative()
+            .size_full()
+            .child(self.terminal.clone())
+            .child(overlay)
     }
 }
 
@@ -106,7 +123,10 @@ impl EntityInputHandler for TerminalIme {
         _: &mut Context<Self>,
     ) -> Option<UTF16Selection> {
         let end = self.marked_len_utf16();
-        Some(UTF16Selection { range: end..end, reversed: false })
+        Some(UTF16Selection {
+            range: end..end,
+            reversed: false,
+        })
     }
 
     fn marked_text_range(&self, _: &mut Window, _: &mut Context<Self>) -> Option<Range<usize>> {

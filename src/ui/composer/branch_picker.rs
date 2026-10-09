@@ -16,10 +16,10 @@ use crate::ui::scale::px;
 use super::focus_later;
 use super::menus::popover_surface;
 use crate::app::BenCodeApp;
-use crate::ui::composer::ComposerPopover;
 use crate::app::workspace_sync::BranchTarget;
 use crate::git;
 use crate::ui::app_callback::app_callback;
+use crate::ui::composer::ComposerPopover;
 use crate::ui::sidebar_popovers::popover_glass;
 
 /// MonoCode `MENU_WIDTH`, `MENU_MIN_HEIGHT`, `MENU_MAX_HEIGHT`.

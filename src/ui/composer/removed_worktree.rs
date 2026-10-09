@@ -31,14 +31,19 @@ impl BenCodeApp {
         worktree: Option<String>,
         cx: &mut Context<Self>,
     ) {
-        let (id, row, target) = (session_id.to_string(), session_id.to_string(), worktree.clone());
+        let (id, row, target) = (
+            session_id.to_string(),
+            session_id.to_string(),
+            worktree.clone(),
+        );
         self.db_then(
             cx,
             move |db| db.reattach_session(&row, target.as_deref()),
             move |this, moved, cx| {
                 if let Err(err) = moved {
                     log::error!("could not move thread {id} to a working copy: {err:#}");
-                    this.composer_error = Some(format!("Could not continue in that working copy: {err}"));
+                    this.composer_error =
+                        Some(format!("Could not continue in that working copy: {err}"));
                     cx.notify();
                     return;
                 }

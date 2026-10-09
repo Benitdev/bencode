@@ -36,8 +36,16 @@ impl Window {
 /// pixels into its content (its top padding).
 pub fn for_scroll(heights: &[Option<f32>], scroll: &ScrollHandle, lead: f32) -> Window {
     let viewport = crate::ui::scale::logical(scroll.bounds().size.height);
-    let viewport = if viewport > 0.0 { viewport } else { FIRST_FRAME_VIEWPORT };
-    visible_window(heights, crate::ui::scale::logical(-scroll.offset().y) - lead, viewport)
+    let viewport = if viewport > 0.0 {
+        viewport
+    } else {
+        FIRST_FRAME_VIEWPORT
+    };
+    visible_window(
+        heights,
+        crate::ui::scale::logical(-scroll.offset().y) - lead,
+        viewport,
+    )
 }
 
 /// The rows overlapping `scroll_top..scroll_top + viewport`, plus
@@ -91,7 +99,9 @@ mod tests {
 
     #[test]
     fn mixed_heights_keep_the_total() {
-        let heights: Vec<Option<f32>> = (0..500).map(|ix| Some(if ix % 7 == 0 { 28.0 } else { 18.0 })).collect();
+        let heights: Vec<Option<f32>> = (0..500)
+            .map(|ix| Some(if ix % 7 == 0 { 28.0 } else { 18.0 }))
+            .collect();
         let window = visible_window(&heights, 2000.0, 400.0);
         let built: f32 = heights[window.range.clone()].iter().flatten().sum();
         let total: f32 = heights.iter().flatten().sum();

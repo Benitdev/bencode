@@ -150,7 +150,12 @@ impl BenCodeApp {
     }
 
     /// Starts the pending run `run_id` of `auto` in a background thread.
-    fn launch_automation_run(&mut self, auto: &AutomationRow, run_id: &str, cx: &mut Context<Self>) {
+    fn launch_automation_run(
+        &mut self,
+        auto: &AutomationRow,
+        run_id: &str,
+        cx: &mut Context<Self>,
+    ) {
         if WorkingCopy::of(auto) == WorkingCopy::Current {
             let session_id = self
                 .reusable_automation_thread(auto)
@@ -191,7 +196,10 @@ impl BenCodeApp {
     /// "Continue last": the thread of the automation's last run, if it is
     /// still loaded and free.
     fn reusable_automation_thread(&self, auto: &AutomationRow) -> Option<String> {
-        let id = auto.last_session_id.as_ref().filter(|_| auto.reuse_session == Some(true))?;
+        let id = auto
+            .last_session_id
+            .as_ref()
+            .filter(|_| auto.reuse_session == Some(true))?;
         let free = self.sessions.iter().any(|s| &s.id == id)
             && !self.is_agent_running_in(id)
             && !self.worktree_removed(id);
@@ -220,12 +228,19 @@ impl BenCodeApp {
                 session.model = option.key.to_string();
                 session.harness = option.harness.id().to_string();
             }
-            if let Some(mode) = auto.runtime_mode.as_deref().and_then(PermissionMode::from_id) {
+            if let Some(mode) = auto
+                .runtime_mode
+                .as_deref()
+                .and_then(PermissionMode::from_id)
+            {
                 session.runtime_mode = Some(mode.id().to_string());
             }
         }
         self.persist_session(&session_id);
-        let folder = auto.session_folder_id.as_deref().filter(|id| !id.is_empty());
+        let folder = auto
+            .session_folder_id
+            .as_deref()
+            .filter(|id| !id.is_empty());
         if let Some(folder) = folder
             && let Some(folders) = self.session_folders.get(&auto.cwd)
             && folders.iter().any(|f| f.id == folder)
@@ -252,7 +267,11 @@ impl BenCodeApp {
         if !self.is_agent_running_in(session_id) {
             // send_prompt already explains the failure inside the thread.
             self.db_write("close automation run", move |db| {
-                db.finish_automation_run(&run, RunStatus::Failed, Some("The agent could not start."))
+                db.finish_automation_run(
+                    &run,
+                    RunStatus::Failed,
+                    Some("The agent could not start."),
+                )
             });
             return;
         }

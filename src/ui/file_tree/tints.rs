@@ -87,7 +87,10 @@ mod tests {
         assert_eq!(tints.dirs.get("src/a"), Some(&GitFileStatus::Untracked));
         assert_eq!(tints.dirs.get("docs"), Some(&GitFileStatus::Deleted));
         let diff = DiffColors::new(DiffPalette::Default, true);
-        assert!(tints.color("moved.rs", false, diff).is_none(), "renames stay plain");
+        assert!(
+            tints.color("moved.rs", false, diff).is_none(),
+            "renames stay plain"
+        );
         assert!(tints.color("src", true, diff).is_some());
     }
 }

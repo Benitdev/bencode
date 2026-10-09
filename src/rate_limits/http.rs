@@ -33,7 +33,12 @@ pub fn get(url: &str, headers: &[(&str, &str)], timeout: Duration) -> Result<Res
 }
 
 /// Blocking; `timeout` bounds the whole transfer.
-pub fn send(url: &str, headers: &[(&str, &str)], send: Send, timeout: Duration) -> Result<Response> {
+pub fn send(
+    url: &str,
+    headers: &[(&str, &str)],
+    send: Send,
+    timeout: Duration,
+) -> Result<Response> {
     let mut child = Command::new("curl")
         // -q: no ~/.curlrc, so nothing there can reshape the output.
         .args(["-q", "--silent", "--show-error", "--config", "-"])
@@ -64,7 +69,10 @@ fn request_config(url: &str, headers: &[(&str, &str)], send: Send, timeout: Dura
         timeout.as_secs().max(1)
     );
     for (name, value) in headers {
-        config.push_str(&format!("header = {}\n", quoted(&format!("{name}: {value}"))));
+        config.push_str(&format!(
+            "header = {}\n",
+            quoted(&format!("{name}: {value}"))
+        ));
     }
     if send.follow_redirects {
         config.push_str("location\n");
@@ -74,7 +82,10 @@ fn request_config(url: &str, headers: &[(&str, &str)], send: Send, timeout: Dura
     }
     for (name, value) in send.form {
         // `name=content`: curl encodes the content, not the name.
-        config.push_str(&format!("data-urlencode = {}\n", quoted_data(&format!("{name}={value}"))));
+        config.push_str(&format!(
+            "data-urlencode = {}\n",
+            quoted_data(&format!("{name}={value}"))
+        ));
     }
     if let Some(body) = send.body {
         // data-raw: a leading `@` is not a file name.
@@ -171,7 +182,12 @@ mod tests {
         };
         let config = request_config("https://example.com/f", &[], follow, Duration::from_secs(5));
         assert!(config.contains("\nlocation\n"));
-        let plain = request_config("https://example.com/f", &[], Send::default(), Duration::from_secs(5));
+        let plain = request_config(
+            "https://example.com/f",
+            &[],
+            Send::default(),
+            Duration::from_secs(5),
+        );
         assert!(!plain.contains("location"));
     }
 

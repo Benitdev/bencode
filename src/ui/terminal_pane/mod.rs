@@ -35,7 +35,9 @@ pub use running::{POLL_EVERY, RunningTerminal, chip_label};
 use crate::app::BenCodeApp;
 use crate::ui::drag_drop::render_pane_drop_hint;
 use crate::ui::icons::ExtraIcon;
-use crate::ui::layout::{LayoutNode, PaneEdge, SplitDir, pane_edge_from_point, set_split_sizes, split_shares};
+use crate::ui::layout::{
+    LayoutNode, PaneEdge, SplitDir, pane_edge_from_point, set_split_sizes, split_shares,
+};
 
 const TAB_HEIGHT: f32 = 28.0;
 /// The least a split's sash leaves a terminal.
@@ -159,7 +161,10 @@ impl TerminalDocks {
 
     /// Shows or hides `project`'s dock (MonoCode `withDockOpen`).
     fn set_open(&mut self, project: &str, open: bool) {
-        let layout = DockLayout { open, ..self.layout(project) };
+        let layout = DockLayout {
+            open,
+            ..self.layout(project)
+        };
         self.set_layout(project, layout);
     }
 
@@ -190,7 +195,10 @@ fn spawn_shell(cwd: &str, cx: &mut Context<Terminal>) -> Terminal {
 
 fn window_size(window: &Window) -> (f32, f32) {
     let size = window.viewport_size();
-    (crate::ui::scale::logical(size.width), crate::ui::scale::logical(size.height))
+    (
+        crate::ui::scale::logical(size.width),
+        crate::ui::scale::logical(size.height),
+    )
 }
 
 /// MonoCode `sideIcon`: the Move Terminal button shows where the dock is.
@@ -266,7 +274,9 @@ impl BenCodeApp {
         let entity = cx.new(|cx| spawn_shell(&cwd, cx));
         let process = crate::terminal_process::spawned(&before);
         if process.is_none() {
-            log::debug!("terminal in {cwd}: its process was not found; no job or folder in its tab");
+            log::debug!(
+                "terminal in {cwd}: its process was not found; no job or folder in its tab"
+            );
         }
         let view = cx.new(|_| ime::TerminalIme::new(entity.clone()));
         self.terminals.next_id += 1;
@@ -324,7 +334,13 @@ impl BenCodeApp {
 
     /// The end of MonoCode `onCloseOtherProjectTerminals`: closes `closing`
     /// and selects `keep`.
-    fn close_terminals_but(&mut self, project: &str, closing: &[u64], keep: u64, cx: &mut Context<Self>) {
+    fn close_terminals_but(
+        &mut self,
+        project: &str,
+        closing: &[u64],
+        keep: u64,
+        cx: &mut Context<Self>,
+    ) {
         if let Some(dock) = self.terminals.docks.get_mut(project) {
             dock.tabs.retain(|tab| !closing.contains(&tab.id));
             for &id in closing {
@@ -402,7 +418,10 @@ impl BenCodeApp {
     /// MonoCode `onProjectTerminalSide`: moves the current project's dock.
     fn set_dock_side(&mut self, side: DockSide, cx: &mut Context<Self>) {
         let project = self.current_cwd.clone();
-        let layout = self.terminals.layout(&project).with_side(side, self.terminals.viewport);
+        let layout = self
+            .terminals
+            .layout(&project)
+            .with_side(side, self.terminals.viewport);
         self.terminals.set_layout(&project, layout);
         self.save_settings(cx);
         cx.notify();
@@ -410,7 +429,11 @@ impl BenCodeApp {
 
     /// The workspace (chat and file pane) with the current project's dock
     /// on its side (MonoCode `dockGridStyle`), or alone while it is hidden.
-    pub fn render_workspace_with_dock(&mut self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
+    pub fn render_workspace_with_dock(
+        &mut self,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let main = div()
             .flex()
             .flex_1()
@@ -448,7 +471,11 @@ impl BenCodeApp {
             .terminals
             .dock(&self.current_cwd)
             .map_or((None, None), |dock| {
-                let active = dock.tabs.iter().any(|t| t.id == dock.active).then_some(dock.active);
+                let active = dock
+                    .tabs
+                    .iter()
+                    .any(|t| t.id == dock.active)
+                    .then_some(dock.active);
                 (split::group_of(&dock.splits, dock.active).cloned(), active)
             });
         let body = match (split, active) {
@@ -494,7 +521,12 @@ impl BenCodeApp {
                     } else {
                         event.event.position.x
                     };
-                    let next = layout.dragged(start_size, start, crate::ui::scale::logical(point), window_size(window));
+                    let next = layout.dragged(
+                        start_size,
+                        start,
+                        crate::ui::scale::logical(point),
+                        window_size(window),
+                    );
                     if next != layout || !this.terminals.resizing {
                         this.terminals.set_layout(&project, next);
                         this.terminals.resizing = true;
@@ -503,7 +535,15 @@ impl BenCodeApp {
                 },
             ))
             .child(self.render_terminal_tabs(layout.side, cx))
-            .child(div().flex().flex_col().flex_1().min_w_0().min_h_0().child(body))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .flex_1()
+                    .min_w_0()
+                    .min_h_0()
+                    .child(body),
+            )
             .child(self.render_terminal_sash(layout.side, cx))
     }
 
@@ -516,7 +556,12 @@ impl BenCodeApp {
                     Err(_) => div().into_any_element(),
                 };
             }
-            LayoutNode::Split { id, dir, children, sizes } => (id, *dir, children, sizes),
+            LayoutNode::Split {
+                id,
+                dir,
+                children,
+                sizes,
+            } => (id, *dir, children, sizes),
         };
         let axis = match dir {
             SplitDir::Right => Axis::Horizontal,
@@ -524,15 +569,25 @@ impl BenCodeApp {
         };
         let weak = cx.entity().downgrade();
         let owned_id = split_id.clone();
-        let mut split = SplitPane::new(SharedString::from(format!("terminal-{split_id}")), axis, px(PANE_MIN))
-            .sizes(&split_shares(children.len(), sizes))
-            .on_resize(move |shares, _, cx| {
-                if let Err(err) = weak.update(cx, |this, cx| this.resize_terminal_split(&owned_id, shares, cx)) {
-                    log::debug!("terminal split resize after app drop: {err:#}");
-                }
-            });
+        let mut split = SplitPane::new(
+            SharedString::from(format!("terminal-{split_id}")),
+            axis,
+            px(PANE_MIN),
+        )
+        .sizes(&split_shares(children.len(), sizes))
+        .on_resize(move |shares, _, cx| {
+            if let Err(err) = weak.update(cx, |this, cx| {
+                this.resize_terminal_split(&owned_id, shares, cx)
+            }) {
+                log::debug!("terminal split resize after app drop: {err:#}");
+            }
+        });
         for child in children {
-            split = split.pane(div().size_full().child(self.render_terminal_split(child, cx)));
+            split = split.pane(
+                div()
+                    .size_full()
+                    .child(self.render_terminal_split(child, cx)),
+            );
         }
         split.into_any_element()
     }
@@ -563,7 +618,9 @@ impl BenCodeApp {
             .min_w_0()
             .min_h_0()
             // In the capture phase: the terminal keeps its own presses.
-            .capture_any_mouse_down(cx.listener(move |this, _, _, cx| this.focus_terminal_pane(id, cx)))
+            .capture_any_mouse_down(
+                cx.listener(move |this, _, _, cx| this.focus_terminal_pane(id, cx)),
+            )
             // Fires for every pane, so each checks the pointer is inside.
             .on_drag_move::<TerminalTabDrag>(cx.listener(
                 move |this, event: &gpui::DragMoveEvent<TerminalTabDrag>, _, cx| {
@@ -593,7 +650,9 @@ impl BenCodeApp {
             .on_drop(cx.listener(move |this, drag: &TerminalTabDrag, _, cx| {
                 this.drop_terminal_on_pane(drag.id, id, cx)
             }))
-            .when(in_split, |el| el.child(self.render_terminal_pane_header(ix, tab, active, cx)))
+            .when(in_split, |el| {
+                el.child(self.render_terminal_pane_header(ix, tab, active, cx))
+            })
             .child(
                 div()
                     .flex()
@@ -616,7 +675,9 @@ impl BenCodeApp {
                     .text_color(colors.fg_muted)
                     .child(running::exited_line(status.code()))
             }))
-            .when_some(drop_hint, |el, edge| el.child(render_pane_drop_hint(edge, cx)))
+            .when_some(drop_hint, |el, edge| {
+                el.child(render_pane_drop_hint(edge, cx))
+            })
             .into_any_element()
     }
 
@@ -658,7 +719,11 @@ impl BenCodeApp {
                     .size(px(8.0))
                     .flex_none()
                     .rounded_full()
-                    .bg(if active { colors.accent } else { gpui::transparent_black() }),
+                    .bg(if active {
+                        colors.accent
+                    } else {
+                        gpui::transparent_black()
+                    }),
             )
             .child(
                 div()
@@ -670,11 +735,14 @@ impl BenCodeApp {
                     .child(title),
             )
             .child(
-                IconButton::new(SharedString::from(format!("terminal-pane-close-{id}")), IconName::X)
-                    .size(ControlSize::Sm)
-                    .variant(ButtonVariant::Ghost)
-                    .tooltip("Close Pane (the terminal keeps its tab)")
-                    .on_click(cx.listener(move |this, _, _, cx| this.close_terminal_pane(id, cx))),
+                IconButton::new(
+                    SharedString::from(format!("terminal-pane-close-{id}")),
+                    IconName::X,
+                )
+                .size(ControlSize::Sm)
+                .variant(ButtonVariant::Ghost)
+                .tooltip("Close Pane (the terminal keeps its tab)")
+                .on_click(cx.listener(move |this, _, _, cx| this.close_terminal_pane(id, cx))),
             )
     }
 
@@ -684,21 +752,42 @@ impl BenCodeApp {
     fn render_terminal_sash(&self, side: DockSide, cx: &Context<Self>) -> impl IntoElement + use<> {
         let fg = cx.theme().colors.fg;
         let dragging = self.terminals.resizing;
-        let end_drag = |this: &mut Self, _: &gpui::MouseUpEvent, _: &mut Window, cx: &mut Context<Self>| {
-            this.terminals.resize_from = None;
-            if std::mem::take(&mut this.terminals.resizing) {
-                this.save_settings(cx);
-                cx.notify();
-            }
-        };
+        let end_drag =
+            |this: &mut Self, _: &gpui::MouseUpEvent, _: &mut Window, cx: &mut Context<Self>| {
+                this.terminals.resize_from = None;
+                if std::mem::take(&mut this.terminals.resizing) {
+                    this.save_settings(cx);
+                    cx.notify();
+                }
+            };
         div()
             .id("terminal-resize")
             .absolute()
             .map(|el| match side {
-                DockSide::Bottom => el.left_0().right_0().top(px(-1.0)).h(px(6.0)).cursor_row_resize(),
-                DockSide::Top => el.left_0().right_0().bottom(px(-1.0)).h(px(6.0)).cursor_row_resize(),
-                DockSide::Left => el.top_0().bottom_0().right(px(-1.0)).w(px(6.0)).cursor_col_resize(),
-                DockSide::Right => el.top_0().bottom_0().left(px(-1.0)).w(px(6.0)).cursor_col_resize(),
+                DockSide::Bottom => el
+                    .left_0()
+                    .right_0()
+                    .top(px(-1.0))
+                    .h(px(6.0))
+                    .cursor_row_resize(),
+                DockSide::Top => el
+                    .left_0()
+                    .right_0()
+                    .bottom(px(-1.0))
+                    .h(px(6.0))
+                    .cursor_row_resize(),
+                DockSide::Left => el
+                    .top_0()
+                    .bottom_0()
+                    .right(px(-1.0))
+                    .w(px(6.0))
+                    .cursor_col_resize(),
+                DockSide::Right => el
+                    .top_0()
+                    .bottom_0()
+                    .left(px(-1.0))
+                    .w(px(6.0))
+                    .cursor_col_resize(),
             })
             .when(dragging, |el| el.bg(fg.opacity(0.15)))
             .when(!dragging, |el| el.hover(move |s| s.bg(fg.opacity(0.10))))
@@ -708,7 +797,10 @@ impl BenCodeApp {
                     let project = this.current_cwd.clone();
                     let layout = this.terminals.layout(&project);
                     if event.click_count >= 2 {
-                        let reset = DockLayout { size: layout.side.default_size(), ..layout };
+                        let reset = DockLayout {
+                            size: layout.side.default_size(),
+                            ..layout
+                        };
                         this.terminals.set_layout(&project, reset);
                         this.terminals.resize_from = None;
                         this.save_settings(cx);
@@ -720,7 +812,8 @@ impl BenCodeApp {
                     } else {
                         event.position.x
                     };
-                    this.terminals.resize_from = Some((crate::ui::scale::logical(point), layout.size));
+                    this.terminals.resize_from =
+                        Some((crate::ui::scale::logical(point), layout.size));
                 }),
             )
             .on_drag(TerminalResize, |drag, _, _, cx| cx.new(|_| *drag))
@@ -745,7 +838,11 @@ impl BenCodeApp {
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default();
-        let menu_open = self.terminals.menu.as_ref().is_some_and(|menu| menu.is_side());
+        let menu_open = self
+            .terminals
+            .menu
+            .as_ref()
+            .is_some_and(|menu| menu.is_side());
         div()
             .flex()
             .flex_none()
@@ -787,7 +884,9 @@ impl BenCodeApp {
                     .cursor_pointer()
                     .when(menu_open, |el| el.bg(colors.hover))
                     .hover(|s| s.bg(colors.hover))
-                    .on_mouse_down(gpui::MouseButton::Left, |_, window, _| window.prevent_default())
+                    .on_mouse_down(gpui::MouseButton::Left, |_, window, _| {
+                        window.prevent_default()
+                    })
                     .on_click(cx.listener(|this, event: &gpui::ClickEvent, _, cx| {
                         this.toggle_dock_side_menu(event.position(), cx)
                     }))
@@ -822,7 +921,9 @@ impl BenCodeApp {
         .size(ControlSize::Sm)
         .variant(ButtonVariant::Ghost)
         .tooltip("Close Terminal")
-        .on_click(cx.listener(move |this, _, _, cx| this.request_close_terminals(&project, vec![id], None, cx)));
+        .on_click(cx.listener(move |this, _, _, cx| {
+            this.request_close_terminals(&project, vec![id], None, cx)
+        }));
         let ghost = title.clone();
         let edge = colors.accent;
         div()
@@ -840,7 +941,11 @@ impl BenCodeApp {
             .border_color(gpui::transparent_black())
             .cursor_pointer()
             .text_size(px(12.0))
-            .text_color(if active || shown { colors.fg } else { colors.fg_muted })
+            .text_color(if active || shown {
+                colors.fg
+            } else {
+                colors.fg_muted
+            })
             .when(active, |el| el.bg(colors.active))
             .hover(|s| s.bg(colors.hover))
             .on_click(cx.listener(move |this, _, _, cx| this.select_terminal(id, cx)))
@@ -855,7 +960,11 @@ impl BenCodeApp {
                 DragGhost::new(ghost.clone(), Some(IconName::Terminal), cx)
             })
             .drag_over::<TerminalTabDrag>(move |style, drag, _, _| {
-                if drag.from == ix { style } else { style.border_color(edge) }
+                if drag.from == ix {
+                    style
+                } else {
+                    style.border_color(edge)
+                }
             })
             .on_drop(cx.listener(move |this, drag: &TerminalTabDrag, _, cx| {
                 this.reorder_terminals(drag.from, ix, cx)

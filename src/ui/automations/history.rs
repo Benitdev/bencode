@@ -5,14 +5,16 @@
 use ely_gpui_component::buttons::{ButtonVariant, IconButton};
 use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize, Palette};
-use gpui::{AnyElement, Context, Div, FontWeight, Hsla, IntoElement, ParentElement, Styled, div, prelude::*};
+use gpui::{
+    AnyElement, Context, Div, FontWeight, Hsla, IntoElement, ParentElement, Styled, div, prelude::*,
+};
 use jiff::tz::TimeZone;
 
 use super::format::{run_at, run_duration};
-use crate::ui::page_parts::{panel, section_title, tint};
 use crate::app::{BenCodeApp, now_ms};
 use crate::db::{AutomationRow, AutomationRunRow, RunStatus, RunTrigger};
 use crate::schedule::schedule_label;
+use crate::ui::page_parts::{panel, section_title, tint};
 use crate::ui::scale::px;
 
 /// MonoCode shows this many runs.
@@ -56,20 +58,42 @@ fn trigger_label(run: &AutomationRunRow, auto: &AutomationRow) -> String {
 }
 
 /// One line of the table: the trigger takes the room the fixed columns leave.
-fn grid_row(trigger: impl IntoElement, triggered: impl IntoElement, status: impl IntoElement, duration: impl IntoElement) -> Div {
+fn grid_row(
+    trigger: impl IntoElement,
+    triggered: impl IntoElement,
+    status: impl IntoElement,
+    duration: impl IntoElement,
+) -> Div {
     div()
         .flex()
         .items_center()
         .gap_4()
         .px_4()
         .child(div().flex_1().min_w_0().child(trigger))
-        .child(div().flex_none().w(px(TRIGGERED_WIDTH)).truncate().child(triggered))
+        .child(
+            div()
+                .flex_none()
+                .w(px(TRIGGERED_WIDTH))
+                .truncate()
+                .child(triggered),
+        )
         .child(div().flex().flex_none().w(px(STATUS_WIDTH)).child(status))
-        .child(div().flex().flex_none().justify_end().w(px(DURATION_WIDTH)).child(duration))
+        .child(
+            div()
+                .flex()
+                .flex_none()
+                .justify_end()
+                .w(px(DURATION_WIDTH))
+                .child(duration),
+        )
 }
 
 impl BenCodeApp {
-    pub(super) fn render_automation_history(&self, draft: &AutomationRow, cx: &Context<Self>) -> AnyElement {
+    pub(super) fn render_automation_history(
+        &self,
+        draft: &AutomationRow,
+        cx: &Context<Self>,
+    ) -> AnyElement {
         let colors = &cx.theme().colors;
         let (fg, muted) = (colors.fg, colors.fg_muted);
         let title = section_title("Run history", muted);
@@ -101,7 +125,13 @@ impl BenCodeApp {
                 )
                 .children(rows)
         };
-        div().flex().flex_col().gap_3().child(title).child(table).into_any_element()
+        div()
+            .flex()
+            .flex_col()
+            .gap_3()
+            .child(title)
+            .child(table)
+            .into_any_element()
     }
 
     fn render_automation_run(
@@ -128,7 +158,11 @@ impl BenCodeApp {
             .gap_2()
             .min_w_0()
             .text_color(fg)
-            .child(Icon::new(IconName::Clock).size(IconSize::Sm).color(fg.opacity(tint::HINT)))
+            .child(
+                Icon::new(IconName::Clock)
+                    .size(IconSize::Sm)
+                    .color(fg.opacity(tint::HINT)),
+            )
             .child(div().min_w_0().truncate().child(trigger_label(run, draft)));
         let pill = div()
             .flex()
@@ -141,7 +175,14 @@ impl BenCodeApp {
             .font_weight(FontWeight::MEDIUM)
             .text_color(tone)
             .child(status_label(run.status));
-        let triggered = run_at(if run.scheduled_for > 0 { run.scheduled_for } else { run.created_at }, tz);
+        let triggered = run_at(
+            if run.scheduled_for > 0 {
+                run.scheduled_for
+            } else {
+                run.created_at
+            },
+            tz,
+        );
         div()
             .id(("automation-run", ix))
             .border_t_1()
@@ -150,14 +191,18 @@ impl BenCodeApp {
             .when_some(session, |el, session| {
                 el.cursor_pointer()
                     .hover(|style| style.bg(fg.opacity(tint::HOVER)))
-                    .on_click(cx.listener(move |this, _, _, cx| this.open_automation_run(&session, cx)))
+                    .on_click(
+                        cx.listener(move |this, _, _, cx| this.open_automation_run(&session, cx)),
+                    )
             })
             .child(
                 grid_row(
                     trigger,
                     div().text_color(fg.opacity(tint::BODY)).child(triggered),
                     pill,
-                    div().text_color(fg.opacity(tint::SOFT)).child(run_duration(run, now)),
+                    div()
+                        .text_color(fg.opacity(tint::SOFT))
+                        .child(run_duration(run, now)),
                 )
                 .h(px(44.0))
                 .text_size(px(13.0)),
@@ -183,7 +228,11 @@ impl BenCodeApp {
                 .bg(danger.opacity(tint::FILL))
                 .text_size(px(12.0))
                 .text_color(danger)
-                .child(Icon::new(IconName::CircleAlert).size(IconSize::Sm).color(danger))
+                .child(
+                    Icon::new(IconName::CircleAlert)
+                        .size(IconSize::Sm)
+                        .color(danger),
+                )
                 .child(div().flex_1().min_w_0().child(error))
                 .child(
                     IconButton::new("automation-error-dismiss", IconName::X)

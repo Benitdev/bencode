@@ -15,8 +15,6 @@ use gpui::{
 };
 
 use crate::app::BenCodeApp;
-use crate::ui::scale::px;
-use crate::ui::scrollbar::{self, ScrollBar};
 use crate::app::file_pane::PaneTab;
 use crate::git::checkpoint::CheckpointStore;
 use crate::git::{self, DiffSource};
@@ -24,6 +22,8 @@ use crate::ui::diff_counts::diff_counts;
 use crate::ui::diff_model::{self, Block, BodyRow, Expand, Line, LineKind, Reveal};
 use crate::ui::git_changes_panel::{Busy, Side};
 use crate::ui::icons::ExtraIcon;
+use crate::ui::scale::px;
+use crate::ui::scrollbar::{self, ScrollBar};
 
 /// MonoCode `UNIFIED_LINE_PX` / `UNIFIED_FOLD_PX`.
 const LINE_HEIGHT: f32 = 20.0;
@@ -83,7 +83,11 @@ pub enum DocStatus {
 enum DocRow {
     Header(usize),
     Line(usize, Line),
-    Fold { file: usize, id: usize, hidden: usize },
+    Fold {
+        file: usize,
+        id: usize,
+        hidden: usize,
+    },
     Message(usize, SharedString),
 }
 
@@ -160,16 +164,18 @@ impl DiffDoc {
                         .copied()
                         .unwrap_or_default()
                 };
-                rows.extend(diff_model::body_rows(blocks, reveal_for).into_iter().map(
-                    |row| match row {
-                        BodyRow::Line(line) => DocRow::Line(ix, line),
-                        BodyRow::Fold { id, hidden } => DocRow::Fold {
-                            file: ix,
-                            id,
-                            hidden,
-                        },
-                    },
-                ));
+                rows.extend(
+                    diff_model::body_rows(blocks, reveal_for)
+                        .into_iter()
+                        .map(|row| match row {
+                            BodyRow::Line(line) => DocRow::Line(ix, line),
+                            BodyRow::Fold { id, hidden } => DocRow::Fold {
+                                file: ix,
+                                id,
+                                hidden,
+                            },
+                        }),
+                );
             }
         }
         rows
@@ -188,7 +194,8 @@ impl DiffDoc {
         self.list.reset(self.rows.len());
         self.list.scroll_to(top);
         let files = &self.files;
-        self.side_scroll.retain(|id, _| files.iter().any(|file| &file.id == id));
+        self.side_scroll
+            .retain(|id, _| files.iter().any(|file| &file.id == id));
     }
 
     /// The longest line file `ix` shows, in characters.
@@ -293,7 +300,11 @@ fn working_tree_entries(cwd: &str, scope: Option<Side>) -> Vec<Entry> {
         };
         for file in list {
             let label = if on(other, &file.path) {
-                let which = if side == Side::Staged { "Staged" } else { "Unstaged" };
+                let which = if side == Side::Staged {
+                    "Staged"
+                } else {
+                    "Unstaged"
+                };
                 format!("{} ({which})", file.path)
             } else {
                 file.path.clone()
@@ -325,7 +336,9 @@ fn entries_for(tab: &PaneTab, store: &CheckpointStore) -> Result<(String, Vec<En
                 counts: (0, 0),
             }],
         )),
-        PaneTab::SessionChanges { cwd, session_id, .. } => {
+        PaneTab::SessionChanges {
+            cwd, session_id, ..
+        } => {
             let entries = store
                 .status(session_id, cwd)?
                 .files
@@ -436,7 +449,12 @@ fn load_doc(tab: &PaneTab, store: &CheckpointStore) -> Result<Vec<DocFile>, Stri
 
 impl BenCodeApp {
     /// Opens `key`'s review, loading it the first time.
-    pub(crate) fn ensure_diff_doc(&mut self, key: &str, focus: Option<DocFocus>, cx: &mut Context<Self>) {
+    pub(crate) fn ensure_diff_doc(
+        &mut self,
+        key: &str,
+        focus: Option<DocFocus>,
+        cx: &mut Context<Self>,
+    ) {
         match self.diff_docs.get_mut(key) {
             Some(doc) => {
                 if focus.is_some() {
@@ -561,7 +579,14 @@ impl BenCodeApp {
         });
     }
 
-    fn reveal_diff_fold(&mut self, key: &str, ix: usize, fold: usize, how: Expand, cx: &mut Context<Self>) {
+    fn reveal_diff_fold(
+        &mut self,
+        key: &str,
+        ix: usize,
+        fold: usize,
+        how: Expand,
+        cx: &mut Context<Self>,
+    ) {
         self.with_doc(key, cx, |doc| {
             let Some(file) = doc.files.get(ix) else {
                 return;
@@ -584,7 +609,14 @@ impl BenCodeApp {
 
     /// Scrolls the lines of file `ix` sideways by `by`, as far as its
     /// longest line reaches.
-    fn scroll_diff_file_sideways(&mut self, key: &str, ix: usize, by: Pixels, window: &Window, cx: &mut Context<Self>) {
+    fn scroll_diff_file_sideways(
+        &mut self,
+        key: &str,
+        ix: usize,
+        by: Pixels,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) {
         let Some(doc) = self.diff_docs.get_mut(key) else {
             return;
         };
@@ -616,7 +648,14 @@ impl BenCodeApp {
     pub(crate) fn render_diff_doc(&self, key: &str, cx: &Context<Self>) -> AnyElement {
         let theme = cx.theme();
         let fg = theme.colors.fg;
-        let centered = || div().flex().flex_1().size_full().items_center().justify_center();
+        let centered = || {
+            div()
+                .flex()
+                .flex_1()
+                .size_full()
+                .items_center()
+                .justify_center()
+        };
         let Some(doc) = self.diff_docs.get(key) else {
             return centered().into_any_element();
         };
@@ -643,9 +682,24 @@ impl BenCodeApp {
                     .flex_col()
                     .p_6()
                     .gap_1()
-                    .child(Icon::new(IconName::CircleAlert).size(IconSize::Md).color(theme.colors.danger))
-                    .child(div().mt_2().text_size(px(13.0)).text_color(fg).child(format!("Couldn’t load {what}")))
-                    .child(div().text_size(px(12.0)).text_color(fg.opacity(0.5)).child(err.clone()))
+                    .child(
+                        Icon::new(IconName::CircleAlert)
+                            .size(IconSize::Md)
+                            .color(theme.colors.danger),
+                    )
+                    .child(
+                        div()
+                            .mt_2()
+                            .text_size(px(13.0))
+                            .text_color(fg)
+                            .child(format!("Couldn’t load {what}")),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(12.0))
+                            .text_color(fg.opacity(0.5))
+                            .child(err.clone()),
+                    )
                     .into_any_element();
             }
             DocStatus::Ready => {}
@@ -722,7 +776,9 @@ impl BenCodeApp {
                 .items_center()
                 .justify_center()
                 .rounded_md()
-                .when(enabled, |el| el.cursor_pointer().hover(|s| s.bg(fg.opacity(0.10))))
+                .when(enabled, |el| {
+                    el.cursor_pointer().hover(|s| s.bg(fg.opacity(0.10)))
+                })
                 .when(!enabled, |el| el.opacity(0.4))
                 .tooltip(Tooltip::text(tip))
                 .child(icon.icon().size(IconSize::Sm).color(fg.opacity(0.45)))
@@ -739,12 +795,15 @@ impl BenCodeApp {
             .border_b_1()
             .border_color(colors.border)
             .text_size(px(12.0))
+            .child(div().text_color(fg.opacity(0.7)).child(if count == 1 {
+                "1 file".to_string()
+            } else {
+                format!("{count} files")
+            }))
             .child(
-                div()
-                    .text_color(fg.opacity(0.7))
-                    .child(if count == 1 { "1 file".to_string() } else { format!("{count} files") }),
+                diff_counts(additions, deletions, crate::ui::appearance::diff_colors(cx))
+                    .text_size(px(11.0)),
             )
-            .child(diff_counts(additions, deletions, crate::ui::appearance::diff_colors(cx)).text_size(px(11.0)))
             .child(
                 div()
                     .ml_auto()
@@ -752,19 +811,29 @@ impl BenCodeApp {
                     .items_center()
                     .gap_0p5()
                     .child(
-                        button("diff-expand-all", ExtraIcon::UnfoldVertical, "Expand all files", true)
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.set_all_diff_files(&expand_key, true, cx)
-                            })),
+                        button(
+                            "diff-expand-all",
+                            ExtraIcon::UnfoldVertical,
+                            "Expand all files",
+                            true,
+                        )
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.set_all_diff_files(&expand_key, true, cx)
+                        })),
                     )
                     .child({
                         let enabled = !doc.open.is_empty();
-                        button("diff-collapse-all", ExtraIcon::FoldVertical, "Collapse all files", enabled)
-                            .when(enabled, |el| {
-                                el.on_click(cx.listener(move |this, _, _, cx| {
-                                    this.set_all_diff_files(&collapse_key, false, cx)
-                                }))
-                            })
+                        button(
+                            "diff-collapse-all",
+                            ExtraIcon::FoldVertical,
+                            "Collapse all files",
+                            enabled,
+                        )
+                        .when(enabled, |el| {
+                            el.on_click(cx.listener(move |this, _, _, cx| {
+                                this.set_all_diff_files(&collapse_key, false, cx)
+                            }))
+                        })
                     }),
             )
     }
@@ -777,19 +846,27 @@ impl BenCodeApp {
             return div().into_any_element();
         };
         match row {
-            DocRow::Header(f) => self.render_doc_header(key, doc, *f, false, cx).into_any_element(),
+            DocRow::Header(f) => self
+                .render_doc_header(key, doc, *f, false, cx)
+                .into_any_element(),
             DocRow::Line(f, line) => {
-                let scrolled = doc.side_scroll.get(&doc.files[*f].id).copied().unwrap_or_default();
+                let scrolled = doc
+                    .side_scroll
+                    .get(&doc.files[*f].id)
+                    .copied()
+                    .unwrap_or_default();
                 let (key, file) = (key.to_string(), *f);
                 render_line(line, scrolled, cx)
-                    .on_scroll_wheel(cx.listener(move |this, event: &ScrollWheelEvent, window, cx| {
-                        let delta = event.delta.pixel_delta(window.line_height());
-                        // An up-and-down gesture is the list's.
-                        if delta.x.abs() > delta.y.abs() {
-                            cx.stop_propagation();
-                            this.scroll_diff_file_sideways(&key, file, -delta.x, window, cx);
-                        }
-                    }))
+                    .on_scroll_wheel(cx.listener(
+                        move |this, event: &ScrollWheelEvent, window, cx| {
+                            let delta = event.delta.pixel_delta(window.line_height());
+                            // An up-and-down gesture is the list's.
+                            if delta.x.abs() > delta.y.abs() {
+                                cx.stop_propagation();
+                                this.scroll_diff_file_sideways(&key, file, -delta.x, window, cx);
+                            }
+                        },
+                    ))
                     .into_any_element()
             }
             DocRow::Fold { file, id, hidden } => self.render_fold(key, *file, *id, *hidden, cx),
@@ -805,7 +882,14 @@ impl BenCodeApp {
 
     /// MonoCode `FileSection` header: chevron, icon, path, counts, and on
     /// the unstaged side Discard and Stage.
-    fn render_doc_header(&self, key: &str, doc: &DiffDoc, ix: usize, pinned: bool, cx: &Context<Self>) -> impl IntoElement {
+    fn render_doc_header(
+        &self,
+        key: &str,
+        doc: &DiffDoc,
+        ix: usize,
+        pinned: bool,
+        cx: &Context<Self>,
+    ) -> impl IntoElement {
         let theme = cx.theme();
         let colors = &theme.colors;
         let fg = colors.fg;
@@ -813,120 +897,168 @@ impl BenCodeApp {
         let expanded = doc.open.contains(&file.id);
         let busy = self.changes_ui.busy.is_some();
         let toggle_key = key.to_string();
-        let name = file.path.rsplit('/').next().unwrap_or(&file.path).to_string();
+        let name = file
+            .path
+            .rsplit('/')
+            .next()
+            .unwrap_or(&file.path)
+            .to_string();
         // Stage and Discard act on the open workspace's tree only.
-        let live = self.file_pane.get(key).and_then(PaneTab::cwd) == Some(self.workspace.cwd.as_str());
+        let live =
+            self.file_pane.get(key).and_then(PaneTab::cwd) == Some(self.workspace.cwd.as_str());
         let unstaged = live && file.side == Some(Side::Unstaged);
         let busy_here = matches!(&self.changes_ui.busy, Some(Busy::File(p)) if *p == file.path);
         let prefix = if pinned { "diff-pinned" } else { "diff" };
-        div()
-            .bg(colors.bg)
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .px_3()
-                    .py_1p5()
-                    .bg(fg.opacity(0.02))
-                    .border_b_1()
-                    .border_color(colors.border)
-                    .child(
-                        div()
-                            .id(SharedString::from(format!("{prefix}-file-{key}-{}", file.id)))
-                            .flex()
-                            .flex_1()
-                            .min_w_0()
-                            .items_center()
-                            .gap_2()
-                            .cursor_pointer()
-                            .tooltip(Tooltip::text(file.label.clone()))
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.toggle_diff_file(&toggle_key, ix, cx)
-                            }))
-                            .child(
-                                Icon::new(if expanded { IconName::ChevronDown } else { IconName::ChevronRight })
-                                    .size(IconSize::Xs)
-                                    .color(fg.opacity(0.45)),
-                            )
-                            .child(div().flex_none().child(FileIcon::file(&name).size(IconSize::Sm)))
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .min_w_0()
-                                    .truncate()
-                                    .font_family(theme.mono_family.clone())
-                                    .text_size(px(12.0))
-                                    .text_color(fg.opacity(0.85))
-                                    .child(file.label.clone()),
-                            )
-                            .child(
-                                diff_counts(file.additions, file.deletions, crate::ui::appearance::diff_colors(cx))
-                                    .flex_none()
-                                    .text_size(px(11.0)),
-                            ),
-                    )
-                    .when(unstaged, |el| {
-                        let discard_path = file.path.clone();
-                        let stage_path = file.path.clone();
-                        el.child(
-                            div()
-                                .id(SharedString::from(format!("{prefix}-discard-{key}-{}", file.id)))
-                                .size(px(24.0))
-                                .flex()
-                                .flex_none()
-                                .items_center()
-                                .justify_center()
-                                .rounded_md()
-                                .tooltip(Tooltip::text("Discard file"))
-                                .when(busy, |el| el.opacity(0.4))
-                                .when(!busy, |el| {
-                                    el.cursor_pointer()
-                                        .hover(|s| s.bg(fg.opacity(0.10)))
-                                        .on_click(cx.listener(move |this, _, _, cx| {
-                                            this.file_action(discard_path.clone(), Side::Unstaged, true, cx)
-                                        }))
-                                })
-                                .child(Icon::new(IconName::Undo2).size(IconSize::Xs).color(fg.opacity(0.45))),
+        div().bg(colors.bg).child(
+            div()
+                .flex()
+                .items_center()
+                .gap_2()
+                .px_3()
+                .py_1p5()
+                .bg(fg.opacity(0.02))
+                .border_b_1()
+                .border_color(colors.border)
+                .child(
+                    div()
+                        .id(SharedString::from(format!(
+                            "{prefix}-file-{key}-{}",
+                            file.id
+                        )))
+                        .flex()
+                        .flex_1()
+                        .min_w_0()
+                        .items_center()
+                        .gap_2()
+                        .cursor_pointer()
+                        .tooltip(Tooltip::text(file.label.clone()))
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.toggle_diff_file(&toggle_key, ix, cx)
+                        }))
+                        .child(
+                            Icon::new(if expanded {
+                                IconName::ChevronDown
+                            } else {
+                                IconName::ChevronRight
+                            })
+                            .size(IconSize::Xs)
+                            .color(fg.opacity(0.45)),
                         )
                         .child(
                             div()
-                                .id(SharedString::from(format!("{prefix}-stage-{key}-{}", file.id)))
-                                .size(px(16.0))
-                                .flex()
                                 .flex_none()
-                                .items_center()
-                                .justify_center()
-                                .rounded(px(3.0))
-                                .bg(fg)
-                                .tooltip(Tooltip::text("Stage file"))
-                                .when(busy || busy_here, |el| el.opacity(0.4))
-                                .when(!busy, |el| {
-                                    el.cursor_pointer()
-                                        .hover(|s| s.opacity(0.8))
-                                        .on_click(cx.listener(move |this, _, _, cx| {
-                                            this.file_action(stage_path.clone(), Side::Unstaged, false, cx)
-                                        }))
-                                })
-                                .child(
-                                    gpui::svg()
-                                        .path(IconName::Check.path())
-                                        .size(px(10.0))
-                                        .text_color(colors.bg),
-                                ),
+                                .child(FileIcon::file(&name).size(IconSize::Sm)),
                         )
-                    }),
-            )
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .truncate()
+                                .font_family(theme.mono_family.clone())
+                                .text_size(px(12.0))
+                                .text_color(fg.opacity(0.85))
+                                .child(file.label.clone()),
+                        )
+                        .child(
+                            diff_counts(
+                                file.additions,
+                                file.deletions,
+                                crate::ui::appearance::diff_colors(cx),
+                            )
+                            .flex_none()
+                            .text_size(px(11.0)),
+                        ),
+                )
+                .when(unstaged, |el| {
+                    let discard_path = file.path.clone();
+                    let stage_path = file.path.clone();
+                    el.child(
+                        div()
+                            .id(SharedString::from(format!(
+                                "{prefix}-discard-{key}-{}",
+                                file.id
+                            )))
+                            .size(px(24.0))
+                            .flex()
+                            .flex_none()
+                            .items_center()
+                            .justify_center()
+                            .rounded_md()
+                            .tooltip(Tooltip::text("Discard file"))
+                            .when(busy, |el| el.opacity(0.4))
+                            .when(!busy, |el| {
+                                el.cursor_pointer()
+                                    .hover(|s| s.bg(fg.opacity(0.10)))
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        this.file_action(
+                                            discard_path.clone(),
+                                            Side::Unstaged,
+                                            true,
+                                            cx,
+                                        )
+                                    }))
+                            })
+                            .child(
+                                Icon::new(IconName::Undo2)
+                                    .size(IconSize::Xs)
+                                    .color(fg.opacity(0.45)),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .id(SharedString::from(format!(
+                                "{prefix}-stage-{key}-{}",
+                                file.id
+                            )))
+                            .size(px(16.0))
+                            .flex()
+                            .flex_none()
+                            .items_center()
+                            .justify_center()
+                            .rounded(px(3.0))
+                            .bg(fg)
+                            .tooltip(Tooltip::text("Stage file"))
+                            .when(busy || busy_here, |el| el.opacity(0.4))
+                            .when(!busy, |el| {
+                                el.cursor_pointer()
+                                    .hover(|s| s.opacity(0.8))
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        this.file_action(
+                                            stage_path.clone(),
+                                            Side::Unstaged,
+                                            false,
+                                            cx,
+                                        )
+                                    }))
+                            })
+                            .child(
+                                gpui::svg()
+                                    .path(IconName::Check.path())
+                                    .size(px(10.0))
+                                    .text_color(colors.bg),
+                            ),
+                    )
+                }),
+        )
     }
 
     /// MonoCode `FoldBar`: reveal twenty lines up or down, or all of them.
-    fn render_fold(&self, key: &str, file: usize, fold: usize, hidden: usize, cx: &Context<Self>) -> AnyElement {
+    fn render_fold(
+        &self,
+        key: &str,
+        file: usize,
+        fold: usize,
+        hidden: usize,
+        cx: &Context<Self>,
+    ) -> AnyElement {
         let theme = cx.theme();
         let fg = theme.colors.fg;
         let arrow = |dir: &str, icon: IconName, tip: &'static str, how: Expand| {
             let key = key.to_string();
             div()
-                .id(SharedString::from(format!("fold-{dir}-{key}-{file}-{fold}")))
+                .id(SharedString::from(format!(
+                    "fold-{dir}-{key}-{file}-{fold}"
+                )))
                 .size(px(20.0))
                 .flex()
                 .flex_none()
@@ -950,8 +1082,18 @@ impl BenCodeApp {
             .h(px(FOLD_HEIGHT))
             .px_2()
             .bg(fg.opacity(0.08))
-            .child(arrow("up", IconName::ChevronUp, "Expand upward", Expand::Up))
-            .child(arrow("down", IconName::ChevronDown, "Expand downward", Expand::Down))
+            .child(arrow(
+                "up",
+                IconName::ChevronUp,
+                "Expand upward",
+                Expand::Up,
+            ))
+            .child(arrow(
+                "down",
+                IconName::ChevronDown,
+                "Expand downward",
+                Expand::Down,
+            ))
             .child(
                 div()
                     .id(SharedString::from(format!("fold-all-{key}-{file}-{fold}")))
@@ -1023,10 +1165,18 @@ fn render_line(line: &Line, scrolled: Pixels, cx: &gpui::App) -> gpui::Div {
                 .whitespace_nowrap()
                 .overflow_hidden()
                 .text_size(px(LINE_TEXT))
-                .text_color(fg.opacity(if line.kind == LineKind::Context { 0.56 } else { 0.8 }))
+                .text_color(fg.opacity(if line.kind == LineKind::Context {
+                    0.56
+                } else {
+                    0.8
+                }))
                 .when(line.text.is_empty(), |el| el.child(" "))
                 .when(!line.text.is_empty(), |el| {
-                    el.child(div().ml(-scrolled).child(SharedString::from(line.text.clone())))
+                    el.child(
+                        div()
+                            .ml(-scrolled)
+                            .child(SharedString::from(line.text.clone())),
+                    )
                 }),
         )
 }

@@ -50,28 +50,36 @@ impl BenCodeApp {
             .flex_1()
             .min_h_0()
             .flex_col()
-            .child(crate::ui::scrollbar::Scrolled::new(
-                "settings-nav-scrollbar",
-                // `flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-2 py-3`
-                div()
-                    .id("settings-nav")
-                    .flex()
-                    .flex_1()
-                    .min_h_0()
-                    .flex_col()
-                    .gap_5()
-                    .overflow_y_scroll()
-                    .pl_2()
-                    .py_3()
-                    .children(groups),
+            .child(
+                crate::ui::scrollbar::Scrolled::new(
+                    "settings-nav-scrollbar",
+                    // `flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-2 py-3`
+                    div()
+                        .id("settings-nav")
+                        .flex()
+                        .flex_1()
+                        .min_h_0()
+                        .flex_col()
+                        .gap_5()
+                        .overflow_y_scroll()
+                        .pl_2()
+                        .py_3()
+                        .children(groups),
+                )
+                .gutter(px(8.0)),
             )
-            .gutter(px(8.0)))
             .child(
                 // `flex shrink-0 flex-col gap-px p-2`
-                div().flex().flex_none().flex_col().gap(px(1.0)).p_2().child(
-                    nav_row("settings-nav-back", "Back", IconName::ArrowLeft, false, cx)
-                        .on_click(cx.listener(|this, _, _, cx| this.close_surface(cx))),
-                ),
+                div()
+                    .flex()
+                    .flex_none()
+                    .flex_col()
+                    .gap(px(1.0))
+                    .p_2()
+                    .child(
+                        nav_row("settings-nav-back", "Back", IconName::ArrowLeft, false, cx)
+                            .on_click(cx.listener(|this, _, _, cx| this.close_surface(cx))),
+                    ),
             )
     }
 

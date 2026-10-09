@@ -25,23 +25,21 @@ use ely_gpui_component::primitives::{Icon, IconName, Severity, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
     Animation, AnimationExt, AnyElement, Bounds, Context, FontWeight, Hsla, InteractiveElement,
-    IntoElement, MouseButton, ParentElement, PathBuilder, Pixels, ScrollHandle, SharedString, Styled, canvas,
-    div, percentage, point, prelude::*, relative, rgb,
+    IntoElement, MouseButton, ParentElement, PathBuilder, Pixels, ScrollHandle, SharedString,
+    Styled, canvas, div, percentage, point, prelude::*, relative, rgb,
 };
 
 use crate::app::BenCodeApp;
-use crate::ui::scale::px;
-use crate::ui::scrollbar;
 use crate::app::file_pane::PaneTab;
-use crate::ui::appearance::DiffColors;
 use crate::git::graph::{self as git_graph, Cmd, Node};
 use crate::git::sync::{BranchPr, HistoryCommit};
-use crate::git::{
-    GitFileChange, GitFileStatus, discard_all, discard_file,
-};
+use crate::git::{GitFileChange, GitFileStatus, discard_all, discard_file};
 use crate::ui::app_callback::app_callback;
+use crate::ui::appearance::DiffColors;
 use crate::ui::git_menus::{GitMenuKind, TriggerLook};
 use crate::ui::icons::ExtraIcon;
+use crate::ui::scale::px;
+use crate::ui::scrollbar;
 use crate::ui::virtual_rows;
 
 /// MonoCode `GRAPH_PANEL_MIN`, `GRAPH_PANEL_DEFAULT`.
@@ -69,9 +67,22 @@ pub enum Busy {
 
 /// One line of the Changes list, flattened so only those in view are built.
 enum ChangeItem<'a> {
-    Header { side: Side, files: &'a [GitFileChange] },
-    Dir { dir: &'a ChangeDir, depth: usize, open: bool, key: String, side: Side },
-    File { file: &'a GitFileChange, side: Side, depth: Option<usize> },
+    Header {
+        side: Side,
+        files: &'a [GitFileChange],
+    },
+    Dir {
+        dir: &'a ChangeDir,
+        depth: usize,
+        open: bool,
+        key: String,
+        side: Side,
+    },
+    File {
+        file: &'a GitFileChange,
+        side: Side,
+        depth: Option<usize>,
+    },
 }
 
 impl ChangeItem<'_> {
@@ -236,9 +247,7 @@ pub(crate) fn spinning_icon(
         .into_any_element()
 }
 
-
 impl BenCodeApp {
-
     pub fn render_git_changes_panel(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         self.check_amend_target();
         let cwd = self.workspace_cwd();
@@ -322,9 +331,9 @@ impl BenCodeApp {
             .child(self.render_changes_header(cx))
             .when_some(self.workspace.git_error.clone(), |el, error| {
                 el.child(
-                    div().p_2().child(
-                        Alert::new("git-error-banner", Severity::Danger, "Git").body(error),
-                    ),
+                    div()
+                        .p_2()
+                        .child(Alert::new("git-error-banner", Severity::Danger, "Git").body(error)),
                 )
             })
             .child(self.render_commit_box(cx))
@@ -410,7 +419,11 @@ impl BenCodeApp {
                             self.git_menu_trigger(
                                 GitMenuKind::Branch,
                                 TriggerLook {
-                                    icon: if pulling { IconName::LoaderCircle } else { IconName::Ellipsis },
+                                    icon: if pulling {
+                                        IconName::LoaderCircle
+                                    } else {
+                                        IconName::Ellipsis
+                                    },
                                     size: if pulling { IconSize::Sm } else { IconSize::Md },
                                     spin: pulling,
                                     color: fg.opacity(0.5),
@@ -496,7 +509,9 @@ impl BenCodeApp {
                             .when(generating || can_generate, |el| {
                                 el.cursor_pointer()
                                     .hover(move |s| s.bg(wand_hover))
-                                    .on_click(cx.listener(|this, _, _, cx| this.toggle_generate(cx)))
+                                    .on_click(
+                                        cx.listener(|this, _, _, cx| this.toggle_generate(cx)),
+                                    )
                             })
                             .tooltip(Tooltip::text(if generating {
                                 "Cancel commit message generation"
@@ -523,10 +538,16 @@ impl BenCodeApp {
                                             .flex()
                                             .invisible()
                                             .group_hover(wand_group.clone(), |s| s.visible())
-                                            .child(Icon::new(IconName::X).size(IconSize::Sm).color(fg)),
+                                            .child(
+                                                Icon::new(IconName::X).size(IconSize::Sm).color(fg),
+                                            ),
                                     )
                                 } else {
-                                    el.child(Icon::new(IconName::WandSparkles).size(IconSize::Xs).color(fg))
+                                    el.child(
+                                        Icon::new(IconName::WandSparkles)
+                                            .size(IconSize::Xs)
+                                            .color(fg),
+                                    )
                                 }
                             }),
                     ),
@@ -554,7 +575,10 @@ impl BenCodeApp {
                             .when(can_commit, |el| {
                                 el.cursor_pointer().on_click(cx.listener(|this, _, _, cx| {
                                     this.commit_from_panel(
-                                        PendingCommit { push: false, pr: false },
+                                        PendingCommit {
+                                            push: false,
+                                            pr: false,
+                                        },
                                         false,
                                         false,
                                         cx,
@@ -622,15 +646,21 @@ impl BenCodeApp {
         let sync_title = if syncing {
             "Synchronizing Changes...".to_string()
         } else if can_publish {
-            sync.branch
-                .as_ref()
-                .map_or("Publish Branch".into(), |b| format!("Publish Branch \"{b}\""))
+            sync.branch.as_ref().map_or("Publish Branch".into(), |b| {
+                format!("Publish Branch \"{b}\"")
+            })
         } else if ahead > 0 && behind > 0 {
             format!("Pull {behind} and push {ahead} commits between {dest}")
         } else if behind > 0 {
-            format!("Pull {behind} commit{} from {dest}", if behind == 1 { "" } else { "s" })
+            format!(
+                "Pull {behind} commit{} from {dest}",
+                if behind == 1 { "" } else { "s" }
+            )
         } else {
-            format!("Push {ahead} commit{} to {dest}", if ahead == 1 { "" } else { "s" })
+            format!(
+                "Push {ahead} commit{} to {dest}",
+                if ahead == 1 { "" } else { "s" }
+            )
         };
         let button = |id: &'static str, enabled: bool, tip: String| {
             let hover = fg.opacity(0.15);
@@ -651,10 +681,17 @@ impl BenCodeApp {
                 .text_color(fg)
                 .tooltip(Tooltip::text(tip))
                 .when(!enabled, |el| el.opacity(0.4))
-                .when(enabled, |el| el.cursor_pointer().hover(move |s| s.bg(hover)))
+                .when(enabled, |el| {
+                    el.cursor_pointer().hover(move |s| s.bg(hover))
+                })
         };
         // `size-3.5` icons; MonoCode's loaders spin (`animate-spin`).
-        let icon = |name: IconName| Icon::new(name).size(IconSize::Sm).color(fg).into_any_element();
+        let icon = |name: IconName| {
+            Icon::new(name)
+                .size(IconSize::Sm)
+                .color(fg)
+                .into_any_element()
+        };
         let spinner =
             |id: &'static str, name: IconName| spinning_icon(id.into(), name, IconSize::Sm, fg);
         let count = |text: String| div().flex_none().text_color(fg.opacity(0.55)).child(text);
@@ -691,9 +728,12 @@ impl BenCodeApp {
         }
         if show_create {
             let enabled = self.can_create_pr() && busy.is_none();
-            let tip = sync.default_branch.as_ref().map_or("Create pull request".into(), |b| {
-                format!("Create a pull request into {b}")
-            });
+            let tip = sync
+                .default_branch
+                .as_ref()
+                .map_or("Create pull request".into(), |b| {
+                    format!("Create a pull request into {b}")
+                });
             col = col.child(
                 button("git-create-pr", enabled, tip)
                     .when(enabled, |el| {
@@ -715,7 +755,9 @@ impl BenCodeApp {
                     busy.is_none(),
                     format!("View PR #{}: {}", pr.number, pr.title),
                 )
-                .when(busy.is_none(), |el| el.on_click(move |_, _, cx| cx.open_url(&url)))
+                .when(busy.is_none(), |el| {
+                    el.on_click(move |_, _, cx| cx.open_url(&url))
+                })
                 .child(icon(IconName::ExternalLink))
                 .child(
                     div()
@@ -766,9 +808,13 @@ impl BenCodeApp {
             // Only the rows in view are built (a big checkout can list
             // thousands of files); spacers stand in for the rest.
             let tree_of = |side: Side, files: &[GitFileChange]| {
-                (self.changes_ui.tree && self.section_open(side) && !files.is_empty()).then(|| build_tree(files))
+                (self.changes_ui.tree && self.section_open(side) && !files.is_empty())
+                    .then(|| build_tree(files))
             };
-            let (staged_tree, unstaged_tree) = (tree_of(Side::Staged, staged), tree_of(Side::Unstaged, unstaged));
+            let (staged_tree, unstaged_tree) = (
+                tree_of(Side::Staged, staged),
+                tree_of(Side::Unstaged, unstaged),
+            );
             let mut items = Vec::new();
             if !staged.is_empty() {
                 self.push_section(Side::Staged, staged, staged_tree.as_ref(), &mut items);
@@ -777,11 +823,20 @@ impl BenCodeApp {
                 self.push_section(Side::Unstaged, unstaged, unstaged_tree.as_ref(), &mut items);
             }
             let heights: Vec<Option<f32>> = items.iter().map(|item| Some(item.height())).collect();
-            let visible = virtual_rows::for_scroll(&heights, &self.changes_ui.scroll, CHANGES_PAD_Y);
+            let visible =
+                virtual_rows::for_scroll(&heights, &self.changes_ui.scroll, CHANGES_PAD_Y);
             div()
-                .when(visible.above > 0.0, |el| el.child(div().h(px(visible.above))))
-                .children(items[visible.range.clone()].iter().map(|item| self.render_change_item(item, cx)))
-                .when(visible.below > 0.0, |el| el.child(div().h(px(visible.below))))
+                .when(visible.above > 0.0, |el| {
+                    el.child(div().h(px(visible.above)))
+                })
+                .children(
+                    items[visible.range.clone()]
+                        .iter()
+                        .map(|item| self.render_change_item(item, cx)),
+                )
+                .when(visible.below > 0.0, |el| {
+                    el.child(div().h(px(visible.below)))
+                })
                 .into_any_element()
         };
         scrollbar::framed(
@@ -867,7 +922,9 @@ impl BenCodeApp {
                     .cursor_pointer()
                     .on_click(cx.listener(move |this, _, _, cx| {
                         match side {
-                            Side::Staged => this.changes_ui.staged_closed = !this.changes_ui.staged_closed,
+                            Side::Staged => {
+                                this.changes_ui.staged_closed = !this.changes_ui.staged_closed
+                            }
                             Side::Unstaged => {
                                 this.changes_ui.changes_closed = !this.changes_ui.changes_closed
                             }
@@ -929,30 +986,43 @@ impl BenCodeApp {
                 })),
             )
             .child(
-                action("open-all", extra("open-all", ExtraIcon::FileDiff), "Open All Changes").on_click(cx.listener(
-                    move |this, _, _, cx| this.open_all_changes(side, cx),
-                )),
+                action(
+                    "open-all",
+                    extra("open-all", ExtraIcon::FileDiff),
+                    "Open All Changes",
+                )
+                .on_click(cx.listener(move |this, _, _, cx| this.open_all_changes(side, cx))),
             );
         header = match side {
             Side::Staged => header.child(
-                action("unstage-all", named("unstage-all", IconName::Minus), "Unstage All Changes")
-                    .on_click(cx.listener(|this, _, _, cx| this.all_action(false, cx))),
+                action(
+                    "unstage-all",
+                    named("unstage-all", IconName::Minus),
+                    "Unstage All Changes",
+                )
+                .on_click(cx.listener(|this, _, _, cx| this.all_action(false, cx))),
             ),
             Side::Unstaged => header
                 .child(
-                    action("discard-all", named("discard-all", IconName::Undo2), "Discard All Changes").on_click(
-                        cx.listener(|this, _, _, cx| {
-                            if !this.git_status.unstaged.is_empty() && this.changes_ui.busy.is_none()
-                            {
-                                this.git_confirm = Some(GitConfirm::DiscardAll);
-                                cx.notify();
-                            }
-                        }),
-                    ),
+                    action(
+                        "discard-all",
+                        named("discard-all", IconName::Undo2),
+                        "Discard All Changes",
+                    )
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        if !this.git_status.unstaged.is_empty() && this.changes_ui.busy.is_none() {
+                            this.git_confirm = Some(GitConfirm::DiscardAll);
+                            cx.notify();
+                        }
+                    })),
                 )
                 .child(
-                    action("stage-all", named("stage-all", IconName::Plus), "Stage All Changes")
-                        .on_click(cx.listener(|this, _, _, cx| this.all_action(true, cx))),
+                    action(
+                        "stage-all",
+                        named("stage-all", IconName::Plus),
+                        "Stage All Changes",
+                    )
+                    .on_click(cx.listener(|this, _, _, cx| this.all_action(true, cx))),
                 ),
         };
         header.into_any_element()
@@ -988,7 +1058,13 @@ impl BenCodeApp {
         }
     }
 
-    fn push_tree<'a>(&self, dir: &'a ChangeDir, depth: usize, side: Side, out: &mut Vec<ChangeItem<'a>>) {
+    fn push_tree<'a>(
+        &self,
+        dir: &'a ChangeDir,
+        depth: usize,
+        side: Side,
+        out: &mut Vec<ChangeItem<'a>>,
+    ) {
         for child in &dir.dirs {
             let key = format!("{side:?}:{}", child.path);
             let open = !self.changes_ui.collapsed_dirs.contains(&key);
@@ -1038,7 +1114,9 @@ impl BenCodeApp {
                 key,
                 side,
             } => self.render_dir_row(dir, *depth, *open, key.clone(), *side, cx),
-            ChangeItem::File { file, side, depth } => self.render_change_row(file, *side, *depth, cx),
+            ChangeItem::File { file, side, depth } => {
+                self.render_change_row(file, *side, *depth, cx)
+            }
         }
     }
 
@@ -1065,39 +1143,36 @@ impl BenCodeApp {
         let action_group = SharedString::from(format!("{group}-stage"));
         // `hidden group-hover:flex`: no room is kept while hidden.
         let hovered = self.changes_ui.hovered_row.as_ref() == Some(&group);
-        let folder_action = div()
-            .flex_none()
-            .child(
-                div()
-                    .id(action_group.clone())
-                    .group(action_group.clone())
-                    .size(px(20.0))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded(px(4.0))
-                    .when(busy, |el| el.opacity(0.4))
-                    // The row folds the folder; a press here is not for it.
-                    .on_click(|_, _, cx| cx.stop_propagation())
-                    .when(!busy, |el| {
-                        el.cursor_pointer()
-                            .hover(move |s| s.bg(action_hover))
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.folder_action(folder.clone(), side, cx)
-                            }))
-                    })
-                    .tooltip(Tooltip::text(format!("{verb} Changes in {}", dir.path)))
-                    .child(
-                        Icon::new(action_icon)
-                            .size(IconSize::Sm)
-                            .color(fg.opacity(0.55))
-                            .group_hover_color(action_group, fg),
-                    ),
-            );
-        let dot = dir
-            .status
-            .as_ref()
-            .map_or(fg.opacity(0.4), |status| status_color(status, crate::ui::appearance::diff_colors(cx)));
+        let folder_action = div().flex_none().child(
+            div()
+                .id(action_group.clone())
+                .group(action_group.clone())
+                .size(px(20.0))
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded(px(4.0))
+                .when(busy, |el| el.opacity(0.4))
+                // The row folds the folder; a press here is not for it.
+                .on_click(|_, _, cx| cx.stop_propagation())
+                .when(!busy, |el| {
+                    el.cursor_pointer()
+                        .hover(move |s| s.bg(action_hover))
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.folder_action(folder.clone(), side, cx)
+                        }))
+                })
+                .tooltip(Tooltip::text(format!("{verb} Changes in {}", dir.path)))
+                .child(
+                    Icon::new(action_icon)
+                        .size(IconSize::Sm)
+                        .color(fg.opacity(0.55))
+                        .group_hover_color(action_group, fg),
+                ),
+        );
+        let dot = dir.status.as_ref().map_or(fg.opacity(0.4), |status| {
+            status_color(status, crate::ui::appearance::diff_colors(cx))
+        });
         let hover = fg.opacity(0.05);
         // `group flex h-7 items-center gap-1 pr-2 leading-none text-content
         // hover:bg-content/5`, indented `8 + depth * 12`.
@@ -1134,15 +1209,21 @@ impl BenCodeApp {
                     .gap_1p5()
                     .tooltip(Tooltip::text(dir.path.clone()))
                     .child(
-                        div().size(px(16.0)).flex().flex_none().items_center().justify_center().child(
-                            Icon::new(if open {
-                                IconName::ChevronDown
-                            } else {
-                                IconName::ChevronRight
-                            })
-                            .size(IconSize::Sm)
-                            .color(fg.opacity(0.5)),
-                        ),
+                        div()
+                            .size(px(16.0))
+                            .flex()
+                            .flex_none()
+                            .items_center()
+                            .justify_center()
+                            .child(
+                                Icon::new(if open {
+                                    IconName::ChevronDown
+                                } else {
+                                    IconName::ChevronRight
+                                })
+                                .size(IconSize::Sm)
+                                .color(fg.opacity(0.5)),
+                            ),
                     )
                     .child(icon.size(IconSize::Md))
                     .child(
@@ -1158,9 +1239,12 @@ impl BenCodeApp {
             .when(hovered, |el| el.child(folder_action))
             // `w-3.5` with a `size-1.5` dot in the shared status colour.
             .child(
-                div().w(px(14.0)).flex().flex_none().justify_center().child(
-                    div().size(px(6.0)).rounded_full().bg(dot),
-                ),
+                div()
+                    .w(px(14.0))
+                    .flex()
+                    .flex_none()
+                    .justify_center()
+                    .child(div().size(px(6.0)).rounded_full().bg(dot)),
             )
             .into_any_element()
     }
@@ -1177,7 +1261,11 @@ impl BenCodeApp {
         let colors = &cx.theme().colors;
         let fg = colors.fg;
         let name = basename(&file.path).to_string();
-        let dir = if depth.is_none() { dirname(&file.path) } else { "" };
+        let dir = if depth.is_none() {
+            dirname(&file.path)
+        } else {
+            ""
+        };
         let active = matches!(
             self.file_pane.active(),
             Some(PaneTab::Review { cwd, path, side: open })
@@ -1201,7 +1289,9 @@ impl BenCodeApp {
                 .justify_center()
                 .rounded(px(4.0))
                 .when(busy, |el| el.opacity(0.4))
-                .when(!busy, |el| el.cursor_pointer().hover(move |s| s.bg(action_hover)))
+                .when(!busy, |el| {
+                    el.cursor_pointer().hover(move |s| s.bg(action_hover))
+                })
                 // The row opens the file; a press here is not for it.
                 .on_click(|_, _, cx| cx.stop_propagation())
                 .tooltip(Tooltip::text(tip))
@@ -1219,13 +1309,14 @@ impl BenCodeApp {
         let show_actions = active || self.changes_ui.hovered_row.as_ref() == Some(&group);
         let mut actions = div().flex().flex_none().items_center();
         if side == Side::Unstaged {
-            actions = actions.child(
-                action("discard", IconName::Undo2, "Discard Changes").when(!busy, |el| {
+            actions = actions.child(action("discard", IconName::Undo2, "Discard Changes").when(
+                !busy,
+                |el| {
                     el.on_click(cx.listener(move |this, _, _, cx| {
                         this.file_action(discard_path.clone(), side, true, cx)
                     }))
-                }),
-            );
+                },
+            ));
         }
         actions = actions.child(
             match side {
@@ -1271,36 +1362,34 @@ impl BenCodeApp {
                     .items_center()
                     .gap_1p5()
                     .tooltip(Tooltip::text(file.path.clone()))
-                    .when(depth.is_some(), |el| el.child(div().size(px(16.0)).flex_none()))
+                    .when(depth.is_some(), |el| {
+                        el.child(div().size(px(16.0)).flex_none())
+                    })
                     // `FileTypeIcon size={16}`
                     .child(icon.size(IconSize::Md))
                     .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .truncate()
-                            .child(
-                                div()
-                                    .flex()
-                                    .items_baseline()
-                                    .gap_1p5()
-                                    .child(
+                        div().flex_1().min_w_0().truncate().child(
+                            div()
+                                .flex()
+                                .items_baseline()
+                                .gap_1p5()
+                                .child(
+                                    div()
+                                        .text_size(px(13.0))
+                                        .font_weight(FontWeight::MEDIUM)
+                                        .child(name),
+                                )
+                                .when(!dir.is_empty(), |el| {
+                                    el.child(
                                         div()
-                                            .text_size(px(13.0))
-                                            .font_weight(FontWeight::MEDIUM)
-                                            .child(name),
+                                            .min_w_0()
+                                            .truncate()
+                                            .text_size(px(11.0))
+                                            .text_color(fg.opacity(0.4))
+                                            .child(dir.to_string()),
                                     )
-                                    .when(!dir.is_empty(), |el| {
-                                        el.child(
-                                            div()
-                                                .min_w_0()
-                                                .truncate()
-                                                .text_size(px(11.0))
-                                                .text_color(fg.opacity(0.4))
-                                                .child(dir.to_string()),
-                                        )
-                                    }),
-                            ),
+                                }),
+                        ),
                     ),
             )
             .when(show_actions, |el| el.child(actions))
@@ -1312,7 +1401,10 @@ impl BenCodeApp {
                     .font_family(cx.theme().mono_family.clone())
                     .text_size(px(11.0))
                     .font_weight(FontWeight::SEMIBOLD)
-                    .text_color(status_color(&file.status, crate::ui::appearance::diff_colors(cx)))
+                    .text_color(status_color(
+                        &file.status,
+                        crate::ui::appearance::diff_colors(cx),
+                    ))
                     .child(status_letter(&file.status)),
             )
             .into_any_element()

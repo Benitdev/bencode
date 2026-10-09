@@ -152,7 +152,12 @@ pub fn default_branch(cwd: &str, remote: Option<&str>) -> Option<String> {
 fn ahead_behind(cwd: &str, base: &str) -> (usize, usize) {
     let Some(text) = stdout(
         cwd,
-        &["rev-list", "--left-right", "--count", &format!("{base}...HEAD")],
+        &[
+            "rev-list",
+            "--left-right",
+            "--count",
+            &format!("{base}...HEAD"),
+        ],
     ) else {
         return (0, 0);
     };
@@ -397,7 +402,11 @@ pub fn auto_fetch(cwd: &str) -> Result<bool, String> {
     let remote_refs = || {
         stdout(
             cwd,
-            &["for-each-ref", "--format=%(refname) %(objectname)", "refs/remotes"],
+            &[
+                "for-each-ref",
+                "--format=%(refname) %(objectname)",
+                "refs/remotes",
+            ],
         )
     };
     let before = remote_refs();
@@ -537,8 +546,7 @@ pub fn pr_status(cwd: &str) -> Option<BranchPr> {
         name_with_owner: String,
     }
     let view: View =
-        serde_json::from_str(&gh(cwd, &["repo", "view", "--json", "nameWithOwner"]).ok()?)
-            .ok()?;
+        serde_json::from_str(&gh(cwd, &["repo", "view", "--json", "nameWithOwner"]).ok()?).ok()?;
     let owner = view.name_with_owner.split_once('/')?.0.to_string();
     let json = gh(
         cwd,
@@ -560,7 +568,13 @@ pub fn pr_status(cwd: &str) -> Option<BranchPr> {
 }
 
 /// MonoCode `git_pr_create`: returns the new pull request's URL.
-pub fn pr_create(cwd: &str, title: &str, body: &str, base: &str, head: &str) -> Result<String, String> {
+pub fn pr_create(
+    cwd: &str,
+    title: &str,
+    body: &str,
+    base: &str,
+    head: &str,
+) -> Result<String, String> {
     let title = title.trim();
     if title.is_empty() {
         return Err("Pull request title cannot be empty".into());
@@ -617,7 +631,10 @@ mod tests {
             &remotes,
         );
         assert!(head);
-        let pairs: Vec<_> = refs.iter().map(|r| (r.name.as_str(), r.kind.as_str())).collect();
+        let pairs: Vec<_> = refs
+            .iter()
+            .map(|r| (r.name.as_str(), r.kind.as_str()))
+            .collect();
         assert_eq!(
             pairs,
             [
@@ -656,7 +673,12 @@ mod tests {
         let cwd = dir.to_string_lossy().to_string();
         let git = |args: &[&str]| {
             assert!(
-                git_command(&cwd).args(args).output().unwrap().status.success(),
+                git_command(&cwd)
+                    .args(args)
+                    .output()
+                    .unwrap()
+                    .status
+                    .success(),
                 "git {args:?}"
             );
         };

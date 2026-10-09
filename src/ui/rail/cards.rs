@@ -20,8 +20,8 @@ use super::group_color;
 use super::model::{ProjectGroup, mute_status, notification_id, path_key};
 use super::reorder::{DraggedRailProject, preview_order};
 use super::widgets::{
-    AMBER_400, ROW_HEIGHT, hover_control, project_card_title, project_diff_stat, project_mascot_icon,
-    rail_label, section_button,
+    AMBER_400, ROW_HEIGHT, hover_control, project_card_title, project_diff_stat,
+    project_mascot_icon, rail_label, section_button,
 };
 use crate::app::{BenCodeApp, same_project_path};
 use crate::ui::mascot::mascot_for;
@@ -59,7 +59,11 @@ impl BenCodeApp {
             draggable,
             selected: self.surface.is_none() && current,
             busy,
-            pinned: self.settings.pinned_projects.iter().any(|p| same_project_path(p, path)),
+            pinned: self
+                .settings
+                .pinned_projects
+                .iter()
+                .any(|p| same_project_path(p, path)),
             stats: if current {
                 self.current_diff_stats()
             } else {
@@ -68,7 +72,10 @@ impl BenCodeApp {
                     .unwrap_or((0, 0))
             },
             mute: mute_status(
-                self.settings.rail.project_notifications.get(&notification_id(path)),
+                self.settings
+                    .rail
+                    .project_notifications
+                    .get(&notification_id(path)),
                 crate::app::now_ms(),
             ),
         }
@@ -76,14 +83,25 @@ impl BenCodeApp {
 
     /// Uncommitted lines in the open project (MonoCode `useProjectDiffStats`).
     fn current_diff_stats(&self) -> (usize, usize) {
-        let files = self.git_status.staged.iter().chain(&self.git_status.unstaged);
-        files.fold((0, 0), |(add, del), f| (add + f.additions, del + f.deletions))
+        let files = self
+            .git_status
+            .staged
+            .iter()
+            .chain(&self.git_status.unstaged);
+        files.fold((0, 0), |(add, del), f| {
+            (add + f.additions, del + f.deletions)
+        })
     }
 
     /// MonoCode `ProjectSectionHeader`: `flex items-center gap-1 px-3
     /// pb-1.5 pt-1`, its label `min-w-0 flex-1 truncate px-1 text-xs
     /// text-content/50`, then its buttons.
-    pub(super) fn render_rail_section_header(&self, label: &'static str, button: Option<AnyElement>, cx: &Context<Self>) -> impl IntoElement {
+    pub(super) fn render_rail_section_header(
+        &self,
+        label: &'static str,
+        button: Option<AnyElement>,
+        cx: &Context<Self>,
+    ) -> impl IntoElement {
         let fg = cx.theme().colors.fg;
         div()
             .flex()
@@ -139,7 +157,12 @@ impl BenCodeApp {
 
     /// A list's cards in `flex flex-col gap-px`, in the order a held row
     /// previews; the list follows the row while it is dragged over it.
-    fn render_card_list(&self, list: &str, paths: &[String], cx: &Context<Self>) -> impl IntoElement {
+    fn render_card_list(
+        &self,
+        list: &str,
+        paths: &[String],
+        cx: &Context<Self>,
+    ) -> impl IntoElement {
         let shown = preview_order(list, paths, self.rail_ui.reorder.as_ref());
         let draggable = paths.len() > 1;
         let (track_list, track_ids) = (list.to_string(), paths.to_vec());
@@ -147,12 +170,16 @@ impl BenCodeApp {
             .flex()
             .flex_col()
             .gap(px(1.0))
-            .on_drag_move::<DraggedRailProject>(cx.listener(move |this, event: &DragMoveEvent<DraggedRailProject>, _, cx| {
-                // Each list sees every move; only its own rows' count.
-                if event.bounds.contains(&event.event.position) || this.rail_ui.reorder.is_some() {
-                    this.track_rail_reorder(&track_list, &track_ids, event, cx);
-                }
-            }))
+            .on_drag_move::<DraggedRailProject>(cx.listener(
+                move |this, event: &DragMoveEvent<DraggedRailProject>, _, cx| {
+                    // Each list sees every move; only its own rows' count.
+                    if event.bounds.contains(&event.event.position)
+                        || this.rail_ui.reorder.is_some()
+                    {
+                        this.track_rail_reorder(&track_list, &track_ids, event, cx);
+                    }
+                },
+            ))
             .children(shown.iter().map(|path| {
                 let card = self.rail_card(path, list, draggable);
                 let row = self.render_project_card(card, cx);
@@ -162,41 +189,71 @@ impl BenCodeApp {
 
     /// MonoCode's "Groups" section: its header's "New project group"
     /// button, then each group.
-    pub(super) fn render_groups_section(&self, groups: &[(ProjectGroup, Vec<String>)], cx: &Context<Self>) -> impl IntoElement {
+    pub(super) fn render_groups_section(
+        &self,
+        groups: &[(ProjectGroup, Vec<String>)],
+        cx: &Context<Self>,
+    ) -> impl IntoElement {
         let fg = cx.theme().colors.fg;
         let anchor: Anchor = Rc::default();
         let button_anchor = anchor.clone();
-        let add = section_button("rail-new-group", IconName::FolderPlus, "New project group", false, fg)
-            .child(canvas(move |bounds, _, _| button_anchor.set(Some(bounds)), |_, _, _, _| {}).absolute().size_full())
-            .on_click(cx.listener(move |this, event: &gpui::ClickEvent, _, cx| {
-                let at = anchor
-                    .get()
-                    .map_or(event.position(), |b| Point::new(b.left(), b.bottom()));
-                this.create_rail_group(at, None, cx);
-            }));
+        let add = section_button(
+            "rail-new-group",
+            IconName::FolderPlus,
+            "New project group",
+            false,
+            fg,
+        )
+        .child(
+            canvas(
+                move |bounds, _, _| button_anchor.set(Some(bounds)),
+                |_, _, _, _| {},
+            )
+            .absolute()
+            .size_full(),
+        )
+        .on_click(cx.listener(move |this, event: &gpui::ClickEvent, _, cx| {
+            let at = anchor
+                .get()
+                .map_or(event.position(), |b| Point::new(b.left(), b.bottom()));
+            this.create_rail_group(at, None, cx);
+        }));
         div()
             .flex_none()
             .mb_2()
             .child(self.render_rail_section_header("Groups", Some(add.into_any_element()), cx))
             .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(1.0))
-                    .px_2()
-                    .children(groups.iter().map(|(group, items)| self.render_group_section(group, items, cx))),
+                div().flex().flex_col().gap(px(1.0)).px_2().children(
+                    groups
+                        .iter()
+                        .map(|(group, items)| self.render_group_section(group, items, cx)),
+                ),
             )
     }
 
     /// MonoCode `ProjectGroupSection`: `rounded-md`, `mb-1.5 bg-content/5`
     /// while open; its header row toggles it and opens its menu.
-    fn render_group_section(&self, group: &ProjectGroup, items: &[String], cx: &Context<Self>) -> AnyElement {
+    fn render_group_section(
+        &self,
+        group: &ProjectGroup,
+        items: &[String],
+        cx: &Context<Self>,
+    ) -> AnyElement {
         let fg = cx.theme().colors.fg;
         let id = format!("rail-group-{}", group.id);
         let header_group = SharedString::from(format!("{id}-row"));
         let expanded = !group.collapsed;
-        let count = format!("{} {}", items.len(), if items.len() == 1 { "project" } else { "projects" });
-        let (toggle_id, menu_id, options_id) = (group.id.clone(), group.id.clone(), group.id.clone());
+        let count = format!(
+            "{} {}",
+            items.len(),
+            if items.len() == 1 {
+                "project"
+            } else {
+                "projects"
+            }
+        );
+        let (toggle_id, menu_id, options_id) =
+            (group.id.clone(), group.id.clone(), group.id.clone());
         let color = group_color(group);
         let mascot = mascot_for(&group.id, group.mascot.as_deref());
         let chevron = |icon: IconName| Icon::new(icon).size(IconSize::Sm).color(fg);
@@ -266,7 +323,15 @@ impl BenCodeApp {
                             cx,
                         );
                     }))
-                    .child(div().flex().flex_none().size_4().items_center().justify_center().child(glyph))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_none()
+                            .size_4()
+                            .items_center()
+                            .justify_center()
+                            .child(glyph),
+                    )
                     .child(rail_label(group.name.clone())),
             )
             .child({
@@ -283,7 +348,14 @@ impl BenCodeApp {
                 .right_1()
                 .top(px(4.0))
                 .size_6()
-                .child(canvas(move |bounds, _, _| button_anchor.set(Some(bounds)), |_, _, _, _| {}).absolute().size_full())
+                .child(
+                    canvas(
+                        move |bounds, _, _| button_anchor.set(Some(bounds)),
+                        |_, _, _, _| {},
+                    )
+                    .absolute()
+                    .size_full(),
+                )
                 .on_mouse_down(
                     MouseButton::Left,
                     cx.listener(move |this, event: &MouseDownEvent, _, cx| {
@@ -320,7 +392,12 @@ impl BenCodeApp {
         let name = self.rail_project_label(&card.path);
         let color = self.project_color(&card.path);
         let mascot = self.project_mascot(&card.path);
-        let logo = self.settings.rail.tab_group_logos.get(&path_key(&card.path)).cloned();
+        let logo = self
+            .settings
+            .rail
+            .tab_group_logos
+            .get(&path_key(&card.path))
+            .cloned();
         let (additions, deletions) = card.stats;
         let has_changes = additions > 0 || deletions > 0;
         let title = project_card_title(&name, &card.path, card.stats, card.busy);
@@ -435,7 +512,11 @@ impl BenCodeApp {
                             div()
                                 .flex_none()
                                 .group_hover(group.clone(), |s| s.invisible())
-                                .child(project_diff_stat(additions, deletions, crate::ui::appearance::diff_colors(cx))),
+                                .child(project_diff_stat(
+                                    additions,
+                                    deletions,
+                                    crate::ui::appearance::diff_colors(cx),
+                                )),
                         )
                     })
                     .when_some(card.mute, |el, status| {
@@ -485,9 +566,17 @@ impl BenCodeApp {
                 // group-hover:opacity-100`, over the logo it replaces.
                 hover_control(
                     SharedString::from(format!("{id}-pin")),
-                    if card.pinned { IconName::PinOff } else { IconName::Pin },
+                    if card.pinned {
+                        IconName::PinOff
+                    } else {
+                        IconName::Pin
+                    },
                     IconSize::Sm,
-                    if card.pinned { "Unpin project" } else { "Pin project" },
+                    if card.pinned {
+                        "Unpin project"
+                    } else {
+                        "Pin project"
+                    },
                     &group,
                     fg,
                 )

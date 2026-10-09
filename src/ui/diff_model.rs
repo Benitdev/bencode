@@ -184,7 +184,12 @@ pub fn body_rows(blocks: &[Block], reveal_for: impl Fn(usize) -> Reveal) -> Vec<
                 if hidden > 0 {
                     rows.push(BodyRow::Fold { id: *id, hidden });
                 }
-                rows.extend(lines[lines.len() - tail..].iter().cloned().map(BodyRow::Line));
+                rows.extend(
+                    lines[lines.len() - tail..]
+                        .iter()
+                        .cloned()
+                        .map(BodyRow::Line),
+                );
             }
         }
     }

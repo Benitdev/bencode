@@ -31,7 +31,8 @@ fn entry_rel(rel: &str) -> Result<&str, String> {
 /// The deepest existing folder of `path`, resolved through symlinks, must
 /// be inside `root` (so a symlinked folder cannot lead writes outside).
 fn ensure_inside(root: &Path, path: &Path) -> Result<(), String> {
-    let canonical_root = std::fs::canonicalize(root).map_err(|e| format!("{}: {e}", root.display()))?;
+    let canonical_root =
+        std::fs::canonicalize(root).map_err(|e| format!("{}: {e}", root.display()))?;
     let mut probe = path.to_path_buf();
     while probe.symlink_metadata().is_err() {
         if !probe.pop() {
@@ -205,7 +206,9 @@ pub fn natural_cmp(a: &str, b: &str) -> Ordering {
 }
 
 fn already_exists(label: &str) -> String {
-    format!("A file or folder {label} already exists at this location. Please choose a different name.")
+    format!(
+        "A file or folder {label} already exists at this location. Please choose a different name."
+    )
 }
 
 /// `name` (well-formed, may nest) under `parent`, refusing to leave it.
@@ -216,7 +219,9 @@ fn resolve_under(root: &Path, parent: &str, name: &str) -> Result<String, String
             "The name {name} is not valid as a file or folder name. Please choose a different name."
         ));
     }
-    let rel = parts.iter().fold(parent.to_string(), |acc, part| join(&acc, part));
+    let rel = parts
+        .iter()
+        .fold(parent.to_string(), |acc, part| join(&acc, part));
     ensure_inside(root, &abs(root, &rel))?;
     Ok(rel)
 }
@@ -275,7 +280,10 @@ pub fn rename(root: &Path, rel: &str, name: &str) -> Result<String, String> {
         std::fs::rename(&from, &tmp).map_err(|e| e.to_string())?;
         if let Err(err) = std::fs::rename(&tmp, &dest) {
             if let Err(back) = std::fs::rename(&tmp, &from) {
-                log::error!("could not restore {} after a failed rename: {back}", from.display());
+                log::error!(
+                    "could not restore {} after a failed rename: {back}",
+                    from.display()
+                );
             }
             return Err(err.to_string());
         }
@@ -338,9 +346,14 @@ fn copy_recursive(from: &Path, to: &Path) -> Result<(), String> {
     if meta.file_type().is_symlink() {
         let target = std::fs::read_link(from).map_err(|e| format!("{}: {e}", from.display()))?;
         #[cfg(unix)]
-        return std::os::unix::fs::symlink(&target, to).map_err(|e| format!("{}: {e}", to.display()));
+        return std::os::unix::fs::symlink(&target, to)
+            .map_err(|e| format!("{}: {e}", to.display()));
         #[cfg(not(unix))]
-        return Err(format!("{}: cannot copy a symbolic link here ({})", from.display(), target.display()));
+        return Err(format!(
+            "{}: cannot copy a symbolic link here ({})",
+            from.display(),
+            target.display()
+        ));
     }
     if meta.is_dir() {
         std::fs::create_dir(to).map_err(|e| format!("{}: {e}", to.display()))?;
@@ -395,7 +408,10 @@ pub fn copy_into(root: &Path, from: &Path, dest_parent: &str) -> Result<String, 
         if let Err(clean_err) = cleanup
             && dest.symlink_metadata().is_ok()
         {
-            log::error!("could not remove partial copy {}: {clean_err}", dest.display());
+            log::error!(
+                "could not remove partial copy {}: {clean_err}",
+                dest.display()
+            );
         }
         return Err(err);
     }
@@ -452,8 +468,14 @@ mod tests {
         let dir = temp_dir("links");
         std::fs::write(dir.join("real.txt"), "keep").unwrap();
         std::os::unix::fs::symlink(dir.join("real.txt"), dir.join("link")).unwrap();
-        assert!(rename(&dir, "link", "real.txt").is_err(), "must not replace the target");
-        assert_eq!(std::fs::read_to_string(dir.join("real.txt")).unwrap(), "keep");
+        assert!(
+            rename(&dir, "link", "real.txt").is_err(),
+            "must not replace the target"
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.join("real.txt")).unwrap(),
+            "keep"
+        );
         std::fs::create_dir_all(dir.join("loop")).unwrap();
         std::os::unix::fs::symlink(&dir, dir.join("loop/up")).unwrap();
         assert_eq!(copy_into(&dir, &dir.join("loop"), "").unwrap(), "loop copy");
@@ -485,7 +507,11 @@ mod tests {
         let entries = list_dir(&dir, "").unwrap();
         let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
         assert_eq!(names, ["dist", "src", ".gitignore", "a.log", "main.rs"]);
-        let ignored: Vec<&str> = entries.iter().filter(|e| e.ignored).map(|e| e.name.as_str()).collect();
+        let ignored: Vec<&str> = entries
+            .iter()
+            .filter(|e| e.ignored)
+            .map(|e| e.name.as_str())
+            .collect();
         assert_eq!(ignored, ["dist", "a.log"]);
         assert!(list_dir(&dir, "missing").is_err());
         std::fs::remove_dir_all(&dir).unwrap();
@@ -520,7 +546,10 @@ mod tests {
         std::fs::create_dir_all(dir.join("f")).unwrap();
         std::fs::write(dir.join("x.rs"), "x").unwrap();
         assert_eq!(copy_into(&dir, &dir.join("x.rs"), "").unwrap(), "x copy.rs");
-        assert_eq!(copy_into(&dir, &dir.join("x.rs"), "").unwrap(), "x copy 2.rs");
+        assert_eq!(
+            copy_into(&dir, &dir.join("x.rs"), "").unwrap(),
+            "x copy 2.rs"
+        );
         assert_eq!(copy_into(&dir, &dir.join("x.rs"), "f").unwrap(), "f/x.rs");
         assert!(copy_into(&dir, &dir.join("f"), "f").is_err());
         assert!(move_into(&dir, "x.rs", "f").is_err(), "f/x.rs exists");

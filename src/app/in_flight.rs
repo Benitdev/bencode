@@ -11,8 +11,8 @@ use std::collections::HashSet;
 
 use gpui::Context;
 
-use crate::app::agent::{TurnInput, mark_turn_interrupted, now_ms};
 use crate::app::BenCodeApp;
+use crate::app::agent::{TurnInput, mark_turn_interrupted, now_ms};
 use crate::db::{InFlightSession, SessionRow};
 use crate::harness::HarnessKind;
 
@@ -52,7 +52,12 @@ pub struct ResumeState {
 fn claim_lock() -> Option<std::fs::File> {
     use std::os::fd::AsRawFd as _;
     let path = crate::storage::data_dir()?.join("in-flight.lock");
-    let file = match std::fs::OpenOptions::new().create(true).truncate(false).write(true).open(&path) {
+    let file = match std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(&path)
+    {
         Ok(file) => file,
         Err(err) => {
             log::warn!("could not open {}: {err}", path.display());
@@ -78,16 +83,22 @@ impl ResumeState {
 /// interrupt notice still last (a later turn ends the offer).
 fn can_continue(session: &SessionRow) -> bool {
     !session.worktree_removed
-        && session.provider_session_id.as_deref().is_some_and(|id| !id.is_empty())
+        && session
+            .provider_session_id
+            .as_deref()
+            .is_some_and(|id| !id.is_empty())
         && HarnessKind::from_id(&session.harness).is_some()
         && session.blocks.last().is_some_and(|b| {
-            b.role == "system" && b.extra.get("notice").and_then(|n| n.as_str()) == Some("interrupt")
+            b.role == "system"
+                && b.extra.get("notice").and_then(|n| n.as_str()) == Some("interrupt")
         })
 }
 
 /// MonoCode `canResumeAfterQuit`: a thread with a turn worth coming back to.
 fn worth_keeping(session: &SessionRow) -> bool {
-    !session.worktree_removed && session.cwd != "~" && session.blocks.iter().any(|b| b.role == "user")
+    !session.worktree_removed
+        && session.cwd != "~"
+        && session.blocks.iter().any(|b| b.role == "user")
 }
 
 impl BenCodeApp {
@@ -101,7 +112,11 @@ impl BenCodeApp {
         let refs: Vec<InFlightSession> = self
             .sessions
             .iter()
-            .filter(|s| self.runs.get(&s.id).is_some_and(|run| run.purpose == super::agent::RunPurpose::Turn))
+            .filter(|s| {
+                self.runs
+                    .get(&s.id)
+                    .is_some_and(|run| run.purpose == super::agent::RunPurpose::Turn)
+            })
             .filter(|s| worth_keeping(s))
             .map(|s| InFlightSession {
                 session_id: s.id.clone(),
@@ -135,7 +150,10 @@ impl BenCodeApp {
                     match db.get_session(&entry.session_id) {
                         Ok(Some(row)) => rows.push(row),
                         Ok(None) => log::info!("interrupted thread {} is gone", entry.session_id),
-                        Err(err) => log::error!("could not read interrupted thread {}: {err:#}", entry.session_id),
+                        Err(err) => log::error!(
+                            "could not read interrupted thread {}: {err:#}",
+                            entry.session_id
+                        ),
                     }
                 }
                 Ok(rows)
@@ -191,7 +209,11 @@ impl BenCodeApp {
     /// thread since.
     fn continue_interrupted(&mut self, session_id: &str, cx: &mut Context<Self>) {
         let ready = !self.is_agent_running_in(session_id)
-            && self.sessions.iter().find(|s| s.id == session_id).is_some_and(can_continue);
+            && self
+                .sessions
+                .iter()
+                .find(|s| s.id == session_id)
+                .is_some_and(can_continue);
         if !ready {
             log::info!("interrupted thread {session_id} moved on; not resumed");
             return;

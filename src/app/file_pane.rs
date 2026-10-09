@@ -11,7 +11,11 @@ pub enum PaneTab {
     /// A file in the code editor, workspace-relative or absolute.
     File { path: String },
     /// One file's working-tree diff, from a Changes row.
-    Review { cwd: String, path: String, side: Side },
+    Review {
+        cwd: String,
+        path: String,
+        side: Side,
+    },
     /// Every working-tree change stacked; `side` keeps one section only,
     /// `focus` is the file to scroll to.
     Changes {
@@ -45,7 +49,9 @@ impl PaneTab {
             Self::File { path } => format!("file:{path}"),
             Self::Review { cwd, path, .. } => format!("review:{cwd}:{path}"),
             Self::Changes { cwd, .. } => format!("changes:{cwd}"),
-            Self::SessionChanges { cwd, session_id, .. } => {
+            Self::SessionChanges {
+                cwd, session_id, ..
+            } => {
                 format!("session-changes:{cwd}:{session_id}")
             }
             Self::Commit { cwd, sha, .. } => format!("commit:{cwd}:{sha}"),
@@ -162,7 +168,12 @@ impl FilePane {
         } else {
             let preview = tab.previewable() && !pin;
             let entry = PaneEntry { tab, preview };
-            match self.entries.iter().position(|e| e.preview).filter(|_| preview) {
+            match self
+                .entries
+                .iter()
+                .position(|e| e.preview)
+                .filter(|_| preview)
+            {
                 Some(ix) => self.entries[ix] = entry,
                 None => self.entries.push(entry),
             }
@@ -213,7 +224,10 @@ impl FilePane {
     }
 
     fn fix_active(&mut self) {
-        let alive = self.active.as_deref().is_some_and(|k| self.position(k).is_some());
+        let alive = self
+            .active
+            .as_deref()
+            .is_some_and(|k| self.position(k).is_some());
         if !alive {
             self.active = self.entries.last().map(|e| e.tab.key());
         }
@@ -269,7 +283,13 @@ mod tests {
             false,
         );
         assert_eq!(pane.entries().len(), 1);
-        assert!(matches!(pane.active(), Some(PaneTab::Review { side: Side::Staged, .. })));
+        assert!(matches!(
+            pane.active(),
+            Some(PaneTab::Review {
+                side: Side::Staged,
+                ..
+            })
+        ));
     }
 
     #[test]

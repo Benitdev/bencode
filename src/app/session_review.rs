@@ -191,8 +191,17 @@ impl BenCodeApp {
             .any(|s| s.id != session_id && s.work_dir() == cwd && self.is_agent_running_in(&s.id))
     }
 
-    fn apply_review(&mut self, session_id: &str, files: Vec<CheckpointFile>, cx: &mut Context<Self>) {
-        let review = self.checkpoints.reviews.entry(session_id.to_string()).or_default();
+    fn apply_review(
+        &mut self,
+        session_id: &str,
+        files: Vec<CheckpointFile>,
+        cx: &mut Context<Self>,
+    ) {
+        let review = self
+            .checkpoints
+            .reviews
+            .entry(session_id.to_string())
+            .or_default();
         if review.files != files {
             review.files = files;
             review.stamp += 1;
@@ -200,12 +209,16 @@ impl BenCodeApp {
                 review.expanded = false;
             }
             // An open review of these changes shows the new state.
-            let open = self.file_pane.entries().iter().find_map(|entry| match &entry.tab {
-                PaneTab::SessionChanges { session_id: id, .. } if id == session_id => {
-                    Some(entry.tab.key())
-                }
-                _ => None,
-            });
+            let open = self
+                .file_pane
+                .entries()
+                .iter()
+                .find_map(|entry| match &entry.tab {
+                    PaneTab::SessionChanges { session_id: id, .. } if id == session_id => {
+                        Some(entry.tab.key())
+                    }
+                    _ => None,
+                });
             if let Some(key) = open {
                 self.load_diff_doc(&key, cx);
             }
@@ -218,12 +231,18 @@ impl BenCodeApp {
         let Some(cwd) = self.session_work_dir(session_id) else {
             return;
         };
-        let review = self.checkpoints.reviews.entry(session_id.to_string()).or_default();
+        let review = self
+            .checkpoints
+            .reviews
+            .entry(session_id.to_string())
+            .or_default();
         review.generation += 1;
         let generation = review.generation;
         let id = session_id.to_string();
         let job_id = id.clone();
-        let result = self.checkpoints.run(move |store| store.status(&job_id, &cwd));
+        let result = self
+            .checkpoints
+            .run(move |store| store.status(&job_id, &cwd));
         cx.spawn(async move |this, cx| {
             let Ok(status) = result.await else {
                 return;
@@ -361,13 +380,22 @@ mod tests {
 
     #[test]
     fn edit_inputs_name_their_files() {
-        assert_eq!(edit_paths(&json!({"file_path": "/r/a.rs", "old_string": "x"})), ["/r/a.rs"]);
-        assert_eq!(edit_paths(&json!({"TargetFile": "b.rs", "path": "b.rs"})), ["b.rs"]);
+        assert_eq!(
+            edit_paths(&json!({"file_path": "/r/a.rs", "old_string": "x"})),
+            ["/r/a.rs"]
+        );
+        assert_eq!(
+            edit_paths(&json!({"TargetFile": "b.rs", "path": "b.rs"})),
+            ["b.rs"]
+        );
         assert_eq!(
             edit_paths(&json!({"changes": [{"path": "a"}, {"path": "b"}, {"kind": "x"}]})),
             ["a", "b"]
         );
-        assert_eq!(edit_paths(&json!({"changes": {"src/x.rs": {"update": {}}}})), ["src/x.rs"]);
+        assert_eq!(
+            edit_paths(&json!({"changes": {"src/x.rs": {"update": {}}}})),
+            ["src/x.rs"]
+        );
         assert!(edit_paths(&json!({"command": "ls"})).is_empty());
         assert!(edit_paths(&Value::Null).is_empty());
     }
@@ -419,7 +447,12 @@ mod tests {
                 .arg("-C")
                 .arg(self.base.join("repo"))
                 .args(["-c", "user.name=Test", "-c", "user.email=test@example.com"])
-                .args(["-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main"])
+                .args([
+                    "-c",
+                    "commit.gpgsign=false",
+                    "-c",
+                    "init.defaultBranch=main",
+                ])
                 .args(args)
                 .output()
                 .unwrap();
@@ -482,7 +515,9 @@ mod tests {
         assert_eq!(fixture.status().files.len(), 1);
 
         let cwd = fixture.cwd();
-        let undone = fixture.checkpoints.run(move |store| store.undo("s1", &cwd, None));
+        let undone = fixture
+            .checkpoints
+            .run(move |store| store.undo("s1", &cwd, None));
         assert!(undone.blocking_recv().unwrap().unwrap().files.is_empty());
         assert_eq!(fixture.text(), "one\ntwo\n");
     }
@@ -493,7 +528,9 @@ mod tests {
         fixture.edit();
 
         let cwd = fixture.cwd();
-        let kept = fixture.checkpoints.run(move |store| store.keep("s1", &cwd, None));
+        let kept = fixture
+            .checkpoints
+            .run(move |store| store.keep("s1", &cwd, None));
         assert!(kept.blocking_recv().unwrap().unwrap().files.is_empty());
         assert_eq!(fixture.text(), "agent\n");
         assert!(fixture.status().files.is_empty());

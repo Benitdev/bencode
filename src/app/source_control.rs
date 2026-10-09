@@ -49,7 +49,10 @@ impl BenCodeApp {
             && sync.remote.is_some()
             && !diverged
             && (!amend || !sync.head_pushed);
-        (push, push && !self.has_open_pr() && !self.on_default_branch())
+        (
+            push,
+            push && !self.has_open_pr() && !self.on_default_branch(),
+        )
     }
 
     /// MonoCode `canCreatePr`.
@@ -173,7 +176,13 @@ impl BenCodeApp {
         cx.notify();
     }
 
-    pub(crate) fn file_action(&mut self, path: String, side: Side, discard: bool, cx: &mut Context<Self>) {
+    pub(crate) fn file_action(
+        &mut self,
+        path: String,
+        side: Side,
+        discard: bool,
+        cx: &mut Context<Self>,
+    ) {
         if discard {
             let untracked = self
                 .git_status
@@ -188,11 +197,13 @@ impl BenCodeApp {
         self.run_changes_action(
             Busy::File(path),
             None,
-            move |cwd| match side {
-                Side::Unstaged => stage_file(cwd, &file),
-                Side::Staged => unstage_file(cwd, &file),
-            }
-            .map_err(|err| format!("{err:#}")),
+            move |cwd| {
+                match side {
+                    Side::Unstaged => stage_file(cwd, &file),
+                    Side::Staged => unstage_file(cwd, &file),
+                }
+                .map_err(|err| format!("{err:#}"))
+            },
             |_, _| {},
             cx,
         );
@@ -204,11 +215,13 @@ impl BenCodeApp {
         self.run_changes_action(
             Busy::Folder(dir),
             None,
-            move |cwd| match side {
-                Side::Unstaged => stage_file(cwd, &target),
-                Side::Staged => unstage_file(cwd, &target),
-            }
-            .map_err(|err| format!("{err:#}")),
+            move |cwd| {
+                match side {
+                    Side::Unstaged => stage_file(cwd, &target),
+                    Side::Staged => unstage_file(cwd, &target),
+                }
+                .map_err(|err| format!("{err:#}"))
+            },
             |_, _| {},
             cx,
         );
@@ -219,7 +232,12 @@ impl BenCodeApp {
             Busy::All,
             None,
             move |cwd| {
-                if stage { stage_all(cwd) } else { unstage_all(cwd) }.map_err(|e| format!("{e:#}"))
+                if stage {
+                    stage_all(cwd)
+                } else {
+                    unstage_all(cwd)
+                }
+                .map_err(|e| format!("{e:#}"))
             },
             |_, _| {},
             cx,
@@ -228,7 +246,13 @@ impl BenCodeApp {
 
     /// MonoCode `onOpenWorkingTreeDiff`: the file's review, as a preview
     /// tab unless `pin` (a double click).
-    pub(crate) fn open_change(&mut self, path: String, side: Side, pin: bool, cx: &mut Context<Self>) {
+    pub(crate) fn open_change(
+        &mut self,
+        path: String,
+        side: Side,
+        pin: bool,
+        cx: &mut Context<Self>,
+    ) {
         let deleted = match side {
             Side::Staged => &self.git_status.staged,
             Side::Unstaged => &self.git_status.unstaged,
@@ -254,7 +278,15 @@ impl BenCodeApp {
 
     /// The commit field's Submit (⌘↩).
     pub fn commit_staged_changes(&mut self, cx: &mut Context<Self>) {
-        self.commit_from_panel(PendingCommit { push: false, pr: false }, false, false, cx);
+        self.commit_from_panel(
+            PendingCommit {
+                push: false,
+                pr: false,
+            },
+            false,
+            false,
+            cx,
+        );
     }
 
     /// MonoCode `commit(push, createPr)`: asks before pushing the default
@@ -368,7 +400,13 @@ impl BenCodeApp {
     }
 
     pub(crate) fn pull_changes(&mut self, cx: &mut Context<Self>) {
-        self.run_changes_action(Busy::Pull, Some("Pull complete"), git_sync::pull, |_, _| {}, cx);
+        self.run_changes_action(
+            Busy::Pull,
+            Some("Pull complete"),
+            git_sync::pull,
+            |_, _| {},
+            cx,
+        );
     }
 
     /// MonoCode `toggleAmend`: HEAD's message fills an empty field.

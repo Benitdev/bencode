@@ -120,7 +120,9 @@ impl AutomationsState {
 /// MonoCode `newAutomationDraft`: weekday mornings in a fresh worktree,
 /// with no trigger yet.
 fn new_draft(cwd: String, model: &str) -> AutomationRow {
-    let harness = model.split_once(':').map_or("claude", |(harness, _)| harness);
+    let harness = model
+        .split_once(':')
+        .map_or("claude", |(harness, _)| harness);
     AutomationRow {
         harness: harness.to_string(),
         model: model.to_string(),
@@ -175,7 +177,8 @@ pub fn access_mode(auto: &AutomationRow) -> PermissionMode {
 }
 
 pub fn grace_minutes(auto: &AutomationRow) -> i64 {
-    auto.missed_run_grace_minutes.unwrap_or(DEFAULT_GRACE_MINUTES)
+    auto.missed_run_grace_minutes
+        .unwrap_or(DEFAULT_GRACE_MINUTES)
 }
 
 /// Whether the editor's `draft` differs from the stored `auto` in anything
@@ -247,7 +250,12 @@ impl BenCodeApp {
     }
 
     /// Shows the list `request` loaded, unless a later load is already shown.
-    fn show_automations(&mut self, request: u64, items: Vec<AutomationRow>, cx: &mut Context<Self>) {
+    fn show_automations(
+        &mut self,
+        request: u64,
+        items: Vec<AutomationRow>,
+        cx: &mut Context<Self>,
+    ) {
         if request < self.automations.listed {
             return;
         }
@@ -286,7 +294,13 @@ impl BenCodeApp {
     /// The editor's automation with the name and instructions typed so far.
     pub(crate) fn editor_draft(&self, cx: &gpui::App) -> Option<AutomationRow> {
         let mut draft = self.automations.draft.clone()?;
-        draft.name = self.automations.name_input.read(cx).text().trim().to_string();
+        draft.name = self
+            .automations
+            .name_input
+            .read(cx)
+            .text()
+            .trim()
+            .to_string();
         draft.prompt = self.automations.prompt_input.read(cx).text().to_string();
         Some(draft)
     }
@@ -309,8 +323,12 @@ impl BenCodeApp {
 
     fn open_automation_editor(&mut self, draft: AutomationRow, cx: &mut Context<Self>) {
         let (name, prompt) = (draft.name.clone(), draft.prompt.clone());
-        self.automations.name_input.update(cx, |input, cx| input.set_text(name, cx));
-        self.automations.prompt_input.update(cx, |input, cx| input.set_text(prompt, cx));
+        self.automations
+            .name_input
+            .update(cx, |input, cx| input.set_text(name, cx));
+        self.automations
+            .prompt_input
+            .update(cx, |input, cx| input.set_text(prompt, cx));
         self.automations.draft = Some(draft);
         self.automations.picker_open = false;
         self.automations.tab = EditorTab::Settings;
@@ -525,7 +543,12 @@ impl BenCodeApp {
     }
 
     /// The switch on a list card: stored at once, unlike the editor's.
-    pub(crate) fn set_automation_enabled(&mut self, id: &str, enabled: bool, cx: &mut Context<Self>) {
+    pub(crate) fn set_automation_enabled(
+        &mut self,
+        id: &str,
+        enabled: bool,
+        cx: &mut Context<Self>,
+    ) {
         // Shown at once; the reload below confirms or undoes it.
         if let Some(auto) = self.automations.items.iter_mut().find(|a| a.id == id) {
             auto.enabled = enabled;
@@ -595,9 +618,15 @@ mod tests {
 
     #[test]
     fn a_template_becomes_a_draft_with_its_trigger() {
-        let weekly = TEMPLATES.iter().find(|t| t.name == "Weekly changelog").unwrap();
+        let weekly = TEMPLATES
+            .iter()
+            .find(|t| t.name == "Weekly changelog")
+            .unwrap();
         let draft = draft_from_template("/repo".into(), "codex:gpt-5", weekly);
-        assert_eq!((draft.name.as_str(), draft.harness.as_str()), ("Weekly changelog", "codex"));
+        assert_eq!(
+            (draft.name.as_str(), draft.harness.as_str()),
+            ("Weekly changelog", "codex")
+        );
         assert_eq!(schedule::schedule_label(&draft), "Friday at 16:00");
         assert_eq!(WorkingCopy::of(&draft), WorkingCopy::Worktree);
         assert!(draft.enabled && draft.id.is_empty() && draft_is_valid(&draft));
@@ -633,7 +662,11 @@ mod tests {
         assert_eq!(WorkingCopy::of(&draft), WorkingCopy::Current);
         assert!(!settings_differ(&draft, &stored));
         // A run finishing behind the editor changes nothing the user edits.
-        let ran = AutomationRow { next_run_at: 99, last_run_at: Some(9), ..stored.clone() };
+        let ran = AutomationRow {
+            next_run_at: 99,
+            last_run_at: Some(9),
+            ..stored.clone()
+        };
         assert!(!settings_differ(&draft, &ran));
         draft.missed_run_grace_minutes = Some(30);
         assert!(settings_differ(&draft, &stored));

@@ -17,7 +17,7 @@ use gpui::{
 
 use crate::app::BenCodeApp;
 use crate::app::session_list::{
-    Groups, ListEntry, LiveStates, SessionFilters, Selection, build_list, compare_sessions,
+    Groups, ListEntry, LiveStates, Selection, SessionFilters, build_list, compare_sessions,
     matches_query, navigation_ids, passes_filters,
 };
 use crate::db::SessionRow;
@@ -193,7 +193,11 @@ impl BenCodeApp {
     }
 
     /// MonoCode's visible sessions: filters, then search, then sorted.
-    fn visible_sessions<'a>(&self, listed: &[&'a SessionRow], states: &LiveStates) -> Vec<&'a SessionRow> {
+    fn visible_sessions<'a>(
+        &self,
+        listed: &[&'a SessionRow],
+        states: &LiveStates,
+    ) -> Vec<&'a SessionRow> {
         let now = crate::app::now_ms();
         let repo = self.workspace.repo.as_deref();
         let mut visible: Vec<&SessionRow> = listed
@@ -224,7 +228,11 @@ impl BenCodeApp {
         let searching = !self.search_query.trim().is_empty();
         let narrowed = searching || self.sessions_ui.filters.is_active();
         let folders = self.project_folders();
-        let reminder_ids: Vec<String> = self.reminders.iter().map(|r| r.session_id.clone()).collect();
+        let reminder_ids: Vec<String> = self
+            .reminders
+            .iter()
+            .map(|r| r.session_id.clone())
+            .collect();
         let groups = Groups {
             pinned_collapsed: self.pinned_collapsed(),
             reminders_collapsed: self.group_collapsed(&self.sessions_ui.reminders_collapsed),
@@ -263,15 +271,25 @@ impl BenCodeApp {
                 .map(|ix| {
                     let entry = &entries[ix];
                     let before_loose = matches!(entries.get(ix + 1), Some(ListEntry::Session(_)));
-                    let (measured, key, app) =
-                        (self.sessions_ui.row_heights.clone(), keys[ix].clone(), app.clone());
+                    let (measured, key, app) = (
+                        self.sessions_ui.row_heights.clone(),
+                        keys[ix].clone(),
+                        app.clone(),
+                    );
                     div()
                         .relative()
                         .flex()
                         .flex_col()
                         // The gap between rows, inside the measured height.
                         .when(ix + 1 < entries.len(), |el| el.pb(px(ROW_GAP)))
-                        .child(self.render_list_entry(entry, before_loose, searching, &states, now, cx))
+                        .child(self.render_list_entry(
+                            entry,
+                            before_loose,
+                            searching,
+                            &states,
+                            now,
+                            cx,
+                        ))
                         .child(
                             canvas(
                                 move |bounds, _, cx| {
@@ -366,7 +384,9 @@ impl BenCodeApp {
         cx: &Context<Self>,
     ) -> AnyElement {
         match entry {
-            ListEntry::Session(session) => self.render_session_card(session, false, states, now, cx),
+            ListEntry::Session(session) => {
+                self.render_session_card(session, false, states, now, cx)
+            }
             ListEntry::Pinned {
                 collapsed,
                 sessions,
@@ -387,7 +407,15 @@ impl BenCodeApp {
                         .map(|s| self.render_session_card(s, true, states, now, cx))
                         .collect()
                 });
-                self.render_session_group(kind, sessions, cards, before_loose, searching, states, cx)
+                self.render_session_group(
+                    kind,
+                    sessions,
+                    cards,
+                    before_loose,
+                    searching,
+                    states,
+                    cx,
+                )
             }
             ListEntry::Folder { folder, sessions } => {
                 let expanded = searching || !folder.collapsed;
@@ -397,7 +425,15 @@ impl BenCodeApp {
                         .map(|s| self.render_session_card(s, true, states, now, cx))
                         .collect()
                 });
-                self.render_session_folder(folder, sessions, cards, before_loose, searching, states, cx)
+                self.render_session_folder(
+                    folder,
+                    sessions,
+                    cards,
+                    before_loose,
+                    searching,
+                    states,
+                    cx,
+                )
             }
         }
     }
@@ -411,7 +447,8 @@ impl BenCodeApp {
         // at half strength until hovered (`content/10`), opened or active
         // (`bg-selection`).
         let filter_group = SharedString::from("filter-sessions");
-        let filter_glyph = |color: gpui::Hsla| ExtraIcon::ListFilter.icon().size(IconSize::Xs).color(color);
+        let filter_glyph =
+            |color: gpui::Hsla| ExtraIcon::ListFilter.icon().size(IconSize::Xs).color(color);
         div()
             .flex()
             .flex_none()
@@ -430,10 +467,11 @@ impl BenCodeApp {
                     .h(px(28.0))
                     .items_center()
                     .child(
-                        div()
-                            .absolute()
-                            .left(px(8.0))
-                            .child(Icon::new(IconName::Search).size(IconSize::Xs).color(fg.opacity(0.5))),
+                        div().absolute().left(px(8.0)).child(
+                            Icon::new(IconName::Search)
+                                .size(IconSize::Xs)
+                                .color(fg.opacity(0.5)),
+                        ),
                     )
                     .child(
                         div()
@@ -511,7 +549,11 @@ impl BenCodeApp {
             if self.sessions_ui.shown_titles.get(id) == Some(title) {
                 continue;
             }
-            if let Some(old) = self.sessions_ui.shown_titles.insert(id.clone(), title.clone()) {
+            if let Some(old) = self
+                .sessions_ui
+                .shown_titles
+                .insert(id.clone(), title.clone())
+            {
                 self.sessions_ui.title_serial += 1;
                 let change = TitleChange {
                     old,
@@ -671,16 +713,21 @@ fn sessions_empty(cx: &Context<BenCodeApp>) -> impl IntoElement {
     let fg = cx.theme().colors.fg;
     let art = fg.opacity(0.25);
     let glow = fg.opacity(0.25 * 0.4);
-    let rows = EMPTY_TERMINAL.iter().zip(EMPTY_GLOW).map(move |(sprite, halo)| {
-        div().flex().children(sprite.bytes().zip(halo.bytes()).map(move |(s, g)| {
-            let cell = div().flex_none().size(px(EMPTY_CELL));
-            match (s, g) {
-                (b'#', _) => cell.bg(art),
-                (_, b'#') => cell.bg(glow),
-                _ => cell,
-            }
-        }))
-    });
+    let rows = EMPTY_TERMINAL
+        .iter()
+        .zip(EMPTY_GLOW)
+        .map(move |(sprite, halo)| {
+            div()
+                .flex()
+                .children(sprite.bytes().zip(halo.bytes()).map(move |(s, g)| {
+                    let cell = div().flex_none().size(px(EMPTY_CELL));
+                    match (s, g) {
+                        (b'#', _) => cell.bg(art),
+                        (_, b'#') => cell.bg(glow),
+                        _ => cell,
+                    }
+                }))
+        });
     div()
         .flex()
         .flex_col()
@@ -720,6 +767,9 @@ mod tests {
             folder: &folder,
             sessions: Vec::new(),
         };
-        assert_ne!(entry_key(&ListEntry::Session(&session)), entry_key(&folder_entry));
+        assert_ne!(
+            entry_key(&ListEntry::Session(&session)),
+            entry_key(&folder_entry)
+        );
     }
 }

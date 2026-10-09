@@ -55,7 +55,9 @@ pub struct AutomationTemplate {
 }
 
 /// MonoCode `templatesForCategory`.
-pub fn templates_for(category: TemplateCategory) -> impl Iterator<Item = &'static AutomationTemplate> {
+pub fn templates_for(
+    category: TemplateCategory,
+) -> impl Iterator<Item = &'static AutomationTemplate> {
     TEMPLATES.iter().filter(move |template| match category {
         TemplateCategory::Popular => template.popular,
         other => template.category == other,

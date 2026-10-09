@@ -214,7 +214,10 @@ impl BenCodeApp {
             None => {
                 let blocks = prompt_blocks(&session.blocks);
                 let fresh = Rc::new(PromptRows {
-                    ids: blocks.iter().map(|ix| session.blocks[*ix].id.clone()).collect(),
+                    ids: blocks
+                        .iter()
+                        .map(|ix| session.blocks[*ix].id.clone())
+                        .collect(),
                     rows: prompt_rows(view, &blocks),
                     blocks,
                 });
@@ -228,7 +231,9 @@ impl BenCodeApp {
         }
         let viewport = view.list.viewport_bounds();
         // A hidden pane has a zero-size box; the rule would pick the last prompt.
-        if viewport.size.height <= px(0.0) || crate::ui::scale::logical(viewport.size.width) < MIN_PANE_WIDTH {
+        if viewport.size.height <= px(0.0)
+            || crate::ui::scale::logical(viewport.size.width) < MIN_PANE_WIDTH
+        {
             return None;
         }
         let near_end = view.near_end();

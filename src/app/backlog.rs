@@ -41,7 +41,9 @@ impl BenCodeApp {
     /// Reads the saved connection off the UI thread (once at launch).
     pub fn load_backlog_account(&mut self, cx: &mut Context<Self>) {
         let generation = self.backlog.generation;
-        let task = cx.background_executor().spawn(async move { backlog::account() });
+        let task = cx
+            .background_executor()
+            .spawn(async move { backlog::account() });
         cx.spawn(async move |this, cx| {
             let account = task.await;
             let landed = this.update(cx, |app, cx| {
@@ -109,7 +111,8 @@ impl BenCodeApp {
                         app.backlog.account = Some(account);
                         app.backlog.seed_seen = true;
                         // The key is saved; it need not stay in the field.
-                        app.backlog_key_input.update(cx, |input, cx| input.set_text("", cx));
+                        app.backlog_key_input
+                            .update(cx, |input, cx| input.set_text("", cx));
                         app.load_backlog_projects(cx);
                         app.refresh_inbox(cx);
                     }
@@ -137,7 +140,9 @@ impl BenCodeApp {
         self.backlog.error = None;
         self.backlog.generation += 1;
         let generation = self.backlog.generation;
-        let task = cx.background_executor().spawn(async move { backlog::disconnect() });
+        let task = cx
+            .background_executor()
+            .spawn(async move { backlog::disconnect() });
         cx.spawn(async move |this, cx| {
             let result = task.await;
             let landed = this.update(cx, |app, cx| {
@@ -173,7 +178,9 @@ impl BenCodeApp {
         }
         self.backlog.projects_loading = true;
         let generation = self.backlog.generation;
-        let task = cx.background_executor().spawn(async move { backlog::projects() });
+        let task = cx
+            .background_executor()
+            .spawn(async move { backlog::projects() });
         cx.spawn(async move |this, cx| {
             let result = task.await;
             let landed = this.update(cx, |app, cx| {
@@ -211,7 +218,12 @@ impl BenCodeApp {
     }
 
     /// Remembers the folder a Backlog project's threads start in.
-    pub(crate) fn set_backlog_project_folder(&mut self, project_key: &str, folder: &str, cx: &mut Context<Self>) {
+    pub(crate) fn set_backlog_project_folder(
+        &mut self,
+        project_key: &str,
+        folder: &str,
+        cx: &mut Context<Self>,
+    ) {
         let folders = &mut self.backlog.project_folders;
         if folders.get(project_key).map(String::as_str) != Some(folder) {
             folders.insert(project_key.to_string(), folder.to_string());

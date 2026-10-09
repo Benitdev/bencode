@@ -105,7 +105,10 @@ mod tests {
         assert_eq!(src.name, "src");
         assert_eq!(src.status, None, "mixed below");
         let app = &src.dirs[0];
-        assert_eq!((app.path.as_str(), app.status.clone()), ("src/app", Some(GitFileStatus::Modified)));
+        assert_eq!(
+            (app.path.as_str(), app.status.clone()),
+            ("src/app", Some(GitFileStatus::Modified))
+        );
         assert_eq!(app.files[0].path, "src/app/a.rs");
         assert_eq!(src.dirs[1].status, Some(GitFileStatus::Untracked));
     }

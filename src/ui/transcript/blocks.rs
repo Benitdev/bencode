@@ -253,7 +253,8 @@ impl BenCodeApp {
                     // so the lines past the clamp stayed unwrapped once the
                     // message was shown in full.
                     .when(clamps && !expanded, |el| {
-                        el.max_h(px(LINE_HEIGHT * CLAMP_LINES as f32)).overflow_hidden()
+                        el.max_h(px(LINE_HEIGHT * CLAMP_LINES as f32))
+                            .overflow_hidden()
                     })
                     .child(
                         PlainText::new(self.seg_ctx(&session.id, ix, true), text.clone()).marks(
@@ -276,13 +277,15 @@ impl BenCodeApp {
                 .border_dashed()
                 .border_color(colors.fg.opacity(0.3))
                 .when_some(accent, |el, accent| {
-                    el.bg(accent.color.opacity(0.08)).border_color(accent.color.opacity(0.38))
+                    el.bg(accent.color.opacity(0.08))
+                        .border_color(accent.color.opacity(0.38))
                 })
         } else if editing {
-            bubble
-                .border_1()
-                .border_dashed()
-                .border_color(accent.map_or(colors.accent, |accent| accent.color).opacity(0.45))
+            bubble.border_1().border_dashed().border_color(
+                accent
+                    .map_or(colors.accent, |accent| accent.color)
+                    .opacity(0.45),
+            )
         } else {
             bubble
         };
@@ -670,7 +673,14 @@ fn prose(
         .px_4()
         .when(under_work, |el| el.pt_1())
         .when(!under_work, |el| el.pt_3())
-        .child(markdown(id, turns::text(block), arriving, Tone::Answer, select, cx))
+        .child(markdown(
+            id,
+            turns::text(block),
+            arriving,
+            Tone::Answer,
+            select,
+            cx,
+        ))
         .into_any_element()
 }
 

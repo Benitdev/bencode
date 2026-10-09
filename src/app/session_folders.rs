@@ -57,7 +57,12 @@ pub fn parse_hex(text: &str) -> Option<gpui::Hsla> {
 pub fn to_hex(color: gpui::Hsla) -> String {
     let rgba = gpui::Rgba::from(color);
     let byte = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
-    format!("#{:02x}{:02x}{:02x}", byte(rgba.r), byte(rgba.g), byte(rgba.b))
+    format!(
+        "#{:02x}{:02x}{:02x}",
+        byte(rgba.r),
+        byte(rgba.g),
+        byte(rgba.b)
+    )
 }
 
 impl SessionFolder {
@@ -173,7 +178,10 @@ pub fn place_session(
 
 /// MonoCode `createFolderWithSessions`: a new open folder holding
 /// `session_ids` (taken out of any other folder), first in the list.
-pub fn create_folder(folders: &[SessionFolder], session_ids: &[String]) -> (Vec<SessionFolder>, Option<String>) {
+pub fn create_folder(
+    folders: &[SessionFolder],
+    session_ids: &[String],
+) -> (Vec<SessionFolder>, Option<String>) {
     let mut ids: Vec<String> = Vec::new();
     for id in session_ids {
         if !id.is_empty() && !ids.contains(id) {
@@ -224,7 +232,11 @@ impl BenCodeApp {
             .map_or(&[], Vec::as_slice)
     }
 
-    pub(crate) fn set_project_folders(&mut self, folders: Vec<SessionFolder>, cx: &mut Context<Self>) {
+    pub(crate) fn set_project_folders(
+        &mut self,
+        folders: Vec<SessionFolder>,
+        cx: &mut Context<Self>,
+    ) {
         let project = self.current_cwd.clone();
         if folders.is_empty() {
             self.session_folders.remove(&project);
@@ -258,11 +270,18 @@ impl BenCodeApp {
     }
 
     /// MonoCode "Add to {folder}" for every menu target.
-    pub fn add_sessions_to_folder(&mut self, session_ids: &[String], folder_id: &str, cx: &mut Context<Self>) {
+    pub fn add_sessions_to_folder(
+        &mut self,
+        session_ids: &[String],
+        folder_id: &str,
+        cx: &mut Context<Self>,
+    ) {
         let target = FolderTarget::Existing(folder_id.to_string());
         let next = session_ids
             .iter()
-            .fold(self.project_folders().to_vec(), |folders, id| place_session(&folders, id, &target));
+            .fold(self.project_folders().to_vec(), |folders, id| {
+                place_session(&folders, id, &target)
+            });
         self.set_project_folders(next, cx);
     }
 
@@ -270,7 +289,9 @@ impl BenCodeApp {
     pub fn remove_sessions_from_folders(&mut self, session_ids: &[String], cx: &mut Context<Self>) {
         let next = session_ids
             .iter()
-            .fold(self.project_folders().to_vec(), |folders, id| remove_session(&folders, id));
+            .fold(self.project_folders().to_vec(), |folders, id| {
+                remove_session(&folders, id)
+            });
         self.set_project_folders(next, cx);
     }
 
@@ -297,7 +318,12 @@ impl BenCodeApp {
 
     /// MonoCode `setFolderColor`: `None` (or the first swatch) clears the
     /// tint and any custom colour.
-    pub fn set_folder_color(&mut self, folder_id: &str, index: Option<usize>, cx: &mut Context<Self>) {
+    pub fn set_folder_color(
+        &mut self,
+        folder_id: &str,
+        index: Option<usize>,
+        cx: &mut Context<Self>,
+    ) {
         let mut next = self.project_folders().to_vec();
         if let Some(folder) = next.iter_mut().find(|f| f.id == folder_id) {
             folder.color_index = index.filter(|i| (1..FOLDER_COLORS.len()).contains(i));
@@ -308,7 +334,12 @@ impl BenCodeApp {
 
     /// MonoCode `setFolderCustomColor`, while the picker is dragged: shown
     /// at once, saved when the folder menu closes.
-    pub fn preview_folder_custom_color(&mut self, folder_id: &str, hex: String, cx: &mut Context<Self>) {
+    pub fn preview_folder_custom_color(
+        &mut self,
+        folder_id: &str,
+        hex: String,
+        cx: &mut Context<Self>,
+    ) {
         if parse_hex(&hex).is_none() {
             return;
         }

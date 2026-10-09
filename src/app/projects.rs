@@ -186,7 +186,11 @@ impl BenCodeApp {
     /// and the current project's folder members. SQLite is read on the
     /// background executor through its own read-only connection (an
     /// in-memory database is read in place) and applied on the UI thread.
-    pub(crate) fn load_sessions_in_background(&mut self, project: Option<String>, cx: &mut Context<Self>) {
+    pub(crate) fn load_sessions_in_background(
+        &mut self,
+        project: Option<String>,
+        cx: &mut Context<Self>,
+    ) {
         let known: Vec<String> = self.sessions.iter().map(|s| s.id.clone()).collect();
         let members: Vec<String> = self
             .project_folders()
@@ -198,7 +202,11 @@ impl BenCodeApp {
         if project.is_none() && members.is_empty() {
             return;
         }
-        let request = SessionsRequest { project, known, members };
+        let request = SessionsRequest {
+            project,
+            known,
+            members,
+        };
         let Some(path) = self.db.file_path() else {
             let loaded = read_sessions(&self.db, &request);
             self.apply_loaded_sessions(loaded, cx);
@@ -212,7 +220,9 @@ impl BenCodeApp {
             let loaded: anyhow::Result<LoadedSessions> = task.await;
             match loaded {
                 Ok(loaded) => {
-                    if let Err(err) = this.update(cx, |app, cx| app.apply_loaded_sessions(loaded, cx)) {
+                    if let Err(err) =
+                        this.update(cx, |app, cx| app.apply_loaded_sessions(loaded, cx))
+                    {
                         log::debug!("sessions loaded after app drop: {err:#}");
                     }
                 }

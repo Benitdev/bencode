@@ -46,7 +46,10 @@ impl OrchestrationSummary {
     }
 
     pub fn done(&self) -> usize {
-        self.tasks.iter().filter(|t| t.status == "completed").count()
+        self.tasks
+            .iter()
+            .filter(|t| t.status == "completed")
+            .count()
     }
 }
 
@@ -59,7 +62,11 @@ impl OrchestrationTask {
             return "Needs input";
         }
         match self.status.as_str() {
-            "running" | "cancelling" | "queued" if run_status == "paused" && self.status == "queued" => "Paused",
+            "running" | "cancelling" | "queued"
+                if run_status == "paused" && self.status == "queued" =>
+            {
+                "Paused"
+            }
             "running" | "cancelling" | "queued" => "Saved",
             "completed" => "Done",
             "failed" => "Failed",
@@ -98,7 +105,10 @@ mod tests {
         assert_eq!(summary.tasks[1].label("active", false), "Done");
         assert_eq!(summary.tasks[2].label("active", false), "Needs review");
         assert_eq!(summary.tasks[2].tone(false), TaskTone::Attention);
-        let queued = OrchestrationTask { status: "queued".into(), ..Default::default() };
+        let queued = OrchestrationTask {
+            status: "queued".into(),
+            ..Default::default()
+        };
         assert_eq!(queued.label("paused", false), "Paused");
         assert!(OrchestrationSummary::from_json("not json").is_none());
     }

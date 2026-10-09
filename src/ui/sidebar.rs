@@ -10,10 +10,10 @@ use gpui::{
 };
 
 use crate::app::{BenCodeApp, SidebarMode};
-use crate::ui::scale::px;
-use crate::ui::window_drag::claim_press;
 use crate::ui::app_callback::app_callback;
 use crate::ui::diff_counts::diff_counts;
+use crate::ui::scale::px;
+use crate::ui::window_drag::claim_press;
 
 /// MonoCode `border-stroke`: content at 7%.
 pub const STROKE_OPACITY: f32 = 0.07;
@@ -48,7 +48,11 @@ pub fn tab_id(tab: SidebarMode) -> &'static str {
 /// MonoCode `loadSidebarTabOrder`: known ids in order, missing ones
 /// appended, anything else the default.
 pub fn parse_tab_order(ids: &[String]) -> Vec<SidebarMode> {
-    const ALL: [SidebarMode; 3] = [SidebarMode::Sessions, SidebarMode::Files, SidebarMode::Changes];
+    const ALL: [SidebarMode; 3] = [
+        SidebarMode::Sessions,
+        SidebarMode::Files,
+        SidebarMode::Changes,
+    ];
     let mut order: Vec<SidebarMode> = Vec::new();
     for id in ids {
         if let Some(tab) = ALL.into_iter().find(|t| tab_id(*t) == id)
@@ -80,8 +84,12 @@ impl gpui::Render for SidebarResize {
 
 /// The width a drag to `x` gives, clamped (MonoCode `useSidebarResize`).
 pub fn resized_width(drag: &SidebarResize, x: f32, window_width: f32) -> f32 {
-    let max = SIDEBAR_MAX_WIDTH.min(window_width * 0.5).max(SIDEBAR_MIN_WIDTH);
-    (drag.start_width + x - drag.start_x).round().clamp(SIDEBAR_MIN_WIDTH, max)
+    let max = SIDEBAR_MAX_WIDTH
+        .min(window_width * 0.5)
+        .max(SIDEBAR_MIN_WIDTH);
+    (drag.start_width + x - drag.start_x)
+        .round()
+        .clamp(SIDEBAR_MIN_WIDTH, max)
 }
 
 /// A thread-level dialog opened from a card's context menu.
@@ -118,9 +126,19 @@ impl BenCodeApp {
                     // MonoCode `DiffStat`: 11px semibold, gap-1.5; the
                     // label is `leading-label`.
                     if tab == SidebarMode::Changes && added + removed > 0 {
-                        el.child(diff_counts(added, removed, crate::ui::appearance::diff_colors(cx)).gap_1p5().text_size(px(11.0)))
+                        el.child(
+                            diff_counts(added, removed, crate::ui::appearance::diff_colors(cx))
+                                .gap_1p5()
+                                .text_size(px(11.0)),
+                        )
                     } else {
-                        el.child(div().min_w_0().truncate().line_height(px(12.0 * 1.4)).child(label))
+                        el.child(
+                            div()
+                                .min_w_0()
+                                .truncate()
+                                .line_height(px(12.0 * 1.4))
+                                .child(label),
+                        )
                     }
                 })
                 .on_click(cx.listener(move |this, _, _, cx| {
@@ -133,10 +151,14 @@ impl BenCodeApp {
                     let dragged = dragged.clone();
                     cx.new(|_| dragged)
                 })
-                .drag_over::<DraggedSidebarTab>(move |style, _, _, _| style.bg(accent.opacity(0.15)))
-                .on_drop(cx.listener(move |this, dragged: &DraggedSidebarTab, _, cx| {
-                    this.move_sidebar_tab(dragged.0, tab, cx);
-                }))
+                .drag_over::<DraggedSidebarTab>(move |style, _, _, _| {
+                    style.bg(accent.opacity(0.15))
+                })
+                .on_drop(
+                    cx.listener(move |this, dragged: &DraggedSidebarTab, _, cx| {
+                        this.move_sidebar_tab(dragged.0, tab, cx);
+                    }),
+                )
         });
 
         div()
@@ -190,7 +212,11 @@ impl BenCodeApp {
             .rounded(px(6.0))
             .text_size(px(12.0))
             .line_height(relative(1.0))
-            .text_color(if active { colors.fg } else { colors.fg.opacity(0.5) })
+            .text_color(if active {
+                colors.fg
+            } else {
+                colors.fg.opacity(0.5)
+            })
             .when(active, |el| el.bg(colors.active))
     }
 
@@ -198,7 +224,8 @@ impl BenCodeApp {
     /// the Sessions tab is left.
     pub(crate) fn show_sidebar(&mut self, mode: SidebarMode, cx: &mut Context<Self>) {
         if self.sidebar_mode == SidebarMode::Sessions && mode != SidebarMode::Sessions {
-            self.search_input.update(cx, |input, cx| input.set_text("", cx));
+            self.search_input
+                .update(cx, |input, cx| input.set_text("", cx));
             self.search_query.clear();
             self.sessions_ui.selection.clear();
             self.close_sidebar_menu(cx);
@@ -342,10 +369,16 @@ impl BenCodeApp {
                     this.sidebar_drag_x = crate::ui::scale::logical(event.position.x);
                 }),
             )
-            .on_drag(SidebarResize { start_x: 0.0, start_width: width }, |drag, _, _, cx| {
-                let drag = drag.clone();
-                cx.new(|_| drag)
-            })
+            .on_drag(
+                SidebarResize {
+                    start_x: 0.0,
+                    start_width: width,
+                },
+                |drag, _, _, cx| {
+                    let drag = drag.clone();
+                    cx.new(|_| drag)
+                },
+            )
     }
 
     fn render_sidebar_header(&self, cx: &Context<Self>) -> impl IntoElement {
@@ -371,25 +404,26 @@ impl BenCodeApp {
             .border_b_1()
             .border_color(colors.fg.opacity(STROKE_OPACITY))
             // The icon rail (or the title bar above it) holds that space.
-            .when(!self.is_rail_open && !self.compact_rail_active() && cfg!(target_os = "macos"), |el| {
-                el.child(div().flex_none().w(gpui::px(78.0))) // MonoCode `w-[78px]`
-            })
-            .child(
-                div().flex().flex_1().min_w_0().items_center().child(
-                    if has_worktrees || self.worktree_focus().is_some() {
-                        self.render_worktree_switcher(cx).into_any_element()
-                    } else {
-                        div()
-                            .min_w_0()
-                            .truncate()
-                            .text_size(px(14.0))
-                            .line_height(relative(1.25))
-                            .font_weight(FontWeight::MEDIUM)
-                            .child("Workspace")
-                            .into_any_element()
-                    },
-                ),
+            .when(
+                !self.is_rail_open && !self.compact_rail_active() && cfg!(target_os = "macos"),
+                |el| {
+                    el.child(div().flex_none().w(gpui::px(78.0))) // MonoCode `w-[78px]`
+                },
             )
+            .child(div().flex().flex_1().min_w_0().items_center().child(
+                if has_worktrees || self.worktree_focus().is_some() {
+                    self.render_worktree_switcher(cx).into_any_element()
+                } else {
+                    div()
+                        .min_w_0()
+                        .truncate()
+                        .text_size(px(14.0))
+                        .line_height(relative(1.25))
+                        .font_weight(FontWeight::MEDIUM)
+                        .child("Workspace")
+                        .into_any_element()
+                },
+            ))
             // MonoCode `WorkspaceTitleActions`: `gap-0.5`.
             .child(
                 claim_press(div())
@@ -420,7 +454,9 @@ impl BenCodeApp {
         let fg = cx.theme().colors.fg;
         let focus = self.worktree_focus();
         let title = focus.map_or("Workspace".to_string(), |f| {
-            f.branch.clone().unwrap_or_else(|| "Detached worktree".to_string())
+            f.branch
+                .clone()
+                .unwrap_or_else(|| "Detached worktree".to_string())
         });
         let tip = match focus {
             Some(f) => format!("{}\n{}", f.branch.as_deref().unwrap_or("detached"), f.path),
@@ -574,13 +610,23 @@ mod tests {
     #[test]
     fn tab_orders_keep_known_ids_and_fill_in_the_rest() {
         let order = parse_tab_order(&["changes".into(), "bogus".into(), "changes".into()]);
-        assert_eq!(order, [SidebarMode::Changes, SidebarMode::Sessions, SidebarMode::Files]);
+        assert_eq!(
+            order,
+            [
+                SidebarMode::Changes,
+                SidebarMode::Sessions,
+                SidebarMode::Files
+            ]
+        );
         assert_eq!(parse_tab_order(&[]).len(), 3);
     }
 
     #[test]
     fn resizing_is_clamped_to_half_the_window() {
-        let drag = SidebarResize { start_x: 100.0, start_width: 260.0 };
+        let drag = SidebarResize {
+            start_x: 100.0,
+            start_width: 260.0,
+        };
         assert_eq!(resized_width(&drag, 200.0, 2000.0), 360.0);
         assert_eq!(resized_width(&drag, 900.0, 2000.0), 560.0);
         assert_eq!(resized_width(&drag, 900.0, 700.0), 350.0);

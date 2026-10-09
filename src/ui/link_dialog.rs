@@ -6,8 +6,8 @@ use ely_gpui_component::buttons::{Button, ButtonVariant};
 use ely_gpui_component::overlays::Dialog;
 use ely_gpui_component::theme::ActiveTheme;
 use gpui::{
-    AnyElement, Context, FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement,
-    MouseButton, StatefulInteractiveElement, Styled, div, relative, rgb,
+    AnyElement, Context, FontWeight, Hsla, InteractiveElement, IntoElement, MouseButton,
+    ParentElement, StatefulInteractiveElement, Styled, div, relative, rgb,
 };
 
 use crate::app::BenCodeApp;
@@ -36,7 +36,8 @@ impl BenCodeApp {
             .and_then(|s| s.linked_work_item.as_ref())
             .map(|item| item.url.clone())
             .unwrap_or_default();
-        self.link_input.update(cx, |input, cx| input.set_text(current, cx));
+        self.link_input
+            .update(cx, |input, cx| input.set_text(current, cx));
         self.link_dialog = Some(LinkDialog {
             session_id: session_id.to_string(),
             error: None,
@@ -85,7 +86,10 @@ impl BenCodeApp {
             cx,
             move |db| db.set_linked_work_item(&row, saved.as_ref()),
             move |this, written, cx| {
-                let dialog_open = this.link_dialog.as_ref().is_some_and(|d| d.session_id == id);
+                let dialog_open = this
+                    .link_dialog
+                    .as_ref()
+                    .is_some_and(|d| d.session_id == id);
                 if let Err(err) = written {
                     log::error!("could not save the GitHub link of {id}: {err:#}");
                     if let Some(dialog) = this.link_dialog.as_mut().filter(|_| dialog_open) {
@@ -215,7 +219,12 @@ impl BenCodeApp {
 
     /// The card badge's click: the item in the Inbox, fetched first when
     /// the Inbox has not listed it.
-    pub fn open_linked_work_item(&mut self, session_id: &str, item: &LinkedWorkItem, cx: &mut Context<Self>) {
+    pub fn open_linked_work_item(
+        &mut self,
+        session_id: &str,
+        item: &LinkedWorkItem,
+        cx: &mut Context<Self>,
+    ) {
         let kind = match item.kind {
             WorkItemKind::Pr => crate::github::Kind::Pr,
             WorkItemKind::Issue => crate::github::Kind::Issue,
@@ -223,7 +232,11 @@ impl BenCodeApp {
         let key = format!(
             "{}:{}:{}",
             item.repo.to_lowercase(),
-            if kind == crate::github::Kind::Pr { "pr" } else { "issue" },
+            if kind == crate::github::Kind::Pr {
+                "pr"
+            } else {
+                "issue"
+            },
             item.number
         );
         self.open_inbox_modal(cx);
@@ -239,10 +252,12 @@ impl BenCodeApp {
             .unwrap_or_else(|| self.current_cwd.clone());
         let (repo, number) = (item.repo.clone(), item.number);
         let task = cx.background_executor().spawn(async move {
-            crate::github::work_item(std::path::Path::new(&cwd), &repo, kind, number).map(|mut found| {
-                found.project = cwd;
-                found
-            })
+            crate::github::work_item(std::path::Path::new(&cwd), &repo, kind, number).map(
+                |mut found| {
+                    found.project = cwd;
+                    found
+                },
+            )
         });
         let url = item.url.clone();
         cx.spawn(async move |this, cx| {

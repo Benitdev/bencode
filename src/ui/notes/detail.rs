@@ -35,7 +35,11 @@ impl BenCodeApp {
                 .justify_center()
                 .gap_3()
                 .size_full()
-                .child(Icon::new(IconName::File).size(IconSize::Lg).color(fg.opacity(0.3)))
+                .child(
+                    Icon::new(IconName::File)
+                        .size(IconSize::Lg)
+                        .color(fg.opacity(0.3)),
+                )
                 .child(
                     div()
                         .text_size(px(13.0))
@@ -53,12 +57,24 @@ impl BenCodeApp {
             .border_b_1()
             .border_color(colors.border)
             .child(
-                page_tab("note-tab-preview", "Preview", mode == NoteMode::Preview, fg, colors.fg_muted)
-                    .on_click(cx.listener(|this, _, _, cx| this.set_note_mode(NoteMode::Preview, cx))),
+                page_tab(
+                    "note-tab-preview",
+                    "Preview",
+                    mode == NoteMode::Preview,
+                    fg,
+                    colors.fg_muted,
+                )
+                .on_click(cx.listener(|this, _, _, cx| this.set_note_mode(NoteMode::Preview, cx))),
             )
             .child(
-                page_tab("note-tab-source", "Source", mode == NoteMode::Source, fg, colors.fg_muted)
-                    .on_click(cx.listener(|this, _, _, cx| this.set_note_mode(NoteMode::Source, cx))),
+                page_tab(
+                    "note-tab-source",
+                    "Source",
+                    mode == NoteMode::Source,
+                    fg,
+                    colors.fg_muted,
+                )
+                .on_click(cx.listener(|this, _, _, cx| this.set_note_mode(NoteMode::Source, cx))),
             );
         let body: AnyElement = match mode {
             NoteMode::Source => div()
@@ -109,7 +125,9 @@ impl BenCodeApp {
             .border_1()
             .border_color(gpui::transparent_black())
             .drag_over::<gpui::ExternalPaths>(move |style, _, _, _| {
-                style.border_color(accent.opacity(0.6)).bg(accent.opacity(tint::HOVER))
+                style
+                    .border_color(accent.opacity(0.6))
+                    .bg(accent.opacity(tint::HOVER))
             })
             .on_drop(cx.listener(|this, paths: &gpui::ExternalPaths, _, cx| {
                 this.drop_note_images(paths.paths().to_vec(), cx);
@@ -181,7 +199,9 @@ impl BenCodeApp {
                             .primary()
                             .size(ControlSize::Sm)
                             .disabled(note.body.trim().is_empty())
-                            .on_click(cx.listener(|this, _, _, cx| this.add_selected_note_to_chat(cx))),
+                            .on_click(
+                                cx.listener(|this, _, _, cx| this.add_selected_note_to_chat(cx)),
+                            ),
                     )
                     .child(
                         Button::new("note-delete", "Delete")
@@ -217,13 +237,18 @@ impl BenCodeApp {
     /// note belongs to.
     fn render_note_project(&self, note: &Note, cx: &Context<Self>) -> impl IntoElement {
         let current = note.source_cwd.as_deref().unwrap_or_default();
-        let menu = self.worktree_project_choices().into_iter().fold(Menu::new(), |menu, path| {
-            let pick = app_callback(cx, {
-                let path = path.clone();
-                move |this, cx| this.move_note_to_project(&path, cx)
+        let menu = self
+            .worktree_project_choices()
+            .into_iter()
+            .fold(Menu::new(), |menu, path| {
+                let pick = app_callback(cx, {
+                    let path = path.clone();
+                    move |this, cx| this.move_note_to_project(&path, cx)
+                });
+                menu.item(
+                    MenuItem::radio(self.rail_project_label(&path), path == current).on_click(pick),
+                )
             });
-            menu.item(MenuItem::radio(self.rail_project_label(&path), path == current).on_click(pick))
-        });
         let label = note_project(note).map_or_else(|| "No project".to_string(), str::to_string);
         DropdownMenu::new("note-project", label, menu)
             .icon(IconName::Folder)
@@ -255,7 +280,9 @@ impl BenCodeApp {
                         .size(ControlSize::Sm)
                         .variant(ButtonVariant::Ghost)
                         .tooltip(format!("Remove #{tag}"))
-                        .on_click(cx.listener(move |this, _, _, cx| this.remove_note_tag(&remove, cx))),
+                        .on_click(
+                            cx.listener(move |this, _, _, cx| this.remove_note_tag(&remove, cx)),
+                        ),
                 )
         });
         div()

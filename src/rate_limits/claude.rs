@@ -91,7 +91,11 @@ fn read_credentials(config_dir: Option<&Path>) -> Option<Credentials> {
 fn credentials_from_blob(raw: &str) -> Option<Credentials> {
     let blob: Value = serde_json::from_str(raw.trim()).ok()?;
     let oauth = blob.get("claudeAiOauth");
-    let field = |key: &str| oauth.and_then(|oauth| oauth.get(key)).or_else(|| blob.get(key));
+    let field = |key: &str| {
+        oauth
+            .and_then(|oauth| oauth.get(key))
+            .or_else(|| blob.get(key))
+    };
     let access_token = field("accessToken")?.as_str()?.trim();
     if access_token.is_empty() {
         return None;
@@ -155,7 +159,11 @@ mod keychain {
             return SERVICE.into();
         };
         let digest = Sha256::digest(config_dir.to_string_lossy().as_bytes());
-        let suffix: String = digest.iter().take(4).map(|byte| format!("{byte:02x}")).collect();
+        let suffix: String = digest
+            .iter()
+            .take(4)
+            .map(|byte| format!("{byte:02x}"))
+            .collect();
         format!("{SERVICE}-{suffix}")
     }
 
@@ -178,8 +186,8 @@ mod keychain {
         let failed = |detail: String| {
             format!("Could not remove the Claude credentials from Keychain ({service}): {detail}")
         };
-        let output =
-            crate::keychain::run(&["delete-generic-password", "-s", service.as_str()]).map_err(failed)?;
+        let output = crate::keychain::run(&["delete-generic-password", "-s", service.as_str()])
+            .map_err(failed)?;
         if output.ok || crate::keychain::not_found(&output) {
             Ok(())
         } else {
@@ -277,7 +285,10 @@ mod tests {
     #[test]
     fn status_errors_name_the_cause() {
         assert_eq!(status_error(401), "Claude sign-in expired");
-        assert_eq!(status_error(403), "Claude usage is unavailable for this account");
+        assert_eq!(
+            status_error(403),
+            "Claude usage is unavailable for this account"
+        );
         assert_eq!(status_error(500), "Claude usage request failed (500)");
     }
 }

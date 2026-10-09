@@ -31,9 +31,9 @@ impl AppDb {
     }
 
     pub fn list_in_flight(&self) -> Result<Vec<InFlightSession>> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT session_id, cwd FROM in_flight_sessions ORDER BY sort_index, session_id")?;
+        let mut stmt = self.conn.prepare(
+            "SELECT session_id, cwd FROM in_flight_sessions ORDER BY sort_index, session_id",
+        )?;
         let rows = stmt.query_map([], |row| {
             Ok(InFlightSession {
                 session_id: row.get(0)?,

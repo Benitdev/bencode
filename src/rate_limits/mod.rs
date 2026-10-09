@@ -169,7 +169,10 @@ impl ProviderRateLimits {
 
     /// MonoCode `errorRateLimits`: a failed read keeps the last snapshot.
     pub fn error(error: impl Into<String>, previous: Option<&Self>, now: i64) -> Self {
-        let base = previous.filter(|p| p.has_windows()).cloned().unwrap_or_default();
+        let base = previous
+            .filter(|p| p.has_windows())
+            .cloned()
+            .unwrap_or_default();
         Self {
             updated_at: now,
             error: Some(error.into()),
@@ -190,7 +193,11 @@ pub enum Fetched {
 
 impl Fetched {
     /// The snapshot to show, given the one on screen.
-    pub fn into_limits(self, previous: Option<&ProviderRateLimits>, now: i64) -> ProviderRateLimits {
+    pub fn into_limits(
+        self,
+        previous: Option<&ProviderRateLimits>,
+        now: i64,
+    ) -> ProviderRateLimits {
         match self {
             Self::Limits(limits) => limits,
             Self::Unavailable(error) => ProviderRateLimits::unavailable(error, now),
@@ -293,7 +300,10 @@ pub fn window_tooltip(window: &RateLimitWindow, now: i64) -> String {
     let usage = format!("{} used", format_usage_percent(window.used_percent));
     match window.resets_at {
         Some(resets_at) => format!("{usage} · {}", format_reset_countdown(resets_at - now)),
-        None => format!("{usage} · {} window", format_window_label(window.window_minutes)),
+        None => format!(
+            "{usage} · {} window",
+            format_window_label(window.window_minutes)
+        ),
     }
 }
 
@@ -321,7 +331,9 @@ pub fn parse_reset_timestamp(value: &Value) -> Option<i64> {
             if let Ok(numeric) = text.parse::<f64>() {
                 return normalize_epoch_ms(numeric);
             }
-            text.parse::<jiff::Timestamp>().ok().map(|t| t.as_millisecond())
+            text.parse::<jiff::Timestamp>()
+                .ok()
+                .map(|t| t.as_millisecond())
         }
         _ => None,
     }
@@ -412,7 +424,9 @@ impl CodexWindow {
 
     fn kind(&self) -> Option<WindowKind> {
         let duration = self.duration_mins?;
-        let near = |minutes: u32| (duration - f64::from(minutes)).abs() <= WINDOW_DURATION_TOLERANCE_MINUTES;
+        let near = |minutes: u32| {
+            (duration - f64::from(minutes)).abs() <= WINDOW_DURATION_TOLERANCE_MINUTES
+        };
         if near(SESSION_WINDOW_MINUTES) {
             Some(WindowKind::Session)
         } else if near(WEEKLY_WINDOW_MINUTES) {
@@ -472,7 +486,10 @@ pub fn parse_codex_rate_limits(result: &Value, now: i64) -> ProviderRateLimits {
 /// `{ usage: { rolling: { status, percent, resetsAt }, weekly, monthly } }`.
 /// `percent` is percent used, matching the dashboard.
 pub fn parse_opencode_go_usage(result: &Value, now: i64) -> ProviderRateLimits {
-    let usage = result.get("usage").filter(|v| v.is_object()).unwrap_or(result);
+    let usage = result
+        .get("usage")
+        .filter(|v| v.is_object())
+        .unwrap_or(result);
     let window = |key: &str, window_minutes: u32| {
         let rec = usage.get(key).filter(|v| v.is_object())?;
         // Require an explicit valid status; unknown shapes are dropped so the
@@ -515,7 +532,10 @@ mod tests {
         assert_eq!(format_reset_duration(47 * 60_000 + 59_000), "47m");
         assert_eq!(format_reset_duration((3 * 60 + 54) * 60_000), "3h 54m");
         assert_eq!(format_reset_duration(2 * 3_600_000), "2h");
-        assert_eq!(format_reset_duration((6 * 24 + 14) * 3_600_000 + 60_000), "6d 14h");
+        assert_eq!(
+            format_reset_duration((6 * 24 + 14) * 3_600_000 + 60_000),
+            "6d 14h"
+        );
         assert_eq!(format_reset_duration(24 * 3_600_000), "1d");
         assert_eq!(format_reset_countdown(-5), "Resets now");
         assert_eq!(format_reset_countdown(15 * 60_000), "Resets in 15m");
@@ -545,14 +565,26 @@ mod tests {
             window_tooltip(&window(100.0, Some(15 * 60_000)), NOW),
             "100% used · Resets in 15m"
         );
-        assert_eq!(window_tooltip(&window(11.0, None), NOW), "11% used · 5h window");
+        assert_eq!(
+            window_tooltip(&window(11.0, None), NOW),
+            "11% used · 5h window"
+        );
     }
 
     #[test]
     fn reset_timestamps_accept_seconds_ms_and_iso() {
-        assert_eq!(parse_reset_timestamp(&json!(1_791_098_400)), Some(1_791_098_400_000));
-        assert_eq!(parse_reset_timestamp(&json!(1_791_098_400_000_i64)), Some(1_791_098_400_000));
-        assert_eq!(parse_reset_timestamp(&json!("1791098400")), Some(1_791_098_400_000));
+        assert_eq!(
+            parse_reset_timestamp(&json!(1_791_098_400)),
+            Some(1_791_098_400_000)
+        );
+        assert_eq!(
+            parse_reset_timestamp(&json!(1_791_098_400_000_i64)),
+            Some(1_791_098_400_000)
+        );
+        assert_eq!(
+            parse_reset_timestamp(&json!("1791098400")),
+            Some(1_791_098_400_000)
+        );
         assert_eq!(
             parse_reset_timestamp(&json!("2026-10-07T04:59:59.943648+00:00")),
             Some(1_791_349_199_943)
@@ -573,7 +605,10 @@ mod tests {
         assert_eq!(session.used_percent, 100.0);
         assert_eq!(session.resets_at, Some(1_791_349_200_000));
         assert_eq!(limits.weekly.as_ref().unwrap().resets_at, None);
-        assert_eq!(limits.weekly.as_ref().unwrap().window_minutes, WEEKLY_WINDOW_MINUTES);
+        assert_eq!(
+            limits.weekly.as_ref().unwrap().window_minutes,
+            WEEKLY_WINDOW_MINUTES
+        );
         assert!(limits.monthly.is_none());
         assert_eq!(limits.windows().len(), 2);
 

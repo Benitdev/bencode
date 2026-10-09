@@ -89,7 +89,10 @@ fn parse_accounts(json: &str) -> Result<Vec<Account>, String> {
         .flat_map(|(_, rows)| rows)
         // A sign-in whose token no longer works cannot run anything.
         .filter(|row| row.state == "success" && valid_login(&row.login))
-        .map(|row| Account { login: row.login, active: row.active })
+        .map(|row| Account {
+            login: row.login,
+            active: row.active,
+        })
         .collect();
     accounts.sort_by(|a, b| (!a.active, &a.login).cmp(&(!b.active, &b.login)));
     Ok(accounts)
@@ -98,10 +101,20 @@ fn parse_accounts(json: &str) -> Result<Vec<Account>, String> {
 /// The accounts `gh` is signed in with, the active one first.
 pub fn list() -> Result<Vec<Account>, String> {
     let home = std::env::var_os("HOME").unwrap_or_else(|| "/".into());
-    let json = crate::github::run_gh(Path::new(&home), &["auth", "status", "--json", "hosts"], None)
-        // gh exits non-zero when one account's token has expired, and
-        // still prints them all.
-        .or_else(|out| if out.trim_start().starts_with('{') { Ok(out) } else { Err(out) })?;
+    let json = crate::github::run_gh(
+        Path::new(&home),
+        &["auth", "status", "--json", "hosts"],
+        None,
+    )
+    // gh exits non-zero when one account's token has expired, and
+    // still prints them all.
+    .or_else(|out| {
+        if out.trim_start().starts_with('{') {
+            Ok(out)
+        } else {
+            Err(out)
+        }
+    })?;
     parse_accounts(&json)
 }
 
@@ -110,7 +123,9 @@ fn valid_login(login: &str) -> bool {
     !login.is_empty()
         && login.len() <= 64
         && !login.starts_with('-')
-        && login.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        && login
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
 fn token(login: &str) -> Option<String> {
@@ -196,7 +211,10 @@ fn account_for(cwd: &Path) -> Option<String> {
     let root = root_of(&cwd.to_string_lossy());
     let (choice, found) = {
         let state = state()?;
-        (choice_for(&state.choices, &root), state.found.get(&root).cloned())
+        (
+            choice_for(&state.choices, &root),
+            state.found.get(&root).cloned(),
+        )
     };
     if choice.is_some() {
         return choice;
@@ -235,8 +253,14 @@ mod tests {
         assert_eq!(
             parse_accounts(json).unwrap(),
             [
-                Account { login: "me".into(), active: true },
-                Account { login: "work-me".into(), active: false },
+                Account {
+                    login: "me".into(),
+                    active: true
+                },
+                Account {
+                    login: "work-me".into(),
+                    active: false
+                },
             ]
         );
         assert_eq!(parse_accounts(r#"{"hosts":{}}"#).unwrap(), []);
@@ -258,7 +282,10 @@ mod tests {
             ("/work".to_string(), "work-me".to_string()),
             ("/work/side".to_string(), "me".to_string()),
         ]);
-        assert_eq!(choice_for(&choices, "/work/api").as_deref(), Some("work-me"));
+        assert_eq!(
+            choice_for(&choices, "/work/api").as_deref(),
+            Some("work-me")
+        );
         assert_eq!(choice_for(&choices, "/work/side").as_deref(), Some("me"));
         assert_eq!(choice_for(&choices, "/workshop"), None);
         assert_eq!(choice_for(&choices, "/home/x"), None);

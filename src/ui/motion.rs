@@ -30,7 +30,11 @@ mod tests {
     fn curves_start_end_and_lead_like_css() {
         let ease = cubic_bezier(0.32, 0.72, 0.0, 1.0);
         assert!(ease(0.0).abs() < 1e-3 && (ease(1.0) - 1.0).abs() < 1e-3);
-        assert!(ease(0.5) > 0.8, "MonoCode's push is front-loaded: {}", ease(0.5));
+        assert!(
+            ease(0.5) > 0.8,
+            "MonoCode's push is front-loaded: {}",
+            ease(0.5)
+        );
         let linear = cubic_bezier(0.0, 0.0, 1.0, 1.0);
         assert!((linear(0.3) - 0.3).abs() < 1e-2);
     }

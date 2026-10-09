@@ -118,8 +118,15 @@ mod tests {
 
     #[test]
     fn elys_icons_still_load() {
-        let data = Assets.load(IconName::Check.path()).expect("the source loads");
+        let data = Assets
+            .load(IconName::Check.path())
+            .expect("the source loads");
         assert!(data.is_some());
-        assert!(Assets.load("bencode/icons/missing.svg").expect("the source loads").is_none());
+        assert!(
+            Assets
+                .load("bencode/icons/missing.svg")
+                .expect("the source loads")
+                .is_none()
+        );
     }
 }

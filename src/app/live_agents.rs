@@ -42,7 +42,11 @@ pub fn live_agent(session: &SessionRow, flags: RunFlags) -> Option<LiveAgent> {
         return None;
     }
     let done = !in_flight;
-    let turn = session.blocks.iter().rev().find(|block| block.role == "user");
+    let turn = session
+        .blocks
+        .iter()
+        .rev()
+        .find(|block| block.role == "user");
     Some(LiveAgent {
         id: session.id.clone(),
         cwd: session.cwd.clone(),
@@ -106,7 +110,11 @@ fn activity_label(blocks: &[Block], cwd: &str) -> String {
                 .and_then(|status| status.as_str())
                 == Some("preparing")
     };
-    let Some(block) = blocks.iter().rev().find(|block| is_tool(block) || preparing(block)) else {
+    let Some(block) = blocks
+        .iter()
+        .rev()
+        .find(|block| is_tool(block) || preparing(block))
+    else {
         return "Working".to_string();
     };
     if preparing(block) {
@@ -152,7 +160,10 @@ impl BenCodeApp {
     /// MonoCode `onSelectLiveAgent`: leaves the open surface and shows the
     /// thread, in whichever project it belongs to.
     pub fn select_live_agent(&mut self, id: &str, cx: &mut Context<Self>) {
-        if self.surface.is_some_and(|surface| surface != Surface::Settings) {
+        if self
+            .surface
+            .is_some_and(|surface| surface != Surface::Settings)
+        {
             self.close_surface(cx);
         }
         self.open_session(id.to_string(), cx);
@@ -203,7 +214,10 @@ mod tests {
 
     #[test]
     fn a_running_thread_shows_its_last_tool_call() {
-        let row = session("a", vec![user(100, None), tool("read", "/repo/src/main.rs")]);
+        let row = session(
+            "a",
+            vec![user(100, None), tool("read", "/repo/src/main.rs")],
+        );
         let agent = live_agent(&row, BUSY).unwrap();
         assert_eq!(agent.title, "Fix the rail");
         assert_eq!(agent.activity, "Read src/main.rs");
@@ -217,7 +231,10 @@ mod tests {
 
     #[test]
     fn a_finished_unseen_thread_is_done_with_its_duration() {
-        let row = session("a", vec![user(100, Some(24_000)), tool("search", "fn main")]);
+        let row = session(
+            "a",
+            vec![user(100, Some(24_000)), tool("search", "fn main")],
+        );
         let flags = RunFlags {
             unseen_finished: true,
             ..Default::default()

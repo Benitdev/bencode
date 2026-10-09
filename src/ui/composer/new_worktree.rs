@@ -10,8 +10,8 @@ use std::hash::{BuildHasher, RandomState};
 use gpui::Context;
 
 use crate::app::{BenCodeApp, TurnInput};
-use crate::ui::composer::ComposerPopover;
 use crate::git::worktrees::create_worktree;
+use crate::ui::composer::ComposerPopover;
 
 /// MonoCode `temporaryWorktreeBranchName`: `mc/` and eight lowercase
 /// letters or digits.

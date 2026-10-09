@@ -71,7 +71,8 @@ impl BenCodeApp {
         self.pane_rects.clear();
         if self.appearance.chat_background.path.is_some() {
             let leaves = layout_leaves(&layout, Default::default());
-            self.pane_rects.extend(leaves.into_iter().map(|leaf| (leaf.id, leaf.rect)));
+            self.pane_rects
+                .extend(leaves.into_iter().map(|leaf| (leaf.id, leaf.rect)));
         }
         shell.child(self.render_layout_node(&layout, in_split, cx))
     }
@@ -114,7 +115,9 @@ impl BenCodeApp {
             SplitDir::Down => Axis::Vertical,
         };
         let theme = cx.theme();
-        let min = theme.pane_min().to_pixels(theme.base_rem() * crate::ui::scale::ui_scale());
+        let min = theme
+            .pane_min()
+            .to_pixels(theme.base_rem() * crate::ui::scale::ui_scale());
         let weak = cx.entity().downgrade();
         let owned_id = split_id.to_string();
         let mut split = SplitPane::new(SharedString::from(owned_id.clone()), axis, min)
@@ -364,7 +367,10 @@ impl BenCodeApp {
             .into_any_element()
         };
         let body = div()
-            .id(SharedString::from(format!("transcript-body-{}", session.id)))
+            .id(SharedString::from(format!(
+                "transcript-body-{}",
+                session.id
+            )))
             .relative()
             .flex()
             .flex_col()

@@ -22,8 +22,10 @@ impl BenCodeApp {
                     if event.click_count >= 2 {
                         this.changes_ui.graph_height = GRAPH_DEFAULT;
                     } else {
-                        this.changes_ui.graph_drag =
-                            Some((crate::ui::scale::logical(event.position.y), this.changes_ui.graph_height));
+                        this.changes_ui.graph_drag = Some((
+                            crate::ui::scale::logical(event.position.y),
+                            this.changes_ui.graph_height,
+                        ));
                     }
                     cx.notify();
                 }),
@@ -50,7 +52,9 @@ impl BenCodeApp {
         let commits = &self.git_history;
         let rows = self.graph_rows();
         let selected = match self.file_pane.active() {
-            Some(PaneTab::Commit { cwd, sha, .. }) if *cwd == self.workspace.cwd => Some(sha.clone()),
+            Some(PaneTab::Commit { cwd, sha, .. }) if *cwd == self.workspace.cwd => {
+                Some(sha.clone())
+            }
             _ => None,
         };
         div()
@@ -60,7 +64,13 @@ impl BenCodeApp {
             .overflow_hidden()
             .border_t_1()
             .border_color(stroke(fg))
-            .map(|el| if open { el.h(px(height)) } else { el.h(px(28.0)) })
+            .map(|el| {
+                if open {
+                    el.h(px(height))
+                } else {
+                    el.h(px(28.0))
+                }
+            })
             .child(
                 div()
                     .id("git-graph-toggle")
@@ -124,14 +134,25 @@ impl BenCodeApp {
                                 // Rows are all one lane tall; only those in
                                 // view are built.
                                 let heights = vec![Some(git_graph::SWIMLANE_HEIGHT); commits.len()];
-                                let visible = virtual_rows::for_scroll(&heights, &self.changes_ui.graph_scroll, 0.0);
+                                let visible = virtual_rows::for_scroll(
+                                    &heights,
+                                    &self.changes_ui.graph_scroll,
+                                    0.0,
+                                );
                                 let range = visible.range.clone();
-                                el.when(visible.above > 0.0, |el| el.child(div().flex_none().h(px(visible.above))))
-                                    .children(commits[range.clone()].iter().zip(&rows[range]).map(|(commit, row)| {
-                                        let active = selected.as_deref() == Some(commit.sha.as_str());
+                                el.when(visible.above > 0.0, |el| {
+                                    el.child(div().flex_none().h(px(visible.above)))
+                                })
+                                .children(commits[range.clone()].iter().zip(&rows[range]).map(
+                                    |(commit, row)| {
+                                        let active =
+                                            selected.as_deref() == Some(commit.sha.as_str());
                                         self.render_history_row(commit, row, active, cx)
-                                    }))
-                                    .when(visible.below > 0.0, |el| el.child(div().flex_none().h(px(visible.below))))
+                                    },
+                                ))
+                                .when(visible.below > 0.0, |el| {
+                                    el.child(div().flex_none().h(px(visible.below)))
+                                })
                             }
                         }),
                 ))
@@ -168,7 +189,10 @@ impl BenCodeApp {
         let tip = if commit.author.is_empty() {
             format!("{} {}", commit.short_sha, commit.subject)
         } else {
-            format!("{} {} — {}", commit.short_sha, commit.subject, commit.author)
+            format!(
+                "{} {} — {}",
+                commit.short_sha, commit.subject, commit.author
+            )
         };
         div()
             .id(SharedString::from(format!("graph-{}", commit.sha)))
@@ -183,7 +207,8 @@ impl BenCodeApp {
             .tooltip(Tooltip::text(tip))
             .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                 let next = hovered.then(|| hover_sha.clone());
-                if *hovered || this.changes_ui.hovered_commit.as_deref() == Some(hover_sha.as_str()) {
+                if *hovered || this.changes_ui.hovered_commit.as_deref() == Some(hover_sha.as_str())
+                {
                     this.changes_ui.hovered_commit = next;
                     cx.notify();
                 }
@@ -200,7 +225,9 @@ impl BenCodeApp {
             .child(
                 canvas(
                     |_, _, _| {},
-                    move |bounds, _, window, _| paint_row_graph(&shape, bounds.origin, node, window),
+                    move |bounds, _, window, _| {
+                        paint_row_graph(&shape, bounds.origin, node, window)
+                    },
                 )
                 .w(px(width))
                 .h(px(git_graph::SWIMLANE_HEIGHT))

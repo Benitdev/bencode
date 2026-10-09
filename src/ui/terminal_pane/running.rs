@@ -36,7 +36,10 @@ pub(super) struct CloseConfirm {
 
 /// MonoCode `defaultTerminalTitle`: the folder's name, `Terminal` at `/`.
 pub(super) fn default_title(cwd: &str) -> String {
-    match std::path::Path::new(cwd).file_name().and_then(|name| name.to_str()) {
+    match std::path::Path::new(cwd)
+        .file_name()
+        .and_then(|name| name.to_str())
+    {
         Some(name) if !name.is_empty() => name.to_string(),
         _ => "Terminal".to_string(),
     }
@@ -46,14 +49,23 @@ pub(super) fn default_title(cwd: &str) -> String {
 pub fn chip_label(terminals: &[RunningTerminal]) -> String {
     let mut counts: Vec<(&str, usize)> = Vec::new();
     for terminal in terminals {
-        match counts.iter_mut().find(|(name, _)| *name == terminal.process) {
+        match counts
+            .iter_mut()
+            .find(|(name, _)| *name == terminal.process)
+        {
             Some((_, n)) => *n += 1,
             None => counts.push((&terminal.process, 1)),
         }
     }
     counts
         .into_iter()
-        .map(|(name, n)| if n > 1 { format!("{name} ×{n}") } else { name.to_string() })
+        .map(|(name, n)| {
+            if n > 1 {
+                format!("{name} ×{n}")
+            } else {
+                name.to_string()
+            }
+        })
         .collect::<Vec<_>>()
         .join(" · ")
 }
@@ -95,7 +107,11 @@ impl BenCodeApp {
             .iter()
             .filter_map(|tab| {
                 let job = tab.foreground.as_ref()?;
-                Some(RunningTerminal { id: tab.id, process: job.process.clone(), label: tab.folder() })
+                Some(RunningTerminal {
+                    id: tab.id,
+                    process: job.process.clone(),
+                    label: tab.folder(),
+                })
             })
             .collect()
     }
@@ -122,11 +138,14 @@ impl BenCodeApp {
                     .background_executor()
                     .spawn(async move {
                         jobs.into_iter()
-                            .map(|(id, root, shell, last)| (id, terminal_process::probe(root, shell, last.as_ref())))
+                            .map(|(id, root, shell, last)| {
+                                (id, terminal_process::probe(root, shell, last.as_ref()))
+                            })
                             .collect::<Vec<_>>()
                     })
                     .await;
-                if let Err(err) = this.update(cx, |this, cx| this.apply_terminal_probes(probes, cx)) {
+                if let Err(err) = this.update(cx, |this, cx| this.apply_terminal_probes(probes, cx))
+                {
                     log::debug!("terminal probes after app drop: {err:#}");
                     return;
                 }
@@ -154,7 +173,12 @@ impl BenCodeApp {
     fn apply_terminal_probes(&mut self, probes: Vec<(u64, Probe)>, cx: &mut Context<Self>) {
         let mut changed = false;
         for (id, probe) in probes {
-            let Some(tab) = self.terminals.docks.values_mut().flat_map(|dock| &mut dock.tabs).find(|tab| tab.id == id)
+            let Some(tab) = self
+                .terminals
+                .docks
+                .values_mut()
+                .flat_map(|dock| &mut dock.tabs)
+                .find(|tab| tab.id == id)
             else {
                 continue;
             };
@@ -213,8 +237,13 @@ impl BenCodeApp {
                     .iter()
                     .filter(|tab| ids.contains(&tab.id) && tab.process.is_some())
                     .filter_map(|tab| {
-                        let job = terminal_process::foreground_now(tab.shell?, tab.foreground.as_ref())?;
-                        Some(RunningTerminal { id: tab.id, process: job.process, label: tab.folder() })
+                        let job =
+                            terminal_process::foreground_now(tab.shell?, tab.foreground.as_ref())?;
+                        Some(RunningTerminal {
+                            id: tab.id,
+                            process: job.process,
+                            label: tab.folder(),
+                        })
                     })
                     .collect()
             })
@@ -232,7 +261,13 @@ impl BenCodeApp {
         cx.notify();
     }
 
-    fn finish_close_terminals(&mut self, project: &str, ids: &[u64], keep: Option<u64>, cx: &mut Context<Self>) {
+    fn finish_close_terminals(
+        &mut self,
+        project: &str,
+        ids: &[u64],
+        keep: Option<u64>,
+        cx: &mut Context<Self>,
+    ) {
         match keep {
             Some(keep) => self.close_terminals_but(project, ids, keep, cx),
             None => {
@@ -276,11 +311,16 @@ impl BenCodeApp {
             cx.notify();
         });
         Some(
-            ConfirmDialog::new("terminal-close-confirm", "BenCode", confirm.message.clone(), cancel)
-                .confirm("Close")
-                .destructive()
-                .on_confirm(close)
-                .into_any_element(),
+            ConfirmDialog::new(
+                "terminal-close-confirm",
+                "BenCode",
+                confirm.message.clone(),
+                cancel,
+            )
+            .confirm("Close")
+            .destructive()
+            .on_confirm(close)
+            .into_any_element(),
         )
     }
 }
@@ -290,15 +330,26 @@ mod tests {
     use super::*;
 
     fn running(id: u64, process: &str, label: &str) -> RunningTerminal {
-        RunningTerminal { id, process: process.into(), label: label.into() }
+        RunningTerminal {
+            id,
+            process: process.into(),
+            label: label.into(),
+        }
     }
 
     #[test]
     fn chip_label_counts_repeats_in_first_seen_order() {
         assert_eq!(chip_label(&[running(1, "vite", "web")]), "vite");
-        assert_eq!(chip_label(&[running(1, "vite", "web"), running(2, "jest", "web")]), "vite · jest");
         assert_eq!(
-            chip_label(&[running(1, "vite", "a"), running(2, "jest", "b"), running(3, "vite", "c")]),
+            chip_label(&[running(1, "vite", "web"), running(2, "jest", "web")]),
+            "vite · jest"
+        );
+        assert_eq!(
+            chip_label(&[
+                running(1, "vite", "a"),
+                running(2, "jest", "b"),
+                running(3, "vite", "c")
+            ]),
             "vite ×2 · jest"
         );
         assert_eq!(chip_label(&[]), "");

@@ -60,9 +60,9 @@ pub(crate) fn pasted_files(item: &gpui::ClipboardItem) -> Option<PastedFiles> {
     };
     for entry in item.entries() {
         match entry {
-            ClipboardEntry::Image(image) => {
-                files.images.push((image.bytes.clone(), image_ext(image.format)))
-            }
+            ClipboardEntry::Image(image) => files
+                .images
+                .push((image.bytes.clone(), image_ext(image.format))),
             ClipboardEntry::ExternalPaths(external) => {
                 files.paths.extend(external.paths().iter().cloned())
             }

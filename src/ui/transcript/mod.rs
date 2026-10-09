@@ -225,7 +225,10 @@ impl TranscriptView {
     /// How far below its place row `ix` is drawn and how opaque, while the
     /// sent prompt rises.
     fn rise_motion(&self, ix: usize) -> Option<(Pixels, f32)> {
-        let turn = self.anchor_rows.as_ref().filter(|turn| turn.contains(&ix))?;
+        let turn = self
+            .anchor_rows
+            .as_ref()
+            .filter(|turn| turn.contains(&ix))?;
         let elapsed = self.rise?.elapsed();
         let progress = |of: Duration| (elapsed.as_secs_f32() / of.as_secs_f32()).min(1.0);
         if ix == turn.start {

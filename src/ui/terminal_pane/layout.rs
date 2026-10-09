@@ -16,7 +16,12 @@ pub enum DockSide {
 }
 
 impl DockSide {
-    pub const ALL: [DockSide; 4] = [DockSide::Bottom, DockSide::Top, DockSide::Left, DockSide::Right];
+    pub const ALL: [DockSide; 4] = [
+        DockSide::Bottom,
+        DockSide::Top,
+        DockSide::Left,
+        DockSide::Right,
+    ];
 
     /// MonoCode `isVerticalDock`: stacked above or below the workspace, so
     /// its size is a height.
@@ -73,14 +78,22 @@ pub struct DockLayout {
 impl Default for DockLayout {
     fn default() -> Self {
         let side = DockSide::default();
-        Self { side, size: side.default_size(), open: false }
+        Self {
+            side,
+            size: side.default_size(),
+            open: false,
+        }
     }
 }
 
 impl DockLayout {
     /// MonoCode `withDockSide`: the size carries over, clamped for the new side.
     pub fn with_side(self, side: DockSide, viewport: (f32, f32)) -> Self {
-        Self { side, size: clamp_size(side, self.size, viewport), ..self }
+        Self {
+            side,
+            size: clamp_size(side, self.size, viewport),
+            ..self
+        }
     }
 
     /// The size a sash drag from `start` to `point` gives: the dock grows
@@ -91,7 +104,10 @@ impl DockLayout {
             DockSide::Bottom | DockSide::Right => -delta,
             DockSide::Top | DockSide::Left => delta,
         };
-        Self { size: clamp_size(self.side, start_size + signed, viewport), ..self }
+        Self {
+            size: clamp_size(self.side, start_size + signed, viewport),
+            ..self
+        }
     }
 }
 
@@ -99,7 +115,11 @@ impl DockLayout {
 /// the window along the dock's axis. `viewport` is `(width, height)`.
 pub fn clamp_size(side: DockSide, value: f32, viewport: (f32, f32)) -> f32 {
     let min = side.min_size();
-    let span = if side.is_vertical() { viewport.1 } else { viewport.0 };
+    let span = if side.is_vertical() {
+        viewport.1
+    } else {
+        viewport.0
+    };
     let max = (span * 0.7).floor().max(min);
     if !value.is_finite() {
         return side.default_size();
@@ -128,13 +148,25 @@ mod tests {
         assert_eq!(bottom.dragged(220.0, 500.0, 400.0, VIEWPORT).size, 320.0);
         assert_eq!(bottom.dragged(220.0, 500.0, 600.0, VIEWPORT).size, 120.0);
 
-        let top = DockLayout { side: DockSide::Top, size: 220.0, open: true };
+        let top = DockLayout {
+            side: DockSide::Top,
+            size: 220.0,
+            open: true,
+        };
         assert_eq!(top.dragged(220.0, 300.0, 400.0, VIEWPORT).size, 320.0);
 
-        let left = DockLayout { side: DockSide::Left, size: 360.0, open: true };
+        let left = DockLayout {
+            side: DockSide::Left,
+            size: 360.0,
+            open: true,
+        };
         assert_eq!(left.dragged(360.0, 400.0, 500.0, VIEWPORT).size, 460.0);
 
-        let right = DockLayout { side: DockSide::Right, size: 360.0, open: true };
+        let right = DockLayout {
+            side: DockSide::Right,
+            size: 360.0,
+            open: true,
+        };
         assert_eq!(right.dragged(360.0, 1000.0, 900.0, VIEWPORT).size, 460.0);
     }
 
@@ -151,7 +183,11 @@ mod tests {
 
     #[test]
     fn changing_side_keeps_the_size_when_it_fits() {
-        let bottom = DockLayout { side: DockSide::Bottom, size: 600.0, open: true };
+        let bottom = DockLayout {
+            side: DockSide::Bottom,
+            size: 600.0,
+            open: true,
+        };
         assert_eq!(bottom.with_side(DockSide::Left, VIEWPORT).size, 600.0);
         assert!(bottom.with_side(DockSide::Left, VIEWPORT).open);
         assert_eq!(bottom.with_side(DockSide::Top, (1400.0, 500.0)).size, 350.0);
@@ -159,7 +195,11 @@ mod tests {
 
     #[test]
     fn layout_round_trips_in_monocode_terms() {
-        let layout = DockLayout { side: DockSide::Right, size: 400.0, open: true };
+        let layout = DockLayout {
+            side: DockSide::Right,
+            size: 400.0,
+            open: true,
+        };
         let json = serde_json::to_string(&layout).unwrap();
         assert_eq!(json, r#"{"side":"right","size":400.0,"open":true}"#);
         assert_eq!(serde_json::from_str::<DockLayout>(&json).unwrap(), layout);

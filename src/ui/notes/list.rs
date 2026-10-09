@@ -22,7 +22,13 @@ impl BenCodeApp {
     pub(super) fn render_notes_list(&self, cx: &Context<Self>) -> impl IntoElement {
         let colors = &cx.theme().colors;
         let fg = colors.fg;
-        let query = self.notes.filter_input.read(cx).text().trim().to_lowercase();
+        let query = self
+            .notes
+            .filter_input
+            .read(cx)
+            .text()
+            .trim()
+            .to_lowercase();
         let now = now_ms();
         let cards: Vec<AnyElement> = self
             .notes
@@ -77,7 +83,11 @@ impl BenCodeApp {
                     .pr_2()
                     .border_b_1()
                     .border_color(colors.border)
-                    .child(Icon::new(IconName::Search).size(IconSize::Xs).color(colors.fg_muted))
+                    .child(
+                        Icon::new(IconName::Search)
+                            .size(IconSize::Xs)
+                            .color(colors.fg_muted),
+                    )
                     .child(
                         div()
                             .flex_1()
@@ -109,20 +119,22 @@ impl BenCodeApp {
             None => note.title.clone(),
         };
         let id = note.id.clone();
-        let mark = project.zip(note.source_cwd.as_deref()).map(|(project, cwd)| {
-            div()
-                .flex()
-                .items_center()
-                .gap(px(6.0))
-                .min_w_0()
-                .child(pixel_sprite(
-                    &self.project_mascot(cwd).rest,
-                    px(12.0),
-                    self.project_color(cwd),
-                    false,
-                ))
-                .child(div().min_w_0().truncate().child(project.to_string()))
-        });
+        let mark = project
+            .zip(note.source_cwd.as_deref())
+            .map(|(project, cwd)| {
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(6.0))
+                    .min_w_0()
+                    .child(pixel_sprite(
+                        &self.project_mascot(cwd).rest,
+                        px(12.0),
+                        self.project_color(cwd),
+                        false,
+                    ))
+                    .child(div().min_w_0().truncate().child(project.to_string()))
+            });
         let tags = (!note.tags.is_empty()).then(|| {
             let extra = note.tags.len().saturating_sub(CARD_TAGS);
             div()

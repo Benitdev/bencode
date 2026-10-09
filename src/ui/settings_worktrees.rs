@@ -11,7 +11,8 @@ use ely_gpui_component::overlays::Dialog;
 use ely_gpui_component::primitives::{Icon, IconName};
 use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
-    AnyElement, Context, Hsla, IntoElement, ParentElement, SharedString, Styled, div, prelude::*, relative,
+    AnyElement, Context, Hsla, IntoElement, ParentElement, SharedString, Styled, div, prelude::*,
+    relative,
 };
 
 use crate::app::worktree_lifecycle::deletion_blocker;
@@ -61,7 +62,9 @@ impl BenCodeApp {
             Select::new("worktrees-project", project_choices)
                 .placeholder("Choose a project…")
                 .selected(page.project.clone())
-                .on_change(on_value(cx, |this, path, cx| this.select_worktrees_project(path, cx))),
+                .on_change(on_value(cx, |this, path, cx| {
+                    this.select_worktrees_project(path, cx)
+                })),
         );
         let project = SettingsGroup::new("Project").row(
             SettingsRow::new("Project")
@@ -71,10 +74,10 @@ impl BenCodeApp {
         let project = match page.main() {
             Some(main) => {
                 let root = default_worktrees_dir(std::path::Path::new(&main.path));
-                project.row(
-                    SettingsRow::new("Location")
-                        .description(format!("New worktrees are created in {}.", pretty_path(&root.to_string_lossy()))),
-                )
+                project.row(SettingsRow::new("Location").description(format!(
+                    "New worktrees are created in {}.",
+                    pretty_path(&root.to_string_lossy())
+                )))
             }
             None => project,
         };
@@ -89,7 +92,11 @@ impl BenCodeApp {
             .gap_1()
             .child(
                 IconButton::new("worktrees-refresh", IconName::RefreshCw)
-                    .variant(if page.load_error.is_some() { ButtonVariant::Danger } else { ButtonVariant::Ghost })
+                    .variant(if page.load_error.is_some() {
+                        ButtonVariant::Danger
+                    } else {
+                        ButtonVariant::Ghost
+                    })
                     .size(ControlSize::Sm)
                     .disabled(page.project.is_empty())
                     .tooltip(refresh_tip)
@@ -120,12 +127,14 @@ impl BenCodeApp {
                     .group(list.note("Add a project to manage its worktrees."));
             }
             (None, Some(error)) => {
-                let list = list.row(SettingsRow::new("Could not list worktrees").error(error.clone()));
+                let list =
+                    list.row(SettingsRow::new("Could not list worktrees").error(error.clone()));
                 return SettingsTab::Worktrees.page().group(project).group(list);
             }
             (None, None) => {
                 let list = list.row(
-                    SettingsRow::new("Loading worktrees…").control(Spinner::new("worktrees-loading")),
+                    SettingsRow::new("Loading worktrees…")
+                        .control(Spinner::new("worktrees-loading")),
                 );
                 return SettingsTab::Worktrees.page().group(project).group(list);
             }
@@ -139,11 +148,21 @@ impl BenCodeApp {
             let count = self.worktree_session_count(&tree.path);
             let branch = match &tree.branch {
                 Some(branch) => format!("Current branch: {branch}"),
-                None => format!("Detached at {}", tree.head.chars().take(7).collect::<String>()),
+                None => format!(
+                    "Detached at {}",
+                    tree.head.chars().take(7).collect::<String>()
+                ),
             };
-            let mut facts = vec![format!("{} in this worktree", plural(count, "session", "sessions"))];
+            let mut facts = vec![format!(
+                "{} in this worktree",
+                plural(count, "session", "sessions")
+            )];
             if let Some(n) = tree.unpushed.filter(|n| *n > 0) {
-                facts.push(plural(n as usize, "unpublished commit", "unpublished commits"));
+                facts.push(plural(
+                    n as usize,
+                    "unpublished commit",
+                    "unpublished commits",
+                ));
             }
             if tree.locked {
                 facts.push("Locked".into());
@@ -158,8 +177,18 @@ impl BenCodeApp {
             let (reveal, remove) = (tree.path.clone(), tree.path.clone());
             list = list.row(
                 SettingsRow::new(title)
-                    .leading(icon_tile(ExtraIcon::FolderTree.icon().size(IconSize::Sm).color(fg.opacity(0.6)), fg))
-                    .description(format!("{}\n{branch}\n{}", pretty_path(&tree.path), facts.join(" · ")))
+                    .leading(icon_tile(
+                        ExtraIcon::FolderTree
+                            .icon()
+                            .size(IconSize::Sm)
+                            .color(fg.opacity(0.6)),
+                        fg,
+                    ))
+                    .description(format!(
+                        "{}\n{branch}\n{}",
+                        pretty_path(&tree.path),
+                        facts.join(" · ")
+                    ))
                     .control(
                         div()
                             .flex()
@@ -167,20 +196,30 @@ impl BenCodeApp {
                             .gap_1()
                             .child(Badge::new(status).tone(tone))
                             .child(
-                                IconButton::new(SharedString::from(format!("worktree-reveal-{ix}")), IconName::FolderOpen)
-                                    .variant(ButtonVariant::Ghost)
-                                    .size(ControlSize::Sm)
-                                    .disabled(tree.missing)
-                                    .tooltip("Reveal folder")
-                                    .on_click(move |_, _, cx| crate::ui::rail::reveal_project(&reveal, cx)),
+                                IconButton::new(
+                                    SharedString::from(format!("worktree-reveal-{ix}")),
+                                    IconName::FolderOpen,
+                                )
+                                .variant(ButtonVariant::Ghost)
+                                .size(ControlSize::Sm)
+                                .disabled(tree.missing)
+                                .tooltip("Reveal folder")
+                                .on_click(move |_, _, cx| {
+                                    crate::ui::rail::reveal_project(&reveal, cx)
+                                }),
                             )
                             .child(
-                                IconButton::new(SharedString::from(format!("worktree-delete-{ix}")), IconName::Trash2)
-                                    .variant(ButtonVariant::Ghost)
-                                    .size(ControlSize::Sm)
-                                    .disabled(blocker.is_some() || delete_locked)
-                                    .tooltip(blocker.unwrap_or("Delete worktree"))
-                                    .on_click(cx.listener(move |this, _, _, cx| this.open_worktree_deletion(&remove, cx))),
+                                IconButton::new(
+                                    SharedString::from(format!("worktree-delete-{ix}")),
+                                    IconName::Trash2,
+                                )
+                                .variant(ButtonVariant::Ghost)
+                                .size(ControlSize::Sm)
+                                .disabled(blocker.is_some() || delete_locked)
+                                .tooltip(blocker.unwrap_or("Delete worktree"))
+                                .on_click(cx.listener(
+                                    move |this, _, _, cx| this.open_worktree_deletion(&remove, cx),
+                                )),
                             ),
                     ),
             );

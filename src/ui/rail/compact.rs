@@ -10,8 +10,7 @@ use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, ClickEvent, Context, Div, IntoElement, MouseButton, MouseDownEvent, ParentElement,
-    Pixels, Point, SharedString, Stateful, Styled, anchored, canvas, deferred, div,
-    prelude::*,
+    Pixels, Point, SharedString, Stateful, Styled, anchored, canvas, deferred, div, prelude::*,
 };
 
 use super::widgets::project_mascot_icon;
@@ -19,8 +18,8 @@ use super::{STROKE_OPACITY, TITLEBAR_HEIGHT, path_key};
 use crate::app::{BenCodeApp, SidebarMode, Surface, same_project_path};
 use crate::ui::appearance::CollapsedRailMode;
 use crate::ui::scale::px;
-use crate::ui::thumbnail::{LOGO, thumbnail};
 use crate::ui::sidebar_menus::SidebarMenuKind;
+use crate::ui::thumbnail::{LOGO, thumbnail};
 
 /// MonoCode `w-12`.
 pub const COMPACT_RAIL_WIDTH: f32 = 48.0;
@@ -120,21 +119,32 @@ impl BenCodeApp {
         let title_bar_above = self.compact_title_bar();
         let workspace_active = self.surface.is_none();
         let tab_shown = self.sidebar_shown();
-        let has_changes = !self.git_status.staged.is_empty() || !self.git_status.unstaged.is_empty();
+        let has_changes =
+            !self.git_status.staged.is_empty() || !self.git_status.unstaged.is_empty();
         let tabs = self.sidebar_tab_order.iter().map(|&tab| {
             let (id, icon, label) = match tab {
-                SidebarMode::Sessions => ("compact-rail-sessions", IconName::MessageSquare, "Sessions"),
+                SidebarMode::Sessions => {
+                    ("compact-rail-sessions", IconName::MessageSquare, "Sessions")
+                }
                 SidebarMode::Files => ("compact-rail-files", IconName::FileCode, "Explorer"),
                 SidebarMode::Changes => ("compact-rail-changes", IconName::GitBranch, "Changes"),
             };
             let active = workspace_active && tab_shown && self.sidebar_mode == tab;
-            compact_action(id, icon, label, active, tab == SidebarMode::Changes && has_changes, cx)
-                .on_click(cx.listener(move |this, _, _, cx| this.pick_compact_tab(tab, cx)))
+            compact_action(
+                id,
+                icon,
+                label,
+                active,
+                tab == SidebarMode::Changes && has_changes,
+                cx,
+            )
+            .on_click(cx.listener(move |this, _, _, cx| this.pick_compact_tab(tab, cx)))
         });
-        let surface_action = |id: &'static str, icon: IconName, label: &'static str, surface: Surface, dot: bool| {
-            compact_action(id, icon, label, self.surface_open(surface), dot, cx)
-                .on_click(cx.listener(move |this, _, _, cx| this.toggle_surface(surface, cx)))
-        };
+        let surface_action =
+            |id: &'static str, icon: IconName, label: &'static str, surface: Surface, dot: bool| {
+                compact_action(id, icon, label, self.surface_open(surface), dot, cx)
+                    .on_click(cx.listener(move |this, _, _, cx| this.toggle_surface(surface, cx)))
+            };
         let unseen = self.inbox_has_unseen();
         div()
             .id("compact-project-rail")
@@ -170,16 +180,29 @@ impl BenCodeApp {
                     .gap_1p5()
                     .py_1p5()
                     .child(
-                        compact_action("compact-rail-expand", IconName::PanelLeft, "Expand projects", false, false, cx)
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.is_rail_open = true;
-                                this.sidebar_drawer_open = false;
-                                cx.notify();
-                            })),
+                        compact_action(
+                            "compact-rail-expand",
+                            IconName::PanelLeft,
+                            "Expand projects",
+                            false,
+                            false,
+                            cx,
+                        )
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.is_rail_open = true;
+                            this.sidebar_drawer_open = false;
+                            cx.notify();
+                        })),
                     )
                     .child(self.render_compact_project_button(cx))
                     .children(tabs)
-                    .child(surface_action("compact-rail-search", IconName::Search, "Search (⌘K)", Surface::Search, false))
+                    .child(surface_action(
+                        "compact-rail-search",
+                        IconName::Search,
+                        "Search (⌘K)",
+                        Surface::Search,
+                        false,
+                    ))
                     .child(
                         surface_action(
                             "compact-rail-inbox",
@@ -197,7 +220,13 @@ impl BenCodeApp {
                             }),
                         ),
                     )
-                    .child(surface_action("compact-rail-notes", IconName::StickyNote, "Notes", Surface::Notes, false))
+                    .child(surface_action(
+                        "compact-rail-notes",
+                        IconName::StickyNote,
+                        "Notes",
+                        Surface::Notes,
+                        false,
+                    ))
                     .child(surface_action(
                         "compact-rail-automations",
                         IconName::Zap,
@@ -210,10 +239,26 @@ impl BenCodeApp {
             .child(div().flex_1().min_h_2())
             .child(
                 // `flex w-full flex-col items-center gap-1 py-1.5`
-                div().flex().flex_col().items_center().w_full().gap_1().py_1p5().child(
-                    compact_action("compact-rail-settings", IconName::Settings, "Settings (⌘,)", false, false, cx)
-                        .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.open_settings(cx))),
-                ),
+                div()
+                    .flex()
+                    .flex_col()
+                    .items_center()
+                    .w_full()
+                    .gap_1()
+                    .py_1p5()
+                    .child(
+                        compact_action(
+                            "compact-rail-settings",
+                            IconName::Settings,
+                            "Settings (⌘,)",
+                            false,
+                            false,
+                            cx,
+                        )
+                        .on_click(
+                            cx.listener(|this, _: &ClickEvent, _, cx| this.open_settings(cx)),
+                        ),
+                    ),
             )
     }
 
@@ -246,7 +291,14 @@ impl BenCodeApp {
             .when(open, |el| el.bg(fg.opacity(0.1)))
             .hover(move |el| el.bg(fg.opacity(0.1)))
             .tooltip(Tooltip::text(label))
-            .child(canvas(move |bounds, _, _| button_anchor.set(Some(bounds)), |_, _, _, _| {}).absolute().size_full())
+            .child(
+                canvas(
+                    move |bounds, _, _| button_anchor.set(Some(bounds)),
+                    |_, _, _, _| {},
+                )
+                .absolute()
+                .size_full(),
+            )
             .child(self.project_glyph(&cwd, "compact-rail-project-icon", cx))
             .on_mouse_down(
                 MouseButton::Left,
@@ -264,17 +316,34 @@ impl BenCodeApp {
     fn project_glyph(&self, path: &str, id: &str, cx: &Context<Self>) -> AnyElement {
         if path.trim().is_empty() {
             let fg = cx.theme().colors.fg;
-            return Icon::new(IconName::FolderPlus).size(IconSize::Md).color(fg.opacity(0.5)).into_any_element();
+            return Icon::new(IconName::FolderPlus)
+                .size(IconSize::Md)
+                .color(fg.opacity(0.5))
+                .into_any_element();
         }
         let busy = self
             .runs
             .keys()
             .filter_map(|id| self.sessions.iter().find(|s| &s.id == id))
             .any(|s| crate::app::is_path_in_project(&s.cwd, path));
-        match self.settings.rail.tab_group_logos.get(&path_key(path)).filter(|_| !busy) {
+        match self
+            .settings
+            .rail
+            .tab_group_logos
+            .get(&path_key(path))
+            .filter(|_| !busy)
+        {
             // `ProjectLogoIcon className="size-4 rounded-sm"`
-            Some(file) => thumbnail(file, LOGO).size_4().rounded(px(4.0)).into_any_element(),
-            None => project_mascot_icon(self.project_mascot(path), self.project_color(path), busy, id),
+            Some(file) => thumbnail(file, LOGO)
+                .size_4()
+                .rounded(px(4.0))
+                .into_any_element(),
+            None => project_mascot_icon(
+                self.project_mascot(path),
+                self.project_color(path),
+                busy,
+                id,
+            ),
         }
     }
 
@@ -297,7 +366,11 @@ impl BenCodeApp {
     /// current one marked, then "Open folder…". MonoCode's picker also
     /// searches and carries each project's menu; those stay on the full
     /// rail here.
-    pub(crate) fn render_compact_projects_menu(&self, position: Point<Pixels>, cx: &Context<Self>) -> AnyElement {
+    pub(crate) fn render_compact_projects_menu(
+        &self,
+        position: Point<Pixels>,
+        cx: &Context<Self>,
+    ) -> AnyElement {
         let fg = cx.theme().colors.fg;
         // `flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5
         // text-[13px] text-content/80 hover:bg-content/8 hover:text-content`
@@ -328,9 +401,19 @@ impl BenCodeApp {
                         .size_4()
                         .items_center()
                         .justify_center()
-                        .child(self.project_glyph(&path, &format!("compact-project-icon-{ix}"), cx)),
+                        .child(self.project_glyph(
+                            &path,
+                            &format!("compact-project-icon-{ix}"),
+                            cx,
+                        )),
                 )
-                .child(div().flex_1().min_w_0().truncate().child(self.rail_project_label(&path)))
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .truncate()
+                        .child(self.rail_project_label(&path)),
+                )
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.close_sidebar_menu(cx);
                     if this.surface.is_some() {
@@ -340,7 +423,11 @@ impl BenCodeApp {
                 }))
         });
         let open_folder = row("compact-project-open-folder".into())
-            .child(Icon::new(IconName::FolderPlus).size(IconSize::Sm).color(fg.opacity(0.8)))
+            .child(
+                Icon::new(IconName::FolderPlus)
+                    .size(IconSize::Sm)
+                    .color(fg.opacity(0.8)),
+            )
             .child("Open folder…")
             .on_click(cx.listener(|this, _, _, cx| {
                 this.close_sidebar_menu(cx);
@@ -417,6 +504,14 @@ fn compact_action(
                 .when(!active, |icon| icon.group_hover_color(id, fg)),
         )
         .when(dot, |el| {
-            el.child(div().absolute().top(px(6.0)).right(px(6.0)).size(px(6.0)).rounded_full().bg(accent))
+            el.child(
+                div()
+                    .absolute()
+                    .top(px(6.0))
+                    .right(px(6.0))
+                    .size(px(6.0))
+                    .rounded_full()
+                    .bg(accent),
+            )
         })
 }

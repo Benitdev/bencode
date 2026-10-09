@@ -208,8 +208,14 @@ mod tests {
             inbox_seen_seeded: true,
             inbox_list_width: Some(400.0),
             backlog_hidden_projects: vec!["12".to_string()],
-            backlog_project_folders: std::collections::BTreeMap::from([("WEB".to_string(), "/p".to_string())]),
-            github_accounts: std::collections::BTreeMap::from([("/p".to_string(), "work-me".to_string())]),
+            backlog_project_folders: std::collections::BTreeMap::from([(
+                "WEB".to_string(),
+                "/p".to_string(),
+            )]),
+            github_accounts: std::collections::BTreeMap::from([(
+                "/p".to_string(),
+                "work-me".to_string(),
+            )]),
             changes_tree: true,
             theme_hue: Some(210.0),
             theme_saturation: Some(12.0),
@@ -253,8 +259,14 @@ mod tests {
                     ..Default::default()
                 },
             },
-            pinned_sessions_collapsed: std::collections::BTreeMap::from([("/repo".to_string(), true)]),
-            reminder_sessions_collapsed: std::collections::BTreeMap::from([("/repo".to_string(), true)]),
+            pinned_sessions_collapsed: std::collections::BTreeMap::from([(
+                "/repo".to_string(),
+                true,
+            )]),
+            reminder_sessions_collapsed: std::collections::BTreeMap::from([(
+                "/repo".to_string(),
+                true,
+            )]),
             sidebar_tab_order: vec!["files".into(), "sessions".into(), "changes".into()],
             terminal_docks: std::collections::BTreeMap::from([(
                 "/repo".to_string(),

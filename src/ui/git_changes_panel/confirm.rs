@@ -6,7 +6,10 @@ use super::*;
 /// `confirmNative`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum GitConfirm {
-    DiscardFile { path: String, untracked: bool },
+    DiscardFile {
+        path: String,
+        untracked: bool,
+    },
     DiscardAll,
     /// Push (or open a PR) from the default branch.
     PushDefault(PendingCommit),
@@ -123,6 +126,13 @@ impl BenCodeApp {
         let dialog = ConfirmDialog::new("git-confirm", title, message, close)
             .confirm(confirm)
             .on_confirm(run);
-        Some(if destructive { dialog.destructive() } else { dialog }.into_any_element())
+        Some(
+            if destructive {
+                dialog.destructive()
+            } else {
+                dialog
+            }
+            .into_any_element(),
+        )
     }
 }

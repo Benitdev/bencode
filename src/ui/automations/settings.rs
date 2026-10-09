@@ -7,12 +7,13 @@ use ely_gpui_component::forms::{Choice, Select};
 use ely_gpui_component::menus::{DropdownMenu, Menu, MenuItem};
 use ely_gpui_component::primitives::{Icon, IconName};
 use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
-use gpui::{AnyElement, Context, Div, FontWeight, IntoElement, ParentElement, Styled, div, prelude::*};
+use gpui::{
+    AnyElement, Context, Div, FontWeight, IntoElement, ParentElement, Styled, div, prelude::*,
+};
 use jiff::tz::TimeZone;
 use serde_json::Value;
 
 use super::format::{gmt_offset_at, next_run_preview};
-use crate::ui::page_parts::{panel, rule, section_title, settings_row, tint};
 use crate::app::automations::{MAX_TRIGGERS, WorkingCopy, access_mode, grace_minutes};
 use crate::app::{BenCodeApp, PermissionMode, now_ms};
 use crate::db::{AutomationRow, DEFAULT_GRACE_MINUTES};
@@ -20,6 +21,7 @@ use crate::harness::{ALL_HARNESSES, catalog};
 use crate::schedule::{self, ScheduleKind, TimeTrigger, Trigger, WEEKDAYS};
 use crate::ui::app_callback::{app_callback, on_value};
 use crate::ui::composer::permission_entry;
+use crate::ui::page_parts::{panel, rule, section_title, settings_row, tint};
 use crate::ui::provider_icon::HarnessIcon;
 use crate::ui::scale::px;
 
@@ -75,7 +77,11 @@ fn event_trigger_label(trigger: &Trigger) -> String {
 }
 
 impl BenCodeApp {
-    pub(super) fn render_automation_settings(&self, draft: &AutomationRow, cx: &Context<Self>) -> AnyElement {
+    pub(super) fn render_automation_settings(
+        &self,
+        draft: &AutomationRow,
+        cx: &Context<Self>,
+    ) -> AnyElement {
         div()
             .flex()
             .flex_col()
@@ -87,7 +93,11 @@ impl BenCodeApp {
             .into_any_element()
     }
 
-    fn render_automation_triggers(&self, draft: &AutomationRow, cx: &Context<Self>) -> impl IntoElement {
+    fn render_automation_triggers(
+        &self,
+        draft: &AutomationRow,
+        cx: &Context<Self>,
+    ) -> impl IntoElement {
         let colors = &cx.theme().colors;
         let (fg, muted) = (colors.fg, colors.fg_muted);
         let triggers = schedule::triggers_of(draft);
@@ -97,10 +107,17 @@ impl BenCodeApp {
             .enumerate()
             .map(|(ix, trigger)| self.render_automation_trigger(ix, trigger, cx))
             .collect();
-        let add = ScheduleKind::ALL.into_iter().fold(Menu::new(), |menu, kind| {
-            let pick = app_callback(cx, move |this, cx| this.add_automation_trigger(kind, cx));
-            menu.item(MenuItem::new(kind.label()).icon(IconName::Clock).disabled(full).on_click(pick))
-        });
+        let add = ScheduleKind::ALL
+            .into_iter()
+            .fold(Menu::new(), |menu, kind| {
+                let pick = app_callback(cx, move |this, cx| this.add_automation_trigger(kind, cx));
+                menu.item(
+                    MenuItem::new(kind.label())
+                        .icon(IconName::Clock)
+                        .disabled(full)
+                        .on_click(pick),
+                )
+            });
         div()
             .flex()
             .flex_col()
@@ -123,7 +140,12 @@ impl BenCodeApp {
     }
 
     /// MonoCode `TriggerRow`.
-    fn render_automation_trigger(&self, ix: usize, trigger: &Trigger, cx: &Context<Self>) -> AnyElement {
+    fn render_automation_trigger(
+        &self,
+        ix: usize,
+        trigger: &Trigger,
+        cx: &Context<Self>,
+    ) -> AnyElement {
         let colors = &cx.theme().colors;
         let (fg, muted) = (colors.fg, colors.fg_muted);
         let sentence = div()
@@ -137,7 +159,10 @@ impl BenCodeApp {
             .text_size(px(13.0))
             .text_color(fg.opacity(tint::BODY));
         let (icon, sentence) = match schedule::time_trigger(trigger) {
-            Some(time) => (IconName::Clock, self.render_time_sentence(sentence, ix, &time, cx)),
+            Some(time) => (
+                IconName::Clock,
+                self.render_time_sentence(sentence, ix, &time, cx),
+            ),
             None => (
                 IconName::Zap,
                 sentence.child(event_trigger_label(trigger)).child(
@@ -177,7 +202,13 @@ impl BenCodeApp {
 
     /// MonoCode `TimeTriggerSentence`: "Every week on [Monday] at [09:00]
     /// GMT+7  Next run …".
-    fn render_time_sentence(&self, sentence: Div, ix: usize, time: &TimeTrigger, cx: &Context<Self>) -> Div {
+    fn render_time_sentence(
+        &self,
+        sentence: Div,
+        ix: usize,
+        time: &TimeTrigger,
+        cx: &Context<Self>,
+    ) -> Div {
         let fg = cx.theme().colors.fg;
         let tz = TimeZone::system();
         let now = now_ms();
@@ -244,11 +275,20 @@ impl BenCodeApp {
                     .child(gmt_offset_at(next.unwrap_or(now), &tz)),
             )
             .when_some(next, |el, at| {
-                el.child(div().ml_1().text_color(fg.opacity(tint::FAINT)).child(next_run_preview(at, &tz)))
+                el.child(
+                    div()
+                        .ml_1()
+                        .text_color(fg.opacity(tint::FAINT))
+                        .child(next_run_preview(at, &tz)),
+                )
             })
     }
 
-    fn render_automation_instructions(&self, draft: &AutomationRow, cx: &Context<Self>) -> impl IntoElement {
+    fn render_automation_instructions(
+        &self,
+        draft: &AutomationRow,
+        cx: &Context<Self>,
+    ) -> impl IntoElement {
         let colors = &cx.theme().colors;
         let (fg, muted) = (colors.fg, colors.fg_muted);
         let models = ALL_HARNESSES
@@ -266,19 +306,28 @@ impl BenCodeApp {
                         });
                     });
                     list.item(
-                        MenuItem::radio(model.label.clone(), model.key == draft.model).on_click(pick),
+                        MenuItem::radio(model.label.clone(), model.key == draft.model)
+                            .on_click(pick),
                     )
                 });
                 menu.item(MenuItem::submenu(kind.label(), list))
             });
         let current = access_mode(draft);
-        let access = PermissionMode::ALL.into_iter().fold(Menu::new(), |menu, mode| {
-            let pick = app_callback(cx, move |this, cx| {
-                this.edit_automation(cx, |draft| draft.runtime_mode = Some(mode.id().to_string()));
+        let access = PermissionMode::ALL
+            .into_iter()
+            .fold(Menu::new(), |menu, mode| {
+                let pick = app_callback(cx, move |this, cx| {
+                    this.edit_automation(cx, |draft| {
+                        draft.runtime_mode = Some(mode.id().to_string())
+                    });
+                });
+                let (label, icon) = permission_entry(mode);
+                menu.item(
+                    MenuItem::radio(label, mode == current)
+                        .icon(icon)
+                        .on_click(pick),
+                )
             });
-            let (label, icon) = permission_entry(mode);
-            menu.item(MenuItem::radio(label, mode == current).icon(icon).on_click(pick))
-        });
         let (access_label, access_icon) = permission_entry(current);
         div()
             .flex()
@@ -329,15 +378,26 @@ impl BenCodeApp {
             )
     }
 
-    fn render_automation_session(&self, draft: &AutomationRow, cx: &Context<Self>) -> impl IntoElement {
+    fn render_automation_session(
+        &self,
+        draft: &AutomationRow,
+        cx: &Context<Self>,
+    ) -> impl IntoElement {
         let colors = &cx.theme().colors;
         let (fg, muted) = (colors.fg, colors.fg_muted);
         let copy = WorkingCopy::of(draft);
         let reuse = draft.reuse_session == Some(true);
         let folder = draft.session_folder_id.clone().unwrap_or_default();
-        let folders = self.session_folders.get(&draft.cwd).map_or(&[][..], Vec::as_slice);
+        let folders = self
+            .session_folders
+            .get(&draft.cwd)
+            .map_or(&[][..], Vec::as_slice);
         let mut folder_choices = vec![Choice::new(NO_FOLDER, "None")];
-        folder_choices.extend(folders.iter().map(|f| Choice::new(f.id.clone(), f.name.clone())));
+        folder_choices.extend(
+            folders
+                .iter()
+                .map(|f| Choice::new(f.id.clone(), f.name.clone())),
+        );
         if !folder.is_empty() && !folders.iter().any(|f| f.id == folder) {
             folder_choices.push(Choice::new(folder.clone(), "Removed folder"));
         }
@@ -376,7 +436,10 @@ impl BenCodeApp {
                         "New chat, or continue the last run",
                         Select::new(
                             "automation-conversation",
-                            [Choice::new("fresh", "Start fresh"), Choice::new("reuse", "Continue last")],
+                            [
+                                Choice::new("fresh", "Start fresh"),
+                                Choice::new("reuse", "Continue last"),
+                            ],
                         )
                         .label("Conversation")
                         .size(ControlSize::Sm)
@@ -395,10 +458,19 @@ impl BenCodeApp {
                         Select::new("automation-folder", folder_choices)
                             .label("Session folder")
                             .size(ControlSize::Sm)
-                            .selected(if folder.is_empty() { NO_FOLDER.to_string() } else { folder })
+                            .selected(if folder.is_empty() {
+                                NO_FOLDER.to_string()
+                            } else {
+                                folder
+                            })
                             .on_change(on_value(cx, |this, value, cx| {
-                                let id = Some(value).filter(|id| *id != NO_FOLDER).unwrap_or("").to_string();
-                                this.edit_automation(cx, |draft| draft.session_folder_id = Some(id));
+                                let id = Some(value)
+                                    .filter(|id| *id != NO_FOLDER)
+                                    .unwrap_or("")
+                                    .to_string();
+                                this.edit_automation(cx, |draft| {
+                                    draft.session_folder_id = Some(id)
+                                });
                             })),
                         fg,
                     )),
@@ -406,7 +478,11 @@ impl BenCodeApp {
     }
 
     /// MonoCode's `<details>`: the catch-up window for missed runs.
-    fn render_automation_advanced(&self, draft: &AutomationRow, cx: &Context<Self>) -> impl IntoElement {
+    fn render_automation_advanced(
+        &self,
+        draft: &AutomationRow,
+        cx: &Context<Self>,
+    ) -> impl IntoElement {
         let fg = cx.theme().colors.fg;
         let open = self.automations.advanced_open;
         let grace = grace_minutes(draft);
@@ -452,9 +528,13 @@ impl BenCodeApp {
                             ),
                     )
                     .child(
-                        Icon::new(if open { IconName::ChevronUp } else { IconName::ChevronDown })
-                            .size(IconSize::Sm)
-                            .color(fg.opacity(tint::HINT)),
+                        Icon::new(if open {
+                            IconName::ChevronUp
+                        } else {
+                            IconName::ChevronDown
+                        })
+                        .size(IconSize::Sm)
+                        .color(fg.opacity(tint::HINT)),
                     ),
             )
             .when(open, |el| {
@@ -485,7 +565,10 @@ mod tests {
     fn times_offer_every_half_hour_and_an_odd_current_one() {
         let options = time_options("09:00");
         assert_eq!(options.len(), 48);
-        assert_eq!((options[0].as_str(), options[47].as_str()), ("00:00", "23:30"));
+        assert_eq!(
+            (options[0].as_str(), options[47].as_str()),
+            ("00:00", "23:30")
+        );
         assert_eq!(time_options("09:15")[0], "09:15");
         assert_eq!(time_options("09:15").len(), 49);
     }

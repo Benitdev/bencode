@@ -6,9 +6,9 @@ use anyhow::{Context as _, Result, bail};
 
 mod branches;
 mod diffs;
+pub mod graph;
 mod rows;
 mod status_pass;
-pub mod graph;
 pub mod sync;
 pub mod text;
 pub use branches::{
@@ -357,7 +357,11 @@ pub fn get_workspace_changes(cwd: &str) -> Vec<GitFileChange> {
 /// plus work tree when there is no commit yet), untracked text files
 /// counting as additions. `None` outside a repository.
 pub fn diff_stats(cwd: &str) -> Option<(usize, usize)> {
-    let untracked = run_git(cwd, &["ls-files", "-o", "--exclude-standard", "-z", "--", "."]).ok()?;
+    let untracked = run_git(
+        cwd,
+        &["ls-files", "-o", "--exclude-standard", "-z", "--", "."],
+    )
+    .ok()?;
     let numstat = |extra: &[&str]| {
         let args: Vec<&str> = ["diff", "--no-ext-diff", "--numstat", "-z"]
             .into_iter()
@@ -374,12 +378,19 @@ pub fn diff_stats(cwd: &str) -> Option<(usize, usize)> {
         }
         files
     });
-    for path in String::from_utf8_lossy(&untracked).split('\0').filter(|p| !p.is_empty()) {
+    for path in String::from_utf8_lossy(&untracked)
+        .split('\0')
+        .filter(|p| !p.is_empty())
+    {
         if !files.contains_key(path) {
             files.insert(path.to_string(), (count_untracked_lines(cwd, path), 0));
         }
     }
-    Some(files.values().fold((0, 0), |(add, del), (a, d)| (add + a, del + d)))
+    Some(
+        files
+            .values()
+            .fold((0, 0), |(add, del), (a, d)| (add + a, del + d)),
+    )
 }
 
 fn current_branch(cwd: &str) -> String {
@@ -1041,11 +1052,19 @@ mod tests {
                 .collect()
         };
         assert_eq!(
-            added(file_diff(repo.cwd(), "a.txt", &DiffSource::Staged).unwrap().lines),
+            added(
+                file_diff(repo.cwd(), "a.txt", &DiffSource::Staged)
+                    .unwrap()
+                    .lines
+            ),
             ["two"]
         );
         assert_eq!(
-            added(file_diff(repo.cwd(), "a.txt", &DiffSource::Unstaged).unwrap().lines),
+            added(
+                file_diff(repo.cwd(), "a.txt", &DiffSource::Unstaged)
+                    .unwrap()
+                    .lines
+            ),
             ["three"]
         );
     }
@@ -1063,7 +1082,9 @@ mod tests {
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].path, "a.txt");
         assert_eq!(files[0].additions, 1);
-        let rows = file_diff(repo.cwd(), "a.txt", &DiffSource::Commit(sha)).unwrap().lines;
+        let rows = file_diff(repo.cwd(), "a.txt", &DiffSource::Commit(sha))
+            .unwrap()
+            .lines;
         assert!(rows.contains(&DiffLineKind::Addition("one".into())));
         assert!(!rows.contains(&DiffLineKind::Addition("dirty".into())));
     }

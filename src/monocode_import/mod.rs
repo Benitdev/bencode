@@ -83,7 +83,11 @@ fn import(home: &Path, db: &Path) -> Result<Option<Imported>> {
     }
     copy_database(source, db)?;
     Ok(Some(Imported {
-        accounts: if from_monocode { accounts::load(home) } else { Vec::new() },
+        accounts: if from_monocode {
+            accounts::load(home)
+        } else {
+            Vec::new()
+        },
     }))
 }
 
@@ -117,7 +121,9 @@ fn copy_folder_once(source: &Path, dest: &Path) -> Result<()> {
 /// Files, folders and symbolic links; anything else (a socket) is left.
 fn copy_tree(source: &Path, dest: &Path) -> Result<()> {
     std::fs::create_dir_all(dest).with_context(|| format!("creating {}", dest.display()))?;
-    for entry in std::fs::read_dir(source).with_context(|| format!("reading {}", source.display()))? {
+    for entry in
+        std::fs::read_dir(source).with_context(|| format!("reading {}", source.display()))?
+    {
         let entry = entry?;
         let (from, to) = (entry.path(), dest.join(entry.file_name()));
         let kind = entry.file_type()?;
@@ -183,7 +189,8 @@ mod tests {
     use super::*;
 
     fn temp_home(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("bencode-import-{name}-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("bencode-import-{name}-{}", std::process::id()));
         if let Err(err) = std::fs::remove_dir_all(&dir) {
             assert_eq!(err.kind(), std::io::ErrorKind::NotFound, "{err}");
         }
@@ -200,15 +207,21 @@ mod tests {
     fn database(path: &Path, note: &str) {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         let conn = Connection::open(path).unwrap();
-        conn.execute_batch("PRAGMA journal_mode = WAL; CREATE TABLE IF NOT EXISTS notes (body TEXT);")
+        conn.execute_batch(
+            "PRAGMA journal_mode = WAL; CREATE TABLE IF NOT EXISTS notes (body TEXT);",
+        )
+        .unwrap();
+        conn.execute("INSERT INTO notes (body) VALUES (?1)", [note])
             .unwrap();
-        conn.execute("INSERT INTO notes (body) VALUES (?1)", [note]).unwrap();
     }
 
     fn notes(path: &Path) -> Vec<String> {
         let conn = Connection::open(path).unwrap();
         let mut stmt = conn.prepare("SELECT body FROM notes").unwrap();
-        stmt.query_map([], |row| row.get(0)).unwrap().map(Result::unwrap).collect()
+        stmt.query_map([], |row| row.get(0))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect()
     }
 
     #[test]
@@ -217,7 +230,10 @@ mod tests {
         let monocode = home.join(MONOCODE_DIR);
         database(&monocode.join("monocode.db"), "from monocode");
         write(&monocode.join("checkpoints/s1/manifest.json"), "{}");
-        write(&monocode.join("provider-accounts/claude/account-1/.claude.json"), "{\"a\":1}");
+        write(
+            &monocode.join("provider-accounts/claude/account-1/.claude.json"),
+            "{\"a\":1}",
+        );
         #[cfg(unix)]
         std::os::unix::fs::symlink("manifest.json", monocode.join("checkpoints/s1/link")).unwrap();
         let data = home.join("data");
@@ -225,10 +241,20 @@ mod tests {
 
         let imported = import(&home, &db).unwrap();
 
-        assert_eq!(imported, Some(Imported::default()), "no account list to read");
+        assert_eq!(
+            imported,
+            Some(Imported::default()),
+            "no account list to read"
+        );
         assert_eq!(notes(&db), ["from monocode"]);
-        assert_eq!(std::fs::read_to_string(data.join("checkpoints/s1/manifest.json")).unwrap(), "{}");
-        assert!(data.join("provider-accounts/claude/account-1/.claude.json").is_file());
+        assert_eq!(
+            std::fs::read_to_string(data.join("checkpoints/s1/manifest.json")).unwrap(),
+            "{}"
+        );
+        assert!(
+            data.join("provider-accounts/claude/account-1/.claude.json")
+                .is_file()
+        );
         #[cfg(unix)]
         assert_eq!(
             std::fs::read_link(data.join("checkpoints/s1/link")).unwrap(),
@@ -249,7 +275,10 @@ mod tests {
     #[test]
     fn a_failed_import_leaves_no_database() {
         let home = temp_home("corrupt");
-        write(&home.join(MONOCODE_DIR).join("monocode.db"), "not a database");
+        write(
+            &home.join(MONOCODE_DIR).join("monocode.db"),
+            "not a database",
+        );
         let db = home.join("data/bencode.db");
 
         assert!(import(&home, &db).is_err());
@@ -304,8 +333,17 @@ mod tests {
             ],
         );
         assert!(changed);
-        assert_eq!(stored["claude"], [account("a1", "claude", "Mine"), account("a2", "claude", "Work")]);
+        assert_eq!(
+            stored["claude"],
+            [
+                account("a1", "claude", "Mine"),
+                account("a2", "claude", "Work")
+            ]
+        );
         assert!(!stored.contains_key("codex") || stored["codex"].is_empty());
-        assert!(!merge_accounts(&mut stored, vec![account("a2", "claude", "Again")]));
+        assert!(!merge_accounts(
+            &mut stored,
+            vec![account("a2", "claude", "Again")]
+        ));
     }
 }

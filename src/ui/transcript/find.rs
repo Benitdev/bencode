@@ -380,7 +380,10 @@ impl BenCodeApp {
         let query = self.find_query_for(session_id, cx)?;
         let colors = &cx.theme().colors;
         // Counted by the pane this frame, so the thread is scanned once.
-        let matches = self.transcripts.get(session_id).map_or(0, |view| view.find_count);
+        let matches = self
+            .transcripts
+            .get(session_id)
+            .map_or(0, |view| view.find_count);
         let active = self.transcript_find.as_ref().map_or(0, |s| s.active);
         let count = if query.trim().is_empty() {
             String::new()
@@ -533,8 +536,9 @@ mod tests {
         assert_ne!(find_stamp(&finished), was);
 
         let mut answered = blocks.clone();
-        answered[1].tool =
-            Some(json!({ "title": "ls", "status": "in_progress", "preview": { "output": "a.rs" } }));
+        answered[1].tool = Some(
+            json!({ "title": "ls", "status": "in_progress", "preview": { "output": "a.rs" } }),
+        );
         assert_ne!(find_stamp(&answered), was);
     }
 

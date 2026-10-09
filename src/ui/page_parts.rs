@@ -45,7 +45,10 @@ const SELECT_WIDTH: f32 = 168.0;
 
 /// MonoCode `rounded-md border border-content/10`.
 pub fn panel(fg: Hsla) -> Div {
-    div().rounded(px(6.0)).border_1().border_color(fg.opacity(tint::STROKE))
+    div()
+        .rounded(px(6.0))
+        .border_1()
+        .border_color(fg.opacity(tint::STROKE))
 }
 
 /// The hairline between a panel's rows.
@@ -64,7 +67,12 @@ pub fn section_title(title: &'static str, muted: Hsla) -> Div {
 }
 
 /// MonoCode `SettingsRow`: a label and hint with the control at the right.
-pub fn settings_row(label: &'static str, hint: &'static str, control: impl IntoElement, fg: Hsla) -> Div {
+pub fn settings_row(
+    label: &'static str,
+    hint: &'static str,
+    control: impl IntoElement,
+    fg: Hsla,
+) -> Div {
     div()
         .flex()
         .items_center()
@@ -78,14 +86,30 @@ pub fn settings_row(label: &'static str, hint: &'static str, control: impl IntoE
                 .flex_col()
                 .gap(px(2.0))
                 .min_w_0()
-                .child(div().text_size(px(12.0)).text_color(fg.opacity(tint::STRONG)).child(label))
-                .child(div().text_size(px(11.0)).text_color(fg.opacity(tint::HINT)).child(hint)),
+                .child(
+                    div()
+                        .text_size(px(12.0))
+                        .text_color(fg.opacity(tint::STRONG))
+                        .child(label),
+                )
+                .child(
+                    div()
+                        .text_size(px(11.0))
+                        .text_color(fg.opacity(tint::HINT))
+                        .child(hint),
+                ),
         )
         .child(div().flex_none().w(px(SELECT_WIDTH)).child(control))
 }
 
 /// MonoCode `PageTab`: a label with a 2px line under the open page.
-pub fn page_tab(id: &'static str, label: &'static str, selected: bool, fg: Hsla, muted: Hsla) -> Stateful<Div> {
+pub fn page_tab(
+    id: &'static str,
+    label: &'static str,
+    selected: bool,
+    fg: Hsla,
+    muted: Hsla,
+) -> Stateful<Div> {
     div()
         .id(id)
         .relative()
@@ -98,6 +122,14 @@ pub fn page_tab(id: &'static str, label: &'static str, selected: bool, fg: Hsla,
         .hover(|style| style.text_color(fg))
         .child(label)
         .when(selected, |el| {
-            el.child(div().absolute().left_0().right_0().bottom_0().h(px(2.0)).bg(fg))
+            el.child(
+                div()
+                    .absolute()
+                    .left_0()
+                    .right_0()
+                    .bottom_0()
+                    .h(px(2.0))
+                    .bg(fg),
+            )
         })
 }

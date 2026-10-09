@@ -140,7 +140,12 @@ fn save_unless_changed(path: &std::path::Path, text: &str, known: u64) -> Result
 }
 
 impl BenCodeApp {
-    pub(crate) fn show_editor_notice(&mut self, title: String, body: String, cx: &mut Context<Self>) {
+    pub(crate) fn show_editor_notice(
+        &mut self,
+        title: String,
+        body: String,
+        cx: &mut Context<Self>,
+    ) {
         self.editor.notice = Some(EditorNotice {
             title: title.into(),
             body: body.into(),
@@ -159,7 +164,12 @@ impl BenCodeApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.editor.reveal = Some(Reveal { path: path.to_string(), line, column, len });
+        self.editor.reveal = Some(Reveal {
+            path: path.to_string(),
+            line,
+            column,
+            len,
+        });
         self.open_file_in_editor(path, window, cx);
         // Already open: the editor is there to move now.
         self.apply_reveal(path, cx);
@@ -185,7 +195,8 @@ impl BenCodeApp {
     /// Opens a workspace-relative or absolute file, reading it off the UI thread.
     pub fn open_file_in_editor(&mut self, path: &str, window: &mut Window, cx: &mut Context<Self>) {
         let path = path.to_string();
-        self.file_pane.open(PaneTab::File { path: path.clone() }, true);
+        self.file_pane
+            .open(PaneTab::File { path: path.clone() }, true);
         self.file_pane_focused = true;
         self.editor.requested = Some(path.clone());
         if self.editor.files.activate(&path) || !self.editor.loading.insert(path.clone()) {
@@ -315,7 +326,13 @@ impl BenCodeApp {
         if self.editor.files.remove(path).is_some() {
             log::info!("editor: closed {path}");
         }
-        self.drop_pane_tab(&PaneTab::File { path: path.to_string() }.key(), cx);
+        self.drop_pane_tab(
+            &PaneTab::File {
+                path: path.to_string(),
+            }
+            .key(),
+            cx,
+        );
         cx.notify();
     }
 

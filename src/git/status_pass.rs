@@ -138,7 +138,10 @@ fn fingerprint_parts(
 ) -> StateFingerprint {
     let hasher = std::collections::hash_map::DefaultHasher::new;
     let mut refs_hash = hasher();
-    for header in raw.split(|b| *b == 0).filter(|rec| rec.first() == Some(&b'#')) {
+    for header in raw
+        .split(|b| *b == 0)
+        .filter(|rec| rec.first() == Some(&b'#'))
+    {
         header.hash(&mut refs_hash);
     }
     refs.hash(&mut refs_hash);
@@ -312,15 +315,25 @@ mod tests {
     fn modified_entry_does_not_move_paths() {
         let unstaged = status(b"1 .M N... 100644 100644 100644 aaaa bbbb file.txt\0");
         let staged = status(b"1 M. N... 100644 100644 100644 aaaa bbbb file.txt\0");
-        assert_eq!(parts(&unstaged, b"r", b"").paths, parts(&staged, b"r", b"").paths);
-        assert_eq!(parts(&unstaged, b"r", b"").paths, parts(&status(b""), b"r", b"").paths);
+        assert_eq!(
+            parts(&unstaged, b"r", b"").paths,
+            parts(&staged, b"r", b"").paths
+        );
+        assert_eq!(
+            parts(&unstaged, b"r", b"").paths,
+            parts(&status(b""), b"r", b"").paths
+        );
     }
 
     #[test]
     fn head_or_ref_change_moves_refs() {
         let raw = status(b"");
         let was = parts(&raw, b"aaaa refs/heads/main", b"");
-        let moved_head = parts(b"# branch.oid ffff0000\0# branch.head main\0", b"aaaa refs/heads/main", b"");
+        let moved_head = parts(
+            b"# branch.oid ffff0000\0# branch.head main\0",
+            b"aaaa refs/heads/main",
+            b"",
+        );
         assert_ne!(was.refs, moved_head.refs);
         let new_branch = parts(&raw, b"aaaa refs/heads/main\naaaa refs/heads/topic", b"");
         assert_ne!(was.refs, new_branch.refs);

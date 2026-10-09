@@ -691,7 +691,6 @@ impl Draw<'_> {
             .into_any_element()
     }
 
-
     /// Blocks in a column with Streamdown's spacing; `fade` reaches the
     /// last one.
     fn blocks(
@@ -1053,40 +1052,45 @@ impl Draw<'_> {
         };
         let weights = column_weights(head, rows);
         // Cells go in reading order, so a copy reads row by row.
-        let cell = |inline: &Inline, row: usize, column: usize, window: &mut Window, cx: &mut App| {
-            let mut inline = inline.clone();
-            if row == 0 {
-                inline.spans.insert(0, (0..inline.text.len(), Span::Strong));
-            }
-            let joint = match (row, column) {
-                (0, 0) => joint,
-                (_, 0) => Joint::Line,
-                _ => Joint::Cell,
+        let cell =
+            |inline: &Inline, row: usize, column: usize, window: &mut Window, cx: &mut App| {
+                let mut inline = inline.clone();
+                if row == 0 {
+                    inline.spans.insert(0, (0..inline.text.len(), Span::Strong));
+                }
+                let joint = match (row, column) {
+                    (0, 0) => joint,
+                    (_, 0) => Joint::Line,
+                    _ => Joint::Cell,
+                };
+                div()
+                    .flex_1()
+                    .flex_grow(weights.get(column).copied().unwrap_or(1.0))
+                    .min_w(px(CELL_MIN_WIDTH))
+                    .flex()
+                    .px(px(10.0))
+                    .py(px(8.0))
+                    .when(aligns.get(column) == Some(&Alignment::Right), |el| {
+                        el.justify_end()
+                    })
+                    .when(aligns.get(column) == Some(&Alignment::Center), |el| {
+                        el.justify_center()
+                    })
+                    // The text may shrink to its cell and wrap; a flex item is
+                    // otherwise as wide as its longest line and runs into the
+                    // next column.
+                    .child(div().min_w_0().child(self.text(
+                        &inline,
+                        Run::new(cell_ink, joint).cell(),
+                        window,
+                        cx,
+                    )))
             };
-            div()
-                .flex_1()
-                .flex_grow(weights.get(column).copied().unwrap_or(1.0))
-                .min_w(px(CELL_MIN_WIDTH))
-                .flex()
-                .px(px(10.0))
-                .py(px(8.0))
-                .when(aligns.get(column) == Some(&Alignment::Right), |el| {
-                    el.justify_end()
-                })
-                .when(aligns.get(column) == Some(&Alignment::Center), |el| {
-                    el.justify_center()
-                })
-                // The text may shrink to its cell and wrap; a flex item is
-                // otherwise as wide as its longest line and runs into the
-                // next column.
-                .child(
-                    div()
-                        .min_w_0()
-                        .child(self.text(&inline, Run::new(cell_ink, joint).cell(), window, cx)),
-                )
-        };
         let mut lines = Vec::with_capacity(rows.len() + 1);
-        for (ix, row) in std::iter::once(head).chain(rows.iter().map(Vec::as_slice)).enumerate() {
+        for (ix, row) in std::iter::once(head)
+            .chain(rows.iter().map(Vec::as_slice))
+            .enumerate()
+        {
             let cells: Vec<_> = row
                 .iter()
                 .enumerate()

@@ -4,6 +4,7 @@
 
 use std::time::Duration;
 
+use crate::ui::appearance::DiffColors;
 use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
@@ -11,7 +12,6 @@ use gpui::{
     InteractiveElement, IntoElement, ParentElement, SharedString, Stateful, Styled, Window, div,
     prelude::*, relative,
 };
-use crate::ui::appearance::DiffColors;
 
 use crate::app::BenCodeApp;
 use crate::ui::mascot::{Mascot, pixel_sprite};
@@ -38,7 +38,12 @@ pub(super) fn format_diff_number(n: usize) -> String {
 }
 
 /// MonoCode `projectCardTitle`: name, path, "Working", then the changes.
-pub(super) fn project_card_title(name: &str, path: &str, (additions, deletions): (usize, usize), busy: bool) -> String {
+pub(super) fn project_card_title(
+    name: &str,
+    path: &str,
+    (additions, deletions): (usize, usize),
+    busy: bool,
+) -> String {
     let mut parts = vec![name.to_string(), path.to_string()];
     if busy {
         parts.push("Working".into());
@@ -59,7 +64,11 @@ pub(super) fn project_card_title(name: &str, path: &str, (additions, deletions):
 /// MonoCode `ProjectDiffStat`: `flex gap-1 text-[11px] font-semibold
 /// tabular-nums`, in the chosen diff palette (`text-diff-add-fg` /
 /// `text-diff-del-fg`).
-pub(super) fn project_diff_stat(additions: usize, deletions: usize, diff: DiffColors) -> impl IntoElement {
+pub(super) fn project_diff_stat(
+    additions: usize,
+    deletions: usize,
+    diff: DiffColors,
+) -> impl IntoElement {
     let (add, del) = (diff.add_fg, diff.del_fg);
     div()
         .flex()
@@ -69,21 +78,40 @@ pub(super) fn project_diff_stat(additions: usize, deletions: usize, diff: DiffCo
         .text_size(px(11.0))
         .font_weight(FontWeight::SEMIBOLD)
         .when(additions > 0, |el| {
-            el.child(div().text_color(add).child(format!("+{}", format_diff_number(additions))))
+            el.child(
+                div()
+                    .text_color(add)
+                    .child(format!("+{}", format_diff_number(additions))),
+            )
         })
         .when(deletions > 0, |el| {
-            el.child(div().text_color(del).child(format!("-{}", format_diff_number(deletions))))
+            el.child(
+                div()
+                    .text_color(del)
+                    .child(format!("-{}", format_diff_number(deletions))),
+            )
         })
 }
 
 /// MonoCode `ProjectMascot className="size-3"`: the rest frame, or while
 /// busy (`mascot-active`) rest and talk swapped each beat with a 1px hop.
-pub(super) fn project_mascot_icon(mascot: &'static Mascot, color: Hsla, busy: bool, id: &str) -> AnyElement {
+pub(super) fn project_mascot_icon(
+    mascot: &'static Mascot,
+    color: Hsla,
+    busy: bool,
+    id: &str,
+) -> AnyElement {
     mascot_icon(mascot, color, busy, id, 12.0)
 }
 
 /// The mascot at `size` (the Working agents card draws it at `size-2`).
-pub(super) fn mascot_icon(mascot: &'static Mascot, color: Hsla, busy: bool, id: &str, size: f32) -> AnyElement {
+pub(super) fn mascot_icon(
+    mascot: &'static Mascot,
+    color: Hsla,
+    busy: bool,
+    id: &str,
+    size: f32,
+) -> AnyElement {
     let size = px(size);
     if !busy {
         return pixel_sprite(&mascot.rest, size, color, false);
@@ -96,12 +124,13 @@ pub(super) fn mascot_icon(mascot: &'static Mascot, color: Hsla, busy: bool, id: 
             Animation::new(MASCOT_BEAT).repeat(),
             move |el, delta| {
                 let talking = delta >= 0.5;
-                el.top(px(if talking { -1.0 } else { 0.0 })).child(pixel_sprite(
-                    if talking { &mascot.talk } else { &mascot.rest },
-                    size,
-                    color,
-                    false,
-                ))
+                el.top(px(if talking { -1.0 } else { 0.0 }))
+                    .child(pixel_sprite(
+                        if talking { &mascot.talk } else { &mascot.rest },
+                        size,
+                        color,
+                        false,
+                    ))
             },
         )
         .into_any_element()
@@ -126,10 +155,21 @@ pub(super) fn hover_control(
         .group_hover(group.clone(), |s| s.visible())
         .items_center()
         .justify_center()
-        .rounded(px(if matches!(size, IconSize::Sm) { 4.0 } else { 6.0 }))
-        .when(!matches!(size, IconSize::Sm), |el| el.hover(move |s| s.bg(fg.opacity(0.08))))
+        .rounded(px(if matches!(size, IconSize::Sm) {
+            4.0
+        } else {
+            6.0
+        }))
+        .when(!matches!(size, IconSize::Sm), |el| {
+            el.hover(move |s| s.bg(fg.opacity(0.08)))
+        })
         .tooltip(Tooltip::text(tip))
-        .child(Icon::new(icon).size(size).color(fg.opacity(0.55)).group_hover_color(id, fg))
+        .child(
+            Icon::new(icon)
+                .size(size)
+                .color(fg.opacity(0.55))
+                .group_hover_color(id, fg),
+        )
 }
 
 /// What a rail row shows at its end.
@@ -240,7 +280,13 @@ fn shortcut_hint(keys: &'static str, fg: Hsla) -> impl IntoElement {
 /// MonoCode `ProjectSectionHeader`'s buttons: `grid size-5 rounded-md
 /// text-content/50 hover:bg-content/8 hover:text-content`, a `size-3.5`
 /// glyph, lit while open.
-pub(super) fn section_button(id: &'static str, icon: IconName, tip: &'static str, open: bool, fg: Hsla) -> Stateful<Div> {
+pub(super) fn section_button(
+    id: &'static str,
+    icon: IconName,
+    tip: &'static str,
+    open: bool,
+    fg: Hsla,
+) -> Stateful<Div> {
     div()
         .id(id)
         .group(id)
@@ -328,6 +374,9 @@ mod tests {
             project_card_title("app", "/x/app", (1_200, 3), true),
             "app\n/x/app\nWorking\n+1,200 -3"
         );
-        assert_eq!(project_card_title("app", "/x/app", (0, 0), false), "app\n/x/app");
+        assert_eq!(
+            project_card_title("app", "/x/app", (0, 0), false),
+            "app\n/x/app"
+        );
     }
 }

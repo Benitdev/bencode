@@ -21,7 +21,8 @@ use crate::rate_limits::RateLimitProvider;
 
 /// The providers Settings › Accounts lists (MonoCode
 /// `PROVIDER_ACCOUNT_PROVIDERS`).
-pub const ACCOUNT_PROVIDERS: [RateLimitProvider; 2] = [RateLimitProvider::Claude, RateLimitProvider::Codex];
+pub const ACCOUNT_PROVIDERS: [RateLimitProvider; 2] =
+    [RateLimitProvider::Claude, RateLimitProvider::Codex];
 
 /// MonoCode's notice when a thread's account no longer exists.
 const REMOVED_ACCOUNT: &str = "This conversation uses a removed provider account. Switch accounts from the usage control to start a new conversation.";
@@ -86,7 +87,9 @@ impl AccountsState {
 impl BenCodeApp {
     /// Reads the profiles on disk, off the UI thread.
     pub(crate) fn load_account_profiles(&mut self, cx: &mut Context<Self>) {
-        let task = cx.background_executor().spawn(async move { accounts::profiles_on_disk() });
+        let task = cx
+            .background_executor()
+            .spawn(async move { accounts::profiles_on_disk() });
         cx.spawn(async move |this, cx| {
             let on_disk = task.await;
             let landed = this.update(cx, |app, cx| {
@@ -184,8 +187,17 @@ impl BenCodeApp {
     /// MonoCode `selectAccount` + `onSelectProviderAccount`: remembers the
     /// choice for the project; an empty active thread takes the account, a
     /// started one stays on its own and a new thread opens for the choice.
-    pub fn select_provider_account(&mut self, provider: &str, account_id: &str, cx: &mut Context<Self>) {
-        if !self.provider_accounts(provider).iter().any(|a| a.id == account_id) {
+    pub fn select_provider_account(
+        &mut self,
+        provider: &str,
+        account_id: &str,
+        cx: &mut Context<Self>,
+    ) {
+        if !self
+            .provider_accounts(provider)
+            .iter()
+            .any(|a| a.id == account_id)
+        {
             return;
         }
         let project = self.account_project_key(self.selected_session());
@@ -207,7 +219,8 @@ impl BenCodeApp {
             .unwrap_or_else(|| DEFAULT_ACCOUNT_ID.into());
         let (active_id, cwd) = (active.id.clone(), active.cwd.clone());
         let (model, harness) = (active.model.clone(), active.harness.clone());
-        let empty = active.blocks.is_empty() && is_blank_session(active, self.is_agent_running_in(&active_id));
+        let empty = active.blocks.is_empty()
+            && is_blank_session(active, self.is_agent_running_in(&active_id));
         if current == account_id && active.provider_account_id.is_some() {
             return;
         }
@@ -253,7 +266,11 @@ impl BenCodeApp {
         if label.trim().is_empty() || self.usage.adding || self.accounts.working.is_some() {
             return;
         }
-        let account = accounts::new_account(provider.id(), label, self.provider_accounts(provider.id()).len());
+        let account = accounts::new_account(
+            provider.id(),
+            label,
+            self.provider_accounts(provider.id()).len(),
+        );
         let Some(profile) = AccountProfile::resolve(&account.provider, Some(&account.id)) else {
             return;
         };
@@ -286,7 +303,12 @@ impl BenCodeApp {
                     Ok(()) => {
                         let saved = account.clone();
                         app.update_provider_accounts(
-                            |stored, _| stored.entry(saved.provider.clone()).or_default().push(saved),
+                            |stored, _| {
+                                stored
+                                    .entry(saved.provider.clone())
+                                    .or_default()
+                                    .push(saved)
+                            },
                             cx,
                         );
                         app.accounts
@@ -297,7 +319,8 @@ impl BenCodeApp {
                         match form {
                             AccountForm::Popover => {
                                 app.select_provider_account(&account.provider, &account.id, cx);
-                                app.account_name_input.update(cx, |input, cx| input.set_text("", cx));
+                                app.account_name_input
+                                    .update(cx, |input, cx| input.set_text("", cx));
                                 app.close_usage_popover(cx);
                             }
                             AccountForm::Settings => app.accounts.editor = None,
@@ -332,7 +355,12 @@ impl BenCodeApp {
 
     /// Who each of `provider`'s accounts is, and the usage of the ones not
     /// read yet (all of them with `force`).
-    pub fn load_account_details(&mut self, provider: RateLimitProvider, force: bool, cx: &mut Context<Self>) {
+    pub fn load_account_details(
+        &mut self,
+        provider: RateLimitProvider,
+        force: bool,
+        cx: &mut Context<Self>,
+    ) {
         if !supports_accounts(provider.id()) {
             return;
         }
@@ -359,8 +387,11 @@ impl BenCodeApp {
             provider,
             account_id: account.map(|account| account.id.clone()),
         });
-        let label = account.map_or("", |account| account.label.as_str()).to_string();
-        self.account_editor_input.update(cx, |input, cx| input.set_text(label, cx));
+        let label = account
+            .map_or("", |account| account.label.as_str())
+            .to_string();
+        self.account_editor_input
+            .update(cx, |input, cx| input.set_text(label, cx));
         crate::ui::composer::menus::focus_later(
             gpui::Focusable::focus_handle(self.account_editor_input.read(cx), cx),
             cx,
@@ -453,10 +484,15 @@ impl BenCodeApp {
         for session_id in running {
             self.stop_agent(&session_id, cx);
         }
-        self.accounts.working = Some(Working::Removing(account.provider.clone(), account.id.clone()));
+        self.accounts.working = Some(Working::Removing(
+            account.provider.clone(),
+            account.id.clone(),
+        ));
         self.accounts.error = None;
         cx.notify();
-        let task = cx.background_executor().spawn(async move { profile.remove() });
+        let task = cx
+            .background_executor()
+            .spawn(async move { profile.remove() });
         cx.spawn(async move |this, cx| {
             let result = task.await;
             let landed = this.update(cx, |app, cx| {
@@ -479,7 +515,9 @@ impl BenCodeApp {
 
     fn forget_account(&mut self, account: &ProviderAccount, cx: &mut Context<Self>) {
         self.update_provider_accounts(
-            |stored, selections| accounts::remove_account(stored, selections, &account.provider, &account.id),
+            |stored, selections| {
+                accounts::remove_account(stored, selections, &account.provider, &account.id)
+            },
             cx,
         );
         let key = (account.provider.clone(), account.id.clone());

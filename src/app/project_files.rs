@@ -58,7 +58,10 @@ impl ProjectFiles {
             self.others.insert(old, current);
         }
         let restored = self.others.remove(root);
-        let mentions = restored.as_ref().map(|l| l.mentions.clone()).unwrap_or_default();
+        let mentions = restored
+            .as_ref()
+            .map(|l| l.mentions.clone())
+            .unwrap_or_default();
         if let Some(listing) = restored {
             self.files = listing.files;
             self.dirs = listing.dirs;

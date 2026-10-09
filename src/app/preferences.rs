@@ -60,8 +60,12 @@ pub fn appearance_prefs(saved: &AppSettings) -> AppearancePrefs {
     AppearancePrefs {
         tint: ThemeTint {
             hue: saved.theme_hue.unwrap_or(appearance::HUE_DEFAULT),
-            saturation: saved.theme_saturation.unwrap_or(appearance::SATURATION_DEFAULT),
-            dark_lightness: saved.theme_dark_lightness.unwrap_or(appearance::DARK_LIGHTNESS_DEFAULT),
+            saturation: saved
+                .theme_saturation
+                .unwrap_or(appearance::SATURATION_DEFAULT),
+            dark_lightness: saved
+                .theme_dark_lightness
+                .unwrap_or(appearance::DARK_LIGHTNESS_DEFAULT),
         }
         .clamped(),
         accent_color: saved
@@ -71,16 +75,23 @@ pub fn appearance_prefs(saved: &AppSettings) -> AppearancePrefs {
             .map(str::to_lowercase),
         diff_palette: saved.diff_palette,
         show_excluded_files: saved.show_excluded_files,
-        ui_scale: saved.ui_scale.map_or(defaults.ui_scale, appearance::normalize_ui_scale),
+        ui_scale: saved
+            .ui_scale
+            .map_or(defaults.ui_scale, appearance::normalize_ui_scale),
         chat_background: ChatBackgroundPrefs {
-            path: saved.chat_background_path.clone().filter(|path| !path.is_empty()),
+            path: saved
+                .chat_background_path
+                .clone()
+                .filter(|path| !path.is_empty()),
             revision: saved.chat_background_revision,
-            empty_opacity: saved
-                .chat_background_empty_opacity
-                .map_or(defaults.chat_background.empty_opacity, appearance::clamp_background_opacity),
-            session_opacity: saved
-                .chat_background_session_opacity
-                .map_or(defaults.chat_background.session_opacity, appearance::clamp_background_opacity),
+            empty_opacity: saved.chat_background_empty_opacity.map_or(
+                defaults.chat_background.empty_opacity,
+                appearance::clamp_background_opacity,
+            ),
+            session_opacity: saved.chat_background_session_opacity.map_or(
+                defaults.chat_background.session_opacity,
+                appearance::clamp_background_opacity,
+            ),
             scope: saved.chat_background_scope,
             effect: saved.new_thread_background_effect,
         },
@@ -114,9 +125,10 @@ impl BenCodeApp {
         self.composer_mascot_off = saved.composer_mascot_off;
         self.live_agents_off = saved.live_agents_off;
         self.resume_interrupted_auto = saved.resume_interrupted_auto;
-        self.sidebar_opacity = saved
-            .sidebar_opacity
-            .map_or(crate::ui::glass::OPACITY_DEFAULT, crate::ui::glass::clamp_opacity);
+        self.sidebar_opacity = saved.sidebar_opacity.map_or(
+            crate::ui::glass::OPACITY_DEFAULT,
+            crate::ui::glass::clamp_opacity,
+        );
         self.body_glass = !saved.body_glass_off;
         self.inbox.seen = saved.inbox_seen.clone();
         self.inbox.seen_seeded = saved.inbox_seen_seeded;
@@ -233,7 +245,10 @@ impl BenCodeApp {
         cx: &mut Context<Self>,
     ) {
         let mut next = self.current_settings();
-        update(&mut next.provider_accounts, &mut next.provider_account_selections);
+        update(
+            &mut next.provider_accounts,
+            &mut next.provider_account_selections,
+        );
         if next == self.settings {
             return;
         }
@@ -498,7 +513,10 @@ impl BenCodeApp {
 
     /// MonoCode `zoomInUiScale` / `zoomOutUiScale`: one step either way.
     pub fn step_ui_scale(&mut self, steps: f32, cx: &mut Context<Self>) {
-        self.set_ui_scale(self.appearance.ui_scale + steps * appearance::UI_SCALE_STEP, cx);
+        self.set_ui_scale(
+            self.appearance.ui_scale + steps * appearance::UI_SCALE_STEP,
+            cx,
+        );
     }
 
     /// Sizes the window's rem for the interface scale, for Ely's components

@@ -52,14 +52,20 @@ impl ChatBackground {
 
 /// BenCode's `backgrounds` folder, beside `settings.json`.
 fn backgrounds_dir() -> Result<PathBuf> {
-    let dir = crate::settings::settings_dir().context("no home directory")?.join("backgrounds");
+    let dir = crate::settings::settings_dir()
+        .context("no home directory")?
+        .join("backgrounds");
     std::fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
     Ok(dir)
 }
 
 /// MonoCode `background_extension`.
 fn background_extension(source: &Path) -> Result<String> {
-    let ext = source.extension().and_then(|ext| ext.to_str()).unwrap_or("").to_ascii_lowercase();
+    let ext = source
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
     if ALLOWED_EXT.contains(&ext.as_str()) {
         Ok(ext)
     } else {
@@ -80,7 +86,9 @@ fn remove_existing_backgrounds(dir: &Path) -> Result<()> {
             match std::fs::remove_file(entry.path()) {
                 Ok(()) => {}
                 Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
-                Err(err) => return Err(err).with_context(|| format!("removing {}", entry.path().display())),
+                Err(err) => {
+                    return Err(err).with_context(|| format!("removing {}", entry.path().display()));
+                }
             }
         }
     }
@@ -94,7 +102,10 @@ fn save_background(dir: &Path, source: &Path) -> Result<PathBuf> {
         bail!("Not a file");
     }
     if meta.len() > MAX_BACKGROUND_BYTES {
-        bail!("Background is too large (maximum {} MB).", MAX_BACKGROUND_BYTES / 1024 / 1024);
+        bail!(
+            "Background is too large (maximum {} MB).",
+            MAX_BACKGROUND_BYTES / 1024 / 1024
+        );
     }
     let ext = background_extension(source)?;
     let dest = dir.join(format!("{FILE_STEM}.{ext}"));
@@ -156,13 +167,21 @@ impl BenCodeApp {
         let light = light && prefs.effect.follows_theme();
         let made_from = |key: &Option<ImageKey>| {
             key.as_ref().is_some_and(|key| {
-                key.path == path && key.revision == prefs.revision && key.effect == prefs.effect && key.light == light
+                key.path == path
+                    && key.revision == prefs.revision
+                    && key.effect == prefs.effect
+                    && key.light == light
             })
         };
         if made_from(&self.chat_background.shown) || made_from(&self.chat_background.loading) {
             return;
         }
-        let key = ImageKey { path: path.to_string(), revision: prefs.revision, effect: prefs.effect, light };
+        let key = ImageKey {
+            path: path.to_string(),
+            revision: prefs.revision,
+            effect: prefs.effect,
+            light,
+        };
         let state = &mut self.chat_background;
         state.loading = Some(key.clone());
         state.generation += 1;
@@ -314,17 +333,30 @@ impl BenCodeApp {
     }
 
     /// MonoCode `onChatBackgroundScope`.
-    pub fn set_chat_background_scope(&mut self, scope: ChatBackgroundScope, cx: &mut Context<Self>) {
+    pub fn set_chat_background_scope(
+        &mut self,
+        scope: ChatBackgroundScope,
+        cx: &mut Context<Self>,
+    ) {
         self.appearance.chat_background.scope = scope;
         self.save_settings(cx);
         cx.notify();
     }
 
     /// MonoCode `onChatBackgroundEmptyOpacity` / `SessionOpacity`.
-    pub fn set_chat_background_opacity(&mut self, empty: bool, opacity: f32, cx: &mut Context<Self>) {
+    pub fn set_chat_background_opacity(
+        &mut self,
+        empty: bool,
+        opacity: f32,
+        cx: &mut Context<Self>,
+    ) {
         let opacity = appearance::clamp_background_opacity(opacity);
         let prefs = &mut self.appearance.chat_background;
-        let slot = if empty { &mut prefs.empty_opacity } else { &mut prefs.session_opacity };
+        let slot = if empty {
+            &mut prefs.empty_opacity
+        } else {
+            &mut prefs.session_opacity
+        };
         if *slot == opacity {
             return;
         }
@@ -339,7 +371,8 @@ mod tests {
     use super::*;
 
     fn temp_dir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("bencode-background-{name}-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("bencode-background-{name}-{}", std::process::id()));
         if let Err(err) = std::fs::remove_dir_all(&dir) {
             assert_eq!(err.kind(), std::io::ErrorKind::NotFound, "{err}");
         }
@@ -349,8 +382,14 @@ mod tests {
 
     #[test]
     fn accepts_supported_extensions_case_insensitively() {
-        assert_eq!(background_extension(Path::new("wallpaper.JPEG")).unwrap(), "jpeg");
-        assert_eq!(background_extension(Path::new("wallpaper.webp")).unwrap(), "webp");
+        assert_eq!(
+            background_extension(Path::new("wallpaper.JPEG")).unwrap(),
+            "jpeg"
+        );
+        assert_eq!(
+            background_extension(Path::new("wallpaper.webp")).unwrap(),
+            "webp"
+        );
         assert!(background_extension(Path::new("wallpaper.txt")).is_err());
         assert!(background_extension(Path::new("wallpaper")).is_err());
     }
@@ -361,7 +400,9 @@ mod tests {
         let store = dir.join("backgrounds");
         std::fs::create_dir_all(&store).unwrap();
         let first = dir.join("one.png");
-        image::RgbaImage::from_pixel(3, 2, image::Rgba([10, 20, 30, 255])).save(&first).unwrap();
+        image::RgbaImage::from_pixel(3, 2, image::Rgba([10, 20, 30, 255]))
+            .save(&first)
+            .unwrap();
         let saved = save_background(&store, &first).unwrap();
         assert_eq!(saved, store.join("chat-background.png"));
 
@@ -369,7 +410,10 @@ mod tests {
         std::fs::copy(&first, &second).unwrap();
         let saved = save_background(&store, &second).unwrap();
         assert_eq!(saved, store.join("chat-background.jpg"));
-        let names: Vec<_> = std::fs::read_dir(&store).unwrap().map(|e| e.unwrap().file_name()).collect();
+        let names: Vec<_> = std::fs::read_dir(&store)
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
         assert_eq!(names, ["chat-background.jpg"]);
 
         // Choosing the saved copy itself keeps it.
@@ -385,7 +429,9 @@ mod tests {
     fn decoded_artwork_renders_as_bgra() {
         let dir = temp_dir("decode");
         let file = dir.join("art.png");
-        image::RgbaImage::from_pixel(4, 4, image::Rgba([10, 20, 30, 255])).save(&file).unwrap();
+        image::RgbaImage::from_pixel(4, 4, image::Rgba([10, 20, 30, 255]))
+            .save(&file)
+            .unwrap();
         let source = decode(&file).unwrap();
         assert_eq!((source.width, source.height), (4, 4));
         let image = render_image(&source, BackgroundEffect::None, false).unwrap();

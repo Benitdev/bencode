@@ -222,14 +222,23 @@ impl BenCodeApp {
     }
 
     /// Opens a result in the editor with its match selected.
-    pub fn open_search_match(&mut self, hit: &SearchMatch, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn open_search_match(
+        &mut self,
+        hit: &SearchMatch,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let path = std::path::Path::new(&self.project_search.root)
             .join(&hit.relative)
             .to_string_lossy()
             .into_owned();
         let len = self.project_search.searched.query.len();
         // A regex match's length is unknown; select nothing then.
-        let len = if self.project_search.searched.regex { 0 } else { len };
+        let len = if self.project_search.searched.regex {
+            0
+        } else {
+            len
+        };
         self.open_file_at(&path, hit.line, hit.column, len, window, cx);
     }
 }

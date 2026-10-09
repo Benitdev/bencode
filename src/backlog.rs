@@ -95,8 +95,8 @@ fn config_path() -> Result<PathBuf, String> {
 fn read_config() -> Result<Option<Config>, String> {
     match std::fs::read_to_string(config_path()?) {
         Ok(raw) => {
-            let config: Config =
-                serde_json::from_str(&raw).map_err(|_| "Backlog settings are invalid".to_string())?;
+            let config: Config = serde_json::from_str(&raw)
+                .map_err(|_| "Backlog settings are invalid".to_string())?;
             Ok((!config.api_key.trim().is_empty()).then_some(config))
         }
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
@@ -124,7 +124,8 @@ fn write_config(config: &Config) -> Result<(), String> {
         options.mode(0o600);
     }
     let mut file = options.open(&path).map_err(|err| err.to_string())?;
-    file.write_all(json.as_bytes()).map_err(|err| err.to_string())
+    file.write_all(json.as_bytes())
+        .map_err(|err| err.to_string())
 }
 
 fn forget_catalog() {
@@ -192,11 +193,17 @@ fn normalize_space(raw: &str) -> Result<String, String> {
         .strip_prefix("https://")
         .or_else(|| trimmed.strip_prefix("http://"))
         .unwrap_or(trimmed);
-    let host = host.split(['/', '?', '#']).next().unwrap_or("").to_ascii_lowercase();
+    let host = host
+        .split(['/', '?', '#'])
+        .next()
+        .unwrap_or("")
+        .to_ascii_lowercase();
     let valid = host.contains('.')
         && !host.starts_with(['.', '-'])
         && !host.ends_with(['.', '-'])
-        && host.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-'));
+        && host
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-'));
     if valid {
         Ok(host)
     } else {
@@ -245,9 +252,19 @@ fn call(
     form: &[(&str, &str)],
 ) -> Result<Value, String> {
     let url = api_url(config, path, query);
-    let response = http::send(&url, &[], http::Send { method, form, body: None, follow_redirects: false }, TIMEOUT)
-        // curl names the host at most, never the query.
-        .map_err(|err| format!("Could not reach Backlog: {err}"))?;
+    let response = http::send(
+        &url,
+        &[],
+        http::Send {
+            method,
+            form,
+            body: None,
+            follow_redirects: false,
+        },
+        TIMEOUT,
+    )
+    // curl names the host at most, never the query.
+    .map_err(|err| format!("Could not reach Backlog: {err}"))?;
     if (200..300).contains(&response.status) {
         if response.body.trim().is_empty() {
             return Ok(Value::Null);
@@ -295,7 +312,9 @@ fn require_issue_key(key: &str) -> Result<&str, String> {
     let key = key.trim();
     let valid = key.rsplit_once('-').is_some_and(|(project, number)| {
         !project.is_empty()
-            && project.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+            && project
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_')
             && !number.is_empty()
             && number.chars().all(|c| c.is_ascii_digit())
     });
@@ -479,7 +498,11 @@ fn work_item(row: &IssueRow, space: &str) -> WorkItem {
             .map(|a| a.name.clone())
             .filter(|name| !name.is_empty())
             .collect(),
-        priority: row.priority.as_ref().map(|p| p.name.clone()).unwrap_or_default(),
+        priority: row
+            .priority
+            .as_ref()
+            .map(|p| p.name.clone())
+            .unwrap_or_default(),
         // `2024-05-31T00:00:00Z`: the day is all Backlog means.
         due_date: row
             .due_date
@@ -560,10 +583,13 @@ pub fn inbox(hidden: &[String], assigned_to_me: bool) -> Option<Listing> {
         }
     };
     listing.statuses = catalog.statuses.clone();
-    let Some(query) = issue_query(&catalog, hidden, assigned_to_me.then_some(config.user_id)) else {
+    let Some(query) = issue_query(&catalog, hidden, assigned_to_me.then_some(config.user_id))
+    else {
         return Some(listing);
     };
-    match call(&config, None, "/issues", &query, &[]).and_then(|data| parse_issues(data, &config.space)) {
+    match call(&config, None, "/issues", &query, &[])
+        .and_then(|data| parse_issues(data, &config.space))
+    {
         Ok(items) => listing.items = items,
         Err(err) => {
             log::warn!("inbox: could not list Backlog issues: {err}");
@@ -656,7 +682,11 @@ fn change_line(change: &Value) -> Option<String> {
 
 fn parse_comment(row: &Value, space: &str, key: &str) -> Option<Comment> {
     let id = row.get("id")?.as_i64()?;
-    let content = row.get("content").and_then(Value::as_str).unwrap_or("").trim();
+    let content = row
+        .get("content")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim();
     let changes: Vec<String> = row
         .get("changeLog")
         .and_then(Value::as_array)
@@ -753,8 +783,14 @@ mod tests {
 
     #[test]
     fn spaces_are_hosts_whatever_was_pasted() {
-        assert_eq!(normalize_space(" https://Acme.backlog.com/projects/X ").unwrap(), "acme.backlog.com");
-        assert_eq!(normalize_space("acme.backlog.jp").unwrap(), "acme.backlog.jp");
+        assert_eq!(
+            normalize_space(" https://Acme.backlog.com/projects/X ").unwrap(),
+            "acme.backlog.com"
+        );
+        assert_eq!(
+            normalize_space("acme.backlog.jp").unwrap(),
+            "acme.backlog.jp"
+        );
         assert!(normalize_space("acme").is_err());
         assert!(normalize_space("acme.backlog.com:evil@x").is_err());
         assert!(normalize_space("").is_err());
@@ -762,7 +798,11 @@ mod tests {
 
     #[test]
     fn urls_encode_the_key_and_array_parameters() {
-        let url = api_url(&config(), "/issues", &[("projectId[]", "12".into()), ("sort", "updated".into())]);
+        let url = api_url(
+            &config(),
+            "/issues",
+            &[("projectId[]", "12".into()), ("sort", "updated".into())],
+        );
         assert_eq!(
             url,
             "https://acme.backlog.com/api/v2/issues?apiKey=k%26y&projectId%5B%5D=12&sort=updated"
@@ -812,11 +852,20 @@ mod tests {
         let item = &items[0];
         assert_eq!(item.provider, Provider::Backlog);
         assert_eq!((item.identifier.as_str(), item.number), ("WEB-42", 42));
-        assert_eq!((item.repo.as_str(), item.container_id.as_str()), ("WEB", "12"));
+        assert_eq!(
+            (item.repo.as_str(), item.container_id.as_str()),
+            ("WEB", "12")
+        );
         assert_eq!(item.url, "https://acme.backlog.com/view/WEB-42");
-        assert_eq!((item.state.as_str(), item.state_color.as_str()), ("In Progress", "#4488c5"));
+        assert_eq!(
+            (item.state.as_str(), item.state_color.as_str()),
+            ("In Progress", "#4488c5")
+        );
         assert!(!item.closed);
-        assert_eq!((item.priority.as_str(), item.due_date.as_str()), ("High", "2026-10-31"));
+        assert_eq!(
+            (item.priority.as_str(), item.due_date.as_str()),
+            ("High", "2026-10-31")
+        );
         assert_eq!(item.assignees, ["Me"]);
         let labels: Vec<&str> = item.labels.iter().map(|l| l.name.as_str()).collect();
         assert_eq!(labels, ["Bug", "Auth"]);
@@ -890,7 +939,10 @@ mod tests {
         assert!(!thread.truncated);
         assert_eq!(thread.comments.len(), 2);
         assert_eq!(thread.comments[0].body, "First");
-        assert_eq!(thread.comments[0].url, "https://acme.backlog.com/view/WEB-42#comment-1");
+        assert_eq!(
+            thread.comments[0].url,
+            "https://acme.backlog.com/view/WEB-42#comment-1"
+        );
         assert_eq!(
             thread.comments[1].body,
             "**Status**: Open → In Progress  \n**Assignee**: Me"
@@ -909,6 +961,13 @@ mod tests {
             { "id": 1, "name": "Open", "color": "#ed8077" },
             { "id": 4, "name": "Closed", "color": "#b0be3c" }
         ]));
-        assert_eq!(statuses[1], StatusOption { id: 4, name: "Closed".into(), color: "#b0be3c".into() });
+        assert_eq!(
+            statuses[1],
+            StatusOption {
+                id: 4,
+                name: "Closed".into(),
+                color: "#b0be3c".into()
+            }
+        );
     }
 }

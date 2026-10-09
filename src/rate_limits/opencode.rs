@@ -95,7 +95,8 @@ fn read_go_api_key() -> Option<String> {
         .ok()
         .or_else(|| {
             // Legacy macOS location.
-            std::fs::read_to_string(home()?.join("Library/Application Support/opencode/auth.json")).ok()
+            std::fs::read_to_string(home()?.join("Library/Application Support/opencode/auth.json"))
+                .ok()
         })?;
     auth_go_key(&serde_json::from_str(raw.trim()).ok()?)
 }
@@ -152,7 +153,11 @@ fn parse_config(raw: &str) -> Option<Value> {
 /// part of a string literal; string literals pass through untouched.
 fn map_outside_strings(
     raw: &str,
-    mut outside: impl FnMut(char, &mut std::iter::Peekable<std::str::Chars<'_>>, &mut String) -> Option<()>,
+    mut outside: impl FnMut(
+        char,
+        &mut std::iter::Peekable<std::str::Chars<'_>>,
+        &mut String,
+    ) -> Option<()>,
 ) -> Option<String> {
     let mut out = String::with_capacity(raw.len());
     let mut chars = raw.chars().peekable();
@@ -206,7 +211,12 @@ fn strip_jsonc_comments(raw: &str) -> Option<String> {
 
 fn strip_jsonc_trailing_commas(raw: &str) -> String {
     map_outside_strings(raw, |ch, chars, out| {
-        let closes = || matches!(chars.clone().find(|next| !next.is_whitespace()), Some('}' | ']'));
+        let closes = || {
+            matches!(
+                chars.clone().find(|next| !next.is_whitespace()),
+                Some('}' | ']')
+            )
+        };
         if ch != ',' || !closes() {
             out.push(ch);
         }
@@ -254,7 +264,8 @@ mod tests {
     fn auth_json_holds_the_go_key() {
         let auth = |raw: &str| auth_go_key(&serde_json::from_str(raw).unwrap());
         assert_eq!(
-            auth(r#"{"openai":{"type":"oauth"},"opencode-go":{"type":"api","key":"sk-go-abc"}}"#).as_deref(),
+            auth(r#"{"openai":{"type":"oauth"},"opencode-go":{"type":"api","key":"sk-go-abc"}}"#)
+                .as_deref(),
             Some("sk-go-abc")
         );
         assert_eq!(auth(r#"{"openai":{"type":"oauth"}}"#), None);
@@ -294,7 +305,10 @@ mod tests {
             }"#,
         )
         .unwrap();
-        assert_eq!(config_go_api_key(&value, &no_env).as_deref(), Some("sk-go-jsonc"));
+        assert_eq!(
+            config_go_api_key(&value, &no_env).as_deref(),
+            Some("sk-go-jsonc")
+        );
         assert_eq!(
             value["provider"]["opencode-go"]["options"]["baseURL"],
             "https://opencode.ai/v1"
@@ -308,9 +322,13 @@ mod tests {
         let both = parse(
             r#"{"provider":{"anthropic":{"options":{"apiKey":"sk-ant-x"}},"opencode-go":{"options":{"apiKey":"sk-go-cfg"}}}}"#,
         );
-        assert_eq!(config_go_api_key(&both, &no_env).as_deref(), Some("sk-go-cfg"));
+        assert_eq!(
+            config_go_api_key(&both, &no_env).as_deref(),
+            Some("sk-go-cfg")
+        );
 
-        let fallthrough = parse(r#"{"provider":{"opencode":{"options":{"apiKey":"sk-go-opencode"}}}}"#);
+        let fallthrough =
+            parse(r#"{"provider":{"opencode":{"options":{"apiKey":"sk-go-opencode"}}}}"#);
         assert_eq!(
             config_go_api_key(&fallthrough, &no_env).as_deref(),
             Some("sk-go-opencode")
@@ -327,8 +345,14 @@ mod tests {
         )
         .unwrap();
         let set = |name: &str| (name == "GO_KEY").then(|| "sk-go-env".to_string());
-        assert_eq!(config_go_api_key(&value, &set).as_deref(), Some("sk-go-env"));
+        assert_eq!(
+            config_go_api_key(&value, &set).as_deref(),
+            Some("sk-go-env")
+        );
         // An unset variable moves on to the next Go provider id.
-        assert_eq!(config_go_api_key(&value, &no_env).as_deref(), Some("sk-fallback"));
+        assert_eq!(
+            config_go_api_key(&value, &no_env).as_deref(),
+            Some("sk-fallback")
+        );
     }
 }

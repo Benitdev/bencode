@@ -20,14 +20,22 @@ impl BenCodeApp {
 
     /// Pins or unpins `id` (a no-op when it already is).
     pub fn set_session_pinned(&mut self, id: &str, pinned: bool, cx: &mut Context<Self>) {
-        if self.sessions.iter().any(|s| s.id == id && s.pinned != pinned) {
+        if self
+            .sessions
+            .iter()
+            .any(|s| s.id == id && s.pinned != pinned)
+        {
             self.toggle_pin_session(id, cx);
         }
     }
 
     /// Archives or unarchives `id` (a no-op when it already is).
     pub fn set_session_archived(&mut self, id: &str, archived: bool, cx: &mut Context<Self>) {
-        if self.sessions.iter().any(|s| s.id == id && s.archived != archived) {
+        if self
+            .sessions
+            .iter()
+            .any(|s| s.id == id && s.archived != archived)
+        {
             self.toggle_archive_session(id, cx);
         }
     }
@@ -39,7 +47,9 @@ impl BenCodeApp {
         let was_archived = session.archived;
         session.archived = !was_archived;
         let id = id.to_string();
-        self.db_write("toggle archive", move |db| db.toggle_archived(&id, was_archived));
+        self.db_write("toggle archive", move |db| {
+            db.toggle_archived(&id, was_archived)
+        });
         cx.notify();
     }
 }

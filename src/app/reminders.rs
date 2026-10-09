@@ -54,13 +54,21 @@ impl Preset {
 }
 
 fn zoned(ms: i64) -> Option<Zoned> {
-    Some(jiff::Timestamp::from_millisecond(ms).ok()?.to_zoned(TimeZone::system()))
+    Some(
+        jiff::Timestamp::from_millisecond(ms)
+            .ok()?
+            .to_zoned(TimeZone::system()),
+    )
 }
 
 /// `day` at `hour`:00 local, in ms.
 fn at_hour(day: &Zoned, hour: i8) -> Option<i64> {
     let time = Time::new(hour, 0, 0, 0).ok()?;
-    let at = day.date().to_datetime(time).to_zoned(day.time_zone().clone()).ok()?;
+    let at = day
+        .date()
+        .to_datetime(time)
+        .to_zoned(day.time_zone().clone())
+        .ok()?;
     Some(at.timestamp().as_millisecond())
 }
 
@@ -117,7 +125,9 @@ pub fn preset_rows(now: i64) -> Vec<(Preset, String, bool)> {
 
 /// MonoCode `formatReminderTime`: "Mon, Oct 6, 9:00 AM".
 pub fn format_reminder_time(due_at: i64) -> String {
-    zoned(due_at).map_or_else(String::new, |z| z.strftime("%a, %b %-d, %-I:%M %p").to_string())
+    zoned(due_at).map_or_else(String::new, |z| {
+        z.strftime("%a, %b %-d, %-I:%M %p").to_string()
+    })
 }
 
 impl BenCodeApp {
@@ -205,7 +215,8 @@ impl BenCodeApp {
             }
             let landed = this.update(cx, |app, cx| {
                 for reminder in &claimed {
-                    let title = crate::app::session_list::display_title(&reminder.title, &reminder.harness);
+                    let title =
+                        crate::app::session_list::display_title(&reminder.title, &reminder.harness);
                     cx.background_executor()
                         .spawn(async move { desktop_alert(&title) })
                         .detach();
@@ -231,7 +242,12 @@ impl BenCodeApp {
 
     /// MonoCode `schedule`: sets (or moves) the threads' reminder and opens
     /// the Reminders group.
-    pub fn schedule_reminders(&mut self, session_ids: &[String], due_at: i64, cx: &mut Context<Self>) {
+    pub fn schedule_reminders(
+        &mut self,
+        session_ids: &[String],
+        due_at: i64,
+        cx: &mut Context<Self>,
+    ) {
         let ids = session_ids.to_vec();
         // On the writer, so a thread saved a moment ago is in the table first.
         self.db_then(
@@ -243,7 +259,12 @@ impl BenCodeApp {
                     log::warn!("could not set reminder: {err:#}");
                 } else {
                     let project = this.current_cwd.clone();
-                    if this.sessions_ui.reminders_collapsed.remove(&project).is_some() {
+                    if this
+                        .sessions_ui
+                        .reminders_collapsed
+                        .remove(&project)
+                        .is_some()
+                    {
                         this.save_settings(cx);
                     }
                 }
@@ -253,7 +274,12 @@ impl BenCodeApp {
     }
 
     /// MonoCode `cancel`.
-    pub fn cancel_reminders(&mut self, session_ids: &[String], expected_due_at: Option<i64>, cx: &mut Context<Self>) {
+    pub fn cancel_reminders(
+        &mut self,
+        session_ids: &[String],
+        expected_due_at: Option<i64>,
+        cx: &mut Context<Self>,
+    ) {
         let ids = session_ids.to_vec();
         self.db_then(
             cx,
@@ -309,7 +335,8 @@ impl BenCodeApp {
                     this.show_reminder_thread(&id, due_at, cx);
                 }
                 Ok(None) => {
-                    this.reminder_failure = Some("This conversation is no longer available.".into());
+                    this.reminder_failure =
+                        Some("This conversation is no longer available.".into());
                     this.cancel_reminders(&[id], Some(due_at), cx);
                 }
                 Err(err) => {
@@ -339,9 +366,16 @@ fn desktop_alert(session_title: &str) {
         "display notification \"Reminder: continue this conversation.\" with title \"BenCode\" subtitle \"{}\"",
         quote(session_title)
     );
-    match std::process::Command::new("osascript").arg("-e").arg(script).output() {
+    match std::process::Command::new("osascript")
+        .arg("-e")
+        .arg(script)
+        .output()
+    {
         Ok(out) if !out.status.success() => {
-            log::warn!("reminder alert failed: {}", String::from_utf8_lossy(&out.stderr))
+            log::warn!(
+                "reminder alert failed: {}",
+                String::from_utf8_lossy(&out.stderr)
+            )
         }
         Ok(_) => {}
         Err(err) => log::warn!("reminder alert failed: {err}"),
@@ -366,13 +400,29 @@ mod tests {
         // Wednesday 2026-10-07 10:05 local.
         let now = local(2026, 10, 7, 10, 5);
         assert_eq!(reminder_time(Preset::OneHour, now), Some(now + HOUR_MS));
-        assert_eq!(reminder_time(Preset::Evening, now), Some(local(2026, 10, 7, 18, 0)));
-        assert_eq!(reminder_time(Preset::Tomorrow, now), Some(local(2026, 10, 8, 9, 0)));
-        assert_eq!(reminder_time(Preset::NextWeek, now), Some(local(2026, 10, 12, 9, 0)));
+        assert_eq!(
+            reminder_time(Preset::Evening, now),
+            Some(local(2026, 10, 7, 18, 0))
+        );
+        assert_eq!(
+            reminder_time(Preset::Tomorrow, now),
+            Some(local(2026, 10, 8, 9, 0))
+        );
+        assert_eq!(
+            reminder_time(Preset::NextWeek, now),
+            Some(local(2026, 10, 12, 9, 0))
+        );
         let late = local(2026, 10, 7, 19, 0);
-        assert_eq!(reminder_time(Preset::Evening, late), None, "evening has passed");
+        assert_eq!(
+            reminder_time(Preset::Evening, late),
+            None,
+            "evening has passed"
+        );
         let monday = local(2026, 10, 12, 8, 0);
-        assert_eq!(reminder_time(Preset::NextWeek, monday), Some(local(2026, 10, 19, 9, 0)));
+        assert_eq!(
+            reminder_time(Preset::NextWeek, monday),
+            Some(local(2026, 10, 19, 9, 0))
+        );
     }
 
     #[test]
@@ -382,6 +432,9 @@ mod tests {
         assert_eq!(rows[0].1, "In 1 hour (9:05)");
         assert_eq!(rows[1].1, "In 3 hours (11:05)");
         assert!(rows.iter().all(|(_, _, enabled)| *enabled));
-        assert_eq!(format_reminder_time(local(2026, 10, 12, 9, 0)), "Mon, Oct 12, 9:00 AM");
+        assert_eq!(
+            format_reminder_time(local(2026, 10, 12, 9, 0)),
+            "Mon, Oct 12, 9:00 AM"
+        );
     }
 }

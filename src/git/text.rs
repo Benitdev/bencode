@@ -122,7 +122,10 @@ pub fn parse_object(raw: &str) -> Option<Map<String, Value>> {
         };
         from = start + 1;
         if let Ok(Value::Object(rec)) = serde_json::from_str::<Value>(json) {
-            if KEYS.iter().any(|k| rec.get(*k).is_some_and(Value::is_string)) {
+            if KEYS
+                .iter()
+                .any(|k| rec.get(*k).is_some_and(Value::is_string))
+            {
                 return Some(rec);
             }
             fallback.get_or_insert(rec);
@@ -139,17 +142,25 @@ fn field<'a>(rec: &'a Map<String, Value>, key: &str) -> &'a str {
 fn sanitize_subject(raw: &str) -> String {
     let line = raw.trim().lines().next().unwrap_or("").trim();
     let line = line.trim_end_matches('.').trim();
-    line.chars().take(72).collect::<String>().trim_end().to_string()
+    line.chars()
+        .take(72)
+        .collect::<String>()
+        .trim_end()
+        .to_string()
 }
 
 /// MonoCode `parseCommitMessage` + `formatCommitMessage`.
 pub fn parse_commit_message(raw: &str) -> Option<String> {
     let rec = parse_object(raw)?;
     let subject = sanitize_subject(
-        [field(&rec, "subject"), field(&rec, "title"), field(&rec, "message")]
-            .into_iter()
-            .find(|s| !s.is_empty())
-            .unwrap_or(""),
+        [
+            field(&rec, "subject"),
+            field(&rec, "title"),
+            field(&rec, "message"),
+        ]
+        .into_iter()
+        .find(|s| !s.is_empty())
+        .unwrap_or(""),
     );
     if subject.is_empty() {
         return None;
@@ -175,7 +186,12 @@ pub fn parse_commit_message(raw: &str) -> Option<String> {
 /// MonoCode `parsePrContent`: (title, body).
 pub fn parse_pr_content(raw: &str) -> Option<(String, String)> {
     let rec = parse_object(raw)?;
-    let title = field(&rec, "title").trim().lines().next()?.trim().to_string();
+    let title = field(&rec, "title")
+        .trim()
+        .lines()
+        .next()?
+        .trim()
+        .to_string();
     (!title.is_empty()).then(|| (title, field(&rec, "body").trim().to_string()))
 }
 
@@ -230,7 +246,9 @@ fn run_claude(cwd: &str, prompt: &str, cancel: &AtomicBool) -> Result<String, St
         .take()
         .ok_or("Claude Code's stdin is unavailable")?;
     let input = prompt.to_owned();
-    let mut writer = Some(std::thread::spawn(move || stdin.write_all(input.as_bytes())));
+    let mut writer = Some(std::thread::spawn(move || {
+        stdin.write_all(input.as_bytes())
+    }));
     let started = Instant::now();
     loop {
         if cancel.load(Ordering::Relaxed) {
@@ -364,7 +382,10 @@ mod tests {
     #[test]
     fn helper_calls_load_no_mcp_servers() {
         let args = claude_text_args();
-        assert_eq!(value_after(&args, "--mcp-config"), serde_json::json!({ "mcpServers": {} }));
+        assert_eq!(
+            value_after(&args, "--mcp-config"),
+            serde_json::json!({ "mcpServers": {} })
+        );
         assert!(args.contains(&"--strict-mcp-config".to_string()));
     }
 

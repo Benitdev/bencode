@@ -36,9 +36,14 @@ impl BenCodeApp {
         // OpenCode without a Go subscription shows no usage at all.
         let target = target.filter(|target| {
             target.provider != RateLimitProvider::OpenCode
-                || self.usage.limits(target.provider, &target.account_id).status != RateLimitStatus::Unavailable
+                || self
+                    .usage
+                    .limits(target.provider, &target.account_id)
+                    .status
+                    != RateLimitStatus::Unavailable
         });
-        if self.usage.popover.is_some() && self.usage.popover != target.as_ref().map(|t| t.provider) {
+        if self.usage.popover.is_some() && self.usage.popover != target.as_ref().map(|t| t.provider)
+        {
             self.usage.popover = None;
             self.usage.view = Default::default();
         }
@@ -119,41 +124,61 @@ impl BenCodeApp {
                     .flex_none()
                     .w(px(PROCESS_SLOT_WIDTH))
                     .h(px(20.0))
-                    .child(crate::ui::composer::runner_view::measure(&self.process_slot)),
+                    .child(crate::ui::composer::runner_view::measure(
+                        &self.process_slot,
+                    )),
             )
-            .child(div().flex_none().w(px(1.0)).h(px(12.0)).ml(px(10.0)).mr(px(6.0)).bg(colors.border))
-            // MonoCode shows the running jobs in the Terminal button's place.
-            .when(!running.is_empty(), |el| el.child(self.render_running_terminal_chip(running.clone(), cx)))
-            .when(running.is_empty(), |el| el.child(
+            .child(
                 div()
-                    .id("footer-terminal-toggle")
-                    .flex()
                     .flex_none()
-                    .items_center()
-                    .gap(px(6.0))
-                    .h(px(20.0))
-                    .px(px(6.0))
-                    .rounded(px(4.0))
-                    .cursor_pointer()
-                    .text_color(if terminal_open { colors.accent } else { fg.opacity(0.4) })
-                    .hover(move |s| {
-                        let s = s.bg(fg.opacity(0.10));
-                        if terminal_open { s } else { s.text_color(fg) }
-                    })
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.set_terminal_open(!this.is_terminal_open(), cx)
-                    }))
-                    .tooltip(Tooltip::text(if terminal_open {
-                        "Hide Terminal (⌘J)"
-                    } else {
-                        "Show Terminal (⌘J)"
-                    }))
-                    .child(Icon::new(IconName::Terminal).size(IconSize::Sm).color(if terminal_open {
-                        colors.accent
-                    } else {
-                        fg.opacity(0.4)
-                    }))
-                    .child("Terminal"),
-            ))
+                    .w(px(1.0))
+                    .h(px(12.0))
+                    .ml(px(10.0))
+                    .mr(px(6.0))
+                    .bg(colors.border),
+            )
+            // MonoCode shows the running jobs in the Terminal button's place.
+            .when(!running.is_empty(), |el| {
+                el.child(self.render_running_terminal_chip(running.clone(), cx))
+            })
+            .when(running.is_empty(), |el| {
+                el.child(
+                    div()
+                        .id("footer-terminal-toggle")
+                        .flex()
+                        .flex_none()
+                        .items_center()
+                        .gap(px(6.0))
+                        .h(px(20.0))
+                        .px(px(6.0))
+                        .rounded(px(4.0))
+                        .cursor_pointer()
+                        .text_color(if terminal_open {
+                            colors.accent
+                        } else {
+                            fg.opacity(0.4)
+                        })
+                        .hover(move |s| {
+                            let s = s.bg(fg.opacity(0.10));
+                            if terminal_open { s } else { s.text_color(fg) }
+                        })
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.set_terminal_open(!this.is_terminal_open(), cx)
+                        }))
+                        .tooltip(Tooltip::text(if terminal_open {
+                            "Hide Terminal (⌘J)"
+                        } else {
+                            "Show Terminal (⌘J)"
+                        }))
+                        .child(Icon::new(IconName::Terminal).size(IconSize::Sm).color(
+                            if terminal_open {
+                                colors.accent
+                            } else {
+                                fg.opacity(0.4)
+                            },
+                        ))
+                        .child("Terminal"),
+                )
+            })
     }
 }

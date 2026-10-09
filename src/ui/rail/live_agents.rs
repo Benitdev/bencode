@@ -43,7 +43,11 @@ pub struct LiveAgentsUi {
 impl BenCodeApp {
     /// The card, or nothing with fewer than two agents. `bottom_spacing`
     /// is MonoCode's `pb-2`, for where nothing follows it.
-    pub(crate) fn render_live_agents(&self, bottom_spacing: bool, cx: &Context<Self>) -> Option<AnyElement> {
+    pub(crate) fn render_live_agents(
+        &self,
+        bottom_spacing: bool,
+        cx: &Context<Self>,
+    ) -> Option<AnyElement> {
         let agents = self.live_agents();
         if agents.len() < LIVE_AGENT_MIN {
             return None;
@@ -52,7 +56,11 @@ impl BenCodeApp {
         let (fg, accent) = (colors.fg, colors.accent);
         let expanded = self.live_agents_ui.expanded;
         let extra = agents.len().saturating_sub(LIVE_AGENT_CAP);
-        let shown = if expanded { agents.len() } else { agents.len() - extra };
+        let shown = if expanded {
+            agents.len()
+        } else {
+            agents.len() - extra
+        };
         let now = crate::app::now_ms();
 
         // `flex items-center gap-2 px-3.5 py-1.5`
@@ -90,7 +98,11 @@ impl BenCodeApp {
                 el.max_h(px(self.live_agents_ui.window_height * EXPANDED_HEIGHT))
                     .overflow_y_scroll()
             })
-            .children(agents[..shown].iter().map(|agent| self.render_live_agent(agent, now, cx)));
+            .children(
+                agents[..shown]
+                    .iter()
+                    .map(|agent| self.render_live_agent(agent, now, cx)),
+            );
         // `flex w-full items-center justify-center gap-1 px-2 py-1.5
         // text-[11px] text-content/50 hover:bg-content/8 hover:text-content`
         let more = (extra > 0).then(|| {
@@ -113,10 +125,14 @@ impl BenCodeApp {
                     cx.notify();
                 }))
                 .child(
-                    Icon::new(if expanded { IconName::ChevronUp } else { IconName::ChevronDown })
-                        .size(IconSize::Xs)
-                        .color(fg.opacity(0.5))
-                        .group_hover_color("live-agents-more", fg),
+                    Icon::new(if expanded {
+                        IconName::ChevronUp
+                    } else {
+                        IconName::ChevronDown
+                    })
+                    .size(IconSize::Xs)
+                    .color(fg.opacity(0.5))
+                    .group_hover_color("live-agents-more", fg),
                 )
                 .child(if expanded {
                     "Show less".to_string()
@@ -154,7 +170,9 @@ impl BenCodeApp {
         let elapsed = if agent.done {
             agent.duration_ms.map(format_live_elapsed)
         } else {
-            agent.started_at.map(|started| format_live_elapsed(now - started))
+            agent
+                .started_at
+                .map(|started| format_live_elapsed(now - started))
         };
         let activity = if agent.needs_approval {
             "Need approval"
@@ -165,12 +183,17 @@ impl BenCodeApp {
         };
         let live = !agent.needs_approval && !agent.done;
         let selected = self.selected_session_id.as_deref() == Some(agent.id.as_str());
-        let tip = [Some(agent.title.as_str()), Some(project.as_str()), Some(activity), elapsed.as_deref()]
-            .into_iter()
-            .flatten()
-            .filter(|part| !part.is_empty())
-            .collect::<Vec<_>>()
-            .join("\n");
+        let tip = [
+            Some(agent.title.as_str()),
+            Some(project.as_str()),
+            Some(activity),
+            elapsed.as_deref(),
+        ]
+        .into_iter()
+        .flatten()
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
         let id = SharedString::from(format!("live-agent-{}", agent.id));
         let status: Hsla = if agent.needs_approval {
             rgb(AMBER_400).into()
@@ -241,9 +264,15 @@ impl BenCodeApp {
             .child(
                 line(status)
                     .child(if agent.needs_approval {
-                        Icon::new(IconName::CircleAlert).size(IconSize::Xs).color(status).into_any_element()
+                        Icon::new(IconName::CircleAlert)
+                            .size(IconSize::Xs)
+                            .color(status)
+                            .into_any_element()
                     } else if agent.done {
-                        Icon::new(IconName::Check).size(IconSize::Xs).color(status).into_any_element()
+                        Icon::new(IconName::Check)
+                            .size(IconSize::Xs)
+                            .color(status)
+                            .into_any_element()
                     } else {
                         terminal_spinner(status, cx).into_any_element()
                     })
@@ -265,10 +294,14 @@ fn pulse_dot(accent: Hsla, reduced: bool) -> AnyElement {
     if reduced {
         return dot.into_any_element();
     }
-    dot.with_animation("live-agents-pulse", Animation::new(PULSE).repeat(), |el, delta| {
-        // Full, down to half at the midpoint, and back.
-        let dip = (delta * std::f32::consts::TAU).cos() * 0.25 + 0.75;
-        el.opacity(dip)
-    })
+    dot.with_animation(
+        "live-agents-pulse",
+        Animation::new(PULSE).repeat(),
+        |el, delta| {
+            // Full, down to half at the midpoint, and back.
+            let dip = (delta * std::f32::consts::TAU).cos() * 0.25 + 0.75;
+            el.opacity(dip)
+        },
+    )
     .into_any_element()
 }

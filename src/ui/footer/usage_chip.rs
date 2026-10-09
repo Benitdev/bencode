@@ -15,8 +15,8 @@ use crate::app::usage::{UsageTarget, UsageView};
 use crate::app::{BenCodeApp, now_ms};
 use crate::harness::accounts::{ProviderAccount, supports_accounts};
 use crate::rate_limits::{
-    antigravity, AccountTone, ProviderRateLimits, RateLimitProvider, RateLimitStatus, RateLimitWindow,
-    WindowKind, account_status, best_alternative, chip_label, clamp_used_percent,
+    AccountTone, ProviderRateLimits, RateLimitProvider, RateLimitStatus, RateLimitWindow,
+    WindowKind, account_status, antigravity, best_alternative, chip_label, clamp_used_percent,
     format_reset_countdown, format_usage_percent, format_window_label, needs_provider_login,
     updated_label, window_tooltip,
 };
@@ -103,11 +103,14 @@ pub(super) struct ChipAccounts<'a> {
 
 impl ChipAccounts<'_> {
     pub fn active(&self) -> Option<&ProviderAccount> {
-        self.accounts.iter().find(|account| account.id == self.active_id)
+        self.accounts
+            .iter()
+            .find(|account| account.id == self.active_id)
     }
 
     pub fn active_label(&self) -> &str {
-        self.active().map_or("Removed account", |account| account.label.as_str())
+        self.active()
+            .map_or("Removed account", |account| account.label.as_str())
     }
 
     pub fn can_manage(&self) -> bool {
@@ -116,7 +119,11 @@ impl ChipAccounts<'_> {
 }
 
 impl BenCodeApp {
-    pub(super) fn render_usage_chip(&self, target: &UsageTarget, cx: &Context<Self>) -> impl IntoElement {
+    pub(super) fn render_usage_chip(
+        &self,
+        target: &UsageTarget,
+        cx: &Context<Self>,
+    ) -> impl IntoElement {
         let colors = &cx.theme().colors;
         let fg = colors.fg;
         let now = now_ms();
@@ -182,7 +189,13 @@ impl BenCodeApp {
                             .map(|active| (active.label.clone(), 96.0))
                     };
                     el.when_some(account, |el, (label, width)| {
-                        el.child(div().max_w(px(width)).truncate().text_color(fg.opacity(0.45)).child(label))
+                        el.child(
+                            div()
+                                .max_w(px(width))
+                                .truncate()
+                                .text_color(fg.opacity(0.45))
+                                .child(label),
+                        )
                     })
                     .child(usage_bar(tightest, 4.0, colors).w(px(32.0)).flex_none())
                     .child(div().flex().items_center().gap_1().children(
@@ -217,8 +230,17 @@ impl BenCodeApp {
     }
 
     /// MonoCode `Popover side="top" align="start"` over the chip.
-    fn render_usage_popover(&self, chip: &ChipAccounts, available: bool, cx: &Context<Self>) -> AnyElement {
-        let view = if chip.can_manage() { self.usage.view } else { UsageView::Usage };
+    fn render_usage_popover(
+        &self,
+        chip: &ChipAccounts,
+        available: bool,
+        cx: &Context<Self>,
+    ) -> AnyElement {
+        let view = if chip.can_manage() {
+            self.usage.view
+        } else {
+            UsageView::Usage
+        };
         // MonoCode `loginView`: nothing to show until the account signs in.
         let login_view = chip.can_manage()
             && available
@@ -229,7 +251,11 @@ impl BenCodeApp {
         let popover = popover_frame(cx)
             .id("usage-popover")
             .occlude()
-            .w(px(if view == UsageView::Accounts { ACCOUNTS_WIDTH } else { POPOVER_WIDTH }))
+            .w(px(if view == UsageView::Accounts {
+                ACCOUNTS_WIDTH
+            } else {
+                POPOVER_WIDTH
+            }))
             .max_h(px(460.0))
             .overflow_y_scroll()
             .when(padded, |el| el.p(px(10.0)))
@@ -346,9 +372,21 @@ impl BenCodeApp {
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         this.set_usage_view(UsageView::Accounts, cx)
                                     }))
-                                    .child(div().flex_none().max_w(px(140.0)).truncate().child(chip.active_label().to_string()))
+                                    .child(
+                                        div()
+                                            .flex_none()
+                                            .max_w(px(140.0))
+                                            .truncate()
+                                            .child(chip.active_label().to_string()),
+                                    )
                                     .when_some(subtitle, |el, subtitle| {
-                                        el.child(div().min_w_0().truncate().text_color(fg.opacity(0.35)).child(subtitle))
+                                        el.child(
+                                            div()
+                                                .min_w_0()
+                                                .truncate()
+                                                .text_color(fg.opacity(0.35))
+                                                .child(subtitle),
+                                        )
                                     })
                                     .child(
                                         Icon::new(IconName::ChevronRight)
@@ -416,21 +454,27 @@ impl BenCodeApp {
             // Each model group has its own limits; the thread's comes first.
             let mut groups = antigravity::GROUPS;
             groups.sort_by_key(|group| *group != chip.active_id);
-            div().flex().flex_col().gap(px(6.0)).children(groups.into_iter().flat_map(|group| {
-                let windows = self.usage.limits(provider, group).windows();
-                let title = div()
-                    .px_1()
-                    .pt_1()
-                    .text_size(px(10.0))
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_color(fg.opacity(0.4))
-                    .child(antigravity::group_title(group));
-                (!windows.is_empty())
-                    .then_some(title)
-                    .into_iter()
-                    .chain(windows.into_iter().map(|(kind, window)| card(usage_window_card(kind, window, now, colors))))
-                    .collect::<Vec<_>>()
-            }))
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(6.0))
+                .children(groups.into_iter().flat_map(|group| {
+                    let windows = self.usage.limits(provider, group).windows();
+                    let title = div()
+                        .px_1()
+                        .pt_1()
+                        .text_size(px(10.0))
+                        .font_weight(FontWeight::MEDIUM)
+                        .text_color(fg.opacity(0.4))
+                        .child(antigravity::group_title(group));
+                    (!windows.is_empty())
+                        .then_some(title)
+                        .into_iter()
+                        .chain(windows.into_iter().map(|(kind, window)| {
+                            card(usage_window_card(kind, window, now, colors))
+                        }))
+                        .collect::<Vec<_>>()
+                }))
         } else {
             div().flex().flex_col().gap(px(6.0)).children(
                 windows
@@ -481,7 +525,12 @@ impl BenCodeApp {
 
 /// MonoCode `UsageWindowCard`: used on top, the bar, then what is left and
 /// when the window resets.
-fn usage_window_card(kind: WindowKind, window: &RateLimitWindow, now: i64, colors: &Palette) -> gpui::Div {
+fn usage_window_card(
+    kind: WindowKind,
+    window: &RateLimitWindow,
+    now: i64,
+    colors: &Palette,
+) -> gpui::Div {
     let fg = colors.fg;
     let used = clamp_used_percent(window.used_percent);
     let row = || div().flex().justify_between().gap_3();
@@ -494,7 +543,11 @@ fn usage_window_card(kind: WindowKind, window: &RateLimitWindow, now: i64, color
                 .text_size(px(11.0))
                 .font_weight(FontWeight::MEDIUM)
                 .child(div().text_color(fg.opacity(0.65)).child(kind.title()))
-                .child(div().flex_none().child(format!("{} used", format_usage_percent(used)))),
+                .child(
+                    div()
+                        .flex_none()
+                        .child(format!("{} used", format_usage_percent(used))),
+                ),
         )
         .child(usage_bar(used, 6.0, colors).mt_2())
         .child(

@@ -52,33 +52,43 @@ impl Render for OrchestrationTip {
         let total = self.summary.tasks.len();
         // A tooltip cannot scroll; the rest is counted.
         let hidden = total.saturating_sub(TIP_ROWS);
-        let rows = self.summary.tasks.iter().zip(&self.needs_input).take(TIP_ROWS).map(|(task, needs)| {
-            let label = task.label(&self.summary.status, *needs);
-            div()
-                .flex()
-                .min_w_0()
-                .items_center()
-                .gap_1p5()
-                .px_1()
-                .py_1()
-                .child(div().opacity(0.75).child(HarnessIcon::new(&task.harness).size(px(14.0))))
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .truncate()
-                        .text_size(px(11.0))
-                        .text_color(fg.opacity(0.75))
-                        .child(task.title.clone()),
-                )
-                .child(
-                    div()
-                        .flex_none()
-                        .text_size(px(10.0))
-                        .text_color(tone_color(task.tone(*needs), fg))
-                        .child(label),
-                )
-        });
+        let rows = self
+            .summary
+            .tasks
+            .iter()
+            .zip(&self.needs_input)
+            .take(TIP_ROWS)
+            .map(|(task, needs)| {
+                let label = task.label(&self.summary.status, *needs);
+                div()
+                    .flex()
+                    .min_w_0()
+                    .items_center()
+                    .gap_1p5()
+                    .px_1()
+                    .py_1()
+                    .child(
+                        div()
+                            .opacity(0.75)
+                            .child(HarnessIcon::new(&task.harness).size(px(14.0))),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .truncate()
+                            .text_size(px(11.0))
+                            .text_color(fg.opacity(0.75))
+                            .child(task.title.clone()),
+                    )
+                    .child(
+                        div()
+                            .flex_none()
+                            .text_size(px(10.0))
+                            .text_color(tone_color(task.tone(*needs), fg))
+                            .child(label),
+                    )
+            });
         crate::ui::sidebar_popovers::popover_frame(cx)
             .w(px(248.0))
             .max_h(px(320.0))
@@ -123,12 +133,18 @@ impl BenCodeApp {
     /// A worker thread's pending approval or question (MonoCode
     /// `sessionNeedsInput`).
     fn task_needs_input(&self, task: &OrchestrationTask, states: &LiveStates) -> bool {
-        task.session_id.as_deref().is_some_and(|id| states.approval.contains(id))
+        task.session_id
+            .as_deref()
+            .is_some_and(|id| states.approval.contains(id))
     }
 
     /// MonoCode's "Linked PR updated since this session" dot: the Inbox
     /// saw the item change after the thread last moved.
-    pub(crate) fn linked_update_dot(&self, session: &SessionRow, cx: &Context<Self>) -> Option<AnyElement> {
+    pub(crate) fn linked_update_dot(
+        &self,
+        session: &SessionRow,
+        cx: &Context<Self>,
+    ) -> Option<AnyElement> {
         let item = session.linked_work_item.as_ref()?;
         let key = format!(
             "{}:{}:{}",
@@ -157,7 +173,11 @@ impl BenCodeApp {
 
     /// MonoCode's work item badge: opens the item here, ⌘-click or a
     /// middle click opens GitHub.
-    pub(crate) fn work_item_badge(&self, session: &SessionRow, cx: &Context<Self>) -> Option<AnyElement> {
+    pub(crate) fn work_item_badge(
+        &self,
+        session: &SessionRow,
+        cx: &Context<Self>,
+    ) -> Option<AnyElement> {
         let item = session.linked_work_item.clone()?;
         let accent = cx.theme().colors.accent;
         let icon = if item.noun() == "PR" {
@@ -276,7 +296,8 @@ impl BenCodeApp {
             let label = task.label(&summary.status, needs);
             let tone = tone_color(task.tone(needs), fg);
             let model = catalog::find(&task.model).map_or_else(|| task.model.clone(), |m| m.label);
-            let harness_title = HarnessKind::from_id(&task.harness).map_or(task.harness.as_str(), |k| k.label());
+            let harness_title =
+                HarnessKind::from_id(&task.harness).map_or(task.harness.as_str(), |k| k.label());
             let tip = format!("{} · {harness_title} · {model} · {label}", task.title);
             let group = SharedString::from(format!("agent-{key}"));
             let toggle_key = key.clone();
@@ -301,38 +322,36 @@ impl BenCodeApp {
                     }
                     cx.notify();
                 }))
-                .child(
-                    div()
-                        .relative()
-                        .size(px(14.0))
-                        .flex_none()
-                        .map(|el| {
-                            if open {
-                                el.child(Icon::new(IconName::ChevronDown).size(IconSize::Xs).color(fg.opacity(0.45)))
-                            } else {
-                                el.child(
-                                    div()
-                                        .absolute()
-                                        .inset_0()
-                                        .opacity(0.75)
-                                        .group_hover(group.clone(), |s| s.invisible())
-                                        .child(HarnessIcon::new(&task.harness).size(px(14.0))),
-                                )
+                .child(div().relative().size(px(14.0)).flex_none().map(|el| {
+                    if open {
+                        el.child(
+                            Icon::new(IconName::ChevronDown)
+                                .size(IconSize::Xs)
+                                .color(fg.opacity(0.45)),
+                        )
+                    } else {
+                        el.child(
+                            div()
+                                .absolute()
+                                .inset_0()
+                                .opacity(0.75)
+                                .group_hover(group.clone(), |s| s.invisible())
+                                .child(HarnessIcon::new(&task.harness).size(px(14.0))),
+                        )
+                        .child(
+                            div()
+                                .absolute()
+                                .inset_0()
+                                .invisible()
+                                .group_hover(group.clone(), |s| s.visible())
                                 .child(
-                                    div()
-                                        .absolute()
-                                        .inset_0()
-                                        .invisible()
-                                        .group_hover(group.clone(), |s| s.visible())
-                                        .child(
-                                            Icon::new(IconName::ChevronRight)
-                                                .size(IconSize::Xs)
-                                                .color(fg.opacity(0.45)),
-                                        ),
-                                )
-                            }
-                        }),
-                )
+                                    Icon::new(IconName::ChevronRight)
+                                        .size(IconSize::Xs)
+                                        .color(fg.opacity(0.45)),
+                                ),
+                        )
+                    }
+                }))
                 .child(
                     div()
                         .flex_1()
@@ -352,8 +371,14 @@ impl BenCodeApp {
                         .text_size(px(11.0))
                         .text_color(tone)
                         .map(|el| match task.tone(needs) {
-                            TaskTone::Attention => el.child(Icon::new(IconName::CircleAlert).size(IconSize::Xs).color(tone)),
-                            TaskTone::Done => el.child(Icon::new(IconName::Check).size(IconSize::Xs).color(tone)),
+                            TaskTone::Attention => el.child(
+                                Icon::new(IconName::CircleAlert)
+                                    .size(IconSize::Xs)
+                                    .color(tone),
+                            ),
+                            TaskTone::Done => {
+                                el.child(Icon::new(IconName::Check).size(IconSize::Xs).color(tone))
+                            }
                             TaskTone::Quiet => el,
                         })
                         .child(label),
@@ -421,7 +446,14 @@ impl BenCodeApp {
                         .child(plural(total, "agent"))
                         .child(format!("{}/{total} done", summary.done())),
                 )
-                .child(div().mx(px(-8.0)).flex().flex_col().gap(px(1.0)).children(rows))
+                .child(
+                    div()
+                        .mx(px(-8.0))
+                        .flex()
+                        .flex_col()
+                        .gap(px(1.0))
+                        .children(rows),
+                )
                 .into_any_element(),
         )
     }

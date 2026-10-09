@@ -524,7 +524,8 @@ mod tests {
 
     #[test]
     fn a_notes_own_image_is_a_block_and_others_stay_links() {
-        let blocks = parse("before ![my shot](/note-assets/n1/1-a.png) after\n\n![x](https://x.dev/a.png)");
+        let blocks =
+            parse("before ![my shot](/note-assets/n1/1-a.png) after\n\n![x](https://x.dev/a.png)");
         assert_eq!(blocks[0], para("before"));
         assert_eq!(
             blocks[1],
@@ -537,7 +538,10 @@ mod tests {
         let Block::Paragraph(link) = &blocks[3] else {
             panic!("a paragraph: {blocks:?}");
         };
-        assert_eq!(link.spans, [(0..1, Span::Link("https://x.dev/a.png".into()))]);
+        assert_eq!(
+            link.spans,
+            [(0..1, Span::Link("https://x.dev/a.png".into()))]
+        );
     }
 
     #[test]

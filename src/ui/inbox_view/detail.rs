@@ -20,9 +20,9 @@ use super::comments::{author_name, byline, byline_dot, comment_card, review_tint
 use super::{kind_label, project_name, relative_time, source_label, status_mark};
 use crate::app::BenCodeApp;
 use crate::github::Kind;
-use crate::work_items::Provider;
 use crate::ui::app_callback::app_callback;
 use crate::ui::composer::inbox_card::label_chip;
+use crate::work_items::Provider;
 
 impl BenCodeApp {
     pub(super) fn render_inbox_detail(&self, cx: &Context<Self>) -> AnyElement {
@@ -64,12 +64,11 @@ impl BenCodeApp {
             .text_size(px(12.0))
             .text_color(fg.opacity(0.5))
             .child(state_pill(item, cx))
-            .child(
-                div()
-                    .min_w_0()
-                    .truncate()
-                    .child(format!("{} · {}", item.identifier, source_label(item))),
-            )
+            .child(div().min_w_0().truncate().child(format!(
+                "{} · {}",
+                item.identifier,
+                source_label(item)
+            )))
             .child(div().flex_1())
             .child(
                 IconButton::new("inbox-open", IconName::ExternalLink)
@@ -96,7 +95,9 @@ impl BenCodeApp {
                 .child(format!("assigned to {}", item.assignees.join(", ")));
         }
         if !item.priority.is_empty() {
-            meta = meta.child(dot()).child(format!("priority {}", item.priority.to_lowercase()));
+            meta = meta
+                .child(dot())
+                .child(format!("priority {}", item.priority.to_lowercase()));
         }
         if !item.due_date.is_empty() {
             meta = meta.child(dot()).child(format!("due {}", item.due_date));
@@ -110,7 +111,9 @@ impl BenCodeApp {
         };
         if !review.is_empty() {
             let color = review_tint(decision, colors).unwrap_or(fg.opacity(0.6));
-            meta = meta.child(dot()).child(div().text_color(color).child(review));
+            meta = meta
+                .child(dot())
+                .child(div().text_color(color).child(review));
         }
 
         let branches = (!base.is_empty() && !head.is_empty()).then(|| {
@@ -129,29 +132,30 @@ impl BenCodeApp {
         });
 
         let start_key = key.clone();
-        let actions = div()
-            .flex()
-            .flex_wrap()
-            .items_center()
-            .gap_2()
-            // MonoCode starts threads from issues only.
-            .when(item.kind == Kind::Issue, |el| {
-                el.child(
-                    Button::new("inbox-start", "Send to agent")
-                        .primary()
-                        .icon(IconName::Sparkles)
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            this.start_inbox_item(&start_key, cx)
-                        })),
-                )
-                .child(self.render_inbox_project_picker(item, cx))
-            })
-            .when(item.provider == Provider::Backlog, |el| {
-                el.children(self.render_backlog_status_picker(item, cx))
-            })
-            .when(item.kind == Kind::Pr, |el| {
-                el.children(self.render_pr_actions(item, &base, &head, cx))
-            });
+        let actions =
+            div()
+                .flex()
+                .flex_wrap()
+                .items_center()
+                .gap_2()
+                // MonoCode starts threads from issues only.
+                .when(item.kind == Kind::Issue, |el| {
+                    el.child(
+                        Button::new("inbox-start", "Send to agent")
+                            .primary()
+                            .icon(IconName::Sparkles)
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.start_inbox_item(&start_key, cx)
+                            })),
+                    )
+                    .child(self.render_inbox_project_picker(item, cx))
+                })
+                .when(item.provider == Provider::Backlog, |el| {
+                    el.children(self.render_backlog_status_picker(item, cx))
+                })
+                .when(item.kind == Kind::Pr, |el| {
+                    el.children(self.render_pr_actions(item, &base, &head, cx))
+                });
 
         let body = match details {
             None => div()
@@ -190,67 +194,66 @@ impl BenCodeApp {
             )
             .child(div().px_4().py_3().text_size(px(14.0)).child(body));
 
-        let detail = div()
-            .id("inbox-detail")
-            .size_full()
-            .overflow_y_scroll()
-            .child(
-                div()
-                    .max_w(px(1024.0))
-                    .mx_auto()
-                    .flex()
-                    .flex_col()
-                    .gap_3()
-                    .px_8()
-                    .pt_4()
-                    .pb_8()
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .gap_2()
-                            .child(identity)
-                            .child(
-                                div()
-                                    .text_size(px(22.0))
-                                    .line_height(px(28.0))
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .text_color(fg)
-                                    .line_clamp(3)
-                                    .child(SharedString::from(item.title.clone())),
-                            )
-                            .child(meta)
-                            .children(branches)
-                            .when(!item.labels.is_empty(), |el| {
-                                el.child(
+        let detail =
+            div()
+                .id("inbox-detail")
+                .size_full()
+                .overflow_y_scroll()
+                .child(
+                    div()
+                        .max_w(px(1024.0))
+                        .mx_auto()
+                        .flex()
+                        .flex_col()
+                        .gap_3()
+                        .px_8()
+                        .pt_4()
+                        .pb_8()
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap_2()
+                                .child(identity)
+                                .child(
                                     div()
-                                        .flex()
-                                        .flex_wrap()
-                                        .gap_1()
-                                        .children(item.labels.iter().map(|l| label_chip(l, cx))),
+                                        .text_size(px(22.0))
+                                        .line_height(px(28.0))
+                                        .font_weight(FontWeight::SEMIBOLD)
+                                        .text_color(fg)
+                                        .line_clamp(3)
+                                        .child(SharedString::from(item.title.clone())),
                                 )
-                            }),
-                    )
-                    .child(actions)
-                    .children(self.render_pr_action_status(cx))
-                    .children(
-                        self.backlog
-                            .status_error
-                            .clone()
-                            .filter(|_| item.provider == Provider::Backlog)
-                            .map(|err| {
-                                div()
-                                    .text_size(px(12.0))
-                                    .text_color(colors.danger.opacity(0.9))
-                                    .child(SharedString::from(err))
-                            }),
-                    )
-                    .child(description)
-                    .when(item.kind == Kind::Pr, |el| {
-                        el.child(self.render_pr_checks(item, cx))
-                    })
-                    .child(self.render_inbox_conversation(item, cx)),
-            );
+                                .child(meta)
+                                .children(branches)
+                                .when(!item.labels.is_empty(), |el| {
+                                    el.child(
+                                        div().flex().flex_wrap().gap_1().children(
+                                            item.labels.iter().map(|l| label_chip(l, cx)),
+                                        ),
+                                    )
+                                }),
+                        )
+                        .child(actions)
+                        .children(self.render_pr_action_status(cx))
+                        .children(
+                            self.backlog
+                                .status_error
+                                .clone()
+                                .filter(|_| item.provider == Provider::Backlog)
+                                .map(|err| {
+                                    div()
+                                        .text_size(px(12.0))
+                                        .text_color(colors.danger.opacity(0.9))
+                                        .child(SharedString::from(err))
+                                }),
+                        )
+                        .child(description)
+                        .when(item.kind == Kind::Pr, |el| {
+                            el.child(self.render_pr_checks(item, cx))
+                        })
+                        .child(self.render_inbox_conversation(item, cx)),
+                );
         crate::ui::scrollbar::Scrolled::new("inbox-detail-scrollbar", detail).into_any_element()
     }
 

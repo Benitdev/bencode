@@ -114,7 +114,8 @@ impl SettingsGroup {
     }
 
     pub fn rows(mut self, rows: impl IntoIterator<Item = impl IntoElement>) -> Self {
-        self.rows.extend(rows.into_iter().map(IntoElement::into_any_element));
+        self.rows
+            .extend(rows.into_iter().map(IntoElement::into_any_element));
         self
     }
 
@@ -240,7 +241,11 @@ impl RenderOnce for SettingsRow {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let colors = &cx.theme().colors;
         let fg = colors.fg;
-        let description_color = if self.error { colors.danger } else { fg.opacity(QUIET) };
+        let description_color = if self.error {
+            colors.danger
+        } else {
+            fg.opacity(QUIET)
+        };
         let mono = cx.theme().mono_family.clone();
         // `flex gap-6 px-4 py-3.5`; label `text-[13px] font-medium`; control
         // `flex min-w-0 max-w-[60%] shrink-0 flex-wrap items-center

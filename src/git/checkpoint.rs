@@ -321,7 +321,12 @@ impl CheckpointStore {
     /// The session's before → after change of one file, with full context
     /// (MonoCode `session_checkpoint_file_diff`, diffed here instead of in
     /// the view).
-    pub fn file_diff(&self, session_id: &str, cwd: &str, relative: &str) -> Result<FileDiff, String> {
+    pub fn file_diff(
+        &self,
+        session_id: &str,
+        cwd: &str,
+        relative: &str,
+    ) -> Result<FileDiff, String> {
         self.exclusive(session_id, |store| {
             let Some(manifest) = store.load_matching(session_id, cwd)? else {
                 return Err("Session changes are no longer available".into());
@@ -500,8 +505,10 @@ fn diff_from_manifest(
     foreign_touched: &HashSet<String>,
 ) -> CheckpointStatus {
     let index = dirty_files(root);
-    let by_relative: BTreeMap<&str, &GitFileChange> =
-        index.iter().map(|file| (file.path.as_str(), file)).collect();
+    let by_relative: BTreeMap<&str, &GitFileChange> = index
+        .iter()
+        .map(|file| (file.path.as_str(), file))
+        .collect();
     let git_dirty: HashSet<&str> = by_relative.keys().copied().collect();
     let mut files = Vec::new();
 
@@ -590,7 +597,11 @@ fn describe_change(
             file.deletions,
         ),
         (None, None) => {
-            let status = if root.join(relative).exists() { "modified" } else { "deleted" };
+            let status = if root.join(relative).exists() {
+                "modified"
+            } else {
+                "deleted"
+            };
             (status.to_string(), 0, 0)
         }
     };
@@ -714,7 +725,14 @@ fn revert_new_change(root: &Path, relative: &str) -> Result<(), String> {
     if in_head(root, relative) {
         return git_checked(
             root,
-            &["restore", "--source=HEAD", "--staged", "--worktree", "--", relative],
+            &[
+                "restore",
+                "--source=HEAD",
+                "--staged",
+                "--worktree",
+                "--",
+                relative,
+            ],
         );
     }
     unstage(root, relative);
@@ -1063,7 +1081,12 @@ mod tests {
         let files = fx.files("s1");
         assert_eq!(files.len(), 2);
         assert_eq!(
-            (files[0].relative.as_str(), files[0].status.as_str(), files[0].additions, files[0].deletions),
+            (
+                files[0].relative.as_str(),
+                files[0].status.as_str(),
+                files[0].additions,
+                files[0].deletions
+            ),
             ("a.txt", "modified", 2, 1)
         );
         assert_eq!((files[1].status.as_str(), files[1].additions), ("added", 1));
@@ -1074,7 +1097,13 @@ mod tests {
         assert!(diff.lines.contains(&DiffLineKind::Deletion("two".into())));
         assert!(diff.lines.contains(&DiffLineKind::Addition("three".into())));
 
-        assert!(fx.store.undo("s1", fx.cwd(), None).unwrap().files.is_empty());
+        assert!(
+            fx.store
+                .undo("s1", fx.cwd(), None)
+                .unwrap()
+                .files
+                .is_empty()
+        );
         assert_eq!(fx.read("a.txt"), "one\ntwo\n");
         assert!(!fx.repo.join("new.txt").exists());
     }
@@ -1141,7 +1170,13 @@ mod tests {
 
         fx.edit("s1", "a.txt", "more\n");
         assert_eq!(fx.files("s1").len(), 1);
-        assert!(fx.store.keep("s1", fx.cwd(), None).unwrap().files.is_empty());
+        assert!(
+            fx.store
+                .keep("s1", fx.cwd(), None)
+                .unwrap()
+                .files
+                .is_empty()
+        );
         assert_eq!(fx.read("a.txt"), "more\n");
     }
 
@@ -1150,7 +1185,9 @@ mod tests {
         let fx = Fixture::new();
         fx.store.ensure("s1", fx.cwd()).unwrap();
         fx.write("a.txt", "shell edit\n");
-        fx.store.capture("s1", fx.cwd(), &["a.txt".to_string()]).unwrap();
+        fx.store
+            .capture("s1", fx.cwd(), &["a.txt".to_string()])
+            .unwrap();
         assert!(fx.files("s1").is_empty());
     }
 
@@ -1179,7 +1216,10 @@ mod tests {
         std::fs::remove_file(fx.repo.join("a.txt")).unwrap();
         fx.store.capture("s1", fx.cwd(), &paths).unwrap();
         let files = fx.files("s1");
-        assert_eq!((files[0].status.as_str(), files[0].deletions), ("deleted", 2));
+        assert_eq!(
+            (files[0].status.as_str(), files[0].deletions),
+            ("deleted", 2)
+        );
         fx.store.undo("s1", fx.cwd(), None).unwrap();
         assert_eq!(fx.read("a.txt"), "one\ntwo\n");
     }

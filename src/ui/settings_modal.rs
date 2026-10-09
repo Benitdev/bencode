@@ -63,7 +63,12 @@ const SECTIONS: [(SettingsTab, &str, &str, IconName); 9] = [
         IconName::Palette,
     ),
     (SettingsTab::About, "about", "About", IconName::Info),
-    (SettingsTab::Archive, "archive", "Archive", IconName::Archive),
+    (
+        SettingsTab::Archive,
+        "archive",
+        "Archive",
+        IconName::Archive,
+    ),
     // MonoCode's nav uses `FolderTree`, which Ely's `IconName` lacks.
     (
         SettingsTab::Worktrees,
@@ -84,15 +89,27 @@ const SECTIONS: [(SettingsTab, &str, &str, IconName); 9] = [
 pub(crate) const SETTINGS_GROUPS: [(&str, &[SettingsTab]); 3] = [
     (
         "App",
-        &[SettingsTab::General, SettingsTab::Appearance, SettingsTab::About],
+        &[
+            SettingsTab::General,
+            SettingsTab::Appearance,
+            SettingsTab::About,
+        ],
     ),
     (
         "Agents",
-        &[SettingsTab::Providers, SettingsTab::Mcp, SettingsTab::Skills],
+        &[
+            SettingsTab::Providers,
+            SettingsTab::Mcp,
+            SettingsTab::Skills,
+        ],
     ),
     (
         "Workspace",
-        &[SettingsTab::Archive, SettingsTab::Worktrees, SettingsTab::Integrations],
+        &[
+            SettingsTab::Archive,
+            SettingsTab::Worktrees,
+            SettingsTab::Integrations,
+        ],
     ),
 ];
 
@@ -109,7 +126,9 @@ impl SettingsTab {
         SECTIONS
             .iter()
             .find(|(tab, ..)| *tab == self)
-            .map_or(("General", IconName::Settings), |(_, _, name, icon)| (*name, *icon))
+            .map_or(("General", IconName::Settings), |(_, _, name, icon)| {
+                (*name, *icon)
+            })
     }
 
     /// MonoCode `settingsSectionDescription`: the line under the page title.
@@ -300,7 +319,11 @@ impl BenCodeApp {
             })),
         };
 
-        SettingsTab::General.page().group(threads).group(workspace).group(editors)
+        SettingsTab::General
+            .page()
+            .group(threads)
+            .group(workspace)
+            .group(editors)
     }
 
     fn render_settings_providers(&self, cx: &Context<Self>) -> SettingsPage {
@@ -398,7 +421,9 @@ impl BenCodeApp {
                 let (restore_path, delete_path) = (project.path.clone(), project.path.clone());
                 SettingsRow::new(self.rail_project_label(&project.path))
                     .leading(icon_tile(
-                        Icon::new(IconName::Folder).size(IconSize::Sm).color(fg.opacity(0.6)),
+                        Icon::new(IconName::Folder)
+                            .size(IconSize::Sm)
+                            .color(fg.opacity(0.6)),
                         fg,
                     ))
                     .description(pretty_path(&project.path))
@@ -408,21 +433,31 @@ impl BenCodeApp {
                             .items_center()
                             .gap_1()
                             .child(
-                                Button::new(SharedString::from(format!("archive-restore-{ix}")), "Restore")
-                                    .variant(ButtonVariant::Outline)
-                                    .size(ControlSize::Sm)
-                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                Button::new(
+                                    SharedString::from(format!("archive-restore-{ix}")),
+                                    "Restore",
+                                )
+                                .variant(ButtonVariant::Outline)
+                                .size(ControlSize::Sm)
+                                .on_click(cx.listener(
+                                    move |this, _, _, cx| {
                                         this.restore_rail_project(&restore_path, cx);
-                                    })),
+                                    },
+                                )),
                             )
                             .child(
-                                IconButton::new(SharedString::from(format!("archive-delete-{ix}")), IconName::Trash2)
-                                    .variant(ButtonVariant::Ghost)
-                                    .size(ControlSize::Sm)
-                                    .tooltip("Delete project")
-                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                IconButton::new(
+                                    SharedString::from(format!("archive-delete-{ix}")),
+                                    IconName::Trash2,
+                                )
+                                .variant(ButtonVariant::Ghost)
+                                .size(ControlSize::Sm)
+                                .tooltip("Delete project")
+                                .on_click(cx.listener(
+                                    move |this, _, _, cx| {
                                         this.request_remove_project(&delete_path, cx);
-                                    })),
+                                    },
+                                )),
                             ),
                     )
             }))
@@ -442,7 +477,10 @@ fn mcp_row(server: &crate::mcp::McpConnection, fg: gpui::Hsla) -> SettingsRow {
         ("Disabled", Tone::Neutral)
     };
     SettingsRow::new(server.name.clone())
-        .leading(icon_tile(HarnessIcon::new(&server.provider).size(px(14.0)), fg))
+        .leading(icon_tile(
+            HarnessIcon::new(&server.provider).size(px(14.0)),
+            fg,
+        ))
         .description(format!(
             "{} · {} · {}",
             server.provider,
@@ -470,7 +508,10 @@ fn provider_row(info: &HarnessInfo, cx: &Context<BenCodeApp>) -> SettingsRow {
         Badge::new("Not installed").tone(Tone::Neutral)
     };
     SettingsRow::new(info.name)
-        .leading(icon_tile(HarnessIcon::new(info.id).size(px(16.0)), cx.theme().colors.fg))
+        .leading(icon_tile(
+            HarnessIcon::new(info.id).size(px(16.0)),
+            cx.theme().colors.fg,
+        ))
         .description(location)
         .control(status)
 }
@@ -497,7 +538,9 @@ impl BenCodeApp {
                 Button::new("about-whats-new", "What's new")
                     .variant(ButtonVariant::Ghost)
                     .size(ControlSize::Sm)
-                    .on_click(cx.listener(move |this, _, _, cx| this.open_whats_new(current.clone(), cx))),
+                    .on_click(
+                        cx.listener(move |this, _, _, cx| this.open_whats_new(current.clone(), cx)),
+                    ),
             )
             .child(
                 Button::new("about-update", label)

@@ -34,7 +34,10 @@ impl BenCodeApp {
         let header = provider_header(
             PROVIDER,
             "Antigravity",
-            format!("{} · one sign-in for the whole machine", plural_accounts(accounts.len())),
+            format!(
+                "{} · one sign-in for the whole machine",
+                plural_accounts(accounts.len())
+            ),
             fg,
             Button::new("accounts-add-antigravity", "Add account")
                 .icon(IconName::Plus)
@@ -132,9 +135,17 @@ impl BenCodeApp {
                             .mt(px(2.0))
                             .text_size(px(10.0))
                             .when(active, |el| {
-                                el.child(div().flex_none().text_color(colors.success).child("In use"))
+                                el.child(
+                                    div().flex_none().text_color(colors.success).child("In use"),
+                                )
                             })
-                            .child(div().min_w_0().truncate().text_color(fg.opacity(0.3)).child(subtitle)),
+                            .child(
+                                div()
+                                    .min_w_0()
+                                    .truncate()
+                                    .text_color(fg.opacity(0.3))
+                                    .child(subtitle),
+                            ),
                     ),
             )
             .child(
@@ -156,47 +167,69 @@ impl BenCodeApp {
                     })
                     .when(!active, |el| {
                         el.child(
-                            Button::new(SharedString::from(format!("agy-account-switch-{id}")), "Switch")
-                                .variant(ButtonVariant::Outline)
-                                .size(ControlSize::Sm)
-                                .loading(switching)
-                                .disabled(busy)
-                                .on_click(cx.listener(move |this, _, _, cx| {
+                            Button::new(
+                                SharedString::from(format!("agy-account-switch-{id}")),
+                                "Switch",
+                            )
+                            .variant(ButtonVariant::Outline)
+                            .size(ControlSize::Sm)
+                            .loading(switching)
+                            .disabled(busy)
+                            .on_click(cx.listener(
+                                move |this, _, _, cx| {
                                     this.switch_agy_account(&switch_target, cx);
-                                })),
+                                },
+                            )),
                         )
                     })
                     .child(
-                        IconButton::new(SharedString::from(format!("agy-account-rename-{id}")), IconName::Pencil)
-                            .variant(ButtonVariant::Ghost)
-                            .size(ControlSize::Sm)
-                            .tooltip("Rename account")
-                            .disabled(busy)
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.rename_agy_account(&rename_target, cx);
-                            })),
+                        IconButton::new(
+                            SharedString::from(format!("agy-account-rename-{id}")),
+                            IconName::Pencil,
+                        )
+                        .variant(ButtonVariant::Ghost)
+                        .size(ControlSize::Sm)
+                        .tooltip("Rename account")
+                        .disabled(busy)
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.rename_agy_account(&rename_target, cx);
+                        })),
                     )
                     .map(|el| {
                         if removing {
                             return el.child(
-                                div().flex().size(px(28.0)).items_center().justify_center().child(spinning_icon(
-                                    SharedString::from(format!("agy-account-removing-{id}")),
-                                    IconName::RefreshCw,
-                                    IconSize::Sm,
-                                    fg.opacity(0.5),
-                                )),
+                                div()
+                                    .flex()
+                                    .size(px(28.0))
+                                    .items_center()
+                                    .justify_center()
+                                    .child(spinning_icon(
+                                        SharedString::from(format!("agy-account-removing-{id}")),
+                                        IconName::RefreshCw,
+                                        IconSize::Sm,
+                                        fg.opacity(0.5),
+                                    )),
                             );
                         }
                         // Removing the one in use would only save it again.
                         el.child(
-                            IconButton::new(SharedString::from(format!("agy-account-remove-{id}")), IconName::Trash2)
-                                .variant(ButtonVariant::Ghost)
-                                .size(ControlSize::Sm)
-                                .tooltip(if active { "Switch to another account to remove this one" } else { "Remove account" })
-                                .disabled(busy || active)
-                                .on_click(cx.listener(move |this, _, _, cx| {
+                            IconButton::new(
+                                SharedString::from(format!("agy-account-remove-{id}")),
+                                IconName::Trash2,
+                            )
+                            .variant(ButtonVariant::Ghost)
+                            .size(ControlSize::Sm)
+                            .tooltip(if active {
+                                "Switch to another account to remove this one"
+                            } else {
+                                "Remove account"
+                            })
+                            .disabled(busy || active)
+                            .on_click(cx.listener(
+                                move |this, _, _, cx| {
                                     this.request_remove_agy_account(&remove_target, cx);
-                                })),
+                                },
+                            )),
                         )
                     }),
             )
@@ -243,7 +276,10 @@ impl BenCodeApp {
     /// The Remove warning, as the other providers' (`render_account_removal`).
     pub fn render_agy_account_removal(&self, cx: &Context<Self>) -> Option<AnyElement> {
         let id = self.agy_accounts.pending_remove.as_ref()?;
-        let (account, _) = self.agy_accounts().into_iter().find(|(account, _)| &account.id == id)?;
+        let (account, _) = self
+            .agy_accounts()
+            .into_iter()
+            .find(|(account, _)| &account.id == id)?;
         let close = app_callback(cx, |this, cx| this.cancel_remove_agy_account(cx));
         let confirm = app_callback(cx, |this, cx| this.confirm_remove_agy_account(cx));
         let message = format!(

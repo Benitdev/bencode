@@ -104,7 +104,8 @@ pub fn new_account(provider: &str, label: &str, existing: usize) -> ProviderAcco
 fn random_uuid() -> String {
     use std::io::Read;
     let mut bytes = [0u8; 16];
-    let filled = std::fs::File::open("/dev/urandom").and_then(|mut source| source.read_exact(&mut bytes));
+    let filled =
+        std::fs::File::open("/dev/urandom").and_then(|mut source| source.read_exact(&mut bytes));
     if let Err(err) = filled {
         // Unique enough for a local profile id when there is no random device.
         log::warn!("no random source for an account id: {err}");
@@ -228,7 +229,9 @@ impl AccountProfile {
         };
         Some(Self {
             provider,
-            dir: crate::storage::provider_accounts_dir()?.join(provider).join(id),
+            dir: crate::storage::provider_accounts_dir()?
+                .join(provider)
+                .join(id),
         })
     }
 
@@ -241,7 +244,11 @@ impl AccountProfile {
             // isolated on every supported platform.
             "claude" => (
                 &["CLAUDE_CONFIG_DIR", "CLAUDE_SECURESTORAGE_CONFIG_DIR"],
-                &["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN"],
+                &[
+                    "ANTHROPIC_API_KEY",
+                    "ANTHROPIC_AUTH_TOKEN",
+                    "CLAUDE_CODE_OAUTH_TOKEN",
+                ],
             ),
             _ => (
                 &["CODEX_HOME"],
@@ -333,15 +340,18 @@ mod tests {
                 account("account-2", "claude", "   "),
             ],
         );
-        stored.insert("codex".into(), vec![account("account-9", "codex", "Other provider")]);
+        stored.insert(
+            "codex".into(),
+            vec![account("account-9", "codex", "Other provider")],
+        );
         let accounts = provider_accounts("claude", &stored);
-        let labels: Vec<_> = accounts.iter().map(|a| (a.id.as_str(), a.label.as_str())).collect();
+        let labels: Vec<_> = accounts
+            .iter()
+            .map(|a| (a.id.as_str(), a.label.as_str()))
+            .collect();
         assert_eq!(
             labels,
-            [
-                ("default", "Default account"),
-                ("account-1", "Work laptop")
-            ]
+            [("default", "Default account"), ("account-1", "Work laptop")]
         );
         assert_eq!(provider_accounts("codex", &stored).len(), 2);
     }
@@ -358,7 +368,11 @@ mod tests {
     fn new_accounts_get_a_uuid_id_and_a_fallback_name() {
         let named = new_account("claude", " Work ", 1);
         assert_eq!(named.label, "Work");
-        assert!(named.id.starts_with("account-") && named.id.len() == 44, "{}", named.id);
+        assert!(
+            named.id.starts_with("account-") && named.id.len() == 44,
+            "{}",
+            named.id
+        );
         assert!(valid_account_id(&named.id));
         assert_ne!(named.id, new_account("claude", "Work", 1).id);
         assert_eq!(new_account("claude", "  ", 2).label, "Account 3");
@@ -367,28 +381,59 @@ mod tests {
 
     #[test]
     fn selection_falls_back_to_the_default_profile() {
-        let accounts = [account("default", "claude", "Default account"), account("a1", "claude", "Work")];
+        let accounts = [
+            account("default", "claude", "Default account"),
+            account("a1", "claude", "Work"),
+        ];
         let mut selections = StoredSelections::new();
         selections
             .entry("/repo".into())
             .or_default()
             .insert("claude".into(), "a1".into());
-        assert_eq!(selected_account_id(&selections, "/repo", "claude", &accounts), "a1");
-        assert_eq!(selected_account_id(&selections, "/other", "claude", &accounts), "default");
-        assert_eq!(selected_account_id(&selections, "/repo", "codex", &accounts), "default");
+        assert_eq!(
+            selected_account_id(&selections, "/repo", "claude", &accounts),
+            "a1"
+        );
+        assert_eq!(
+            selected_account_id(&selections, "/other", "claude", &accounts),
+            "default"
+        );
+        assert_eq!(
+            selected_account_id(&selections, "/repo", "codex", &accounts),
+            "default"
+        );
         // The remembered account was removed.
-        assert_eq!(selected_account_id(&selections, "/repo", "claude", &accounts[..1]), "default");
+        assert_eq!(
+            selected_account_id(&selections, "/repo", "claude", &accounts[..1]),
+            "default"
+        );
     }
 
     #[test]
     fn renaming_names_the_account_in_this_apps_list() {
         let mut stored = StoredAccounts::new();
         stored.insert("claude".into(), vec![account("a1", "claude", "Work")]);
-        assert!(rename_account(&mut stored, &account("a1", "claude", "Work"), "  Day   job "));
+        assert!(rename_account(
+            &mut stored,
+            &account("a1", "claude", "Work"),
+            "  Day   job "
+        ));
         // An unlisted profile and the default one get an entry.
-        assert!(rename_account(&mut stored, &account("m1", "claude", "Unnamed account"), "Mine"));
-        assert!(rename_account(&mut stored, &account("default", "claude", "Default account"), "Main"));
-        assert!(!rename_account(&mut stored, &account("a1", "claude", "Work"), "   "));
+        assert!(rename_account(
+            &mut stored,
+            &account("m1", "claude", "Unnamed account"),
+            "Mine"
+        ));
+        assert!(rename_account(
+            &mut stored,
+            &account("default", "claude", "Default account"),
+            "Main"
+        ));
+        assert!(!rename_account(
+            &mut stored,
+            &account("a1", "claude", "Work"),
+            "   "
+        ));
         let labels: Vec<_> = provider_accounts("claude", &stored)
             .into_iter()
             .map(|a| a.label)
@@ -401,21 +446,37 @@ mod tests {
         let mut stored = StoredAccounts::new();
         stored.insert(
             "claude".into(),
-            vec![account("a1", "claude", "Work"), account("a2", "claude", "Home")],
+            vec![
+                account("a1", "claude", "Work"),
+                account("a2", "claude", "Home"),
+            ],
         );
         stored.insert("codex".into(), vec![account("a1", "codex", "Same id")]);
         let mut selections = StoredSelections::new();
-        selections.insert("/one".into(), [("claude".to_string(), "a1".to_string())].into());
+        selections.insert(
+            "/one".into(),
+            [("claude".to_string(), "a1".to_string())].into(),
+        );
         selections.insert(
             "/two".into(),
-            [("claude".to_string(), "a1".to_string()), ("codex".to_string(), "a1".to_string())].into(),
+            [
+                ("claude".to_string(), "a1".to_string()),
+                ("codex".to_string(), "a1".to_string()),
+            ]
+            .into(),
         );
-        selections.insert("/three".into(), [("claude".to_string(), "a2".to_string())].into());
+        selections.insert(
+            "/three".into(),
+            [("claude".to_string(), "a2".to_string())].into(),
+        );
         remove_account(&mut stored, &mut selections, "claude", "a1");
         assert_eq!(stored["claude"], [account("a2", "claude", "Home")]);
         assert_eq!(stored["codex"].len(), 1);
         assert!(!selections.contains_key("/one"));
-        assert_eq!(selections["/two"], [("codex".to_string(), "a1".to_string())].into());
+        assert_eq!(
+            selections["/two"],
+            [("codex".to_string(), "a1".to_string())].into()
+        );
         assert_eq!(selections["/three"]["claude"], "a2");
         remove_account(&mut stored, &mut selections, "claude", "a2");
         assert!(!stored.contains_key("claude"));
@@ -455,7 +516,10 @@ mod tests {
         assert!(profile.dir.ends_with("provider-accounts/codex/account-1"));
         assert_eq!(profile.env().0, ["CODEX_HOME"]);
         let claude = AccountProfile::resolve("claude", Some("account-1")).unwrap();
-        assert_eq!(claude.env().0, ["CLAUDE_CONFIG_DIR", "CLAUDE_SECURESTORAGE_CONFIG_DIR"]);
+        assert_eq!(
+            claude.env().0,
+            ["CLAUDE_CONFIG_DIR", "CLAUDE_SECURESTORAGE_CONFIG_DIR"]
+        );
         assert!(claude.env().1.contains(&"ANTHROPIC_API_KEY"));
     }
 }

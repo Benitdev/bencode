@@ -60,7 +60,8 @@ impl BenCodeApp {
             let (sid, due_at) = (reminder.session_id.clone(), reminder.due_at);
             let title = crate::app::session_list::display_title(&reminder.title, &reminder.harness);
             let project = crate::ui::inbox_view::project_name(&reminder.cwd);
-            let (open_id, title_id, snooze_id, dismiss_id) = (sid.clone(), sid.clone(), sid.clone(), sid.clone());
+            let (open_id, title_id, snooze_id, dismiss_id) =
+                (sid.clone(), sid.clone(), sid.clone(), sid.clone());
             let snooze_anchor: Rc<Cell<Option<Bounds<Pixels>>>> = Rc::default();
             // `article px-3 py-2.5`, `divide-y divide-stroke` between them.
             div()
@@ -75,7 +76,9 @@ impl BenCodeApp {
                         .flex()
                         .flex_col()
                         .cursor_pointer()
-                        .on_click(cx.listener(move |this, _, _, cx| this.open_reminder(&title_id, due_at, cx)))
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.open_reminder(&title_id, due_at, cx)
+                        }))
                         // `block truncate text-[13px] font-medium hover:underline`
                         .child(
                             div()
@@ -106,42 +109,67 @@ impl BenCodeApp {
                         .text_size(px(11.0))
                         .child(
                             // `bg-content/10 hover:bg-content/15`
-                            button(SharedString::from(format!("due-open-{sid}")), "Open session", 1.0, 0.1, 0.15)
-                                .on_click(cx.listener(move |this, _, _, cx| this.open_reminder(&open_id, due_at, cx))),
+                            button(
+                                SharedString::from(format!("due-open-{sid}")),
+                                "Open session",
+                                1.0,
+                                0.1,
+                                0.15,
+                            )
+                            .on_click(cx.listener(
+                                move |this, _, _, cx| this.open_reminder(&open_id, due_at, cx),
+                            )),
                         )
                         .child(
                             // `text-content/65 hover:bg-content/10`
                             // MonoCode opens it at `rect.left, rect.bottom + 4`.
-                            button(SharedString::from(format!("due-snooze-{sid}")), "Snooze", 0.65, 0.0, 0.1)
-                                .relative()
-                                .child({
-                                    let anchor = snooze_anchor.clone();
-                                    canvas(move |bounds, _, _| anchor.set(Some(bounds)), |_, _, _, _| {})
-                                        .absolute()
-                                        .size_full()
-                                })
-                                .on_mouse_down(
-                                    MouseButton::Left,
-                                    cx.listener(move |this, event: &MouseDownEvent, _, cx| {
-                                        cx.stop_propagation();
-                                        this.close_sidebar_menu(cx);
-                                        let kind = SidebarMenuKind::Remind {
-                                            ids: vec![snooze_id.clone()],
-                                        };
-                                        let at = snooze_anchor.get().map_or(event.position, |b| {
-                                            Point::new(b.left(), b.bottom() + px(SNOOZE_MENU_GAP))
-                                        });
-                                        this.open_sidebar_menu(kind, at, cx);
-                                    }),
-                                ),
+                            button(
+                                SharedString::from(format!("due-snooze-{sid}")),
+                                "Snooze",
+                                0.65,
+                                0.0,
+                                0.1,
+                            )
+                            .relative()
+                            .child({
+                                let anchor = snooze_anchor.clone();
+                                canvas(
+                                    move |bounds, _, _| anchor.set(Some(bounds)),
+                                    |_, _, _, _| {},
+                                )
+                                .absolute()
+                                .size_full()
+                            })
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(move |this, event: &MouseDownEvent, _, cx| {
+                                    cx.stop_propagation();
+                                    this.close_sidebar_menu(cx);
+                                    let kind = SidebarMenuKind::Remind {
+                                        ids: vec![snooze_id.clone()],
+                                    };
+                                    let at = snooze_anchor.get().map_or(event.position, |b| {
+                                        Point::new(b.left(), b.bottom() + px(SNOOZE_MENU_GAP))
+                                    });
+                                    this.open_sidebar_menu(kind, at, cx);
+                                }),
+                            ),
                         )
                         .child(
                             // `ml-auto text-content/50 hover:bg-content/10`
-                            button(SharedString::from(format!("due-dismiss-{sid}")), "Dismiss", 0.5, 0.0, 0.1)
-                                .ml_auto()
-                                .on_click(cx.listener(move |this, _, _, cx| {
+                            button(
+                                SharedString::from(format!("due-dismiss-{sid}")),
+                                "Dismiss",
+                                0.5,
+                                0.0,
+                                0.1,
+                            )
+                            .ml_auto()
+                            .on_click(cx.listener(
+                                move |this, _, _, cx| {
                                     this.cancel_reminders(&[dismiss_id.clone()], Some(due_at), cx)
-                                })),
+                                },
+                            )),
                         ),
                 )
         });
@@ -173,7 +201,11 @@ impl BenCodeApp {
                     .py(px(10.0))
                     .border_b_1()
                     .border_color(stroke)
-                    .child(Icon::new(IconName::Clock).size(IconSize::Sm).color(rgb(AMBER_400)))
+                    .child(
+                        Icon::new(IconName::Clock)
+                            .size(IconSize::Sm)
+                            .color(rgb(AMBER_400)),
+                    )
                     .child(
                         div()
                             .flex_1()
@@ -202,16 +234,14 @@ impl BenCodeApp {
                         .text_size(px(12.0))
                         .text_color(colors.danger)
                         .child(div().flex_1().child(failure))
-                        .child(
-                            div().text_size(px(11.0)).child(
-                                button("due-failure-ok".into(), "OK", 1.0, 0.1, 0.15).on_click(cx.listener(
-                                    |this, _, _, cx| {
-                                        this.reminder_failure = None;
-                                        cx.notify();
-                                    },
-                                )),
+                        .child(div().text_size(px(11.0)).child(
+                            button("due-failure-ok".into(), "OK", 1.0, 0.1, 0.15).on_click(
+                                cx.listener(|this, _, _, cx| {
+                                    this.reminder_failure = None;
+                                    cx.notify();
+                                }),
                             ),
-                        ),
+                        )),
                 )
             })
             // `px-3 py-2 text-[12px] text-content/70`, "Retry" an underlined

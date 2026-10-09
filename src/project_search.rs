@@ -44,7 +44,11 @@ pub struct SearchResult {
 }
 
 /// Searches `root`; a set `cancel` ends it early with no matches.
-pub fn search(root: &Path, options: &SearchOptions, cancel: &AtomicBool) -> Result<SearchResult, String> {
+pub fn search(
+    root: &Path,
+    options: &SearchOptions,
+    cancel: &AtomicBool,
+) -> Result<SearchResult, String> {
     let query = options.query.trim();
     if query.is_empty() || cancel.load(Ordering::Acquire) {
         return Ok(SearchResult::default());
@@ -109,7 +113,10 @@ fn git_grep(
         };
         matches.push(SearchMatch {
             relative: String::from_utf8_lossy(path).replace('\\', "/"),
-            line: std::str::from_utf8(line).ok().and_then(|l| l.parse().ok()).unwrap_or(1),
+            line: std::str::from_utf8(line)
+                .ok()
+                .and_then(|l| l.parse().ok())
+                .unwrap_or(1),
             column,
             preview,
         });
@@ -176,7 +183,12 @@ fn grep_output(
 
 /// MonoCode `scan_files`: outside a repository, a plain-text search of the
 /// project's files (no regex).
-fn scan_files(root: &Path, options: &SearchOptions, query: &str, cancel: &AtomicBool) -> SearchResult {
+fn scan_files(
+    root: &Path,
+    options: &SearchOptions,
+    query: &str,
+    cancel: &AtomicBool,
+) -> SearchResult {
     if options.regex {
         return SearchResult::default();
     }
@@ -192,7 +204,8 @@ fn scan_files(root: &Path, options: &SearchOptions, query: &str, cancel: &Atomic
             continue;
         }
         let path = root.join(&relative);
-        let small = std::fs::metadata(&path).is_ok_and(|m| m.is_file() && m.len() <= MAX_FILE_BYTES);
+        let small =
+            std::fs::metadata(&path).is_ok_and(|m| m.is_file() && m.len() <= MAX_FILE_BYTES);
         let Some(content) = small
             .then(|| std::fs::read(&path).ok())
             .flatten()
@@ -212,15 +225,25 @@ fn scan_files(root: &Path, options: &SearchOptions, query: &str, cancel: &Atomic
                 preview: line.to_string(),
             });
             if matches.len() >= MAX_MATCHES {
-                return SearchResult { matches, truncated: true };
+                return SearchResult {
+                    matches,
+                    truncated: true,
+                };
             }
         }
     }
-    SearchResult { matches, truncated: false }
+    SearchResult {
+        matches,
+        truncated: false,
+    }
 }
 
 fn needle(query: &str, case_sensitive: bool) -> String {
-    if case_sensitive { query.to_string() } else { query.to_lowercase() }
+    if case_sensitive {
+        query.to_string()
+    } else {
+        query.to_lowercase()
+    }
 }
 
 /// The first match of `needle` on `line` (column from one), honouring
@@ -242,7 +265,11 @@ fn find_on_line(line: &str, needle: &str, options: &SearchOptions) -> Option<u32
 }
 
 fn needle_case(text: &str, case_sensitive: bool) -> std::borrow::Cow<'_, str> {
-    if case_sensitive { text.into() } else { text.to_lowercase().into() }
+    if case_sensitive {
+        text.into()
+    } else {
+        text.to_lowercase().into()
+    }
 }
 
 fn is_word_boundary(line: &str, start: usize, len: usize) -> bool {
@@ -265,7 +292,11 @@ fn glob_tokens(value: &str) -> Vec<String> {
 fn pathspecs(include: &str, exclude: &str) -> Vec<String> {
     glob_tokens(include)
         .into_iter()
-        .chain(glob_tokens(exclude).into_iter().map(|glob| format!(":(exclude){glob}")))
+        .chain(
+            glob_tokens(exclude)
+                .into_iter()
+                .map(|glob| format!(":(exclude){glob}")),
+        )
         .collect()
 }
 
@@ -322,12 +353,21 @@ mod tests {
     }
 
     fn git(dir: &Path, args: &[&str]) {
-        let ok = crate::git::git_command(dir).args(args).output().unwrap().status.success();
+        let ok = crate::git::git_command(dir)
+            .args(args)
+            .output()
+            .unwrap()
+            .status
+            .success();
         assert!(ok, "git {args:?}");
     }
 
     fn options(query: &str) -> SearchOptions {
-        SearchOptions { query: query.into(), case_sensitive: true, ..Default::default() }
+        SearchOptions {
+            query: query.into(),
+            case_sensitive: true,
+            ..Default::default()
+        }
     }
 
     fn live() -> AtomicBool {
@@ -354,28 +394,49 @@ mod tests {
             }]
         );
 
-        let any_case = SearchOptions { case_sensitive: false, ..options("needle") };
+        let any_case = SearchOptions {
+            case_sensitive: false,
+            ..options("needle")
+        };
         assert_eq!(search(&dir.0, &any_case, &live()).unwrap().matches.len(), 2);
 
-        let only_md = SearchOptions { include: "*.md".into(), ..any_case.clone() };
+        let only_md = SearchOptions {
+            include: "*.md".into(),
+            ..any_case.clone()
+        };
         let found = search(&dir.0, &only_md, &live()).unwrap();
         assert_eq!(found.matches.len(), 1);
-        assert_eq!((found.matches[0].relative.as_str(), found.matches[0].column), ("notes.md", 3));
+        assert_eq!(
+            (found.matches[0].relative.as_str(), found.matches[0].column),
+            ("notes.md", 3)
+        );
 
-        let not_src = SearchOptions { exclude: "src".into(), ..any_case };
-        assert_eq!(search(&dir.0, &not_src, &live()).unwrap().matches[0].relative, "notes.md");
+        let not_src = SearchOptions {
+            exclude: "src".into(),
+            ..any_case
+        };
+        assert_eq!(
+            search(&dir.0, &not_src, &live()).unwrap().matches[0].relative,
+            "notes.md"
+        );
     }
 
     #[test]
     fn a_folder_outside_git_is_scanned() {
         let dir = tmp("scan");
         std::fs::write(dir.0.join("app.ts"), "const needle = 1;\nneedles\n").unwrap();
-        let whole = SearchOptions { whole_word: true, ..options("needle") };
+        let whole = SearchOptions {
+            whole_word: true,
+            ..options("needle")
+        };
         let found = search(&dir.0, &whole, &live()).unwrap();
         assert_eq!(found.matches.len(), 1);
         assert_eq!((found.matches[0].line, found.matches[0].column), (1, 7));
         // The scan has no regex engine.
-        let regex = SearchOptions { regex: true, ..options("need.e") };
+        let regex = SearchOptions {
+            regex: true,
+            ..options("need.e")
+        };
         assert!(search(&dir.0, &regex, &live()).unwrap().matches.is_empty());
     }
 
@@ -391,7 +452,11 @@ mod tests {
     fn a_capped_grep_keeps_whole_records() {
         let dir = tmp("cap");
         git(&dir.0, &["init", "-q"]);
-        std::fs::write(dir.0.join("a.txt"), "needle one\nneedle two\nneedle three\n").unwrap();
+        std::fs::write(
+            dir.0.join("a.txt"),
+            "needle one\nneedle two\nneedle three\n",
+        )
+        .unwrap();
         git(&dir.0, &["add", "."]);
         // Room for one record and part of the next.
         let found = git_grep(&dir.0, &options("needle"), "needle", 30, &live()).unwrap();

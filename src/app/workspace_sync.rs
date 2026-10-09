@@ -58,8 +58,14 @@ impl WorkspaceCache {
             .snapshots
             .iter()
             .find(|(cwd, _)| crate::app::same_project_path(cwd, project))?;
-        let files = snapshot.status.staged.iter().chain(&snapshot.status.unstaged);
-        Some(files.fold((0, 0), |(add, del), f| (add + f.additions, del + f.deletions)))
+        let files = snapshot
+            .status
+            .staged
+            .iter()
+            .chain(&snapshot.status.unstaged);
+        Some(files.fold((0, 0), |(add, del), f| {
+            (add + f.additions, del + f.deletions)
+        }))
     }
 }
 
@@ -238,7 +244,9 @@ impl BenCodeApp {
                     return; // a newer refresh superseded this one
                 }
                 app.workspace.loaded_generation = generation;
-                app.workspace.snapshots.insert(cwd.clone(), snapshot.clone());
+                app.workspace
+                    .snapshots
+                    .insert(cwd.clone(), snapshot.clone());
                 app.apply_snapshot(cwd.clone(), snapshot, refs_reloaded, cx);
                 app.reload_working_tree_docs(&cwd, cx);
                 app.reload_session_reviews(&cwd, cx);
@@ -372,7 +380,9 @@ impl BenCodeApp {
         }
         self.workspace.fetching = true;
         // Stamped before it runs, so a failing remote waits a full period too.
-        self.workspace.fetched_at.insert(cwd.clone(), Instant::now());
+        self.workspace
+            .fetched_at
+            .insert(cwd.clone(), Instant::now());
         let fetch_cwd = cwd.clone();
         let task = cx
             .background_executor()
@@ -533,14 +543,23 @@ mod tests {
 
     #[test]
     fn a_first_poll_reloads_everything() {
-        assert_eq!(scope_for(None, fingerprint(1, 1, 1)), Some(RefreshScope::FULL));
+        assert_eq!(
+            scope_for(None, fingerprint(1, 1, 1)),
+            Some(RefreshScope::FULL)
+        );
     }
 
     #[test]
     fn moved_refs_reload_everything() {
         let old = Some(fingerprint(1, 1, 1));
-        assert_eq!(scope_for(old, fingerprint(2, 2, 2)), Some(RefreshScope::FULL));
-        assert_eq!(scope_for(old, fingerprint(2, 1, 1)), Some(RefreshScope::FULL));
+        assert_eq!(
+            scope_for(old, fingerprint(2, 2, 2)),
+            Some(RefreshScope::FULL)
+        );
+        assert_eq!(
+            scope_for(old, fingerprint(2, 1, 1)),
+            Some(RefreshScope::FULL)
+        );
     }
 
     #[test]
@@ -569,6 +588,9 @@ mod tests {
 
     #[test]
     fn an_unchanged_repository_reloads_nothing() {
-        assert_eq!(scope_for(Some(fingerprint(1, 1, 1)), fingerprint(1, 1, 1)), None);
+        assert_eq!(
+            scope_for(Some(fingerprint(1, 1, 1)), fingerprint(1, 1, 1)),
+            None
+        );
     }
 }

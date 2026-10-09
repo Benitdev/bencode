@@ -5,8 +5,8 @@
 use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
-    AnimationExt, AnyElement, ClickEvent, Context, FontWeight, InteractiveElement, IntoElement, MouseButton,
-    MouseDownEvent, ParentElement, SharedString, Styled, div, prelude::*, rgb,
+    AnimationExt, AnyElement, ClickEvent, Context, FontWeight, InteractiveElement, IntoElement,
+    MouseButton, MouseDownEvent, ParentElement, SharedString, Styled, div, prelude::*, rgb,
 };
 
 use crate::app::BenCodeApp;
@@ -50,7 +50,8 @@ impl BenCodeApp {
                 .text_size(px(11.0))
                 .text_color(color)
         };
-        let icon = |name: IconName, color: gpui::Hsla| Icon::new(name).size(IconSize::Xs).color(color);
+        let icon =
+            |name: IconName, color: gpui::Hsla| Icon::new(name).size(IconSize::Xs).color(color);
         if states.approval.contains(&session.id) {
             let amber: gpui::Hsla = rgb(AMBER).into();
             return row(amber)
@@ -112,25 +113,28 @@ impl BenCodeApp {
             .flex_1()
             .min_w_0()
             .overflow_hidden()
+            .child(text(title.to_string()).with_animation(
+                SharedString::from(format!("title-in-{id}-{key}")),
+                gpui::Animation::new(sweep),
+                {
+                    let ease = crate::ui::motion::cubic_bezier(0.65, 0.0, 0.35, 1.0);
+                    move |el, delta| el.opacity(ease(delta))
+                },
+            ))
             .child(
-                text(title.to_string()).with_animation(
-                    SharedString::from(format!("title-in-{id}-{key}")),
-                    gpui::Animation::new(sweep),
-                    {
-                        let ease = crate::ui::motion::cubic_bezier(0.65, 0.0, 0.35, 1.0);
-                        move |el, delta| el.opacity(ease(delta))
-                    },
-                ),
-            )
-            .child(
-                div().absolute().top_0().left_0().right_0().child(text(old).with_animation(
-                    SharedString::from(format!("title-out-{id}-{key}")),
-                    gpui::Animation::new(sweep),
-                    move |el, delta| {
-                        let t = ease(delta);
-                        el.opacity(1.0 - t).mt(px(-6.0 * t))
-                    },
-                )),
+                div()
+                    .absolute()
+                    .top_0()
+                    .left_0()
+                    .right_0()
+                    .child(text(old).with_animation(
+                        SharedString::from(format!("title-out-{id}-{key}")),
+                        gpui::Animation::new(sweep),
+                        move |el, delta| {
+                            let t = ease(delta);
+                            el.opacity(1.0 - t).mt(px(-6.0 * t))
+                        },
+                    )),
             )
             .into_any_element()
     }
@@ -182,8 +186,8 @@ impl BenCodeApp {
             .child(self.session_status(session, draft, states, now, cx));
         // MonoCode `orchestrationExpanded`: an orchestrator lists its agents
         // while open, picked or working, and keeps its model row then.
-        let expanded = session.orchestration.is_some()
-            && (active || picked || states.busy.contains(&id));
+        let expanded =
+            session.orchestration.is_some() && (active || picked || states.busy.contains(&id));
         // The card's insets follow where it is listed; its layout follows
         // whether the model row shows.
         let in_group = compact;
@@ -200,7 +204,11 @@ impl BenCodeApp {
             .gap_1p5()
             .when(!compact, |el| el.mt_1())
             .when(session.pinned, |el| {
-                el.child(Icon::new(IconName::Pin).size(IconSize::Xs).color(fg.opacity(0.45)))
+                el.child(
+                    Icon::new(IconName::Pin)
+                        .size(IconSize::Xs)
+                        .color(fg.opacity(0.45)),
+                )
             })
             .child(self.render_card_title(&id, &title, cx));
         let (model_row, title_row) = if compact {
@@ -237,7 +245,11 @@ impl BenCodeApp {
             Some(tree) if !git.is_empty() => format!("{git}\n{tree}"),
             _ => git.clone(),
         };
-        let archive_label = if session.archived { "Unarchive" } else { "Archive" };
+        let archive_label = if session.archived {
+            "Unarchive"
+        } else {
+            "Archive"
+        };
         let archive_id = id.clone();
         let bottom = div()
             .mt_1()
@@ -330,7 +342,11 @@ impl BenCodeApp {
         };
         let accent = colors.accent;
         let selection_bg = colors.active;
-        let dashed = fg.opacity(if needs_approval || picked || active { 0.30 } else { 0.25 });
+        let dashed = fg.opacity(if needs_approval || picked || active {
+            0.30
+        } else {
+            0.25
+        });
         let open_id = id.clone();
         let menu_id = id.clone();
         let (drop_hover_id, drop_id) = (id.clone(), id.clone());
@@ -349,7 +365,13 @@ impl BenCodeApp {
             .px(px(10.0))
             // Opening the agents keeps the top inset; only the bottom grows.
             .pt(px(if in_group { 6.0 } else { 8.0 }))
-            .pb(px(if expanded { 10.0 } else if in_group { 6.0 } else { 8.0 }))
+            .pb(px(if expanded {
+                10.0
+            } else if in_group {
+                6.0
+            } else {
+                8.0
+            }))
             .rounded(px(6.0))
             .border_1()
             .border_color(gpui::transparent_black())
@@ -369,7 +391,8 @@ impl BenCodeApp {
                         .border_color(dashed)
                         .hover(move |s| s.bg(fg.opacity(0.05)))
                 } else if expanded {
-                    el.bg(fg.opacity(0.05)).hover(move |s| s.bg(fg.opacity(0.10)))
+                    el.bg(fg.opacity(0.05))
+                        .hover(move |s| s.bg(fg.opacity(0.10)))
                 } else {
                     el.hover(move |s| s.bg(fg.opacity(0.05)))
                 }
@@ -440,7 +463,12 @@ impl BenCodeApp {
     /// The inline title field that replaces a card while renaming
     /// (MonoCode `SessionRenameRow`: `px-2.5 py-2`, amber while it needs
     /// approval, the selection fill while open).
-    fn render_session_rename_row(&self, active: bool, needs_approval: bool, cx: &Context<Self>) -> AnyElement {
+    fn render_session_rename_row(
+        &self,
+        active: bool,
+        needs_approval: bool,
+        cx: &Context<Self>,
+    ) -> AnyElement {
         let colors = &cx.theme().colors;
         let amber: gpui::Hsla = rgb(AMBER).into();
         div()

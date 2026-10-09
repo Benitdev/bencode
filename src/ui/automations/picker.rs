@@ -3,12 +3,14 @@
 
 use ely_gpui_component::primitives::{Icon, IconName};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
-use gpui::{AnyElement, Context, FontWeight, Hsla, IntoElement, ParentElement, Styled, div, prelude::*};
+use gpui::{
+    AnyElement, Context, FontWeight, Hsla, IntoElement, ParentElement, Styled, div, prelude::*,
+};
 
 use super::PAGE_WIDTH;
-use crate::ui::page_parts::tint;
 use super::templates::{AutomationTemplate, TemplateCategory, templates_for};
 use crate::app::BenCodeApp;
+use crate::ui::page_parts::tint;
 use crate::ui::scale::px;
 use crate::ui::scrollbar::Scrolled;
 
@@ -16,7 +18,13 @@ use crate::ui::scrollbar::Scrolled;
 const CARD_MIN_HEIGHT: f32 = 148.0;
 
 /// The round icon, name and description every card starts with.
-fn card_head(icon: IconName, name: &'static str, description: &'static str, fg: Hsla, muted: Hsla) -> impl IntoElement {
+fn card_head(
+    icon: IconName,
+    name: &'static str,
+    description: &'static str,
+    fg: Hsla,
+    muted: Hsla,
+) -> impl IntoElement {
     div()
         .flex()
         .gap_3()
@@ -29,7 +37,11 @@ fn card_head(icon: IconName, name: &'static str, description: &'static str, fg: 
                 .size(px(36.0))
                 .rounded_full()
                 .bg(fg.opacity(tint::FILL))
-                .child(Icon::new(icon).size(IconSize::Sm).color(fg.opacity(tint::BODY))),
+                .child(
+                    Icon::new(icon)
+                        .size(IconSize::Sm)
+                        .color(fg.opacity(tint::BODY)),
+                ),
         )
         .child(
             div()
@@ -59,31 +71,34 @@ impl BenCodeApp {
         let colors = &cx.theme().colors;
         let (fg, muted) = (colors.fg, colors.fg_muted);
         let category = self.automations.category;
-        let pills = TemplateCategory::ALL.into_iter().enumerate().map(|(ix, option)| {
-            div()
-                .id(("automation-category", ix))
-                .flex()
-                .items_center()
-                .h(px(28.0))
-                .px_3()
-                .rounded_full()
-                .text_size(px(12.0))
-                .font_weight(FontWeight::MEDIUM)
-                .cursor_pointer()
-                .map(|el| {
-                    if option == category {
-                        el.bg(fg).text_color(colors.bg)
-                    } else {
-                        el.text_color(muted)
-                            .hover(|style| style.bg(fg.opacity(tint::FILL)).text_color(fg))
-                    }
-                })
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    this.automations.category = option;
-                    cx.notify();
-                }))
-                .child(option.label())
-        });
+        let pills = TemplateCategory::ALL
+            .into_iter()
+            .enumerate()
+            .map(|(ix, option)| {
+                div()
+                    .id(("automation-category", ix))
+                    .flex()
+                    .items_center()
+                    .h(px(28.0))
+                    .px_3()
+                    .rounded_full()
+                    .text_size(px(12.0))
+                    .font_weight(FontWeight::MEDIUM)
+                    .cursor_pointer()
+                    .map(|el| {
+                        if option == category {
+                            el.bg(fg).text_color(colors.bg)
+                        } else {
+                            el.text_color(muted)
+                                .hover(|style| style.bg(fg.opacity(tint::FILL)).text_color(fg))
+                        }
+                    })
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.automations.category = option;
+                        cx.notify();
+                    }))
+                    .child(option.label())
+            });
         let blank = div()
             .id("automation-blank")
             .flex()
@@ -95,7 +110,11 @@ impl BenCodeApp {
             .border_dashed()
             .border_color(fg.opacity(tint::DASH))
             .cursor_pointer()
-            .hover(|style| style.bg(fg.opacity(tint::HOVER)).border_color(fg.opacity(tint::DASH_HOVER)))
+            .hover(|style| {
+                style
+                    .bg(fg.opacity(tint::HOVER))
+                    .border_color(fg.opacity(tint::DASH_HOVER))
+            })
             .on_click(cx.listener(|this, _, _, cx| this.begin_blank_automation(cx)))
             .child(card_head(
                 IconName::Plus,
@@ -136,7 +155,15 @@ impl BenCodeApp {
                             .child("Pick an example or start from scratch."),
                     )
                     .child(div().flex().flex_wrap().gap(px(6.0)).mt_4().children(pills))
-                    .child(div().grid().grid_cols(2).gap_3().mt_4().child(blank).children(cards)),
+                    .child(
+                        div()
+                            .grid()
+                            .grid_cols(2)
+                            .gap_3()
+                            .mt_4()
+                            .child(blank)
+                            .children(cards),
+                    ),
             );
         Scrolled::new("automation-picker-scrollbar", page).into_any_element()
     }
@@ -159,9 +186,19 @@ impl BenCodeApp {
             .border_1()
             .border_color(fg.opacity(tint::STROKE))
             .cursor_pointer()
-            .hover(|style| style.bg(fg.opacity(tint::HOVER)).border_color(fg.opacity(tint::STROKE_HOVER)))
+            .hover(|style| {
+                style
+                    .bg(fg.opacity(tint::HOVER))
+                    .border_color(fg.opacity(tint::STROKE_HOVER))
+            })
             .on_click(cx.listener(move |this, _, _, cx| this.begin_automation_from(template, cx)))
-            .child(card_head(template.icon, template.name, template.description, fg, muted))
+            .child(card_head(
+                template.icon,
+                template.name,
+                template.description,
+                fg,
+                muted,
+            ))
             .child(div().flex_1())
             .child(
                 div()

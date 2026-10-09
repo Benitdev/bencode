@@ -30,7 +30,9 @@ impl BenCodeApp {
         self.file_tree.op_error = None;
         let root = self.file_tree.root.clone();
         let job_root = PathBuf::from(&root);
-        let task = cx.background_executor().spawn(async move { work(&job_root) });
+        let task = cx
+            .background_executor()
+            .spawn(async move { work(&job_root) });
         cx.spawn(async move |this, cx| {
             let result = task.await;
             let updated = this.update(cx, |this, cx| {
@@ -149,7 +151,9 @@ impl BenCodeApp {
     /// Re-lists folders an operation changed, forgetting moved-away ones.
     fn refresh_touched(&mut self, touched: Vec<String>, forget: &[String], cx: &mut Context<Self>) {
         for gone in forget {
-            self.file_tree.dir_cache.retain(|dir, _| !is_within(dir, gone));
+            self.file_tree
+                .dir_cache
+                .retain(|dir, _| !is_within(dir, gone));
         }
         let mut dirs = touched;
         dirs.sort();
@@ -186,12 +190,7 @@ impl BenCodeApp {
 
     /// MonoCode `startCreate`: a field in the selected folder (or the
     /// selected file's folder), opened.
-    pub fn start_tree_create(
-        &mut self,
-        is_dir: bool,
-        at: Option<String>,
-        cx: &mut Context<Self>,
-    ) {
+    pub fn start_tree_create(&mut self, is_dir: bool, at: Option<String>, cx: &mut Context<Self>) {
         let at = at.or_else(|| self.file_tree.selected_path.clone());
         let parent = self.file_tree.create_parent_of(at.as_deref());
         self.expand_tree_dirs(&[String::new(), parent.clone()], cx);
@@ -267,7 +266,9 @@ impl BenCodeApp {
         self.file_tree.edit_state.submit_error = None;
         let root = self.file_tree.root.clone();
         let job_root = PathBuf::from(&root);
-        let task = cx.background_executor().spawn(async move { work(&job_root) });
+        let task = cx
+            .background_executor()
+            .spawn(async move { work(&job_root) });
         cx.spawn(async move |this, cx| {
             let result = task.await;
             let updated = this.update(cx, |this, cx| {
@@ -295,7 +296,13 @@ impl BenCodeApp {
 
     /// MonoCode `onCreateCommit`: a trailing `/` makes a folder; nested
     /// folders open; a new file opens in the editor.
-    fn create_tree_entry(&mut self, parent: String, is_dir: bool, raw: String, cx: &mut Context<Self>) {
+    fn create_tree_entry(
+        &mut self,
+        parent: String,
+        is_dir: bool,
+        raw: String,
+        cx: &mut Context<Self>,
+    ) {
         let as_folder = is_dir || raw.ends_with(['/', '\\']);
         let file_name = well_formed(&raw);
         let touched = dirs_touched_by_create(&parent, &file_name);
@@ -322,9 +329,16 @@ impl BenCodeApp {
     }
 
     /// MonoCode `onRenameCommit`: the tree and open editors follow.
-    fn rename_tree_entry(&mut self, path: String, is_dir: bool, raw: String, cx: &mut Context<Self>) {
+    fn rename_tree_entry(
+        &mut self,
+        path: String,
+        is_dir: bool,
+        raw: String,
+        cx: &mut Context<Self>,
+    ) {
         let file_name = well_formed(&raw);
-        let unchanged = Path::new(&path).file_name().and_then(|n| n.to_str()) == Some(file_name.as_str())
+        let unchanged = Path::new(&path).file_name().and_then(|n| n.to_str())
+            == Some(file_name.as_str())
             && !raw.contains(['/', '\\']);
         if file_name.is_empty() || unchanged {
             self.cancel_tree_edit(cx);
@@ -337,7 +351,11 @@ impl BenCodeApp {
         self.run_tree_edit(
             move |root| fs::rename(root, &from, &file_name),
             move |this, next, cx| {
-                let forget = if is_dir { vec![path.clone()] } else { Vec::new() };
+                let forget = if is_dir {
+                    vec![path.clone()]
+                } else {
+                    Vec::new()
+                };
                 this.refresh_touched(touched.clone(), &forget, cx);
                 this.expand_tree_dirs(&touched, cx);
                 this.remap_tree_paths(&path, &next, cx);
@@ -351,7 +369,11 @@ impl BenCodeApp {
     /// their new place.
     fn remap_tree_paths(&mut self, from: &str, to: &str, cx: &mut Context<Self>) {
         let tree = &mut self.file_tree;
-        tree.expanded_paths = tree.expanded_paths.iter().map(|p| rebase(p, from, to)).collect();
+        tree.expanded_paths = tree
+            .expanded_paths
+            .iter()
+            .map(|p| rebase(p, from, to))
+            .collect();
         let moved: Vec<String> = tree
             .expanded_paths
             .iter()
@@ -385,7 +407,9 @@ impl BenCodeApp {
         for old in &moved {
             self.close_editor_file(old, cx);
         }
-        let reopen_active = active.filter(|a| moved.contains(a)).map(|a| rebase(&a, from, to));
+        let reopen_active = active
+            .filter(|a| moved.contains(a))
+            .map(|a| rebase(&a, from, to));
         if let Some(path) = reopen_active {
             self.open_tree_file(path, cx);
         }
@@ -421,13 +445,25 @@ impl BenCodeApp {
             move |root| fs::delete(root, &target),
             move |this, (), cx| {
                 let parent = parent_of(&path);
-                let forget = if is_dir { vec![path.clone()] } else { Vec::new() };
+                let forget = if is_dir {
+                    vec![path.clone()]
+                } else {
+                    Vec::new()
+                };
                 this.refresh_touched(vec![parent.clone()], &forget, cx);
                 let tree = &mut this.file_tree;
-                if tree.selected_path.as_deref().is_none_or(|s| is_within(s, &path)) {
+                if tree
+                    .selected_path
+                    .as_deref()
+                    .is_none_or(|s| is_within(s, &path))
+                {
                     tree.selected_path = Some(parent);
                 }
-                if tree.clip.as_ref().is_some_and(|c| is_within(&c.path, &path)) {
+                if tree
+                    .clip
+                    .as_ref()
+                    .is_some_and(|c| is_within(&c.path, &path))
+                {
                     tree.clip = None;
                 }
                 tree.expanded_paths.retain(|p| !is_within(p, &path));
@@ -476,7 +512,11 @@ impl BenCodeApp {
                 if clip.cut {
                     let mut touched = vec![parent_of(&clip.path), parent_of(&created)];
                     touched.dedup();
-                    let forget = if clip.is_dir { vec![clip.path.clone()] } else { Vec::new() };
+                    let forget = if clip.is_dir {
+                        vec![clip.path.clone()]
+                    } else {
+                        Vec::new()
+                    };
                     this.refresh_touched(touched, &forget, cx);
                     this.remap_tree_paths(&clip.path, &created, cx);
                     this.on_tree_entry_moved(&clip.path, &created, cx);
@@ -558,7 +598,10 @@ impl BenCodeApp {
 
     pub fn tree_copy_path(&mut self, cx: &mut Context<Self>) {
         let target = self.tree_target_for_keys();
-        let text = self.tree_abs_path(&target.path).to_string_lossy().into_owned();
+        let text = self
+            .tree_abs_path(&target.path)
+            .to_string_lossy()
+            .into_owned();
         cx.write_to_clipboard(gpui::ClipboardItem::new_string(text));
     }
 

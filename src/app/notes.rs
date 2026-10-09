@@ -129,7 +129,10 @@ fn atx_heading(line: &str) -> Option<&str> {
 
 /// MonoCode `MarkdownSourceHighlight`: heading lines in full ink, the rest
 /// a step quieter.
-fn source_highlights(text: &str, cx: &App) -> Vec<(std::ops::Range<usize>, ely_gpui_component::forms::Highlight)> {
+fn source_highlights(
+    text: &str,
+    cx: &App,
+) -> Vec<(std::ops::Range<usize>, ely_gpui_component::forms::Highlight)> {
     use ely_gpui_component::forms::Highlight;
     use ely_gpui_component::theme::ActiveTheme;
     let fg = cx.theme().colors.fg;
@@ -260,7 +263,12 @@ pub fn note_preview(text: &str, title: &str) -> String {
 pub fn normalize_note_tags<S: AsRef<str>>(tags: &[S]) -> Vec<String> {
     let mut normalized: Vec<String> = Vec::new();
     for input in tags {
-        let words: Vec<&str> = input.as_ref().trim().trim_start_matches('#').split_whitespace().collect();
+        let words: Vec<&str> = input
+            .as_ref()
+            .trim()
+            .trim_start_matches('#')
+            .split_whitespace()
+            .collect();
         let tag = clipped(words.join("-").to_lowercase(), MAX_NOTE_TAG_LENGTH);
         let tag = tag.trim_end_matches('-');
         if tag.is_empty() || normalized.iter().any(|seen| seen == tag) {
@@ -306,7 +314,11 @@ pub fn note_matches(note: &Note, query: &str) -> bool {
 fn note_slugs_in_text(text: &str) -> Vec<&str> {
     let mut slugs: Vec<&str> = Vec::new();
     for (at, _) in text.match_indices("@note/") {
-        if text[..at].chars().next_back().is_some_and(|c| !c.is_whitespace()) {
+        if text[..at]
+            .chars()
+            .next_back()
+            .is_some_and(|c| !c.is_whitespace())
+        {
             continue;
         }
         let rest = &text[at + "@note/".len()..];
@@ -341,7 +353,10 @@ pub fn apply_notes_to_turn(text: &str, notes: &[Note]) -> String {
             "" => UNTITLED_NOTE,
             title => title,
         };
-        prompt.push_str(&format!("\nReferenced note \"{heading}\":\n\n{}", note.body.trim()));
+        prompt.push_str(&format!(
+            "\nReferenced note \"{heading}\":\n\n{}",
+            note.body.trim()
+        ));
     }
     prompt
 }
@@ -356,7 +371,11 @@ fn saved_title(typed: &str, body: &str) -> String {
 
 /// MonoCode `onSaved`'s order: newest edit first.
 fn sort_notes(notes: &mut [Note]) {
-    notes.sort_by(|a, b| b.updated_at.cmp(&a.updated_at).then_with(|| a.id.cmp(&b.id)));
+    notes.sort_by(|a, b| {
+        b.updated_at
+            .cmp(&a.updated_at)
+            .then_with(|| a.id.cmp(&b.id))
+    });
 }
 
 impl BenCodeApp {
@@ -417,9 +436,15 @@ impl BenCodeApp {
         let (title, body, tags) = note.map_or_else(Default::default, |note| {
             (note.title.clone(), note.body.clone(), note.tags.clone())
         });
-        self.notes.title_input.update(cx, |input, cx| input.set_text(title, cx));
-        self.notes.body_input.update(cx, |input, cx| input.set_text(body, cx));
-        self.notes.tag_input.update(cx, |input, cx| input.set_text("", cx));
+        self.notes
+            .title_input
+            .update(cx, |input, cx| input.set_text(title, cx));
+        self.notes
+            .body_input
+            .update(cx, |input, cx| input.set_text(body, cx));
+        self.notes
+            .tag_input
+            .update(cx, |input, cx| input.set_text("", cx));
         self.notes.tags = tags;
         self.notes.save_error = None;
     }
@@ -499,7 +524,9 @@ impl BenCodeApp {
                     Ok((id, items)) => {
                         this.open_notes(cx);
                         this.show_notes(request, items, cx);
-                        this.notes.filter_input.update(cx, |input, cx| input.set_text("", cx));
+                        this.notes
+                            .filter_input
+                            .update(cx, |input, cx| input.set_text("", cx));
                         if blank {
                             this.notes.modes.insert(id.clone(), NoteMode::Source);
                             this.notes.focus_source = true;
@@ -568,7 +595,13 @@ impl BenCodeApp {
     }
 
     pub(crate) fn remove_note_tag(&mut self, tag: &str, cx: &mut Context<Self>) {
-        let tags = self.notes.tags.iter().filter(|t| *t != tag).cloned().collect();
+        let tags = self
+            .notes
+            .tags
+            .iter()
+            .filter(|t| *t != tag)
+            .cloned()
+            .collect();
         self.set_note_tags(tags, cx);
     }
 
@@ -598,7 +631,11 @@ impl BenCodeApp {
         let Some(files) = cx.read_from_clipboard().as_ref().and_then(pasted_files) else {
             return false;
         };
-        let paths: Vec<PathBuf> = files.paths.into_iter().filter(|p| is_note_image(p)).collect();
+        let paths: Vec<PathBuf> = files
+            .paths
+            .into_iter()
+            .filter(|p| is_note_image(p))
+            .collect();
         if paths.is_empty() && files.images.is_empty() {
             return false;
         }
@@ -635,7 +672,8 @@ impl BenCodeApp {
                 // Pasted data passes through temporary files: the note
                 // keeps its own copy.
                 let temporary = write_pasted_images(pasted, stamp);
-                let all: Vec<PathBuf> = paths.into_iter().chain(temporary.iter().cloned()).collect();
+                let all: Vec<PathBuf> =
+                    paths.into_iter().chain(temporary.iter().cloned()).collect();
                 let saved = save_note_images(&data_dir, &note_id, &all);
                 for file in temporary {
                     if let Err(err) = std::fs::remove_file(&file) {
@@ -653,8 +691,12 @@ impl BenCodeApp {
                     // The note is still the open one: its field takes them.
                     Ok(images) if this.notes.selected_id.as_deref() == Some(note_id.as_str()) => {
                         this.notes.body_input.update(cx, |field, cx| {
-                            let (value, cursor) =
-                                insert_images_markdown(field.text(), range.start, range.end, &images);
+                            let (value, cursor) = insert_images_markdown(
+                                field.text(),
+                                range.start,
+                                range.end,
+                                &images,
+                            );
                             field.set_text(value, cx);
                             field.select(cursor..cursor, cx);
                         });
@@ -842,7 +884,10 @@ mod tests {
     #[test]
     fn titles_come_from_the_first_heading_or_line() {
         assert_eq!(note_title("intro\n\n## The **Plan**\nmore"), "The Plan");
-        assert_eq!(note_title("\n---\n[Ship](https://x.dev) on `Friday`"), "Ship on Friday");
+        assert_eq!(
+            note_title("\n---\n[Ship](https://x.dev) on `Friday`"),
+            "Ship on Friday"
+        );
         assert_eq!(note_title("```\ncode\n```\nafter"), "after");
         assert_eq!(note_title("![shot](a.png)\n\nreal"), "real");
         assert_eq!(note_title("  \n"), "Untitled");
@@ -885,7 +930,14 @@ mod tests {
     fn projects_exclude_home_root_and_app_bundles() {
         let home = Some("/Users/me");
         assert!(looks_like_project("/Users/me/code/app", home));
-        for path in ["", "/", "~", "/Users/me", "/Users/me/", "/Applications/X.app/Contents"] {
+        for path in [
+            "",
+            "/",
+            "~",
+            "/Users/me",
+            "/Users/me/",
+            "/Applications/X.app/Contents",
+        ] {
             assert!(!looks_like_project(path, home), "{path}");
         }
         assert_eq!(note_project(&note("t", "", &[])), Some("storefront"));
@@ -901,15 +953,27 @@ mod tests {
     #[test]
     fn mentioned_notes_follow_the_prompt() {
         let plan = note("Release", "  Ship on Friday.\n", &[]);
-        let other = Note { id: "o".into(), slug: "other".into(), title: " ".into(), body: "B".into(), ..Default::default() };
+        let other = Note {
+            id: "o".into(),
+            slug: "other".into(),
+            title: " ".into(),
+            body: "B".into(),
+            ..Default::default()
+        };
         let notes = [plan, other];
         assert_eq!(
             apply_notes_to_turn("check @note/release-plan, then @note/other \n", &notes),
             "check @note/release-plan, then @note/other\n\n---\nReferenced note \"Release\":\n\nShip on Friday.\nReferenced note \"Untitled\":\n\nB"
         );
         // Unknown slugs, repeats and mid-word marks add nothing.
-        assert_eq!(apply_notes_to_turn("see @note/missing", &notes), "see @note/missing");
-        assert_eq!(note_slugs_in_text("@note/a @note/a x@note/b @note/ (@note/c)"), ["a"]);
+        assert_eq!(
+            apply_notes_to_turn("see @note/missing", &notes),
+            "see @note/missing"
+        );
+        assert_eq!(
+            note_slugs_in_text("@note/a @note/a x@note/b @note/ (@note/c)"),
+            ["a"]
+        );
     }
 
     #[test]

@@ -116,7 +116,11 @@ pub fn passes_filters(
     if session.archived != filters.show_archived {
         return false;
     }
-    if filters.hidden_harnesses.iter().any(|h| h == &session.harness) {
+    if filters
+        .hidden_harnesses
+        .iter()
+        .any(|h| h == &session.harness)
+    {
         return false;
     }
     if filters.time != TimeFilter::All && session.updated_at < time_filter_start(filters.time, now)
@@ -305,7 +309,12 @@ pub fn build_list<'a>(
             sessions: pinned,
         });
     }
-    entries.extend(loose.into_iter().filter(|s| !s.pinned).map(ListEntry::Session));
+    entries.extend(
+        loose
+            .into_iter()
+            .filter(|s| !s.pinned)
+            .map(ListEntry::Session),
+    );
     entries
 }
 
@@ -369,7 +378,11 @@ impl Selection {
     /// thread) to `id`, added to the selection when ⌘ is held too.
     pub fn select_range(&mut self, id: &str, order: &[String], active: Option<&str>, add: bool) {
         self.from_menu = false;
-        if self.anchor.as_deref().is_some_and(|a| !order.iter().any(|o| o == a)) {
+        if self
+            .anchor
+            .as_deref()
+            .is_some_and(|a| !order.iter().any(|o| o == a))
+        {
             self.anchor = None;
         }
         let anchor = self
@@ -383,7 +396,11 @@ impl Selection {
             (Some(s), Some(e)) => order[s.min(e)..=s.max(e)].to_vec(),
             _ => vec![id.to_string()],
         };
-        self.anchor = Some(if start.is_some() { anchor } else { id.to_string() });
+        self.anchor = Some(if start.is_some() {
+            anchor
+        } else {
+            id.to_string()
+        });
         if !add {
             self.ids.clear();
         }
@@ -393,7 +410,11 @@ impl Selection {
     /// MonoCode `pruneSessionSelection`.
     pub fn prune(&mut self, available: &[String]) {
         self.ids.retain(|id| available.iter().any(|a| a == id));
-        if self.anchor.as_deref().is_some_and(|a| !available.iter().any(|o| o == a)) {
+        if self
+            .anchor
+            .as_deref()
+            .is_some_and(|a| !available.iter().any(|o| o == a))
+        {
             self.anchor = None;
         }
     }
@@ -483,16 +504,36 @@ mod tests {
         assert!(!passes_filters(&archived, &filters, &states, now));
         filters.show_archived = true;
         assert!(passes_filters(&archived, &filters, &states, now));
-        assert!(!passes_filters(&row("b", now, false), &filters, &states, now));
+        assert!(!passes_filters(
+            &row("b", now, false),
+            &filters,
+            &states,
+            now
+        ));
 
         let mut filters = SessionFilters::default();
         filters.hidden_harnesses = vec!["claude".into()];
-        assert!(!passes_filters(&row("c", now, false), &filters, &states, now));
+        assert!(!passes_filters(
+            &row("c", now, false),
+            &filters,
+            &states,
+            now
+        ));
 
         let mut filters = SessionFilters::default();
         filters.time = TimeFilter::Week;
-        assert!(!passes_filters(&row("d", now - 8 * DAY_MS, false), &filters, &states, now));
-        assert!(passes_filters(&row("e", now - DAY_MS, false), &filters, &states, now));
+        assert!(!passes_filters(
+            &row("d", now - 8 * DAY_MS, false),
+            &filters,
+            &states,
+            now
+        ));
+        assert!(passes_filters(
+            &row("e", now - DAY_MS, false),
+            &filters,
+            &states,
+            now
+        ));
 
         let mut filters = SessionFilters::default();
         filters.status.working = true;
@@ -548,7 +589,10 @@ mod tests {
         assert!(matches!(&list[0], ListEntry::Reminders { sessions, .. }
             if sessions.iter().map(|s| s.id.as_str()).collect::<Vec<_>>() == ["d", "b"]));
         assert!(matches!(&list[1], ListEntry::Folder { sessions, .. } if sessions.len() == 1));
-        assert!(matches!(&list[2], ListEntry::Session(s) if s.id == "a"), "no pinned group left");
+        assert!(
+            matches!(&list[2], ListEntry::Session(s) if s.id == "a"),
+            "no pinned group left"
+        );
     }
 
     #[test]

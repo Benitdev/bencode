@@ -129,7 +129,11 @@ pub fn card_kind(icon: CardIcon, kind: String, cx: &Context<BenCodeApp>) -> Div 
             .size(IconSize::Xs)
             .color(tint)
             .into_any_element(),
-        CardIcon::Extra(extra) => extra.icon().size(IconSize::Sm).color(tint).into_any_element(),
+        CardIcon::Extra(extra) => extra
+            .icon()
+            .size(IconSize::Sm)
+            .color(tint)
+            .into_any_element(),
     };
     let fg = cx.theme().colors.fg;
     div()

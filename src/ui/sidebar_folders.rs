@@ -52,7 +52,13 @@ fn folder_state(sessions: &[&SessionRow], states: &LiveStates) -> FolderState {
 /// The row's leading glyph: the group icon, swapped for a chevron on hover
 /// (and while a plain folder is open). MonoCode: `size-4` slot, `size-3.5`
 /// glyphs.
-fn folder_glyph(group: &SharedString, icon: AnyElement, open: bool, keep_icon: bool, fg: Hsla) -> AnyElement {
+fn folder_glyph(
+    group: &SharedString,
+    icon: AnyElement,
+    open: bool,
+    keep_icon: bool,
+    fg: Hsla,
+) -> AnyElement {
     let chevron = Icon::new(if open {
         IconName::ChevronDown
     } else {
@@ -185,7 +191,13 @@ impl BenCodeApp {
                     }),
                 )
                 .when(drop_target, |el| {
-                    el.child(div().absolute().inset_0().rounded(px(6.0)).bg(accent.opacity(0.20)))
+                    el.child(
+                        div()
+                            .absolute()
+                            .inset_0()
+                            .rounded(px(6.0))
+                            .bg(accent.opacity(0.20)),
+                    )
                 })
                 .child(folder_glyph(&group, icon, open, false, fg))
                 .child(
@@ -211,7 +223,9 @@ impl BenCodeApp {
             .overflow_hidden()
             .rounded(px(6.0))
             // MonoCode `folderShellFill`: the tint at 18%.
-            .bg(folder.accent().map_or(fg.opacity(0.05), |accent| accent.opacity(0.18)))
+            .bg(folder
+                .accent()
+                .map_or(fg.opacity(0.05), |accent| accent.opacity(0.18)))
             .when(open || before_loose, |el| el.mb(px(6.0)))
             .on_drag_move::<DraggedSession>(cx.listener(
                 move |this, event: &gpui::DragMoveEvent<DraggedSession>, _, cx| {
@@ -355,11 +369,17 @@ impl BenCodeApp {
             .px_2()
             .py(px(6.0))
             .child(
-                div().size(px(16.0)).flex().flex_none().items_center().justify_center().child(
-                    Icon::new(IconName::ChevronDown)
-                        .size(IconSize::Sm)
-                        .color(colors.fg.opacity(0.5)),
-                ),
+                div()
+                    .size(px(16.0))
+                    .flex()
+                    .flex_none()
+                    .items_center()
+                    .justify_center()
+                    .child(
+                        Icon::new(IconName::ChevronDown)
+                            .size(IconSize::Sm)
+                            .color(colors.fg.opacity(0.5)),
+                    ),
             )
             .child(
                 div()
@@ -393,7 +413,8 @@ impl BenCodeApp {
     /// MonoCode `onNewInFolder`: a new thread, filed in the folder.
     fn new_session_in_folder(&mut self, folder_id: &str, cx: &mut Context<Self>) {
         let id = self.create_new_session_id(cx);
-        self.search_input.update(cx, |input, cx| input.set_text("", cx));
+        self.search_input
+            .update(cx, |input, cx| input.set_text("", cx));
         self.search_query.clear();
         self.place_session_in_folder(&id, &FolderTarget::Existing(folder_id.to_string()), cx);
     }

@@ -6,9 +6,7 @@ use ely_gpui_component::feedback::{Alert, EmptyState};
 use ely_gpui_component::overlays::ConfirmDialog;
 use ely_gpui_component::primitives::{Icon, IconName, Severity};
 use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize, TextSize};
-use gpui::{
-    AnyElement, Context, IntoElement, ParentElement, Styled, div, prelude::*,
-};
+use gpui::{AnyElement, Context, IntoElement, ParentElement, Styled, div, prelude::*};
 
 use super::EditorHandle;
 use super::files::{detect_language, file_name};

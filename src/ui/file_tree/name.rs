@@ -126,7 +126,8 @@ pub fn join(parent: &str, name: &str) -> String {
 
 /// The folder holding `rel` (`""` for a root entry).
 pub fn parent_of(rel: &str) -> String {
-    rel.rsplit_once('/').map_or(String::new(), |(dir, _)| dir.to_string())
+    rel.rsplit_once('/')
+        .map_or(String::new(), |(dir, _)| dir.to_string())
 }
 
 /// MonoCode `rebasePath`: `path` moved along when `from` became `to`.
@@ -134,7 +135,10 @@ pub fn rebase(path: &str, from: &str, to: &str) -> String {
     if path == from {
         return to.to_string();
     }
-    match path.strip_prefix(from).and_then(|rest| rest.strip_prefix('/')) {
+    match path
+        .strip_prefix(from)
+        .and_then(|rest| rest.strip_prefix('/'))
+    {
         Some(rest) => join(to, rest),
         None => path.to_string(),
     }
@@ -169,8 +173,14 @@ mod tests {
         assert_eq!(validate("", &siblings), Some(NameIssue::Empty));
         assert_eq!(validate("\t \t", &siblings), Some(NameIssue::Empty));
         assert_eq!(validate("/abs", &siblings), Some(NameIssue::Slash));
-        assert_eq!(validate("main.rs", &siblings), Some(NameIssue::Exists("main.rs".into())));
-        assert_eq!(validate("a/../b", &siblings), Some(NameIssue::Invalid("a/../b".into())));
+        assert_eq!(
+            validate("main.rs", &siblings),
+            Some(NameIssue::Exists("main.rs".into()))
+        );
+        assert_eq!(
+            validate("a/../b", &siblings),
+            Some(NameIssue::Invalid("a/../b".into()))
+        );
         assert_eq!(validate(" padded", &siblings), Some(NameIssue::Whitespace));
         assert!(!NameIssue::Whitespace.is_error());
         assert_eq!(validate("lib/util.rs", &siblings), None);

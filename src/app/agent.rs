@@ -420,9 +420,10 @@ impl BenCodeApp {
     pub fn composer_has_value(&self, cx: &gpui::App) -> bool {
         !self.prompt_input.read(cx).text().trim().is_empty()
             || self.has_composer_card()
-            || self.selected_session_id.as_ref().is_some_and(|id| {
-                self.thread(id).is_some_and(|t| !t.attachments.is_empty())
-            })
+            || self
+                .selected_session_id
+                .as_ref()
+                .is_some_and(|id| self.thread(id).is_some_and(|t| !t.attachments.is_empty()))
     }
 
     /// The composer's button: Stop when the focused thread is running and
@@ -838,14 +839,14 @@ impl BenCodeApp {
             return;
         };
         let spawn = pinned
-            .and_then(|()| spawn_request(session, &request.prompt, mode, self.claude_hooks_disabled))
-            .map(
-            |spawn| SpawnRequest {
+            .and_then(|()| {
+                spawn_request(session, &request.prompt, mode, self.claude_hooks_disabled)
+            })
+            .map(|spawn| SpawnRequest {
                 attachments: request.attachments.clone(),
                 plan: request.plan,
                 ..spawn
-            },
-        );
+            });
         let harness_kind = spawn.as_ref().ok().map(|r| r.harness);
         // The baseline is queued before the agent can edit anything.
         if request.purpose == RunPurpose::Turn {
@@ -1315,12 +1316,15 @@ pub(super) fn mark_turn_interrupted(session: &mut SessionRow, now: i64) {
         let Some(tool) = block.tool.as_mut().and_then(Value::as_object_mut) else {
             continue;
         };
-        let open = tool.get("status").and_then(Value::as_str).is_some_and(|status| {
-            matches!(
-                status.to_ascii_lowercase().as_str(),
-                "in_progress" | "pending" | "running"
-            )
-        });
+        let open = tool
+            .get("status")
+            .and_then(Value::as_str)
+            .is_some_and(|status| {
+                matches!(
+                    status.to_ascii_lowercase().as_str(),
+                    "in_progress" | "pending" | "running"
+                )
+            });
         if open {
             tool.insert("status".into(), json!("cancelled"));
         }
@@ -1629,8 +1633,14 @@ mod tests {
 
     #[test]
     fn automation_status_maps_turn_outcomes() {
-        assert_eq!(automation_status(Some(DoneStatus::Completed)), RunStatus::Succeeded);
-        assert_eq!(automation_status(Some(DoneStatus::Cancelled)), RunStatus::Cancelled);
+        assert_eq!(
+            automation_status(Some(DoneStatus::Completed)),
+            RunStatus::Succeeded
+        );
+        assert_eq!(
+            automation_status(Some(DoneStatus::Cancelled)),
+            RunStatus::Cancelled
+        );
         assert_eq!(automation_status(None), RunStatus::Failed);
     }
 
@@ -1731,11 +1741,17 @@ mod tests {
         let start = edit_start("t1", "Edit", json!({"file_path": "/r/a.rs"}));
         let step = plan_event(false, &mut edits, true, start);
         assert!(matches!(step, EventStep::Apply { done: None, .. }));
-        assert_eq!(checkpoint_of(step), Some((vec!["/r/a.rs".to_string()], false)));
+        assert_eq!(
+            checkpoint_of(step),
+            Some((vec!["/r/a.rs".to_string()], false))
+        );
         assert!(edits.contains_key("t1"));
 
         let step = plan_event(false, &mut edits, true, tool_finish("t1", true));
-        assert_eq!(checkpoint_of(step), Some((vec!["/r/a.rs".to_string()], true)));
+        assert_eq!(
+            checkpoint_of(step),
+            Some((vec!["/r/a.rs".to_string()], true))
+        );
         assert!(edits.is_empty());
     }
 
@@ -1753,16 +1769,25 @@ mod tests {
     fn non_edit_tools_and_pathless_edits_take_no_checkpoint() {
         let mut edits = HashMap::new();
         let bash = edit_start("t1", "Bash", json!({"command": "ls"}));
-        assert_eq!(checkpoint_of(plan_event(false, &mut edits, true, bash)), None);
+        assert_eq!(
+            checkpoint_of(plan_event(false, &mut edits, true, bash)),
+            None
+        );
         assert!(edits.is_empty());
 
         // An edit that names no file is still tracked until it finishes.
         let write = edit_start("t2", "Write", json!({}));
-        assert_eq!(checkpoint_of(plan_event(false, &mut edits, true, write)), None);
+        assert_eq!(
+            checkpoint_of(plan_event(false, &mut edits, true, write)),
+            None
+        );
         assert_eq!(edits.get("t2"), Some(&Vec::new()));
 
         let unknown = tool_finish("nope", true);
-        assert_eq!(checkpoint_of(plan_event(false, &mut edits, true, unknown)), None);
+        assert_eq!(
+            checkpoint_of(plan_event(false, &mut edits, true, unknown)),
+            None
+        );
     }
 
     #[test]
@@ -1889,7 +1914,10 @@ mod tests {
             provider_session_id: "p1".into(),
         };
         assert!(save_due(&started, Duration::ZERO));
-        assert!(save_due(&AgentEvent::Done(DoneStatus::Completed), Duration::ZERO));
+        assert!(save_due(
+            &AgentEvent::Done(DoneStatus::Completed),
+            Duration::ZERO
+        ));
     }
 
     #[test]
@@ -1914,14 +1942,21 @@ mod tests {
             .iter()
             .find(|b| b.id == format!("tool-{call_id}"))
             .unwrap();
-        block.tool.as_ref().unwrap()["status"].as_str().unwrap().to_string()
+        block.tool.as_ref().unwrap()["status"]
+            .as_str()
+            .unwrap()
+            .to_string()
     }
 
     #[test]
     fn interrupt_cancels_open_tools_and_adds_one_notice() {
         let mut s = session();
         start_turn(&mut s, "go", 10, &[]);
-        apply_event(&mut s, edit_start("t1", "Bash", json!({"command": "ls"})), 11);
+        apply_event(
+            &mut s,
+            edit_start("t1", "Bash", json!({"command": "ls"})),
+            11,
+        );
         mark_turn_interrupted(&mut s, 20);
         mark_turn_interrupted(&mut s, 21);
         assert_eq!(tool_status(&s, "t1"), "cancelled");
@@ -1938,7 +1973,11 @@ mod tests {
     fn interrupt_keeps_finished_tools() {
         let mut s = session();
         start_turn(&mut s, "go", 10, &[]);
-        apply_event(&mut s, edit_start("t1", "Bash", json!({"command": "ls"})), 11);
+        apply_event(
+            &mut s,
+            edit_start("t1", "Bash", json!({"command": "ls"})),
+            11,
+        );
         apply_event(&mut s, tool_finish("t1", true), 12);
         mark_turn_interrupted(&mut s, 20);
         assert_eq!(tool_status(&s, "t1"), "completed");

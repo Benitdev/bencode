@@ -53,7 +53,11 @@ pub fn dock(splits: &mut Vec<LayoutNode>, target: u64, dragged: u64, edge: PaneE
     }
     let ix = index_of(splits, target);
     let tree = ix.map_or_else(|| leaf(key(target)), |ix| splits[ix].clone());
-    store(splits, ix, place_pane(&tree, key(dragged), &key(target), edge));
+    store(
+        splits,
+        ix,
+        place_pane(&tree, key(dragged), &key(target), edge),
+    );
 }
 
 /// Takes terminal `id` out of its split. The terminal to make active when

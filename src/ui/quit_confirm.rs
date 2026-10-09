@@ -14,7 +14,9 @@ fn quit_while_busy_message(count: usize, verb: &str) -> String {
     if count == 1 {
         format!("1 chat is still running. {verb} anyway? It can resume when BenCode opens again.")
     } else {
-        format!("{count} chats are still running. {verb} anyway? They can resume when BenCode opens again.")
+        format!(
+            "{count} chats are still running. {verb} anyway? They can resume when BenCode opens again."
+        )
     }
 }
 

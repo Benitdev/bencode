@@ -69,7 +69,11 @@ impl UsageState {
     }
 
     /// The snapshot of an account that has been asked for, if any.
-    pub fn cached(&self, provider: RateLimitProvider, account_id: &str) -> Option<&ProviderRateLimits> {
+    pub fn cached(
+        &self,
+        provider: RateLimitProvider,
+        account_id: &str,
+    ) -> Option<&ProviderRateLimits> {
         self.snapshots.get(&(provider, account_id.to_string()))
     }
 
@@ -134,9 +138,9 @@ impl BenCodeApp {
         self.usage.pending.insert(key.clone(), force);
         let profile = AccountProfile::resolve(provider.id(), Some(account_id));
         let account_id = account_id.to_string();
-        let task = cx
-            .background_executor()
-            .spawn(async move { rate_limits::fetch(provider, profile.as_ref(), &account_id, now_ms()) });
+        let task = cx.background_executor().spawn(async move {
+            rate_limits::fetch(provider, profile.as_ref(), &account_id, now_ms())
+        });
         cx.spawn(async move |this, cx| {
             let fetched = task.await;
             let landed = this.update(cx, |app, cx| {
@@ -211,7 +215,11 @@ impl BenCodeApp {
     /// refreshed the token), and for another account after a switch.
     pub(crate) fn reload_antigravity_usage(&mut self, cx: &mut Context<Self>) {
         for group in rate_limits::antigravity::GROUPS {
-            if self.usage.cached(RateLimitProvider::Antigravity, group).is_some() {
+            if self
+                .usage
+                .cached(RateLimitProvider::Antigravity, group)
+                .is_some()
+            {
                 self.load_rate_limits(RateLimitProvider::Antigravity, group, true, cx);
             }
         }

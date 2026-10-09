@@ -79,8 +79,14 @@ impl ThemeTint {
     pub fn clamped(self) -> Self {
         Self {
             hue: self.hue.clamp(HUE_MIN, HUE_MAX).round(),
-            saturation: self.saturation.clamp(SATURATION_MIN, SATURATION_MAX).round(),
-            dark_lightness: self.dark_lightness.clamp(DARK_LIGHTNESS_MIN, DARK_LIGHTNESS_MAX).round(),
+            saturation: self
+                .saturation
+                .clamp(SATURATION_MIN, SATURATION_MAX)
+                .round(),
+            dark_lightness: self
+                .dark_lightness
+                .clamp(DARK_LIGHTNESS_MIN, DARK_LIGHTNESS_MAX)
+                .round(),
         }
     }
 
@@ -101,7 +107,11 @@ pub enum DiffPalette {
 }
 
 impl DiffPalette {
-    pub const ALL: [DiffPalette; 3] = [DiffPalette::Default, DiffPalette::Colorblind, DiffPalette::HighContrast];
+    pub const ALL: [DiffPalette; 3] = [
+        DiffPalette::Default,
+        DiffPalette::Colorblind,
+        DiffPalette::HighContrast,
+    ];
 
     /// MonoCode's id, as stored.
     pub fn key(self) -> &'static str {
@@ -140,7 +150,8 @@ pub enum ChatBackgroundScope {
 }
 
 impl ChatBackgroundScope {
-    pub const ALL: [ChatBackgroundScope; 2] = [ChatBackgroundScope::Empty, ChatBackgroundScope::All];
+    pub const ALL: [ChatBackgroundScope; 2] =
+        [ChatBackgroundScope::Empty, ChatBackgroundScope::All];
 
     pub fn key(self) -> &'static str {
         match self {
@@ -219,7 +230,9 @@ impl BackgroundEffect {
             BackgroundEffect::Ascii => "Recreates the artwork with colored characters on black.",
             BackgroundEffect::Halftone => "Recreates the artwork with colored print dots on black.",
             BackgroundEffect::Scanlines => "Adds a pronounced horizontal display-line texture.",
-            BackgroundEffect::GradientBlur => "Blurs and fades the artwork into the background below.",
+            BackgroundEffect::GradientBlur => {
+                "Blurs and fades the artwork into the background below."
+            }
         }
     }
 
@@ -316,9 +329,15 @@ impl DiffColors {
             (DiffPalette::Default, true) => (0x10b981, 0x6ee7b7, 0xf43f5e, 0xfda4af, 0.15, 0.25),
             (DiffPalette::Default, false) => (0x10b981, 0x047857, 0xf43f5e, 0xbe123c, 0.15, 0.25),
             (DiffPalette::Colorblind, true) => (0x388bfd, 0x79c0ff, 0xdb6d28, 0xffa657, 0.15, 0.25),
-            (DiffPalette::Colorblind, false) => (0x0969da, 0x0550ae, 0xbc4c00, 0x953800, 0.15, 0.25),
-            (DiffPalette::HighContrast, true) => (0x58a6ff, 0xcae8ff, 0xf0883e, 0xffdfb6, 0.28, 0.45),
-            (DiffPalette::HighContrast, false) => (0x0550ae, 0x032563, 0x953800, 0x471700, 0.28, 0.45),
+            (DiffPalette::Colorblind, false) => {
+                (0x0969da, 0x0550ae, 0xbc4c00, 0x953800, 0.15, 0.25)
+            }
+            (DiffPalette::HighContrast, true) => {
+                (0x58a6ff, 0xcae8ff, 0xf0883e, 0xffdfb6, 0.28, 0.45)
+            }
+            (DiffPalette::HighContrast, false) => {
+                (0x0550ae, 0x032563, 0x953800, 0x471700, 0.28, 0.45)
+            }
         };
         let (add, del): (Hsla, Hsla) = (rgb(add).into(), rgb(del).into());
         Self {
@@ -386,7 +405,10 @@ impl Default for AppearancePrefs {
 
 impl AppearancePrefs {
     pub fn tokens(&self) -> AppearanceTokens {
-        AppearanceTokens { diff_palette: self.diff_palette, user_accent: self.user_accent() }
+        AppearanceTokens {
+            diff_palette: self.diff_palette,
+            user_accent: self.user_accent(),
+        }
     }
 
     pub fn user_accent(&self) -> Option<UserAccent> {
@@ -403,7 +425,10 @@ pub struct AppearanceTokens {
 
 impl Default for AppearanceTokens {
     fn default() -> Self {
-        Self { diff_palette: DiffPalette::Default, user_accent: None }
+        Self {
+            diff_palette: DiffPalette::Default,
+            user_accent: None,
+        }
     }
 }
 
@@ -416,7 +441,9 @@ impl AppearanceTokens {
     }
 
     fn get(cx: &App) -> AppearanceTokens {
-        cx.try_global::<AppearanceTokens>().copied().unwrap_or_default()
+        cx.try_global::<AppearanceTokens>()
+            .copied()
+            .unwrap_or_default()
     }
 }
 
@@ -444,10 +471,18 @@ pub fn parse_hex(hex: &str) -> Option<Rgba> {
 /// (relative luminance above 0.179).
 fn accent_foreground(color: Rgba) -> Hsla {
     let linear = |c: f32| {
-        if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) }
+        if c <= 0.04045 {
+            c / 12.92
+        } else {
+            ((c + 0.055) / 1.055).powf(2.4)
+        }
     };
     let luminance = 0.2126 * linear(color.r) + 0.7152 * linear(color.g) + 0.0722 * linear(color.b);
-    if luminance > 0.179 { gpui::black() } else { gpui::white() }
+    if luminance > 0.179 {
+        gpui::black()
+    } else {
+        gpui::white()
+    }
 }
 
 /// CSS `hsl(h s% l%)`.
@@ -493,8 +528,20 @@ mod tests {
 
     #[test]
     fn tint_clamps_to_whole_numbers_in_range() {
-        let tint = ThemeTint { hue: 400.4, saturation: -3.0, dark_lightness: 12.6 }.clamped();
-        assert_eq!(tint, ThemeTint { hue: 360.0, saturation: 0.0, dark_lightness: 13.0 });
+        let tint = ThemeTint {
+            hue: 400.4,
+            saturation: -3.0,
+            dark_lightness: 12.6,
+        }
+        .clamped();
+        assert_eq!(
+            tint,
+            ThemeTint {
+                hue: 360.0,
+                saturation: 0.0,
+                dark_lightness: 13.0
+            }
+        );
     }
 
     #[test]
@@ -518,21 +565,36 @@ mod tests {
     fn diff_palettes_swap_hues_and_strengths() {
         let default = DiffColors::new(DiffPalette::Default, true);
         assert_eq!(hex(default.add_fg), 0x6ee7b7);
-        assert_eq!(hex(DiffColors::new(DiffPalette::Default, false).del_fg), 0xbe123c);
+        assert_eq!(
+            hex(DiffColors::new(DiffPalette::Default, false).del_fg),
+            0xbe123c
+        );
         let high = DiffColors::new(DiffPalette::HighContrast, true);
         assert_eq!(hex(high.add), 0x58a6ff);
         assert!((high.add_bg.a - 0.28).abs() < 1e-6);
-        assert_eq!(hex(DiffColors::new(DiffPalette::Colorblind, false).del), 0xbc4c00);
+        assert_eq!(
+            hex(DiffColors::new(DiffPalette::Colorblind, false).del),
+            0xbc4c00
+        );
     }
 
     #[test]
     fn background_and_rail_ids_are_monocodes() {
         for effect in BackgroundEffect::ALL {
-            assert_eq!(serde_json::to_string(&effect).unwrap(), format!("\"{}\"", effect.key()));
+            assert_eq!(
+                serde_json::to_string(&effect).unwrap(),
+                format!("\"{}\"", effect.key())
+            );
             assert_eq!(BackgroundEffect::from_key(effect.key()), Some(effect));
         }
-        assert_eq!(serde_json::to_string(&ChatBackgroundScope::Empty).unwrap(), r#""empty""#);
-        assert_eq!(serde_json::to_string(&CollapsedRailMode::Compact).unwrap(), r#""compact""#);
+        assert_eq!(
+            serde_json::to_string(&ChatBackgroundScope::Empty).unwrap(),
+            r#""empty""#
+        );
+        assert_eq!(
+            serde_json::to_string(&CollapsedRailMode::Compact).unwrap(),
+            r#""compact""#
+        );
         assert_eq!(clamp_background_opacity(0.9), 0.65);
         assert_eq!(clamp_background_opacity(0.237), 0.24);
     }
@@ -549,7 +611,10 @@ mod tests {
     #[test]
     fn diff_palette_ids_are_monocodes() {
         for palette in DiffPalette::ALL {
-            assert_eq!(serde_json::to_string(&palette).unwrap(), format!("\"{}\"", palette.key()));
+            assert_eq!(
+                serde_json::to_string(&palette).unwrap(),
+                format!("\"{}\"", palette.key())
+            );
             assert_eq!(DiffPalette::from_key(palette.key()), Some(palette));
         }
     }

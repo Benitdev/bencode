@@ -49,7 +49,11 @@ fn storage_files(root: &Path) -> Vec<PathBuf> {
 fn read_accounts(file: &Path) -> Result<Vec<ProviderAccount>> {
     let conn = Connection::open_with_flags(file, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
     let value: Option<Vec<u8>> = conn
-        .query_row("SELECT value FROM ItemTable WHERE key = ?1", [ACCOUNTS_KEY], |row| row.get(0))
+        .query_row(
+            "SELECT value FROM ItemTable WHERE key = ?1",
+            [ACCOUNTS_KEY],
+            |row| row.get(0),
+        )
         .map(Some)
         .or_else(|err| match err {
             rusqlite::Error::QueryReturnedNoRows => Ok(None),

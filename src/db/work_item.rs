@@ -25,8 +25,14 @@ pub struct LinkedWorkItem {
 }
 
 fn repo_ok(repo: &str) -> bool {
-    let ok = |part: &str| !part.is_empty() && part.chars().all(|c| c.is_ascii_alphanumeric() || "_.-".contains(c));
-    repo.split_once('/').is_some_and(|(owner, name)| ok(owner) && ok(name))
+    let ok = |part: &str| {
+        !part.is_empty()
+            && part
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || "_.-".contains(c))
+    };
+    repo.split_once('/')
+        .is_some_and(|(owner, name)| ok(owner) && ok(name))
 }
 
 impl LinkedWorkItem {
@@ -112,7 +118,11 @@ impl LinkedWorkItem {
 
 impl AppDb {
     /// MonoCode `set_linked_work_item`; `None` unlinks.
-    pub fn set_linked_work_item(&self, session_id: &str, item: Option<&LinkedWorkItem>) -> Result<()> {
+    pub fn set_linked_work_item(
+        &self,
+        session_id: &str,
+        item: Option<&LinkedWorkItem>,
+    ) -> Result<()> {
         let json = item.map(serde_json::to_string).transpose()?;
         self.conn.execute(
             "UPDATE sessions SET linked_work_item_json = ?1 WHERE id = ?2",
@@ -128,11 +138,13 @@ mod tests {
 
     #[test]
     fn urls_parse_like_monocode() {
-        let pr = LinkedWorkItem::parse_url("see https://github.com/Owner/repo.rs/pull/12/files").unwrap();
+        let pr = LinkedWorkItem::parse_url("see https://github.com/Owner/repo.rs/pull/12/files")
+            .unwrap();
         assert_eq!(pr.kind, WorkItemKind::Pr);
         assert_eq!(pr.repo, "Owner/repo.rs");
         assert_eq!(pr.url, "https://github.com/Owner/repo.rs/pull/12");
-        let issue = LinkedWorkItem::parse_url("HTTPS://GITHUB.COM/a/b/issues/7#issuecomment-1").unwrap();
+        let issue =
+            LinkedWorkItem::parse_url("HTTPS://GITHUB.COM/a/b/issues/7#issuecomment-1").unwrap();
         assert_eq!((issue.kind, issue.number), (WorkItemKind::Issue, 7));
         assert!(LinkedWorkItem::parse_url("https://github.com/a/b/pulls/7").is_none());
         assert!(LinkedWorkItem::parse_url("https://github.com/a/b/pull/0").is_none());
@@ -146,8 +158,13 @@ mod tests {
         let json = serde_json::to_string(&item).unwrap();
         assert_eq!(LinkedWorkItem::from_json(&json), Some(item));
         let forged = r#"{"kind":"pr","repo":"a/b","number":3,"url":"https://evil.example"}"#;
-        assert_eq!(LinkedWorkItem::from_json(forged).unwrap().url, "https://github.com/a/b/pull/3");
-        assert!(LinkedWorkItem::from_json(r#"{"kind":"pr","repo":"bad repo","number":3}"#).is_none());
+        assert_eq!(
+            LinkedWorkItem::from_json(forged).unwrap().url,
+            "https://github.com/a/b/pull/3"
+        );
+        assert!(
+            LinkedWorkItem::from_json(r#"{"kind":"pr","repo":"bad repo","number":3}"#).is_none()
+        );
     }
 
     #[test]
@@ -162,9 +179,17 @@ mod tests {
         db.upsert_session(&session).unwrap();
         let item = LinkedWorkItem::parse_url("https://github.com/a/b/issues/9").unwrap();
         db.set_linked_work_item("s", Some(&item)).unwrap();
-        assert_eq!(db.get_session("s").unwrap().unwrap().linked_work_item, Some(item.clone()));
-        db.upsert_session(&db.get_session("s").unwrap().unwrap()).unwrap();
-        assert_eq!(db.get_session("s").unwrap().unwrap().linked_work_item, Some(item), "saves keep it");
+        assert_eq!(
+            db.get_session("s").unwrap().unwrap().linked_work_item,
+            Some(item.clone())
+        );
+        db.upsert_session(&db.get_session("s").unwrap().unwrap())
+            .unwrap();
+        assert_eq!(
+            db.get_session("s").unwrap().unwrap().linked_work_item,
+            Some(item),
+            "saves keep it"
+        );
         db.set_linked_work_item("s", None).unwrap();
         assert_eq!(db.get_session("s").unwrap().unwrap().linked_work_item, None);
     }

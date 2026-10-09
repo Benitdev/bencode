@@ -36,7 +36,11 @@ const REWIND_TIMEOUT: Duration = Duration::from_secs(30);
 /// user turn, so an edited prompt can be sent in its place. `exec` cannot
 /// do this, so a short-lived `codex app-server` loads the thread and
 /// reverts it. Blocking; run it on a background executor.
-pub fn rewind_last_turn(thread_id: &str, cwd: &Path, account: Option<&AccountProfile>) -> Result<()> {
+pub fn rewind_last_turn(
+    thread_id: &str,
+    cwd: &Path,
+    account: Option<&AccountProfile>,
+) -> Result<()> {
     let program = HarnessResolver::resolve_codex().context("Codex is not installed")?;
     let mut server = AppServer::open(&program, cwd, REWIND_TIMEOUT, account)?;
     server.call(

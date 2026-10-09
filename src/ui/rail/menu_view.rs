@@ -9,8 +9,8 @@ use ely_gpui_component::primitives::{Icon, IconName};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, Bounds, Context, Div, Hsla, InteractiveElement, IntoElement, MouseButton,
-    MouseDownEvent, ParentElement, Pixels, Point, SharedString, Stateful, Styled, anchored,
-    canvas, deferred, div, prelude::*, relative, rgb,
+    MouseDownEvent, ParentElement, Pixels, Point, SharedString, Stateful, Styled, anchored, canvas,
+    deferred, div, prelude::*, relative, rgb,
 };
 
 use crate::ui::scale::px;
@@ -65,8 +65,15 @@ impl RowIcon {
     /// `size-3.5` in `color`.
     fn render(self, color: Hsla) -> AnyElement {
         match self {
-            Self::Ely(icon) => Icon::new(icon).size(IconSize::Sm).color(color).into_any_element(),
-            Self::Extra(icon) => icon.icon().size(IconSize::Sm).color(color).into_any_element(),
+            Self::Ely(icon) => Icon::new(icon)
+                .size(IconSize::Sm)
+                .color(color)
+                .into_any_element(),
+            Self::Extra(icon) => icon
+                .icon()
+                .size(IconSize::Sm)
+                .color(color)
+                .into_any_element(),
         }
     }
 }
@@ -84,7 +91,11 @@ pub(super) struct ExtraItem {
 }
 
 impl ExtraItem {
-    pub(super) fn new(id: &'static str, label: impl Into<String>, icon: impl Into<RowIcon>) -> Self {
+    pub(super) fn new(
+        id: &'static str,
+        label: impl Into<String>,
+        icon: impl Into<RowIcon>,
+    ) -> Self {
         Self {
             id,
             label: label.into(),
@@ -120,32 +131,36 @@ impl BenCodeApp {
         let theme = cx.theme();
         let fg = theme.colors.fg;
         let prefs = &self.settings.rail;
-        let (extra, color_index, custom, current, mascot_seed, mascot_name, logo_path) = match &menu.target {
-            MenuTarget::Project(path) => {
-                let key = model::path_key(path);
-                (
-                    self.project_extra_items(path),
-                    prefs.tab_group_colors.get(&key).copied(),
-                    prefs.tab_group_custom_colors.get(&key).and_then(|h| parse_hex(h)),
-                    self.project_color(path),
-                    project_name(path).to_string(),
-                    prefs.tab_group_mascots.get(&key).cloned(),
-                    Some(prefs.tab_group_logos.get(&key).cloned()),
-                )
-            }
-            MenuTarget::Group(id) => {
-                let group = prefs.project_groups.iter().find(|g| &g.id == id)?;
-                (
-                    Self::group_extra_items(),
-                    group.color_index,
-                    group.custom_color.as_deref().and_then(parse_hex),
-                    group_color(group),
-                    group.id.clone(),
-                    group.mascot.clone(),
-                    None,
-                )
-            }
-        };
+        let (extra, color_index, custom, current, mascot_seed, mascot_name, logo_path) =
+            match &menu.target {
+                MenuTarget::Project(path) => {
+                    let key = model::path_key(path);
+                    (
+                        self.project_extra_items(path),
+                        prefs.tab_group_colors.get(&key).copied(),
+                        prefs
+                            .tab_group_custom_colors
+                            .get(&key)
+                            .and_then(|h| parse_hex(h)),
+                        self.project_color(path),
+                        project_name(path).to_string(),
+                        prefs.tab_group_mascots.get(&key).cloned(),
+                        Some(prefs.tab_group_logos.get(&key).cloned()),
+                    )
+                }
+                MenuTarget::Group(id) => {
+                    let group = prefs.project_groups.iter().find(|g| &g.id == id)?;
+                    (
+                        Self::group_extra_items(),
+                        group.color_index,
+                        group.custom_color.as_deref().and_then(parse_hex),
+                        group_color(group),
+                        group.id.clone(),
+                        group.mascot.clone(),
+                        None,
+                    )
+                }
+            };
         let leading = match &menu.target {
             MenuTarget::Project(path) => mute_status(
                 prefs.project_notifications.get(&notification_id(path)),
@@ -153,7 +168,11 @@ impl BenCodeApp {
             )
             .map(|status| ExtraItem {
                 description: Some(status),
-                ..ExtraItem::new("notifications-resume", "Resume notifications", ExtraIcon::BellOff)
+                ..ExtraItem::new(
+                    "notifications-resume",
+                    "Resume notifications",
+                    ExtraIcon::BellOff,
+                )
             }),
             MenuTarget::Group(_) => None,
         };
@@ -168,7 +187,8 @@ impl BenCodeApp {
             .flex_col()
             .on_mouse_down_out(cx.listener(|this, event: &MouseDownEvent, _, cx| {
                 let in_submenu = this.rail_ui.submenu.as_ref().is_some_and(|s| {
-                    submenu_bounds(&this.rail_submenu_entries(s.kind), s.position).contains(&event.position)
+                    submenu_bounds(&this.rail_submenu_entries(s.kind), s.position)
+                        .contains(&event.position)
                 });
                 if in_submenu || std::mem::take(&mut this.rail_ui.trigger_hit) {
                     return;
@@ -194,11 +214,17 @@ impl BenCodeApp {
                 let target = target.clone();
                 el.child(
                     div().mb_2().child(
-                        ely_gpui_component::forms::ColorPicker::new("rail-color-picker", custom.unwrap_or(current))
-                            .opaque()
-                            .on_change(app_callback_with(cx, move |this, color: Hsla, cx| {
+                        ely_gpui_component::forms::ColorPicker::new(
+                            "rail-color-picker",
+                            custom.unwrap_or(current),
+                        )
+                        .opaque()
+                        .on_change(app_callback_with(
+                            cx,
+                            move |this, color: Hsla, cx| {
                                 this.set_rail_custom_color(&target, &to_hex(color), cx);
-                            })),
+                            },
+                        )),
                     ),
                 )
             })
@@ -222,9 +248,14 @@ impl BenCodeApp {
                     .child(err)
             }));
         Some(
-            deferred(anchored().position(menu.position).snap_to_window().child(frame))
-                .with_priority(3)
-                .into_any_element(),
+            deferred(
+                anchored()
+                    .position(menu.position)
+                    .snap_to_window()
+                    .child(frame),
+            )
+            .with_priority(3)
+            .into_any_element(),
         )
     }
 
@@ -295,12 +326,24 @@ impl BenCodeApp {
             .py(px(6.0))
             .text_size(px(13.0))
             .text_color(fg)
-            .on_mouse_down(MouseButton::Left, move |_, window, cx| window.focus(&handle, cx))
-            .child(div().flex_1().min_w_0().child(self.rail_ui.name_input.clone()))
+            .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+                window.focus(&handle, cx)
+            })
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .child(self.rail_ui.name_input.clone()),
+            )
     }
 
     /// MonoCode's project logo row: `mb-2 flex items-center gap-2 px-0.5`.
-    fn render_logo_row(&self, path: &str, logo: Option<String>, cx: &Context<Self>) -> impl IntoElement {
+    fn render_logo_row(
+        &self,
+        path: &str,
+        logo: Option<String>,
+        cx: &Context<Self>,
+    ) -> impl IntoElement {
         let fg = cx.theme().colors.fg;
         let (pick_path, clear_path) = (path.to_string(), path.to_string());
         let has_logo = logo.is_some();
@@ -329,7 +372,9 @@ impl BenCodeApp {
                     } else {
                         "Add project logo"
                     }))
-                    .on_click(cx.listener(move |this, _, _, cx| this.pick_project_logo(&pick_path, cx)))
+                    .on_click(
+                        cx.listener(move |this, _, _, cx| this.pick_project_logo(&pick_path, cx)),
+                    )
                     .child(match logo {
                         Some(file) => thumbnail(file, LOGO).size_5().into_any_element(),
                         None => ExtraIcon::ImagePlus
@@ -343,7 +388,12 @@ impl BenCodeApp {
                 div()
                     .min_w_0()
                     .flex_1()
-                    .child(div().text_size(px(11.0)).text_color(fg.opacity(0.5)).child("Project logo"))
+                    .child(
+                        div()
+                            .text_size(px(11.0))
+                            .text_color(fg.opacity(0.5))
+                            .child("Project logo"),
+                    )
                     .child(
                         div()
                             .truncate()
@@ -369,7 +419,9 @@ impl BenCodeApp {
                         .justify_center()
                         .rounded(px(6.0))
                         .hover(move |s| s.bg(fg.opacity(0.1)))
-                        .tooltip(ely_gpui_component::primitives::Tooltip::text("Remove project logo"))
+                        .tooltip(ely_gpui_component::primitives::Tooltip::text(
+                            "Remove project logo",
+                        ))
                         .on_click(cx.listener(move |this, _, _, cx| {
                             this.update_rail_prefs(|prefs| prefs.with_logo(&clear_path, None), cx);
                         }))
@@ -426,32 +478,50 @@ impl BenCodeApp {
                         ),
                 )
         };
-        let mut row = div().mb_2().flex().items_center().justify_between().gap_1().px(px(2.0));
+        let mut row = div()
+            .mb_2()
+            .flex()
+            .items_center()
+            .justify_between()
+            .gap_1()
+            .px(px(2.0));
         for ix in 0..FOLDER_COLORS.len() {
-            let selected = custom.is_none() && (color_index == Some(ix) || (color_index.is_none() && ix == 0));
+            let selected =
+                custom.is_none() && (color_index == Some(ix) || (color_index.is_none() && ix == 0));
             let target = target.clone();
             row = row.child(
-                swatch(SharedString::from(format!("rail-color-{ix}")), palette_color(ix), selected)
-                    .tooltip(ely_gpui_component::primitives::Tooltip::text(format!("Color {}", ix + 1)))
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.rail_ui.custom_color_open = false;
-                        this.set_rail_color(&target, (ix > 0).then_some(ix), cx);
-                    })),
+                swatch(
+                    SharedString::from(format!("rail-color-{ix}")),
+                    palette_color(ix),
+                    selected,
+                )
+                .tooltip(ely_gpui_component::primitives::Tooltip::text(format!(
+                    "Color {}",
+                    ix + 1
+                )))
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.rail_ui.custom_color_open = false;
+                    this.set_rail_color(&target, (ix > 0).then_some(ix), cx);
+                })),
             );
         }
         let pipette = custom.is_some() || picker_open;
         row.child(
             swatch(SharedString::from("rail-color-custom"), custom, pipette)
-                .tooltip(ely_gpui_component::primitives::Tooltip::text("Custom color"))
+                .tooltip(ely_gpui_component::primitives::Tooltip::text(
+                    "Custom color",
+                ))
                 .on_click(cx.listener(|this, _, _, cx| {
                     this.rail_ui.custom_color_open = !this.rail_ui.custom_color_open;
                     cx.notify();
                 }))
                 .when(custom.is_none(), |el| {
                     el.child(
-                        div()
-                            .absolute()
-                            .child(Icon::new(IconName::Pipette).size(IconSize::Xs).color(fg.opacity(0.6))),
+                        div().absolute().child(
+                            Icon::new(IconName::Pipette)
+                                .size(IconSize::Xs)
+                                .color(fg.opacity(0.6)),
+                        ),
                     )
                 }),
         )
@@ -474,33 +544,51 @@ impl BenCodeApp {
         div()
             .mb_2()
             .px(px(2.0))
-            .child(div().mb_1().text_size(px(11.0)).text_color(fg.opacity(0.5)).child("Mascot"))
-            .child(div().flex().items_center().justify_between().gap_1().children(
-                MASCOT_NAMES.iter().map(|mascot| {
-                    let selected = *mascot == shown;
-                    let target = target.clone();
-                    let sprite = mascot_for(seed, Some(mascot));
-                    div()
-                        .id(SharedString::from(format!("rail-mascot-{mascot}")))
-                        .flex()
-                        .flex_none()
-                        .size_5()
-                        .items_center()
-                        .justify_center()
-                        .rounded(px(6.0))
-                        .cursor_pointer()
-                        .map(|el| {
-                            if selected {
-                                el.bg(selected_bg).border_1().border_color(fg.opacity(0.5))
-                            } else {
-                                el.hover(move |s| s.bg(fg.opacity(0.08)))
-                            }
-                        })
-                        .tooltip(ely_gpui_component::primitives::Tooltip::text(*mascot))
-                        .on_click(cx.listener(move |this, _, _, cx| this.set_rail_mascot(&target, mascot, cx)))
-                        .child(pixel_sprite(&sprite.rest, px(12.0), fg.opacity(0.75), false))
-                }),
-            ))
+            .child(
+                div()
+                    .mb_1()
+                    .text_size(px(11.0))
+                    .text_color(fg.opacity(0.5))
+                    .child("Mascot"),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .gap_1()
+                    .children(MASCOT_NAMES.iter().map(|mascot| {
+                        let selected = *mascot == shown;
+                        let target = target.clone();
+                        let sprite = mascot_for(seed, Some(mascot));
+                        div()
+                            .id(SharedString::from(format!("rail-mascot-{mascot}")))
+                            .flex()
+                            .flex_none()
+                            .size_5()
+                            .items_center()
+                            .justify_center()
+                            .rounded(px(6.0))
+                            .cursor_pointer()
+                            .map(|el| {
+                                if selected {
+                                    el.bg(selected_bg).border_1().border_color(fg.opacity(0.5))
+                                } else {
+                                    el.hover(move |s| s.bg(fg.opacity(0.08)))
+                                }
+                            })
+                            .tooltip(ely_gpui_component::primitives::Tooltip::text(*mascot))
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.set_rail_mascot(&target, mascot, cx)
+                            }))
+                            .child(pixel_sprite(
+                                &sprite.rest,
+                                px(12.0),
+                                fg.opacity(0.75),
+                                false,
+                            ))
+                    })),
+            )
     }
 
     /// MonoCode `MenuRow`: `flex min-h-8 items-center gap-2.5 rounded-lg
@@ -509,14 +597,21 @@ impl BenCodeApp {
         let fg = cx.theme().colors.fg;
         let (red_300, red_500): (Hsla, Hsla) = (rgb(RED_300).into(), rgb(RED_500).into());
         let anchor: Anchor = Rc::default();
-        let expanded = item
-            .submenu
-            .is_some_and(|kind| self.rail_ui.submenu.as_ref().is_some_and(|s| s.kind == kind));
+        let expanded = item.submenu.is_some_and(|kind| {
+            self.rail_ui
+                .submenu
+                .as_ref()
+                .is_some_and(|s| s.kind == kind)
+        });
         let id = item.id;
         let (submenu, disabled) = (item.submenu, item.disabled);
         let hover_anchor = anchor.clone();
         let click_anchor = anchor.clone();
-        let hover_bg = if item.danger { red_500.opacity(0.15) } else { fg.opacity(0.05) };
+        let hover_bg = if item.danger {
+            red_500.opacity(0.15)
+        } else {
+            fg.opacity(0.05)
+        };
         div()
             .id(SharedString::from(format!("rail-menu-{id}")))
             .relative()
@@ -533,14 +628,22 @@ impl BenCodeApp {
                 if disabled {
                     el.text_color(fg.opacity(0.3))
                 } else if item.danger {
-                    el.text_color(red_300.opacity(0.9)).hover(move |s| s.bg(hover_bg))
+                    el.text_color(red_300.opacity(0.9))
+                        .hover(move |s| s.bg(hover_bg))
                 } else {
                     el.text_color(fg)
                         .when(expanded, |el| el.bg(hover_bg))
                         .hover(move |s| s.bg(hover_bg))
                 }
             })
-            .child(canvas(move |bounds, _, _| anchor.set(Some(bounds)), |_, _, _, _| {}).absolute().size_full())
+            .child(
+                canvas(
+                    move |bounds, _, _| anchor.set(Some(bounds)),
+                    |_, _, _, _| {},
+                )
+                .absolute()
+                .size_full(),
+            )
             .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                 if !*hovered {
                     return;
@@ -557,9 +660,10 @@ impl BenCodeApp {
                 }
             }))
             .when(!disabled, |el| {
-                el.cursor_pointer().on_click(cx.listener(move |this, _, _, cx| {
-                    this.pick_rail_extra(id, click_anchor.get(), cx);
-                }))
+                el.cursor_pointer()
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.pick_rail_extra(id, click_anchor.get(), cx);
+                    }))
             })
             .child(item.icon.render(fg.opacity(0.55)))
             .child(
@@ -581,10 +685,13 @@ impl BenCodeApp {
                     })),
             )
             .when(submenu.is_some(), |el| {
-                el.child(Icon::new(IconName::ChevronRight).size(IconSize::Sm).color(fg.opacity(0.5)))
+                el.child(
+                    Icon::new(IconName::ChevronRight)
+                        .size(IconSize::Sm)
+                        .color(fg.opacity(0.5)),
+                )
             })
     }
-
 }
 
 /// A submenu's origin beside its row: MonoCode `ExplorerMenu` anchored to

@@ -44,7 +44,10 @@ fn live_mark(reduced: bool) -> impl IntoElement {
         .h(px(10.0))
         .children((0..3).map(|bar| {
             let lit = bar_lit(bar, elapsed, POLL_EVERY, reduced);
-            div().w(px(4.0)).h(px(8.0)).bg(color.opacity(if lit { 0.85 } else { 0.4 }))
+            div()
+                .w(px(4.0))
+                .h(px(8.0))
+                .bg(color.opacity(if lit { 0.85 } else { 0.4 }))
         }))
 }
 
@@ -89,14 +92,18 @@ impl BenCodeApp {
                     .px(px(4.0))
                     .rounded(px(4.0))
                     .cursor_pointer()
-                    .when(self.running_terminals_menu_open(), |el| el.bg(fg.opacity(0.10)))
+                    .when(self.running_terminals_menu_open(), |el| {
+                        el.bg(fg.opacity(0.10))
+                    })
                     .hover(move |s| s.bg(fg.opacity(0.10)).text_color(fg))
                     // The open list closes on this press, as on any press
                     // outside it; the click must then not reopen it.
                     .capture_any_mouse_down(cx.listener(|this, _, _, _| {
                         this.terminals.running_menu_at_press = this.running_terminals_menu_open();
                     }))
-                    .on_mouse_down(gpui::MouseButton::Left, |_, window, _| window.prevent_default())
+                    .on_mouse_down(gpui::MouseButton::Left, |_, window, _| {
+                        window.prevent_default()
+                    })
                     .on_click(cx.listener(move |this, _, _, cx| {
                         if std::mem::take(&mut this.terminals.running_menu_at_press) {
                             this.close_terminal_menu(cx);
@@ -131,7 +138,11 @@ mod tests {
     #[test]
     fn bars_light_one_quarter_at_a_time() {
         let q = Duration::from_millis(800);
-        let lit = |ms: u64| (0..3).map(|bar| bar_lit(bar, Duration::from_millis(ms), q, false)).collect::<Vec<_>>();
+        let lit = |ms: u64| {
+            (0..3)
+                .map(|bar| bar_lit(bar, Duration::from_millis(ms), q, false))
+                .collect::<Vec<_>>()
+        };
         assert_eq!(lit(0), [false, false, false]);
         assert_eq!(lit(800), [true, false, false]);
         assert_eq!(lit(1600), [true, true, false]);
@@ -142,10 +153,24 @@ mod tests {
 
     #[test]
     fn title_says_what_a_click_does() {
-        let vite = RunningTerminal { id: 1, process: "vite".into(), label: "web".into() };
-        let jest = RunningTerminal { id: 2, process: "jest".into(), label: "api".into() };
-        assert_eq!(chip_title(&[vite.clone()], false), "Show vite\n\"vite\" in web");
-        assert_eq!(chip_title(&[vite.clone()], true), "Hide vite\n\"vite\" in web");
+        let vite = RunningTerminal {
+            id: 1,
+            process: "vite".into(),
+            label: "web".into(),
+        };
+        let jest = RunningTerminal {
+            id: 2,
+            process: "jest".into(),
+            label: "api".into(),
+        };
+        assert_eq!(
+            chip_title(&[vite.clone()], false),
+            "Show vite\n\"vite\" in web"
+        );
+        assert_eq!(
+            chip_title(&[vite.clone()], true),
+            "Hide vite\n\"vite\" in web"
+        );
         assert_eq!(
             chip_title(&[vite, jest], false),
             "2 terminals are running processes\n\"vite\" in web\n\"jest\" in api"

@@ -497,7 +497,14 @@ impl BenCodeApp {
             cx,
             move |db| db.session_ids_in_worktree(&listed),
             move |this, stored, cx| {
-                this.detach_worktree_threads(stored, path, main, project, deletion.delete_sessions, cx)
+                this.detach_worktree_threads(
+                    stored,
+                    path,
+                    main,
+                    project,
+                    deletion.delete_sessions,
+                    cx,
+                )
             },
         );
     }
@@ -563,9 +570,15 @@ impl BenCodeApp {
                 return;
             }
             match journal {
-                Ok(Some(journal)) => {
-                    this.remove_detached_worktree(path, main, project, kept, journal, sessions_deleted, cx)
-                }
+                Ok(Some(journal)) => this.remove_detached_worktree(
+                    path,
+                    main,
+                    project,
+                    kept,
+                    journal,
+                    sessions_deleted,
+                    cx,
+                ),
                 Ok(None) => this.abandon_worktree_deletion(
                     "Some sessions could not be deleted, so the worktree was kept.".into(),
                     cx,

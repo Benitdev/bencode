@@ -939,7 +939,11 @@ mod tests {
 
     #[test]
     fn layout_key_sees_shape_changes() {
-        let base = vec![block("user", "a"), block("assistant", ""), block("system", "s")];
+        let base = vec![
+            block("user", "a"),
+            block("assistant", ""),
+            block("system", "s"),
+        ];
         let none = HashSet::new();
         let was = key(&base);
 
@@ -974,8 +978,16 @@ mod tests {
                 vec![finished_user("a"), block("assistant", "hi there")],
             ),
             (
-                vec![finished_user("a"), tool("execute", "ls", "pending"), block("assistant", "ok")],
-                vec![finished_user("a"), tool("execute", "ls", "completed"), block("assistant", "ok")],
+                vec![
+                    finished_user("a"),
+                    tool("execute", "ls", "pending"),
+                    block("assistant", "ok"),
+                ],
+                vec![
+                    finished_user("a"),
+                    tool("execute", "ls", "completed"),
+                    block("assistant", "ok"),
+                ],
             ),
         ];
         for (a, b) in pairs {

@@ -8,21 +8,24 @@ use ely_gpui_component::menus::{DropdownMenu, Menu, MenuItem, OverflowMenu};
 use ely_gpui_component::primitives::IconName;
 use ely_gpui_component::theme::{ActiveTheme, ControlSize};
 use gpui::{
-    AnyElement, Context, Div, FontWeight, Hsla, IntoElement, ParentElement, Styled, div,
-    prelude::*,
+    AnyElement, Context, Div, FontWeight, Hsla, IntoElement, ParentElement, Styled, div, prelude::*,
 };
 
 use super::PAGE_WIDTH;
-use crate::ui::page_parts::{page_tab, tint};
-use crate::app::automations::{EditorTab, draft_is_valid};
 use crate::app::BenCodeApp;
+use crate::app::automations::{EditorTab, draft_is_valid};
 use crate::db::AutomationRow;
 use crate::ui::app_callback::app_callback;
+use crate::ui::page_parts::{page_tab, tint};
 use crate::ui::scale::px;
 use crate::ui::scrollbar::Scrolled;
 
 fn divider(fg: Hsla) -> Div {
-    div().flex_none().w(px(1.0)).h(px(12.0)).bg(fg.opacity(tint::DIVIDER))
+    div()
+        .flex_none()
+        .w(px(1.0))
+        .h(px(12.0))
+        .bg(fg.opacity(tint::DIVIDER))
 }
 
 impl BenCodeApp {
@@ -83,10 +86,13 @@ impl BenCodeApp {
             .gap_2()
             .when(dirty, |el| {
                 el.child(
-                    Button::new("automation-discard", if stored { "Reset" } else { "Cancel" })
-                        .variant(ButtonVariant::Outline)
-                        .size(ControlSize::Sm)
-                        .on_click(cx.listener(|this, _, _, cx| this.discard_automation_edits(cx))),
+                    Button::new(
+                        "automation-discard",
+                        if stored { "Reset" } else { "Cancel" },
+                    )
+                    .variant(ButtonVariant::Outline)
+                    .size(ControlSize::Sm)
+                    .on_click(cx.listener(|this, _, _, cx| this.discard_automation_edits(cx))),
                 )
             })
             .when(stored, |el| {
@@ -121,7 +127,11 @@ impl BenCodeApp {
                 Switch::new("automation-enabled", draft.enabled)
                     .on_change(move |on, window, cx| enable(&on, window, cx)),
             )
-            .child(div().flex_none().child(if draft.enabled { "Active" } else { "Inactive" }))
+            .child(
+                div()
+                    .flex_none()
+                    .child(if draft.enabled { "Active" } else { "Inactive" }),
+            )
             .child(divider(fg).ml_2())
             .child(self.render_automation_project(draft, cx))
             .when(stored, |el| {
@@ -139,55 +149,66 @@ impl BenCodeApp {
                     OverflowMenu::new("automation-actions", menu).tooltip("Automation actions"),
                 )
             });
-        let tabs = stored.then(|| {
-            div()
-                .flex()
-                .gap_4()
-                .child(
-                    page_tab("automation-tab-settings", "Settings", !history, fg, muted).on_click(
-                        cx.listener(|this, _, _, cx| this.show_automation_tab(EditorTab::Settings, cx)),
-                    ),
-                )
-                .child(
-                    page_tab("automation-tab-history", "Run history", history, fg, muted).on_click(
-                        cx.listener(|this, _, _, cx| this.show_automation_tab(EditorTab::History, cx)),
-                    ),
-                )
-        });
-        div().flex_none().border_b_1().border_color(colors.border).child(
-            div()
-                .flex()
-                .flex_col()
-                .gap(px(10.0))
-                .mx_auto()
-                .w_full()
-                .max_w(px(PAGE_WIDTH))
-                .px_8()
-                .pt_5()
-                .when(!stored, |el| el.pb_5())
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap_6()
-                        .child(
-                            div()
-                                .flex_1()
-                                .min_w_0()
-                                .text_size(px(20.0))
-                                .font_weight(FontWeight::SEMIBOLD)
-                                .text_color(fg)
-                                .child(self.automations.name_input.clone()),
-                        )
-                        .child(actions),
-                )
-                .child(status)
-                .children(tabs),
-        )
+        let tabs =
+            stored.then(|| {
+                div()
+                    .flex()
+                    .gap_4()
+                    .child(
+                        page_tab("automation-tab-settings", "Settings", !history, fg, muted)
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.show_automation_tab(EditorTab::Settings, cx)
+                            })),
+                    )
+                    .child(
+                        page_tab("automation-tab-history", "Run history", history, fg, muted)
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.show_automation_tab(EditorTab::History, cx)
+                            })),
+                    )
+            });
+        div()
+            .flex_none()
+            .border_b_1()
+            .border_color(colors.border)
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(10.0))
+                    .mx_auto()
+                    .w_full()
+                    .max_w(px(PAGE_WIDTH))
+                    .px_8()
+                    .pt_5()
+                    .when(!stored, |el| el.pb_5())
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_6()
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .text_size(px(20.0))
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .text_color(fg)
+                                    .child(self.automations.name_input.clone()),
+                            )
+                            .child(actions),
+                    )
+                    .child(status)
+                    .children(tabs),
+            )
     }
 
     /// MonoCode `SearchableProjectPicker`: the project runs happen in.
-    fn render_automation_project(&self, draft: &AutomationRow, cx: &Context<Self>) -> impl IntoElement {
+    fn render_automation_project(
+        &self,
+        draft: &AutomationRow,
+        cx: &Context<Self>,
+    ) -> impl IntoElement {
         let mut projects = self.worktree_project_choices();
         if !draft.cwd.is_empty() && !projects.contains(&draft.cwd) {
             projects.insert(0, draft.cwd.clone());

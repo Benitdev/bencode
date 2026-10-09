@@ -29,11 +29,11 @@ use gpui::{
 use crate::app::{BenCodeApp, Surface};
 use crate::backlog;
 use crate::github::{self, Details, Kind, Status, WorkItem};
-use crate::work_items::Provider;
+use crate::ui::app_callback::app_callback;
 use crate::ui::composer::cards::ComposerCard;
 use crate::ui::composer::inbox_card::{InboxCard, label_chip};
-use crate::ui::app_callback::app_callback;
 use crate::ui::scale::px;
+use crate::work_items::Provider;
 
 pub use checks::{Repair, RepairForm};
 pub use comments::ReplyTarget;
@@ -267,7 +267,11 @@ pub fn relative_time(iso: &str, now_ms: i64) -> String {
 /// own status, or GitHub's Open / Draft / Merged / Closed.
 pub fn status_name(item: &WorkItem) -> &str {
     if item.provider == Provider::Backlog {
-        return if item.state.is_empty() { "Open" } else { item.state.as_str() };
+        return if item.state.is_empty() {
+            "Open"
+        } else {
+            item.state.as_str()
+        };
     }
     match (item.kind, item.state.to_uppercase().as_str()) {
         (Kind::Pr, "MERGED") => "Merged",
@@ -297,10 +301,23 @@ pub fn status_mark(item: &WorkItem, cx: &gpui::App) -> (IconName, gpui::Hsla, Sh
     let colors = &cx.theme().colors;
     if item.provider == Provider::Backlog {
         // Backlog's statuses are the project's own, each with its colour.
-        let tint = crate::ui::composer::inbox_card::label_color(&item.state_color)
-            .unwrap_or(if item.closed { colors.accent } else { colors.success });
-        let icon = if item.closed { IconName::CircleCheck } else { IconName::CircleDot };
-        return (icon, tint, SharedString::from(status_name(item).to_string()));
+        let tint = crate::ui::composer::inbox_card::label_color(&item.state_color).unwrap_or(
+            if item.closed {
+                colors.accent
+            } else {
+                colors.success
+            },
+        );
+        let icon = if item.closed {
+            IconName::CircleCheck
+        } else {
+            IconName::CircleDot
+        };
+        return (
+            icon,
+            tint,
+            SharedString::from(status_name(item).to_string()),
+        );
     }
     let state = item.state.to_uppercase();
     let (icon, tint, name) = match (item.kind, state.as_str()) {
@@ -454,7 +471,8 @@ impl BenCodeApp {
                     return;
                 }
                 // A fresh Backlog connection: its first list counts as read.
-                let seed_backlog = std::mem::take(&mut app.backlog.seed_seen) && backlog_statuses.is_some();
+                let seed_backlog =
+                    std::mem::take(&mut app.backlog.seed_seen) && backlog_statuses.is_some();
                 app.backlog.statuses = backlog_statuses.clone().unwrap_or_default();
                 let inbox = &mut app.inbox;
                 inbox.status = Some(status);
@@ -681,7 +699,14 @@ impl BenCodeApp {
         };
         let title = format!("{} {}", item.identifier, item.title.trim());
         let body = (item.provider == Provider::Backlog)
-            .then(|| self.inbox.details.get(key)?.as_ref().ok().map(|d| d.body.clone()))
+            .then(|| {
+                self.inbox
+                    .details
+                    .get(key)?
+                    .as_ref()
+                    .ok()
+                    .map(|d| d.body.clone())
+            })
             .flatten();
         let cwd = self.inbox_start_project(&item);
         if !crate::app::same_project_path(&cwd, &self.current_cwd) {
@@ -914,7 +939,13 @@ impl BenCodeApp {
             .collect();
         let mut ordered: Vec<String> = Vec::new();
         for item in &items {
-            for status in self.backlog.statuses.get(&item.container_id).into_iter().flatten() {
+            for status in self
+                .backlog
+                .statuses
+                .get(&item.container_id)
+                .into_iter()
+                .flatten()
+            {
                 if !ordered.contains(&status.name) {
                     ordered.push(status.name.clone());
                 }
@@ -942,24 +973,25 @@ impl BenCodeApp {
                 (Some(Provider::Backlog), Provider::Backlog.label()),
             ];
             for (choice, label) in choices {
-                menu = menu.item(MenuItem::radio(label, source == choice).on_click(app_callback(
-                    cx,
-                    move |this, cx| {
-                        this.inbox.source = choice;
-                        cx.notify();
-                    },
-                )));
+                menu = menu.item(
+                    MenuItem::radio(label, source == choice).on_click(app_callback(
+                        cx,
+                        move |this, cx| {
+                            this.inbox.source = choice;
+                            cx.notify();
+                        },
+                    )),
+                );
             }
             menu = menu.separator();
         }
         let picked = &self.inbox.statuses;
-        menu = menu.item(MenuItem::radio("All statuses", picked.is_empty()).on_click(app_callback(
-            cx,
-            |this, cx| {
+        menu = menu.item(MenuItem::radio("All statuses", picked.is_empty()).on_click(
+            app_callback(cx, |this, cx| {
                 this.inbox.statuses.clear();
                 cx.notify();
-            },
-        )));
+            }),
+        ));
         for status in self.inbox_status_choices() {
             let on = picked.contains(&status);
             menu = menu.item(MenuItem::check(status.clone(), on).on_click(app_callback(
@@ -1110,7 +1142,11 @@ impl BenCodeApp {
                                     .truncate()
                                     .text_size(px(11.0))
                                     .text_color(fg.opacity(0.5))
-                                    .child(format!("{} · {}", kind_label(item.kind), item.identifier)),
+                                    .child(format!(
+                                        "{} · {}",
+                                        kind_label(item.kind),
+                                        item.identifier
+                                    )),
                             )
                             .when(repairs > 0, |el| {
                                 el.child(
@@ -1197,7 +1233,12 @@ pub(super) fn refreshing(id: &'static str, cx: &gpui::App) -> AnyElement {
 
 /// MonoCode's `animate-spin` loader at the Inbox's small size.
 pub(super) fn loading_icon(id: &'static str, color: gpui::Hsla) -> AnyElement {
-    crate::ui::git_changes_panel::spinning_icon(id.into(), IconName::LoaderCircle, IconSize::Xs, color)
+    crate::ui::git_changes_panel::spinning_icon(
+        id.into(),
+        IconName::LoaderCircle,
+        IconSize::Xs,
+        color,
+    )
 }
 
 /// Loads `fetch` into `slot(inbox)[key]` off the UI thread, once at a time.
@@ -1266,8 +1307,15 @@ mod tests {
             backlog("Resolved"),
         ];
         let refs: Vec<&WorkItem> = items.iter().collect();
-        let workflow = ["Open".to_string(), "In Progress".to_string(), "Resolved".to_string()];
-        assert_eq!(status_choices(&refs, &workflow), ["Open", "Resolved", "Draft"]);
+        let workflow = [
+            "Open".to_string(),
+            "In Progress".to_string(),
+            "Resolved".to_string(),
+        ];
+        assert_eq!(
+            status_choices(&refs, &workflow),
+            ["Open", "Resolved", "Draft"]
+        );
     }
 
     fn item(updated: &str) -> WorkItem {

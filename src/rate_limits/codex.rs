@@ -36,7 +36,11 @@ pub fn fetch(account: Option<&AccountProfile>, now: i64) -> Fetched {
 fn failure(message: &str) -> Fetched {
     let lower = message.to_lowercase();
     let has = |needles: &[&str]| needles.iter().any(|needle| lower.contains(needle));
-    if has(&["not signed in", "chatgpt authentication required", "not authenticated"]) {
+    if has(&[
+        "not signed in",
+        "chatgpt authentication required",
+        "not authenticated",
+    ]) {
         Fetched::Unavailable("Codex not signed in".into())
     } else if has(&["enoent", "not found", "could not run", "could not start"]) {
         Fetched::Unavailable("Codex CLI not found".into())

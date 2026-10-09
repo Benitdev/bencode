@@ -135,7 +135,9 @@ impl BenCodeApp {
             dim_label(settled_title(blocks, turn), &group, cx)
         };
         let harness = turn.harness(blocks).unwrap_or(&session.harness).to_string();
-        let icon = HarnessIcon::new(&harness).size(px(ICON_BOX)).into_any_element();
+        let icon = HarnessIcon::new(&harness)
+            .size(px(ICON_BOX))
+            .into_any_element();
         let row = div()
             .id(SharedString::from(group.clone()))
             .group(SharedString::from(group.clone()))
@@ -434,16 +436,14 @@ impl BenCodeApp {
             .min_w_0()
             .child(header)
             .when(open, |el| {
-                el.child(
-                    div().pb_2().child(markdown(
-                        SharedString::from(format!("{group}-body")),
-                        &body,
-                        None,
-                        Tone::Reasoning,
-                        self.seg_ctx(&session.id, ix, false),
-                        cx,
-                    )),
-                )
+                el.child(div().pb_2().child(markdown(
+                    SharedString::from(format!("{group}-body")),
+                    &body,
+                    None,
+                    Tone::Reasoning,
+                    self.seg_ctx(&session.id, ix, false),
+                    cx,
+                )))
             })
             .into_any_element()
     }
@@ -590,7 +590,9 @@ fn step_entrance(block: &Block, now: i64) -> Option<f32> {
     let since = now - block.started_at?;
     let whole = STEP_ENTRANCE.as_millis() as i64;
     // A clock set back shows the step rather than hiding it until then.
-    (0..whole).contains(&since).then(|| since as f32 / whole as f32)
+    (0..whole)
+        .contains(&since)
+        .then(|| since as f32 / whole as f32)
 }
 
 /// "Opus worked for 1m 4s", or what the folded work adds up to.
@@ -627,7 +629,10 @@ fn display_path(path: &str, cwd: &str) -> String {
 
 /// MonoCode `composeToolTitle` reduced to BenCode's tool kinds: the verb, the
 /// target, and the file to open when the target is one.
-pub(crate) fn tool_label(block: &Block, cwd: &str) -> (Option<&'static str>, String, Option<String>) {
+pub(crate) fn tool_label(
+    block: &Block,
+    cwd: &str,
+) -> (Option<&'static str>, String, Option<String>) {
     let target = turns::tool_target(block);
     match turns::tool_kind_name(block) {
         "read" => (

@@ -2,9 +2,7 @@
 //! `providers/model/accountUsage.ts`): Ready / Running low / Exhausted, and
 //! the account worth switching to.
 
-use super::{
-    ProviderRateLimits, RateLimitStatus, clamp_used_percent, format_reset_duration,
-};
+use super::{ProviderRateLimits, RateLimitStatus, clamp_used_percent, format_reset_duration};
 
 /// At or below this much headroom an account reads as "Running low".
 pub const LOW_HEADROOM_PERCENT: f64 = 20.0;
@@ -60,7 +58,11 @@ pub fn account_status(limits: Option<&ProviderRateLimits>, now: i64) -> AccountS
                 };
                 status(
                     AccountTone::Unknown,
-                    limits.error.as_deref().filter(|e| !e.is_empty()).unwrap_or(fallback),
+                    limits
+                        .error
+                        .as_deref()
+                        .filter(|e| !e.is_empty())
+                        .unwrap_or(fallback),
                     None,
                 )
             }
@@ -73,7 +75,11 @@ pub fn account_status(limits: Option<&ProviderRateLimits>, now: i64) -> AccountS
             .map(|reset_at| format!("back in {}", format_reset_duration(reset_at - now)));
         status(AccountTone::Exhausted, "Exhausted", back_in)
     } else if headroom <= LOW_HEADROOM_PERCENT {
-        status(AccountTone::Low, "Running low", Some(format!("{}% left", headroom.round())))
+        status(
+            AccountTone::Low,
+            "Running low",
+            Some(format!("{}% left", headroom.round())),
+        )
     } else {
         status(AccountTone::Ready, "Ready", None)
     }
@@ -98,10 +104,13 @@ pub fn best_alternative<'a, T>(
         .into_iter()
         .filter_map(|(candidate, limits)| Some((candidate, account_headroom(limits, now)?)))
         .filter(|(_, headroom)| *headroom > LOW_HEADROOM_PERCENT)
-        .fold(None, |best: Option<(&T, f64)>, (candidate, headroom)| match best {
-            Some((_, most)) if most >= headroom => best,
-            _ => Some((candidate, headroom)),
-        })
+        .fold(
+            None,
+            |best: Option<(&T, f64)>, (candidate, headroom)| match best {
+                Some((_, most)) if most >= headroom => best,
+                _ => Some((candidate, headroom)),
+            },
+        )
         .map(|(candidate, _)| candidate)
 }
 
@@ -112,9 +121,15 @@ pub fn needs_provider_login(limits: &ProviderRateLimits) -> bool {
         RateLimitStatus::Unavailable => true,
         RateLimitStatus::Error => {
             let text = limits.error.as_deref().unwrap_or_default().to_lowercase();
-            ["expired", "sign-in", "not signed in", "not connected", "authentication"]
-                .iter()
-                .any(|needle| text.contains(needle))
+            [
+                "expired",
+                "sign-in",
+                "not signed in",
+                "not connected",
+                "authentication",
+            ]
+            .iter()
+            .any(|needle| text.contains(needle))
         }
         _ => false,
     }
@@ -147,7 +162,10 @@ mod tests {
     #[test]
     fn status_follows_the_tightest_window() {
         let ready = account_status(Some(&limits(30.0, 11.0, None)), NOW);
-        assert_eq!((ready.tone, ready.label.as_str()), (AccountTone::Ready, "Ready"));
+        assert_eq!(
+            (ready.tone, ready.label.as_str()),
+            (AccountTone::Ready, "Ready")
+        );
 
         let low = account_status(Some(&limits(85.4, 11.0, None)), NOW);
         assert_eq!(low.tone, AccountTone::Low);
@@ -171,21 +189,44 @@ mod tests {
         );
         let signed_out = ProviderRateLimits::unavailable("Claude not signed in", NOW);
         let status = account_status(Some(&signed_out), NOW);
-        assert_eq!((status.tone, status.label.as_str()), (AccountTone::Unknown, "Claude not signed in"));
+        assert_eq!(
+            (status.tone, status.label.as_str()),
+            (AccountTone::Unknown, "Claude not signed in")
+        );
         assert!(needs_provider_login(&signed_out));
-        assert!(needs_provider_login(&ProviderRateLimits::error("Claude sign-in expired", None, NOW)));
-        assert!(!needs_provider_login(&ProviderRateLimits::error("request failed (500)", None, NOW)));
+        assert!(needs_provider_login(&ProviderRateLimits::error(
+            "Claude sign-in expired",
+            None,
+            NOW
+        )));
+        assert!(!needs_provider_login(&ProviderRateLimits::error(
+            "request failed (500)",
+            None,
+            NOW
+        )));
         assert!(!needs_provider_login(&limits(10.0, 10.0, None)));
     }
 
     #[test]
     fn the_suggested_account_has_the_most_room_above_low() {
-        let (low, some, most) = (limits(90.0, 10.0, None), limits(50.0, 10.0, None), limits(5.0, 30.0, None));
+        let (low, some, most) = (
+            limits(90.0, 10.0, None),
+            limits(50.0, 10.0, None),
+            limits(5.0, 30.0, None),
+        );
         let pick = best_alternative(
-            [(&"low", Some(&low)), (&"some", Some(&some)), (&"most", Some(&most)), (&"unknown", None)],
+            [
+                (&"low", Some(&low)),
+                (&"some", Some(&some)),
+                (&"most", Some(&most)),
+                (&"unknown", None),
+            ],
             NOW,
         );
         assert_eq!(pick, Some(&"most"));
-        assert_eq!(best_alternative([(&"low", Some(&low)), (&"unknown", None)], NOW), None);
+        assert_eq!(
+            best_alternative([(&"low", Some(&low)), (&"unknown", None)], NOW),
+            None
+        );
     }
 }
