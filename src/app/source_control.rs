@@ -12,7 +12,7 @@ use crate::app::BenCodeApp;
 use crate::app::file_pane::PaneTab;
 use crate::git::sync as git_sync;
 use crate::git::{GitFileStatus, stage_all, stage_file, unstage_all, unstage_file};
-use crate::ui::git_changes_panel::{Busy, GitConfirm, PendingCommit, Side};
+use crate::ui::git_changes_panel::{Busy, GitConfirm, GitError, GitFailure, PendingCommit, Side};
 
 /// MonoCode clears its status line after 4s.
 const STATUS_FOR: Duration = Duration::from_secs(4);
@@ -142,10 +142,29 @@ impl BenCodeApp {
         after: impl FnOnce(&mut Self, &mut Context<Self>) + 'static,
         cx: &mut Context<Self>,
     ) {
+        self.run_changes_steps(
+            busy,
+            done,
+            move |cwd| work(cwd).map_err(GitFailure::from),
+            after,
+            cx,
+        );
+    }
+
+    /// `run_changes_action` for work of more than one step, whose failure
+    /// names the step that failed rather than the whole action.
+    fn run_changes_steps(
+        &mut self,
+        busy: Busy,
+        done: Option<&'static str>,
+        work: impl FnOnce(&str) -> Result<(), GitFailure> + Send + 'static,
+        after: impl FnOnce(&mut Self, &mut Context<Self>) + 'static,
+        cx: &mut Context<Self>,
+    ) {
         if self.changes_ui.busy.is_some() {
             return;
         }
-        self.changes_ui.busy = Some(busy);
+        self.changes_ui.busy = Some(busy.clone());
         self.workspace.git_error = None;
         let cwd = self.workspace_cwd();
         let task = cx.background_executor().spawn(async move { work(&cwd) });
@@ -160,9 +179,9 @@ impl BenCodeApp {
                         }
                         after(app, cx);
                     }
-                    Err(err) => {
-                        log::warn!("git action failed: {err}");
-                        app.workspace.git_error = Some(err);
+                    Err(failure) => {
+                        log::warn!("git action failed: {}", failure.output());
+                        app.workspace.git_error = Some(failure.into_error(&busy));
                     }
                 }
                 app.refresh_workspace(cx);
@@ -313,13 +332,16 @@ impl BenCodeApp {
         }
         let message = self.git_commit_input.read(cx).text().to_string();
         let amend = self.changes_ui.amend.is_some();
-        self.run_changes_action(
+        self.run_changes_steps(
             if pending.pr { Busy::Pr } else { Busy::Commit },
             None,
             move |cwd| {
-                git_sync::commit(cwd, &message, amend)?;
+                git_sync::commit(cwd, &message, amend)
+                    .map_err(|err| GitFailure::titled("Couldn't commit", err))?;
                 if pending.push || pending.pr {
-                    git_sync::push(cwd)?;
+                    // The commit is made: saying it failed invites a second.
+                    git_sync::push(cwd)
+                        .map_err(|err| GitFailure::titled("Committed, but couldn't push", err))?;
                 }
                 Ok(())
             },
@@ -431,7 +453,9 @@ impl BenCodeApp {
                         app.changes_ui.amend =
                             Some((app.git_sync.branch.clone(), app.git_sync.head.clone()));
                     }
-                    Err(err) => app.workspace.git_error = Some(err),
+                    Err(err) => {
+                        app.workspace.git_error = Some(GitError::new("Couldn't amend", err))
+                    }
                 }
                 cx.notify();
             });
@@ -473,7 +497,9 @@ impl BenCodeApp {
                     Ok(message) => app
                         .git_commit_input
                         .update(cx, |input, cx| input.set_text(message, cx)),
-                    Err(err) => app.workspace.git_error = Some(err),
+                    Err(err) => {
+                        app.workspace.git_error = Some(GitError::for_busy(&Busy::Generate, err))
+                    }
                 }
                 cx.notify();
             });

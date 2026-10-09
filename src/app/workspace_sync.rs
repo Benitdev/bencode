@@ -31,8 +31,8 @@ pub struct WorkspaceCache {
     pub branches: Vec<git::Branch>,
     pub changes: Vec<GitFileChange>,
     pub worktrees: Vec<crate::git::Worktree>,
-    /// Last failed git action, shown in the Changes panel until the next one.
-    pub git_error: Option<String>,
+    /// Last failed git action, shown in a dialog until dismissed.
+    pub git_error: Option<crate::ui::git_changes_panel::GitError>,
     /// MonoCode `GitInfo.repo`: the repository name session cards show.
     pub repo: Option<String>,
     /// `git::state_fingerprint` of the loaded snapshot.
@@ -476,7 +476,10 @@ impl BenCodeApp {
                         // Shown in the popover when the switch came from it.
                         if !app.finish_branch_switch(Some(format!("{err:#}")), cx) {
                             app.workspace.git_error =
-                                Some(format!("Switch branch failed: {err:#}"));
+                                Some(crate::ui::git_changes_panel::GitError::new(
+                                    "Couldn't switch branch",
+                                    format!("{err:#}"),
+                                ));
                         }
                     }
                 }

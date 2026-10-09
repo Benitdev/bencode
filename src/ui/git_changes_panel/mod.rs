@@ -5,10 +5,12 @@
 //! list or a tree, and the commit graph under a resize sash.
 
 mod confirm;
+mod error;
 mod graph;
 mod tree;
 
 pub use confirm::GitConfirm;
+pub use error::{GitError, GitFailure};
 pub use tree::{ChangeDir, build_tree};
 use tree::{basename, dirname};
 
@@ -19,7 +21,6 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
-use ely_gpui_component::feedback::Alert;
 use ely_gpui_component::overlays::ConfirmDialog;
 use ely_gpui_component::primitives::{Icon, IconName, Severity, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
@@ -329,13 +330,6 @@ impl BenCodeApp {
                     )
             })
             .child(self.render_changes_header(cx))
-            .when_some(self.workspace.git_error.clone(), |el, error| {
-                el.child(
-                    div()
-                        .p_2()
-                        .child(Alert::new("git-error-banner", Severity::Danger, "Git").body(error)),
-                )
-            })
             .child(self.render_commit_box(cx))
             .child(self.render_change_sections(cx))
             .when(graph_open, |el| el.child(self.render_graph_sash(cx)))

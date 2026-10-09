@@ -1599,6 +1599,7 @@ impl Render for BenCodeApp {
                     .children(self.render_quick_open(cx))
                     .children(self.render_lightbox(cx))
                     .children(self.render_git_confirm(cx))
+                    .children(self.render_git_error(cx))
                     .children(self.render_session_undo_confirm(cx))
                     .children(self.render_branch_switch_confirm(cx))
                     .children(self.render_branch_create_dialog(cx))
