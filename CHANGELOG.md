@@ -32,6 +32,9 @@ tagging (`docs/releasing.md`).
 - Selecting text in a chat follows the pointer. The highlight used to lag
   behind a drag and often only appeared once the button was released; ⌘A
   and Esc on a selection show at once too.
+- A file open beside the chat costs much less to draw: the editor's
+  minimap is gone. It was redrawn in full on every streamed token, key and
+  hover, which took longer the longer the file.
 
 ## [0.1.3] - 2026-10-09
 

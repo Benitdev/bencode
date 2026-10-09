@@ -263,7 +263,9 @@ impl BenCodeApp {
             CodeEditor::new(text, window, cx)
                 .language(detect_language(path))
                 .line_numbers(LineNumbers::Absolute)
-                .minimap()
+                // No minimap: Ely colours the whole file and paints a quad
+                // per token on every render (about 3ms a frame at 1,600
+                // lines), and the editor renders whenever the app does.
                 .sticky_scroll()
                 .rainbow_brackets()
         });
