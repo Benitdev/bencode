@@ -26,6 +26,8 @@ tagging (`docs/releasing.md`).
   Volta) beside the one the ChatGPT or Codex app bundles, BenCode used the
   old one, which only listed models a ChatGPT account can no longer run.
   BenCode also finds Codex installed through Volta, Bun or `n`.
+- A web address written bare in a reply or a note (`https://…`, `www.…`)
+  is a link you can click, as one written in Markdown already was.
 
 ## [0.1.3] - 2026-10-09
 

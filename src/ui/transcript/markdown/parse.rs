@@ -108,7 +108,8 @@ impl Builder {
             self.inline = Inline::default();
             return;
         }
-        let inline = std::mem::take(&mut self.inline);
+        let mut inline = std::mem::take(&mut self.inline);
+        autolink(&mut inline);
         self.push(Block::Paragraph(inline));
     }
 
@@ -121,6 +122,7 @@ impl Builder {
             range.start = range.start.min(range.end);
         }
         inline.spans.retain(|(range, _)| !range.is_empty());
+        autolink(&mut inline);
         inline
     }
 
@@ -327,6 +329,113 @@ impl Builder {
     }
 }
 
+/// Where the address starting at `at` begins after its prefix, and whether
+/// that prefix is `www.` (no scheme).
+fn address_prefix(text: &str, at: usize) -> Option<(usize, bool)> {
+    let rest = &text.as_bytes()[at..];
+    let starts = |prefix: &str| {
+        rest.len() >= prefix.len() && rest[..prefix.len()].eq_ignore_ascii_case(prefix.as_bytes())
+    };
+    if starts("https://") {
+        Some((at + 8, false))
+    } else if starts("http://") {
+        Some((at + 7, false))
+    } else if starts("www.") {
+        Some((at + 4, true))
+    } else {
+        None
+    }
+}
+
+/// GFM's rule for where a bare address ends: closing punctuation and a
+/// bracket that nothing in the address opened belong to the sentence.
+fn address_len(address: &str) -> usize {
+    let mut end = address.len();
+    while let Some(last) = address[..end].chars().next_back() {
+        let link = &address[..end];
+        let unopened = |open: char, close: char| {
+            last == close && link.matches(close).count() > link.matches(open).count()
+        };
+        if "?!.,:;*_~'\"".contains(last) || unopened('(', ')') || unopened('[', ']') {
+            end -= last.len_utf8();
+        } else {
+            break;
+        }
+    }
+    end
+}
+
+/// GFM autolink literals: an `http://`, `https://` or `www.` address typed
+/// bare becomes a link. pulldown-cmark leaves them as text; MonoCode's
+/// Streamdown links them (remark-gfm). Addresses in code or in a link stay
+/// as they are, and emails stay text: nothing here opens `mailto:`.
+fn autolink(inline: &mut Inline) {
+    let text = inline.text.as_str();
+    // Most text holds no address: one pass over its bytes settles that.
+    let may_hold_one = text.contains("://")
+        || text
+            .as_bytes()
+            .windows(4)
+            .any(|word| word.eq_ignore_ascii_case(b"www."));
+    if !may_hold_one {
+        return;
+    }
+    let taken: Vec<Range<usize>> = inline
+        .spans
+        .iter()
+        .filter(|(_, span)| matches!(span, Span::Code | Span::Link(_)))
+        .map(|(range, _)| range.clone())
+        .collect();
+    let mut links = Vec::new();
+    let mut resume = 0;
+    for (at, _) in text.char_indices() {
+        if at < resume || taken.iter().any(|range| range.contains(&at)) {
+            continue;
+        }
+        let Some((domain, www)) = address_prefix(text, at) else {
+            continue;
+        };
+        let before = text[..at].chars().next_back();
+        let starts_a_word = match before {
+            None => true,
+            // remark-gfm: `www.` after a space or an opening mark, a scheme
+            // anywhere but inside a word.
+            Some(c) if www => c.is_whitespace() || "(*_[]~".contains(c),
+            Some(c) => !c.is_alphanumeric(),
+        };
+        let has_domain = text[domain..]
+            .chars()
+            .next()
+            .is_some_and(char::is_alphanumeric);
+        if !starts_a_word || !has_domain {
+            continue;
+        }
+        // Up to the next space, or the code or link that follows.
+        let limit = taken
+            .iter()
+            .map(|range| range.start)
+            .filter(|start| *start > at)
+            .min()
+            .unwrap_or(text.len());
+        let stop = text[at..limit]
+            .find(|c: char| c.is_whitespace() || c == '<')
+            .map_or(limit, |offset| at + offset);
+        let end = at + address_len(&text[at..stop]);
+        if end <= domain {
+            continue;
+        }
+        let address = &text[at..end];
+        let url = if www {
+            format!("http://{address}")
+        } else {
+            address.to_string()
+        };
+        links.push((at..end, Span::Link(url)));
+        resume = end;
+    }
+    inline.spans.extend(links);
+}
+
 fn depth(level: HeadingLevel) -> u8 {
     match level {
         HeadingLevel::H1 => 1,
@@ -498,6 +607,104 @@ mod tests {
             text: text.into(),
             spans: Vec::new(),
         })
+    }
+
+    fn links(markdown: &str) -> Vec<(String, String)> {
+        let blocks = parse(markdown);
+        let Some(Block::Paragraph(inline)) = blocks.first() else {
+            panic!("a paragraph: {blocks:?}");
+        };
+        inline
+            .spans
+            .iter()
+            .filter_map(|(range, span)| match span {
+                Span::Link(url) => Some((inline.text[range.clone()].to_string(), url.clone())),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn link(text: &str, url: &str) -> (String, String) {
+        (text.to_string(), url.to_string())
+    }
+
+    #[test]
+    fn bare_addresses_become_links() {
+        let url = "https://github.com/Benitdev/bencode/pull/new/fix/codex-update-offer";
+        assert_eq!(
+            links(&format!("Mở link này: {url}. Nhánh chỉ có một commit")),
+            [link(url, url)]
+        );
+        // Underscores split the text the parser hands over; the address is one.
+        assert_eq!(
+            links("see https://x.dev/a_b_c, then"),
+            [link("https://x.dev/a_b_c", "https://x.dev/a_b_c")]
+        );
+        assert_eq!(
+            links("go to www.example.com/docs now"),
+            [link("www.example.com/docs", "http://www.example.com/docs")]
+        );
+    }
+
+    #[test]
+    fn a_bare_address_ends_before_the_sentence_does() {
+        assert_eq!(
+            links("(see https://x.dev/a_(b))."),
+            [link("https://x.dev/a_(b)", "https://x.dev/a_(b)")]
+        );
+        assert_eq!(
+            links("**https://x.dev/a**!"),
+            [link("https://x.dev/a", "https://x.dev/a")]
+        );
+        assert_eq!(
+            links("is it https://x.dev/a?b=1&c=2?"),
+            [link("https://x.dev/a?b=1&c=2", "https://x.dev/a?b=1&c=2")]
+        );
+    }
+
+    #[test]
+    fn code_links_and_plain_words_are_left_alone() {
+        assert_eq!(
+            links("`https://x.dev` and [docs](https://y.dev) and <https://z.dev>"),
+            [
+                link("docs", "https://y.dev"),
+                link("https://z.dev", "https://z.dev")
+            ]
+        );
+        assert_eq!(
+            links("[https://x.dev/a](https://x.dev/b)"),
+            [link("https://x.dev/a", "https://x.dev/b")]
+        );
+        let none: [(String, String); 0] = [];
+        assert_eq!(links("xhttps://x.dev https:// www. awww.x.dev"), none);
+        assert_eq!(links("me@example.com"), none);
+    }
+
+    #[test]
+    fn bare_addresses_link_in_lists_headings_and_tables() {
+        let blocks =
+            parse("- one https://x.dev/1\n\n# Head www.x.dev\n\n| a |\n| - |\n| https://x.dev/2 |");
+        let has = |inline: &Inline, url: &str| {
+            inline
+                .spans
+                .iter()
+                .any(|(_, span)| *span == Span::Link(url.to_string()))
+        };
+        let Block::List { items, .. } = &blocks[0] else {
+            panic!("a list: {blocks:?}");
+        };
+        let Block::Paragraph(item) = &items[0].blocks[0] else {
+            panic!("an item's text: {items:?}");
+        };
+        assert!(has(item, "https://x.dev/1"));
+        let Block::Heading(_, head) = &blocks[1] else {
+            panic!("a heading: {blocks:?}");
+        };
+        assert!(has(head, "http://www.x.dev"));
+        let Block::Table { rows, .. } = &blocks[2] else {
+            panic!("a table: {blocks:?}");
+        };
+        assert!(has(&rows[0][0], "https://x.dev/2"));
     }
 
     #[test]
