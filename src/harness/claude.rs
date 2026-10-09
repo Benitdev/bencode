@@ -444,12 +444,22 @@ fn on_result(rec: &Value, rate_limited: Option<Option<i64>>, events: &mut Vec<Ag
         .and_then(Value::as_bool)
         .unwrap_or(false);
     if is_error {
-        let message = str_field(rec, "result")
-            .or_else(|| str_field(rec, "subtype"))
-            .unwrap_or("Claude reported an error");
-        events.push(AgentEvent::Error(message.to_string()));
         let errors = rec.get("errors").and_then(Value::as_array);
-        let limited_text = is_usage_limit_text(message)
+        // MonoCode `turnStatusFromResult`: a `success` result has already
+        // streamed its text (a usage limit, say) as the reply, so only the
+        // other subtypes add a notice.
+        if str_field(rec, "subtype") != Some("success") {
+            let message = errors
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .find(|e| !e.starts_with("[ede_diagnostic]"))
+                .or_else(|| str_field(rec, "result"))
+                .or_else(|| str_field(rec, "subtype"))
+                .unwrap_or("Claude reported an error");
+            events.push(AgentEvent::Error(message.to_string()));
+        }
+        let limited_text = str_field(rec, "result").is_some_and(is_usage_limit_text)
             || errors
                 .into_iter()
                 .flatten()
@@ -643,6 +653,8 @@ mod tests {
         assert!(events.contains(&AgentEvent::UsageLimited {
             resets_at: Some(1_791_098_400_000)
         }));
+        // Its text came as the reply; no notice repeats it.
+        assert!(!events.iter().any(|e| matches!(e, AgentEvent::Error(_))));
         // An allowed rate-limit event changes nothing.
         let allowed = parse_all(&[
             r#"{"type":"rate_limit_event","rate_limit_info":{"status":"allowed"}}"#,
