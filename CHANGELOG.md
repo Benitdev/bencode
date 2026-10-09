@@ -10,6 +10,9 @@ tagging (`docs/releasing.md`).
   next launch lists them and resumes the ones you pick, asking each agent to
   check its last step first. Settings › General can resume them without
   asking.
+- When Claude Code, Codex or OpenCode is behind its latest release, a notice
+  at launch offers to update it; the model picker then lists the new
+  version's models.
 - Opening or closing work while an agent runs no longer flashes: a step
   fades in once, as it lands, and a reply that comes back into view is shown
   as it stands rather than typed out again.

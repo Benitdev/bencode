@@ -19,6 +19,7 @@ pub mod probe;
 pub mod process;
 pub mod resolver;
 pub mod runtime;
+pub mod updates;
 
 pub use events::{AgentEvent, DoneStatus, PermissionRequest};
 pub use handle::HarnessProcessHandle;

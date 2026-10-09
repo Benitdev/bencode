@@ -20,6 +20,15 @@ impl BenCodeApp {
         }
     }
 
+    /// After the CLI changed (an update): skips the cooldown, so the picker
+    /// gets the new version's models.
+    pub fn force_refresh_model_catalog(&mut self, kind: HarnessKind, cx: &mut Context<Self>) {
+        if let Some(Some(_)) = self.catalog_probes.get(&kind) {
+            self.catalog_probes.remove(&kind);
+        }
+        self.refresh_model_catalog(kind, cx);
+    }
+
     /// Replaces `kind`'s models with what its CLI reports; a failed probe
     /// keeps the current list (MonoCode logs it and moves on).
     pub fn refresh_model_catalog(&mut self, kind: HarnessKind, cx: &mut Context<Self>) {

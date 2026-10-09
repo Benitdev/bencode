@@ -8,8 +8,8 @@ use std::rc::Rc;
 
 use gpui::{
     AnyElement, Bounds, Context, FontWeight, InteractiveElement, IntoElement, MouseButton,
-    MouseDownEvent, ParentElement, Pixels, Point, SharedString, Styled, canvas, deferred, div,
-    prelude::*, relative, rgb,
+    MouseDownEvent, ParentElement, Pixels, Point, SharedString, Styled, canvas, div, prelude::*,
+    relative, rgb,
 };
 
 use crate::app::BenCodeApp;
@@ -17,9 +17,8 @@ use crate::app::reminders::format_reminder_time;
 use crate::ui::scale::px;
 use crate::ui::sidebar_menus::SidebarMenuKind;
 
-/// MonoCode: `min(320px, 100vw - 24px)` wide, `top-3 right-3`.
+/// MonoCode: `min(320px, 100vw - 24px)` wide.
 const PANEL_WIDTH: f32 = 320.0;
-const INSET: f32 = 12.0;
 /// MonoCode: the Snooze menu sits `4px` under its button.
 const SNOOZE_MENU_GAP: f32 = 4.0;
 /// Tailwind preflight's `line-height: 1.5` (GPUI defaults to ~1.618).
@@ -31,7 +30,7 @@ const LIST_MAX_HEIGHT: f32 = 320.0;
 const AMBER_400: u32 = 0xfbbf24;
 
 impl BenCodeApp {
-    pub fn render_reminder_notices(&self, cx: &Context<Self>) -> Option<AnyElement> {
+    pub(super) fn render_reminder_notices(&self, cx: &Context<Self>) -> Option<AnyElement> {
         let due = self.due_reminders();
         if due.is_empty() && self.reminder_error.is_none() && self.reminder_failure.is_none() {
             return None;
@@ -274,16 +273,7 @@ impl BenCodeApp {
                     .overflow_y_scroll()
                     .children(items),
             );
-        Some(
-            deferred(
-                div()
-                    .absolute()
-                    .top(px(INSET))
-                    .right(px(INSET))
-                    .child(panel),
-            )
-            .with_priority(2)
-            .into_any_element(),
-        )
+        // Placed by `render_corner_notices`, above the harness updates.
+        Some(panel.into_any_element())
     }
 }

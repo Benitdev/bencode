@@ -132,6 +132,7 @@ bencode/
 | `source_control.rs` | The Changes panel's git and PR actions: stage, discard, commit, push, pull, sync, create / view PR |
 | `tab_scope.rs`, `tab_history.rs`, `workspace_nav.rs` | Which tabs belong to which project or worktree; Back / Forward |
 | `reminders.rs`, `model_catalog.rs` | Session reminders; live model catalogs |
+| `harness_updates.rs` | The launch check for CLIs behind their npm release; Update / Update all through each CLI's own updater, then its models reloaded |
 | `usage.rs` | Provider usage snapshots for the footer, per account: load once, Refresh, the 30s countdown tick |
 | `backlog.rs` | The Backlog connection: connect / disconnect, which projects the Inbox lists, each project's start folder, status changes |
 | `github_accounts.rs` | GitHub accounts: `gh`'s sign-ins as listed in Settings › Integrations, the account picked for each project |
@@ -166,7 +167,7 @@ bencode/
 | `page_parts.rs`, `relative_time.rs` | What the Notes and Automations pages share: `content/N` tints, section titles, page tabs, boxed rows; "5 minutes ago" |
 | `settings_parts.rs` | What every Settings page is built from: `SettingsPage` (title and line), `SettingsGroup` (a titled card), `SettingsRow` |
 | `settings_accounts.rs`, `settings_agy_accounts.rs`, `settings_appearance.rs`, `settings_worktrees.rs`, `settings_integrations.rs` | Settings pages: provider accounts, appearance, worktrees, integrations (GitHub accounts, Backlog) |
-| `quick_open.rs`, `lightbox.rs`, `link_dialog.rs`, `reminder_notices.rs`, `whats_new.rs`, `resume_interrupted.rs` | Overlays |
+| `quick_open.rs`, `lightbox.rs`, `link_dialog.rs`, `reminder_notices.rs`, `harness_update_notice.rs`, `whats_new.rs`, `resume_interrupted.rs` | Overlays |
 | `theme.rs`, `appearance.rs`, `scale.rs`, `background_effects.rs`, `icons.rs`, `provider_icon.rs`, `mascot.rs`, `motion.rs`, `spinner.rs` | Look and shared drawing: palettes, tint / accent / diff colours, interface scale, chat background effects |
 | `app_callback.rs`, `virtual_rows.rs`, `explorer_menu.rs`, `drag_drop.rs`, `thumbnail.rs` | Shared helpers; `thumbnail.rs` draws a file image scaled down to its size (use it, not `img(path)`, for anything drawn smaller than the file) |
 
@@ -257,6 +258,7 @@ only read that cache.
 | `Sidebar.tsx` `CompactProjectRail`, `settings.ts` `CollapsedProjectRailMode` | `ui/rail/compact.rs` | Icon rail with the sidebar as a drawer; its project list has no search or per-project menu |
 | `sessions/model/liveAgents.ts`, `sessions/ui/LiveAgentsPreview.tsx` | `app/live_agents.rs`, `ui/rail/live_agents.rs` | "Working" card on the rail (the sidebar's foot while the rail is closed); toggle in Settings › General |
 | `app/model/updater.ts`, `updateNotice.ts`, `releaseNotes.ts`, `shell/SidebarUpdate.tsx`, `UpdateRailCard.tsx`, `WhatsNewDialog.tsx`, `tauri-plugin-updater` | `updater.rs`, `app/updater.rs`, `app/release_notes.rs`, `ui/rail/update.rs`, `ui/whats_new.rs` | Self-update from GitHub Releases (Tauri's `latest.json`, minisign); Check for Updates… in the BenCode menu and Settings › About. No update sound |
+| `providers/ui/HarnessUpdateNotice.tsx`, `providers/model/harnessUpdates.ts`, `src-tauri/src/harness_updates.rs` | `harness/updates.rs`, `app/harness_updates.rs`, `ui/harness_update_notice.rs` | Claude Code, Codex and OpenCode against npm, once per launch; npm through `curl` |
 | `ProjectRail`, `TitleBar.tsx`, `Sidebar.tsx` | `ui/rail/`, `ui/titlebar/`, `ui/sidebar*.rs` | Shell |
 | `app/shell/UsageFooter.tsx`, `UsageProviderChip.tsx`, `providers/model/rateLimits*.ts`, `src-tauri/src/rate_limits.rs` | `ui/footer/`, `app/usage.rs`, `rate_limits/` | 5h / weekly / monthly usage per account; HTTP through `curl` |
 | `providers/model/providerAccounts.ts`, `accountUsage.ts`, `harness/core/auth.ts`, `src-tauri/src/account_identity.rs` | `harness/accounts.rs`, `harness/login.rs`, `harness/account_identity.rs`, `app/accounts.rs` | Account profiles in BenCode's own `provider-accounts`; the list is in `settings.json` |

@@ -9,6 +9,7 @@ pub mod commands;
 mod composer_input;
 pub mod file_pane;
 pub mod github_accounts;
+pub mod harness_updates;
 mod ids;
 pub mod in_flight;
 mod integrations;
@@ -226,6 +227,8 @@ pub struct BenCodeApp {
     /// Model catalog probes per harness: `None` while one runs, else when
     /// the last one ended.
     pub catalog_probes: HashMap<crate::harness::HarnessKind, Option<std::time::Instant>>,
+    /// The launch check's harness updates and each row's progress.
+    pub harness_updates: crate::app::harness_updates::HarnessUpdates,
     /// Find in conversation (⌘F): its field and the open bar.
     pub find_input: Entity<TextInput>,
     /// Every file of the project, for Go to File, `@` and Search.
@@ -1187,6 +1190,7 @@ impl BenCodeApp {
             recent_models: Vec::new(),
             last_model_settings: Default::default(),
             catalog_probes: Default::default(),
+            harness_updates: Default::default(),
             composer_menus: crate::ui::composer::MenuState::new(menu_focus),
             find_input,
             transcript_find: None,
@@ -1311,6 +1315,7 @@ impl BenCodeApp {
         app.start_usage_clock(cx);
         app.load_account_profiles(cx);
         app.refresh_installed_catalogs(cx);
+        app.start_harness_update_check(cx);
         app.load_backlog_account(cx);
         app.start_inbox_poll(cx);
         app.start_update_probe(cx);
@@ -1589,7 +1594,7 @@ impl Render for BenCodeApp {
                     .children(self.render_terminal_menu(cx))
                     .children(self.render_git_menu(cx))
                     .children(self.render_link_dialog(cx))
-                    .children(self.render_reminder_notices(cx))
+                    .children(self.render_corner_notices(cx))
                     .children(self.render_session_dialog(cx))
                     .children(self.render_worktree_deletion(cx))
                     .children(self.render_account_removal(cx))
