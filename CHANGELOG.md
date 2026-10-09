@@ -4,7 +4,7 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
-## [0.1.4] - Unreleased
+## [0.1.4] - 2026-10-09
 
 - Chats cut off by a quit, an update's restart or a crash can carry on: the
   next launch lists them and resumes the ones you pick, asking each agent to
