@@ -78,6 +78,8 @@ bencode/
 │   └── providers/            harness brand icons (ui/provider_icon.rs)
 ├── docs/migration/           parity backlog and migration notes
 ├── docs/releasing.md         cutting a release; signing and notarization
+├── docs/readme/              README translations (README.vi.md)
+├── docs/assets/readme/       README screenshots and GIF, taken from a demo project
 ├── packaging/macos/          app icon, Info.plist, entitlements, bundle.sh (.app / .dmg)
 ├── site/                     the landing page (GitHub Pages)
 ├── reference/monocode        symlink to the MonoCode source (git-ignored)
