@@ -468,7 +468,7 @@ impl BenCodeApp {
                         div()
                             .flex_1()
                             .min_w_0()
-                            .font_family("monospace")
+                            .font_family(cx.theme().mono_family.clone())
                             .child(pretty_path(&tree.path)),
                     ),
             )

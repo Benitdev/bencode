@@ -57,7 +57,6 @@ pub fn default_harness_color(harness: &str, theme: &ely_gpui_component::theme::T
 pub struct HarnessIcon {
     harness: String,
     size: Pixels,
-    color: Option<Hsla>,
 }
 
 impl HarnessIcon {
@@ -65,7 +64,6 @@ impl HarnessIcon {
         Self {
             harness: harness.into(),
             size: px(14.0),
-            color: None,
         }
     }
 
@@ -73,20 +71,11 @@ impl HarnessIcon {
         self.size = size;
         self
     }
-
-    #[allow(dead_code)]
-    pub fn color(mut self, color: Hsla) -> Self {
-        self.color = Some(color);
-        self
-    }
 }
 
 impl RenderOnce for HarnessIcon {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
-        let theme = cx.theme();
-        let color = self
-            .color
-            .unwrap_or_else(|| default_harness_color(&self.harness, theme));
+        let color = default_harness_color(&self.harness, cx.theme());
         let data = harness_svg_data(&self.harness);
         svg()
             .data(data)

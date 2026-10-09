@@ -5,7 +5,7 @@
 use std::borrow::Cow;
 
 use ely_gpui_component::primitives::Icon;
-use gpui::{AssetSource, Hsla, IntoElement, Pixels, SharedString, Styled, svg};
+use gpui::{AssetSource, SharedString};
 
 macro_rules! extra_icons {
     ($($(#[$doc:meta])* $variant:ident => $file:literal,)*) => {
@@ -65,15 +65,6 @@ extra_icons! {
 impl ExtraIcon {
     pub fn icon(self) -> Icon {
         Icon::from_path(self.path())
-    }
-
-    #[allow(dead_code)]
-    pub fn render(self, size: Pixels, color: Hsla) -> impl IntoElement {
-        svg()
-            .data(self.data())
-            .size(size)
-            .flex_none()
-            .text_color(color)
     }
 }
 
