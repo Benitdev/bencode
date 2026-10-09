@@ -4,6 +4,13 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
+## [0.1.4] - Unreleased
+
+- Chats cut off by a quit, an update's restart or a crash can carry on: the
+  next launch lists them and resumes the ones you pick, asking each agent to
+  check its last step first. Settings › General can resume them without
+  asking.
+
 ## [0.1.3] - 2026-10-09
 
 - GitHub: each project can run as its own `gh` account (Settings ›

@@ -49,6 +49,9 @@ pub struct AppSettings {
     /// MonoCode `monocode.liveAgentsEnabled` switched off: no Working
     /// agents card. On by default.
     pub live_agents_off: bool,
+    /// Resume the turns a quit, restart or crash cut off at launch, without
+    /// asking. Off by default: BenCode asks.
+    pub resume_interrupted_auto: bool,
     /// MonoCode `monocode.sidebarOpacity` (0.15–1); `None` is the default.
     pub sidebar_opacity: Option<f32>,
     /// MonoCode `monocode.bodyGlass` switched off. On by default.
@@ -198,6 +201,7 @@ mod tests {
             claude_hooks_disabled: true,
             composer_mascot_off: true,
             live_agents_off: true,
+            resume_interrupted_auto: true,
             sidebar_opacity: Some(0.6),
             body_glass_off: true,
             inbox_seen: std::collections::BTreeMap::from([("o/r:issue:1".to_string(), 5)]),

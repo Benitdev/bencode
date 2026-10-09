@@ -7,14 +7,14 @@ use gpui::{AnyElement, Context, IntoElement};
 use crate::app::BenCodeApp;
 use crate::ui::app_callback::app_callback;
 
-/// MonoCode's message without its "resume when you reopen" sentence:
-/// BenCode does not resume interrupted turns. `verb` is Quit, or Restart
-/// for an update.
+/// MonoCode's message, its "resume when you reopen" sentence included:
+/// the next launch offers the cut-off turns (`app/in_flight.rs`). `verb`
+/// is Quit, or Restart for an update.
 fn quit_while_busy_message(count: usize, verb: &str) -> String {
     if count == 1 {
-        format!("1 chat is still running. {verb} anyway?")
+        format!("1 chat is still running. {verb} anyway? It can resume when BenCode opens again.")
     } else {
-        format!("{count} chats are still running. {verb} anyway?")
+        format!("{count} chats are still running. {verb} anyway? They can resume when BenCode opens again.")
     }
 }
 
@@ -55,15 +55,21 @@ mod tests {
 
     #[test]
     fn one_chat_is_singular() {
-        assert_eq!(quit_while_busy_message(1, "Quit"), "1 chat is still running. Quit anyway?");
+        assert_eq!(
+            quit_while_busy_message(1, "Quit"),
+            "1 chat is still running. Quit anyway? It can resume when BenCode opens again."
+        );
     }
 
     #[test]
     fn several_chats_are_plural() {
-        assert_eq!(quit_while_busy_message(3, "Quit"), "3 chats are still running. Quit anyway?");
+        assert_eq!(
+            quit_while_busy_message(3, "Quit"),
+            "3 chats are still running. Quit anyway? They can resume when BenCode opens again."
+        );
         assert_eq!(
             quit_while_busy_message(2, "Restart"),
-            "2 chats are still running. Restart anyway?"
+            "2 chats are still running. Restart anyway? They can resume when BenCode opens again."
         );
     }
 }

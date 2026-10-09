@@ -10,6 +10,7 @@ pub mod commands;
 mod composer_input;
 pub mod file_pane;
 mod ids;
+pub mod in_flight;
 mod integrations;
 pub mod live_agents;
 pub mod note_images;
@@ -256,6 +257,10 @@ pub struct BenCodeApp {
     /// MonoCode `LiveAgentsPreview`: the Working agents card and its setting.
     pub live_agents_ui: crate::ui::rail::LiveAgentsUi,
     pub live_agents_off: bool,
+    /// Settings › General: resume interrupted turns at launch without asking.
+    pub resume_interrupted_auto: bool,
+    /// The turns a quit, restart or crash cut off, offered at launch.
+    pub resume: in_flight::ResumeState,
     /// MonoCode Appearance › Translucency: the glass panes' tint over the
     /// blurred desktop, and whether the main pane takes it (`ui::glass`).
     pub sidebar_opacity: f32,
@@ -1166,6 +1171,8 @@ impl BenCodeApp {
             composer_mascot_off: false,
             live_agents_ui: Default::default(),
             live_agents_off: false,
+            resume_interrupted_auto: false,
+            resume: Default::default(),
             sidebar_opacity: crate::ui::glass::OPACITY_DEFAULT,
             settings_write: Default::default(),
             appearance: Default::default(),
@@ -1260,6 +1267,8 @@ impl BenCodeApp {
             _subscriptions: subscriptions,
         };
         app.apply_settings(saved);
+        // First on the writer, before any turn can write a new list.
+        app.load_interrupted_turns(cx);
         app.start_git_poll(cx);
         app.start_auto_fetch(cx);
         app.start_project_stats_poll(cx);
@@ -1559,6 +1568,7 @@ impl Render for BenCodeApp {
                     .children(self.render_file_tree_dialog(cx))
                     .children(self.render_terminal_close_confirm(cx))
                     .children(self.render_whats_new(cx))
+                    .children(self.render_resume_interrupted(cx))
                     .children(self.render_quit_confirm(cx)),
             );
         // The commands sit above the focus scope, not inside it: while the

@@ -6,6 +6,7 @@
 //! model: unknown block fields, unknown automation definition fields, and
 //! session columns it never reads.
 
+mod in_flight;
 mod orchestration;
 mod reminders;
 mod schedule;
@@ -13,6 +14,7 @@ mod work_item;
 mod worktree_removals;
 mod writer;
 
+pub use in_flight::InFlightSession;
 pub use orchestration::{OrchestrationSummary, OrchestrationTask, TaskTone};
 
 pub use reminders::Reminder;

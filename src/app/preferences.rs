@@ -113,6 +113,7 @@ impl BenCodeApp {
         self.claude_hooks_disabled = saved.claude_hooks_disabled;
         self.composer_mascot_off = saved.composer_mascot_off;
         self.live_agents_off = saved.live_agents_off;
+        self.resume_interrupted_auto = saved.resume_interrupted_auto;
         self.sidebar_opacity = saved
             .sidebar_opacity
             .map_or(crate::ui::glass::OPACITY_DEFAULT, crate::ui::glass::clamp_opacity);
@@ -150,6 +151,7 @@ impl BenCodeApp {
             claude_hooks_disabled: self.claude_hooks_disabled,
             composer_mascot_off: self.composer_mascot_off,
             live_agents_off: self.live_agents_off,
+            resume_interrupted_auto: self.resume_interrupted_auto,
             sidebar_opacity: Some(self.sidebar_opacity)
                 .filter(|o| (o - crate::ui::glass::OPACITY_DEFAULT).abs() > f32::EPSILON),
             body_glass_off: !self.body_glass,
@@ -401,6 +403,13 @@ impl BenCodeApp {
     /// MonoCode Settings › "Working agents".
     pub fn set_live_agents(&mut self, enabled: bool, cx: &mut Context<Self>) {
         self.live_agents_off = !enabled;
+        self.save_settings(cx);
+        cx.notify();
+    }
+
+    /// Settings › General › "Resume interrupted chats".
+    pub fn set_resume_interrupted_auto(&mut self, on: bool, cx: &mut Context<Self>) {
+        self.resume_interrupted_auto = on;
         self.save_settings(cx);
         cx.notify();
     }

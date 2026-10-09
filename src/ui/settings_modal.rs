@@ -263,6 +263,25 @@ impl BenCodeApp {
                             },
                         ),
                     )
+            })
+            .row({
+                let entity = cx.entity().downgrade();
+                SettingsRow::new("Resume interrupted chats")
+                    .description(
+                        "When a quit, an update's restart or a crash cuts a turn off, carry it on \
+                         at the next launch without asking first.",
+                    )
+                    .control(
+                        Switch::new("resume-interrupted", self.resume_interrupted_auto).on_change(
+                            move |on, _, cx| {
+                                if let Err(err) = entity
+                                    .update(cx, |this, cx| this.set_resume_interrupted_auto(on, cx))
+                                {
+                                    log::debug!("resume toggle after app drop: {err:#}");
+                                }
+                            },
+                        ),
+                    )
             });
 
         let editors = SettingsGroup::new("External editors")

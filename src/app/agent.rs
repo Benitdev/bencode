@@ -864,6 +864,7 @@ impl BenCodeApp {
                         && request.purpose == RunPurpose::Turn;
                     run.purpose = request.purpose;
                 }
+                self.sync_in_flight();
             }
             Err(message) => {
                 log::error!("{message}");
@@ -997,6 +998,7 @@ impl BenCodeApp {
         let Some(run) = self.runs.remove(session_id) else {
             return;
         };
+        self.sync_in_flight();
         if self
             .sessions
             .iter()
@@ -1069,6 +1071,7 @@ impl BenCodeApp {
             return;
         };
         run.handle.cancel();
+        self.sync_in_flight();
         self.close_automation_run(&run, RunStatus::Cancelled);
         if let Some(thread) = self.threads.get_mut(session_id)
             && !thread.queue.is_empty()
@@ -1103,8 +1106,9 @@ impl BenCodeApp {
     }
 
     /// Quit or window close: stops every run, marks its turn interrupted,
-    /// saves it, and waits for the writer. Needs no `cx`: it also runs from
-    /// `on_release`.
+    /// saves it, and waits for the writer. The in-flight list is left as
+    /// it is, for the next launch to resume. Needs no `cx`: it also runs
+    /// from `on_release`.
     pub(crate) fn interrupt_runs_for_quit(&mut self) {
         let runs: Vec<(String, AgentRun)> = self.runs.drain().collect();
         for (session_id, run) in &runs {
@@ -1306,7 +1310,7 @@ fn finish_turn(session: &mut SessionRow, now: i64) {
 
 /// MonoCode `markTurnInterrupted` (inFlight.ts): open tools become
 /// cancelled and the turn ends with an interrupt notice (once).
-fn mark_turn_interrupted(session: &mut SessionRow, now: i64) {
+pub(super) fn mark_turn_interrupted(session: &mut SessionRow, now: i64) {
     for block in &mut session.blocks {
         let Some(tool) = block.tool.as_mut().and_then(Value::as_object_mut) else {
             continue;
