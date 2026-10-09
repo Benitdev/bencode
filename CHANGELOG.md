@@ -4,6 +4,22 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
+## [0.1.3] - 2026-10-09
+
+- GitHub: each project can run as its own `gh` account (Settings ›
+  Integrations). Automatic uses the active account, or another signed-in one
+  when the active one cannot see the repository.
+- Settings: every page redesigned as titled groups of cards, with the page
+  shown in the title bar (`Settings / Appearance`).
+- The context ring shows the window Claude Code reports (1M where the model
+  has it) and what the context holds now, rather than the turn's summed
+  usage.
+- Clicking a menu or popover no longer also clicks the session or row
+  underneath it.
+- Opening or closing a turn's work no longer makes the chat jump.
+- A new thread's branch chip shows its own project's branch after switching
+  projects, and follows the checkout until the first prompt.
+
 ## [0.1.2] - 2026-10-08
 
 - Downloads are now one disk image per architecture, `BenCode-arm64.dmg`
