@@ -164,6 +164,7 @@ fn usage_event(usage: &Value) -> AgentEvent {
         input_tokens,
         output_tokens,
         total_tokens,
+        context_window: None,
     }
 }
 
@@ -196,7 +197,8 @@ mod tests {
                 AgentEvent::Usage {
                     input_tokens: 12231,
                     output_tokens: 22,
-                    total_tokens: 12253
+                    total_tokens: 12253,
+                    context_window: None,
                 },
                 AgentEvent::TurnMetrics(TurnMetrics {
                     input_tokens: Some(12231),

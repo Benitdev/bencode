@@ -86,6 +86,7 @@ impl LineParser for OpenCodeParser {
                         input_tokens,
                         output_tokens,
                         total_tokens: input_tokens + output_tokens,
+                        context_window: None,
                     });
                     // MonoCode `turnMetricsFromMessageInfo`.
                     let cache = tokens.get("cache");
@@ -184,7 +185,8 @@ mod tests {
                 AgentEvent::Usage {
                     input_tokens: 4,
                     output_tokens: 3,
-                    total_tokens: 7
+                    total_tokens: 7,
+                    context_window: None,
                 },
                 AgentEvent::TurnMetrics(TurnMetrics {
                     input_tokens: Some(4),

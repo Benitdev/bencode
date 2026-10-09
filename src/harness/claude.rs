@@ -385,18 +385,41 @@ fn is_usage_limit_text(text: &str) -> bool {
         || lower.contains("hit your usage limit")
 }
 
+/// MonoCode `contextFromResult`: the top-level `usage` sums every
+/// iteration of the turn, so the last of `usage.iterations` is what sits in
+/// the window; `modelUsage` carries the window itself.
+fn context_from_result(rec: &Value, usage: &Value) -> AgentEvent {
+    let last = usage
+        .get("iterations")
+        .and_then(Value::as_array)
+        .and_then(|iterations| iterations.last())
+        .unwrap_or(usage);
+    let field = |name: &str| last.get(name).and_then(Value::as_u64).unwrap_or(0);
+    let input_tokens = field("input_tokens")
+        + field("cache_read_input_tokens")
+        + field("cache_creation_input_tokens");
+    let output_tokens = field("output_tokens");
+    let context_window = rec
+        .get("modelUsage")
+        .and_then(Value::as_object)
+        .into_iter()
+        .flat_map(|models| models.values())
+        .filter_map(|model| model.get("contextWindow").and_then(Value::as_u64))
+        .filter(|window| *window > 0)
+        .max();
+    AgentEvent::Usage {
+        input_tokens,
+        output_tokens,
+        total_tokens: input_tokens + output_tokens,
+        context_window,
+    }
+}
+
 fn on_result(rec: &Value, rate_limited: Option<Option<i64>>, events: &mut Vec<AgentEvent>) {
     if let Some(usage) = rec.get("usage") {
         let field = |name: &str| usage.get(name).and_then(Value::as_u64).unwrap_or(0);
-        let input_tokens = field("input_tokens")
-            + field("cache_read_input_tokens")
-            + field("cache_creation_input_tokens");
+        events.push(context_from_result(rec, usage));
         let output_tokens = field("output_tokens");
-        events.push(AgentEvent::Usage {
-            input_tokens,
-            output_tokens,
-            total_tokens: input_tokens + output_tokens,
-        });
         // MonoCode `turnMetricsFromResult`.
         let (input, read, write) = (
             field("input_tokens"),
@@ -647,6 +670,22 @@ mod tests {
     }
 
     #[test]
+    fn result_context_is_the_last_iteration_in_the_cli_window() {
+        let events = parse_all(&[
+            r#"{"type":"result","subtype":"success","is_error":false,"usage":{"input_tokens":30,"cache_read_input_tokens":300000,"output_tokens":900,"iterations":[{"input_tokens":10,"cache_read_input_tokens":100000,"output_tokens":400},{"input_tokens":20,"cache_read_input_tokens":200000,"output_tokens":500}]},"modelUsage":{"claude-haiku-5-5":{"contextWindow":200000},"claude-opus-5-5":{"contextWindow":1000000}}}"#,
+        ]);
+        assert_eq!(
+            events[0],
+            AgentEvent::Usage {
+                input_tokens: 200_020,
+                output_tokens: 500,
+                total_tokens: 200_520,
+                context_window: Some(1_000_000),
+            }
+        );
+    }
+
+    #[test]
     fn result_reports_usage_and_done() {
         let ok = parse_all(&[
             r#"{"type":"result","subtype":"success","is_error":false,"usage":{"input_tokens":10,"cache_read_input_tokens":90,"output_tokens":5}}"#,
@@ -657,7 +696,8 @@ mod tests {
                 AgentEvent::Usage {
                     input_tokens: 100,
                     output_tokens: 5,
-                    total_tokens: 105
+                    total_tokens: 105,
+                    context_window: None,
                 },
                 AgentEvent::TurnMetrics(TurnMetrics {
                     input_tokens: Some(10),

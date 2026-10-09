@@ -1366,8 +1366,16 @@ pub fn apply_event(session: &mut SessionRow, event: AgentEvent, now: i64) {
             output,
             success,
         } => finish_tool(session, &id, &output, success),
-        AgentEvent::Usage { total_tokens, .. } => {
+        AgentEvent::Usage {
+            total_tokens,
+            context_window,
+            ..
+        } => {
             session.context_used = i64::try_from(total_tokens).ok();
+            // The CLI's own window wins over the catalog's guess.
+            if let Some(window) = context_window.and_then(|w| i64::try_from(w).ok()) {
+                session.context_window = Some(window);
+            }
             // The ring appears with the first report (MonoCode `contextUsage`).
             if session.context_window.is_none() {
                 session.context_window = Some(crate::harness::catalog::context_window_tokens(
@@ -1582,6 +1590,7 @@ mod tests {
                 input_tokens: 5,
                 output_tokens: 5,
                 total_tokens: 10,
+                context_window: None,
             },
             1,
         );

@@ -151,6 +151,7 @@ impl LineParser for CodexParser {
                         input_tokens,
                         output_tokens,
                         total_tokens: input_tokens + output_tokens,
+                        context_window: None,
                     });
                     // Codex counts cached input inside `input_tokens`
                     // (MonoCode `mapTokenUsage`).
@@ -429,7 +430,8 @@ mod tests {
                 AgentEvent::Usage {
                     input_tokens: 7,
                     output_tokens: 3,
-                    total_tokens: 10
+                    total_tokens: 10,
+                    context_window: None,
                 },
                 AgentEvent::TurnMetrics(TurnMetrics {
                     input_tokens: Some(7),

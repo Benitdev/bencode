@@ -76,6 +76,8 @@ pub enum AgentEvent {
         input_tokens: u64,
         output_tokens: u64,
         total_tokens: u64,
+        /// The model's context window, when the CLI reports it.
+        context_window: Option<u64>,
     },
     /// Token accounting for the running user turn (MonoCode `turn.metrics`).
     TurnMetrics(TurnMetrics),
