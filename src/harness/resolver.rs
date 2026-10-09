@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::OnceLock;
+use std::sync::Mutex;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct HarnessInfo {
@@ -114,32 +114,24 @@ impl HarnessResolver {
     /// ChatGPT account can no longer run, so the newest copy wins; on a tie,
     /// the earlier one (PATH first, the app bundles last, as in MonoCode).
     /// Asking each copy its version can take a few hundred ms, so a lone
-    /// copy is used without asking, and the pick is kept for the session;
-    /// the startup model probe makes it off the UI thread.
+    /// copy is used without asking, and the pick is kept until that file
+    /// goes away (or until Codex is installed, when none was found); the
+    /// startup model probe makes it off the UI thread.
     pub fn resolve_codex() -> Option<PathBuf> {
-        CODEX_PICK
-            .get_or_init(|| {
-                let found = candidates(&CODEX);
-                if found.len() < 2 {
-                    return found.into_iter().next();
-                }
-                let found = found
-                    .into_iter()
-                    .map(|path| {
-                        let version = cli_version(&path);
-                        (path, version)
-                    })
-                    .collect::<Vec<_>>();
-                let pick = newest(found.iter().cloned());
-                log::info!("Codex copies {found:?}, using {pick:?}");
-                pick
-            })
-            .clone()
+        let mut pick = CODEX_PICK.lock().unwrap_or_else(|err| err.into_inner());
+        if let Some(path) = pick.as_ref().filter(|path| path.is_file()) {
+            return Some(path.clone());
+        }
+        *pick = pick_codex();
+        pick.clone()
     }
 
-    /// The copy `resolve_codex` picked, once it has run. Does no IO.
+    /// The copy `resolve_codex` last picked. Does no IO.
     pub fn resolved_codex() -> Option<PathBuf> {
-        CODEX_PICK.get().cloned().flatten()
+        CODEX_PICK
+            .lock()
+            .unwrap_or_else(|err| err.into_inner())
+            .clone()
     }
 
     pub fn resolve_opencode() -> Option<PathBuf> {
@@ -147,25 +139,45 @@ impl HarnessResolver {
     }
 }
 
-static CODEX_PICK: OnceLock<Option<PathBuf>> = OnceLock::new();
+static CODEX_PICK: Mutex<Option<PathBuf>> = Mutex::new(None);
 
-fn resolve(spec: &BinarySpec) -> Option<PathBuf> {
-    candidates(spec).into_iter().next()
+fn resolve(spec: &'static BinarySpec) -> Option<PathBuf> {
+    candidates(spec).next()
+}
+
+fn pick_codex() -> Option<PathBuf> {
+    let found: Vec<PathBuf> = candidates(&CODEX).collect();
+    if found.len() < 2 {
+        return found.into_iter().next();
+    }
+    let found: Vec<_> = found
+        .into_iter()
+        .map(|path| {
+            let version = cli_version(&path);
+            (path, version)
+        })
+        .collect();
+    let pick = newest(found.iter().cloned());
+    log::info!("Codex copies {found:?}, using {pick:?}");
+    pick
 }
 
 /// Every copy of `spec`'s binary on disk, in lookup order, without repeats.
-fn candidates(spec: &BinarySpec) -> Vec<PathBuf> {
+/// Lazy, so taking the first one stops at the first hit.
+fn candidates(spec: &'static BinarySpec) -> impl Iterator<Item = PathBuf> {
     let from_path = std::env::var_os("PATH")
         .into_iter()
         .flat_map(|path| std::env::split_paths(&path).collect::<Vec<_>>());
     let home = std::env::var_os("HOME").map(PathBuf::from);
+    let home_for_bundled = home.clone();
     let from_home = spec
         .home_dirs
         .iter()
-        .filter_map(|dir| home.as_ref().map(|home| home.join(dir)));
+        .filter_map(move |dir| home.as_ref().map(|home| home.join(dir)));
     let from_system = SYSTEM_DIRS.iter().map(PathBuf::from);
-    let bundled = spec.bundled.iter().flat_map(|path| {
-        home.iter()
+    let bundled = spec.bundled.iter().flat_map(move |path| {
+        home_for_bundled
+            .iter()
             .map(|home| home.join(path))
             .chain([Path::new("/").join(path)])
             .collect::<Vec<_>>()
@@ -177,8 +189,7 @@ fn candidates(spec: &BinarySpec) -> Vec<PathBuf> {
         .chain(from_system)
         .map(|dir| dir.join(spec.binary))
         .chain(bundled)
-        .filter(|candidate| candidate.is_file() && seen.insert(candidate.clone()))
-        .collect()
+        .filter(move |candidate| candidate.is_file() && seen.insert(candidate.clone()))
 }
 
 /// What `<binary> --version` reports, as numbers; `None` when it fails.
