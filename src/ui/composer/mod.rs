@@ -337,9 +337,9 @@ impl BenCodeApp {
                     crate::ui::scale::logical(bounds.origin.y),
                     crate::ui::scale::logical(bounds.size.height),
                 ))),
-                DockProbe::Pane => measure
-                    .pane_bottom
-                    .set(Some(crate::ui::scale::logical(bounds.origin.y + bounds.size.height))),
+                DockProbe::Pane => measure.pane_bottom.set(Some(crate::ui::scale::logical(
+                    bounds.origin.y + bounds.size.height,
+                ))),
             },
             |_, _, _, _| {},
         )
@@ -472,6 +472,26 @@ impl BenCodeApp {
                     .relative()
                     .when(focused, |el| {
                         el.child(runner_view::measure(&self.runner_geometry.track))
+                    })
+                    // A press anywhere on the box that no button took
+                    // (buttons prevent default) puts the caret in the prompt;
+                    // an open popover keeps its own focus.
+                    .when(focused, |el| {
+                        el.on_mouse_down(
+                            gpui::MouseButton::Left,
+                            cx.listener(|this, _, window, cx| {
+                                if window.default_prevented()
+                                    || this.composer_popover.is_some()
+                                    || this.mcp_picker.is_some()
+                                    || this.folder_picker.is_some()
+                                {
+                                    return;
+                                }
+                                let handle =
+                                    gpui::Focusable::focus_handle(this.prompt_input.read(cx), cx);
+                                window.focus(&handle, cx);
+                            }),
+                        )
                     })
                     .rounded(px(8.0))
                     .border_1()
@@ -685,7 +705,8 @@ impl BenCodeApp {
         let in_worktree = session.map_or(self.worktree_focus().is_some(), |s| {
             s.worktree_cwd.as_deref().is_some_and(|w| !w.is_empty())
         });
-        let preparing = session.is_some_and(|s| self.thread(&s.id).is_some_and(|t| t.preparing_worktree));
+        let preparing =
+            session.is_some_and(|s| self.thread(&s.id).is_some_and(|t| t.preparing_worktree));
         let new_tree = can_switch && self.new_worktree_base().is_some();
         let (label, icon) = if preparing {
             ("Creating worktree…", TriggerIcon::FolderTree)
@@ -789,7 +810,9 @@ impl BenCodeApp {
             cx,
         )
         .tooltip(Tooltip::text(model_tip))
-        .on_click(cx.listener(|this, _, _, cx| this.toggle_composer_popover(ComposerPopover::Model, cx)))
+        .on_click(
+            cx.listener(|this, _, _, cx| this.toggle_composer_popover(ComposerPopover::Model, cx)),
+        )
         .on_mouse_down(
             gpui::MouseButton::Right,
             cx.listener(|this, _, _, cx| this.toggle_recent_models(cx)),
@@ -837,14 +860,17 @@ impl BenCodeApp {
             cx,
         )
         .tooltip(Tooltip::text(access_tip))
-        .on_click(cx.listener(|this, _, _, cx| this.toggle_composer_popover(ComposerPopover::Access, cx)));
+        .on_click(
+            cx.listener(|this, _, _, cx| this.toggle_composer_popover(ComposerPopover::Access, cx)),
+        );
         let access = div()
             .relative()
             .flex_none()
             .child(popover_anchor(access, cx))
-            .when(focused && self.popover_open(ComposerPopover::Access), |el| {
-                el.child(over_composer(self.render_permission_picker_popover(cx)))
-            });
+            .when(
+                focused && self.popover_open(ComposerPopover::Access),
+                |el| el.child(over_composer(self.render_permission_picker_popover(cx))),
+            );
         div()
             .flex()
             .items_center()
@@ -878,24 +904,27 @@ impl BenCodeApp {
         let colors = &cx.theme().colors;
         let open = self.popover_open(ComposerPopover::Plus);
         let (fill, hover, emphasis) = (selection(cx), selection_hover(cx), selection_emphasis(cx));
-        let button = div()
-            .id("composer-plus")
-            .size(px(26.0))
-            .flex_none()
-            .rounded(px(6.0))
-            .bg(if open { emphasis } else { fill })
-            .flex()
-            .items_center()
-            .justify_center()
-            .cursor_pointer()
-            .when(!open, |el| el.hover(move |s| s.bg(hover)))
-            .tooltip(Tooltip::text("Add files or choose a mode"))
-            .on_click(cx.listener(|this, _, _, cx| this.toggle_composer_popover(ComposerPopover::Plus, cx)))
-            .child(Icon::new(IconName::Plus).size(IconSize::Xs).color(if open {
-                colors.fg
-            } else {
-                colors.fg.opacity(0.5)
-            }));
+        let button =
+            div()
+                .id("composer-plus")
+                .size(px(26.0))
+                .flex_none()
+                .rounded(px(6.0))
+                .bg(if open { emphasis } else { fill })
+                .flex()
+                .items_center()
+                .justify_center()
+                .cursor_pointer()
+                .when(!open, |el| el.hover(move |s| s.bg(hover)))
+                .tooltip(Tooltip::text("Add files or choose a mode"))
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.toggle_composer_popover(ComposerPopover::Plus, cx)
+                }))
+                .child(Icon::new(IconName::Plus).size(IconSize::Xs).color(if open {
+                    colors.fg
+                } else {
+                    colors.fg.opacity(0.5)
+                }));
         popover_anchor(button, cx)
     }
 
@@ -1248,10 +1277,10 @@ impl BenCodeApp {
         let colors = &cx.theme().colors;
         let sid = self.selected_session_id.clone().unwrap_or_default();
         let typed = mode_commands::leading_mode(self.prompt_input.read(cx).text()).map(|(m, _)| m);
-        let plan_on =
-            self.thread(&sid).is_some_and(|t| t.plan_mode) || typed == Some(mode_commands::ModeCommand::Plan);
-        let draft_on =
-            self.thread(&sid).is_some_and(|t| t.draft_mode) || typed == Some(mode_commands::ModeCommand::Draft);
+        let plan_on = self.thread(&sid).is_some_and(|t| t.plan_mode)
+            || typed == Some(mode_commands::ModeCommand::Plan);
+        let draft_on = self.thread(&sid).is_some_and(|t| t.draft_mode)
+            || typed == Some(mode_commands::ModeCommand::Draft);
         let upload: PlusAction = |this, cx| this.open_attachment_dialog(cx);
         let plan: PlusAction = |this, cx| this.toggle_mode(false, cx);
         let draft: PlusAction = |this, cx| this.toggle_mode(true, cx);
