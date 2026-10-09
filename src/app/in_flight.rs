@@ -102,6 +102,12 @@ fn worth_keeping(session: &SessionRow) -> bool {
 }
 
 impl BenCodeApp {
+    /// Whether this is the one BenCode on its data folder (it holds the
+    /// lock), not a second one beside it.
+    pub(crate) fn owns_data_folder(&self) -> bool {
+        self.resume.lock.is_some()
+    }
+
     /// Writes the running user turns to `in_flight_sessions` when they
     /// changed. Called as runs start and end; a quit leaves the list as it
     /// was, which is what the next launch reads.

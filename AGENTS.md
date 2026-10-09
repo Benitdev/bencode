@@ -104,6 +104,7 @@ bencode/
     ├── storage.rs            where BenCode keeps its data (database, checkpoints, account profiles, logs)
     ├── logging.rs            log to the terminal, else to ~/Library/Logs/BenCode; the panic hook
     ├── updater.rs            self-update: the release feed, the signed archive, the swap and restart
+    ├── pty_host/             the terminal host (`bencode --pty-host`) and the tabs' attach client (`--pty-attach`)
     ├── keychain.rs           the macOS `security` tool (Claude's usage token, Antigravity's sign-in)
     ├── monocode_import/      the one-time copy of a MonoCode install's data
     ├── external_editor.rs    finding and launching VS Code, Cursor, Zed, …
@@ -161,7 +162,7 @@ bencode/
 | `file_pane.rs` | The pane beside the chat and its tab strip |
 | `editor_pane/` | Code editor: open files, saves, disk sync |
 | `diff_viewer.rs`, `diff_model.rs` | Review of working-tree changes and commits |
-| `terminal_pane/` | Terminal dock: tabs, splits (`split.rs`), menus, running jobs |
+| `terminal_pane/` | Terminal dock: tabs, splits (`split.rs`), menus, running jobs, host sessions (`sessions.rs`) |
 | `footer/` | Status bar: provider usage chip, its details popover and account pages, terminal toggle |
 | `inbox_view*`, `notes/`, `automations/`, `search_view.rs`, `settings_modal.rs` | The five surfaces |
 | `page_parts.rs`, `relative_time.rs` | What the Notes and Automations pages share: `content/N` tints, section titles, page tabs, boxed rows; "5 minutes ago" |
@@ -245,7 +246,7 @@ only read that cache.
 | `features/source-control/ui/GitChangesPanel.tsx`, `GitHistoryGraph` | `ui/git_changes_panel/`, `app/source_control.rs`, `git/` | Staged / unstaged, commit, sync, PR, graph |
 | `features/source-control/ui/UnifiedDiffView.tsx`, `model/unifiedDiff.ts` | `ui/diff_viewer.rs`, `ui/diff_model.rs`, `git/diffs.rs` | Stacked files, sticky headers, folds, stage / discard |
 | `sessions/ui/SessionReview.tsx`, `sessions/model/checkpoint.ts`, `source-control/ui/SessionChangesDiff.tsx` | `ui/transcript/review_card.rs`, `app/session_review.rs`, `git/checkpoint.rs` | "Changed N files" card with Undo / Keep / Review |
-| `features/terminal/` | `ui/terminal_pane/` | Ely PTY terminal, one dock per project. Terminals side by side (a tab dragged onto a terminal's edge) are BenCode's own |
+| `features/terminal/` | `ui/terminal_pane/`, `pty_host/` | Ely terminal, one dock per project. BenCode's own: terminals side by side (a tab dragged onto a terminal's edge), and shells that outlive an update's restart or a crash (the terminal host; ⌘Q ends them) |
 | `features/notes/` | `ui/notes/`, `app/notes.rs`, `db/mod.rs` | Cards, tags, project, Preview / Source, dropped images, autosave, Add to chat. Source has no line numbers |
 | `features/automations/` | `ui/automations/`, `app/automations.rs`, `app/automation_runs.rs`, `schedule.rs`, `db/schedule.rs` | Templates, time triggers, session settings, run history, 30s scheduler. No event triggers |
 | `features/inbox/` | `ui/inbox_view*`, `github.rs`, `work_items.rs` | GitHub issues and PRs, checks, CI repair, comments |
@@ -436,6 +437,22 @@ div()
 - `AgentEvent` is the whole contract with the UI: `SessionStarted`, `TextDelta`,
   `ThinkingDelta`, `ToolCallStart` / `ToolCallFinish`, `PermissionRequest`,
   `Usage`, `TurnMetrics`, `UsageLimited`, `Compacted`, `Done`, `Error`.
+
+### Terminal host (`src/pty_host/`)
+
+- The dock's shells run in `bencode --pty-host`, one per data folder (it
+  holds `pty-host.lock`, so only it touches `pty.sock`). A tab runs
+  `bencode --pty-attach <session> <cwd>` in Ely's terminal; that client
+  starts the host when none answers. `main` hands both modes off before the
+  app starts.
+- The client's stdout is the terminal: it and the host log only to
+  `pty-host.log` (`logging::init_file`).
+- Tabs are saved as `terminalSessions` in `settings.json` and shown again at
+  launch (`ui/terminal_pane/sessions.rs`). ⌘Q ends this BenCode's sessions;
+  an update's restart (`updater.keep_terminals`) and a crash do not. Only
+  the BenCode holding `in-flight.lock` ends sessions no tab names.
+- A frame's meaning changes only with `PROTOCOL_VERSION`: a host from the
+  previous release may still be running.
 
 ### Database (`src/db/`)
 

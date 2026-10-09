@@ -1,9 +1,8 @@
 //! What runs in a dock terminal, read from the kernel: the shell Ely
 //! started, the job in its foreground and the folder the shell is in.
 //! MonoCode owns its PTY and asks it (`src-tauri/src/pty.rs`
-//! `foreground_label`), and takes the folder from OSC 7; Ely's `Terminal`
-//! keeps its PTY to itself, so BenCode finds the shell among its own child
-//! processes instead.
+//! `foreground_label`), and takes the folder from OSC 7; BenCode reads the
+//! process the terminal host (`pty_host`) started for a tab instead.
 
 /// The job in a terminal's foreground: its process group and the name
 /// MonoCode shows for it (`vite`, `npm`, `cargo`).
@@ -51,21 +50,6 @@ pub fn foreground_now(shell: u32, last: Option<&Foreground>) -> Option<Foregroun
     }
     let process = sys::name(pgid).filter(|name| !is_shell_name(name))?;
     Some(Foreground { pgid, process })
-}
-
-/// BenCode's child processes now.
-pub fn children() -> Vec<u32> {
-    sys::children(std::process::id())
-}
-
-/// The process a terminal just started: a child missing from `before` with
-/// a terminal of its own (git and agent CLIs share BenCode's, or have none).
-pub fn spawned(before: &[u32]) -> Option<u32> {
-    let own = sys::tty(std::process::id());
-    children()
-        .into_iter()
-        .filter(|pid| !before.contains(pid))
-        .find(|&pid| sys::tty(pid).is_some_and(|tty| Some(tty) != own))
 }
 
 /// MonoCode `command_label`: a command's name, or the script an
@@ -149,12 +133,6 @@ mod sys {
             .collect()
     }
 
-    /// The device of `pid`'s controlling terminal, if it has one.
-    pub fn tty(pid: u32) -> Option<u32> {
-        let tdev = bsd_info(pid)?.e_tdev;
-        (tdev != u32::MAX && tdev != 0).then_some(tdev)
-    }
-
     pub fn name(pid: u32) -> Option<String> {
         let mut buf = [0u8; 2 * libc::MAXCOMLEN + 1];
         // SAFETY: `proc_name` writes at most `buf.len()` bytes.
@@ -226,9 +204,6 @@ mod sys {
 mod sys {
     pub fn children(_: u32) -> Vec<u32> {
         Vec::new()
-    }
-    pub fn tty(_: u32) -> Option<u32> {
-        None
     }
     pub fn name(_: u32) -> Option<String> {
         None

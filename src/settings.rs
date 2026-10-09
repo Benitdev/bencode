@@ -123,6 +123,10 @@ pub struct AppSettings {
     /// keeps them on its `ProjectTerminalDock`); projects with the default,
     /// hidden bottom dock are left out.
     pub terminal_docks: std::collections::BTreeMap<String, crate::ui::terminal_pane::DockLayout>,
+    /// Each project's dock tabs, by their terminal host session, so a
+    /// restart shows them again (`ui/terminal_pane/sessions.rs`).
+    pub terminal_sessions:
+        std::collections::BTreeMap<String, Vec<crate::ui::terminal_pane::SavedTerminal>>,
     /// MonoCode `monocode.pinnedProjects`: projects on the rail's Pinned
     /// list, in rail order.
     pub pinned_projects: Vec<String>,
@@ -275,6 +279,13 @@ mod tests {
                     size: 400.0,
                     open: true,
                 },
+            )]),
+            terminal_sessions: std::collections::BTreeMap::from([(
+                "/repo".to_string(),
+                vec![crate::ui::terminal_pane::SavedTerminal {
+                    session: "t1".into(),
+                    cwd: "/repo".into(),
+                }],
             )]),
             pinned_projects: vec!["/repo".into()],
             provider_accounts: [(

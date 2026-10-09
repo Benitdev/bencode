@@ -20,7 +20,8 @@ pub fn init() {
     let mut builder =
         env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn"));
     if !std::io::stderr().is_terminal()
-        && let Some(file) = crate::storage::logs_dir().and_then(|dir| open_log(&dir))
+        && let Some(file) =
+            crate::storage::logs_dir().and_then(|dir| open_log(&dir, LOG_FILE, OLD_LOG_FILE))
     {
         builder.target(env_logger::Target::Pipe(Box::new(file)));
     }
@@ -28,8 +29,27 @@ pub fn init() {
     install_panic_hook();
 }
 
+/// The terminal host and its attach clients: their own log file, never
+/// stderr, which for a client is the terminal it shows. Without the file
+/// nothing is logged.
+pub fn init_file(name: &str) {
+    let mut builder =
+        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn"));
+    let old = format!("{}.old.log", name.trim_end_matches(".log"));
+    match crate::storage::logs_dir().and_then(|dir| open_log(&dir, name, &old)) {
+        Some(file) => {
+            builder.target(env_logger::Target::Pipe(Box::new(file)));
+        }
+        None => {
+            builder.filter_level(log::LevelFilter::Off);
+        }
+    }
+    builder.init();
+    install_panic_hook();
+}
+
 /// The log file for appending, after rotating one that grew too large.
-fn open_log(dir: &Path) -> Option<File> {
+fn open_log(dir: &Path, name: &str, old_name: &str) -> Option<File> {
     if let Err(err) = fs::create_dir_all(dir) {
         eprintln!(
             "bencode: cannot create the log folder {}: {err}",
@@ -37,9 +57,9 @@ fn open_log(dir: &Path) -> Option<File> {
         );
         return None;
     }
-    let path = dir.join(LOG_FILE);
+    let path = dir.join(name);
     if fs::metadata(&path).is_ok_and(|meta| meta.len() > ROTATE_BYTES)
-        && let Err(err) = fs::rename(&path, dir.join(OLD_LOG_FILE))
+        && let Err(err) = fs::rename(&path, dir.join(old_name))
     {
         eprintln!("bencode: cannot rotate {}: {err}", path.display());
     }
@@ -91,7 +111,7 @@ mod tests {
         let dir = temp_dir("append");
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join(LOG_FILE), "before\n").unwrap();
-        let mut file = open_log(&dir).expect("log file");
+        let mut file = open_log(&dir, LOG_FILE, OLD_LOG_FILE).expect("log file");
         std::io::Write::write_all(&mut file, b"after\n").unwrap();
         assert_eq!(
             fs::read_to_string(dir.join(LOG_FILE)).unwrap(),
@@ -105,7 +125,7 @@ mod tests {
         let dir = temp_dir("rotate");
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join(LOG_FILE), vec![b'x'; ROTATE_BYTES as usize + 1]).unwrap();
-        open_log(&dir).expect("log file");
+        open_log(&dir, LOG_FILE, OLD_LOG_FILE).expect("log file");
         assert_eq!(fs::metadata(dir.join(LOG_FILE)).unwrap().len(), 0);
         assert_eq!(
             fs::metadata(dir.join(OLD_LOG_FILE)).unwrap().len(),

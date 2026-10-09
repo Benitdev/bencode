@@ -12,6 +12,7 @@ pub mod mcp;
 mod monocode_import;
 mod process_stats;
 mod project_search;
+mod pty_host;
 mod rate_limits;
 mod schedule;
 mod settings;
@@ -30,6 +31,10 @@ use gpui::{
 use monocode_import::ImportOutcome;
 
 fn main() {
+    // The terminal host and the dock's attach clients are this binary too.
+    if let Some(code) = pty_host::run_from_args() {
+        std::process::exit(code);
+    }
     logging::init();
 
     let application = gpui_platform::application().with_assets(ui::icons::Assets);

@@ -825,6 +825,10 @@ impl BenCodeApp {
         // callback itself: GPUI polls the returned future for only 200 ms.
         subscriptions.push(cx.on_app_quit(|this, _cx| {
             this.interrupt_runs_for_quit();
+            // ⌘Q ends the dock's shells; an update's restart keeps them.
+            if !this.updater.keep_terminals {
+                this.end_all_terminal_sessions();
+            }
             async {}
         }));
         // Closing the window drops the app without quitting (macOS).
@@ -1115,9 +1119,8 @@ impl BenCodeApp {
                 this.refresh_workspace(cx);
                 this.refresh_integrations(cx);
                 this.start_automation_scheduler(cx);
-                if this.is_terminal_open() {
-                    this.ensure_project_terminal(cx);
-                }
+                // The open dock's shell starts once the saved tabs are back.
+                this.restore_terminals(cx);
             });
         })
         .detach();

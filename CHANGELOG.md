@@ -10,6 +10,9 @@ tagging (`docs/releasing.md`).
   next launch lists them and resumes the ones you pick, asking each agent to
   check its last step first. Settings › General can resume them without
   asking.
+- Terminals survive an update's restart or a crash: their shells keep
+  running in a small host process, and the dock shows them again with their
+  recent output. ⌘Q still ends them.
 - When Claude Code, Codex or OpenCode is behind its latest release, a notice
   at launch offers to update it; the model picker then lists the new
   version's models.

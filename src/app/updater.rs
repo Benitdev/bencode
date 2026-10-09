@@ -38,6 +38,9 @@ pub struct UpdaterState {
     ready: Option<PathBuf>,
     /// The quit confirmation is the restart's: it says Restart.
     pub restart_on_quit: bool,
+    /// The quit under way is an update's restart: the dock's shells stay
+    /// for the new version to show again.
+    pub keep_terminals: bool,
     /// MonoCode `updateNotice`: "Updated to" until dismissed.
     pub installed: Option<String>,
     /// The version whose notes the What's new dialog shows.
@@ -368,7 +371,10 @@ impl BenCodeApp {
             return cx.quit();
         };
         match updater::relaunch(&bundle) {
-            Ok(()) => cx.quit(),
+            Ok(()) => {
+                self.updater.keep_terminals = true;
+                cx.quit();
+            }
             Err(err) => {
                 log::error!("could not restart BenCode: {err:#}");
                 self.fail_update(format!("{err:#}"), cx);

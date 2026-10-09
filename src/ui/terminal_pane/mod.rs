@@ -6,12 +6,14 @@
 //! A tab is named for the job it runs or the folder its shell is in, and
 //! one whose shell ended stays open with MonoCode's `[process exited]`.
 //! A tab dragged onto an edge of a terminal shows the two side by side
-//! (`split`), as panes dock in the chat.
+//! (`split`), as panes dock in the chat. Each tab shows a session of the
+//! terminal host (`sessions`), so its shell outlives a restart.
 
 mod ime;
 mod layout;
 mod menu;
 mod running;
+mod sessions;
 mod split;
 
 use std::collections::{BTreeMap, HashMap};
@@ -31,6 +33,7 @@ use crate::ui::scale::px;
 
 pub use layout::{DockLayout, DockSide};
 pub use running::{POLL_EVERY, RunningTerminal, chip_label};
+pub use sessions::SavedTerminal;
 
 use crate::app::BenCodeApp;
 use crate::ui::drag_drop::render_pane_drop_hint;
@@ -45,12 +48,14 @@ const PANE_MIN: f32 = 120.0;
 
 pub struct TerminalTab {
     pub id: u64,
+    /// Its session on the terminal host.
+    pub session: String,
     pub entity: Entity<Terminal>,
     /// The terminal as the dock shows it, with text composition.
     view: Entity<ime::TerminalIme>,
     /// The folder its shell started in.
     pub cwd: String,
-    /// The process Ely started for it (`login` on macOS) until it ends.
+    /// The process its session started (`login` on macOS) until it ends.
     process: Option<u32>,
     /// The shell under `process`, once found.
     shell: Option<u32>,
@@ -121,6 +126,10 @@ pub struct TerminalDocks {
     viewport: (f32, f32),
     /// The terminal a dragged tab is over, and the edge it would dock on.
     pane_drop: Option<(u64, PaneEdge)>,
+    /// The tabs `settings.json` had, until the launch has shown them again.
+    pub saved: BTreeMap<String, Vec<SavedTerminal>>,
+    /// The launch is showing the saved tabs: no shell is started meanwhile.
+    restoring: bool,
 }
 
 /// Drag payload of the dock's resize sash.
@@ -178,9 +187,14 @@ impl TerminalDocks {
     }
 }
 
-fn spawn_shell(cwd: &str, cx: &mut Context<Terminal>) -> Terminal {
+/// A terminal showing host session `session`, whose shell starts in `cwd`
+/// when the session is new; Ely's own shell when the host cannot be used.
+fn spawn_attached(session: &str, cwd: &str, cx: &mut Context<Terminal>) -> Terminal {
+    let program = crate::pty_host::attach_command(session, cwd)
+        .inspect_err(|err| log::error!("terminal {session}: {err:#}; a shell of its own instead"))
+        .ok();
     let launch = Launch {
-        program: None,
+        program,
         cwd: Some(PathBuf::from(cwd)).filter(|p| p.is_dir()),
         env: vec![
             ("TERM".into(), "xterm-256color".into()),
@@ -241,6 +255,9 @@ impl BenCodeApp {
 
     /// Makes sure the current project has at least one terminal.
     pub fn ensure_project_terminal(&mut self, cx: &mut Context<Self>) {
+        if self.terminals.restoring {
+            return;
+        }
         let has_tab = self
             .terminals
             .dock(&self.current_cwd)
@@ -269,19 +286,31 @@ impl BenCodeApp {
     /// Explorer "Open in Terminal").
     pub fn new_terminal_at(&mut self, cwd: &str, cx: &mut Context<Self>) {
         let project = self.current_cwd.clone();
-        let cwd = cwd.to_string();
-        let before = crate::terminal_process::children();
-        let entity = cx.new(|cx| spawn_shell(&cwd, cx));
-        let process = crate::terminal_process::spawned(&before);
-        if process.is_none() {
-            log::debug!(
-                "terminal in {cwd}: its process was not found; no job or folder in its tab"
-            );
+        let session = crate::pty_host::new_session_id();
+        let id = self.add_terminal_tab(&project, session.clone(), cwd, None, cx);
+        self.find_terminal_process(id, session, cx);
+        if !self.is_terminal_open() {
+            self.set_terminal_open(true, cx);
         }
+        self.save_settings(cx);
+    }
+
+    /// A tab of `project` showing host session `session` (new, or shown
+    /// again with its process `pid`), made the active one.
+    fn add_terminal_tab(
+        &mut self,
+        project: &str,
+        session: String,
+        cwd: &str,
+        pid: Option<u32>,
+        cx: &mut Context<Self>,
+    ) -> u64 {
+        let cwd = cwd.to_string();
+        let entity = cx.new(|cx| spawn_attached(&session, &cwd, cx));
         let view = cx.new(|_| ime::TerminalIme::new(entity.clone()));
         self.terminals.next_id += 1;
         let id = self.terminals.next_id;
-        let key = project.clone();
+        let key = project.to_string();
         let events = cx.subscribe(
             &entity,
             move |this, _, event: &TerminalEvent, cx| match event {
@@ -289,24 +318,25 @@ impl BenCodeApp {
                 _ => {}
             },
         );
-        let dock = self.terminals.docks.entry(project).or_default();
+        let dock = self.terminals.docks.entry(project.to_string()).or_default();
         dock.tabs.push(TerminalTab {
             id,
+            session,
             entity,
             view,
             cwd,
-            process,
+            process: pid,
             shell: None,
             foreground: None,
             dir: None,
             _events: events,
         });
         dock.active = id;
-        if !self.is_terminal_open() {
-            self.set_terminal_open(true, cx);
+        if pid.is_some() {
+            self.start_terminal_poll(cx);
         }
-        self.start_terminal_poll(cx);
         cx.notify();
+        id
     }
 
     /// Closes terminal `id` of `project`; its neighbour becomes active.
@@ -317,7 +347,7 @@ impl BenCodeApp {
         let Some(ix) = dock.tabs.iter().position(|t| t.id == id) else {
             return;
         };
-        dock.tabs.remove(ix);
+        let closed = dock.tabs.remove(ix);
         if split::group_of(&dock.splits, id).is_some() {
             dock.leave_split(id);
         } else if dock.active == id {
@@ -327,8 +357,9 @@ impl BenCodeApp {
         // MonoCode `closeTerminalInDock` drops an emptied dock, which hides it.
         if dock.tabs.is_empty() && self.terminals.layout(project).open {
             self.terminals.set_open(project, false);
-            self.save_settings(cx);
         }
+        self.end_terminal_sessions(vec![closed.session], cx);
+        self.save_settings(cx);
         cx.notify();
     }
 
@@ -342,6 +373,12 @@ impl BenCodeApp {
         cx: &mut Context<Self>,
     ) {
         if let Some(dock) = self.terminals.docks.get_mut(project) {
+            let sessions = dock
+                .tabs
+                .iter()
+                .filter(|tab| closing.contains(&tab.id))
+                .map(|tab| tab.session.clone())
+                .collect();
             dock.tabs.retain(|tab| !closing.contains(&tab.id));
             for &id in closing {
                 dock.leave_split(id);
@@ -349,6 +386,8 @@ impl BenCodeApp {
             if dock.tabs.iter().any(|tab| tab.id == keep) {
                 dock.active = keep;
             }
+            self.end_terminal_sessions(sessions, cx);
+            self.save_settings(cx);
             cx.notify();
         }
     }

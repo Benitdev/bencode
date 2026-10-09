@@ -139,6 +139,7 @@ impl BenCodeApp {
         crate::github_accounts::set_choices(self.github.choices.clone());
         self.changes_ui.tree = saved.changes_tree;
         self.terminals.layouts = saved.terminal_docks.clone();
+        self.terminals.saved = saved.terminal_sessions.clone();
         if let Some(width) = saved.inbox_list_width {
             self.inbox.list_width = width;
         }
@@ -193,6 +194,7 @@ impl BenCodeApp {
             new_thread_background_effect: self.appearance.chat_background.effect,
             collapsed_project_rail_mode: self.appearance.collapsed_rail,
             terminal_docks: self.terminals.layouts.clone(),
+            terminal_sessions: self.saved_terminals(),
             inbox_list_width: Some(self.inbox.list_width)
                 .filter(|w| *w != crate::ui::inbox_view::DEFAULT_LIST_WIDTH),
             favorite_models: self.favorite_models.clone(),
