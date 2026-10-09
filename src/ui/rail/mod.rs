@@ -366,6 +366,7 @@ impl BenCodeApp {
             .child("Open folder…");
         let menu = crate::ui::sidebar_popovers::popover_frame(cx)
             .id("rail-add-project-menu")
+            .occlude()
             .w(px(ADD_PROJECT_WIDTH))
             .p_1()
             .on_mouse_down_out(cx.listener(|_, _, window, cx| {

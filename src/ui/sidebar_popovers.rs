@@ -154,6 +154,7 @@ impl BenCodeApp {
         }
         let menu = popover_frame(cx)
             .id("worktree-switcher-menu")
+            .occlude()
             .w(px(280.0))
             .max_h(px(360.0))
             .overflow_y_scroll()
@@ -414,6 +415,7 @@ impl BenCodeApp {
         }
         let menu = popover_frame(cx)
             .id("filter-sessions-menu")
+            .occlude()
             .w(px(MENU_WIDTH))
             .max_h(px(480.0))
             .overflow_y_scroll()

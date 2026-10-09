@@ -322,6 +322,7 @@ impl BenCodeApp {
         let (chat_text, note_text, sid) = (text.clone(), text, session_id.to_string());
         let menu = popover_frame(cx)
             .id("transcript-selection-menu")
+            .occlude()
             .relative()
             .p_1()
             .min_w(px(144.0))

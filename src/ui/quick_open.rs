@@ -533,6 +533,7 @@ impl BenCodeApp {
             deferred(
                 div()
                     .id("quick-open-scrim")
+                    .occlude()
                     .absolute()
                     .inset_0()
                     .on_mouse_down(

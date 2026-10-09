@@ -1373,6 +1373,7 @@ impl BenCodeApp {
         let menu = div()
             .id("composer-permission-popover")
             .track_focus(&self.composer_menus.focus)
+            .occlude()
             .absolute()
             .bottom(px(32.0))
             .left_0()

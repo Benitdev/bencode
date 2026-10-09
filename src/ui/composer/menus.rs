@@ -81,9 +81,12 @@ pub(super) fn over_composer(popover: impl IntoElement) -> gpui::Deferred {
 /// Makes `el` part of the open popover: mouse-downs on it never dismiss,
 /// mouse-downs outside it do unless they land on another part.
 pub(super) fn popover_surface<E: InteractiveElement>(el: E, cx: &Context<BenCodeApp>) -> E {
-    popover_anchor(el, cx).on_mouse_down_out(cx.listener(|this, _, window, cx| {
-        this.queue_outside_check(window, cx);
-    }))
+    popover_anchor(el, cx)
+        // Drawn over the transcript: a press here must not reach what is under it.
+        .occlude()
+        .on_mouse_down_out(cx.listener(|this, _, window, cx| {
+            this.queue_outside_check(window, cx);
+        }))
 }
 
 /// A chip that toggles a popover: clicking it never counts as outside, so

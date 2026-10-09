@@ -373,6 +373,8 @@ pub fn render_menu_styled(
     let menu = div()
         .id(id)
         .track_focus(focus)
+        // Drawn over other rows: a press or hover here must not reach them.
+        .occlude()
         .map(|el| match place {
             MenuPlace::UnderRight(_) => el.min_w(px(width)),
             _ => el.w(px(width)),

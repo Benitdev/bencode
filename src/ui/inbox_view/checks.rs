@@ -708,6 +708,7 @@ impl BenCodeApp {
         let count = form.checks.len();
         let panel = div()
             .id("inbox-repair-form")
+            .occlude()
             .w(px(300.0))
             .p_2()
             .flex()

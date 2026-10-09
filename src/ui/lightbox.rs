@@ -60,6 +60,7 @@ impl BenCodeApp {
             deferred(
                 div()
                     .id("lightbox")
+                    .occlude()
                     .absolute()
                     .inset_0()
                     .p_6()
