@@ -54,8 +54,6 @@ impl BenCodeApp {
         let signed_out = state.live_email.is_none() && !accounts.is_empty() && !signing_in;
 
         div()
-            .border_b_1()
-            .border_color(colors.border)
             .child(header)
             .child(
                 div()

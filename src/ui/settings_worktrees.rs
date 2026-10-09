@@ -5,13 +5,11 @@
 
 use ely_gpui_component::buttons::{Button, ButtonVariant, IconButton};
 use ely_gpui_component::data_display::{Badge, Tone};
-use ely_gpui_component::feedback::EmptyState;
 use ely_gpui_component::forms::{Choice, Select, Switch};
 use ely_gpui_component::motion::Spinner;
 use ely_gpui_component::overlays::Dialog;
 use ely_gpui_component::primitives::{Icon, IconName};
-use ely_gpui_component::settings::{SettingsRow, SettingsSection};
-use ely_gpui_component::theme::{ActiveTheme, IconSize};
+use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
     AnyElement, Context, Hsla, IntoElement, ParentElement, SharedString, Styled, div, prelude::*, relative,
 };
@@ -23,6 +21,8 @@ use crate::git::worktrees::default_worktrees_dir;
 use crate::ui::app_callback::{app_callback, app_callback_with, on_value};
 use crate::ui::icons::ExtraIcon;
 use crate::ui::scale::px;
+use crate::ui::settings_modal::SettingsTab;
+use crate::ui::settings_parts::{SettingsGroup, SettingsPage, SettingsRow, icon_tile};
 use crate::ui::sidebar_popovers::pretty_path;
 
 fn plural(n: usize, one: &str, many: &str) -> String {
@@ -49,121 +49,101 @@ fn status(tree: &Worktree) -> (&'static str, Tone) {
 }
 
 impl BenCodeApp {
-    /// MonoCode `WorktreesPage`.
-    pub(crate) fn render_settings_worktrees(&self, cx: &Context<Self>) -> impl IntoElement {
+    /// MonoCode `WorktreesPage`: the project and where its worktrees go,
+    /// then its linked worktrees.
+    pub(crate) fn render_settings_worktrees(&self, cx: &Context<Self>) -> SettingsPage {
         let page = &self.worktrees_page;
+        let fg = cx.theme().colors.fg;
         let project_choices = self.worktree_project_choices().into_iter().map(|path| {
             Choice::new(path.clone(), self.rail_project_label(&path)).note(pretty_path(&path))
         });
-        let picker = div()
-            .flex()
-            .flex_wrap()
-            .items_center()
-            .gap_1()
-            .child(
-                div().min_w(px(220.0)).child(
-                    Select::new("worktrees-project", project_choices)
-                        .placeholder("Choose a project…")
-                        .selected(page.project.clone())
-                        .on_change(on_value(cx, |this, path, cx| {
-                            this.select_worktrees_project(path, cx)
-                        })),
-                ),
-            )
-            .child(
-                Button::new("worktrees-create", "Create worktree")
-                    .variant(ButtonVariant::Ghost)
-                    .icon(IconName::Plus)
-                    .disabled(page.main().is_none())
-                    .on_click(cx.listener(|this, _, _, cx| this.open_worktree_creation(cx))),
-            );
+        let picker = div().w(px(240.0)).child(
+            Select::new("worktrees-project", project_choices)
+                .placeholder("Choose a project…")
+                .selected(page.project.clone())
+                .on_change(on_value(cx, |this, path, cx| this.select_worktrees_project(path, cx))),
+        );
+        let project = SettingsGroup::new("Project").row(
+            SettingsRow::new("Project")
+                .description("Whose worktrees this page manages.")
+                .control(picker),
+        );
+        let project = match page.main() {
+            Some(main) => {
+                let root = default_worktrees_dir(std::path::Path::new(&main.path));
+                project.row(
+                    SettingsRow::new("Location")
+                        .description(format!("New worktrees are created in {}.", pretty_path(&root.to_string_lossy()))),
+                )
+            }
+            None => project,
+        };
+
         let refresh_tip = match &page.load_error {
             Some(error) => format!("Refresh failed: {error}. Click to retry."),
             None => "Refresh worktrees".into(),
         };
-        let mut section = SettingsSection::new("Worktrees")
-            .description("Manage additional worktrees for each project.")
-            .row(picker)
-            .row(
-                SettingsRow::new("Worktrees")
-                    .description(
-                        "Sessions can share a worktree. Deleting one keeps its sessions by \
-                         default and discards uncommitted changes. Its branch and commits are kept.",
-                    )
-                    .control(
-                        IconButton::new("worktrees-refresh", IconName::RefreshCw)
-                            .variant(if page.load_error.is_some() {
-                                ButtonVariant::Danger
-                            } else {
-                                ButtonVariant::Ghost
-                            })
-                            .disabled(page.project.is_empty())
-                            .tooltip(refresh_tip)
-                            .on_click(cx.listener(|this, _, _, cx| this.load_worktrees_page(cx))),
-                    ),
+        let actions = div()
+            .flex()
+            .items_center()
+            .gap_1()
+            .child(
+                IconButton::new("worktrees-refresh", IconName::RefreshCw)
+                    .variant(if page.load_error.is_some() { ButtonVariant::Danger } else { ButtonVariant::Ghost })
+                    .size(ControlSize::Sm)
+                    .disabled(page.project.is_empty())
+                    .tooltip(refresh_tip)
+                    .on_click(cx.listener(|this, _, _, cx| this.load_worktrees_page(cx))),
+            )
+            .child(
+                Button::new("worktrees-create", "Create worktree")
+                    .variant(ButtonVariant::Outline)
+                    .size(ControlSize::Sm)
+                    .icon(IconName::Plus)
+                    .disabled(page.main().is_none())
+                    .on_click(cx.listener(|this, _, _, cx| this.open_worktree_creation(cx))),
             );
+        let mut list = SettingsGroup::new("Worktrees")
+            .description(
+                "Sessions can share a worktree. Deleting one keeps its sessions by default and \
+                 discards uncommitted changes. Its branch and commits are kept.",
+            )
+            .action(actions);
         if let Some(error) = &page.error {
-            section = section.row(
-                SettingsRow::new("Something went wrong")
-                    .description(error.clone())
-                    .control(Badge::new("Error").tone(Tone::Danger)),
-            );
+            list = list.row(SettingsRow::new("Something went wrong").error(error.clone()));
         }
         let trees = match (&page.trees, &page.load_error) {
             _ if page.project.is_empty() => {
-                return section
-                    .row(SettingsRow::new("Add a project to manage its worktrees."))
-                    .into_any_element();
+                return SettingsTab::Worktrees
+                    .page()
+                    .group(project)
+                    .group(list.note("Add a project to manage its worktrees."));
             }
             (None, Some(error)) => {
-                return section
-                    .row(
-                        SettingsRow::new("Could not list worktrees")
-                            .description(error.clone())
-                            .control(Badge::new("Error").tone(Tone::Danger)),
-                    )
-                    .into_any_element();
+                let list = list.row(SettingsRow::new("Could not list worktrees").error(error.clone()));
+                return SettingsTab::Worktrees.page().group(project).group(list);
             }
             (None, None) => {
-                return section
-                    .row(
-                        SettingsRow::new("Loading worktrees…")
-                            .control(Spinner::new("worktrees-loading")),
-                    )
-                    .into_any_element();
+                let list = list.row(
+                    SettingsRow::new("Loading worktrees…").control(Spinner::new("worktrees-loading")),
+                );
+                return SettingsTab::Worktrees.page().group(project).group(list);
             }
             (Some(_), _) => page.linked().collect::<Vec<_>>(),
         };
         if trees.is_empty() {
-            section = section.row(
-                EmptyState::new(
-                    "worktrees-empty",
-                    IconName::GitBranch,
-                    "No additional worktrees",
-                )
-                .body("Create a worktree to work on another branch in a separate folder."),
-            );
+            list = list.note("No additional worktrees. Create one to work on another branch in a separate folder.");
         }
         let delete_locked = page.refreshing_after_failure || page.load_error.is_some();
         for (ix, tree) in trees.into_iter().enumerate() {
             let count = self.worktree_session_count(&tree.path);
             let branch = match &tree.branch {
                 Some(branch) => format!("Current branch: {branch}"),
-                None => format!(
-                    "Detached at {}",
-                    tree.head.chars().take(7).collect::<String>()
-                ),
+                None => format!("Detached at {}", tree.head.chars().take(7).collect::<String>()),
             };
-            let mut facts = vec![format!(
-                "{} in this worktree",
-                plural(count, "session", "sessions")
-            )];
+            let mut facts = vec![format!("{} in this worktree", plural(count, "session", "sessions"))];
             if let Some(n) = tree.unpushed.filter(|n| *n > 0) {
-                facts.push(plural(
-                    n as usize,
-                    "unpublished commit",
-                    "unpublished commits",
-                ));
+                facts.push(plural(n as usize, "unpublished commit", "unpublished commits"));
             }
             if tree.locked {
                 facts.push("Locked".into());
@@ -176,13 +156,10 @@ impl BenCodeApp {
             let (status, tone) = status(tree);
             let blocker = deletion_blocker(tree);
             let (reveal, remove) = (tree.path.clone(), tree.path.clone());
-            section = section.row(
+            list = list.row(
                 SettingsRow::new(title)
-                    .description(format!(
-                        "{}\n{branch}\n{}",
-                        pretty_path(&tree.path),
-                        facts.join(" · ")
-                    ))
+                    .leading(icon_tile(ExtraIcon::FolderTree.icon().size(IconSize::Sm).color(fg.opacity(0.6)), fg))
+                    .description(format!("{}\n{branch}\n{}", pretty_path(&tree.path), facts.join(" · ")))
                     .control(
                         div()
                             .flex()
@@ -190,38 +167,25 @@ impl BenCodeApp {
                             .gap_1()
                             .child(Badge::new(status).tone(tone))
                             .child(
-                                IconButton::new(
-                                    SharedString::from(format!("worktree-reveal-{ix}")),
-                                    IconName::FolderOpen,
-                                )
-                                .variant(ButtonVariant::Ghost)
-                                .disabled(tree.missing)
-                                .tooltip("Reveal folder")
-                                .on_click(move |_, _, cx| crate::ui::rail::reveal_project(&reveal, cx)),
+                                IconButton::new(SharedString::from(format!("worktree-reveal-{ix}")), IconName::FolderOpen)
+                                    .variant(ButtonVariant::Ghost)
+                                    .size(ControlSize::Sm)
+                                    .disabled(tree.missing)
+                                    .tooltip("Reveal folder")
+                                    .on_click(move |_, _, cx| crate::ui::rail::reveal_project(&reveal, cx)),
                             )
                             .child(
-                                IconButton::new(
-                                    SharedString::from(format!("worktree-delete-{ix}")),
-                                    IconName::Trash2,
-                                )
-                                .variant(ButtonVariant::Ghost)
-                                .disabled(blocker.is_some() || delete_locked)
-                                .tooltip(blocker.unwrap_or("Delete worktree"))
-                                .on_click(cx.listener(
-                                    move |this, _, _, cx| this.open_worktree_deletion(&remove, cx),
-                                )),
+                                IconButton::new(SharedString::from(format!("worktree-delete-{ix}")), IconName::Trash2)
+                                    .variant(ButtonVariant::Ghost)
+                                    .size(ControlSize::Sm)
+                                    .disabled(blocker.is_some() || delete_locked)
+                                    .tooltip(blocker.unwrap_or("Delete worktree"))
+                                    .on_click(cx.listener(move |this, _, _, cx| this.open_worktree_deletion(&remove, cx))),
                             ),
                     ),
             );
         }
-        if let Some(main) = page.main() {
-            let root = default_worktrees_dir(std::path::Path::new(&main.path));
-            section = section.row(SettingsRow::new("Location").description(format!(
-                "New worktrees are created in {}.",
-                pretty_path(&root.to_string_lossy())
-            )));
-        }
-        section.into_any_element()
+        SettingsTab::Worktrees.page().group(project).group(list)
     }
 
     /// MonoCode `CreateWorktreeDialog`.

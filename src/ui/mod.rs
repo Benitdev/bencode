@@ -38,6 +38,7 @@ mod settings_agy_accounts;
 pub mod settings_integrations;
 pub mod settings_appearance;
 pub mod settings_modal;
+pub mod settings_parts;
 pub mod settings_worktrees;
 pub mod whats_new;
 pub mod window_drag;

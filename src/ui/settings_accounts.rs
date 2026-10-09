@@ -6,7 +6,6 @@
 use ely_gpui_component::buttons::{Button, ButtonVariant, IconButton};
 use ely_gpui_component::overlays::Dialog;
 use ely_gpui_component::primitives::IconName;
-use ely_gpui_component::settings::{SettingsRow, SettingsSection};
 use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
     AnyElement, Context, FontWeight, IntoElement, ParentElement, SharedString, Styled, div,
@@ -22,6 +21,7 @@ use crate::ui::app_callback::app_callback;
 use crate::ui::footer::{account_status_label, usage_meter};
 use crate::ui::git_changes_panel::spinning_icon;
 use crate::ui::scale::px;
+use crate::ui::settings_parts::{SettingsGroup, SettingsRow, icon_tile};
 
 /// MonoCode `UsageMeter`'s `w-36`.
 const METER_WIDTH: f32 = 144.0;
@@ -43,6 +43,7 @@ pub(crate) fn provider_header(
         .flex()
         .items_center()
         .gap_4()
+        .px_4()
         .py(px(14.0))
         .child(
             div()
@@ -50,20 +51,8 @@ pub(crate) fn provider_header(
                 .flex_1()
                 .min_w_0()
                 .items_center()
-                .gap(px(10.0))
-                .child(
-                    div()
-                        .flex()
-                        .flex_none()
-                        .items_center()
-                        .justify_center()
-                        .size(px(28.0))
-                        .rounded(px(8.0))
-                        .bg(fg.opacity(0.05))
-                        .border_1()
-                        .border_color(fg.opacity(0.06))
-                        .child(HarnessIcon::new(harness).size(px(16.0))),
-                )
+                .gap_3()
+                .child(icon_tile(HarnessIcon::new(harness).size(px(16.0)), fg))
                 .child(
                     div()
                         .min_w_0()
@@ -82,37 +71,29 @@ pub(crate) fn provider_header(
 
 impl BenCodeApp {
     /// MonoCode `ProviderAccountsSettings`.
-    pub(crate) fn render_settings_accounts(&self, cx: &Context<Self>) -> impl IntoElement {
+    pub(crate) fn render_settings_accounts(&self, cx: &Context<Self>) -> SettingsGroup {
         let refreshing = self.usage.refreshing();
-        let section = SettingsSection::new("Accounts")
+        let group = SettingsGroup::new("Accounts")
             .description(
-                "Create isolated sign-ins for providers that support account profiles. \
-                 Account switching stays available from the usage control in the footer.",
+                "Isolated sign-ins for providers that support account profiles. Switch \
+                 accounts from the usage control in the footer.",
             )
-            .row(
-                SettingsRow::new("Usage limits")
-                    .description("Read every account's usage again")
-                    .control(
-                        IconButton::new("accounts-refresh", IconName::RefreshCw)
-                            .variant(ButtonVariant::Ghost)
-                            .tooltip("Refresh usage limits")
-                            .disabled(refreshing)
-                            .on_click(cx.listener(|this, _, _, cx| this.load_accounts_page(true, cx))),
-                    ),
+            .action(
+                IconButton::new("accounts-refresh", IconName::RefreshCw)
+                    .variant(ButtonVariant::Ghost)
+                    .size(ControlSize::Sm)
+                    .tooltip("Refresh usage limits")
+                    .disabled(refreshing)
+                    .on_click(cx.listener(|this, _, _, cx| this.load_accounts_page(true, cx))),
             );
-        let section = ACCOUNT_PROVIDERS
-            .iter()
-            .fold(section, |section, provider| section.row(self.render_provider_accounts(*provider, cx)))
-            .row(self.render_agy_accounts(cx));
         let error = self.accounts.error.clone().or_else(|| self.agy_accounts.error.clone());
-        div().flex().flex_col().child(section).children(error.map(|error| {
-            div()
-                .pt_2()
-                .text_size(px(11.0))
-                .line_height(px(16.0))
-                .text_color(cx.theme().colors.danger)
-                .child(error)
-        }))
+        let group = match error {
+            Some(error) => group.row(SettingsRow::new("Something went wrong").error(error)),
+            None => group,
+        };
+        group
+            .rows(ACCOUNT_PROVIDERS.iter().map(|provider| self.render_provider_accounts(*provider, cx)))
+            .row(self.render_agy_accounts(cx))
     }
 
     /// One provider: its header with Add account, then its accounts.
@@ -147,8 +128,6 @@ impl BenCodeApp {
         });
 
         div()
-            .border_b_1()
-            .border_color(colors.border)
             .child(header)
             .child(
                 div()

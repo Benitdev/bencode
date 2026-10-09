@@ -172,11 +172,23 @@ impl BenCodeApp {
             )
             .child(
                 div()
+                    .flex()
                     .flex_1()
+                    .min_w_0()
+                    .items_center()
+                    .gap_2()
                     .text_size(px(13.0))
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(colors.fg)
-                    .child(surface.title()),
+                    .map(|el| {
+                        if surface != Surface::Settings {
+                            return el.child(surface.title());
+                        }
+                        // MonoCode's `Settings / <page>` crumb.
+                        el.child(div().text_color(colors.fg.opacity(0.45)).child(surface.title()))
+                            .child(div().text_color(colors.fg.opacity(0.25)).child("/"))
+                            .child(div().truncate().child(self.settings_tab.label_icon().0))
+                    }),
             )
             .when(
                 surface == Surface::Settings

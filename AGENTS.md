@@ -161,6 +161,7 @@ bencode/
 | `footer/` | Status bar: provider usage chip, its details popover and account pages, terminal toggle |
 | `inbox_view*`, `notes/`, `automations/`, `search_view.rs`, `settings_modal.rs` | The five surfaces |
 | `page_parts.rs`, `relative_time.rs` | What the Notes and Automations pages share: `content/N` tints, section titles, page tabs, boxed rows; "5 minutes ago" |
+| `settings_parts.rs` | What every Settings page is built from: `SettingsPage` (title and line), `SettingsGroup` (a titled card), `SettingsRow` |
 | `settings_accounts.rs`, `settings_agy_accounts.rs`, `settings_appearance.rs`, `settings_worktrees.rs`, `settings_integrations.rs` | Settings pages: provider accounts, appearance, worktrees, integrations (GitHub accounts, Backlog) |
 | `quick_open.rs`, `lightbox.rs`, `link_dialog.rs`, `reminder_notices.rs`, `whats_new.rs` | Overlays |
 | `theme.rs`, `appearance.rs`, `scale.rs`, `background_effects.rs`, `icons.rs`, `provider_icon.rs`, `mascot.rs`, `motion.rs`, `spinner.rs` | Look and shared drawing: palettes, tint / accent / diff colours, interface scale, chat background effects |

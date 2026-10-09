@@ -6,7 +6,7 @@
 use ely_gpui_component::buttons::{Button, ButtonVariant, SegmentedControl};
 use ely_gpui_component::forms::{Choice, ColorPicker, Select, Slider, Switch};
 use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
-use ely_gpui_component::settings::{Appearance, SettingsRow, SettingsSection, ThemeSelector};
+use ely_gpui_component::settings::{Appearance, ThemeSelector};
 use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
     Anchor, Context, Hsla, IntoElement, MouseButton, ObjectFit, ParentElement, SharedString, Styled,
@@ -26,22 +26,22 @@ use crate::ui::git_changes_panel::spinning_icon;
 use crate::ui::icons::ExtraIcon;
 
 use crate::ui::scale::px;
+use crate::ui::settings_modal::SettingsTab;
+use crate::ui::settings_parts::{SettingsGroup, SettingsPage, SettingsRow};
 
 /// MonoCode `ColorPickerPopover`'s `width={248}`.
 const ACCENT_PICKER_WIDTH: f32 = 248.0;
 
 impl BenCodeApp {
     /// MonoCode `AppearancePage`.
-    pub(crate) fn render_settings_appearance(&self, cx: &Context<Self>) -> impl IntoElement {
-        div()
-            .flex()
-            .flex_col()
-            .gap_6()
-            .child(self.render_appearance_theme(cx))
-            .child(self.render_appearance_color(cx))
-            .child(self.render_appearance_translucency(cx))
-            .child(self.render_chat_background_card(cx))
-            .child(self.render_appearance_layout(cx))
+    pub(crate) fn render_settings_appearance(&self, cx: &Context<Self>) -> SettingsPage {
+        SettingsTab::Appearance
+            .page()
+            .group(self.render_appearance_theme(cx))
+            .group(self.render_appearance_color(cx))
+            .group(self.render_appearance_translucency(cx))
+            .group(self.render_chat_background_card(cx))
+            .group(self.render_appearance_layout(cx))
     }
 
     /// The header's "Restore defaults": `gap-1.5 rounded-md px-2 py-1
@@ -94,7 +94,7 @@ impl BenCodeApp {
                 None => log::warn!("unknown diff palette {key}"),
             }
         }));
-        SettingsSection::new("Theme")
+        SettingsGroup::new("Theme")
             .description(
                 "Dark and light share the same tint, so the color settings below apply to both.",
             )
@@ -225,7 +225,7 @@ impl BenCodeApp {
     fn render_appearance_color(&self, cx: &Context<Self>) -> impl IntoElement {
         let tint = self.appearance.tint;
         let light = !cx.theme().is_dark();
-        SettingsSection::new("Color")
+        SettingsGroup::new("Color")
             .description("Hue and saturation tint every surface. Lightness only moves the dark theme.")
             .row(
                 SettingsRow::new("Hue")
@@ -302,7 +302,7 @@ impl BenCodeApp {
         let body = Switch::new("glass-body", self.body_glass)
             .disabled(disabled)
             .on_change(app_callback_with(cx, |this, on, cx| this.set_body_glass(on, cx)));
-        SettingsSection::new("Translucency")
+        SettingsGroup::new("Translucency")
             .description(description)
             .row(
                 SettingsRow::new("Sidebar opacity")
@@ -419,7 +419,7 @@ impl BenCodeApp {
                 // `mt-2 text-[12px] text-red-400`
                 div().mt_2().text_size(px(12.0)).text_color(colors.danger).child(error)
             }));
-        let section = SettingsSection::new("Chat background")
+        let section = SettingsGroup::new("Chat background")
             .description("An image behind your chat panes. It stays on this device.")
             .row(picture);
         if !has_image {
@@ -510,7 +510,7 @@ impl BenCodeApp {
         }));
         let excluded = Switch::new("appearance-show-excluded", self.appearance.show_excluded_files)
             .on_change(app_callback_with(cx, |this, on, cx| this.set_show_excluded_files(on, cx)));
-        SettingsSection::new("Layout")
+        SettingsGroup::new("Layout")
             .row(
                 SettingsRow::new("Collapsed project rail")
                     .description(

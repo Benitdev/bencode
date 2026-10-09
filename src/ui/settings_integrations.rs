@@ -6,68 +6,76 @@
 //! confirmation. State and logic: `app/backlog.rs`.
 
 use ely_gpui_component::buttons::{Button, ButtonVariant};
+use ely_gpui_component::data_display::{Badge, Tone};
 use ely_gpui_component::forms::{Input, PasswordInput, Switch};
 use ely_gpui_component::menus::{DropdownMenu, Menu, MenuItem};
 use ely_gpui_component::overlays::Dialog;
-use ely_gpui_component::settings::{SettingsRow, SettingsSection};
-use ely_gpui_component::theme::ActiveTheme;
+use ely_gpui_component::primitives::{Icon, IconName};
+use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{AnyElement, Context, IntoElement, ParentElement, SharedString, Styled, div, relative};
 
 use crate::app::BenCodeApp;
 use crate::backlog::Account;
 use crate::ui::app_callback::{app_callback, app_callback_with};
 use crate::ui::scale::px;
+use crate::ui::settings_modal::SettingsTab;
+use crate::ui::settings_parts::{SettingsGroup, SettingsPage, SettingsRow, icon_tile};
+use crate::ui::sidebar_popovers::pretty_path;
 
 /// The connection form's fields.
 const FIELD_WIDTH: f32 = 280.0;
 
 impl BenCodeApp {
-    pub(crate) fn render_settings_integrations(&self, cx: &Context<Self>) -> impl IntoElement {
-        let page = div()
-            .flex()
-            .flex_col()
-            .gap_6()
-            .child(self.render_github_accounts())
-            .children(self.render_github_projects(cx));
+    pub(crate) fn render_settings_integrations(&self, cx: &Context<Self>) -> SettingsPage {
+        let page = SettingsTab::Integrations
+            .page()
+            .group(self.render_github_accounts(cx));
+        let page = match self.render_github_projects(cx) {
+            Some(group) => page.group(group),
+            None => page,
+        };
         match &self.backlog.account {
             Some(account) => page
-                .child(self.render_backlog_connection(account, cx))
-                .child(self.render_backlog_projects(cx)),
-            None => page.child(self.render_backlog_form(cx)),
+                .group(self.render_backlog_connection(account, cx))
+                .group(self.render_backlog_projects(cx)),
+            None => page.group(self.render_backlog_form(cx)),
         }
     }
 
     /// The accounts `gh` is signed in with.
-    fn render_github_accounts(&self) -> SettingsSection {
-        let section = SettingsSection::new("GitHub").description(
+    fn render_github_accounts(&self, cx: &Context<Self>) -> SettingsGroup {
+        let fg = cx.theme().colors.fg;
+        let group = SettingsGroup::new("GitHub accounts").description(
             "The accounts the GitHub CLI is signed in with. Add one with `gh auth login` in a \
              terminal; BenCode keeps no token of its own.",
         );
         match &self.github.accounts {
-            None => section.row(SettingsRow::new("Reading accounts…")),
-            Some(Err(err)) => section.row(SettingsRow::new("Could not read gh's accounts").description(err.clone())),
-            Some(Ok(accounts)) if accounts.is_empty() => section.row(
-                SettingsRow::new("Not signed in").description("Run `gh auth login` in a terminal to connect GitHub."),
-            ),
-            Some(Ok(accounts)) => accounts.iter().fold(section, |section, account| {
-                let row = SettingsRow::new(account.login.clone());
-                section.row(if account.active {
-                    row.description("Active in gh: what a project on Automatic uses first.")
+            None => group.note("Reading accounts…"),
+            Some(Err(err)) => group.row(SettingsRow::new("Could not read gh's accounts").error(err.clone())),
+            Some(Ok(accounts)) if accounts.is_empty() => {
+                group.note("Not signed in. Run `gh auth login` in a terminal to connect GitHub.")
+            }
+            Some(Ok(accounts)) => group.rows(accounts.iter().map(|account| {
+                let row = SettingsRow::new(account.login.clone())
+                    .leading(icon_tile(Icon::new(IconName::User).size(IconSize::Sm).color(fg.opacity(0.6)), fg));
+                if account.active {
+                    row.description("Projects on Automatic try this account first.")
+                        .control(Badge::new("Active in gh").tone(Tone::Success).dot())
                 } else {
                     row
-                })
-            }),
+                }
+            })),
         }
     }
 
     /// Each rail project's account, once there are two to pick from.
-    fn render_github_projects(&self, cx: &Context<Self>) -> Option<SettingsSection> {
+    fn render_github_projects(&self, cx: &Context<Self>) -> Option<SettingsGroup> {
         let accounts = self.github.accounts.as_ref()?.as_ref().ok().filter(|accounts| accounts.len() > 1)?;
-        let section = SettingsSection::new("GitHub account by project").description(
+        let group = SettingsGroup::new("GitHub account by project").description(
             "The account a project's Inbox, pull requests, comments and merges run as. Automatic \
              uses the active account, or another one when the active one cannot see the repository.",
         );
-        Some(self.rail_order().into_iter().enumerate().fold(section, |section, (ix, project)| {
+        Some(group.rows(self.rail_order().into_iter().enumerate().map(|(ix, project)| {
             let chosen = self.github.choices.get(&project).cloned();
             let pick = |login: Option<String>| {
                 let project = project.clone();
@@ -81,27 +89,32 @@ impl BenCodeApp {
                 },
             );
             let label = chosen.unwrap_or_else(|| "Automatic".to_string());
-            section.row(
-                SettingsRow::new(self.rail_project_label(&project))
-                    .description(project.clone())
-                    .control(DropdownMenu::new(("github-project-account", ix), label, menu).variant(ButtonVariant::Outline)),
-            )
-        }))
+            SettingsRow::new(self.rail_project_label(&project))
+                .description(pretty_path(&project))
+                .control(DropdownMenu::new(("github-project-account", ix), label, menu).variant(ButtonVariant::Outline))
+        })))
     }
 
-    fn backlog_section(&self) -> SettingsSection {
-        SettingsSection::new("Backlog")
+    fn backlog_group(&self) -> SettingsGroup {
+        SettingsGroup::new("Backlog")
             .description("Open issues of a Nulab Backlog space show in the Inbox, beside GitHub's.")
     }
 
     /// Not connected: the space, the key, Connect.
-    fn render_backlog_form(&self, cx: &Context<Self>) -> SettingsSection {
+    fn render_backlog_form(&self, cx: &Context<Self>) -> SettingsGroup {
         let busy = self.backlog.busy || !self.backlog.loaded;
         let typed = !self.backlog_space_input.read(cx).text().trim().is_empty()
             && !self.backlog_key_input.read(cx).text().trim().is_empty();
         let field = |input: AnyElement| div().w(px(FIELD_WIDTH)).child(input);
-        let error = self.backlog.error.clone();
-        self.backlog_section()
+        let connect = SettingsRow::new("Access");
+        let connect = match self.backlog.error.clone() {
+            Some(error) => connect.error(error),
+            None => connect.description(
+                "BenCode reads issues and comments, and posts the comments and status changes \
+                 you make in the Inbox.",
+            ),
+        };
+        self.backlog_group()
             .row(
                 SettingsRow::new("Space")
                     .description("Your space's address, like yourspace.backlog.com or yourspace.backlog.jp")
@@ -116,36 +129,33 @@ impl BenCodeApp {
                     .control(field(PasswordInput::new(&self.backlog_key_input).into_any_element())),
             )
             .row(
-                SettingsRow::new(if self.backlog.busy { "Checking the key…" } else { "Connect" })
-                    .description(error.unwrap_or_else(|| {
-                        "BenCode reads issues and comments, and posts the comments and status \
-                         changes you make in the Inbox."
-                            .to_string()
-                    }))
-                    .control(
-                        Button::new("backlog-connect", "Connect")
-                            .primary()
-                            .disabled(busy || !typed)
-                            .on_click(cx.listener(|this, _, _, cx| this.connect_backlog(cx))),
-                    ),
+                connect.control(
+                    Button::new("backlog-connect", if self.backlog.busy { "Checking the key…" } else { "Connect" })
+                        .primary()
+                        .loading(self.backlog.busy)
+                        .disabled(busy || !typed)
+                        .on_click(cx.listener(|this, _, _, cx| this.connect_backlog(cx))),
+                ),
             )
     }
 
     /// Connected: who and where, and Disconnect.
-    fn render_backlog_connection(&self, account: &Account, cx: &Context<Self>) -> SettingsSection {
+    fn render_backlog_connection(&self, account: &Account, cx: &Context<Self>) -> SettingsGroup {
         let who = if account.user_name.is_empty() {
             account.space.clone()
         } else {
             format!("{} · {}", account.user_name, account.space)
         };
-        let detail = match &self.backlog.error {
-            Some(err) => format!("{who}\n{err}"),
-            None => who,
+        let row = SettingsRow::new("Connected");
+        let row = match &self.backlog.error {
+            Some(err) => row.error(format!("{who}\n{err}")),
+            None => row.description(who),
         };
-        self.backlog_section().row(
-            SettingsRow::new("Connected").description(detail).control(
+        self.backlog_group().row(
+            row.control(
                 Button::new("backlog-disconnect", "Disconnect")
                     .variant(ButtonVariant::Outline)
+                    .size(ControlSize::Sm)
                     .disabled(self.backlog.busy)
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.backlog_disconnect_open = true;
@@ -156,33 +166,29 @@ impl BenCodeApp {
     }
 
     /// The space's projects, each with a switch for the Inbox.
-    fn render_backlog_projects(&self, cx: &Context<Self>) -> SettingsSection {
-        let section = SettingsSection::new("Backlog projects")
+    fn render_backlog_projects(&self, cx: &Context<Self>) -> SettingsGroup {
+        let group = SettingsGroup::new("Backlog projects")
             .description("Projects whose open issues the Inbox lists.");
         let projects = match &self.backlog.projects {
-            None => return section.row(SettingsRow::new("Loading projects…")),
+            None => return group.note("Loading projects…"),
             Some(Err(err)) => {
-                return section.row(SettingsRow::new("Could not list projects").description(err.clone()));
+                return group.row(SettingsRow::new("Could not list projects").error(err.clone()));
             }
-            Some(Ok(projects)) if projects.is_empty() => {
-                return section.row(SettingsRow::new("No projects in this space"));
-            }
+            Some(Ok(projects)) if projects.is_empty() => return group.note("No projects in this space."),
             Some(Ok(projects)) => projects,
         };
-        projects.iter().fold(section, |section, project| {
+        group.rows(projects.iter().map(|project| {
             let shown = !self.backlog.hidden_projects.contains(&project.id);
             let id = project.id.clone();
-            section.row(
-                SettingsRow::new(project.name.clone())
-                    .description(project.key.clone())
-                    .control(
-                        Switch::new(SharedString::from(format!("backlog-project-{}", project.id)), shown)
-                            .on_change(app_callback_with(cx, move |this, on, cx| {
-                                this.set_backlog_project_shown(&id, on, cx)
-                            })),
-                    ),
-            )
-        })
+            SettingsRow::new(project.name.clone())
+                .aside(project.key.clone())
+                .control(
+                    Switch::new(SharedString::from(format!("backlog-project-{}", project.id)), shown)
+                        .on_change(app_callback_with(cx, move |this, on, cx| {
+                            this.set_backlog_project_shown(&id, on, cx)
+                        })),
+                )
+        }))
     }
 
     /// Disconnect's confirmation: the key is deleted.

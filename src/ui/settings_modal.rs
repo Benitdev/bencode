@@ -1,14 +1,14 @@
 //! Settings: general defaults, provider CLIs, MCP, skills, integrations,
 //! appearance, about.
 
-use ely_gpui_component::buttons::{ButtonVariant, IconButton};
+use ely_gpui_component::buttons::{Button, ButtonVariant, IconButton};
 use ely_gpui_component::data_display::{Badge, Tone};
-use ely_gpui_component::feedback::EmptyState;
 use ely_gpui_component::forms::Switch;
-use ely_gpui_component::primitives::IconName;
-use ely_gpui_component::settings::{SettingsLayout, SettingsRow, SettingsSection};
+use ely_gpui_component::primitives::{Icon, IconName};
+use ely_gpui_component::settings::SettingsLayout;
+use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
-    AnyElement, App, Context, InteractiveElement, IntoElement, ParentElement, SharedString,
+    AnyElement, Context, InteractiveElement, IntoElement, ParentElement, SharedString,
     StatefulInteractiveElement, Styled, div,
 };
 
@@ -16,6 +16,8 @@ use crate::app::BenCodeApp;
 use crate::harness::HarnessInfo;
 use crate::ui::HarnessIcon;
 use crate::ui::scale::px;
+use crate::ui::settings_parts::{SettingsGroup, SettingsPage, SettingsRow, icon_tile};
+use crate::ui::sidebar_popovers::pretty_path;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum SettingsTab {
@@ -110,6 +112,37 @@ impl SettingsTab {
             .map_or(("General", IconName::Settings), |(_, _, name, icon)| (*name, *icon))
     }
 
+    /// MonoCode `settingsSectionDescription`: the line under the page title.
+    fn description(self) -> &'static str {
+        match self {
+            Self::General => {
+                "The model new threads start with, the panels BenCode shows, and the editors it \
+                 opens files in."
+            }
+            Self::Appearance => {
+                "Theme, tint, translucency, workspace layout, and conversation backgrounds."
+            }
+            Self::About => "The build you are running and how it stays up to date.",
+            Self::Providers => {
+                "Provider accounts, the agent CLIs BenCode drives, and how they run."
+            }
+            Self::Mcp => "MCP servers found in Claude, Cursor and project configuration.",
+            Self::Skills => {
+                "File skills from project and personal folders. Type / in the composer to use one."
+            }
+            Self::Archive => "Projects you have archived from the rail.",
+            Self::Worktrees => "Manage additional worktrees for each project.",
+            Self::Integrations => {
+                "Where the Inbox reads from: GitHub through its CLI, and a Nulab Backlog space."
+            }
+        }
+    }
+
+    /// The page's header, ready for its groups.
+    pub(crate) fn page(self) -> SettingsPage {
+        SettingsPage::new(self.label_icon().0).description(self.description())
+    }
+
     fn from_key(key: &str) -> Option<Self> {
         SECTIONS
             .iter()
@@ -119,36 +152,6 @@ impl SettingsTab {
 }
 
 impl BenCodeApp {
-    /// Skills found in the project and user folders (MonoCode `SkillsPage`).
-    fn render_settings_skills(&self, cx: &Context<Self>) -> impl IntoElement {
-        let skills = &self.integrations.skills;
-        let section = SettingsSection::new("Skills").description(format!(
-            "{} skills. Type / in the composer to use one; add folders with a SKILL.md under .agents/skills.",
-            skills.len()
-        ));
-        let section = section.row(
-            SettingsRow::new("Rescan")
-                .description("Rescan skill folders")
-                .control(
-                    IconButton::new("skills-rescan", IconName::RefreshCw)
-                        .variant(ButtonVariant::Ghost)
-                        .on_click(cx.listener(|this, _, _, cx| this.refresh_skills(true, cx))),
-                ),
-        );
-        skills.iter().fold(section, |section, skill| {
-            let detail = if skill.path.is_empty() {
-                skill.description.clone()
-            } else {
-                format!("{}\n{}", skill.description, skill.path)
-            };
-            section.row(
-                SettingsRow::new(format!("/{}", skill.name))
-                    .description(detail)
-                    .control(Badge::new(format!("{} · {}", skill.scope, skill.source))),
-            )
-        })
-    }
-
     pub(crate) fn render_settings_body(&mut self, cx: &mut Context<Self>) -> AnyElement {
         // MonoCode: the project rail holds the sections while settings
         // are open, so the page stands alone.
@@ -192,7 +195,7 @@ impl BenCodeApp {
         match self.settings_tab {
             SettingsTab::General => self.render_settings_general(cx).into_any_element(),
             SettingsTab::Providers => self.render_settings_providers(cx).into_any_element(),
-            SettingsTab::Mcp => self.render_settings_mcp().into_any_element(),
+            SettingsTab::Mcp => self.render_settings_mcp(cx).into_any_element(),
             SettingsTab::Skills => self.render_settings_skills(cx).into_any_element(),
             SettingsTab::Appearance => self.render_settings_appearance(cx).into_any_element(),
             SettingsTab::About => self.render_settings_about(cx).into_any_element(),
@@ -202,91 +205,25 @@ impl BenCodeApp {
         }
     }
 
-    /// MonoCode `ArchivePage` (projects): Restore puts one back on the rail
-    /// and opens it; Delete asks first.
-    fn render_settings_archive(&self, cx: &Context<Self>) -> impl IntoElement {
-        let archived = &self.settings.rail.archived_projects;
-        let section = SettingsSection::new("Archive").description("Projects and conversations you have archived.");
-        if archived.is_empty() {
-            return section.row(SettingsRow::new("No archived projects"));
-        }
-        archived.iter().enumerate().fold(section, |section, (ix, project)| {
-            let (restore_path, delete_path) = (project.path.clone(), project.path.clone());
-            section.row(
-                SettingsRow::new(self.rail_project_label(&project.path))
-                    .description(project.path.clone())
-                    .control(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap_1()
-                            .child(
-                                ely_gpui_component::buttons::Button::new(
-                                    SharedString::from(format!("archive-restore-{ix}")),
-                                    "Restore",
-                                )
-                                .variant(ButtonVariant::Ghost)
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    this.restore_rail_project(&restore_path, cx);
-                                })),
-                            )
-                            .child(
-                                ely_gpui_component::buttons::Button::new(
-                                    SharedString::from(format!("archive-delete-{ix}")),
-                                    "Delete",
-                                )
-                                .variant(ButtonVariant::Danger)
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    this.request_remove_project(&delete_path, cx);
-                                })),
-                            ),
-                    ),
-            )
-        })
-    }
+    fn render_settings_general(&self, cx: &Context<Self>) -> SettingsPage {
+        let model = &self.selected_model;
+        let harness = model.split_once(':').map_or("", |(harness, _)| harness);
+        let default_model = div()
+            .flex()
+            .items_center()
+            .gap_2()
+            .text_size(px(12.0))
+            .text_color(cx.theme().colors.fg)
+            .child(HarnessIcon::new(harness).size(px(14.0)))
+            .child(crate::harness::catalog::label_for(model));
+        let threads = SettingsGroup::new("New threads").row(
+            SettingsRow::new("Default model")
+                .description("The model a new thread starts with.")
+                .control(default_model),
+        );
 
-    fn render_settings_general(&self, cx: &Context<Self>) -> impl IntoElement {
-        let editor_controls = match &self.integrations.editors {
-            None => div().child(Badge::new("Scanning…").tone(Tone::Neutral)),
-            Some(editors) if editors.is_empty() => {
-                div().child(Badge::new("None detected").tone(Tone::Neutral))
-            }
-            Some(editors) => div().flex().items_center().gap_1().children(
-                editors
-                    .iter()
-                    .map(|ed| Badge::new(ed.name).tone(Tone::Success).dot()),
-            ),
-        };
-
-        SettingsSection::new("General")
-            .description("Defaults for new threads and workspace tools.")
-            .row(
-                SettingsRow::new("Default model")
-                    .description("Model used when a new thread starts")
-                    .control(Badge::new(crate::harness::catalog::label_for(
-                        &self.selected_model,
-                    ))),
-            )
-            .row({
-                let entity = cx.entity().downgrade();
-                SettingsRow::new("Composer mascot")
-                    .description(
-                        "When a turn is running, the project mascot runs along the composer, \
-                         bonks the scroll-to-latest button the first time, then jumps it, and \
-                         sometimes grabs a coin.",
-                    )
-                    .control(
-                        Switch::new("composer-mascot", !self.composer_mascot_off).on_change(
-                            move |on, _, cx| {
-                                if let Err(err) =
-                                    entity.update(cx, |this, cx| this.set_composer_mascot(on, cx))
-                                {
-                                    log::debug!("mascot toggle after app drop: {err:#}");
-                                }
-                            },
-                        ),
-                    )
-            })
+        let workspace = SettingsGroup::new("Workspace")
+            .description("What BenCode shows around your chats.")
             .row({
                 let entity = cx.entity().downgrade();
                 SettingsRow::new("Working agents")
@@ -307,40 +244,61 @@ impl BenCodeApp {
                         ),
                     )
             })
-            .row(
-                SettingsRow::new("External editors")
+            .row({
+                let entity = cx.entity().downgrade();
+                SettingsRow::new("Composer mascot")
                     .description(
-                        "Detected IDEs available to open files and workspaces; the first is used",
+                        "When a turn is running, the project mascot runs along the composer, \
+                         bonks the scroll-to-latest button the first time, then jumps it, and \
+                         sometimes grabs a coin.",
                     )
-                    .control(editor_controls),
-            )
-    }
+                    .control(
+                        Switch::new("composer-mascot", !self.composer_mascot_off).on_change(
+                            move |on, _, cx| {
+                                if let Err(err) =
+                                    entity.update(cx, |this, cx| this.set_composer_mascot(on, cx))
+                                {
+                                    log::debug!("mascot toggle after app drop: {err:#}");
+                                }
+                            },
+                        ),
+                    )
+            });
 
-    fn render_settings_providers(&self, cx: &Context<Self>) -> impl IntoElement {
-        let section = SettingsSection::new("Providers")
-            .description("Agent CLIs found when BenCode started. Sign in through each CLI.");
-        let providers = if self.harnesses.is_empty() {
-            section.row(SettingsRow::new("No harness CLIs detected"))
-        } else {
-            self.harnesses
-                .iter()
-                .fold(section, |section, info| section.row(provider_row(info, cx)))
+        let editors = SettingsGroup::new("External editors")
+            .description("IDEs found on this Mac. Files and workspaces open in the first one.");
+        let editors = match &self.integrations.editors {
+            None => editors.note("Looking for editors…"),
+            Some(found) if found.is_empty() => editors.note(
+                "No supported editor found. Install VS Code, Cursor or Zed to open files outside BenCode.",
+            ),
+            Some(found) => editors.rows(found.iter().enumerate().map(|(ix, editor)| {
+                SettingsRow::new(editor.name).control(if ix == 0 {
+                    Badge::new("Default").tone(Tone::Accent)
+                } else {
+                    Badge::new("Installed").tone(Tone::Neutral)
+                })
+            })),
         };
-        div()
-            .flex()
-            .flex_col()
-            .gap_6()
-            .child(self.render_settings_accounts(cx))
-            .child(providers)
-            .child(self.render_settings_advanced(cx))
+
+        SettingsTab::General.page().group(threads).group(workspace).group(editors)
     }
 
-    /// MonoCode Providers › Advanced.
-    fn render_settings_advanced(&self, cx: &Context<Self>) -> impl IntoElement {
+    fn render_settings_providers(&self, cx: &Context<Self>) -> SettingsPage {
+        let clis = SettingsGroup::new("Agent CLIs")
+            .description("Found on PATH when BenCode started. Sign in through each CLI.");
+        let clis = if self.harnesses.is_empty() {
+            clis.note("No agent CLIs found. Install Claude Code, Codex, OpenCode or Antigravity, then restart BenCode.")
+        } else {
+            clis.rows(self.harnesses.iter().map(|info| provider_row(info, cx)))
+        };
         let entity = cx.entity().downgrade();
-        SettingsSection::new("Advanced").row(
+        let advanced = SettingsGroup::new("Advanced").row(
             SettingsRow::new("Claude Code hooks")
-                .description("Run hooks from your Claude settings. Applies from the next turn.")
+                .description(
+                    "Run the hooks from your Claude settings, as the Claude Code CLI would. Turn \
+                     this off if a hook is misbehaving. Applies from the next turn.",
+                )
                 .control(
                     Switch::new("claude-hooks", !self.claude_hooks_disabled).on_change(
                         move |on, _, cx| {
@@ -352,79 +310,157 @@ impl BenCodeApp {
                         },
                     ),
                 ),
-        )
+        );
+        SettingsTab::Providers
+            .page()
+            .group(self.render_settings_accounts(cx))
+            .group(clis)
+            .group(advanced)
     }
 
-    fn render_settings_mcp(&self) -> impl IntoElement {
-        let Some(servers) = &self.integrations.mcp_servers else {
-            return div()
-                .child(Badge::new("Scanning MCP configuration…").tone(Tone::Neutral))
-                .into_any_element();
+    fn render_settings_mcp(&self, cx: &Context<Self>) -> SettingsPage {
+        let fg = cx.theme().colors.fg;
+        let group = SettingsGroup::new("Servers")
+            .description("BenCode lists these servers; each agent CLI starts its own.");
+        let group = match &self.integrations.mcp_servers {
+            None => group.note("Reading MCP configuration…"),
+            Some(servers) if servers.is_empty() => group.note(
+                "No MCP servers configured. Add servers to ~/.cursor/mcp.json, Claude Desktop or \
+                 .bencode/mcp.json to see them here.",
+            ),
+            Some(servers) => group
+                .action(Badge::new(plural(servers.len(), "server", "servers")))
+                .rows(servers.iter().map(|server| mcp_row(server, fg))),
         };
-        if servers.is_empty() {
-            return div()
-                .child(
-                    EmptyState::new("mcp-empty", IconName::SlidersHorizontal, "No MCP servers configured")
-                        .body("Add servers to ~/.cursor/mcp.json, Claude Desktop or .bencode/mcp.json to see them here."),
-                )
-                .into_any_element();
-        }
-        let section = SettingsSection::new("Model Context Protocol (MCP)")
-            .description("Servers found in Claude, Cursor and project configuration. BenCode lists them; it does not start them.");
-        servers
-            .iter()
-            .fold(section, |section, server| section.row(mcp_row(server)))
-            .into_any_element()
+        SettingsTab::Mcp.page().group(group)
+    }
+
+    /// Skills found in the project and user folders (MonoCode `SkillsPage`).
+    fn render_settings_skills(&self, cx: &Context<Self>) -> SettingsPage {
+        let skills = &self.integrations.skills;
+        let group = SettingsGroup::new(plural(skills.len(), "skill", "skills"))
+            .description("Add a folder with a SKILL.md under .agents/skills, in a project or your home folder.")
+            .action(
+                IconButton::new("skills-rescan", IconName::RefreshCw)
+                    .variant(ButtonVariant::Ghost)
+                    .size(ControlSize::Sm)
+                    .tooltip("Rescan skill folders")
+                    .on_click(cx.listener(|this, _, _, cx| this.refresh_skills(true, cx))),
+            );
+        let group = if skills.is_empty() {
+            group.note("No skills found yet.")
+        } else {
+            group.rows(skills.iter().map(|skill| {
+                let detail = if skill.path.is_empty() {
+                    skill.description.clone()
+                } else {
+                    format!("{}\n{}", skill.description, pretty_path(&skill.path))
+                };
+                SettingsRow::new(format!("/{}", skill.name))
+                    .description(detail)
+                    .control(Badge::new(format!("{} · {}", skill.scope, skill.source)))
+            }))
+        };
+        SettingsTab::Skills.page().group(group)
+    }
+
+    /// MonoCode `ArchivePage` (projects): Restore puts one back on the rail
+    /// and opens it; Delete asks first.
+    fn render_settings_archive(&self, cx: &Context<Self>) -> SettingsPage {
+        let fg = cx.theme().colors.fg;
+        let archived = &self.settings.rail.archived_projects;
+        let group = SettingsGroup::new("Archived projects").description(
+            "Archive a project from the rail to keep its chats without listing it in the sidebar.",
+        );
+        let group = if archived.is_empty() {
+            group.note("No archived projects.")
+        } else {
+            group.rows(archived.iter().enumerate().map(|(ix, project)| {
+                let (restore_path, delete_path) = (project.path.clone(), project.path.clone());
+                SettingsRow::new(self.rail_project_label(&project.path))
+                    .leading(icon_tile(
+                        Icon::new(IconName::Folder).size(IconSize::Sm).color(fg.opacity(0.6)),
+                        fg,
+                    ))
+                    .description(pretty_path(&project.path))
+                    .control(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_1()
+                            .child(
+                                Button::new(SharedString::from(format!("archive-restore-{ix}")), "Restore")
+                                    .variant(ButtonVariant::Outline)
+                                    .size(ControlSize::Sm)
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        this.restore_rail_project(&restore_path, cx);
+                                    })),
+                            )
+                            .child(
+                                IconButton::new(SharedString::from(format!("archive-delete-{ix}")), IconName::Trash2)
+                                    .variant(ButtonVariant::Ghost)
+                                    .size(ControlSize::Sm)
+                                    .tooltip("Delete project")
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        this.request_remove_project(&delete_path, cx);
+                                    })),
+                            ),
+                    )
+            }))
+        };
+        SettingsTab::Archive.page().group(group)
     }
 }
 
-fn mcp_row(server: &crate::mcp::McpConnection) -> SettingsRow {
+fn plural(n: usize, one: &str, many: &str) -> String {
+    format!("{n} {}", if n == 1 { one } else { many })
+}
+
+fn mcp_row(server: &crate::mcp::McpConnection, fg: gpui::Hsla) -> SettingsRow {
     let (status, tone) = if server.enabled {
         ("Enabled", Tone::Success)
     } else {
         ("Disabled", Tone::Neutral)
     };
     SettingsRow::new(server.name.clone())
+        .leading(icon_tile(HarnessIcon::new(&server.provider).size(px(14.0)), fg))
         .description(format!(
-            "{} ({}) • {}",
-            server.provider, server.scope, server.config_path
+            "{} · {} · {}",
+            server.provider,
+            server.scope,
+            pretty_path(&server.config_path)
         ))
         .control(
             div()
                 .flex()
                 .items_center()
                 .gap_2()
-                .child(HarnessIcon::new(&server.provider).size(px(14.0)))
                 .child(Badge::new(server.transport.clone()).tone(Tone::Neutral))
                 .child(Badge::new(status).tone(tone).dot()),
         )
 }
 
-fn provider_row(info: &HarnessInfo, _cx: &App) -> SettingsRow {
+fn provider_row(info: &HarnessInfo, cx: &Context<BenCodeApp>) -> SettingsRow {
     let location = info.binary_path.as_ref().map_or_else(
         || "Not found on PATH".to_string(),
-        |path| path.display().to_string(),
+        |path| pretty_path(&path.display().to_string()),
     );
     let status = if info.available {
         Badge::new("Available").tone(Tone::Success).dot()
     } else {
         Badge::new("Not installed").tone(Tone::Neutral)
     };
-    SettingsRow::new(info.name).description(location).control(
-        div()
-            .flex()
-            .items_center()
-            .gap_2p5()
-            .child(HarnessIcon::new(info.id).size(px(16.0)))
-            .child(status),
-    )
+    SettingsRow::new(info.name)
+        .leading(icon_tile(HarnessIcon::new(info.id).size(px(16.0)), cx.theme().colors.fg))
+        .description(location)
+        .control(status)
 }
 
 impl BenCodeApp {
     /// About, with MonoCode's `UpdateRow`: the version, what the updater
     /// last found, What's new, and Check for updates / Download (Restart
     /// once an update waits for one).
-    fn render_settings_about(&self, cx: &Context<Self>) -> impl IntoElement {
+    fn render_settings_about(&self, cx: &Context<Self>) -> SettingsPage {
         use crate::app::updater::Phase;
         let state = &self.updater;
         let busy = matches!(state.phase, Phase::Checking | Phase::Downloading);
@@ -439,13 +475,15 @@ impl BenCodeApp {
             .items_center()
             .gap_2()
             .child(
-                ely_gpui_component::buttons::Button::new("about-whats-new", "What's new")
+                Button::new("about-whats-new", "What's new")
                     .variant(ButtonVariant::Ghost)
+                    .size(ControlSize::Sm)
                     .on_click(cx.listener(move |this, _, _, cx| this.open_whats_new(current.clone(), cx))),
             )
             .child(
-                ely_gpui_component::buttons::Button::new("about-update", label)
-                    .variant(ButtonVariant::Secondary)
+                Button::new("about-update", label)
+                    .variant(ButtonVariant::Outline)
+                    .size(ControlSize::Sm)
                     .icon(icon)
                     .loading(busy)
                     .disabled(busy)
@@ -454,14 +492,16 @@ impl BenCodeApp {
                         _ => this.check_for_updates(window, cx),
                     })),
             );
-        SettingsSection::new("About BenCode")
+        let app = SettingsGroup::new("BenCode")
             .description(env!("CARGO_PKG_DESCRIPTION"))
             .row(
-                SettingsRow::new(format!("Version {}", state.current_version()))
+                SettingsRow::new("Version")
+                    .aside(state.current_version().to_string())
                     .description(state.status_line())
                     .control(controls),
             )
-            .row(SettingsRow::new("License").control(Badge::new(env!("CARGO_PKG_LICENSE"))))
+            .row(SettingsRow::new("License").control(Badge::new(env!("CARGO_PKG_LICENSE"))));
+        SettingsTab::About.page().group(app)
     }
 }
 
