@@ -273,6 +273,7 @@ impl BenCodeApp {
         cx: &mut Context<Self>,
     ) {
         self.git_status = snapshot.status;
+        self.follow_checkout_branch(&cwd);
         self.file_tree.invalidate_tints();
         let cache = &mut self.workspace;
         cache.cwd = cwd;
@@ -392,6 +393,28 @@ impl BenCodeApp {
             }
         })
         .detach();
+    }
+
+    /// A thread with no prompt yet shows the branch its checkout is on now,
+    /// as the composer's branch chip acts on that checkout.
+    fn follow_checkout_branch(&mut self, cwd: &str) {
+        let branch = Some(self.git_status.branch.clone()).filter(|b| !b.is_empty());
+        if branch.is_none() {
+            return;
+        }
+        let drafts: Vec<String> = self
+            .sessions
+            .iter()
+            .filter(|s| s.branch != branch && crate::app::same_project_path(s.work_dir(), cwd))
+            .filter(|s| crate::app::tab_scope::is_blank_session(s, self.is_agent_running_in(&s.id)))
+            .map(|s| s.id.clone())
+            .collect();
+        for id in drafts {
+            if let Some(session) = self.sessions.iter_mut().find(|s| s.id == id) {
+                session.branch = branch.clone();
+            }
+            self.persist_session(&id);
+        }
     }
 
     /// Refreshes only if the active thread points at a different directory.

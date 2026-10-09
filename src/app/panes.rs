@@ -526,13 +526,21 @@ impl BenCodeApp {
         let harness = catalog::find(&self.selected_model)
             .map(|m| m.harness)
             .unwrap_or(HarnessKind::Claude);
-        let branch = Some(self.git_status.branch.clone()).filter(|b| !b.is_empty());
-
         // MonoCode keeps `cwd` on the project and records the worktree apart.
         let worktree_cwd = self
             .worktree_focus()
             .filter(|_| crate::app::same_project_path(cwd, &self.current_cwd))
             .map(|focus| focus.path.clone());
+        // The status shown may still be the previous project's; a snapshot
+        // of this checkout fills the branch in when it lands.
+        let branch = Some(self.git_status.branch.clone())
+            .filter(|b| !b.is_empty())
+            .filter(|_| {
+                crate::app::same_project_path(
+                    worktree_cwd.as_deref().unwrap_or(cwd),
+                    &self.workspace.cwd,
+                )
+            });
 
         let session = SessionRow {
             id: id.clone(),
