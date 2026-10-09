@@ -51,8 +51,10 @@ const PROMPT_REVEAL_LIFT: f32 = 10.0;
 /// Fallback slide distance when the viewport hasn't been measured yet (~30% of a typical viewport).
 const PROMPT_FALLBACK_RISE: f32 = 160.0;
 
-/// The heights of the last turn's rows as they were last painted.
-type RowHeights = Rc<RefCell<HashMap<usize, Pixels>>>;
+/// The heights of the last turn's rows as they were last painted, by row
+/// rather than by index: opening or closing a fold shifts the indices, and
+/// the spacer must be sized for the new rows in the same frame.
+type RowHeights = Rc<RefCell<HashMap<Row, Pixels>>>;
 
 /// What is needed to size the spacer that stretches the last turn to the
 /// viewport (MonoCode `.transcript-turn-anchor`).
@@ -62,6 +64,7 @@ struct AnchorProbe {
     heights: RowHeights,
     /// The turn's rows, without the spacer after them.
     turn: Range<usize>,
+    rows: Vec<Row>,
     /// Where the measured viewport height is kept for the rows (see
     /// `TranscriptView::last_viewport_height`).
     last_viewport_height: Rc<Cell<Pixels>>,
@@ -77,7 +80,7 @@ impl AnchorProbe {
         }
         self.last_viewport_height.set(viewport);
         let heights = self.heights.borrow();
-        let turn: Pixels = self.turn.clone().filter_map(|ix| heights.get(&ix)).sum();
+        let turn: Pixels = self.rows.iter().filter_map(|row| heights.get(row)).sum();
         (viewport - turn).max(px(0.0))
     }
 }
@@ -158,10 +161,12 @@ impl Default for TranscriptView {
 
 impl TranscriptView {
     fn anchor_probe(&self) -> Option<AnchorProbe> {
+        let turn = self.anchor_rows.clone()?;
         Some(AnchorProbe {
             list: self.list.clone(),
             heights: self.heights.clone(),
-            turn: self.anchor_rows.clone()?,
+            rows: self.rows.get(turn.clone())?.to_vec(),
+            turn,
             last_viewport_height: self.last_viewport_height.clone(),
         })
     }
@@ -419,6 +424,9 @@ impl BenCodeApp {
         view.review_stamp = review_stamp;
         // A thread opened on its first prompt starts there, not at the tail.
         let introduce = sent || (fresh && running && turns.len() == 1);
+        // The spacer is sized from these rows, so they go in first.
+        view.turns = turns;
+        view.rows = rows;
         view.anchor_turn(introduce);
         if introduce && view.anchor_rows.is_some() {
             view.rise = Some(Instant::now());
@@ -429,8 +437,6 @@ impl BenCodeApp {
             view.rise = None;
         }
         view.live = running;
-        view.turns = turns;
-        view.rows = rows;
     }
 
     pub fn render_transcript_panel(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -477,10 +483,10 @@ impl BenCodeApp {
             .as_ref()
             .filter(|turn| turn.contains(&ix))
             .map(|_| {
-                let heights = view.heights.clone();
+                let (heights, row) = (view.heights.clone(), row.clone());
                 canvas(
                     move |bounds, _, _| {
-                        heights.borrow_mut().insert(ix, bounds.size.height);
+                        heights.borrow_mut().insert(row.clone(), bounds.size.height);
                     },
                     |_, _, _, _| {},
                 )

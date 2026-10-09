@@ -556,7 +556,7 @@ pub fn turn_copy_text(blocks: &[Block], range: Range<usize>) -> String {
 }
 
 /// One row of the virtualized transcript list.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Row {
     /// An item of turn `turn` outside any fold.
     Item { turn: usize, item: usize },
