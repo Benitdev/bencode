@@ -834,6 +834,13 @@ impl BenCodeApp {
         // Closing the window drops the app without quitting (macOS).
         subscriptions.push(cx.on_release(|this, _cx| this.interrupt_runs_for_quit()));
 
+        // The selection is not a view, so its notify alone leaves the cached
+        // app view as it was drawn: a drag would only show once something
+        // else redrew the app (a hover, the click that ends it).
+        let transcript_selection =
+            cx.new(|_| crate::ui::transcript::selection::TranscriptSelection::default());
+        subscriptions.push(cx.observe(&transcript_selection, |_, _, cx| cx.notify()));
+
         subscriptions.push(cx.intercept_keystrokes(move |event, window, cx| {
             // The text input binds these keys itself, deeper than any action
             // context, so the composer's Enter and the picker keys
@@ -1233,7 +1240,7 @@ impl BenCodeApp {
             quick_open_input,
             expanded_reasoning: std::collections::HashSet::new(),
             transcript_ui: Default::default(),
-            transcript_selection: cx.new(|_| Default::default()),
+            transcript_selection,
             transcript_focus: cx.focus_handle(),
             terminals: Default::default(),
             settings_tab: SettingsTab::Providers,

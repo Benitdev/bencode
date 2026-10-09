@@ -184,8 +184,10 @@ blocks and reads `self`. Text inputs, code editors and terminals are the
 exceptions, they are Ely entities stored on the app.
 
 `WindowRoot` wraps the app in a **cached** view. The app re-renders only when it
-(or an entity it read) calls `cx.notify()`. A state change without `cx.notify()`
-does not appear on screen.
+(or a view it draws, such as a text input) calls `cx.notify()`. A state change
+without `cx.notify()` does not appear on screen. State kept in an entity that
+is not a view (`transcript_selection`) redraws nothing by notifying: the app
+has to `cx.observe` it and notify itself.
 
 ### Window layout
 

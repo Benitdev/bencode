@@ -2,7 +2,8 @@
 //! and the process readout's.
 //! The runner redraws every frame of a turn; caching keeps those frames
 //! from re-rendering the whole app, which redraws only when it notifies
-//! (or an entity it read does).
+//! (or a view it draws does). An entity it only reads is not enough: the
+//! app observes it and notifies (`transcript_selection`).
 
 use gpui::{
     AppContext, Context, Entity, IntoElement, ParentElement, Render, StyleRefinement, Styled,

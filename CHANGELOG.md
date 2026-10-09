@@ -29,6 +29,9 @@ tagging (`docs/releasing.md`).
   BenCode also finds Codex installed through Volta, Bun or `n`.
 - A web address written bare in a reply or a note (`https://…`, `www.…`)
   is a link you can click, as one written in Markdown already was.
+- Selecting text in a chat follows the pointer. The highlight used to lag
+  behind a drag and often only appeared once the button was released; ⌘A
+  and Esc on a selection show at once too.
 
 ## [0.1.3] - 2026-10-09
 
