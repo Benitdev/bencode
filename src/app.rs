@@ -8,6 +8,7 @@ pub mod chat_background;
 pub mod commands;
 mod composer_input;
 pub mod file_pane;
+pub mod frame_bench;
 pub mod github_accounts;
 pub mod harness_updates;
 mod ids;
@@ -1125,6 +1126,9 @@ impl BenCodeApp {
             let _ = this.update(cx, |this, cx| {
                 this.refresh_workspace(cx);
                 this.refresh_integrations(cx);
+                if frame_bench::enabled() {
+                    return;
+                }
                 this.start_automation_scheduler(cx);
                 // The open dock's shell starts once the saved tabs are back.
                 this.restore_terminals(cx);
@@ -1313,6 +1317,15 @@ impl BenCodeApp {
             _subscriptions: subscriptions,
         };
         app.apply_settings(saved);
+        if frame_bench::enabled() {
+            // Only what fills the window from the data folder: a bench runs
+            // on a copy and starts no agent, fetch or sign-in.
+            app.start_git_poll(cx);
+            app.start_project_stats_poll(cx);
+            app.load_folder_members(cx);
+            app.start_frame_bench(window, cx);
+            return app;
+        }
         // First on the writer, before any turn can write a new list.
         app.load_interrupted_turns(cx);
         app.start_git_poll(cx);

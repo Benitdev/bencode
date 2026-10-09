@@ -143,6 +143,7 @@ bencode/
 | `automations.rs`, `automation_runs.rs` | Automations: the surface's state and the editor's draft, loading and saving off the UI thread; the 30s scheduler, Run now, and the thread, worktree and folder a run gets |
 | `worktree_lifecycle.rs` | Settings › Worktrees: project picker, create, delete (with the removal journal) |
 | `chat_background.rs` | Appearance › Chat background: the saved copy of the image, decoding and effects off the UI thread, the image the panes draw |
+| `frame_bench.rs` | Frame timings for perf work: `BENCODE_FRAME_BENCH=1` draws the window by hand, case by case, and prints what a redraw costs (see Verifying) |
 | `in_flight.rs` | The turns running now, kept in `in_flight_sessions` (one BenCode per data folder, by `in-flight.lock`); at launch, the ones a quit, restart or crash cut off: marked interrupted and offered for resuming (`ui/resume_interrupted.rs`) |
 | `updater.rs`, `release_notes.rs` | Updates: the probe at launch, Check for Updates…, install and restart, the "Updated to" note; a version's CHANGELOG section for What's new |
 
@@ -188,6 +189,12 @@ exceptions, they are Ely entities stored on the app.
 without `cx.notify()` does not appear on screen. State kept in an entity that
 is not a view (`transcript_selection`) redraws nothing by notifying: the app
 has to `cx.observe` it and notify itself.
+
+A view cached **inside** the app saves nothing: while a cached view
+re-renders, GPUI re-renders every view under it, cached or not, and a child's
+notify marks the app dirty. What must not pay for the app's redraws (or make
+the app pay for its own) is a sibling of the app under `WindowRoot`, like
+`RunnerLayer` and `ProcessLayer`.
 
 ### Window layout
 
@@ -548,6 +555,19 @@ packaging/macos/bundle.sh    # BenCode.app and a dmg per architecture in target/
   (`harness/claude.rs::live_permission_round_trip`), two read the Keychain
   and a usage endpoint (`rate_limits/claude.rs::live_usage_round_trip`,
   `rate_limits/antigravity.rs::live_usage_round_trip`).
+- What a redraw costs is measured, not guessed (`app/frame_bench.rs`). It
+  changes the layout, so it runs on a copy of the data folder:
+
+```bash
+B="$(mktemp -d)/Library/Application Support/BenCode" && mkdir -p "$B"
+D="$HOME/Library/Application Support/BenCode"
+sqlite3 "$D/bencode.db" ".backup '$B/bencode.db'" && cp "$D/settings.json" "$B/"
+HOME="${B%/Library/*}" BENCODE_FRAME_BENCH=1 target/debug/bencode
+```
+
+  `BENCODE_FRAME_BENCH=2000` draws each case that many times, long enough to
+  `sample` the process; `BENCODE_FRAME_BENCH_CASE=file` measures only the
+  cases whose name holds the word.
 
 ### Releasing
 
