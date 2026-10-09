@@ -16,6 +16,10 @@ tagging (`docs/releasing.md`).
 - Much less memory with screenshots in a thread: image attachments, note
   images and project logos are kept as small thumbnails rather than the
   full picture, and the image preview lets the full one go when it closes.
+- Codex runs the newest copy installed. With an old CLI on PATH (say, from
+  Volta) beside the one the ChatGPT or Codex app bundles, BenCode used the
+  old one, which only listed models a ChatGPT account can no longer run.
+  BenCode also finds Codex installed through Volta, Bun or `n`.
 
 ## [0.1.3] - 2026-10-09
 

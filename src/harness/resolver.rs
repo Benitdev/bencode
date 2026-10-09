@@ -1,4 +1,7 @@
-use std::path::PathBuf;
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::sync::OnceLock;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct HarnessInfo {
@@ -9,12 +12,15 @@ pub struct HarnessInfo {
 }
 
 /// Where to look for one CLI: its binary name plus install locations relative
-/// to `$HOME` that are commonly missing from a Finder-launched app's PATH.
+/// to `$HOME` that are commonly missing from a Finder-launched app's PATH,
+/// and, last, copies an app bundles but never puts on PATH (tried under
+/// `$HOME` and then under `/`).
 struct BinarySpec {
     id: &'static str,
     name: &'static str,
     binary: &'static str,
     home_dirs: &'static [&'static str],
+    bundled: &'static [&'static str],
 }
 
 const SYSTEM_DIRS: &[&str] = &["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"];
@@ -29,30 +35,46 @@ const CLAUDE: BinarySpec = BinarySpec {
         ".local/share/claude",
         ".npm-global/bin",
     ],
+    bundled: &[],
 };
 const ANTIGRAVITY: BinarySpec = BinarySpec {
     id: "antigravity",
     name: "Antigravity",
     binary: "agy",
     home_dirs: &[".local/bin", ".antigravity/antigravity/bin"],
+    bundled: &[],
 };
 const CODEX: BinarySpec = BinarySpec {
     id: "codex",
     name: "Codex",
     binary: "codex",
-    home_dirs: &[".local/bin", ".cargo/bin", ".npm-global/bin"],
+    home_dirs: &[
+        ".local/bin",
+        ".cargo/bin",
+        ".npm-global/bin",
+        ".bun/bin",
+        ".volta/bin",
+        "n/bin",
+    ],
+    // The Codex app's CLI, and the one the ChatGPT app ships for its Codex.
+    bundled: &[
+        "Applications/Codex.app/Contents/Resources/codex",
+        "Applications/ChatGPT.app/Contents/Resources/codex",
+    ],
 };
 const CURSOR: BinarySpec = BinarySpec {
     id: "cursor",
     name: "Cursor Agent",
     binary: "cursor-agent",
     home_dirs: &[".local/bin"],
+    bundled: &[],
 };
 const OPENCODE: BinarySpec = BinarySpec {
     id: "opencode",
     name: "OpenCode",
     binary: "opencode",
     home_dirs: &[".local/bin", ".cargo/bin", ".opencode/bin"],
+    bundled: &[],
 };
 
 const ALL: [&BinarySpec; 5] = [&CLAUDE, &ANTIGRAVITY, &CODEX, &CURSOR, &OPENCODE];
@@ -86,8 +108,36 @@ impl HarnessResolver {
         resolve(&ANTIGRAVITY)
     }
 
+    /// Codex is often installed twice: a package-manager CLI, and the copy
+    /// the Codex or ChatGPT app bundles and keeps current. The server offers
+    /// its newest models only to recent CLIs, and an old one lists models a
+    /// ChatGPT account can no longer run, so the newest copy wins; on a tie,
+    /// the earlier one (PATH first, the app bundles last, as in MonoCode).
+    /// Asking each copy its version can take a few hundred ms, so the pick
+    /// is kept for the session; the startup model probe makes it off the UI
+    /// thread.
     pub fn resolve_codex() -> Option<PathBuf> {
-        resolve(&CODEX)
+        CODEX_PICK
+            .get_or_init(|| {
+                let found = candidates(&CODEX)
+                    .into_iter()
+                    .map(|path| {
+                        let version = cli_version(&path);
+                        (path, version)
+                    })
+                    .collect::<Vec<_>>();
+                let pick = newest(found.iter().cloned());
+                if found.len() > 1 {
+                    log::info!("Codex copies {found:?}, using {pick:?}");
+                }
+                pick
+            })
+            .clone()
+    }
+
+    /// The copy `resolve_codex` picked, once it has run. Does no IO.
+    pub fn resolved_codex() -> Option<PathBuf> {
+        CODEX_PICK.get().cloned().flatten()
     }
 
     pub fn resolve_opencode() -> Option<PathBuf> {
@@ -95,7 +145,14 @@ impl HarnessResolver {
     }
 }
 
+static CODEX_PICK: OnceLock<Option<PathBuf>> = OnceLock::new();
+
 fn resolve(spec: &BinarySpec) -> Option<PathBuf> {
+    candidates(spec).into_iter().next()
+}
+
+/// Every copy of `spec`'s binary on disk, in lookup order, without repeats.
+fn candidates(spec: &BinarySpec) -> Vec<PathBuf> {
     let from_path = std::env::var_os("PATH")
         .into_iter()
         .flat_map(|path| std::env::split_paths(&path).collect::<Vec<_>>());
@@ -105,12 +162,63 @@ fn resolve(spec: &BinarySpec) -> Option<PathBuf> {
         .iter()
         .filter_map(|dir| home.as_ref().map(|home| home.join(dir)));
     let from_system = SYSTEM_DIRS.iter().map(PathBuf::from);
+    let bundled = spec.bundled.iter().flat_map(|path| {
+        home.iter()
+            .map(|home| home.join(path))
+            .chain([Path::new("/").join(path)])
+            .collect::<Vec<_>>()
+    });
 
+    let mut seen = HashSet::new();
     from_path
         .chain(from_home)
         .chain(from_system)
         .map(|dir| dir.join(spec.binary))
-        .find(|candidate| candidate.is_file())
+        .chain(bundled)
+        .filter(|candidate| candidate.is_file() && seen.insert(candidate.clone()))
+        .collect()
+}
+
+/// What `<binary> --version` reports, as numbers; `None` when it fails.
+fn cli_version(path: &Path) -> Option<Vec<u64>> {
+    let output = Command::new(path)
+        .arg("--version")
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output();
+    match output {
+        Ok(output) if output.status.success() => {
+            parse_version(&String::from_utf8_lossy(&output.stdout))
+        }
+        Ok(output) => {
+            log::debug!("{} --version exited with {}", path.display(), output.status);
+            None
+        }
+        Err(err) => {
+            log::debug!("{} --version: {err}", path.display());
+            None
+        }
+    }
+}
+
+/// `codex-cli 0.153.1` → `[0, 153, 1]`. A pre-release or build tag is
+/// dropped, so a pre-release ties with its release.
+fn parse_version(text: &str) -> Option<Vec<u64>> {
+    let word = text.split_whitespace().last()?;
+    let core = word.trim_start_matches('v').split(['-', '+']).next()?;
+    core.split('.').map(|part| part.parse().ok()).collect()
+}
+
+/// The path with the highest version; the earlier one on a tie. A copy whose
+/// version could not be read loses to any that reported one.
+fn newest(found: impl IntoIterator<Item = (PathBuf, Option<Vec<u64>>)>) -> Option<PathBuf> {
+    let mut best: Option<(PathBuf, Option<Vec<u64>>)> = None;
+    for (path, version) in found {
+        if best.as_ref().is_none_or(|(_, top)| version > *top) {
+            best = Some((path, version));
+        }
+    }
+    best.map(|(path, _)| path)
 }
 
 #[cfg(test)]
@@ -124,6 +232,45 @@ mod tests {
             ids,
             ["claude", "antigravity", "codex", "cursor", "opencode"]
         );
+    }
+
+    #[test]
+    fn versions_parse_from_cli_output() {
+        assert_eq!(parse_version("codex-cli 0.153.1\n"), Some(vec![0, 153, 1]));
+        assert_eq!(
+            parse_version("codex-cli 0.154.0-alpha.3"),
+            Some(vec![0, 154, 0])
+        );
+        assert_eq!(parse_version("v1.2"), Some(vec![1, 2]));
+        assert_eq!(parse_version("codex-cli dev"), None);
+        assert_eq!(parse_version(""), None);
+    }
+
+    #[test]
+    fn newest_copy_wins_and_ties_keep_lookup_order() {
+        let path = |p: &str| PathBuf::from(p);
+        let picked = newest([
+            (path("/volta/codex"), Some(vec![0, 143, 0])),
+            (path("/ChatGPT.app/codex"), Some(vec![0, 153, 1])),
+        ]);
+        assert_eq!(picked, Some(path("/ChatGPT.app/codex")));
+
+        let tie = newest([
+            (path("/usr/local/bin/codex"), Some(vec![0, 153, 1])),
+            (path("/Codex.app/codex"), Some(vec![0, 153, 1])),
+        ]);
+        assert_eq!(tie, Some(path("/usr/local/bin/codex")));
+
+        let unread = newest([
+            (path("/broken/codex"), None),
+            (path("/Codex.app/codex"), Some(vec![0, 1, 0])),
+        ]);
+        assert_eq!(unread, Some(path("/Codex.app/codex")));
+        assert_eq!(
+            newest([(path("/only/codex"), None)]),
+            Some(path("/only/codex"))
+        );
+        assert_eq!(newest([]), None);
     }
 
     #[test]

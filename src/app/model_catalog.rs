@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use gpui::Context;
 
 use crate::app::BenCodeApp;
-use crate::harness::{ALL_HARNESSES, HarnessKind, catalog, discovery};
+use crate::harness::{ALL_HARNESSES, HarnessKind, HarnessResolver, catalog, discovery};
 
 const PROBE_COOLDOWN: Duration = Duration::from_secs(60);
 
@@ -43,6 +43,14 @@ impl BenCodeApp {
             let models = task.await;
             let updated = this.update(cx, |app, cx| {
                 app.catalog_probes.insert(kind, Some(Instant::now()));
+                // Startup lists the first Codex found; the probe has now
+                // picked the newest copy, which is the one turns run.
+                if kind == HarnessKind::Codex
+                    && let Some(path) = HarnessResolver::resolved_codex()
+                    && let Some(info) = app.harnesses.iter_mut().find(|h| h.id == kind.id())
+                {
+                    info.binary_path = Some(path);
+                }
                 match models {
                     Ok(models) => {
                         log::info!("{} lists {} models", kind.label(), models.len());
