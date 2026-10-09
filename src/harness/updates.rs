@@ -3,7 +3,7 @@
 //! updater. Blocking; run these on a background executor.
 
 use std::io::Read;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
@@ -12,6 +12,7 @@ use serde_json::Value;
 
 use crate::harness::HarnessKind;
 use crate::harness::process::child_path;
+use crate::harness::resolver::HarnessResolver;
 
 const REGISTRY_URL: &str = "https://registry.npmjs.org";
 const HTTP_TIMEOUT: Duration = Duration::from_secs(10);
@@ -51,11 +52,23 @@ pub fn is_updatable(kind: HarnessKind) -> bool {
     npm_package(kind).is_some() && update_args(kind).is_some()
 }
 
-/// `kind`'s update, if its CLI at `program` is behind npm. Any failure,
-/// offline or otherwise, is `None`: this runs unprompted at launch and must
-/// never surface an error of its own.
-pub fn find_update(kind: HarnessKind, program: &Path) -> Option<HarnessUpdate> {
+/// The copy of `kind`'s CLI an update is about: the one turns run. `listed`
+/// is where startup found it. Codex may run another copy, the newest of
+/// several (asking each its version, hence blocking); `None` when that one
+/// is an app's, which `codex update` cannot update.
+fn updatable(kind: HarnessKind, listed: &Path) -> Option<PathBuf> {
+    if kind != HarnessKind::Codex {
+        return Some(listed.to_path_buf());
+    }
+    HarnessResolver::resolve_codex().filter(|path| !HarnessResolver::is_bundled_codex(path))
+}
+
+/// `kind`'s update, if the CLI turns run (`listed`, see `updatable`) is
+/// behind npm. Any failure, offline or otherwise, is `None`: this runs
+/// unprompted at launch and must never surface an error of its own.
+pub fn find_update(kind: HarnessKind, listed: &Path) -> Option<HarnessUpdate> {
     let package = npm_package(kind)?;
+    let program = &updatable(kind, listed)?;
     let installed = installed_version(program)
         .map_err(|err| log::debug!("{} --version: {err:#}", kind.label()))
         .ok()?;
@@ -72,8 +85,10 @@ pub fn find_update(kind: HarnessKind, program: &Path) -> Option<HarnessUpdate> {
 /// Runs the CLI's self-update, then returns the version it reports
 /// afterwards. stdin is closed, so an updater that stops to ask fails
 /// instead of hanging.
-pub fn run_update(kind: HarnessKind, program: &Path) -> Result<String> {
+pub fn run_update(kind: HarnessKind, listed: &Path) -> Result<String> {
     let args = update_args(kind).with_context(|| format!("No updater for {}", kind.label()))?;
+    let program = &updatable(kind, listed)
+        .with_context(|| format!("{} is updated by the app it came with.", kind.label()))?;
     let (ok, stdout, stderr) = run(program, args, UPDATE_TIMEOUT)?;
     if !ok {
         bail!("{}", update_failure(&stdout, &stderr));
@@ -221,6 +236,15 @@ mod tests {
         assert_eq!(npm_package(HarnessKind::Antigravity), None);
         assert!(is_updatable(HarnessKind::OpenCode));
         assert!(!is_updatable(HarnessKind::Antigravity));
+    }
+
+    #[test]
+    fn other_clis_update_where_startup_found_them() {
+        let listed = Path::new("/opt/homebrew/bin/claude");
+        assert_eq!(
+            updatable(HarnessKind::Claude, listed).as_deref(),
+            Some(listed)
+        );
     }
 
     #[test]

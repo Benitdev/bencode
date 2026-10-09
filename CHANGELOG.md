@@ -15,7 +15,8 @@ tagging (`docs/releasing.md`).
   recent output. ⌘Q still ends them.
 - When Claude Code, Codex or OpenCode is behind its latest release, a notice
   at launch offers to update it; the model picker then lists the new
-  version's models.
+  version's models. For Codex that is the copy BenCode runs; one that came
+  with the ChatGPT or Codex app is left to that app to update.
 - Opening or closing work while an agent runs no longer flashes: a step
   fades in once, as it lands, and a reply that comes back into view is shown
   as it stands rather than typed out again.
