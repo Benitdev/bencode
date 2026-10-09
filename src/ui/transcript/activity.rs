@@ -225,7 +225,7 @@ impl BenCodeApp {
                     .child(markdown(
                         id,
                         &text,
-                        false,
+                        None,
                         Tone::Fold,
                         self.seg_ctx(&session.id, *ix, false),
                         cx,
@@ -376,16 +376,20 @@ impl BenCodeApp {
         } else {
             dim_label(turns::text(block).to_string(), "status", cx)
         };
-        if !live {
+        // The fade runs from when the step landed, not from when it was
+        // first drawn (MonoCode `PhaseStep`'s `turn`, set only on the render
+        // a step arrives in): a phase opened again, or a row back in view,
+        // draws its steps anew and must not fade them in a second time.
+        let Some(entered) = live.then(|| step_entrance(block, now_ms())).flatten() else {
             return row;
-        }
+        };
         div()
             .id(SharedString::from(format!("step-{}", block.id)))
             .child(row)
             .with_animation(
                 SharedString::from(format!("step-in-{}", block.id)),
                 Animation::new(STEP_ENTRANCE),
-                |el, t| el.opacity(t),
+                move |el, _| el.opacity(entered),
             )
             .into_any_element()
     }
@@ -434,7 +438,7 @@ impl BenCodeApp {
                     div().pb_2().child(markdown(
                         SharedString::from(format!("{group}-body")),
                         &body,
-                        false,
+                        None,
                         Tone::Reasoning,
                         self.seg_ctx(&session.id, ix, false),
                         cx,
@@ -580,6 +584,15 @@ fn tool_status(key: &str, state: ToolState, live: bool, cx: &App) -> Option<AnyE
     }
 }
 
+/// How far through its fade a step that landed at `started_at` is at `now`,
+/// or `None` once it has settled (and for a step with no arrival time).
+fn step_entrance(block: &Block, now: i64) -> Option<f32> {
+    let since = now - block.started_at?;
+    let whole = STEP_ENTRANCE.as_millis() as i64;
+    // A clock set back shows the step rather than hiding it until then.
+    (0..whole).contains(&since).then(|| since as f32 / whole as f32)
+}
+
 /// "Opus worked for 1m 4s", or what the folded work adds up to.
 fn settled_title(blocks: &[Block], turn: &TurnLayout) -> String {
     let model = turn.model_name(blocks);
@@ -665,5 +678,18 @@ mod tests {
         assert_eq!(file.as_deref(), Some("/repo/src/a.rs"));
         block.tool = Some(serde_json::json!({"kind": "execute", "title": "cargo test\nmore"}));
         assert_eq!(tool_label(&block, "/repo").1, "cargo test");
+    }
+
+    #[test]
+    fn a_step_fades_in_only_while_it_lands() {
+        let mut block = Block::new("t", "tool", "");
+        assert_eq!(step_entrance(&block, 1_000), None);
+        block.started_at = Some(1_000);
+        assert_eq!(step_entrance(&block, 1_000), Some(0.0));
+        assert_eq!(step_entrance(&block, 1_090), Some(0.5));
+        // Drawn again later (its phase reopened, its row back in view).
+        assert_eq!(step_entrance(&block, 1_180), None);
+        assert_eq!(step_entrance(&block, 60_000), None);
+        assert_eq!(step_entrance(&block, 900), None);
     }
 }

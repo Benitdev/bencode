@@ -83,7 +83,7 @@ const CHIP_PAD: &str = "\u{202F}";
 pub struct AgentMarkdown {
     id: ElementId,
     source: SharedString,
-    live: bool,
+    live: Option<Duration>,
     tone: Tone,
     on_open_file: Option<OnOpenFile>,
     select: Option<SegCtx>,
@@ -94,7 +94,7 @@ impl AgentMarkdown {
         Self {
             id: id.into(),
             source: source.into(),
-            live: false,
+            live: None,
             tone: Tone::Answer,
             on_open_file: None,
             select: None,
@@ -109,9 +109,10 @@ impl AgentMarkdown {
     }
 
     /// While more may arrive: the text reveals at a steady pace and its
-    /// edge fades in.
-    pub fn live(mut self, live: bool) -> Self {
-        self.live = live;
+    /// edge fades in. `arriving` is how long the text has been coming in,
+    /// which tells a reply that has just begun from one drawn again.
+    pub fn live(mut self, arriving: Option<Duration>) -> Self {
+        self.live = arriving;
         self
     }
 
@@ -152,6 +153,26 @@ fn cached_blocks(cache: &Parsed, shown: &str) -> Option<Rc<Vec<Block>>> {
     (cache.text == shown).then(|| cache.blocks.clone())
 }
 
+impl Reveal {
+    /// Where a reveal starts for text that has been `arriving` this long.
+    /// The progress lives in element state, which is lost whenever the row
+    /// is not drawn (scrolled away, behind work opened above it), so text
+    /// older than a backlog takes to show has been read already: it starts
+    /// caught up, its fade over, rather than again from the first word
+    /// (MonoCode: a reply hidden and shown again never replays).
+    fn start(arriving: Duration, now: Instant) -> Self {
+        let seen = arriving > CATCH_UP;
+        Self {
+            // Clamped to the text's length when it is first counted.
+            shown: if seen { f32::MAX } else { 0.0 },
+            at: now,
+            settled: seen.then(|| now.checked_sub(FADE_SETTLE)).flatten(),
+            counted: usize::MAX,
+            total: 0,
+        }
+    }
+}
+
 /// The byte offset after `shown` graphemes of `text`.
 fn reveal_end(text: &str, shown: usize, total: usize) -> usize {
     if shown >= total {
@@ -175,14 +196,16 @@ fn advanced(shown: f32, total: usize, elapsed: Duration) -> f32 {
 /// The byte length of `text` a live reply shows this frame, and how
 /// strongly its edge is faded (1 while revealing, easing to 0 once caught
 /// up). Asks for frames until both settle.
-fn revealed(id: &ElementId, text: &str, window: &mut Window, cx: &mut App) -> (usize, f32) {
+fn revealed(
+    id: &ElementId,
+    text: &str,
+    arriving: Duration,
+    window: &mut Window,
+    cx: &mut App,
+) -> (usize, f32) {
     let now = Instant::now();
-    let state = window.use_keyed_state((id.clone(), "reveal"), cx, |_, _| Reveal {
-        shown: 0.0,
-        at: now,
-        settled: None,
-        counted: usize::MAX,
-        total: 0,
+    let state = window.use_keyed_state((id.clone(), "reveal"), cx, |_, _| {
+        Reveal::start(arriving, now)
     });
     let Reveal {
         shown,
@@ -1150,10 +1173,9 @@ fn gap_before(prev: Option<&Block>, block: &Block, tone: Tone) -> f32 {
 
 impl RenderOnce for AgentMarkdown {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let (end, fade) = if self.live {
-            revealed(&self.id, &self.source, window, cx)
-        } else {
-            (self.source.len(), 0.0)
+        let (end, fade) = match self.live {
+            Some(arriving) => revealed(&self.id, &self.source, arriving, window, cx),
+            None => (self.source.len(), 0.0),
         };
         let shown = &self.source[..end];
         let cache = window.use_keyed_state((self.id.clone(), "parsed"), cx, |_, _| Parsed {
@@ -1205,6 +1227,18 @@ mod tests {
         let long = advanced(0.0, 1000, tick);
         assert!(long > PACE * 0.1 && long < 1000.0, "{long}");
         assert_eq!(advanced(12.0, 10, tick), 10.0);
+    }
+
+    #[test]
+    fn a_reveal_drawn_again_starts_caught_up() {
+        let now = Instant::now() + Duration::from_secs(60);
+        let fresh = Reveal::start(Duration::from_millis(40), now);
+        assert_eq!((fresh.shown, fresh.settled), (0.0, None));
+        // Its row was out of view while the reply came in.
+        let back = Reveal::start(Duration::from_secs(20), now);
+        assert_eq!(advanced(back.shown.min(500.0), 500, Duration::ZERO), 500.0);
+        let settled = back.settled.expect("the fade is over");
+        assert!(now.duration_since(settled) >= FADE_SETTLE);
     }
 
     #[test]

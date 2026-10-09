@@ -10,6 +10,9 @@ tagging (`docs/releasing.md`).
   next launch lists them and resumes the ones you pick, asking each agent to
   check its last step first. Settings › General can resume them without
   asking.
+- Opening or closing work while an agent runs no longer flashes: a step
+  fades in once, as it lands, and a reply that comes back into view is shown
+  as it stands rather than typed out again.
 - Much less memory with screenshots in a thread: image attachments, note
   images and project logos are kept as small thumbnails rather than the
   full picture, and the image preview lets the full one go when it closes.

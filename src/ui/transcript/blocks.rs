@@ -13,11 +13,12 @@ use gpui::{
 use crate::ui::scale::px;
 use jiff::Timestamp;
 use std::rc::Rc;
+use std::time::Duration;
 
 use super::markdown::{AgentMarkdown, Tone};
 use super::selection::{PlainText, SegCtx};
 use super::turns::{self, TurnLayout};
-use crate::app::BenCodeApp;
+use crate::app::{BenCodeApp, now_ms};
 use crate::db::SessionRow;
 use crate::ui::attachment_chip::{ChipFile, attachment_chip};
 
@@ -30,7 +31,7 @@ const CLAMP_LINES: usize = 4;
 /// The user bubble's line height.
 const LINE_HEIGHT: f32 = 22.0;
 /// How long a copy button shows its check (MonoCode).
-const COPIED_FOR: std::time::Duration = std::time::Duration::from_secs(2);
+const COPIED_FOR: Duration = Duration::from_secs(2);
 /// Rough characters per bubble line, to tell when a message needs the clamp.
 const CHARS_PER_LINE: usize = 72;
 
@@ -39,7 +40,7 @@ const CHARS_PER_LINE: usize = 72;
 pub fn markdown(
     id: SharedString,
     text: &str,
-    live: bool,
+    live: Option<Duration>,
     tone: Tone,
     select: SegCtx,
     cx: &Context<BenCodeApp>,
@@ -660,11 +661,16 @@ fn prose(
 ) -> AnyElement {
     let block = &session.blocks[ix];
     let id = SharedString::from(format!("{}-{ix}", session.id));
+    // How long the reply has been streaming, for a reveal that starts late.
+    let arriving = live.then(|| {
+        let since = block.started_at.map_or(0, |at| now_ms() - at);
+        Duration::from_millis(since.max(0) as u64)
+    });
     div()
         .px_4()
         .when(under_work, |el| el.pt_1())
         .when(!under_work, |el| el.pt_3())
-        .child(markdown(id, turns::text(block), live, Tone::Answer, select, cx))
+        .child(markdown(id, turns::text(block), arriving, Tone::Answer, select, cx))
         .into_any_element()
 }
 
