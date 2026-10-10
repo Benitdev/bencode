@@ -232,7 +232,8 @@ impl BenCodeApp {
                         shown,
                     )
                     .on_change(app_callback_with(cx, move |this, on, cx| {
-                        this.set_backlog_project_shown(&id, on, cx)
+                        this.set_backlog_project_shown(&id, on, cx);
+                        this.play_cue(crate::sounds::Cue::Switch);
                     })),
                 )
         }))

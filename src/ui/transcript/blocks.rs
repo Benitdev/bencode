@@ -142,6 +142,7 @@ fn copy_button(
         .tooltip(Tooltip::text(if copied { "Copied" } else { "Copy" }))
         .on_click(cx.listener(move |this, _, _, cx| {
             cx.write_to_clipboard(gpui::ClipboardItem::new_string(text.clone()));
+            this.play_cue(crate::sounds::Cue::Copy);
             this.transcript_ui.copied.insert(key.clone());
             let key = key.clone();
             cx.spawn(async move |this, cx| {

@@ -106,6 +106,8 @@ bencode/
     ├── updater.rs            self-update: the release feed, the signed archive, the swap and restart
     ├── pty_host/             the terminal host (`bencode --pty-host`) and the tabs' attach client (`--pty-attach`)
     ├── keychain.rs           the macOS `security` tool (Claude's usage token, Antigravity's sign-in)
+    ├── notifications.rs      macOS notifications (UNUserNotificationCenter): permission, banners, clicks
+    ├── sounds/               the cues (cuelume 0.2.2's recipes, rendered once and played with NSSound)
     ├── monocode_import/      the one-time copy of a MonoCode install's data
     ├── external_editor.rs    finding and launching VS Code, Cursor, Zed, …
     └── workspace.rs          workspace file helpers
@@ -133,6 +135,7 @@ bencode/
 | `source_control.rs` | The Changes panel's git and PR actions: stage, discard, commit, push, pull, sync, create / view PR |
 | `tab_scope.rs`, `tab_history.rs`, `workspace_nav.rs` | Which tabs belong to which project or worktree; Back / Forward |
 | `reminders.rs`, `model_catalog.rs` | Session reminders; live model catalogs |
+| `alerts.rs` | Sounds and notifications: the Settings switches, the macOS permission, the project's mutes, what a banner says, a click opening its thread or reminder |
 | `harness_updates.rs` | The launch check for CLIs behind their npm release; Update / Update all through each CLI's own updater, then its models reloaded |
 | `usage.rs` | Provider usage snapshots for the footer, per account: load once, Refresh, the 30s countdown tick |
 | `backlog.rs` | The Backlog connection: connect / disconnect, which projects the Inbox lists, each project's start folder, status changes |
@@ -269,6 +272,7 @@ only read that cache.
 | `sessions/model/liveAgents.ts`, `sessions/ui/LiveAgentsPreview.tsx` | `app/live_agents.rs`, `ui/rail/live_agents.rs` | "Working" card on the rail (the sidebar's foot while the rail is closed); toggle in Settings › General |
 | `app/model/updater.ts`, `updateNotice.ts`, `releaseNotes.ts`, `shell/SidebarUpdate.tsx`, `UpdateRailCard.tsx`, `WhatsNewDialog.tsx`, `tauri-plugin-updater` | `updater.rs`, `app/updater.rs`, `app/release_notes.rs`, `ui/rail/update.rs`, `ui/whats_new.rs` | Self-update from GitHub Releases (Tauri's `latest.json`, minisign); Check for Updates… in the BenCode menu and Settings › About. No update sound |
 | `providers/ui/HarnessUpdateNotice.tsx`, `providers/model/harnessUpdates.ts`, `src-tauri/src/harness_updates.rs` | `harness/updates.rs`, `app/harness_updates.rs`, `ui/harness_update_notice.rs` | Claude Code, Codex and OpenCode against npm, once per launch; npm through `curl` |
+| `settings/model/sounds.ts`, `notifications/model/notifications.ts`, `notificationPreferences.ts`, `src-tauri/src/notifications.rs`, `cuelume` | `sounds/`, `notifications.rs`, `app/alerts.rs`, `ui/settings_modal.rs` | Cues for finished turns, Inbox activity, updates, switches and Copy; banners for finished turns, approvals, questions and reminders. Notifications need BenCode.app (none from `cargo run`); no linked-activity cue, no Dock badge |
 | `ProjectRail`, `TitleBar.tsx`, `Sidebar.tsx` | `ui/rail/`, `ui/titlebar/`, `ui/sidebar*.rs` | Shell |
 | `app/shell/UsageFooter.tsx`, `UsageProviderChip.tsx`, `providers/model/rateLimits*.ts`, `src-tauri/src/rate_limits.rs` | `ui/footer/`, `app/usage.rs`, `rate_limits/` | 5h / weekly / monthly usage per account; HTTP through `curl` |
 | `providers/model/providerAccounts.ts`, `accountUsage.ts`, `harness/core/auth.ts`, `src-tauri/src/account_identity.rs` | `harness/accounts.rs`, `harness/login.rs`, `harness/account_identity.rs`, `app/accounts.rs` | Account profiles in BenCode's own `provider-accounts`; the list is in `settings.json` |

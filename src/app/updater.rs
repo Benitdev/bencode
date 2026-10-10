@@ -158,6 +158,8 @@ impl BenCodeApp {
             }
         }
         self.updater.error = None;
+        let version = self.updater.available_version().map(str::to_string);
+        self.announce_update_available(version.as_deref());
     }
 
     /// MonoCode `runUpdateFlow(true)`: BenCode › Check for Updates… and

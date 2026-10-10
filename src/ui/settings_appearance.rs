@@ -338,7 +338,8 @@ impl BenCodeApp {
         let body = Switch::new("glass-body", self.body_glass)
             .disabled(disabled)
             .on_change(app_callback_with(cx, |this, on, cx| {
-                this.set_body_glass(on, cx)
+                this.set_body_glass(on, cx);
+                this.play_cue(crate::sounds::Cue::Switch);
             }));
         SettingsGroup::new("Translucency")
             .description(description)
@@ -581,7 +582,8 @@ impl BenCodeApp {
             self.appearance.show_excluded_files,
         )
         .on_change(app_callback_with(cx, |this, on, cx| {
-            this.set_show_excluded_files(on, cx)
+            this.set_show_excluded_files(on, cx);
+            this.play_cue(crate::sounds::Cue::Switch);
         }));
         SettingsGroup::new("Layout")
             .row(

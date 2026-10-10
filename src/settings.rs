@@ -52,6 +52,12 @@ pub struct AppSettings {
     /// Resume the turns a quit, restart or crash cut off at launch, without
     /// asking. Off by default: BenCode asks.
     pub resume_interrupted_auto: bool,
+    /// MonoCode `monocode.sounds` switched off. On by default.
+    pub sounds_off: bool,
+    /// MonoCode `monocode.soundsEnabledAt`: when sounds were last turned on.
+    pub sounds_enabled_at: Option<i64>,
+    /// MonoCode `monocode.notifications`. Off until the user opts in.
+    pub notifications: bool,
     /// MonoCode `monocode.sidebarOpacity` (0.15–1); `None` is the default.
     pub sidebar_opacity: Option<f32>,
     /// MonoCode `monocode.bodyGlass` switched off. On by default.
@@ -206,6 +212,9 @@ mod tests {
             composer_mascot_off: true,
             live_agents_off: true,
             resume_interrupted_auto: true,
+            sounds_off: true,
+            sounds_enabled_at: Some(42),
+            notifications: true,
             sidebar_opacity: Some(0.6),
             body_glass_off: true,
             inbox_seen: std::collections::BTreeMap::from([("o/r:issue:1".to_string(), 5)]),

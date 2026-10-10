@@ -113,11 +113,11 @@ Last checked against the code: 2026-10-06.
   `remote.rs`.
 - [ ] **MCP supervisor**: launching and supervising servers, and a JSON-RPC
   client.
-- [ ] **macOS integration**: a menu bar icon, a Dock badge, system
-  notifications. MonoCode: `src-tauri/src/tray.rs`, `notifications.rs`.
-- [ ] **Appearance**: per-project chat backgrounds (`chat_background.rs`),
-  harness update notices (`harness_updates.rs`). The "Working agents" panel is
-  done.
+- [ ] **macOS integration**: a menu bar icon, a Dock badge. MonoCode:
+  `src-tauri/src/tray.rs`, `dockBadge.ts`. System notifications and sounds
+  are done (no linked work item cue: BenCode has no linked-activity notice).
+- [ ] **Appearance**: per-project chat backgrounds (`chat_background.rs`).
+  Harness update notices and the "Working agents" panel are done.
 
 ---
 

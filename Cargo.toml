@@ -45,6 +45,9 @@ minisign-verify = "0.2"
 [target.'cfg(target_os = "macos")'.dependencies]
 cocoa = "0.26"
 objc = "0.2"
+# Completion handlers for UNUserNotificationCenter (notifications.rs); the
+# version cocoa already builds.
+block = "0.1"
 # The window's NSView, for the Liquid Glass under it (ui/native_glass.rs);
 # the version GPUI already builds.
 raw-window-handle = "0.6"

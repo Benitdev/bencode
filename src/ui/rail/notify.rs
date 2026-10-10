@@ -1,7 +1,7 @@
 //! MonoCode's notification mutes on the rail: the Inbox row's menu
 //! (`InboxNotificationMenu`) and the "Choose date and time" step
-//! (`NotificationMuteDatePicker`). BenCode posts no system notifications
-//! yet, so a mute is kept (with MonoCode's meaning) and shown on the rail.
+//! (`NotificationMuteDatePicker`). A mute silences the project's sounds and
+//! notifications (`app/alerts.rs`) and is shown on the rail.
 
 use ely_gpui_component::buttons::{Button, ButtonVariant};
 use ely_gpui_component::forms::DateTimePicker;

@@ -485,6 +485,7 @@ impl BenCodeApp {
                     .and_then(|key| inbox.items.iter().find(|i| i.key() == key))
                     .filter(|item| !list.items.iter().any(|l| l.key() == item.key()))
                     .cloned();
+                let failed = !list.errors.is_empty();
                 inbox.items = list.items;
                 inbox.items.extend(kept);
                 inbox.errors = list.errors;
@@ -515,6 +516,7 @@ impl BenCodeApp {
                 if seeded {
                     app.save_settings(cx);
                 }
+                app.announce_inbox_changes(failed);
                 if let Some(key) = app.inbox.selected.clone().filter(|_| !quiet) {
                     app.load_inbox_item(&key, cx);
                 }

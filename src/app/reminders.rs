@@ -215,11 +215,7 @@ impl BenCodeApp {
             }
             let landed = this.update(cx, |app, cx| {
                 for reminder in &claimed {
-                    let title =
-                        crate::app::session_list::display_title(&reminder.title, &reminder.harness);
-                    cx.background_executor()
-                        .spawn(async move { desktop_alert(&title) })
-                        .detach();
+                    app.announce_reminder(reminder, cx);
                 }
                 app.refresh_reminders(cx);
             });
@@ -352,33 +348,6 @@ impl BenCodeApp {
         self.sidebar_mode = crate::app::SidebarMode::Sessions;
         self.open_session(session_id.to_string(), cx);
         self.cancel_reminders(&[session_id.to_string()], Some(due_at), cx);
-    }
-}
-
-/// MonoCode's macOS alert, under BenCode's name: the thread as subtitle,
-/// "Reminder: continue this conversation."
-fn desktop_alert(session_title: &str) {
-    if !cfg!(target_os = "macos") {
-        return;
-    }
-    let quote = |text: &str| text.replace('\\', "\\\\").replace('"', "\\\"");
-    let script = format!(
-        "display notification \"Reminder: continue this conversation.\" with title \"BenCode\" subtitle \"{}\"",
-        quote(session_title)
-    );
-    match std::process::Command::new("osascript")
-        .arg("-e")
-        .arg(script)
-        .output()
-    {
-        Ok(out) if !out.status.success() => {
-            log::warn!(
-                "reminder alert failed: {}",
-                String::from_utf8_lossy(&out.stderr)
-            )
-        }
-        Ok(_) => {}
-        Err(err) => log::warn!("reminder alert failed: {err}"),
     }
 }
 

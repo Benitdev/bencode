@@ -916,7 +916,9 @@ impl BenCodeApp {
                 }
                 let applied = this.update(cx, |app, cx| {
                     for event in batch {
-                        app.on_agent_event(&session_id, run_id, event);
+                        if let Some(request) = app.on_agent_event(&session_id, run_id, event) {
+                            app.announce_input(&session_id, &request, cx);
+                        }
                     }
                     cx.notify();
                 });
@@ -936,11 +938,16 @@ impl BenCodeApp {
         self.runs.get_mut(session_id).filter(|run| run.id == run_id)
     }
 
-    fn on_agent_event(&mut self, session_id: &str, run_id: u64, event: AgentEvent) {
+    /// Folds one event in; returns a permission request the user now has
+    /// to answer, for its notification.
+    fn on_agent_event(
+        &mut self,
+        session_id: &str,
+        run_id: u64,
+        event: AgentEvent,
+    ) -> Option<PermissionRequest> {
         let focused = self.selected_session_id.as_deref() == Some(session_id);
-        let Some(run) = self.current_run(session_id, run_id) else {
-            return;
-        };
+        let run = self.current_run(session_id, run_id)?;
         let save = save_due(&event, run.last_saved.elapsed());
         match plan_event(run.auto_approve, &mut run.edit_paths, focused, event) {
             EventStep::UsageLimited(resets_at) => self.record_usage_limit(session_id, resets_at),
@@ -954,7 +961,7 @@ impl BenCodeApp {
                 request,
                 focus_question,
             } => {
-                run.pending_permission = Some(request);
+                run.pending_permission = Some(request.clone());
                 run.last_saved = Instant::now();
                 // The form takes the keys, as MonoCode focuses its options.
                 if focus_question {
@@ -962,6 +969,7 @@ impl BenCodeApp {
                 }
                 // The user may walk away while the prompt waits.
                 self.persist_session(session_id);
+                return Some(request);
             }
             EventStep::Apply {
                 event,
@@ -990,6 +998,7 @@ impl BenCodeApp {
                 }
             }
         }
+        None
     }
 
     fn finish_run(&mut self, session_id: &str, run_id: u64, cx: &mut Context<Self>) {
@@ -1023,6 +1032,9 @@ impl BenCodeApp {
         }
         self.persist_session(session_id);
         self.close_automation_run(&run, automation_status(run.outcome));
+        if run.purpose == RunPurpose::Turn {
+            self.announce_turn_finished(session_id, cx);
+        }
         // The agent has most likely edited files.
         self.refresh_workspace(cx);
         self.load_session_review(session_id, cx);

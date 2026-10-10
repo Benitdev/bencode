@@ -530,6 +530,9 @@ impl BenCodeApp {
                         if blank {
                             this.notes.modes.insert(id.clone(), NoteMode::Source);
                             this.notes.focus_source = true;
+                        } else {
+                            // MonoCode: a turn saved as a note plays Copy.
+                            this.play_cue(crate::sounds::Cue::Copy);
                         }
                         this.select_note(id, cx);
                     }

@@ -241,6 +241,7 @@ impl BenCodeApp {
                 .control(default_model),
         );
 
+        let alerts = self.render_settings_alerts(cx);
         let workspace = SettingsGroup::new("Workspace")
             .description("What BenCode shows around your chats.")
             .row({
@@ -254,9 +255,10 @@ impl BenCodeApp {
                     .control(
                         Switch::new("working-agents", !self.live_agents_off).on_change(
                             move |on, _, cx| {
-                                if let Err(err) =
-                                    entity.update(cx, |this, cx| this.set_live_agents(on, cx))
-                                {
+                                if let Err(err) = entity.update(cx, |this, cx| {
+                                    this.set_live_agents(on, cx);
+                                    this.play_cue(crate::sounds::Cue::Switch);
+                                }) {
                                     log::debug!("working agents toggle after app drop: {err:#}");
                                 }
                             },
@@ -274,9 +276,10 @@ impl BenCodeApp {
                     .control(
                         Switch::new("composer-mascot", !self.composer_mascot_off).on_change(
                             move |on, _, cx| {
-                                if let Err(err) =
-                                    entity.update(cx, |this, cx| this.set_composer_mascot(on, cx))
-                                {
+                                if let Err(err) = entity.update(cx, |this, cx| {
+                                    this.set_composer_mascot(on, cx);
+                                    this.play_cue(crate::sounds::Cue::Switch);
+                                }) {
                                     log::debug!("mascot toggle after app drop: {err:#}");
                                 }
                             },
@@ -293,9 +296,10 @@ impl BenCodeApp {
                     .control(
                         Switch::new("resume-interrupted", self.resume_interrupted_auto).on_change(
                             move |on, _, cx| {
-                                if let Err(err) = entity
-                                    .update(cx, |this, cx| this.set_resume_interrupted_auto(on, cx))
-                                {
+                                if let Err(err) = entity.update(cx, |this, cx| {
+                                    this.set_resume_interrupted_auto(on, cx);
+                                    this.play_cue(crate::sounds::Cue::Switch);
+                                }) {
                                     log::debug!("resume toggle after app drop: {err:#}");
                                 }
                             },
@@ -321,9 +325,93 @@ impl BenCodeApp {
 
         SettingsTab::General
             .page()
+            .group(alerts)
             .group(threads)
             .group(workspace)
             .group(editors)
+    }
+
+    /// MonoCode General › Alerts: Sounds and Notifications.
+    fn render_settings_alerts(&self, cx: &Context<Self>) -> SettingsGroup {
+        use crate::notifications::Permission;
+        let muted = cx.theme().colors.fg.opacity(0.45);
+        let notifications = self.alerts.notifications;
+        // MonoCode shows the reason beside the switch while it is on.
+        let status = match self.alerts.permission {
+            Permission::Denied if notifications => Some(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .child("Permission needed")
+                    .child(
+                        Button::new("notifications-open-settings", "Open System Settings")
+                            .variant(ButtonVariant::Outline)
+                            .size(ControlSize::Sm)
+                            .on_click(
+                                cx.listener(|this, _, _, _| this.open_notification_settings()),
+                            ),
+                    )
+                    .into_any_element(),
+            ),
+            // BenCode's own: the center needs the app bundle, so a build run
+            // from `cargo run` has none.
+            Permission::Unsupported if notifications => {
+                Some("Only in BenCode.app".into_any_element())
+            }
+            _ => None,
+        };
+        SettingsGroup::new("Alerts")
+            .description("How BenCode reaches you while you are looking somewhere else.")
+            .row({
+                let entity = cx.entity().downgrade();
+                SettingsRow::new("Sounds")
+                    .description(
+                        "Short cues for project activity, finished turns, and available updates. \
+                         Mute a project from its menu on the rail. Switches and Copy on a finished \
+                         turn also play.",
+                    )
+                    .control(Switch::new("sounds", self.alerts.sounds).on_change(
+                        move |on, _, cx| {
+                            let toggled = entity.update(cx, |this, cx| {
+                                this.set_sounds(on, cx);
+                                this.play_cue(crate::sounds::Cue::Switch);
+                            });
+                            if let Err(err) = toggled {
+                                log::debug!("sounds toggle after app drop: {err:#}");
+                            }
+                        },
+                    ))
+            })
+            .row({
+                let entity = cx.entity().downgrade();
+                SettingsRow::new("Notifications")
+                    .description(
+                        "Notify when a reminder is due, or when an agent finishes or needs input \
+                         in another session or while BenCode is in the background. Click the \
+                         notification to open that session.",
+                    )
+                    .control(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_3()
+                            .text_size(px(12.0))
+                            .text_color(muted)
+                            .children(status)
+                            .child(Switch::new("notifications", notifications).on_change(
+                                move |on, _, cx| {
+                                    let toggled = entity.update(cx, |this, cx| {
+                                        this.set_notifications(on, cx);
+                                        this.play_cue(crate::sounds::Cue::Switch);
+                                    });
+                                    if let Err(err) = toggled {
+                                        log::debug!("notifications toggle after app drop: {err:#}");
+                                    }
+                                },
+                            )),
+                    )
+            })
     }
 
     fn render_settings_providers(&self, cx: &Context<Self>) -> SettingsPage {
@@ -344,9 +432,10 @@ impl BenCodeApp {
                 .control(
                     Switch::new("claude-hooks", !self.claude_hooks_disabled).on_change(
                         move |on, _, cx| {
-                            if let Err(err) =
-                                entity.update(cx, |this, cx| this.set_claude_hooks(on, cx))
-                            {
+                            if let Err(err) = entity.update(cx, |this, cx| {
+                                this.set_claude_hooks(on, cx);
+                                this.play_cue(crate::sounds::Cue::Switch);
+                            }) {
                                 log::debug!("hooks toggle after app drop: {err:#}");
                             }
                         },

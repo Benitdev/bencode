@@ -134,6 +134,9 @@ impl BenCodeApp {
             .cursor_pointer()
             .text_color(fg.opacity(0.45))
             .hover(move |s| s.bg(fg.opacity(0.08)).text_color(fg))
+            // It sits over the row; without this the row's click opens
+            // What's new too.
+            .occlude()
             .on_click(cx.listener(|this, _, _, cx| this.dismiss_installed_update(cx)))
             .child(Icon::new(IconName::X).size(IconSize::Sm));
         // `relative overflow-hidden rounded-lg bg-content/12`

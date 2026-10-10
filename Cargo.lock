@@ -596,6 +596,7 @@ version = "0.1.4"
 dependencies = [
  "anyhow",
  "base64",
+ "block",
  "cocoa",
  "ely-gpui-component",
  "env_logger",

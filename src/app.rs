@@ -1,6 +1,7 @@
 pub mod accounts;
 mod agent;
 pub mod agy_accounts;
+pub mod alerts;
 mod automation_runs;
 pub mod automations;
 pub mod backlog;
@@ -230,6 +231,8 @@ pub struct BenCodeApp {
     pub catalog_probes: HashMap<crate::harness::HarnessKind, Option<std::time::Instant>>,
     /// The launch check's harness updates and each row's progress.
     pub harness_updates: crate::app::harness_updates::HarnessUpdates,
+    /// Sounds, notifications and what decides them.
+    pub alerts: crate::app::alerts::Alerts,
     /// Find in conversation (⌘F): its field and the open bar.
     pub find_input: Entity<TextInput>,
     /// Every file of the project, for Go to File, `@` and Search.
@@ -599,6 +602,7 @@ impl BenCodeApp {
             ),
             // Files may have changed while BenCode was in the background.
             cx.observe_window_activation(window, |this, window, cx| {
+                this.on_window_activation(window.is_window_active(), cx);
                 if window.is_window_active() {
                     this.recheck_open_files_on_disk(cx);
                     // MonoCode re-lists the Explorer on focus.
@@ -1205,6 +1209,10 @@ impl BenCodeApp {
             last_model_settings: Default::default(),
             catalog_probes: Default::default(),
             harness_updates: Default::default(),
+            alerts: crate::app::alerts::Alerts {
+                window_active: true,
+                ..Default::default()
+            },
             composer_menus: crate::ui::composer::MenuState::new(menu_focus),
             find_input,
             transcript_find: None,
@@ -1339,6 +1347,7 @@ impl BenCodeApp {
         app.load_account_profiles(cx);
         app.refresh_installed_catalogs(cx);
         app.start_harness_update_check(cx);
+        app.listen_for_notification_clicks(cx);
         app.load_backlog_account(cx);
         app.start_inbox_poll(cx);
         app.start_update_probe(cx);
