@@ -18,7 +18,6 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::time::{Duration, Instant};
 
 use ely_gpui_component::buttons::{ButtonVariant, IconButton, SegmentedControl};
-use ely_gpui_component::menus::{DropdownMenu, Menu, MenuItem};
 use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
@@ -29,10 +28,11 @@ use gpui::{
 use crate::app::{BenCodeApp, Surface};
 use crate::backlog;
 use crate::github::{self, Details, Kind, Status, WorkItem};
-use crate::ui::app_callback::app_callback;
 use crate::ui::composer::cards::ComposerCard;
 use crate::ui::composer::inbox_card::{InboxCard, label_chip};
+use crate::ui::icons::ExtraIcon;
 use crate::ui::scale::px;
+use crate::ui::sidebar_popovers::popover_frame;
 use crate::work_items::Provider;
 
 pub use checks::{Repair, RepairForm};
@@ -48,6 +48,8 @@ const POLL_DELAY: Duration = Duration::from_secs(5);
 pub const DEFAULT_LIST_WIDTH: f32 = 340.0;
 const MIN_LIST_WIDTH: f32 = 260.0;
 const MAX_LIST_WIDTH: f32 = 560.0;
+/// MonoCode `INBOX_FILTER_MENU_WIDTH`.
+const FILTER_MENU_WIDTH: f32 = 228.0;
 const ROW_HEIGHT: f32 = 76.0;
 
 /// MonoCode's kind filter (`hiddenKinds`), as one choice.
@@ -139,6 +141,11 @@ pub struct InboxState {
     /// The statuses shown, by name; empty is all of them.
     pub statuses: Vec<String>,
     pub assigned_to_me: bool,
+    /// Where the filter menu opened, while it is open.
+    filter_menu: Option<gpui::Point<gpui::Pixels>>,
+    /// The filter button took this press: the menu's press-outside must
+    /// not close what the button just toggled.
+    filter_button_hit: bool,
     pub details: Loaded<Details>,
     pub threads: Loaded<github::Thread>,
     pub checks: Loaded<github::Checks>,
@@ -183,6 +190,8 @@ impl Default for InboxState {
             source: None,
             statuses: Vec::new(),
             assigned_to_me: false,
+            filter_menu: None,
+            filter_button_hit: false,
             details: Loaded::default(),
             threads: Loaded::default(),
             checks: Loaded::default(),
@@ -906,7 +915,8 @@ impl BenCodeApp {
                             .text_size(px(12.0))
                             .child(self.inbox_search_input.clone()),
                     )
-                    .child(self.render_inbox_filter_menu(cx))
+                    .child(self.render_inbox_filter_button(cx))
+                    .children(self.render_inbox_filter_menu(cx))
                     .child(
                         IconButton::new("inbox-mark-read", IconName::CheckCheck)
                             .variant(ButtonVariant::Ghost)
@@ -963,42 +973,146 @@ impl BenCodeApp {
         choices
     }
 
+    /// MonoCode's filter button (`ListFilter`, `size-6 rounded-md`): the
+    /// glyph at half strength until hovered, opened or filtering.
+    fn render_inbox_filter_button(&self, cx: &Context<Self>) -> impl IntoElement + use<> {
+        let colors = &cx.theme().colors;
+        let fg = colors.fg;
+        let active = self.inbox.filter_menu.is_some()
+            || self.inbox.source_filter().is_some()
+            || !self.inbox.statuses.is_empty();
+        let group = SharedString::from("inbox-filters");
+        let glyph =
+            |color: gpui::Hsla| ExtraIcon::ListFilter.icon().size(IconSize::Xs).color(color);
+        div()
+            .id("inbox-filters")
+            .group(group.clone())
+            .relative()
+            .size(px(24.0))
+            .flex()
+            .flex_none()
+            .items_center()
+            .justify_center()
+            .rounded(px(6.0))
+            .cursor_pointer()
+            .when(active, |el| el.bg(colors.active))
+            .when(!active, |el| el.hover(move |s| s.bg(fg.opacity(0.10))))
+            .tooltip(Tooltip::text("Filter inbox"))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|this, event: &gpui::MouseDownEvent, _, cx| {
+                    this.inbox.filter_button_hit = true;
+                    this.inbox.filter_menu = match this.inbox.filter_menu {
+                        Some(_) => None,
+                        None => Some(gpui::point(
+                            event.position.x - px(FILTER_MENU_WIDTH - 12.0),
+                            event.position.y + px(14.0),
+                        )),
+                    };
+                    cx.notify();
+                }),
+            )
+            .map(|el| {
+                if active {
+                    el.child(glyph(fg))
+                } else {
+                    el.child(
+                        div()
+                            .group_hover(group.clone(), |s| s.invisible())
+                            .child(glyph(fg.opacity(0.5))),
+                    )
+                    .child(
+                        div()
+                            .absolute()
+                            .invisible()
+                            .group_hover(group.clone(), |s| s.visible())
+                            .child(glyph(fg)),
+                    )
+                }
+            })
+    }
+
     /// MonoCode `InboxFiltersMenu`: the source (once there is more than
-    /// GitHub) and the statuses to show.
-    fn render_inbox_filter_menu(&self, cx: &Context<Self>) -> impl IntoElement + use<> {
+    /// GitHub), the statuses to show, and Clear filters once anything is
+    /// set.
+    fn render_inbox_filter_menu(&self, cx: &Context<Self>) -> Option<AnyElement> {
+        let position = self.inbox.filter_menu?;
+        let fg = cx.theme().colors.fg;
+        let section = |label: &'static str| {
+            div()
+                .px_2()
+                .pt_2()
+                .pb(px(2.0))
+                .text_size(px(10.0))
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(fg.opacity(0.4))
+                .child(label.to_uppercase())
+        };
+        let row = |id: SharedString, label: SharedString, checked: bool| {
+            div()
+                .id(id)
+                .flex()
+                .items_center()
+                .gap_2()
+                .h(px(28.0))
+                .px_2()
+                .rounded(px(8.0))
+                .text_size(px(13.0))
+                .line_height(gpui::relative(1.0))
+                .text_color(fg)
+                .cursor_pointer()
+                .hover(move |s| s.bg(fg.opacity(0.05)))
+                .child(div().flex_1().min_w_0().truncate().child(label))
+                .when(checked, |el| {
+                    el.child(Icon::new(IconName::Check).size(IconSize::Sm).color(fg))
+                })
+        };
         let source = self.inbox.source_filter();
-        let mut menu = Menu::new();
+        let mut body = div().flex().flex_col();
         if self.inbox.backlog_connected {
+            body = body.child(section("Source"));
             let choices = [
                 (None, "All sources"),
                 (Some(Provider::GitHub), Provider::GitHub.label()),
                 (Some(Provider::Backlog), Provider::Backlog.label()),
             ];
             for (choice, label) in choices {
-                menu = menu.item(
-                    MenuItem::radio(label, source == choice).on_click(app_callback(
-                        cx,
-                        move |this, cx| {
-                            this.inbox.source = choice;
-                            cx.notify();
-                        },
-                    )),
+                body = body.child(
+                    row(
+                        SharedString::from(format!("inbox-filter-source-{label}")),
+                        label.into(),
+                        source == choice,
+                    )
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.inbox.source = choice;
+                        cx.notify();
+                    })),
                 );
             }
-            menu = menu.separator();
         }
-        let picked = &self.inbox.statuses;
-        menu = menu.item(MenuItem::radio("All statuses", picked.is_empty()).on_click(
-            app_callback(cx, |this, cx| {
-                this.inbox.statuses.clear();
-                cx.notify();
-            }),
-        ));
-        for status in self.inbox_status_choices() {
-            let on = picked.contains(&status);
-            menu = menu.item(MenuItem::check(status.clone(), on).on_click(app_callback(
-                cx,
-                move |this, cx| {
+        body = body.child(section("Status"));
+        let statuses = self.inbox_status_choices();
+        if statuses.is_empty() {
+            body = body.child(
+                div()
+                    .px_2()
+                    .h(px(28.0))
+                    .flex()
+                    .items_center()
+                    .text_size(px(13.0))
+                    .text_color(fg.opacity(0.4))
+                    .child("No statuses yet"),
+            );
+        }
+        for status in statuses {
+            let on = self.inbox.statuses.contains(&status);
+            body = body.child(
+                row(
+                    SharedString::from(format!("inbox-filter-status-{status}")),
+                    status.clone().into(),
+                    on,
+                )
+                .on_click(cx.listener(move |this, _, _, cx| {
                     let statuses = &mut this.inbox.statuses;
                     match statuses.iter().position(|s| *s == status) {
                         Some(ix) => {
@@ -1007,18 +1121,61 @@ impl BenCodeApp {
                         None => statuses.push(status.clone()),
                     }
                     cx.notify();
-                },
-            )));
+                })),
+            );
         }
-        let active = usize::from(source.is_some()) + picked.len();
-        let label = if active == 0 {
-            "Filter".to_string()
-        } else {
-            format!("Filter · {active}")
-        };
-        DropdownMenu::new("inbox-filters", label, menu)
-            .variant(ButtonVariant::Ghost)
-            .icon(IconName::Filter)
+        if source.is_some() || !self.inbox.statuses.is_empty() {
+            body = body
+                .child(div().my_1().h(px(1.0)).bg(fg.opacity(0.1)))
+                .child(
+                    div()
+                        .id("inbox-filter-clear")
+                        .flex()
+                        .items_center()
+                        .h(px(28.0))
+                        .px_2()
+                        .rounded(px(8.0))
+                        .text_size(px(13.0))
+                        .line_height(gpui::relative(1.0))
+                        .text_color(fg.opacity(0.7))
+                        .cursor_pointer()
+                        .hover(move |s| s.bg(fg.opacity(0.05)).text_color(fg))
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.inbox.source = None;
+                            this.inbox.statuses.clear();
+                            cx.notify();
+                        }))
+                        .child("Clear filters"),
+                );
+        }
+        let menu = popover_frame(cx)
+            .id("inbox-filters-menu")
+            .occlude()
+            .w(px(FILTER_MENU_WIDTH))
+            .max_h(px(480.0))
+            .overflow_y_scroll()
+            .p_1()
+            // A press on the filter button toggles the menu itself; only
+            // once every handler ran is it known whether it was outside.
+            .on_mouse_down_out(cx.listener(|_, _, window, cx| {
+                cx.defer_in(window, |this, _, cx| {
+                    if !std::mem::take(&mut this.inbox.filter_button_hit) {
+                        this.inbox.filter_menu = None;
+                        cx.notify();
+                    }
+                });
+            }))
+            .child(body);
+        Some(
+            gpui::deferred(
+                gpui::anchored()
+                    .position(position)
+                    .snap_to_window()
+                    .child(menu),
+            )
+            .with_priority(3)
+            .into_any_element(),
+        )
     }
 
     fn render_inbox_list(&self, cx: &Context<Self>) -> AnyElement {
