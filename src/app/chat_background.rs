@@ -87,7 +87,8 @@ fn remove_existing_backgrounds(dir: &Path) -> Result<()> {
                 Ok(()) => {}
                 Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
                 Err(err) => {
-                    return Err(err).with_context(|| format!("removing {}", entry.path().display()));
+                    return Err(err)
+                        .with_context(|| format!("removing {}", entry.path().display()));
                 }
             }
         }
