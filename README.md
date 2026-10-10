@@ -318,7 +318,7 @@ A few core principles:
 | :--- | :--- |
 | Language | Rust (2024 edition) |
 | UI | Zed's [GPUI](https://www.gpui.rs/) |
-| Components | [Ely GPUI Components](https://github.com/ZacharyZhang-NY/Ely-GPUI-Components) |
+| Components | [Ely GPUI Components](https://github.com/Benitdev/Ely-GPUI-Components) |
 | Database | SQLite via `rusqlite` (bundled) |
 | Agent processes | Tokio |
 | Time, hashing, JSON | `jiff`, `sha2`, `serde_json` |

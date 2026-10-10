@@ -12,7 +12,7 @@ Last checked against the code: 2026-10-06.
 
 ```toml
 [dependencies]
-ely-gpui-component = { git = "https://github.com/ZacharyZhang-NY/Ely-GPUI-Components" }
+ely-gpui-component = { git = "https://github.com/Benitdev/Ely-GPUI-Components" }
 # GPUI must be the same Zed commit Ely is built against.
 gpui = { git = "https://github.com/zed-industries/zed", rev = "1a28cff4b409169bac058bca40dfbfeb7621d19b", default-features = false, features = ["stacker"] }
 gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "1a28cff4b409169bac058bca40dfbfeb7621d19b", features = ["font-kit"] }
