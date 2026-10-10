@@ -4,7 +4,7 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
-## [0.1.5] - Unreleased
+## [0.1.5] - 2026-10-10
 
 - Grok Build joins the providers: with xAI's `grok` installed and signed in
   (`grok login`), its models show in the picker's Grok Build tab, with their
