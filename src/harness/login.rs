@@ -22,7 +22,7 @@ fn login_args(harness: HarnessKind) -> Option<&'static [&'static str]> {
     match harness {
         HarnessKind::Claude => Some(&["auth", "login"]),
         HarnessKind::Codex => Some(&["login"]),
-        HarnessKind::Antigravity | HarnessKind::OpenCode => None,
+        HarnessKind::Antigravity | HarnessKind::Grok | HarnessKind::OpenCode => None,
     }
 }
 
@@ -101,7 +101,7 @@ fn resolve(harness: HarnessKind) -> Option<PathBuf> {
     match harness {
         HarnessKind::Claude => HarnessResolver::resolve_claude(),
         HarnessKind::Codex => HarnessResolver::resolve_codex(),
-        HarnessKind::Antigravity | HarnessKind::OpenCode => None,
+        HarnessKind::Antigravity | HarnessKind::Grok | HarnessKind::OpenCode => None,
     }
 }
 

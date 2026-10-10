@@ -53,6 +53,44 @@ impl TurnMetrics {
     }
 }
 
+/// MonoCode `TaskListItemStatus`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskStatus {
+    Pending,
+    InProgress,
+    Completed,
+    Cancelled,
+}
+
+impl TaskStatus {
+    /// MonoCode `normalizeTaskListStatus`: every provider's spelling.
+    pub fn parse(value: &str) -> Self {
+        let status: String = value
+            .trim()
+            .to_ascii_lowercase()
+            .chars()
+            .filter(|c| !matches!(c, ' ' | '_' | '-'))
+            .collect();
+        match status.as_str() {
+            "completed" | "complete" | "done" => Self::Completed,
+            "inprogress" | "active" | "running" => Self::InProgress,
+            "cancelled" | "canceled" | "skipped" => Self::Cancelled,
+            _ => Self::Pending,
+        }
+    }
+}
+
+/// MonoCode `TaskListItem`: one row of the agent's task list, in the shape
+/// a `tasks` block stores.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TaskItem {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    pub text: String,
+    pub status: TaskStatus,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum AgentEvent {
     /// Provider-side conversation id; persisted so the next turn can resume.
@@ -72,6 +110,9 @@ pub enum AgentEvent {
         success: bool,
     },
     PermissionRequest(PermissionRequest),
+    /// The agent's task list, whole (MonoCode `tasks.updated`); empty
+    /// takes the list away.
+    Tasks(Vec<TaskItem>),
     Usage {
         input_tokens: u64,
         output_tokens: u64,

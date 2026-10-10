@@ -13,16 +13,32 @@ use tokio::process::{Child, ChildStdin, Command};
 use tokio::sync::{mpsc, oneshot};
 
 use crate::harness::accounts::AccountProfile;
+use crate::harness::attachments::Attachment;
 use crate::harness::events::{AgentEvent, DoneStatus};
-use crate::harness::handle::{HarnessProcessHandle, PermissionResponder, StdinMsg};
+use crate::harness::handle::{HarnessProcessHandle, PermissionResponder, StdinMsg, Steer};
 use crate::harness::runtime::runtime;
 
 const STDERR_TAIL_LINES: usize = 20;
+/// How long a child may keep running once its turn is `Done` and its stdin
+/// closed; an agent server that ignores EOF is killed after this.
+const EXIT_GRACE: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// Turns one stdout line into zero or more events. Implementations are pure
 /// state machines so they can be unit-tested with recorded transcripts.
 pub trait LineParser: Send + 'static {
     fn parse_line(&mut self, line: &str) -> Vec<AgentEvent>;
+
+    /// Lines the protocol must answer with after the last `parse_line`
+    /// (a JSON-RPC handshake step, an automatic approval). Written to stdin
+    /// before that line's events go out; each gets a trailing newline.
+    fn take_replies(&mut self) -> Vec<String> {
+        Vec::new()
+    }
+
+    /// A follow-up the user sent into the running turn (MonoCode
+    /// `steerTurn`). Only called for a `ProcessSpec` with `can_steer`; what
+    /// it must write comes back from `take_replies`.
+    fn steer(&mut self, _prompt: &str, _attachments: &[Attachment]) {}
 }
 
 pub enum StdinMode {
@@ -39,6 +55,8 @@ pub struct ProcessSpec {
     pub cwd: String,
     pub stdin: StdinMode,
     pub permission_responder: Option<PermissionResponder>,
+    /// Whether the parser takes follow-ups mid-turn (`LineParser::steer`).
+    pub can_steer: bool,
     /// The account profile the child signs in with, if not the default.
     pub account: Option<AccountProfile>,
 }
@@ -88,7 +106,18 @@ pub fn spawn(
     let stderr_tail: StderrTail = Arc::default();
     let stderr_task = tokio::spawn(capture_stderr(stderr, stderr_tail.clone()));
 
-    let handle = HarnessProcessHandle::new(stdin_tx.clone(), cancel_tx, spec.permission_responder);
+    let (steer_tx, steer_rx) = if spec.can_steer {
+        let (tx, rx) = mpsc::unbounded_channel();
+        (Some(tx), Some(rx))
+    } else {
+        (None, None)
+    };
+    let handle = HarnessProcessHandle::new(
+        stdin_tx.clone(),
+        cancel_tx,
+        spec.permission_responder,
+        steer_tx,
+    );
     tokio::spawn(pump(PumpCtx {
         child,
         stdout,
@@ -96,6 +125,7 @@ pub fn spawn(
         event_tx,
         stdin_tx,
         cancel_rx,
+        steer_rx,
         stderr_task,
         stderr_tail,
     }));
@@ -139,16 +169,32 @@ struct PumpCtx<P> {
     event_tx: mpsc::UnboundedSender<AgentEvent>,
     stdin_tx: mpsc::UnboundedSender<StdinMsg>,
     cancel_rx: oneshot::Receiver<()>,
+    steer_rx: Option<mpsc::UnboundedReceiver<Steer>>,
     stderr_task: tokio::task::JoinHandle<()>,
     stderr_tail: StderrTail,
+}
+
+/// The next follow-up; never resolves for a harness that takes none.
+async fn next_steer(rx: &mut Option<mpsc::UnboundedReceiver<Steer>>) -> Option<Steer> {
+    match rx {
+        Some(rx) => rx.recv().await,
+        None => std::future::pending().await,
+    }
 }
 
 async fn pump<P: LineParser>(mut ctx: PumpCtx<P>) {
     let mut lines = BufReader::new(ctx.stdout).lines();
     let mut done = false;
+    let exit_deadline = tokio::time::sleep(std::time::Duration::MAX);
+    tokio::pin!(exit_deadline);
 
     loop {
         tokio::select! {
+            () = &mut exit_deadline, if done => {
+                log::debug!("harness still running {EXIT_GRACE:?} after its turn; killing it");
+                let _ = ctx.child.kill().await;
+                break;
+            }
             Ok(()) = &mut ctx.cancel_rx => {
                 let _ = ctx.child.kill().await;
                 if !done {
@@ -156,9 +202,25 @@ async fn pump<P: LineParser>(mut ctx: PumpCtx<P>) {
                 }
                 return;
             }
+            steer = next_steer(&mut ctx.steer_rx), if !done => match steer {
+                Some(steer) => {
+                    ctx.parser.steer(&steer.prompt, &steer.attachments);
+                    for reply in ctx.parser.take_replies() {
+                        let _ = ctx.stdin_tx.send(StdinMsg::Line(format!("{reply}\n")));
+                    }
+                }
+                // Every handle is gone; nothing more can be sent.
+                None => ctx.steer_rx = None,
+            },
             line = lines.next_line() => match line {
                 Ok(Some(line)) => {
-                    for event in ctx.parser.parse_line(&line) {
+                    let events = ctx.parser.parse_line(&line);
+                    for reply in ctx.parser.take_replies() {
+                        if !done {
+                            let _ = ctx.stdin_tx.send(StdinMsg::Line(format!("{reply}\n")));
+                        }
+                    }
+                    for event in events {
                         // The turn is closed once Done is seen; later output is noise.
                         if done {
                             break;
@@ -166,6 +228,9 @@ async fn pump<P: LineParser>(mut ctx: PumpCtx<P>) {
                         if matches!(event, AgentEvent::Done(_)) {
                             done = true;
                             let _ = ctx.stdin_tx.send(StdinMsg::Close);
+                            exit_deadline
+                                .as_mut()
+                                .reset(tokio::time::Instant::now() + EXIT_GRACE);
                         }
                         let _ = ctx.event_tx.send(event);
                     }
@@ -245,6 +310,7 @@ mod tests {
             cwd: std::env::temp_dir().to_string_lossy().into_owned(),
             stdin: StdinMode::Null,
             permission_responder: None,
+            can_steer: false,
             account: None,
         }
     }
@@ -314,6 +380,99 @@ mod tests {
                 AgentEvent::Done(DoneStatus::Completed)
             ]
         );
+    }
+
+    #[test]
+    fn parser_replies_reach_stdin() {
+        /// Answers the first line, finishes on the second.
+        #[derive(Default)]
+        struct Handshake {
+            replies: Vec<String>,
+        }
+        impl LineParser for Handshake {
+            fn parse_line(&mut self, line: &str) -> Vec<AgentEvent> {
+                if line == "ready" {
+                    self.replies.push("go".into());
+                    return Vec::new();
+                }
+                vec![
+                    AgentEvent::TextDelta(line.into()),
+                    AgentEvent::Done(DoneStatus::Completed),
+                ]
+            }
+            fn take_replies(&mut self) -> Vec<String> {
+                std::mem::take(&mut self.replies)
+            }
+        }
+        let mut spec = sh("read first; echo ready; read second; echo \"$first $second\"; cat");
+        spec.stdin = StdinMode::Protocol {
+            initial: "hello\n".into(),
+        };
+        let (_handle, rx) = spawn(spec, Handshake::default()).unwrap();
+        assert_eq!(
+            collect(rx),
+            vec![
+                AgentEvent::TextDelta("hello go".into()),
+                AgentEvent::Done(DoneStatus::Completed)
+            ]
+        );
+    }
+
+    #[test]
+    fn a_follow_up_reaches_the_parser_and_its_line_the_child() {
+        /// Writes each follow-up to the child; finishes on its echo.
+        #[derive(Default)]
+        struct Steered {
+            replies: Vec<String>,
+        }
+        impl LineParser for Steered {
+            fn parse_line(&mut self, line: &str) -> Vec<AgentEvent> {
+                vec![
+                    AgentEvent::TextDelta(line.into()),
+                    AgentEvent::Done(DoneStatus::Completed),
+                ]
+            }
+            fn take_replies(&mut self) -> Vec<String> {
+                std::mem::take(&mut self.replies)
+            }
+            fn steer(&mut self, prompt: &str, _: &[Attachment]) {
+                self.replies.push(format!("steered:{prompt}"));
+            }
+        }
+        let mut spec = sh("read first; read second; echo \"$second\"");
+        spec.stdin = StdinMode::Protocol {
+            initial: "hello\n".into(),
+        };
+        spec.can_steer = true;
+        let (handle, rx) = spawn(spec, Steered::default()).unwrap();
+        assert!(handle.can_steer());
+        assert!(handle.steer("also this", &[]));
+        assert_eq!(
+            collect(rx),
+            vec![
+                AgentEvent::TextDelta("steered:also this".into()),
+                AgentEvent::Done(DoneStatus::Completed)
+            ]
+        );
+
+        let (handle, _rx) = spawn(sh("sleep 30"), EchoParser).unwrap();
+        assert!(!handle.can_steer());
+        assert!(!handle.steer("no", &[]));
+    }
+
+    #[test]
+    fn a_child_that_outlives_its_turn_is_killed() {
+        struct DoneAtOnce;
+        impl LineParser for DoneAtOnce {
+            fn parse_line(&mut self, _: &str) -> Vec<AgentEvent> {
+                vec![AgentEvent::Done(DoneStatus::Completed)]
+            }
+        }
+        // Ignores the closed stdin and keeps stdout open.
+        let started = std::time::Instant::now();
+        let (_handle, rx) = spawn(sh("echo done; exec sleep 30"), DoneAtOnce).unwrap();
+        assert_eq!(collect(rx), vec![AgentEvent::Done(DoneStatus::Completed)]);
+        assert!(started.elapsed() < std::time::Duration::from_secs(20));
     }
 
     #[test]

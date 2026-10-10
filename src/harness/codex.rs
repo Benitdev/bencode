@@ -24,6 +24,7 @@ pub fn spawn(req: &SpawnRequest) -> Result<(HarnessProcessHandle, EventRx)> {
         cwd: req.cwd.clone(),
         stdin: StdinMode::Null,
         permission_responder: None,
+        can_steer: false,
         account: req.account.clone(),
     };
     process::spawn(spec, CodexParser::default())
@@ -387,6 +388,7 @@ mod tests {
             disable_hooks: false,
             attachments: Vec::new(),
             plan: false,
+            compact: false,
             settings: Default::default(),
             account: None,
         };

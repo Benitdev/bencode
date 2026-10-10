@@ -620,6 +620,7 @@ impl BenCodeApp {
                 HarnessKind::Claude => "model-tab-claude",
                 HarnessKind::Antigravity => "model-tab-antigravity",
                 HarnessKind::Codex => "model-tab-codex",
+                HarnessKind::Grok => "model-tab-grok",
                 HarnessKind::OpenCode => "model-tab-opencode",
             };
             tab_button(

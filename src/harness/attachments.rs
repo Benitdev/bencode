@@ -144,6 +144,23 @@ pub fn claude_content(text: &str, files: &[Attachment]) -> Vec<Value> {
     content
 }
 
+/// MonoCode `promptBlocks`: an ACP `session/prompt`'s content, text then
+/// an image block per vision image and a path line for every other file.
+pub fn acp_prompt_blocks(text: &str, files: &[Attachment]) -> Vec<Value> {
+    let text = prompt_text(text, files);
+    let mut blocks = Vec::new();
+    if !text.is_empty() {
+        blocks.push(json!({ "type": "text", "text": text }));
+    }
+    for file in files {
+        blocks.push(match &file.data {
+            Some(data) => json!({ "type": "image", "mimeType": file.mime_type, "data": data }),
+            None => json!({ "type": "text", "text": path_text(file) }),
+        });
+    }
+    blocks
+}
+
 /// For harnesses that take the prompt on argv: the text, then a path line
 /// per file.
 pub fn plain_prompt(text: &str, files: &[Attachment]) -> String {
@@ -183,6 +200,19 @@ mod tests {
             content[2]["text"],
             "Attached file (read from disk): \"/tmp/b.pdf\""
         );
+    }
+
+    #[test]
+    fn acp_blocks_carry_images_inline() {
+        let files = [file("a.png", "image/png", Some("YWJj"))];
+        assert_eq!(
+            acp_prompt_blocks("  describe this  ", &files),
+            vec![
+                json!({ "type": "text", "text": "describe this" }),
+                json!({ "type": "image", "mimeType": "image/png", "data": "YWJj" }),
+            ]
+        );
+        assert!(acp_prompt_blocks("   ", &[]).is_empty());
     }
 
     #[test]

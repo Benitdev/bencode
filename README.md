@@ -17,7 +17,7 @@
 
 <p align="center">
   <strong>Every coding agent, one native window.</strong><br/>
-  Run Claude Code, Codex, Antigravity and OpenCode side by side, with your files, git, terminal and inbox around them.<br/>
+  Run Claude Code, Codex, Antigravity, Grok Build and OpenCode side by side, with your files, git, terminal and inbox around them.<br/>
   No Electron, no web view: every pixel is drawn on the GPU.
 </p>
 
@@ -147,6 +147,7 @@ BenCode drives the agent CLIs over stdio and reads the JSON stream they print.
   <a href="https://docs.anthropic.com/en/docs/claude-code"><kbd><img src="https://www.google.com/s2/favicons?domain=claude.ai&amp;sz=64" alt="" width="16" valign="middle" /> Claude Code</kbd></a> &nbsp;
   <a href="https://github.com/openai/codex"><kbd><img src="https://www.google.com/s2/favicons?domain=openai.com&amp;sz=64" alt="" width="16" valign="middle" /> Codex</kbd></a> &nbsp;
   <a href="https://antigravity.google/"><kbd><img src="https://www.google.com/s2/favicons?domain=antigravity.google&amp;sz=64" alt="" width="16" valign="middle" /> Antigravity</kbd></a> &nbsp;
+  <a href="https://x.ai/cli"><kbd><img src="https://www.google.com/s2/favicons?domain=x.ai&amp;sz=64" alt="" width="16" valign="middle" /> Grok Build</kbd></a> &nbsp;
   <a href="https://opencode.ai/"><kbd><img src="https://www.google.com/s2/favicons?domain=opencode.ai&amp;sz=64" alt="" width="16" valign="middle" /> OpenCode</kbd></a>
 </p>
 

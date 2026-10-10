@@ -4,7 +4,9 @@
 //! - Codex: `model/list` on `codex app-server`;
 //! - Antigravity: `agy models` (MonoCode asks its ACP server, which BenCode
 //!   does not run; the CLI lists the same models);
-//! - OpenCode: `opencode models --verbose` and `opencode agent list`.
+//! - OpenCode: `opencode models --verbose` and `opencode agent list`;
+//! - Grok Build: `initialize`, else `session/new`, on `grok agent stdio`
+//!   (ACP), else `grok models`.
 //!
 //! The parsers are pure; `discover` blocks on a child process and must run
 //! on a background executor.
@@ -16,10 +18,10 @@ use std::time::Duration;
 use anyhow::{Context as _, Result};
 use serde_json::{Value, json};
 
-use crate::harness::HarnessKind;
 use crate::harness::catalog::{self, ModelOption, ModelSetting, SettingKind};
 use crate::harness::probe::{AppServer, LineProbe, run_to_end};
 use crate::harness::resolver::HarnessResolver;
+use crate::harness::{HarnessKind, grok};
 
 /// MonoCode `DISCOVERY_TIMEOUT_MS`.
 const DISCOVERY_TIMEOUT: Duration = Duration::from_secs(15);
@@ -30,6 +32,7 @@ pub fn discover(harness: HarnessKind) -> Result<Vec<ModelOption>> {
         HarnessKind::Claude => discover_claude(),
         HarnessKind::Codex => discover_codex(),
         HarnessKind::Antigravity => discover_antigravity(),
+        HarnessKind::Grok => discover_grok(),
         HarnessKind::OpenCode => discover_opencode(),
     }
 }
@@ -460,6 +463,71 @@ pub fn antigravity_models(stdout: &str) -> Vec<ModelOption> {
             settings: Vec::new(),
         })
         .collect()
+}
+
+// ---- Grok Build ------------------------------------------------------------
+
+/// MonoCode `discoverGrokModels`: ACP first, then the CLI's listing.
+fn discover_grok() -> Result<Vec<ModelOption>> {
+    let program = HarnessResolver::resolve_grok().context("Grok Build is not installed")?;
+    match discover_grok_acp(&program) {
+        Ok(models) if !models.is_empty() => return Ok(models),
+        Ok(_) => log::debug!("grok ACP listed no models"),
+        Err(err) => log::debug!("grok ACP catalog: {err:#}"),
+    }
+    let out = run_to_end(
+        Command::new(&program).arg("models"),
+        &home(),
+        DISCOVERY_TIMEOUT,
+    )?;
+    Ok(grok::models_from_cli(&out))
+}
+
+fn discover_grok_acp(program: &std::path::Path) -> Result<Vec<ModelOption>> {
+    let home = home();
+    let mut probe = LineProbe::spawn(
+        Command::new(program).args(grok::probe_args()),
+        &home,
+        DISCOVERY_TIMEOUT,
+    )?;
+    let init = acp_call(&mut probe, 1, "initialize", grok::initialize_params())?;
+    let models = grok::models_from_acp(&init);
+    if !models.is_empty() {
+        return Ok(models);
+    }
+    if let Some(method) = grok::auth_method(&init) {
+        let params = json!({ "methodId": method, "_meta": { "headless": true } });
+        if let Err(err) = acp_call(&mut probe, 2, "authenticate", params) {
+            log::debug!("grok authenticate: {err:#}");
+        }
+    }
+    let params = json!({ "cwd": home.to_string_lossy(), "mcpServers": [] });
+    let created = acp_call(&mut probe, 3, "session/new", params)?;
+    Ok(grok::models_from_acp(&created))
+}
+
+/// One ACP request and its result; requests from the agent meanwhile get an
+/// empty result (nothing is granted during a probe).
+fn acp_call(probe: &mut LineProbe, id: u64, method: &str, params: Value) -> Result<Value> {
+    probe.send(&json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params }))?;
+    loop {
+        let rec = probe.next_json()?;
+        if rec.get("method").is_some() {
+            if let Some(asked) = rec.get("id") {
+                probe.send(&json!({ "jsonrpc": "2.0", "id": asked, "result": {} }))?;
+            }
+            continue;
+        }
+        if rec.get("id").and_then(Value::as_u64) != Some(id) {
+            continue;
+        }
+        if let Some(error) = rec.get("error") {
+            let message =
+                str_field(error, "message").map_or_else(|| error.to_string(), String::from);
+            anyhow::bail!("grok {method}: {message}");
+        }
+        return Ok(rec.get("result").cloned().unwrap_or(Value::Null));
+    }
 }
 
 // ---- OpenCode --------------------------------------------------------------

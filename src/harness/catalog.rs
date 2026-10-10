@@ -252,6 +252,7 @@ fn seeds(harness: HarnessKind) -> Vec<ModelOption> {
                 Vec::new(),
             ),
         ],
+        HarnessKind::Grok => crate::harness::grok::seed_models(),
         // MonoCode ships no Codex or OpenCode seeds: they list once probed.
         HarnessKind::Codex | HarnessKind::OpenCode => Vec::new(),
     }

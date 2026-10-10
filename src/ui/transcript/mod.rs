@@ -12,6 +12,7 @@ pub mod outline_model;
 mod review_card;
 pub mod selection;
 mod selection_ui;
+mod task_list;
 pub mod turns;
 
 use std::cell::{Cell, RefCell};

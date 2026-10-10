@@ -36,6 +36,7 @@ mod source_control;
 mod surfaces;
 mod tab_history;
 mod tab_scope;
+pub mod task_list;
 pub mod thread_state;
 pub mod updater;
 pub mod usage;

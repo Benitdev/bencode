@@ -21,6 +21,8 @@ struct BinarySpec {
     binary: &'static str,
     home_dirs: &'static [&'static str],
     bundled: &'static [&'static str],
+    /// Tells this CLI from another of the same binary name.
+    is_it: Option<fn(&Path) -> bool>,
 }
 
 const SYSTEM_DIRS: &[&str] = &["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"];
@@ -36,6 +38,7 @@ const CLAUDE: BinarySpec = BinarySpec {
         ".npm-global/bin",
     ],
     bundled: &[],
+    is_it: None,
 };
 const ANTIGRAVITY: BinarySpec = BinarySpec {
     id: "antigravity",
@@ -43,6 +46,7 @@ const ANTIGRAVITY: BinarySpec = BinarySpec {
     binary: "agy",
     home_dirs: &[".local/bin", ".antigravity/antigravity/bin"],
     bundled: &[],
+    is_it: None,
 };
 const CODEX: BinarySpec = BinarySpec {
     id: "codex",
@@ -61,6 +65,7 @@ const CODEX: BinarySpec = BinarySpec {
         "Applications/Codex.app/Contents/Resources/codex",
         "Applications/ChatGPT.app/Contents/Resources/codex",
     ],
+    is_it: None,
 };
 const CURSOR: BinarySpec = BinarySpec {
     id: "cursor",
@@ -68,6 +73,7 @@ const CURSOR: BinarySpec = BinarySpec {
     binary: "cursor-agent",
     home_dirs: &[".local/bin"],
     bundled: &[],
+    is_it: None,
 };
 const OPENCODE: BinarySpec = BinarySpec {
     id: "opencode",
@@ -75,9 +81,26 @@ const OPENCODE: BinarySpec = BinarySpec {
     binary: "opencode",
     home_dirs: &[".local/bin", ".cargo/bin", ".opencode/bin"],
     bundled: &[],
+    is_it: None,
 };
 
-const ALL: [&BinarySpec; 5] = [&CLAUDE, &ANTIGRAVITY, &CODEX, &CURSOR, &OPENCODE];
+/// xAI's Grok Build; other CLIs install a `grok` too.
+const GROK: BinarySpec = BinarySpec {
+    id: "grok",
+    name: "Grok Build",
+    binary: "grok",
+    home_dirs: &[
+        ".grok/bin",
+        ".local/bin",
+        ".npm-global/bin",
+        ".cargo/bin",
+        "n/bin",
+    ],
+    bundled: &[],
+    is_it: Some(crate::harness::grok::is_grok_build),
+};
+
+const ALL: [&BinarySpec; 6] = [&CLAUDE, &ANTIGRAVITY, &CODEX, &CURSOR, &GROK, &OPENCODE];
 
 pub struct HarnessResolver;
 
@@ -144,6 +167,10 @@ impl HarnessResolver {
             .clone()
     }
 
+    pub fn resolve_grok() -> Option<PathBuf> {
+        resolve(&GROK)
+    }
+
     pub fn resolve_opencode() -> Option<PathBuf> {
         resolve(&OPENCODE)
     }
@@ -200,6 +227,7 @@ fn candidates(spec: &'static BinarySpec) -> impl Iterator<Item = PathBuf> {
         .map(|dir| dir.join(spec.binary))
         .chain(bundled)
         .filter(move |candidate| candidate.is_file() && seen.insert(candidate.clone()))
+        .filter(|candidate| spec.is_it.is_none_or(|is_it| is_it(candidate)))
 }
 
 /// What `<binary> --version` reports, as numbers; `None` when it fails.
@@ -253,7 +281,14 @@ mod tests {
         let ids: Vec<_> = HarnessResolver::discover().iter().map(|h| h.id).collect();
         assert_eq!(
             ids,
-            ["claude", "antigravity", "codex", "cursor", "opencode"]
+            [
+                "claude",
+                "antigravity",
+                "codex",
+                "cursor",
+                "grok",
+                "opencode"
+            ]
         );
     }
 

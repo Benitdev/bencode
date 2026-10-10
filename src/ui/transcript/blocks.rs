@@ -189,6 +189,18 @@ impl BenCodeApp {
         cx: &Context<Self>,
     ) -> AnyElement {
         let block = &session.blocks[ix];
+        // A list stored before `tasks` blocks kept their items reads as text.
+        let tasks = crate::app::task_list::items(block);
+        if !tasks.is_empty() {
+            let explanation = block
+                .extra
+                .get("taskList")
+                .and_then(|meta| meta.get("explanation"))
+                .and_then(|line| line.as_str())
+                .map(str::trim)
+                .filter(|line| !line.is_empty());
+            return super::task_list::card(&tasks, explanation, cx);
+        }
         match block.role.as_str() {
             "user" => self.render_user_message(session, ix, cx),
             "system" => notice(turns::text(block), self.seg_ctx(&session.id, ix, false), cx),

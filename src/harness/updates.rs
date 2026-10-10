@@ -1,6 +1,7 @@
 //! MonoCode `harness_updates.rs` and `harnessUpdates.ts`: whether an
-//! installed CLI is behind its npm release, and running the CLI's own
-//! updater. Blocking; run these on a background executor.
+//! installed CLI is behind its latest release (npm's, or for Grok Build
+//! xAI's own channel pointer), and running the CLI's own updater. Blocking;
+//! run these on a background executor.
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -15,6 +16,7 @@ use crate::harness::process::child_path;
 use crate::harness::resolver::HarnessResolver;
 
 const REGISTRY_URL: &str = "https://registry.npmjs.org";
+const GROK_FEED_URL: &str = "https://x.ai/cli";
 const HTTP_TIMEOUT: Duration = Duration::from_secs(10);
 const VERSION_TIMEOUT: Duration = Duration::from_secs(15);
 /// A download plus, for npm installs, a full dependency install.
@@ -27,13 +29,24 @@ pub struct HarnessUpdate {
     pub latest: String,
 }
 
-/// Only harnesses whose releases are published to npm. The rest ship through
-/// their own installers with no public version feed to compare against.
-fn npm_package(kind: HarnessKind) -> Option<&'static str> {
+/// Where a CLI's latest version is published.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Feed {
+    /// `<registry>/<package>/latest`.
+    Npm(&'static str),
+    /// `https://x.ai/cli/<channel>`: the version on its first line, as
+    /// Grok's installer reads it.
+    Grok,
+}
+
+/// Only harnesses with a public version feed. Antigravity ships through
+/// its own installer with nothing to compare against.
+fn feed(kind: HarnessKind) -> Option<Feed> {
     match kind {
-        HarnessKind::Claude => Some("@anthropic-ai/claude-code"),
-        HarnessKind::Codex => Some("@openai/codex"),
-        HarnessKind::OpenCode => Some("opencode-ai"),
+        HarnessKind::Claude => Some(Feed::Npm("@anthropic-ai/claude-code")),
+        HarnessKind::Codex => Some(Feed::Npm("@openai/codex")),
+        HarnessKind::OpenCode => Some(Feed::Npm("opencode-ai")),
+        HarnessKind::Grok => Some(Feed::Grok),
         HarnessKind::Antigravity => None,
     }
 }
@@ -42,14 +55,14 @@ fn npm_package(kind: HarnessKind) -> Option<&'static str> {
 /// Homebrew) better than BenCode could guess from the binary path.
 fn update_args(kind: HarnessKind) -> Option<&'static [&'static str]> {
     match kind {
-        HarnessKind::Claude | HarnessKind::Codex => Some(&["update"]),
+        HarnessKind::Claude | HarnessKind::Codex | HarnessKind::Grok => Some(&["update"]),
         HarnessKind::OpenCode => Some(&["upgrade"]),
         HarnessKind::Antigravity => None,
     }
 }
 
 pub fn is_updatable(kind: HarnessKind) -> bool {
-    npm_package(kind).is_some() && update_args(kind).is_some()
+    feed(kind).is_some() && update_args(kind).is_some()
 }
 
 /// The copy of `kind`'s CLI an update is about: the one turns run. `listed`
@@ -64,15 +77,15 @@ fn updatable(kind: HarnessKind, listed: &Path) -> Option<PathBuf> {
 }
 
 /// `kind`'s update, if the CLI turns run (`listed`, see `updatable`) is
-/// behind npm. Any failure, offline or otherwise, is `None`: this runs
+/// behind its feed. Any failure, offline or otherwise, is `None`: this runs
 /// unprompted at launch and must never surface an error of its own.
 pub fn find_update(kind: HarnessKind, listed: &Path) -> Option<HarnessUpdate> {
-    let package = npm_package(kind)?;
+    let feed = feed(kind)?;
     let program = &updatable(kind, listed)?;
     let installed = installed_version(program)
         .map_err(|err| log::debug!("{} --version: {err:#}", kind.label()))
         .ok()?;
-    let latest = latest_version(package)
+    let latest = latest_version(feed)
         .map_err(|err| log::debug!("{} latest version: {err:#}", kind.label()))
         .ok()?;
     (compare_semver(&latest, &installed) == std::cmp::Ordering::Greater).then_some(HarnessUpdate {
@@ -101,18 +114,67 @@ fn installed_version(program: &Path) -> Result<String> {
     parse_version(&String::from_utf8_lossy(&stdout)).context("CLI returned no valid version.")
 }
 
-fn latest_version(package: &str) -> Result<String> {
-    let response = crate::rate_limits::http::get(
-        &format!("{REGISTRY_URL}/{package}/latest"),
-        &[("Accept", "application/json")],
-        HTTP_TIMEOUT,
-    )?;
-    if response.status != 200 {
-        bail!("npm registry answered {}", response.status);
+fn latest_version(feed: Feed) -> Result<String> {
+    match feed {
+        Feed::Npm(package) => {
+            let response = crate::rate_limits::http::get(
+                &format!("{REGISTRY_URL}/{package}/latest"),
+                &[("Accept", "application/json")],
+                HTTP_TIMEOUT,
+            )?;
+            if response.status != 200 {
+                bail!("npm registry answered {}", response.status);
+            }
+            let body: Value = serde_json::from_str(&response.body)
+                .context("npm registry returned invalid JSON")?;
+            registry_version(&body).context("npm registry returned no version")
+        }
+        Feed::Grok => {
+            let channel = grok_channel(&grok_config());
+            let response = crate::rate_limits::http::get(
+                &format!("{GROK_FEED_URL}/{channel}"),
+                &[],
+                HTTP_TIMEOUT,
+            )?;
+            if response.status != 200 {
+                bail!("x.ai answered {}", response.status);
+            }
+            parse_version(response.body.lines().next().unwrap_or_default())
+                .context("x.ai returned no version")
+        }
     }
-    let body: Value =
-        serde_json::from_str(&response.body).context("npm registry returned invalid JSON")?;
-    registry_version(&body).context("npm registry returned no version")
+}
+
+/// Grok's own `config.toml`; empty when it has none.
+fn grok_config() -> String {
+    let Some(home) = std::env::var_os("HOME") else {
+        return String::new();
+    };
+    std::fs::read_to_string(Path::new(&home).join(".grok/config.toml")).unwrap_or_default()
+}
+
+/// The release channel Grok follows: `[cli] channel` in its config, which
+/// its installer writes for anything but stable.
+fn grok_channel(config: &str) -> &'static str {
+    let mut in_cli = false;
+    for line in config.lines().map(str::trim) {
+        if line.starts_with('[') {
+            in_cli = line == "[cli]";
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        if in_cli && key.trim() == "channel" {
+            let value = value.split('#').next().unwrap_or_default();
+            return match value.trim().trim_matches(['"', '\'']) {
+                "alpha" => "alpha",
+                "enterprise" => "enterprise",
+                _ => "stable",
+            };
+        }
+    }
+    "stable"
 }
 
 /// Runs `program args` to completion within `timeout`: (success, stdout, stderr).
@@ -228,13 +290,15 @@ mod tests {
     use std::cmp::Ordering;
 
     #[test]
-    fn maps_only_npm_published_harnesses() {
+    fn maps_only_harnesses_with_a_version_feed() {
         assert_eq!(
-            npm_package(HarnessKind::Claude),
-            Some("@anthropic-ai/claude-code")
+            feed(HarnessKind::Claude),
+            Some(Feed::Npm("@anthropic-ai/claude-code"))
         );
-        assert_eq!(npm_package(HarnessKind::Antigravity), None);
+        assert_eq!(feed(HarnessKind::Grok), Some(Feed::Grok));
+        assert_eq!(feed(HarnessKind::Antigravity), None);
         assert!(is_updatable(HarnessKind::OpenCode));
+        assert!(is_updatable(HarnessKind::Grok));
         assert!(!is_updatable(HarnessKind::Antigravity));
     }
 
@@ -248,9 +312,27 @@ mod tests {
     }
 
     #[test]
+    fn grok_follows_the_channel_its_installer_wrote() {
+        assert_eq!(grok_channel(""), "stable");
+        assert_eq!(
+            grok_channel(
+                "[cli]\ninstaller = \"internal\"\nchannel = \"alpha\"\n\n[ui]\nyolo = false\n"
+            ),
+            "alpha"
+        );
+        // Another table's key of the same name is not the CLI's.
+        assert_eq!(
+            grok_channel("[marketplace]\nchannel = \"alpha\"\n"),
+            "stable"
+        );
+        assert_eq!(grok_channel("[cli]\nchannel = \"nightly\"\n"), "stable");
+    }
+
+    #[test]
     fn updates_only_through_each_cli_own_updater() {
         assert_eq!(update_args(HarnessKind::OpenCode), Some(&["upgrade"][..]));
         assert_eq!(update_args(HarnessKind::Claude), Some(&["update"][..]));
+        assert_eq!(update_args(HarnessKind::Grok), Some(&["update"][..]));
     }
 
     #[test]

@@ -17,7 +17,7 @@
 
 <p align="center">
   <strong>Mọi coding agent, trong một cửa sổ native.</strong><br/>
-  Chạy Claude Code, Codex, Antigravity và OpenCode song song, cùng file, git, terminal và hộp thư công việc ngay bên cạnh.<br/>
+  Chạy Claude Code, Codex, Antigravity, Grok Build và OpenCode song song, cùng file, git, terminal và hộp thư công việc ngay bên cạnh.<br/>
   Không Electron, không web view: mọi pixel đều được vẽ bằng GPU.
 </p>
 
@@ -147,6 +147,7 @@ BenCode điều khiển CLI của agent qua stdio và đọc luồng JSON mà ch
   <a href="https://docs.anthropic.com/en/docs/claude-code"><kbd><img src="https://www.google.com/s2/favicons?domain=claude.ai&amp;sz=64" alt="" width="16" valign="middle" /> Claude Code</kbd></a> &nbsp;
   <a href="https://github.com/openai/codex"><kbd><img src="https://www.google.com/s2/favicons?domain=openai.com&amp;sz=64" alt="" width="16" valign="middle" /> Codex</kbd></a> &nbsp;
   <a href="https://antigravity.google/"><kbd><img src="https://www.google.com/s2/favicons?domain=antigravity.google&amp;sz=64" alt="" width="16" valign="middle" /> Antigravity</kbd></a> &nbsp;
+  <a href="https://x.ai/cli"><kbd><img src="https://www.google.com/s2/favicons?domain=x.ai&amp;sz=64" alt="" width="16" valign="middle" /> Grok Build</kbd></a> &nbsp;
   <a href="https://opencode.ai/"><kbd><img src="https://www.google.com/s2/favicons?domain=opencode.ai&amp;sz=64" alt="" width="16" valign="middle" /> OpenCode</kbd></a>
 </p>
 

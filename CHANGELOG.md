@@ -6,12 +6,20 @@ tagging (`docs/releasing.md`).
 
 ## [0.1.5] - Unreleased
 
+- Grok Build joins the providers: with xAI's `grok` installed and signed in
+  (`grok login`), its models show in the picker's Grok Build tab, with their
+  reasoning effort. Approvals, questions, image attachments, resuming a chat
+  and `/compact` work as with the other agents. A message sent while Grok is
+  working goes into the turn it is on, without stopping it, and its todo
+  list shows as a Tasks card that fills in as it works.
 - Sounds and notifications, as in MonoCode: short cues when a turn
   finishes, the Inbox has new activity or an update is available, and
   (turned on in Settings › General) macOS notifications when an agent
   finishes, needs your approval or asks a question while you are looking
   elsewhere, and when a reminder is due. Click one to open that chat. A
   project muted on the rail stays quiet.
+- The notice at launch for a CLI behind its latest release covers Grok
+  Build too.
 
 ## [0.1.4] - 2026-10-09
 

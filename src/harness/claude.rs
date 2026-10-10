@@ -31,6 +31,7 @@ pub fn spawn(req: &SpawnRequest) -> Result<(HarnessProcessHandle, EventRx)> {
             ),
         },
         permission_responder: Some(permission_response),
+        can_steer: true,
         account: req.account.clone(),
     };
     process::spawn(spec, ClaudeParser::default())
@@ -139,7 +140,7 @@ fn prompt_with_effort(req: &SpawnRequest) -> String {
 
 /// A follow-up written into a running turn (MonoCode `steerClaudeTurn`):
 /// Claude folds it into the turn it is working on.
-pub fn steer_message(prompt: &str, files: &[Attachment]) -> String {
+fn steer_message(prompt: &str, files: &[Attachment]) -> String {
     user_message(prompt, files)
 }
 
@@ -176,6 +177,8 @@ pub struct ClaudeParser {
     started_tools: HashSet<String>,
     /// A `rate_limit_event` refused the turn; its reset time, when given.
     rate_limited: Option<Option<i64>>,
+    /// Follow-ups waiting to be written into the running turn.
+    replies: Vec<String>,
 }
 
 impl LineParser for ClaudeParser {
@@ -215,6 +218,14 @@ impl LineParser for ClaudeParser {
             _ => {}
         }
         events
+    }
+
+    fn take_replies(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.replies)
+    }
+
+    fn steer(&mut self, prompt: &str, attachments: &[Attachment]) {
+        self.replies.push(steer_message(prompt, attachments));
     }
 }
 
@@ -497,6 +508,7 @@ mod tests {
             disable_hooks: false,
             attachments: Vec::new(),
             plan: false,
+            compact: false,
             settings: Default::default(),
             account: None,
         }
@@ -754,6 +766,7 @@ mod tests {
             disable_hooks: false,
             attachments: Vec::new(),
             plan: false,
+            compact: false,
             settings: Default::default(),
             account: None,
         };

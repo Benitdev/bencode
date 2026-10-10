@@ -128,6 +128,7 @@ bencode/
 | `projects.rs`, `project_stats.rs`, `project_files.rs` | The project rail, per-project diff stats, the file index |
 | `session_list.rs`, `session_folders.rs` | Sidebar session filters and folders |
 | `session_review.rs` | Session review: the ordered checkpoint queue, a thread's changed files, Keep / Undo |
+| `task_list.rs` | The agent's task list: one `tasks` block per turn that each snapshot replaces, its text and progress label |
 | `thread_state.rs` | `ThreadState`: each thread's composer and queue state (draft, attachments, modes, card, question form, usage limit), dropped with the thread |
 | `composer_input.rs` | The prompt field: `/` and `@` tokens and pickers, inserting skills and mentions, the key interceptor, dropped files |
 | `session_flags.rs` | Pinning and archiving threads |
@@ -136,7 +137,7 @@ bencode/
 | `tab_scope.rs`, `tab_history.rs`, `workspace_nav.rs` | Which tabs belong to which project or worktree; Back / Forward |
 | `reminders.rs`, `model_catalog.rs` | Session reminders; live model catalogs |
 | `alerts.rs` | Sounds and notifications: the Settings switches, the macOS permission, the project's mutes, what a banner says, a click opening its thread or reminder |
-| `harness_updates.rs` | The launch check for CLIs behind their npm release; Update / Update all through each CLI's own updater, then its models reloaded |
+| `harness_updates.rs` | The launch check for CLIs behind their latest release; Update / Update all through each CLI's own updater, then its models reloaded |
 | `usage.rs` | Provider usage snapshots for the footer, per account: load once, Refresh, the 30s countdown tick |
 | `backlog.rs` | The Backlog connection: connect / disconnect, which projects the Inbox lists, each project's start folder, status changes |
 | `github_accounts.rs` | GitHub accounts: `gh`'s sign-ins as listed in Settings › Integrations, the account picked for each project |
@@ -161,7 +162,7 @@ bencode/
 | `git_changes_panel/` (`tree.rs`, `graph.rs`, `confirm.rs`), `git_menus.rs` | Sidebar: Changes tab and commit graph |
 | `titlebar/` | Title bar and workspace tabs |
 | `pane_tree.rs`, `layout/` | Split chat panes and the layout tree |
-| `transcript/` | Turns, blocks, activity folds, find in conversation, prompt outline, text selection |
+| `transcript/` | Turns, blocks, activity folds, the Tasks card (`task_list.rs`), find in conversation, prompt outline, text selection |
 | `composer/` | Prompt composer and its pickers, cards, runner |
 | `file_pane.rs` | The pane beside the chat and its tab strip |
 | `editor_pane/` | Code editor: open files, saves, disk sync |
@@ -271,7 +272,7 @@ only read that cache.
 | `Sidebar.tsx` `CompactProjectRail`, `settings.ts` `CollapsedProjectRailMode` | `ui/rail/compact.rs` | Icon rail with the sidebar as a drawer; its project list has no search or per-project menu |
 | `sessions/model/liveAgents.ts`, `sessions/ui/LiveAgentsPreview.tsx` | `app/live_agents.rs`, `ui/rail/live_agents.rs` | "Working" card on the rail (the sidebar's foot while the rail is closed); toggle in Settings › General |
 | `app/model/updater.ts`, `updateNotice.ts`, `releaseNotes.ts`, `shell/SidebarUpdate.tsx`, `UpdateRailCard.tsx`, `WhatsNewDialog.tsx`, `tauri-plugin-updater` | `updater.rs`, `app/updater.rs`, `app/release_notes.rs`, `ui/rail/update.rs`, `ui/whats_new.rs` | Self-update from GitHub Releases (Tauri's `latest.json`, minisign); Check for Updates… in the BenCode menu and Settings › About. No update sound |
-| `providers/ui/HarnessUpdateNotice.tsx`, `providers/model/harnessUpdates.ts`, `src-tauri/src/harness_updates.rs` | `harness/updates.rs`, `app/harness_updates.rs`, `ui/harness_update_notice.rs` | Claude Code, Codex and OpenCode against npm, once per launch; npm through `curl` |
+| `providers/ui/HarnessUpdateNotice.tsx`, `providers/model/harnessUpdates.ts`, `src-tauri/src/harness_updates.rs` | `harness/updates.rs`, `app/harness_updates.rs`, `ui/harness_update_notice.rs` | Claude Code, Codex and OpenCode against npm, once per launch; npm through `curl`. BenCode's own: Grok Build against xAI's channel pointer (`https://x.ai/cli/<channel>`, the channel from `~/.grok/config.toml`) |
 | `settings/model/sounds.ts`, `notifications/model/notifications.ts`, `notificationPreferences.ts`, `src-tauri/src/notifications.rs`, `cuelume` | `sounds/`, `notifications.rs`, `app/alerts.rs`, `ui/settings_modal.rs` | Cues for finished turns, Inbox activity, updates, switches and Copy; banners for finished turns, approvals, questions and reminders. Notifications need BenCode.app (none from `cargo run`); no linked-activity cue, no Dock badge |
 | `ProjectRail`, `TitleBar.tsx`, `Sidebar.tsx` | `ui/rail/`, `ui/titlebar/`, `ui/sidebar*.rs` | Shell |
 | `app/shell/UsageFooter.tsx`, `UsageProviderChip.tsx`, `providers/model/rateLimits*.ts`, `src-tauri/src/rate_limits.rs` | `ui/footer/`, `app/usage.rs`, `rate_limits/` | 5h / weekly / monthly usage per account; HTTP through `curl` |
@@ -279,6 +280,8 @@ only read that cache.
 | the user's `agy-save` / `agy-switch` scripts | `harness/agy_accounts.rs`, `app/agy_accounts.rs`, `ui/settings_agy_accounts.rs`, `keychain.rs` | Antigravity accounts. BenCode's own; one sign-in for the whole machine, not one per thread |
 | `shared/ui/` (buttons, dialogs) | Ely components directly | No local component library |
 | `integrations/harness/` | `harness/` | Argv builders and stdout parsers |
+| `integrations/harness/providers/grok/` | `harness/grok.rs` | Grok Build over ACP, one `grok agent stdio` per turn; `/compact` through `_x.ai/compact_conversation`. BenCode's own: follow-ups go into the running turn (`_x.ai/interject`), where MonoCode queues them, and the context meter reads the count Grok stamps on its updates |
+| `sessions/model/taskList.ts`, `sessions/ui/TaskListPreview.tsx`, `harness/core/apply.ts` `upsertTaskList` | `app/task_list.rs`, `ui/transcript/task_list.rs` | The Tasks card, from `AgentEvent::Tasks`. Only Grok Build's plan updates feed it; Claude's `TodoWrite` still shows as a tool row. Whole snapshots only (no `merge`, no `key`) |
 | `src-tauri/src/` (`checkpoint.rs`, `reminders.rs`, `fs.rs`, …) | `git/checkpoint.rs`, `db/`, `ui/file_tree/fs.rs` | In-process calls, no IPC |
 
 Open gaps are tracked in `docs/migration/PARITY-BACKLOG.md`.
@@ -424,12 +427,30 @@ div()
 ### Harness (`src/harness/`)
 
 - Supported CLIs (`HarnessKind`): **Claude Code**, **Antigravity** (`agy`),
-  **Codex**, **OpenCode**. `resolver.rs` finds the binaries once at startup.
+  **Codex**, **Grok Build** (`grok`), **OpenCode**. `resolver.rs` finds the
+  binaries once at startup.
 - `harness::spawn(&SpawnRequest)` is the only way to start an agent. It returns a
   `HarnessProcessHandle` and an `AgentEvent` receiver. Do not spawn CLIs yourself.
 - A new harness is an **argv builder plus a pure `LineParser`** (see `claude.rs`),
   with tests on recorded CLI output. Process plumbing lives only in `process.rs`;
-  child processes run on the dedicated runtime in `runtime.rs`.
+  child processes run on the dedicated runtime in `runtime.rs`. A protocol
+  that must answer the CLI by itself (a JSON-RPC handshake, an automatic
+  approval) returns those lines from `LineParser::take_replies`.
+- **A follow-up mid-turn goes through the parser**: `ProcessSpec.can_steer`
+  gives the handle `steer(..)`, which reaches `LineParser::steer` on the
+  pump; the parser returns what to write from `take_replies`. Do not build
+  a harness' steer line in `app/`.
+- **Grok Build speaks ACP** (`grok.rs`): each turn starts `grok agent stdio`,
+  binds the thread's session (`session/resume`, else `session/load` with its
+  replay muted, else `session/new`) and sends one `session/prompt`. A
+  permission's `request_id` carries the JSON-RPC id and the option ids its
+  reply picks. It never authenticates with the browser method (`grok.com`).
+  A follow-up is `_x.ai/interject` while the prompt runs; one Grok refuses,
+  or one sent before the prompt, is prompted once the running prompt
+  returns, in the same process. `SpawnRequest.compact` resumes the session
+  and sends `_x.ai/compact_conversation` instead of a prompt (never a new
+  session). Its parser tests replay `tests/fixtures/grok_acp_turn.jsonl`,
+  in the shapes Grok writes to `~/.grok/sessions/*/updates.jsonl`.
 - **Model keys use MonoCode's `harness:model` form** (`claude:opus`). See
   `catalog.rs` and `discovery.rs`; never pass a display name to `--model`.
 - **Account profiles** (`accounts.rs`): a thread's `provider_account_id` picks
@@ -449,7 +470,7 @@ div()
   snapshot until the next Antigravity turn.
 - `AgentEvent` is the whole contract with the UI: `SessionStarted`, `TextDelta`,
   `ThinkingDelta`, `ToolCallStart` / `ToolCallFinish`, `PermissionRequest`,
-  `Usage`, `TurnMetrics`, `UsageLimited`, `Compacted`, `Done`, `Error`.
+  `Tasks`, `Usage`, `TurnMetrics`, `UsageLimited`, `Compacted`, `Done`, `Error`.
 
 ### Terminal host (`src/pty_host/`)
 
@@ -484,7 +505,7 @@ div()
   and do not touch session columns BenCode does not model: imported rows carry
   them.
 - Transcript blocks use MonoCode's roles: `user`, `assistant`, `reasoning`,
-  `tool`, `system`.
+  `tool`, `system`, `tasks`.
 - **Never `let _ =` a DB or git `Result`.** Log it or show it.
 
 ### Git (`src/git/`)

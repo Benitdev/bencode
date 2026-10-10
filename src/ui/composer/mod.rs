@@ -57,10 +57,11 @@ const COMPOSER_MAX_WIDTH: f32 = 896.0;
 pub const PROMPT_PLACEHOLDER: &str = "Ask, build, / for commands, @ for references... ";
 /// MonoCode `CwdPicker` `PREVIEW`.
 const RECENT_PROJECTS_SHOWN: usize = 5;
-const HARNESS_ORDER: [HarnessKind; 4] = [
+const HARNESS_ORDER: [HarnessKind; 5] = [
     HarnessKind::Claude,
     HarnessKind::Antigravity,
     HarnessKind::Codex,
+    HarnessKind::Grok,
     HarnessKind::OpenCode,
 ];
 /// The composer's toolbar popover; at most one is open.

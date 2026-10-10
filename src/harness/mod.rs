@@ -12,6 +12,7 @@ pub mod claude;
 pub mod codex;
 pub mod discovery;
 pub mod events;
+pub mod grok;
 pub mod handle;
 pub mod login;
 pub mod opencode;
@@ -21,7 +22,7 @@ pub mod resolver;
 pub mod runtime;
 pub mod updates;
 
-pub use events::{AgentEvent, DoneStatus, PermissionRequest};
+pub use events::{AgentEvent, DoneStatus, PermissionRequest, TaskItem, TaskStatus};
 pub use handle::HarnessProcessHandle;
 pub use resolver::{HarnessInfo, HarnessResolver};
 
@@ -38,14 +39,16 @@ pub enum HarnessKind {
     Claude,
     Antigravity,
     Codex,
+    Grok,
     OpenCode,
 }
 
 /// Every harness, in picker order.
-pub const ALL_HARNESSES: [HarnessKind; 4] = [
+pub const ALL_HARNESSES: [HarnessKind; 5] = [
     HarnessKind::Claude,
     HarnessKind::Antigravity,
     HarnessKind::Codex,
+    HarnessKind::Grok,
     HarnessKind::OpenCode,
 ];
 
@@ -56,6 +59,7 @@ impl HarnessKind {
             "claude" => Some(Self::Claude),
             "antigravity" | "agy" => Some(Self::Antigravity),
             "codex" => Some(Self::Codex),
+            "grok" => Some(Self::Grok),
             "opencode" => Some(Self::OpenCode),
             _ => None,
         }
@@ -66,6 +70,7 @@ impl HarnessKind {
             Self::Claude => "claude",
             Self::Antigravity => "antigravity",
             Self::Codex => "codex",
+            Self::Grok => "grok",
             Self::OpenCode => "opencode",
         }
     }
@@ -75,6 +80,7 @@ impl HarnessKind {
             Self::Claude => "Claude Code",
             Self::Antigravity => "Antigravity",
             Self::Codex => "Codex",
+            Self::Grok => "Grok Build",
             Self::OpenCode => "OpenCode",
         }
     }
@@ -110,6 +116,10 @@ pub struct SpawnRequest {
     pub attachments: Vec<Attachment>,
     /// MonoCode Plan mode: review a plan before building.
     pub plan: bool,
+    /// MonoCode `compactContext`: summarise the thread's older context
+    /// instead of taking a turn. Claude does it for the `/compact` prompt
+    /// itself; Grok Build has a request of its own for it.
+    pub compact: bool,
     /// The thread's model settings (`effort`, `fast`, …), defaults filled in.
     pub settings: std::collections::BTreeMap<String, String>,
     /// The thread's account profile; None runs under the default one.
@@ -126,6 +136,7 @@ pub fn spawn(req: &SpawnRequest) -> Result<(HarnessProcessHandle, EventRx)> {
         HarnessKind::Claude => claude::spawn(req),
         HarnessKind::Antigravity => antigravity::spawn(req),
         HarnessKind::Codex => codex::spawn(req),
+        HarnessKind::Grok => grok::spawn(req),
         HarnessKind::OpenCode => opencode::spawn(req),
     }
 }
@@ -170,12 +181,7 @@ mod tests {
 
     #[test]
     fn harness_ids_round_trip() {
-        for kind in [
-            HarnessKind::Claude,
-            HarnessKind::Antigravity,
-            HarnessKind::Codex,
-            HarnessKind::OpenCode,
-        ] {
+        for kind in ALL_HARNESSES {
             assert_eq!(HarnessKind::from_id(kind.id()), Some(kind));
         }
         assert_eq!(
@@ -212,6 +218,7 @@ mod tests {
             disable_hooks: false,
             attachments: Vec::new(),
             plan: false,
+            compact: false,
             settings: Default::default(),
             account: None,
         };

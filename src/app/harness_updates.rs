@@ -1,5 +1,5 @@
 //! MonoCode `HarnessUpdateNotice`'s logic: once per launch, each installed
-//! CLI with an npm feed is compared with its latest release; the ones behind
+//! CLI with a version feed is compared with its latest release; the ones behind
 //! are offered, and Update runs the CLI's own updater. Nothing is remembered
 //! between launches: a harness still behind is offered again next time.
 

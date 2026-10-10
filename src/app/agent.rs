@@ -64,7 +64,7 @@ pub struct AgentRun {
     pub automation_run_id: Option<String>,
     /// Full access: every tool is allowed at once, questions still ask.
     pub auto_approve: bool,
-    /// Only Claude takes a follow-up in the middle of a turn.
+    /// Whether the harness takes a follow-up in the middle of this turn.
     pub can_steer: bool,
     pub purpose: RunPurpose,
     /// A compaction the harness confirmed, with the context left after it.
@@ -98,11 +98,20 @@ struct RunRequest {
 const COMPACT_COMMAND: &str = "/compact";
 const COMPACTING_NOTICE: &str = "Compacting context…";
 const COMPACTED_NOTICE: &str = "Compacted context";
-const UNCONFIRMED_COMPACT: &str = "Claude Code did not confirm context compaction";
+
+/// MonoCode's "Claude Code did not confirm context compaction", for
+/// whichever harness the thread runs.
+fn unconfirmed_compact(harness: &str) -> String {
+    let label = harness::HarnessKind::from_id(harness).map_or(harness, |kind| kind.label());
+    format!("{label} did not confirm context compaction")
+}
 
 /// MonoCode `canCompactHarnessContext` for the harnesses BenCode drives.
 pub fn can_compact(harness: &str) -> bool {
-    harness::HarnessKind::from_id(harness) == Some(harness::HarnessKind::Claude)
+    matches!(
+        harness::HarnessKind::from_id(harness),
+        Some(harness::HarnessKind::Claude | harness::HarnessKind::Grok)
+    )
 }
 
 /// MonoCode's terminal automation-run status for a turn outcome.
@@ -630,8 +639,7 @@ impl BenCodeApp {
             return Err(input);
         }
         let prompt = self.apply_skills(&input.text);
-        let line = crate::harness::claude::steer_message(&prompt, &input.attachments);
-        if !run.handle.send_line(&line) {
+        if !run.handle.steer(&prompt, &input.attachments) {
             return Err(input);
         }
         if let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id) {
@@ -798,8 +806,9 @@ impl BenCodeApp {
         self.start_run(session_id, request, cx);
     }
 
-    /// MonoCode `onCompactContext`: Claude summarises the older context
-    /// (`/compact`) as a turn of its own, shown only as status lines.
+    /// MonoCode `onCompactContext`: the agent summarises the older context
+    /// (Claude's `/compact`, Grok's own request) as a turn of its own,
+    /// shown only as status lines.
     pub fn compact_context(&mut self, session_id: &str, cx: &mut Context<Self>) {
         if self.is_agent_running_in(session_id) {
             return;
@@ -845,9 +854,9 @@ impl BenCodeApp {
             .map(|spawn| SpawnRequest {
                 attachments: request.attachments.clone(),
                 plan: request.plan,
+                compact: request.purpose == RunPurpose::Compact,
                 ..spawn
             });
-        let harness_kind = spawn.as_ref().ok().map(|r| r.harness);
         // The baseline is queued before the agent can edit anything.
         if request.purpose == RunPurpose::Turn {
             self.checkpoints.begin_turn(session_id, session.work_dir());
@@ -859,10 +868,10 @@ impl BenCodeApp {
         match started {
             Ok((handle, events)) => {
                 let auto_approve = mode == PermissionMode::FullAccess && !request.plan;
+                let steers = handle.can_steer();
                 self.track_run(session_id.to_string(), handle, events, auto_approve, cx);
                 if let Some(run) = self.runs.get_mut(session_id) {
-                    run.can_steer = harness_kind == Some(harness::HarnessKind::Claude)
-                        && request.purpose == RunPurpose::Turn;
+                    run.can_steer = steers && request.purpose == RunPurpose::Turn;
                     run.purpose = request.purpose;
                 }
                 self.sync_in_flight();
@@ -1026,7 +1035,10 @@ impl BenCodeApp {
                         session.context_used = Some(tokens);
                     }
                 }
-                CompactEnd::Unconfirmed => push_notice(session, UNCONFIRMED_COMPACT, now_ms()),
+                CompactEnd::Unconfirmed => {
+                    let notice = unconfirmed_compact(&session.harness);
+                    push_notice(session, &notice, now_ms());
+                }
                 CompactEnd::Cancelled => {}
             }
         }
@@ -1238,6 +1250,7 @@ fn spawn_request(
         disable_hooks,
         attachments: Vec::new(),
         plan: false,
+        compact: false,
         settings: catalog::resolved_settings(&session.model, session.model_settings.as_ref()),
         account: AccountProfile::resolve(&session.harness, session.provider_account_id.as_deref()),
     })
@@ -1404,6 +1417,7 @@ pub fn apply_event(session: &mut SessionRow, event: AgentEvent, now: i64) {
                 ));
             }
         }
+        AgentEvent::Tasks(items) => crate::app::task_list::upsert(session, &items, now),
         AgentEvent::TurnMetrics(metrics) => record_turn_metrics(session, &metrics),
         // Kept by the run and the app rather than the transcript.
         AgentEvent::Compacted { .. } | AgentEvent::UsageLimited { .. } => {}
