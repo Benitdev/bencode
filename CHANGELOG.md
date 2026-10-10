@@ -34,6 +34,12 @@ tagging (`docs/releasing.md`).
   again.
 - An Edit menu (Cut, Copy, Paste, Select All), which is also what makes
   those keys work inside a browser page.
+- Reviews colour their code: keywords, strings, numbers and comments, in
+  working-tree changes, commits and a chat's changes.
+- Reviews side by side: the button at the top right of a review puts the old
+  file beside the new one, a removed line next to the line that replaced
+  it. The choice is kept. A pane too narrow for two columns shows the
+  review unified until it is widened.
 
 ## [0.1.4] - 2026-10-09
 

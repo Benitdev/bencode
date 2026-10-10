@@ -141,6 +141,7 @@ impl BenCodeApp {
         self.github.choices = saved.github_accounts.clone();
         crate::github_accounts::set_choices(self.github.choices.clone());
         self.changes_ui.tree = saved.changes_tree;
+        self.diff_split = saved.diff_split;
         self.terminals.layouts = saved.terminal_docks.clone();
         self.terminals.saved = saved.terminal_sessions.clone();
         if let Some(width) = saved.inbox_list_width {
@@ -181,6 +182,7 @@ impl BenCodeApp {
             backlog_project_folders: self.backlog.project_folders.clone(),
             github_accounts: self.github.choices.clone(),
             changes_tree: self.changes_ui.tree,
+            diff_split: self.diff_split,
             theme_hue: Some(self.appearance.tint.hue).filter(|v| *v != appearance::HUE_DEFAULT),
             theme_saturation: Some(self.appearance.tint.saturation)
                 .filter(|v| *v != appearance::SATURATION_DEFAULT),
@@ -475,6 +477,16 @@ impl BenCodeApp {
     pub fn set_diff_palette(&mut self, palette: DiffPalette, cx: &mut Context<Self>) {
         self.appearance.diff_palette = palette;
         self.apply_appearance_tokens(cx);
+    }
+
+    /// Reviews side by side (else unified), in every open review.
+    pub fn set_diff_split(&mut self, split: bool, cx: &mut Context<Self>) {
+        self.diff_split = split;
+        for doc in self.diff_docs.values_mut() {
+            doc.set_split(split);
+        }
+        self.save_settings(cx);
+        cx.notify();
     }
 
     fn apply_appearance_tokens(&mut self, cx: &mut Context<Self>) {

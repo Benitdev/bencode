@@ -50,7 +50,7 @@ doing that, it is how the two codebases stay traceable.
 | :--- | :--- | :--- |
 | Language | Rust, 2024 edition | TypeScript (React 19) + Rust (Tauri) |
 | UI framework | [GPUI](https://www.gpui.rs/), pinned to the Zed commit Ely uses | React 19 + Vite |
-| Components | [Ely GPUI Components](https://github.com/ZacharyZhang-NY/Ely-GPUI-Components) | Tailwind, CodeMirror, xterm |
+| Components | [Ely GPUI Components](https://github.com/Benitdev/Ely-GPUI-Components) | Tailwind, CodeMirror, xterm |
 | Theme | Ely tokens (`cx.theme().colors`); MonoCode palettes in `ui/theme.rs` | Tailwind + CSS variables |
 | Async | GPUI executors for app work; one Tokio runtime for harness processes | Tokio + browser event loop |
 | Database | SQLite via `rusqlite` (bundled) | SQLite via `rusqlite` in `src-tauri` |
@@ -262,7 +262,7 @@ only read that cache.
 | `features/files/ui/FileEditor.tsx` | `ui/editor_pane/` | One `CodeEditor` per file, atomic saves, disk-conflict handling |
 | `features/workspace/model/layout.ts` (`openEditorTab`, `openChangesTab`, `openCommitTab`), `SurfaceTabs.tsx` | `app/file_pane.rs`, `ui/file_pane.rs` | Tabs beside the chat, preview tabs |
 | `features/source-control/ui/GitChangesPanel.tsx`, `GitHistoryGraph` | `ui/git_changes_panel/`, `app/source_control.rs`, `git/` | Staged / unstaged, commit, sync, PR, graph |
-| `features/source-control/ui/UnifiedDiffView.tsx`, `model/unifiedDiff.ts` | `ui/diff_viewer.rs`, `ui/diff_model.rs`, `git/diffs.rs` | Stacked files, sticky headers, folds, stage / discard |
+| `features/source-control/ui/UnifiedDiffView.tsx`, `model/unifiedDiff.ts` | `ui/diff_viewer.rs`, `ui/diff_model.rs`, `git/diffs.rs` | Stacked files, sticky headers, folds, stage / discard, syntax colours (Ely's one lexer for every language, a line at a time: no block comments). BenCode's own: the review side by side, where MonoCode has its `@codemirror/merge` editor diff |
 | `sessions/ui/SessionReview.tsx`, `sessions/model/checkpoint.ts`, `source-control/ui/SessionChangesDiff.tsx` | `ui/transcript/review_card.rs`, `app/session_review.rs`, `git/checkpoint.rs` | "Changed N files" card with Undo / Keep / Review |
 | `features/terminal/` | `ui/terminal_pane/`, `pty_host/` | Ely terminal, one dock per project. BenCode's own: terminals side by side (a tab dragged onto a terminal's edge), and shells that outlive an update's restart or a crash (the terminal host; ⌘Q ends them) |
 | `features/notes/` | `ui/notes/`, `app/notes.rs`, `db/mod.rs` | Cards, tags, project, Preview / Source, dropped images, autosave, Add to chat. Source has no line numbers |

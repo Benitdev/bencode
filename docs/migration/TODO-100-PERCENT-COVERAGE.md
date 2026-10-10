@@ -75,9 +75,11 @@ Last checked against the code: 2026-10-06.
 ### P1 — Visible differences
 
 - [ ] **Review**
-  - Syntax highlighting in diffs.
+  - Syntax highlighting per language (diffs are coloured by one lexer for
+    every language, a line at a time).
   - The side-by-side diff mode in the editor, MonoCode's default
-    (`DIFF_VIEWER_DEFAULT = "editor"`).
+    (`DIFF_VIEWER_DEFAULT = "editor"`); the review has a side-by-side
+    layout of its own.
 - [ ] **Session review**: Keep / Undo per file (the engine already supports
   it), and integrating worker changes under orchestration
   (`session_checkpoint_apply`).
@@ -128,7 +130,7 @@ Last checked against the code: 2026-10-06.
 | Worktree lifecycle | `src-tauri/src/worktree_lifecycle.rs` | `src/git/worktrees.rs`, `src/app/worktree_lifecycle.rs`, `src/ui/settings_worktrees.rs` | 🟡 Branch rename missing |
 | MCP | `src-tauri/src/mcp.rs` | `src/mcp/mod.rs` | 🟡 Discovery only |
 | macOS menus | `src-tauri/src/menu.rs` | `src/app/commands.rs` | 🟡 Edit / Window / Help missing |
-| Side-by-side review | `@codemirror/merge` | `src/ui/diff_viewer.rs` | 🟡 Unified only |
+| Side-by-side review | `@codemirror/merge` | `src/ui/diff_viewer.rs` | 🟡 The review side by side; no editor diff |
 | Orchestration | `features/orchestration/` | `src/db/orchestration.rs` | 🟡 Read-only |
 | Quick Composer | `src-tauri/src/quick_composer.rs` | not yet | ⚪ |
 | Other trackers | `src-tauri/src/{gitlab,linear,jira,azure_devops}.rs` | not yet | ⚪ |

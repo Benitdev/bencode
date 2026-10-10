@@ -196,6 +196,159 @@ pub fn body_rows(blocks: &[Block], reveal_for: impl Fn(usize) -> Reveal) -> Vec<
     rows
 }
 
+/// One drawn row of a file's body side by side: the old line beside the
+/// new one, either of them missing where only one side has a line.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SplitRow {
+    Pair {
+        old: Option<Line>,
+        new: Option<Line>,
+    },
+    Fold {
+        id: usize,
+        hidden: usize,
+    },
+}
+
+/// `rows` side by side. An unchanged line is on both sides; a run of
+/// deletions is paired, line by line, with the additions that follow it.
+pub fn split_rows(rows: Vec<BodyRow>) -> Vec<SplitRow> {
+    fn flush(dels: &mut Vec<Line>, adds: &mut Vec<Line>, out: &mut Vec<SplitRow>) {
+        let (mut dels, mut adds) = (dels.drain(..), adds.drain(..));
+        loop {
+            match (dels.next(), adds.next()) {
+                (None, None) => break,
+                (old, new) => out.push(SplitRow::Pair { old, new }),
+            }
+        }
+    }
+    let mut out = Vec::with_capacity(rows.len());
+    let (mut dels, mut adds) = (Vec::new(), Vec::new());
+    for row in rows {
+        match row {
+            BodyRow::Line(line) => match line.kind {
+                LineKind::Del => {
+                    // Deletions after additions start another change.
+                    if !adds.is_empty() {
+                        flush(&mut dels, &mut adds, &mut out);
+                    }
+                    dels.push(line);
+                }
+                LineKind::Add => adds.push(line),
+                LineKind::Context => {
+                    flush(&mut dels, &mut adds, &mut out);
+                    out.push(SplitRow::Pair {
+                        old: Some(line.clone()),
+                        new: Some(line),
+                    });
+                }
+            },
+            BodyRow::Fold { id, hidden } => {
+                flush(&mut dels, &mut adds, &mut out);
+                out.push(SplitRow::Fold { id, hidden });
+            }
+        }
+    }
+    flush(&mut dels, &mut adds, &mut out);
+    out
+}
+
+/// How a file's lines are coloured, from its name (MonoCode
+/// `languageForPath`, with one lexer for every language).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Syntax {
+    /// Prose and data: no colours.
+    Plain,
+    Code,
+    /// Code whose comments start at a `#`.
+    HashComments,
+    Json,
+}
+
+const PLAIN_EXTENSIONS: &[&str] = &[
+    "md", "markdown", "mdx", "txt", "text", "rst", "adoc", "org", "log", "csv", "tsv", "lock",
+    "svg", "patch", "diff",
+];
+const HASH_EXTENSIONS: &[&str] = &[
+    "py",
+    "pyi",
+    "rb",
+    "sh",
+    "bash",
+    "zsh",
+    "fish",
+    "yml",
+    "yaml",
+    "toml",
+    "ini",
+    "cfg",
+    "conf",
+    "pl",
+    "r",
+    "jl",
+    "ex",
+    "exs",
+    "tf",
+    "nix",
+    "ps1",
+    "mk",
+    "cmake",
+    "env",
+    "properties",
+];
+const HASH_NAMES: &[&str] = &[
+    "dockerfile",
+    "makefile",
+    "gemfile",
+    "rakefile",
+    "justfile",
+    "cmakelists.txt",
+];
+const PLAIN_NAMES: &[&str] = &["license", "copying", "authors", "notice", "changelog"];
+
+pub fn syntax_for(path: &str) -> Syntax {
+    let name = path.rsplit('/').next().unwrap_or(path).to_ascii_lowercase();
+    if HASH_NAMES.contains(&name.as_str()) {
+        return Syntax::HashComments;
+    }
+    if PLAIN_NAMES.contains(&name.as_str()) {
+        return Syntax::Plain;
+    }
+    // A dotfile is named by what follows its dot (`.gitignore`, `.env`).
+    let extension = name.rsplit('.').next().unwrap_or("");
+    if name.starts_with('.') && !name[1..].contains('.') {
+        return Syntax::HashComments;
+    }
+    if PLAIN_EXTENSIONS.contains(&extension) {
+        Syntax::Plain
+    } else if HASH_EXTENSIONS.contains(&extension) {
+        Syntax::HashComments
+    } else if matches!(extension, "json" | "jsonc" | "json5") {
+        Syntax::Json
+    } else {
+        Syntax::Code
+    }
+}
+
+/// Where a `#` comment starts in `text`, given the spans its lexer found
+/// (a string is one span, so a `#` inside one is not a span of its own).
+/// The `#` opens the line or follows a space, which leaves `$#` alone.
+pub fn hash_comment_start(
+    text: &str,
+    spans: impl IntoIterator<Item = std::ops::Range<usize>>,
+) -> Option<usize> {
+    spans
+        .into_iter()
+        .find(|span| {
+            &text[span.clone()] == "#"
+                && text[..span.start]
+                    .chars()
+                    .next_back()
+                    .is_none_or(char::is_whitespace)
+        })
+        .map(|span| span.start)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -270,5 +423,85 @@ mod tests {
         });
         assert_eq!(opened[0], BodyRow::Fold { id: 0, hidden: 6 });
         assert_eq!(opened.len(), 1 + 20 + 8 + 1);
+    }
+
+    fn line(kind: LineKind, text: &str) -> BodyRow {
+        BodyRow::Line(Line {
+            kind,
+            text: text.into(),
+            old: None,
+            new: None,
+        })
+    }
+
+    /// Each row as `(old text, new text)`; a fold is `("…", "…")`.
+    fn sides(rows: &[SplitRow]) -> Vec<(&str, &str)> {
+        fn text(line: &Option<Line>) -> &str {
+            line.as_ref().map_or("", |l| &*l.text)
+        }
+        rows.iter()
+            .map(|row| match row {
+                SplitRow::Pair { old, new } => (text(old), text(new)),
+                SplitRow::Fold { .. } => ("…", "…"),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn deletions_sit_beside_the_additions_after_them() {
+        let rows = split_rows(vec![
+            line(LineKind::Context, "a"),
+            line(LineKind::Del, "b"),
+            line(LineKind::Del, "c"),
+            line(LineKind::Add, "B"),
+            line(LineKind::Context, "d"),
+            line(LineKind::Add, "e"),
+            BodyRow::Fold { id: 0, hidden: 4 },
+            line(LineKind::Del, "f"),
+        ]);
+        assert_eq!(
+            sides(&rows),
+            [
+                ("a", "a"),
+                ("b", "B"),
+                ("c", ""),
+                ("d", "d"),
+                ("", "e"),
+                ("…", "…"),
+                ("f", ""),
+            ]
+        );
+    }
+
+    #[test]
+    fn deletions_after_additions_are_another_change() {
+        let rows = split_rows(vec![
+            line(LineKind::Add, "A"),
+            line(LineKind::Del, "b"),
+            line(LineKind::Add, "B"),
+        ]);
+        assert_eq!(sides(&rows), [("", "A"), ("b", "B")]);
+    }
+
+    #[test]
+    fn a_file_name_picks_its_colours() {
+        assert_eq!(syntax_for("src/ui/diff_model.rs"), Syntax::Code);
+        assert_eq!(syntax_for("README.md"), Syntax::Plain);
+        assert_eq!(syntax_for("LICENSE"), Syntax::Plain);
+        assert_eq!(syntax_for("ci/build.sh"), Syntax::HashComments);
+        assert_eq!(syntax_for("Dockerfile"), Syntax::HashComments);
+        assert_eq!(syntax_for(".gitignore"), Syntax::HashComments);
+        assert_eq!(syntax_for("package.json"), Syntax::Json);
+        assert_eq!(syntax_for(".eslintrc.json"), Syntax::Json);
+    }
+
+    #[test]
+    fn a_hash_comment_starts_outside_strings_and_words() {
+        // The spans a lexer would give: the string is one of them.
+        let text = r#"x = "a # b" # why"#;
+        let spans = [0..1, 2..3, 4..11, 12..13, 14..17];
+        assert_eq!(hash_comment_start(text, spans), Some(12));
+        assert_eq!(hash_comment_start("echo $#", [0..4, 5..6, 6..7]), None);
+        assert_eq!(hash_comment_start("# top", [0..1, 2..5]), Some(0));
     }
 }

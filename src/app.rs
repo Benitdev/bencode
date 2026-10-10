@@ -135,6 +135,8 @@ pub struct BenCodeApp {
     pub updater: updater::UpdaterState,
     /// The loaded review of each diff tab in `file_pane`, by tab key.
     pub diff_docs: HashMap<String, crate::ui::diff_viewer::DiffDoc>,
+    /// Reviews show the old file beside the new one, saved in settings.
+    pub diff_split: bool,
     /// Whether ⌘W closes a tab of `file_pane` rather than the thread.
     pub file_pane_focused: bool,
     /// The chat's and the file pane's shares of the width.
@@ -1158,6 +1160,7 @@ impl BenCodeApp {
                 ),
             ),
             diff_docs: HashMap::new(),
+            diff_split: false,
             file_pane_focused: false,
             file_pane_shares: [1.0, 1.0],
             browser,

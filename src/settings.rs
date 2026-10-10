@@ -106,6 +106,9 @@ pub struct AppSettings {
     pub collapsed_project_rail_mode: crate::ui::appearance::CollapsedRailMode,
     /// MonoCode `monocode.changesView`: the Changes panel as a tree.
     pub changes_tree: bool,
+    /// Reviews show the old file beside the new one. BenCode's own
+    /// (MonoCode's `monocode.diffViewer` picks its editor diff instead).
+    pub diff_split: bool,
     /// MonoCode `monocode.favoriteModels`: starred model keys.
     pub favorite_models: Vec<String>,
     /// MonoCode recent model choices, newest first (⌘. menu).
@@ -230,6 +233,7 @@ mod tests {
                 "work-me".to_string(),
             )]),
             changes_tree: true,
+            diff_split: true,
             theme_hue: Some(210.0),
             theme_saturation: Some(12.0),
             theme_dark_lightness: Some(4.0),

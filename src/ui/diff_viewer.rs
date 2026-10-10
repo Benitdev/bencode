@@ -2,16 +2,21 @@
 //! its loaders): every file of a review stacked under a header that sticks
 //! to the top, unchanged runs folded behind "N unmodified lines" bars.
 //! Headers and rows share one `gpui::list`; git runs only in the loader.
+//! BenCode's own: the same review with the old file beside the new one
+//! (`DocRow::Pair`), where the pane is wide enough for two lanes. MonoCode's
+//! side by side is its editor diff (`@codemirror/merge`), which is not ported.
 
 use std::collections::{HashMap, HashSet};
+use std::ops::Range;
 
 use ely_gpui_component::files::FileIcon;
+use ely_gpui_component::forms::{code_highlights, json_highlights};
 use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
-    AnyElement, Context, Hsla, InteractiveElement, IntoElement, ListAlignment, ListOffset,
-    ListState, ParentElement, Pixels, ScrollWheelEvent, SharedString, StatefulInteractiveElement,
-    Styled, Window, div, list, prelude::*,
+    AnyElement, Context, HighlightStyle, Hsla, InteractiveElement, IntoElement, ListAlignment,
+    ListOffset, ListState, ParentElement, Pixels, ScrollWheelEvent, SharedString,
+    StatefulInteractiveElement, Styled, StyledText, Window, canvas, div, list, prelude::*,
 };
 
 use crate::app::BenCodeApp;
@@ -19,10 +24,12 @@ use crate::app::file_pane::PaneTab;
 use crate::git::checkpoint::CheckpointStore;
 use crate::git::{self, DiffSource};
 use crate::ui::diff_counts::diff_counts;
-use crate::ui::diff_model::{self, Block, BodyRow, Expand, Line, LineKind, Reveal};
+use crate::ui::diff_model::{
+    self, Block, BodyRow, Expand, Line, LineKind, Reveal, SplitRow, Syntax,
+};
 use crate::ui::git_changes_panel::{Busy, Side};
 use crate::ui::icons::ExtraIcon;
-use crate::ui::scale::px;
+use crate::ui::scale::{self, px};
 use crate::ui::scrollbar::{self, ScrollBar};
 
 /// MonoCode `UNIFIED_LINE_PX` / `UNIFIED_FOLD_PX`.
@@ -30,6 +37,11 @@ const LINE_HEIGHT: f32 = 20.0;
 const FOLD_HEIGHT: f32 = 32.0;
 /// A line's `text-[12px]`.
 const LINE_TEXT: f32 = 12.0;
+/// The narrowest review that still shows two lanes; under it a side by
+/// side review is drawn unified.
+const SPLIT_MIN_WIDTH: f32 = 520.0;
+/// A longer line (minified code) keeps one colour.
+const HIGHLIGHT_MAX_LEN: usize = 2000;
 /// MonoCode `DIFF_LOAD_CONCURRENCY`.
 const LOAD_THREADS: usize = 4;
 
@@ -83,6 +95,12 @@ pub enum DocStatus {
 enum DocRow {
     Header(usize),
     Line(usize, Line),
+    /// A row of the side by side layout: the old line and the new one.
+    Pair {
+        file: usize,
+        old: Option<Line>,
+        new: Option<Line>,
+    },
     Fold {
         file: usize,
         id: usize,
@@ -95,8 +113,25 @@ impl DocRow {
     fn file(&self) -> usize {
         match self {
             Self::Header(f) | Self::Line(f, _) | Self::Message(f, _) => *f,
-            Self::Fold { file, .. } => *file,
+            Self::Fold { file, .. } | Self::Pair { file, .. } => *file,
         }
+    }
+
+    /// The lines the row shows.
+    fn lines(&self) -> impl Iterator<Item = &Line> {
+        let (a, b) = match self {
+            Self::Line(_, line) => (Some(line), None),
+            Self::Pair { old, new, .. } => (old.as_ref(), new.as_ref()),
+            _ => (None, None),
+        };
+        a.into_iter().chain(b)
+    }
+
+    /// The old and new line numbers the row shows.
+    fn numbers(&self) -> (Option<u32>, Option<u32>) {
+        self.lines().fold((None, None), |(old, new), line| {
+            (old.or(line.old), new.or(line.new))
+        })
     }
 }
 
@@ -120,6 +155,9 @@ pub struct DiffDoc {
     /// How far each file's lines are scrolled sideways, by file id
     /// (MonoCode's `overflow-x-auto` code lane).
     side_scroll: HashMap<String, Pixels>,
+    /// Side by side is chosen, and the pane has the room for it.
+    split: bool,
+    wide: bool,
     focus: Option<DocFocus>,
     generation: u64,
 }
@@ -130,7 +168,58 @@ impl DiffDoc {
         self.list.remeasure();
     }
 
-    fn new(focus: Option<DocFocus>) -> Self {
+    fn side_by_side(&self) -> bool {
+        self.split && self.wide
+    }
+
+    pub(crate) fn set_split(&mut self, split: bool) {
+        let was = self.side_by_side();
+        self.split = split;
+        if self.side_by_side() != was {
+            self.relayout();
+        }
+    }
+
+    fn set_wide(&mut self, wide: bool) {
+        let was = self.side_by_side();
+        self.wide = wide;
+        if self.side_by_side() != was {
+            self.relayout();
+        }
+    }
+
+    /// Rebuilds the rows in the other layout, with the line that was at
+    /// the top still there.
+    fn relayout(&mut self) {
+        let top = self.list.logical_scroll_top();
+        let anchor = self
+            .rows
+            .get(top.item_ix)
+            .map(|row| (row.file(), row.numbers()));
+        self.rebuild();
+        // The lanes changed width: what was in reach may not be now.
+        self.side_scroll.clear();
+        let Some((file, (old, new))) = anchor else {
+            return;
+        };
+        let Some((from, to)) = self.starts.get(file).zip(self.starts.get(file + 1)) else {
+            return;
+        };
+        let at = self.rows[*from..*to]
+            .iter()
+            .position(|row| match (row.numbers(), new) {
+                ((_, Some(n)), Some(new)) => n >= new,
+                ((Some(o), _), None) => old.is_some_and(|old| o >= old),
+                _ => false,
+            })
+            .unwrap_or(0);
+        self.list.scroll_to(ListOffset {
+            item_ix: from + at,
+            offset_in_item: px(0.0),
+        });
+    }
+
+    fn new(focus: Option<DocFocus>, split: bool) -> Self {
         Self {
             files: Vec::new(),
             status: DocStatus::Loading,
@@ -140,6 +229,9 @@ impl DiffDoc {
             starts: vec![0],
             list: ListState::new(0, ListAlignment::Top, px(600.0)),
             side_scroll: HashMap::new(),
+            split,
+            // Until the pane is measured (`render_diff_doc`).
+            wide: true,
             focus,
             generation: 0,
         }
@@ -164,18 +256,30 @@ impl DiffDoc {
                         .copied()
                         .unwrap_or_default()
                 };
-                rows.extend(
-                    diff_model::body_rows(blocks, reveal_for)
-                        .into_iter()
-                        .map(|row| match row {
-                            BodyRow::Line(line) => DocRow::Line(ix, line),
-                            BodyRow::Fold { id, hidden } => DocRow::Fold {
-                                file: ix,
-                                id,
-                                hidden,
-                            },
-                        }),
-                );
+                let body = diff_model::body_rows(blocks, reveal_for);
+                if self.side_by_side() {
+                    rows.extend(
+                        diff_model::split_rows(body)
+                            .into_iter()
+                            .map(|row| match row {
+                                SplitRow::Pair { old, new } => DocRow::Pair { file: ix, old, new },
+                                SplitRow::Fold { id, hidden } => DocRow::Fold {
+                                    file: ix,
+                                    id,
+                                    hidden,
+                                },
+                            }),
+                    );
+                } else {
+                    rows.extend(body.into_iter().map(|row| match row {
+                        BodyRow::Line(line) => DocRow::Line(ix, line),
+                        BodyRow::Fold { id, hidden } => DocRow::Fold {
+                            file: ix,
+                            id,
+                            hidden,
+                        },
+                    }));
+                }
             }
         }
         rows
@@ -205,10 +309,8 @@ impl DiffDoc {
         };
         self.rows[*from..*to]
             .iter()
-            .filter_map(|row| match row {
-                DocRow::Line(_, line) => Some(line.text.chars().count()),
-                _ => None,
-            })
+            .flat_map(DocRow::lines)
+            .map(|line| line.text.chars().count())
             .max()
             .unwrap_or(0)
     }
@@ -243,6 +345,16 @@ impl DiffDoc {
                 offset_in_item: px(0.0),
             });
         }
+    }
+
+    /// How file `ix`'s lines are coloured and how far they are scrolled
+    /// sideways.
+    fn lane_look(&self, ix: usize) -> (Syntax, Pixels) {
+        let file = &self.files[ix];
+        (
+            diff_model::syntax_for(&file.path),
+            self.side_scroll.get(&file.id).copied().unwrap_or_default(),
+        )
     }
 
     fn totals(&self) -> (usize, usize) {
@@ -465,7 +577,8 @@ impl BenCodeApp {
                 }
             }
             None => {
-                self.diff_docs.insert(key.to_string(), DiffDoc::new(focus));
+                self.diff_docs
+                    .insert(key.to_string(), DiffDoc::new(focus, self.diff_split));
                 self.load_diff_doc(key, cx);
             }
         }
@@ -632,9 +745,12 @@ impl BenCodeApp {
                 return;
             }
         };
-        // The row less its `w-12` gutter and the text's `px-3` on each side.
+        // A lane (half the row, side by side) less its `w-12` gutter and
+        // the text's `px-3` on each side.
         let rem = window.rem_size();
-        let room = doc.list.viewport_bounds().size.width - scrollbar::gutter(&doc.list) - rem * 4.5;
+        let row = doc.list.viewport_bounds().size.width - scrollbar::gutter(&doc.list);
+        let lane = if doc.side_by_side() { row / 2.0 } else { row };
+        let room = lane - rem * 4.5;
         let reach = (advance * doc.widest_line(ix) as f32 - room).max(Pixels::ZERO);
         let before = doc.side_scroll.get(&id).copied().unwrap_or_default();
         let after = (before + by).clamp(Pixels::ZERO, reach);
@@ -723,6 +839,30 @@ impl BenCodeApp {
             .filter(|f| doc.open.contains(&doc.files[*f].id));
         let rows_key = key.to_string();
         let gutter = scrollbar::gutter(&doc.list);
+        // Whether two lanes fit is known once the rows' box is laid out.
+        let probe = {
+            let app = cx.entity().downgrade();
+            let (key, was) = (key.to_string(), doc.wide);
+            canvas(
+                move |bounds, _, cx| {
+                    let wide = scale::logical(bounds.size.width) >= SPLIT_MIN_WIDTH;
+                    if wide == was {
+                        return;
+                    }
+                    cx.defer(move |cx| {
+                        let set = app.update(cx, |this, cx| {
+                            this.with_doc(&key, cx, |doc| doc.set_wide(wide))
+                        });
+                        if let Err(err) = set {
+                            log::debug!("diff measured after app drop: {err:#}");
+                        }
+                    });
+                },
+                |_, _, _, _| {},
+            )
+            .absolute()
+            .size_full()
+        };
         div()
             .flex()
             .flex_col()
@@ -734,6 +874,7 @@ impl BenCodeApp {
                     .relative()
                     .flex_1()
                     .min_h_0()
+                    .child(probe)
                     .child(
                         list(
                             doc.list.clone(),
@@ -768,7 +909,7 @@ impl BenCodeApp {
         let fg = colors.fg;
         let count = doc.files.len();
         let (additions, deletions) = doc.totals();
-        let button = |id: &str, icon: ExtraIcon, tip: &'static str, enabled: bool| {
+        let button = |id: &str, icon: Icon, tip: &'static str, enabled: bool| {
             div()
                 .id(SharedString::from(format!("{id}-{key}")))
                 .size(px(28.0))
@@ -781,8 +922,9 @@ impl BenCodeApp {
                 })
                 .when(!enabled, |el| el.opacity(0.4))
                 .tooltip(Tooltip::text(tip))
-                .child(icon.icon().size(IconSize::Sm).color(fg.opacity(0.45)))
+                .child(icon.size(IconSize::Sm).color(fg.opacity(0.45)))
         };
+        let split = doc.split;
         let expand_key = key.to_string();
         let collapse_key = key.to_string();
         div()
@@ -812,8 +954,27 @@ impl BenCodeApp {
                     .gap_0p5()
                     .child(
                         button(
+                            "diff-layout",
+                            Icon::new(if split {
+                                IconName::Rows2
+                            } else {
+                                IconName::Columns2
+                            }),
+                            match (split, doc.wide) {
+                                (false, _) => "Show side by side",
+                                (true, true) => "Show unified",
+                                (true, false) => "Show unified (side by side needs a wider pane)",
+                            },
+                            true,
+                        )
+                        .on_click(
+                            cx.listener(move |this, _, _, cx| this.set_diff_split(!split, cx)),
+                        ),
+                    )
+                    .child(
+                        button(
                             "diff-expand-all",
-                            ExtraIcon::UnfoldVertical,
+                            ExtraIcon::UnfoldVertical.icon(),
                             "Expand all files",
                             true,
                         )
@@ -825,7 +986,7 @@ impl BenCodeApp {
                         let enabled = !doc.open.is_empty();
                         button(
                             "diff-collapse-all",
-                            ExtraIcon::FoldVertical,
+                            ExtraIcon::FoldVertical.icon(),
                             "Collapse all files",
                             enabled,
                         )
@@ -850,23 +1011,33 @@ impl BenCodeApp {
                 .render_doc_header(key, doc, *f, false, cx)
                 .into_any_element(),
             DocRow::Line(f, line) => {
-                let scrolled = doc
-                    .side_scroll
-                    .get(&doc.files[*f].id)
-                    .copied()
-                    .unwrap_or_default();
-                let (key, file) = (key.to_string(), *f);
-                render_line(line, scrolled, cx)
-                    .on_scroll_wheel(cx.listener(
-                        move |this, event: &ScrollWheelEvent, window, cx| {
-                            let delta = event.delta.pixel_delta(window.line_height());
-                            // An up-and-down gesture is the list's.
-                            if delta.x.abs() > delta.y.abs() {
-                                cx.stop_propagation();
-                                this.scroll_diff_file_sideways(&key, file, -delta.x, window, cx);
-                            }
-                        },
+                let (syntax, scrolled) = doc.lane_look(*f);
+                render_line(Some(line), line.number(), syntax, scrolled, cx)
+                    .on_scroll_wheel(self.side_scroll_listener(key, *f, cx))
+                    .into_any_element()
+            }
+            // Both lanes scroll sideways together, so a pair stays aligned.
+            DocRow::Pair { file, old, new } => {
+                let (syntax, scrolled) = doc.lane_look(*file);
+                let lane = |line: &Option<Line>, number: Option<u32>| {
+                    div().flex_1().min_w_0().child(render_line(
+                        line.as_ref(),
+                        number,
+                        syntax,
+                        scrolled,
+                        cx,
                     ))
+                };
+                div()
+                    .flex()
+                    .w_full()
+                    .child(
+                        lane(old, old.as_ref().and_then(|line| line.old))
+                            .border_r_1()
+                            .border_color(cx.theme().colors.border),
+                    )
+                    .child(lane(new, new.as_ref().and_then(|line| line.new)))
+                    .on_scroll_wheel(self.side_scroll_listener(key, *file, cx))
                     .into_any_element()
             }
             DocRow::Fold { file, id, hidden } => self.render_fold(key, *file, *id, *hidden, cx),
@@ -878,6 +1049,24 @@ impl BenCodeApp {
                 .child(text.clone())
                 .into_any_element(),
         }
+    }
+
+    /// A sideways wheel over file `ix`'s lines scrolls them.
+    fn side_scroll_listener(
+        &self,
+        key: &str,
+        ix: usize,
+        cx: &Context<Self>,
+    ) -> impl Fn(&ScrollWheelEvent, &mut Window, &mut gpui::App) + 'static {
+        let key = key.to_string();
+        cx.listener(move |this, event: &ScrollWheelEvent, window, cx| {
+            let delta = event.delta.pixel_delta(window.line_height());
+            // An up-and-down gesture is the list's.
+            if delta.x.abs() > delta.y.abs() {
+                cx.stop_propagation();
+                this.scroll_diff_file_sideways(&key, ix, -delta.x, window, cx);
+            }
+        })
     }
 
     /// MonoCode `FileSection` header: chevron, icon, path, counts, and on
@@ -1117,19 +1306,75 @@ impl BenCodeApp {
     }
 }
 
+/// A line's syntax colours (MonoCode `renderLineText`), each at `strength`
+/// of its own.
+fn line_highlights(
+    text: &str,
+    syntax: Syntax,
+    strength: f32,
+    cx: &gpui::App,
+) -> Vec<(Range<usize>, HighlightStyle)> {
+    if text.len() > HIGHLIGHT_MAX_LEN {
+        return Vec::new();
+    }
+    let mut spans: Vec<(Range<usize>, Hsla)> = match syntax {
+        Syntax::Plain => return Vec::new(),
+        Syntax::Json => json_highlights(text, cx),
+        Syntax::Code | Syntax::HashComments => code_highlights(text, cx),
+    }
+    .into_iter()
+    .map(|(range, highlight)| (range, highlight.color))
+    .collect();
+    if syntax == Syntax::HashComments
+        && let Some(at) =
+            diff_model::hash_comment_start(text, spans.iter().map(|(range, _)| range.clone()))
+    {
+        spans.retain(|(range, _)| range.end <= at);
+        spans.push((at..text.len(), cx.theme().colors.syntax.comment));
+    }
+    spans
+        .into_iter()
+        .map(|(range, color)| {
+            (
+                range,
+                HighlightStyle {
+                    color: Some(color.opacity(strength)),
+                    ..HighlightStyle::default()
+                },
+            )
+        })
+        .collect()
+}
+
 /// MonoCode `DiffLineRow`: a tinted gutter number, then the text, in the
 /// chosen diff palette (`bg-diff-*-bg`, `bg-diff-*-gutter`, `text-diff-*-fg`).
 /// The text starts `scrolled` to the left of its lane; the gutter stays.
-fn render_line(line: &Line, scrolled: Pixels, cx: &gpui::App) -> gpui::Div {
+/// `None` is the blank side of a line only the other side has.
+fn render_line(
+    line: Option<&Line>,
+    number: Option<u32>,
+    syntax: Syntax,
+    scrolled: Pixels,
+    cx: &gpui::App,
+) -> gpui::Div {
     let theme = cx.theme();
     let colors = &theme.colors;
     let fg = colors.fg;
+    let Some(line) = line else {
+        return div().h(px(LINE_HEIGHT)).w_full().bg(fg.opacity(0.03));
+    };
     let diff = crate::ui::appearance::diff_colors(cx);
     // (row, gutter, number)
     let (tint, number_color): (Option<(Hsla, Hsla)>, Hsla) = match line.kind {
         LineKind::Add => (Some((diff.add_bg, diff.add_gutter)), diff.add_fg),
         LineKind::Del => (Some((diff.del_bg, diff.del_gutter)), diff.del_fg),
         LineKind::Context => (None, fg.opacity(0.35)),
+    };
+    // MonoCode `opacity-70` on an unchanged line, its colours included.
+    let strength = if line.kind == LineKind::Context {
+        0.7
+    } else {
+        1.0
     };
     div()
         .flex()
@@ -1155,7 +1400,7 @@ fn render_line(line: &Line, scrolled: Pixels, cx: &gpui::App) -> gpui::Div {
                 })
                 .text_size(px(11.0))
                 .text_color(number_color)
-                .children(line.number().map(|n| n.to_string())),
+                .children(number.map(|n| n.to_string())),
         )
         .child(
             div()
@@ -1165,17 +1410,14 @@ fn render_line(line: &Line, scrolled: Pixels, cx: &gpui::App) -> gpui::Div {
                 .whitespace_nowrap()
                 .overflow_hidden()
                 .text_size(px(LINE_TEXT))
-                .text_color(fg.opacity(if line.kind == LineKind::Context {
-                    0.56
-                } else {
-                    0.8
-                }))
+                .text_color(fg.opacity(0.8 * strength))
                 .when(line.text.is_empty(), |el| el.child(" "))
                 .when(!line.text.is_empty(), |el| {
                     el.child(
-                        div()
-                            .ml(-scrolled)
-                            .child(SharedString::from(line.text.clone())),
+                        div().ml(-scrolled).child(
+                            StyledText::new(SharedString::from(line.text.clone()))
+                                .with_highlights(line_highlights(&line.text, syntax, strength, cx)),
+                        ),
                     )
                 }),
         )

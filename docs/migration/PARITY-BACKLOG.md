@@ -134,8 +134,8 @@ Notes:
 - [x] P1 M Preview tabs: a click replaces the preview, a double click keeps it — `layout.ts` `isPreviewableTab`, `pinEditorFile`
 - [x] P1 L Review ported from `UnifiedDiffView`: stacked files, sticky header, "N unmodified lines" folds (20 lines per step), stage / discard on the header, expand / collapse all — `source-control/ui/UnifiedDiffView.tsx`, `model/unifiedDiff.ts`
 - [x] P0 S Hovering a Changes row aborted the app (`must call prepaint before paint`): hover styles no longer change `display`
-- [ ] P1 M Syntax highlighting in the review
-- [ ] P1 L Side-by-side editor diff, MonoCode's default (`DIFF_VIEWER_DEFAULT = "editor"`, `@codemirror/merge`); BenCode shows every review as unified
+- [x] P1 M Syntax highlighting in the review (Ely's lexer, one line at a time; MonoCode parses the whole file per language) — `files/editor/syntaxTokens.ts` `highlightDiffFile`
+- [ ] P1 L Side-by-side editor diff, MonoCode's default (`DIFF_VIEWER_DEFAULT = "editor"`, `@codemirror/merge`); BenCode shows the review itself side by side instead (read only, its own toggle)
 - [x] P0 L Session review: checkpoints around edit tools, "Changed N files" card with Undo / Keep / Review, and the session changes review — `sessions/ui/SessionReview.tsx`, `sessions/model/checkpoint.ts`, `src-tauri/src/checkpoint.rs`, `source-control/ui/SessionChangesDiff.tsx`
 - [ ] P2 M Session review: Keep / Undo per file; worker integration (`session_checkpoint_apply`)
 - [ ] P1 M File pane per workspace tab and restored on launch (now one global, in-memory pane); splitting editor panes
