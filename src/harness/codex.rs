@@ -26,6 +26,7 @@ pub fn spawn(req: &SpawnRequest) -> Result<(HarnessProcessHandle, EventRx)> {
         permission_responder: None,
         can_steer: false,
         account: req.account.clone(),
+        env: Vec::new(),
     };
     process::spawn(spec, CodexParser::default())
 }
@@ -108,6 +109,18 @@ fn build_args(req: &SpawnRequest) -> Vec<String> {
     }
     if let Some(tier) = req.settings.get("serviceTier").filter(|t| *t != "default") {
         args.extend(["-c".into(), format!("service_tier=\"{tier}\"")]);
+    }
+    if let Some(launch) = &req.browser_mcp {
+        // TOML values; a JSON string or array of strings is one.
+        let key = format!("mcp_servers.{}", crate::browser::MCP_SERVER_NAME);
+        let command = serde_json::to_string(&launch.command).unwrap_or_default();
+        let launch_args = serde_json::to_string(&launch.args).unwrap_or_default();
+        args.extend([
+            "-c".into(),
+            format!("{key}.command={command}"),
+            "-c".into(),
+            format!("{key}.args={launch_args}"),
+        ]);
     }
     if let Some(thread) = &req.resume_id {
         args.extend(["resume".into(), thread.clone()]);
@@ -377,6 +390,46 @@ mod tests {
     }
 
     #[test]
+    fn an_open_browser_tab_adds_its_mcp_server() {
+        let req = SpawnRequest {
+            harness: HarnessKind::Codex,
+            cwd: "/tmp".into(),
+            prompt: "go".into(),
+            model: None,
+            permission: PermissionPolicy::Ask,
+            resume_id: Some("th_1".into()),
+            disable_hooks: false,
+            attachments: Vec::new(),
+            plan: false,
+            compact: false,
+            settings: Default::default(),
+            account: None,
+            browser_mcp: Some(crate::browser::McpLaunch {
+                command: "/Apps/Ben Code/bencode".into(),
+                args: vec!["--browser-mcp".into(), "/tmp/b.sock".into()],
+            }),
+        };
+        let args = build_args(&req);
+        assert!(args.windows(2).any(|w| w
+            == [
+                "-c",
+                r#"mcp_servers.bencode-browser.command="/Apps/Ben Code/bencode""#
+            ]));
+        assert!(args.windows(2).any(|w| w
+            == [
+                "-c",
+                r#"mcp_servers.bencode-browser.args=["--browser-mcp","/tmp/b.sock"]"#
+            ]));
+        // Config overrides go before the `resume` subcommand.
+        let config = args
+            .iter()
+            .position(|a| a.starts_with("mcp_servers"))
+            .unwrap();
+        let resume = args.iter().position(|a| a == "resume").unwrap();
+        assert!(config < resume);
+    }
+
+    #[test]
     fn args_put_prompt_last_after_separator() {
         let req = SpawnRequest {
             harness: HarnessKind::Codex,
@@ -391,6 +444,7 @@ mod tests {
             compact: false,
             settings: Default::default(),
             account: None,
+            browser_mcp: None,
         };
         let args = build_args(&req);
         assert_eq!(&args[..3], ["exec", "--json", "--skip-git-repo-check"]);

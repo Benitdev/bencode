@@ -324,7 +324,7 @@ fn working_tree_entries(cwd: &str, scope: Option<Side>) -> Vec<Entry> {
 
 fn entries_for(tab: &PaneTab, store: &CheckpointStore) -> Result<(String, Vec<Entry>), String> {
     match tab {
-        PaneTab::File { .. } => Ok((String::new(), Vec::new())),
+        PaneTab::File { .. } | PaneTab::Browser { .. } => Ok((String::new(), Vec::new())),
         PaneTab::Review { cwd, path, side } => Ok((
             cwd.clone(),
             vec![Entry {

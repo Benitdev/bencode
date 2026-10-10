@@ -20,6 +20,15 @@ tagging (`docs/releasing.md`).
   project muted on the rail stays quiet.
 - The notice at launch for a CLI behind its latest release covers Grok
   Build too.
+- A browser beside the chat (the Browser button in the status bar, View ›
+  Open Browser, or ⌘⇧O): back, forward,
+  reload and an address bar that takes `localhost:3000` as readily as a
+  site. A `localhost` link in a reply opens there. Pick an element on the
+  page or take a screenshot, and it goes to the composer with its markup.
+  While a browser tab is open, Claude Code, Codex, Grok Build and OpenCode
+  can drive it themselves: open an address, read the page, click, type,
+  run a script, read the console and take screenshots, in the page you
+  see.
 
 ## [0.1.4] - 2026-10-09
 

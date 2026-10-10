@@ -33,6 +33,7 @@ pub fn spawn(req: &SpawnRequest) -> Result<(HarnessProcessHandle, EventRx)> {
         permission_responder: Some(permission_response),
         can_steer: true,
         account: req.account.clone(),
+        env: Vec::new(),
     };
     process::spawn(spec, ClaudeParser::default())
 }
@@ -49,6 +50,20 @@ fn build_args(req: &SpawnRequest) -> Vec<String> {
     ]
     .map(String::from)
     .to_vec();
+    // Added to the user's own servers. The flag takes several values, so
+    // it goes before the others.
+    if let Some(launch) = &req.browser_mcp {
+        let config = serde_json::json!({
+            "mcpServers": {
+                crate::browser::MCP_SERVER_NAME: {
+                    "type": "stdio",
+                    "command": launch.command,
+                    "args": launch.args,
+                },
+            },
+        });
+        args.extend(["--mcp-config".into(), config.to_string()]);
+    }
 
     // MonoCode `runtimeModeToPermission`: always pass a mode, so the user's
     // `permissions.defaultMode` cannot silently change what the picker says.
@@ -511,7 +526,33 @@ mod tests {
             compact: false,
             settings: Default::default(),
             account: None,
+            browser_mcp: None,
         }
+    }
+
+    #[test]
+    fn an_open_browser_tab_adds_its_mcp_server() {
+        assert!(!build_args(&request(PermissionPolicy::Ask)).contains(&"--mcp-config".into()));
+        let req = SpawnRequest {
+            browser_mcp: Some(crate::browser::McpLaunch {
+                command: "/bin/bencode".into(),
+                args: vec!["--browser-mcp".into(), "/tmp/b.sock".into()],
+            }),
+            ..request(PermissionPolicy::Ask)
+        };
+        let args = build_args(&req);
+        let at = args.iter().position(|a| a == "--mcp-config").unwrap();
+        let config: serde_json::Value = serde_json::from_str(&args[at + 1]).unwrap();
+        assert_eq!(
+            config["mcpServers"]["bencode-browser"],
+            serde_json::json!({
+                "type": "stdio",
+                "command": "/bin/bencode",
+                "args": ["--browser-mcp", "/tmp/b.sock"],
+            })
+        );
+        // The flag takes several values: an option must follow it.
+        assert!(args[at + 2].starts_with("--"));
     }
 
     #[test]
@@ -769,6 +810,7 @@ mod tests {
             compact: false,
             settings: Default::default(),
             account: None,
+            browser_mcp: None,
         };
         let (handle, mut rx) = crate::harness::spawn(&req).unwrap();
         let events = crate::harness::runtime::runtime().block_on(async move {

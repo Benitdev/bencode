@@ -21,6 +21,7 @@ actions!(
         ToggleSidebar,
         ToggleTerminal,
         NewTerminal,
+        OpenBrowser,
         SplitRight,
         SplitDown,
         FocusLeft,
@@ -84,6 +85,12 @@ actions!(
 #[action(namespace = bencode, no_json)]
 pub struct ActivateTab(pub Option<usize>);
 
+/// A dev server's address, opened in the in-app browser (a reply's
+/// `localhost` link).
+#[derive(Clone, Debug, PartialEq, gpui::Action)]
+#[action(namespace = bencode, no_json)]
+pub struct OpenInBrowser(pub String);
+
 /// Shortcuts, matching MonoCode's menu accelerators and its workspace keys
 /// (`workspace/model/tabKeys.ts`).
 pub(crate) fn keymap() -> Vec<KeyBinding> {
@@ -126,6 +133,7 @@ pub(crate) fn keymap() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-shift-=", ZoomIn, None),
         KeyBinding::new("cmd-0", ZoomReset, None),
         KeyBinding::new("cmd-j", ToggleTerminal, None),
+        KeyBinding::new("cmd-shift-o", OpenBrowser, None),
         KeyBinding::new("cmd-`", NewTerminal, None),
         // MonoCode "Terminal: New Tab"; every BenCode terminal is a dock tab.
         KeyBinding::new("cmd-shift-`", NewTerminal, None),
@@ -241,6 +249,7 @@ fn menus() -> Vec<Menu> {
             MenuItem::action("Find in Files…", FindInProject),
             MenuItem::action("Toggle Terminal", ToggleTerminal),
             MenuItem::action("New Terminal", NewTerminal),
+            MenuItem::action("Open Browser", OpenBrowser),
             MenuItem::separator(),
             MenuItem::action("Split Pane Right", SplitRight),
             MenuItem::action("Split Pane Down", SplitDown),
@@ -514,6 +523,12 @@ impl BenCodeApp {
         .on_action(cx.listener(|this, _: &GoBack, _, cx| this.go_back(cx)))
         .on_action(cx.listener(|this, _: &GoForward, _, cx| this.go_forward(cx)))
         .on_action(cx.listener(|this, _: &NewTerminal, _, cx| this.new_terminal(cx)))
+        .on_action(cx.listener(|this, _: &OpenBrowser, window, cx| {
+            this.open_browser(None, window, cx);
+        }))
+        .on_action(cx.listener(|this, action: &OpenInBrowser, window, cx| {
+            this.open_url_in_browser(&action.0, window, cx);
+        }))
         .on_action(cx.listener(|this, _: &ToggleTerminal, _, cx| {
             this.set_terminal_open(!this.is_terminal_open(), cx)
         }))

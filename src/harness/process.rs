@@ -59,6 +59,8 @@ pub struct ProcessSpec {
     pub can_steer: bool,
     /// The account profile the child signs in with, if not the default.
     pub account: Option<AccountProfile>,
+    /// More environment for the child (OpenCode's inline config).
+    pub env: Vec<(String, String)>,
 }
 
 type EventRx = mpsc::UnboundedReceiver<AgentEvent>;
@@ -81,6 +83,7 @@ pub fn spawn(
     if let Some(account) = &spec.account {
         account.apply_async(&mut cmd);
     }
+    cmd.envs(spec.env.iter().map(|(key, value)| (key, value)));
     cmd.stdin(match spec.stdin {
         StdinMode::Null => Stdio::null(),
         StdinMode::Protocol { .. } => Stdio::piped(),
@@ -312,6 +315,7 @@ mod tests {
             permission_responder: None,
             can_steer: false,
             account: None,
+            env: Vec::new(),
         }
     }
 

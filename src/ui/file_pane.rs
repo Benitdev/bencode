@@ -45,7 +45,7 @@ impl BenCodeApp {
             .is_some_and(|open| !open.same_source(&tab));
         let key = self.file_pane.open(tab, pin);
         self.file_pane_focused = true;
-        self.settle_file_pane();
+        self.settle_file_pane(cx);
         if is_diff {
             self.ensure_diff_doc(&key, focus, cx);
             if moved {
@@ -55,9 +55,9 @@ impl BenCodeApp {
         cx.notify();
     }
 
-    /// After tabs opened, closed or changed: reviews of closed tabs go, and
-    /// the editor follows the active file.
-    fn settle_file_pane(&mut self) {
+    /// After tabs opened, closed or changed: reviews and pages of closed
+    /// tabs go, and the editor follows the active file.
+    fn settle_file_pane(&mut self, cx: &mut Context<Self>) {
         self.diff_docs
             .retain(|key, _| self.file_pane.get(key).is_some());
         if let Some(PaneTab::File { path }) = self.file_pane.active() {
@@ -67,12 +67,13 @@ impl BenCodeApp {
         if self.file_pane.is_empty() {
             self.file_pane_focused = false;
         }
+        self.settle_browser_tabs(cx);
     }
 
     fn select_pane_tab(&mut self, key: &str, cx: &mut Context<Self>) {
         if self.file_pane.activate(key) {
             self.file_pane_focused = true;
-            self.settle_file_pane();
+            self.settle_file_pane(cx);
             cx.notify();
         }
     }
@@ -98,7 +99,7 @@ impl BenCodeApp {
     /// Removes a tab without asking.
     pub(crate) fn drop_pane_tab(&mut self, key: &str, cx: &mut Context<Self>) {
         if self.file_pane.close(key).is_some() {
-            self.settle_file_pane();
+            self.settle_file_pane(cx);
             cx.notify();
         }
     }
@@ -144,6 +145,7 @@ impl BenCodeApp {
         let glass = self.glass(cx);
         let colors = &cx.theme().colors;
         let body = match self.file_pane.active() {
+            Some(PaneTab::Browser { id }) => self.render_browser_tab(*id, cx),
             Some(tab) if tab.is_diff() => self.render_diff_doc(&tab.key(), cx),
             _ => self.render_editor_file(cx).into_any_element(),
         };
@@ -174,10 +176,16 @@ impl BenCodeApp {
 
     fn render_pane_tabs(&self, cx: &Context<Self>) -> impl IntoElement {
         let tabs = self.file_pane.entries().iter().map(|entry| {
-            let (label, _) = entry.tab.label();
+            let (mut label, _) = entry.tab.label();
+            if let PaneTab::Browser { id } = &entry.tab
+                && let Some(tab) = self.browser.tabs.get(id)
+            {
+                label = tab.label();
+            }
             let (icon, dirty) = match &entry.tab {
                 PaneTab::File { path } => (IconName::FileCode, self.editor.files.is_dirty(path)),
                 PaneTab::Commit { .. } => (IconName::GitCommitHorizontal, false),
+                PaneTab::Browser { .. } => (IconName::Globe, false),
                 PaneTab::Review { .. }
                 | PaneTab::Changes { .. }
                 | PaneTab::SessionChanges { .. } => (IconName::GitBranch, false),

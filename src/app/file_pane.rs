@@ -36,6 +36,8 @@ pub enum PaneTab {
         short_sha: String,
         subject: String,
     },
+    /// A page in the in-app browser (`app/browser.rs` keeps its view).
+    Browser { id: u64 },
 }
 
 fn basename(path: &str) -> &str {
@@ -55,6 +57,7 @@ impl PaneTab {
                 format!("session-changes:{cwd}:{session_id}")
             }
             Self::Commit { cwd, sha, .. } => format!("commit:{cwd}:{sha}"),
+            Self::Browser { id } => format!("browser:{id}"),
         }
     }
 
@@ -65,13 +68,13 @@ impl PaneTab {
     }
 
     pub fn is_diff(&self) -> bool {
-        !matches!(self, Self::File { .. })
+        !matches!(self, Self::File { .. } | Self::Browser { .. })
     }
 
     /// The working tree or repository a diff tab reads.
     pub fn cwd(&self) -> Option<&str> {
         match self {
-            Self::File { .. } => None,
+            Self::File { .. } | Self::Browser { .. } => None,
             Self::Review { cwd, .. }
             | Self::Changes { cwd, .. }
             | Self::SessionChanges { cwd, .. }
@@ -111,6 +114,8 @@ impl PaneTab {
                 let name = if name.is_empty() { short_sha } else { name };
                 (name.to_string(), format!("{short_sha} — {subject}"))
             }
+            // The page's title replaces it once loaded (`render_pane_tabs`).
+            Self::Browser { .. } => ("Browser".into(), "Browser".into()),
         }
     }
 }

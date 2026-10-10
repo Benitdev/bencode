@@ -332,6 +332,7 @@ impl BenCodeApp {
                 this.transcript_ui
                     .phase_open
                     .insert(phase_id.clone(), !open);
+                this.transcript_ui.reflow += 1;
                 cx.notify();
             }))
             .child(icon_slot(icon, false, true, &group, cx))
@@ -427,6 +428,7 @@ impl BenCodeApp {
                 if !this.expanded_reasoning.remove(&key) {
                     this.expanded_reasoning.insert(key.clone());
                 }
+                this.transcript_ui.reflow += 1;
                 cx.notify();
             }))
             .child(dim_label(summary, &group, cx));
@@ -488,6 +490,7 @@ impl BenCodeApp {
                         if !errors.remove(&key) {
                             errors.insert(key.clone());
                         }
+                        this.transcript_ui.reflow += 1;
                         cx.notify();
                     }))
             })

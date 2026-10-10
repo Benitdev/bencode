@@ -17,6 +17,8 @@ notes, automations, GitHub inbox) in one window.
 Goals:
 
 1. **No Electron, WebKit or Chromium.** Everything is drawn by GPUI (Metal on macOS).
+   The one exception is the in-app browser's page: the system's WKWebView, in
+   a browser tab only (`browser/`).
 2. **Fast and small.** Targets: sub-50ms startup, about 30MB of RAM.
 3. **Local-first, with its own data.** Threads, checkpoints and account profiles
    live in BenCode's folder. Nothing is shared with MonoCode; a first launch
@@ -95,6 +97,7 @@ bencode/
     ├── github.rs             GitHub through `gh` (Inbox, PR actions)
     ├── github_accounts.rs    the accounts `gh` is signed in with; the one a project's `gh` runs as
     ├── backlog.rs            Nulab Backlog through its REST API (Inbox issues, comments, status)
+    ├── browser/              the in-app browser: the WKWebView (wry), its scripts, the agents' MCP server (`--browser-mcp`) and its socket
     ├── work_items.rs         the Inbox's items, whichever tracker they come from
     ├── mcp/                  MCP server discovery
     ├── rate_limits/          provider usage windows (footer): parsers and fetchers
@@ -146,6 +149,7 @@ bencode/
 | `notes.rs`, `note_images.rs` | Notes: titles, previews and tags (`notes.ts`), the open note's fields, autosave, create / move / delete off the UI thread, `@note/slug` bodies for a turn; images dropped into a note (`note-assets/` in the data folder) |
 | `automations.rs`, `automation_runs.rs` | Automations: the surface's state and the editor's draft, loading and saving off the UI thread; the 30s scheduler, Run now, and the thread, worktree and folder a run gets |
 | `worktree_lifecycle.rs` | Settings › Worktrees: project picker, create, delete (with the removal journal) |
+| `browser.rs` | The in-app browser: its tabs and pages, the address bar, the element picker and screenshots for the composer, the agents' browser tool calls |
 | `chat_background.rs` | Appearance › Chat background: the saved copy of the image, decoding and effects off the UI thread, the image the panes draw |
 | `frame_bench.rs` | Frame timings for perf work: `BENCODE_FRAME_BENCH=1` draws the window by hand, case by case, and prints what a redraw costs (see Verifying) |
 | `in_flight.rs` | The turns running now, kept in `in_flight_sessions` (one BenCode per data folder, by `in-flight.lock`); at launch, the ones a quit, restart or crash cut off: marked interrupted and offered for resuming (`ui/resume_interrupted.rs`) |
@@ -165,6 +169,7 @@ bencode/
 | `transcript/` | Turns, blocks, activity folds, the Tasks card (`task_list.rs`), find in conversation, prompt outline, text selection |
 | `composer/` | Prompt composer and its pickers, cards, runner |
 | `file_pane.rs` | The pane beside the chat and its tab strip |
+| `browser_pane.rs` | A browser tab: toolbar, address bar, the page's box |
 | `editor_pane/` | Code editor: open files, saves, disk sync |
 | `diff_viewer.rs`, `diff_model.rs` | Review of working-tree changes and commits |
 | `terminal_pane/` | Terminal dock: tabs, splits (`split.rs`), menus, running jobs, host sessions (`sessions.rs`) |
@@ -282,6 +287,7 @@ only read that cache.
 | `integrations/harness/` | `harness/` | Argv builders and stdout parsers |
 | `integrations/harness/providers/grok/` | `harness/grok.rs` | Grok Build over ACP, one `grok agent stdio` per turn; `/compact` through `_x.ai/compact_conversation`. BenCode's own: follow-ups go into the running turn (`_x.ai/interject`), where MonoCode queues them, and the context meter reads the count Grok stamps on its updates |
 | `sessions/model/taskList.ts`, `sessions/ui/TaskListPreview.tsx`, `harness/core/apply.ts` `upsertTaskList` | `app/task_list.rs`, `ui/transcript/task_list.rs` | The Tasks card, from `AgentEvent::Tasks`. Only Grok Build's plan updates feed it; Claude's `TodoWrite` still shows as a tool row. Whole snapshots only (no `merge`, no `key`) |
+| none (Codex desktop's in-app browser) | `browser/`, `app/browser.rs`, `ui/browser_pane.rs` | BenCode's own. A WKWebView over a file-pane tab; picked elements and screenshots go to the composer; agents drive it through the `bencode-browser` MCP server while a browser tab is open |
 | `src-tauri/src/` (`checkpoint.rs`, `reminders.rs`, `fs.rs`, …) | `git/checkpoint.rs`, `db/`, `ui/file_tree/fs.rs` | In-process calls, no IPC |
 
 Open gaps are tracked in `docs/migration/PARITY-BACKLOG.md`.
@@ -471,6 +477,22 @@ div()
 - `AgentEvent` is the whole contract with the UI: `SessionStarted`, `TextDelta`,
   `ThinkingDelta`, `ToolCallStart` / `ToolCallFinish`, `PermissionRequest`,
   `Tasks`, `Usage`, `TurnMetrics`, `UsageLimited`, `Compacted`, `Done`, `Error`.
+
+### In-app browser (`src/browser/`)
+
+- A page is a native view above everything GPUI draws; GPUI's clipping
+  does not reach it. The pane places it on each frame it is drawn
+  (`ui/browser_pane.rs`); `BenCodeApp::render` hides every page not drawn,
+  and the drawn one while a dialog in its `dialogs` list is open. A new
+  full-window dialog goes in that list.
+- Agents reach it through `bencode --browser-mcp <socket>` (`mcp.rs`), which
+  relays each tool call over the app's socket (`bridge.rs`, one per process
+  in the temporary folder); the app answers on the UI thread.
+  `SpawnRequest.browser_mcp` carries the server only while a browser tab is
+  open, so the tools cost no tokens otherwise. The tools act on the tab the
+  user last showed.
+- Scripts run through `scripts.rs`, each starting with `PRELUDE` and
+  evaluating to a JSON string (`page::decode_result`).
 
 ### Terminal host (`src/pty_host/`)
 

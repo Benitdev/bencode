@@ -22,6 +22,7 @@ pub fn spawn(req: &SpawnRequest) -> Result<(HarnessProcessHandle, EventRx)> {
         permission_responder: None,
         can_steer: false,
         account: None,
+        env: Vec::new(),
     };
     process::spawn(spec, AntigravityParser)
 }

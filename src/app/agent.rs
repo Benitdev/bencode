@@ -864,6 +864,9 @@ impl BenCodeApp {
                 attachments: request.attachments.clone(),
                 plan: request.plan,
                 compact: request.purpose == RunPurpose::Compact,
+                browser_mcp: (request.purpose == RunPurpose::Turn)
+                    .then(|| self.browser_mcp_launch())
+                    .flatten(),
                 ..spawn
             });
         // The baseline is queued before the agent can edit anything.
@@ -1262,6 +1265,7 @@ fn spawn_request(
         compact: false,
         settings: catalog::resolved_settings(&session.model, session.model_settings.as_ref()),
         account: AccountProfile::resolve(&session.harness, session.provider_account_id.as_deref()),
+        browser_mcp: None,
     })
 }
 

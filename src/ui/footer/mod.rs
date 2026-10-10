@@ -137,6 +137,7 @@ impl BenCodeApp {
                     .mr(px(6.0))
                     .bg(colors.border),
             )
+            .child(self.render_browser_toggle(cx))
             // MonoCode shows the running jobs in the Terminal button's place.
             .when(!running.is_empty(), |el| {
                 el.child(self.render_running_terminal_chip(running.clone(), cx))
@@ -180,5 +181,37 @@ impl BenCodeApp {
                         .child("Terminal"),
                 )
             })
+    }
+
+    /// BenCode's own: shows the in-app browser (a new tab when none is open),
+    /// lit while a browser tab is the pane's active one.
+    fn render_browser_toggle(&self, cx: &Context<Self>) -> impl IntoElement {
+        let colors = &cx.theme().colors;
+        let fg = colors.fg;
+        let shown = self.active_browser_id().is_some();
+        let tint = if shown {
+            colors.accent
+        } else {
+            fg.opacity(0.4)
+        };
+        div()
+            .id("footer-browser-toggle")
+            .flex()
+            .flex_none()
+            .items_center()
+            .gap(px(6.0))
+            .h(px(20.0))
+            .px(px(6.0))
+            .rounded(px(4.0))
+            .cursor_pointer()
+            .text_color(tint)
+            .hover(move |s| {
+                let s = s.bg(fg.opacity(0.10));
+                if shown { s } else { s.text_color(fg) }
+            })
+            .on_click(cx.listener(|this, _, window, cx| this.show_browser(window, cx)))
+            .tooltip(Tooltip::text("Browser (⌘⇧O opens a new tab)"))
+            .child(Icon::new(IconName::Globe).size(IconSize::Sm).color(tint))
+            .child("Browser")
     }
 }

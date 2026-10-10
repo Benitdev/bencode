@@ -22,8 +22,24 @@ pub fn spawn(req: &SpawnRequest) -> Result<(HarnessProcessHandle, EventRx)> {
         permission_responder: None,
         can_steer: false,
         account: None,
+        env: inline_config(req).into_iter().collect(),
     };
     process::spawn(spec, OpenCodeParser::default())
+}
+
+/// The in-app browser's MCP server as OpenCode's inline config, which it
+/// merges over the user's own.
+fn inline_config(req: &SpawnRequest) -> Option<(String, String)> {
+    let launch = req.browser_mcp.as_ref()?;
+    let command: Vec<&str> = std::iter::once(launch.command.as_str())
+        .chain(launch.args.iter().map(String::as_str))
+        .collect();
+    let config = serde_json::json!({
+        "mcp": {
+            crate::browser::MCP_SERVER_NAME: { "type": "local", "command": command, "enabled": true },
+        },
+    });
+    Some(("OPENCODE_CONFIG_CONTENT".into(), config.to_string()))
 }
 
 fn build_args(req: &SpawnRequest) -> Vec<String> {
@@ -152,6 +168,37 @@ fn on_tool_use(part: &Value, events: &mut Vec<AgentEvent>) {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn an_open_browser_tab_goes_in_the_inline_config() {
+        let mut req = SpawnRequest {
+            harness: crate::harness::HarnessKind::OpenCode,
+            cwd: "/tmp".into(),
+            prompt: "go".into(),
+            model: None,
+            permission: crate::harness::PermissionPolicy::Ask,
+            resume_id: None,
+            disable_hooks: false,
+            attachments: Vec::new(),
+            plan: false,
+            compact: false,
+            settings: Default::default(),
+            account: None,
+            browser_mcp: None,
+        };
+        assert!(inline_config(&req).is_none());
+        req.browser_mcp = Some(crate::browser::McpLaunch {
+            command: "/bin/bencode".into(),
+            args: vec!["--browser-mcp".into(), "/tmp/b.sock".into()],
+        });
+        let (key, value) = inline_config(&req).unwrap();
+        assert_eq!(key, "OPENCODE_CONFIG_CONTENT");
+        let config: serde_json::Value = serde_json::from_str(&value).unwrap();
+        assert_eq!(
+            config["mcp"]["bencode-browser"],
+            json!({ "type": "local", "command": ["/bin/bencode", "--browser-mcp", "/tmp/b.sock"], "enabled": true })
+        );
+    }
 
     #[test]
     fn parses_run_json_events() {

@@ -38,6 +38,15 @@
 	<true/>
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright © 2026 Benitdev. MIT License.</string>
+	<!-- The in-app browser opens dev servers over plain http: by name
+	     (app.localhost, a .test host) and on the local network. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoadsInWebContent</key>
+		<true/>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>A command run from BenCode wants to control another app.</string>
 	<key>NSCameraUsageDescription</key>

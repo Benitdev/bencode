@@ -124,6 +124,9 @@ pub struct SpawnRequest {
     pub settings: std::collections::BTreeMap<String, String>,
     /// The thread's account profile; None runs under the default one.
     pub account: Option<accounts::AccountProfile>,
+    /// The in-app browser's MCP server, offered to the agent while a
+    /// browser tab is open (`app/browser.rs`).
+    pub browser_mcp: Option<crate::browser::McpLaunch>,
 }
 
 /// Starts one agent turn. Non-blocking apart from a fork/exec; safe to call
@@ -221,6 +224,7 @@ mod tests {
             compact: false,
             settings: Default::default(),
             account: None,
+            browser_mcp: None,
         };
         assert!(spawn(&req).is_err());
     }

@@ -38,6 +38,10 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 # The footer's CPU and memory readout (getrusage, proc_pid_rusage)
 libc = "0.2"
 
+# The in-app browser's WKWebView (browser/page.rs): the version Ely already
+# builds for its WebView; `devtools` turns on Web Inspector.
+wry = { version = "0.57", default-features = false, features = ["devtools"] }
+
 # Checks an update's signature against the release key (updater.rs); what
 # tauri-plugin-updater uses for MonoCode, with no dependencies of its own.
 minisign-verify = "0.2"

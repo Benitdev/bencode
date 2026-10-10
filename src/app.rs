@@ -5,6 +5,7 @@ pub mod alerts;
 mod automation_runs;
 pub mod automations;
 pub mod backlog;
+pub mod browser;
 pub mod chat_background;
 pub mod commands;
 mod composer_input;
@@ -53,7 +54,7 @@ use ely_gpui_component::forms::{InputEvent, TextInput};
 use ely_gpui_component::primitives::FocusScope;
 use ely_gpui_component::theme::ActiveTheme;
 use gpui::{
-    AppContext, Context, Entity, Focusable, IntoElement, ParentElement, Render, Styled,
+    AnyElement, AppContext, Context, Entity, Focusable, IntoElement, ParentElement, Render, Styled,
     Subscription, Window, div, prelude::*,
 };
 
@@ -138,6 +139,8 @@ pub struct BenCodeApp {
     pub file_pane_focused: bool,
     /// The chat's and the file pane's shares of the width.
     pub file_pane_shares: [f32; 2],
+    /// The in-app browser's tabs and the agents' way to them.
+    pub browser: browser::BrowserState,
     /// The sidebar's Sessions tab: filters, picks, inline renames.
     pub sessions_ui: crate::ui::sidebar_sessions::SessionsUi,
     /// The sidebar's width (MonoCode keeps it for the run, not on disk).
@@ -1143,6 +1146,7 @@ impl BenCodeApp {
         })
         .detach();
 
+        let browser = browser::BrowserState::new(window, cx);
         let mut app = Self {
             sessions,
             selected_session_id,
@@ -1156,6 +1160,7 @@ impl BenCodeApp {
             diff_docs: HashMap::new(),
             file_pane_focused: false,
             file_pane_shares: [1.0, 1.0],
+            browser,
             sessions_ui: Default::default(),
             sidebar_menu: None,
             sidebar_width: crate::ui::sidebar::SIDEBAR_MIN_WIDTH,
@@ -1471,6 +1476,13 @@ impl BenCodeApp {
     }
 }
 
+fn any_elements(items: impl IntoIterator<Item = impl IntoElement>) -> Vec<AnyElement> {
+    items
+        .into_iter()
+        .map(IntoElement::into_any_element)
+        .collect()
+}
+
 impl Render for BenCodeApp {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         // How often the whole app re-renders, for perf work: run with
@@ -1498,6 +1510,8 @@ impl Render for BenCodeApp {
             self.open_file_in_editor(&path, window, cx);
         }
         self.sync_mention_marks(window, cx);
+        // The browser tab the file pane draws shows; the others hide below.
+        self.browser.drawn.set(None);
         // The runner layer reads what this layout measures.
         self.runner_geometry.clear();
         // A footer that is not drawn leaves no readout behind.
@@ -1515,6 +1529,34 @@ impl Render for BenCodeApp {
         let workspace_visible = surface.is_none();
         let compact_rail = self.compact_rail_active();
         let title_bar_above = self.compact_title_bar();
+        // A browser page is a native view above everything GPUI draws: it
+        // hides while one of these dialogs is open (`app/browser.rs`).
+        let dialogs: Vec<AnyElement> = [
+            any_elements(self.render_link_dialog(cx)),
+            any_elements(self.render_session_dialog(cx)),
+            any_elements(self.render_worktree_deletion(cx)),
+            any_elements(self.render_account_removal(cx)),
+            any_elements(self.render_agy_account_removal(cx)),
+            any_elements(self.render_backlog_disconnect(cx)),
+            any_elements(self.render_worktree_creation(cx)),
+            any_elements(self.render_quick_open(cx)),
+            any_elements(self.render_lightbox(cx)),
+            any_elements(self.render_git_confirm(cx)),
+            any_elements(self.render_git_error(cx)),
+            any_elements(self.render_session_undo_confirm(cx)),
+            any_elements(self.render_branch_switch_confirm(cx)),
+            any_elements(self.render_branch_create_dialog(cx)),
+            any_elements(self.render_pr_action_confirm(cx)),
+            any_elements(self.render_file_tree_dialog(cx)),
+            any_elements(self.render_terminal_close_confirm(cx)),
+            any_elements(self.render_whats_new(cx)),
+            any_elements(self.render_resume_interrupted(cx)),
+            any_elements(self.render_quit_confirm(cx)),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+        self.browser.obscured.set(!dialogs.is_empty());
 
         // Full size explicitly: the app is laid out inside `WindowRoot`'s
         // cached slot, not as the window's root.
@@ -1628,28 +1670,10 @@ impl Render for BenCodeApp {
                     .children(self.render_tree_menu(cx))
                     .children(self.render_terminal_menu(cx))
                     .children(self.render_git_menu(cx))
-                    .children(self.render_link_dialog(cx))
                     .children(self.render_corner_notices(cx))
-                    .children(self.render_session_dialog(cx))
-                    .children(self.render_worktree_deletion(cx))
-                    .children(self.render_account_removal(cx))
-                    .children(self.render_agy_account_removal(cx))
-                    .children(self.render_backlog_disconnect(cx))
-                    .children(self.render_worktree_creation(cx))
-                    .children(self.render_quick_open(cx))
-                    .children(self.render_lightbox(cx))
-                    .children(self.render_git_confirm(cx))
-                    .children(self.render_git_error(cx))
-                    .children(self.render_session_undo_confirm(cx))
-                    .children(self.render_branch_switch_confirm(cx))
-                    .children(self.render_branch_create_dialog(cx))
-                    .children(self.render_pr_action_confirm(cx))
-                    .children(self.render_file_tree_dialog(cx))
-                    .children(self.render_terminal_close_confirm(cx))
-                    .children(self.render_whats_new(cx))
-                    .children(self.render_resume_interrupted(cx))
-                    .children(self.render_quit_confirm(cx)),
+                    .children(dialogs),
             );
+        self.browser.hide_undrawn();
         // The commands sit above the focus scope, not inside it: while the
         // scope's own handle holds focus (nothing else has it), actions
         // dispatch from the scope upward and never reach a child's handlers,

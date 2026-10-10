@@ -503,6 +503,11 @@ fn fade_tail(laid: &mut Laid, strength: f32) {
 /// Opens what a click on a reply's link or file chip names.
 fn open_target(target: &Target, open: &Option<OnOpenFile>, window: &mut Window, cx: &mut App) {
     match target {
+        // A dev server on this machine opens beside the chat.
+        Target::Url(url) if crate::browser::is_local_url(url) => window.dispatch_action(
+            Box::new(crate::app::commands::OpenInBrowser(url.clone())),
+            cx,
+        ),
         Target::Url(url) if url.starts_with("http://") || url.starts_with("https://") => {
             cx.open_url(url)
         }

@@ -1,5 +1,6 @@
 mod app;
 mod backlog;
+mod browser;
 mod db;
 pub mod external_editor;
 mod git;
@@ -35,6 +36,10 @@ use monocode_import::ImportOutcome;
 fn main() {
     // The terminal host and the dock's attach clients are this binary too.
     if let Some(code) = pty_host::run_from_args() {
+        std::process::exit(code);
+    }
+    // So is the MCP server that gives agents the in-app browser.
+    if let Some(code) = browser::run_from_args() {
         std::process::exit(code);
     }
     logging::init();

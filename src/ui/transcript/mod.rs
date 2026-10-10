@@ -113,6 +113,14 @@ pub struct TranscriptView {
     anchor_rows: Option<Range<usize>>,
     /// The spacer's height.
     gap: Pixels,
+    /// Whether the spacer fills the viewport this frame. `gap` comes from
+    /// the last paint, so a row that shrinks (a phase or message closed)
+    /// would leave the rows short of the viewport, and the list would pull
+    /// the turn above into view for a frame. While `hold` lays the list out
+    /// from the prompt, the extra room only overflows below the fold.
+    slack: bool,
+    /// `TranscriptUiState::reflow` as of the last sync.
+    reflow: u64,
     /// Whether the scroll top is held on the prompt. The spacer is sized
     /// from the last paint, so while the turn is shorter than the viewport
     /// the list is laid out from the prompt down: a stale spacer then only
@@ -150,6 +158,8 @@ impl Default for TranscriptView {
             anchored: false,
             anchor_rows: None,
             gap: px(0.0),
+            slack: false,
+            reflow: 0,
             hold: false,
             heights: RowHeights::default(),
             rise: None,
@@ -223,6 +233,14 @@ impl TranscriptView {
         }
     }
 
+    fn spacer_height(&self) -> Pixels {
+        if self.slack {
+            self.gap.max(self.last_viewport_height.get())
+        } else {
+            self.gap
+        }
+    }
+
     /// How far below its place row `ix` is drawn and how opaque, while the
     /// sent prompt rises.
     fn rise_motion(&self, ix: usize) -> Option<(Pixels, f32)> {
@@ -258,12 +276,12 @@ impl TranscriptView {
     /// spacer should be; it goes after the list so the rows are measured.
     pub fn anchor_check(&self) -> Option<impl IntoElement + use<>> {
         let probe = self.anchor_probe()?;
-        let (gap, hold) = (self.gap, self.hold);
+        let (gap, hold, slack) = (self.gap, self.hold, self.slack);
         Some(
             canvas(
                 move |_, window, _| {
                     let next = probe.gap();
-                    if (next - gap).abs() > px(0.5) || (hold && next == px(0.0)) {
+                    if slack || (next - gap).abs() > px(0.5) || (hold && next == px(0.0)) {
                         window.request_animation_frame();
                     }
                 },
@@ -294,6 +312,10 @@ pub struct TranscriptUiState {
     pub phase_open: HashMap<String, bool>,
     pub open_tool_errors: HashSet<String>,
     pub expanded_messages: HashSet<String>,
+    /// Bumped by a toggle that changes a row's height but not the rows
+    /// (phases, thoughts, tool errors, long messages), so the transcript
+    /// can make room for the row to shrink (`TranscriptView::slack`).
+    pub reflow: u64,
     /// Copy buttons showing their check.
     pub copied: HashSet<String>,
 }
@@ -358,6 +380,7 @@ impl BenCodeApp {
             .map_or(0, |review| review.stamp);
         let session = self.sessions.iter().find(|s| s.id == session_id);
         let open = &self.transcript_ui.open_folds;
+        let reflow = self.transcript_ui.reflow;
         let trailer = waiting || review;
         let key = session.map(|s| turns::LayoutKey::new(&s.blocks, running, trailer, open));
         let view = self.transcripts.entry(session_id.to_string()).or_default();
@@ -399,6 +422,9 @@ impl BenCodeApp {
             rows.push(Row::Spacer);
         }
         let count = rows.len();
+        // What may make a row of the stretched turn shorter this frame.
+        let reshaped = relayout || view.review_stamp != review_stamp || view.reflow != reflow;
+        view.reflow = reflow;
         if fresh {
             view.list.reset(count);
             view.list.set_follow_mode(FollowMode::Tail);
@@ -432,6 +458,13 @@ impl BenCodeApp {
         view.turns = turns;
         view.rows = rows;
         view.anchor_turn(introduce);
+        let slack = reshaped && view.hold;
+        if slack != view.slack {
+            view.slack = slack;
+            if let Some(turn) = &view.anchor_rows {
+                view.list.remeasure_items(turn.end..turn.end + 1);
+            }
+        }
         if introduce && view.anchor_rows.is_some() {
             view.rise = Some(Instant::now());
         } else if view
@@ -479,7 +512,7 @@ impl BenCodeApp {
             }
             Row::Footer { turn } => self.render_turn_footer(session, turn_of(*turn), cx),
             Row::Trailer => self.render_trailer(session, cx),
-            Row::Spacer => div().h(view.gap).into_any_element(),
+            Row::Spacer => div().h(view.spacer_height()).into_any_element(),
         };
         // The stretched turn's rows report their height for the spacer.
         let measure = view

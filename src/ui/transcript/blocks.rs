@@ -402,6 +402,7 @@ impl BenCodeApp {
                 if !set.remove(&key) {
                     set.insert(key.clone());
                 }
+                this.transcript_ui.reflow += 1;
                 cx.notify();
             }))
             .child(if expanded { "Show less" } else { "Show more" })

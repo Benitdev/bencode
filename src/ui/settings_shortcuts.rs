@@ -159,6 +159,7 @@ fn groups() -> Vec<Group<Entry>> {
                 ),
                 entry("Toggle Terminal", I::PanelBottom, cmd::ToggleTerminal),
                 entry("New Terminal", I::Terminal, cmd::NewTerminal),
+                entry("Open Browser", I::Globe, cmd::OpenBrowser),
                 entry("Zoom In", I::ZoomIn, cmd::ZoomIn),
                 entry("Zoom Out", I::ZoomOut, cmd::ZoomOut),
                 entry("Reset Zoom", I::RotateCcw, cmd::ZoomReset),

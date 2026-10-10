@@ -47,6 +47,7 @@ pub fn spawn(req: &SpawnRequest) -> Result<(HarnessProcessHandle, EventRx)> {
         // A compaction is not a turn to add to.
         can_steer: !req.compact,
         account: None,
+        env: Vec::new(),
     };
     process::spawn(spec, parser)
 }
@@ -97,9 +98,28 @@ pub fn initialize_params() -> Value {
     })
 }
 
+/// The MCP servers a session gets, in ACP's stdio shape: the in-app
+/// browser's while a browser tab is open, else none.
+fn mcp_servers(browser: Option<&crate::browser::McpLaunch>) -> Value {
+    match browser {
+        Some(launch) => json!([{
+            "name": crate::browser::MCP_SERVER_NAME,
+            "command": launch.command,
+            "args": launch.args,
+            "env": [],
+        }]),
+        None => json!([]),
+    }
+}
+
 /// MonoCode `grokSessionNewParams`.
-fn session_new_params(cwd: &str, permission: PermissionPolicy, plan: bool) -> Value {
-    let mut params = json!({ "cwd": cwd, "mcpServers": [] });
+fn session_new_params(
+    cwd: &str,
+    permission: PermissionPolicy,
+    plan: bool,
+    mcp_servers: &Value,
+) -> Value {
+    let mut params = json!({ "cwd": cwd, "mcpServers": mcp_servers });
     let meta = match permission {
         PermissionPolicy::AutoApprove if !plan => Some(json!({ "yoloMode": true })),
         PermissionPolicy::Auto => Some(json!({ "autoMode": true })),
@@ -168,6 +188,8 @@ enum Step {
 
 pub struct GrokParser {
     cwd: String,
+    /// `mcp_servers(..)`, for whichever way the session is bound.
+    mcp_servers: Value,
     prompt: Vec<Value>,
     resume_id: Option<String>,
     model: Option<String>,
@@ -207,6 +229,7 @@ impl GrokParser {
     fn new(req: &SpawnRequest) -> Self {
         Self {
             cwd: req.cwd.clone(),
+            mcp_servers: mcp_servers(req.browser_mcp.as_ref()),
             prompt: crate::harness::attachments::acp_prompt_blocks(&req.prompt, &req.attachments),
             resume_id: req.resume_id.clone().filter(|id| !id.trim().is_empty()),
             model: req.model.clone(),
@@ -289,7 +312,7 @@ impl GrokParser {
                 self.muted = true;
                 self.request(
                     "session/load",
-                    json!({ "sessionId": id, "cwd": self.cwd, "mcpServers": [] }),
+                    json!({ "sessionId": id, "cwd": self.cwd, "mcpServers": self.mcp_servers }),
                     Step::Load,
                 );
             }
@@ -340,14 +363,23 @@ impl GrokParser {
 
     fn open_session(&mut self, events: &mut Vec<AgentEvent>) {
         match self.resume_id.clone() {
-            Some(id) => self.request("session/resume", json!({ "sessionId": id }), Step::Resume),
+            Some(id) => {
+                let mut params = json!({ "sessionId": id });
+                // Only when there are servers: a resume without them is the
+                // shape Grok has always been sent.
+                if self.mcp_servers.as_array().is_some_and(|s| !s.is_empty()) {
+                    params["cwd"] = json!(self.cwd);
+                    params["mcpServers"] = self.mcp_servers.clone();
+                }
+                self.request("session/resume", params, Step::Resume)
+            }
             None if self.compact => fail(NOTHING_TO_COMPACT.into(), events),
             None => self.new_session(),
         }
     }
 
     fn new_session(&mut self) {
-        let params = session_new_params(&self.cwd, self.permission, self.plan);
+        let params = session_new_params(&self.cwd, self.permission, self.plan, &self.mcp_servers);
         self.request("session/new", params, Step::New);
     }
 
@@ -1433,6 +1465,7 @@ mod tests {
             compact: false,
             settings: [("effort".to_string(), "high".to_string())].into(),
             account: None,
+            browser_mcp: None,
         }
     }
 
@@ -1523,22 +1556,45 @@ mod tests {
     #[test]
     fn session_meta_follows_the_access_mode() {
         assert_eq!(
-            session_new_params("/repo", PermissionPolicy::Ask, false),
+            session_new_params("/repo", PermissionPolicy::Ask, false, &json!([])),
             json!({ "cwd": "/repo", "mcpServers": [] })
         );
         assert_eq!(
-            session_new_params("/repo", PermissionPolicy::AutoApprove, false)["_meta"],
+            session_new_params("/repo", PermissionPolicy::AutoApprove, false, &json!([]))["_meta"],
             json!({ "yoloMode": true })
         );
         assert_eq!(
-            session_new_params("/repo", PermissionPolicy::Auto, false)["_meta"],
+            session_new_params("/repo", PermissionPolicy::Auto, false, &json!([]))["_meta"],
             json!({ "autoMode": true })
         );
         assert!(
-            session_new_params("/repo", PermissionPolicy::AutoApprove, true)
+            session_new_params("/repo", PermissionPolicy::AutoApprove, true, &json!([]))
                 .get("_meta")
                 .is_none()
         );
+    }
+
+    #[test]
+    fn an_open_browser_tab_gives_the_session_its_tools() {
+        let launch = crate::browser::McpLaunch {
+            command: "/Applications/BenCode.app/Contents/MacOS/bencode".into(),
+            args: vec!["--browser-mcp".into(), "/tmp/b.sock".into()],
+        };
+        let servers = mcp_servers(Some(&launch));
+        assert_eq!(
+            servers,
+            json!([{
+                "name": "bencode-browser",
+                "command": "/Applications/BenCode.app/Contents/MacOS/bencode",
+                "args": ["--browser-mcp", "/tmp/b.sock"],
+                "env": [],
+            }])
+        );
+        assert_eq!(
+            session_new_params("/repo", PermissionPolicy::Ask, false, &servers)["mcpServers"],
+            servers
+        );
+        assert_eq!(mcp_servers(None), json!([]));
     }
 
     #[test]
