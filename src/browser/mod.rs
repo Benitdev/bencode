@@ -8,6 +8,8 @@
 //! open or its tab is not drawn (`app/browser.rs`).
 
 pub mod bridge;
+#[cfg(target_os = "macos")]
+mod container;
 pub mod mcp;
 pub mod page;
 pub mod scripts;

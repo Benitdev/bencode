@@ -7,7 +7,7 @@ use ely_gpui_component::primitives::{Icon, IconName};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, Context, FontWeight, InteractiveElement, IntoElement, MouseButton, ParentElement,
-    SharedString, Styled, deferred, div, prelude::*, relative, rgb,
+    SharedString, Styled, Window, deferred, div, prelude::*, relative, rgb,
 };
 
 use crate::app::BenCodeApp;
@@ -29,18 +29,26 @@ const RED_300: u32 = 0xfca5a5;
 impl BenCodeApp {
     /// The top-right notices, stacked as MonoCode stacks them: due reminders,
     /// then harness updates.
-    pub fn render_corner_notices(&self, cx: &Context<Self>) -> Option<AnyElement> {
+    pub fn render_corner_notices(&self, window: &Window, cx: &Context<Self>) -> Option<AnyElement> {
         let reminders = self.render_reminder_notices(cx);
         let updates = self.render_harness_update_notice(cx);
         if reminders.is_none() && updates.is_none() {
             return None;
         }
+        // A browser page is a native view above everything drawn here: the
+        // notices keep to its left (where it was put last frame).
+        let page_width = self
+            .browser
+            .drawn_page_left()
+            .map_or(gpui::Pixels::ZERO, |left| {
+                window.viewport_size().width - left
+            });
         Some(
             deferred(
                 div()
                     .absolute()
                     .top(px(INSET))
-                    .right(px(INSET))
+                    .right(px(INSET) + page_width)
                     .flex()
                     .flex_col()
                     .items_end()

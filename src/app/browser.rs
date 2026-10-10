@@ -19,8 +19,7 @@ use tokio::sync::{mpsc, oneshot};
 
 use super::BenCodeApp;
 use super::file_pane::PaneTab;
-use crate::browser::bridge::{self, ToolCall, ToolReply};
-use crate::browser::bridge::ToolRequest;
+use crate::browser::bridge::{self, ToolCall, ToolReply, ToolRequest};
 use crate::browser::page::{NO_RESULT, Page, PageEvent, PageEvents};
 use crate::browser::{McpLaunch, agent_may_open, is_web_url, normalize_url, scripts};
 
@@ -32,6 +31,13 @@ const SCRIPT_TIMEOUT: Duration = Duration::from_secs(15);
 const PROMISE_TIMEOUT: Duration = Duration::from_secs(30);
 /// What a click or a key gets to settle before its tool answers.
 const SETTLE: Duration = Duration::from_millis(350);
+/// The page zooms, in percent (Chrome's steps).
+const ZOOM_STEPS: [u16; 17] = [
+    25, 33, 50, 67, 75, 80, 90, 100, 110, 125, 150, 175, 200, 250, 300, 400, 500,
+];
+pub const ZOOM_DEFAULT: u16 = 100;
+/// How often an open inspector is asked who has the keyboard.
+const KEYS_POLL: Duration = Duration::from_millis(250);
 /// How often a load is asked whether it gave up (`watch_load`).
 const LOAD_POLL: Duration = Duration::from_millis(250);
 /// The widest screenshot an agent gets; wider ones are scaled down.
@@ -49,12 +55,16 @@ pub struct BrowserTab {
     /// The last load gave up (nothing answered at `url`); the pane says so
     /// in the page's place.
     pub load_failed: bool,
+    /// The page's zoom, in percent.
+    pub zoom: u16,
     /// Answered when a load that starts after them finishes.
     load_waiters: Vec<LoadWaiter>,
     /// Counts the loads that finished, and the watches started: a watch
     /// reads both to tell its load's end from another's.
     loads_finished: u64,
     load_watch: u64,
+    /// Counts the inspector's openings, so one `watch_inspector_keys` runs.
+    inspector_watch: u64,
 }
 
 impl BrowserTab {
@@ -68,9 +78,11 @@ impl BrowserTab {
             can_forward: false,
             error,
             load_failed: false,
+            zoom: ZOOM_DEFAULT,
             load_waiters: Vec::new(),
             loads_finished: 0,
             load_watch: 0,
+            inspector_watch: 0,
         }
     }
 
@@ -189,6 +201,13 @@ impl BrowserState {
         }
     }
 
+    /// The left edge (window coordinates) of the page drawn this frame,
+    /// from where it was last put.
+    pub fn drawn_page_left(&self) -> Option<gpui::Pixels> {
+        let page = self.tabs.get(&self.drawn.get()?)?.page.as_ref()?;
+        Some(page.bounds()?.origin.x)
+    }
+
     /// Hides every page but the one drawn this frame.
     pub fn hide_undrawn(&self) {
         let drawn = self.drawn.get();
@@ -229,6 +248,16 @@ pub fn crop_rect(
         (right - left) as u32,
         (bottom - top) as u32,
     ))
+}
+
+/// A page zoom a step from `zoom`: in (`true`) or out, stopping at the ends.
+pub fn stepped_zoom(zoom: u16, zoom_in: bool) -> u16 {
+    let next = if zoom_in {
+        ZOOM_STEPS.iter().find(|step| **step > zoom)
+    } else {
+        ZOOM_STEPS.iter().rev().find(|step| **step < zoom)
+    };
+    next.copied().unwrap_or(zoom)
 }
 
 /// Whether two addresses are one page's: WebKit writes `http://a.dev` as
@@ -561,10 +590,96 @@ impl BenCodeApp {
         cx.notify();
     }
 
-    pub(crate) fn browser_devtools(&mut self, id: u64) {
-        if let Some(page) = self.browser_page(id) {
-            page.open_devtools();
+    /// Sets tab `id`'s page zoom, in percent.
+    pub(crate) fn set_browser_zoom(&mut self, id: u64, zoom: u16, cx: &mut Context<Self>) {
+        let Some(tab) = self.browser.tabs.get_mut(&id) else {
+            return;
+        };
+        if tab.zoom == zoom {
+            return;
         }
+        tab.zoom = zoom;
+        if let Some(page) = &tab.page {
+            page.zoom(f64::from(zoom) / 100.0);
+        }
+        cx.notify();
+    }
+
+    /// One zoom step in or out for tab `id`.
+    pub(crate) fn step_browser_zoom(&mut self, id: u64, zoom_in: bool, cx: &mut Context<Self>) {
+        if let Some(zoom) = self.browser.tabs.get(&id).map(|tab| tab.zoom) {
+            self.set_browser_zoom(id, stepped_zoom(zoom, zoom_in), cx);
+        }
+    }
+
+    /// The browser tab ⌘+ ⌘− ⌘0 zoom instead of the interface: the shown
+    /// one, while its page has the keyboard.
+    pub(crate) fn browser_with_keys(&self) -> Option<u64> {
+        let id = self.active_browser_id()?;
+        let page = self.browser.tabs.get(&id)?.page.as_ref()?;
+        (page.is_shown() && page.has_keys()).then_some(id)
+    }
+
+    /// The bug button: Web Inspector, opened or closed.
+    pub(crate) fn browser_devtools(
+        &mut self,
+        id: u64,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(page) = self.browser_page(id) else {
+            return;
+        };
+        let opening = !page.devtools_open();
+        page.toggle_devtools();
+        if opening {
+            self.watch_inspector_keys(id, window, cx);
+        }
+    }
+
+    /// A docked inspector is a native view like the page, with the keyboard
+    /// when pressed in, but it tells the app nothing (`PageEvent::Focused`
+    /// is the page's). While it is open, an input GPUI still holds as
+    /// focused, which would take the inspector's ⌘V, is let go of.
+    fn watch_inspector_keys(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
+        /// The polls an inspector gets to show up: WebKit opens it a
+        /// moment after it is asked to.
+        const PATIENCE: u32 = 12;
+        let Some(tab) = self.browser.tabs.get_mut(&id) else {
+            return;
+        };
+        tab.inspector_watch += 1;
+        let watch = tab.inspector_watch;
+        cx.spawn_in(window, async move |this, cx| {
+            let (mut seen, mut polls) = (false, 0);
+            loop {
+                cx.background_executor().timer(KEYS_POLL).await;
+                polls += 1;
+                let open = this.update_in(cx, |this, window, cx| {
+                    let Some(tab) = this.browser.tabs.get(&id) else {
+                        return false;
+                    };
+                    let Some(page) = tab.page.as_ref() else {
+                        return false;
+                    };
+                    if tab.inspector_watch != watch {
+                        return false;
+                    }
+                    if !page.devtools_open() {
+                        return !seen && polls < PATIENCE;
+                    }
+                    seen = true;
+                    if page.box_has_keys() && !this.focus_handle.is_focused(window) {
+                        window.focus(&this.focus_handle, cx);
+                    }
+                    true
+                });
+                if !matches!(open, Ok(true)) {
+                    break;
+                }
+            }
+        })
+        .detach();
     }
 
     /// The pick button: outline elements under the pointer until one is
@@ -688,10 +803,11 @@ impl BenCodeApp {
                 }
             }
             // An input GPUI still holds as focused would take the page's
-            // ⌘V and ⌘A.
+            // ⌘V and ⌘A: focus goes to the app's root, where the commands
+            // still answer.
             PageEvent::Focused => {
-                if window.focused(cx).is_some() {
-                    window.blur(cx);
+                if !self.focus_handle.is_focused(window) {
+                    window.focus(&self.focus_handle, cx);
                 }
             }
             PageEvent::Message(message) => {
@@ -714,6 +830,11 @@ impl BenCodeApp {
                             .and_then(|page| page.url())
                             .unwrap_or_default();
                         let context = element_context(&field("selector"), &url, &field("html"));
+                        // The click gave the page the keys; what comes next
+                        // is typed in the composer.
+                        if let Some(page) = self.browser_page(id) {
+                            page.release_keys();
+                        }
                         self.snapshot_to_chat(id, Some((message, context)), cx);
                     }
                     Some("pickCancelled") => {}
@@ -738,6 +859,8 @@ impl BenCodeApp {
             return;
         }
         (tab.can_back, tab.can_forward) = (can_back, can_forward);
+        // The view is somewhere: not at the address that did not load.
+        tab.load_failed &= tab.url == url;
         tab.url = url.clone();
         // What the user is typing stays.
         let editing = self
@@ -887,7 +1010,8 @@ impl BenCodeApp {
             "browser_history" => {
                 let action = text("action");
                 if !matches!(action.as_deref(), Some("back" | "forward" | "reload")) {
-                    return call.answer(ToolReply::error("action must be back, forward or reload."));
+                    return call
+                        .answer(ToolReply::error("action must be back, forward or reload."));
                 }
                 let loaded = self.wait_for_load(id);
                 match action.as_deref() {
@@ -1261,6 +1385,17 @@ mod tests {
             crop_rect((1000, 800), 0.0, (0.0, 0.0, 10.0, 10.0), 0.0),
             None
         );
+    }
+
+    #[test]
+    fn zoom_steps_through_the_list_and_stops_at_its_ends() {
+        assert_eq!(stepped_zoom(100, true), 110);
+        assert_eq!(stepped_zoom(100, false), 90);
+        assert_eq!(stepped_zoom(500, true), 500);
+        assert_eq!(stepped_zoom(25, false), 25);
+        // From a zoom that is no step, to the nearest one that way.
+        assert_eq!(stepped_zoom(105, true), 110);
+        assert_eq!(stepped_zoom(105, false), 100);
     }
 
     #[test]

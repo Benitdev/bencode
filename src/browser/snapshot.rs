@@ -1,7 +1,7 @@
 //! What wry does not pass on from a WKWebView. A PNG of what it shows
 //! (`takeSnapshotWithConfiguration:`): the page draws in WebKit's own
 //! process, so the view cannot be drawn into a bitmap from here. And
-//! whether it is loading.
+//! whether it is loading, and whether it has the keyboard.
 
 #![allow(unexpected_cfgs)]
 
@@ -30,6 +30,32 @@ pub fn is_loading(view: &wry::WebView) -> bool {
     let webview: Id = &*webview as *const _ as Id;
     let loading: BOOL = unsafe { msg_send![webview, isLoading] };
     loading != NO
+}
+
+/// Whether the view, or a view inside it, is its window's first responder.
+pub fn has_keys(view: &wry::WebView) -> bool {
+    let webview = view.webview();
+    let webview: Id = &*webview as *const _ as Id;
+    unsafe {
+        let window: Id = msg_send![webview, window];
+        if window.is_null() {
+            return false;
+        }
+        let responder: Id = msg_send![window, firstResponder];
+        if responder.is_null() {
+            return false;
+        }
+        if responder == webview {
+            return true;
+        }
+        // A window or a text field's editor is a responder but no view.
+        let is_view: BOOL = msg_send![responder, isKindOfClass: class!(NSView)];
+        if is_view == NO {
+            return false;
+        }
+        let inside: BOOL = msg_send![responder, isDescendantOf: webview];
+        inside != NO
+    }
 }
 
 /// A configuration that keeps the snapshot within `limit`, or nil when it

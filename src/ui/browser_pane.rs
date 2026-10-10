@@ -3,7 +3,7 @@
 //! page is a native view (`browser/page.rs`) placed over this pane's box on
 //! every frame it is drawn; `BenCodeApp::render` hides the rest.
 
-use ely_gpui_component::buttons::{ButtonVariant, IconButton};
+use ely_gpui_component::buttons::{Button, ButtonVariant, IconButton};
 use ely_gpui_component::feedback::EmptyState;
 use ely_gpui_component::primitives::IconName;
 use ely_gpui_component::theme::{ActiveTheme, ControlSize, TextSize};
@@ -13,6 +13,7 @@ use gpui::{
 };
 
 use crate::app::BenCodeApp;
+use crate::app::browser::{ZOOM_DEFAULT, stepped_zoom};
 
 impl BenCodeApp {
     pub(crate) fn render_browser_tab(&self, id: u64, cx: &Context<Self>) -> AnyElement {
@@ -109,6 +110,7 @@ impl BenCodeApp {
         let url = tab.map(|t| t.url.clone()).unwrap_or_default();
         let has_page = tab.is_some_and(|t| t.page.is_some()) && url != "about:blank";
         let picking = self.browser.picking == Some(id);
+        let zoom = tab.map_or(ZOOM_DEFAULT, |t| t.zoom);
         let button = |name: &'static str, icon: IconName, tip: &'static str| {
             IconButton::new((name, id as usize), icon)
                 .size(ControlSize::Sm)
@@ -153,6 +155,30 @@ impl BenCodeApp {
                     .child(self.browser.url_input.clone()),
             )
             .child(
+                button("browser-zoom-out", IconName::ZoomOut, "Zoom out")
+                    .disabled(!has_page || stepped_zoom(zoom, false) == zoom)
+                    .on_click(
+                        cx.listener(move |this, _, _, cx| this.step_browser_zoom(id, false, cx)),
+                    ),
+            )
+            // The zoom itself; a click puts it back.
+            .child(
+                Button::new(("browser-zoom", id as usize), format!("{zoom}%"))
+                    .size(ControlSize::Sm)
+                    .variant(ButtonVariant::Ghost)
+                    .disabled(!has_page || zoom == ZOOM_DEFAULT)
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.set_browser_zoom(id, ZOOM_DEFAULT, cx)
+                    })),
+            )
+            .child(
+                button("browser-zoom-in", IconName::ZoomIn, "Zoom in")
+                    .disabled(!has_page || stepped_zoom(zoom, true) == zoom)
+                    .on_click(
+                        cx.listener(move |this, _, _, cx| this.step_browser_zoom(id, true, cx)),
+                    ),
+            )
+            .child(
                 button(
                     "browser-pick",
                     IconName::Crosshair,
@@ -180,7 +206,9 @@ impl BenCodeApp {
             .child(
                 button("browser-devtools", IconName::Bug, "Web Inspector")
                     .disabled(!has_page)
-                    .on_click(cx.listener(move |this, _, _, _| this.browser_devtools(id))),
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        this.browser_devtools(id, window, cx)
+                    })),
             )
             .child(
                 button(

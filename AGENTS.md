@@ -481,7 +481,10 @@ div()
 ### In-app browser (`src/browser/`)
 
 - A page is a native view above everything GPUI draws; GPUI's clipping
-  does not reach it. The pane places it on each frame it is drawn
+  does not reach it. It sits in a box of its own (`container.rs`), which
+  is what is placed, hidden and asked for the keyboard: WebKit docks Web
+  Inspector against the page's superview, so with the window's view as
+  that the two took the whole window. The pane places it on each frame it is drawn
   (`ui/browser_pane.rs`); `BenCodeApp::render` hides every page not drawn,
   and the drawn one while a dialog in its `dialogs` list is open. A new
   full-window dialog goes in that list.
@@ -493,6 +496,20 @@ div()
   user last showed.
 - Scripts run through `scripts.rs`, each starting with `PRELUDE` and
   evaluating to a JSON string (`page::decode_result`).
+- **What a page posts is not trusted**: any site can call the scripts'
+  message handler. An address comes from the view (`Page::url`), never from
+  a message; `picked` counts only while the user's pick is on; a new window
+  opens only at `http(s)`. A password field's value never goes into
+  `outline`.
+- wry passes on a load that starts and one that finishes, not one that
+  fails: every load BenCode starts is followed by `watch_load`, which asks
+  the view (`isLoading`) and sets the tab's `load_failed`.
+- A page event redraws the app only when it changed the tab
+  (`on_page_event`): a page can send them as fast as it likes.
+- A page with the keyboard is out of reach of GPUI's key bindings: it takes
+  ⌘X ⌘C ⌘V ⌘A from the Edit menu's system selectors (`commands.rs`), and
+  says so (`PageEvent::Focused`) so the app's focus goes to its root.
+  ⌘+ ⌘− ⌘0 zoom that page (`browser_with_keys`), the interface otherwise.
 
 ### Terminal host (`src/pty_host/`)
 

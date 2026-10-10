@@ -1,7 +1,8 @@
-//! One browser tab's native view: a WKWebView through wry, a child of the
-//! window's view (as Ely's `WebView`, which only shows an address; this one
-//! navigates, runs scripts and takes snapshots). What the page does comes
-//! back as `PageEvent`s on the app's channel, tagged with the tab's id.
+//! One browser tab's native view: a WKWebView through wry, in a box of its
+//! own in the window's view (`container.rs`; Ely's `WebView` only shows an
+//! address, this one navigates, runs scripts and takes snapshots). What the
+//! page does comes back as `PageEvent`s on the app's channel, tagged with
+//! the tab's id.
 
 use std::cell::Cell;
 use std::sync::Mutex;
@@ -10,8 +11,7 @@ use anyhow::{Context as _, Result};
 use gpui::{Bounds, Pixels};
 use serde_json::Value;
 use tokio::sync::mpsc::UnboundedSender;
-use wry::dpi::{LogicalPosition, LogicalSize};
-use wry::{NewWindowResponse, PageLoadEvent, Rect, WebViewBuilder};
+use wry::{NewWindowResponse, PageLoadEvent, WebViewBuilder};
 
 use super::scripts;
 
@@ -42,6 +42,10 @@ pub type PageEvents = UnboundedSender<(u64, PageEvent)>;
 
 pub struct Page {
     view: wry::WebView,
+    /// The box the view and a docked inspector share (dropped after the
+    /// view it holds).
+    #[cfg(target_os = "macos")]
+    container: super::container::Container,
     /// What the view was last given, so a redraw changes nothing native
     /// when nothing moved.
     placed: Cell<Option<(Bounds<Pixels>, bool)>>,
@@ -57,9 +61,16 @@ impl Page {
         };
         let (on_load, on_title, on_window, on_message) =
             (send.clone(), send.clone(), send.clone(), send);
+        #[cfg(target_os = "macos")]
+        let container = super::container::Container::new(window)?;
+        #[cfg(target_os = "macos")]
+        let parent = &container;
+        // Elsewhere the view is the window's own child, hidden by itself.
+        #[cfg(not(target_os = "macos"))]
+        let parent = window;
         let view = WebViewBuilder::new()
             .with_url(url)
-            .with_visible(false)
+            .with_visible(cfg!(target_os = "macos"))
             .with_devtools(true)
             .with_back_forward_navigation_gestures(true)
             .with_initialization_script(scripts::PRELUDE)
@@ -83,10 +94,14 @@ impl Page {
                     _ => on_message(PageEvent::Message(message)),
                 }
             })
-            .build_as_child(window)
+            .build_as_child(parent)
             .context("the web view could not be created")?;
+        #[cfg(target_os = "macos")]
+        container.fill(&view);
         Ok(Self {
             view,
+            #[cfg(target_os = "macos")]
+            container,
             placed: Cell::new(None),
         })
     }
@@ -130,6 +145,22 @@ impl Page {
         false
     }
 
+    /// Whether the page has the keyboard (the user pressed in it last).
+    pub fn has_keys(&self) -> bool {
+        #[cfg(target_os = "macos")]
+        return super::snapshot::has_keys(&self.view);
+        #[cfg(not(target_os = "macos"))]
+        false
+    }
+
+    /// Scales the page (text and layout), `1.0` being its own size. The
+    /// view keeps it across loads.
+    pub fn zoom(&self, factor: f64) {
+        if let Err(err) = self.view.zoom(factor) {
+            log::warn!("browser: zoom failed: {err}");
+        }
+    }
+
     pub fn can_go_back(&self) -> bool {
         self.view.can_go_back().unwrap_or(false)
     }
@@ -138,8 +169,18 @@ impl Page {
         self.view.can_go_forward().unwrap_or(false)
     }
 
-    pub fn open_devtools(&self) {
-        self.view.open_devtools();
+    pub fn devtools_open(&self) -> bool {
+        self.view.is_devtools_open()
+    }
+
+    /// Opens Web Inspector (docked under the page when there is room, in
+    /// its own window otherwise), or closes it.
+    pub fn toggle_devtools(&self) {
+        if self.view.is_devtools_open() {
+            self.view.close_devtools();
+        } else {
+            self.view.open_devtools();
+        }
     }
 
     /// Puts the view over `bounds` (window coordinates), or hides it.
@@ -150,26 +191,44 @@ impl Page {
         let shown = self.placed.get().is_some_and(|(_, shown)| shown);
         self.placed.set(Some((bounds, visible)));
         if visible {
-            let rect = Rect {
-                position: LogicalPosition::new(
-                    f32::from(bounds.origin.x),
-                    f32::from(bounds.origin.y),
-                )
-                .into(),
-                size: LogicalSize::new(f32::from(bounds.size.width), f32::from(bounds.size.height))
-                    .into(),
-            };
-            if let Err(err) = self.view.set_bounds(rect) {
-                log::warn!("browser: could not place the page: {err}");
-            }
+            self.set_frame(bounds);
         }
         if visible != shown {
-            if let Err(err) = self.view.set_visible(visible) {
-                log::warn!("browser: could not show or hide the page: {err}");
-            }
+            self.set_shown(visible);
             if !visible {
                 self.release_keys();
             }
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn set_frame(&self, bounds: Bounds<Pixels>) {
+        self.container.set_frame(bounds);
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    fn set_frame(&self, bounds: Bounds<Pixels>) {
+        use wry::dpi::{LogicalPosition, LogicalSize};
+        let rect = wry::Rect {
+            position: LogicalPosition::new(f32::from(bounds.origin.x), f32::from(bounds.origin.y))
+                .into(),
+            size: LogicalSize::new(f32::from(bounds.size.width), f32::from(bounds.size.height))
+                .into(),
+        };
+        if let Err(err) = self.view.set_bounds(rect) {
+            log::warn!("browser: could not place the page: {err}");
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn set_shown(&self, shown: bool) {
+        self.container.set_hidden(!shown);
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    fn set_shown(&self, shown: bool) {
+        if let Err(err) = self.view.set_visible(shown) {
+            log::warn!("browser: could not show or hide the page: {err}");
         }
     }
 
@@ -189,8 +248,19 @@ impl Page {
         self.placed.get().map(|(bounds, _)| bounds)
     }
 
+    /// Whether the page or its docked inspector has the keyboard.
+    pub fn box_has_keys(&self) -> bool {
+        #[cfg(target_os = "macos")]
+        return self.container.has_keys();
+        #[cfg(not(target_os = "macos"))]
+        false
+    }
+
     /// Gives the keyboard back to the window (a press anywhere GPUI draws).
     pub fn release_keys(&self) {
+        #[cfg(target_os = "macos")]
+        self.container.release_keys();
+        #[cfg(not(target_os = "macos"))]
         if let Err(err) = self.view.focus_parent() {
             log::debug!("browser: keys stay with the page: {err}");
         }
@@ -216,12 +286,12 @@ impl Page {
     pub fn snapshot(&self, max_width: Option<u32>, done: impl FnOnce(Result<Vec<u8>>) + 'static) {
         #[cfg(target_os = "macos")]
         {
-            let limit = max_width.zip(self.bounds()).map(|(max, bounds)| {
-                super::snapshot::Limit {
+            let limit = max_width
+                .zip(self.bounds())
+                .map(|(max, bounds)| super::snapshot::Limit {
                     view_width: f64::from(f32::from(bounds.size.width)),
                     max_pixels: max,
-                }
-            });
+                });
             super::snapshot::take(&self.view, limit, done);
         }
         #[cfg(not(target_os = "macos"))]
@@ -234,6 +304,10 @@ impl Page {
 
 impl Drop for Page {
     fn drop(&mut self) {
+        // An inspector in its own window would outlive its tab.
+        if self.view.is_devtools_open() {
+            self.view.close_devtools();
+        }
         self.release_keys();
     }
 }

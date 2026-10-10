@@ -28,7 +28,12 @@ tagging (`docs/releasing.md`).
   While a browser tab is open, Claude Code, Codex, Grok Build and OpenCode
   can drive it themselves: open an address, read the page, click, type,
   run a script, read the console and take screenshots, in the page you
-  see.
+  see. An address nothing answers at says so instead of staying blank.
+  Each tab zooms its page from the toolbar, or with ⌘+ ⌘− ⌘0 after a click
+  in the page. Web Inspector docks inside the tab, and its button closes it
+  again.
+- An Edit menu (Cut, Copy, Paste, Select All), which is also what makes
+  those keys work inside a browser page.
 
 ## [0.1.4] - 2026-10-09
 

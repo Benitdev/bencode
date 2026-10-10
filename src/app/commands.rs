@@ -2,7 +2,8 @@
 //! `src-tauri/src/menu.rs`), the macOS menu bar, and the root handlers.
 
 use gpui::{
-    App, Context, Div, InteractiveElement, KeyBinding, Menu, MenuItem, Stateful, Window, actions,
+    App, Context, Div, InteractiveElement, KeyBinding, Menu, MenuItem, OsAction, Stateful, Window,
+    actions,
 };
 
 use crate::app::BenCodeApp;
@@ -216,10 +217,42 @@ pub fn install(cx: &mut App) {
     // path; quitting still saves through `on_app_quit`.
     cx.on_action(|_: &Quit, cx| cx.quit());
     cx.on_action(|_: &ShowLogs, cx| crate::logging::reveal(cx));
-    cx.set_menus(menus());
+    let menus = menus(cx);
+    cx.set_menus(menus);
 }
 
-fn menus() -> Vec<Menu> {
+/// Edit (BenCode's own; MonoCode's is the webview's). Its items carry the
+/// system's selectors, so a browser page, a native view GPUI's key bindings
+/// do not reach, takes ⌘X ⌘C ⌘V ⌘A from the menu while it has the keyboard.
+/// GPUI's inputs answer the same keys from their bindings first. Ely keeps
+/// its input actions private: they are built by name.
+fn edit_menu(cx: &App) -> Menu {
+    let items = [
+        ("Cut", "Cut", OsAction::Cut),
+        ("Copy", "Copy", OsAction::Copy),
+        ("Paste", "Paste", OsAction::Paste),
+        ("Select All", "SelectAll", OsAction::SelectAll),
+    ]
+    .into_iter()
+    .filter_map(|(name, action, os_action)| {
+        match cx.build_action(&format!("ely_input::{action}"), None) {
+            Ok(action) => Some(MenuItem::Action {
+                name: name.into(),
+                action,
+                os_action: Some(os_action),
+                checked: false,
+                disabled: false,
+            }),
+            Err(err) => {
+                log::warn!("no Edit › {name}: {err}");
+                None
+            }
+        }
+    });
+    Menu::new("Edit").items(items)
+}
+
+fn menus(cx: &App) -> Vec<Menu> {
     vec![
         Menu::new("BenCode").items([
             MenuItem::action("Settings…", OpenSettings),
@@ -241,6 +274,7 @@ fn menus() -> Vec<Menu> {
             MenuItem::separator(),
             MenuItem::action("Archive Session", ArchiveSession),
         ]),
+        edit_menu(cx),
         Menu::new("View").items([
             MenuItem::action("Toggle Projects", ToggleSidebar),
             MenuItem::action("Toggle Session Sidebar", ToggleSessionSidebar),
@@ -425,11 +459,26 @@ impl BenCodeApp {
             cx.listener(|this, _: &CheckForUpdates, window, cx| this.check_for_updates(window, cx)),
         )
         .on_action(cx.listener(|this, _: &Search, _, cx| this.open_search_modal(cx)))
-        .on_action(cx.listener(|this, _: &ZoomIn, _, cx| this.step_ui_scale(1.0, cx)))
-        .on_action(cx.listener(|this, _: &ZoomOut, _, cx| this.step_ui_scale(-1.0, cx)))
-        .on_action(cx.listener(|this, _: &ZoomReset, _, cx| {
-            this.set_ui_scale(crate::ui::appearance::UI_SCALE_DEFAULT, cx)
-        }))
+        // A browser page with the keyboard is what these zoom, as in a
+        // browser; otherwise the interface.
+        .on_action(
+            cx.listener(|this, _: &ZoomIn, _, cx| match this.browser_with_keys() {
+                Some(id) => this.step_browser_zoom(id, true, cx),
+                None => this.step_ui_scale(1.0, cx),
+            }),
+        )
+        .on_action(
+            cx.listener(|this, _: &ZoomOut, _, cx| match this.browser_with_keys() {
+                Some(id) => this.step_browser_zoom(id, false, cx),
+                None => this.step_ui_scale(-1.0, cx),
+            }),
+        )
+        .on_action(cx.listener(
+            |this, _: &ZoomReset, _, cx| match this.browser_with_keys() {
+                Some(id) => this.set_browser_zoom(id, crate::app::browser::ZOOM_DEFAULT, cx),
+                None => this.set_ui_scale(crate::ui::appearance::UI_SCALE_DEFAULT, cx),
+            },
+        ))
         .on_action(cx.listener(|this, _: &NewThread, _, cx| this.create_new_session(cx)))
         .on_action(cx.listener(|this, _: &CloseActive, _, cx| this.close_active(cx)))
         .on_action(cx.listener(|this, _: &Save, _, cx| {

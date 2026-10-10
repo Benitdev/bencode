@@ -1670,7 +1670,7 @@ impl Render for BenCodeApp {
                     .children(self.render_tree_menu(cx))
                     .children(self.render_terminal_menu(cx))
                     .children(self.render_git_menu(cx))
-                    .children(self.render_corner_notices(cx))
+                    .children(self.render_corner_notices(window, cx))
                     .children(dialogs),
             );
         self.browser.hide_undrawn();
