@@ -44,6 +44,7 @@ pub mod settings_appearance;
 pub mod settings_integrations;
 pub mod settings_modal;
 pub mod settings_parts;
+mod settings_shortcuts;
 pub mod settings_worktrees;
 pub mod sidebar;
 pub mod sidebar_card_extras;

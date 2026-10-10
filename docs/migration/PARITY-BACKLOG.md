@@ -102,7 +102,7 @@ Notes:
 - [x] P0 S Theme System option (Ely `settings::ThemeSelector`)
 - [~] P0 M-L MCP: discovery reads Claude CLI, Claude Desktop, Cursor and project configs; still open: add / remove / sign-in / show config, Codex (`~/.codex/config.toml`) and OpenCode discovery
 - [~] P0 M Terminal per project + tabs + ⌘` done; tabs named for the running job or the shell's folder (read from the process, `terminal_process.rs`), the footer's running-terminal chip, "Close anyway?" for a running job, `[process exited]` with the tab kept; still open: links and find from `TerminalEvent`
-- [~] P1 M Settings nav groups (done, `ui/rail/settings_nav.rs`), remembered section, search; Appearance page done (`ui/settings_appearance.rs`) except blur radius; chat background (`app/chat_background.rs`) and the collapsed icon rail (`ui/rail/compact.rs`) done, without per-project backgrounds or the icon rail's searchable project picker; General/Chat/Keybindings pages; CLI path override; terminal dock side/resize
+- [~] P1 M Settings nav groups (done, `ui/rail/settings_nav.rs`), remembered section, search; Appearance page done (`ui/settings_appearance.rs`) except blur radius; chat background (`app/chat_background.rs`) and the collapsed icon rail (`ui/rail/compact.rs`) done, without per-project backgrounds or the icon rail's searchable project picker; General/Chat pages; Keybindings page (a read-only Shortcuts page is done, `ui/settings_shortcuts.rs`; rebinding is not); CLI path override; terminal dock side/resize
 - [ ] P2 macOS terminal keys, harness update notice
 
 ## Batch F — notes, automations, search, inbox

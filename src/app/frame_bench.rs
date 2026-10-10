@@ -197,7 +197,10 @@ async fn run(this: WeakEntity<BenCodeApp>, cx: &mut AsyncWindowContext) -> Resul
             cx.notify();
         })?;
         settle(cx).await?;
-        if only.as_ref().is_some_and(|only| !case.name.contains(only.as_str())) {
+        if only
+            .as_ref()
+            .is_some_and(|only| !case.name.contains(only.as_str()))
+        {
             continue;
         }
         let mut took = Vec::with_capacity(frames);

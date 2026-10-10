@@ -764,6 +764,9 @@ impl BenCodeApp {
             log::warn!("thread {session_id} {why}; turn not sent");
             return;
         }
+        // Before the prompt lands: a thread with a user block and no account
+        // reads as one from before accounts, and would run as the default.
+        let pinned = self.pin_session_account(session_id);
         let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id) else {
             return;
         };
@@ -803,7 +806,7 @@ impl BenCodeApp {
             plan: input.plan,
             purpose: RunPurpose::Turn,
         };
-        self.start_run(session_id, request, cx);
+        self.start_run(session_id, request, pinned, cx);
     }
 
     /// MonoCode `onCompactContext`: the agent summarises the older context
@@ -836,14 +839,20 @@ impl BenCodeApp {
             plan: false,
             purpose: RunPurpose::Compact,
         };
-        self.start_run(session_id, request, cx);
+        let pinned = self.pin_session_account(session_id);
+        self.start_run(session_id, request, pinned, cx);
     }
 
     /// Spawns the thread's harness for `request` and follows its events; a
-    /// failure to start lands in the transcript.
-    fn start_run(&mut self, session_id: &str, request: RunRequest, cx: &mut Context<Self>) {
+    /// failure to start (`pinned` included) lands in the transcript.
+    fn start_run(
+        &mut self,
+        session_id: &str,
+        request: RunRequest,
+        pinned: Result<(), String>,
+        cx: &mut Context<Self>,
+    ) {
         let mode = self.session_permission_mode(self.sessions.iter().find(|s| s.id == session_id));
-        let pinned = self.pin_session_account(session_id);
         let Some(session) = self.sessions.iter().find(|s| s.id == session_id) else {
             return;
         };

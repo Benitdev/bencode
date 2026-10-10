@@ -1,5 +1,5 @@
 //! Settings: general defaults, provider CLIs, MCP, skills, integrations,
-//! appearance, about.
+//! appearance, shortcuts, about.
 
 use ely_gpui_component::buttons::{Button, ButtonVariant, IconButton};
 use ely_gpui_component::data_display::{Badge, Tone};
@@ -27,6 +27,8 @@ pub enum SettingsTab {
     Mcp,
     Skills,
     Appearance,
+    /// The keys BenCode answers to, read only (`ui/settings_shortcuts.rs`).
+    Shortcuts,
     About,
     /// MonoCode Settings › Archive: archived projects.
     Archive,
@@ -36,7 +38,7 @@ pub enum SettingsTab {
     Integrations,
 }
 
-const SECTIONS: [(SettingsTab, &str, &str, IconName); 9] = [
+const SECTIONS: [(SettingsTab, &str, &str, IconName); 10] = [
     (
         SettingsTab::General,
         "general",
@@ -61,6 +63,12 @@ const SECTIONS: [(SettingsTab, &str, &str, IconName); 9] = [
         "appearance",
         "Appearance",
         IconName::Palette,
+    ),
+    (
+        SettingsTab::Shortcuts,
+        "shortcuts",
+        "Shortcuts",
+        IconName::Keyboard,
     ),
     (SettingsTab::About, "about", "About", IconName::Info),
     (
@@ -92,6 +100,7 @@ pub(crate) const SETTINGS_GROUPS: [(&str, &[SettingsTab]); 3] = [
         &[
             SettingsTab::General,
             SettingsTab::Appearance,
+            SettingsTab::Shortcuts,
             SettingsTab::About,
         ],
     ),
@@ -141,6 +150,7 @@ impl SettingsTab {
             Self::Appearance => {
                 "Theme, tint, translucency, workspace layout, and conversation backgrounds."
             }
+            Self::Shortcuts => "Keyboard shortcuts for quick navigation and control.",
             Self::About => "The build you are running and how it stays up to date.",
             Self::Providers => {
                 "Provider accounts, the agent CLIs BenCode drives, and how they run."
@@ -217,6 +227,7 @@ impl BenCodeApp {
             SettingsTab::Mcp => self.render_settings_mcp(cx).into_any_element(),
             SettingsTab::Skills => self.render_settings_skills(cx).into_any_element(),
             SettingsTab::Appearance => self.render_settings_appearance(cx).into_any_element(),
+            SettingsTab::Shortcuts => self.render_settings_shortcuts(cx).into_any_element(),
             SettingsTab::About => self.render_settings_about(cx).into_any_element(),
             SettingsTab::Archive => self.render_settings_archive(cx).into_any_element(),
             SettingsTab::Worktrees => self.render_settings_worktrees(cx).into_any_element(),

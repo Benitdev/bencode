@@ -86,7 +86,7 @@ pub struct ActivateTab(pub Option<usize>);
 
 /// Shortcuts, matching MonoCode's menu accelerators and its workspace keys
 /// (`workspace/model/tabKeys.ts`).
-fn keymap() -> Vec<KeyBinding> {
+pub(crate) fn keymap() -> Vec<KeyBinding> {
     let mut keys = vec![
         KeyBinding::new("cmd-q", Quit, None),
         KeyBinding::new("cmd-,", OpenSettings, None),
@@ -180,6 +180,25 @@ fn keymap() -> Vec<KeyBinding> {
     );
     keys.push(KeyBinding::new("cmd-9", ActivateTab(None), None));
     keys
+}
+
+/// The first chord `keys` binds to `action` in `context` (`None`: bound
+/// everywhere), in keymap syntax ("cmd-shift-o"). Settings › Shortcuts reads
+/// its keys here, so the page shows what is bound.
+pub(crate) fn chord_for(
+    keys: &[KeyBinding],
+    action: &dyn gpui::Action,
+    context: Option<&str>,
+) -> Option<String> {
+    keys.iter()
+        .find(|binding| {
+            binding.action().partial_eq(action)
+                && binding.predicate().map(|p| p.to_string()).as_deref() == context
+        })
+        .map(|binding| {
+            let strokes: Vec<String> = binding.keystrokes().iter().map(|k| k.unparse()).collect();
+            strokes.join(" ")
+        })
 }
 
 /// Installs the keymap and the menu bar. Call once at startup.
@@ -568,6 +587,22 @@ mod tests {
         assert_eq!(adjacent_id(&ids, Some("gone"), 1).as_deref(), Some("a"));
         assert_eq!(adjacent_id(&ids, None, -1).as_deref(), Some("c"));
         assert_eq!(adjacent_id(&[], None, 1), None);
+    }
+
+    #[test]
+    fn chords_are_found_by_action_and_context() {
+        let keys = keymap();
+        assert_eq!(chord_for(&keys, &NewThread, None).as_deref(), Some("cmd-t"));
+        assert_eq!(
+            chord_for(&keys, &ToggleWorkspaceMode, Some("DraftComposer")).as_deref(),
+            Some("cmd-shift-g")
+        );
+        // Bound only in the session list, so not found anywhere else.
+        assert_eq!(chord_for(&keys, &RenameSelectedSession, None), None);
+        assert_eq!(
+            chord_for(&keys, &ActivateTab(Some(1)), None).as_deref(),
+            Some("cmd-2")
+        );
     }
 
     #[test]
