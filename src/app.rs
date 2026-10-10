@@ -555,7 +555,9 @@ impl BenCodeApp {
         let note_body_keys_input = notes.body_input.clone();
         let mut automations = automations::AutomationsState::new(window, cx);
         let project_search = project_search::ProjectSearchState::new(window, cx);
-        let git_commit_input = multiline_input(window, cx, "Message (⌘↩ to commit)", (1, 7));
+        // No row cap: the Changes panel's box scrolls it (`max-h-40`).
+        let git_commit_input =
+            multiline_input(window, cx, "Message (⌘↩ to commit)", (1, usize::MAX));
         let search_modal_input =
             text_input(window, cx, "Search conversations, files, projects... (⌘K)");
 
