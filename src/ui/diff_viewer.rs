@@ -347,14 +347,24 @@ impl DiffDoc {
         }
     }
 
-    /// How file `ix`'s lines are coloured and how far they are scrolled
-    /// sideways.
-    fn lane_look(&self, ix: usize) -> (Syntax, Pixels) {
+    /// One lane of file `ix`: `line` as `number`, or the blank side of a
+    /// line only the other side has.
+    fn lane(
+        &self,
+        ix: usize,
+        line: Option<&Line>,
+        number: Option<u32>,
+        cx: &gpui::App,
+    ) -> gpui::Div {
+        let Some(line) = line else {
+            return div()
+                .h(px(LINE_HEIGHT))
+                .bg(cx.theme().colors.fg.opacity(0.03));
+        };
         let file = &self.files[ix];
-        (
-            diff_model::syntax_for(&file.path),
-            self.side_scroll.get(&file.id).copied().unwrap_or_default(),
-        )
+        let scrolled = self.side_scroll.get(&file.id).copied().unwrap_or_default();
+        let syntax = diff_model::syntax_for(&file.path);
+        render_line(line, number, syntax, scrolled, cx)
     }
 
     fn totals(&self) -> (usize, usize) {
@@ -1010,23 +1020,17 @@ impl BenCodeApp {
             DocRow::Header(f) => self
                 .render_doc_header(key, doc, *f, false, cx)
                 .into_any_element(),
-            DocRow::Line(f, line) => {
-                let (syntax, scrolled) = doc.lane_look(*f);
-                render_line(Some(line), line.number(), syntax, scrolled, cx)
-                    .on_scroll_wheel(self.side_scroll_listener(key, *f, cx))
-                    .into_any_element()
-            }
+            DocRow::Line(f, line) => doc
+                .lane(*f, Some(line), line.number(), cx)
+                .w_full()
+                .on_scroll_wheel(self.side_scroll_listener(key, *f, cx))
+                .into_any_element(),
             // Both lanes scroll sideways together, so a pair stays aligned.
             DocRow::Pair { file, old, new } => {
-                let (syntax, scrolled) = doc.lane_look(*file);
                 let lane = |line: &Option<Line>, number: Option<u32>| {
-                    div().flex_1().min_w_0().child(render_line(
-                        line.as_ref(),
-                        number,
-                        syntax,
-                        scrolled,
-                        cx,
-                    ))
+                    doc.lane(*file, line.as_ref(), number, cx)
+                        .flex_1()
+                        .min_w_0()
                 };
                 div()
                     .flex()
@@ -1306,6 +1310,11 @@ impl BenCodeApp {
     }
 }
 
+/// MonoCode `opacity-70` on an unchanged line, its colours included.
+fn strength(kind: LineKind) -> f32 {
+    if kind == LineKind::Context { 0.7 } else { 1.0 }
+}
+
 /// A line's syntax colours (MonoCode `renderLineText`), each at `strength`
 /// of its own.
 fn line_highlights(
@@ -1349,9 +1358,9 @@ fn line_highlights(
 /// MonoCode `DiffLineRow`: a tinted gutter number, then the text, in the
 /// chosen diff palette (`bg-diff-*-bg`, `bg-diff-*-gutter`, `text-diff-*-fg`).
 /// The text starts `scrolled` to the left of its lane; the gutter stays.
-/// `None` is the blank side of a line only the other side has.
+/// The caller gives the row its width.
 fn render_line(
-    line: Option<&Line>,
+    line: &Line,
     number: Option<u32>,
     syntax: Syntax,
     scrolled: Pixels,
@@ -1360,9 +1369,6 @@ fn render_line(
     let theme = cx.theme();
     let colors = &theme.colors;
     let fg = colors.fg;
-    let Some(line) = line else {
-        return div().h(px(LINE_HEIGHT)).w_full().bg(fg.opacity(0.03));
-    };
     let diff = crate::ui::appearance::diff_colors(cx);
     // (row, gutter, number)
     let (tint, number_color): (Option<(Hsla, Hsla)>, Hsla) = match line.kind {
@@ -1370,17 +1376,18 @@ fn render_line(
         LineKind::Del => (Some((diff.del_bg, diff.del_gutter)), diff.del_fg),
         LineKind::Context => (None, fg.opacity(0.35)),
     };
-    // MonoCode `opacity-70` on an unchanged line, its colours included.
-    let strength = if line.kind == LineKind::Context {
-        0.7
-    } else {
-        1.0
-    };
+    let text = (!line.text.is_empty()).then(|| {
+        StyledText::new(SharedString::from(line.text.clone())).with_highlights(line_highlights(
+            &line.text,
+            syntax,
+            strength(line.kind),
+            cx,
+        ))
+    });
     div()
         .flex()
         .items_center()
         .h(px(LINE_HEIGHT))
-        .w_full()
         .overflow_hidden()
         .when_some(tint, |el, (row, _)| el.bg(row))
         .font_family(theme.mono_family.clone())
@@ -1410,15 +1417,14 @@ fn render_line(
                 .whitespace_nowrap()
                 .overflow_hidden()
                 .text_size(px(LINE_TEXT))
-                .text_color(fg.opacity(0.8 * strength))
-                .when(line.text.is_empty(), |el| el.child(" "))
-                .when(!line.text.is_empty(), |el| {
-                    el.child(
-                        div().ml(-scrolled).child(
-                            StyledText::new(SharedString::from(line.text.clone()))
-                                .with_highlights(line_highlights(&line.text, syntax, strength, cx)),
-                        ),
-                    )
+                .text_color(fg.opacity(0.8 * strength(line.kind)))
+                .map(|el| match text {
+                    None => el.child(" "),
+                    // A box of its own only for text moved out of its lane.
+                    Some(text) if scrolled > Pixels::ZERO => {
+                        el.child(div().ml(-scrolled).child(text))
+                    }
+                    Some(text) => el.child(text),
                 }),
         )
 }

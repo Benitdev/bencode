@@ -63,6 +63,10 @@ fn notify_app(_: &mut BenCodeApp, cx: &mut Context<BenCodeApp>) {
 /// A file every checkout has, and a long one.
 const FILE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/src/app.rs");
 
+/// A commit this repository's history has: one Rust file, a screen of
+/// changed lines.
+const COMMIT: &str = "4ddb50b09cbcf9f872d26cc07f4a9ade047ed27c";
+
 /// The cases in the order they run; each starts from the window the one
 /// before it left. `thread` is the long thread the bench opened.
 fn cases(thread: Option<String>) -> Vec<Case> {
@@ -123,6 +127,25 @@ fn cases(thread: Option<String>) -> Vec<Case> {
                 };
                 app.open_pane_tab(tab, true, cx);
             }),
+            notify_app,
+        ),
+        case(
+            "app notified, long thread, a commit beside it",
+            Box::new(|app, cx| {
+                app.set_diff_split(false, cx);
+                let tab = PaneTab::Commit {
+                    cwd: env!("CARGO_MANIFEST_DIR").to_string(),
+                    sha: COMMIT.to_string(),
+                    short_sha: COMMIT[..7].to_string(),
+                    subject: String::new(),
+                };
+                app.open_pane_tab(tab, true, cx);
+            }),
+            notify_app,
+        ),
+        case(
+            "app notified, long thread, the commit side by side",
+            Box::new(|app, cx| app.set_diff_split(true, cx)),
             notify_app,
         ),
         case(
