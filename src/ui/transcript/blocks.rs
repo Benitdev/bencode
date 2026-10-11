@@ -687,6 +687,7 @@ fn prose(
         .px_4()
         .when(under_work, |el| el.pt_1())
         .when(!under_work, |el| el.pt_3())
+        .pb_1()
         .child(markdown(
             id,
             turns::text(block),
