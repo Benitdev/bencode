@@ -4,6 +4,18 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
+## [0.1.6] - 2026-10-11
+
+- Right-click a commit in the Changes graph to undo the last commit (its
+  changes stay staged and its message returns to the commit box), revert a
+  commit, or copy its id or message. Undoing a commit that is already
+  pushed asks first.
+- Faster redraws: the window is drawn in about half the time while an agent
+  streams or a list scrolls. The session list and long replies were laid
+  out many times over on each frame; now once.
+- Settings with the project rail closed: the pages have their margins
+  again, keep to a readable width, and scroll.
+
 ## [0.1.5] - 2026-10-10
 
 - Grok Build joins the providers: with xAI's `grok` installed and signed in
@@ -40,13 +52,6 @@ tagging (`docs/releasing.md`).
   file beside the new one, a removed line next to the line that replaced
   it. The choice is kept. A pane too narrow for two columns shows the
   review unified until it is widened.
-- Right-click a commit in the Changes graph to undo the last commit (its
-  changes stay staged and its message returns to the commit box), revert a
-  commit, or copy its id or message. Undoing a commit that is already
-  pushed asks first.
-- Faster redraws: the window is drawn in about half the time while an agent
-  streams or a list scrolls. The session list and long replies were laid
-  out many times over on each frame; now once.
 
 ## [0.1.4] - 2026-10-09
 
