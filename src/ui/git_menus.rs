@@ -1,7 +1,8 @@
 //! The Changes panel's two dropdowns, drawn the way MonoCode draws them
 //! (its own `role="menu"` lists, not a library dropdown): "Commit
 //! options" under the Commit button's arrow, and "Branch actions" under
-//! the header's `…`.
+//! the header's `…`. BenCode's own: a commit's menu in the graph (Undo
+//! Last Commit, Revert Commit, Copy), which MonoCode's graph does not have.
 
 use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::IconSize;
@@ -18,6 +19,7 @@ use crate::ui::scale::px;
 /// MonoCode `min-w-48` (Commit options) and `min-w-36` (Branch actions).
 const COMMIT_MENU_WIDTH: f32 = 192.0;
 const BRANCH_MENU_WIDTH: f32 = 144.0;
+const HISTORY_MENU_WIDTH: f32 = 192.0;
 /// MonoCode `mt-1` between a trigger and its menu.
 const MENU_GAP: f32 = 4.0;
 
@@ -25,6 +27,8 @@ const MENU_GAP: f32 = 4.0;
 pub enum GitMenuKind {
     Commit,
     Branch,
+    /// A commit of the graph, right-clicked (`ChangesUi::menu_commit`).
+    History,
 }
 
 #[derive(Clone, Debug)]
@@ -40,6 +44,7 @@ impl GitMenuKind {
         match self {
             GitMenuKind::Commit => COMMIT_MENU_WIDTH,
             GitMenuKind::Branch => BRANCH_MENU_WIDTH,
+            GitMenuKind::History => HISTORY_MENU_WIDTH,
         }
     }
 }
@@ -88,13 +93,70 @@ impl BenCodeApp {
                         .tooltip(why),
                 )]
             }
+            GitMenuKind::History => {
+                let Some(commit) = &self.changes_ui.menu_commit else {
+                    return Vec::new();
+                };
+                let busy = self.changes_ui.busy.is_some();
+                let merge = commit.parents.len() > 1;
+                let mut entries = Vec::new();
+                // Only the branch's last commit can be taken off it.
+                if commit.head {
+                    let root = commit.parents.is_empty();
+                    entries.push(MenuEntry::Item(
+                        MenuAction::new("undo-commit", "Undo Last Commit")
+                            .disabled(busy || root)
+                            .tooltip(
+                                root.then(|| "The first commit has nothing to go back to".into()),
+                            ),
+                    ));
+                }
+                entries.extend([
+                    MenuEntry::Item(
+                        MenuAction::new("revert-commit", "Revert Commit")
+                            .disabled(busy || merge)
+                            .tooltip(merge.then(|| {
+                                "A merge commit is reverted from the terminal (git revert -m)"
+                                    .into()
+                            })),
+                    ),
+                    MenuEntry::Separator,
+                    MenuEntry::Item(MenuAction::new("copy-commit-id", "Copy Commit ID")),
+                    MenuEntry::Item(MenuAction::new(
+                        "copy-commit-message",
+                        "Copy Commit Message",
+                    )),
+                ]);
+                entries
+            }
         }
+    }
+
+    /// Opens `commit`'s menu at the pointer.
+    pub(crate) fn open_history_menu(
+        &mut self,
+        commit: crate::git::sync::HistoryCommit,
+        at: Point<Pixels>,
+        cx: &mut Context<Self>,
+    ) {
+        self.changes_ui.menu_trigger_hit = self.changes_ui.menu.is_some();
+        self.changes_ui.menu_commit = Some(commit);
+        let entries = self.git_menu_entries(GitMenuKind::History, cx);
+        self.changes_ui.menu = Some(GitMenu {
+            kind: GitMenuKind::History,
+            position: at,
+            active: explorer_menu::first_item(&entries),
+        });
+        self.focus_composer_menu(cx);
+        cx.notify();
     }
 
     /// Opens `kind` under its trigger, right-aligned like MonoCode's
     /// `absolute top-full right-0`; a second press closes it.
     fn toggle_git_menu(&mut self, kind: GitMenuKind, at: Point<Pixels>, cx: &mut Context<Self>) {
-        self.changes_ui.menu_trigger_hit = true;
+        // An open menu sees this press as one outside it (`render_git_menu`);
+        // with none open nothing would take the mark back.
+        self.changes_ui.menu_trigger_hit = self.changes_ui.menu.is_some();
         if self
             .changes_ui
             .menu
@@ -136,6 +198,7 @@ impl BenCodeApp {
         };
         self.changes_ui.menu = None;
         self.refocus_prompt(cx);
+        let commit = self.changes_ui.menu_commit.take();
         match id {
             "commit-push" => self.commit_from_panel(
                 PendingCommit {
@@ -157,6 +220,22 @@ impl BenCodeApp {
             ),
             "amend" => self.toggle_amend(cx),
             "pull" => self.pull_changes(cx),
+            "undo-commit" => self.undo_last_commit(false, cx),
+            "revert-commit" => {
+                if let Some(commit) = commit {
+                    self.revert_commit(commit.sha, cx);
+                }
+            }
+            "copy-commit-id" => {
+                if let Some(commit) = commit {
+                    cx.write_to_clipboard(gpui::ClipboardItem::new_string(commit.sha));
+                }
+            }
+            "copy-commit-message" => {
+                if let Some(commit) = commit {
+                    self.copy_commit_message(commit.sha, cx);
+                }
+            }
             _ => {}
         }
         cx.notify();
@@ -196,7 +275,10 @@ impl BenCodeApp {
                 id: "git-menu",
                 entries: &entries,
                 active: menu.active,
-                place: MenuPlace::UnderRight(menu.position),
+                place: match menu.kind {
+                    GitMenuKind::History => MenuPlace::At(menu.position),
+                    _ => MenuPlace::UnderRight(menu.position),
+                },
                 width: menu.kind.width(),
                 focus: &self.composer_menus.focus,
                 header: None,
@@ -257,6 +339,7 @@ impl BenCodeApp {
         let (id, tip) = match kind {
             GitMenuKind::Commit => ("git-commit-options", "Commit options"),
             GitMenuKind::Branch => ("git-branch-actions", "Branch actions"),
+            GitMenuKind::History => ("git-commit-actions", "Commit actions"),
         };
         let anchor = self.changes_ui.menu_anchor(kind);
         let icon = if look.spin {

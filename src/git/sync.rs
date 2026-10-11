@@ -381,6 +381,36 @@ pub fn head_message(cwd: &str) -> Result<String, String> {
     stdout(cwd, &["log", "-1", "--pretty=%B"]).ok_or_else(|| "No commits yet".into())
 }
 
+/// VS Code "Undo Last Commit": the branch steps back one commit, whose
+/// changes stay staged. BenCode's own, like the two below.
+pub fn undo_last_commit(cwd: &str) -> Result<(), String> {
+    checked(cwd, &["reset", "--soft", "HEAD~1"])
+}
+
+/// A new commit that takes back what `sha` changed. A revert that does not
+/// apply is given up, so the tree is left as it was.
+pub fn revert_commit(cwd: &str, sha: &str) -> Result<(), String> {
+    super::diffs::validate_sha(sha).map_err(|err| format!("{err:#}"))?;
+    // One the user started in a terminal is theirs to finish or abort.
+    if stdout(cwd, &["rev-parse", "-q", "--verify", "REVERT_HEAD"]).is_some() {
+        return Err("A revert is already in progress in this repository".into());
+    }
+    checked(cwd, &["revert", "--no-edit", sha]).map_err(|err| {
+        if stdout(cwd, &["rev-parse", "-q", "--verify", "REVERT_HEAD"]).is_some()
+            && let Err(abort) = checked(cwd, &["revert", "--abort"])
+        {
+            log::warn!("could not abort the failed revert: {abort}");
+        }
+        with_signing_hint(err)
+    })
+}
+
+/// `sha`'s subject and body.
+pub fn commit_message(cwd: &str, sha: &str) -> Result<String, String> {
+    super::diffs::validate_sha(sha).map_err(|err| format!("{err:#}"))?;
+    stdout(cwd, &["log", "-1", "--pretty=%B", sha]).ok_or_else(|| "No such commit".into())
+}
+
 /// MonoCode `git_push_for`: to the upstream, or publish to the remote.
 pub fn push(cwd: &str) -> Result<(), String> {
     if stdout(cwd, &["rev-parse", "--abbrev-ref", "@{upstream}"]).is_some() {

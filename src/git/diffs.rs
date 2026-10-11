@@ -37,7 +37,7 @@ const MAX_PATCH_BYTES: usize = 4 * 1024 * 1024;
 const FULL_CONTEXT: &str = "-U2147483647";
 
 /// Rejects anything but a hex object id, so it can never be read as an option.
-fn validate_sha(sha: &str) -> Result<()> {
+pub(super) fn validate_sha(sha: &str) -> Result<()> {
     if sha.is_empty() || !sha.chars().all(|c| c.is_ascii_hexdigit()) {
         bail!("not a commit id: {sha}");
     }

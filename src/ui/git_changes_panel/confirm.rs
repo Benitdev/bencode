@@ -16,6 +16,8 @@ pub enum GitConfirm {
     /// Amend a commit that is already on a remote.
     AmendPushed(PendingCommit),
     CreatePrDefault,
+    /// Undo a commit that is already on a remote.
+    UndoPushed,
 }
 
 impl BenCodeApp {
@@ -87,6 +89,12 @@ impl BenCodeApp {
                 "Create PR",
                 false,
             ),
+            GitConfirm::UndoPushed => (
+                "Undo a pushed commit?",
+                "Undo a commit that is already pushed? Your branch will be behind its remote, and BenCode cannot push the result. You will need a force push from the terminal.".to_string(),
+                "Undo",
+                true,
+            ),
             GitConfirm::AmendPushed(_) => (
                 "Amend a pushed commit?",
                 "Amend a commit that is already pushed? BenCode cannot push the result. You will need a force push from the terminal.".to_string(),
@@ -121,6 +129,7 @@ impl BenCodeApp {
                 GitConfirm::PushDefault(p) => this.commit_from_panel(*p, true, false, cx),
                 GitConfirm::AmendPushed(p) => this.commit_from_panel(*p, true, true, cx),
                 GitConfirm::CreatePrDefault => this.create_pr(true, cx),
+                GitConfirm::UndoPushed => this.undo_last_commit(true, cx),
             }
         });
         let dialog = ConfirmDialog::new("git-confirm", title, message, close)

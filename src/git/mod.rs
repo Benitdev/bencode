@@ -1120,4 +1120,55 @@ mod tests {
         assert!(names.contains(&("feature".to_string(), false)));
         assert!(create_branch(repo.cwd(), "-bad").is_err());
     }
+
+    #[test]
+    fn undoing_the_last_commit_keeps_its_changes_staged() {
+        let repo = TempRepo::new();
+        repo.write("a.txt", "one\n");
+        repo.commit_all("first");
+        repo.write("a.txt", "two\n");
+        repo.commit_all("second");
+        sync::undo_last_commit(repo.cwd()).expect("undo");
+        assert_eq!(repo.git(&["log", "--format=%s"]).trim(), "first");
+        assert_eq!(repo.staged_blob("a.txt"), "two\n");
+        // The first commit has nothing under it to step back to.
+        assert!(sync::undo_last_commit(repo.cwd()).is_err());
+    }
+
+    #[test]
+    fn reverting_a_commit_adds_one_that_takes_it_back() {
+        let repo = TempRepo::new();
+        repo.write("a.txt", "one\n");
+        repo.commit_all("first");
+        repo.write("b.txt", "new\n");
+        repo.commit_all("add b");
+        let sha = repo.git(&["rev-parse", "HEAD"]).trim().to_string();
+        assert_eq!(
+            sync::commit_message(repo.cwd(), &sha).as_deref(),
+            Ok("add b")
+        );
+        sync::revert_commit(repo.cwd(), &sha).expect("revert");
+        assert!(!repo.exists("b.txt"));
+        let log = repo.git(&["log", "--format=%s"]);
+        assert_eq!(log.lines().next(), Some("Revert \"add b\""));
+        assert!(sync::revert_commit(repo.cwd(), "--abort").is_err());
+    }
+
+    #[test]
+    fn a_revert_that_conflicts_leaves_the_tree_as_it_was() {
+        let repo = TempRepo::new();
+        repo.write("a.txt", "one\n");
+        repo.commit_all("first");
+        repo.write("a.txt", "two\n");
+        repo.commit_all("second");
+        let second = repo.git(&["rev-parse", "HEAD"]).trim().to_string();
+        repo.write("a.txt", "three\n");
+        repo.commit_all("third");
+        assert!(sync::revert_commit(repo.cwd(), &second).is_err());
+        assert_eq!(repo.read("a.txt").as_deref(), Some("three\n"));
+        assert_eq!(repo.git(&["status", "--porcelain"]).trim(), "");
+        assert!(
+            run_git_string(repo.cwd(), &["rev-parse", "-q", "--verify", "REVERT_HEAD"]).is_err()
+        );
+    }
 }

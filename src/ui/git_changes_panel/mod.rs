@@ -60,6 +60,9 @@ pub enum Busy {
     Pr,
     Sync,
     Generate,
+    /// Undo Last Commit and Revert Commit, from a commit's menu.
+    Undo,
+    Revert,
     All,
     File(String),
     /// Staging or unstaging a folder of the tree view.
@@ -119,6 +122,8 @@ pub struct ChangesUi {
     pub graph_height: f32,
     /// The open Commit options / Branch actions menu.
     pub menu: Option<crate::ui::git_menus::GitMenu>,
+    /// The commit whose menu is open (`GitMenuKind::History`).
+    pub menu_commit: Option<HistoryCommit>,
     /// A dropdown trigger saw this mouse-down (so it is not "outside").
     pub menu_trigger_hit: bool,
     graph_drag: Option<(f32, f32)>,
@@ -166,6 +171,8 @@ impl ChangesUi {
         match kind {
             GitMenuKind::Commit => self.commit_anchor.clone(),
             GitMenuKind::Branch => self.branch_anchor.clone(),
+            // A commit's menu opens at the pointer.
+            GitMenuKind::History => Anchor::default(),
         }
     }
 }
@@ -184,6 +191,7 @@ impl Default for ChangesUi {
             collapsed_dirs: HashSet::new(),
             graph_height: GRAPH_DEFAULT,
             menu: None,
+            menu_commit: None,
             menu_trigger_hit: false,
             graph_drag: None,
             panel_height: Rc::new(Cell::new(0.0)),

@@ -185,6 +185,7 @@ impl BenCodeApp {
         let hovered = self.changes_ui.hovered_commit.as_deref() == Some(commit.sha.as_str());
         let node = node_look(bg, fg, hovered, active);
         let open = commit.clone();
+        let menu = commit.clone();
         let hover_sha = commit.sha.clone();
         let tip = if commit.author.is_empty() {
             format!("{} {}", commit.short_sha, commit.subject)
@@ -222,6 +223,13 @@ impl BenCodeApp {
                 };
                 this.open_pane_tab(tab, event.click_count() == 2, cx);
             }))
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
+                    cx.stop_propagation();
+                    this.open_history_menu(menu.clone(), event.position, cx);
+                }),
+            )
             .child(
                 canvas(
                     |_, _, _| {},

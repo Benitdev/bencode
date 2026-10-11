@@ -421,6 +421,75 @@ impl BenCodeApp {
         );
     }
 
+    /// VS Code "Undo Last Commit": HEAD comes off the branch, its changes
+    /// stay staged and its message goes back to an empty commit box. One
+    /// that is already pushed asks first (`pushed_ok` once it has).
+    pub(crate) fn undo_last_commit(&mut self, pushed_ok: bool, cx: &mut Context<Self>) {
+        if self.git_sync.head_pushed && !pushed_ok {
+            self.git_confirm = Some(GitConfirm::UndoPushed);
+            cx.notify();
+            return;
+        }
+        let undone = std::sync::Arc::new(std::sync::Mutex::new(None));
+        let kept = undone.clone();
+        self.run_changes_action(
+            Busy::Undo,
+            Some("Undid the last commit"),
+            move |cwd| {
+                let message = git_sync::head_message(cwd).ok();
+                git_sync::undo_last_commit(cwd)?;
+                if let Ok(mut slot) = kept.lock() {
+                    *slot = message;
+                }
+                Ok(())
+            },
+            move |app, cx| {
+                let message = undone.lock().ok().and_then(|mut slot| slot.take());
+                if let Some(message) = message
+                    && app.git_commit_input.read(cx).text().trim().is_empty()
+                {
+                    app.git_commit_input
+                        .update(cx, |input, cx| input.set_text(message, cx));
+                }
+            },
+            cx,
+        );
+    }
+
+    /// A new commit that takes back what `sha` changed.
+    pub(crate) fn revert_commit(&mut self, sha: String, cx: &mut Context<Self>) {
+        self.run_changes_action(
+            Busy::Revert,
+            Some("Reverted the commit"),
+            move |cwd| git_sync::revert_commit(cwd, &sha),
+            |_, _| {},
+            cx,
+        );
+    }
+
+    /// `sha`'s whole message on the clipboard.
+    pub(crate) fn copy_commit_message(&mut self, sha: String, cx: &mut Context<Self>) {
+        let cwd = self.workspace_cwd();
+        let task = cx
+            .background_executor()
+            .spawn(async move { git_sync::commit_message(&cwd, &sha) });
+        cx.spawn(async move |this, cx| {
+            let message = task.await;
+            let updated = this.update(cx, |app, cx| match message {
+                Ok(message) => cx.write_to_clipboard(gpui::ClipboardItem::new_string(message)),
+                Err(err) => {
+                    app.workspace.git_error =
+                        Some(GitError::new("Couldn't read the commit message", err));
+                    cx.notify();
+                }
+            });
+            if let Err(err) = updated {
+                log::debug!("commit message after app drop: {err:#}");
+            }
+        })
+        .detach();
+    }
+
     pub(crate) fn pull_changes(&mut self, cx: &mut Context<Self>) {
         self.run_changes_action(
             Busy::Pull,

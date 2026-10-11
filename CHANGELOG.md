@@ -40,6 +40,10 @@ tagging (`docs/releasing.md`).
   file beside the new one, a removed line next to the line that replaced
   it. The choice is kept. A pane too narrow for two columns shows the
   review unified until it is widened.
+- Right-click a commit in the Changes graph to undo the last commit (its
+  changes stay staged and its message returns to the commit box), revert a
+  commit, or copy its id or message. Undoing a commit that is already
+  pushed asks first.
 - Faster redraws: the window is drawn in about half the time while an agent
   streams or a list scrolls. The session list and long replies were laid
   out many times over on each frame; now once.

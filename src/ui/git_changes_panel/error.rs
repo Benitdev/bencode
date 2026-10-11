@@ -36,6 +36,8 @@ impl GitError {
             Busy::Pr => "Couldn't push or open the pull request",
             Busy::Sync => "Couldn't sync",
             Busy::Generate => "Couldn't write a commit message",
+            Busy::Undo => "Couldn't undo the commit",
+            Busy::Revert => "Couldn't revert the commit",
             Busy::All | Busy::File(_) | Busy::Folder(_) => "Couldn't update your changes",
         };
         Self::new(title, output)
