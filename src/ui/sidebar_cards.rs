@@ -358,8 +358,8 @@ impl BenCodeApp {
             .id(group.clone())
             .group(group.clone())
             .relative()
-            .flex()
-            .flex_col()
+            // A block: its rows stack, and each is laid out once (as a
+            // flex column every row is measured several times over).
             .w_full()
             .min_w_0()
             .px(px(10.0))

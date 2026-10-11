@@ -40,6 +40,9 @@ tagging (`docs/releasing.md`).
   file beside the new one, a removed line next to the line that replaced
   it. The choice is kept. A pane too narrow for two columns shows the
   review unified until it is widened.
+- Faster redraws: the window is drawn in about half the time while an agent
+  streams or a list scrolls. The session list and long replies were laid
+  out many times over on each frame; now once.
 
 ## [0.1.4] - 2026-10-09
 

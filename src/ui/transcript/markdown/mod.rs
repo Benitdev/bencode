@@ -770,8 +770,6 @@ impl Draw<'_> {
                     .into_any_element()
             }
             Block::Quote(inner) => div()
-                .flex()
-                .flex_col()
                 .pl_4()
                 .border_l_4()
                 .border_color(look.fg.opacity(0.2))
@@ -781,9 +779,6 @@ impl Draw<'_> {
             Block::List { start, items } => {
                 let last = items.len().saturating_sub(1);
                 div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(4.0))
                     .children(items.iter().enumerate().map(|(ix, item)| {
                         let marker: AnyElement = match (item.task, start) {
                             (Some(done), _) => div()
@@ -814,6 +809,7 @@ impl Draw<'_> {
                         };
                         div()
                             .flex()
+                            .when(ix > 0, |el| el.mt(px(4.0)))
                             .child(
                                 div()
                                     .flex_none()
@@ -827,8 +823,6 @@ impl Draw<'_> {
                                 div()
                                     .flex_1()
                                     .min_w_0()
-                                    .flex()
-                                    .flex_col()
                                     .when(item.task == Some(true), |el| el.opacity(0.6))
                                     .children(self.blocks(
                                         &item.blocks,
@@ -1215,8 +1209,6 @@ impl RenderOnce for AgentMarkdown {
         };
         let children = draw.blocks(&blocks, false, fade, Joint::Block, window, cx);
         div()
-            .flex()
-            .flex_col()
             .min_w_0()
             .text_size(px(BODY_SIZE))
             .line_height(px(BODY_LEADING))

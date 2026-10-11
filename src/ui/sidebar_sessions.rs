@@ -54,6 +54,14 @@ pub struct TitleChange {
     pub serial: u64,
 }
 
+/// A list row's height as last painted.
+#[derive(Clone, Copy, Debug)]
+pub struct RowHeight {
+    pub height: f32,
+    /// The paint before measured the same: the row may be given it.
+    pub settled: bool,
+}
+
 /// The Sessions tab's state.
 #[derive(Default)]
 pub struct SessionsUi {
@@ -93,7 +101,7 @@ pub struct SessionsUi {
     pub filter_button_hit: bool,
     /// Each list row's height as last painted, by row key, so only the rows
     /// in view are built (`virtual_rows`).
-    pub row_heights: Rc<RefCell<HashMap<String, f32>>>,
+    pub row_heights: Rc<RefCell<HashMap<String, RowHeight>>>,
 }
 
 /// A list row's key for its measured height: a thread and a folder may
@@ -259,10 +267,14 @@ impl BenCodeApp {
             // Only the rows in view are built; every row is, until each has
             // been painted once and its height is known.
             let keys: Vec<String> = entries.iter().map(entry_key).collect();
-            let heights: Vec<Option<f32>> = {
+            let measured: Vec<Option<RowHeight>> = {
                 let known = self.sessions_ui.row_heights.borrow();
                 keys.iter().map(|key| known.get(key).copied()).collect()
             };
+            let heights: Vec<Option<f32>> = measured
+                .iter()
+                .map(|row| row.map(|row| row.height))
+                .collect();
             let window = virtual_rows::for_scroll(&heights, &self.sessions_ui.scroll, LIST_PAD);
             let app = cx.entity().downgrade();
             let rows: Vec<AnyElement> = window
@@ -271,15 +283,14 @@ impl BenCodeApp {
                 .map(|ix| {
                     let entry = &entries[ix];
                     let before_loose = matches!(entries.get(ix + 1), Some(ListEntry::Session(_)));
+                    let settled = measured[ix].filter(|row| row.settled);
                     let (measured, key, app) = (
                         self.sessions_ui.row_heights.clone(),
                         keys[ix].clone(),
                         app.clone(),
                     );
-                    div()
+                    let row = div()
                         .relative()
-                        .flex()
-                        .flex_col()
                         // The gap between rows, inside the measured height.
                         .when(ix + 1 < entries.len(), |el| el.pb(px(ROW_GAP)))
                         .child(self.render_list_entry(
@@ -294,10 +305,19 @@ impl BenCodeApp {
                             canvas(
                                 move |bounds, _, cx| {
                                     let height = crate::ui::scale::logical(bounds.size.height);
-                                    let was = measured.borrow_mut().insert(key.clone(), height);
+                                    let was = measured.borrow().get(&key).copied();
+                                    let moved =
+                                        was.is_some_and(|was| (was.height - height).abs() > 0.5);
+                                    measured.borrow_mut().insert(
+                                        key.clone(),
+                                        RowHeight {
+                                            height,
+                                            settled: was.is_some() && !moved,
+                                        },
+                                    );
                                     // The spacers were sized from the old
                                     // height: lay the list out once more.
-                                    if was.is_some_and(|was| (was - height).abs() > 0.5) {
+                                    if moved {
                                         let app = app.clone();
                                         cx.defer(move |cx| {
                                             if let Err(err) = app.update(cx, |_, cx| cx.notify()) {
@@ -310,7 +330,16 @@ impl BenCodeApp {
                             )
                             .absolute()
                             .size_full(),
-                        )
+                        );
+                    // A row whose height held still is given it, so the
+                    // layout above never has to ask the card for one: a
+                    // card is laid out many times over otherwise, once
+                    // for each way every box around it measures it. The
+                    // card keeps its own height inside, which is what is
+                    // measured; one that changes shows the row again.
+                    div()
+                        .when_some(settled, |el, row| el.w_full().h(px(row.height)))
+                        .child(row)
                         .into_any_element()
                 })
                 .collect();
@@ -322,8 +351,6 @@ impl BenCodeApp {
                     .retain(|key, _| listed.contains(key.as_str()));
             }
             div()
-                .flex()
-                .flex_col()
                 .p(px(LIST_PAD))
                 .when(window.above > 0.0, |el| el.child(div().h(px(window.above))))
                 .children(rows)

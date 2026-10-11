@@ -345,6 +345,25 @@ pages in `examples/gallery/pages/<chapter>.rs`. Read the library's own
 - Every interactive `div` needs a **unique `.id(...)`**. An element drawn twice
   (a row and its pinned copy) needs two different ids.
 
+### Stacks are blocks, not flex columns
+
+**A `div` that only stacks its children takes no `.flex().flex_col()`.** A
+plain `div()` is a block: children stack and fill its width, each laid out
+once. A flex container measures every child several times (its content
+size, its smallest size, its cross size, then the layout), and each
+nested flex level multiplies that, so a card five flex levels deep is laid
+out hundreds of times a frame. Layout was half of a redraw until the
+session cards and the markdown stacks became blocks (8.2ms to 3.8ms).
+
+- Keep flex for rows, and for a column that needs `gap`, `items_*`,
+  `justify_*` or a `flex_1` child. A block has no `gap`: give the later
+  children a top margin.
+- A row of a hand-virtualized list whose height is known is given it
+  (`RowHeight::settled` in `ui/sidebar_sessions.rs`), so the layout around
+  the list never measures its content.
+- Check a change of this kind with the frame bench, and that nothing
+  moved: rows' bounds printed before and after must match.
+
 ### Hover: never toggle `display`
 
 **Do not write `.hidden().group_hover(.., |s| s.flex())`, or any hover, active
