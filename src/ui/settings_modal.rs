@@ -210,14 +210,22 @@ impl BenCodeApp {
                 .map(|(_, key, name, icon)| (*key, *name, *icon)),
             self.settings_tab.key(),
         )
-        .page(self.render_settings_page(cx))
+        // The page's `max-w-5xl`, as with the rail open.
+        .page(div().max_w(px(1024.0)).child(self.render_settings_page(cx)))
         .on_select(cx.listener(|this, key: &SharedString, _, cx| {
             match SettingsTab::from_key(key) {
                 Some(tab) => this.select_settings_tab(tab, cx),
                 None => log::warn!("unknown settings section {key}"),
             }
         }));
-        div().size_full().child(layout).into_any_element()
+        // Ely's layout has no insets and does not scroll: the page's
+        // `px-8 py-8 pb-16`, with the sections nearer the window's edge.
+        let page = div()
+            .id("settings-page")
+            .size_full()
+            .overflow_y_scroll()
+            .child(div().pl_3().pr_8().pt_8().pb_16().child(layout));
+        crate::ui::scrollbar::Scrolled::new("settings-page-scrollbar", page).into_any_element()
     }
 
     fn render_settings_page(&self, cx: &Context<Self>) -> AnyElement {
