@@ -6,6 +6,18 @@ tagging (`docs/releasing.md`).
 
 ## [Unreleased]
 
+- Much less CPU while agents work: the busy marks (the rail's mascots,
+  shimmer and pulse, a running tool's spinner) no longer redraw the whole
+  window on every frame of the display, only a dozen times a second, and
+  smoothly where you watch a running thread.
+- A reply with a long code block no longer slows the window down: its
+  colours took some 20ms to work out for a 200-line block, again on every
+  redraw; now well under a millisecond, and once.
+- After a scroll, the fading scroll bar no longer keeps the window busy
+  for the second it stays.
+- While BenCode's window is out of sight (minimized, covered or on another
+  Space), it stops asking git for changes and fetching, and catches up as
+  soon as it shows.
 - A Mono's floating chat takes far less work while agents run elsewhere:
   it redraws when its own conversation or the Monos beside it change, not
   with every update to BenCode's window.
