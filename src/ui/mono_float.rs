@@ -8,8 +8,9 @@
 //! with the work between replies folded into one line.
 //!
 //! The window has no title bar, as MonoCode's has no decorations. GPUI's
-//! undecorated window does not resize, so AppKit is asked to
-//! (`native_resize`); the size it is left at is the one it opens with.
+//! undecorated window does not resize and its panel hides with the app's
+//! focus, so AppKit is asked otherwise (`native_window`); the size it is
+//! left at is the one it opens with.
 //!
 //! Not ported: the menu bar item that opens it (it opens from the Mono's
 //! header and its rail menu), questions answered in place (they open in
@@ -41,7 +42,7 @@ use crate::ui::mascot::pixel_sprite;
 use crate::ui::scale::px;
 use crate::ui::transcript::activity::tool_label;
 use crate::ui::transcript::markdown::AgentMarkdown;
-use crate::ui::transcript::turns::{is_tool, tool_target};
+use crate::ui::transcript::turns::{is_tool, tool_kind_name, tool_target};
 
 /// MonoCode `mono_chat.rs`: a 384pt conversation plus the 56pt rail.
 const WIDTH: f32 = 440.0;
@@ -187,7 +188,8 @@ fn recent(blocks: &[Block]) -> &[Block] {
 
 /// What [`float_items`] reads from `blocks`, folded into a number: while it
 /// holds, so do the items. A block changes in place only by its text
-/// growing (a reply streaming in) or a tool call's target being filled in;
+/// growing (a reply streaming in) or a tool call's kind or target being
+/// filled in;
 /// anything else adds, removes or replaces blocks, which moves the count
 /// or the ids at the window's ends. No allocation: it runs on each of the
 /// app's redraws.
@@ -199,7 +201,7 @@ fn items_key(blocks: &[Block], cwd: &str) -> u64 {
     for block in blocks {
         hasher.write_usize(block.text.as_deref().map_or(0, str::len));
         if is_tool(block) {
-            tool_target(block).hash(&mut hasher);
+            (tool_kind_name(block), tool_target(block)).hash(&mut hasher);
         }
     }
     hasher.finish()
@@ -207,7 +209,8 @@ fn items_key(blocks: &[Block], cwd: &str) -> u64 {
 
 /// What the window draws from the app. The app redraws many times a second
 /// while any agent works (a token in any thread, a spinner's frame, its
-/// clock); this window redraws only when what it shows changed.
+/// clock); this window redraws only when what it shows changed. Anything
+/// new the window draws from the app goes in here, or it is drawn stale.
 #[derive(Default, PartialEq)]
 struct Shown {
     /// The rail: every Mono and what it is doing.
@@ -1561,64 +1564,9 @@ pub fn open(
         ..Default::default()
     };
     cx.open_window(options, |window, cx| {
-        native_resize::allow(window);
+        crate::ui::native_window::make_floating_panel(window);
         cx.new(|cx| MonoFloat::new(app, main, mono_id, window, cx))
     })
-}
-
-#[cfg(not(target_os = "macos"))]
-mod native_resize {
-    pub fn allow(_: &gpui::Window) {}
-}
-
-/// GPUI gives a window without a title bar no resizable style, whatever
-/// `is_resizable` says: the style is added to its `NSWindow` here.
-// objc 0.2's `msg_send!` expands to a `cargo-clippy` feature check.
-#[cfg(target_os = "macos")]
-#[allow(unexpected_cfgs)]
-mod native_resize {
-    use objc::runtime::{Object, YES};
-    use objc::{msg_send, sel, sel_impl};
-    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-
-    type Id = *mut Object;
-
-    /// `NSWindowStyleMaskResizable`.
-    const RESIZABLE: usize = 1 << 3;
-    /// `NSWindowCloseButton`, `NSWindowMiniaturizeButton`, `NSWindowZoomButton`.
-    const BUTTONS: [usize; 3] = [0, 1, 2];
-
-    pub fn allow(window: &gpui::Window) {
-        // `Window::window_handle` is GPUI's own handle; this is the
-        // platform's.
-        let Ok(handle) = HasWindowHandle::window_handle(window) else {
-            return;
-        };
-        let RawWindowHandle::AppKit(appkit) = handle.as_raw() else {
-            return;
-        };
-        let view = appkit.ns_view.as_ptr() as Id;
-        // SAFETY: AppKit calls on the main thread, where GPUI opens its
-        // windows. `view` is GPUI's live NSView; its window and the
-        // window's buttons are borrowed, and each is checked for nil.
-        unsafe {
-            let native: Id = msg_send![view, window];
-            if native.is_null() {
-                log::warn!("the floating chat has no native window to make resizable");
-                return;
-            }
-            let mask: usize = msg_send![native, styleMask];
-            let _: () = msg_send![native, setStyleMask: mask | RESIZABLE];
-            // A resizable window gets its traffic lights back; MonoCode's
-            // panel has none.
-            for button in BUTTONS {
-                let button: Id = msg_send![native, standardWindowButton: button];
-                if !button.is_null() {
-                    let _: () = msg_send![button, setHidden: YES];
-                }
-            }
-        }
-    }
 }
 
 #[cfg(test)]
@@ -1726,6 +1674,12 @@ mod tests {
         let mut retargeted = blocks.clone();
         retargeted[1] = tool("/repo/b.rs");
         assert_ne!(items_key(&retargeted, "/repo"), key);
+        // The same target under another verb.
+        let mut rekinded = blocks.clone();
+        if let Some(tool) = rekinded[1].tool.as_mut().and_then(|t| t.as_object_mut()) {
+            tool.insert("kind".into(), serde_json::json!("edit"));
+        }
+        assert_ne!(items_key(&rekinded, "/repo"), key);
         // A call finishing changes nothing the rows show.
         let mut finished = blocks.clone();
         if let Some(tool) = finished[1].tool.as_mut().and_then(|t| t.as_object_mut()) {

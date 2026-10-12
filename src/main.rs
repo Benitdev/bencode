@@ -118,10 +118,15 @@ fn main() {
             // BenCode's state, running agents included, lives in its one
             // window, and macOS keeps the app running when it closes. So the
             // close button hides the app, as ⌘H does, and the Dock icon brings
-            // it back; ⌘Q quits.
+            // it back; ⌘Q quits. With the floating chat open, only this
+            // window goes: hiding the app would take the chat with it.
             let hide_on_close = window.update(cx, |_, window, cx| {
-                window.on_window_should_close(cx, |_, cx| {
-                    cx.hide();
+                window.on_window_should_close(cx, |window, cx| {
+                    if cx.windows().len() > 1 {
+                        ui::native_window::order_out(window);
+                    } else {
+                        cx.hide();
+                    }
                     false
                 });
             });
