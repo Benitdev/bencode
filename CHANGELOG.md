@@ -4,7 +4,7 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
-## [Unreleased]
+## [0.1.9] - 2026-10-12
 
 - Much less CPU while agents work: the busy marks (the rail's mascots,
   shimmer and pulse, a running tool's spinner) no longer redraw the whole
