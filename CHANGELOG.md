@@ -4,6 +4,14 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
+## [Unreleased]
+
+- Deleting a project from the rail deletes only the conversations in that
+  folder. It also took those of every project inside it, so deleting the
+  home folder, which a Mono's chat put on the rail, deleted them all.
+- The home folder is no longer listed as a project because a Mono's
+  conversation ran there.
+
 ## [0.1.7] - 2026-10-12
 
 - Monos (experimental), as in MonoCode: agents of your own that live on the
