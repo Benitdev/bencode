@@ -556,7 +556,6 @@ impl BenCodeApp {
                 this.close_surface(cx);
             } else if !this.close_lightbox(cx)
                 && !this.close_quick_open(cx)
-                && !this.close_browser_picker(cx)
                 && !this.close_sidebar_drawer(cx)
                 && !this.close_mcp_picker(true, cx)
                 && !this.close_folder_picker(true, cx)
@@ -565,6 +564,7 @@ impl BenCodeApp {
                 && !this.close_usage_popover(cx)
                 && !this.close_find(cx)
                 && !this.close_project_search(cx)
+                && !this.close_browser_picker(cx)
                 && !this.stop_focused_turn(window, cx)
             {
                 cx.propagate();

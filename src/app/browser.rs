@@ -703,7 +703,11 @@ impl BenCodeApp {
 
     /// Esc while the picker is on and the keyboard is BenCode's, not the
     /// page's (the pick button keeps it): the page's own Esc never fires.
+    /// A dialog over the page takes the key first.
     pub(crate) fn close_browser_picker(&mut self, cx: &mut Context<Self>) -> bool {
+        if self.browser.obscured.get() {
+            return false;
+        }
         match self.browser.picking {
             Some(id) => {
                 self.toggle_browser_picker(id, cx);
