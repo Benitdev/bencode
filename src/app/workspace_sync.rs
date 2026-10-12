@@ -48,6 +48,9 @@ pub struct WorkspaceCache {
     fetching: bool,
     /// When each directory's remote refs were last fetched.
     fetched_at: HashMap<String, Instant>,
+    /// The window is out of sight (minimized, fully covered, on another
+    /// Space or a sleeping display): the git poll and the auto fetch wait.
+    pub hidden: bool,
 }
 
 impl WorkspaceCache {
@@ -305,12 +308,16 @@ impl BenCodeApp {
         cx.spawn(async move |this, cx| {
             loop {
                 cx.background_executor().timer(GIT_POLL_INTERVAL).await;
-                let Ok(cwd) = this.update(cx, |app, _| app.workspace.cwd.clone()) else {
+                // Three git commands a tick: none while nobody can see the
+                // result. The next tick after the window shows catches up.
+                let Ok(cwd) = this.update(cx, |app, _| {
+                    (!app.workspace.hidden).then(|| app.workspace.cwd.clone())
+                }) else {
                     return; // app dropped
                 };
-                if cwd.is_empty() {
+                let Some(cwd) = cwd.filter(|cwd| !cwd.is_empty()) else {
                     continue;
-                }
+                };
                 let probe = cwd.clone();
                 let fingerprint = cx
                     .background_executor()
@@ -343,10 +350,12 @@ impl BenCodeApp {
         cx.spawn(async move |this, cx| {
             loop {
                 cx.background_executor().timer(AUTO_FETCH_TICK).await;
-                if this
-                    .update(cx, |app, cx| app.auto_fetch(AUTO_FETCH_INTERVAL, cx))
-                    .is_err()
-                {
+                let fetched = this.update(cx, |app, cx| {
+                    if !app.workspace.hidden {
+                        app.auto_fetch(AUTO_FETCH_INTERVAL, cx);
+                    }
+                });
+                if fetched.is_err() {
                     return; // app dropped
                 }
             }

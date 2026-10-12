@@ -635,6 +635,9 @@ impl BenCodeApp {
             cx.observe_window_appearance(window, |this, window, cx| {
                 this.on_system_appearance_changed(window.appearance(), cx)
             }),
+            cx.observe_window_visibility(window, |this, visibility, _, _| {
+                this.workspace.hidden = !visibility.is_visible();
+            }),
             cx.subscribe(
                 &model_search_input,
                 |this: &mut Self, _, event: &InputEvent, cx| match event {
