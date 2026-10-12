@@ -799,6 +799,9 @@ impl BenCodeApp {
         };
         // MonoCode `applyNotesToTurn`: `@note/slug` brings the note along.
         let agent_prompt = super::notes::apply_notes_to_turn(&agent_prompt, &self.notes.items);
+        // MonoCode `monoTurn`: a Mono reads who it is ahead of the message.
+        let provider = session.provider_session_id.clone();
+        let agent_prompt = self.apply_mono_context(session_id, provider.as_deref(), agent_prompt);
         self.persist_session(session_id);
         let request = RunRequest {
             prompt: agent_prompt,
@@ -870,7 +873,7 @@ impl BenCodeApp {
                 ..spawn
             });
         // The baseline is queued before the agent can edit anything.
-        if request.purpose == RunPurpose::Turn {
+        if request.purpose == RunPurpose::Turn && !self.is_mono_session(session_id) {
             self.checkpoints.begin_turn(session_id, session.work_dir());
         }
         let started = spawn.and_then(|spawn| {
@@ -968,6 +971,9 @@ impl BenCodeApp {
         event: AgentEvent,
     ) -> Option<PermissionRequest> {
         let focused = self.selected_session_id.as_deref() == Some(session_id);
+        // A Mono works from the home folder, across projects: there is no
+        // one checkout to snapshot, so its turns have no review card.
+        let tracked = !self.is_mono_session(session_id);
         let run = self.current_run(session_id, run_id)?;
         let save = save_due(&event, run.last_saved.elapsed());
         match plan_event(run.auto_approve, &mut run.edit_paths, focused, event) {
@@ -1004,7 +1010,7 @@ impl BenCodeApp {
                     run.last_saved = Instant::now();
                 }
                 if let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id) {
-                    if let Some((paths, completed)) = checkpoint {
+                    if let Some((paths, completed)) = checkpoint.filter(|_| tracked) {
                         let cwd = session.work_dir();
                         if completed {
                             self.checkpoints.capture(session_id, cwd, paths);
@@ -1057,6 +1063,7 @@ impl BenCodeApp {
         self.persist_session(session_id);
         self.close_automation_run(&run, automation_status(run.outcome));
         if run.purpose == RunPurpose::Turn {
+            self.record_mono_context(session_id, cx);
             self.announce_turn_finished(session_id, cx);
         }
         // The agent has most likely edited files.

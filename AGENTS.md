@@ -112,6 +112,7 @@ bencode/
     ├── notifications.rs      macOS notifications (UNUserNotificationCenter): permission, banners, clicks
     ├── sounds/               the cues (cuelume 0.2.2's recipes, rendered once and played with NSSound)
     ├── monocode_import/      the one-time copy of a MonoCode install's data
+    ├── monos.rs              Monos: the roster's model, a Mono's `SOUL.md`, the context its turns carry
     ├── external_editor.rs    finding and launching VS Code, Cursor, Zed, …
     └── workspace.rs          workspace file helpers
 ```
@@ -139,6 +140,7 @@ bencode/
 | `source_control.rs` | The Changes panel's git and PR actions: stage, discard, commit, push, pull, sync, create / view PR |
 | `tab_scope.rs`, `tab_history.rs`, `workspace_nav.rs` | Which tabs belong to which project or worktree; Back / Forward |
 | `reminders.rs`, `model_catalog.rs` | Session reminders; live model catalogs |
+| `monos.rs` | Monos: create / open / delete / reset, the one in view (over the tabs), its projects, its soul's autosave, the standing context a turn carries and its record |
 | `alerts.rs` | Sounds and notifications: the Settings switches, the macOS permission, the project's mutes, what a banner says, a click opening its thread or reminder |
 | `harness_updates.rs` | The launch check for CLIs behind their latest release; Update / Update all through each CLI's own updater, then its models reloaded |
 | `usage.rs` | Provider usage snapshots for the footer, per account: load once, Refresh, the 30s countdown tick |
@@ -170,6 +172,7 @@ bencode/
 | `composer/` | Prompt composer and its pickers, cards, runner |
 | `file_pane.rs` | The pane beside the chat and its tab strip |
 | `browser_pane.rs` | A browser tab: toolbar, address bar, the page's box |
+| `monos.rs`, `rail/monos.rs` | A Mono in the main area (header, chat, Details: look, projects, soul); the rail's Monos section |
 | `editor_pane/` | Code editor: open files, saves, disk sync |
 | `diff_viewer.rs`, `diff_model.rs` | Review of working-tree changes and commits |
 | `terminal_pane/` | Terminal dock: tabs, splits (`split.rs`), menus, running jobs, host sessions (`sessions.rs`) |
@@ -287,6 +290,7 @@ only read that cache.
 | `integrations/harness/` | `harness/` | Argv builders and stdout parsers |
 | `integrations/harness/providers/grok/` | `harness/grok.rs` | Grok Build over ACP, one `grok agent stdio` per turn; `/compact` through `_x.ai/compact_conversation`. BenCode's own: follow-ups go into the running turn (`_x.ai/interject`), where MonoCode queues them, and the context meter reads the count Grok stamps on its updates |
 | `sessions/model/taskList.ts`, `sessions/ui/TaskListPreview.tsx`, `harness/core/apply.ts` `upsertTaskList` | `app/task_list.rs`, `ui/transcript/task_list.rs` | The Tasks card, from `AgentEvent::Tasks`. Only Grok Build's plan updates feed it; Claude's `TodoWrite` still shows as a tool row. Whole snapshots only (no `merge`, no `key`) |
+| `features/monos/` (`mono.ts`, `monoFiles.ts`, `monoWorkspace.ts`, `MonoDetails`, `MonoProjects`), `app/shell/MonoRailSection.tsx` | `monos.rs`, `app/monos.rs`, `ui/monos.rs`, `ui/rail/monos.rs` | Agents of their own on the rail: one conversation each, in the home folder with Auto permissions, their projects and `SOUL.md` handed over ahead of a message. The roster is in `settings.json`. No memory, habits, started sessions, artifacts or reactions (MonoCode's `app` CLI), no floating chat, no review card |
 | none (Codex desktop's in-app browser) | `browser/`, `app/browser.rs`, `ui/browser_pane.rs` | BenCode's own. A WKWebView over a file-pane tab; picked elements and screenshots go to the composer; agents drive it through the `bencode-browser` MCP server while a browser tab is open |
 | `src-tauri/src/` (`checkpoint.rs`, `reminders.rs`, `fs.rs`, …) | `git/checkpoint.rs`, `db/`, `ui/file_tree/fs.rs` | In-process calls, no IPC |
 
@@ -496,6 +500,23 @@ div()
 - `AgentEvent` is the whole contract with the UI: `SessionStarted`, `TextDelta`,
   `ThinkingDelta`, `ToolCallStart` / `ToolCallFinish`, `PermissionRequest`,
   `Tasks`, `Usage`, `TurnMetrics`, `UsageLimited`, `Compacted`, `Done`, `Error`.
+
+### Monos (`src/monos.rs`, `src/app/monos.rs`)
+
+- A Mono's conversation is a session row like any other, but **never a
+  tab and never a project**: it is left out of the tabs and the rail's
+  projects at launch, `open_session` opens it as the Mono, and while one is
+  in view (`monos.view`) `sync_selection` selects its session and leaves
+  the project, tabs and dock as they were. Anything new that opens a tab
+  calls `leave_mono_view` first.
+- It runs in the home folder, so its turns take **no checkpoints** (there
+  is no one checkout to snapshot).
+- What a turn carries (name, projects, `SOUL.md`) goes ahead of the
+  message in `apply_mono_context`, only when the provider session behind
+  the chat has not been given it (`Mono.handed`), and is recorded once the
+  turn ends (`record_mono_context`). The user's block keeps what they typed.
+- A Mono's files live in BenCode's data folder (`monos/<id>/`), never in a
+  repository; deleting a Mono leaves them on disk.
 
 ### In-app browser (`src/browser/`)
 

@@ -18,6 +18,7 @@ pub mod in_flight;
 mod integrations;
 pub mod live_agents;
 mod model_catalog;
+pub mod monos;
 pub mod note_images;
 pub mod notes;
 mod panes;
@@ -424,6 +425,8 @@ pub struct BenCodeApp {
     pub is_rail_open: bool,
     /// The project rail's menus, dialogs and drags.
     pub rail_ui: crate::ui::rail::RailUi,
+    /// The Mono in view, its details panel and its soul.
+    pub monos: monos::MonosState,
     pub theme_preference: crate::settings::ThemePreference,
     /// Run Claude with `disableAllHooks` (MonoCode "Claude Code hooks" off).
     pub claude_hooks_disabled: bool,
@@ -492,9 +495,18 @@ impl BenCodeApp {
                 log::error!("failed to load sessions: {err:#}");
                 Vec::new()
             });
+        // A Mono's conversation is no project's: it opens from the rail,
+        // never as a tab.
+        let is_mono_session = |id: &str| {
+            saved
+                .monos
+                .iter()
+                .any(|mono| mono.session_id.as_deref() == Some(id))
+        };
         let tabs = crate::ui::layout::TabSet::with_sessions(
             sessions
                 .iter()
+                .filter(|s| !is_mono_session(&s.id))
                 .take(INITIAL_OPEN_TABS)
                 .map(|s| s.id.as_str()),
         );
@@ -1117,7 +1129,10 @@ impl BenCodeApp {
                     .map(|p| normalize_project_path(&p.to_string_lossy()))
             })
             .unwrap_or_else(|| ".".to_string());
-        let recent_projects = projects::recent_projects(&current_cwd, &sessions);
+        let recent_projects = projects::recent_projects(
+            &current_cwd,
+            sessions.iter().filter(|s| !is_mono_session(&s.id)),
+        );
 
         let harnesses = HarnessResolver::discover();
         let selected_model = catalog::default_model(&harnesses).key;
@@ -1327,6 +1342,7 @@ impl BenCodeApp {
             is_sidebar_open: true,
             is_rail_open: true,
             rail_ui,
+            monos: monos::MonosState::new(window, cx),
             theme_preference: Default::default(),
             claude_hooks_disabled: false,
             tab_history: Default::default(),
@@ -1529,7 +1545,9 @@ impl Render for BenCodeApp {
         // Search, Inbox, Notes, Automations and Settings replace the
         // sidebar and the workspace column (MonoCode in-shell views).
         let surface = self.render_surface(cx);
-        let workspace_visible = surface.is_none();
+        // A Mono's conversation does too (MonoCode `monoCovers`).
+        let mono_view = self.render_mono_view(cx);
+        let workspace_visible = surface.is_none() && mono_view.is_none();
         let compact_rail = self.compact_rail_active();
         let title_bar_above = self.compact_title_bar();
         // A browser page is a native view above everything GPUI draws: it
@@ -1555,6 +1573,7 @@ impl Render for BenCodeApp {
             any_elements(self.render_whats_new(cx)),
             any_elements(self.render_resume_interrupted(cx)),
             any_elements(self.render_quit_confirm(cx)),
+            any_elements(self.render_mono_dialogs(cx)),
         ]
         .into_iter()
         .flatten()
@@ -1666,7 +1685,8 @@ impl Render for BenCodeApp {
                                         ),
                                 )
                             })
-                            .children(surface),
+                            .children(surface)
+                            .children(mono_view),
                     )
                     .children(self.render_sidebar_menu(cx))
                     .children(self.render_rail_overlays(cx))

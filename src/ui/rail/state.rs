@@ -9,11 +9,13 @@ use gpui::{AppContext as _, Context, Entity, Focusable as _, Pixels, Point, Subs
 
 use crate::app::BenCodeApp;
 
-/// What a project or group menu (MonoCode `TabGroupMenu`) acts on.
+/// What a project or group menu (MonoCode `TabGroupMenu`) acts on; a
+/// Mono's (MonoCode `MonoMenu`) is the same menu over its name and look.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MenuTarget {
     Project(String),
     Group(String),
+    Mono(String),
 }
 
 #[derive(Clone, Debug)]

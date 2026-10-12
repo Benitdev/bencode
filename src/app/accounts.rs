@@ -226,7 +226,8 @@ impl BenCodeApp {
         }
         let target = if empty {
             active_id
-        } else if current == account_id {
+        // A Mono has one conversation: the pick waits for its next chat.
+        } else if current == account_id || self.is_mono_session(&active_id) {
             return;
         } else {
             let id = self.create_session_row(&cwd);

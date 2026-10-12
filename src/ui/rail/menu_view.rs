@@ -160,6 +160,18 @@ impl BenCodeApp {
                         None,
                     )
                 }
+                MenuTarget::Mono(id) => {
+                    let mono = self.mono(id)?;
+                    (
+                        Self::mono_extra_items(),
+                        Some(mono.color_index),
+                        mono.custom_color.as_deref().and_then(parse_hex),
+                        self.mono_color(mono),
+                        mono.id.clone(),
+                        Some(mono.mascot.clone()),
+                        None,
+                    )
+                }
             };
         let leading = match &menu.target {
             MenuTarget::Project(path) => mute_status(
@@ -174,7 +186,7 @@ impl BenCodeApp {
                     ExtraIcon::BellOff,
                 )
             }),
-            MenuTarget::Group(_) => None,
+            MenuTarget::Group(_) | MenuTarget::Mono(_) => None,
         };
         let target = menu.target.clone();
         let separator = || div().my_1().h(px(1.0)).bg(fg.opacity(0.1));

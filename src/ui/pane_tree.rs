@@ -134,7 +134,7 @@ impl BenCodeApp {
         split.into_any_element()
     }
 
-    fn render_session_pane(
+    pub(crate) fn render_session_pane(
         &mut self,
         session_id: &str,
         in_split: bool,
@@ -148,8 +148,9 @@ impl BenCodeApp {
             )
             .into_any_element();
         }
-        // A thread's card is read the first time its pane is drawn.
-        if !self.checkpoints.reviews.contains_key(session_id) {
+        // A thread's card is read the first time its pane is drawn (a
+        // Mono's turns keep no checkpoints).
+        if !self.checkpoints.reviews.contains_key(session_id) && !self.is_mono_session(session_id) {
             self.load_session_review(session_id, cx);
         }
         self.sync_transcript_list_for(session_id);
@@ -518,6 +519,23 @@ impl BenCodeApp {
             Some(name) => format!("What should we work on in {name}?"),
             None => "What should we work on?".to_string(),
         };
+        let headline = match self.mono_for_session(&session.id) {
+            Some(mono) => self.render_mono_greeting(mono, cx),
+            // MonoCode `EmptySession`: the headline sits over the composer
+            // in the same column (`px-1.5`, then `px-2.5`).
+            None => div()
+                .w_full()
+                .max_w(px(896.0))
+                .mx_auto()
+                .px(px(16.0))
+                .mb_4()
+                .truncate()
+                .text_size(px(18.0))
+                .line_height(px(28.0))
+                .text_color(cx.theme().colors.fg)
+                .child(title)
+                .into_any_element(),
+        };
         div()
             .flex()
             .flex_col()
@@ -525,21 +543,7 @@ impl BenCodeApp {
             .min_h_0()
             .justify_center()
             .py_12()
-            // MonoCode `EmptySession`: the headline sits over the composer
-            // in the same column (`px-1.5`, then `px-2.5`).
-            .child(
-                div()
-                    .w_full()
-                    .max_w(px(896.0))
-                    .mx_auto()
-                    .px(px(16.0))
-                    .mb_4()
-                    .truncate()
-                    .text_size(px(18.0))
-                    .line_height(px(28.0))
-                    .text_color(cx.theme().colors.fg)
-                    .child(title),
-            )
+            .child(headline)
             .child(
                 div()
                     .relative()

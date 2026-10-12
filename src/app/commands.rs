@@ -441,6 +441,9 @@ impl BenCodeApp {
             self.close_surface(cx);
             return;
         }
+        if self.close_mono_view(cx) {
+            return;
+        }
         if self.file_pane_focused && self.close_active_pane_tab(cx) {
             return;
         }

@@ -1,0 +1,661 @@
+//! Monos on the app (MonoCode `App.tsx`'s `monoViewId`, `monoWorkspace.ts`,
+//! `monoFiles.ts`): the roster in `settings.json`, the Mono whose
+//! conversation covers the workspace, its details panel and `SOUL.md`, and
+//! the standing context a turn carries. The model is in `crate::monos`.
+
+use std::collections::HashMap;
+use std::time::Duration;
+
+use ely_gpui_component::forms::{InputEvent, TextInput};
+use gpui::{AppContext as _, Context, Entity, Hsla, PathPromptOptions, Subscription, Window};
+
+use crate::app::live_agents::{RunFlags, live_agent};
+use crate::app::session_folders::{palette_color, parse_hex};
+use crate::app::{BenCodeApp, same_project_path, unique_id};
+use crate::monos::{Handed, Mono, MonoState, MonoStatus};
+use crate::ui::mascot::{Mascot, mascot_for};
+
+/// How long the soul field rests before it is saved.
+const SOUL_SAVE_DELAY: Duration = Duration::from_millis(600);
+/// MonoCode `ensureMonoSession`: a Mono's chat starts with Auto permissions.
+const MONO_RUNTIME_MODE: &str = "auto";
+
+pub struct MonosState {
+    /// The Mono whose conversation covers the workspace.
+    pub view: Option<String>,
+    /// MonoCode `monoDetailsOpen`.
+    pub details_open: bool,
+    /// Each Mono's `SOUL.md` as last read or saved.
+    souls: HashMap<String, String>,
+    pub soul_input: Entity<TextInput>,
+    /// The Mono whose soul the field holds.
+    soul_of: Option<String>,
+    pub soul_error: Option<String>,
+    /// Bumped on every edit; a pending save only runs if it still matches.
+    soul_generation: u64,
+    /// Mono id awaiting delete confirmation.
+    pub pending_delete: Option<String>,
+    /// The open Mono's chat is awaiting a reset confirmation.
+    pub pending_reset: bool,
+    /// The context a running turn carries, by conversation: recorded as
+    /// handed over once the turn ends with a provider session to name.
+    carrying: HashMap<String, String>,
+    _subscriptions: Vec<Subscription>,
+}
+
+impl MonosState {
+    pub fn new(window: &mut Window, cx: &mut Context<BenCodeApp>) -> Self {
+        let soul_input = cx.new(|cx| {
+            TextInput::new(window, cx)
+                .multi_line(8, usize::MAX)
+                .placeholder("Anything it should always keep in mind…")
+        });
+        let subscriptions = vec![cx.subscribe(
+            &soul_input,
+            |this: &mut BenCodeApp, _, event: &InputEvent, cx| match event {
+                InputEvent::Changed => this.schedule_soul_save(cx),
+                InputEvent::Blur => this.save_soul_if_dirty(cx),
+                _ => {}
+            },
+        )];
+        Self {
+            view: None,
+            details_open: false,
+            souls: HashMap::new(),
+            soul_input,
+            soul_of: None,
+            soul_error: None,
+            soul_generation: 0,
+            pending_delete: None,
+            pending_reset: false,
+            carrying: HashMap::new(),
+            _subscriptions: subscriptions,
+        }
+    }
+}
+
+/// `$HOME`: no single project is a Mono's own (MonoCode `host.home()`).
+fn home_dir() -> Option<String> {
+    std::env::var_os("HOME").map(|home| home.to_string_lossy().into_owned())
+}
+
+impl BenCodeApp {
+    pub fn mono(&self, id: &str) -> Option<&Mono> {
+        self.settings.monos.iter().find(|mono| mono.id == id)
+    }
+
+    /// MonoCode `monoForSession`: the Mono whose conversation this is.
+    pub fn mono_for_session(&self, session_id: &str) -> Option<&Mono> {
+        self.settings
+            .monos
+            .iter()
+            .find(|mono| mono.session_id.as_deref() == Some(session_id))
+    }
+
+    pub fn is_mono_session(&self, session_id: &str) -> bool {
+        self.mono_for_session(session_id).is_some()
+    }
+
+    /// The Mono open in the main area.
+    pub fn mono_in_view(&self) -> Option<&Mono> {
+        self.mono(self.monos.view.as_deref()?)
+    }
+
+    /// The conversation the open Mono shows, once it is loaded.
+    pub fn mono_view_session(&self) -> Option<&str> {
+        let id = self.mono_in_view()?.session_id.as_deref()?;
+        self.sessions.iter().any(|s| s.id == id).then_some(id)
+    }
+
+    /// A Mono's colour: its custom one, else its palette pick.
+    pub fn mono_color(&self, mono: &Mono) -> Hsla {
+        mono.custom_color
+            .as_deref()
+            .and_then(parse_hex)
+            .or_else(|| palette_color(mono.color_index))
+            .or_else(|| palette_color(1))
+            .unwrap_or_default()
+    }
+
+    pub fn mono_mascot(&self, mono: &Mono) -> &'static Mascot {
+        mascot_for(&mono.id, Some(&mono.mascot))
+    }
+
+    /// MonoCode `monoLook().projects`: its projects as (rail label, folder).
+    pub fn mono_projects(&self, mono: &Mono) -> Vec<(String, String)> {
+        mono.projects
+            .iter()
+            .map(|path| (self.rail_project_label(path), path.clone()))
+            .collect()
+    }
+
+    /// MonoCode `monoState`: working, waiting on the user, or idle.
+    pub fn mono_state(&self, mono: &Mono) -> MonoState {
+        let Some(session) = mono
+            .session_id
+            .as_deref()
+            .and_then(|id| self.sessions.iter().find(|s| s.id == id))
+        else {
+            return MonoState::IDLE;
+        };
+        if let Some(request) = self.pending_permission_for(&session.id) {
+            let waiting = if request.tool == crate::app::QUESTION_TOOL {
+                "Waiting for your answer".to_string()
+            } else {
+                format!("Approve {}", request.tool)
+            };
+            return MonoState {
+                status: MonoStatus::NeedsYou,
+                activity: Some(waiting),
+            };
+        }
+        if self
+            .thread(&session.id)
+            .is_some_and(|thread| thread.usage_limit.is_some())
+        {
+            return MonoState {
+                status: MonoStatus::NeedsYou,
+                activity: Some("Usage limit reached".to_string()),
+            };
+        }
+        let flags = RunFlags {
+            busy: self.is_agent_running_in(&session.id),
+            ..Default::default()
+        };
+        match live_agent(session, flags) {
+            Some(agent) => MonoState {
+                status: MonoStatus::Working,
+                activity: Some(agent.activity),
+            },
+            None => MonoState::IDLE,
+        }
+    }
+
+    /// MonoCode `createMono` then `onOpenMono`: a new Mono, opened.
+    pub fn create_mono(&mut self, cx: &mut Context<Self>) {
+        let id = unique_id("mono");
+        let mono = crate::monos::new_mono(&self.settings.monos, id.clone());
+        self.update_monos(|roster| roster.push(mono), cx);
+        self.open_mono(&id, cx);
+    }
+
+    /// MonoCode `onOpenMono`: the Mono's conversation takes the main area,
+    /// read from the database or started if it has none yet.
+    pub fn open_mono(&mut self, id: &str, cx: &mut Context<Self>) {
+        let Some(session) = self.mono(id).map(|mono| mono.session_id.clone()) else {
+            return;
+        };
+        self.close_rail_menu(cx);
+        let Some(session_id) = session else {
+            self.start_mono_session(id, cx);
+            return;
+        };
+        if self.sessions.iter().any(|s| s.id == session_id) {
+            self.show_mono(id, cx);
+            return;
+        }
+        let (mono_id, row) = (id.to_string(), session_id.clone());
+        self.db_then(
+            cx,
+            move |db| db.get_session(&row),
+            move |this, loaded, cx| match loaded {
+                Ok(Some(session)) => {
+                    if !this.sessions.iter().any(|s| s.id == session.id) {
+                        this.sessions.push(session);
+                    }
+                    this.show_mono(&mono_id, cx);
+                }
+                // Deleted since: it starts over, as a Mono first opened does.
+                Ok(None) => this.start_mono_session(&mono_id, cx),
+                Err(err) => log::error!("could not load the Mono's conversation: {err:#}"),
+            },
+        );
+    }
+
+    /// A new conversation for the Mono, in the home folder.
+    fn start_mono_session(&mut self, id: &str, cx: &mut Context<Self>) {
+        let Some(home) = home_dir() else {
+            log::error!("no home folder to start a Mono in");
+            return;
+        };
+        let session_id = self.create_session_row(&home);
+        if let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id) {
+            session.runtime_mode = Some(MONO_RUNTIME_MODE.to_string());
+            session.worktree_cwd = None;
+            session.branch = None;
+        }
+        self.persist_session(&session_id);
+        self.update_monos(
+            |roster| {
+                if let Some(mono) = roster.iter_mut().find(|mono| mono.id == id) {
+                    mono.session_id = Some(session_id.clone());
+                    mono.handed = None;
+                }
+            },
+            cx,
+        );
+        self.show_mono(id, cx);
+    }
+
+    fn show_mono(&mut self, id: &str, cx: &mut Context<Self>) {
+        self.save_soul_if_dirty(cx);
+        if self.surface == Some(crate::app::Surface::Notes) {
+            self.save_note_if_dirty(cx);
+        }
+        self.surface = None;
+        self.settings_return = None;
+        self.monos.view = Some(id.to_string());
+        self.monos.pending_reset = false;
+        self.load_mono_soul(id, cx);
+        self.sync_selection(cx);
+    }
+
+    /// MonoCode `closeMonoView`: back to the project's tabs. Returns whether
+    /// a Mono was open.
+    pub fn close_mono_view(&mut self, cx: &mut Context<Self>) -> bool {
+        if !self.leave_mono_view(cx) {
+            return false;
+        }
+        self.sync_selection(cx);
+        true
+    }
+
+    /// Leaves the Mono's view without choosing what shows next; the caller
+    /// does, and syncs the selection.
+    pub(crate) fn leave_mono_view(&mut self, cx: &mut Context<Self>) -> bool {
+        if self.monos.view.is_none() {
+            return false;
+        }
+        self.save_soul_if_dirty(cx);
+        self.monos.view = None;
+        self.monos.pending_reset = false;
+        true
+    }
+
+    pub fn toggle_mono_details(&mut self, cx: &mut Context<Self>) {
+        self.monos.details_open = !self.monos.details_open;
+        if !self.monos.details_open {
+            self.save_soul_if_dirty(cx);
+        }
+        cx.notify();
+    }
+
+    /// MonoCode `removeMono`: its conversation goes with it; its folder of
+    /// files stays on disk.
+    pub fn delete_mono(&mut self, id: &str, cx: &mut Context<Self>) {
+        self.monos.pending_delete = None;
+        let Some(mono) = self.mono(id).cloned() else {
+            return;
+        };
+        if self.monos.view.as_deref() == Some(id) {
+            // Its soul is not saved on the way out: the Mono is going.
+            self.monos.soul_generation += 1;
+            self.monos.soul_of = None;
+            self.monos.view = None;
+        }
+        self.monos.souls.remove(id);
+        self.update_monos(|roster| roster.retain(|mono| mono.id != id), cx);
+        match mono.session_id {
+            Some(session_id) => self.drop_mono_session(&session_id, cx),
+            None => self.sync_selection(cx),
+        }
+    }
+
+    /// Stops and deletes a conversation that was a Mono's.
+    fn drop_mono_session(&mut self, session_id: &str, cx: &mut Context<Self>) {
+        if self.is_agent_running_in(session_id) {
+            self.stop_agent(session_id, cx);
+        }
+        if self.sessions.iter().any(|s| s.id == session_id) {
+            self.delete_session(session_id, cx);
+            return;
+        }
+        // Never loaded this launch: only its row is left.
+        let row = session_id.to_string();
+        self.db_write("delete mono session", move |db| db.delete_session(&row));
+        self.sync_selection(cx);
+    }
+
+    /// MonoCode `resetMonoSession`: a fresh chat with the same harness,
+    /// model and permissions; its name, look, projects and soul stay.
+    pub fn reset_mono_session(&mut self, cx: &mut Context<Self>) {
+        self.monos.pending_reset = false;
+        let Some(mono) = self.mono_in_view().cloned() else {
+            return;
+        };
+        let Some(old) = mono
+            .session_id
+            .as_deref()
+            .and_then(|id| self.sessions.iter().find(|s| s.id == id))
+            .cloned()
+        else {
+            return;
+        };
+        let fresh = self.create_session_row(&old.cwd);
+        if let Some(session) = self.sessions.iter_mut().find(|s| s.id == fresh) {
+            session.harness = old.harness.clone();
+            session.model = old.model.clone();
+            session.runtime_mode = old.runtime_mode.clone();
+            session.model_settings = old.model_settings.clone();
+            session.worktree_cwd = None;
+            session.branch = None;
+        }
+        self.persist_session(&fresh);
+        self.update_monos(
+            |roster| {
+                if let Some(entry) = roster.iter_mut().find(|entry| entry.id == mono.id) {
+                    entry.session_id = Some(fresh.clone());
+                    entry.handed = None;
+                }
+            },
+            cx,
+        );
+        self.drop_mono_session(&old.id, cx);
+    }
+
+    pub fn set_mono_name(&mut self, id: &str, name: &str, cx: &mut Context<Self>) {
+        let name: String = name.trim().chars().take(crate::monos::NAME_MAX).collect();
+        self.update_monos(
+            |roster| {
+                if let Some(mono) = roster.iter_mut().find(|mono| mono.id == id) {
+                    mono.name = Some(name).filter(|name| !name.is_empty());
+                }
+            },
+            cx,
+        );
+    }
+
+    /// MonoCode `saveMonoMascot`.
+    pub fn set_mono_mascot(&mut self, id: &str, mascot: &str, cx: &mut Context<Self>) {
+        self.update_monos(
+            |roster| {
+                if let Some(mono) = roster.iter_mut().find(|mono| mono.id == id) {
+                    mono.mascot = mascot.to_string();
+                }
+            },
+            cx,
+        );
+    }
+
+    /// A palette pick; it replaces a custom colour.
+    pub fn set_mono_color(&mut self, id: &str, index: usize, cx: &mut Context<Self>) {
+        self.update_monos(
+            |roster| {
+                if let Some(mono) = roster.iter_mut().find(|mono| mono.id == id) {
+                    mono.color_index = index;
+                    mono.custom_color = None;
+                }
+            },
+            cx,
+        );
+    }
+
+    /// The projects on the rail the Mono has not been given yet.
+    pub fn mono_project_choices(&self, mono: &Mono) -> Vec<String> {
+        self.rail_order()
+            .into_iter()
+            .filter(|path| !mono.works_on(path))
+            .collect()
+    }
+
+    /// MonoCode `addMonoProject`.
+    pub fn add_mono_project(&mut self, id: &str, path: &str, cx: &mut Context<Self>) {
+        let path = crate::app::normalize_project_path(path);
+        if path.is_empty() || path == "~" {
+            return;
+        }
+        self.update_monos(
+            |roster| {
+                if let Some(mono) = roster.iter_mut().find(|mono| mono.id == id)
+                    && !mono.works_on(&path)
+                {
+                    mono.projects.push(path);
+                }
+            },
+            cx,
+        );
+    }
+
+    /// MonoCode `removeMonoProject`.
+    pub fn remove_mono_project(&mut self, id: &str, path: &str, cx: &mut Context<Self>) {
+        self.update_monos(
+            |roster| {
+                if let Some(mono) = roster.iter_mut().find(|mono| mono.id == id) {
+                    mono.projects.retain(|p| !same_project_path(p, path));
+                }
+            },
+            cx,
+        );
+    }
+
+    /// "Choose folder…": any folder becomes one of the Mono's projects.
+    pub fn pick_mono_project(&mut self, id: &str, cx: &mut Context<Self>) {
+        let picked = cx.prompt_for_paths(PathPromptOptions {
+            files: false,
+            directories: true,
+            multiple: true,
+            prompt: Some("Add Project".into()),
+        });
+        let id = id.to_string();
+        cx.spawn(async move |this, cx| {
+            let paths = match picked.await {
+                Ok(Ok(Some(paths))) => paths,
+                Ok(Ok(None)) | Err(_) => return,
+                Ok(Err(err)) => {
+                    log::error!("folder picker failed: {err:#}");
+                    return;
+                }
+            };
+            let added = this.update(cx, |this, cx| {
+                for path in paths {
+                    this.add_mono_project(&id, &path.to_string_lossy(), cx);
+                }
+            });
+            if let Err(err) = added {
+                log::debug!("folder picked after app drop: {err:#}");
+            }
+        })
+        .detach();
+    }
+
+    /// Reads the Mono's `SOUL.md` off the UI thread (seeding it the first
+    /// time) and shows it in the details field.
+    fn load_mono_soul(&mut self, id: &str, cx: &mut Context<Self>) {
+        let Some(dir) =
+            crate::storage::data_dir().and_then(|data| crate::monos::mono_dir(&data, id))
+        else {
+            return;
+        };
+        self.monos.soul_error = None;
+        match self.monos.souls.get(id).cloned() {
+            Some(soul) => self.show_soul(id, soul, cx),
+            // The field is nobody's until the read lands.
+            None => self.monos.soul_of = None,
+        }
+        let id = id.to_string();
+        let task = cx
+            .background_executor()
+            .spawn(async move { crate::monos::load_soul(&dir) });
+        cx.spawn(async move |this, cx| {
+            let loaded = task.await;
+            let landed = this.update(cx, |this, cx| match loaded {
+                Ok(soul) => {
+                    // Edits made while it loaded win over what was on disk.
+                    let editing = this.monos.soul_of.as_deref() == Some(id.as_str())
+                        && this.soul_field_dirty(cx);
+                    if !editing {
+                        this.monos.souls.insert(id.clone(), soul.clone());
+                        if this.monos.view.as_deref() == Some(id.as_str()) {
+                            this.show_soul(&id, soul, cx);
+                        }
+                    }
+                }
+                Err(err) => {
+                    log::error!("could not read the Mono's soul: {err:#}");
+                    this.monos.soul_error = Some(format!("Could not read SOUL.md: {err}"));
+                    cx.notify();
+                }
+            });
+            if let Err(err) = landed {
+                log::debug!("soul loaded after app drop: {err:#}");
+            }
+        })
+        .detach();
+    }
+
+    fn show_soul(&mut self, id: &str, soul: String, cx: &mut Context<Self>) {
+        self.monos.soul_of = Some(id.to_string());
+        // Not an edit: nothing is saved for it.
+        self.monos.soul_generation += 1;
+        if self.monos.soul_input.read(cx).text() != soul {
+            self.monos
+                .soul_input
+                .update(cx, |input, cx| input.set_text(soul, cx));
+        }
+        cx.notify();
+    }
+
+    fn soul_field_dirty(&self, cx: &gpui::App) -> bool {
+        let Some(id) = self.monos.soul_of.as_deref() else {
+            return false;
+        };
+        self.monos
+            .souls
+            .get(id)
+            .is_some_and(|saved| saved != self.monos.soul_input.read(cx).text())
+    }
+
+    fn schedule_soul_save(&mut self, cx: &mut Context<Self>) {
+        self.monos.soul_generation += 1;
+        let generation = self.monos.soul_generation;
+        let timer = cx.background_executor().timer(SOUL_SAVE_DELAY);
+        cx.spawn(async move |this, cx| {
+            timer.await;
+            let saved = this.update(cx, |this, cx| {
+                if this.monos.soul_generation == generation {
+                    this.save_soul_if_dirty(cx);
+                }
+            });
+            if let Err(err) = saved {
+                log::debug!("soul autosave after app drop: {err:#}");
+            }
+        })
+        .detach();
+    }
+
+    /// Saves the soul field when it differs from what is stored, so closing
+    /// the panel or switching Monos never drops edits.
+    pub(crate) fn save_soul_if_dirty(&mut self, cx: &mut Context<Self>) {
+        if !self.soul_field_dirty(cx) {
+            return;
+        }
+        let Some(id) = self.monos.soul_of.clone() else {
+            return;
+        };
+        let Some(dir) =
+            crate::storage::data_dir().and_then(|data| crate::monos::mono_dir(&data, &id))
+        else {
+            return;
+        };
+        let text = self.monos.soul_input.read(cx).text().to_string();
+        // What the next turn carries, whether or not the write has landed.
+        self.monos.souls.insert(id, text.clone());
+        let task = cx
+            .background_executor()
+            .spawn(async move { crate::monos::save_soul(&dir, &text) });
+        cx.spawn(async move |this, cx| {
+            let saved = task.await;
+            let landed = this.update(cx, |this, cx| {
+                this.monos.soul_error = saved
+                    .err()
+                    .map(|err| format!("Could not save SOUL.md: {err}"));
+                cx.notify();
+            });
+            if let Err(err) = landed {
+                log::debug!("soul saved after app drop: {err:#}");
+            }
+        })
+        .detach();
+    }
+
+    /// MonoCode `monoTurn` over `monoContext`: a Mono's turn carries who it
+    /// is and its standing instructions, unless the provider session behind
+    /// its chat already holds them. Other threads' prompts pass through.
+    pub(crate) fn apply_mono_context(
+        &mut self,
+        session_id: &str,
+        provider: Option<&str>,
+        prompt: String,
+    ) -> String {
+        let Some(mono) = self.mono_for_session(session_id).cloned() else {
+            return prompt;
+        };
+        // MonoCode `rawCommand`: a command must stay first.
+        if prompt.starts_with('/') {
+            return prompt;
+        }
+        let soul = match self.monos.souls.get(&mono.id) {
+            Some(soul) => soul.clone(),
+            // Not opened this launch (a queued turn, a resumed one): a small
+            // file, read as skill bodies are right before the turn starts.
+            None => crate::storage::data_dir()
+                .and_then(|data| crate::monos::mono_dir(&data, &mono.id))
+                .and_then(|dir| {
+                    crate::monos::load_soul(&dir)
+                        .map_err(|err| log::error!("could not read the Mono's soul: {err:#}"))
+                        .ok()
+                })
+                .unwrap_or_else(crate::monos::default_soul),
+        };
+        let context =
+            crate::monos::standing_context(&mono.display_name(), &self.mono_projects(&mono), &soul);
+        let hash = crate::monos::context_hash(&context);
+        let provider = provider.filter(|id| !id.is_empty());
+        if !crate::monos::needs_context(mono.handed.as_ref(), provider, &hash) {
+            return prompt;
+        }
+        self.monos.carrying.insert(session_id.to_string(), hash);
+        crate::monos::turn_with_context(&prompt, &context)
+    }
+
+    /// MonoCode `recordAgentContext`, once a Mono's turn has ended: the
+    /// provider session it left behind holds what the turn carried. A turn
+    /// that never reached a provider session records nothing, so the next
+    /// one carries the context again.
+    pub(crate) fn record_mono_context(&mut self, session_id: &str, cx: &mut Context<Self>) {
+        let carried = self.monos.carrying.remove(session_id);
+        let Some(mono) = self.mono_for_session(session_id) else {
+            return;
+        };
+        let Some(provider) = self
+            .sessions
+            .iter()
+            .find(|s| s.id == session_id)
+            .and_then(|s| s.provider_session_id.clone())
+            .filter(|id| !id.is_empty())
+        else {
+            return;
+        };
+        // A provider that renames its session each turn keeps what it held.
+        let Some(context_hash) =
+            carried.or_else(|| mono.handed.as_ref().map(|h| h.context_hash.clone()))
+        else {
+            return;
+        };
+        let (id, handed) = (
+            mono.id.clone(),
+            Handed {
+                provider: Some(provider),
+                context_hash,
+            },
+        );
+        self.update_monos(
+            |roster| {
+                if let Some(entry) = roster.iter_mut().find(|entry| entry.id == id) {
+                    entry.handed = Some(handed);
+                }
+            },
+            cx,
+        );
+    }
+}

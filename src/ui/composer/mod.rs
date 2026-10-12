@@ -609,6 +609,8 @@ impl BenCodeApp {
         let empty = session.is_none_or(|s| !s.blocks.iter().any(|b| b.role == "user"));
         let projectless = session.is_none_or(|s| matches!(s.cwd.trim(), "" | "~"));
         let busy = session.is_some_and(|s| self.is_agent_running_in(&s.id));
+        // A Mono's chat has no project, checkout or branch of its own.
+        let mono = session.is_some_and(|s| self.is_mono_session(&s.id));
         div()
             .flex()
             .min_w_0()
@@ -617,7 +619,7 @@ impl BenCodeApp {
             .overflow_hidden()
             .px_3()
             .pt_2p5()
-            .when(empty && projectless, |el| {
+            .when(empty && projectless && !mono, |el| {
                 let project = std::path::Path::new(&self.current_cwd)
                     .file_name()
                     .map_or_else(
@@ -627,6 +629,7 @@ impl BenCodeApp {
                 el.child(self.project_picker(&project, cx))
             })
             .map(|el| match session.filter(|s| s.worktree_removed) {
+                _ if mono => el,
                 Some(session) => el.child(self.removed_worktree_picker(session, cx)),
                 None => el
                     .child(self.workspace_identity(session, empty && !busy, cx))

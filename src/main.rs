@@ -11,6 +11,7 @@ mod keychain;
 mod logging;
 pub mod mcp;
 mod monocode_import;
+mod monos;
 mod notifications;
 mod process_stats;
 mod project_search;

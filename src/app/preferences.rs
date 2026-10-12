@@ -220,6 +220,7 @@ impl BenCodeApp {
             pinned_projects: self.settings.pinned_projects.clone(),
             provider_accounts: self.settings.provider_accounts.clone(),
             provider_account_selections: self.settings.provider_account_selections.clone(),
+            monos: self.settings.monos.clone(),
             rail: self.settings.rail.clone(),
             extra: self.settings.extra.clone(),
         }
@@ -259,6 +260,21 @@ impl BenCodeApp {
             &mut next.provider_accounts,
             &mut next.provider_account_selections,
         );
+        if next == self.settings {
+            return;
+        }
+        self.write_settings(next, cx);
+        cx.notify();
+    }
+
+    /// Saves a change to the Mono roster.
+    pub fn update_monos(
+        &mut self,
+        update: impl FnOnce(&mut Vec<crate::monos::Mono>),
+        cx: &mut Context<Self>,
+    ) {
+        let mut next = self.current_settings();
+        update(&mut next.monos);
         if next == self.settings {
             return;
         }

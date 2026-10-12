@@ -167,6 +167,7 @@ impl BenCodeApp {
             configure(session);
         }
         self.persist_session(&id);
+        self.leave_mono_view(cx);
         self.tabs.open(&id);
         self.sync_selection(cx);
         self.thread_mut(&id).composer_card = Some(card);

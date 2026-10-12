@@ -4,6 +4,16 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
+## [Unreleased]
+
+- Monos (experimental), as in MonoCode: agents of your own that live on the
+  rail above the projects. Each has a name, a mascot and a colour, one long
+  conversation that is not tied to a project, the projects you give it, and
+  standing instructions it always keeps in mind (its Details panel). Memory,
+  habits and the sessions a Mono starts are not here yet.
+- Esc cancels the browser's element picker, after any menu or dialog that
+  is open.
+
 ## [0.1.6] - 2026-10-11
 
 - Right-click a commit in the Changes graph to undo the last commit (its

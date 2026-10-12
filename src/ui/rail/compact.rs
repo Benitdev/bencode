@@ -39,7 +39,10 @@ impl BenCodeApp {
     /// MonoCode `compactTitleBar`: on macOS the title bar runs above the
     /// icon rail, which is narrower than the traffic lights.
     pub fn compact_title_bar(&self) -> bool {
-        cfg!(target_os = "macos") && self.compact_rail_active() && self.surface.is_none()
+        cfg!(target_os = "macos")
+            && self.compact_rail_active()
+            && self.surface.is_none()
+            && self.monos.view.is_none()
     }
 
     /// MonoCode `drawerMode`: beside the icon rail a hidden sidebar opens

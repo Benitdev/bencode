@@ -145,6 +145,8 @@ pub struct AppSettings {
     pub provider_accounts: crate::harness::accounts::StoredAccounts,
     /// MonoCode `monocode.providerAccountSelections.v1`.
     pub provider_account_selections: crate::harness::accounts::StoredSelections,
+    /// MonoCode `monocode:mono-roster`: the Monos, in rail order.
+    pub monos: Vec<crate::monos::Mono>,
     /// The project rail's order, width, archive, groups, appearance and
     /// notification mutes, under MonoCode's names (see `ui::rail::model`).
     /// Declared before `extra` so its keys are not also kept as unknown.
@@ -315,6 +317,19 @@ mod tests {
                 [("claude".to_string(), "account-1".to_string())].into(),
             )]
             .into(),
+            monos: vec![crate::monos::Mono {
+                id: "mono-1".into(),
+                session_id: Some("s9".into()),
+                name: Some("Ada".into()),
+                mascot: "crab".into(),
+                color_index: 3,
+                projects: vec!["/repo".into()],
+                handed: Some(crate::monos::Handed {
+                    provider: Some("p1".into()),
+                    context_hash: "abc".into(),
+                }),
+                ..Default::default()
+            }],
             rail: crate::ui::rail::model::RailPrefs {
                 project_rail_order: vec!["/repo".into()],
                 project_rail_width: Some(240.0),

@@ -55,10 +55,13 @@ pub fn is_path_in_project(path: &str, project: &str) -> bool {
 }
 
 /// Distinct session working directories, most recent first, current one on top.
-pub(super) fn recent_projects(current_cwd: &str, sessions: &[SessionRow]) -> Vec<String> {
+pub(super) fn recent_projects<'a>(
+    current_cwd: &str,
+    sessions: impl IntoIterator<Item = &'a SessionRow>,
+) -> Vec<String> {
     let mut seen = HashSet::new();
     std::iter::once(normalize_project_path(current_cwd))
-        .chain(sessions.iter().map(|s| normalize_project_path(&s.cwd)))
+        .chain(sessions.into_iter().map(|s| normalize_project_path(&s.cwd)))
         .filter(|cwd| !cwd.is_empty() && cwd != "~" && seen.insert(cwd.clone()))
         .take(RECENT_PROJECT_LIMIT)
         .collect()
@@ -74,7 +77,11 @@ impl BenCodeApp {
             return;
         }
         self.close_overlay_views();
+        let left_mono = self.leave_mono_view(cx);
         if same_project_path(&self.current_cwd, &cwd) {
+            if left_mono {
+                self.sync_selection(cx);
+            }
             cx.notify();
             return;
         }

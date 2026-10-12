@@ -140,3 +140,11 @@ Notes:
 - [ ] P2 M Session review: Keep / Undo per file; worker integration (`session_checkpoint_apply`)
 - [ ] P1 M File pane per workspace tab and restored on launch (now one global, in-memory pane); splitting editor panes
 - [ ] P2 S Tab context menu; `git-compare` icon for review tabs (Ely has none, add to `ui/icons.rs`)
+
+## Batch I — Monos (2026-10-12)
+- [~] P1 L Monos: roster on the rail, one conversation each over the workspace, Details (mascot, colour, projects, soul), delete and reset — `features/monos/model/mono.ts`, `monoFiles.ts`, `monoWorkspace.ts`, `app/shell/MonoRailSection.tsx`. Not compared with MonoCode on screen
+- [ ] P1 L Memory, habits, sessions a Mono starts and their completion reports, artifacts: all go through MonoCode's `app` CLI (`src-tauri/src/control_cli.rs`), which BenCode lacks — `monoMemory.ts`, `monoHabits.ts`, `monoSpawnedSessions.ts`
+- [ ] P2 M Reactions (`<reaction>` replies as a badge on the message), unread counts on the rail, the "Meet Monos" intro, drag to reorder — `monoReaction.ts`, `MonoIntro.tsx`
+- [ ] P2 M Monos on the collapsed icon rail; the floating chat window — `FloatingMonoChat.tsx`
+- [ ] P2 M A Mono's changes per project (its turns keep no checkpoints) — `MonoChangesPanel.tsx`
+- [ ] P2 S Name edited in place in Details; a per-Mono chat background

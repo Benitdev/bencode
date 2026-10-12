@@ -62,6 +62,19 @@ impl BenCodeApp {
         self.open_rail_menu(MenuTarget::Group(id.to_string()), name, at, cx);
     }
 
+    /// MonoCode `MonoMenu`: its name, mascot and colour, then Delete.
+    pub(crate) fn open_rail_mono_menu(
+        &mut self,
+        id: &str,
+        at: Point<Pixels>,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(name) = self.mono(id).map(|mono| mono.display_name()) else {
+            return;
+        };
+        self.open_rail_menu(MenuTarget::Mono(id.to_string()), name, at, cx);
+    }
+
     fn open_rail_menu(
         &mut self,
         target: MenuTarget,
@@ -161,6 +174,15 @@ impl BenCodeApp {
                         },
                         cx,
                     );
+                }
+            }
+            // A blank name goes back to the mascot's own.
+            MenuTarget::Mono(id) => {
+                if self
+                    .mono(&id)
+                    .is_some_and(|mono| mono.display_name() != text)
+                {
+                    self.set_mono_name(&id, &text, cx);
                 }
             }
         }
@@ -281,6 +303,15 @@ impl BenCodeApp {
                 ..ExtraItem::new("delete", "Delete", IconName::Trash2)
             },
         ]
+    }
+
+    /// MonoCode `MonoMenu`'s actions. Background image is left out: BenCode
+    /// has one chat background, not one per Mono.
+    pub(super) fn mono_extra_items() -> Vec<ExtraItem> {
+        vec![ExtraItem {
+            danger: true,
+            ..ExtraItem::new("delete-mono", "Delete mono…", IconName::Trash2)
+        }]
     }
 
     pub(super) fn group_extra_items() -> Vec<ExtraItem> {
@@ -458,6 +489,11 @@ impl BenCodeApp {
                 self.close_rail_menu(cx);
             }
             (MenuTarget::Project(path), _) => self.pick_project_extra(&path, id, anchor, cx),
+            (MenuTarget::Mono(mono), "delete-mono") => {
+                self.close_rail_menu(cx);
+                self.monos.pending_delete = Some(mono);
+                cx.notify();
+            }
             _ => {}
         }
     }
@@ -586,6 +622,15 @@ impl BenCodeApp {
                 },
                 cx,
             ),
+            MenuTarget::Mono(id) => self.update_monos(
+                |roster| {
+                    if let Some(mono) = roster.iter_mut().find(|mono| &mono.id == id) {
+                        mono.color_index = index.unwrap_or(0);
+                        mono.custom_color = None;
+                    }
+                },
+                cx,
+            ),
         }
     }
 
@@ -606,6 +651,14 @@ impl BenCodeApp {
                         custom_color: Some(hex.to_lowercase()),
                         ..g.clone()
                     })
+                },
+                cx,
+            ),
+            MenuTarget::Mono(id) => self.update_monos(
+                |roster| {
+                    if let Some(mono) = roster.iter_mut().find(|mono| &mono.id == id) {
+                        mono.custom_color = Some(hex.to_lowercase());
+                    }
                 },
                 cx,
             ),
@@ -631,6 +684,27 @@ impl BenCodeApp {
                 },
                 cx,
             ),
+            MenuTarget::Mono(id) => {
+                // An unnamed Mono goes by its mascot: the field follows it.
+                let follows = self.mono(id).is_some_and(|mono| {
+                    mono.display_name() == self.rail_ui.name_input.read(cx).text().trim()
+                        && mono.name.is_none()
+                });
+                self.update_monos(
+                    |roster| {
+                        if let Some(mono) = roster.iter_mut().find(|mono| &mono.id == id) {
+                            mono.mascot = name.to_string();
+                        }
+                    },
+                    cx,
+                );
+                if follows {
+                    let default = crate::monos::default_name(name);
+                    self.rail_ui
+                        .name_input
+                        .update(cx, |input, cx| input.set_text(default, cx));
+                }
+            }
         }
     }
 }

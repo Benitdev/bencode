@@ -10,6 +10,7 @@ mod live_agents;
 mod menu;
 mod menu_view;
 pub mod model;
+mod monos;
 mod notify;
 mod remove;
 mod reorder;
@@ -310,6 +311,8 @@ impl BenCodeApp {
             .flex_col()
             .overflow_y_scroll()
             .pb_2()
+            // MonoCode: the Monos section above the projects.
+            .child(self.render_rail_monos(cx))
             .when(!pinned.is_empty(), |el| {
                 el.child(self.render_project_section("Pinned", "pinned", &pinned, false, false, cx))
             })
@@ -479,7 +482,11 @@ impl BenCodeApp {
                 SharedString::from(format!("{prefix}-nav-back")),
                 IconName::ChevronLeft,
                 "Back (⌘[)",
-                state(self.tab_history.can_go_back() || self.surface.is_some()),
+                state(
+                    self.tab_history.can_go_back()
+                        || self.surface.is_some()
+                        || self.monos.view.is_some(),
+                ),
                 cx,
                 |this, _, _, cx| this.go_back(cx),
             )
