@@ -6,6 +6,8 @@ tagging (`docs/releasing.md`).
 
 ## [Unreleased]
 
+- A Mono's floating chat resizes from its edges and corners, and opens at
+  the size you left it.
 - Deleting a project from the rail deletes only the conversations in that
   folder. It also took those of every project inside it, so deleting the
   home folder, which a Mono's chat put on the rail, deleted them all.

@@ -221,6 +221,7 @@ impl BenCodeApp {
             provider_accounts: self.settings.provider_accounts.clone(),
             provider_account_selections: self.settings.provider_account_selections.clone(),
             monos: self.settings.monos.clone(),
+            mono_float_size: self.settings.mono_float_size,
             rail: self.settings.rail.clone(),
             extra: self.settings.extra.clone(),
         }
@@ -280,6 +281,16 @@ impl BenCodeApp {
         }
         self.write_settings(next, cx);
         cx.notify();
+    }
+
+    /// Saves the size the floating Mono chat was left at.
+    pub fn set_mono_float_size(&mut self, size: [f32; 2], cx: &mut Context<Self>) {
+        if self.settings.mono_float_size == Some(size) {
+            return;
+        }
+        let mut next = self.current_settings();
+        next.mono_float_size = Some(size);
+        self.write_settings(next, cx);
     }
 
     /// Saves the rail's state as `update` returns it from the current one

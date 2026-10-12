@@ -7,8 +7,9 @@
 //! Its transcript is its own, reduced to a messaging app's: what was said,
 //! with the work between replies folded into one line.
 //!
-//! The window has no title bar, as MonoCode's has no decorations; unlike
-//! it, it does not resize (GPUI's undecorated window cannot).
+//! The window has no title bar, as MonoCode's has no decorations. GPUI's
+//! undecorated window does not resize, so AppKit is asked to
+//! (`native_resize`); the size it is left at is the one it opens with.
 //!
 //! Not ported: the menu bar item that opens it (it opens from the Mono's
 //! header and its rail menu), questions answered in place (they open in
@@ -44,6 +45,11 @@ use crate::ui::transcript::turns::is_tool;
 /// MonoCode `mono_chat.rs`: a 384pt conversation plus the 56pt rail.
 const WIDTH: f32 = 440.0;
 const HEIGHT: f32 = 560.0;
+/// The smallest it resizes to: the header's buttons and a few messages.
+const MIN_WIDTH: f32 = 340.0;
+const MIN_HEIGHT: f32 = 320.0;
+/// How long a resize rests before its size is saved.
+const SIZE_SAVE_DELAY: std::time::Duration = std::time::Duration::from_millis(400);
 const RAIL_WIDTH: f32 = 56.0;
 /// MonoCode `CARD`: `my-1.5 mr-1.5 rounded-[10px]`, the conversation inset
 /// from the window by this gap.
@@ -193,6 +199,8 @@ pub struct MonoFloat {
     /// When a press outside the picker last closed it: a press on its own
     /// button does that too, and the click that follows must not reopen it.
     emoji_dismissed: Option<std::time::Instant>,
+    /// Bumped by each resize: only the last one's size is saved.
+    size_generation: u64,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -216,6 +224,7 @@ impl MonoFloat {
         let subscriptions = vec![
             // Whatever the app redraws for (a token, a status), this shows.
             cx.observe(&app, |_, _, cx| cx.notify()),
+            cx.observe_window_bounds(window, Self::size_changed),
             // MonoCode `MonoComposer`: Enter sends, ⇧Enter is a new line;
             // Esc stops a reply.
             cx.intercept_keystrokes(move |event, window, cx| {
@@ -264,10 +273,37 @@ impl MonoFloat {
             emoji: None,
             recent_emoji: Vec::new(),
             emoji_dismissed: None,
+            size_generation: 0,
             _subscriptions: subscriptions,
         };
         float.sync_placeholder(cx);
         float
+    }
+
+    /// Saves the window's size once a resize has rested (a drag reports
+    /// every step of it).
+    fn size_changed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let bounds = window.bounds().size;
+        let size = [
+            crate::ui::scale::logical(bounds.width),
+            crate::ui::scale::logical(bounds.height),
+        ];
+        self.size_generation += 1;
+        let generation = self.size_generation;
+        let timer = cx.background_executor().timer(SIZE_SAVE_DELAY);
+        cx.spawn(async move |this, cx| {
+            timer.await;
+            let saved = this.update(cx, |this, cx| {
+                if this.size_generation == generation {
+                    this.app
+                        .update(cx, |app, cx| app.set_mono_float_size(size, cx));
+                }
+            });
+            if let Err(err) = saved {
+                log::debug!("floating chat size after its window closed: {err:#}");
+            }
+        })
+        .detach();
     }
 
     /// MonoCode `data-tauri-drag-region`: a press on `el`'s background and
@@ -1393,7 +1429,17 @@ pub fn open(
     mono_id: String,
     cx: &mut App,
 ) -> anyhow::Result<WindowHandle<MonoFloat>> {
-    let bounds = Bounds::centered(None, size(px(WIDTH), px(HEIGHT)), cx);
+    let [width, height] = app
+        .read(cx)
+        .settings
+        .mono_float_size
+        .unwrap_or([WIDTH, HEIGHT]);
+    let min = size(px(MIN_WIDTH), px(MIN_HEIGHT));
+    let bounds = Bounds::centered(
+        None,
+        size(px(width).max(min.width), px(height).max(min.height)),
+        cx,
+    );
     let options = WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(bounds)),
         // MonoCode's panel has no decorations: no title bar and no traffic
@@ -1401,11 +1447,68 @@ pub fn open(
         titlebar: None,
         kind: WindowKind::Floating,
         is_minimizable: false,
+        window_min_size: Some(min),
         ..Default::default()
     };
     cx.open_window(options, |window, cx| {
+        native_resize::allow(window);
         cx.new(|cx| MonoFloat::new(app, main, mono_id, window, cx))
     })
+}
+
+#[cfg(not(target_os = "macos"))]
+mod native_resize {
+    pub fn allow(_: &gpui::Window) {}
+}
+
+/// GPUI gives a window without a title bar no resizable style, whatever
+/// `is_resizable` says: the style is added to its `NSWindow` here.
+// objc 0.2's `msg_send!` expands to a `cargo-clippy` feature check.
+#[cfg(target_os = "macos")]
+#[allow(unexpected_cfgs)]
+mod native_resize {
+    use objc::runtime::{Object, YES};
+    use objc::{msg_send, sel, sel_impl};
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+
+    type Id = *mut Object;
+
+    /// `NSWindowStyleMaskResizable`.
+    const RESIZABLE: usize = 1 << 3;
+    /// `NSWindowCloseButton`, `NSWindowMiniaturizeButton`, `NSWindowZoomButton`.
+    const BUTTONS: [usize; 3] = [0, 1, 2];
+
+    pub fn allow(window: &gpui::Window) {
+        // `Window::window_handle` is GPUI's own handle; this is the
+        // platform's.
+        let Ok(handle) = HasWindowHandle::window_handle(window) else {
+            return;
+        };
+        let RawWindowHandle::AppKit(appkit) = handle.as_raw() else {
+            return;
+        };
+        let view = appkit.ns_view.as_ptr() as Id;
+        // SAFETY: AppKit calls on the main thread, where GPUI opens its
+        // windows. `view` is GPUI's live NSView; its window and the
+        // window's buttons are borrowed, and each is checked for nil.
+        unsafe {
+            let native: Id = msg_send![view, window];
+            if native.is_null() {
+                log::warn!("the floating chat has no native window to make resizable");
+                return;
+            }
+            let mask: usize = msg_send![native, styleMask];
+            let _: () = msg_send![native, setStyleMask: mask | RESIZABLE];
+            // A resizable window gets its traffic lights back; MonoCode's
+            // panel has none.
+            for button in BUTTONS {
+                let button: Id = msg_send![native, standardWindowButton: button];
+                if !button.is_null() {
+                    let _: () = msg_send![button, setHidden: YES];
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]
