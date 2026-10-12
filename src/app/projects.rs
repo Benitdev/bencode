@@ -40,6 +40,21 @@ pub fn same_project_path(a: &str, b: &str) -> bool {
     trim_path(a) == trim_path(b)
 }
 
+/// `$HOME` (MonoCode `host.home()`).
+pub(super) fn home_dir() -> Option<String> {
+    std::env::var_os("HOME").map(|home| home.to_string_lossy().into_owned())
+}
+
+/// The home folder is no project: Monos' conversations run there, and
+/// every other project is inside it.
+fn is_home(path: &str, home: Option<&str>) -> bool {
+    trim_path(path) == "~" || home.is_some_and(|home| same_project_path(path, home))
+}
+
+pub fn is_home_path(path: &str) -> bool {
+    is_home(path, home_dir().as_deref())
+}
+
 /// Whether `path` is `project` itself or one of its sub-directories.
 pub fn is_path_in_project(path: &str, project: &str) -> bool {
     let path = trim_path(path);
@@ -54,14 +69,20 @@ pub fn is_path_in_project(path: &str, project: &str) -> bool {
         .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
 }
 
-/// Distinct session working directories, most recent first, current one on top.
+/// Distinct session working directories, most recent first, current one on
+/// top. A conversation in `home` brings no project with it.
 pub(super) fn recent_projects<'a>(
     current_cwd: &str,
     sessions: impl IntoIterator<Item = &'a SessionRow>,
+    home: Option<&str>,
 ) -> Vec<String> {
     let mut seen = HashSet::new();
+    let of_sessions = sessions
+        .into_iter()
+        .map(|s| normalize_project_path(&s.cwd))
+        .filter(|cwd| !is_home(cwd, home));
     std::iter::once(normalize_project_path(current_cwd))
-        .chain(sessions.into_iter().map(|s| normalize_project_path(&s.cwd)))
+        .chain(of_sessions)
         .filter(|cwd| !cwd.is_empty() && cwd != "~" && seen.insert(cwd.clone()))
         .take(RECENT_PROJECT_LIMIT)
         .collect()
@@ -170,7 +191,7 @@ impl BenCodeApp {
         let Some(cwd) = self
             .selected_session()
             .map(|s| normalize_project_path(&s.cwd))
-            .filter(|cwd| !cwd.is_empty() && cwd != "~")
+            .filter(|cwd| !cwd.is_empty() && !is_home_path(cwd))
         else {
             return;
         };
@@ -316,8 +337,28 @@ mod tests {
         let projects = recent_projects(
             "/here",
             &[session("/a"), session("/here/"), session("/a"), session("")],
+            None,
         );
         assert_eq!(projects, ["/here", "/a"]);
+    }
+
+    #[test]
+    fn a_conversation_in_the_home_folder_is_no_project() {
+        let session = |cwd: &str| SessionRow {
+            cwd: cwd.into(),
+            ..Default::default()
+        };
+        let projects = recent_projects(
+            "/Users/me/app",
+            &[
+                session("/Users/me"),
+                session("/Users/me/"),
+                session("~"),
+                session("/Users/me/b"),
+            ],
+            Some("/Users/me"),
+        );
+        assert_eq!(projects, ["/Users/me/app", "/Users/me/b"]);
     }
 
     #[test]

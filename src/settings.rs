@@ -147,6 +147,9 @@ pub struct AppSettings {
     pub provider_account_selections: crate::harness::accounts::StoredSelections,
     /// MonoCode `monocode:mono-roster`: the Monos, in rail order.
     pub monos: Vec<crate::monos::Mono>,
+    /// The floating Mono chat's width and height as last left, before the
+    /// interface scale; `None` is the default. BenCode's own.
+    pub mono_float_size: Option<[f32; 2]>,
     /// The project rail's order, width, archive, groups, appearance and
     /// notification mutes, under MonoCode's names (see `ui::rail::model`).
     /// Declared before `extra` so its keys are not also kept as unknown.
@@ -330,6 +333,7 @@ mod tests {
                 }),
                 ..Default::default()
             }],
+            mono_float_size: Some([480.0, 620.0]),
             rail: crate::ui::rail::model::RailPrefs {
                 project_rail_order: vec!["/repo".into()],
                 project_rail_width: Some(240.0),

@@ -11,6 +11,14 @@ use crate::ui::app_callback::app_callback;
 /// Every session of a project, for Delete (far above any real count).
 const ALL_SESSIONS: usize = 1_000_000;
 
+/// Of `rows` (a folder's and its sub-folders'), the ones `path` itself owns.
+fn project_session_ids(rows: Vec<crate::db::SessionRow>, path: &str) -> Vec<String> {
+    rows.into_iter()
+        .filter(|row| crate::app::same_project_path(&row.cwd, path))
+        .map(|row| row.id)
+        .collect()
+}
+
 impl BenCodeApp {
     /// MonoCode `onRemoveProject(path, { purgeData: false })`: off the rail
     /// and into Settings › Archive; an open project gives way to the next.
@@ -43,18 +51,19 @@ impl BenCodeApp {
     }
 
     /// The ids of every saved conversation of `path`, read on a background
-    /// connection (the in-memory DB of tests is read in place).
+    /// connection (the in-memory DB of tests is read in place). Only the
+    /// ones in the folder itself: a folder inside it is a project of its
+    /// own on the rail, and Delete must not reach into it.
     fn read_project_session_ids(
         &self,
         path: &str,
         cx: &Context<Self>,
     ) -> gpui::Task<anyhow::Result<Vec<String>>> {
         let ids = |db: &crate::db::AppDb, path: &str| -> anyhow::Result<Vec<String>> {
-            Ok(db
-                .list_sessions_for_cwd(path, ALL_SESSIONS, &[])?
-                .into_iter()
-                .map(|row| row.id)
-                .collect())
+            Ok(project_session_ids(
+                db.list_sessions_for_cwd(path, ALL_SESSIONS, &[])?,
+                path,
+            ))
         };
         let Some(file) = self.db.file_path() else {
             return gpui::Task::ready(ids(&self.db, path));
@@ -190,5 +199,29 @@ impl BenCodeApp {
             .on_confirm(confirm)
             .into_any_element(),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn deleting_a_project_leaves_the_projects_inside_it() {
+        let row = |id: &str, cwd: &str| crate::db::SessionRow {
+            id: id.into(),
+            cwd: cwd.into(),
+            ..Default::default()
+        };
+        let rows = || {
+            vec![
+                row("home", "/Users/me"),
+                row("slash", "/Users/me/"),
+                row("app", "/Users/me/app"),
+                row("nested", "/Users/me/app/backend"),
+            ]
+        };
+        assert_eq!(project_session_ids(rows(), "/Users/me"), ["home", "slash"]);
+        assert_eq!(project_session_ids(rows(), "/Users/me/app"), ["app"]);
     }
 }

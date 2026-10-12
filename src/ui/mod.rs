@@ -29,6 +29,7 @@ pub mod mono_float;
 pub mod monos;
 pub mod motion;
 pub mod native_glass;
+pub mod native_window;
 pub mod notes;
 pub mod page_parts;
 pub mod pane_tree;

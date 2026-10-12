@@ -18,6 +18,18 @@ tagging (`docs/releasing.md`).
 - While BenCode's window is out of sight (minimized, covered or on another
   Space), it stops asking git for changes and fetching, and catches up as
   soon as it shows.
+
+## [0.1.8] - 2026-10-12
+
+- A Mono's floating chat stays on screen when switching to other apps,
+  and closing the main window leaves the floating chat open.
+- A Mono's floating chat resizes from its edges and corners, and opens at
+  the size you left it.
+- Deleting a project from the rail deletes only the conversations in that
+  folder. It also took those of every project inside it, so deleting the
+  home folder, which a Mono's chat put on the rail, deleted them all.
+- The home folder is no longer listed as a project because a Mono's
+  conversation ran there.
 - A Mono's floating chat takes far less work while agents run elsewhere:
   it redraws when its own conversation or the Monos beside it change, not
   with every update to BenCode's window.

@@ -62,7 +62,7 @@ use gpui::{
 pub use agent::{AgentRun, NEW_SESSION_TITLE, QUESTION_TOOL, TurnInput, can_compact, now_ms};
 pub use ids::unique_id;
 pub use preferences::{appearance_prefs, is_dark_appearance, theme_mode};
-pub use projects::{is_path_in_project, normalize_project_path, same_project_path};
+pub use projects::{is_home_path, is_path_in_project, normalize_project_path, same_project_path};
 pub use surfaces::Surface;
 pub use workspace_sync::WorkspaceCache;
 
@@ -506,7 +506,8 @@ impl BenCodeApp {
         let tabs = crate::ui::layout::TabSet::with_sessions(
             sessions
                 .iter()
-                .filter(|s| !is_mono_session(&s.id))
+                // Nor is one left in the home folder (a Mono's that was).
+                .filter(|s| !is_mono_session(&s.id) && !is_home_path(&s.cwd))
                 .take(INITIAL_OPEN_TABS)
                 .map(|s| s.id.as_str()),
         );
@@ -1125,7 +1126,7 @@ impl BenCodeApp {
             .as_deref()
             .and_then(|id| sessions.iter().find(|s| s.id == id))
             .map(|s| normalize_project_path(&s.cwd))
-            .filter(|cwd| !cwd.is_empty() && cwd != "~")
+            .filter(|cwd| !cwd.is_empty() && !is_home_path(cwd))
             .or_else(|| {
                 std::env::current_dir()
                     .ok()
@@ -1135,6 +1136,7 @@ impl BenCodeApp {
         let recent_projects = projects::recent_projects(
             &current_cwd,
             sessions.iter().filter(|s| !is_mono_session(&s.id)),
+            projects::home_dir().as_deref(),
         );
 
         let harnesses = HarnessResolver::discover();

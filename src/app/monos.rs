@@ -78,11 +78,6 @@ impl MonosState {
     }
 }
 
-/// `$HOME`: no single project is a Mono's own (MonoCode `host.home()`).
-fn home_dir() -> Option<String> {
-    std::env::var_os("HOME").map(|home| home.to_string_lossy().into_owned())
-}
-
 impl BenCodeApp {
     pub fn mono(&self, id: &str) -> Option<&Mono> {
         self.settings.monos.iter().find(|mono| mono.id == id)
@@ -261,9 +256,10 @@ impl BenCodeApp {
         );
     }
 
-    /// A new conversation for the Mono, in the home folder.
+    /// A new conversation for the Mono, in the home folder: no single
+    /// project is a Mono's own.
     fn start_mono_session(&mut self, id: &str, show: bool, cx: &mut Context<Self>) {
-        let Some(home) = home_dir() else {
+        let Some(home) = super::projects::home_dir() else {
             log::error!("no home folder to start a Mono in");
             return;
         };

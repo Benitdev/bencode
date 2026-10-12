@@ -7,8 +7,10 @@
 //! Its transcript is its own, reduced to a messaging app's: what was said,
 //! with the work between replies folded into one line.
 //!
-//! The window has no title bar, as MonoCode's has no decorations; unlike
-//! it, it does not resize (GPUI's undecorated window cannot).
+//! The window has no title bar, as MonoCode's has no decorations. GPUI's
+//! undecorated window does not resize and its panel hides with the app's
+//! focus, so AppKit is asked otherwise (`native_window`); the size it is
+//! left at is the one it opens with.
 //!
 //! Not ported: the menu bar item that opens it (it opens from the Mono's
 //! header and its rail menu), questions answered in place (they open in
@@ -40,11 +42,16 @@ use crate::ui::mascot::pixel_sprite;
 use crate::ui::scale::px;
 use crate::ui::transcript::activity::tool_label;
 use crate::ui::transcript::markdown::AgentMarkdown;
-use crate::ui::transcript::turns::{is_tool, tool_target};
+use crate::ui::transcript::turns::{is_tool, tool_kind_name, tool_target};
 
 /// MonoCode `mono_chat.rs`: a 384pt conversation plus the 56pt rail.
 const WIDTH: f32 = 440.0;
 const HEIGHT: f32 = 560.0;
+/// The smallest it resizes to: the header's buttons and a few messages.
+const MIN_WIDTH: f32 = 340.0;
+const MIN_HEIGHT: f32 = 320.0;
+/// How long a resize rests before its size is saved.
+const SIZE_SAVE_DELAY: std::time::Duration = std::time::Duration::from_millis(400);
 const RAIL_WIDTH: f32 = 56.0;
 /// MonoCode `CARD`: `my-1.5 mr-1.5 rounded-[10px]`, the conversation inset
 /// from the window by this gap.
@@ -181,7 +188,8 @@ fn recent(blocks: &[Block]) -> &[Block] {
 
 /// What [`float_items`] reads from `blocks`, folded into a number: while it
 /// holds, so do the items. A block changes in place only by its text
-/// growing (a reply streaming in) or a tool call's target being filled in;
+/// growing (a reply streaming in) or a tool call's kind or target being
+/// filled in;
 /// anything else adds, removes or replaces blocks, which moves the count
 /// or the ids at the window's ends. No allocation: it runs on each of the
 /// app's redraws.
@@ -193,7 +201,7 @@ fn items_key(blocks: &[Block], cwd: &str) -> u64 {
     for block in blocks {
         hasher.write_usize(block.text.as_deref().map_or(0, str::len));
         if is_tool(block) {
-            tool_target(block).hash(&mut hasher);
+            (tool_kind_name(block), tool_target(block)).hash(&mut hasher);
         }
     }
     hasher.finish()
@@ -201,7 +209,8 @@ fn items_key(blocks: &[Block], cwd: &str) -> u64 {
 
 /// What the window draws from the app. The app redraws many times a second
 /// while any agent works (a token in any thread, a spinner's frame, its
-/// clock); this window redraws only when what it shows changed.
+/// clock); this window redraws only when what it shows changed. Anything
+/// new the window draws from the app goes in here, or it is drawn stale.
 #[derive(Default, PartialEq)]
 struct Shown {
     /// The rail: every Mono and what it is doing.
@@ -241,6 +250,8 @@ pub struct MonoFloat {
     /// When a press outside the picker last closed it: a press on its own
     /// button does that too, and the click that follows must not reopen it.
     emoji_dismissed: Option<std::time::Instant>,
+    /// Bumped by each resize: only the last one's size is saved.
+    size_generation: u64,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -269,6 +280,7 @@ impl MonoFloat {
                     cx.notify();
                 }
             }),
+            cx.observe_window_bounds(window, Self::size_changed),
             // MonoCode `MonoComposer`: Enter sends, ⇧Enter is a new line;
             // Esc stops a reply.
             cx.intercept_keystrokes(move |event, window, cx| {
@@ -318,10 +330,37 @@ impl MonoFloat {
             emoji: None,
             recent_emoji: Vec::new(),
             emoji_dismissed: None,
+            size_generation: 0,
             _subscriptions: subscriptions,
         };
         float.refresh(cx);
         float
+    }
+
+    /// Saves the window's size once a resize has rested (a drag reports
+    /// every step of it).
+    fn size_changed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let bounds = window.bounds().size;
+        let size = [
+            crate::ui::scale::logical(bounds.width),
+            crate::ui::scale::logical(bounds.height),
+        ];
+        self.size_generation += 1;
+        let generation = self.size_generation;
+        let timer = cx.background_executor().timer(SIZE_SAVE_DELAY);
+        cx.spawn(async move |this, cx| {
+            timer.await;
+            let saved = this.update(cx, |this, cx| {
+                if this.size_generation == generation {
+                    this.app
+                        .update(cx, |app, cx| app.set_mono_float_size(size, cx));
+                }
+            });
+            if let Err(err) = saved {
+                log::debug!("floating chat size after its window closed: {err:#}");
+            }
+        })
+        .detach();
     }
 
     /// MonoCode `data-tauri-drag-region`: a press on `el`'s background and
@@ -1503,7 +1542,17 @@ pub fn open(
     mono_id: String,
     cx: &mut App,
 ) -> anyhow::Result<WindowHandle<MonoFloat>> {
-    let bounds = Bounds::centered(None, size(px(WIDTH), px(HEIGHT)), cx);
+    let [width, height] = app
+        .read(cx)
+        .settings
+        .mono_float_size
+        .unwrap_or([WIDTH, HEIGHT]);
+    let min = size(px(MIN_WIDTH), px(MIN_HEIGHT));
+    let bounds = Bounds::centered(
+        None,
+        size(px(width).max(min.width), px(height).max(min.height)),
+        cx,
+    );
     let options = WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(bounds)),
         // MonoCode's panel has no decorations: no title bar and no traffic
@@ -1511,9 +1560,11 @@ pub fn open(
         titlebar: None,
         kind: WindowKind::Floating,
         is_minimizable: false,
+        window_min_size: Some(min),
         ..Default::default()
     };
     cx.open_window(options, |window, cx| {
+        crate::ui::native_window::make_floating_panel(window);
         cx.new(|cx| MonoFloat::new(app, main, mono_id, window, cx))
     })
 }
@@ -1623,6 +1674,12 @@ mod tests {
         let mut retargeted = blocks.clone();
         retargeted[1] = tool("/repo/b.rs");
         assert_ne!(items_key(&retargeted, "/repo"), key);
+        // The same target under another verb.
+        let mut rekinded = blocks.clone();
+        if let Some(tool) = rekinded[1].tool.as_mut().and_then(|t| t.as_object_mut()) {
+            tool.insert("kind".into(), serde_json::json!("edit"));
+        }
+        assert_ne!(items_key(&rekinded, "/repo"), key);
         // A call finishing changes nothing the rows show.
         let mut finished = blocks.clone();
         if let Some(tool) = finished[1].tool.as_mut().and_then(|t| t.as_object_mut()) {
