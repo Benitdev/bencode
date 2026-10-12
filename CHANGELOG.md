@@ -4,8 +4,10 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
-## [Unreleased]
+## [0.1.8] - 2026-10-12
 
+- A Mono's floating chat stays on screen when switching to other apps,
+  and closing the main window leaves the floating chat open.
 - A Mono's floating chat resizes from its edges and corners, and opens at
   the size you left it.
 - Deleting a project from the rail deletes only the conversations in that
