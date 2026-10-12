@@ -739,12 +739,9 @@ impl MonoFloat {
             MonoStatus::Working => color,
             MonoStatus::Idle => fg.opacity(0.3),
         };
-        // "Working · Working" says nothing twice.
         let status = match state.activity.as_deref() {
-            Some(activity) if activity != state.status.label() => {
-                format!("{} · {activity}", state.status.label())
-            }
-            _ => state.status.label().to_string(),
+            Some(activity) => format!("{} · {activity}", state.status.label()),
+            None => state.status.label().to_string(),
         };
         let busy = state.status == MonoStatus::Working;
         self.drag_region(div(), cx)

@@ -14,6 +14,7 @@ use crate::app::session_folders::{palette_color, parse_hex};
 use crate::app::{BenCodeApp, same_project_path, unique_id};
 use crate::monos::{Handed, Mono, MonoState, MonoStatus};
 use crate::ui::mascot::{Mascot, mascot_for};
+use crate::ui::transcript::turns::is_tool;
 
 /// How long the soul field rests before it is saved.
 const SOUL_SAVE_DELAY: Duration = Duration::from_millis(600);
@@ -166,10 +167,21 @@ impl BenCodeApp {
             ..Default::default()
         };
         match live_agent(session, flags) {
-            Some(agent) => MonoState {
-                status: MonoStatus::Working,
-                activity: Some(agent.activity),
-            },
+            Some(agent) => {
+                // Its one conversation runs for days: a tool call from an
+                // earlier turn is not what it is on now. With none in this
+                // turn it is just "Working", said once.
+                let this_turn = session
+                    .blocks
+                    .iter()
+                    .rev()
+                    .take_while(|block| block.role != "user")
+                    .any(is_tool);
+                MonoState {
+                    status: MonoStatus::Working,
+                    activity: this_turn.then_some(agent.activity),
+                }
+            }
             None => MonoState::IDLE,
         }
     }
@@ -219,29 +231,32 @@ impl BenCodeApp {
         self.db_then(
             cx,
             move |db| db.get_session(&row),
-            move |this, loaded, cx| match loaded {
-                Ok(Some(session)) => {
-                    if !this.sessions.iter().any(|s| s.id == session.id) {
-                        this.sessions.push(session);
-                    }
+            move |this, loaded, cx| {
+                // Deleted or reset while it loaded: no longer its chat, and
+                // nothing to bring back or start over.
+                let Some(mono) = this.mono(&mono_id) else {
+                    return;
+                };
+                if mono.session_id.as_deref() != Some(session_id.as_str()) {
                     if show {
-                        this.show_mono(&mono_id, cx);
-                    }
-                    cx.notify();
-                }
-                // Deleted since: it starts over, as a Mono first opened does.
-                Ok(None) => {
-                    // Unless another request already started it.
-                    let started = this.mono(&mono_id).is_some_and(|mono| {
-                        mono.session_id.as_deref() != Some(session_id.as_str())
-                    });
-                    if !started {
-                        this.start_mono_session(&mono_id, show, cx);
-                    } else if show {
                         this.open_mono(&mono_id, cx);
                     }
+                    return;
                 }
-                Err(err) => log::error!("could not load the Mono's conversation: {err:#}"),
+                match loaded {
+                    Ok(Some(session)) => {
+                        if !this.sessions.iter().any(|s| s.id == session.id) {
+                            this.sessions.push(session);
+                        }
+                        if show {
+                            this.show_mono(&mono_id, cx);
+                        }
+                        cx.notify();
+                    }
+                    // Deleted since: it starts over, as a Mono first opened does.
+                    Ok(None) => this.start_mono_session(&mono_id, show, cx),
+                    Err(err) => log::error!("could not load the Mono's conversation: {err:#}"),
+                }
             },
         );
     }
@@ -416,20 +431,30 @@ impl BenCodeApp {
         let Some(mono) = self.mono_in_view().cloned() else {
             return;
         };
-        let Some(old) = mono
+        // What carries over, not the whole row: its blocks can be huge.
+        let Some((old_id, cwd, harness, model, runtime_mode, model_settings)) = mono
             .session_id
             .as_deref()
             .and_then(|id| self.sessions.iter().find(|s| s.id == id))
-            .cloned()
+            .map(|s| {
+                (
+                    s.id.clone(),
+                    s.cwd.clone(),
+                    s.harness.clone(),
+                    s.model.clone(),
+                    s.runtime_mode.clone(),
+                    s.model_settings.clone(),
+                )
+            })
         else {
             return;
         };
-        let fresh = self.create_session_row(&old.cwd);
+        let fresh = self.create_session_row(&cwd);
         if let Some(session) = self.sessions.iter_mut().find(|s| s.id == fresh) {
-            session.harness = old.harness.clone();
-            session.model = old.model.clone();
-            session.runtime_mode = old.runtime_mode.clone();
-            session.model_settings = old.model_settings.clone();
+            session.harness = harness;
+            session.model = model;
+            session.runtime_mode = runtime_mode;
+            session.model_settings = model_settings;
             session.worktree_cwd = None;
             session.branch = None;
         }
@@ -443,7 +468,7 @@ impl BenCodeApp {
             },
             cx,
         );
-        self.drop_mono_session(&old.id, cx);
+        self.drop_mono_session(&old_id, cx);
     }
 
     pub fn set_mono_name(&mut self, id: &str, name: &str, cx: &mut Context<Self>) {
@@ -689,16 +714,22 @@ impl BenCodeApp {
         }
         let soul = match self.monos.souls.get(&mono.id) {
             Some(soul) => soul.clone(),
-            // Not opened this launch (a queued turn, a resumed one): a small
-            // file, read as skill bodies are right before the turn starts.
-            None => crate::storage::data_dir()
-                .and_then(|data| crate::monos::mono_dir(&data, &mono.id))
-                .and_then(|dir| {
-                    crate::monos::load_soul(&dir)
-                        .map_err(|err| log::error!("could not read the Mono's soul: {err:#}"))
-                        .ok()
-                })
-                .unwrap_or_else(crate::monos::default_soul),
+            // Not opened this launch (a queued turn, a resumed one, the
+            // floating chat): a small file, read as skill bodies are right
+            // before the turn starts, and kept for the turns after it.
+            None => {
+                let read = crate::storage::data_dir()
+                    .and_then(|data| crate::monos::mono_dir(&data, &mono.id))
+                    .and_then(|dir| {
+                        crate::monos::load_soul(&dir)
+                            .map_err(|err| log::error!("could not read the Mono's soul: {err:#}"))
+                            .ok()
+                    });
+                if let Some(soul) = &read {
+                    self.monos.souls.insert(mono.id.clone(), soul.clone());
+                }
+                read.unwrap_or_else(crate::monos::default_soul)
+            }
         };
         let context =
             crate::monos::standing_context(&mono.display_name(), &self.mono_projects(&mono), &soul);

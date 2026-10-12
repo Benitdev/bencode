@@ -77,11 +77,12 @@ impl BenCodeApp {
             return;
         }
         self.close_overlay_views();
-        let left_mono = self.leave_mono_view(cx);
+        // The plan below starts from the focused thread: the tabs' one, not
+        // the Mono's, whose blank chat would otherwise move into `cwd`.
+        if self.leave_mono_view(cx) {
+            self.sync_selection(cx);
+        }
         if same_project_path(&self.current_cwd, &cwd) {
-            if left_mono {
-                self.sync_selection(cx);
-            }
             cx.notify();
             return;
         }
