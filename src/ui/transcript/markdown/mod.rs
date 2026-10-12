@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 
 use ely_gpui_component::forms::code_highlights;
 use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
-use ely_gpui_component::theme::{ActiveTheme, IconSize};
+use ely_gpui_component::theme::{ActiveTheme, IconSize, Syntax};
 use gpui::prelude::*;
 use gpui::{
     AnyElement, App, ClickEvent, CursorStyle, ElementId, Font, FontStyle, FontWeight, Hsla,
@@ -541,26 +541,56 @@ fn hover_link(runs: &mut Vec<TextRun>, range: &Range<usize>, color: Hsla) {
     });
 }
 
-/// Runs of `base` over `len` bytes, coloured where `highlights` say.
+/// Runs of `base` over `len` bytes, coloured where `highlights` say (a
+/// lexer's spans; where two overlap, the first keeps the bytes they
+/// share). One pass: restyling the runs span by span remade them all for
+/// each span, some 20ms a frame for a 200-line block.
 fn highlighted_runs(
     len: usize,
     base: &TextRun,
     highlights: impl IntoIterator<Item = (Range<usize>, Hsla)>,
 ) -> Vec<TextRun> {
-    let mut runs = vec![TextRun {
-        len,
-        ..base.clone()
-    }];
     if len == 0 {
         return Vec::new();
     }
-    for (range, color) in highlights {
-        let range = range.start.min(len)..range.end.min(len);
-        if !range.is_empty() {
-            restyle(&mut runs, &range, |run| run.color = color);
+    let mut spans: Vec<(Range<usize>, Hsla)> = highlights
+        .into_iter()
+        .map(|(range, color)| (range.start.min(len)..range.end.min(len), color))
+        .filter(|(range, _)| !range.is_empty())
+        .collect();
+    spans.sort_by_key(|(range, _)| range.start);
+    let piece = |len: usize, color: Hsla| TextRun {
+        len,
+        color,
+        ..base.clone()
+    };
+    let mut runs = Vec::with_capacity(spans.len() * 2 + 1);
+    let mut at = 0;
+    for (range, color) in spans {
+        let start = range.start.max(at);
+        if start >= range.end {
+            continue;
         }
+        if start > at {
+            runs.push(piece(start - at, base.color));
+        }
+        runs.push(piece(range.end - start, color));
+        at = range.end;
+    }
+    if at < len {
+        runs.push(piece(len - at, base.color));
     }
     runs
+}
+
+/// A code block's colours as last lexed, so a frame that shows the same
+/// code in the same palette does not lex it again.
+#[derive(Default)]
+struct CodeRuns {
+    code: SharedString,
+    base: TextRun,
+    syntax: Option<Syntax>,
+    runs: Vec<TextRun>,
 }
 
 /// How a run of inline text is drawn, and where it sits in a copy.
@@ -958,29 +988,49 @@ impl Draw<'_> {
             .child(copy);
 
         let code = fence.code.trim_end_matches('\n');
-        let ink = cx.theme().colors.syntax.variable;
-        let runs = highlighted_runs(
-            code.len(),
-            &TextRun {
-                len: 0,
-                font: look.mono.clone(),
-                color: ink,
-                background_color: None,
-                underline: None,
-                strikethrough: None,
-            },
-            code_highlights(code, cx)
-                .into_iter()
-                .map(|(range, highlight)| (range, highlight.color)),
-        );
+        let syntax = cx.theme().colors.syntax.clone();
+        let ink = syntax.variable;
+        let base = TextRun {
+            len: 0,
+            font: look.mono.clone(),
+            color: ink,
+            background_color: None,
+            underline: None,
+            strikethrough: None,
+        };
+        let cache = window.use_keyed_state((key.clone(), "runs"), cx, |_, _| CodeRuns::default());
+        let fresh = {
+            let cached = cache.read(cx);
+            cached.code.as_ref() != code
+                || cached.base != base
+                || cached.syntax.as_ref() != Some(&syntax)
+        };
+        if fresh {
+            let runs = highlighted_runs(
+                code.len(),
+                &base,
+                code_highlights(code, cx)
+                    .into_iter()
+                    .map(|(range, highlight)| (range, highlight.color)),
+            );
+            let lexed = CodeRuns {
+                code: SharedString::from(code.to_string()),
+                base,
+                syntax: Some(syntax),
+                runs,
+            };
+            cache.update(cx, |cached, _| *cached = lexed);
+        }
+        let (shown, runs) = {
+            let cached = cache.read(cx);
+            (cached.code.clone(), cached.runs.clone())
+        };
         let code_text: AnyElement = match self.select {
             Some(ctx) => ctx
-                .text(self.next_seq(), joint, false, code.to_string(), runs, cx)
+                .text(self.next_seq(), joint, false, shown.to_string(), runs, cx)
                 .element
                 .into_any_element(),
-            None => StyledText::new(code.to_string())
-                .with_runs(runs)
-                .into_any_element(),
+            None => StyledText::new(shown).with_runs(runs).into_any_element(),
         };
         let lines = code.lines().count().max(1);
         let first = fence.start_line.unwrap_or(1).max(1);
@@ -1220,6 +1270,41 @@ impl RenderOnce for AgentMarkdown {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn code_runs_cover_the_text_in_one_pass() {
+        let base = TextRun {
+            len: 0,
+            font: gpui::font("Mono"),
+            color: gpui::black(),
+            background_color: None,
+            underline: None,
+            strikethrough: None,
+        };
+        let red = gpui::red();
+        let blue = gpui::blue();
+        let shape = |runs: Vec<TextRun>| -> Vec<(usize, Hsla)> {
+            runs.into_iter().map(|run| (run.len, run.color)).collect()
+        };
+        // "let x = 1;": gaps keep the base ink, spans out of order still land.
+        let runs = highlighted_runs(10, &base, [(8..9, blue), (0..3, red), (4..5, red)]);
+        assert_eq!(
+            shape(runs),
+            [
+                (3, red),
+                (1, gpui::black()),
+                (1, red),
+                (3, gpui::black()),
+                (1, blue),
+                (1, gpui::black()),
+            ]
+        );
+        // Spans past the end are cut; an overlap keeps the first's bytes.
+        let runs = highlighted_runs(6, &base, [(0..4, red), (2..9, blue)]);
+        assert_eq!(shape(runs), [(4, red), (2, blue)]);
+        assert!(highlighted_runs(0, &base, [(0..1, red)]).is_empty());
+        assert_eq!(shape(highlighted_runs(3, &base, [])), [(3, gpui::black())]);
+    }
 
     #[test]
     fn a_reveal_keeps_pace_and_catches_up() {
