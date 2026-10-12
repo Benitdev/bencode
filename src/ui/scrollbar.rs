@@ -192,11 +192,40 @@ fn overlay_presence(since: Option<Instant>, now: Instant) -> f32 {
     }
 }
 
+/// Redraws the view being drawn once `wait` has passed; one wake at a time
+/// (a later move sets the next one when this one lands).
+fn wake_after(wait: Duration, waking: &Rc<Cell<bool>>, window: &mut Window, cx: &mut App) {
+    if waking.replace(true) {
+        return;
+    }
+    let (waking, view) = (waking.clone(), window.current_view());
+    window
+        .spawn(cx, async move |cx| {
+            cx.background_executor().timer(wait).await;
+            waking.set(false);
+            if let Err(err) = cx.update(move |_, cx| cx.notify(view)) {
+                log::debug!("scroll bar wake after its window closed: {err:#}");
+            }
+        })
+        .detach();
+}
+
+/// How long an overlay bar that moved at `since` stays as it is before it
+/// fades; `None` once it is fading (or gone).
+fn overlay_hold(since: Option<Instant>, now: Instant) -> Option<Duration> {
+    let idle = now.saturating_duration_since(since?);
+    OVERLAY_IDLE
+        .checked_sub(idle)
+        .filter(|hold| !hold.is_zero())
+}
+
 /// A bar's state between frames.
 #[derive(Default)]
 struct Bar {
     scrolled: Pixels,
     moved_at: Option<Instant>,
+    /// A redraw is set for when the overlay bar starts to fade.
+    waking: Rc<Cell<bool>>,
     hovered: bool,
     /// While the knob is dragged: where the pointer holds it.
     grab: Option<Pixels>,
@@ -298,9 +327,14 @@ impl RenderOnce for ScrollBar {
                 bar.moved_at = Some(now);
             }
         });
-        let (hovered, dragging, moved_at) = {
+        let (hovered, dragging, moved_at, waking) = {
             let bar = state.read(cx);
-            (bar.hovered, bar.grab.is_some(), bar.moved_at)
+            (
+                bar.hovered,
+                bar.grab.is_some(),
+                bar.moved_at,
+                bar.waking.clone(),
+            )
         };
         let style = system_style();
         let active = hovered || dragging;
@@ -312,9 +346,14 @@ impl RenderOnce for ScrollBar {
         if presence <= 0.0 {
             return div().into_any_element();
         }
-        if presence < 1.0 || (style == Style::Overlay && !active) {
-            // Until the overlay bar has faded.
-            window.request_animation_frame();
+        if style == Style::Overlay && !active {
+            match overlay_hold(moved_at, now) {
+                // Shown and still: one redraw when the fade starts, not one
+                // each frame (each is the whole view the bar is in).
+                Some(hold) => wake_after(hold, &waking, window, cx),
+                // Until the overlay bar has faded.
+                None => window.request_animation_frame(),
+            }
         }
 
         let fg = cx.theme().colors.fg;
@@ -486,6 +525,15 @@ mod tests {
     fn an_overlay_bar_stays_then_fades() {
         let now = Instant::now();
         assert_eq!(overlay_presence(None, now), 0.0);
+        // Held still for a second, a wake away; then fading, frame by frame.
+        assert_eq!(overlay_hold(None, now), None);
+        assert_eq!(overlay_hold(Some(now), now), Some(OVERLAY_IDLE));
+        let later = now + Duration::from_millis(400);
+        assert_eq!(
+            overlay_hold(Some(now), later),
+            Some(Duration::from_millis(600))
+        );
+        assert_eq!(overlay_hold(Some(now), now + OVERLAY_IDLE), None);
         assert_eq!(overlay_presence(Some(now), now), 1.0);
         let fading = now + OVERLAY_IDLE + OVERLAY_FADE / 2;
         assert!((overlay_presence(Some(now), fading) - 0.5).abs() < 0.01);
