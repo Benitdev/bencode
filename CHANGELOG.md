@@ -4,7 +4,7 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
-## [Unreleased]
+## [0.1.7] - 2026-10-12
 
 - Monos (experimental), as in MonoCode: agents of your own that live on the
   rail above the projects. Each has a name, a mascot and a colour, one long
