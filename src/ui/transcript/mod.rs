@@ -324,8 +324,9 @@ pub struct TranscriptUiState {
 const CLOCK_TICK: std::time::Duration = std::time::Duration::from_secs(1);
 
 impl BenCodeApp {
-    /// Redraws while any agent runs: every spinner frame (80ms) while the
-    /// workspace shows them, else every second so "working for 12s" ticks.
+    /// Redraws while any agent runs, which is all the busy marks
+    /// (`ui/spinner.rs`) ask for: a step every spinner frame (80ms), and
+    /// smoothly (`WATCHED_FRAME`) while a running thread is in view.
     /// Usage-limit countdowns tick once a second.
     pub fn start_clock(&mut self, cx: &mut Context<Self>) {
         cx.spawn(async move |this, cx| {
@@ -344,11 +345,13 @@ impl BenCodeApp {
                     if running || countdown {
                         cx.notify();
                     }
-                    // A surface covers the workspace and its spinners.
-                    if running && app.surface.is_none() {
-                        crate::ui::spinner::FRAME
-                    } else {
+                    if !running {
                         CLOCK_TICK
+                    } else if app.alerts.window_active && app.running_thread_in_view() {
+                        crate::ui::spinner::WATCHED_FRAME
+                    } else {
+                        // The rail's busy mascots show over the views too.
+                        crate::ui::spinner::FRAME
                     }
                 });
                 match ticked {
@@ -358,6 +361,20 @@ impl BenCodeApp {
             }
         })
         .detach();
+    }
+
+    /// Whether a thread the workspace shows (a pane of the active tab, or
+    /// the Mono in view) has its agent at work.
+    fn running_thread_in_view(&self) -> bool {
+        if self.surface.is_some() {
+            return false;
+        }
+        if let Some(id) = self.mono_view_session() {
+            return self.is_agent_running_in(id);
+        }
+        self.tabs
+            .active()
+            .is_some_and(|tab| tab.leaf_ids().iter().any(|id| self.is_agent_running_in(id)))
     }
 
     /// Gets or creates the transcript view for a given session.

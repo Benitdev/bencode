@@ -9,9 +9,8 @@ use std::time::Duration;
 use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
-    Animation, AnimationExt, AnyElement, Context, FontWeight, Hsla, InteractiveElement,
-    IntoElement, ParentElement, SharedString, StatefulInteractiveElement, Styled, div, prelude::*,
-    rgb,
+    AnyElement, App, Context, FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement,
+    SharedString, StatefulInteractiveElement, Styled, div, prelude::*, rgb,
 };
 
 use super::project_name;
@@ -20,7 +19,7 @@ use crate::app::BenCodeApp;
 use crate::app::live_agents::{LiveAgent, format_live_elapsed};
 use crate::ui::provider_icon::HarnessIcon;
 use crate::ui::scale::px;
-use crate::ui::spinner::terminal_spinner;
+use crate::ui::spinner::{self, terminal_spinner};
 
 /// MonoCode `LIVE_AGENT_MIN` / `LIVE_AGENT_CAP`.
 const LIVE_AGENT_MIN: usize = 2;
@@ -70,7 +69,7 @@ impl BenCodeApp {
             .gap_2()
             .px(px(14.0))
             .py(px(6.0))
-            .child(pulse_dot(accent, cx.reduce_motion()))
+            .child(pulse_dot(accent, cx))
             .child(
                 div()
                     .min_w_0()
@@ -246,8 +245,8 @@ impl BenCodeApp {
                         self.project_mascot(&agent.cwd),
                         self.project_color(&agent.cwd),
                         live,
-                        &id,
                         8.0,
+                        cx,
                     ))
                     .child(
                         div()
@@ -288,20 +287,14 @@ impl BenCodeApp {
     }
 }
 
-/// `size-1.5 rounded-full bg-accent motion-safe:animate-pulse`.
-fn pulse_dot(accent: Hsla, reduced: bool) -> AnyElement {
+/// `size-1.5 rounded-full bg-accent motion-safe:animate-pulse`, stepped by
+/// the app's clock (`ui/spinner.rs`).
+fn pulse_dot(accent: Hsla, cx: &App) -> AnyElement {
     let dot = div().flex_none().size(px(6.0)).rounded_full().bg(accent);
-    if reduced {
+    if spinner::still(cx) {
         return dot.into_any_element();
     }
-    dot.with_animation(
-        "live-agents-pulse",
-        Animation::new(PULSE).repeat(),
-        |el, delta| {
-            // Full, down to half at the midpoint, and back.
-            let dip = (delta * std::f32::consts::TAU).cos() * 0.25 + 0.75;
-            el.opacity(dip)
-        },
-    )
-    .into_any_element()
+    // Full, down to half at the midpoint, and back.
+    let dip = (spinner::cycle(PULSE) * std::f32::consts::TAU).cos() * 0.25 + 0.75;
+    dot.opacity(dip).into_any_element()
 }

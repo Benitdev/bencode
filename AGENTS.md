@@ -400,6 +400,15 @@ this.some_field = value;
 cx.notify(); // without this the cached app view does not redraw
 ```
 
+### Animation
+
+`with_animation` (and Ely's `ShimmerText` and `Spinner`, built on it) asks
+for every frame and notifies the view it is drawn in: inside the app, that
+is the whole app redrawn at the display's rate. A one-shot transition is
+fine. **Anything that loops while agents run is a busy mark in
+`ui/spinner.rs`**, stepped by the app's clock (`start_clock`): `shimmer`,
+`ring`, `terminal_spinner`, and `cycle(period)` for a mark of its own.
+
 ### Background work
 
 - **Never block the UI thread** with disk IO, git commands or SQLite queries.

@@ -8,14 +8,14 @@ use crate::ui::appearance::DiffColors;
 use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
-    Animation, AnimationExt, AnyElement, ClickEvent, Context, Div, FontWeight, Hsla,
-    InteractiveElement, IntoElement, ParentElement, SharedString, Stateful, Styled, Window, div,
-    prelude::*, relative,
+    AnyElement, App, ClickEvent, Context, Div, FontWeight, Hsla, InteractiveElement, IntoElement,
+    ParentElement, SharedString, Stateful, Styled, Window, div, prelude::*, relative,
 };
 
 use crate::app::BenCodeApp;
 use crate::ui::mascot::{Mascot, pixel_sprite};
 use crate::ui::scale::px;
+use crate::ui::spinner;
 
 /// MonoCode `h-8`: every rail row.
 pub(super) const ROW_HEIGHT: f32 = 32.0;
@@ -99,40 +99,35 @@ pub(super) fn project_mascot_icon(
     mascot: &'static Mascot,
     color: Hsla,
     busy: bool,
-    id: &str,
+    cx: &App,
 ) -> AnyElement {
-    mascot_icon(mascot, color, busy, id, 12.0)
+    mascot_icon(mascot, color, busy, 12.0, cx)
 }
 
 /// The mascot at `size` (the Working agents card draws it at `size-2`).
+/// Its beat is stepped by the app's clock (`ui/spinner.rs`).
 pub(super) fn mascot_icon(
     mascot: &'static Mascot,
     color: Hsla,
     busy: bool,
-    id: &str,
     size: f32,
+    cx: &App,
 ) -> AnyElement {
     let size = px(size);
     if !busy {
         return pixel_sprite(&mascot.rest, size, color, false);
     }
+    let talking = !spinner::still(cx) && spinner::cycle(MASCOT_BEAT) >= 0.5;
     div()
         .relative()
         .size(size)
-        .with_animation(
-            SharedString::from(format!("{id}-mascot")),
-            Animation::new(MASCOT_BEAT).repeat(),
-            move |el, delta| {
-                let talking = delta >= 0.5;
-                el.top(px(if talking { -1.0 } else { 0.0 }))
-                    .child(pixel_sprite(
-                        if talking { &mascot.talk } else { &mascot.rest },
-                        size,
-                        color,
-                        false,
-                    ))
-            },
-        )
+        .top(px(if talking { -1.0 } else { 0.0 }))
+        .child(pixel_sprite(
+            if talking { &mascot.talk } else { &mascot.rest },
+            size,
+            color,
+            false,
+        ))
         .into_any_element()
 }
 

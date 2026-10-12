@@ -6,7 +6,6 @@ use std::rc::Rc;
 
 use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
-use ely_gpui_component::typography::ShimmerText;
 use gpui::{
     AnyElement, Bounds, Context, DragMoveEvent, FontWeight, InteractiveElement, IntoElement,
     MouseButton, MouseDownEvent, ParentElement, Pixels, Point, SharedString, Styled, canvas, div,
@@ -270,7 +269,7 @@ impl BenCodeApp {
                         .items_center()
                         .justify_center()
                         .group_hover(header_group.clone(), |s| s.invisible())
-                        .child(project_mascot_icon(mascot, color, false, &id)),
+                        .child(project_mascot_icon(mascot, color, false, cx)),
                 )
                 .child(
                     div()
@@ -429,7 +428,7 @@ impl BenCodeApp {
         let strong = fg.opacity(if dark { 0.12 } else { 0.07 });
         let hover = fg.opacity(0.05);
         let label = if card.busy {
-            ShimmerText::new(SharedString::from(format!("{id}-shimmer")), name).into_any_element()
+            crate::ui::spinner::shimmer(name, cx)
         } else {
             name.into_any_element()
         };
@@ -439,7 +438,7 @@ impl BenCodeApp {
                 .size_4()
                 .rounded(px(4.0))
                 .into_any_element(),
-            None => project_mascot_icon(mascot, color, card.busy, &id),
+            None => project_mascot_icon(mascot, color, card.busy, cx),
         };
         div()
             .id(SharedString::from(id.clone()))

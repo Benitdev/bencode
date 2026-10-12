@@ -5,16 +5,15 @@
 
 use std::time::Duration;
 
-use ely_gpui_component::motion::Spinner;
 use ely_gpui_component::primitives::{Icon, IconName};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
-use ely_gpui_component::typography::ShimmerText;
 use gpui::{
     Animation, AnimationExt, AnyElement, App, Context, Hsla, InteractiveElement, IntoElement,
     ParentElement, SharedString, Styled, div, prelude::*,
 };
 
 use crate::ui::scale::px;
+use crate::ui::spinner;
 
 use super::blocks::markdown;
 use super::markdown::Tone;
@@ -105,13 +104,13 @@ fn dim_label(text: impl Into<SharedString>, group: &str, cx: &App) -> AnyElement
         .into_any_element()
 }
 
-fn shimmer_label(id: String, text: String) -> AnyElement {
+fn shimmer_label(text: String, cx: &App) -> AnyElement {
     div()
         .flex_1()
         .min_w_0()
         .truncate()
         .text_size(px(14.0))
-        .child(ShimmerText::new(SharedString::from(id), text))
+        .child(spinner::shimmer(text, cx))
         .into_any_element()
 }
 
@@ -130,7 +129,7 @@ impl BenCodeApp {
         let open = expandable && self.transcript_ui.open_folds.contains(&turn_id);
         let group = format!("fold-{turn_id}");
         let label = if turn.live {
-            shimmer_label(format!("{group}-clock"), self.live_status(session, turn))
+            shimmer_label(self.live_status(session, turn), cx)
         } else {
             dim_label(settled_title(blocks, turn), &group, cx)
         };
@@ -191,7 +190,7 @@ impl BenCodeApp {
             Item::Activity(group) => {
                 let blocks = &session.blocks;
                 if turn.live && turns::is_initial_thinking(blocks, &turn.items, item) {
-                    return initial_thinking(&session.id);
+                    return initial_thinking(cx);
                 }
                 let done = turn.activity_done(blocks, item);
                 div()
@@ -309,7 +308,7 @@ impl BenCodeApp {
         let title = turns::phase_title(&session.blocks, phase, active);
         let group = format!("phase-{}", phase.id);
         let label = if active {
-            shimmer_label(format!("{group}-title"), title)
+            shimmer_label(title, cx)
         } else {
             dim_label(title, &group, cx)
         };
@@ -517,7 +516,7 @@ impl BenCodeApp {
                     .text_color(target_color)
                     .child(self.tool_target_el(&key, target, file, cx)),
             )
-            .children(tool_status(&key, state, live, cx));
+            .children(tool_status(state, live, cx));
         div()
             .flex()
             .flex_col()
@@ -573,14 +572,10 @@ impl BenCodeApp {
 
 /// Trailing status: spinner while live, dashed circle while waiting, red X
 /// on failure; success has none (MonoCode `ToolCallStatusIcon`).
-fn tool_status(key: &str, state: ToolState, live: bool, cx: &App) -> Option<AnyElement> {
+fn tool_status(state: ToolState, live: bool, cx: &App) -> Option<AnyElement> {
     let colors = &cx.theme().colors;
     match state {
-        ToolState::Pending if live => Some(
-            Spinner::new(SharedString::from(format!("tool-spin-{key}")))
-                .size(IconSize::Xs)
-                .into_any_element(),
-        ),
+        ToolState::Pending if live => Some(spinner::ring(IconSize::Xs, cx)),
         ToolState::Pending => Some(small_icon(IconName::CircleDashed, muted(colors.fg, 0.4))),
         ToolState::Failed => Some(small_icon(IconName::X, colors.danger)),
         ToolState::Done => None,
@@ -660,16 +655,13 @@ pub(crate) fn tool_label(
 }
 
 /// MonoCode `InitialThinking`: "Thinking…" shimmering before any output.
-fn initial_thinking(session_id: &str) -> AnyElement {
+fn initial_thinking(cx: &App) -> AnyElement {
     div()
         .px_4()
         .pt_3()
         .pb_1()
         .text_size(px(14.0))
-        .child(ShimmerText::new(
-            SharedString::from(format!("thinking-{session_id}")),
-            "Thinking…",
-        ))
+        .child(spinner::shimmer("Thinking…", cx))
         .into_any_element()
 }
 

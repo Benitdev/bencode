@@ -6,7 +6,6 @@
 
 use ely_gpui_component::primitives::{IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
-use ely_gpui_component::typography::ShimmerText;
 use gpui::{
     AnyElement, Context, FontWeight, InteractiveElement, IntoElement, MouseButton, MouseDownEvent,
     ParentElement, SharedString, Styled, div, prelude::*, relative,
@@ -85,8 +84,7 @@ impl BenCodeApp {
         let strong = fg.opacity(if theme.is_dark() { 0.12 } else { 0.07 });
         let hover = fg.opacity(0.05);
         let label = if working {
-            ShimmerText::new(SharedString::from(format!("{id}-shimmer")), name.clone())
-                .into_any_element()
+            crate::ui::spinner::shimmer(name.clone(), cx)
         } else {
             name.clone().into_any_element()
         };
@@ -126,7 +124,7 @@ impl BenCodeApp {
                     .gap_2()
                     .group_hover(group.clone(), |s| s.pr(px(24.0)))
                     .tooltip(Tooltip::text(self.mono_card_title(mono, &state)))
-                    .child(self.render_mono_rail_mascot(mono, &state, &id, cx))
+                    .child(self.render_mono_rail_mascot(mono, &state, cx))
                     .child(
                         // `min-w-0 flex-1 truncate text-sm font-medium leading-tight`
                         div()
@@ -193,7 +191,6 @@ impl BenCodeApp {
         &self,
         mono: &Mono,
         state: &MonoState,
-        id: &str,
         cx: &Context<Self>,
     ) -> impl IntoElement {
         let colors = &cx.theme().colors;
@@ -214,8 +211,8 @@ impl BenCodeApp {
                 self.mono_mascot(mono),
                 color,
                 state.status == MonoStatus::Working,
-                id,
                 12.0,
+                cx,
             ))
             .child(
                 div()

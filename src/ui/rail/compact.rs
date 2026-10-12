@@ -302,7 +302,7 @@ impl BenCodeApp {
                 .absolute()
                 .size_full(),
             )
-            .child(self.project_glyph(&cwd, "compact-rail-project-icon", cx))
+            .child(self.project_glyph(&cwd, cx))
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(move |this, event: &MouseDownEvent, _, cx| {
@@ -316,7 +316,7 @@ impl BenCodeApp {
     }
 
     /// A project's logo, else its mascot; a folder with no project.
-    fn project_glyph(&self, path: &str, id: &str, cx: &Context<Self>) -> AnyElement {
+    fn project_glyph(&self, path: &str, cx: &Context<Self>) -> AnyElement {
         if path.trim().is_empty() {
             let fg = cx.theme().colors.fg;
             return Icon::new(IconName::FolderPlus)
@@ -345,7 +345,7 @@ impl BenCodeApp {
                 self.project_mascot(path),
                 self.project_color(path),
                 busy,
-                id,
+                cx,
             ),
         }
     }
@@ -404,11 +404,7 @@ impl BenCodeApp {
                         .size_4()
                         .items_center()
                         .justify_center()
-                        .child(self.project_glyph(
-                            &path,
-                            &format!("compact-project-icon-{ix}"),
-                            cx,
-                        )),
+                        .child(self.project_glyph(&path, cx)),
                 )
                 .child(
                     div()
