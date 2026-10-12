@@ -13,6 +13,9 @@ tagging (`docs/releasing.md`).
   home folder, which a Mono's chat put on the rail, deleted them all.
 - The home folder is no longer listed as a project because a Mono's
   conversation ran there.
+- A Mono's floating chat takes far less work while agents run elsewhere:
+  it redraws when its own conversation or the Monos beside it change, not
+  with every update to BenCode's window.
 
 ## [0.1.7] - 2026-10-12
 
