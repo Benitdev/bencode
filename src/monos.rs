@@ -7,9 +7,11 @@
 //! `settings.json` (`monos`). A Mono's standing instructions are its
 //! `SOUL.md`, in BenCode's data folder (`monos/<id>/`), never in a repo.
 //!
-//! Not ported: memory, habits, sessions a Mono starts, artifacts and
-//! reactions (they go through MonoCode's `app` CLI, which BenCode lacks),
-//! and the floating chat window.
+//! A reply that is only `<reaction>👍</reaction>` is a reaction on the
+//! user's message (`monoReaction.ts`), drawn by the views.
+//!
+//! Not ported: memory, habits, sessions a Mono starts and artifacts (they
+//! go through MonoCode's `app` CLI, which BenCode lacks).
 
 use std::path::{Path, PathBuf};
 
@@ -250,12 +252,67 @@ fn projects_brief(projects: &[(String, String)]) -> String {
     )
 }
 
+/// MonoCode's `<reaction_rules>`: when a reply may be an emoji on the
+/// user's message instead of words.
+const REACTION_RULES: &str = "<reaction_rules>\nNot every message needs words back. When the \
+    user only acknowledges, thanks you, agrees or signs off (\"cool no worries\", \"thanks!\", \
+    \"sounds good\") and there is nothing you need to add, you may react instead, as a friend \
+    would in a messaging app: make your whole reply <reaction>👍</reaction> with one fitting \
+    emoji and nothing else. BenCode shows it on their message instead of as a reply. Use it \
+    only when words would add nothing; questions, requests and anything that needs work or a \
+    decision still get a written answer.\n</reaction_rules>";
+
+const REACTION_OPEN: &str = "<reaction>";
+const REACTION_CLOSE: &str = "</reaction>";
+
+/// MonoCode `isSingleEmoji`, by what it leaves out rather than Unicode's
+/// emoji tables: a short run with a pictograph in it and nothing a word or
+/// a tag is made of.
+fn is_single_emoji(text: &str) -> bool {
+    let count = text.chars().count();
+    (1..=12).contains(&count)
+        && text.chars().any(|c| c as u32 >= 0x203C)
+        && !text
+            .chars()
+            .any(|c| c.is_alphabetic() || c.is_whitespace() || matches!(c, '<' | '>' | '&'))
+}
+
+/// MonoCode `monoReaction`: the emoji when a reply is only a reaction.
+pub fn mono_reaction(text: &str) -> Option<&str> {
+    let emoji = text
+        .trim()
+        .strip_prefix(REACTION_OPEN)?
+        .strip_suffix(REACTION_CLOSE)?
+        .trim();
+    is_single_emoji(emoji).then_some(emoji)
+}
+
+/// MonoCode `monoReplyText`: how a reply reads outside the chat, such as in
+/// a notification.
+pub fn reply_text(text: &str) -> String {
+    match mono_reaction(text) {
+        Some(emoji) => format!("Reacted {emoji} to your message"),
+        None => text.to_string(),
+    }
+}
+
+/// MonoCode `partialReaction`: a reply still streaming in that may yet turn
+/// out to be a reaction, and so is not shown as text meanwhile.
+pub fn partial_reaction(text: &str) -> bool {
+    let text = text.trim_start();
+    if text.len() < REACTION_OPEN.len() {
+        !text.is_empty() && REACTION_OPEN.starts_with(text)
+    } else {
+        text.starts_with(REACTION_OPEN) && !text.contains("</")
+    }
+}
+
 /// MonoCode `monoContext`: who the Mono is and its standing instructions.
 pub fn standing_context(name: &str, projects: &[(String, String)], soul: &str) -> String {
     format!(
         "<mono>\nYou are {name}, a Mono in BenCode: an agent of your own rather than one \
          project's. {} This is one long conversation the user comes back to over \
-         time.\n</mono>\n\n<soul>\nYour standing instructions, from SOUL.md. They rank below \
+         time.\n</mono>\n\n{REACTION_RULES}\n\n<soul>\nYour standing instructions, from SOUL.md. They rank below \
          the user's current request. The user edits them in BenCode, from your details panel; \
          never change them on your own.\n\n{}\n</soul>",
         projects_brief(projects),
@@ -409,6 +466,51 @@ mod tests {
         let turn = turn_with_context("hello", &two);
         assert!(turn.starts_with("<bencode_context>"));
         assert!(turn.ends_with("</bencode_context>\n\nhello"));
+    }
+
+    #[test]
+    fn a_reply_that_is_only_a_reaction_gives_its_emoji() {
+        assert_eq!(mono_reaction("<reaction>👍</reaction>"), Some("👍"));
+        assert_eq!(mono_reaction("  <reaction> 🎉 </reaction>\n"), Some("🎉"));
+        // A family is one emoji; a flag too.
+        assert_eq!(mono_reaction("<reaction>👨‍👩‍👧</reaction>"), Some("👨‍👩‍👧"));
+        assert_eq!(mono_reaction("<reaction>❤️</reaction>"), Some("❤️"));
+        for not in [
+            "👍",
+            "<reaction>ok</reaction>",
+            "<reaction>👍 thanks</reaction>",
+            "<reaction></reaction>",
+            "Sure <reaction>👍</reaction>",
+            "<reaction>👍</reaction> done",
+            "<reaction><b>👍</b></reaction>",
+        ] {
+            assert_eq!(mono_reaction(not), None, "{not}");
+        }
+    }
+
+    #[test]
+    fn a_reaction_reads_as_a_sentence_outside_the_chat() {
+        assert_eq!(
+            reply_text("<reaction>👍</reaction>"),
+            "Reacted 👍 to your message"
+        );
+        assert_eq!(reply_text("Done."), "Done.");
+    }
+
+    #[test]
+    fn a_reaction_still_streaming_is_held_back() {
+        for held in ["<", "<reac", "<reaction>", "<reaction>👍", "  <reaction>👍"] {
+            assert!(partial_reaction(held), "{held}");
+        }
+        for shown in [
+            "",
+            "Sure",
+            "<b>",
+            "<reaction>👍</",
+            "<reaction>👍</reaction>",
+        ] {
+            assert!(!partial_reaction(shown), "{shown}");
+        }
     }
 
     #[test]

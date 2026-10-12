@@ -673,8 +673,8 @@ impl BenCodeApp {
             }))
             .when(!disabled, |el| {
                 el.cursor_pointer()
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.pick_rail_extra(id, click_anchor.get(), cx);
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        this.pick_rail_extra(id, click_anchor.get(), window, cx);
                     }))
             })
             .child(item.icon.render(fg.opacity(0.55)))

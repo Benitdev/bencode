@@ -37,6 +37,8 @@ pub struct MonosState {
     pub pending_delete: Option<String>,
     /// The open Mono's chat is awaiting a reset confirmation.
     pub pending_reset: bool,
+    /// The floating chat, while its window is open.
+    float: Option<gpui::WindowHandle<crate::ui::mono_float::MonoFloat>>,
     /// The context a running turn carries, by conversation: recorded as
     /// handed over once the turn ends with a provider session to name.
     carrying: HashMap<String, String>,
@@ -68,6 +70,7 @@ impl MonosState {
             soul_generation: 0,
             pending_delete: None,
             pending_reset: false,
+            float: None,
             carrying: HashMap::new(),
             _subscriptions: subscriptions,
         }
@@ -173,25 +176,43 @@ impl BenCodeApp {
 
     /// MonoCode `createMono` then `onOpenMono`: a new Mono, opened.
     pub fn create_mono(&mut self, cx: &mut Context<Self>) {
+        let id = self.add_mono(cx);
+        self.open_mono(&id, cx);
+    }
+
+    /// MonoCode `createMono`: a new Mono on the roster; its id.
+    pub fn add_mono(&mut self, cx: &mut Context<Self>) -> String {
         let id = unique_id("mono");
         let mono = crate::monos::new_mono(&self.settings.monos, id.clone());
         self.update_monos(|roster| roster.push(mono), cx);
-        self.open_mono(&id, cx);
+        id
     }
 
     /// MonoCode `onOpenMono`: the Mono's conversation takes the main area,
     /// read from the database or started if it has none yet.
     pub fn open_mono(&mut self, id: &str, cx: &mut Context<Self>) {
+        self.close_rail_menu(cx);
+        self.ensure_mono_session(id, true, cx);
+    }
+
+    /// MonoCode `ensureMonoSession`: the Mono's conversation in memory,
+    /// without showing it (the floating chat reads it from there).
+    pub fn prepare_mono_session(&mut self, id: &str, cx: &mut Context<Self>) {
+        self.ensure_mono_session(id, false, cx);
+    }
+
+    fn ensure_mono_session(&mut self, id: &str, show: bool, cx: &mut Context<Self>) {
         let Some(session) = self.mono(id).map(|mono| mono.session_id.clone()) else {
             return;
         };
-        self.close_rail_menu(cx);
         let Some(session_id) = session else {
-            self.start_mono_session(id, cx);
+            self.start_mono_session(id, show, cx);
             return;
         };
         if self.sessions.iter().any(|s| s.id == session_id) {
-            self.show_mono(id, cx);
+            if show {
+                self.show_mono(id, cx);
+            }
             return;
         }
         let (mono_id, row) = (id.to_string(), session_id.clone());
@@ -203,17 +224,30 @@ impl BenCodeApp {
                     if !this.sessions.iter().any(|s| s.id == session.id) {
                         this.sessions.push(session);
                     }
-                    this.show_mono(&mono_id, cx);
+                    if show {
+                        this.show_mono(&mono_id, cx);
+                    }
+                    cx.notify();
                 }
                 // Deleted since: it starts over, as a Mono first opened does.
-                Ok(None) => this.start_mono_session(&mono_id, cx),
+                Ok(None) => {
+                    // Unless another request already started it.
+                    let started = this.mono(&mono_id).is_some_and(|mono| {
+                        mono.session_id.as_deref() != Some(session_id.as_str())
+                    });
+                    if !started {
+                        this.start_mono_session(&mono_id, show, cx);
+                    } else if show {
+                        this.open_mono(&mono_id, cx);
+                    }
+                }
                 Err(err) => log::error!("could not load the Mono's conversation: {err:#}"),
             },
         );
     }
 
     /// A new conversation for the Mono, in the home folder.
-    fn start_mono_session(&mut self, id: &str, cx: &mut Context<Self>) {
+    fn start_mono_session(&mut self, id: &str, show: bool, cx: &mut Context<Self>) {
         let Some(home) = home_dir() else {
             log::error!("no home folder to start a Mono in");
             return;
@@ -234,7 +268,66 @@ impl BenCodeApp {
             },
             cx,
         );
-        self.show_mono(id, cx);
+        if show {
+            self.show_mono(id, cx);
+        }
+    }
+
+    /// MonoCode `FloatingMonoChat`: the Mono's chat in the window that
+    /// floats above the others, opened or brought forward on this Mono.
+    pub fn open_mono_float(&mut self, id: &str, window: &mut gpui::Window, cx: &mut Context<Self>) {
+        if self.mono(id).is_none() {
+            return;
+        }
+        self.close_rail_menu(cx);
+        self.prepare_mono_session(id, cx);
+        let (app, main, mono_id) = (cx.entity(), window.window_handle(), id.to_string());
+        let existing = self.monos.float.take();
+        // Opening a window updates the app it is drawn from: after this one.
+        cx.defer(move |cx| {
+            let shown = existing.and_then(|float| {
+                float
+                    .update(cx, |float, window, cx| {
+                        float.show(&mono_id, window, cx);
+                        window.activate_window();
+                    })
+                    .ok()
+                    .map(|()| float)
+            });
+            let float = match shown {
+                Some(float) => Some(float),
+                // Never opened, or closed since.
+                None => crate::ui::mono_float::open(app.clone(), main, mono_id, cx)
+                    .map_err(|err| log::error!("could not open the floating chat: {err:#}"))
+                    .ok(),
+            };
+            app.update(cx, |this, _| this.monos.float = float);
+        });
+    }
+
+    /// A message typed in the floating chat: into the running turn where
+    /// the agent takes follow-ups, queued behind it otherwise, else a turn
+    /// of its own (the composer's own rules, `submit_prompt`).
+    pub fn send_mono_message(&mut self, session_id: &str, text: String, cx: &mut Context<Self>) {
+        // With the files waiting in the thread's composer, as Send takes them.
+        let attachments = self
+            .threads
+            .get_mut(session_id)
+            .map(|thread| std::mem::take(&mut thread.attachments))
+            .unwrap_or_default();
+        let input = crate::app::TurnInput {
+            text,
+            attachments,
+            ..Default::default()
+        };
+        if self.is_agent_running_in(session_id) {
+            if let Err(input) = self.steer(session_id, input, cx) {
+                self.thread_mut(session_id).queue.push(input);
+            }
+            cx.notify();
+            return;
+        }
+        self.send_turn(session_id, input, cx);
     }
 
     fn show_mono(&mut self, id: &str, cx: &mut Context<Self>) {

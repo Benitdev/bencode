@@ -45,6 +45,15 @@ pub fn markdown(
     select: SegCtx,
     cx: &Context<BenCodeApp>,
 ) -> AnyElement {
+    // A Mono's reply that is only a reaction (MonoCode `monoReaction`)
+    // reads as its emoji, not as the tag that carries it.
+    if let Some(emoji) = crate::monos::mono_reaction(text) {
+        return div()
+            .text_size(px(24.0))
+            .line_height(px(32.0))
+            .child(emoji.to_string())
+            .into_any_element();
+    }
     let app = cx.entity().downgrade();
     AgentMarkdown::new(id, text.to_string())
         .live(live)

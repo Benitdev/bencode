@@ -144,7 +144,13 @@ Notes:
 ## Batch I — Monos (2026-10-12)
 - [~] P1 L Monos: roster on the rail, one conversation each over the workspace, Details (mascot, colour, projects, soul), delete and reset — `features/monos/model/mono.ts`, `monoFiles.ts`, `monoWorkspace.ts`, `app/shell/MonoRailSection.tsx`. Not compared with MonoCode on screen
 - [ ] P1 L Memory, habits, sessions a Mono starts and their completion reports, artifacts: all go through MonoCode's `app` CLI (`src-tauri/src/control_cli.rs`), which BenCode lacks — `monoMemory.ts`, `monoHabits.ts`, `monoSpawnedSessions.ts`
-- [ ] P2 M Reactions (`<reaction>` replies as a badge on the message), unread counts on the rail, the "Meet Monos" intro, drag to reorder — `monoReaction.ts`, `MonoIntro.tsx`
-- [ ] P2 M Monos on the collapsed icon rail; the floating chat window — `FloatingMonoChat.tsx`
+- [~] P2 M Reactions: a reply that is only `<reaction>` is a badge on the user's message in the floating chat — `monoReaction.ts`. The main transcript shows the emoji as the reply instead of on the message; no bounce
+- [ ] P2 M Unread counts on the rail, the "Meet Monos" intro, drag to reorder — `MonoIntro.tsx`
+- [~] P1 L The floating chat window: a rail of every Mono, the conversation as messages with work folded, approvals, Stop, Open in BenCode — `FloatingMonoChat.tsx`, `src-tauri/src/mono_chat.rs`. Not compared with MonoCode on screen
+- [x] P2 M Floating chat: files attached with +, by drop, shown as chips and on sent messages — `MonoComposer.tsx`
+- [x] P2 S Floating chat: ⌘V attaches the clipboard's images and files — `MonoComposer.tsx` `onPaste`
+- [~] P2 M Floating chat: the emoji picker, by group with this launch's recent ones — `shared/ui/EmojiPicker.tsx`. No search, no skin tone, recents not saved (MonoCode bundles Emojibase)
+- [ ] P2 M Floating chat: the menu bar item that opens it (`mono_chat/menu_bar.rs`), questions answered in place, earlier pages, queued messages shown as pending, resizing, the glass look
+- [ ] P2 M Monos on the collapsed icon rail
 - [ ] P2 M A Mono's changes per project (its turns keep no checkpoints) — `MonoChangesPanel.tsx`
 - [ ] P2 S Name edited in place in Details; a per-Mono chat background

@@ -130,7 +130,7 @@ impl BenCodeApp {
 
     /// Reads `paths` into `session_id`'s composer. A send waits for it
     /// (MonoCode `pasteFlightRef`).
-    fn attach_paths_to(
+    pub(crate) fn attach_paths_to(
         &mut self,
         session_id: String,
         paths: Vec<std::path::PathBuf>,
@@ -185,11 +185,17 @@ impl BenCodeApp {
     /// MonoCode `onPaste`: images and files on the clipboard attach instead
     /// of pasting as text. Returns whether anything was attached.
     pub fn paste_into_composer(&mut self, cx: &mut Context<Self>) -> bool {
-        let Some(item) = cx.read_from_clipboard() else {
-            return false;
-        };
         // The thread the paste was made in keeps it, wherever focus goes.
         let Some(session_id) = self.selected_session_id.clone() else {
+            return false;
+        };
+        self.paste_files_into(session_id, cx)
+    }
+
+    /// The clipboard's images and files into `session_id`'s composer;
+    /// false when it holds only text.
+    pub(crate) fn paste_files_into(&mut self, session_id: String, cx: &mut Context<Self>) -> bool {
+        let Some(item) = cx.read_from_clipboard() else {
             return false;
         };
         let Some(PastedFiles { mut paths, images }) = pasted_files(&item) else {
@@ -232,7 +238,7 @@ impl BenCodeApp {
             .is_some_and(crate::app::thread_state::ThreadState::defer_send)
     }
 
-    fn remove_attachment(&mut self, session_id: &str, id: &str, cx: &mut Context<Self>) {
+    pub(crate) fn remove_attachment(&mut self, session_id: &str, id: &str, cx: &mut Context<Self>) {
         if let Some(thread) = self.threads.get_mut(session_id) {
             thread.attachments.retain(|f| f.id != id);
         }

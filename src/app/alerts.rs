@@ -137,7 +137,8 @@ pub fn notification_text(session: &SessionRow, event: &Event) -> Text {
             .rev()
             .filter(|b| b.role == "assistant")
             .find_map(|b| b.text.as_deref().filter(|t| !t.trim().is_empty()))
-            .map_or_else(|| format!("{harness} finished"), str::to_string),
+            // MonoCode `monoReplyText`: a Mono's reaction is not its tag.
+            .map_or_else(|| format!("{harness} finished"), crate::monos::reply_text),
     };
     Text {
         title: "BenCode".into(),

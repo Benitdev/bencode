@@ -9,7 +9,12 @@ tagging (`docs/releasing.md`).
 - Monos (experimental), as in MonoCode: agents of your own that live on the
   rail above the projects. Each has a name, a mascot and a colour, one long
   conversation that is not tied to a project, the projects you give it, and
-  standing instructions it always keeps in mind (its Details panel). Memory,
+  standing instructions it always keeps in mind (its Details panel). A
+  Mono's chat also opens in a small window that floats above your other
+  windows (the button in its header, or its menu on the rail), with every
+  Mono one click away; attach files there with +, by dropping them or by
+  pasting an image, and pick an emoji from the composer's own picker. A
+  Mono may answer a "thanks" with just an emoji on your message. Memory,
   habits and the sessions a Mono starts are not here yet.
 - Esc cancels the browser's element picker, after any menu or dialog that
   is open.

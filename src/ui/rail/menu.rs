@@ -308,10 +308,18 @@ impl BenCodeApp {
     /// MonoCode `MonoMenu`'s actions. Background image is left out: BenCode
     /// has one chat background, not one per Mono.
     pub(super) fn mono_extra_items() -> Vec<ExtraItem> {
-        vec![ExtraItem {
-            danger: true,
-            ..ExtraItem::new("delete-mono", "Delete mono…", IconName::Trash2)
-        }]
+        vec![
+            ExtraItem::new(
+                "float-mono",
+                "Open floating chat",
+                IconName::PictureInPicture2,
+            ),
+            ExtraItem {
+                danger: true,
+                sep_before: true,
+                ..ExtraItem::new("delete-mono", "Delete mono…", IconName::Trash2)
+            },
+        ]
     }
 
     pub(super) fn group_extra_items() -> Vec<ExtraItem> {
@@ -477,6 +485,7 @@ impl BenCodeApp {
         &mut self,
         id: &'static str,
         anchor: Option<Bounds<Pixels>>,
+        window: &mut gpui::Window,
         cx: &mut Context<Self>,
     ) {
         let Some(menu) = self.rail_ui.menu.clone() else {
@@ -489,6 +498,7 @@ impl BenCodeApp {
                 self.close_rail_menu(cx);
             }
             (MenuTarget::Project(path), _) => self.pick_project_extra(&path, id, anchor, cx),
+            (MenuTarget::Mono(mono), "float-mono") => self.open_mono_float(&mono, window, cx),
             (MenuTarget::Mono(mono), "delete-mono") => {
                 self.close_rail_menu(cx);
                 self.monos.pending_delete = Some(mono);

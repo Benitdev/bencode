@@ -172,7 +172,7 @@ bencode/
 | `composer/` | Prompt composer and its pickers, cards, runner |
 | `file_pane.rs` | The pane beside the chat and its tab strip |
 | `browser_pane.rs` | A browser tab: toolbar, address bar, the page's box |
-| `monos.rs`, `rail/monos.rs` | A Mono in the main area (header, chat, Details: look, projects, soul); the rail's Monos section |
+| `monos.rs`, `rail/monos.rs`, `mono_float.rs` | A Mono in the main area (header, chat, Details: look, projects, soul); the rail's Monos section; the floating chat, a window and view of its own (`MonoFloat`) |
 | `editor_pane/` | Code editor: open files, saves, disk sync |
 | `diff_viewer.rs`, `diff_model.rs` | Review of working-tree changes and commits |
 | `terminal_pane/` | Terminal dock: tabs, splits (`split.rs`), menus, running jobs, host sessions (`sessions.rs`) |
@@ -183,7 +183,7 @@ bencode/
 | `settings_accounts.rs`, `settings_agy_accounts.rs`, `settings_appearance.rs`, `settings_shortcuts.rs`, `settings_worktrees.rs`, `settings_integrations.rs` | Settings pages: provider accounts, appearance, shortcuts (read only, keys looked up in `commands.rs`'s keymap), worktrees, integrations (GitHub accounts, Backlog) |
 | `quick_open.rs`, `lightbox.rs`, `link_dialog.rs`, `reminder_notices.rs`, `harness_update_notice.rs`, `whats_new.rs`, `resume_interrupted.rs` | Overlays |
 | `theme.rs`, `appearance.rs`, `scale.rs`, `background_effects.rs`, `icons.rs`, `provider_icon.rs`, `mascot.rs`, `motion.rs`, `spinner.rs` | Look and shared drawing: palettes, tint / accent / diff colours, interface scale, chat background effects |
-| `app_callback.rs`, `virtual_rows.rs`, `explorer_menu.rs`, `drag_drop.rs`, `thumbnail.rs` | Shared helpers; `thumbnail.rs` draws a file image scaled down to its size (use it, not `img(path)`, for anything drawn smaller than the file) |
+| `app_callback.rs`, `virtual_rows.rs`, `explorer_menu.rs`, `drag_drop.rs`, `thumbnail.rs`, `emoji_picker.rs` | Shared helpers; `emoji_picker.rs` is the emoji a picker lists, by group; `thumbnail.rs` draws a file image scaled down to its size (use it, not `img(path)`, for anything drawn smaller than the file) |
 
 ---
 
@@ -290,7 +290,7 @@ only read that cache.
 | `integrations/harness/` | `harness/` | Argv builders and stdout parsers |
 | `integrations/harness/providers/grok/` | `harness/grok.rs` | Grok Build over ACP, one `grok agent stdio` per turn; `/compact` through `_x.ai/compact_conversation`. BenCode's own: follow-ups go into the running turn (`_x.ai/interject`), where MonoCode queues them, and the context meter reads the count Grok stamps on its updates |
 | `sessions/model/taskList.ts`, `sessions/ui/TaskListPreview.tsx`, `harness/core/apply.ts` `upsertTaskList` | `app/task_list.rs`, `ui/transcript/task_list.rs` | The Tasks card, from `AgentEvent::Tasks`. Only Grok Build's plan updates feed it; Claude's `TodoWrite` still shows as a tool row. Whole snapshots only (no `merge`, no `key`) |
-| `features/monos/` (`mono.ts`, `monoFiles.ts`, `monoWorkspace.ts`, `MonoDetails`, `MonoProjects`), `app/shell/MonoRailSection.tsx` | `monos.rs`, `app/monos.rs`, `ui/monos.rs`, `ui/rail/monos.rs` | Agents of their own on the rail: one conversation each, in the home folder with Auto permissions, their projects and `SOUL.md` handed over ahead of a message. The roster is in `settings.json`. No memory, habits, started sessions, artifacts or reactions (MonoCode's `app` CLI), no floating chat, no review card |
+| `features/monos/` (`mono.ts`, `monoFiles.ts`, `monoWorkspace.ts`, `MonoDetails`, `MonoProjects`, `FloatingMonoChat`), `app/shell/MonoRailSection.tsx` | `monos.rs`, `app/monos.rs`, `ui/monos.rs`, `ui/rail/monos.rs`, `ui/mono_float.rs` | Agents of their own on the rail: one conversation each, in the home folder with Auto permissions, their projects and `SOUL.md` handed over ahead of a message. The roster is in `settings.json`. The floating chat opens from a Mono's header or rail menu (no menu bar item) with a reduced transcript of its own. A reply that is only `<reaction>👍</reaction>` is a reaction: a badge on the user's message in the floating chat, the emoji alone in the main transcript. No memory, habits, started sessions or artifacts (MonoCode's `app` CLI), no review card |
 | none (Codex desktop's in-app browser) | `browser/`, `app/browser.rs`, `ui/browser_pane.rs` | BenCode's own. A WKWebView over a file-pane tab; picked elements and screenshots go to the composer; agents drive it through the `bencode-browser` MCP server while a browser tab is open |
 | `src-tauri/src/` (`checkpoint.rs`, `reminders.rs`, `fs.rs`, …) | `git/checkpoint.rs`, `db/`, `ui/file_tree/fs.rs` | In-process calls, no IPC |
 
@@ -517,6 +517,15 @@ div()
   turn ends (`record_mono_context`). The user's block keeps what they typed.
 - A Mono's files live in BenCode's data folder (`monos/<id>/`), never in a
   repository; deleting a Mono leaves them on disk.
+- **The floating chat is a second window** (`ui/mono_float.rs`), the only
+  one besides BenCode's own. `MonoFloat` is its own view: it observes the
+  app, reads the Mono's session from it and acts through its methods
+  (`send_mono_message`, `stop_agent`, `answer_permission`); it owns no
+  conversation state (the files waiting to be sent are the thread's own
+  `attachments`, shared with the chat in BenCode's window), and its text
+  field and list are its own (the app's
+  entities belong to the app's window). The app's commands are bound on the
+  app's window, so the float binds the ones it answers (⌘W, ⌘Q).
 
 ### In-app browser (`src/browser/`)
 

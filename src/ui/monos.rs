@@ -94,6 +94,7 @@ impl BenCodeApp {
         let compact = self.compact_rail_active();
         let beside_rail = self.is_rail_open || compact;
         let details_open = self.monos.details_open;
+        let float_id = mono.id.clone();
         self.window_drag_region(div(), cx)
             .flex()
             .flex_none()
@@ -156,6 +157,17 @@ impl BenCodeApp {
                     .text_size(px(12.0))
                     .text_color(colors.fg.opacity(0.45))
                     .child(mono_status_line(state, self.mono_color(mono), cx)),
+            )
+            .child(
+                claim_press(div()).flex_none().child(
+                    IconButton::new("mono-float-open", IconName::PictureInPicture2)
+                        .size(ControlSize::Sm)
+                        .variant(ButtonVariant::Ghost)
+                        .tooltip("Open floating chat")
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            this.open_mono_float(&float_id, window, cx)
+                        })),
+                ),
             )
             // MonoCode `onShowMonoDetails`: offered only while they are hidden;
             // the panel's own header hides them.
