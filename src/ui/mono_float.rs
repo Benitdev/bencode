@@ -19,6 +19,7 @@ use ely_gpui_component::buttons::{Button, ButtonVariant, IconButton};
 use ely_gpui_component::forms::TextInput;
 use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::rc::Rc;
 
 use gpui::{
@@ -39,7 +40,7 @@ use crate::ui::mascot::pixel_sprite;
 use crate::ui::scale::px;
 use crate::ui::transcript::activity::tool_label;
 use crate::ui::transcript::markdown::AgentMarkdown;
-use crate::ui::transcript::turns::is_tool;
+use crate::ui::transcript::turns::{is_tool, tool_target};
 
 /// MonoCode `mono_chat.rs`: a 384pt conversation plus the 56pt rail.
 const WIDTH: f32 = 440.0;
@@ -173,6 +174,51 @@ pub fn float_items(blocks: &[Block], cwd: &str) -> Vec<FloatItem> {
     items
 }
 
+/// The newest blocks, the ones the window draws.
+fn recent(blocks: &[Block]) -> &[Block] {
+    &blocks[blocks.len().saturating_sub(RECENT_BLOCKS)..]
+}
+
+/// What [`float_items`] reads from `blocks`, folded into a number: while it
+/// holds, so do the items. A block changes in place only by its text
+/// growing (a reply streaming in) or a tool call's target being filled in;
+/// anything else adds, removes or replaces blocks, which moves the count
+/// or the ids at the window's ends. No allocation: it runs on each of the
+/// app's redraws.
+fn items_key(blocks: &[Block], cwd: &str) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    (cwd, blocks.len()).hash(&mut hasher);
+    blocks.first().map(|block| &block.id).hash(&mut hasher);
+    blocks.last().map(|block| &block.id).hash(&mut hasher);
+    for block in blocks {
+        hasher.write_usize(block.text.as_deref().map_or(0, str::len));
+        if is_tool(block) {
+            tool_target(block).hash(&mut hasher);
+        }
+    }
+    hasher.finish()
+}
+
+/// What the window draws from the app. The app redraws many times a second
+/// while any agent works (a token in any thread, a spinner's frame, its
+/// clock); this window redraws only when what it shows changed.
+#[derive(Default, PartialEq)]
+struct Shown {
+    /// The rail: every Mono and what it is doing.
+    monos: Vec<(Mono, MonoState)>,
+    /// The conversation, once the app holds it.
+    session: Option<String>,
+    running: bool,
+    /// [`items_key`] of its newest blocks.
+    blocks: u64,
+    /// The approval waiting, by its request id.
+    permission: Option<String>,
+    usage_limited: bool,
+    /// The files waiting in its composer, and whether more are being read.
+    attached: (Vec<ChipFile>, bool),
+    scale: f32,
+}
+
 pub struct MonoFloat {
     app: Entity<BenCodeApp>,
     /// BenCode's window, for "Open in BenCode".
@@ -181,6 +227,8 @@ pub struct MonoFloat {
     input: Entity<TextInput>,
     focus: FocusHandle,
     list: ListState,
+    /// What was drawn from the app last; see [`Shown`].
+    shown: Shown,
     items: Vec<FloatItem>,
     /// The conversation `list` was last laid out for.
     listed: Option<String>,
@@ -214,8 +262,13 @@ impl MonoFloat {
         let list = ListState::new(0, ListAlignment::Bottom, px(400.0));
         list.set_follow_mode(FollowMode::Tail);
         let subscriptions = vec![
-            // Whatever the app redraws for (a token, a status), this shows.
-            cx.observe(&app, |_, _, cx| cx.notify()),
+            // Only what this window shows redraws it, not each of the app's
+            // own redraws.
+            cx.observe(&app, |this, _, cx| {
+                if this.refresh(cx) {
+                    cx.notify();
+                }
+            }),
             // MonoCode `MonoComposer`: Enter sends, ⇧Enter is a new line;
             // Esc stops a reply.
             cx.intercept_keystrokes(move |event, window, cx| {
@@ -258,6 +311,7 @@ impl MonoFloat {
             input,
             focus: cx.focus_handle(),
             list,
+            shown: Shown::default(),
             items: Vec::new(),
             listed: None,
             drag_pressed: false,
@@ -266,7 +320,7 @@ impl MonoFloat {
             emoji_dismissed: None,
             _subscriptions: subscriptions,
         };
-        float.sync_placeholder(cx);
+        float.refresh(cx);
         float
     }
 
@@ -316,9 +370,81 @@ impl MonoFloat {
         self.sync_placeholder(cx);
         self.app
             .update(cx, |app, cx| app.prepare_mono_session(mono_id, cx));
+        self.refresh(cx);
         let handle = self.input.read(cx).focus_handle(cx);
         window.focus(&handle, cx);
         cx.notify();
+    }
+
+    /// Takes in what the app holds now; whether any of it is drawn here.
+    fn refresh(&mut self, cx: &mut Context<Self>) -> bool {
+        let shown = self.shown_now(cx);
+        if shown == self.shown {
+            return false;
+        }
+        let relist = shown.session != self.shown.session
+            || shown.running != self.shown.running
+            || shown.blocks != self.shown.blocks;
+        // A Mono renamed: "Message <name>" follows.
+        let roster = shown.monos != self.shown.monos;
+        self.shown = shown;
+        if relist {
+            let items = self.items_now(cx);
+            let session = self.shown.session.clone();
+            self.sync_list(session.as_deref(), items, self.shown.running);
+        }
+        if roster {
+            self.sync_placeholder(cx);
+        }
+        true
+    }
+
+    fn shown_now(&self, cx: &App) -> Shown {
+        let app = self.app.read(cx);
+        let session_id = self.session_id(cx);
+        let session = session_id
+            .as_deref()
+            .and_then(|id| app.sessions.iter().find(|s| s.id == id));
+        Shown {
+            monos: app
+                .settings
+                .monos
+                .iter()
+                .map(|mono| (mono.clone(), app.mono_state(mono)))
+                .collect(),
+            running: session.is_some_and(|s| app.is_agent_running_in(&s.id)),
+            blocks: session.map_or(0, |s| items_key(recent(&s.blocks), &s.cwd)),
+            permission: session
+                .and_then(|s| app.pending_permission_for(&s.id))
+                .map(|request| request.request_id.clone()),
+            usage_limited: session
+                .and_then(|s| app.thread(&s.id))
+                .is_some_and(|thread| thread.usage_limit.is_some()),
+            attached: session.map_or_else(Default::default, |s| self.attached(&s.id, cx)),
+            scale: crate::ui::scale::ui_scale(),
+            session: session_id,
+        }
+    }
+
+    /// The conversation's rows, with the Mono typing under a message it
+    /// has not answered yet.
+    fn items_now(&self, cx: &App) -> Vec<FloatItem> {
+        let app = self.app.read(cx);
+        let Some(session) = self
+            .shown
+            .session
+            .as_deref()
+            .and_then(|id| app.sessions.iter().find(|s| s.id == id))
+        else {
+            return Vec::new();
+        };
+        let mut items = float_items(recent(&session.blocks), &session.cwd);
+        // A message it reacted to is answered.
+        let unanswered = matches!(items.last(), Some(FloatItem::User { reaction: None, .. }));
+        if self.shown.running && unanswered {
+            items.push(FloatItem::Typing);
+        }
+        items
     }
 
     /// The conversation shown, once the app holds it.
@@ -634,9 +760,8 @@ impl MonoFloat {
             // `pt-[17px]`: the first mascot level with the header's.
             .pt(px(17.0))
             .pb_3();
-        for mono in &app.settings.monos {
+        for (mono, state) in &self.shown.monos {
             let selected = mono.id == self.mono_id;
-            let state = app.mono_state(mono);
             let color = app.mono_color(mono);
             let dot = match state.status {
                 MonoStatus::Working => color,
@@ -1231,31 +1356,16 @@ impl Render for MonoFloat {
         self.app.read(cx).apply_ui_scale(window);
         let (bg, fg) = (cx.theme().colors.bg, cx.theme().colors.fg);
         let dark = cx.theme().is_dark();
-        let mono = self.app.read(cx).mono(&self.mono_id).cloned();
-        let session_id = self.session_id(cx);
-        let (state, items, busy) = {
-            let app = self.app.read(cx);
-            let session = session_id
-                .as_deref()
-                .and_then(|id| app.sessions.iter().find(|s| s.id == id));
-            let mut items = session.map_or_else(Vec::new, |session| {
-                let from = session.blocks.len().saturating_sub(RECENT_BLOCKS);
-                float_items(&session.blocks[from..], &session.cwd)
-            });
-            let running = session.is_some_and(|s| app.is_agent_running_in(&s.id));
-            // A message it reacted to is answered.
-            let unanswered = matches!(items.last(), Some(FloatItem::User { reaction: None, .. }));
-            if running && unanswered {
-                items.push(FloatItem::Typing);
-            }
-            (
-                mono.as_ref()
-                    .map_or(MonoState::IDLE, |mono| app.mono_state(mono)),
-                items,
-                session.is_some_and(|s| app.is_agent_running_in(&s.id)),
-            )
-        };
-        self.sync_list(session_id.as_deref(), items, busy);
+        // Drawn from what `refresh` took in: the items and the list are
+        // already laid out for it.
+        let (mono, state) = self
+            .shown
+            .monos
+            .iter()
+            .find(|(mono, _)| mono.id == self.mono_id)
+            .cloned()
+            .map_or((None, MonoState::IDLE), |(mono, state)| (Some(mono), state));
+        let session_id = self.shown.session.clone();
 
         let card = div()
             .flex()
@@ -1492,6 +1602,34 @@ mod tests {
         assert!(text.is_empty());
         assert_eq!(files[0].name, "a.png");
         assert!(files[0].image);
+    }
+
+    #[test]
+    fn the_items_key_follows_what_the_rows_show() {
+        let blocks = vec![
+            Block::new("u", "user", "hello"),
+            tool("/repo/a.rs"),
+            Block::new("a", "assistant", "Hi"),
+        ];
+        let key = items_key(&blocks, "/repo");
+        assert_eq!(items_key(&blocks.clone(), "/repo"), key);
+        // A reply streaming in, a new block, another file read.
+        let mut streamed = blocks.clone();
+        streamed[2].text = Some("Hi there".into());
+        assert_ne!(items_key(&streamed, "/repo"), key);
+        let mut added = blocks.clone();
+        added.push(Block::new("s", "system", "Stopped."));
+        assert_ne!(items_key(&added, "/repo"), key);
+        let mut retargeted = blocks.clone();
+        retargeted[1] = tool("/repo/b.rs");
+        assert_ne!(items_key(&retargeted, "/repo"), key);
+        // A call finishing changes nothing the rows show.
+        let mut finished = blocks.clone();
+        if let Some(tool) = finished[1].tool.as_mut().and_then(|t| t.as_object_mut()) {
+            tool.insert("status".into(), serde_json::json!("completed"));
+            tool.insert("detail".into(), serde_json::json!("fn main() {}"));
+        }
+        assert_eq!(items_key(&finished, "/repo"), key);
     }
 
     #[test]
