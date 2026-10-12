@@ -556,6 +556,7 @@ impl BenCodeApp {
                 this.close_surface(cx);
             } else if !this.close_lightbox(cx)
                 && !this.close_quick_open(cx)
+                && !this.close_browser_picker(cx)
                 && !this.close_sidebar_drawer(cx)
                 && !this.close_mcp_picker(true, cx)
                 && !this.close_folder_picker(true, cx)

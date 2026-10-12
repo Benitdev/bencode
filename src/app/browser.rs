@@ -701,6 +701,20 @@ impl BenCodeApp {
         cx.notify();
     }
 
+    /// Esc while the picker is on and the keyboard is BenCode's, not the
+    /// page's (the pick button keeps it): the page's own Esc never fires.
+    pub(crate) fn close_browser_picker(&mut self, cx: &mut Context<Self>) -> bool {
+        match self.browser.picking {
+            Some(id) => {
+                self.toggle_browser_picker(id, cx);
+                // A closed tab has no page to stop.
+                self.browser.picking = None;
+                true
+            }
+            None => false,
+        }
+    }
+
     /// The camera button: what the page shows goes to the composer.
     pub(crate) fn browser_screenshot_to_chat(&mut self, id: u64, cx: &mut Context<Self>) {
         self.snapshot_to_chat(id, None, cx);
