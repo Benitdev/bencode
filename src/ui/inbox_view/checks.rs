@@ -134,7 +134,7 @@ impl BenCodeApp {
 
     /// The project's chats a repair can go to: idle ones, newest first.
     fn repair_targets(&self, item: &WorkItem) -> Vec<(String, String)> {
-        let project = self.inbox_start_project(item);
+        let project = self.inbox_start_project_shown(item);
         let mut sessions: Vec<_> = self
             .sessions
             .iter()

@@ -161,6 +161,9 @@ pub struct InboxState {
     pub pr: PrActionUi,
     /// The project "Send to agent" starts in, when changed from the item's.
     pub start_project: HashMap<String, String>,
+    /// Folders the inbox may name that the last list found gone from disk:
+    /// drawing reads this, never the disk (`inbox_projects_shown`).
+    pub missing_dirs: HashSet<String>,
     /// MonoCode `inboxSeen`: `updatedAt` (ms) of each item when read.
     pub seen: BTreeMap<String, i64>,
     pub seen_seeded: bool,
@@ -204,6 +207,7 @@ impl Default for InboxState {
             comment_error: None,
             pr: PrActionUi::default(),
             start_project: HashMap::new(),
+            missing_dirs: HashSet::new(),
             seen: BTreeMap::new(),
             seen_seeded: false,
             list_width: DEFAULT_LIST_WIDTH,
@@ -383,11 +387,17 @@ impl BenCodeApp {
     }
 
     /// The rail's projects that are still folders (MonoCode
-    /// `collectRailProjects`).
-    pub(crate) fn inbox_projects(&self) -> Vec<String> {
+    /// `collectRailProjects`), as the last list found them on disk: for
+    /// drawing, which asks the disk nothing.
+    pub(crate) fn inbox_projects_shown(&self) -> Vec<String> {
+        self.inbox_projects_where(|path| !self.inbox.missing_dirs.contains(path))
+    }
+
+    /// The rail's projects, once each, that `exists` keeps.
+    fn inbox_projects_where(&self, exists: impl Fn(&str) -> bool) -> Vec<String> {
         let mut projects: Vec<String> = Vec::new();
         for path in std::iter::once(&self.current_cwd).chain(self.recent_projects.iter()) {
-            let real = !matches!(path.trim(), "" | "~") && std::path::Path::new(path).is_dir();
+            let real = !matches!(path.trim(), "" | "~") && exists(path);
             if real
                 && !projects
                     .iter()
@@ -448,7 +458,16 @@ impl BenCodeApp {
     /// Fetches the list. A `quiet` fetch (the poll) shows no spinner and
     /// keeps what was loaded for items; an explicit one reloads it all.
     fn fetch_inbox(&mut self, quiet: bool, cx: &mut Context<Self>) {
-        let projects = self.inbox_projects();
+        // Which are still folders is asked off the UI thread, with the
+        // other folders the inbox may name.
+        let candidates = self.inbox_projects_where(|_| true);
+        let named: Vec<String> = self
+            .inbox
+            .start_project
+            .values()
+            .chain(self.backlog.project_folders.values())
+            .cloned()
+            .collect();
         let assigned = self.inbox.assigned_to_me;
         let hidden = self.backlog.hidden_projects.clone();
         self.inbox.fetching = true;
@@ -459,6 +478,9 @@ impl BenCodeApp {
             self.inbox.generation += 1;
         }
         let task = cx.background_executor().spawn(async move {
+            let (projects, mut missing): (Vec<String>, Vec<String>) =
+                candidates.into_iter().partition(|path| is_dir(path));
+            missing.extend(named.into_iter().filter(|path| !is_dir(path)));
             let status = github::status();
             let mut list = match status {
                 Status::Ready => github::inbox(&projects, assigned),
@@ -471,14 +493,19 @@ impl BenCodeApp {
                 list.errors.extend(found.errors);
                 list.items.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
             }
-            (status, list, statuses)
+            let mut item_projects: Vec<&String> = list.items.iter().map(|i| &i.project).collect();
+            item_projects.sort();
+            item_projects.dedup();
+            missing.extend(item_projects.into_iter().filter(|p| !is_dir(p)).cloned());
+            (status, list, statuses, missing)
         });
         cx.spawn(async move |this, cx| {
-            let (status, list, backlog_statuses) = task.await;
+            let (status, list, backlog_statuses, missing) = task.await;
             let updated = this.update(cx, |app, cx| {
                 if app.inbox.list_generation != list_generation {
                     return;
                 }
+                app.inbox.missing_dirs = missing.into_iter().collect();
                 // A fresh Backlog connection: its first list counts as read.
                 let seed_backlog =
                     std::mem::take(&mut app.backlog.seed_seen) && backlog_statuses.is_some();
@@ -734,19 +761,29 @@ impl BenCodeApp {
 
     /// The project "Send to agent" (and CI repair) starts in.
     pub(crate) fn inbox_start_project(&self, item: &WorkItem) -> String {
+        self.start_project_where(item, is_dir)
+    }
+
+    /// `inbox_start_project` as the last list found the folders on disk:
+    /// for drawing, which asks the disk nothing.
+    pub(crate) fn inbox_start_project_shown(&self, item: &WorkItem) -> String {
+        self.start_project_where(item, |path| !self.inbox.missing_dirs.contains(path))
+    }
+
+    fn start_project_where(&self, item: &WorkItem, exists: impl Fn(&str) -> bool) -> String {
         self.inbox
             .start_project
             .get(&item.key())
             .cloned()
-            .filter(|p| std::path::Path::new(p).is_dir())
+            .filter(|p| exists(p))
             // A Backlog project's threads start where the last one did.
             .or_else(|| {
                 (item.provider == Provider::Backlog)
                     .then(|| self.backlog.project_folders.get(&item.repo).cloned())
                     .flatten()
-                    .filter(|p| std::path::Path::new(p).is_dir())
+                    .filter(|p| exists(p))
             })
-            .or_else(|| Some(item.project.clone()).filter(|p| std::path::Path::new(p).is_dir()))
+            .or_else(|| Some(item.project.clone()).filter(|p| exists(p)))
             .unwrap_or_else(|| self.current_cwd.clone())
     }
 
@@ -1216,7 +1253,7 @@ impl BenCodeApp {
                 "Loading…".to_string()
             } else if let Some(error) = self.inbox.errors.first() {
                 error.clone()
-            } else if self.inbox_projects().is_empty() && !self.inbox.backlog_connected {
+            } else if self.inbox_projects_shown().is_empty() && !self.inbox.backlog_connected {
                 "Open a project to fill the inbox".to_string()
             } else if narrowed {
                 "No issues or pull requests match these filters".to_string()
@@ -1398,6 +1435,12 @@ pub(super) fn loading_icon(id: &'static str, color: gpui::Hsla) -> AnyElement {
         IconSize::Xs,
         color,
     )
+}
+
+/// Whether `path` is a folder on disk: for actions and background work,
+/// not for drawing.
+fn is_dir(path: &str) -> bool {
+    std::path::Path::new(path).is_dir()
 }
 
 /// Loads `fetch` into `slot(inbox)[key]` off the UI thread, once at a time.

@@ -263,12 +263,12 @@ impl BenCodeApp {
         item: &crate::github::WorkItem,
         cx: &Context<Self>,
     ) -> impl IntoElement {
-        let chosen = self.inbox_start_project(item);
+        let chosen = self.inbox_start_project_shown(item);
         let key = item.key();
         // A Backlog project keeps the folder picked for one of its issues.
         let backlog_project = (item.provider == Provider::Backlog).then(|| item.repo.clone());
         let menu = self
-            .inbox_projects()
+            .inbox_projects_shown()
             .into_iter()
             .fold(Menu::new(), |menu, path| {
                 let (key, target) = (key.clone(), path.clone());
