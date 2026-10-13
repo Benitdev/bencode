@@ -52,6 +52,8 @@ const MIN_WIDTH: f32 = 340.0;
 const MIN_HEIGHT: f32 = 320.0;
 /// How long a resize rests before its size is saved.
 const SIZE_SAVE_DELAY: std::time::Duration = std::time::Duration::from_millis(400);
+/// From the window going off screen to its removal; see [`MonoFloat::close`].
+const CLOSE_DELAY: std::time::Duration = std::time::Duration::from_millis(100);
 const RAIL_WIDTH: f32 = 56.0;
 /// MonoCode `CARD`: `my-1.5 mr-1.5 rounded-[10px]`, the conversation inset
 /// from the window by this gap.
@@ -252,6 +254,9 @@ pub struct MonoFloat {
     emoji_dismissed: Option<std::time::Instant>,
     /// Bumped by each resize: only the last one's size is saved.
     size_generation: u64,
+    /// Bumped by each close and each show: a close removes the window only
+    /// while it is the last of them.
+    close_generation: u64,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -331,6 +336,7 @@ impl MonoFloat {
             recent_emoji: Vec::new(),
             emoji_dismissed: None,
             size_generation: 0,
+            close_generation: 0,
             _subscriptions: subscriptions,
         };
         float.refresh(cx);
@@ -402,6 +408,8 @@ impl MonoFloat {
 
     /// MonoCode `mono_chat_switch`: another Mono's chat in this window.
     pub fn show(&mut self, mono_id: &str, window: &mut Window, cx: &mut Context<Self>) {
+        // Shown again before a close removed it: the window stays.
+        self.close_generation += 1;
         if self.mono_id != mono_id {
             self.mono_id = mono_id.to_string();
             self.input.update(cx, |input, cx| input.set_text("", cx));
@@ -413,6 +421,30 @@ impl MonoFloat {
         let handle = self.input.read(cx).focus_handle(cx);
         window.focus(&handle, cx);
         cx.notify();
+    }
+
+    /// MonoCode's "Hide chat". The window goes off screen now and is removed
+    /// a moment later: AppKit watches the key window's views for the Touch
+    /// Bar and lets go of them on its next display pass, while GPUI, removing
+    /// a window, has already put the content view's class back. Removed while
+    /// it is key, AppKit finds its watch gone and aborts BenCode.
+    fn close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        crate::ui::native_window::order_out(window);
+        self.close_generation += 1;
+        let generation = self.close_generation;
+        let timer = cx.background_executor().timer(CLOSE_DELAY);
+        cx.spawn_in(window, async move |this, cx| {
+            timer.await;
+            let removed = this.update_in(cx, |this, window, _| {
+                if this.close_generation == generation {
+                    window.remove_window();
+                }
+            });
+            if let Err(err) = removed {
+                log::debug!("the floating chat was gone before its close: {err:#}");
+            }
+        })
+        .detach();
     }
 
     /// Takes in what the app holds now; whether any of it is drawn here.
@@ -1486,9 +1518,7 @@ impl Render for MonoFloat {
                 this.app
                     .update(cx, |app, cx| app.attach_paths_to(session_id, paths, cx));
             }))
-            .on_action(cx.listener(|_, _: &CloseActive, window, _| {
-                window.remove_window();
-            }))
+            .on_action(cx.listener(|this, _: &CloseActive, window, cx| this.close(window, cx)))
             .on_action(cx.listener(|this, _: &Quit, _, cx| {
                 this.app.update(cx, |app, cx| app.request_quit(cx));
                 // With turns running BenCode asks first, in its own window.
@@ -1532,7 +1562,7 @@ fn hide_button(cx: &mut Context<MonoFloat>) -> impl IntoElement {
         .size(ControlSize::Sm)
         .variant(ButtonVariant::Ghost)
         .tooltip("Hide chat (⌘W)")
-        .on_click(cx.listener(|_, _, window, _| window.remove_window()))
+        .on_click(cx.listener(|this, _, window, cx| this.close(window, cx)))
 }
 
 /// Opens the floating chat on `mono_id`, above the other windows.
