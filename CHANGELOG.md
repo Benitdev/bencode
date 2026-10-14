@@ -4,6 +4,17 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
+## [0.1.10] - 2026-10-14
+
+- Closing a Mono's floating chat no longer quits BenCode.
+- A thread opened from an automation's run history keeps its tab: the run
+  works in a worktree of its own, and its tab left the title bar as soon
+  as another tab was picked. Opening a thread now shows the worktree it
+  runs in.
+- A tab dragged onto a pane always lands beside it. Dropped on a new,
+  empty thread, it took that thread's place, so dragging one new thread
+  onto another seemed to do nothing.
+
 ## [0.1.9] - 2026-10-12
 
 - Much less CPU while agents work: the busy marks (the rail's mascots,
