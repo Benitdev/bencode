@@ -8,7 +8,7 @@
 
 use super::{
     LayoutNode, PaneEdge, SplitDir, close_leaf, contains_leaf, leaf, place_layout, place_pane,
-    replace_leaf, replace_with_layout, set_split_sizes, split_pane,
+    replace_leaf, set_split_sizes, split_pane,
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -243,14 +243,13 @@ impl TabSet {
     }
 
     /// MonoCode `applyPlaceTabOnPane`: tab `source` joins the tab holding
-    /// `target`, beside it on `edge`, or in its place when `replace` (a blank
-    /// thread). The merged tab becomes active, focused on the source's pane.
+    /// `target`, beside it on `edge`. The merged tab becomes active, focused
+    /// on the source's pane.
     pub fn place_tab_on_pane(
         &mut self,
         source: &str,
         target: &str,
         edge: PaneEdge,
-        replace: bool,
     ) -> bool {
         let Some(from) = self.index_of(source) else {
             return false;
@@ -268,11 +267,7 @@ impl TabSet {
             return false;
         }
         let into = &mut self.tabs[to];
-        into.layout = if replace {
-            replace_with_layout(&into.layout, target, &incoming.layout)
-        } else {
-            place_layout(&into.layout, &incoming.layout, target, edge)
-        };
+        into.layout = place_layout(&into.layout, &incoming.layout, target, edge);
         into.focused = incoming.focused.clone();
         let merged = into.id.clone();
         self.tabs.remove(from);

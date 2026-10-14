@@ -345,7 +345,8 @@ impl BenCodeApp {
     }
 
     /// MonoCode `onPlaceTabOnPane`: tab `tab_id` joins the pane `to_id` on
-    /// the hinted edge. A blank thread there is replaced and dropped.
+    /// the hinted edge. Unlike MonoCode, an empty thread there is kept: the
+    /// tab always lands beside it, never in its place.
     pub fn place_title_tab_on_pane(&mut self, tab_id: &str, to_id: &str, cx: &mut Context<Self>) {
         let edge = self
             .active_pane_drop
@@ -353,22 +354,10 @@ impl BenCodeApp {
             .filter(|target| target.over_id == to_id)
             .map_or(PaneEdge::Right, |target| target.edge);
         self.clear_drop_hints();
-        let blank = self
-            .sessions
-            .iter()
-            .find(|s| s.id == to_id)
-            .is_some_and(|s| !s.blocks.iter().any(|b| b.role == "user"))
-            && !self.is_agent_running_in(to_id);
-        if !self.tabs.place_tab_on_pane(tab_id, to_id, edge, blank) {
+        if self.tabs.place_tab_on_pane(tab_id, to_id, edge) {
+            self.sync_selection(cx);
+        } else {
             cx.notify();
-            return;
-        }
-        if blank {
-            self.discard_blank_session(to_id);
-        }
-        self.sync_selection(cx);
-        if blank {
-            self.forget_thread_state(to_id);
         }
     }
 

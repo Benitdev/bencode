@@ -261,17 +261,6 @@ pub fn place_layout(
     dock_beside(node, incoming, to_id, edge)
 }
 
-/// MonoCode `replacePaneWithLayout`: one pane swapped for an intact tree.
-pub fn replace_with_layout(node: &LayoutNode, target: &str, incoming: &LayoutNode) -> LayoutNode {
-    match node {
-        LayoutNode::Leaf { id } if id == target => incoming.clone(),
-        LayoutNode::Leaf { .. } => node.clone(),
-        LayoutNode::Split { .. } => {
-            map_children(node, |c| replace_with_layout(c, target, incoming))
-        }
-    }
-}
-
 pub fn place_pane(node: &LayoutNode, leaf_id: String, to_id: &str, edge: PaneEdge) -> LayoutNode {
     if leaf_id == to_id || !contains_leaf(node, to_id) {
         return node.clone();
