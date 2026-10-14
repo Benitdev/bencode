@@ -4,6 +4,23 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
+## [0.1.12] - 2026-10-14
+
+- A Mono's floating chat matches MonoCode: turn work rides on the identity
+  line as a live ticker ("Reading file…", "Waiting for approval…") with its
+  prose staying in the work until it settles, Copy and the finish time on hover,
+  in-place questions, earlier turns ten at a time on reaching the top,
+  pending and held messages ("Not sent" · Resume), day separators, "Try again"
+  on usage limits, and a draft per Mono.
+- Faster session lists, git polling and search: an index on `sessions` so the
+  lists stop reading every transcript to reach late columns; the git state
+  fingerprint skips `git diff --shortstat` when there are no unstaged changes;
+  and Universal Search matches in place without allocating memory on every
+  keystroke.
+- Antigravity: tool steps are shown with their parameters and output, failed
+  turns report the CLI's reason, and the context meter reads the last model
+  call's usage rather than the sum of every step.
+
 ## [0.1.11] - 2026-10-14
 
 - Claude's subagents and background commands: the turn stays open until
