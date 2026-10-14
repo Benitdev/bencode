@@ -61,6 +61,12 @@ pub fn still(cx: &App) -> bool {
     cx.reduce_motion() || cx.theme().reduced_motion
 }
 
+/// Which of the clock's frames it is now: a view drawn outside the app
+/// (the floating chat) redraws its marks when this moves on.
+pub fn frame_count() -> u64 {
+    (epoch().elapsed().as_millis() / FRAME.as_millis()) as u64
+}
+
 /// The glyph shown now: the first one when motion is reduced.
 fn frame_at(elapsed: Duration, reduced: bool) -> &'static str {
     if reduced {

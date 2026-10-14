@@ -38,6 +38,9 @@ pub struct MonosState {
     pub pending_delete: Option<String>,
     /// The open Mono's chat is awaiting a reset confirmation.
     pub pending_reset: bool,
+    /// Why a Mono's conversation could not be read, by Mono; the floating
+    /// chat shows it in place of "Loading conversation…".
+    pub load_errors: HashMap<String, String>,
     /// The floating chat, while its window is open.
     float: Option<gpui::WindowHandle<crate::ui::mono_float::MonoFloat>>,
     /// The context a running turn carries, by conversation: recorded as
@@ -71,6 +74,7 @@ impl MonosState {
             soul_generation: 0,
             pending_delete: None,
             pending_reset: false,
+            load_errors: HashMap::new(),
             float: None,
             carrying: HashMap::new(),
             _subscriptions: subscriptions,
@@ -184,6 +188,8 @@ impl BenCodeApp {
     /// MonoCode `createMono` then `onOpenMono`: a new Mono, opened.
     pub fn create_mono(&mut self, cx: &mut Context<Self>) {
         let id = self.add_mono(cx);
+        // Its details open with it, ready to be told what it works on.
+        self.monos.details_open = true;
         self.open_mono(&id, cx);
     }
 
@@ -238,6 +244,9 @@ impl BenCodeApp {
                     }
                     return;
                 }
+                if loaded.is_ok() {
+                    this.monos.load_errors.remove(&mono_id);
+                }
                 match loaded {
                     Ok(Some(session)) => {
                         if !this.sessions.iter().any(|s| s.id == session.id) {
@@ -250,7 +259,13 @@ impl BenCodeApp {
                     }
                     // Deleted since: it starts over, as a Mono first opened does.
                     Ok(None) => this.start_mono_session(&mono_id, show, cx),
-                    Err(err) => log::error!("could not load the Mono's conversation: {err:#}"),
+                    Err(err) => {
+                        log::error!("could not load the Mono's conversation: {err:#}");
+                        this.monos
+                            .load_errors
+                            .insert(mono_id, format!("Could not load the conversation: {err}"));
+                        cx.notify();
+                    }
                 }
             },
         );
@@ -319,7 +334,18 @@ impl BenCodeApp {
     /// A message typed in the floating chat: into the running turn where
     /// the agent takes follow-ups, queued behind it otherwise, else a turn
     /// of its own (the composer's own rules, `submit_prompt`).
-    pub fn send_mono_message(&mut self, session_id: &str, text: String, cx: &mut Context<Self>) {
+    /// Whether it was taken: a thread that cannot run keeps the message
+    /// and its files where they were (MonoCode's "could not be sent").
+    pub fn send_mono_message(
+        &mut self,
+        session_id: &str,
+        text: String,
+        cx: &mut Context<Self>,
+    ) -> Result<(), String> {
+        if let Some(why) = self.turn_blocked(session_id) {
+            log::warn!("Mono thread {session_id} {why}; message not sent");
+            return Err("The message could not be sent. Try again in a moment.".to_string());
+        }
         // With the files waiting in the thread's composer, as Send takes them.
         let attachments = self
             .threads
@@ -336,9 +362,10 @@ impl BenCodeApp {
                 self.thread_mut(session_id).queue.push(input);
             }
             cx.notify();
-            return;
+            return Ok(());
         }
         self.send_turn(session_id, input, cx);
+        Ok(())
     }
 
     fn show_mono(&mut self, id: &str, cx: &mut Context<Self>) {
@@ -701,13 +728,12 @@ impl BenCodeApp {
         provider: Option<&str>,
         prompt: String,
     ) -> String {
+        // MonoCode keeps a raw slash command first only for harnesses that
+        // take them typed (`isNativeCommandPrompt`); none of BenCode's do, so
+        // every Mono turn carries it.
         let Some(mono) = self.mono_for_session(session_id).cloned() else {
             return prompt;
         };
-        // MonoCode `rawCommand`: a command must stay first.
-        if prompt.starts_with('/') {
-            return prompt;
-        }
         let soul = match self.monos.souls.get(&mono.id) {
             Some(soul) => soul.clone(),
             // Not opened this launch (a queued turn, a resumed one, the
@@ -738,12 +764,46 @@ impl BenCodeApp {
         crate::monos::turn_with_context(&prompt, &context)
     }
 
+    /// A turn that never finished (stopped, or never started) hands nothing over.
+    pub(crate) fn drop_mono_context(&mut self, session_id: &str) {
+        self.monos.carrying.remove(session_id);
+    }
+
+    /// After a compaction the provider session holds a summary, which may
+    /// have dropped who the Mono is: the next turn carries it again.
+    pub(crate) fn forget_mono_context(&mut self, session_id: &str, cx: &mut Context<Self>) {
+        let Some(id) = self
+            .mono_for_session(session_id)
+            .map(|mono| mono.id.clone())
+        else {
+            return;
+        };
+        self.update_monos(
+            |roster| {
+                if let Some(entry) = roster.iter_mut().find(|entry| entry.id == id) {
+                    entry.handed = None;
+                }
+            },
+            cx,
+        );
+    }
+
     /// MonoCode `recordAgentContext`, once a Mono's turn has ended: the
     /// provider session it left behind holds what the turn carried. A turn
     /// that never reached a provider session records nothing, so the next
     /// one carries the context again.
-    pub(crate) fn record_mono_context(&mut self, session_id: &str, cx: &mut Context<Self>) {
+    pub(crate) fn record_mono_context(
+        &mut self,
+        session_id: &str,
+        accepted: bool,
+        cx: &mut Context<Self>,
+    ) {
         let carried = self.monos.carrying.remove(session_id);
+        // MonoCode records what a turn the provider accepted carried: one
+        // that failed or was cut short may never have reached it.
+        if !accepted {
+            return;
+        }
         let Some(mono) = self.mono_for_session(session_id) else {
             return;
         };

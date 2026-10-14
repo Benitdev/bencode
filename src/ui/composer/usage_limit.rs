@@ -119,7 +119,7 @@ impl BenCodeApp {
     }
 
     /// Resume: the continue turn now.
-    fn resume_after_limit(&mut self, session_id: &str, cx: &mut Context<Self>) {
+    pub(crate) fn resume_after_limit(&mut self, session_id: &str, cx: &mut Context<Self>) {
         if self.is_agent_running_in(session_id)
             || self
                 .threads

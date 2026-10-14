@@ -4,24 +4,33 @@
 //!
 //! It is a second view of the conversation the app owns: it reads the
 //! app's session and sends through it, so closing it never stops a turn.
-//! Its transcript is its own, reduced to a messaging app's: what was said,
-//! with the work between replies folded into one line.
+//! Its transcript is its own, reduced to a messaging app's (`items.rs`):
+//! what was said, with the work behind each reply carried by the turn's
+//! identity line, a live ticker while it runs. The newest ten turns show
+//! at first; scrolling to the top brings in ten more.
 //!
 //! The window has no title bar, as MonoCode's has no decorations. GPUI's
 //! undecorated window does not resize and its panel hides with the app's
 //! focus, so AppKit is asked otherwise (`native_window`); the size it is
 //! left at is the one it opens with.
 //!
+//! A message sent while the Mono replies shows at once, dimmed, until the
+//! turn ends and it goes (`Not sent` with Resume once the agent was
+//! stopped); a turn that opens a new stretch is stamped with its day.
+//!
+//! A question the agent asks is answered here, in the app's own form with
+//! an "Other" field of this window's.
+//!
 //! Not ported: the menu bar item that opens it (it opens from the Mono's
-//! header and its rail menu), questions answered in place (they open in
-//! BenCode) and earlier pages of a long conversation. The emoji picker
-//! lists everyday emoji by group, without MonoCode's search or skin tone.
+//! header and its rail menu), the activity trail beside the chat (the
+//! ticker opens the Mono in BenCode instead) and the question form's keys.
+//! The emoji picker lists everyday emoji by group, without MonoCode's
+//! search or skin tone.
 
 use ely_gpui_component::buttons::{Button, ButtonVariant, IconButton};
-use ely_gpui_component::forms::TextInput;
+use ely_gpui_component::forms::{InputEvent, TextInput};
 use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
-use std::hash::{DefaultHasher, Hash, Hasher};
 use std::rc::Rc;
 
 use gpui::{
@@ -34,15 +43,13 @@ use gpui::{
 
 use crate::app::BenCodeApp;
 use crate::app::commands::{CloseActive, Quit};
-use crate::db::Block;
-use crate::monos::{Mono, MonoState, MonoStatus, mono_reaction, partial_reaction};
+use crate::monos::{Mono, MonoState, MonoStatus};
 use crate::ui::attachment_chip::{ChipFile, OnRemove, attachment_chip};
+use crate::ui::composer::question::QuestionUi;
 use crate::ui::emoji_picker;
 use crate::ui::mascot::pixel_sprite;
 use crate::ui::scale::px;
-use crate::ui::transcript::activity::tool_label;
 use crate::ui::transcript::markdown::AgentMarkdown;
-use crate::ui::transcript::turns::{is_tool, tool_kind_name, tool_target};
 
 /// MonoCode `mono_chat.rs`: a 384pt conversation plus the 56pt rail.
 const WIDTH: f32 = 440.0;
@@ -61,153 +68,9 @@ const CARD_GAP: f32 = 6.0;
 const CARD_RADIUS: f32 = 10.0;
 /// A click this soon after a press closed the emoji picker is that press's.
 const EMOJI_REOPEN_GUARD: std::time::Duration = std::time::Duration::from_millis(400);
-/// How many of the newest blocks the window draws.
-const RECENT_BLOCKS: usize = 400;
+mod items;
 
-/// One row of the floating transcript.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum FloatItem {
-    /// What the user sent: its text, its files, and the emoji the Mono
-    /// answered it with when its whole reply was a reaction.
-    User {
-        text: String,
-        files: Vec<ChipFile>,
-        reaction: Option<String>,
-    },
-    /// What the Mono said, and when (ms) it started saying it.
-    Reply {
-        text: String,
-        at: Option<i64>,
-    },
-    /// Tool calls between two messages: how many, and the latest as the
-    /// transcript titles it.
-    Work {
-        steps: usize,
-        latest: String,
-    },
-    Notice(String),
-    /// The Mono has the message and has not said or done anything yet.
-    Typing,
-}
-
-/// MonoCode's `inlineWork` transcript: messages, with each run of tool
-/// calls folded into one line, and (`monoReactionBlocks`) a reply that is
-/// only a reaction moved onto the message it answers.
-pub fn float_items(blocks: &[Block], cwd: &str) -> Vec<FloatItem> {
-    let mut items: Vec<FloatItem> = Vec::new();
-    // The user's message a reaction would sit on.
-    let mut target: Option<usize> = None;
-    for (ix, block) in blocks.iter().enumerate() {
-        let text = block.text.as_deref().unwrap_or("").trim();
-        if is_tool(block) {
-            let (verb, target, _) = tool_label(block, cwd);
-            let latest = match verb {
-                Some(verb) if !target.is_empty() => format!("{verb} {target}"),
-                Some(verb) => verb.to_string(),
-                None => target,
-            };
-            match items.last_mut() {
-                Some(FloatItem::Work {
-                    steps,
-                    latest: shown,
-                }) => {
-                    *steps += 1;
-                    *shown = latest;
-                }
-                _ => items.push(FloatItem::Work { steps: 1, latest }),
-            }
-            continue;
-        }
-        match block.role.as_str() {
-            "user" => {
-                let files: Vec<ChipFile> = block
-                    .extra
-                    .get("attachments")
-                    .and_then(|files| files.as_array())
-                    .map(|files| files.iter().filter_map(ChipFile::from_block_json).collect())
-                    .unwrap_or_default();
-                if text.is_empty() && files.is_empty() {
-                    continue;
-                }
-                target = Some(items.len());
-                items.push(FloatItem::User {
-                    text: text.to_string(),
-                    files,
-                    reaction: None,
-                });
-            }
-            "assistant" if !text.is_empty() => {
-                // The newest block may still be streaming one in.
-                if ix + 1 == blocks.len() && partial_reaction(text) {
-                    continue;
-                }
-                if let Some(emoji) = mono_reaction(text) {
-                    match target {
-                        // The reaction is the whole answer: the steps behind
-                        // it would only draw an empty reply. Notices stay.
-                        Some(at) => {
-                            let after = items.split_off(at + 1);
-                            items.extend(
-                                after
-                                    .into_iter()
-                                    .filter(|item| matches!(item, FloatItem::Notice(_))),
-                            );
-                            if let Some(FloatItem::User { reaction, .. }) = items.get_mut(at) {
-                                *reaction = Some(emoji.to_string());
-                            }
-                        }
-                        // No message to sit on: the emoji on its own.
-                        None => items.push(FloatItem::Reply {
-                            text: emoji.to_string(),
-                            at: block.started_at,
-                        }),
-                    }
-                    continue;
-                }
-                match items.last_mut() {
-                    // A reply streams as one block, but a provider may split it.
-                    Some(FloatItem::Reply { text: reply, .. }) => {
-                        reply.push_str("\n\n");
-                        reply.push_str(text);
-                    }
-                    _ => items.push(FloatItem::Reply {
-                        text: text.to_string(),
-                        at: block.started_at,
-                    }),
-                }
-            }
-            "system" if !text.is_empty() => items.push(FloatItem::Notice(text.to_string())),
-            _ => {}
-        }
-    }
-    items
-}
-
-/// The newest blocks, the ones the window draws.
-fn recent(blocks: &[Block]) -> &[Block] {
-    &blocks[blocks.len().saturating_sub(RECENT_BLOCKS)..]
-}
-
-/// What [`float_items`] reads from `blocks`, folded into a number: while it
-/// holds, so do the items. A block changes in place only by its text
-/// growing (a reply streaming in) or a tool call's kind or target being
-/// filled in;
-/// anything else adds, removes or replaces blocks, which moves the count
-/// or the ids at the window's ends. No allocation: it runs on each of the
-/// app's redraws.
-fn items_key(blocks: &[Block], cwd: &str) -> u64 {
-    let mut hasher = DefaultHasher::new();
-    (cwd, blocks.len()).hash(&mut hasher);
-    blocks.first().map(|block| &block.id).hash(&mut hasher);
-    blocks.last().map(|block| &block.id).hash(&mut hasher);
-    for block in blocks {
-        hasher.write_usize(block.text.as_deref().map_or(0, str::len));
-        if is_tool(block) {
-            (tool_kind_name(block), tool_target(block)).hash(&mut hasher);
-        }
-    }
-    hasher.finish()
-}
+use items::{Delivery, FloatItem, FloatRow, Live, PAGE_TURNS, float_rows, rows_key, window_start};
 
 /// What the window draws from the app. The app redraws many times a second
 /// while any agent works (a token in any thread, a spinner's frame, its
@@ -220,11 +83,23 @@ struct Shown {
     /// The conversation, once the app holds it.
     session: Option<String>,
     running: bool,
-    /// [`items_key`] of its newest blocks.
+    /// Where the turns shown start, and [`rows_key`] of what follows.
+    start: usize,
     blocks: u64,
+    /// What the running turn waits on.
+    live: Option<Live>,
+    /// The clock's frame while the ticker shimmers.
+    tick: u64,
+    /// The question form's state, and whether its "Other" field shows.
+    question: Option<(QuestionUi, bool)>,
     /// The approval waiting, by its request id.
     permission: Option<String>,
     usage_limited: bool,
+    /// The messages queued behind the running turn (text and file count),
+    /// and whether the queue is paused.
+    queued: (Vec<(String, usize)>, bool),
+    /// Why the conversation could not be read.
+    load_error: Option<String>,
     /// The files waiting in its composer, and whether more are being read.
     attached: (Vec<ChipFile>, bool),
     scale: f32,
@@ -240,11 +115,28 @@ pub struct MonoFloat {
     list: ListState,
     /// What was drawn from the app last; see [`Shown`].
     shown: Shown,
-    items: Vec<FloatItem>,
+    rows: Vec<FloatRow>,
+    /// Where the turns shown start in the conversation `listed`: it only
+    /// moves back, as earlier turns are brought in.
+    start: Option<(String, usize)>,
+    /// Earlier turns were just brought in above what is read: the list
+    /// keeps its place over them.
+    keep_anchor: bool,
+    /// The turn under the pointer, whose Copy and time show.
+    hovered_turn: Option<usize>,
+    /// The question form's "Other" field (BenCode's own is in its window).
+    question_input: Entity<TextInput>,
+    /// The "Other" field just opened: it takes the keyboard.
+    focus_question: bool,
     /// The conversation `list` was last laid out for.
     listed: Option<String>,
     /// A press on a drag region that has not moved yet.
     drag_pressed: bool,
+    /// Why the last message could not be sent; cleared by the next try.
+    error: Option<String>,
+    /// MonoCode keeps a draft per conversation (`floating:<session>`): what
+    /// was typed to each Mono while another was shown.
+    drafts: std::collections::HashMap<String, String>,
     /// The emoji picker's group while it is open (`None` shows Recent).
     emoji: Option<Option<usize>>,
     /// The emoji picked this launch, newest first.
@@ -275,8 +167,23 @@ impl MonoFloat {
         });
         let keys_input = input.clone();
         let weak = cx.entity().downgrade();
+        let own_window = window.window_handle().window_id();
         let list = ListState::new(0, ListAlignment::Bottom, px(400.0));
         list.set_follow_mode(FollowMode::Tail);
+        // MonoCode `loadEarlierOnScroll`: reaching the top brings in more.
+        let scrolled = cx.entity().downgrade();
+        list.set_scroll_handler(move |event, _, cx| {
+            if event.visible_range.start == 0
+                && let Err(err) = scrolled.update(cx, |this, cx| this.reached_top(cx))
+            {
+                log::debug!("floating chat scrolled after it closed: {err:#}");
+            }
+        });
+        let question_input = cx.new(|cx| {
+            TextInput::new(window, cx)
+                .multi_line(1, 4)
+                .placeholder("Type your answer")
+        });
         let subscriptions = vec![
             // Only what this window shows redraws it, not each of the app's
             // own redraws.
@@ -286,11 +193,37 @@ impl MonoFloat {
                 }
             }),
             cx.observe_window_bounds(window, Self::size_changed),
+            cx.subscribe(&question_input, |this, input, event: &InputEvent, cx| {
+                if !matches!(event, InputEvent::Changed) {
+                    return;
+                }
+                let Some(session_id) = this.session_id(cx) else {
+                    return;
+                };
+                let typed = input.read(cx).text().to_string();
+                this.app.update(cx, |app, cx| {
+                    if app.question_custom(&session_id) != typed {
+                        app.set_question_custom(&session_id, typed, cx);
+                    }
+                });
+            }),
             // MonoCode `MonoComposer`: Enter sends, ⇧Enter is a new line;
             // Esc stops a reply.
             cx.intercept_keystrokes(move |event, window, cx| {
                 let key = event.keystroke.key.as_str();
                 let modifiers = event.keystroke.modifiers;
+                // MonoCode stops a reply on Escape anywhere in the
+                // conversation, not only in the field.
+                if key == "escape"
+                    && !modifiers.modified()
+                    && window.window_handle().window_id() == own_window
+                {
+                    let handled = weak.update(cx, |this, cx| this.close_emoji(cx) || this.stop(cx));
+                    if matches!(handled, Ok(true)) {
+                        cx.stop_propagation();
+                    }
+                    return;
+                }
                 if !keys_input.read(cx).focus_handle(cx).is_focused(window) {
                     return;
                 }
@@ -303,18 +236,10 @@ impl MonoFloat {
                     }
                     return;
                 }
-                if modifiers.modified() || !matches!(key, "enter" | "escape") {
+                if modifiers.modified() || key != "enter" {
                     return;
                 }
-                let handled = weak.update(cx, |this, cx| match key {
-                    "enter" => {
-                        this.submit(cx);
-                        true
-                    }
-                    // The picker closes first, then a reply stops.
-                    _ => this.close_emoji(cx) || this.stop(cx),
-                });
-                if matches!(handled, Ok(true)) {
+                if weak.update(cx, |this, cx| this.submit(cx)).is_ok() {
                     cx.stop_propagation();
                 }
             }),
@@ -329,9 +254,16 @@ impl MonoFloat {
             focus: cx.focus_handle(),
             list,
             shown: Shown::default(),
-            items: Vec::new(),
+            rows: Vec::new(),
+            start: None,
+            keep_anchor: false,
+            hovered_turn: None,
+            question_input,
+            focus_question: false,
             listed: None,
             drag_pressed: false,
+            error: None,
+            drafts: std::collections::HashMap::new(),
             emoji: None,
             recent_emoji: Vec::new(),
             emoji_dismissed: None,
@@ -411,8 +343,17 @@ impl MonoFloat {
         // Shown again before a close removed it: the window stays.
         self.close_generation += 1;
         if self.mono_id != mono_id {
-            self.mono_id = mono_id.to_string();
-            self.input.update(cx, |input, cx| input.set_text("", cx));
+            let typed = self.input.read(cx).text().to_string();
+            let previous = std::mem::replace(&mut self.mono_id, mono_id.to_string());
+            if typed.is_empty() {
+                self.drafts.remove(&previous);
+            } else {
+                self.drafts.insert(previous, typed);
+            }
+            let draft = self.drafts.remove(mono_id).unwrap_or_default();
+            self.input.update(cx, |input, cx| input.set_text(draft, cx));
+            self.error = None;
+            self.close_emoji(cx);
         }
         self.sync_placeholder(cx);
         self.app
@@ -455,15 +396,38 @@ impl MonoFloat {
         }
         let relist = shown.session != self.shown.session
             || shown.running != self.shown.running
-            || shown.blocks != self.shown.blocks;
+            || shown.start != self.shown.start
+            || shown.blocks != self.shown.blocks
+            || shown.live != self.shown.live
+            || shown.queued != self.shown.queued;
         // A Mono renamed: "Message <name>" follows.
         let roster = shown.monos != self.shown.monos;
+        let asked = |shown: &Shown| {
+            shown
+                .question
+                .as_ref()
+                .map(|(ui, _)| (ui.request_id.clone(), ui.current))
+        };
+        let new_question = asked(&shown) != asked(&self.shown);
+        let other_opened = shown.question.as_ref().is_some_and(|(_, open)| *open)
+            && !self.shown.question.as_ref().is_some_and(|(_, open)| *open);
         self.shown = shown;
+        self.start = self
+            .shown
+            .session
+            .clone()
+            .map(|session| (session, self.shown.start));
         if relist {
-            let items = self.items_now(cx);
+            let rows = self.rows_now(cx);
             let session = self.shown.session.clone();
-            self.sync_list(session.as_deref(), items, self.shown.running);
+            self.sync_list(session.as_deref(), rows);
         }
+        if new_question && let Some(session_id) = self.shown.session.clone() {
+            let typed = self.app.read(cx).question_custom(&session_id);
+            self.question_input
+                .update(cx, |input, cx| input.set_text(typed, cx));
+        }
+        self.focus_question |= other_opened;
         if roster {
             self.sync_placeholder(cx);
         }
@@ -476,6 +440,17 @@ impl MonoFloat {
         let session = session_id
             .as_deref()
             .and_then(|id| app.sessions.iter().find(|s| s.id == id));
+        let running = session.is_some_and(|s| app.is_agent_running_in(&s.id));
+        let start = session.map_or(0, |s| self.window_for(&s.id, &s.blocks));
+        let live = session.filter(|_| running).map(|s| {
+            let waiting = app.pending_permission_for(&s.id);
+            let question = waiting.is_some_and(|request| request.tool == crate::app::QUESTION_TOOL);
+            Live {
+                approval: waiting.is_some() && !question,
+                question,
+                background: app.background_tasks_for(&s.id).len(),
+            }
+        });
         Shown {
             monos: app
                 .settings
@@ -483,23 +458,55 @@ impl MonoFloat {
                 .iter()
                 .map(|mono| (mono.clone(), app.mono_state(mono)))
                 .collect(),
-            running: session.is_some_and(|s| app.is_agent_running_in(&s.id)),
-            blocks: session.map_or(0, |s| items_key(recent(&s.blocks), &s.cwd)),
+            running,
+            start,
+            blocks: session.map_or(0, |s| rows_key(&s.blocks, start)),
+            live,
+            // Only while the ticker runs: the chat is still otherwise.
+            tick: if live.is_some() && !crate::ui::spinner::still(cx) {
+                crate::ui::spinner::frame_count()
+            } else {
+                0
+            },
+            question: session
+                .and_then(|s| Some((app.question_ui(&s.id)?, app.question_other_open(&s.id)))),
             permission: session
                 .and_then(|s| app.pending_permission_for(&s.id))
                 .map(|request| request.request_id.clone()),
             usage_limited: session
                 .and_then(|s| app.thread(&s.id))
                 .is_some_and(|thread| thread.usage_limit.is_some()),
+            queued: session.and_then(|s| app.thread(&s.id)).map_or_else(
+                Default::default,
+                |thread| {
+                    (
+                        thread
+                            .queue
+                            .iter()
+                            .map(|input| (input.text.clone(), input.attachments.len()))
+                            .collect(),
+                        thread.queue_paused,
+                    )
+                },
+            ),
+            load_error: app.monos.load_errors.get(&self.mono_id).cloned(),
             attached: session.map_or_else(Default::default, |s| self.attached(&s.id, cx)),
             scale: crate::ui::scale::ui_scale(),
             session: session_id,
         }
     }
 
-    /// The conversation's rows, with the Mono typing under a message it
-    /// has not answered yet.
-    fn items_now(&self, cx: &App) -> Vec<FloatItem> {
+    /// Where the turns shown start: the newest page at first, further back
+    /// once earlier ones were brought in.
+    fn window_for(&self, session_id: &str, blocks: &[crate::db::Block]) -> usize {
+        match &self.start {
+            Some((listed, start)) if listed == session_id && *start <= blocks.len() => *start,
+            _ => window_start(blocks, PAGE_TURNS),
+        }
+    }
+
+    /// The conversation's rows, then the messages waiting to be delivered.
+    fn rows_now(&self, cx: &App) -> Vec<FloatRow> {
         let app = self.app.read(cx);
         let Some(session) = self
             .shown
@@ -509,13 +516,61 @@ impl MonoFloat {
         else {
             return Vec::new();
         };
-        let mut items = float_items(recent(&session.blocks), &session.cwd);
-        // A message it reacted to is answered.
-        let unanswered = matches!(items.last(), Some(FloatItem::User { reaction: None, .. }));
-        if self.shown.running && unanswered {
-            items.push(FloatItem::Typing);
+        let mut rows = float_rows(&session.blocks, self.shown.start, self.shown.live);
+        // MonoCode `enqueueMonoMessage`: a message sent while it replies
+        // shows at once, waiting, and is delivered after the turn.
+        if let Some(thread) = app.thread(&session.id) {
+            let delivery = if thread.queue_paused {
+                Delivery::Paused
+            } else {
+                Delivery::Pending
+            };
+            rows.extend(thread.queue.iter().map(|input| FloatRow {
+                turn: usize::MAX,
+                item: FloatItem::User {
+                    text: input.text.trim().to_string(),
+                    files: input.attachments.iter().map(ChipFile::from).collect(),
+                    reaction: None,
+                    delivery,
+                },
+            }));
         }
-        items
+        rows
+    }
+
+    /// The list was scrolled to its top: earlier turns, if any are left out.
+    fn reached_top(&mut self, cx: &mut Context<Self>) {
+        if matches!(
+            self.rows.first(),
+            Some(FloatRow {
+                item: FloatItem::Earlier,
+                ..
+            })
+        ) {
+            self.load_earlier(cx);
+        }
+    }
+
+    /// MonoCode `loadEarlier`: the page of turns before the ones shown.
+    fn load_earlier(&mut self, cx: &mut Context<Self>) {
+        let Some((session_id, start)) = self.start.clone() else {
+            return;
+        };
+        let earlier = self
+            .app
+            .read(cx)
+            .sessions
+            .iter()
+            .find(|s| s.id == session_id)
+            .map(|s| window_start(&s.blocks[..start.min(s.blocks.len())], PAGE_TURNS));
+        let Some(earlier) = earlier.filter(|earlier| *earlier < start) else {
+            return;
+        };
+        self.start = Some((session_id, earlier));
+        self.keep_anchor = true;
+        if self.refresh(cx) {
+            cx.notify();
+        }
     }
 
     /// The conversation shown, once the app holds it.
@@ -535,9 +590,18 @@ impl MonoFloat {
         if reading || (text.is_empty() && files.is_empty()) {
             return;
         }
-        self.input.update(cx, |input, cx| input.set_text("", cx));
-        self.app
+        let sent = self
+            .app
             .update(cx, |app, cx| app.send_mono_message(&session_id, text, cx));
+        // What could not be sent stays in the field.
+        match sent {
+            Ok(()) => {
+                self.error = None;
+                self.input.update(cx, |input, cx| input.set_text("", cx));
+            }
+            Err(err) => self.error = Some(err),
+        }
+        cx.notify();
     }
 
     /// The files waiting in the Mono's composer, and whether more are
@@ -776,6 +840,16 @@ impl MonoFloat {
         })
     }
 
+    /// "Resume" on a message held since the stop: the agent goes on, then
+    /// the queue drains.
+    fn resume(&mut self, cx: &mut Context<Self>) {
+        let Some(session_id) = self.session_id(cx) else {
+            return;
+        };
+        self.app
+            .update(cx, |app, cx| app.resume_queue(&session_id, cx));
+    }
+
     /// MonoCode's `reveal`: the Mono in BenCode's own window.
     fn reveal(&mut self, cx: &mut Context<Self>) {
         let id = self.mono_id.clone();
@@ -789,25 +863,44 @@ impl MonoFloat {
         self.app.update(cx, |app, cx| app.open_mono(&id, cx));
     }
 
-    /// Lays the list out for the conversation as it is now.
-    fn sync_list(&mut self, session_id: Option<&str>, items: Vec<FloatItem>, busy: bool) {
-        let count = items.len();
-        let old = self.list.item_count();
-        if self.listed.as_deref() != session_id || count < old {
-            self.list.reset(count);
+    /// Lays the list out for the conversation as it is now: only the rows
+    /// that changed are measured again.
+    fn sync_list(&mut self, session_id: Option<&str>, rows: Vec<FloatRow>) {
+        if self.listed.as_deref() != session_id {
+            self.list.reset(rows.len());
             self.list.set_follow_mode(FollowMode::Tail);
             self.listed = session_id.map(str::to_string);
-        } else {
-            if count > old {
-                self.list.splice(old..old, count - old);
-            }
-            // The newest row grows while a reply streams or work goes on.
-            let changed = self.items.last() != items.last();
-            if count > 0 && (busy || changed) {
-                self.list.remeasure_items(count - 1..count);
-            }
+            self.rows = rows;
+            self.keep_anchor = false;
+            self.hovered_turn = None;
+            return;
         }
-        self.items = items;
+        let (old, new) = (self.rows.len(), rows.len());
+        let prefix = self
+            .rows
+            .iter()
+            .zip(&rows)
+            .take_while(|(a, b)| a == b)
+            .count();
+        let suffix = self
+            .rows
+            .iter()
+            .rev()
+            .zip(rows.iter().rev())
+            .take(old.min(new) - prefix)
+            .take_while(|(a, b)| a == b)
+            .count();
+        let top = self.list.logical_scroll_top();
+        self.list
+            .splice(prefix..old - suffix, new - prefix - suffix);
+        if std::mem::take(&mut self.keep_anchor) {
+            // Earlier turns came in above: what was read stays in place.
+            self.list.scroll_to(gpui::ListOffset {
+                item_ix: top.item_ix + new.saturating_sub(old),
+                offset_in_item: top.offset_in_item,
+            });
+        }
+        self.rows = rows;
     }
 
     /// MonoCode `MonoRail`: `w-14`, a `size-8` button per Mono with its
@@ -893,6 +986,11 @@ impl MonoFloat {
                     ),
             );
         }
+        let has_current = self
+            .shown
+            .monos
+            .iter()
+            .any(|(mono, _)| mono.id == self.mono_id);
         rail.child(
             div()
                 .id("mono-float-new")
@@ -908,7 +1006,12 @@ impl MonoFloat {
                 .bg(fg.opacity(0.05))
                 .hover(move |s| s.bg(fg.opacity(0.1)))
                 .tooltip(Tooltip::text("New mono"))
-                .on_click(cx.listener(|this, _, window, cx| {
+                // MonoCode: only from a Mono's chat.
+                .when(!has_current, |el| el.opacity(0.4))
+                .on_click(cx.listener(move |this, _, window, cx| {
+                    if !has_current {
+                        return;
+                    }
                     let id = this.app.update(cx, |app, cx| app.add_mono(cx));
                     this.show(&id, window, cx);
                 }))
@@ -939,7 +1042,8 @@ impl MonoFloat {
             Some(activity) => format!("{} · {activity}", state.status.label()),
             None => state.status.label().to_string(),
         };
-        let busy = state.status == MonoStatus::Working;
+        // A turn waiting on an approval still runs, and can still be stopped.
+        let busy = self.shown.running;
         self.drag_region(div(), cx)
             .flex()
             .flex_none()
@@ -1003,25 +1107,39 @@ impl MonoFloat {
     }
 
     /// MonoCode's messaging transcript (`AgentTranscript` with
-    /// `agentMascot`): the user's message a bubble at the right in the
-    /// accent's tint, the Mono's turn signed with its mascot and name, its
-    /// reply as markdown with Copy and the time under it, and work and
-    /// notices as a quiet line.
+    /// `agentMascot` and `inlineWork`): the user's message a bubble at the
+    /// right in the accent's tint; the Mono's turn under its pill, with the
+    /// live ticker beside it while it works; its reply as markdown; Copy
+    /// and the time it finished while the turn is hovered.
     fn render_item(&self, ix: usize, cx: &mut Context<Self>) -> AnyElement {
+        let Some(FloatRow { turn, item }) = self.rows.get(ix) else {
+            return div().into_any_element();
+        };
+        let turn = *turn;
         let colors = &cx.theme().colors;
         let (fg, accent) = (colors.fg, colors.accent);
-        let previous = ix.checked_sub(1).and_then(|ix| self.items.get(ix));
-        let next = self.items.get(ix + 1);
-        // The Mono signs a turn once, where its side of it starts.
-        let signed = matches!(previous, None | Some(FloatItem::User { .. }));
-        let sign = |cx: &mut Context<Self>| signed.then(|| self.render_sign(cx));
         let row = div().w_full().px_4();
-        match self.items.get(ix) {
-            Some(FloatItem::User {
+        let body = match item {
+            FloatItem::Earlier => div()
+                .flex()
+                .w_full()
+                .justify_center()
+                .px_4()
+                .py_3()
+                .child(
+                    Button::new("mono-float-earlier", "Load earlier messages")
+                        .variant(ButtonVariant::Secondary)
+                        .size(ControlSize::Sm)
+                        .on_click(cx.listener(|this, _, _, cx| this.load_earlier(cx))),
+                )
+                .into_any_element(),
+            FloatItem::User {
                 text,
                 files,
                 reaction,
-            }) => {
+                delivery,
+            } => {
+                let delivery = *delivery;
                 let dark = cx.theme().is_dark();
                 let bg = cx.theme().colors.bg;
                 let chips = self.chips(files, None, cx);
@@ -1053,6 +1171,8 @@ impl MonoFloat {
                                 .rounded(px(16.0))
                                 .rounded_br(px(5.0))
                                 .bg(accent.opacity(0.24))
+                                // Not delivered yet: the bubble waits, dimmed.
+                                .when(delivery != Delivery::Sent, |el| el.opacity(0.6))
                                 .px_3()
                                 .py_2()
                                 .text_size(px(13.0))
@@ -1083,102 +1203,160 @@ impl MonoFloat {
                                 })),
                         )
                     })
-                    .into_any_element()
-            }
-            Some(FloatItem::Reply { text, at }) => {
-                // Copy and the time close the turn, not each part of it.
-                let closes = !matches!(
-                    next,
-                    Some(FloatItem::Reply { .. } | FloatItem::Work { .. } | FloatItem::Notice(_))
-                );
-                let copied = text.clone();
-                row.pt_2()
-                    .children(sign(cx))
-                    .child(
-                        div()
-                            .text_size(px(13.0))
-                            .child(AgentMarkdown::new(("mono-float-reply", ix), text.clone())),
-                    )
-                    .when(closes, |el| {
+                    .when(delivery == Delivery::Paused, |el| {
+                        // MonoCode's delivery control: held since the stop.
                         el.child(
                             div()
                                 .flex()
                                 .items_center()
-                                .gap_1p5()
-                                .mt_1()
-                                .text_size(px(11.0))
-                                .text_color(fg.opacity(0.4))
+                                .gap_2()
+                                .text_size(px(12.0))
+                                .text_color(fg.opacity(0.5))
+                                .child("Not sent")
                                 .child(
-                                    IconButton::new(("mono-float-copy", ix), IconName::Copy)
-                                        .size(ControlSize::Sm)
+                                    Button::new(("mono-float-resume", ix), "Resume")
                                         .variant(ButtonVariant::Ghost)
-                                        .tooltip("Copy")
-                                        .on_click(cx.listener(move |_, _, _, cx| {
-                                            cx.write_to_clipboard(gpui::ClipboardItem::new_string(
-                                                copied.clone(),
-                                            ));
-                                        })),
-                                )
-                                .children(at.and_then(clock_time).map(|time| {
-                                    div()
-                                        .flex()
-                                        .gap_1p5()
-                                        .child(div().opacity(0.6).child("·"))
-                                        .child(time)
-                                })),
+                                        .size(ControlSize::Sm)
+                                        .on_click(cx.listener(|this, _, _, cx| this.resume(cx))),
+                                ),
                         )
                     })
                     .into_any_element()
             }
-            Some(FloatItem::Work { steps, latest }) => {
-                let count = if *steps == 1 {
-                    "1 step".to_string()
-                } else {
-                    format!("{steps} steps")
-                };
-                row.pt_2()
-                    .children(sign(cx))
+            FloatItem::Day(at) => {
+                let (day, time) = day_stamp(*at);
+                div()
+                    .flex()
+                    .w_full()
+                    .justify_center()
+                    .px_4()
+                    .pt_6()
+                    .pb_1()
+                    .text_size(px(12.0))
+                    .line_height(px(16.0))
                     .child(
                         div()
                             .flex()
-                            .items_center()
-                            .gap_1p5()
-                            .text_size(px(12.0))
-                            .line_height(px(18.0))
-                            .text_color(fg.opacity(0.45))
+                            .gap_1()
+                            .rounded_full()
+                            .bg(fg.opacity(0.07))
+                            .px_3()
+                            .py_1()
                             .child(
-                                Icon::new(IconName::Wrench)
-                                    .size(IconSize::Xs)
-                                    .color(fg.opacity(0.4)),
+                                div()
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .text_color(fg.opacity(0.75))
+                                    .child(day),
                             )
-                            .child(div().flex_none().child(count))
-                            .when(!latest.is_empty(), |el| {
-                                el.child(div().flex_none().opacity(0.6).child("·"))
-                                    .child(div().min_w_0().truncate().child(latest.clone()))
-                            }),
+                            .child(div().text_color(fg.opacity(0.45)).child(time)),
                     )
                     .into_any_element()
             }
-            Some(FloatItem::Notice(text)) => row
+            FloatItem::Header { ticker } => {
+                let ticker = ticker.clone();
+                row.flex()
+                    .items_center()
+                    .gap_1p5()
+                    .pt_2()
+                    .pb_1()
+                    .child(self.render_sign(cx))
+                    .children(ticker.map(|label| {
+                        // MonoCode `onShowWork`: the turn's trail is in BenCode.
+                        div()
+                            .id(("mono-float-ticker", ix))
+                            .flex()
+                            .min_w_0()
+                            .flex_1()
+                            .items_center()
+                            .gap_1p5()
+                            .text_size(px(13.0))
+                            .cursor_pointer()
+                            .hover(|s| s.opacity(0.7))
+                            .tooltip(Tooltip::text("Show activity"))
+                            .on_click(cx.listener(|this, _, _, cx| this.reveal(cx)))
+                            .child(div().flex_none().text_color(fg.opacity(0.25)).child("·"))
+                            .child(
+                                div()
+                                    .min_w_0()
+                                    .truncate()
+                                    .child(crate::ui::spinner::shimmer(label, cx)),
+                            )
+                    }))
+                    .into_any_element()
+            }
+            FloatItem::Reply(text) => row
+                .pt_1()
+                .child(
+                    div()
+                        .text_size(px(13.0))
+                        .child(AgentMarkdown::new(("mono-float-reply", ix), text.clone())),
+                )
+                .into_any_element(),
+            FloatItem::Notice(text) => row
                 .pt_2()
                 .text_size(px(12.0))
                 .line_height(px(18.0))
                 .text_color(fg.opacity(0.45))
                 .child(text.clone())
                 .into_any_element(),
-            Some(FloatItem::Typing) => row
-                .pt_2()
-                .children(sign(cx))
-                .child(
-                    div()
-                        .text_size(px(13.0))
-                        .line_height(px(20.0))
-                        .text_color(fg.opacity(0.45))
-                        .child("…"),
-                )
-                .into_any_element(),
-            None => div().into_any_element(),
+            FloatItem::Footer { copy, at } => {
+                let copied = copy.clone();
+                let shown = self.hovered_turn == Some(turn);
+                row.flex()
+                    .items_center()
+                    .gap_1p5()
+                    .mt_1()
+                    .h(px(24.0))
+                    .text_size(px(11.0))
+                    .text_color(fg.opacity(0.4))
+                    // MonoCode `revealOnHover`: there while the turn is hovered.
+                    .when(!shown, |el| el.invisible())
+                    .when(!copy.is_empty(), |el| {
+                        el.child(
+                            IconButton::new(("mono-float-copy", ix), IconName::Copy)
+                                .size(ControlSize::Sm)
+                                .variant(ButtonVariant::Ghost)
+                                .tooltip("Copy")
+                                .on_click(cx.listener(move |_, _, _, cx| {
+                                    cx.write_to_clipboard(gpui::ClipboardItem::new_string(
+                                        copied.clone(),
+                                    ));
+                                })),
+                        )
+                    })
+                    .children(at.and_then(clock_time).map(|time| {
+                        div()
+                            .flex()
+                            .gap_1p5()
+                            .when(!copy.is_empty(), |el| {
+                                el.child(div().opacity(0.6).child("·"))
+                            })
+                            .child(time)
+                    }))
+                    .into_any_element()
+            }
+        };
+        if turn == usize::MAX {
+            return body;
         }
+        // Hovering any of the turn's rows shows its Copy and time.
+        div()
+            .id(("mono-float-row", ix))
+            .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
+                let next = if *hovered {
+                    Some(turn)
+                } else if this.hovered_turn == Some(turn) {
+                    None
+                } else {
+                    return;
+                };
+                if this.hovered_turn != next {
+                    this.hovered_turn = next;
+                    cx.notify();
+                }
+            }))
+            .child(body)
+            .into_any_element()
     }
 
     /// MonoCode signs a Mono's turn with its mascot and name on a pill
@@ -1191,7 +1369,7 @@ impl MonoFloat {
         };
         div()
             .flex()
-            .mb_2()
+            .flex_none()
             .child(
                 div()
                     .flex()
@@ -1240,18 +1418,23 @@ impl MonoFloat {
                 .line_height(px(18.0))
                 .text_color(fg.opacity(0.7))
         };
-        let open = |cx: &mut Context<Self>| {
-            Button::new("mono-float-open", "Open in BenCode")
-                .variant(ButtonVariant::Link)
-                .size(ControlSize::Sm)
-                .on_click(cx.listener(|this, _, _, cx| this.reveal(cx)))
-        };
         if let Some(request) = app.pending_permission_for(session_id) {
             if request.tool == crate::app::QUESTION_TOOL {
+                // MonoCode `QuestionForm`, answered here; the form is the
+                // app's, its "Other" field this window's.
+                let other = self.question_input.clone().into_any_element();
+                let sid = session_id.to_string();
+                let form = self
+                    .app
+                    .update(cx, |app, cx| app.question_form(&sid, other, None, true, cx))?;
                 return Some(
-                    card()
-                        .child("It has a question for you.")
-                        .child(open(cx))
+                    div()
+                        .id("mono-float-question")
+                        .flex_none()
+                        .max_h(gpui::relative(0.45))
+                        .overflow_y_scroll()
+                        .px_1()
+                        .child(form)
                         .into_any_element(),
                 );
             }
@@ -1300,9 +1483,31 @@ impl MonoFloat {
         app.thread(session_id)
             .is_some_and(|thread| thread.usage_limit.is_some())
             .then(|| {
+                let sid = session_id.to_string();
                 card()
                     .child("The provider’s usage limit was reached.")
-                    .child(open(cx))
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .child(
+                                Button::new("mono-float-retry", "Try again")
+                                    .variant(ButtonVariant::Link)
+                                    .size(ControlSize::Sm)
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        this.app
+                                            .update(cx, |app, cx| app.resume_after_limit(&sid, cx));
+                                    })),
+                            )
+                            .child(div().text_color(fg.opacity(0.25)).child("·"))
+                            .child(
+                                Button::new("mono-float-change-model", "Change model in BenCode")
+                                    .variant(ButtonVariant::Link)
+                                    .size(ControlSize::Sm)
+                                    .on_click(cx.listener(|this, _, _, cx| this.reveal(cx))),
+                            ),
+                    )
                     .into_any_element()
             })
     }
@@ -1425,6 +1630,10 @@ impl Focusable for MonoFloat {
 impl Render for MonoFloat {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.app.read(cx).apply_ui_scale(window);
+        if std::mem::take(&mut self.focus_question) {
+            let handle = self.question_input.read(cx).focus_handle(cx);
+            window.focus(&handle, cx);
+        }
         let (bg, fg) = (cx.theme().colors.bg, cx.theme().colors.fg);
         let dark = cx.theme().is_dark();
         // Drawn from what `refresh` took in: the items and the list are
@@ -1467,15 +1676,16 @@ impl Render for MonoFloat {
                     cx,
                 )),
             (Some(mono), None) => {
+                let line = self
+                    .shown
+                    .load_error
+                    .clone()
+                    .unwrap_or_else(|| "Loading conversation…".to_string());
                 card.child(self.render_header(mono, &state, cx))
-                    .child(self.render_placeholder(
-                        Some(mono),
-                        "Loading conversation…".to_string(),
-                        cx,
-                    ))
+                    .child(self.render_placeholder(Some(mono), line, cx))
             }
             (Some(mono), Some(session_id)) => {
-                let body = if self.items.is_empty() {
+                let body = if self.rows.is_empty() {
                     self.render_placeholder(
                         Some(mono),
                         format!(
@@ -1498,6 +1708,18 @@ impl Render for MonoFloat {
                         .into_any_element()
                 };
                 card.child(self.render_header(mono, &state, cx))
+                    .children(self.error.clone().map(|err| {
+                        // MonoCode's `role="alert"` line under the header.
+                        div()
+                            .flex_none()
+                            .border_b_1()
+                            .border_color(fg.opacity(0.08))
+                            .px_3()
+                            .py_2()
+                            .text_size(px(12.0))
+                            .text_color(cx.theme().colors.danger)
+                            .child(err)
+                    }))
                     .child(body)
                     .children(self.render_waiting(session_id, cx))
                     .child(self.render_composer(session_id, cx))
@@ -1556,6 +1778,28 @@ fn clock_time(ms: i64) -> Option<String> {
     )
 }
 
+/// MonoCode `dayStamp`: "Today", "Yesterday" or the date ("Tue, Oct 14",
+/// with the year when it is not this one), and the time beside it.
+fn day_stamp(ms: i64) -> (String, String) {
+    let tz = jiff::tz::TimeZone::system();
+    let Ok(at) = jiff::Timestamp::from_millisecond(ms) else {
+        return (String::new(), String::new());
+    };
+    let at = at.to_zoned(tz.clone());
+    let today = jiff::Timestamp::now().to_zoned(tz).date();
+    let date = at.date();
+    let day = if date == today {
+        "Today".to_string()
+    } else if today.yesterday().ok() == Some(date) {
+        "Yesterday".to_string()
+    } else if date.year() == today.year() {
+        at.strftime("%a, %b %-d").to_string()
+    } else {
+        at.strftime("%a, %b %-d, %Y").to_string()
+    };
+    (day, clock_time(ms).unwrap_or_default())
+}
+
 /// MonoCode's "Hide chat": the window goes; the conversation carries on.
 fn hide_button(cx: &mut Context<MonoFloat>) -> impl IntoElement {
     IconButton::new("mono-float-hide", IconName::X)
@@ -1597,144 +1841,4 @@ pub fn open(
         crate::ui::native_window::make_floating_panel(window);
         cx.new(|cx| MonoFloat::new(app, main, mono_id, window, cx))
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn tool(title: &str) -> Block {
-        let mut block = Block::new("t", "tool", "");
-        block.tool = Some(serde_json::json!({"kind": "read", "title": title}));
-        block
-    }
-
-    #[test]
-    fn work_between_messages_folds_into_one_line() {
-        let blocks = [
-            Block::new("u", "user", " hello "),
-            Block::new("r", "reasoning", "thinking"),
-            tool("/repo/a.rs"),
-            tool("/repo/b.rs"),
-            Block::new("a", "assistant", "Done."),
-            Block::new("s", "system", "Stopped."),
-        ];
-        assert_eq!(
-            float_items(&blocks, "/repo"),
-            [
-                FloatItem::User {
-                    text: "hello".into(),
-                    files: Vec::new(),
-                    reaction: None
-                },
-                FloatItem::Work {
-                    steps: 2,
-                    latest: "Read b.rs".into()
-                },
-                FloatItem::Reply {
-                    text: "Done.".into(),
-                    at: None
-                },
-                FloatItem::Notice("Stopped.".into()),
-            ]
-        );
-    }
-
-    #[test]
-    fn a_reaction_lands_on_the_message_it_answers() {
-        let blocks = [
-            Block::new("u1", "user", "fix it"),
-            Block::new("a1", "assistant", "Fixed."),
-            Block::new("u2", "user", "thanks!"),
-            tool("/repo/a.rs"),
-            Block::new("s", "system", "Stopped."),
-            Block::new("a2", "assistant", "<reaction>👍</reaction>"),
-        ];
-        let items = float_items(&blocks, "/repo");
-        assert_eq!(
-            items[2],
-            FloatItem::User {
-                text: "thanks!".into(),
-                files: Vec::new(),
-                reaction: Some("👍".into())
-            }
-        );
-        // The steps behind it go; a notice stays.
-        assert_eq!(items[3..], [FloatItem::Notice("Stopped.".into())]);
-        // One still streaming in is not shown as text.
-        let streaming = [
-            Block::new("u", "user", "ok"),
-            Block::new("a", "assistant", "<reaction>👍"),
-        ];
-        assert_eq!(float_items(&streaming, "/repo").len(), 1);
-    }
-
-    #[test]
-    fn a_message_keeps_its_files() {
-        let mut block = Block::new("u", "user", "");
-        block.extra.insert(
-            "attachments".into(),
-            serde_json::json!([{"id": "f1", "name": "a.png", "path": "/tmp/a.png", "kind": "image"}]),
-        );
-        let items = float_items(&[block], "/repo");
-        let [FloatItem::User { text, files, .. }] = items.as_slice() else {
-            panic!("one message expected, got {items:?}");
-        };
-        assert!(text.is_empty());
-        assert_eq!(files[0].name, "a.png");
-        assert!(files[0].image);
-    }
-
-    #[test]
-    fn the_items_key_follows_what_the_rows_show() {
-        let blocks = vec![
-            Block::new("u", "user", "hello"),
-            tool("/repo/a.rs"),
-            Block::new("a", "assistant", "Hi"),
-        ];
-        let key = items_key(&blocks, "/repo");
-        assert_eq!(items_key(&blocks.clone(), "/repo"), key);
-        // A reply streaming in, a new block, another file read.
-        let mut streamed = blocks.clone();
-        streamed[2].text = Some("Hi there".into());
-        assert_ne!(items_key(&streamed, "/repo"), key);
-        let mut added = blocks.clone();
-        added.push(Block::new("s", "system", "Stopped."));
-        assert_ne!(items_key(&added, "/repo"), key);
-        let mut retargeted = blocks.clone();
-        retargeted[1] = tool("/repo/b.rs");
-        assert_ne!(items_key(&retargeted, "/repo"), key);
-        // The same target under another verb.
-        let mut rekinded = blocks.clone();
-        if let Some(tool) = rekinded[1].tool.as_mut().and_then(|t| t.as_object_mut()) {
-            tool.insert("kind".into(), serde_json::json!("edit"));
-        }
-        assert_ne!(items_key(&rekinded, "/repo"), key);
-        // A call finishing changes nothing the rows show.
-        let mut finished = blocks.clone();
-        if let Some(tool) = finished[1].tool.as_mut().and_then(|t| t.as_object_mut()) {
-            tool.insert("status".into(), serde_json::json!("completed"));
-            tool.insert("detail".into(), serde_json::json!("fn main() {}"));
-        }
-        assert_eq!(items_key(&finished, "/repo"), key);
-    }
-
-    #[test]
-    fn a_reply_split_over_blocks_reads_as_one() {
-        let blocks = [
-            Block::new("a1", "assistant", "One."),
-            Block::new("e", "assistant", "  "),
-            Block::new("a2", "assistant", "Two."),
-            tool("/repo/a.rs"),
-            Block::new("a3", "assistant", "Three."),
-        ];
-        let items = float_items(&blocks, "/repo");
-        let reply = |text: &str| FloatItem::Reply {
-            text: text.into(),
-            at: None,
-        };
-        assert_eq!(items[0], reply("One.\n\nTwo."));
-        assert_eq!(items[2], reply("Three."));
-        assert_eq!(items.len(), 3);
-    }
 }

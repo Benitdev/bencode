@@ -76,6 +76,9 @@ pub struct AgentRun {
     /// What the turn waits on after the agent yielded with tasks still
     /// running in the background (MonoCode `backgroundTasks`).
     pub background: Vec<String>,
+    /// The provider answered (text or a tool call): it took the prompt,
+    /// whatever status it ends with.
+    pub answered: bool,
 }
 
 /// What a run is for.
@@ -762,7 +765,7 @@ impl BenCodeApp {
 
     /// Starts a turn of `input` in `session_id`.
     /// Why a turn cannot start in `session_id`, if it cannot.
-    fn turn_blocked(&self, session_id: &str) -> Option<&'static str> {
+    pub(crate) fn turn_blocked(&self, session_id: &str) -> Option<&'static str> {
         if self.worktree_removed(session_id) {
             Some("has no working copy")
         } else if !self.sessions.iter().any(|s| s.id == session_id) {
@@ -906,6 +909,7 @@ impl BenCodeApp {
             }
             Err(message) => {
                 log::error!("{message}");
+                self.drop_mono_context(session_id);
                 if let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id) {
                     let now = now_ms();
                     push_notice(session, &message, now);
@@ -942,6 +946,7 @@ impl BenCodeApp {
                 edit_paths: HashMap::new(),
                 last_saved: Instant::now(),
                 background: Vec::new(),
+                answered: false,
             },
         );
 
@@ -990,6 +995,10 @@ impl BenCodeApp {
         let tracked = !self.is_mono_session(session_id);
         let run = self.current_run(session_id, run_id)?;
         let save = save_due(&event, run.last_saved.elapsed());
+        run.answered |= matches!(
+            event,
+            AgentEvent::TextDelta(_) | AgentEvent::ToolCallStart { .. }
+        );
         match plan_event(run.auto_approve, &mut run.edit_paths, focused, event) {
             EventStep::UsageLimited(resets_at) => self.record_usage_limit(session_id, resets_at),
             EventStep::Compacted(tokens_after) => run.compacted = Some(tokens_after),
@@ -1058,6 +1067,7 @@ impl BenCodeApp {
         {
             self.reload_antigravity_usage(cx);
         }
+        let mut compacted = false;
         if run.purpose == RunPurpose::Compact
             && let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id)
         {
@@ -1067,6 +1077,7 @@ impl BenCodeApp {
                     if let Some(tokens) = tokens {
                         session.context_used = Some(tokens);
                     }
+                    compacted = true;
                 }
                 CompactEnd::Unconfirmed => {
                     let notice = unconfirmed_compact(&session.harness);
@@ -1078,7 +1089,17 @@ impl BenCodeApp {
         self.persist_session(session_id);
         self.close_automation_run(&run, automation_status(run.outcome));
         if run.purpose == RunPurpose::Turn {
-            self.record_mono_context(session_id, cx);
+            // A turn that ended badly after the provider answered it still
+            // reached the provider, context and all.
+            let accepted = run.outcome == Some(DoneStatus::Completed) || run.answered;
+            self.record_mono_context(session_id, accepted, cx);
+            // The provider compacted on its own, mid-turn.
+            compacted |= run.compacted.is_some();
+        }
+        if compacted {
+            self.forget_mono_context(session_id, cx);
+        }
+        if run.purpose == RunPurpose::Turn {
             self.announce_turn_finished(session_id, cx);
         }
         // The agent has most likely edited files.
@@ -1131,6 +1152,7 @@ impl BenCodeApp {
         };
         run.handle.cancel();
         self.sync_in_flight();
+        self.drop_mono_context(session_id);
         self.close_automation_run(&run, RunStatus::Cancelled);
         if let Some(thread) = self.threads.get_mut(session_id)
             && !thread.queue.is_empty()

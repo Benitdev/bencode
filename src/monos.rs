@@ -8,7 +8,8 @@
 //! `SOUL.md`, in BenCode's data folder (`monos/<id>/`), never in a repo.
 //!
 //! A reply that is only `<reaction>👍</reaction>` is a reaction on the
-//! user's message (`monoReaction.ts`), drawn by the views.
+//! user's message (`monoReaction.ts`), drawn by the views. While a turn
+//! runs its prose is not shown, so one still streaming in never shows.
 //!
 //! Not ported: memory, habits, sessions a Mono starts and artifacts (they
 //! go through MonoCode's `app` CLI, which BenCode lacks).
@@ -296,17 +297,6 @@ pub fn reply_text(text: &str) -> String {
     }
 }
 
-/// MonoCode `partialReaction`: a reply still streaming in that may yet turn
-/// out to be a reaction, and so is not shown as text meanwhile.
-pub fn partial_reaction(text: &str) -> bool {
-    let text = text.trim_start();
-    if text.len() < REACTION_OPEN.len() {
-        !text.is_empty() && REACTION_OPEN.starts_with(text)
-    } else {
-        text.starts_with(REACTION_OPEN) && !text.contains("</")
-    }
-}
-
 /// MonoCode `monoContext`: who the Mono is and its standing instructions.
 pub fn standing_context(name: &str, projects: &[(String, String)], soul: &str) -> String {
     format!(
@@ -495,22 +485,6 @@ mod tests {
             "Reacted 👍 to your message"
         );
         assert_eq!(reply_text("Done."), "Done.");
-    }
-
-    #[test]
-    fn a_reaction_still_streaming_is_held_back() {
-        for held in ["<", "<reac", "<reaction>", "<reaction>👍", "  <reaction>👍"] {
-            assert!(partial_reaction(held), "{held}");
-        }
-        for shown in [
-            "",
-            "Sure",
-            "<b>",
-            "<reaction>👍</",
-            "<reaction>👍</reaction>",
-        ] {
-            assert!(!partial_reaction(shown), "{shown}");
-        }
     }
 
     #[test]

@@ -252,8 +252,66 @@ impl BenCodeApp {
         self.thread_mut(session_id).question_ui = Some(ui);
     }
 
-    /// Picks option `id` of the current question (toggles when several apply).
-    fn pick_option(&mut self, session_id: &str, id: &str, cx: &mut Context<Self>) {
+    /// The form's state while a question waits in `session_id` (the
+    /// floating chat redraws when it changes).
+    pub(crate) fn question_ui(&self, session_id: &str) -> Option<QuestionUi> {
+        let (request_id, _, _) = self.pending_question(session_id)?;
+        Some(self.question_state(session_id, &request_id))
+    }
+
+    /// What has been typed as the current question's "Other" answer.
+    pub(crate) fn question_custom(&self, session_id: &str) -> String {
+        let Some((request_id, questions, _)) = self.pending_question(session_id) else {
+            return String::new();
+        };
+        let ui = self.question_state(session_id, &request_id);
+        questions
+            .get(ui.current)
+            .and_then(|question| ui.custom.get(&question.id))
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// Whether the current question's "Other" row is picked, so its field shows.
+    pub(crate) fn question_other_open(&self, session_id: &str) -> bool {
+        let Some((request_id, questions, _)) = self.pending_question(session_id) else {
+            return false;
+        };
+        let ui = self.question_state(session_id, &request_id);
+        let Some(question) = questions.get(ui.current) else {
+            return false;
+        };
+        let picked = ui.answers.get(&question.id);
+        shown_options(question)
+            .iter()
+            .any(|o| is_other(o) && picked.is_some_and(|p| p.contains(&o.id)))
+    }
+
+    /// The "Other" answer typed for the current question.
+    pub(crate) fn set_question_custom(
+        &mut self,
+        session_id: &str,
+        typed: String,
+        cx: &mut Context<Self>,
+    ) {
+        self.update_question(session_id, |ui, questions| {
+            if let Some(question) = questions.get(ui.current) {
+                ui.custom.insert(question.id.clone(), typed);
+            }
+        });
+        cx.notify();
+    }
+
+    /// Picks option `id` of the current question (toggles when several
+    /// apply). `focus_other` moves the keyboard to BenCode's own "Other"
+    /// field; the floating chat has a field of its own.
+    fn pick_option(
+        &mut self,
+        session_id: &str,
+        id: &str,
+        focus_other: bool,
+        cx: &mut Context<Self>,
+    ) {
         let is_custom_row = id == CUSTOM;
         self.update_question(session_id, |ui, questions| {
             let Some(question) = questions.get(ui.current) else {
@@ -273,7 +331,7 @@ impl BenCodeApp {
                 ui.active = ix;
             }
         });
-        if is_custom_row {
+        if is_custom_row && focus_other {
             let typed = self
                 .thread(session_id)
                 .and_then(|thread| thread.question_ui.as_ref())
@@ -298,16 +356,16 @@ impl BenCodeApp {
             return;
         };
         let typed = self.question_custom_input.read(cx).text().to_string();
-        self.update_question(&session_id, |ui, questions| {
-            if let Some(question) = questions.get(ui.current) {
-                ui.custom.insert(question.id.clone(), typed);
-            }
-        });
-        cx.notify();
+        self.set_question_custom(&session_id, typed, cx);
     }
 
     /// Continue: the next question, or the answers to the agent.
     pub fn continue_question(&mut self, session_id: &str, cx: &mut Context<Self>) {
+        self.continue_question_from(session_id, true, cx);
+    }
+
+    /// Continue; `refocus` gives BenCode's prompt the keyboard once answered.
+    fn continue_question_from(&mut self, session_id: &str, refocus: bool, cx: &mut Context<Self>) {
         let Some((request_id, questions, input)) = self.pending_question(session_id) else {
             return;
         };
@@ -329,13 +387,16 @@ impl BenCodeApp {
         }
         let answered = allow_input(&input, &questions, &ui);
         self.answer_question(session_id, Some(answered), cx);
-        self.refocus_prompt(cx);
+        if refocus {
+            self.refocus_prompt(cx);
+        }
     }
 
     /// MonoCode `skipCurrent`: this question goes unanswered and the form
     /// moves on; after the last one the agent gets the questions that were
     /// answered (or a skip when none were).
-    pub fn skip_question(&mut self, session_id: &str, cx: &mut Context<Self>) {
+    /// `refocus` gives BenCode's prompt the keyboard once answered.
+    fn skip_question(&mut self, session_id: &str, refocus: bool, cx: &mut Context<Self>) {
         let Some((request_id, questions, input)) = self.pending_question(session_id) else {
             return;
         };
@@ -356,7 +417,9 @@ impl BenCodeApp {
         let answered = questions.iter().any(|q| is_complete(q, &ui));
         let reply = answered.then(|| allow_input(&input, &questions, &ui));
         self.answer_question(session_id, reply, cx);
-        self.refocus_prompt(cx);
+        if refocus {
+            self.refocus_prompt(cx);
+        }
     }
 
     /// MonoCode's option keys, while the form holds focus.
@@ -395,13 +458,13 @@ impl BenCodeApp {
             }
             "enter" | "space" => {
                 if let Some(option) = options.get(ui.active) {
-                    self.pick_option(&session_id, &option.id.clone(), cx);
+                    self.pick_option(&session_id, &option.id.clone(), true, cx);
                 }
             }
             digit if digit.len() == 1 && digit.as_bytes()[0].is_ascii_digit() && digit != "0" => {
                 let ix = (digit.as_bytes()[0] - b'1') as usize;
                 if let Some(option) = options.get(ix) {
-                    self.pick_option(&session_id, &option.id.clone(), cx);
+                    self.pick_option(&session_id, &option.id.clone(), true, cx);
                 }
             }
             _ => return false,
@@ -416,6 +479,21 @@ impl BenCodeApp {
         session_id: &str,
         cx: &Context<Self>,
     ) -> Option<AnyElement> {
+        let other = self.question_custom_input.clone().into_any_element();
+        self.question_form(session_id, other, Some(&self.question_focus), false, cx)
+    }
+
+    /// The form itself, with `other` as its "Other" field; `floating` for
+    /// the floating chat's (MonoCode answers questions in place there).
+    pub(crate) fn question_form(
+        &self,
+        session_id: &str,
+        other: AnyElement,
+        focus: Option<&gpui::FocusHandle>,
+        floating: bool,
+        cx: &Context<Self>,
+    ) -> Option<AnyElement> {
+        let mut other = Some(other);
         let (request_id, questions, _) = self.pending_question(session_id)?;
         let ui = self.question_state(session_id, &request_id);
         let question = questions.get(ui.current)?.clone();
@@ -482,7 +560,9 @@ impl BenCodeApp {
                             .hover(move |s| s.bg(hover))
                     }
                 })
-                .on_click(cx.listener(move |this, _, _, cx| this.pick_option(&sid, &id, cx)))
+                .on_click(
+                    cx.listener(move |this, _, _, cx| this.pick_option(&sid, &id, !floating, cx)),
+                )
                 .child(glyph)
                 .child(
                     div()
@@ -510,7 +590,7 @@ impl BenCodeApp {
                 .child(
                     div()
                         .id("question-form")
-                        .track_focus(&self.question_focus)
+                        .when_some(focus, |el, focus| el.track_focus(focus))
                         .rounded(px(8.0))
                         .border_1()
                         .border_color(fg.opacity(0.10))
@@ -549,7 +629,7 @@ impl BenCodeApp {
                                         .cursor_pointer()
                                         .hover(move |s| s.bg(button_hover))
                                         .on_click(cx.listener(move |this, _, _, cx| {
-                                            this.skip_question(&skip_sid, cx)
+                                            this.skip_question(&skip_sid, !floating, cx)
                                         }))
                                         .child("Skip"),
                                 ),
@@ -589,7 +669,7 @@ impl BenCodeApp {
                                     .border_color(fg.opacity(0.15))
                                     .bg(fg.opacity(0.05))
                                     .text_size(px(13.0))
-                                    .child(self.question_custom_input.clone()),
+                                    .children(other.take()),
                             )
                         })
                         .child(
@@ -609,7 +689,9 @@ impl BenCodeApp {
                                     .when(complete, |el| {
                                         el.cursor_pointer().on_click(cx.listener(
                                             move |this, _, _, cx| {
-                                                this.continue_question(&next_sid, cx)
+                                                this.continue_question_from(
+                                                    &next_sid, !floating, cx,
+                                                )
                                             },
                                         ))
                                     })

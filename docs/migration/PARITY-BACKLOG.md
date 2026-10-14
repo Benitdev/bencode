@@ -150,7 +150,10 @@ Notes:
 - [x] P2 M Floating chat: files attached with +, by drop, shown as chips and on sent messages — `MonoComposer.tsx`
 - [x] P2 S Floating chat: ⌘V attaches the clipboard's images and files — `MonoComposer.tsx` `onPaste`
 - [~] P2 M Floating chat: the emoji picker, by group with this launch's recent ones — `shared/ui/EmojiPicker.tsx`. No search, no skin tone, recents not saved (MonoCode bundles Emojibase)
-- [ ] P2 M Floating chat: the menu bar item that opens it (`mono_chat/menu_bar.rs`), questions answered in place, earlier pages, queued messages shown as pending, resizing, the glass look
+- [x] P2 M Floating chat: queued messages shown as pending (`Not sent` · Resume once stopped), day separators, "Try again" on a usage limit, errors in place of a silent failure, a draft kept per Mono, Escape stops from anywhere in the window — `monoMessaging.ts`, `AgentTranscript.tsx` `DaySeparator`
+- [x] P2 L Floating chat: the live work ticker on the turn's identity line (`monoWorkStatus.ts`, "Reading file…", "Waiting for approval…"), the turn's prose kept in the work until it settles (`groupMonoTurnItems`), Copy and the finish time on hover for the whole turn (`TurnDuration` `revealOnHover`), questions answered in place (`QuestionForm`), earlier turns ten at a time on scrolling to the top (`MONO_PAGE_TURNS`, `loadEarlierOnScroll`). BenCode pages what it already holds (MonoCode reads pages from the database); no follow-up-reply nuance of `groupMonoTurnItems`; the question form has no keys there
+- [ ] P2 M Floating chat: the menu bar item that opens it (`mono_chat/menu_bar.rs`), the glass look, the activity trail panel (`MonoActivityTrail`; the ticker opens BenCode instead)
+- [ ] P2 M Mono session rotation at 80% of the context window with a brief of recent exchanges — `monoRotation.ts`. BenCode only hands the context over again after a compaction
 - [ ] P2 M Monos on the collapsed icon rail
 - [ ] P2 M A Mono's changes per project (its turns keep no checkpoints) — `MonoChangesPanel.tsx`
 - [ ] P2 S Name edited in place in Details; a per-Mono chat background
