@@ -164,11 +164,11 @@ mod tests {
             label: "api".into(),
         };
         assert_eq!(
-            chip_title(&[vite.clone()], false),
+            chip_title(std::slice::from_ref(&vite), false),
             "Show vite\n\"vite\" in web"
         );
         assert_eq!(
-            chip_title(&[vite.clone()], true),
+            chip_title(std::slice::from_ref(&vite), true),
             "Hide vite\n\"vite\" in web"
         );
         assert_eq!(

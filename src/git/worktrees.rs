@@ -311,6 +311,10 @@ pub fn remove_worktree(cwd: &str, path: &str, force: bool) -> Result<()> {
 }
 
 /// Prunes dead worktree references from git metadata.
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "nothing prunes worktrees outside the tests yet")
+)]
 pub fn prune_worktrees(cwd: &str) -> Result<()> {
     let root = Path::new(cwd);
     git_cmd(root, &["worktree", "prune"])?;

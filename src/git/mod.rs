@@ -17,13 +17,6 @@ pub use branches::{
 pub use diffs::{DiffSource, commit_files, file_diff};
 pub use rows::number_rows;
 
-// Only `list_worktrees` feeds the sidebar switcher so far; create/remove/prune
-// are tracked in docs/migration/TODO-100-PERCENT-COVERAGE.md (2.1). `expect`
-// (not `allow`) so the attribute errors out once the rest becomes live.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "worktree create/remove/prune are not wired yet")
-)]
 pub mod worktrees;
 pub use status_pass::{StateFingerprint, StatusPass, read_local_state};
 pub use worktrees::Worktree;

@@ -311,13 +311,11 @@ impl BenCodeApp {
         self.terminals.next_id += 1;
         let id = self.terminals.next_id;
         let key = project.to_string();
-        let events = cx.subscribe(
-            &entity,
-            move |this, _, event: &TerminalEvent, cx| match event {
-                TerminalEvent::Exited(_) => this.terminal_exited(&key, id, cx),
-                _ => {}
-            },
-        );
+        let events = cx.subscribe(&entity, move |this, _, event: &TerminalEvent, cx| {
+            if let TerminalEvent::Exited(_) = event {
+                this.terminal_exited(&key, id, cx);
+            }
+        });
         let dock = self.terminals.docks.entry(project.to_string()).or_default();
         dock.tabs.push(TerminalTab {
             id,

@@ -391,6 +391,13 @@ const LATE_SESSION_COLUMNS: &[(&str, &str)] = &[
     ("inbox_ask", "TEXT"),
 ];
 
+/// The thread lists read newest first. It needs `inbox_ask`, which a database
+/// from before that column only has once `ensure_session_columns` ran. Being
+/// late, the column is stored after the transcript, so without the index a
+/// list reads every thread's transcript to reach it.
+const SESSION_INDEX_SQL: &str = "CREATE INDEX IF NOT EXISTS sessions_recent_idx \
+    ON sessions (updated_at DESC, id) WHERE inbox_ask IS NULL;";
+
 const SESSION_SELECT: &str =
     "SELECT id, title, cwd, harness, model, created_at, updated_at, branch,
         blocks_json, context_used, context_window, pinned, archived, provider_session_id,
@@ -463,6 +470,7 @@ impl AppDb {
         conn.execute_batch("PRAGMA foreign_keys = ON;")?;
         conn.execute_batch(SCHEMA_SQL)?;
         ensure_session_columns(&conn)?;
+        conn.execute_batch(SESSION_INDEX_SQL)?;
         conn.execute_batch(reminders::REMINDERS_SQL)?;
         conn.execute_batch(orchestration::ORCHESTRATION_SQL)?;
         conn.execute_batch(worktree_removals::WORKTREE_REMOVALS_SQL)?;

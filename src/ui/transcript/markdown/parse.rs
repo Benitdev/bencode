@@ -456,7 +456,7 @@ fn fence(info: &str) -> Fence {
         .iter()
         .find_map(|word| word.strip_prefix("startLine="))
         .and_then(|n| n.parse().ok());
-    let line_numbers = !meta.iter().any(|word| *word == "noLineNumbers");
+    let line_numbers = !meta.contains(&"noLineNumbers");
     let mut citation = raw.splitn(3, ':');
     if let (Some(start), Some(end), Some(path)) =
         (citation.next(), citation.next(), citation.next())

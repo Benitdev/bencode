@@ -524,7 +524,7 @@ impl BenCodeApp {
                 } else {
                     this.refresh_touched(vec![dest.clone()], &[], cx);
                 }
-                this.expand_tree_dirs(&[dest.clone()], cx);
+                this.expand_tree_dirs(std::slice::from_ref(&dest), cx);
                 this.file_tree.selected_path = Some(created);
             },
             cx,

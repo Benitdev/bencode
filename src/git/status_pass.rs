@@ -51,7 +51,16 @@ impl StatusPass {
 
     /// See `super::state_fingerprint`.
     pub fn fingerprint(&self, cwd: &str) -> StateFingerprint {
-        let shortstat = run_git(cwd, &["diff", "--no-ext-diff", "--shortstat"]).unwrap_or_default();
+        // Only unstaged edits show in `git diff`: with none, it prints nothing.
+        let unstaged = self
+            .entries
+            .iter()
+            .any(|e| !e.is_ignored() && !e.is_untracked() && e.worktree != '.');
+        let shortstat = if unstaged {
+            run_git(cwd, &["diff", "--no-ext-diff", "--shortstat"]).unwrap_or_default()
+        } else {
+            Vec::new()
+        };
         // Branches, tags and remote refs moved outside BenCode show here only.
         let refs = run_git(cwd, &["for-each-ref", "--format=%(objectname) %(refname)"])
             .unwrap_or_default();

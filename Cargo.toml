@@ -16,7 +16,7 @@ gpui = { git = "https://github.com/zed-industries/zed", rev = "1a28cff4b409169ba
 gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "1a28cff4b409169bac058bca40dfbfeb7621d19b", features = ["font-kit"] }
 
 # Async runtime & Utilities
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", features = ["io-util", "macros", "process", "rt-multi-thread", "sync", "time"] }
 anyhow = "1"
 base64 = "0.22"
 log = "0.4"

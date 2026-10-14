@@ -72,18 +72,35 @@ pub struct SearchHit {
     pub target_id: String,
 }
 
+/// Whether `haystack` holds `needle` (already lowercase), ignoring case.
+/// Every keystroke runs this over each loaded transcript, so it lowercases
+/// as it compares instead of copying the text.
+fn contains_folded(haystack: &str, needle: &str) -> bool {
+    if needle.is_empty() {
+        return true;
+    }
+    if haystack.is_ascii() && needle.is_ascii() {
+        return haystack
+            .as_bytes()
+            .windows(needle.len())
+            .any(|window| window.eq_ignore_ascii_case(needle.as_bytes()));
+    }
+    haystack.char_indices().any(|(start, _)| {
+        let mut folded = haystack[start..].chars().flat_map(char::to_lowercase);
+        needle.chars().all(|want| folded.next() == Some(want))
+    })
+}
+
 fn session_hits(query: &str, sessions: &[SessionRow]) -> impl Iterator<Item = SearchHit> {
     sessions
         .iter()
         .filter(move |s| {
             [&s.title, &s.cwd, &s.model]
                 .iter()
-                .any(|field| field.to_lowercase().contains(query))
-                || s.blocks.iter().any(|b| {
-                    b.text
-                        .as_deref()
-                        .is_some_and(|t| t.to_lowercase().contains(query))
-                })
+                .any(|field| contains_folded(field, query))
+                || s.blocks
+                    .iter()
+                    .any(|b| b.text.as_deref().is_some_and(|t| contains_folded(t, query)))
         })
         .map(|s| SearchHit {
             title: s.title.clone().into(),
@@ -97,7 +114,7 @@ fn session_hits(query: &str, sessions: &[SessionRow]) -> impl Iterator<Item = Se
 fn file_hits(query: &str, root: &str, files: &[SharedString]) -> impl Iterator<Item = SearchHit> {
     files
         .iter()
-        .filter(move |path| path.to_lowercase().contains(query))
+        .filter(move |path| contains_folded(path, query))
         .take(SEARCH_FILE_HIT_LIMIT)
         .map(move |path| SearchHit {
             title: path.rsplit('/').next().unwrap_or(path).to_string().into(),
@@ -111,7 +128,7 @@ fn file_hits(query: &str, root: &str, files: &[SharedString]) -> impl Iterator<I
 fn project_hits(query: &str, projects: &[String]) -> impl Iterator<Item = SearchHit> {
     projects
         .iter()
-        .filter(move |p| p.to_lowercase().contains(query))
+        .filter(move |p| contains_folded(p, query))
         .map(|p| SearchHit {
             title: std::path::Path::new(p)
                 .file_name()
@@ -343,6 +360,27 @@ mod tests {
         assert_eq!(hits.len(), SEARCH_FILE_HIT_LIMIT);
         assert_eq!(hits[0].title.as_ref(), "mod0.rs");
         assert_eq!(hits[0].subtitle.as_ref(), "/repo/src/mod0.rs");
+    }
+
+    #[test]
+    fn contains_folded_matches_like_lowercasing() {
+        for (haystack, needle) in [
+            ("Fix Parser", "parser"),
+            ("Fix Parser", "x p"),
+            ("Fix Parser", "parsers"),
+            ("ab", "abc"),
+            ("Tiếng VIỆT", "việt"),
+            ("Tiếng VIỆT", "tiếng v"),
+            ("ÉCOLE", "école"),
+            ("ÉCOLE", "ecole"),
+            ("", ""),
+        ] {
+            assert_eq!(
+                contains_folded(haystack, needle),
+                haystack.to_lowercase().contains(needle),
+                "{haystack:?} / {needle:?}"
+            );
+        }
     }
 
     #[test]
