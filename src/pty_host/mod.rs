@@ -12,6 +12,7 @@
 mod attach;
 mod host;
 mod protocol;
+mod screen;
 
 use std::io;
 use std::os::unix::net::UnixStream;

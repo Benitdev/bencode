@@ -589,6 +589,10 @@ div()
   `bencode --pty-attach <session> <cwd>` in Ely's terminal; that client
   starts the host when none answers. `main` hands both modes off before the
   app starts.
+- The host keeps each session's screen in an emulator (`screen.rs`) and a
+  tab shown again gets it drawn at the tab's size, never the shell's bytes
+  replayed: those only mean what they meant at the width they were written
+  for, and a tab starts at 80 by 24 before its first layout.
 - The client's stdout is the terminal: it and the host log only to
   `pty-host.log` (`logging::init_file`).
 - Tabs are saved as `terminalSessions` in `settings.json` and shown again at

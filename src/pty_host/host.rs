@@ -1,10 +1,10 @@
 //! `bencode --pty-host`: holds the dock's shells. Each session is a PTY,
 //! the shell on it (started as Alacritty starts it, which is what Ely's
-//! terminal did before), the last output for showing it again, and the one
-//! client showing it now. The host leaves once nothing has run and nobody
-//! has been attached for a while.
+//! terminal did before), its screen for showing it again (`screen.rs`),
+//! and the one client showing it now. The host leaves once nothing has
+//! run and nobody has been attached for a while.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::fs::File;
 use std::io;
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
@@ -22,9 +22,8 @@ use super::protocol::{
     AttachRequest, Attached, ControlReply, ControlRequest, Frame, PROTOCOL_VERSION, SessionInfo,
     read_frame, write_frame,
 };
+use super::screen::Screen;
 
-/// The output kept to show a session again.
-const HISTORY: usize = 1024 * 1024;
 /// How long the host stays with nothing running and nobody attached.
 const IDLE_EXIT: Duration = Duration::from_secs(60);
 /// A client that stops reading for this long is let go, not waited on.
@@ -123,9 +122,8 @@ struct Session {
     state: Mutex<SessionState>,
 }
 
-#[derive(Default)]
 struct SessionState {
-    history: VecDeque<u8>,
+    screen: Screen,
     /// The client showing the session, by its number.
     client: Option<(u64, UnixStream)>,
     exited: Option<i32>,
@@ -223,8 +221,18 @@ impl Host {
         let client = self.next_client.fetch_add(1, Ordering::Relaxed);
         stream.set_write_timeout(Some(CLIENT_WRITE_TIMEOUT))?;
         let mut writer = stream.try_clone()?;
+        if !created {
+            // At the client's size before its screen is drawn for it. A
+            // full-screen program draws itself again on a size change; a
+            // shell is left alone, or a prompt is drawn twice.
+            if lock(&session.state).screen.alt_screen() {
+                session.nudge(request.cols, request.rows);
+            } else {
+                session.resize(request.cols, request.rows);
+            }
+        }
         {
-            // The history and the hand-over in one lock: output the shell
+            // The screen and the hand-over in one lock: output the shell
             // writes meanwhile goes after it, once.
             let mut state = lock(&session.state);
             let attached = Attached {
@@ -235,9 +243,9 @@ impl Host {
                 &mut writer,
                 &Frame::Attached(serde_json::to_vec(&attached)?),
             )?;
-            let (front, back) = state.history.as_slices();
-            for part in [front, back].into_iter().filter(|p| !p.is_empty()) {
-                write_frame(&mut writer, &Frame::Output(part.to_vec()))?;
+            if !created {
+                let screen = state.screen.redraw();
+                write_frame(&mut writer, &Frame::Output(screen))?;
             }
             if let Some(code) = state.exited {
                 write_frame(&mut writer, &Frame::Exited(code))?;
@@ -248,10 +256,6 @@ impl Host {
                     log::debug!("pty host: previous client of {}: {err}", session.id);
                 }
             }
-        }
-        if !created {
-            // A full-screen program draws itself again on a size change.
-            session.nudge(request.cols, request.rows);
         }
         loop {
             match read_frame(&mut stream) {
@@ -355,7 +359,11 @@ impl Session {
             pid: child.id(),
             master,
             child: Mutex::new(Some(child)),
-            state: Mutex::new(SessionState::default()),
+            state: Mutex::new(SessionState {
+                screen: Screen::new(request.cols, request.rows),
+                client: None,
+                exited: None,
+            }),
         })
     }
 
@@ -379,7 +387,7 @@ impl Session {
             }
             let bytes = &buf[..read as usize];
             let mut state = lock(&self.state);
-            push_history(&mut state.history, bytes);
+            state.screen.feed(bytes);
             send_to_client(&mut state, &Frame::Output(bytes.to_vec()));
         }
         // Taken before the wait, not held through it: from here on the pid
@@ -413,6 +421,7 @@ impl Session {
     }
 
     fn resize(&self, cols: u16, rows: u16) {
+        lock(&self.state).screen.resize(cols, rows);
         let size = libc::winsize {
             ws_row: rows.max(1),
             ws_col: cols.max(1),
@@ -457,12 +466,6 @@ impl Session {
             );
         }
     }
-}
-
-fn push_history(history: &mut VecDeque<u8>, bytes: &[u8]) {
-    history.extend(bytes);
-    let over = history.len().saturating_sub(HISTORY);
-    history.drain(..over);
 }
 
 /// A client that cannot take the frame is let go: its connection is closed
@@ -531,18 +534,6 @@ fn shell_command(user: &ShellUser) -> Command {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn history_keeps_the_latest_bytes() {
-        let mut history = VecDeque::new();
-        push_history(&mut history, &vec![1u8; HISTORY]);
-        push_history(&mut history, &[2, 3]);
-        assert_eq!(history.len(), HISTORY);
-        assert_eq!(
-            history.iter().rev().take(2).copied().collect::<Vec<_>>(),
-            vec![3, 2]
-        );
-    }
 
     /// A host on a temporary socket: a session runs, is shown again with
     /// its output, and ends on Kill.
@@ -613,7 +604,7 @@ mod tests {
         assert!(read_until(&mut first, "bencode-42").contains("bencode-42"));
         drop(first);
 
-        // Shown again: the same shell, its output replayed.
+        // Shown again: the same shell, its screen drawn again.
         let mut second = connect();
         let again = attach(&mut second);
         assert!(!again.created);
