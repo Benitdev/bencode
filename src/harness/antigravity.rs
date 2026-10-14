@@ -1,8 +1,16 @@
 //! Antigravity (`agy`) print mode with `--output-format stream-json`.
 //! Events are `{"event": "init" | "step_update" | "result" | "error", …}`.
+//!
+//! A tool runs as a `"tool"` step (`tool_info`: name, parameters, output),
+//! reported `ACTIVE` then `DONE`; older builds sent `"tool_call"` steps.
+//! The result's `usage` adds up every model call of the turn, so the
+//! context meter reads the last call's instead; a result that is not
+//! `SUCCESS` says why in its `error`.
 
 use anyhow::Result;
-use serde_json::Value;
+use std::collections::HashSet;
+
+use serde_json::{Map, Value};
 
 use crate::harness::events::{AgentEvent, DoneStatus, TurnMetrics};
 use crate::harness::handle::HarnessProcessHandle;
@@ -24,7 +32,7 @@ pub fn spawn(req: &SpawnRequest) -> Result<(HarnessProcessHandle, EventRx)> {
         account: None,
         env: Vec::new(),
     };
-    process::spawn(spec, AntigravityParser)
+    process::spawn(spec, AntigravityParser::default())
 }
 
 fn build_args(req: &SpawnRequest) -> Vec<String> {
@@ -47,7 +55,13 @@ fn build_args(req: &SpawnRequest) -> Vec<String> {
     args
 }
 
-pub struct AntigravityParser;
+#[derive(Default)]
+pub struct AntigravityParser {
+    /// The last model call's usage: how full the context is now.
+    last_usage: Option<Value>,
+    /// Tool steps already started, so `DONE` only finishes them.
+    started: HashSet<String>,
+}
 
 impl LineParser for AntigravityParser {
     fn parse_line(&mut self, line: &str) -> Vec<AgentEvent> {
@@ -65,23 +79,33 @@ impl LineParser for AntigravityParser {
             }
             Some("step_update") => {
                 if let Some(step) = rec.get("step_update") {
-                    on_step(step, &mut events);
+                    self.on_step(step, &mut events);
                 }
             }
             Some("result") => {
                 let result = rec.get("result").unwrap_or(&Value::Null);
+                if let Some(usage) = self
+                    .last_usage
+                    .take()
+                    .or_else(|| result.get("usage").cloned())
+                {
+                    events.push(usage_event(&usage));
+                }
                 if let Some(usage) = result.get("usage") {
-                    events.push(usage_event(usage));
                     events.extend(metrics_event(usage));
                 }
                 match str_field(result, "status") {
                     None | Some(SUCCESS_STATUS) => {
                         events.push(AgentEvent::Done(DoneStatus::Completed))
                     }
+                    Some(status) if recovered(result) => {
+                        // The retry answered: the turn is whole, the failed
+                        // attempt is only `agy`'s to report.
+                        log::warn!("{} (recovered)", result_error(status, result));
+                        events.push(AgentEvent::Done(DoneStatus::Completed));
+                    }
                     Some(status) => {
-                        events.push(AgentEvent::Error(format!(
-                            "Antigravity finished with status {status}"
-                        )));
+                        events.push(AgentEvent::Error(result_error(status, result)));
                         events.push(AgentEvent::Done(DoneStatus::Failed));
                     }
                 }
@@ -98,37 +122,137 @@ impl LineParser for AntigravityParser {
     }
 }
 
-fn on_step(step: &Value, events: &mut Vec<AgentEvent>) {
-    match str_field(step, "step_type") {
-        Some("agent_response") => {
-            if let Some(thinking) = str_field(step, "thinking_delta").filter(|t| !t.is_empty()) {
-                events.push(AgentEvent::ThinkingDelta(thinking.to_string()));
+impl AntigravityParser {
+    fn on_step(&mut self, step: &Value, events: &mut Vec<AgentEvent>) {
+        match str_field(step, "step_type") {
+            Some("agent_response") => {
+                if let Some(thinking) = str_field(step, "thinking_delta").filter(|t| !t.is_empty())
+                {
+                    events.push(AgentEvent::ThinkingDelta(thinking.to_string()));
+                }
+                if let Some(text) = str_field(step, "text_delta").filter(|t| !t.is_empty()) {
+                    events.push(AgentEvent::TextDelta(text.to_string()));
+                }
+                if let Some(usage) = step.get("usage") {
+                    self.last_usage = Some(usage.clone());
+                }
             }
-            if let Some(text) = str_field(step, "text_delta").filter(|t| !t.is_empty()) {
-                events.push(AgentEvent::TextDelta(text.to_string()));
+            Some("tool") => {
+                let Some(info) = step.get("tool_info") else {
+                    return;
+                };
+                let index = step
+                    .get("step_index")
+                    .map(Value::to_string)
+                    .unwrap_or_default();
+                let conversation = str_field(step, "conversation_id").unwrap_or_default();
+                let id = format!("agy-{conversation}-{index}");
+                let name = str_field(info, "name")
+                    .or_else(|| str_field(step, "tool_name"))
+                    .unwrap_or("tool");
+                let parameters = info.get("parameters").unwrap_or(&Value::Null);
+                self.tool(events, &id, name, parameters, info, step);
             }
+            // Older builds' shape.
+            Some("tool_call") => {
+                let Some(call) = step.get("tool_call") else {
+                    return;
+                };
+                let Some(id) = str_field(call, "id") else {
+                    return;
+                };
+                let name = str_field(call, "name").unwrap_or("tool");
+                let input = call.get("input").unwrap_or(&Value::Null);
+                self.tool(events, id, name, input, call, step);
+            }
+            _ => {}
         }
-        Some("tool_call") => {
-            let Some(call) = step.get("tool_call") else {
-                return;
-            };
-            let Some(id) = str_field(call, "id") else {
-                return;
-            };
+    }
+
+    /// A tool step: started once, finished when it is `DONE` (or failed).
+    fn tool(
+        &mut self,
+        events: &mut Vec<AgentEvent>,
+        id: &str,
+        name: &str,
+        input: &Value,
+        info: &Value,
+        step: &Value,
+    ) {
+        if self.started.insert(id.to_string()) {
             events.push(AgentEvent::ToolCallStart {
                 id: id.to_string(),
-                name: str_field(call, "name").unwrap_or("tool").to_string(),
-                input: call.get("input").cloned().unwrap_or(Value::Null),
+                name: name.to_string(),
+                input: with_common_keys(input),
             });
-            if str_field(step, "state") == Some("DONE") {
-                events.push(AgentEvent::ToolCallFinish {
-                    id: id.to_string(),
-                    output: str_field(call, "output").unwrap_or_default().to_string(),
-                    success: call.get("error").is_none_or(Value::is_null),
-                });
-            }
         }
-        _ => {}
+        let state = str_field(step, "state").unwrap_or("");
+        let failed = info.get("error").is_some_and(|e| !e.is_null())
+            || matches!(state, "ERROR" | "FAILED" | "CANCELED" | "CANCELLED");
+        if state == "DONE" || failed {
+            let output = str_field(info, "output")
+                .or_else(|| str_field(info, "error"))
+                .unwrap_or_default();
+            events.push(AgentEvent::ToolCallFinish {
+                id: id.to_string(),
+                output: output.to_string(),
+                success: !failed,
+            });
+        }
+    }
+}
+
+/// `agy`'s parameters (`CommandLine`, `TargetFile`, `AbsolutePath`, …) with
+/// the keys the transcript titles tools by added alongside.
+fn with_common_keys(input: &Value) -> Value {
+    let Some(params) = input.as_object() else {
+        return input.clone();
+    };
+    let mut out: Map<String, Value> = params.clone();
+    let aliases = [
+        ("command", &["CommandLine"][..]),
+        (
+            "path",
+            &[
+                "AbsolutePath",
+                "TargetFile",
+                "File",
+                "DirectoryPath",
+                "SearchPath",
+            ][..],
+        ),
+        ("pattern", &["Pattern"][..]),
+        ("query", &["Query"][..]),
+        ("url", &["Url", "URL"][..]),
+    ];
+    for (key, from) in aliases {
+        if out.contains_key(key) {
+            continue;
+        }
+        if let Some(value) = from.iter().find_map(|name| params.get(*name)) {
+            out.insert(key.to_string(), value.clone());
+        }
+    }
+    Value::Object(out)
+}
+
+/// A turn `agy` calls an error only for a model call it retried: its
+/// `error` names the failed attempt ("API error (attempt 1): … connection
+/// reset by peer") and the retry's reply is the `response`.
+fn recovered(result: &Value) -> bool {
+    let retried = str_field(result, "error").is_some_and(|e| e.starts_with("API error (attempt"));
+    let answered = str_field(result, "response").is_some_and(|r| !r.trim().is_empty());
+    retried && answered
+}
+
+/// What a failed turn says: `agy`'s own reason when it gives one.
+fn result_error(status: &str, result: &Value) -> String {
+    match str_field(result, "error")
+        .map(str::trim)
+        .filter(|e| !e.is_empty())
+    {
+        Some(error) => format!("Antigravity: {error}"),
+        None => format!("Antigravity finished with status {status}"),
     }
 }
 
@@ -184,7 +308,7 @@ mod tests {
 
     #[test]
     fn parses_recorded_print_session() {
-        let mut parser = AntigravityParser;
+        let mut parser = AntigravityParser::default();
         let events: Vec<_> = RECORDED
             .iter()
             .flat_map(|line| parser.parse_line(line))
@@ -214,8 +338,93 @@ mod tests {
 
     #[test]
     fn non_success_result_is_an_error() {
-        let mut parser = AntigravityParser;
+        let mut parser = AntigravityParser::default();
         let events = parser.parse_line(r#"{"event":"result","result":{"status":"CANCELLED"}}"#);
         assert_eq!(events.last(), Some(&AgentEvent::Done(DoneStatus::Failed)));
+    }
+
+    #[test]
+    fn a_failed_result_says_why() {
+        let mut parser = AntigravityParser::default();
+        // Recorded from `agy --conversation <unknown id>`.
+        let events = parser.parse_line(
+            r#"{"event":"result","result":{"conversation_id":"30e6","status":"ERROR","response":"","error":"failed to send message: trajectory not found: 30e6","usage":{"input_tokens":0,"output_tokens":0,"total_tokens":0}}}"#,
+        );
+        assert!(events.contains(&AgentEvent::Error(
+            "Antigravity: failed to send message: trajectory not found: 30e6".into()
+        )));
+    }
+
+    #[test]
+    fn a_retried_call_that_answered_is_a_finished_turn() {
+        let mut parser = AntigravityParser::default();
+        // As `agy` reports a turn whose first model call was cut off.
+        let events = parser.parse_line(
+            r#"{"event":"result","result":{"conversation_id":"83bc","status":"ERROR","response":"Có chứ!\n","error":"API error (attempt 1): request failed: Post \"https://daily-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse\": read tcp 10.10.1.211:56340->172.217.115.4:443: read: connection reset by peer"}}"#,
+        );
+        assert_eq!(events, [AgentEvent::Done(DoneStatus::Completed)]);
+        // Without a reply it is still the failure it says.
+        let events = parser.parse_line(
+            r#"{"event":"result","result":{"status":"ERROR","response":"","error":"API error (attempt 3): request failed"}}"#,
+        );
+        assert_eq!(events.last(), Some(&AgentEvent::Done(DoneStatus::Failed)));
+    }
+
+    /// Recorded from `agy -p "run the shell command: ls /tmp | head -3, then
+    /// tell me the result" --output-format stream-json` (agy 2026-10).
+    const TOOL_TURN: &[&str] = &[
+        r#"{"event":"step_update","step_update":{"conversation_id":"8b5f","step_index":1,"state":"DONE","step_type":"agent_response","usage":{"input_tokens":18668,"output_tokens":314,"total_tokens":18982}}}"#,
+        r#"{"event":"step_update","step_update":{"conversation_id":"8b5f","step_index":2,"state":"ACTIVE","step_type":"tool","tool_name":"run_command","tool_info":{"name":"run_command","parameters":{"CommandLine":"ls /tmp | head -3"}}}}"#,
+        r#"{"event":"step_update","step_update":{"conversation_id":"8b5f","step_index":2,"state":"DONE","step_type":"tool","tool_name":"run_command","duration_seconds":0.07,"tool_info":{"name":"run_command","parameters":{"CommandLine":"ls /tmp | head -3"},"output":"after.txt\r\n"}}}"#,
+        r#"{"event":"step_update","step_update":{"conversation_id":"8b5f","step_index":3,"state":"DONE","step_type":"agent_response","text_delta":"Done.","usage":{"input_tokens":19081,"output_tokens":65,"total_tokens":19146}}}"#,
+        r#"{"event":"result","result":{"conversation_id":"8b5f","status":"SUCCESS","response":"Done.","usage":{"input_tokens":37749,"output_tokens":379,"total_tokens":38128}}}"#,
+    ];
+
+    #[test]
+    fn tool_steps_start_once_and_finish() {
+        let mut parser = AntigravityParser::default();
+        let events: Vec<_> = TOOL_TURN
+            .iter()
+            .flat_map(|line| parser.parse_line(line))
+            .collect();
+        let starts: Vec<_> = events
+            .iter()
+            .filter_map(|event| match event {
+                AgentEvent::ToolCallStart { id, name, input } => Some((id, name, input)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(starts.len(), 1);
+        assert_eq!(starts[0].0, "agy-8b5f-2");
+        assert_eq!(starts[0].1, "run_command");
+        assert_eq!(starts[0].2["command"], "ls /tmp | head -3");
+        assert!(events.contains(&AgentEvent::ToolCallFinish {
+            id: "agy-8b5f-2".into(),
+            output: "after.txt\r\n".into(),
+            success: true,
+        }));
+    }
+
+    #[test]
+    fn the_context_is_the_last_calls_not_the_turns_total() {
+        let mut parser = AntigravityParser::default();
+        let events: Vec<_> = TOOL_TURN
+            .iter()
+            .flat_map(|line| parser.parse_line(line))
+            .collect();
+        assert!(events.contains(&AgentEvent::Usage {
+            input_tokens: 19081,
+            output_tokens: 65,
+            total_tokens: 19146,
+            context_window: None,
+        }));
+        // What the turn cost is still the whole of it.
+        assert!(events.iter().any(|event| matches!(
+            event,
+            AgentEvent::TurnMetrics(TurnMetrics {
+                input_tokens: Some(37749),
+                ..
+            })
+        )));
     }
 }
