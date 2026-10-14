@@ -1,6 +1,8 @@
 //! What GPUI's windows lack on macOS, asked of their `NSWindow`: the
-//! floating chat's panel behaviour (MonoCode `make_panel`) and hiding one
-//! window rather than the app (MonoCode `window.hide()`).
+//! floating chat's panel behaviour (MonoCode `make_panel`), hiding one
+//! window rather than the app (MonoCode `window.hide()`), its shadow kept
+//! to its rounded shape (MonoCode `invalidateShadow`), and the screen under
+//! the pointer (MonoCode `monitor_from_point(cursor_position())`).
 
 #[cfg(not(target_os = "macos"))]
 pub fn make_floating_panel(_: &gpui::Window) {}
@@ -8,8 +10,16 @@ pub fn make_floating_panel(_: &gpui::Window) {}
 #[cfg(not(target_os = "macos"))]
 pub fn order_out(_: &gpui::Window) {}
 
+#[cfg(not(target_os = "macos"))]
+pub fn invalidate_shadow(_: &gpui::Window) {}
+
+#[cfg(not(target_os = "macos"))]
+pub fn display_under_pointer() -> Option<u64> {
+    None
+}
+
 #[cfg(target_os = "macos")]
-pub use macos::{make_floating_panel, order_out};
+pub use macos::{display_under_pointer, invalidate_shadow, make_floating_panel, order_out};
 
 // objc 0.2's `msg_send!` expands to a `cargo-clippy` feature check.
 #[cfg(target_os = "macos")]
@@ -64,6 +74,72 @@ mod macos {
                 }
             }
             let _: () = msg_send![native, setHidesOnDeactivate: NO];
+        }
+    }
+
+    /// A window drawn with clear corners casts its shadow from what it drew
+    /// last: AppKit is asked again once it has a new size.
+    pub fn invalidate_shadow(window: &gpui::Window) {
+        let Some(native) = ns_window(window) else {
+            return;
+        };
+        // SAFETY: as in `ns_window`.
+        unsafe {
+            let _: () = msg_send![native, invalidateShadow];
+        }
+    }
+
+    /// AppKit's `NSPoint` and `NSRect`, in points with the origin at the
+    /// primary screen's bottom left.
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    struct Point {
+        x: f64,
+        y: f64,
+    }
+
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    struct Rect {
+        origin: Point,
+        size: Point,
+    }
+
+    /// The display the pointer is on, as GPUI names it (its
+    /// `CGDirectDisplayID`).
+    pub fn display_under_pointer() -> Option<u64> {
+        use objc::class;
+        // SAFETY: AppKit class methods and the screens they return, read on
+        // the main thread; nothing is kept past this call. The key is a
+        // static C string, copied by `stringWithUTF8String:`.
+        unsafe {
+            let pointer: Point = msg_send![class!(NSEvent), mouseLocation];
+            let screens: Id = msg_send![class!(NSScreen), screens];
+            if screens.is_null() {
+                return None;
+            }
+            let count: usize = msg_send![screens, count];
+            let key: Id =
+                msg_send![class!(NSString), stringWithUTF8String: c"NSScreenNumber".as_ptr()];
+            for ix in 0..count {
+                let screen: Id = msg_send![screens, objectAtIndex: ix];
+                let frame: Rect = msg_send![screen, frame];
+                let inside = pointer.x >= frame.origin.x
+                    && pointer.x < frame.origin.x + frame.size.x
+                    && pointer.y >= frame.origin.y
+                    && pointer.y < frame.origin.y + frame.size.y;
+                if !inside {
+                    continue;
+                }
+                let description: Id = msg_send![screen, deviceDescription];
+                let number: Id = msg_send![description, objectForKey: key];
+                if number.is_null() {
+                    return None;
+                }
+                let id: u32 = msg_send![number, unsignedIntValue];
+                return Some(u64::from(id));
+            }
+            None
         }
     }
 

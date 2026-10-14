@@ -2,7 +2,12 @@
 //! `#` painted in the project colour and `.` left clear, each with a rest
 //! and a talk frame swapped while a turn runs.
 
-use gpui::{AnyElement, Hsla, IntoElement, ParentElement, Pixels, Styled, div};
+use std::time::Duration;
+
+use gpui::{AnyElement, App, Hsla, IntoElement, ParentElement, Pixels, Styled, div};
+
+use crate::ui::scale::px;
+use crate::ui::spinner;
 
 /// One sprite frame, top row first.
 pub type Rows = [&'static str; 8];
@@ -197,6 +202,68 @@ pub fn pixel_sprite(rows: &Rows, size: Pixels, color: Hsla, mirrored: bool) -> A
         .into_any_element()
 }
 
+/// MonoCode `PixelMascot`'s motion by status (`pixel-bob`, `pixel-hop`,
+/// `pixel-frame-a` / `-b`): at rest it bobs unless held still, while it
+/// works it hops and talks, and while it waits on the user it stands.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MascotMotion {
+    Still,
+    Bob,
+    Hop,
+}
+
+/// `pixel-bob 3.6s step-end`: up for the second half of the beat.
+pub const BOB: Duration = Duration::from_millis(3600);
+/// `pixel-hop`: the bob at 1.2s.
+const HOP: Duration = Duration::from_millis(1200);
+/// `pixel-frame-a` / `-b`: the talk frame for the second half of 600ms.
+const TALK: Duration = Duration::from_millis(600);
+/// `translateY(-0.75px)` on the sprite's 16-unit grid.
+const LIFT: f32 = 0.75 / 16.0;
+
+/// Whether the sprite is up and on its talk frame, at `beat` and `talk`
+/// (each 0..1 through its period).
+pub fn pose(motion: MascotMotion, beat: f32, talk: f32) -> (bool, bool) {
+    match motion {
+        MascotMotion::Still => (false, false),
+        MascotMotion::Bob => (beat >= 0.5, false),
+        MascotMotion::Hop => (beat >= 0.5, talk >= 0.5),
+    }
+}
+
+/// A sprite `size` wide in `motion`, stepped by the app's clock
+/// (`ui/spinner.rs`); still while the system asks for less motion.
+pub fn moving_sprite(
+    mascot: &'static Mascot,
+    size: f32,
+    color: Hsla,
+    motion: MascotMotion,
+    cx: &App,
+) -> AnyElement {
+    let motion = if spinner::still(cx) {
+        MascotMotion::Still
+    } else {
+        motion
+    };
+    let beat = match motion {
+        MascotMotion::Hop => spinner::cycle(HOP),
+        _ => spinner::cycle(BOB),
+    };
+    let (lifted, talking) = pose(motion, beat, spinner::cycle(TALK));
+    div()
+        .relative()
+        .flex_none()
+        .size(px(size))
+        .top(px(if lifted { -size * LIFT } else { 0.0 }))
+        .child(pixel_sprite(
+            if talking { &mascot.talk } else { &mascot.rest },
+            px(size),
+            color,
+            false,
+        ))
+        .into_any_element()
+}
+
 /// MonoCode's 8×8 coin and star frames (`composerRunner.ts`).
 pub const COIN_FACE: Rows = [
     "........", "..####..", ".######.", "########", "########", ".######.", "..####..", "........",
@@ -213,6 +280,15 @@ pub const STAR_EDGE: Rows = [
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_mascot_moves_by_its_status() {
+        assert_eq!(pose(MascotMotion::Still, 0.9, 0.9), (false, false));
+        assert_eq!(pose(MascotMotion::Bob, 0.2, 0.9), (false, false));
+        assert_eq!(pose(MascotMotion::Bob, 0.7, 0.9), (true, false));
+        assert_eq!(pose(MascotMotion::Hop, 0.7, 0.2), (true, false));
+        assert_eq!(pose(MascotMotion::Hop, 0.2, 0.7), (false, true));
+    }
+
     use super::*;
 
     #[test]

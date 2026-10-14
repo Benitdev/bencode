@@ -24,8 +24,14 @@ const MONO_RUNTIME_MODE: &str = "auto";
 pub struct MonosState {
     /// The Mono whose conversation covers the workspace.
     pub view: Option<String>,
-    /// MonoCode `monoDetailsOpen`.
-    pub details_open: bool,
+    /// MonoCode `monoOverviewOpen`: the title bar's Overview pill is on.
+    /// Until the Overview panel is ported it shows the details panel.
+    pub overview_open: bool,
+    /// MonoCode `monoSettingsOpen`: the title bar's gear. Until the
+    /// settings dialog is ported it shows the details panel too.
+    pub settings_open: bool,
+    /// The Mono composer's emoji picker (MonoCode `EmojiPickerPopover`).
+    pub emoji: crate::ui::emoji_picker::EmojiPicker,
     /// Each Mono's `SOUL.md` as last read or saved.
     souls: HashMap<String, String>,
     pub soul_input: Entity<TextInput>,
@@ -66,7 +72,9 @@ impl MonosState {
         )];
         Self {
             view: None,
-            details_open: false,
+            overview_open: false,
+            settings_open: false,
+            emoji: Default::default(),
             souls: HashMap::new(),
             soul_input,
             soul_of: None,
@@ -188,8 +196,8 @@ impl BenCodeApp {
     /// MonoCode `createMono` then `onOpenMono`: a new Mono, opened.
     pub fn create_mono(&mut self, cx: &mut Context<Self>) {
         let id = self.add_mono(cx);
-        // Its details open with it, ready to be told what it works on.
-        self.monos.details_open = true;
+        // Its settings open with it, ready to be told what it works on.
+        self.monos.settings_open = true;
         self.open_mono(&id, cx);
     }
 
@@ -403,12 +411,81 @@ impl BenCodeApp {
         true
     }
 
-    pub fn toggle_mono_details(&mut self, cx: &mut Context<Self>) {
-        self.monos.details_open = !self.monos.details_open;
-        if !self.monos.details_open {
+    /// The panel beside the Mono's chat shows: its Overview or its
+    /// settings, both the details panel for now.
+    pub fn mono_details_shown(&self) -> bool {
+        self.monos.overview_open || self.monos.settings_open
+    }
+
+    /// MonoCode `onToggleMonoOverview`: the title bar's Overview pill.
+    pub fn toggle_mono_overview(&mut self, cx: &mut Context<Self>) {
+        self.monos.overview_open = !self.monos.overview_open;
+        self.monos.settings_open = false;
+        self.mono_details_changed(cx);
+    }
+
+    /// MonoCode `onOpenMonoSettings`: the title bar's gear.
+    pub fn toggle_mono_settings(&mut self, cx: &mut Context<Self>) {
+        self.monos.settings_open = !self.monos.settings_open;
+        self.monos.overview_open = false;
+        self.mono_details_changed(cx);
+    }
+
+    /// The details panel's own Hide.
+    pub fn close_mono_details(&mut self, cx: &mut Context<Self>) {
+        self.monos.overview_open = false;
+        self.monos.settings_open = false;
+        self.mono_details_changed(cx);
+    }
+
+    fn mono_details_changed(&mut self, cx: &mut Context<Self>) {
+        if !self.mono_details_shown() {
             self.save_soul_if_dirty(cx);
         }
         cx.notify();
+    }
+
+    /// MonoCode `switchMonoUsageLimitAccount`: a Mono stopped by its
+    /// account's limit carries on as another account. The provider session
+    /// belongs to the old account's profile, so a new one starts, which is
+    /// handed the Mono's standing context again; then it resumes.
+    pub fn switch_mono_usage_limit_account(
+        &mut self,
+        session_id: &str,
+        account_id: &str,
+        cx: &mut Context<Self>,
+    ) {
+        let limited = self
+            .thread(session_id)
+            .is_some_and(|thread| thread.usage_limit.is_some());
+        if !limited || self.is_agent_running_in(session_id) || !self.is_mono_session(session_id) {
+            return;
+        }
+        let Some(session) = self.sessions.iter().find(|s| s.id == session_id) else {
+            return;
+        };
+        if self.session_account_id(session) == account_id
+            || !self.account_exists(&session.harness, account_id)
+        {
+            return;
+        }
+        if let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id) {
+            session.provider_account_id = Some(account_id.to_string());
+            session.provider_session_id = None;
+        }
+        self.persist_session(session_id);
+        self.resume_after_limit(session_id, cx);
+        cx.notify();
+    }
+
+    /// The Mono's greeting fills its chat: it has no message yet. Its
+    /// mascot bobs, so the clock wakes for it (`start_clock`).
+    pub fn mono_greeting_shown(&self) -> bool {
+        self.mono_covers()
+            && self
+                .mono_view_session()
+                .and_then(|id| self.sessions.iter().find(|s| s.id == id))
+                .is_some_and(|session| !session.blocks.iter().any(|b| b.role == "user"))
     }
 
     /// MonoCode `removeMono`: its conversation goes with it; its folder of
@@ -504,6 +581,8 @@ impl BenCodeApp {
             },
             cx,
         );
+        // Its composer says "Message {name}".
+        self.sync_prompt_placeholder(cx);
     }
 
     /// MonoCode `saveMonoMascot`.

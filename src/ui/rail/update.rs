@@ -20,8 +20,9 @@ use crate::ui::git_changes_panel::spinning_icon;
 use crate::ui::icons::ExtraIcon;
 use crate::ui::scale::px;
 
-/// MonoCode's `/monocode.png` beside "Updated to": BenCode's own icon.
-static APP_ICON: LazyLock<Arc<Image>> = LazyLock::new(|| {
+/// MonoCode's `/monocode.png` beside "Updated to" (and in the floating
+/// chat when its Mono is gone): BenCode's own icon.
+pub(crate) static APP_ICON: LazyLock<Arc<Image>> = LazyLock::new(|| {
     Arc::new(Image::from_bytes(
         ImageFormat::Png,
         include_bytes!("../../../assets/app-icon.png").to_vec(),

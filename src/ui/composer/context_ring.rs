@@ -92,15 +92,18 @@ fn meter_text(used: i64, window: i64) -> (f32, String, String) {
 
 impl BenCodeApp {
     /// The ring, its hover card, and the pinned card with "Compact now".
+    /// Without `compact` (a Mono's chat, which rotates its threads itself)
+    /// there is nothing to pin.
     pub(super) fn context_meter(
         &self,
         session: &SessionRow,
+        compact: bool,
         cx: &Context<Self>,
     ) -> Option<AnyElement> {
         let used = session.context_used?.max(0);
         let window = session.context_window.filter(|w| *w > 0)?;
         let (share, headline, detail) = meter_text(used, window);
-        let compactable = can_compact(&session.harness);
+        let compactable = compact && can_compact(&session.harness);
         let pinned = compactable && self.composer_menus.context_pinned;
         let card_lines = (headline.clone(), detail.clone());
         let ring = div()

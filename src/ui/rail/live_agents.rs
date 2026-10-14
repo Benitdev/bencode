@@ -4,8 +4,6 @@
 //! a click jumps to the thread in its project. The list itself is
 //! `app/live_agents.rs`.
 
-use std::time::Duration;
-
 use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
@@ -28,8 +26,6 @@ const LIVE_AGENT_CAP: usize = 4;
 const EXPANDED_HEIGHT: f32 = 0.45;
 /// MonoCode `text-emerald-400`.
 const EMERALD_400: u32 = 0x34d399;
-/// Tailwind `animate-pulse`.
-const PULSE: Duration = Duration::from_secs(2);
 
 /// What the card keeps between frames.
 #[derive(Default)]
@@ -290,11 +286,11 @@ impl BenCodeApp {
 /// `size-1.5 rounded-full bg-accent motion-safe:animate-pulse`, stepped by
 /// the app's clock (`ui/spinner.rs`).
 fn pulse_dot(accent: Hsla, cx: &App) -> AnyElement {
-    let dot = div().flex_none().size(px(6.0)).rounded_full().bg(accent);
-    if spinner::still(cx) {
-        return dot.into_any_element();
-    }
-    // Full, down to half at the midpoint, and back.
-    let dip = (spinner::cycle(PULSE) * std::f32::consts::TAU).cos() * 0.25 + 0.75;
-    dot.opacity(dip).into_any_element()
+    div()
+        .flex_none()
+        .size(px(6.0))
+        .rounded_full()
+        .bg(accent)
+        .opacity(spinner::pulse(cx))
+        .into_any_element()
 }

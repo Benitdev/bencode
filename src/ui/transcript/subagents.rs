@@ -33,8 +33,6 @@ impl BenCodeApp {
         cx: &Context<Self>,
     ) -> AnyElement {
         div()
-            .flex()
-            .flex_col()
             .min_w_0()
             .children(
                 group
@@ -214,14 +212,10 @@ impl BenCodeApp {
         let mono = cx.theme().mono_family.clone();
         let danger = colors.danger;
         div()
-            .flex()
-            .flex_col()
             .min_w_0()
             .child(header)
             .child(
                 div()
-                    .flex()
-                    .flex_col()
                     .min_w_0()
                     .pb_1()
                     .when(!all.is_empty(), |el| {

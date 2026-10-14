@@ -46,6 +46,15 @@ impl BenCodeApp {
         if self.skill_draft.is_some() {
             return;
         }
+        // MonoCode `MonoComposer` has no `/` or `@` pickers.
+        if self
+            .selected_session_id
+            .as_deref()
+            .is_some_and(|id| self.is_mono_session(id))
+        {
+            self.token_picker = None;
+            return;
+        }
         let was = self.token_picker;
         let slash = crate::ui::composer::tokens::slash_token_at(&text, caret);
         let mention = slash

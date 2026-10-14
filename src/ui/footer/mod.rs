@@ -10,6 +10,7 @@ mod usage_chip;
 
 pub(crate) use account_views::{account_status_label, usage_meter};
 pub use process_layer::ProcessLayer;
+pub use usage_chip::UsageChipVariant;
 
 use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
@@ -56,7 +57,6 @@ impl BenCodeApp {
         let glass = self.glass(cx);
         let colors = &cx.theme().colors;
         let fg = colors.fg;
-        let refreshing = self.usage.refreshing();
         let terminal_open = self.is_terminal_open();
         let running = self.running_terminals();
 
@@ -73,36 +73,9 @@ impl BenCodeApp {
             .text_size(px(11.0))
             .text_color(fg.opacity(0.55))
             .map(|el| match (&target, harness) {
-                (Some(target), _) => el.child(self.render_usage_chip(target, cx)).child(
-                    div()
-                        .id("usage-refresh")
-                        .flex()
-                        .flex_none()
-                        .items_center()
-                        .justify_center()
-                        .size(px(18.0))
-                        .rounded(px(4.0))
-                        .map(|el| {
-                            if refreshing {
-                                el.opacity(0.5).child(spinning_icon(
-                                    "usage-refresh-spin".into(),
-                                    IconName::RefreshCw,
-                                    IconSize::Xs,
-                                    fg.opacity(0.4),
-                                ))
-                            } else {
-                                el.cursor_pointer()
-                                    .hover(move |s| s.bg(fg.opacity(0.10)))
-                                    .on_click(cx.listener(|this, _, _, cx| this.refresh_usage(cx)))
-                                    .child(
-                                        Icon::new(IconName::RefreshCw)
-                                            .size(IconSize::Xs)
-                                            .color(fg.opacity(0.4)),
-                                    )
-                            }
-                        })
-                        .tooltip(Tooltip::text("Refresh usage")),
-                ),
+                (Some(target), _) => el
+                    .child(self.render_usage_chip(target, UsageChipVariant::Footer, cx))
+                    .child(self.render_usage_refresh(UsageChipVariant::Footer, cx)),
                 // MonoCode `SessionChip`: a harness whose usage cannot be read.
                 (None, Some(id)) => el.child(
                     div()
@@ -181,6 +154,50 @@ impl BenCodeApp {
                         .child("Terminal"),
                 )
             })
+    }
+
+    /// MonoCode `USAGE_REFRESH_CLASSES`: Refresh beside the usage chips,
+    /// `size-4.5 rounded` in the footer, `size-6.5 rounded-md` under a
+    /// Mono's composer; turning while it reads.
+    pub(crate) fn render_usage_refresh(
+        &self,
+        variant: UsageChipVariant,
+        cx: &Context<Self>,
+    ) -> impl IntoElement {
+        let fg = cx.theme().colors.fg;
+        let composer = variant == UsageChipVariant::Composer;
+        div()
+            .id(if composer {
+                "usage-refresh-composer"
+            } else {
+                "usage-refresh"
+            })
+            .flex()
+            .flex_none()
+            .items_center()
+            .justify_center()
+            .size(px(if composer { 26.0 } else { 18.0 }))
+            .rounded(px(if composer { 6.0 } else { 4.0 }))
+            .map(|el| {
+                if self.usage.refreshing() {
+                    el.opacity(0.5).child(spinning_icon(
+                        "usage-refresh-spin".into(),
+                        IconName::RefreshCw,
+                        IconSize::Xs,
+                        fg.opacity(0.4),
+                    ))
+                } else {
+                    el.cursor_pointer()
+                        .hover(move |s| s.bg(fg.opacity(if composer { 0.08 } else { 0.10 })))
+                        .on_click(cx.listener(|this, _, _, cx| this.refresh_usage(cx)))
+                        .child(
+                            Icon::new(IconName::RefreshCw)
+                                .size(IconSize::Xs)
+                                .color(fg.opacity(0.4)),
+                        )
+                }
+            })
+            .tooltip(Tooltip::text("Refresh usage"))
     }
 
     /// BenCode's own: shows the in-app browser (a new tab when none is open),

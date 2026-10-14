@@ -14,10 +14,11 @@ use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
-use gpui::{AsyncWindowContext, Context, WeakEntity, Window, px, size};
+use gpui::{AsyncWindowContext, Context, ListOffset, WeakEntity, Window, px, size};
 
-use crate::app::BenCodeApp;
 use crate::app::file_pane::PaneTab;
+use crate::app::{BenCodeApp, subagents};
+use crate::ui::transcript::turns::{self, Item, Row};
 
 /// Draws per case, unless `BENCODE_FRAME_BENCH` gives a number (a long run
 /// leaves time to sample the process).
@@ -66,6 +67,124 @@ const FILE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/src/app.rs");
 /// A commit this repository's history has: one Rust file, a screen of
 /// changed lines.
 const COMMIT: &str = "4ddb50b09cbcf9f872d26cc07f4a9ade047ed27c";
+
+/// The subagent run with the longest trail: its thread and block.
+fn longest_run(app: &BenCodeApp) -> Option<(String, usize)> {
+    app.sessions
+        .iter()
+        .flat_map(|s| s.blocks.iter().enumerate().map(move |(ix, b)| (s, ix, b)))
+        .map(|(s, ix, b)| (subagents::steps(b).len(), s.id.clone(), ix))
+        .max_by_key(|(steps, ..)| *steps)
+        .filter(|(steps, ..)| *steps > 0)
+        .map(|(_, id, ix)| (id, ix))
+}
+
+/// The thread of the longest run, every turn's fold open.
+fn open_longest_run_thread(app: &mut BenCodeApp, cx: &mut Context<BenCodeApp>) {
+    app.set_terminal_open(false, cx);
+    let Some((id, _)) = longest_run(app) else {
+        return;
+    };
+    app.open_session(id.clone(), cx);
+    if let Some(session) = app.sessions.iter().find(|s| s.id == id) {
+        let users = session.blocks.iter().filter(|b| b.role == "user");
+        app.transcript_ui
+            .open_folds
+            .extend(users.map(|b| b.id.clone()));
+    }
+}
+
+/// The longest run opened onto its trail and scrolled to.
+fn open_longest_run(app: &mut BenCodeApp, _: &mut Context<BenCodeApp>) {
+    let Some((id, ix)) = longest_run(app) else {
+        return;
+    };
+    let Some(session) = app.sessions.iter().find(|s| s.id == id) else {
+        return;
+    };
+    let Some(view) = app.transcripts.get(&id) else {
+        return;
+    };
+    let group = |row: &Row| match *row {
+        Row::Item { turn, item } | Row::FoldItem { turn, item, .. } => {
+            match &view.turns[turn].items[item] {
+                Item::Subagents(group) | Item::Activity(group) => {
+                    Some(group).filter(|group| group.contains(&ix))
+                }
+                Item::Block(_) => None,
+            }
+        }
+        _ => None,
+    };
+    let Some((row, group)) = view
+        .rows
+        .iter()
+        .enumerate()
+        .find_map(|(row, item)| Some((row, group(item)?)))
+    else {
+        return;
+    };
+    // A run inside a phase shows once the phase is open; its own trail's
+    // phases open too, as the live one is while the run works.
+    let mut phases = turns::build_phases(&session.blocks, group);
+    let steps: Vec<_> = subagents::steps(&session.blocks[ix])
+        .iter()
+        .map(subagents::step_block)
+        .collect();
+    let all: Vec<usize> = (0..steps.len()).collect();
+    phases.extend(turns::build_phases(&steps, &all));
+    let ui = &mut app.transcript_ui;
+    ui.phase_open
+        .extend(phases.into_iter().map(|phase| (phase.id, true)));
+    ui.subagent_open.insert(session.blocks[ix].id.clone(), true);
+    ui.reflow += 1;
+    BENCH_RUN.with(|cell| cell.set(Some(row)));
+    {
+        view.list.scroll_to(ListOffset {
+            item_ix: row,
+            offset_in_item: px(0.0),
+        });
+    }
+}
+
+thread_local! {
+    /// The list row of the open run, for the case that streams into it.
+    static BENCH_RUN: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
+}
+
+/// A step lands on the open run, as one does while it works: its row is
+/// measured again, as the live tail's rows are.
+fn stream_into_run(app: &mut BenCodeApp, cx: &mut Context<BenCodeApp>) {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+    let Some((id, ix)) = longest_run(app) else {
+        return;
+    };
+    let Some(session) = app.sessions.iter_mut().find(|s| s.id == id) else {
+        return;
+    };
+    let call = session.blocks[ix]
+        .tool
+        .as_ref()
+        .and_then(|t| t.get("callId"))
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+    let n = NEXT.fetch_add(1, Ordering::Relaxed);
+    let step = crate::harness::AgentStep {
+        id: format!("bench-{n}"),
+        kind: crate::harness::StepKind::Tool,
+        text: format!("grep -rn \"bench {n}\" src | head"),
+        tool_name: Some("Bash".into()),
+        status: Some("completed".into()),
+        detail: None,
+    };
+    subagents::record_step(session, &call, &step);
+    if let (Some(view), Some(row)) = (app.transcripts.get(&id), BENCH_RUN.with(|c| c.get())) {
+        view.list.remeasure_items(row..row + 1);
+    }
+    cx.notify();
+}
 
 /// The cases in the order they run; each starts from the window the one
 /// before it left. `thread` is the long thread the bench opened.
@@ -155,6 +274,21 @@ fn cases(thread: Option<String>) -> Vec<Case> {
                 app.set_terminal_open(true, cx);
             }),
             notify_app,
+        ),
+        case(
+            "app notified, a long subagent run, closed",
+            Box::new(open_longest_run_thread),
+            notify_app,
+        ),
+        case(
+            "app notified, a long subagent run, open",
+            Box::new(open_longest_run),
+            notify_app,
+        ),
+        case(
+            "a long subagent run open, a step streamed in",
+            Box::new(nothing),
+            stream_into_run,
         ),
     ]
 }

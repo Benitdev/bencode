@@ -2,6 +2,8 @@
 //! `usageLimit.ts`): an amber tab on the composer — "Usage limit reached",
 //! when it resets, and Resume (once reset) or Resume at reset, which sends
 //! "Continue from where you left off." on its own once the limit lifts.
+//! A Mono's chat has its own card instead (`MonoUsageLimitNotice`): the
+//! model and account to keep going on, and the same resume.
 
 use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
@@ -13,7 +15,16 @@ use gpui::{
 use crate::ui::scale::px;
 use jiff::{Timestamp, tz::TimeZone};
 
+use super::menus::{over_composer, popover_anchor};
+use super::model_picker::ModelsAnchor;
 use crate::app::{BenCodeApp, now_ms};
+use crate::db::SessionRow;
+use crate::harness::HarnessKind;
+use crate::harness::accounts::supports_accounts;
+use crate::ui::HarnessIcon;
+use crate::ui::app_callback::app_callback;
+use ely_gpui_component::buttons::ButtonVariant;
+use ely_gpui_component::menus::{DropdownMenu, Menu, MenuItem};
 
 /// MonoCode `USAGE_LIMIT_RESUME_GRACE_MS`: providers can still refuse right
 /// at the reset.
@@ -93,6 +104,191 @@ pub fn format_reset(resets_at: i64, now: i64, tz: &TimeZone) -> String {
 }
 
 impl BenCodeApp {
+    /// MonoCode `ResumeControls`: Resume once the limit has reset, else
+    /// Resume at reset, or Resuming at reset while that is armed.
+    fn resume_control(
+        &self,
+        session_id: &str,
+        limit: UsageLimit,
+        waiting: bool,
+        cx: &Context<Self>,
+    ) -> gpui::Stateful<gpui::Div> {
+        let colors = &cx.theme().colors;
+        let fg = colors.fg;
+        let hover = fg.opacity(0.10);
+        let button = |id: &'static str, icon: IconName, label: &'static str| {
+            div()
+                .id(id)
+                .flex()
+                .flex_none()
+                .items_center()
+                .gap_1p5()
+                .h(px(24.0))
+                .px_1p5()
+                .rounded(px(6.0))
+                .cursor_pointer()
+                .hover(move |s| s.bg(hover).text_color(fg))
+                .child(Icon::new(icon).size(IconSize::Xs).color(fg.opacity(0.7)))
+                .child(label)
+        };
+        let sid = session_id.to_string();
+        if !waiting {
+            button("usage-resume", IconName::Play, "Resume")
+                .on_click(cx.listener(move |this, _, _, cx| this.resume_after_limit(&sid, cx)))
+        } else if limit.resume_at_reset {
+            button("usage-armed", IconName::Clock, "Resuming at reset")
+                .text_color(colors.warning)
+                .tooltip(Tooltip::text("Cancel the automatic resume"))
+                .on_click(cx.listener(move |this, _, _, cx| this.arm_usage_resume(&sid, false, cx)))
+        } else {
+            button("usage-arm", IconName::Clock, "Resume at reset")
+                .tooltip(Tooltip::text("Continue this session once the limit resets"))
+                .on_click(cx.listener(move |this, _, _, cx| this.arm_usage_resume(&sid, true, cx)))
+        }
+    }
+
+    /// MonoCode `MonoUsageLimitNotice` (`UsageLimitNotice variant="mono"`):
+    /// a card over a Mono's composer, `mx-1.5 mb-2 rounded-lg border
+    /// border-amber-400/20 bg-amber-400/6 px-3 py-2.5 text-[12px]`, saying
+    /// the conversation is kept, when the limit lifts, and offering another
+    /// model, another account and the resume.
+    pub(super) fn render_mono_usage_limit(
+        &self,
+        session: &SessionRow,
+        cx: &Context<Self>,
+    ) -> Option<AnyElement> {
+        let limit = self.thread(&session.id)?.usage_limit?;
+        let colors = &cx.theme().colors;
+        let fg = colors.fg;
+        let now = now_ms();
+        let waiting = limit.waiting(now);
+        let provider = HarnessKind::from_id(&session.harness)
+            .map_or("Usage limit reached".to_string(), |kind| {
+                format!("{} usage limit reached", kind.label())
+            });
+        let resets = limit.resets_at.map(|at| {
+            if waiting {
+                format!("Resets {}", format_reset(at, now, &TimeZone::system()))
+            } else {
+                "Limit has reset".to_string()
+            }
+        });
+        // MonoCode `ModelPicker triggerLabel="Choose another model"`.
+        let open = self.composer_menus.models_only == Some(ModelsAnchor::UsageLimit);
+        let model = super::composer_chip(
+            "mono-limit-model",
+            HarnessIcon::new(&session.harness)
+                .size(px(16.0))
+                .into_any_element(),
+            "Choose another model".to_string(),
+            None,
+            open,
+            240.0,
+            cx,
+        )
+        .on_click(
+            cx.listener(|this, _, _, cx| this.toggle_models_only(ModelsAnchor::UsageLimit, cx)),
+        );
+        let model = div()
+            .relative()
+            .flex_none()
+            .child(popover_anchor(model, cx))
+            .children(
+                self.render_models_only(ModelsAnchor::UsageLimit, false, cx)
+                    .map(over_composer),
+            );
+        Some(
+            div()
+                .mx_1p5()
+                .mb_2()
+                .rounded(px(8.0))
+                .border_1()
+                .border_color(colors.warning.opacity(0.2))
+                .bg(colors.warning.opacity(0.06))
+                .px_3()
+                .py(px(10.0))
+                .text_size(px(12.0))
+                .text_color(fg.opacity(0.6))
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap_2()
+                        .child(
+                            Icon::new(IconName::Gauge)
+                                .size(IconSize::Xs)
+                                .color(colors.warning),
+                        )
+                        .child(
+                            div()
+                                .flex_none()
+                                .text_color(fg.opacity(0.85))
+                                .child(provider),
+                        ),
+                )
+                .child(
+                    // `pl-5.5`: under the words, past the gauge.
+                    div()
+                        .pl(px(22.0))
+                        .child(div().mt_1().line_height(px(19.5)).child(
+                            "Your conversation is saved. Choose another model or account to \
+                                 keep going.",
+                        ))
+                        .children(
+                            resets
+                                .map(|line| div().mt_1().text_color(fg.opacity(0.45)).child(line)),
+                        )
+                        .child(
+                            div()
+                                .mt_2()
+                                .flex()
+                                .flex_wrap()
+                                .items_center()
+                                .gap_x_3()
+                                .gap_y_1p5()
+                                .child(model)
+                                .children(self.render_mono_account_picker(session, cx))
+                                .child(self.resume_control(&session.id, limit, waiting, cx)),
+                        ),
+                )
+                .into_any_element(),
+        )
+    }
+
+    /// MonoCode `AccountPicker`: the provider's other accounts, the pick
+    /// moving the conversation onto it and resuming.
+    fn render_mono_account_picker(
+        &self,
+        session: &SessionRow,
+        cx: &Context<Self>,
+    ) -> Option<AnyElement> {
+        if !supports_accounts(&session.harness) {
+            return None;
+        }
+        let current = self.session_account_id(session);
+        let others: Vec<_> = self
+            .provider_accounts(&session.harness)
+            .into_iter()
+            .filter(|account| account.id != current)
+            .collect();
+        if others.is_empty() {
+            return None;
+        }
+        let menu = others.into_iter().fold(Menu::new(), |menu, account| {
+            let (sid, id) = (session.id.clone(), account.id.clone());
+            menu.item(
+                MenuItem::new(account.label.clone()).on_click(app_callback(cx, move |this, cx| {
+                    this.switch_mono_usage_limit_account(&sid, &id, cx)
+                })),
+            )
+        });
+        Some(
+            DropdownMenu::new("mono-limit-account", "Choose another account", menu)
+                .variant(ButtonVariant::Secondary)
+                .into_any_element(),
+        )
+    }
+
     pub fn record_usage_limit(&mut self, session_id: &str, resets_at: Option<i64>) {
         self.thread_mut(session_id).usage_limit = Some(UsageLimit {
             resets_at,
@@ -168,41 +364,7 @@ impl BenCodeApp {
         };
         let fg = colors.fg;
         let hover = fg.opacity(0.10);
-        let button = |id: &'static str, icon: IconName, label: &'static str| {
-            div()
-                .id(id)
-                .flex()
-                .flex_none()
-                .items_center()
-                .gap_1p5()
-                .h(px(24.0))
-                .px_1p5()
-                .rounded(px(6.0))
-                .cursor_pointer()
-                .hover(move |s| s.bg(hover).text_color(fg))
-                .child(Icon::new(icon).size(IconSize::Xs).color(fg.opacity(0.7)))
-                .child(label)
-        };
-        let action = {
-            let sid = session_id.to_string();
-            if !waiting {
-                button("usage-resume", IconName::Play, "Resume")
-                    .on_click(cx.listener(move |this, _, _, cx| this.resume_after_limit(&sid, cx)))
-            } else if limit.resume_at_reset {
-                button("usage-armed", IconName::Clock, "Resuming at reset")
-                    .text_color(colors.warning)
-                    .tooltip(Tooltip::text("Cancel the automatic resume"))
-                    .on_click(
-                        cx.listener(move |this, _, _, cx| this.arm_usage_resume(&sid, false, cx)),
-                    )
-            } else {
-                button("usage-arm", IconName::Clock, "Resume at reset")
-                    .tooltip(Tooltip::text("Continue this session once the limit resets"))
-                    .on_click(
-                        cx.listener(move |this, _, _, cx| this.arm_usage_resume(&sid, true, cx)),
-                    )
-            }
-        };
+        let action = self.resume_control(session_id, limit, waiting, cx);
         let dismiss_sid = session_id.to_string();
         Some(
             div()

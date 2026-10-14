@@ -17,6 +17,7 @@ pub mod mentions;
 pub(crate) mod menus;
 pub mod mode_commands;
 mod model_picker;
+pub mod mono;
 pub mod new_skill;
 pub mod new_worktree;
 pub mod note_card;
@@ -644,7 +645,7 @@ impl BenCodeApp {
                     .flex()
                     .flex_none()
                     .items_center()
-                    .children(session.and_then(|s| self.context_meter(s, cx))),
+                    .children(session.and_then(|s| self.context_meter(s, true, cx))),
             )
     }
 
@@ -957,9 +958,14 @@ impl BenCodeApp {
         let open = self.composer_popover.is_some()
             || self.composer_menus.recent_open
             || self.composer_menus.workspace_menu.is_some()
-            || self.composer_menus.context_pinned;
+            || self.composer_menus.context_pinned
+            || self.composer_menus.pill_menu.is_some()
+            || self.monos.emoji.is_open();
         if open {
             self.composer_menus.context_pinned = false;
+            self.composer_menus.pill_menu = None;
+            self.composer_menus.models_only = None;
+            self.monos.emoji.close();
             self.composer_menus.workspace_menu = None;
             self.composer_menus.recent_open = false;
             self.composer_menus.model_submenu = None;
@@ -995,7 +1001,6 @@ impl BenCodeApp {
     /// a dark arrow, or a filled square to stop. While this thread runs an
     /// empty composer offers Stop; typing turns it back into Send (queue).
     fn render_send_button(&self, running_here: bool, cx: &Context<Self>) -> impl IntoElement {
-        let colors = &cx.theme().colors;
         // A card can be sent on its own.
         let typed = self.composer_has_value(cx);
         let removed = self
@@ -1007,13 +1012,7 @@ impl BenCodeApp {
         let enabled = (running_here || typed) && !(removed && !stop);
         // MonoCode `html.has-user-accent .primary-action`: the accent the
         // user picked, else the light button.
-        let accent = crate::ui::appearance::user_accent(cx);
-        let (bg, ink) = match (accent, enabled) {
-            (Some(accent), true) => (accent.color, accent.foreground),
-            (Some(accent), false) => (accent.color.opacity(0.28), colors.fg.opacity(0.35)),
-            (None, true) => (colors.fg, colors.bg),
-            (None, false) => (colors.fg.opacity(0.3), colors.bg.opacity(0.4)),
-        };
+        let (bg, ink, hover) = crate::ui::appearance::primary_action(enabled, cx);
         let drafting = self
             .selected_session_id
             .as_deref()
@@ -1027,10 +1026,6 @@ impl BenCodeApp {
             "Save draft"
         } else {
             "Send"
-        };
-        let hover = match accent {
-            Some(accent) => crate::ui::appearance::mix(accent.color, colors.fg, 0.12),
-            None => colors.fg.opacity(0.9),
         };
         div()
             .id("composer-send-btn")

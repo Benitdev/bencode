@@ -19,6 +19,8 @@ mod state;
 mod update;
 pub(crate) mod widgets;
 
+pub(crate) use update::APP_ICON;
+
 use std::cell::Cell;
 use std::rc::Rc;
 

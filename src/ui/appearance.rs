@@ -458,6 +458,26 @@ pub fn user_accent(cx: &App) -> Option<UserAccent> {
     AppearanceTokens::get(cx).user_accent
 }
 
+/// MonoCode `.primary-action` (Send): the accent the user picked, else the
+/// light button; dimmed while it cannot be pressed. Its fill, its ink and
+/// its fill under the pointer.
+pub fn primary_action(enabled: bool, cx: &App) -> (Hsla, Hsla, Hsla) {
+    use ely_gpui_component::theme::ActiveTheme;
+    let colors = &cx.theme().colors;
+    let accent = user_accent(cx);
+    let (bg, ink) = match (accent, enabled) {
+        (Some(accent), true) => (accent.color, accent.foreground),
+        (Some(accent), false) => (accent.color.opacity(0.28), colors.fg.opacity(0.35)),
+        (None, true) => (colors.fg, colors.bg),
+        (None, false) => (colors.fg.opacity(0.3), colors.bg.opacity(0.4)),
+    };
+    let hover = match accent {
+        Some(accent) => mix(accent.color, colors.fg, 0.12),
+        None => colors.fg.opacity(0.9),
+    };
+    (bg, ink, hover)
+}
+
 /// MonoCode `isHexColor`: `#rrggbb`.
 pub fn parse_hex(hex: &str) -> Option<Rgba> {
     let digits = hex.strip_prefix('#')?;

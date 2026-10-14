@@ -254,7 +254,39 @@ impl BenCodeApp {
             chips.is_none() && !text.contains('\n') && text.chars().count() <= CHARS_PER_LINE;
         let group = SharedString::from(format!("user-msg-{key}"));
         let accent = crate::ui::appearance::user_accent(cx);
+        // A Mono's reaction sits on the message it answers (MonoCode
+        // `MonoReactionBadge`).
+        let turn = self
+            .transcripts
+            .get(&session.id)
+            .and_then(|view| view.turns.iter().find(|turn| turn.user == Some(ix)));
+        let mono_chat = turn.is_some_and(|turn| turn.mono);
+        let reaction = turn.and_then(|turn| turn.reaction.clone());
+        let badge = reaction.map(|emoji| super::mono::reaction_badge(&emoji, cx));
+        // In a Mono's chat a few emoji stand alone, like a reaction: no
+        // bubble, time or actions.
+        if mono_chat && chips.is_none() && note.is_none() && crate::monos::is_emoji_only(&text) {
+            return div()
+                .w_full()
+                .flex()
+                .flex_col()
+                .items_end()
+                .pt_1p5()
+                .pr_4()
+                .pb_1()
+                .pl(px(56.0))
+                .child(
+                    div()
+                        .relative()
+                        .text_size(px(60.0))
+                        .line_height(px(60.0))
+                        .child(text.trim().to_string())
+                        .children(badge),
+                )
+                .into_any_element();
+        }
         let bubble = div()
+            .relative()
             .min_w_0()
             .max_w(px(USER_BUBBLE_MAX_WIDTH))
             .px_3()
@@ -288,7 +320,8 @@ impl BenCodeApp {
             )
             .when(clamps, |el| {
                 el.child(self.show_more_toggle(&key, expanded, cx))
-            });
+            })
+            .children(badge);
         let draft = block.extra.get("draft").and_then(|d| d.as_bool()) == Some(true);
         // MonoCode `edit-last-turn-bubble`: the message being edited.
         let editing = self.editing_last_turn.as_deref() == Some(session.id.as_str())
@@ -632,8 +665,12 @@ impl BenCodeApp {
                                 ))
                         }
                     })
-                    .children(self.handoff_button(session, turn, cx))
-                    .children(self.turn_metrics_badge(session, turn, cx)),
+                    // A Mono's turn keeps copy, save as note and the time
+                    // (MonoCode `hideTurnMetrics`, and no handoff).
+                    .when(!turn.mono, |el| {
+                        el.children(self.handoff_button(session, turn, cx))
+                            .children(self.turn_metrics_badge(session, turn, cx))
+                    }),
             )
             .children(
                 turn.range

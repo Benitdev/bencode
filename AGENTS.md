@@ -141,7 +141,7 @@ bencode/
 | `source_control.rs` | The Changes panel's git and PR actions: stage, discard, commit, push, pull, sync, create / view PR |
 | `tab_scope.rs`, `tab_history.rs`, `workspace_nav.rs` | Which tabs belong to which project or worktree; Back / Forward |
 | `reminders.rs`, `model_catalog.rs` | Session reminders; live model catalogs |
-| `monos.rs` | Monos: create / open / delete / reset, the one in view (over the tabs), its projects, its soul's autosave, the standing context a turn carries and its record |
+| `monos.rs` | Monos: create / open / delete / reset, the one in view (over the tabs), its Overview and settings toggles (both Details for now), its projects, its soul's autosave, the standing context a turn carries and its record, the account switch on a usage limit |
 | `alerts.rs` | Sounds and notifications: the Settings switches, the macOS permission, the project's mutes, what a banner says, a click opening its thread or reminder |
 | `harness_updates.rs` | The launch check for CLIs behind their latest release; Update / Update all through each CLI's own updater, then its models reloaded |
 | `usage.rs` | Provider usage snapshots for the footer, per account: load once, Refresh, the 30s countdown tick |
@@ -167,13 +167,13 @@ bencode/
 | `sidebar*.rs` | Sidebar: Sessions tab (cards, folders, menus, popovers) |
 | `file_tree/` | Sidebar: Explorer tab |
 | `git_changes_panel/` (`tree.rs`, `graph.rs`, `confirm.rs`), `git_menus.rs` | Sidebar: Changes tab and commit graph |
-| `titlebar/` | Title bar and workspace tabs |
+| `titlebar/` | Title bar and workspace tabs; `mono.rs` is the one over a Mono (its title, Overview, settings) |
 | `pane_tree.rs`, `layout/` | Split chat panes and the layout tree |
-| `transcript/` | Turns, blocks, activity folds, the Tasks card (`task_list.rs`), subagent rows and their trail (`subagents.rs`), find in conversation, prompt outline, text selection |
-| `composer/` | Prompt composer and its pickers, cards, runner |
+| `transcript/` | Turns, blocks, activity folds, the Tasks card (`task_list.rs`), subagent rows and their trail (`subagents.rs`), find in conversation, prompt outline, text selection; `mono.rs` is what a Mono's chat draws in either window (day pills, reactions, the signature pill, the work status) |
+| `composer/` | Prompt composer and its pickers, cards, runner; `mono.rs` is a Mono's composer in BenCode's window |
 | `file_pane.rs` | The pane beside the chat and its tab strip |
 | `browser_pane.rs` | A browser tab: toolbar, address bar, the page's box |
-| `monos.rs`, `rail/monos.rs`, `mono_float/` | A Mono in the main area (header, chat, Details: look, projects, soul); the rail's Monos section; the floating chat, a window and view of its own (`MonoFloat`) |
+| `monos.rs`, `rail/monos.rs`, `mono_float/` | A Mono in the main area (chat, greeting, Details: look, projects, soul); the rail's Monos section; the floating chat, a window and view of its own (`MonoFloat`) |
 | `editor_pane/` | Code editor: open files, saves, disk sync |
 | `diff_viewer.rs`, `diff_model.rs` | Review of working-tree changes and commits |
 | `terminal_pane/` | Terminal dock: tabs, splits (`split.rs`), menus, running jobs, host sessions (`sessions.rs`) |
@@ -183,8 +183,8 @@ bencode/
 | `settings_parts.rs` | What every Settings page is built from: `SettingsPage` (title and line), `SettingsGroup` (a titled card), `SettingsRow` |
 | `settings_accounts.rs`, `settings_agy_accounts.rs`, `settings_appearance.rs`, `settings_shortcuts.rs`, `settings_worktrees.rs`, `settings_integrations.rs` | Settings pages: provider accounts, appearance, shortcuts (read only, keys looked up in `commands.rs`'s keymap), worktrees, integrations (GitHub accounts, Backlog) |
 | `quick_open.rs`, `lightbox.rs`, `link_dialog.rs`, `reminder_notices.rs`, `harness_update_notice.rs`, `whats_new.rs`, `resume_interrupted.rs` | Overlays |
-| `theme.rs`, `appearance.rs`, `scale.rs`, `background_effects.rs`, `icons.rs`, `provider_icon.rs`, `mascot.rs`, `motion.rs`, `spinner.rs` | Look and shared drawing: palettes, tint / accent / diff colours, interface scale, chat background effects |
-| `app_callback.rs`, `virtual_rows.rs`, `explorer_menu.rs`, `drag_drop.rs`, `thumbnail.rs`, `emoji_picker.rs` | Shared helpers; `emoji_picker.rs` is the emoji a picker lists, by group; `thumbnail.rs` draws a file image scaled down to its size (use it, not `img(path)`, for anything drawn smaller than the file) |
+| `theme.rs`, `appearance.rs`, `scale.rs`, `background_effects.rs`, `icons.rs`, `provider_icon.rs`, `mascot.rs`, `motion.rs`, `spinner.rs` | Look and shared drawing: palettes, tint / accent / diff colours, interface scale, chat background effects; the mascots and their motion by status (`moving_sprite`) |
+| `app_callback.rs`, `virtual_rows.rs`, `explorer_menu.rs`, `drag_drop.rs`, `thumbnail.rs`, `emoji_picker.rs` | Shared helpers; `emoji_picker.rs` is the emoji picker (its groups and the popover, for any view); `thumbnail.rs` draws a file image scaled down to its size (use it, not `img(path)`, for anything drawn smaller than the file) |
 
 ---
 
@@ -292,7 +292,7 @@ only read that cache.
 | `integrations/harness/providers/grok/` | `harness/grok.rs` | Grok Build over ACP, one `grok agent stdio` per turn; `/compact` through `_x.ai/compact_conversation`. BenCode's own: follow-ups go into the running turn (`_x.ai/interject`), where MonoCode queues them, and the context meter reads the count Grok stamps on its updates |
 | `harness/providers/claude/claude.ts` (`handleAgentLifecycle`, `noteSubagent*`), `sessions/ui/AgentTranscript.tsx` `SubagentPanel`, `transcriptActivity.ts` | `harness/claude/tasks.rs`, `app/subagents.rs`, `ui/transcript/subagents.rs` | Claude's subagents and backgrounded commands: the turn stays open until they finish and Claude reports back ("· running in background" on the fold line); a run's row (mascot, name, model, steps) holds its place while the turn is live and opens onto its trail. Stop kills the process, so no `stop_task` |
 | `sessions/model/taskList.ts`, `sessions/ui/TaskListPreview.tsx`, `harness/core/apply.ts` `upsertTaskList` | `app/task_list.rs`, `ui/transcript/task_list.rs` | The Tasks card, from `AgentEvent::Tasks`. Only Grok Build's plan updates feed it; Claude's `TodoWrite` still shows as a tool row. Whole snapshots only (no `merge`, no `key`) |
-| `features/monos/` (`mono.ts`, `monoFiles.ts`, `monoWorkspace.ts`, `MonoDetails`, `MonoProjects`, `FloatingMonoChat`), `app/shell/MonoRailSection.tsx` | `monos.rs`, `app/monos.rs`, `ui/monos.rs`, `ui/rail/monos.rs`, `ui/mono_float/` | Agents of their own on the rail: one conversation each, in the home folder with Auto permissions, their projects and `SOUL.md` handed over ahead of a message. The roster is in `settings.json`. The floating chat opens from a Mono's header or rail menu (no menu bar item) with a reduced transcript of its own; it resizes (BenCode adds the resizable style to its `NSWindow`, GPUI gives a window without a title bar none) and its size is `monoFloatSize` in `settings.json`. A reply that is only `<reaction>👍</reaction>` is a reaction: a badge on the user's message in the floating chat, the emoji alone in the main transcript. No memory, habits, started sessions or artifacts (MonoCode's `app` CLI), no review card |
+| `features/monos/` (`mono.ts`, `monoFiles.ts`, `monoWorkspace.ts`, `MonoDetails`, `MonoProjects`, `FloatingMonoChat`), `app/shell/MonoRailSection.tsx` | `monos.rs`, `app/monos.rs`, `ui/monos.rs`, `ui/rail/monos.rs`, `ui/mono_float/` | Agents of their own on the rail: one conversation each, in the home folder with Auto permissions, their projects and `SOUL.md` handed over ahead of a message. The roster is in `settings.json`. In BenCode's window it is MonoCode's in-app Mono view: its own title bar (the mascot moving with its status, Overview and the gear, both Details until MonoCode's Overview panel and settings dialog are ported), a greeting filling the chat before the first message, day pills and the signature pill in the transcript (no turn metrics, handoff or outline), `MonoComposer`'s full layout with the emoji picker, the plan's usage, the model as text and its settings as pills, and `MonoUsageLimitNotice`; it covers the footer as MonoCode's does. The floating chat opens from a Mono's rail menu (no menu bar item, no header button, as MonoCode), at the top right of the screen under the pointer, with a reduced transcript of its own (approvals answered in the turn, a message that could not be sent kept with Retry) and MonoCode's inline composer (no emoji button); it resizes (BenCode adds the resizable style to its `NSWindow`, GPUI gives a window without a title bar none), its frame is drawn rounded on a clear window, and its size is `monoFloatSize` in `settings.json`. A reply that is only `<reaction>👍</reaction>` is a reaction: a badge on the user's message in both windows (the emoji alone only when no message precedes it). No memory, habits, started sessions or artifacts (MonoCode's `app` CLI), no review card |
 | none (Codex desktop's in-app browser) | `browser/`, `app/browser.rs`, `ui/browser_pane.rs` | BenCode's own. A WKWebView over a file-pane tab; picked elements and screenshots go to the composer; agents drive it through the `bencode-browser` MCP server while a browser tab is open |
 | `src-tauri/src/` (`checkpoint.rs`, `reminders.rs`, `fs.rs`, …) | `git/checkpoint.rs`, `db/`, `ui/file_tree/fs.rs` | In-process calls, no IPC |
 
@@ -409,7 +409,10 @@ for every frame and notifies the view it is drawn in: inside the app, that
 is the whole app redrawn at the display's rate. A one-shot transition is
 fine. **Anything that loops while agents run is a busy mark in
 `ui/spinner.rs`**, stepped by the app's clock (`start_clock`): `shimmer`,
-`ring`, `terminal_spinner`, and `cycle(period)` for a mark of its own.
+`ring`, `terminal_spinner`, `pulse` (Tailwind's `animate-pulse`), and
+`cycle(period)` for a mark of its own. The one mark that moves with no
+agent running is a Mono greeting's bobbing mascot: the clock wakes at its
+steps (`until_step`) only while that greeting is in view.
 
 ### Background work
 
@@ -533,6 +536,11 @@ div()
   calls `leave_mono_view` first.
 - It runs in the home folder, so its turns take **no checkpoints** (there
   is no one checkout to snapshot).
+- **Its chat is laid out as a Mono's** (`layout_turns(.., mono)`,
+  `ui/transcript/mono.rs`): reactions move onto the message they answer,
+  turns that open a new stretch get a day pill, the fold line is the
+  signature pill. The same pure functions feed the floating chat's rows;
+  a property they read goes into `LayoutKey::new` too.
 - What a turn carries (name, projects, `SOUL.md`) goes ahead of the
   message in `apply_mono_context`, only when the provider session behind
   the chat has not been given it (`Mono.handed`), and is recorded once the
