@@ -508,6 +508,7 @@ impl BenCodeApp {
                 }
             }
         }
+        self.focus_session_workspace(&id);
         self.sync_selection(cx);
         if let Some(blank) = discarded {
             self.forget_thread_state(&blank);

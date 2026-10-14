@@ -117,6 +117,33 @@ impl BenCodeApp {
         };
     }
 
+    /// Narrows the thread's project to the working copy the thread runs in.
+    /// The title bar keeps only the focused workspace's tabs, so a thread
+    /// opened from elsewhere in another worktree (an automation run) would
+    /// leave the strip as soon as another tab is picked.
+    pub(super) fn focus_session_workspace(&mut self, id: &str) {
+        let Some(session) = self.sessions.iter().find(|s| s.id == id) else {
+            return;
+        };
+        if session.cwd.is_empty() || session.cwd == "~" {
+            return;
+        }
+        let project = session.cwd.clone();
+        let work_dir = session.work_dir();
+        let focused = self
+            .worktree_focuses
+            .get(&normalize_project_path(&project))
+            .map_or(project.as_str(), |focus| focus.path.as_str());
+        if same_project_path(focused, work_dir) {
+            return;
+        }
+        let focus = (!same_project_path(work_dir, &project)).then(|| WorktreeFocus {
+            path: work_dir.to_string(),
+            branch: session.branch.clone(),
+        });
+        self.set_worktree_focus(&project, focus);
+    }
+
     /// Re-homes a thread (MonoCode `onCwdChange` / `onWorktreeChange`).
     pub(super) fn move_session(&mut self, id: &str, project: &str, worktree: Option<String>) {
         let Some(session) = self.sessions.iter_mut().find(|s| s.id == id) else {
