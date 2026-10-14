@@ -4,6 +4,16 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
+## [0.1.11] - 2026-10-14
+
+- Claude's subagents and background commands: the turn stays open until
+  they finish and Claude reports back. Each subagent shows as a row with
+  its name, model and steps, and opens onto what it did.
+- A terminal shown again after a restart looks as it did. Its output was
+  replayed at the wrong width, so the prompt landed far to the right and
+  broken copies of it piled up with every restart. Takes effect once the
+  terminals left open by an earlier version have ended (⌘Q).
+
 ## [0.1.10] - 2026-10-14
 
 - Closing a Mono's floating chat no longer quits BenCode.
