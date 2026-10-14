@@ -12,6 +12,7 @@ pub mod outline_model;
 mod review_card;
 pub mod selection;
 mod selection_ui;
+mod subagents;
 mod task_list;
 pub mod turns;
 
@@ -311,6 +312,9 @@ pub struct TranscriptUiState {
     pub open_folds: HashSet<String>,
     pub phase_open: HashMap<String, bool>,
     pub open_tool_errors: HashSet<String>,
+    /// Subagent rows the reader opened or closed, by block id; a failed
+    /// run opens itself until then.
+    pub subagent_open: HashMap<String, bool>,
     pub expanded_messages: HashSet<String>,
     /// Bumped by a toggle that changes a row's height but not the rows
     /// (phases, thoughts, tool errors, long messages), so the transcript

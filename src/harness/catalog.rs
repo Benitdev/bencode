@@ -411,6 +411,53 @@ fn has_digit(text: &str) -> bool {
     text.chars().any(|c| c.is_ascii_digit())
 }
 
+/// MonoCode `subagentModelName`: the name of the model a CLI reported by
+/// its own id (`claude-haiku-4-5`), else that id.
+pub fn native_label(harness_id: &str, native: &str) -> String {
+    let Some(harness) = HarnessKind::from_id(harness_id) else {
+        return native.to_string();
+    };
+    let wanted = comparable_native(harness, native);
+    models_for(harness)
+        .iter()
+        .find(|m| {
+            [m.native.as_str(), native_id_from(&m.key)]
+                .iter()
+                .any(|id| !id.is_empty() && comparable_native(harness, id) == wanted)
+        })
+        .map(|m| m.label.clone())
+        .or_else(|| {
+            (harness == HarnessKind::Claude)
+                .then(|| claude_model_name(native))
+                .flatten()
+        })
+        .unwrap_or_else(|| native.to_string())
+}
+
+/// A Claude model id the catalog lists only by alias, read as its name:
+/// `claude-haiku-4-5-20251001` is "Haiku 4.5".
+fn claude_model_name(native: &str) -> Option<String> {
+    let mut parts: Vec<&str> = native.strip_prefix("claude-")?.split('-').collect();
+    if parts
+        .last()
+        .is_some_and(|p| p.len() == 8 && p.chars().all(|c| c.is_ascii_digit()))
+    {
+        parts.pop();
+    }
+    let (family, version) = parts.split_first()?;
+    if family.is_empty()
+        || version.is_empty()
+        || !version
+            .iter()
+            .all(|p| p.chars().all(|c| c.is_ascii_digit()))
+    {
+        return None;
+    }
+    let mut chars = family.chars();
+    let first = chars.next()?.to_ascii_uppercase();
+    Some(format!("{first}{} {}", chars.as_str(), version.join(".")))
+}
+
 /// MonoCode `resolveModel(harness, id).name`: the name a session card shows
 /// for a stored model, matching by key, native id, alias or id prefix.
 pub fn display_label(harness_id: &str, key: &str) -> String {
@@ -586,6 +633,12 @@ mod tests {
         );
         assert_eq!(display_label("claude", "claude:opus"), "Claude Opus");
         assert_eq!(display_label("claude", "claude:haiku"), "Claude Haiku");
+        assert_eq!(
+            native_label("claude", "claude-haiku-4-5-20251001"),
+            "Haiku 4.5"
+        );
+        assert_eq!(native_label("claude", "claude-sonnet-5"), "Sonnet 5");
+        assert_eq!(native_label("codex", "gpt-9-codex"), "gpt-9-codex");
         assert_eq!(
             display_label("claude", "claude:opus-9-1"),
             "claude-opus-9-1"

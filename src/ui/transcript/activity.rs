@@ -114,6 +114,34 @@ fn shimmer_label(text: String, cx: &App) -> AnyElement {
         .into_any_element()
 }
 
+/// The blocks a list of work rows draws from: the thread's own, or the
+/// steps of a subagent's run standing in as blocks.
+#[derive(Clone, Copy)]
+pub(super) struct Trail<'a> {
+    pub session_id: &'a str,
+    pub cwd: &'a str,
+    pub harness: &'a str,
+    pub blocks: &'a [Block],
+    /// The thread block a run's text selects as: its Agent call.
+    pub select_as: Option<usize>,
+}
+
+impl<'a> Trail<'a> {
+    pub fn of(session: &'a SessionRow) -> Self {
+        Self {
+            session_id: &session.id,
+            cwd: &session.cwd,
+            harness: &session.harness,
+            blocks: &session.blocks,
+            select_as: None,
+        }
+    }
+
+    fn select(&self, ix: usize) -> usize {
+        self.select_as.unwrap_or(ix)
+    }
+}
+
 impl BenCodeApp {
     /// The turn's status line: "Opus working for 12s" shimmering while the
     /// agent runs, "Opus worked for 1m 4s" after, toggling the folded work.
@@ -175,7 +203,14 @@ impl BenCodeApp {
         }
         let blocks = &session.blocks;
         let elapsed = turn.started_at(blocks).map(|start| now_ms() - start);
-        turns::working_duration(elapsed, turn.model_name(blocks), false)
+        let working = turns::working_duration(elapsed, turn.model_name(blocks), false);
+        // Yielding with work still going is not the end of the turn: the
+        // clock keeps running and the line says what it waits on.
+        match self.background_tasks_for(&session.id).len() {
+            0 => working,
+            1 => format!("{working} · running in background"),
+            n => format!("{working} · {n} tasks running in background"),
+        }
     }
 
     /// An item of a turn: activity renders as phases, blocks as themselves.
@@ -195,12 +230,19 @@ impl BenCodeApp {
                 let done = turn.activity_done(blocks, item);
                 div()
                     .px_4()
-                    .child(self.render_phase_list(session, group, done, cx))
+                    .child(self.render_phase_list(Trail::of(session), group, done, cx))
                     .into_any_element()
             }
+            Item::Subagents(group) => div()
+                .px_4()
+                .child(self.render_subagent_stack(Trail::of(session), group, turn.live, cx))
+                .into_any_element(),
             Item::Block(ix) => {
-                let under_work =
-                    item > 0 && matches!(turn.items.get(item - 1), Some(Item::Activity(_)));
+                let under_work = item > 0
+                    && matches!(
+                        turn.items.get(item - 1),
+                        Some(Item::Activity(_) | Item::Subagents(_))
+                    );
                 let live = turn.live && *ix + 1 == session.blocks.len();
                 self.render_block(session, *ix, live, under_work, cx)
             }
@@ -217,7 +259,10 @@ impl BenCodeApp {
     ) -> AnyElement {
         let fg = cx.theme().colors.fg;
         let body = match &turn.items[item] {
-            Item::Activity(group) => self.render_phase_list(session, group, true, cx),
+            Item::Activity(group) => self.render_phase_list(Trail::of(session), group, true, cx),
+            Item::Subagents(group) => {
+                self.render_subagent_stack(Trail::of(session), group, false, cx)
+            }
             Item::Block(ix) => {
                 let text = turns::text(&session.blocks[*ix]).to_string();
                 let id = SharedString::from(format!("{}-fold-{ix}", session.id));
@@ -248,14 +293,14 @@ impl BenCodeApp {
             .into_any_element()
     }
 
-    fn render_phase_list(
+    pub(super) fn render_phase_list(
         &self,
-        session: &SessionRow,
+        trail: Trail<'_>,
         group: &[usize],
         done: bool,
         cx: &Context<Self>,
     ) -> AnyElement {
-        let phases = turns::build_phases(&session.blocks, group);
+        let phases = turns::build_phases(trail.blocks, group);
         let last = phases.len().saturating_sub(1);
         div()
             .flex()
@@ -266,7 +311,7 @@ impl BenCodeApp {
                 phases
                     .iter()
                     .enumerate()
-                    .map(|(ix, phase)| self.render_phase(session, phase, !done && ix == last, cx)),
+                    .map(|(ix, phase)| self.render_phase(trail, phase, !done && ix == last, cx)),
             )
             .into_any_element()
     }
@@ -275,24 +320,27 @@ impl BenCodeApp {
     /// to its title once the agent moves on; click to open or close.
     fn render_phase(
         &self,
-        session: &SessionRow,
+        trail: Trail<'_>,
         phase: &Phase,
         active: bool,
         cx: &Context<Self>,
     ) -> AnyElement {
         let fg = cx.theme().colors.fg;
         if phase.headline.is_none() && phase.steps.len() == 1 {
-            // A lone call the agent never introduced is not a group.
+            // A lone call the agent never introduced is not a group. A run
+            // brings its own mascot.
+            let icon = phase_icon(phase.kind)
+                .filter(|_| !turns::is_subagent(&trail.blocks[phase.steps[0]]));
             return div()
                 .flex()
                 .min_w_0()
                 .items_start()
                 .gap_1p5()
-                .when_some(phase_icon(phase.kind), |el, icon| {
+                .when_some(icon, |el, icon| {
                     el.child(div().mt(px(7.0)).child(small_icon(icon, muted(fg, 0.45))))
                 })
                 .child(div().flex_1().min_w_0().child(self.render_step(
-                    session,
+                    trail,
                     phase.steps[0],
                     active,
                     cx,
@@ -305,7 +353,7 @@ impl BenCodeApp {
             .get(&phase.id)
             .copied()
             .unwrap_or(active);
-        let title = turns::phase_title(&session.blocks, phase, active);
+        let title = turns::phase_title(trail.blocks, phase, active);
         let group = format!("phase-{}", phase.id);
         let label = if active {
             shimmer_label(title, cx)
@@ -354,7 +402,7 @@ impl BenCodeApp {
                             phase
                                 .steps
                                 .iter()
-                                .map(|&ix| self.render_step(session, ix, active, cx)),
+                                .map(|&ix| self.render_step(trail, ix, active, cx)),
                         ),
                 )
             })
@@ -365,16 +413,20 @@ impl BenCodeApp {
     /// that land while the phase is live fade in.
     fn render_step(
         &self,
-        session: &SessionRow,
+        trail: Trail<'_>,
         ix: usize,
         live: bool,
         cx: &Context<Self>,
     ) -> AnyElement {
-        let block = &session.blocks[ix];
-        let row = if turns::is_tool(block) {
-            self.render_tool_row(session, ix, live, cx)
+        let block = &trail.blocks[ix];
+        // A settled turn's runs are work like any call, but still open onto
+        // their own trail.
+        let row = if turns::is_subagent(block) {
+            self.render_subagent_row(trail, ix, live, cx)
+        } else if turns::is_tool(block) {
+            self.render_tool_row(trail, ix, live, cx)
         } else if turns::is_thinking(block) || turns::is_prose(block) {
-            self.render_thought_row(session, ix, cx)
+            self.render_thought_row(trail, ix, cx)
         } else {
             dim_label(turns::text(block).to_string(), "status", cx)
         };
@@ -398,13 +450,8 @@ impl BenCodeApp {
 
     /// MonoCode `ActivityThinkingRow` / `ActivityNoteRow`: one dim line,
     /// opening onto the full text.
-    fn render_thought_row(
-        &self,
-        session: &SessionRow,
-        ix: usize,
-        cx: &Context<Self>,
-    ) -> AnyElement {
-        let block = &session.blocks[ix];
+    fn render_thought_row(&self, trail: Trail<'_>, ix: usize, cx: &Context<Self>) -> AnyElement {
+        let block = &trail.blocks[ix];
         let key = block.id.clone();
         let open = self.expanded_reasoning.contains(&key);
         let summary = turns::prose_summary(turns::text(block));
@@ -442,7 +489,7 @@ impl BenCodeApp {
                     &body,
                     None,
                     Tone::Reasoning,
-                    self.seg_ctx(&session.id, ix, false),
+                    self.seg_ctx(trail.session_id, trail.select(ix), false),
                     cx,
                 )))
             })
@@ -453,16 +500,16 @@ impl BenCodeApp {
     /// chip or monospace; a spinner while running, a red X when it failed.
     fn render_tool_row(
         &self,
-        session: &SessionRow,
+        trail: Trail<'_>,
         ix: usize,
         live: bool,
         cx: &Context<Self>,
     ) -> AnyElement {
-        let block = &session.blocks[ix];
+        let block = &trail.blocks[ix];
         let colors = &cx.theme().colors;
         let state = turns::tool_state(block);
         let failed = state == ToolState::Failed;
-        let (verb, target, file) = tool_label(block, &session.cwd);
+        let (verb, target, file) = tool_label(block, trail.cwd);
         let key = block.id.clone();
         let detail = turns::tool_detail(block)
             .filter(|_| failed)
@@ -610,7 +657,7 @@ fn folded_blocks(turn: &TurnLayout) -> Vec<usize> {
     turn.items[start..=end]
         .iter()
         .flat_map(|item| match item {
-            Item::Activity(ixs) => ixs.clone(),
+            Item::Activity(ixs) | Item::Subagents(ixs) => ixs.clone(),
             Item::Block(ix) => vec![*ix],
         })
         .collect()

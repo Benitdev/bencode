@@ -39,6 +39,18 @@ pub trait LineParser: Send + 'static {
     /// `steerTurn`). Only called for a `ProcessSpec` with `can_steer`; what
     /// it must write comes back from `take_replies`.
     fn steer(&mut self, _prompt: &str, _attachments: &[Attachment]) {}
+
+    /// How long the parser waits for its next line before `on_quiet`
+    /// gets a say; `None` waits for good. Asked after every line.
+    fn quiet_limit(&self) -> Option<std::time::Duration> {
+        None
+    }
+
+    /// No line came within `quiet_limit` (a turn that waited on the
+    /// agent waking up, say).
+    fn on_quiet(&mut self) -> Vec<AgentEvent> {
+        Vec::new()
+    }
 }
 
 pub enum StdinMode {
@@ -185,11 +197,51 @@ async fn next_steer(rx: &mut Option<mpsc::UnboundedReceiver<Steer>>) -> Option<S
     }
 }
 
+/// Sends a parse's events on; the first `Done` closes the turn: stdin
+/// closes and the child has `EXIT_GRACE` to exit.
+fn forward(
+    stdin_tx: &mpsc::UnboundedSender<StdinMsg>,
+    event_tx: &mpsc::UnboundedSender<AgentEvent>,
+    events: Vec<AgentEvent>,
+    done: &mut bool,
+    mut exit_deadline: std::pin::Pin<&mut tokio::time::Sleep>,
+) {
+    for event in events {
+        // The turn is closed once Done is seen; later output is noise.
+        if *done {
+            break;
+        }
+        if matches!(event, AgentEvent::Done(_)) {
+            *done = true;
+            let _ = stdin_tx.send(StdinMsg::Close);
+            exit_deadline
+                .as_mut()
+                .reset(tokio::time::Instant::now() + EXIT_GRACE);
+        }
+        let _ = event_tx.send(event);
+    }
+}
+
+/// Restarts the parser's quiet timer; whether one is running.
+fn rearm_quiet<P: LineParser>(
+    parser: &P,
+    deadline: std::pin::Pin<&mut tokio::time::Sleep>,
+) -> bool {
+    let Some(limit) = parser.quiet_limit() else {
+        return false;
+    };
+    deadline.reset(tokio::time::Instant::now() + limit);
+    true
+}
+
 async fn pump<P: LineParser>(mut ctx: PumpCtx<P>) {
     let mut lines = BufReader::new(ctx.stdout).lines();
     let mut done = false;
     let exit_deadline = tokio::time::sleep(std::time::Duration::MAX);
     tokio::pin!(exit_deadline);
+    let quiet_deadline = tokio::time::sleep(std::time::Duration::MAX);
+    tokio::pin!(quiet_deadline);
+    let mut quiet_armed = false;
 
     loop {
         tokio::select! {
@@ -215,6 +267,11 @@ async fn pump<P: LineParser>(mut ctx: PumpCtx<P>) {
                 // Every handle is gone; nothing more can be sent.
                 None => ctx.steer_rx = None,
             },
+            () = &mut quiet_deadline, if quiet_armed && !done => {
+                let events = ctx.parser.on_quiet();
+                forward(&ctx.stdin_tx, &ctx.event_tx, events, &mut done, exit_deadline.as_mut());
+                quiet_armed = rearm_quiet(&ctx.parser, quiet_deadline.as_mut());
+            }
             line = lines.next_line() => match line {
                 Ok(Some(line)) => {
                     let events = ctx.parser.parse_line(&line);
@@ -223,20 +280,8 @@ async fn pump<P: LineParser>(mut ctx: PumpCtx<P>) {
                             let _ = ctx.stdin_tx.send(StdinMsg::Line(format!("{reply}\n")));
                         }
                     }
-                    for event in events {
-                        // The turn is closed once Done is seen; later output is noise.
-                        if done {
-                            break;
-                        }
-                        if matches!(event, AgentEvent::Done(_)) {
-                            done = true;
-                            let _ = ctx.stdin_tx.send(StdinMsg::Close);
-                            exit_deadline
-                                .as_mut()
-                                .reset(tokio::time::Instant::now() + EXIT_GRACE);
-                        }
-                        let _ = ctx.event_tx.send(event);
-                    }
+                    forward(&ctx.stdin_tx, &ctx.event_tx, events, &mut done, exit_deadline.as_mut());
+                    quiet_armed = rearm_quiet(&ctx.parser, quiet_deadline.as_mut());
                 }
                 Ok(None) => break,
                 Err(err) => {

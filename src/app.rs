@@ -35,6 +35,7 @@ pub mod session_folders;
 pub mod session_list;
 pub mod session_review;
 mod source_control;
+pub mod subagents;
 mod surfaces;
 mod tab_history;
 mod tab_scope;

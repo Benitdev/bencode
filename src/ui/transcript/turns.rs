@@ -167,6 +167,12 @@ pub fn tool_detail(block: &Block) -> Option<&str> {
         .filter(|d| !d.is_empty())
 }
 
+/// MonoCode `isSubagentBlock`: the call that spawned a subagent. One still
+/// waiting on approval stays in the work, where its controls are.
+pub fn is_subagent(block: &Block) -> bool {
+    block.role == "tool" && tool_kind(block) == WorkKind::Agent
+}
+
 /// MonoCode `isActivityBlock`: work that folds — calls, thinking, status rows.
 fn is_activity(block: &Block) -> bool {
     is_thinking(block) || is_tool(block) || (block.role == "system" && !is_notice(block))
@@ -177,11 +183,13 @@ fn is_ignored(block: &Block) -> bool {
     matches!(block.role.as_str(), "assistant" | "reasoning") && text(block).trim().is_empty()
 }
 
-/// One entry of a turn: a block on its own, or a run of activity.
+/// One entry of a turn: a block on its own, a run of activity, or the
+/// subagents a live turn keeps in place.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Item {
     Block(usize),
     Activity(Vec<usize>),
+    Subagents(Vec<usize>),
 }
 
 /// Blocks split at each user message (MonoCode `groupTurns`), as index ranges.
@@ -201,13 +209,26 @@ pub fn group_turns(blocks: &[Block]) -> Vec<Range<usize>> {
 }
 
 /// MonoCode `groupTurnItems`: runs of activity fold into one item; prose,
-/// the user message and notices stand alone.
-pub fn group_items(blocks: &[Block], range: Range<usize>) -> Vec<Item> {
+/// the user message and notices stand alone. While the turn is live its
+/// subagents keep rows of their own: that is where the reader watches, and
+/// the work around them folds and re-folds meanwhile. Once it settles they
+/// are work like any other call, except one that failed.
+pub fn group_items(blocks: &[Block], range: Range<usize>, live: bool) -> Vec<Item> {
     let mut items = Vec::new();
     let mut activity: Vec<usize> = Vec::new();
     for ix in range {
         let block = &blocks[ix];
         if is_ignored(block) {
+            continue;
+        }
+        if is_subagent(block) && (live || tool_state(block) == ToolState::Failed) {
+            if !activity.is_empty() {
+                items.push(Item::Activity(std::mem::take(&mut activity)));
+            }
+            match items.last_mut() {
+                Some(Item::Subagents(run)) => run.push(ix),
+                _ => items.push(Item::Subagents(vec![ix])),
+            }
             continue;
         }
         if is_activity(block) {
@@ -272,7 +293,7 @@ pub fn last_activity(items: &[Item]) -> Option<usize> {
 pub fn is_initial_thinking(blocks: &[Block], items: &[Item], at: usize) -> bool {
     let first_work = items.iter().position(|item| match item {
         Item::Block(ix) => !matches!(blocks[*ix].role.as_str(), "user" | "system"),
-        Item::Activity(_) => true,
+        Item::Activity(_) | Item::Subagents(_) => true,
     });
     let only_thinking = matches!(
         &items[at],
@@ -659,6 +680,8 @@ impl LayoutKey {
             text(block).trim().is_empty().hash(&mut hasher);
             block.extra.contains_key("notice").hash(&mut hasher);
             block.duration_ms.is_some().hash(&mut hasher);
+            // A failed run keeps its own row once the turn settles.
+            (is_subagent(block) && tool_state(block) == ToolState::Failed).hash(&mut hasher);
             if ix == 0 || block.role == "user" {
                 // Turn starts: fold state and prompt identity.
                 block.id.hash(&mut hasher);
@@ -686,11 +709,12 @@ pub fn layout_turns(blocks: &[Block], running: bool) -> Vec<TurnLayout> {
         .into_iter()
         .enumerate()
         .map(|(ix, range)| {
-            let items = group_items(blocks, range.clone());
+            let live = running && ix + 1 == count;
+            let items = group_items(blocks, range.clone(), live);
             let fold = foldable_work(blocks, &items);
             let user = range.clone().find(|i| blocks[*i].role == "user");
             TurnLayout {
-                live: running && ix + 1 == count,
+                live,
                 range,
                 items,
                 fold,
@@ -702,31 +726,32 @@ pub fn layout_turns(blocks: &[Block], running: bool) -> Vec<TurnLayout> {
 
 fn turn_rows(blocks: &[Block], t: usize, turn: &TurnLayout, open: bool, rows: &mut Vec<Row>) {
     let show_line = turn.shows_fold_line(blocks);
+    // Subagents kept out of the fold still come after the line, as work.
+    let first_run = turn
+        .items
+        .iter()
+        .position(|item| matches!(item, Item::Subagents(_)));
     let line_at = turn
         .fold
         .map(|(start, _)| start)
         .or_else(|| first_foldable(blocks, &turn.items))
-        .unwrap_or(turn.items.len());
+        .unwrap_or(turn.items.len())
+        .min(first_run.unwrap_or(usize::MAX));
     for i in 0..turn.items.len() {
+        if i == line_at && show_line {
+            rows.push(Row::FoldLine { turn: t });
+        }
         match turn.fold {
             Some((start, end)) if (start..=end).contains(&i) => {
-                if i == start {
-                    rows.push(Row::FoldLine { turn: t });
-                    if open {
-                        rows.extend((start..=end).map(|item| Row::FoldItem {
-                            turn: t,
-                            item,
-                            last: item == end,
-                        }));
-                    }
+                if open {
+                    rows.push(Row::FoldItem {
+                        turn: t,
+                        item: i,
+                        last: i == end,
+                    });
                 }
             }
-            _ => {
-                if i == line_at && show_line {
-                    rows.push(Row::FoldLine { turn: t });
-                }
-                rows.push(Row::Item { turn: t, item: i });
-            }
+            _ => rows.push(Row::Item { turn: t, item: i }),
         }
     }
     if line_at >= turn.items.len() && show_line {
@@ -788,6 +813,41 @@ mod tests {
         let mut b = Block::new(format!("tool-{title}-{kind}"), "tool", "");
         b.tool = Some(json!({"kind": kind, "title": title, "status": status}));
         b
+    }
+
+    #[test]
+    fn a_live_turn_keeps_its_subagents_out_of_the_fold() {
+        let blocks = vec![
+            block("user", "review"),
+            tool("read", "a.rs", "completed"),
+            tool("agent", "Correctness review", "in_progress"),
+            tool("agent", "Style review", "in_progress"),
+            block("assistant", "Waiting for the reviews."),
+        ];
+        let live = layout_turns(&blocks, true);
+        assert_eq!(
+            live[0].items,
+            vec![
+                Item::Block(0),
+                Item::Activity(vec![1]),
+                Item::Subagents(vec![2, 3]),
+                Item::Block(4),
+            ]
+        );
+        // Settled, they are work like any call; a failed one stays out.
+        let mut settled = blocks.clone();
+        settled[2].tool.as_mut().unwrap()["status"] = json!("completed");
+        settled[3].tool.as_mut().unwrap()["status"] = json!("failed");
+        let done = layout_turns(&settled, false);
+        assert_eq!(
+            done[0].items,
+            vec![
+                Item::Block(0),
+                Item::Activity(vec![1, 2]),
+                Item::Subagents(vec![3]),
+                Item::Block(4),
+            ]
+        );
     }
 
     fn finished_user(text: &str) -> Block {

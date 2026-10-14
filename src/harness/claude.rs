@@ -4,7 +4,8 @@
 //! arrive as `control_request`/`can_use_tool` and are answered with a
 //! `control_response` on stdin.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use serde_json::{Value, json};
@@ -16,7 +17,15 @@ use crate::harness::process::{self, LineParser, ProcessSpec, StdinMode};
 use crate::harness::resolver::HarnessResolver;
 use crate::harness::{EventRx, PermissionPolicy, SpawnRequest, str_field, summarize_tool_input};
 
+mod tasks;
+
+use tasks::{is_agent_tool, is_subagent_message};
+
 const DENY_MESSAGE: &str = "User declined tool execution.";
+/// MonoCode `RESUME_GRACE_MS`: how long a finished background task may
+/// take to wake Claude before the turn is let go anyway. The follow-up
+/// turn normally starts within a second or two.
+const RESUME_GRACE: Duration = Duration::from_secs(15);
 
 pub fn spawn(req: &SpawnRequest) -> Result<(HarnessProcessHandle, EventRx)> {
     let program = HarnessResolver::resolve_claude().unwrap_or_else(|| "claude".into());
@@ -182,6 +191,21 @@ fn permission_response(request: &PermissionRequest, allow: bool) -> String {
     .to_string()
 }
 
+/// A task Claude runs for the session (MonoCode `BackgroundTask`):
+/// a subagent, a shell it backgrounded, a monitor.
+struct BackgroundTask {
+    id: String,
+    description: String,
+    tool_use_id: Option<String>,
+}
+
+/// A subagent's task (MonoCode `LiveAgentTask`), by the Agent call that
+/// spawned it.
+struct AgentTask {
+    call_id: String,
+    backgrounded: bool,
+}
+
 #[derive(Default)]
 pub struct ClaudeParser {
     session_announced: bool,
@@ -189,11 +213,35 @@ pub struct ClaudeParser {
     /// trailing `assistant` snapshot must not repeat it.
     streamed_messages: HashSet<String>,
     current_stream_message: Option<String>,
-    started_tools: HashSet<String>,
+    /// The parent's tool calls, by id: name and input.
+    tools: HashMap<String, (String, Value)>,
+    /// The ids of its Agent calls, in the order they started.
+    agent_calls: Vec<String>,
     /// A `rate_limit_event` refused the turn; its reset time, when given.
     rate_limited: Option<Option<i64>>,
     /// Follow-ups waiting to be written into the running turn.
     replies: Vec<String>,
+    /// Every task Claude still runs, in the order they started. Each ends
+    /// in a notification that wakes Claude for another turn, so the
+    /// BenCode turn stays open until they are done.
+    background: Vec<BackgroundTask>,
+    /// The subagents among them, by task id.
+    agents: HashMap<String, AgentTask>,
+    /// Rows shown for commands still running when Claude yielded, by task id.
+    background_rows: HashMap<String, String>,
+    /// Claude yielded (its `result`) with how the turn went; the turn ends
+    /// with it once nothing runs in the background.
+    yielded: Option<DoneStatus>,
+    /// A task finished after Claude yielded; its follow-up turn is on the
+    /// way, until `RESUME_GRACE` after this.
+    awaiting_resume: Option<Instant>,
+    /// What finished subagents reported, held until Claude picks back up.
+    task_notes: Vec<String>,
+    /// The last list sent as `AgentEvent::Background`.
+    background_sent: Vec<String>,
+    /// The model last reported for each subagent, by its Agent call.
+    agent_models: HashMap<String, String>,
+    finished: bool,
 }
 
 impl LineParser for ClaudeParser {
@@ -204,19 +252,39 @@ impl LineParser for ClaudeParser {
             }
             return Vec::new();
         };
-        // Subagent traffic belongs to the parent's Task tool call, not the transcript.
-        if rec.get("parent_tool_use_id").is_some_and(|v| !v.is_null()) {
-            return Vec::new();
+        let mut events = Vec::new();
+        // Subagent traffic belongs to the parent's Agent call, not the transcript.
+        if is_subagent_message(&rec) {
+            self.on_subagent(&rec, &mut events);
+            return events;
+        }
+        if self.on_task_lifecycle(&rec, &mut events) {
+            return events;
         }
 
-        let mut events = Vec::new();
         self.announce_session(&rec, &mut events);
         match str_field(&rec, "type") {
-            Some("stream_event") => self.on_stream_event(&rec, &mut events),
-            Some("assistant") => self.on_assistant(&rec, &mut events),
-            Some("user") => on_user(&rec, &mut events),
+            Some("stream_event") => {
+                self.note_turn_started(&mut events);
+                self.on_stream_event(&rec, &mut events);
+            }
+            Some("assistant") => {
+                self.note_turn_started(&mut events);
+                self.on_assistant(&rec, &mut events);
+            }
+            Some("user") => self.on_user(&rec, &mut events),
             Some("control_request") => on_control_request(&rec, &mut events),
-            Some("result") => on_result(&rec, self.rate_limited.take(), &mut events),
+            Some("tool_progress") => self.on_tool_progress(&rec, &mut events),
+            Some("result") => {
+                let status = on_result(&rec, self.rate_limited.take(), &mut events);
+                self.yielded = Some(status);
+                self.maybe_finish(&mut events);
+                self.show_background_rows(&mut events);
+                self.sync_background(&mut events);
+            }
+            Some("system") if str_field(&rec, "subtype") == Some("init") => {
+                self.note_turn_started(&mut events);
+            }
             Some("rate_limit_event") => {
                 if let Some(limit) = usage_limit_from_rate_limit_event(&rec) {
                     self.rate_limited = Some(limit);
@@ -242,9 +310,46 @@ impl LineParser for ClaudeParser {
     fn steer(&mut self, prompt: &str, attachments: &[Attachment]) {
         self.replies.push(steer_message(prompt, attachments));
     }
+
+    fn quiet_limit(&self) -> Option<Duration> {
+        let since = self.awaiting_resume?;
+        Some(RESUME_GRACE.saturating_sub(since.elapsed()))
+    }
+
+    /// A finished task never woke Claude: the turn is let go.
+    fn on_quiet(&mut self) -> Vec<AgentEvent> {
+        let mut events = Vec::new();
+        if self.awaiting_resume.take().is_some() {
+            self.maybe_finish(&mut events);
+            self.sync_background(&mut events);
+        }
+        events
+    }
 }
 
 impl ClaudeParser {
+    fn on_user(&mut self, rec: &Value, events: &mut Vec<AgentEvent>) {
+        for (id, output, success) in tool_results(rec) {
+            let agent = self
+                .tools
+                .get(&id)
+                .is_some_and(|(name, _)| is_agent_tool(name));
+            // A backgrounded run's result only says it launched; its report
+            // comes with the notification.
+            if agent && self.is_backgrounded_agent(&id) {
+                continue;
+            }
+            events.push(AgentEvent::ToolCallFinish {
+                id: id.clone(),
+                output,
+                success,
+            });
+            if agent {
+                self.settle_inline_agent(&id, events);
+            }
+        }
+    }
+
     fn announce_session(&mut self, rec: &Value, events: &mut Vec<AgentEvent>) {
         if self.session_announced || str_field(rec, "type") == Some("stream_event") {
             return;
@@ -314,13 +419,20 @@ impl ClaudeParser {
                     let Some(id) = str_field(block, "id") else {
                         continue;
                     };
-                    if !self.started_tools.insert(id.to_string()) {
+                    if self.tools.contains_key(id) {
                         continue;
+                    }
+                    let name = str_field(block, "name").unwrap_or("tool").to_string();
+                    let input = block.get("input").cloned().unwrap_or(Value::Null);
+                    self.tools
+                        .insert(id.to_string(), (name.clone(), input.clone()));
+                    if is_agent_tool(&name) {
+                        self.agent_calls.push(id.to_string());
                     }
                     events.push(AgentEvent::ToolCallStart {
                         id: id.to_string(),
-                        name: str_field(block, "name").unwrap_or("tool").to_string(),
-                        input: block.get("input").cloned().unwrap_or(Value::Null),
+                        name,
+                        input,
                     });
                 }
                 _ => {}
@@ -329,26 +441,27 @@ impl ClaudeParser {
     }
 }
 
-fn on_user(rec: &Value, events: &mut Vec<AgentEvent>) {
+/// The `tool_result` blocks of a `user` record: call id, text, success.
+fn tool_results(rec: &Value) -> Vec<(String, String, bool)> {
     let Some(content) = rec.pointer("/message/content").and_then(Value::as_array) else {
-        return;
+        return Vec::new();
     };
-    for block in content
+    content
         .iter()
         .filter(|b| str_field(b, "type") == Some("tool_result"))
-    {
-        let Some(id) = str_field(block, "tool_use_id") else {
-            continue;
-        };
-        events.push(AgentEvent::ToolCallFinish {
-            id: id.to_string(),
-            output: tool_result_text(block.get("content")),
-            success: !block
+        .filter_map(|block| {
+            let id = str_field(block, "tool_use_id")?;
+            let failed = block
                 .get("is_error")
                 .and_then(Value::as_bool)
-                .unwrap_or(false),
-        });
-    }
+                .unwrap_or(false);
+            Some((
+                id.to_string(),
+                tool_result_text(block.get("content")),
+                !failed,
+            ))
+        })
+        .collect()
 }
 
 /// `tool_result.content` is either a string or a list of content blocks.
@@ -441,7 +554,13 @@ fn context_from_result(rec: &Value, usage: &Value) -> AgentEvent {
     }
 }
 
-fn on_result(rec: &Value, rate_limited: Option<Option<i64>>, events: &mut Vec<AgentEvent>) {
+/// Folds Claude's `result` in; how its turn went. The BenCode turn ends
+/// with it only once nothing runs in the background (`maybe_finish`).
+fn on_result(
+    rec: &Value,
+    rate_limited: Option<Option<i64>>,
+    events: &mut Vec<AgentEvent>,
+) -> DoneStatus {
     if let Some(usage) = rec.get("usage") {
         let field = |name: &str| usage.get(name).and_then(Value::as_u64).unwrap_or(0);
         events.push(context_from_result(rec, usage));
@@ -494,15 +613,16 @@ fn on_result(rec: &Value, rate_limited: Option<Option<i64>>, events: &mut Vec<Ag
         if let Some(resets_at) = rate_limited.or(limited_text.then_some(None)) {
             events.push(AgentEvent::UsageLimited { resets_at });
         }
-        events.push(AgentEvent::Done(DoneStatus::Failed));
+        DoneStatus::Failed
     } else {
-        events.push(AgentEvent::Done(DoneStatus::Completed));
+        DoneStatus::Completed
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::harness::{AgentStep, StepKind};
 
     fn parse_all(lines: &[&str]) -> Vec<AgentEvent> {
         let mut parser = ClaudeParser::default();
@@ -672,6 +792,161 @@ mod tests {
             r#"{"type":"assistant","message":{"id":"m2","content":[{"type":"text","text":"inner"}]},"parent_tool_use_id":"task-1"}"#,
         ]);
         assert!(events.is_empty());
+    }
+
+    /// A run in the background, recorded from Claude Code 2.1: Claude
+    /// launches it, says "waiting" and yields; the run's notification wakes
+    /// it for a second turn in the same process.
+    const BACKGROUND_AGENT: &str =
+        include_str!("../../tests/fixtures/claude_background_agent.jsonl");
+    const AGENT_CALL: &str = "toolu_01FC4pYrE6VwX8WNYBuZzhe9";
+
+    #[test]
+    fn a_background_subagent_holds_the_turn_until_claude_reports_back() {
+        let lines: Vec<&str> = BACKGROUND_AGENT.lines().collect();
+        let events = parse_all(&lines);
+        let done: Vec<usize> = events
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| matches!(e, AgentEvent::Done(_)))
+            .map(|(ix, _)| ix)
+            .collect();
+        // Once, after the second turn's answer.
+        assert_eq!(done.len(), 1);
+        assert_eq!(
+            events.last(),
+            Some(&AgentEvent::Done(DoneStatus::Completed))
+        );
+        let answer = events
+            .iter()
+            .position(|e| matches!(e, AgentEvent::TextDelta(t) if t.starts_with("The subagent")))
+            .expect("the follow-up answer");
+        assert!(answer < done[0]);
+
+        let waits: Vec<&Vec<String>> = events
+            .iter()
+            .filter_map(|e| match e {
+                AgentEvent::Background(tasks) => Some(tasks),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(waits, [&vec!["Count files".to_string()], &Vec::new()]);
+
+        // The launch receipt never settles the row; the run's end does,
+        // and its report lands on it.
+        let finishes: Vec<&String> = events
+            .iter()
+            .filter_map(|e| match e {
+                AgentEvent::ToolCallFinish { id, output, .. } if id == AGENT_CALL => Some(output),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            !finishes
+                .iter()
+                .any(|out| out.contains("Async agent launched"))
+        );
+        assert!(finishes.last().unwrap().starts_with("There are 17 entries"));
+        // What it reported is noted in the trail before Claude picks back up.
+        let note = events
+            .iter()
+            .position(|e| matches!(e, AgentEvent::Status(_)))
+            .expect("a note");
+        assert!(note < answer);
+    }
+
+    #[test]
+    fn a_subagent_mirrors_its_steps_onto_its_agent_call() {
+        let lines: Vec<&str> = BACKGROUND_AGENT.lines().collect();
+        let events = parse_all(&lines);
+        let steps: Vec<&AgentStep> = events
+            .iter()
+            .filter_map(|e| match e {
+                AgentEvent::AgentStep { call_id, step } => {
+                    assert_eq!(call_id, AGENT_CALL);
+                    Some(step)
+                }
+                _ => None,
+            })
+            .collect();
+        let bash: Vec<&&AgentStep> = steps
+            .iter()
+            .filter(|s| s.id == "toolu_01GaA1Dh6jEFHDY36ZyhPapR")
+            .collect();
+        assert_eq!(bash[0].kind, StepKind::Tool);
+        assert_eq!(bash[0].text, "ls / | wc -l; ls /");
+        assert_eq!(bash[0].tool_name.as_deref(), Some("Bash"));
+        assert_eq!(bash.last().unwrap().status.as_deref(), Some("completed"));
+        assert!(
+            steps
+                .iter()
+                .any(|s| s.kind == StepKind::Message && s.text.contains("17 entries"))
+        );
+        assert!(events.contains(&AgentEvent::AgentModel {
+            call_id: AGENT_CALL.into(),
+            model: "claude-haiku-5-5".into(),
+        }));
+        // None of the run's prose joins the parent transcript.
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, AgentEvent::TextDelta(t) if t.contains("There are 17")))
+        );
+    }
+
+    #[test]
+    fn an_inline_subagent_ends_with_the_turn() {
+        let events = parse_all(&[
+            r#"{"type":"assistant","message":{"id":"m1","content":[{"type":"tool_use","id":"a1","name":"Agent","input":{"description":"Explore"}}]}}"#,
+            r#"{"type":"system","subtype":"task_started","task_id":"t1","tool_use_id":"a1","description":"Explore","task_type":"local_agent"}"#,
+            r#"{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"a1","content":"Auth lives in src/auth."}]}}"#,
+            r#"{"type":"result","subtype":"success","is_error":false}"#,
+        ]);
+        assert_eq!(
+            events.last(),
+            Some(&AgentEvent::Done(DoneStatus::Completed))
+        );
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, AgentEvent::Background(_)))
+        );
+    }
+
+    #[test]
+    fn a_background_command_gets_a_row_and_a_quiet_wake_lets_the_turn_go() {
+        let mut parser = ClaudeParser::default();
+        let mut events: Vec<AgentEvent> = [
+            r#"{"type":"assistant","message":{"id":"m1","content":[{"type":"tool_use","id":"b","name":"Bash","input":{"command":"sleep 30","run_in_background":true}}]}}"#,
+            r#"{"type":"system","subtype":"task_started","task_id":"b1","tool_use_id":"b","description":"Wait","task_type":"local_bash"}"#,
+            r#"{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"b","content":"Command running in background with ID: b1"}]}}"#,
+            r#"{"type":"result","subtype":"success","is_error":false}"#,
+        ]
+        .iter()
+        .flat_map(|line| parser.parse_line(line))
+        .collect();
+        assert!(!events.iter().any(|e| matches!(e, AgentEvent::Done(_))));
+        assert!(events.iter().any(
+            |e| matches!(e, AgentEvent::ToolCallStart { id, name, .. } if id == "background:b1" && name == "Bash")
+        ));
+        assert_eq!(parser.quiet_limit(), None);
+
+        events = parser.parse_line(
+            r#"{"type":"system","subtype":"task_notification","task_id":"b1","tool_use_id":"b","status":"completed","summary":"done (exit 0)"}"#,
+        );
+        assert!(events.contains(&AgentEvent::ToolCallFinish {
+            id: "background:b1".into(),
+            output: "done (exit 0)".into(),
+            success: true,
+        }));
+        assert!(events.contains(&AgentEvent::Background(Vec::new())));
+        // Claude is about to be woken; the turn waits for it, not for good.
+        assert!(!events.iter().any(|e| matches!(e, AgentEvent::Done(_))));
+        assert!(parser.quiet_limit().is_some_and(|d| d <= RESUME_GRACE));
+        assert_eq!(
+            parser.on_quiet(),
+            vec![AgentEvent::Done(DoneStatus::Completed)]
+        );
     }
 
     #[test]

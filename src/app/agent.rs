@@ -73,6 +73,9 @@ pub struct AgentRun {
     pub edit_paths: HashMap<String, Vec<String>>,
     /// When this run last saved its thread (see `save_due`).
     pub last_saved: Instant,
+    /// What the turn waits on after the agent yielded with tasks still
+    /// running in the background (MonoCode `backgroundTasks`).
+    pub background: Vec<String>,
 }
 
 /// What a run is for.
@@ -131,6 +134,8 @@ enum EventStep {
     UsageLimited(Option<i64>),
     /// The harness confirmed a compaction.
     Compacted(Option<u64>),
+    /// What the turn now waits on in the background.
+    Background(Vec<String>),
     /// Full access: allow at once.
     AutoApprove(PermissionRequest),
     /// The user answers; a question for the focused thread takes the keys.
@@ -159,6 +164,7 @@ fn plan_event(
     let event = match event {
         AgentEvent::UsageLimited { resets_at } => return EventStep::UsageLimited(resets_at),
         AgentEvent::Compacted { tokens_after } => return EventStep::Compacted(tokens_after),
+        AgentEvent::Background(tasks) => return EventStep::Background(tasks),
         AgentEvent::PermissionRequest(request) => {
             let question = request.tool == QUESTION_TOOL;
             // MonoCode full access answers everything but a question.
@@ -302,6 +308,13 @@ impl BenCodeApp {
 
     /// The permission prompt owned by this thread's run, if any. Scoped so an
     /// Approve click in one tab can never answer another thread's agent.
+    /// The background tasks a thread's turn waits on, once its agent yielded.
+    pub fn background_tasks_for(&self, session_id: &str) -> &[String] {
+        self.runs
+            .get(session_id)
+            .map_or(&[], |run| run.background.as_slice())
+    }
+
     pub fn pending_permission_for(&self, session_id: &str) -> Option<&PermissionRequest> {
         self.runs.get(session_id)?.pending_permission.as_ref()
     }
@@ -928,6 +941,7 @@ impl BenCodeApp {
                 compacted: None,
                 edit_paths: HashMap::new(),
                 last_saved: Instant::now(),
+                background: Vec::new(),
             },
         );
 
@@ -979,6 +993,7 @@ impl BenCodeApp {
         match plan_event(run.auto_approve, &mut run.edit_paths, focused, event) {
             EventStep::UsageLimited(resets_at) => self.record_usage_limit(session_id, resets_at),
             EventStep::Compacted(tokens_after) => run.compacted = Some(tokens_after),
+            EventStep::Background(tasks) => run.background = tasks,
             EventStep::AutoApprove(request) => {
                 if !run.handle.respond_permission(&request, true) {
                     log::warn!("harness rejected auto-approval for {}", request.request_id);
@@ -1390,6 +1405,17 @@ pub(super) fn mark_turn_interrupted(session: &mut SessionRow, now: i64) {
     finish_turn(session, now);
 }
 
+/// MonoCode `appendStatus`: a row in the work trail, not a notice.
+fn push_status(session: &mut SessionRow, text: &str, now: i64) {
+    let mut block = Block::new(
+        format!("sys-{now}-{}", session.blocks.len()),
+        "system",
+        text,
+    );
+    block.started_at = Some(now);
+    session.blocks.push(block);
+}
+
 fn push_notice(session: &mut SessionRow, message: &str, now: i64) {
     let mut block = Block::new(
         format!("sys-{now}-{}", session.blocks.len()),
@@ -1438,9 +1464,18 @@ pub fn apply_event(session: &mut SessionRow, event: AgentEvent, now: i64) {
             }
         }
         AgentEvent::Tasks(items) => crate::app::task_list::upsert(session, &items, now),
+        AgentEvent::AgentStep { call_id, step } => {
+            crate::app::subagents::record_step(session, &call_id, &step)
+        }
+        AgentEvent::AgentModel { call_id, model } => {
+            crate::app::subagents::record_model(session, &call_id, &model)
+        }
+        AgentEvent::Status(text) => push_status(session, &text, now),
         AgentEvent::TurnMetrics(metrics) => record_turn_metrics(session, &metrics),
         // Kept by the run and the app rather than the transcript.
-        AgentEvent::Compacted { .. } | AgentEvent::UsageLimited { .. } => {}
+        AgentEvent::Compacted { .. }
+        | AgentEvent::UsageLimited { .. }
+        | AgentEvent::Background(_) => {}
         AgentEvent::Error(message) => push_notice(session, &message, now),
         AgentEvent::Done(status) => {
             finish_turn(session, now);
@@ -1526,7 +1561,7 @@ fn finish_tool(session: &mut SessionRow, call_id: &str, output: &str, success: b
 }
 
 /// MonoCode's tool `kind` vocabulary, which the transcript keys icons off.
-fn tool_kind(name: &str) -> &'static str {
+pub(super) fn tool_kind(name: &str) -> &'static str {
     match name.to_ascii_lowercase().as_str() {
         "bash" | "shell" | "run_command" | "exec" => "execute",
         "edit"

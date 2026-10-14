@@ -22,7 +22,9 @@ pub mod resolver;
 pub mod runtime;
 pub mod updates;
 
-pub use events::{AgentEvent, DoneStatus, PermissionRequest, TaskItem, TaskStatus};
+pub use events::{
+    AgentEvent, AgentStep, DoneStatus, PermissionRequest, StepKind, TaskItem, TaskStatus,
+};
 pub use handle::HarnessProcessHandle;
 pub use resolver::{HarnessInfo, HarnessResolver};
 

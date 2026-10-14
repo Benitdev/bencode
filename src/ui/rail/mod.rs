@@ -17,7 +17,7 @@ mod reorder;
 mod settings_nav;
 mod state;
 mod update;
-mod widgets;
+pub(crate) mod widgets;
 
 use std::cell::Cell;
 use std::rc::Rc;

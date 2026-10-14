@@ -160,7 +160,7 @@ pub fn row_shows(row: &Row, turns: &[turns::TurnLayout], block: usize) -> bool {
     };
     match &turns[*turn].items[*item] {
         Item::Block(ix) => *ix == block,
-        Item::Activity(group) => group.contains(&block),
+        Item::Activity(group) | Item::Subagents(group) => group.contains(&block),
     }
 }
 

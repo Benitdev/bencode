@@ -128,7 +128,7 @@ impl BenCodeApp {
                 Row::Item { turn, item } | Row::FoldItem { turn, item, .. } => {
                     match view.turns.get(*turn)?.items.get(*item)? {
                         Item::Block(ix) => Some(*ix),
-                        Item::Activity(_) => None,
+                        Item::Activity(_) | Item::Subagents(_) => None,
                     }
                 }
                 _ => None,

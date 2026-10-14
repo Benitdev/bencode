@@ -133,6 +133,7 @@ bencode/
 | `session_list.rs`, `session_folders.rs` | Sidebar session filters and folders |
 | `session_review.rs` | Session review: the ordered checkpoint queue, a thread's changed files, Keep / Undo |
 | `task_list.rs` | The agent's task list: one `tasks` block per turn that each snapshot replaces, its text and progress label |
+| `subagents.rs` | A subagent's run, kept on its Agent block as `agentRun` (MonoCode's shape): steps merged by id, its model, name and status line |
 | `thread_state.rs` | `ThreadState`: each thread's composer and queue state (draft, attachments, modes, card, question form, usage limit), dropped with the thread |
 | `composer_input.rs` | The prompt field: `/` and `@` tokens and pickers, inserting skills and mentions, the key interceptor, dropped files |
 | `session_flags.rs` | Pinning and archiving threads |
@@ -168,7 +169,7 @@ bencode/
 | `git_changes_panel/` (`tree.rs`, `graph.rs`, `confirm.rs`), `git_menus.rs` | Sidebar: Changes tab and commit graph |
 | `titlebar/` | Title bar and workspace tabs |
 | `pane_tree.rs`, `layout/` | Split chat panes and the layout tree |
-| `transcript/` | Turns, blocks, activity folds, the Tasks card (`task_list.rs`), find in conversation, prompt outline, text selection |
+| `transcript/` | Turns, blocks, activity folds, the Tasks card (`task_list.rs`), subagent rows and their trail (`subagents.rs`), find in conversation, prompt outline, text selection |
 | `composer/` | Prompt composer and its pickers, cards, runner |
 | `file_pane.rs` | The pane beside the chat and its tab strip |
 | `browser_pane.rs` | A browser tab: toolbar, address bar, the page's box |
@@ -289,6 +290,7 @@ only read that cache.
 | `shared/ui/` (buttons, dialogs) | Ely components directly | No local component library |
 | `integrations/harness/` | `harness/` | Argv builders and stdout parsers |
 | `integrations/harness/providers/grok/` | `harness/grok.rs` | Grok Build over ACP, one `grok agent stdio` per turn; `/compact` through `_x.ai/compact_conversation`. BenCode's own: follow-ups go into the running turn (`_x.ai/interject`), where MonoCode queues them, and the context meter reads the count Grok stamps on its updates |
+| `harness/providers/claude/claude.ts` (`handleAgentLifecycle`, `noteSubagent*`), `sessions/ui/AgentTranscript.tsx` `SubagentPanel`, `transcriptActivity.ts` | `harness/claude/tasks.rs`, `app/subagents.rs`, `ui/transcript/subagents.rs` | Claude's subagents and backgrounded commands: the turn stays open until they finish and Claude reports back ("· running in background" on the fold line); a run's row (mascot, name, model, steps) holds its place while the turn is live and opens onto its trail. Stop kills the process, so no `stop_task` |
 | `sessions/model/taskList.ts`, `sessions/ui/TaskListPreview.tsx`, `harness/core/apply.ts` `upsertTaskList` | `app/task_list.rs`, `ui/transcript/task_list.rs` | The Tasks card, from `AgentEvent::Tasks`. Only Grok Build's plan updates feed it; Claude's `TodoWrite` still shows as a tool row. Whole snapshots only (no `merge`, no `key`) |
 | `features/monos/` (`mono.ts`, `monoFiles.ts`, `monoWorkspace.ts`, `MonoDetails`, `MonoProjects`, `FloatingMonoChat`), `app/shell/MonoRailSection.tsx` | `monos.rs`, `app/monos.rs`, `ui/monos.rs`, `ui/rail/monos.rs`, `ui/mono_float.rs` | Agents of their own on the rail: one conversation each, in the home folder with Auto permissions, their projects and `SOUL.md` handed over ahead of a message. The roster is in `settings.json`. The floating chat opens from a Mono's header or rail menu (no menu bar item) with a reduced transcript of its own; it resizes (BenCode adds the resizable style to its `NSWindow`, GPUI gives a window without a title bar none) and its size is `monoFloatSize` in `settings.json`. A reply that is only `<reaction>👍</reaction>` is a reaction: a badge on the user's message in the floating chat, the emoji alone in the main transcript. No memory, habits, started sessions or artifacts (MonoCode's `app` CLI), no review card |
 | none (Codex desktop's in-app browser) | `browser/`, `app/browser.rs`, `ui/browser_pane.rs` | BenCode's own. A WKWebView over a file-pane tab; picked elements and screenshots go to the composer; agents drive it through the `bencode-browser` MCP server while a browser tab is open |
@@ -478,6 +480,16 @@ div()
   gives the handle `steer(..)`, which reaches `LineParser::steer` on the
   pump; the parser returns what to write from `take_replies`. Do not build
   a harness' steer line in `app/`.
+- **Claude's `result` is not the end of a turn** while it runs anything
+  in the background (`claude/tasks.rs`): subagents and backgrounded
+  commands report as `system` `task_*` records, and each one's
+  notification wakes Claude for another turn in the same process. `Done`
+  waits until Claude has yielded with nothing left; a finished task that
+  does not wake it within `RESUME_GRACE` lets the turn go
+  (`LineParser::quiet_limit`). A subagent's own messages
+  (`parent_tool_use_id`) become `AgentStep`s on its Agent call, never
+  transcript text. Its parser tests replay
+  `tests/fixtures/claude_background_agent.jsonl`.
 - **Grok Build speaks ACP** (`grok.rs`): each turn starts `grok agent stdio`,
   binds the thread's session (`session/resume`, else `session/load` with its
   replay muted, else `session/new`) and sends one `session/prompt`. A
@@ -508,7 +520,8 @@ div()
   snapshot until the next Antigravity turn.
 - `AgentEvent` is the whole contract with the UI: `SessionStarted`, `TextDelta`,
   `ThinkingDelta`, `ToolCallStart` / `ToolCallFinish`, `PermissionRequest`,
-  `Tasks`, `Usage`, `TurnMetrics`, `UsageLimited`, `Compacted`, `Done`, `Error`.
+  `AgentStep`, `AgentModel`, `Background`, `Status`, `Tasks`, `Usage`,
+  `TurnMetrics`, `UsageLimited`, `Compacted`, `Done`, `Error`.
 
 ### Monos (`src/monos.rs`, `src/app/monos.rs`)
 

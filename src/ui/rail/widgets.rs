@@ -106,7 +106,7 @@ pub(super) fn project_mascot_icon(
 
 /// The mascot at `size` (the Working agents card draws it at `size-2`).
 /// Its beat is stepped by the app's clock (`ui/spinner.rs`).
-pub(super) fn mascot_icon(
+pub(crate) fn mascot_icon(
     mascot: &'static Mascot,
     color: Hsla,
     busy: bool,
