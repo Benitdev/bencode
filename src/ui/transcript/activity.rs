@@ -9,7 +9,7 @@ use ely_gpui_component::primitives::{Icon, IconName};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
     Animation, AnimationExt, AnyElement, App, Context, Hsla, InteractiveElement, IntoElement,
-    ParentElement, SharedString, Styled, div, prelude::*,
+    ParentElement, SharedString, Styled, div, prelude::*, relative,
 };
 
 use crate::ui::scale::px;
@@ -17,10 +17,12 @@ use crate::ui::spinner;
 
 use super::blocks::markdown;
 use super::markdown::Tone;
+use super::mono;
 use super::turns::{self, Item, Phase, ToolState, TurnLayout, WorkKind};
 use crate::app::{BenCodeApp, now_ms};
 use crate::db::{Block, SessionRow};
 use crate::ui::HarnessIcon;
+use crate::ui::mascot::pixel_sprite;
 
 /// MonoCode fades a step in as it lands (`zen-step-in`).
 const STEP_ENTRANCE: Duration = Duration::from_millis(180);
@@ -156,6 +158,11 @@ impl BenCodeApp {
         let expandable = turn.fold.is_some();
         let open = expandable && self.transcript_ui.open_folds.contains(&turn_id);
         let group = format!("fold-{turn_id}");
+        if turn.mono
+            && let Some(mono) = self.mono_for_session(&session.id)
+        {
+            return self.render_mono_fold_line(session, turn, mono, open, cx);
+        }
         let label = if turn.live {
             shimmer_label(self.live_status(session, turn), cx)
         } else {
@@ -177,6 +184,77 @@ impl BenCodeApp {
             .py_1()
             .child(icon_slot(icon, open, expandable, &group, cx))
             .child(label);
+        if !expandable {
+            return row.into_any_element();
+        }
+        row.cursor_pointer()
+            .on_click(cx.listener(move |this, _, _, cx| {
+                let folds = &mut this.transcript_ui.open_folds;
+                if !folds.remove(&turn_id) {
+                    folds.insert(turn_id.clone());
+                }
+                cx.notify();
+            }))
+            .into_any_element()
+    }
+
+    /// MonoCode `MonoTurnHeader`: a Mono signs its turn with its pill (the
+    /// still mascot and its name), and while it works the status of the
+    /// latest step runs beside it. The pill opens the folded work, which
+    /// MonoCode shows in its activity panel instead.
+    fn render_mono_fold_line(
+        &self,
+        session: &SessionRow,
+        turn: &TurnLayout,
+        mono: &crate::monos::Mono,
+        open: bool,
+        cx: &Context<Self>,
+    ) -> AnyElement {
+        let blocks = &session.blocks;
+        let turn_id = turn.id(blocks).to_string();
+        let expandable = turn.fold.is_some();
+        let group = format!("fold-{turn_id}");
+        let fg = cx.theme().colors.fg;
+        let mark = pixel_sprite(
+            &self.mono_mascot(mono).rest,
+            px(ICON_BOX),
+            self.mono_color(mono),
+            false,
+        );
+        let pill = mono::signature_pill(
+            icon_slot(mark, open, expandable, &group, cx),
+            mono::signature_name(mono.display_name(), cx),
+            cx,
+        );
+        let ticker = turn.live.then(|| {
+            let request = self.pending_permission_for(&session.id);
+            let live = mono::Live {
+                approval: request.is_some_and(|r| r.tool != crate::app::QUESTION_TOOL),
+                question: request.is_some_and(|r| r.tool == crate::app::QUESTION_TOOL),
+                background: self.background_tasks_for(&session.id).len(),
+            };
+            let steps: Vec<&Block> = turn.range.clone().map(|ix| &blocks[ix]).collect();
+            mono::work_status(&steps, live)
+        });
+        let row = div()
+            .id(SharedString::from(group.clone()))
+            .group(SharedString::from(group.clone()))
+            .flex()
+            .w_full()
+            .min_w_0()
+            .items_center()
+            .gap_1p5()
+            .px_4()
+            .py_1()
+            .text_size(px(14.0))
+            .text_color(muted(fg, 0.5))
+            .map(|el| match ticker {
+                Some(status) => el
+                    .child(div().flex().flex_none().max_w(relative(0.45)).child(pill))
+                    .child(div().flex_none().text_color(muted(fg, 0.25)).child("·"))
+                    .child(shimmer_label(status, cx)),
+                None => el.child(pill),
+            });
         if !expandable {
             return row.into_any_element();
         }
@@ -302,17 +380,18 @@ impl BenCodeApp {
     ) -> AnyElement {
         let phases = turns::build_phases(trail.blocks, group);
         let last = phases.len().saturating_sub(1);
+        // Blocks, not flex columns: a run's trail nests a phase list inside
+        // another, and every flex level multiplies the layout passes.
         div()
-            .flex()
-            .flex_col()
             .min_w_0()
-            .gap_1()
-            .children(
-                phases
-                    .iter()
-                    .enumerate()
-                    .map(|(ix, phase)| self.render_phase(trail, phase, !done && ix == last, cx)),
-            )
+            .children(phases.iter().enumerate().map(|(ix, phase)| {
+                div().when(ix > 0, |el| el.mt_1()).child(self.render_phase(
+                    trail,
+                    phase,
+                    !done && ix == last,
+                    cx,
+                ))
+            }))
             .into_any_element()
     }
 
@@ -385,8 +464,6 @@ impl BenCodeApp {
             .child(icon_slot(icon, false, true, &group, cx))
             .child(label);
         div()
-            .flex()
-            .flex_col()
             .min_w_0()
             .child(header)
             .when(open, |el| {
@@ -396,8 +473,6 @@ impl BenCodeApp {
                         .pl(px(12.0))
                         .border_l_1()
                         .border_color(muted(fg, 0.14))
-                        .flex()
-                        .flex_col()
                         .children(
                             phase
                                 .steps
@@ -479,8 +554,6 @@ impl BenCodeApp {
             }))
             .child(dim_label(summary, &group, cx));
         div()
-            .flex()
-            .flex_col()
             .min_w_0()
             .child(header)
             .when(open, |el| {
@@ -565,8 +638,6 @@ impl BenCodeApp {
             )
             .children(tool_status(state, live, cx));
         div()
-            .flex()
-            .flex_col()
             .min_w_0()
             .child(row)
             .when_some(detail.filter(|_| error_open), |el, detail| {

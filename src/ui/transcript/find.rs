@@ -317,7 +317,8 @@ impl BenCodeApp {
             return;
         };
         let running = self.is_agent_running_in(&session_id);
-        let layouts = turns::layout_turns(&session.blocks, running);
+        let mono = self.is_mono_session(&session_id);
+        let layouts = turns::layout_turns(&session.blocks, running, mono);
         if let Some(turn) = layouts.iter().find(|t| t.range.contains(&block)) {
             self.transcript_ui
                 .open_folds

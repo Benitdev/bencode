@@ -232,6 +232,8 @@ pub struct ClaudeParser {
     /// Claude yielded (its `result`) with how the turn went; the turn ends
     /// with it once nothing runs in the background.
     yielded: Option<DoneStatus>,
+    /// Claude has yielded once in this process: the prompt has its answer.
+    answered: bool,
     /// A task finished after Claude yielded; its follow-up turn is on the
     /// way, until `RESUME_GRACE` after this.
     awaiting_resume: Option<Instant>,
@@ -275,9 +277,16 @@ impl LineParser for ClaudeParser {
             Some("user") => self.on_user(&rec, &mut events),
             Some("control_request") => on_control_request(&rec, &mut events),
             Some("tool_progress") => self.on_tool_progress(&rec, &mut events),
+            // A resumed session whose background tasks died with the last
+            // process (Stop, quit) first answers their notifications in a
+            // turn of its own, before the prompt: that `result` is not ours.
+            Some("result") if !self.answered && is_notification_result(&rec) => {
+                log::debug!("claude: skipped a task notification's result before the prompt");
+            }
             Some("result") => {
                 let status = on_result(&rec, self.rate_limited.take(), &mut events);
                 self.yielded = Some(status);
+                self.answered = true;
                 self.maybe_finish(&mut events);
                 self.show_background_rows(&mut events);
                 self.sync_background(&mut events);
@@ -552,6 +561,11 @@ fn context_from_result(rec: &Value, usage: &Value) -> AgentEvent {
         total_tokens: input_tokens + output_tokens,
         context_window,
     }
+}
+
+/// A `result` closing a turn Claude ran for task notifications alone.
+fn is_notification_result(rec: &Value) -> bool {
+    rec.pointer("/origin/kind").and_then(Value::as_str) == Some("task-notification")
 }
 
 /// Folds Claude's `result` in; how its turn went. The BenCode turn ends
@@ -910,6 +924,28 @@ mod tests {
             !events
                 .iter()
                 .any(|e| matches!(e, AgentEvent::Background(_)))
+        );
+    }
+
+    #[test]
+    fn a_resume_after_dead_background_agents_waits_for_the_prompt() {
+        // Claude 2.1.299 resuming a session stopped with two agents running.
+        let events = parse_all(&[
+            r#"{"type":"system","subtype":"task_notification","task_id":"t1","status":"failed","summary":"Background agent \"Explore\" didn't finish before the previous session ended"}"#,
+            r#"{"type":"system","subtype":"init","session_id":"s1"}"#,
+            r#"{"type":"result","subtype":"success","is_error":false,"num_turns":0,"result":"","origin":{"kind":"task-notification"},"session_id":"s1"}"#,
+            r#"{"type":"system","subtype":"init","session_id":"s1"}"#,
+        ]);
+        assert!(!events.iter().any(|e| matches!(e, AgentEvent::Done(_))));
+
+        let events = parse_all(&[
+            r#"{"type":"result","subtype":"success","is_error":false,"num_turns":0,"result":"","origin":{"kind":"task-notification"}}"#,
+            r#"{"type":"assistant","message":{"id":"m1","content":[{"type":"text","text":"ok"}]}}"#,
+            r#"{"type":"result","subtype":"success","is_error":false,"result":"ok"}"#,
+        ]);
+        assert_eq!(
+            events.last(),
+            Some(&AgentEvent::Done(DoneStatus::Completed))
         );
     }
 

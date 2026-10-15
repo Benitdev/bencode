@@ -7,6 +7,7 @@
 //! button on hover, a tooltip and a context menu. Middle-click closes, tabs
 //! drag to reorder, and opening or closing a tab sweeps its width.
 
+mod mono;
 pub mod tabs;
 
 use std::collections::{HashMap, HashSet};

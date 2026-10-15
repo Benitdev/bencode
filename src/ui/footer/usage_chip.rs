@@ -91,9 +91,20 @@ fn chip_tooltip(limits: &ProviderRateLimits, now: i64) -> String {
     }
 }
 
+/// MonoCode `UsageChipVariant`: the footer's chip, or the quiet tool
+/// buttons under a Mono's composer (`composer`), which name no account and
+/// switch none (`accountPicker={false}`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UsageChipVariant {
+    Footer,
+    Composer,
+}
+
 /// What the popover needs to know about the footer's account.
 pub(super) struct ChipAccounts<'a> {
     pub provider: RateLimitProvider,
+    /// The popover may switch accounts (MonoCode `accountPicker`).
+    pub picker: bool,
     /// Empty for a provider without account profiles.
     pub accounts: &'a [ProviderAccount],
     pub active_id: &'a str,
@@ -114,16 +125,18 @@ impl ChipAccounts<'_> {
     }
 
     pub fn can_manage(&self) -> bool {
-        supports_accounts(self.provider.id())
+        self.picker && supports_accounts(self.provider.id())
     }
 }
 
 impl BenCodeApp {
-    pub(super) fn render_usage_chip(
+    pub(crate) fn render_usage_chip(
         &self,
         target: &UsageTarget,
+        variant: UsageChipVariant,
         cx: &Context<Self>,
     ) -> impl IntoElement {
+        let composer = variant == UsageChipVariant::Composer;
         let colors = &cx.theme().colors;
         let fg = colors.fg;
         let now = now_ms();
@@ -135,13 +148,14 @@ impl BenCodeApp {
             removed = ProviderRateLimits::unavailable(REMOVED_ACCOUNT, now);
             &removed
         };
-        let accounts = if supports_accounts(provider.id()) {
+        let accounts = if supports_accounts(provider.id()) && !composer {
             self.provider_accounts(provider.id())
         } else {
             Vec::new()
         };
         let chip_accounts = ChipAccounts {
             provider,
+            picker: !composer,
             accounts: &accounts,
             active_id: &target.account_id,
             limits,
@@ -150,18 +164,29 @@ impl BenCodeApp {
         let windows = limits.windows();
         let faint = |text: &'static str| div().text_color(fg.opacity(0.35)).child(text);
 
+        // MonoCode `USAGE_CHIP_CLASSES`: `h-5 rounded px-1
+        // hover:bg-content/10` in the footer, `h-6.5 rounded-md px-1.5
+        // hover:bg-content/8` under the composer.
         let chip = div()
-            .id("usage-chip")
+            .id(if composer {
+                "usage-chip-composer"
+            } else {
+                "usage-chip"
+            })
             .flex()
             .flex_none()
             .items_center()
             .gap(px(6.0))
-            .h(px(20.0))
-            .px_1()
-            .rounded(px(4.0))
+            .h(px(if composer { 26.0 } else { 20.0 }))
+            .map(|el| if composer { el.px_1p5() } else { el.px_1() })
+            .rounded(px(if composer { 6.0 } else { 4.0 }))
+            .text_color(fg.opacity(0.55))
             .whitespace_nowrap()
             .cursor_pointer()
-            .hover(move |s| s.bg(fg.opacity(0.10)).text_color(fg))
+            .hover(move |s| {
+                s.bg(fg.opacity(if composer { 0.08 } else { 0.10 }))
+                    .text_color(fg)
+            })
             .on_hover(cx.listener(|this, hovered: &bool, _, _| this.usage.chip_hovered = *hovered))
             .on_click(cx.listener(move |this, _, _, cx| this.toggle_usage_popover(provider, cx)))
             .tooltip(Tooltip::text(chip_tooltip(limits, now)))
@@ -222,7 +247,7 @@ impl BenCodeApp {
         div()
             .relative()
             .flex_none()
-            .mx(px(-4.0))
+            .when(!composer, |el| el.mx(px(-4.0)))
             .child(chip)
             .when(self.usage.popover == Some(provider), |el| {
                 el.child(self.render_usage_popover(&chip_accounts, target.available, cx))

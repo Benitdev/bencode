@@ -18,6 +18,7 @@ use super::handoff::{HandoffCard, HandoffMeta, handoff_mini_card};
 use super::note_card::{NoteCard, note_mini_card};
 use crate::app::BenCodeApp;
 use crate::db::{Block, SessionRow};
+use crate::monos::Mono;
 use crate::ui::attachment_chip::OnRemove;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -193,14 +194,27 @@ impl BenCodeApp {
 
     /// The placeholder follows the focused thread's card.
     pub fn sync_prompt_placeholder(&mut self, cx: &mut Context<Self>) {
-        let placeholder = match self.selected_session_id.as_deref() {
-            Some(id) if self.worktree_removed(id) => super::removed_worktree::REMOVED_PLACEHOLDER,
+        let mono = self
+            .selected_session_id
+            .as_deref()
+            .and_then(|id| self.mono_for_session(id));
+        let placeholder: SharedString = match self.selected_session_id.as_deref() {
+            // MonoCode `MonoComposer`: "Message {name}".
+            _ if mono.is_some() => format!(
+                "Message {}",
+                mono.map(Mono::display_name).unwrap_or_default()
+            )
+            .into(),
+            Some(id) if self.worktree_removed(id) => {
+                super::removed_worktree::REMOVED_PLACEHOLDER.into()
+            }
             id => id
                 .and_then(|id| self.thread(id)?.composer_card.as_ref())
-                .map_or(super::PROMPT_PLACEHOLDER, ComposerCard::placeholder),
+                .map_or(super::PROMPT_PLACEHOLDER, ComposerCard::placeholder)
+                .into(),
         };
         self.prompt_input.update(cx, |input, cx| {
-            if input.placeholder_text().as_ref() != placeholder {
+            if *input.placeholder_text() != placeholder {
                 input.set_placeholder(placeholder, cx);
             }
         });

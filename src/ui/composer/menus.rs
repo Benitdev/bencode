@@ -6,7 +6,7 @@
 use gpui::{App, Context, FocusHandle, Focusable, InteractiveElement, IntoElement, Window};
 
 use super::PERMISSION_MODES;
-use super::model_picker::{ModelTab, Submenu};
+use super::model_picker::{ModelTab, ModelsAnchor, Submenu};
 use crate::app::BenCodeApp;
 use crate::ui::composer::ComposerPopover;
 use crate::ui::explorer_menu::{self, MenuAction, MenuEntry, MenuPlace, MenuView};
@@ -25,6 +25,11 @@ pub struct MenuState {
     pub model_submenu: Option<Submenu>,
     pub setting_index: usize,
     pub model_tab: ModelTab,
+    /// The models opened on their own, and by which trigger.
+    pub models_only: Option<ModelsAnchor>,
+    /// The model setting whose pill menu is open (MonoCode `SelectPill`),
+    /// by its id.
+    pub pill_menu: Option<String>,
     /// The context meter's card, pinned open by a click.
     pub context_pinned: bool,
     /// The checkout menu of a new thread, and its highlighted row.
@@ -49,6 +54,8 @@ impl MenuState {
             model_submenu: None,
             setting_index: 0,
             model_tab: ModelTab::default(),
+            models_only: None,
+            pill_menu: None,
             context_pinned: false,
             workspace_menu: None,
             recent_open: false,

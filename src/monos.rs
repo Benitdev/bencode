@@ -8,8 +8,9 @@
 //! `SOUL.md`, in BenCode's data folder (`monos/<id>/`), never in a repo.
 //!
 //! A reply that is only `<reaction>👍</reaction>` is a reaction on the
-//! user's message (`monoReaction.ts`), drawn by the views. While a turn
-//! runs its prose is not shown, so one still streaming in never shows.
+//! user's message (`monoReaction.ts`), drawn by the views; one still
+//! streaming in is held back until it settles (`partial_reaction`). A
+//! message of a few emoji stands alone, large (`emojiMessage.ts`).
 //!
 //! Not ported: memory, habits, sessions a Mono starts and artifacts (they
 //! go through MonoCode's `app` CLI, which BenCode lacks).
@@ -272,10 +273,62 @@ const REACTION_CLOSE: &str = "</reaction>";
 fn is_single_emoji(text: &str) -> bool {
     let count = text.chars().count();
     (1..=12).contains(&count)
-        && text.chars().any(|c| c as u32 >= 0x203C)
+        && text.chars().any(is_pictograph)
         && !text
             .chars()
             .any(|c| c.is_alphabetic() || c.is_whitespace() || matches!(c, '<' | '>' | '&'))
+}
+
+/// The blocks `\p{Extended_Pictographic}` mostly lives in, and the keycap
+/// mark: enough to tell an emoji from an arrow or a letter.
+fn is_pictograph(c: char) -> bool {
+    matches!(
+        c as u32,
+        0x1F000..=0x1FAFF
+            | 0x2600..=0x27BF
+            | 0x2300..=0x23FF
+            | 0x2B00..=0x2BFF
+            | 0x2194..=0x21AA
+            | 0x203C
+            | 0x2049
+            | 0x20E3
+            | 0x2122
+            | 0x2139
+            | 0x3030
+            | 0x303D
+            | 0x3297
+            | 0x3299
+    )
+}
+
+/// MonoCode `MAX_EMOJI`: messaging apps show up to three emoji on their own.
+const MAX_EMOJI: usize = 3;
+
+/// MonoCode `isEmojiOnlyMessage`: a message that is just a few emoji, which
+/// reads as a reaction and is drawn large, without a bubble.
+pub fn is_emoji_only(text: &str) -> bool {
+    use unicode_segmentation::UnicodeSegmentation;
+    let mut count = 0;
+    for word in text.split_whitespace() {
+        for grapheme in word.graphemes(true) {
+            count += 1;
+            if count > MAX_EMOJI || !is_single_emoji(grapheme) {
+                return false;
+            }
+        }
+    }
+    count > 0
+}
+
+/// MonoCode `partialReaction`: a reply still streaming in that may yet turn
+/// out to be a reaction, so it is not shown until it settles.
+pub fn partial_reaction(text: &str) -> bool {
+    let text = text.trim_start();
+    if text.len() < REACTION_OPEN.len() {
+        REACTION_OPEN.starts_with(text)
+    } else {
+        text.starts_with(REACTION_OPEN) && !text.contains("</")
+    }
 }
 
 /// MonoCode `monoReaction`: the emoji when a reply is only a reaction.
@@ -475,6 +528,27 @@ mod tests {
             "<reaction><b>👍</b></reaction>",
         ] {
             assert_eq!(mono_reaction(not), None, "{not}");
+        }
+    }
+
+    #[test]
+    fn a_few_emoji_stand_alone() {
+        for only in ["👍", " 🎉🎉 ", "❤️ 👍 🇻🇳", "👨‍👩‍👧", "1️⃣"]
+        {
+            assert!(is_emoji_only(only), "{only}");
+        }
+        for not in ["", "  ", "👍👍👍👍", "ok 👍", "👍!", "→", "123"] {
+            assert!(!is_emoji_only(not), "{not}");
+        }
+    }
+
+    #[test]
+    fn a_reply_may_be_a_reaction_until_it_closes() {
+        for maybe in ["", "<rea", " <reaction>👍"] {
+            assert!(partial_reaction(maybe), "{maybe}");
+        }
+        for not in ["Sure", "<reaction>👍</", "<b>"] {
+            assert!(!partial_reaction(not), "{not}");
         }
     }
 

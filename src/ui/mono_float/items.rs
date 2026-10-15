@@ -8,51 +8,37 @@
 //! ticker ("Reading file…") while the turn runs, and the full trail is one
 //! click away in BenCode. While it runs even its prose stays in the work;
 //! once it settles the reply after the last step shows, with Copy and the
-//! time it finished.
+//! time it finished. An approval it waits on is answered in the turn
+//! (MonoCode `MonoWorkApprovals`).
+//!
+//! A reply that is only a reaction moves onto the message before it, and
+//! the work between them goes, notices aside (`monoReactionBlocks`).
 
 use std::hash::{DefaultHasher, Hash, Hasher};
 
 use crate::db::Block;
-use crate::monos::mono_reaction;
 use crate::ui::attachment_chip::ChipFile;
+pub use crate::ui::transcript::mono::{Live, is_message};
+use crate::ui::transcript::mono::{Reactions, mono_reactions, opens_new_stretch, work_status};
 use crate::ui::transcript::turns::{
-    WorkKind, is_notice, is_prose, is_thinking, is_tool, text, tool_kind, tool_kind_name,
+    is_notice, is_prose, is_thinking, is_tool, text, tool_kind_name,
 };
 
 /// MonoCode `MONO_PAGE_TURNS`: the turns shown at first, and how many
 /// more each scroll to the top brings in.
 pub const PAGE_TURNS: usize = 10;
 
-/// MonoCode `STRETCH_GAP`: a message this long after the one before gets
-/// its own day and time.
-pub const STRETCH_GAP_MS: i64 = 60 * 60 * 1000;
-
-/// MonoCode `THINKING_LABELS`, one per thought so the line moves on.
-const THINKING_LABELS: [&str; 4] = [
-    "Thinking…",
-    "Pondering…",
-    "Considering…",
-    "Working it through…",
-];
-
 /// Where a message the user sent stands (MonoCode `MessageDelivery`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Delivery {
     Sent,
-    /// Waiting behind the running turn.
+    /// Waiting behind the running turn, drawn as sent.
     Pending,
-    /// Held since the agent was stopped: "Not sent", with Resume.
+    /// Held since the agent was stopped: "Not sent". MonoCode's floating
+    /// chat offers no Resume (it passes no `onRetryMessage`).
     Paused,
-}
-
-/// What the running turn waits on, which the app knows and the blocks do
-/// not.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct Live {
-    pub approval: bool,
-    pub question: bool,
-    /// Background tasks the turn waits on (MonoCode `backgroundTasks`).
-    pub background: usize,
+    /// It could not be sent: "Not sent · why", with Retry.
+    Failed(String),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -69,6 +55,8 @@ pub enum FloatItem {
         files: Vec<ChipFile>,
         reaction: Option<String>,
         delivery: Delivery,
+        /// When it was sent (ms), shown beside its Copy on hover.
+        at: Option<i64>,
     },
     /// MonoCode `MonoTurnHeader`: the Mono's pill, and while the turn runs
     /// the ticker beside it.
@@ -84,6 +72,9 @@ pub enum FloatItem {
         copy: String,
         at: Option<i64>,
     },
+    /// MonoCode `MonoWorkApprovals`: the approval the running turn waits
+    /// on, by its request id, answered in place.
+    Approval(String),
 }
 
 /// A row and the turn it belongs to (the index of its first block), which
@@ -92,29 +83,6 @@ pub enum FloatItem {
 pub struct FloatRow {
     pub turn: usize,
     pub item: FloatItem,
-}
-
-fn flag(block: &Block, key: &str) -> bool {
-    block.extra.get(key).and_then(|v| v.as_bool()) == Some(true)
-}
-
-/// A message the user sent: MonoCode shows neither the app's own prompts
-/// nor drafts.
-pub fn is_message(block: &Block) -> bool {
-    block.role == "user" && !flag(block, "internal") && !flag(block, "draft")
-}
-
-/// MonoCode `opensNewStretch`: the first message, a new day or after a break.
-pub fn opens_new_stretch(at: i64, previous: Option<i64>) -> bool {
-    let Some(previous) = previous else {
-        return true;
-    };
-    let day = |ms: i64| {
-        jiff::Timestamp::from_millisecond(ms)
-            .ok()
-            .map(|t| t.to_zoned(jiff::tz::TimeZone::system()).date())
-    };
-    at - previous > STRETCH_GAP_MS || day(at) != day(previous)
 }
 
 /// Where the newest `turns` turns start; 0 when there are no more.
@@ -166,14 +134,20 @@ pub fn float_rows(blocks: &[Block], start: usize, live: Option<Live>) -> Vec<Flo
             item: FloatItem::Earlier,
         });
     }
-    let shown = &blocks[start..];
+    let reactions = mono_reactions(blocks, live.is_some());
+    let shown: Vec<usize> = reactions
+        .kept
+        .iter()
+        .copied()
+        .filter(|&ix| ix >= start)
+        .collect();
     // Each turn starts at a message; what comes before the first is a turn
     // with none (a reply the Mono sent on its own).
     let mut heads: Vec<usize> = shown
         .iter()
         .enumerate()
-        .filter(|(_, block)| is_message(block))
-        .map(|(ix, _)| ix)
+        .filter(|(_, ix)| is_message(&blocks[**ix]))
+        .map(|(at, _)| at)
         .collect();
     if heads.first() != Some(&0) {
         heads.insert(0, 0);
@@ -188,7 +162,7 @@ pub fn float_rows(blocks: &[Block], start: usize, live: Option<Live>) -> Vec<Flo
         let end = heads.get(turn + 1).copied().unwrap_or(shown.len());
         let range = &shown[head..end];
         let (user, rest) = match range.split_first() {
-            Some((first, rest)) if is_message(first) => (Some(first), rest),
+            Some((&first, rest)) if is_message(&blocks[first]) => (Some(first), rest),
             _ => (None, range),
         };
         if user.is_none() && rest.is_empty() {
@@ -197,154 +171,145 @@ pub fn float_rows(blocks: &[Block], start: usize, live: Option<Live>) -> Vec<Flo
         let live = live.filter(|_| turn + 1 == count);
         // Named by where it starts in the whole conversation, so bringing
         // in earlier turns leaves the rows after them as they were.
-        push_turn(&mut rows, start + head, user, rest, live, &mut previous_at);
+        let turn = Turn {
+            blocks,
+            user,
+            rest: rest
+                .iter()
+                .copied()
+                .filter(|&ix| blocks[ix].role != "user")
+                .collect(),
+            reactions: &reactions,
+            live,
+        };
+        turn.push(&mut rows, range[0], &mut previous_at);
     }
     rows
 }
 
-fn push_turn(
-    rows: &mut Vec<FloatRow>,
-    turn: usize,
-    user: Option<&Block>,
-    rest: &[Block],
+/// A message and what the Mono did for it, by block index.
+struct Turn<'a> {
+    blocks: &'a [Block],
+    user: Option<usize>,
+    rest: Vec<usize>,
+    reactions: &'a Reactions,
     live: Option<Live>,
-    previous_at: &mut Option<i64>,
-) {
-    let push = |rows: &mut Vec<FloatRow>, item| rows.push(FloatRow { turn, item });
-    let rest: Vec<&Block> = rest.iter().filter(|block| block.role != "user").collect();
-    // MonoCode `groupMonoTurnItems`: the work runs to the last step (any
-    // prose, while the turn is live); the prose after it is the reply.
-    let work_end = rest.iter().rposition(|block| {
-        is_tool(block) || is_thinking(block) || (live.is_some() && is_prose(block))
-    });
-    let shows = |ix: usize| live.is_none() && work_end.is_none_or(|end| ix > end);
-    let replies: Vec<&str> = rest
-        .iter()
-        .enumerate()
-        .filter(|(ix, block)| is_prose(block) && shows(*ix))
-        .map(|(_, block)| text(block).trim())
-        .collect();
-    let reaction = (replies.len() == 1)
-        .then(|| mono_reaction(replies[0]))
-        .flatten()
-        .map(str::to_string);
-    if let Some(user) = user {
-        if let Some(at) = user.started_at {
-            if opens_new_stretch(at, *previous_at) {
-                push(rows, FloatItem::Day(at));
-            }
-            *previous_at = Some(at);
-        }
-        let files = user
-            .extra
-            .get("attachments")
-            .and_then(|files| files.as_array())
-            .map(|files| files.iter().filter_map(ChipFile::from_block_json).collect())
-            .unwrap_or_default();
-        push(
-            rows,
-            FloatItem::User {
-                text: text(user).trim().to_string(),
-                files,
-                // A Mono that only reacted answered on the message itself.
-                reaction: reaction.clone(),
-                delivery: Delivery::Sent,
-            },
-        );
-    }
-    let notices = rest.iter().filter(|block| is_notice(block));
-    if reaction.is_some() && user.is_some() {
-        for block in notices {
-            push(rows, FloatItem::Notice(text(block).trim().to_string()));
-        }
-        return;
-    }
-    // MonoCode `showFoldLine`: the line is there from the first token on.
-    let worked = rest.iter().any(|block| {
-        !matches!(block.role.as_str(), "assistant" | "reasoning") || !text(block).trim().is_empty()
-    });
-    if live.is_none() && !worked {
-        return;
-    }
-    push(
-        rows,
-        FloatItem::Header {
-            ticker: live.map(|live| work_status(&rest, live)),
-        },
-    );
-    for (ix, block) in rest.iter().enumerate() {
-        if is_notice(block) {
-            push(rows, FloatItem::Notice(text(block).trim().to_string()));
-        } else if is_prose(block) && shows(ix) {
-            let said = match &reaction {
-                // No message to sit on: the emoji on its own.
-                Some(emoji) => emoji.as_str(),
-                None => text(block).trim(),
-            };
-            match rows.last_mut() {
-                // A reply streams as one block, but a provider may split it.
-                Some(FloatRow {
-                    item: FloatItem::Reply(reply),
-                    ..
-                }) => {
-                    reply.push_str("\n\n");
-                    reply.push_str(said);
-                }
-                _ => push(rows, FloatItem::Reply(said.to_string())),
-            }
-        }
-    }
-    if live.is_none() {
-        // MonoCode `turnCopyText` over what the turn shows.
-        let copy = match &reaction {
-            Some(emoji) => emoji.clone(),
-            None => replies.join("\n\n"),
-        };
-        let at = user.and_then(|user| Some(user.started_at? + user.duration_ms.unwrap_or(0)));
-        push(rows, FloatItem::Footer { copy, at });
-    }
 }
 
-/// MonoCode `monoWorkStatus`: a short line for the latest activity, stable
-/// across its streamed chunks.
-pub fn work_status(blocks: &[&Block], live: Live) -> String {
-    if live.approval {
-        return "Waiting for approval…".to_string();
-    }
-    if live.question {
-        return "Waiting for answers…".to_string();
-    }
-    let mut thoughts = 0usize;
-    let mut latest: Option<&Block> = None;
-    for block in blocks {
-        if is_prose(block) || is_thinking(block) {
-            thoughts += 1;
-            latest = Some(block);
-        } else if is_tool(block) {
-            latest = Some(block);
+impl Turn<'_> {
+    fn push(&self, rows: &mut Vec<FloatRow>, turn: usize, previous_at: &mut Option<i64>) {
+        let push = |rows: &mut Vec<FloatRow>, item| rows.push(FloatRow { turn, item });
+        let blocks = self.blocks;
+        let live = self.live;
+        let rest: Vec<(usize, &Block)> = self.rest.iter().map(|&ix| (ix, &blocks[ix])).collect();
+        // MonoCode `groupMonoTurnItems`: the work runs to the last step (any
+        // prose, while the turn is live); the prose after it is the reply.
+        let work_end = rest.iter().rposition(|(_, block)| {
+            is_tool(block) || is_thinking(block) || (live.is_some() && is_prose(block))
+        });
+        let shows = |at: usize| live.is_none() && work_end.is_none_or(|end| at > end);
+        // What the Mono said, a reaction with no message standing as its emoji.
+        let said = |(ix, block): (usize, &Block)| -> String {
+            match self.reactions.alone(ix) {
+                Some(emoji) => emoji.to_string(),
+                None => text(block).trim().to_string(),
+            }
+        };
+        let replies: Vec<String> = rest
+            .iter()
+            .enumerate()
+            .filter(|(at, (_, block))| is_prose(block) && shows(*at))
+            .map(|(_, &step)| said(step))
+            .collect();
+        let reaction = self
+            .user
+            .and_then(|user| self.reactions.on(user))
+            .map(str::to_string);
+        if let Some(user) = self.user.map(|ix| &blocks[ix]) {
+            if let Some(at) = user.started_at {
+                if opens_new_stretch(at, *previous_at) {
+                    push(rows, FloatItem::Day(at));
+                }
+                *previous_at = Some(at);
+            }
+            let files = user
+                .extra
+                .get("attachments")
+                .and_then(|files| files.as_array())
+                .map(|files| files.iter().filter_map(ChipFile::from_block_json).collect())
+                .unwrap_or_default();
+            push(
+                rows,
+                FloatItem::User {
+                    text: text(user).trim().to_string(),
+                    files,
+                    reaction: reaction.clone(),
+                    delivery: Delivery::Sent,
+                    at: user.started_at,
+                },
+            );
         }
-    }
-    match latest.filter(|block| is_tool(block)) {
-        Some(tool) => match tool_kind(tool) {
-            WorkKind::Run => "Running command…",
-            WorkKind::Edit => "Editing file…",
-            WorkKind::Research if tool_kind_name(tool) == "read" => "Reading file…",
-            WorkKind::Research => "Exploring project…",
-            WorkKind::Agent => "Running agent…",
-            _ => "Using tool…",
+        // MonoCode `reactedOnly`: the reaction answered it; its notices stay.
+        if reaction.is_some() && rest.iter().all(|(_, block)| is_notice(block)) {
+            for (_, block) in &rest {
+                push(rows, FloatItem::Notice(text(block).trim().to_string()));
+            }
+            return;
         }
-        .to_string(),
-        None => match live.background {
-            0 => THINKING_LABELS[thoughts.saturating_sub(1) % THINKING_LABELS.len()].to_string(),
-            1 => "Waiting for background task…".to_string(),
-            n => format!("Waiting for {n} background tasks…"),
-        },
+        // MonoCode `showFoldLine`: the line is there from the first token on.
+        let worked = rest.iter().any(|(_, block)| {
+            !matches!(block.role.as_str(), "assistant" | "reasoning")
+                || !text(block).trim().is_empty()
+        });
+        if live.is_none() && !worked {
+            return;
+        }
+        let steps: Vec<&Block> = rest.iter().map(|(_, block)| *block).collect();
+        push(
+            rows,
+            FloatItem::Header {
+                ticker: live.map(|live| work_status(&steps, live)),
+            },
+        );
+        for (at, &(ix, block)) in rest.iter().enumerate() {
+            if is_notice(block) {
+                push(rows, FloatItem::Notice(text(block).trim().to_string()));
+            } else if is_prose(block) && shows(at) {
+                let said = said((ix, block));
+                match rows.last_mut() {
+                    // A reply streams as one block, but a provider may split it.
+                    Some(FloatRow {
+                        item: FloatItem::Reply(reply),
+                        ..
+                    }) => {
+                        reply.push_str("\n\n");
+                        reply.push_str(&said);
+                    }
+                    _ => push(rows, FloatItem::Reply(said)),
+                }
+            }
+        }
+        if live.is_none() && reaction.is_none() {
+            // MonoCode `turnCopyText` over what the turn shows.
+            let at = self
+                .user
+                .map(|ix| &blocks[ix])
+                .and_then(|user| Some(user.started_at? + user.duration_ms.unwrap_or(0)));
+            push(
+                rows,
+                FloatItem::Footer {
+                    copy: replies.join("\n\n"),
+                    at,
+                },
+            );
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ui::transcript::mono::STRETCH_GAP_MS;
 
     fn tool(kind: &str) -> Block {
         let mut block = Block::new(format!("t-{kind}"), "tool", "");
@@ -373,6 +338,7 @@ mod tests {
             files: Vec::new(),
             reaction: None,
             delivery: Delivery::Sent,
+            at: None,
         }
     }
 
@@ -434,42 +400,6 @@ mod tests {
     }
 
     #[test]
-    fn the_ticker_names_the_latest_step() {
-        let read = tool("read");
-        let search = tool("search");
-        let run = tool("execute");
-        let think = Block::new("r", "reasoning", "hmm");
-        let say = Block::new("a", "assistant", "ok");
-        let live = Live::default();
-        assert_eq!(work_status(&[&read], live), "Reading file…");
-        assert_eq!(work_status(&[&search], live), "Exploring project…");
-        assert_eq!(work_status(&[&read, &run], live), "Running command…");
-        assert_eq!(work_status(&[&run, &think], live), "Thinking…");
-        assert_eq!(work_status(&[&think, &say], live), "Pondering…");
-        assert_eq!(work_status(&[], live), "Thinking…");
-        let waiting = Live {
-            approval: true,
-            ..live
-        };
-        assert_eq!(work_status(&[&run], waiting), "Waiting for approval…");
-        let asking = Live {
-            question: true,
-            ..live
-        };
-        assert_eq!(work_status(&[&run], asking), "Waiting for answers…");
-        let background = Live {
-            background: 2,
-            ..live
-        };
-        assert_eq!(
-            work_status(&[&think], background),
-            "Waiting for 2 background tasks…"
-        );
-        // A step still running is named over the background wait.
-        assert_eq!(work_status(&[&run], background), "Running command…");
-    }
-
-    #[test]
     fn a_reaction_lands_on_the_message_it_answers() {
         let blocks = [
             Block::new("u1", "user", "fix it"),
@@ -487,6 +417,7 @@ mod tests {
                     files: Vec::new(),
                     reaction: Some("👍".into()),
                     delivery: Delivery::Sent,
+                    at: None,
                 }
         });
         // No pill or footer: the notice alone stays.

@@ -213,12 +213,19 @@ pub fn group_turns(blocks: &[Block]) -> Vec<Range<usize>> {
 /// subagents keep rows of their own: that is where the reader watches, and
 /// the work around them folds and re-folds meanwhile. Once it settles they
 /// are work like any other call, except one that failed.
-pub fn group_items(blocks: &[Block], range: Range<usize>, live: bool) -> Vec<Item> {
+/// Only the blocks `shown` keeps are grouped (a Mono's chat leaves out the
+/// replies that became reactions, and the work before them).
+pub fn group_items(
+    blocks: &[Block],
+    range: Range<usize>,
+    live: bool,
+    shown: impl Fn(usize) -> bool,
+) -> Vec<Item> {
     let mut items = Vec::new();
     let mut activity: Vec<usize> = Vec::new();
     for ix in range {
         let block = &blocks[ix];
-        if is_ignored(block) {
+        if is_ignored(block) || !shown(ix) {
             continue;
         }
         if is_subagent(block) && (live || tool_state(block) == ToolState::Failed) {
@@ -579,6 +586,9 @@ pub fn turn_copy_text(blocks: &[Block], range: Range<usize>) -> String {
 /// One row of the virtualized transcript list.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Row {
+    /// MonoCode `DaySeparator`: "Today 19:39" over a Mono's turn that opens
+    /// a new stretch of the conversation.
+    Day { turn: usize },
     /// An item of turn `turn` outside any fold.
     Item { turn: usize, item: usize },
     /// The turn's status line: live clock, or "worked for" with the fold toggle.
@@ -608,6 +618,14 @@ pub struct TurnLayout {
     pub live: bool,
     /// The turn's user message block.
     pub user: Option<usize>,
+    /// Laid out as a Mono's chat: the line where its work starts, and no
+    /// line or footer for a turn the Mono answered with a reaction.
+    pub mono: bool,
+    /// The emoji a Mono answered the message with (MonoCode `monoReaction`).
+    pub reaction: Option<String>,
+    /// When the message was sent, on a Mono's turn that opens a new stretch
+    /// of the conversation (ms): the day pill over it.
+    pub stamp: Option<i64>,
 }
 
 impl TurnLayout {
@@ -638,7 +656,21 @@ impl TurnLayout {
 
     /// MonoCode `showFoldLine`.
     pub fn shows_fold_line(&self, blocks: &[Block]) -> bool {
+        if self.reacted_only(blocks) {
+            return false;
+        }
         self.live || self.duration_ms(blocks).is_some() || self.fold.is_some()
+    }
+
+    /// MonoCode `reactedOnly`: a Mono's reaction answered the message, and
+    /// nothing else is left to show.
+    pub fn reacted_only(&self, blocks: &[Block]) -> bool {
+        self.reaction.is_some()
+            && !self.live
+            && self
+                .items
+                .iter()
+                .all(|item| matches!(item, Item::Block(ix) if blocks[*ix].role == "user"))
     }
 
     /// Whether activity item `item` renders folded back to its headers.
@@ -672,10 +704,34 @@ pub struct LayoutKey {
 }
 
 impl LayoutKey {
-    pub fn new(blocks: &[Block], running: bool, trailer: bool, open: &HashSet<String>) -> Self {
+    /// `mono`: the thread is laid out as a Mono's chat, whose reactions and
+    /// day pills change the rows too.
+    pub fn new(
+        blocks: &[Block],
+        running: bool,
+        trailer: bool,
+        open: &HashSet<String>,
+        mono: bool,
+    ) -> Self {
         use std::hash::{Hash, Hasher};
         let mut hasher = std::hash::DefaultHasher::new();
+        mono.hash(&mut hasher);
         for (ix, block) in blocks.iter().enumerate() {
+            if mono {
+                if block.role == "assistant" {
+                    let said = text(block);
+                    crate::monos::mono_reaction(said)
+                        .is_some()
+                        .hash(&mut hasher);
+                    if running && ix + 1 == blocks.len() {
+                        crate::monos::partial_reaction(said).hash(&mut hasher);
+                    }
+                } else if block.role == "user" {
+                    block.started_at.hash(&mut hasher);
+                    (block.extra.get("draft").and_then(Value::as_bool) == Some(true))
+                        .hash(&mut hasher);
+                }
+            }
             block.role.hash(&mut hasher);
             text(block).trim().is_empty().hash(&mut hasher);
             block.extra.contains_key("notice").hash(&mut hasher);
@@ -702,29 +758,67 @@ impl LayoutKey {
 /// Lays out every turn of a thread. `running` marks the last turn live.
 /// A block property that changes the rows (not just how one draws) must
 /// also go into `LayoutKey::new`, or the list keeps stale rows.
-pub fn layout_turns(blocks: &[Block], running: bool) -> Vec<TurnLayout> {
+///
+/// As a Mono's chat when `mono` (MonoCode `AgentTranscript`
+/// with `daySeparators` and `monoReactionBlocks`): a reply that is only a
+/// reaction moves onto the message it answers, taking the work before it
+/// (but its notices) out of the turn, and a message that opens a new
+/// stretch of the conversation is stamped with its day.
+pub fn layout_turns(blocks: &[Block], running: bool, mono: bool) -> Vec<TurnLayout> {
+    let reactions = mono.then(|| super::mono::mono_reactions(blocks, running));
+    let shown: Option<Vec<bool>> = reactions.as_ref().map(|reactions| {
+        let mut shown = vec![false; blocks.len()];
+        for &ix in &reactions.kept {
+            shown[ix] = true;
+        }
+        shown
+    });
     let turns = group_turns(blocks);
     let count = turns.len();
-    turns
-        .into_iter()
-        .enumerate()
-        .map(|(ix, range)| {
-            let live = running && ix + 1 == count;
-            let items = group_items(blocks, range.clone(), live);
-            let fold = foldable_work(blocks, &items);
-            let user = range.clone().find(|i| blocks[*i].role == "user");
-            TurnLayout {
-                live,
-                range,
-                items,
-                fold,
-                user,
+    let mut previous_at = None;
+    let mut layouts = Vec::with_capacity(count);
+    for (ix, range) in turns.into_iter().enumerate() {
+        let live = running && ix + 1 == count;
+        let items = group_items(blocks, range.clone(), live, |at| {
+            shown.as_ref().is_none_or(|shown| shown[at])
+        });
+        let fold = foldable_work(blocks, &items);
+        let user = range.clone().find(|i| blocks[*i].role == "user");
+        let reaction = reactions
+            .as_ref()
+            .zip(user)
+            .and_then(|(reactions, user)| reactions.on(user))
+            .map(str::to_string);
+        let mut stamp = None;
+        if let Some(at) = user
+            .filter(|_| mono)
+            .map(|user| &blocks[user])
+            .filter(|block| super::mono::is_message(block))
+            .and_then(|block| block.started_at)
+        {
+            if super::mono::opens_new_stretch(at, previous_at) {
+                stamp = Some(at);
             }
-        })
-        .collect()
+            previous_at = Some(at);
+        }
+        layouts.push(TurnLayout {
+            live,
+            range,
+            items,
+            fold,
+            user,
+            mono,
+            reaction,
+            stamp,
+        });
+    }
+    layouts
 }
 
 fn turn_rows(blocks: &[Block], t: usize, turn: &TurnLayout, open: bool, rows: &mut Vec<Row>) {
+    if turn.stamp.is_some() {
+        rows.push(Row::Day { turn: t });
+    }
     let show_line = turn.shows_fold_line(blocks);
     // Subagents kept out of the fold still come after the line, as work.
     let first_run = turn
@@ -736,7 +830,17 @@ fn turn_rows(blocks: &[Block], t: usize, turn: &TurnLayout, open: bool, rows: &m
         .map(|(start, _)| start)
         .or_else(|| first_foldable(blocks, &turn.items))
         .unwrap_or(turn.items.len())
-        .min(first_run.unwrap_or(usize::MAX));
+        .min(first_run.unwrap_or(usize::MAX))
+        // A Mono signs its turn before anything it says (MonoCode
+        // `MonoTurnHeader`, from the first token on).
+        .min(if turn.mono {
+            turn.items
+                .iter()
+                .position(|item| !matches!(item, Item::Block(ix) if blocks[*ix].role == "user"))
+                .unwrap_or(turn.items.len())
+        } else {
+            usize::MAX
+        });
     for i in 0..turn.items.len() {
         if i == line_at && show_line {
             rows.push(Row::FoldLine { turn: t });
@@ -757,7 +861,7 @@ fn turn_rows(blocks: &[Block], t: usize, turn: &TurnLayout, open: bool, rows: &m
     if line_at >= turn.items.len() && show_line {
         rows.push(Row::FoldLine { turn: t });
     }
-    if !turn.live && turn.duration_ms(blocks).is_some() {
+    if !turn.live && turn.duration_ms(blocks).is_some() && !turn.reacted_only(blocks) {
         rows.push(Row::Footer { turn: t });
     }
 }
@@ -824,7 +928,7 @@ mod tests {
             tool("agent", "Style review", "in_progress"),
             block("assistant", "Waiting for the reviews."),
         ];
-        let live = layout_turns(&blocks, true);
+        let live = layout_turns(&blocks, true, false);
         assert_eq!(
             live[0].items,
             vec![
@@ -838,7 +942,7 @@ mod tests {
         let mut settled = blocks.clone();
         settled[2].tool.as_mut().unwrap()["status"] = json!("completed");
         settled[3].tool.as_mut().unwrap()["status"] = json!("failed");
-        let done = layout_turns(&settled, false);
+        let done = layout_turns(&settled, false, false);
         assert_eq!(
             done[0].items,
             vec![
@@ -866,7 +970,7 @@ mod tests {
             tool("edit", "src/a.rs", "completed"),
             block("assistant", "Done."),
         ];
-        let turns = layout_turns(&blocks, false);
+        let turns = layout_turns(&blocks, false, false);
         assert_eq!(turns.len(), 1);
         assert_eq!(turns[0].items.len(), 3);
         assert_eq!(turns[0].fold, Some((1, 1)));
@@ -895,7 +999,7 @@ mod tests {
             block("user", "go"),
             tool("execute", "cargo test", "in_progress"),
         ];
-        let turns = layout_turns(&blocks, true);
+        let turns = layout_turns(&blocks, true, false);
         assert!(turns[0].live && turns[0].fold.is_none());
         let rows = build_rows(&blocks, &turns, &HashSet::new(), true);
         assert_eq!(
@@ -969,13 +1073,13 @@ mod tests {
     }
 
     fn layout(blocks: &[Block], open: &HashSet<String>) -> (Vec<TurnLayout>, Vec<Row>) {
-        let turns = layout_turns(blocks, false);
+        let turns = layout_turns(blocks, false, false);
         let rows = build_rows(blocks, &turns, open, false);
         (turns, rows)
     }
 
     fn key(blocks: &[Block]) -> LayoutKey {
-        LayoutKey::new(blocks, false, false, &HashSet::new())
+        LayoutKey::new(blocks, false, false, &HashSet::new(), false)
     }
 
     #[test]
@@ -1024,9 +1128,9 @@ mod tests {
         assert_ne!(key(&noticed), was);
 
         let open = HashSet::from([base[0].id.clone()]);
-        assert_ne!(LayoutKey::new(&base, false, false, &open), was);
-        assert_ne!(LayoutKey::new(&base, true, false, &none), was);
-        assert_ne!(LayoutKey::new(&base, false, true, &none), was);
+        assert_ne!(LayoutKey::new(&base, false, false, &open, false), was);
+        assert_ne!(LayoutKey::new(&base, true, false, &none, false), was);
+        assert_ne!(LayoutKey::new(&base, false, true, &none, false), was);
     }
 
     #[test]
@@ -1054,5 +1158,96 @@ mod tests {
             assert_eq!(key(&a), key(&b));
             assert_eq!(layout(&a, &open), layout(&b, &open));
         }
+    }
+
+    #[test]
+    fn a_monos_reaction_moves_onto_the_message_it_answers() {
+        let mut thanks = finished_user("thanks");
+        thanks.started_at = None;
+        let blocks = vec![
+            thanks,
+            tool("read", "a.rs", "completed"),
+            block("assistant", "<reaction>👍</reaction>"),
+        ];
+        let turns = layout_turns(&blocks, false, true);
+        assert_eq!(turns[0].reaction.as_deref(), Some("👍"));
+        assert_eq!(turns[0].items, vec![Item::Block(0)]);
+        // Nothing but the message is left: no line, no footer.
+        let rows = build_rows(&blocks, &turns, &HashSet::new(), false);
+        assert_eq!(rows, vec![Row::Item { turn: 0, item: 0 }]);
+        // Another thread keeps the reply as it was.
+        let plain = layout_turns(&blocks, false, false);
+        assert_eq!(plain[0].reaction, None);
+        assert_eq!(plain[0].items.len(), 3);
+    }
+
+    #[test]
+    fn a_monos_turn_is_signed_before_its_reply() {
+        let blocks = vec![finished_user("hi"), block("assistant", "Hello")];
+        let turns = layout_turns(&blocks, false, true);
+        let rows = build_rows(&blocks, &turns, &HashSet::new(), false);
+        assert_eq!(
+            rows[..2],
+            [Row::Day { turn: 0 }, Row::Item { turn: 0, item: 0 }]
+        );
+        assert_eq!(rows[2], Row::FoldLine { turn: 0 });
+        assert_eq!(rows[3], Row::Item { turn: 0, item: 1 });
+        // A notice before the reply comes after the pill too.
+        let mut stopped = block("system", "Retrying.");
+        stopped.extra.insert("notice".into(), json!("error"));
+        let blocks = vec![finished_user("hi"), stopped, block("assistant", "Hello")];
+        let turns = layout_turns(&blocks, false, true);
+        let rows = build_rows(&blocks, &turns, &HashSet::new(), false);
+        assert_eq!(rows[2], Row::FoldLine { turn: 0 });
+        let plain = layout_turns(&blocks, false, false);
+        let rows = build_rows(&blocks, &plain, &HashSet::new(), false);
+        assert_eq!(rows[1], Row::Item { turn: 0, item: 1 });
+    }
+
+    #[test]
+    fn a_mono_stamps_only_the_turns_that_open_a_stretch() {
+        let at = |text: &str, ms: i64| {
+            let mut user = finished_user(text);
+            user.started_at = Some(ms);
+            user
+        };
+        let noon = 1_760_443_200_000;
+        let blocks = vec![
+            at("a", noon),
+            block("assistant", "A"),
+            at("b", noon + 60_000),
+            block("assistant", "B"),
+            at("c", noon + 2 * super::super::mono::STRETCH_GAP_MS),
+        ];
+        let stamps: Vec<Option<i64>> = layout_turns(&blocks, false, true)
+            .iter()
+            .map(|turn| turn.stamp)
+            .collect();
+        assert_eq!(
+            stamps,
+            [
+                Some(noon),
+                None,
+                Some(noon + 2 * super::super::mono::STRETCH_GAP_MS)
+            ]
+        );
+        assert!(
+            layout_turns(&blocks, false, false)
+                .iter()
+                .all(|t| t.stamp.is_none())
+        );
+    }
+
+    #[test]
+    fn a_reaction_landing_changes_a_monos_layout_key() {
+        let mut blocks = vec![finished_user("thanks"), block("assistant", "<reaction>👍")];
+        let none = HashSet::new();
+        let was = LayoutKey::new(&blocks, false, false, &none, true);
+        blocks[1].text = Some("<reaction>👍</reaction>".into());
+        assert_ne!(LayoutKey::new(&blocks, false, false, &none, true), was);
+        assert_ne!(
+            LayoutKey::new(&blocks, false, false, &none, false),
+            LayoutKey::new(&blocks, false, false, &none, true)
+        );
     }
 }

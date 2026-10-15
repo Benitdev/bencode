@@ -8,7 +8,7 @@
 //!
 //! MonoCode `TerminalSpinner` (a braille spinner, one frame every 80ms),
 //! and in place of their frame-driven forms: the rail's mascot beat
-//! (`--mascot-beat`) and pulse (`animate-pulse`), Ely's `ShimmerText` and
+//! (`--mascot-beat`) and pulse (`animate-pulse`, [`pulse`]), Ely's `ShimmerText` and
 //! the ring of Ely's `Spinner`.
 
 use std::f32::consts::{FRAC_PI_2, TAU};
@@ -35,6 +35,8 @@ pub const WATCHED_FRAME: Duration = Duration::from_millis(33);
 const SHIMMER: Duration = Duration::from_millis(1800);
 /// Ely `Spinner`'s ring: one turn.
 const RING: Duration = Duration::from_millis(900);
+/// Tailwind `animate-pulse`: one breath.
+const PULSE: Duration = Duration::from_secs(2);
 /// Where a still ring rests in its turn (Ely `STILL`).
 const RING_STILL: f32 = 0.3;
 /// Segments in a drawn arc (Ely `ARC`).
@@ -49,6 +51,19 @@ fn epoch() -> Instant {
 /// How far through a `period`-long cycle the clock is now, 0..1.
 pub fn cycle(period: Duration) -> f32 {
     cycle_at(epoch().elapsed(), period)
+}
+
+/// How long until the next `step` boundary of the shared epoch: a clock
+/// that wakes then redraws a stepped mark the moment it moves.
+pub fn until_step(step: Duration) -> Duration {
+    until_step_at(epoch().elapsed(), step)
+}
+
+fn until_step_at(elapsed: Duration, step: Duration) -> Duration {
+    let step = step.as_millis().max(1);
+    let left = step - elapsed.as_millis() % step;
+    // Just past the boundary, so the mark has moved when it is drawn.
+    Duration::from_millis(left as u64 + 1)
 }
 
 fn cycle_at(elapsed: Duration, period: Duration) -> f32 {
@@ -84,6 +99,19 @@ pub fn terminal_spinner(color: Hsla, cx: &App) -> impl IntoElement {
         .line_height(px(11.0))
         .text_color(color)
         .child(frame_at(epoch().elapsed(), cx.reduce_motion()))
+}
+
+/// Tailwind `animate-pulse` as an opacity: full, down to half at the
+/// midpoint, and back; full while motion is held still.
+pub fn pulse(cx: &App) -> f32 {
+    if still(cx) {
+        return 1.0;
+    }
+    pulse_at(cycle(PULSE))
+}
+
+fn pulse_at(t: f32) -> f32 {
+    (t * TAU).cos() * 0.25 + 0.75
 }
 
 /// Ely `ShimmerText`: a band of light sweeping `text` while it waits.
@@ -220,6 +248,26 @@ mod tests {
         assert_eq!(cycle_at(Duration::ZERO, period), 0.0);
         assert_eq!(cycle_at(Duration::from_millis(100), period), 0.25);
         assert_eq!(cycle_at(Duration::from_millis(500), period), 0.25);
+    }
+
+    #[test]
+    fn the_clock_wakes_just_past_the_next_step() {
+        let step = Duration::from_millis(1800);
+        assert_eq!(
+            until_step_at(Duration::from_millis(300), step),
+            Duration::from_millis(1501)
+        );
+        assert_eq!(
+            until_step_at(Duration::from_millis(1800), step),
+            Duration::from_millis(1801)
+        );
+    }
+
+    #[test]
+    fn a_pulse_dips_to_half_and_comes_back() {
+        assert_eq!(pulse_at(0.0), 1.0);
+        assert!((pulse_at(0.5) - 0.5).abs() < 1e-6);
+        assert!((pulse_at(1.0) - 1.0).abs() < 1e-6);
     }
 
     #[test]

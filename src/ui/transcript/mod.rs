@@ -7,6 +7,7 @@ pub(crate) mod activity;
 pub mod blocks;
 pub mod find;
 pub mod markdown;
+pub mod mono;
 mod outline;
 pub mod outline_model;
 mod review_card;
@@ -297,7 +298,8 @@ impl TranscriptView {
 /// The turn a row belongs to; the trailer and spacer follow the last one.
 pub(super) fn row_turn(row: &Row) -> Option<usize> {
     match row {
-        Row::Item { turn, .. }
+        Row::Day { turn }
+        | Row::Item { turn, .. }
         | Row::FoldLine { turn }
         | Row::FoldItem { turn, .. }
         | Row::Footer { turn } => Some(*turn),
@@ -346,10 +348,15 @@ impl BenCodeApp {
                         false
                     };
                     let running = app.is_agent_running();
-                    if running || countdown {
+                    // A Mono's greeting bobs its mascot (two steps a beat).
+                    let bobbing =
+                        !running && app.mono_greeting_shown() && !crate::ui::spinner::still(cx);
+                    if running || countdown || bobbing {
                         cx.notify();
                     }
-                    if !running {
+                    if bobbing {
+                        crate::ui::spinner::until_step(crate::ui::mascot::BOB / 2).min(CLOCK_TICK)
+                    } else if !running {
                         CLOCK_TICK
                     } else if app.alerts.window_active && app.running_thread_in_view() {
                         crate::ui::spinner::WATCHED_FRAME
@@ -399,18 +406,19 @@ impl BenCodeApp {
             .reviews
             .get(session_id)
             .map_or(0, |review| review.stamp);
+        let mono = self.is_mono_session(session_id);
         let session = self.sessions.iter().find(|s| s.id == session_id);
         let open = &self.transcript_ui.open_folds;
         let reflow = self.transcript_ui.reflow;
         let trailer = waiting || review;
-        let key = session.map(|s| turns::LayoutKey::new(&s.blocks, running, trailer, open));
+        let key = session.map(|s| turns::LayoutKey::new(&s.blocks, running, trailer, open, mono));
         let view = self.transcripts.entry(session_id.to_string()).or_default();
         let fresh = view.session_id.as_deref() != Some(session_id);
         let relayout = fresh || key.is_none() || view.layout_key != key;
         let (turns, mut rows) = if relayout {
             match session {
                 Some(s) => {
-                    let turns = turns::layout_turns(&s.blocks, running);
+                    let turns = turns::layout_turns(&s.blocks, running, mono);
                     let rows = turns::build_rows(&s.blocks, &turns, open, trailer);
                     (turns, rows)
                 }
@@ -526,6 +534,10 @@ impl BenCodeApp {
                 && find::row_shows(row, &view.turns, block)
         });
         let content = match row {
+            Row::Day { turn } => match turn_of(*turn).stamp {
+                Some(at) => mono::day_separator(("transcript-day", ix), at, cx).into_any_element(),
+                None => div().into_any_element(),
+            },
             Row::Item { turn, item } => self.render_turn_item(session, turn_of(*turn), *item, cx),
             Row::FoldLine { turn } => self.render_fold_line(session, turn_of(*turn), cx),
             Row::FoldItem { turn, item, .. } => {
@@ -583,18 +595,30 @@ impl BenCodeApp {
     /// The permission prompt, inline under the work like MonoCode's
     /// `ApprovalControls`: what the agent wants, then Allow / Deny.
     pub fn render_trailer(&self, session: &SessionRow, cx: &Context<Self>) -> AnyElement {
-        let Some(request) = self
-            .pending_permission_for(&session.id)
-            .filter(|r| r.tool != crate::app::QUESTION_TOOL)
-        else {
-            // A question is answered in the composer's form.
-            if self.session_review_shown(&session.id) {
-                return self.render_session_review(&session.id, cx);
-            }
-            return div().into_any_element();
-        };
+        if let Some(prompt) = self.render_permission_prompt(&session.id, cx) {
+            return prompt;
+        }
+        // A question is answered in the composer's form.
+        if self.session_review_shown(&session.id) {
+            return self.render_session_review(&session.id, cx);
+        }
+        div().into_any_element()
+    }
+
+    /// MonoCode `ApprovalControls` under what the agent asks to do, for
+    /// any transcript that draws a thread's pending approval (the floating
+    /// chat's `MonoWorkApprovals` too). None while nothing waits, or while
+    /// what waits is a question.
+    pub fn render_permission_prompt(
+        &self,
+        session_id: &str,
+        cx: &Context<Self>,
+    ) -> Option<AnyElement> {
+        let request = self
+            .pending_permission_for(session_id)
+            .filter(|r| r.tool != crate::app::QUESTION_TOOL)?;
         let colors = &cx.theme().colors;
-        let (allow_id, deny_id) = (session.id.clone(), session.id.clone());
+        let (allow_id, deny_id) = (session_id.to_string(), session_id.to_string());
         let button = |id: &str, label: &'static str, primary: bool| {
             let (bg, fg, hover) = if primary {
                 (colors.fg, colors.bg, colors.fg.opacity(0.8))
@@ -606,7 +630,7 @@ impl BenCodeApp {
                 )
             };
             div()
-                .id(SharedString::from(format!("{id}-{}", session.id)))
+                .id(SharedString::from(format!("{id}-{session_id}")))
                 .px_2p5()
                 .py_0p5()
                 .rounded(px(6.0))
@@ -618,38 +642,40 @@ impl BenCodeApp {
                 .hover(move |s| s.bg(hover))
                 .child(label)
         };
-        div()
-            .flex()
-            .flex_col()
-            .gap_1p5()
-            .px_4()
-            .py_1()
-            .child(
-                div()
-                    .text_size(px(14.0))
-                    .text_color(colors.fg.opacity(0.7))
-                    .child(format!("Allow {}?", request.tool)),
-            )
-            .when(!request.description.is_empty(), |el| {
-                el.child(
+        Some(
+            div()
+                .flex()
+                .flex_col()
+                .gap_1p5()
+                .px_4()
+                .py_1()
+                .child(
                     div()
-                        .font_family(cx.theme().mono_family.clone())
-                        .text_size(px(12.0))
-                        .text_color(colors.fg.opacity(0.5))
-                        .child(request.description.clone()),
+                        .text_size(px(14.0))
+                        .text_color(colors.fg.opacity(0.7))
+                        .child(format!("Allow {}?", request.tool)),
                 )
-            })
-            .child(
-                div()
-                    .flex()
-                    .gap_2()
-                    .child(button("perm-allow", "Allow", true).on_click(cx.listener(
-                        move |this, _, _, cx| this.answer_permission(&allow_id, true, cx),
-                    )))
-                    .child(button("perm-deny", "Deny", false).on_click(cx.listener(
-                        move |this, _, _, cx| this.answer_permission(&deny_id, false, cx),
-                    ))),
-            )
-            .into_any_element()
+                .when(!request.description.is_empty(), |el| {
+                    el.child(
+                        div()
+                            .font_family(cx.theme().mono_family.clone())
+                            .text_size(px(12.0))
+                            .text_color(colors.fg.opacity(0.5))
+                            .child(request.description.clone()),
+                    )
+                })
+                .child(
+                    div()
+                        .flex()
+                        .gap_2()
+                        .child(button("perm-allow", "Allow", true).on_click(cx.listener(
+                            move |this, _, _, cx| this.answer_permission(&allow_id, true, cx),
+                        )))
+                        .child(button("perm-deny", "Deny", false).on_click(cx.listener(
+                            move |this, _, _, cx| this.answer_permission(&deny_id, false, cx),
+                        ))),
+                )
+                .into_any_element(),
+        )
     }
 }

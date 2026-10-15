@@ -34,6 +34,15 @@ const OPTION_HEIGHT: f32 = 32.0;
 const PROVIDER_TAB_SIZE: f32 = 32.0;
 const RECENT_MODELS_SHOWN: usize = 6;
 
+/// Which trigger opened the models on their own (MonoCode `hideSettings`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ModelsAnchor {
+    /// The Mono composer's model picker.
+    MonoComposer,
+    /// "Choose another model" on a Mono's usage-limit notice.
+    UsageLimit,
+}
+
 /// The flyout open beside the menu.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Submenu {
@@ -169,6 +178,11 @@ impl BenCodeApp {
             self.close_model_picker(cx);
             return;
         }
+        self.toggle_model_picker_open(cx);
+    }
+
+    /// Opens the model menu, whichever trigger asked.
+    fn toggle_model_picker_open(&mut self, cx: &mut Context<Self>) {
         self.close_composer_popovers(cx);
         self.composer_popover = Some(ComposerPopover::Model);
         let current = self.current_model_key();
@@ -211,6 +225,7 @@ impl BenCodeApp {
 
     pub fn close_model_picker(&mut self, cx: &mut Context<Self>) {
         self.close_popover(ComposerPopover::Model);
+        self.composer_menus.models_only = None;
         self.composer_menus.recent_open = false;
         self.composer_menus.model_submenu = None;
         self.refocus_prompt(cx);
@@ -221,8 +236,20 @@ impl BenCodeApp {
         if catalog::find(key).is_some_and(|m| !self.harness_available(m.harness)) {
             return;
         }
+        // MonoCode `recoverLimit`: another model, picked from a Mono's
+        // usage-limit card, carries on where the limit stopped it.
+        let recover = (self.composer_menus.models_only == Some(ModelsAnchor::UsageLimit))
+            .then(|| {
+                self.selected_session()
+                    .map(|s| (s.id.clone(), s.model.clone()))
+            })
+            .flatten()
+            .filter(|(_, model)| model != key);
         self.set_session_model(key, cx);
         self.close_model_picker(cx);
+        if let Some((session_id, _)) = recover {
+            self.resume_after_limit(&session_id, cx);
+        }
     }
 
     /// ↑/↓ over the models, stopping at the ends (MonoCode `ModelFlyout`).
@@ -258,7 +285,7 @@ impl BenCodeApp {
 
     /// MonoCode `onModelSettingsChange`: the focused thread's settings take
     /// `value`, and it is remembered for threads to come.
-    fn set_model_setting(&mut self, id: &str, value: &str, cx: &mut Context<Self>) {
+    pub(super) fn set_model_setting(&mut self, id: &str, value: &str, cx: &mut Context<Self>) {
         let mut next =
             catalog::merge_settings(&self.current_model_key(), self.current_model_values());
         next.insert(id.to_string(), Value::String(value.to_string()));
@@ -275,7 +302,7 @@ impl BenCodeApp {
         cx.notify();
     }
 
-    fn toggle_model_setting(&mut self, setting: &ModelSetting, cx: &mut Context<Self>) {
+    pub(super) fn toggle_model_setting(&mut self, setting: &ModelSetting, cx: &mut Context<Self>) {
         let next = if setting.value(self.current_model_values()) == "true" {
             "false"
         } else {
@@ -314,6 +341,10 @@ impl BenCodeApp {
         let settings = catalog::picker_settings(&self.current_model_key());
         let entries = settings.len() + 1;
         let submenu = self.composer_menus.model_submenu;
+        // The models alone have no menu to go back to.
+        if self.composer_menus.models_only.is_some() && matches!(key, "left" | "right") {
+            return true;
+        }
         match (key, submenu) {
             ("down" | "up", Some(Submenu::Models)) => {
                 self.move_model_picker(if key == "down" { 1 } else { -1 }, cx);
@@ -571,8 +602,55 @@ impl BenCodeApp {
         popover_surface(flyout, cx).into_any_element()
     }
 
-    /// MonoCode `ModelFlyout`: provider rail, search, models with stars.
+    /// MonoCode `ModelFlyout` beside the model menu's Model row.
     fn render_model_flyout(&self, current_key: &str, cx: &Context<Self>) -> AnyElement {
+        let flyout = self
+            .model_flyout(current_key, cx)
+            .absolute()
+            .left(px(MENU_WIDTH - 2.0 - SUBMENU_OVERLAP))
+            .bottom(px(-5.0));
+        popover_surface(flyout, cx).into_any_element()
+    }
+
+    /// MonoCode `ModelPicker` with `hideSettings`: the trigger opens the
+    /// models alone, settings being pills of their own. Where `anchor`'s
+    /// trigger is, hung above it from its `side`.
+    pub(super) fn toggle_models_only(&mut self, anchor: ModelsAnchor, cx: &mut Context<Self>) {
+        if self.composer_menus.models_only == Some(anchor) {
+            self.close_model_picker(cx);
+            return;
+        }
+        self.toggle_model_picker_open(cx);
+        self.composer_menus.models_only = Some(anchor);
+        self.composer_menus.model_submenu = Some(Submenu::Models);
+        cx.notify();
+    }
+
+    /// The models alone, over `anchor`'s trigger: its bottom edge 32px up
+    /// from the trigger's top (`side="top"`), from its left or right edge.
+    pub(super) fn render_models_only(
+        &self,
+        anchor: ModelsAnchor,
+        right: bool,
+        cx: &Context<Self>,
+    ) -> Option<AnyElement> {
+        if self.composer_menus.models_only != Some(anchor)
+            || !self.popover_open(ComposerPopover::Model)
+        {
+            return None;
+        }
+        // The menu that holds the keyboard is this one.
+        let flyout = self
+            .model_flyout(&self.current_model_key(), cx)
+            .track_focus(&self.composer_menus.focus)
+            .absolute()
+            .bottom(px(32.0))
+            .map(|el| if right { el.right_0() } else { el.left_0() });
+        Some(popover_surface(flyout, cx).into_any_element())
+    }
+
+    /// MonoCode `ModelFlyout`: provider rail, search, models with stars.
+    fn model_flyout(&self, current_key: &str, cx: &Context<Self>) -> gpui::Stateful<gpui::Div> {
         let colors = &cx.theme().colors;
         let tab = self.composer_menus.model_tab;
         let models = self.visible_models(cx);
@@ -792,11 +870,8 @@ impl BenCodeApp {
             .p_1()
             .children(rows)
             .children(empty);
-        let flyout = div()
+        div()
             .id("model-flyout")
-            .absolute()
-            .left(px(MENU_WIDTH - 2.0 - SUBMENU_OVERLAP))
-            .bottom(px(-5.0))
             .w(px(MODEL_MENU_WIDTH))
             .h(px(model_menu_height()))
             .flex()
@@ -816,8 +891,7 @@ impl BenCodeApp {
                     .flex_col()
                     .child(search)
                     .child(list),
-            );
-        popover_surface(flyout, cx).into_any_element()
+            )
     }
 
     /// The recent-models menu (⌘. / right-click on the chip).

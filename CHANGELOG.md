@@ -4,6 +4,23 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
+## [0.1.13] - 2026-10-15
+
+- A Mono in BenCode's window looks like MonoCode's: its own title bar
+  (the mascot moving with its status, Overview and settings buttons), a
+  greeting centred in the chat, day pills and the Mono's signature pill
+  in the transcript, reactions as a badge on your message, and
+  MonoCode's composer, with the emoji picker, the plan's usage, the
+  model and its settings, and the context ring. A usage limit offers
+  another model or account, or resuming at reset.
+- The floating chat follows MonoCode more closely: it opens at the top
+  right of the screen under the pointer, with rounded corners, message
+  bubbles that fold long text, photos above the bubble, approvals in the
+  turn, a rolling status ticker, and the inline composer (no emoji
+  button). A message that could not be sent keeps Retry.
+- In the floating chat, a settled turn's Copy and Show activity buttons
+  were dimmed under the bottom fade. They now sit clear of it.
+
 ## [0.1.12] - 2026-10-14
 
 - A Mono's floating chat matches MonoCode: turn work rides on the identity

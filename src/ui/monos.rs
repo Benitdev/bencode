@@ -1,11 +1,14 @@
-//! A Mono in the main area (MonoCode `App.tsx`'s `monoCovers`, `MonoTitle`,
-//! `MonoDetails`, `MonoProjects`, `ConfirmReset`): its conversation in
-//! place of the sidebar and the tabs, under a header that names it, with
-//! its details beside the chat.
+//! A Mono in the main area (MonoCode `App.tsx`'s `monoCovers`,
+//! `MonoHeader`, `MonoDetails`, `MonoProjects`, `ConfirmReset`): its
+//! conversation in place of the sidebar, the tabs and the footer, under its
+//! title bar (`ui/titlebar/mono.rs`), with its details beside the chat, and
+//! the greeting that fills the chat before the first message.
 //!
 //! Details holds its look, its projects and its soul (`SOUL.md`); the
-//! model and the permissions are the composer's own pickers. Habits,
-//! memory and the sessions and documents a Mono starts are not ported.
+//! title bar's Overview and gear both show it until MonoCode's Overview
+//! panel and settings dialog are ported. The model is the composer's
+//! (`ui/composer/mono.rs`). Habits, memory and the sessions and documents
+//! a Mono starts are not ported.
 
 use ely_gpui_component::buttons::{ButtonVariant, IconButton};
 use ely_gpui_component::feedback::EmptyState;
@@ -22,10 +25,9 @@ use crate::app::BenCodeApp;
 use crate::app::session_folders::{FOLDER_COLORS, palette_color};
 use crate::monos::{Mono, MonoState, MonoStatus, projects_phrase};
 use crate::ui::app_callback::app_callback;
-use crate::ui::mascot::{MASCOT_NAMES, mascot_for, pixel_sprite};
+use crate::ui::mascot::{MASCOT_NAMES, MascotMotion, mascot_for, moving_sprite, pixel_sprite};
 use crate::ui::scale::px;
 use crate::ui::scrollbar::Scrolled;
-use crate::ui::window_drag::claim_press;
 
 /// MonoCode `MonoSidebar`: `MIN_WIDTH`.
 const DETAILS_WIDTH: f32 = 340.0;
@@ -39,13 +41,25 @@ impl BenCodeApp {
         self.surface.is_none() && self.monos.view.is_some()
     }
 
-    /// The Mono's column: header, chat and details, then the usage footer.
+    /// The Mono's column: its title bar, then the chat and details. It
+    /// covers the footer, as MonoCode's does.
     pub(crate) fn render_mono_view(&mut self, cx: &mut Context<Self>) -> Option<AnyElement> {
         if !self.mono_covers() {
             return None;
         }
         let mono = self.mono_in_view()?.clone();
         let state = self.mono_state(&mono);
+        // The plan's usage shows under its composer: read once, as the
+        // footer's chip does.
+        let harness = self.selected_session().map(|s| s.harness.clone());
+        if let Some(target) = self.usage_target().filter(|target| {
+            target.available
+                && harness
+                    .as_deref()
+                    .is_some_and(crate::ui::composer::mono::shows_usage)
+        }) {
+            self.load_rate_limits(target.provider, &target.account_id, false, cx);
+        }
         let glass = self.glass(cx);
         let bg = cx.theme().colors.bg;
         let chat = match self.mono_view_session().map(str::to_string) {
@@ -65,123 +79,20 @@ impl BenCodeApp {
                 .min_w_0()
                 .h_full()
                 .bg(glass.body(bg))
-                .child(self.render_mono_header(&mono, &state, cx))
+                .child(self.render_mono_titlebar(&mono, &state, cx))
+                // The plan's usage is under the composer instead.
                 .child(
                     div()
                         .flex()
                         .flex_1()
                         .min_h_0()
                         .child(div().flex_1().min_w_0().h_full().child(chat))
-                        .when(self.monos.details_open, |el| {
+                        .when(self.mono_details_shown(), |el| {
                             el.child(self.render_mono_details(&mono, &state, cx))
                         }),
                 )
-                .child(self.render_usage_footer(cx))
                 .into_any_element(),
         )
-    }
-
-    /// MonoCode `MonoTitle` in the title bar: the mascot, the name and what
-    /// it is doing, then the details toggle. Laid out as the views' header
-    /// is, so the traffic lights and Back have the same room.
-    fn render_mono_header(
-        &self,
-        mono: &Mono,
-        state: &MonoState,
-        cx: &Context<Self>,
-    ) -> impl IntoElement {
-        let colors = &cx.theme().colors;
-        let compact = self.compact_rail_active();
-        let beside_rail = self.is_rail_open || compact;
-        let details_open = self.monos.details_open;
-        let float_id = mono.id.clone();
-        self.window_drag_region(div(), cx)
-            .flex()
-            .flex_none()
-            .items_center()
-            .gap_2()
-            .h(px(crate::ui::sidebar::TITLEBAR_HEIGHT))
-            .px_3()
-            .border_b_1()
-            .border_color(colors.border)
-            .when(!self.is_rail_open && cfg!(target_os = "macos"), |el| {
-                let gap = if compact { 16.0 } else { 72.0 };
-                el.child(div().flex_none().w(gpui::px(gap)))
-            })
-            .when(!beside_rail, |el| {
-                el.child(
-                    claim_press(div())
-                        .flex()
-                        .flex_none()
-                        .items_center()
-                        .child(
-                            IconButton::new("mono-back", IconName::ChevronLeft)
-                                .size(ControlSize::Sm)
-                                .variant(ButtonVariant::Ghost)
-                                .tooltip("Back (⌘[)")
-                                .on_click(cx.listener(|this, _, _, cx| {
-                                    this.close_mono_view(cx);
-                                })),
-                        )
-                        .child(
-                            IconButton::new("mono-toggle-projects", IconName::PanelLeft)
-                                .size(ControlSize::Sm)
-                                .variant(ButtonVariant::Ghost)
-                                .tooltip("Toggle Sidebar (⌘B)")
-                                .on_click(cx.listener(|this, _, _, cx| {
-                                    this.is_rail_open = true;
-                                    cx.notify();
-                                })),
-                        ),
-                )
-            })
-            .child(pixel_sprite(
-                &self.mono_mascot(mono).rest,
-                px(16.0),
-                self.mono_color(mono),
-                false,
-            ))
-            .child(
-                div()
-                    .flex_none()
-                    .text_size(px(13.0))
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_color(colors.fg)
-                    .child(mono.display_name()),
-            )
-            .child(
-                div()
-                    .flex()
-                    .flex_1()
-                    .min_w_0()
-                    .text_size(px(12.0))
-                    .text_color(colors.fg.opacity(0.45))
-                    .child(mono_status_line(state, self.mono_color(mono), cx)),
-            )
-            .child(
-                claim_press(div()).flex_none().child(
-                    IconButton::new("mono-float-open", IconName::PictureInPicture2)
-                        .size(ControlSize::Sm)
-                        .variant(ButtonVariant::Ghost)
-                        .tooltip("Open floating chat")
-                        .on_click(cx.listener(move |this, _, window, cx| {
-                            this.open_mono_float(&float_id, window, cx)
-                        })),
-                ),
-            )
-            // MonoCode `onShowMonoDetails`: offered only while they are hidden;
-            // the panel's own header hides them.
-            .when(!details_open, |el| {
-                el.child(
-                    claim_press(div()).flex_none().child(
-                        IconButton::new("mono-details-toggle", IconName::PanelRight)
-                            .size(ControlSize::Sm)
-                            .variant(ButtonVariant::Ghost)
-                            .tooltip("Show details")
-                            .on_click(cx.listener(|this, _, _, cx| this.toggle_mono_details(cx))),
-                    ),
-                )
-            })
     }
 
     /// MonoCode `MonoDetails`: `mono-details-panel flex h-full shrink-0
@@ -222,7 +133,7 @@ impl BenCodeApp {
                     .size(ControlSize::Sm)
                     .variant(ButtonVariant::Ghost)
                     .tooltip("Hide details")
-                    .on_click(cx.listener(|this, _, _, cx| this.toggle_mono_details(cx))),
+                    .on_click(cx.listener(|this, _, _, cx| this.close_mono_details(cx))),
             );
         // `flex flex-col items-center px-3 pb-4 pt-6`
         let profile = div()
@@ -609,65 +520,104 @@ impl BenCodeApp {
     }
 
     /// MonoCode `MonoHeader` with `greeting`: before the first message the
-    /// mascot stands on its name pill and says hello, over the composer.
+    /// header fills the chat (`min-h-full justify-center py-12`), the
+    /// mascot at `size-14` standing on its name pill (`-mt-2`, drawn over
+    /// it) and saying hello.
     pub(crate) fn render_mono_greeting(&self, mono: &Mono, cx: &Context<Self>) -> AnyElement {
-        let fg = cx.theme().colors.fg;
+        let theme = cx.theme();
+        let fg = theme.colors.fg;
         let names: Vec<String> = self
             .mono_projects(mono)
             .into_iter()
             .map(|(name, _)| name)
             .collect();
-        let hello = if names.is_empty() {
-            "Add the projects I should work on from my details, or just ask me something."
-                .to_string()
-        } else {
-            format!(
-                "I work across {}. Ask what’s going on, or hand me work.",
-                projects_phrase(&names)
-            )
-        };
-        div()
+        // `.mono-pill`: the text colour at 14% and 6%; white in light mode,
+        // lifted by a shadow.
+        let pill = div()
+            .mt(px(-8.0))
             .flex()
-            .flex_col()
+            .h(px(32.0))
             .items_center()
-            .w_full()
-            .px_6()
-            .mb_6()
-            .child(pixel_sprite(
-                &self.mono_mascot(mono).rest,
-                px(56.0),
-                self.mono_color(mono),
-                false,
-            ))
+            .rounded_full()
+            .border_1()
+            .px(px(14.0))
+            .map(|el| {
+                if theme.is_dark() {
+                    el.border_color(fg.opacity(0.14)).bg(fg.opacity(0.06))
+                } else {
+                    el.border_color(gpui::black().opacity(0.06))
+                        .bg(gpui::white())
+                        .shadow_md()
+                }
+            })
+            .text_size(px(13.0))
+            .font_weight(FontWeight::SEMIBOLD)
+            .text_color(fg)
+            .child(mono.display_name());
+        div()
+            .id("mono-greeting")
+            .size_full()
+            .overflow_y_scroll()
             .child(
-                // `mono-pill -mt-2 flex h-8 items-center rounded-full border px-3.5`
                 div()
-                    .mt(px(4.0))
                     .flex()
-                    .h(px(32.0))
+                    .flex_col()
                     .items_center()
-                    .rounded_full()
-                    .border_1()
-                    .border_color(fg.opacity(0.1))
-                    .bg(fg.opacity(0.05))
-                    .px(px(14.0))
-                    .text_size(px(13.0))
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_color(fg)
-                    .child(mono.display_name()),
-            )
-            .child(
-                // `mt-3 max-w-sm text-[13px] leading-relaxed text-content/50`
-                div()
-                    .mt_3()
-                    .max_w(px(384.0))
+                    .justify_center()
+                    .min_h_full()
+                    .px_6()
+                    .py_12()
                     .text_center()
-                    .text_size(px(13.0))
-                    .line_height(px(21.0))
-                    .text_color(fg.opacity(0.5))
-                    .child(hello),
+                    .child(
+                        div()
+                            .relative()
+                            .flex()
+                            .flex_col()
+                            .items_center()
+                            .child(div().h(px(56.0)))
+                            .child(pill)
+                            .child(
+                                div()
+                                    .absolute()
+                                    .top_0()
+                                    .left_0()
+                                    .right_0()
+                                    .flex()
+                                    .justify_center()
+                                    .child(moving_sprite(
+                                        self.mono_mascot(mono),
+                                        56.0,
+                                        self.mono_color(mono),
+                                        MascotMotion::Bob,
+                                        cx,
+                                    )),
+                            ),
+                    )
+                    .child(
+                        // `mt-3 max-w-sm text-[13px] leading-relaxed text-content/50`
+                        div()
+                            .mt_3()
+                            .max_w(px(384.0))
+                            .text_size(px(13.0))
+                            .line_height(px(21.0))
+                            .text_color(fg.opacity(0.5))
+                            .child(greeting_text(&names)),
+                    ),
             )
             .into_any_element()
+    }
+}
+
+/// MonoCode `MonoHeader`'s hello, with `monoProjectsPhrase`.
+fn greeting_text(projects: &[String]) -> String {
+    if projects.is_empty() {
+        "Add the projects I should work on in my settings, or just ask me something.".to_string()
+    } else {
+        format!(
+            "I can see every session, note and folder in {}. Ask what’s going on, or hand me \
+             work.",
+            projects_phrase(projects)
+        )
     }
 }
 
@@ -729,4 +679,22 @@ fn mono_status_line(state: &MonoState, color: Hsla, cx: &Context<BenCodeApp>) ->
                 .child(div().flex_none().opacity(0.6).child("·"))
                 .child(div().min_w_0().truncate().child(activity))
         }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_greeting_uses_monocodes_words() {
+        assert_eq!(
+            greeting_text(&[]),
+            "Add the projects I should work on in my settings, or just ask me something."
+        );
+        assert_eq!(
+            greeting_text(&["bencode".into(), "site".into()]),
+            "I can see every session, note and folder in bencode and site. Ask what’s going \
+             on, or hand me work."
+        );
+    }
 }

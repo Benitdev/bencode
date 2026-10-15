@@ -159,8 +159,14 @@ impl BenCodeApp {
         view.find_block = find_block;
         view.find_count = find_count;
         let list_state = view.list.clone();
-        // Needs fewer than two prompts to be absent, so an empty thread has none.
-        let outline = self.render_prompt_outline(session_id, cx);
+        let mono = self.mono_for_session(session_id).cloned();
+        // Needs fewer than two prompts to be absent, so an empty thread has
+        // none; a Mono's endless chat has none either (MonoCode: one mark
+        // per message would crowd it).
+        let outline = match mono {
+            Some(_) => None,
+            None => self.render_prompt_outline(session_id, cx),
+        };
 
         // Borrowed, never cloned: a session's blocks can be huge.
         let Some(session) = self.sessions.iter().find(|s| s.id == session_id) else {
@@ -172,7 +178,9 @@ impl BenCodeApp {
             .as_ref()
             .filter(|target| target.over_id == session_id)
             .map(|target| target.edge);
-        let composer = if is_focused {
+        let composer = if mono.is_some() {
+            self.render_mono_composer(session, cx)
+        } else if is_focused {
             self.render_composer(Some(session), cx).into_any_element()
         } else {
             self.render_composer_view(Some(session), false, false, cx)
@@ -194,7 +202,18 @@ impl BenCodeApp {
             .when(in_split, |el| {
                 el.child(self.render_pane_header(session, is_focused, cx))
             });
-        let frame = if empty && is_focused {
+        let frame = if let Some(mono) = mono.as_ref().filter(|_| empty) {
+            // MonoCode: a Mono's input always sits at the bottom, like a
+            // chat, under its greeting.
+            frame
+                .child(
+                    div()
+                        .flex_1()
+                        .min_h_0()
+                        .child(self.render_mono_greeting(mono, cx)),
+                )
+                .child(composer)
+        } else if empty && is_focused {
             frame.child(self.render_empty_session(session, cx))
         } else {
             frame
@@ -519,23 +538,19 @@ impl BenCodeApp {
             Some(name) => format!("What should we work on in {name}?"),
             None => "What should we work on?".to_string(),
         };
-        let headline = match self.mono_for_session(&session.id) {
-            Some(mono) => self.render_mono_greeting(mono, cx),
-            // MonoCode `EmptySession`: the headline sits over the composer
-            // in the same column (`px-1.5`, then `px-2.5`).
-            None => div()
-                .w_full()
-                .max_w(px(896.0))
-                .mx_auto()
-                .px(px(16.0))
-                .mb_4()
-                .truncate()
-                .text_size(px(18.0))
-                .line_height(px(28.0))
-                .text_color(cx.theme().colors.fg)
-                .child(title)
-                .into_any_element(),
-        };
+        // MonoCode `EmptySession`: the headline sits over the composer in
+        // the same column (`px-1.5`, then `px-2.5`).
+        let headline = div()
+            .w_full()
+            .max_w(px(896.0))
+            .mx_auto()
+            .px(px(16.0))
+            .mb_4()
+            .truncate()
+            .text_size(px(18.0))
+            .line_height(px(28.0))
+            .text_color(cx.theme().colors.fg)
+            .child(title);
         div()
             .flex()
             .flex_col()
