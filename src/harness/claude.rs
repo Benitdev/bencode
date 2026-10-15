@@ -237,6 +237,9 @@ pub struct ClaudeParser {
     /// A task finished after Claude yielded; its follow-up turn is on the
     /// way, until `RESUME_GRACE` after this.
     awaiting_resume: Option<Instant>,
+    /// A task finished while Claude was still working: its notification
+    /// waits in Claude's queue and wakes it once it yields.
+    wake_queued: bool,
     /// What finished subagents reported, held until Claude picks back up.
     task_notes: Vec<String>,
     /// The last list sent as `AgentEvent::Background`.
@@ -287,6 +290,7 @@ impl LineParser for ClaudeParser {
                 let status = on_result(&rec, self.rate_limited.take(), &mut events);
                 self.yielded = Some(status);
                 self.answered = true;
+                self.note_yielded();
                 self.maybe_finish(&mut events);
                 self.show_background_rows(&mut events);
                 self.sync_background(&mut events);
@@ -982,6 +986,42 @@ mod tests {
         assert_eq!(
             parser.on_quiet(),
             vec![AgentEvent::Done(DoneStatus::Completed)]
+        );
+    }
+
+    /// Two runs in the background: the second finishes while Claude is
+    /// still answering the first's report, so its notification waits in
+    /// Claude's queue and wakes it only after that answer's result.
+    #[test]
+    fn a_run_finishing_mid_turn_holds_the_turn_for_its_wake() {
+        let mut parser = ClaudeParser::default();
+        let events: Vec<AgentEvent> = [
+            r#"{"type":"assistant","message":{"id":"m1","content":[{"type":"tool_use","id":"a","name":"Agent","input":{"description":"Survey","run_in_background":true}},{"type":"tool_use","id":"b","name":"Agent","input":{"description":"Trace","run_in_background":true}}]}}"#,
+            r#"{"type":"system","subtype":"task_started","task_id":"ta","tool_use_id":"a","description":"Survey","task_type":"local_agent"}"#,
+            r#"{"type":"system","subtype":"task_started","task_id":"tb","tool_use_id":"b","description":"Trace","task_type":"local_agent"}"#,
+            r#"{"type":"result","subtype":"success","is_error":false}"#,
+            r#"{"type":"system","subtype":"task_notification","task_id":"ta","tool_use_id":"a","status":"completed","summary":"Survey done"}"#,
+            r#"{"type":"assistant","message":{"id":"m2","content":[{"type":"text","text":"Got the survey."}]}}"#,
+            r#"{"type":"system","subtype":"task_notification","task_id":"tb","tool_use_id":"b","status":"completed","summary":"Trace done"}"#,
+            r#"{"type":"assistant","message":{"id":"m3","content":[{"type":"text","text":"Waiting for the trace."}]}}"#,
+            r#"{"type":"result","subtype":"success","is_error":false}"#,
+        ]
+        .iter()
+        .flat_map(|line| parser.parse_line(line))
+        .collect();
+        assert!(!events.iter().any(|e| matches!(e, AgentEvent::Done(_))));
+        assert!(parser.quiet_limit().is_some());
+
+        let events: Vec<AgentEvent> = [
+            r#"{"type":"assistant","message":{"id":"m4","content":[{"type":"text","text":"Here is the story."}]}}"#,
+            r#"{"type":"result","subtype":"success","is_error":false}"#,
+        ]
+        .iter()
+        .flat_map(|line| parser.parse_line(line))
+        .collect();
+        assert_eq!(
+            events.last(),
+            Some(&AgentEvent::Done(DoneStatus::Completed))
         );
     }
 
