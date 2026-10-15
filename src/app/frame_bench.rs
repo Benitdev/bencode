@@ -2,7 +2,9 @@
 //! opens the longest thread, draws the window by hand a fixed number of
 //! times per case and prints how long a draw took: with nothing changed,
 //! with the whole app notified, and with parts of the window taken away to
-//! see what each costs.
+//! see what each costs. Then what opening a view costs (the change and its
+//! first draw), and every frame of a fling from the end of the longest
+//! thread to its start and back.
 //!
 //! Run it on a copy of the data folder (a scratch `HOME`, see AGENTS.md):
 //! it changes the layout as it goes and saves it. The launch jobs that
@@ -17,6 +19,7 @@ use anyhow::Result;
 use gpui::{AsyncWindowContext, Context, ListOffset, WeakEntity, Window, px, size};
 
 use crate::app::file_pane::PaneTab;
+use crate::app::surfaces::Surface;
 use crate::app::{BenCodeApp, subagents};
 use crate::ui::transcript::turns::{self, Item, Row};
 
@@ -293,6 +296,224 @@ fn cases(thread: Option<String>) -> Vec<Case> {
     ]
 }
 
+/// Opening a view: `open` is timed with the draw that shows it; `close`
+/// puts the window back before the next try.
+struct Opening {
+    name: &'static str,
+    open: Step,
+    close: Step,
+}
+
+/// Tries per opening: each is a cold first draw, so fewer than a case's.
+const OPENINGS: usize = 15;
+
+/// Drops a thread's transcript view, so opening it lays it out and
+/// measures its rows again, as the first time it opens after a launch.
+fn forget_view(app: &mut BenCodeApp, id: &str) {
+    app.transcripts.remove(id);
+}
+
+fn openings(long: Option<String>, other: Option<String>) -> Vec<Opening> {
+    let surface = |name, surface: Surface| Opening {
+        name,
+        open: Box::new(move |app, cx| app.show_surface(surface, cx)),
+        close: Box::new(|app, cx| app.close_surface(cx)),
+    };
+    let thread = |name, cold: bool, id: Option<String>, back: Option<String>| Opening {
+        name,
+        open: Box::new(move |app, cx| {
+            if let Some(id) = &id {
+                if cold {
+                    forget_view(app, id);
+                }
+                app.open_session(id.clone(), cx);
+            }
+        }),
+        close: Box::new(move |app, cx| {
+            if let Some(back) = &back {
+                app.open_session(back.clone(), cx);
+            }
+        }),
+    };
+    vec![
+        thread(
+            "open the longest thread, first time",
+            true,
+            long.clone(),
+            other.clone(),
+        ),
+        thread(
+            "open the longest thread again",
+            false,
+            long.clone(),
+            other.clone(),
+        ),
+        thread(
+            "open another thread, first time",
+            true,
+            other.clone(),
+            long.clone(),
+        ),
+        surface("open Search", Surface::Search),
+        surface("open Inbox", Surface::Inbox),
+        surface("open Notes", Surface::Notes),
+        surface("open Automations", Surface::Automations),
+        surface("open Settings", Surface::Settings),
+    ]
+}
+
+/// Pixels a frame of the fling moves: a quick trackpad flick at 120Hz.
+const FLING_STEP: f32 = 60.0;
+/// A frame at 120Hz.
+const FRAME_BUDGET: Duration = Duration::from_micros(8333);
+
+/// Flings the open thread `step` pixels a frame (up when negative) until
+/// it stops: each frame is a trackpad's scroll event over the transcript,
+/// dispatched as the platform's would be, and the draw it causes.
+async fn fling(
+    this: &WeakEntity<BenCodeApp>,
+    id: &str,
+    step: f32,
+    cx: &mut AsyncWindowContext,
+) -> Result<Vec<Duration>> {
+    let mut took = Vec::new();
+    let mut last = None;
+    let mut still = 0;
+    // A long thread is a few hundred screens.
+    for _ in 0..5_000 {
+        let Some((center, top)) = this.update(cx, |app, _| {
+            let list = &app.transcripts.get(id)?.list;
+            let top = list.logical_scroll_top();
+            Some((
+                list.viewport_bounds().center(),
+                (top.item_ix, top.offset_in_item),
+            ))
+        })?
+        else {
+            break;
+        };
+        // Stopped: the position held for a few frames.
+        if last == Some(top) {
+            still += 1;
+            if still == 3 {
+                break;
+            }
+        } else {
+            still = 0;
+        }
+        last = Some(top);
+        let started = Instant::now();
+        cx.update(|window, cx| {
+            let event = gpui::ScrollWheelEvent {
+                position: center,
+                // A positive delta scrolls the content down: toward the start.
+                delta: gpui::ScrollDelta::Pixels(gpui::point(px(0.0), px(-step))),
+                modifiers: Default::default(),
+                touch_phase: gpui::TouchPhase::Moved,
+            };
+            window.dispatch_event(gpui::PlatformInput::ScrollWheel(event), cx);
+        })?;
+        draw(cx)?;
+        took.push(started.elapsed());
+    }
+    Ok(took)
+}
+
+fn print_frames(name: &str, mut took: Vec<Duration>) {
+    if took.is_empty() {
+        println!("{name:<52} (nothing to measure)");
+        return;
+    }
+    let over = took.iter().filter(|t| **t > FRAME_BUDGET).count();
+    took.sort();
+    let n = took.len();
+    println!(
+        "{:<52} {:>6.2}ms {:>6.2}ms {:>6.2}ms   {n} frames, {over} over 8.3ms",
+        name,
+        millis(took[n / 2]),
+        millis(took[n * 95 / 100]),
+        millis(took[n - 1]),
+    );
+}
+
+async fn run_openings(
+    this: &WeakEntity<BenCodeApp>,
+    long: Option<String>,
+    other: Option<String>,
+    cx: &mut AsyncWindowContext,
+) -> Result<()> {
+    let only = std::env::var("BENCODE_FRAME_BENCH_CASE").ok();
+    for opening in openings(long, other) {
+        if only
+            .as_ref()
+            .is_some_and(|only| !opening.name.contains(only.as_str()))
+        {
+            continue;
+        }
+        let mut took = Vec::with_capacity(OPENINGS);
+        for _ in 0..OPENINGS {
+            this.update(cx, |app, cx| {
+                (opening.close)(app, cx);
+                cx.notify();
+            })?;
+            settle(cx).await?;
+            let started = Instant::now();
+            this.update(cx, |app, cx| {
+                (opening.open)(app, cx);
+                cx.notify();
+            })?;
+            draw(cx)?;
+            took.push(started.elapsed());
+        }
+        this.update(cx, |app, cx| (opening.close)(app, cx))?;
+        took.sort();
+        println!(
+            "{:<52} {:>6.2}ms {:>6.2}ms {:>6.2}ms",
+            opening.name,
+            millis(took[OPENINGS / 2]),
+            millis(took[OPENINGS * 95 / 100]),
+            millis(took[OPENINGS - 1]),
+        );
+    }
+    Ok(())
+}
+
+async fn run_flings(
+    this: &WeakEntity<BenCodeApp>,
+    long: &str,
+    cx: &mut AsyncWindowContext,
+) -> Result<()> {
+    // Opened fresh, at its end, every turn's work unfolded: the longest
+    // read there is, and no row above the screen drawn yet.
+    this.update(cx, |app, cx| {
+        forget_view(app, long);
+        app.open_session(long.to_string(), cx);
+        if let Some(session) = app.sessions.iter().find(|s| s.id == long) {
+            let users = session.blocks.iter().filter(|b| b.role == "user");
+            app.transcript_ui
+                .open_folds
+                .extend(users.map(|b| b.id.clone()));
+        }
+        cx.notify();
+    })?;
+    settle(cx).await?;
+    let rows = this.update(cx, |app, _| app.transcripts.get(long).map(|v| v.rows.len()))?;
+    println!("{} rows, {FLING_STEP}px a frame", rows.unwrap_or(0));
+    print_frames(
+        "fling to the start, rows drawn the first time",
+        fling(this, long, -FLING_STEP, cx).await?,
+    );
+    print_frames(
+        "fling back to the end, rows drawn before",
+        fling(this, long, FLING_STEP, cx).await?,
+    );
+    print_frames(
+        "fling to the start again",
+        fling(this, long, -FLING_STEP, cx).await?,
+    );
+    Ok(())
+}
+
 /// One draw of the window, timed: layout, prepaint and paint of whatever is
 /// dirty. The scene is not presented, so the GPU's share is left out.
 fn draw(cx: &mut AsyncWindowContext) -> Result<Duration> {
@@ -348,7 +569,8 @@ async fn run(this: WeakEntity<BenCodeApp>, cx: &mut AsyncWindowContext) -> Resul
     // `BENCODE_FRAME_BENCH_CASE`: only the cases whose name holds it are
     // measured (the others still set the window up for the next).
     let only = std::env::var("BENCODE_FRAME_BENCH_CASE").ok();
-    for case in cases(thread.map(|(id, _)| id)) {
+    let long = thread.map(|(id, _)| id);
+    for case in cases(long.clone()) {
         this.update(cx, |app, cx| {
             (case.set_up)(app, cx);
             cx.notify();
@@ -374,6 +596,37 @@ async fn run(this: WeakEntity<BenCodeApp>, cx: &mut AsyncWindowContext) -> Resul
             millis(took[frames * 95 / 100]),
             millis(took[frames - 1]),
         );
+    }
+    // The views back to a plain window: the long thread, nothing beside it.
+    let other = this.update(cx, |app, cx| {
+        app.set_terminal_open(false, cx);
+        while app.close_active_pane_tab(cx) {}
+        let long = long.as_deref();
+        app.sessions
+            .iter()
+            .filter(|s| Some(s.id.as_str()) != long && !app.is_mono_session(&s.id))
+            .max_by_key(|s| s.blocks.len())
+            .map(|s| s.id.clone())
+    })?;
+    println!(
+        "\n{:<52} {:>8} {:>8} {:>8}",
+        "opening (change + first draw)", "median", "p95", "max"
+    );
+    run_openings(&this, long.clone(), other, cx).await?;
+    if let Some(long) = &long {
+        println!(
+            "\n{:<52} {:>8} {:>8} {:>8}",
+            "fling, every frame", "median", "p95", "max"
+        );
+        // `BENCODE_FRAME_BENCH_FLINGS`: the flings again, from a cold
+        // view each time, long enough to `sample` them.
+        let times = std::env::var("BENCODE_FRAME_BENCH_FLINGS")
+            .ok()
+            .and_then(|n| n.parse().ok())
+            .unwrap_or(1);
+        for _ in 0..times {
+            run_flings(&this, long, cx).await?;
+        }
     }
     Ok(())
 }

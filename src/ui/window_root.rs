@@ -11,7 +11,7 @@ use gpui::{
 };
 
 use crate::app::BenCodeApp;
-use crate::settings::AppSettings;
+use crate::launch::LaunchData;
 use crate::ui::composer::runner_view::RunnerLayer;
 use crate::ui::footer::ProcessLayer;
 
@@ -19,18 +19,13 @@ pub struct WindowRoot {
     app: Entity<BenCodeApp>,
     runner: Entity<RunnerLayer>,
     process: Entity<ProcessLayer>,
+    /// For the startup trace: the first render is marked.
+    drawn: bool,
 }
 
 impl WindowRoot {
-    /// `import_failed`: the first-launch import did not finish (see
-    /// `BenCodeApp::new`).
-    pub fn new(
-        window: &mut Window,
-        saved: AppSettings,
-        import_failed: bool,
-        cx: &mut Context<Self>,
-    ) -> Self {
-        let app = cx.new(|cx| BenCodeApp::new(window, saved, import_failed, cx));
+    pub fn new(window: &mut Window, launch: LaunchData, cx: &mut Context<Self>) -> Self {
+        let app = cx.new(|cx| BenCodeApp::new(window, launch, cx));
         let weak = app.downgrade();
         let runner = cx.new(|_| RunnerLayer::new(weak));
         let slot = app.read(cx).process_slot.clone();
@@ -39,12 +34,24 @@ impl WindowRoot {
             app,
             runner,
             process,
+            drawn: false,
         }
     }
 }
 
 impl Render for WindowRoot {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        if crate::startup_trace::enabled() && !self.drawn {
+            self.drawn = true;
+            crate::startup_trace::mark("first render");
+            window.on_next_frame(|_, cx| {
+                crate::startup_trace::landed(
+                    crate::startup_trace::FIRST_FRAME,
+                    "first frame presented",
+                    cx,
+                );
+            });
+        }
         // The runner layer goes first: it reads the composer geometry the
         // app measured last frame before the app lays out again.
         div()

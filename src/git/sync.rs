@@ -98,16 +98,14 @@ pub fn repo_name(cwd: &str) -> Option<String> {
 
 /// MonoCode `git_remote_name`: `origin` when there is one, else the first.
 pub fn remote_name(cwd: &str) -> Option<String> {
-    let remotes = stdout(cwd, &["remote"])?;
-    let names: Vec<&str> = remotes
-        .lines()
-        .map(str::trim)
-        .filter(|n| !n.is_empty())
-        .collect();
-    if names.contains(&"origin") {
+    pick_remote(&remote_names(cwd))
+}
+
+fn pick_remote(names: &[String]) -> Option<String> {
+    if names.iter().any(|n| n == "origin") {
         return Some("origin".into());
     }
-    names.first().map(|n| n.to_string())
+    names.first().cloned()
 }
 
 fn remote_names(cwd: &str) -> Vec<String> {
@@ -167,47 +165,106 @@ fn ahead_behind(cwd: &str, base: &str) -> (usize, usize) {
     (ahead, behind)
 }
 
-/// MonoCode `git_sync_for` with the branch and HEAD.
+/// What the sync info and the history both start from: the remotes, the
+/// branch's upstream and the default branch. A snapshot reads it once.
+#[derive(Clone, Debug, Default)]
+pub struct RepoBase {
+    remotes: Vec<String>,
+    upstream: Option<String>,
+    default_branch: Option<String>,
+}
+
+impl RepoBase {
+    /// The upstream is read beside the remotes; the default branch needs
+    /// the remote.
+    pub fn read(cwd: &str) -> Self {
+        std::thread::scope(|scope| {
+            let upstream =
+                scope.spawn(|| stdout(cwd, &["rev-parse", "--abbrev-ref", "@{upstream}"]));
+            let remotes = remote_names(cwd);
+            let default_branch = default_branch(cwd, pick_remote(&remotes).as_deref());
+            Self {
+                remotes,
+                upstream: joined(upstream),
+                default_branch,
+            }
+        })
+    }
+
+    fn remote(&self) -> Option<String> {
+        pick_remote(&self.remotes)
+    }
+
+    /// `remote/branch` of the default branch, when there is a remote.
+    fn default_ref(&self) -> Option<String> {
+        self.remote()
+            .zip(self.default_branch.as_ref())
+            .map(|(r, b)| format!("{r}/{b}"))
+    }
+}
+
+/// A scoped git read's result; a panic counts as nothing read.
+fn joined<T: Default>(handle: std::thread::ScopedJoinHandle<'_, T>) -> T {
+    handle.join().unwrap_or_else(|_| {
+        log::error!("a git read panicked");
+        T::default()
+    })
+}
+
+/// MonoCode `git_sync_for` with the branch and HEAD. The snapshot reads
+/// the base once for this and the history (`sync_info_from`).
 pub fn sync_info(cwd: &str) -> SyncInfo {
     if !Path::new(cwd).exists() {
         return SyncInfo::default();
     }
-    let remote = remote_name(cwd);
-    let upstream = stdout(cwd, &["rev-parse", "--abbrev-ref", "@{upstream}"]);
-    let default_branch = default_branch(cwd, remote.as_deref());
-    let default_ref = remote
-        .as_ref()
-        .zip(default_branch.as_ref())
-        .map(|(r, b)| format!("{r}/{b}"));
-    let (ahead, behind) = match (&upstream, &default_ref) {
-        (Some(_), _) => ahead_behind(cwd, "@{upstream}"),
-        (None, Some(base)) => ahead_behind(cwd, base),
-        _ => (0, 0),
+    sync_info_from(cwd, &RepoBase::read(cwd))
+}
+
+/// The sync info from a base already read. Each git call is a process of
+/// its own and none needs another's answer, so they run side by side.
+pub fn sync_info_from(cwd: &str, base: &RepoBase) -> SyncInfo {
+    let default_ref = base.default_ref();
+    // Ahead and behind count against the upstream, else the default branch.
+    let tracked = match (&base.upstream, &default_ref) {
+        (Some(_), _) => Some("@{upstream}"),
+        (None, Some(base)) => Some(base.as_str()),
+        _ => None,
     };
-    let ahead_of_default = default_ref
-        .as_deref()
-        .map_or(ahead, |base| ahead_behind(cwd, base).0);
-    SyncInfo {
-        branch: stdout(cwd, &["symbolic-ref", "--quiet", "--short", "HEAD"]),
-        head: stdout(cwd, &["rev-parse", "HEAD"]),
-        head_pushed: stdout(
-            cwd,
-            &[
-                "for-each-ref",
-                "--count=1",
-                "--contains",
-                "HEAD",
-                "refs/remotes",
-            ],
-        )
-        .is_some(),
-        remote,
-        upstream,
-        default_branch,
-        ahead,
-        behind,
-        ahead_of_default,
-    }
+    std::thread::scope(|scope| {
+        let branch = scope.spawn(|| stdout(cwd, &["symbolic-ref", "--quiet", "--short", "HEAD"]));
+        let head = scope.spawn(|| stdout(cwd, &["rev-parse", "HEAD"]));
+        let head_pushed = scope.spawn(|| {
+            stdout(
+                cwd,
+                &[
+                    "for-each-ref",
+                    "--count=1",
+                    "--contains",
+                    "HEAD",
+                    "refs/remotes",
+                ],
+            )
+            .is_some()
+        });
+        // The count against the default branch, unless that is the one
+        // `tracked` already counts against.
+        let of_default = default_ref
+            .as_deref()
+            .filter(|base| tracked != Some(*base))
+            .map(|base| scope.spawn(move || ahead_behind(cwd, base).0));
+        let (ahead, behind) = tracked.map_or((0, 0), |base| ahead_behind(cwd, base));
+        SyncInfo {
+            branch: joined(branch),
+            head: joined(head),
+            head_pushed: joined(head_pushed),
+            remote: base.remote(),
+            upstream: base.upstream.clone(),
+            default_branch: base.default_branch.clone(),
+            ahead,
+            behind,
+            ahead_of_default: of_default.map_or(ahead, joined),
+        }
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -234,46 +291,55 @@ pub struct HistoryCommit {
 }
 
 /// MonoCode `git_history_tips`: HEAD, its upstream, the default branch.
-fn history_tips(cwd: &str) -> Vec<String> {
+/// The remote branch is named by its full ref and `log` skips it if it is
+/// not there (`--ignore-missing`), so it needs no check of its own.
+fn history_tips(base: &RepoBase) -> Vec<String> {
     let mut tips = vec!["HEAD".to_string()];
-    if stdout(cwd, &["rev-parse", "--abbrev-ref", "@{upstream}"]).is_some() {
+    if base.upstream.is_some() {
         tips.push("@{upstream}".into());
     }
-    if let Some(remote) = remote_name(cwd)
-        && let Some(branch) = default_branch(cwd, Some(&remote))
-    {
-        let spec = format!("{remote}/{branch}");
-        if ref_exists(cwd, &format!("refs/remotes/{spec}")) {
-            tips.push(spec);
-        }
+    if let Some(spec) = base.default_ref() {
+        tips.push(format!("refs/remotes/{spec}"));
     }
     tips
 }
 
 /// Recent commits of HEAD, its upstream and the default branch, newest
 /// first in topological order, with parents for the graph.
+#[cfg(test)]
 pub fn history(cwd: &str) -> Vec<HistoryCommit> {
-    let head = stdout(cwd, &["rev-parse", "HEAD"]);
-    if head.is_none() {
-        return Vec::new();
-    }
-    let remotes = remote_names(cwd);
+    history_from(cwd, &RepoBase::read(cwd))
+}
+
+/// The history (newest first, topological, with parents for the graph)
+/// from a base already read; HEAD is read beside the log.
+pub fn history_from(cwd: &str, base: &RepoBase) -> Vec<HistoryCommit> {
     let count = HISTORY_LIMIT.to_string();
     let mut args = vec![
         "log".to_string(),
         "--no-show-signature".into(),
         "--topo-order".into(),
         "--decorate=short".into(),
+        "--ignore-missing".into(),
         "--max-count".into(),
         count,
         "--format=%H%x00%h%x00%P%x00%an%x00%at%x00%D%x00%s%x1e".into(),
     ];
-    args.extend(history_tips(cwd));
+    args.extend(history_tips(base));
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    let Ok(text) = run_git_string(cwd, &refs) else {
-        return Vec::new();
-    };
-    parse_history(&text, head.as_deref(), &remotes)
+    std::thread::scope(|scope| {
+        let head = scope.spawn(|| stdout(cwd, &["rev-parse", "HEAD"]));
+        let text = run_git_string(cwd, &refs);
+        let head = joined(head);
+        // No commit yet: no history, whatever `log` said.
+        if head.is_none() {
+            return Vec::new();
+        }
+        let Ok(text) = text else {
+            return Vec::new();
+        };
+        parse_history(&text, head.as_deref(), &base.remotes)
+    })
 }
 
 fn parse_history(text: &str, head: Option<&str>, remotes: &[String]) -> Vec<HistoryCommit> {
@@ -727,6 +793,20 @@ mod tests {
         assert_eq!(info.default_branch.as_deref(), Some("main"));
         assert!(info.remote.is_none() && !info.head_pushed);
         assert_eq!(history(&cwd).len(), 1);
+        // A remote never fetched: its default branch is a tip that is not
+        // there, which the log must skip, not fail on.
+        git(&[
+            "remote",
+            "add",
+            "origin",
+            "https://example.invalid/repo.git",
+        ]);
+        let base = RepoBase::read(&cwd);
+        assert_eq!(base.default_ref().as_deref(), Some("origin/main"));
+        assert_eq!(history_from(&cwd, &base).len(), 1);
+        let info = sync_info_from(&cwd, &base);
+        assert_eq!(info.remote.as_deref(), Some("origin"));
+        assert_eq!((info.ahead, info.behind, info.ahead_of_default), (0, 0, 0));
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

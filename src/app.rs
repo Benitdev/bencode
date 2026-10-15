@@ -72,9 +72,9 @@ pub use workspace_sync::WorkspaceCache;
 
 use crate::db::{AppDb, SessionRow};
 use crate::harness::{HarnessInfo, HarnessResolver, catalog};
+use crate::startup_trace::mark as trace;
 use crate::ui::settings_modal::SettingsTab;
 
-const RECENT_SESSION_LIMIT: usize = 50;
 const INITIAL_OPEN_TABS: usize = 3;
 
 /// MonoCode's per-session access modes (`RuntimeMode`, `session.ts:368-390`),
@@ -441,6 +441,8 @@ pub struct BenCodeApp {
     /// Writes to `db`'s file in order, off the UI thread. `None` while `db` is
     /// the in-memory fallback, which a second connection cannot see.
     pub db_writer: Option<crate::db::DbWriter>,
+    /// For the startup trace: the first render is marked.
+    rendered_once: bool,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -470,21 +472,18 @@ pub(crate) fn multiline_input(
 impl BenCodeApp {
     pub fn new(
         window: &mut Window,
-        saved: crate::settings::AppSettings,
-        import_failed: bool,
+        launch: crate::launch::LaunchData,
         cx: &mut Context<Self>,
     ) -> Self {
-        let db = if import_failed {
-            // Opening the default path would create an empty database, and
-            // the import would never run again.
-            log::error!("the import failed; nothing will be saved this launch");
-            AppDb::open_fallback()
-        } else {
-            AppDb::open_default().unwrap_or_else(|err| {
-                log::error!("database unavailable ({err:#}); nothing will be saved this launch");
-                AppDb::open_fallback()
-            })
-        };
+        trace("app construction");
+        let crate::launch::LaunchData {
+            settings: saved,
+            db,
+            sessions,
+            notes: saved_notes,
+            automations: saved_automations,
+            ..
+        } = launch;
         let db_writer = db.file_path().and_then(|path| {
             crate::db::DbWriter::open(&path)
                 .map_err(|err| {
@@ -493,12 +492,6 @@ impl BenCodeApp {
                 .ok()
         });
 
-        let sessions = db
-            .list_recent_sessions(RECENT_SESSION_LIMIT)
-            .unwrap_or_else(|err| {
-                log::error!("failed to load sessions: {err:#}");
-                Vec::new()
-            });
         // A Mono's conversation is no project's: it opens from the rail,
         // never as a tab.
         let is_mono_session = |id: &str| {
@@ -1146,22 +1139,14 @@ impl BenCodeApp {
         let harnesses = HarnessResolver::discover();
         let selected_model = catalog::default_model(&harnesses).key;
 
-        notes.items = db.list_notes().unwrap_or_else(|err| {
-            log::error!("failed to load notes: {err:#}");
-            Vec::new()
-        });
+        notes.items = saved_notes;
         notes.selected_id = notes.items.first().map(|n| n.id.clone());
-        automations.items = db.list_automations().unwrap_or_else(|err| {
-            log::error!("failed to load automations: {err:#}");
-            Vec::new()
-        });
+        automations.items = saved_automations;
         automations.selected_id = automations.items.first().map(|a| a.id.clone());
 
-        // Git shells out several times; load it in the background after construction.
+        // Once the app is built and on screen.
         cx.spawn(async move |this, cx| {
             let _ = this.update(cx, |this, cx| {
-                this.refresh_workspace(cx);
-                this.refresh_integrations(cx);
                 if frame_bench::enabled() {
                     return;
                 }
@@ -1358,9 +1343,16 @@ impl BenCodeApp {
             navigating_history: false,
             db,
             db_writer,
+            rendered_once: false,
             _subscriptions: subscriptions,
         };
+        trace("app state built");
         app.apply_settings(saved);
+        // Git and the folder's listings load on the background executor
+        // while the first frame draws; the folder is the one the restored
+        // worktree focus (`apply_settings`) picks.
+        app.refresh_workspace(cx);
+        app.refresh_integrations(cx);
         if frame_bench::enabled() {
             // Only what fills the window from the data folder: a bench runs
             // on a copy and starts no agent, fetch or sign-in.
@@ -1388,6 +1380,7 @@ impl BenCodeApp {
         app.start_inbox_poll(cx);
         app.start_update_probe(cx);
         app.reopen_saved_mono(cx);
+        trace("launch jobs started");
         app
     }
 
@@ -1708,6 +1701,10 @@ impl Render for BenCodeApp {
                     .children(dialogs),
             );
         self.browser.hide_undrawn();
+        if crate::startup_trace::enabled() && !self.rendered_once {
+            self.rendered_once = true;
+            trace("app rendered (elements built)");
+        }
         // The commands sit above the focus scope, not inside it: while the
         // scope's own handle holds focus (nothing else has it), actions
         // dispatch from the scope upward and never reach a child's handlers,

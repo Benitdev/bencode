@@ -156,8 +156,9 @@ fn load_snapshot(cwd: &str, reuse: Option<(RefsState, u64)>) -> Snapshot {
     std::thread::scope(|scope| {
         // One `git status` feeds the fingerprint, status and changes.
         let local = scope.spawn(|| git::read_local_state(cwd));
-        let sync = scope.spawn(|| git::sync::sync_info(cwd));
-        let history = scope.spawn(|| git::sync::history(cwd));
+        // The remotes, upstream and default branch both of these start
+        // from, read once.
+        let base = scope.spawn(|| git::sync::RepoBase::read(cwd));
         let branches = scope.spawn(|| git::list_branches(cwd));
         let worktrees = scope.spawn(|| {
             crate::git::worktrees::list_worktrees(cwd).unwrap_or_else(|err| {
@@ -167,6 +168,18 @@ fn load_snapshot(cwd: &str, reuse: Option<(RefsState, u64)>) -> Snapshot {
             })
         });
         let repo = scope.spawn(|| git::sync::repo_name(cwd));
+        let base = std::sync::Arc::new(joined(base, "remotes"));
+        let sync = scope.spawn({
+            let base = base.clone();
+            move || {
+                if std::path::Path::new(cwd).exists() {
+                    git::sync::sync_info_from(cwd, &base)
+                } else {
+                    Default::default()
+                }
+            }
+        });
+        let history = scope.spawn(move || git::sync::history_from(cwd, &base));
         let local = joined(local, "status");
         Snapshot {
             fingerprint: local.fingerprint,
@@ -256,6 +269,11 @@ impl BenCodeApp {
                 app.refresh_file_tree(cx);
                 app.recheck_open_files_on_disk(cx);
                 cx.notify();
+                crate::startup_trace::landed(
+                    crate::startup_trace::WORKSPACE,
+                    "workspace snapshot landed",
+                    cx,
+                );
             });
             if let Err(err) = landed {
                 log::debug!("workspace snapshot after app drop: {err:#}");

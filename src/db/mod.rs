@@ -488,8 +488,8 @@ impl AppDb {
         let sql =
             format!("{SESSION_SELECT} WHERE inbox_ask IS NULL ORDER BY updated_at DESC LIMIT ?1");
         let mut stmt = self.conn.prepare(&sql)?;
-        let rows = stmt.query_map([limit as i64], session_from_row)?;
-        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+        let rows = stmt.query_map([limit as i64], unparsed_session)?;
+        Ok(sessions_from_rows(rows)?)
     }
 
     /// The project's `limit` most recent threads, leaving out `exclude`
@@ -515,9 +515,9 @@ impl AppDb {
         let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt.query_map(
             rusqlite::params![cwd, prefix, limit as i64, exclude],
-            session_from_row,
+            unparsed_session,
         )?;
-        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+        Ok(sessions_from_rows(rows)?)
     }
 
     pub fn get_session(&self, session_id: &str) -> Result<Option<SessionRow>> {
@@ -995,16 +995,95 @@ fn ensure_session_columns(conn: &Connection) -> Result<()> {
 }
 
 fn session_from_row(row: &Row<'_>) -> rusqlite::Result<SessionRow> {
+    let (session, blocks_json) = unparsed_session(row)?;
+    let parsed = serde_json::from_str::<Vec<Block>>(&blocks_json);
+    Ok(with_blocks(session, parsed))
+}
+
+/// The session's transcript, or a read-only row when it does not parse.
+fn with_blocks(mut session: SessionRow, parsed: serde_json::Result<Vec<Block>>) -> SessionRow {
+    match parsed {
+        Ok(blocks) => session.blocks = blocks,
+        Err(err) => {
+            log::warn!(
+                "Session {}: could not parse blocks_json ({err}); row is read-only",
+                session.id
+            );
+            session.blocks_parse_failed = true;
+        }
+    }
+    session
+}
+
+/// Below this much transcript, parsing on more threads costs more than
+/// it saves.
+const PARALLEL_PARSE_BYTES: usize = 256 * 1024;
+
+/// Many sessions at once: the rows first, then their transcripts parsed
+/// side by side. Each is a JSON document of its own, and a long history's
+/// are most of what a launch or a project's first open reads.
+fn sessions_from_rows(
+    rows: impl Iterator<Item = rusqlite::Result<(SessionRow, String)>>,
+) -> rusqlite::Result<Vec<SessionRow>> {
+    let rows = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+    let bytes: usize = rows.iter().map(|(_, json)| json.len()).sum();
+    let threads = std::thread::available_parallelism()
+        .map_or(1, |n| n.get())
+        .min(rows.len());
+    if bytes < PARALLEL_PARSE_BYTES || threads < 2 {
+        return Ok(rows
+            .into_iter()
+            .map(|(session, json)| {
+                let parsed = serde_json::from_str(&json);
+                with_blocks(session, parsed)
+            })
+            .collect());
+    }
+    // Workers take the next row as they finish, so one long transcript
+    // does not hold up a whole share.
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let mut parsed: Vec<Option<serde_json::Result<Vec<Block>>>> =
+        rows.iter().map(|_| None).collect();
+    std::thread::scope(|scope| {
+        let workers: Vec<_> = (0..threads)
+            .map(|_| {
+                scope.spawn(|| {
+                    let mut done = Vec::new();
+                    loop {
+                        let ix = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        let Some((_, json)) = rows.get(ix) else {
+                            return done;
+                        };
+                        done.push((ix, serde_json::from_str::<Vec<Block>>(json)));
+                    }
+                })
+            })
+            .collect();
+        for worker in workers {
+            let done = worker
+                .join()
+                .unwrap_or_else(|panic| std::panic::resume_unwind(panic));
+            for (ix, result) in done {
+                parsed[ix] = Some(result);
+            }
+        }
+    });
+    Ok(rows
+        .into_iter()
+        .zip(parsed)
+        .map(|((session, json), result)| {
+            // Every row was taken by a worker that returned.
+            let result = result.unwrap_or_else(|| serde_json::from_str(&json));
+            with_blocks(session, result)
+        })
+        .collect())
+}
+
+/// A session row with its transcript still as the stored text.
+fn unparsed_session(row: &Row<'_>) -> rusqlite::Result<(SessionRow, String)> {
     let id: String = row.get(0)?;
     let blocks_json: String = row.get(8)?;
-    let (blocks, blocks_parse_failed) = match serde_json::from_str::<Vec<Block>>(&blocks_json) {
-        Ok(blocks) => (blocks, false),
-        Err(err) => {
-            log::warn!("Session {id}: could not parse blocks_json ({err}); row is read-only");
-            (Vec::new(), true)
-        }
-    };
-    Ok(SessionRow {
+    let session = SessionRow {
         id,
         title: row.get(1)?,
         cwd: row.get(2)?,
@@ -1017,7 +1096,7 @@ fn session_from_row(row: &Row<'_>) -> rusqlite::Result<SessionRow> {
         context_window: row.get(10)?,
         pinned: row.get::<_, i64>(11)? != 0,
         archived: row.get::<_, i64>(12)? != 0,
-        blocks,
+        blocks: Vec::new(),
         provider_session_id: row.get(13)?,
         provider_account_id: row
             .get::<_, Option<String>>(21)?
@@ -1043,8 +1122,9 @@ fn session_from_row(row: &Row<'_>) -> rusqlite::Result<SessionRow> {
             .get::<_, Option<String>>(20)?
             .as_deref()
             .and_then(OrchestrationSummary::from_json),
-        blocks_parse_failed,
-    })
+        blocks_parse_failed: false,
+    };
+    Ok((session, blocks_json))
 }
 
 /// Required MonoCode `Automation` fields BenCode does not model, with the
@@ -1571,6 +1651,49 @@ mod tests {
             .collect();
         assert_eq!(ids, vec!["normal".to_string()]);
         assert!(db.get_session("ask").unwrap().is_none());
+    }
+
+    #[test]
+    fn many_long_transcripts_parse_side_by_side_in_order() {
+        let db = monocode_db();
+        // Past `PARALLEL_PARSE_BYTES`, so the threads parse them.
+        let text = "x".repeat(40 * 1024);
+        for n in 0..12 {
+            let blocks = serde_json::json!([
+                {"id": format!("b{n}"), "role": "assistant", "text": format!("{n} {text}")}
+            ]);
+            insert_monocode_session(&db, &format!("s{n}"), &blocks.to_string());
+            db.conn
+                .execute(
+                    "UPDATE sessions SET updated_at = ?2 WHERE id = ?1",
+                    params![format!("s{n}"), n],
+                )
+                .unwrap();
+        }
+        insert_monocode_session(&db, "broken", "[{");
+        db.conn
+            .execute(
+                "UPDATE sessions SET updated_at = 100 WHERE id = 'broken'",
+                [],
+            )
+            .unwrap();
+        let sessions = db.list_recent_sessions(50).unwrap();
+        let ids: Vec<&str> = sessions.iter().map(|s| s.id.as_str()).collect();
+        let mut expected: Vec<String> = (0..12).rev().map(|n| format!("s{n}")).collect();
+        expected.insert(0, "broken".into());
+        assert_eq!(ids, expected);
+        for session in &sessions {
+            if session.id == "broken" {
+                assert!(session.blocks_parse_failed && session.blocks.is_empty());
+                continue;
+            }
+            let n = &session.id[1..];
+            assert!(!session.blocks_parse_failed);
+            assert_eq!(session.blocks.len(), 1);
+            assert_eq!(session.blocks[0].id, format!("b{n}"));
+            let text = session.blocks[0].text.as_deref().unwrap_or_default();
+            assert!(text.starts_with(&format!("{n} x")));
+        }
     }
 
     #[test]

@@ -83,6 +83,7 @@ bencode/
 ├── docs/readme/              README translations (README.vi.md)
 ├── docs/assets/readme/       README screenshots and GIF, taken from a demo project
 ├── packaging/macos/          app icon, Info.plist, entitlements, bundle.sh (.app / .dmg)
+├── scripts/                  startup-bench.py (launch timings, see Verifying)
 ├── site/                     the landing page (GitHub Pages)
 ├── reference/monocode        symlink to the MonoCode source (git-ignored)
 ├── tests/fixtures/           recorded CLI output for parser tests
@@ -105,6 +106,8 @@ bencode/
     ├── schedule.rs           automation schedules (next run time)
     ├── settings.rs           BenCode's settings.json
     ├── storage.rs            where BenCode keeps its data (database, checkpoints, account profiles, logs)
+    ├── launch.rs             what a launch reads from the data folder (import, settings, database, recent threads), on its own thread from the start of `main`
+    ├── startup_trace.rs      launch timings for perf work (`BENCODE_STARTUP_TRACE`, see Verifying)
     ├── logging.rs            log to the terminal, else to ~/Library/Logs/BenCode; the panic hook
     ├── updater.rs            self-update: the release feed, the signed archive, the swap and restart
     ├── pty_host/             the terminal host (`bencode --pty-host`) and the tabs' attach client (`--pty-attach`)
@@ -155,7 +158,7 @@ bencode/
 | `worktree_lifecycle.rs` | Settings › Worktrees: project picker, create, delete (with the removal journal) |
 | `browser.rs` | The in-app browser: its tabs and pages, the address bar, the element picker and screenshots for the composer, the agents' browser tool calls |
 | `chat_background.rs` | Appearance › Chat background: the saved copy of the image, decoding and effects off the UI thread, the image the panes draw |
-| `frame_bench.rs` | Frame timings for perf work: `BENCODE_FRAME_BENCH=1` draws the window by hand, case by case, and prints what a redraw costs (see Verifying) |
+| `frame_bench.rs` | Frame timings for perf work: `BENCODE_FRAME_BENCH=1` draws the window by hand, case by case, and prints what a redraw costs, what opening a view costs, and every frame of a fling through the longest thread (see Verifying) |
 | `in_flight.rs` | The turns running now, kept in `in_flight_sessions` (one BenCode per data folder, by `in-flight.lock`); at launch, the ones a quit, restart or crash cut off: marked interrupted and offered for resuming (`ui/resume_interrupted.rs`) |
 | `updater.rs`, `release_notes.rs` | Updates: the probe at launch, Check for Updates…, install and restart, the "Updated to" note; a version's CHANGELOG section for What's new |
 
@@ -727,7 +730,24 @@ HOME="${B%/Library/*}" BENCODE_FRAME_BENCH=1 target/debug/bencode
 
   `BENCODE_FRAME_BENCH=2000` draws each case that many times, long enough to
   `sample` the process; `BENCODE_FRAME_BENCH_CASE=file` measures only the
-  cases whose name holds the word.
+  cases whose name holds the word; `BENCODE_FRAME_BENCH_FLINGS=50` repeats
+  the flings (scroll events dispatched as a trackpad's, from a cold view).
+- What a launch costs is measured the same way (`startup_trace.rs`).
+  `BENCODE_STARTUP_TRACE=1` prints each step's time since `main` and the
+  process's CPU time; `scripts/startup-bench.py` launches a build again and
+  again on a scratch copy of the data folder and prints each step's median.
+  Give it two builds to compare: their runs alternate, so a machine that
+  gets busier halfway weighs on both. `--heavy` gives every thread a launch
+  loads the longest one's transcript, as a long history would.
+
+```bash
+scripts/startup-bench.py --runs 12 before/bencode target/release/bencode
+```
+
+  Launch work belongs off the main thread or after the first frame: the
+  data folder is read on `launch.rs`'s thread while GPUI sets up, git
+  starts loading as the app is built, the menu bar waits for the first
+  frame. Check a change with the script before and after.
 
 ### Releasing
 

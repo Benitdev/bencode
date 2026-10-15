@@ -219,6 +219,12 @@ pub fn install(cx: &mut App) {
     // path; quitting still saves through `on_app_quit`.
     cx.on_action(|_: &Quit, cx| cx.quit());
     cx.on_action(|_: &ShowLogs, cx| crate::logging::reveal(cx));
+}
+
+/// The menu bar. Building it looks every item's shortcut up in the keymap
+/// and takes AppKit a while (24ms), so it waits for the first frame; the
+/// shortcuts work before it, from the bindings `install` made.
+pub fn install_menus(cx: &mut App) {
     let menus = menus(cx);
     cx.set_menus(menus);
 }

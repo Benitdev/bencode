@@ -8,6 +8,7 @@ mod github;
 mod github_accounts;
 mod harness;
 mod keychain;
+mod launch;
 mod logging;
 pub mod mcp;
 mod monocode_import;
@@ -21,6 +22,7 @@ mod schedule;
 mod settings;
 mod skills;
 mod sounds;
+mod startup_trace;
 mod storage;
 mod terminal_process;
 mod ui;
@@ -32,9 +34,8 @@ use gpui::{
     App, AppContext, Bounds, TitlebarOptions, WindowBounds, WindowOptions, point, px, size,
 };
 
-use monocode_import::ImportOutcome;
-
 fn main() {
+    startup_trace::init();
     // The terminal host and the dock's attach clients are this binary too.
     if let Some(code) = pty_host::run_from_args() {
         std::process::exit(code);
@@ -44,8 +45,12 @@ fn main() {
         std::process::exit(code);
     }
     logging::init();
+    startup_trace::mark("main");
+    // The data folder is read while GPUI sets the platform up.
+    let launch = launch::start();
 
     let application = gpui_platform::application().with_assets(ui::icons::Assets);
+    startup_trace::mark("application created");
     // The Dock icon with no window on screen (hidden or minimized): bring
     // BenCode's window back.
     application.on_reopen(|cx| {
@@ -58,6 +63,7 @@ fn main() {
     });
     application
         .run(|cx: &mut App| {
+            startup_trace::mark("application launched");
             // Without Ely's assets and fonts nothing can be drawn.
             if let Err(err) = ely_gpui_component::init(cx) {
                 log::error!("ely init failed: {err:#}");
@@ -65,27 +71,13 @@ fn main() {
                 return;
             }
             app::commands::install(cx);
-            // Before the database opens: the first launch on its own data
-            // brings along what a MonoCode install held.
-            let imported = monocode_import::import_once();
-            let mut saved = settings::settings_dir()
-                .map(|dir| settings::load_from(&dir))
-                .unwrap_or_default();
-            let mut import_error = None;
-            match imported {
-                ImportOutcome::Nothing => {}
-                ImportOutcome::Imported(imported) => {
-                    if monocode_import::merge_accounts(&mut saved.provider_accounts, imported.accounts)
-                        && let Some(dir) = settings::settings_dir()
-                        && let Err(err) = settings::save_to(&dir, &saved)
-                    {
-                        log::error!("saving the imported account names: {err:#}");
-                    }
-                }
-                ImportOutcome::Failed(err) => import_error = Some(err),
-            }
+            // Read on its own thread since `main` began; most launches find
+            // it done.
+            let mut launch = launch.wait();
+            startup_trace::mark("data folder read");
+            let saved = &launch.settings;
             let system_dark = app::is_dark_appearance(cx.window_appearance());
-            let appearance = app::appearance_prefs(&saved);
+            let appearance = app::appearance_prefs(saved);
             ui::theme::install(
                 app::theme_mode(saved.theme, system_dark),
                 &appearance.tint,
@@ -109,12 +101,37 @@ fn main() {
                 ..Default::default()
             };
 
-            let import_failed = import_error.is_some();
+            let import_error = launch.import_error.take();
             let window = cx
                 .open_window(options, |window, cx| {
-                    cx.new(|cx| ui::window_root::WindowRoot::new(window, saved, import_failed, cx))
+                    startup_trace::mark("window opened");
+                    cx.new(|cx| ui::window_root::WindowRoot::new(window, launch, cx))
                 })
                 .expect("Failed to open BenCode window");
+            startup_trace::mark("open_window returned");
+            // The menu bar after the first frame, or soon anyway if the
+            // window does not draw (opened hidden).
+            let menus_due = std::rc::Rc::new(std::cell::Cell::new(true));
+            let install_menus = move |cx: &mut App| {
+                if menus_due.replace(false) {
+                    app::commands::install_menus(cx);
+                    startup_trace::mark("menus installed");
+                }
+            };
+            let after_frame = install_menus.clone();
+            let waiting = window.update(cx, |_, window, _| {
+                window.on_next_frame(move |_, cx| after_frame(cx));
+            });
+            if let Err(err) = waiting {
+                log::error!("could not wait for the first frame: {err:#}");
+            }
+            cx.spawn(async move |cx| {
+                cx.background_executor()
+                    .timer(std::time::Duration::from_millis(500))
+                    .await;
+                cx.update(install_menus);
+            })
+            .detach();
             // BenCode's state, running agents included, lives in its one
             // window, and macOS keeps the app running when it closes. So the
             // close button hides the app, as ⌘H does, and the Dock icon brings

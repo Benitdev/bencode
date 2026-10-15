@@ -149,6 +149,7 @@ impl BenCodeApp {
         session: String,
         cx: &mut Context<Self>,
     ) {
+        let executor = cx.background_executor().clone();
         let task = cx.background_executor().spawn(async move {
             let started = std::time::Instant::now();
             while started.elapsed() < PID_WAIT {
@@ -160,7 +161,9 @@ impl BenCodeApp {
                     }
                     Err(err) => log::debug!("terminal session list: {err:#}"),
                 }
-                std::thread::sleep(Duration::from_millis(100));
+                // A timer, not a sleep: the wait holds none of the threads
+                // the launch's loads run on.
+                executor.timer(Duration::from_millis(100)).await;
             }
             None
         });

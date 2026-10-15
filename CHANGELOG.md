@@ -21,6 +21,17 @@ tagging (`docs/releasing.md`).
   ⌘I toggles the last Mono, and the Mono in view at quit opens at launch.
 - Mascots bob and blink while idle, hop while working, and show a bulb
   when the Mono needs you. Status lines use MonoCode's wording.
+- BenCode starts faster: the window shows 10–20% sooner (more with a long
+  history), and the branch, changes and history are filled in about 45%
+  sooner (under 400ms, where they took about 700ms). Threads, settings and
+  the database are read while the window is being set up, git starts
+  reading as the app is built and runs its commands side by side, and the
+  menu bar is built after the first frame.
+- Every git command BenCode runs is quicker: it runs the developer tools'
+  git directly instead of going through macOS's `/usr/bin/git`, which
+  looked it up again on every call.
+- A project with a long history lists its threads sooner: their
+  transcripts are read side by side.
 
 ## [0.1.13] - 2026-10-15
 
