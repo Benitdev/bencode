@@ -4,6 +4,24 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
+## [0.1.14] - 2026-10-15
+
+- A Mono's settings open in a dialog of their own: General (its face and
+  colour, name, model and the model's settings, permissions, projects,
+  Reset conversation and Delete), Soul (saved when you leave the field;
+  Use theirs / Keep mine when the file changed on disk) and Memory (add,
+  edit and forget facts, with the 200-line / 24KB gauge). Each turn now
+  carries the Mono's memory, sent only when its session lacks that
+  version.
+- The Overview beside a Mono's chat, open by default and resizable:
+  Sessions, Documents, Habits, Changes (commit and push per project) and
+  Activity, which shows a turn's work when its signature pill is clicked.
+  It replaces the Details panel.
+- Settings › Monos: turn Monos off, pin them to the icon rail, Reset Mono.
+  ⌘I toggles the last Mono, and the Mono in view at quit opens at launch.
+- Mascots bob and blink while idle, hop while working, and show a bulb
+  when the Mono needs you. Status lines use MonoCode's wording.
+
 ## [0.1.13] - 2026-10-15
 
 - A Mono in BenCode's window looks like MonoCode's: its own title bar
