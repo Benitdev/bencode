@@ -367,11 +367,23 @@ impl ClaudeParser {
         if self.background.len() == before {
             return;
         }
-        if self.yielded.is_some() && self.awaiting_resume.is_none() {
+        if self.yielded.is_none() {
+            self.wake_queued = true;
+        } else if self.awaiting_resume.is_none() {
             self.awaiting_resume = Some(Instant::now());
         }
         self.maybe_finish(events);
         self.sync_background(events);
+    }
+
+    /// Claude yielded. A task that finished during the turn has its
+    /// notification queued behind this result, and it starts the next
+    /// turn: wait for that as for one finishing now. (Claude may have taken
+    /// it in mid-turn instead; then the grace lets the turn go.)
+    pub(super) fn note_yielded(&mut self) {
+        if std::mem::take(&mut self.wake_queued) && self.awaiting_resume.is_none() {
+            self.awaiting_resume = Some(Instant::now());
+        }
     }
 
     /// MonoCode `noteClaudeTurnStarted`: Claude began another turn inside

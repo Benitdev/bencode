@@ -20,6 +20,9 @@ tagging (`docs/releasing.md`).
   button). A message that could not be sent keeps Retry.
 - In the floating chat, a settled turn's Copy and Show activity buttons
   were dimmed under the bottom fade. They now sit clear of it.
+- Claude: a background subagent that finished while Claude was still
+  working no longer lets the turn end before Claude reads its report.
+  The turn waits for the wake-up its notification brings.
 
 ## [0.1.12] - 2026-10-14
 
