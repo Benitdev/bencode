@@ -58,6 +58,8 @@ const TICKER_LINE: f32 = 24.0;
 /// `mono-transcript-fades`: `1.5rem` at the top, `2rem` at the bottom.
 const FADE_TOP: f32 = 24.0;
 const FADE_BOTTOM: f32 = 32.0;
+/// The scroller's `pb-5`: the last row stops above the bottom fade.
+const LIST_END: f32 = 20.0;
 
 /// Which message a "Show more" opened: by its turn, and by its row while it
 /// waits to be sent (it has no turn yet).
@@ -224,7 +226,8 @@ impl MonoFloat {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let Some(FloatRow { turn, item }) = self.rows.get(ix).cloned() else {
-            return div().into_any_element();
+            // The list's end, under the last row.
+            return div().h(px(LIST_END)).into_any_element();
         };
         let fg = cx.theme().colors.fg;
         let row = div().w_full().px_4();

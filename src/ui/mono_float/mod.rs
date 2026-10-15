@@ -805,7 +805,9 @@ impl MonoFloat {
     /// that changed are measured again.
     fn sync_list(&mut self, session_id: Option<&str>, rows: Vec<FloatRow>) {
         if self.listed.as_deref() != session_id {
-            self.list.reset(rows.len());
+            // One more item than rows: the list's end (`pb-5`), so the
+            // last row clears the bottom fade.
+            self.list.reset(rows.len() + 1);
             self.list.set_follow_mode(FollowMode::Tail);
             self.listed = session_id.map(str::to_string);
             self.rows = rows;
