@@ -4,28 +4,32 @@
 //! and lives on the rail above the projects.
 //!
 //! MonoCode keeps the roster in webview storage; BenCode keeps it in
-//! `settings.json` (`monos`). A Mono's standing instructions are its
-//! `SOUL.md`, in BenCode's data folder (`monos/<id>/`), never in a repo.
+//! `settings.json` (`monos`). A Mono's standing instructions (`SOUL.md`)
+//! and what it knows (`MEMORY.md`) are in BenCode's data folder
+//! (`monos/<id>/`, `files.rs`), never in a repo; `memory.rs` edits the
+//! memory as MonoCode does and `habits.rs` reads its habits.
 //!
 //! A reply that is only `<reaction>👍</reaction>` is a reaction on the
 //! user's message (`monoReaction.ts`), drawn by the views; one still
 //! streaming in is held back until it settles (`partial_reaction`). A
 //! message of a few emoji stands alone, large (`emojiMessage.ts`).
 //!
-//! Not ported: memory, habits, sessions a Mono starts and artifacts (they
-//! go through MonoCode's `app` CLI, which BenCode lacks).
+//! Not ported: the memory the agent writes itself, running habits, the
+//! sessions a Mono starts and artifacts (they go through MonoCode's `app`
+//! CLI, which BenCode lacks).
+
+pub mod files;
+pub mod habits;
+pub mod memory;
 
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context as _, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 
 use crate::app::session_folders::FOLDER_COLORS;
 use crate::ui::mascot::MASCOT_NAMES;
-
-const SOUL_FILE: &str = "SOUL.md";
 
 /// MonoCode's name field: `maxLength={40}`.
 pub const NAME_MAX: usize = 40;
@@ -38,8 +42,13 @@ pub struct Handed {
     /// The provider session it was given to; absent before the first reply.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub provider: Option<String>,
-    /// [`context_hash`] of what it was given.
+    /// [`context_hash`] of the identity and soul it was given
+    /// ([`soul_context`]).
     pub context_hash: String,
+    /// The `MEMORY.md` hash its memory block was made from; empty before
+    /// BenCode handed memory over.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub memory_hash: String,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -53,7 +62,8 @@ pub struct Mono {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     pub mascot: String,
-    /// Into `FOLDER_COLORS`, never its untinted first.
+    /// 1–8 into `FOLDER_COLORS` (never its untinted first), 9 for Indigo:
+    /// MonoCode `MONO_COLORS` ([`mono_palette_color`]).
     pub color_index: usize,
     /// `#rrggbb`, ahead of `color_index`.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -97,6 +107,30 @@ pub fn default_name(mascot: &str) -> String {
     }
 }
 
+/// MonoCode `MONO_COLORS`' ninth preset, past the project palette:
+/// `hsl(245 75% 65%)`.
+const INDIGO: (f32, f32, f32) = (245.0, 0.75, 0.65);
+
+/// MonoCode `ColorPicker`'s labels for `MONO_COLORS`, by `color_index` - 1.
+pub const MONO_COLOR_LABELS: [&str; 9] = [
+    "Blue", "Coral", "Yellow", "Green", "Pink", "Purple", "Teal", "Orange", "Indigo",
+];
+
+/// How many presets a Mono picks from: the tinted project colours and Indigo.
+pub const MONO_COLOR_COUNT: usize = MONO_COLOR_LABELS.len();
+
+/// MonoCode `MONO_COLORS[index - 1]`: the project palette's tinted
+/// colours, then Indigo.
+pub fn mono_palette_color(index: usize) -> Option<gpui::Hsla> {
+    let (h, s, l) = match index {
+        0 => return None,
+        ix if ix < FOLDER_COLORS.len() => FOLDER_COLORS[ix],
+        ix if ix == MONO_COLOR_COUNT => INDIGO,
+        _ => return None,
+    };
+    Some(gpui::hsla(h / 360.0, s, l, 1.0))
+}
+
 /// MonoCode `nextMonoLook`: a mascot and a colour the others are not using
 /// yet, where any are left.
 pub fn next_look(roster: &[Mono]) -> (&'static str, usize) {
@@ -104,7 +138,7 @@ pub fn next_look(roster: &[Mono]) -> (&'static str, usize) {
         .iter()
         .find(|name| roster.iter().all(|mono| mono.mascot != **name))
         .unwrap_or(&MASCOT_NAMES[roster.len() % MASCOT_NAMES.len()]);
-    let tinted = FOLDER_COLORS.len() - 1;
+    let tinted = MONO_COLOR_COUNT;
     let color = (1..=tinted)
         .find(|index| {
             roster
@@ -168,6 +202,62 @@ impl MonoState {
     };
 }
 
+/// MonoCode `plainLine`: the first line of a title, its spaces collapsed.
+fn plain_line(text: &str) -> String {
+    text.lines()
+        .find(|line| !line.trim().is_empty())
+        .unwrap_or("")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// MonoCode `monoState` while a permission waits: "Approve {the call's
+/// title}", else "Waiting for approval".
+pub fn approval_activity(title: &str) -> String {
+    match plain_line(title) {
+        line if line.is_empty() => "Waiting for approval".to_string(),
+        line => format!("Approve {line}"),
+    }
+}
+
+/// MonoCode `monoState` while a question waits: its title, or its first
+/// prompt (`AskUserQuestion`'s `questions[0].question`).
+pub fn question_activity(input: &Value) -> Option<String> {
+    let title = input.get("title").and_then(Value::as_str);
+    let first = input
+        .get("questions")
+        .and_then(|q| q.get(0))
+        .and_then(|q| q.get("question").or_else(|| q.get("prompt")))
+        .and_then(Value::as_str);
+    [title, first]
+        .into_iter()
+        .flatten()
+        .map(str::trim)
+        .find(|text| !text.is_empty())
+        .map(str::to_string)
+}
+
+/// MonoCode `monoState` while it works: "Writing a reply" while the last
+/// block is its streaming reply, else the title of the latest call in this
+/// turn, else "Thinking".
+pub fn working_activity(blocks: &[crate::db::Block]) -> String {
+    if blocks
+        .last()
+        .is_some_and(|last| last.role == "assistant" && last.tool.is_none())
+    {
+        return "Writing a reply".to_string();
+    }
+    blocks
+        .iter()
+        .rev()
+        .take_while(|block| block.role != "user")
+        .filter_map(|block| block.tool.as_ref()?.get("title")?.as_str())
+        .map(plain_line)
+        .find(|title| !title.is_empty())
+        .unwrap_or_else(|| "Thinking".to_string())
+}
+
 /// The folder a Mono's files are kept in. Ids come from the settings file,
 /// so one that could leave `monos/` names no folder.
 pub fn mono_dir(data_dir: &Path, id: &str) -> Option<PathBuf> {
@@ -181,29 +271,6 @@ pub fn default_soul() -> String {
         .to_string()
 }
 
-/// Reads `SOUL.md`, writing the default the first time.
-pub fn load_soul(dir: &Path) -> Result<String> {
-    let path = dir.join(SOUL_FILE);
-    match std::fs::read_to_string(&path) {
-        Ok(text) => Ok(text),
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-            let soul = default_soul();
-            save_soul(dir, &soul)?;
-            Ok(soul)
-        }
-        Err(err) => Err(err).with_context(|| format!("reading {}", path.display())),
-    }
-}
-
-/// Writes `SOUL.md` atomically: a temp file beside it, then rename.
-pub fn save_soul(dir: &Path, text: &str) -> Result<()> {
-    std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
-    let tmp = dir.join(format!("{SOUL_FILE}.tmp"));
-    std::fs::write(&tmp, text).with_context(|| format!("writing {}", tmp.display()))?;
-    std::fs::rename(&tmp, dir.join(SOUL_FILE)).context("replacing SOUL.md")?;
-    Ok(())
-}
-
 /// What a session is recorded as holding once it was given `context`: the
 /// Mono's name, projects and soul are all in it, so a change to any of
 /// them is handed over once (MonoCode's `handedFiles.soulHash`).
@@ -212,12 +279,36 @@ pub fn context_hash(context: &str) -> String {
     digest.iter().take(8).map(|b| format!("{b:02x}")).collect()
 }
 
-/// MonoCode `planAgentContext`: whether this turn has to carry the standing
-/// context. A native session that already holds it does not get it again;
-/// a fresh one (first turn, a new model's session) does.
-pub fn needs_context(handed: Option<&Handed>, provider_session: Option<&str>, hash: &str) -> bool {
+/// MonoCode `AgentContextPlan`: what a turn has to carry.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ContextPlan {
+    /// Identity, soul and how memory works: a session that has not seen
+    /// this version of them.
+    pub soul: bool,
+    /// The memory block: a session that has not seen this version of it.
+    pub memory: bool,
+}
+
+impl ContextPlan {
+    pub fn any(self) -> bool {
+        self.soul || self.memory
+    }
+}
+
+/// MonoCode `planAgentContext`: a native session that already holds the
+/// soul and this memory gets neither again, so nothing piles up in its
+/// context; a fresh one (first turn, a new model's session) gets both.
+pub fn plan_context(
+    handed: Option<&Handed>,
+    provider_session: Option<&str>,
+    soul_hash: &str,
+    memory_hash: &str,
+) -> ContextPlan {
     let (Some(handed), Some(provider)) = (handed, provider_session) else {
-        return true;
+        return ContextPlan {
+            soul: true,
+            memory: true,
+        };
     };
     // The provider id arrives with the first reply, so a record made before
     // it belongs to whatever session that reply started.
@@ -225,7 +316,17 @@ pub fn needs_context(handed: Option<&Handed>, provider_session: Option<&str>, ha
         .provider
         .as_deref()
         .is_none_or(|given| given == provider);
-    !same_session || handed.context_hash != hash
+    if !same_session {
+        return ContextPlan {
+            soul: true,
+            memory: true,
+        };
+    }
+    let soul = handed.context_hash != soul_hash;
+    ContextPlan {
+        soul,
+        memory: soul || handed.memory_hash != memory_hash,
+    }
 }
 
 /// MonoCode `monoProjectsBrief`: where the Mono works, as (label, folder).
@@ -350,17 +451,59 @@ pub fn reply_text(text: &str) -> String {
     }
 }
 
-/// MonoCode `monoContext`: who the Mono is and its standing instructions.
-pub fn standing_context(name: &str, projects: &[(String, String)], soul: &str) -> String {
+/// MonoCode's `<memory_rules>`, for a Mono that cannot write its memory:
+/// BenCode has no `app memory.add`, so the user keeps it.
+const MEMORY_RULES: &str = "<memory_rules>\nYou have a memory that carries across \
+    conversations: MEMORY.md, in the <memory> block. Its first 200 lines load whenever it \
+    changes. The user keeps it in BenCode, from your settings; never edit its files \
+    yourself, and never repeat secrets, tokens or credentials from it.\n</memory_rules>";
+
+/// MonoCode `monoContext`'s soul part: who the Mono is, its standing
+/// instructions and how its memory works.
+pub fn soul_context(name: &str, projects: &[(String, String)], soul: &str) -> String {
     format!(
         "<mono>\nYou are {name}, a Mono in BenCode: an agent of your own rather than one \
          project's. {} This is one long conversation the user comes back to over \
          time.\n</mono>\n\n{REACTION_RULES}\n\n<soul>\nYour standing instructions, from SOUL.md. They rank below \
-         the user's current request. The user edits them in BenCode, from your details panel; \
-         never change them on your own.\n\n{}\n</soul>",
+         the user's current request. The user edits them in BenCode, from your settings; \
+         never change them on your own.\n\n{}\n</soul>\n\n{MEMORY_RULES}",
         projects_brief(projects),
         soul.trim()
     )
+}
+
+/// MonoCode `monoContext`'s `<memory>` block: what of `MEMORY.md` fits its
+/// budget, and the topic notes beside it (read from `topics_dir` with the
+/// agent's own tools; MonoCode's go through `memory.read`).
+pub fn memory_context(memory: &str, topics: &[String], topics_dir: &str) -> String {
+    let budget = memory::memory_within_budget(memory);
+    let text = if budget.text.is_empty() {
+        "(Empty. Nothing has been remembered yet.)".to_string()
+    } else {
+        budget.text
+    };
+    let dropped = match budget.dropped_lines {
+        0 => String::new(),
+        n => format!("\n[{n} more lines in MEMORY.md did not load.]"),
+    };
+    let topics = if topics.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "\n\nTopic notes, read on demand from {topics_dir}: {}",
+            topics.join(", ")
+        )
+    };
+    format!("<memory>\n{text}{dropped}{topics}\n</memory>")
+}
+
+/// MonoCode `monoContext`: the blocks this turn adds, as `plan` says.
+pub fn turn_context(plan: ContextPlan, soul: &str, memory: &str) -> String {
+    [plan.soul.then_some(soul), plan.memory.then_some(memory)]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
+        .join("\n\n")
 }
 
 /// MonoCode `monoTurn`: the user's message with what the app adds to it,
@@ -427,7 +570,18 @@ mod tests {
             .collect();
         let (mascot, color) = next_look(&roster);
         assert_eq!(mascot, MASCOT_NAMES[0]);
-        assert!((1..FOLDER_COLORS.len()).contains(&color));
+        assert!((1..=MONO_COLOR_COUNT).contains(&color));
+    }
+
+    #[test]
+    fn the_ninth_preset_is_indigo() {
+        let roster: Vec<Mono> = (1..=8).map(|ix| mono(MASCOT_NAMES[ix], ix)).collect();
+        assert_eq!(next_look(&roster).1, 9);
+        assert_eq!(MONO_COLOR_LABELS[8], "Indigo");
+        assert!(mono_palette_color(9).is_some());
+        assert_eq!(mono_palette_color(1), crate::app::session_folders::palette_color(1));
+        assert_eq!(mono_palette_color(0), None);
+        assert_eq!(mono_palette_color(10), None);
     }
 
     #[test]
@@ -455,47 +609,76 @@ mod tests {
     }
 
     #[test]
-    fn the_soul_is_seeded_then_kept() {
-        let dir = std::env::temp_dir().join(format!("bencode-mono-{}", std::process::id()));
-        std::fs::remove_dir_all(&dir).ok();
-        assert_eq!(load_soul(&dir).unwrap(), default_soul());
-        save_soul(&dir, "# Soul\n\nBe brief.\n").unwrap();
-        assert_eq!(load_soul(&dir).unwrap(), "# Soul\n\nBe brief.\n");
-        std::fs::remove_dir_all(&dir).ok();
+    fn context_goes_to_a_session_that_has_not_seen_it() {
+        let (soul, memory) = (context_hash("soul"), "m1".to_string());
+        let all = ContextPlan {
+            soul: true,
+            memory: true,
+        };
+        // The first turn, and any turn before the provider names its session.
+        assert_eq!(plan_context(None, None, &soul, &memory), all);
+        let before_reply = Handed {
+            provider: None,
+            context_hash: soul.clone(),
+            memory_hash: memory.clone(),
+        };
+        assert_eq!(plan_context(Some(&before_reply), None, &soul, &memory), all);
+        // The session that first reply started holds it.
+        assert!(!plan_context(Some(&before_reply), Some("s1"), &soul, &memory).any());
+        let given = Handed {
+            provider: Some("s1".into()),
+            ..before_reply
+        };
+        assert!(!plan_context(Some(&given), Some("s1"), &soul, &memory).any());
+        // Another native session, or an edited soul: everything again.
+        assert_eq!(plan_context(Some(&given), Some("s2"), &soul, &memory), all);
+        assert_eq!(
+            plan_context(Some(&given), Some("s1"), &context_hash("new"), &memory),
+            all
+        );
+        // A memory that changed: only the memory.
+        assert_eq!(
+            plan_context(Some(&given), Some("s1"), &soul, "m2"),
+            ContextPlan {
+                soul: false,
+                memory: true,
+            }
+        );
     }
 
     #[test]
-    fn context_goes_to_a_session_that_has_not_seen_it() {
-        let hash = context_hash("soul");
-        // The first turn, and any turn before the provider names its session.
-        assert!(needs_context(None, None, &hash));
-        let before_reply = Handed {
-            provider: None,
-            context_hash: hash.clone(),
+    fn the_memory_block_is_what_fits() {
+        assert_eq!(
+            memory_context("", &[], "/m"),
+            "<memory>\n(Empty. Nothing has been remembered yet.)\n</memory>"
+        );
+        let block = memory_context(
+            "- 2026-10-01 · likes tea\n",
+            &["releases".into(), "team".into()],
+            "/data/monos/m/memory",
+        );
+        assert_eq!(
+            block,
+            "<memory>\n- 2026-10-01 · likes tea\n\nTopic notes, read on demand from \
+             /data/monos/m/memory: releases, team\n</memory>"
+        );
+        let long: String = (0..205).map(|n| format!("- {n}\n")).collect();
+        assert!(memory_context(&long, &[], "/m").contains("\n[5 more lines in MEMORY.md did not load.]"));
+        let plan = ContextPlan {
+            soul: false,
+            memory: true,
         };
-        assert!(needs_context(Some(&before_reply), None, &hash));
-        // The session that first reply started holds it.
-        assert!(!needs_context(Some(&before_reply), Some("s1"), &hash));
-        let given = Handed {
-            provider: Some("s1".into()),
-            context_hash: hash.clone(),
-        };
-        assert!(!needs_context(Some(&given), Some("s1"), &hash));
-        // Another native session, or an edited soul.
-        assert!(needs_context(Some(&given), Some("s2"), &hash));
-        assert!(needs_context(
-            Some(&given),
-            Some("s1"),
-            &context_hash("new")
-        ));
+        assert_eq!(turn_context(plan, "S", "M"), "M");
+        let both = ContextPlan { soul: true, ..plan };
+        assert_eq!(turn_context(both, "S", "M"), "S\n\nM");
     }
 
     #[test]
     fn the_context_names_the_mono_and_its_projects() {
-        let none = standing_context("MonoCrab", &[], "# Soul\n");
+        let none = soul_context("MonoCrab", &[], "# Soul\n");
         assert!(none.contains("You are MonoCrab, a Mono in BenCode"));
         assert!(none.contains("has not given you any projects yet"));
-        let two = standing_context(
+        let two = soul_context(
             "Ada",
             &[
                 ("app".into(), "/src/app".into()),
@@ -505,7 +688,7 @@ mod tests {
         );
         assert!(two.contains("these 2 projects (app and site)"));
         assert!(two.contains("- site: /src/site"));
-        assert!(two.contains("\n\nBe brief.\n</soul>"));
+        assert!(two.contains("\n\nBe brief.\n</soul>\n\n<memory_rules>"));
         let turn = turn_with_context("hello", &two);
         assert!(turn.starts_with("<bencode_context>"));
         assert!(turn.ends_with("</bencode_context>\n\nhello"));
@@ -550,6 +733,26 @@ mod tests {
         for not in ["Sure", "<reaction>👍</", "<b>"] {
             assert!(!partial_reaction(not), "{not}");
         }
+    }
+
+    #[test]
+    fn its_activity_uses_monocodes_words() {
+        use crate::db::Block;
+        assert_eq!(approval_activity("npm   test\nmore"), "Approve npm test");
+        assert_eq!(approval_activity("  "), "Waiting for approval");
+        let input = serde_json::json!({"questions": [{"question": " Which one? "}]});
+        assert_eq!(question_activity(&input).as_deref(), Some("Which one?"));
+        assert_eq!(question_activity(&serde_json::json!({})), None);
+        let user = Block::new("u", "user", "hi");
+        let mut tool = Block::new("t", "tool", "");
+        tool.tool = Some(serde_json::json!({"title": "Read src/main.rs"}));
+        let reply = Block::new("a", "assistant", "Sure");
+        let thought = Block::new("r", "reasoning", "hmm");
+        assert_eq!(working_activity(&[user.clone()]), "Thinking");
+        assert_eq!(working_activity(&[user.clone(), tool.clone(), thought]), "Read src/main.rs");
+        assert_eq!(working_activity(&[user.clone(), tool.clone(), reply]), "Writing a reply");
+        // A call from an earlier turn is not what it is on now.
+        assert_eq!(working_activity(&[tool, user]), "Thinking");
     }
 
     #[test]

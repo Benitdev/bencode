@@ -1,7 +1,8 @@
 //! The title bar over a Mono's view (MonoCode `TitleBar.tsx` with `mono`:
 //! `MonoTitle` and its trailing controls): the mascot, moving with the
 //! Mono's status, its name and the status alone (in the accent while it
-//! needs you), then the Overview pill and the gear, "{name} settings".
+//! needs you, a bulb over its mascot then), then the Overview pill and the
+//! gear, "{name} settings", which opens its settings dialog.
 //!
 //! MonoCode's header has no floating-chat button; BenCode opens the float
 //! from the Mono's rail menu, as MonoCode does.
@@ -16,18 +17,9 @@ use gpui::{
 
 use crate::app::BenCodeApp;
 use crate::monos::{Mono, MonoState, MonoStatus};
-use crate::ui::mascot::{MascotMotion, moving_sprite};
+use crate::ui::mascot::{MascotLook, pixel_mascot};
 use crate::ui::scale::px;
 use crate::ui::window_drag::claim_press;
-
-/// The mascot's motion in the title bar: MonoCode's `still` at rest, a hop
-/// while it works, standing while it waits on the user.
-fn title_motion(status: MonoStatus) -> MascotMotion {
-    match status {
-        MonoStatus::Working => MascotMotion::Hop,
-        MonoStatus::NeedsYou | MonoStatus::Idle => MascotMotion::Still,
-    }
-}
 
 impl BenCodeApp {
     /// MonoCode `TitleBar` in a Mono's view: `h-10 border-b border-stroke`,
@@ -102,11 +94,11 @@ impl BenCodeApp {
             .items_center()
             .gap_2()
             .px_4()
-            .child(moving_sprite(
+            .child(pixel_mascot(
                 self.mono_mascot(mono),
                 16.0,
                 self.mono_color(mono),
-                title_motion(state.status),
+                MascotLook::for_status(state.status, &mono.mascot),
                 cx,
             ))
             .child(
@@ -181,19 +173,7 @@ impl BenCodeApp {
                         "{} settings",
                         mono.display_name()
                     )))
-                    .on_click(cx.listener(|this, _, _, cx| this.toggle_mono_settings(cx))),
+                    .on_click(cx.listener(|this, _, _, cx| this.open_mono_settings(crate::app::monos::SettingsSection::General, cx))),
             )
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_title_mascot_moves_only_while_it_works() {
-        assert_eq!(title_motion(MonoStatus::Working), MascotMotion::Hop);
-        assert_eq!(title_motion(MonoStatus::NeedsYou), MascotMotion::Still);
-        assert_eq!(title_motion(MonoStatus::Idle), MascotMotion::Still);
     }
 }

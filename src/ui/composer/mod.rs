@@ -268,6 +268,11 @@ const PERMISSION_MODES: [(PermissionMode, &str, &str, IconName); 4] = [
     ),
 ];
 
+/// MonoCode `AccessPicker`'s rows, for pickers outside the composer.
+pub(crate) fn permission_modes() -> &'static [(PermissionMode, &'static str, &'static str, IconName)] {
+    &PERMISSION_MODES
+}
+
 pub(crate) fn permission_entry(mode: PermissionMode) -> (&'static str, IconName) {
     PERMISSION_MODES
         .iter()

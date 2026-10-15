@@ -11,7 +11,7 @@ use gpui::{
     ParentElement, SharedString, Styled, div, prelude::*, relative,
 };
 
-use super::widgets::{ROW_HEIGHT, hover_control, mascot_icon, section_button};
+use super::widgets::{ROW_HEIGHT, hover_control, section_button};
 use crate::app::BenCodeApp;
 use crate::monos::{Mono, MonoState, MonoStatus, projects_phrase};
 use crate::ui::scale::px;
@@ -185,8 +185,9 @@ impl BenCodeApp {
             .join("\n")
     }
 
-    /// MonoCode `MonoRailMascot`: the mascot in `size-4` with its status
-    /// circle at the top right (`size-1.5`, ringed with the background).
+    /// MonoCode `MonoRailMascot`: the mascot in `size-4` (hopping while it
+    /// works, its bulb lit while it needs you) with its status circle at the
+    /// top right (`size-1.5`, ringed with the background).
     fn render_mono_rail_mascot(
         &self,
         mono: &Mono,
@@ -207,11 +208,11 @@ impl BenCodeApp {
             .size_4()
             .items_center()
             .justify_center()
-            .child(mascot_icon(
+            .child(crate::ui::mascot::pixel_mascot(
                 self.mono_mascot(mono),
-                color,
-                state.status == MonoStatus::Working,
                 12.0,
+                color,
+                crate::ui::mascot::MascotLook::for_status(state.status, &mono.mascot),
                 cx,
             ))
             .child(

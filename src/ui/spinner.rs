@@ -59,6 +59,32 @@ pub fn until_step(step: Duration) -> Duration {
     until_step_at(epoch().elapsed(), step)
 }
 
+/// How far through a `period`-long cycle the clock is, `offset` ahead of
+/// the shared epoch (a mark that should not move in unison with the rest).
+pub fn cycle_offset(period: Duration, offset: Duration) -> f32 {
+    cycle_at(epoch().elapsed() + offset, period)
+}
+
+/// How long until the cycle (`period`, `offset` ahead) next crosses one of
+/// `edges` (fractions of the period): when a mark stepped at those edges
+/// changes next.
+pub fn until_edge(period: Duration, offset: Duration, edges: &[f32]) -> Duration {
+    until_edge_at(epoch().elapsed() + offset, period, edges)
+}
+
+fn until_edge_at(elapsed: Duration, period: Duration, edges: &[f32]) -> Duration {
+    let period_ms = period.as_millis().max(1) as f32;
+    let at = (elapsed.as_millis() as f32) % period_ms;
+    let left = edges
+        .iter()
+        .map(|edge| {
+            let edge = edge * period_ms;
+            if edge > at { edge - at } else { edge + period_ms - at }
+        })
+        .fold(period_ms, f32::min);
+    Duration::from_millis(left.ceil() as u64 + 1)
+}
+
 fn until_step_at(elapsed: Duration, step: Duration) -> Duration {
     let step = step.as_millis().max(1);
     let left = step - elapsed.as_millis() % step;
@@ -280,5 +306,14 @@ mod tests {
             [0..1, 1..2, 2..6]
         );
         assert_eq!(lit, [0.0, 1.0, 0.0]);
+    }
+
+    #[test]
+    fn the_next_edge_is_the_nearest_ahead() {
+        let period = Duration::from_millis(1000);
+        let at = |ms| until_edge_at(Duration::from_millis(ms), period, &[0.5, 0.9]);
+        assert_eq!(at(100), Duration::from_millis(401));
+        assert_eq!(at(600), Duration::from_millis(301));
+        assert_eq!(at(950), Duration::from_millis(551));
     }
 }

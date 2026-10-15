@@ -41,6 +41,8 @@ pub enum ModelsAnchor {
     MonoComposer,
     /// "Choose another model" on a Mono's usage-limit notice.
     UsageLimit,
+    /// The Model row of a Mono's settings dialog; it opens below.
+    MonoSettings,
 }
 
 /// The flyout open beside the menu.
@@ -644,7 +646,13 @@ impl BenCodeApp {
             .model_flyout(&self.current_model_key(), cx)
             .track_focus(&self.composer_menus.focus)
             .absolute()
-            .bottom(px(32.0))
+            .map(|el| {
+                if anchor == ModelsAnchor::MonoSettings {
+                    el.top(px(32.0))
+                } else {
+                    el.bottom(px(32.0))
+                }
+            })
             .map(|el| if right { el.right_0() } else { el.left_0() });
         Some(popover_surface(flyout, cx).into_any_element())
     }

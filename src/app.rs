@@ -18,6 +18,9 @@ pub mod in_flight;
 mod integrations;
 pub mod live_agents;
 mod model_catalog;
+pub mod mono_changes;
+pub mod mono_files;
+pub mod mono_overview;
 pub mod monos;
 pub mod note_images;
 pub mod notes;
@@ -1384,6 +1387,7 @@ impl BenCodeApp {
         app.load_backlog_account(cx);
         app.start_inbox_poll(cx);
         app.start_update_probe(cx);
+        app.reopen_saved_mono(cx);
         app
     }
 
@@ -1579,6 +1583,7 @@ impl Render for BenCodeApp {
             any_elements(self.render_whats_new(cx)),
             any_elements(self.render_resume_interrupted(cx)),
             any_elements(self.render_quit_confirm(cx)),
+            any_elements(self.render_mono_settings(cx)),
             any_elements(self.render_mono_dialogs(cx)),
         ]
         .into_iter()

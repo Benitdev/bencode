@@ -147,6 +147,11 @@ impl BenCodeApp {
         if let Some(width) = saved.inbox_list_width {
             self.inbox.list_width = width;
         }
+        self.monos.overview.width = saved
+            .mono_overview_width
+            .map_or(crate::app::mono_overview::DEFAULT_WIDTH, |w| {
+                w.clamp(crate::app::mono_overview::MIN_WIDTH, crate::app::mono_overview::MAX_WIDTH)
+            });
         self.favorite_models = saved.favorite_models.clone();
         self.recent_models = saved.recent_models.clone();
         self.last_model_settings = saved.last_model_settings.clone();
@@ -222,6 +227,11 @@ impl BenCodeApp {
             provider_account_selections: self.settings.provider_account_selections.clone(),
             monos: self.settings.monos.clone(),
             mono_float_size: self.settings.mono_float_size,
+            monos_off: self.settings.monos_off,
+            rail_monos_pinned: self.settings.rail_monos_pinned,
+            open_mono: self.settings.open_mono.clone(),
+            mono_overview_width: Some(self.monos.overview.width)
+                .filter(|w| *w != crate::app::mono_overview::DEFAULT_WIDTH),
             rail: self.settings.rail.clone(),
             extra: self.settings.extra.clone(),
         }
@@ -280,6 +290,41 @@ impl BenCodeApp {
             return;
         }
         self.write_settings(next, cx);
+        cx.notify();
+    }
+
+    /// MonoCode `saveOpenMono`: the Mono in view, opened again at launch.
+    pub(crate) fn save_open_mono(&mut self, cx: &mut Context<Self>) {
+        let open = self.monos.view.clone();
+        if self.settings.open_mono == open {
+            return;
+        }
+        let mut next = self.current_settings();
+        next.open_mono = open;
+        self.write_settings(next, cx);
+    }
+
+    /// MonoCode `saveMonosEnabled`: Monos shown on the rail, or hidden
+    /// (closing the one in view).
+    pub fn set_monos_enabled(&mut self, on: bool, cx: &mut Context<Self>) {
+        if !on {
+            self.close_mono_view(cx);
+        }
+        let mut next = self.current_settings();
+        next.monos_off = !on;
+        if next != self.settings {
+            self.write_settings(next, cx);
+        }
+        cx.notify();
+    }
+
+    /// MonoCode `saveRailMonosPinned`.
+    pub fn set_rail_monos_pinned(&mut self, on: bool, cx: &mut Context<Self>) {
+        let mut next = self.current_settings();
+        next.rail_monos_pinned = on;
+        if next != self.settings {
+            self.write_settings(next, cx);
+        }
         cx.notify();
     }
 

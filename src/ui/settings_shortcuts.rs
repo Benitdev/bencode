@@ -158,6 +158,7 @@ fn groups() -> Vec<Group<Entry>> {
                     cmd::ToggleSessionSidebar,
                 ),
                 entry("Toggle Terminal", I::PanelBottom, cmd::ToggleTerminal),
+                entry("Toggle Mono", I::Bot, cmd::ToggleMono),
                 entry("New Terminal", I::Terminal, cmd::NewTerminal),
                 entry("Open Browser", I::Globe, cmd::OpenBrowser),
                 entry("Zoom In", I::ZoomIn, cmd::ZoomIn),

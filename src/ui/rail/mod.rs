@@ -314,7 +314,7 @@ impl BenCodeApp {
             .overflow_y_scroll()
             .pb_2()
             // MonoCode: the Monos section above the projects.
-            .child(self.render_rail_monos(cx))
+            .when(self.monos_enabled(), |el| el.child(self.render_rail_monos(cx)))
             .when(!pinned.is_empty(), |el| {
                 el.child(self.render_project_section("Pinned", "pinned", &pinned, false, false, cx))
             })

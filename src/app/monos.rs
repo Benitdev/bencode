@@ -1,49 +1,68 @@
 //! Monos on the app (MonoCode `App.tsx`'s `monoViewId`, `monoWorkspace.ts`,
 //! `monoFiles.ts`): the roster in `settings.json`, the Mono whose
-//! conversation covers the workspace, its details panel and `SOUL.md`, and
-//! the standing context a turn carries. The model is in `crate::monos`.
+//! conversation covers the workspace, its Overview beside the chat and its
+//! settings dialog, and the standing context a turn carries (its soul and
+//! its memory). Its files are `mono_files.rs`, its Overview's state
+//! `mono_overview.rs`; the model is in `crate::monos`.
 
 use std::collections::HashMap;
-use std::time::Duration;
 
-use ely_gpui_component::forms::{InputEvent, TextInput};
-use gpui::{AppContext as _, Context, Entity, Hsla, PathPromptOptions, Subscription, Window};
+use gpui::{Context, Hsla, PathPromptOptions, Subscription, Window};
 
-use crate::app::live_agents::{RunFlags, live_agent};
-use crate::app::session_folders::{palette_color, parse_hex};
+use crate::app::mono_files::FilesState;
+use crate::app::mono_overview::OverviewState;
+use crate::app::session_folders::parse_hex;
 use crate::app::{BenCodeApp, same_project_path, unique_id};
 use crate::monos::{Handed, Mono, MonoState, MonoStatus};
 use crate::ui::mascot::{Mascot, mascot_for};
-use crate::ui::transcript::turns::is_tool;
 
-/// How long the soul field rests before it is saved.
-const SOUL_SAVE_DELAY: Duration = Duration::from_millis(600);
 /// MonoCode `ensureMonoSession`: a Mono's chat starts with Auto permissions.
 const MONO_RUNTIME_MODE: &str = "auto";
+
+/// MonoCode `MonoSettingsSection`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SettingsSection {
+    #[default]
+    General,
+    Soul,
+    Memory,
+}
+
+/// What a running turn carried, recorded as handed over once it ends.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Carried {
+    soul_hash: String,
+    memory_hash: String,
+}
 
 pub struct MonosState {
     /// The Mono whose conversation covers the workspace.
     pub view: Option<String>,
-    /// MonoCode `monoOverviewOpen`: the title bar's Overview pill is on.
-    /// Until the Overview panel is ported it shows the details panel.
+    /// MonoCode `monoOverviewOpen`: the title bar's Overview pill. A Mono
+    /// opens with its Overview beside the chat until it is hidden.
     pub overview_open: bool,
-    /// MonoCode `monoSettingsOpen`: the title bar's gear. Until the
-    /// settings dialog is ported it shows the details panel too.
+    /// MonoCode `monoSettingsFor`: the settings dialog is open, on this
+    /// section.
     pub settings_open: bool,
+    pub settings_section: SettingsSection,
+    /// The dialog's face opens its mascots and colours (MonoCode
+    /// `LookButton`).
+    pub look_open: bool,
+    /// MonoCode `lastMonoIdRef`: the last Mono opened, which ⌘I brings back.
+    pub last_mono: Option<String>,
     /// The Mono composer's emoji picker (MonoCode `EmojiPickerPopover`).
     pub emoji: crate::ui::emoji_picker::EmojiPicker,
-    /// Each Mono's `SOUL.md` as last read or saved.
-    souls: HashMap<String, String>,
-    pub soul_input: Entity<TextInput>,
-    /// The Mono whose soul the field holds.
-    soul_of: Option<String>,
-    pub soul_error: Option<String>,
-    /// Bumped on every edit; a pending save only runs if it still matches.
-    soul_generation: u64,
+    pub files: FilesState,
+    pub overview: OverviewState,
+    pub changes: crate::app::mono_changes::ChangesState,
     /// Mono id awaiting delete confirmation.
     pub pending_delete: Option<String>,
     /// The open Mono's chat is awaiting a reset confirmation.
     pub pending_reset: bool,
+    /// Mono id awaiting Settings › Monos' Reset Mono confirmation.
+    pub pending_defaults: Option<String>,
+    /// Why the last reset could not finish.
+    pub reset_error: Option<String>,
     /// Why a Mono's conversation could not be read, by Mono; the floating
     /// chat shows it in place of "Loading conversation…".
     pub load_errors: HashMap<String, String>,
@@ -51,37 +70,37 @@ pub struct MonosState {
     float: Option<gpui::WindowHandle<crate::ui::mono_float::MonoFloat>>,
     /// The context a running turn carries, by conversation: recorded as
     /// handed over once the turn ends with a provider session to name.
-    carrying: HashMap<String, String>,
+    carrying: HashMap<String, Carried>,
     _subscriptions: Vec<Subscription>,
+}
+
+/// MonoCode `onToggleMono`'s pick: the last Mono opened while it is still
+/// on the roster, else the first.
+pub fn toggle_target(last: Option<&str>, roster: &[Mono]) -> Option<String> {
+    last.filter(|id| roster.iter().any(|mono| mono.id == *id))
+        .map(str::to_string)
+        .or_else(|| roster.first().map(|mono| mono.id.clone()))
 }
 
 impl MonosState {
     pub fn new(window: &mut Window, cx: &mut Context<BenCodeApp>) -> Self {
-        let soul_input = cx.new(|cx| {
-            TextInput::new(window, cx)
-                .multi_line(8, usize::MAX)
-                .placeholder("Anything it should always keep in mind…")
-        });
-        let subscriptions = vec![cx.subscribe(
-            &soul_input,
-            |this: &mut BenCodeApp, _, event: &InputEvent, cx| match event {
-                InputEvent::Changed => this.schedule_soul_save(cx),
-                InputEvent::Blur => this.save_soul_if_dirty(cx),
-                _ => {}
-            },
-        )];
+        let (files, subscriptions) = FilesState::new(window, cx);
+        let changes = crate::app::mono_changes::ChangesState::new(window, cx);
         Self {
             view: None,
-            overview_open: false,
+            overview_open: true,
             settings_open: false,
+            settings_section: SettingsSection::General,
+            look_open: false,
+            last_mono: None,
             emoji: Default::default(),
-            souls: HashMap::new(),
-            soul_input,
-            soul_of: None,
-            soul_error: None,
-            soul_generation: 0,
+            files,
+            overview: OverviewState::default(),
+            changes,
             pending_delete: None,
             pending_reset: false,
+            pending_defaults: None,
+            reset_error: None,
             load_errors: HashMap::new(),
             float: None,
             carrying: HashMap::new(),
@@ -123,8 +142,8 @@ impl BenCodeApp {
         mono.custom_color
             .as_deref()
             .and_then(parse_hex)
-            .or_else(|| palette_color(mono.color_index))
-            .or_else(|| palette_color(1))
+            .or_else(|| crate::monos::mono_palette_color(mono.color_index))
+            .or_else(|| crate::monos::mono_palette_color(1))
             .unwrap_or_default()
     }
 
@@ -150,14 +169,16 @@ impl BenCodeApp {
             return MonoState::IDLE;
         };
         if let Some(request) = self.pending_permission_for(&session.id) {
-            let waiting = if request.tool == crate::app::QUESTION_TOOL {
-                "Waiting for your answer".to_string()
+            let activity = if request.tool == crate::app::QUESTION_TOOL {
+                crate::monos::question_activity(&request.input)
             } else {
-                format!("Approve {}", request.tool)
+                Some(crate::monos::approval_activity(
+                    &crate::harness::summarize_tool_input(&request.tool, &request.input),
+                ))
             };
             return MonoState {
                 status: MonoStatus::NeedsYou,
-                activity: Some(waiting),
+                activity,
             };
         }
         if self
@@ -169,36 +190,24 @@ impl BenCodeApp {
                 activity: Some("Usage limit reached".to_string()),
             };
         }
-        let flags = RunFlags {
-            busy: self.is_agent_running_in(&session.id),
-            ..Default::default()
-        };
-        match live_agent(session, flags) {
-            Some(agent) => {
-                // Its one conversation runs for days: a tool call from an
-                // earlier turn is not what it is on now. With none in this
-                // turn it is just "Working", said once.
-                let this_turn = session
-                    .blocks
-                    .iter()
-                    .rev()
-                    .take_while(|block| block.role != "user")
-                    .any(is_tool);
-                MonoState {
-                    status: MonoStatus::Working,
-                    activity: this_turn.then_some(agent.activity),
-                }
-            }
-            None => MonoState::IDLE,
+        if !self.is_agent_running_in(&session.id) {
+            return MonoState::IDLE;
+        }
+        MonoState {
+            status: MonoStatus::Working,
+            activity: Some(crate::monos::working_activity(&session.blocks)),
         }
     }
 
     /// MonoCode `createMono` then `onOpenMono`: a new Mono, opened.
     pub fn create_mono(&mut self, cx: &mut Context<Self>) {
         let id = self.add_mono(cx);
-        // Its settings open with it, ready to be told what it works on.
-        self.monos.settings_open = true;
         self.open_mono(&id, cx);
+        // Its settings open with it, ready to be told what it works on (a
+        // new Mono has no conversation to read, so it is in view already).
+        if self.monos.view.as_deref() == Some(id.as_str()) {
+            self.open_mono_settings(SettingsSection::General, cx);
+        }
     }
 
     /// MonoCode `createMono`: a new Mono on the roster; its id.
@@ -377,15 +386,26 @@ impl BenCodeApp {
     }
 
     fn show_mono(&mut self, id: &str, cx: &mut Context<Self>) {
-        self.save_soul_if_dirty(cx);
         if self.surface == Some(crate::app::Surface::Notes) {
             self.save_note_if_dirty(cx);
         }
         self.surface = None;
         self.settings_return = None;
+        let another = self.monos.view.as_deref() != Some(id);
+        if another {
+            // Another Mono's view closes the last one's dialog.
+            self.close_mono_settings(cx);
+            self.monos.overview.mono_changed();
+        }
         self.monos.view = Some(id.to_string());
+        self.monos.last_mono = Some(id.to_string());
         self.monos.pending_reset = false;
-        self.load_mono_soul(id, cx);
+        self.monos.files.load_error = None;
+        self.load_mono_files(id, cx);
+        self.load_mono_overview(id, cx);
+        self.load_mono_changes(cx);
+        self.load_mono_project_sessions(cx);
+        self.save_open_mono(cx);
         self.sync_selection(cx);
     }
 
@@ -405,43 +425,124 @@ impl BenCodeApp {
         if self.monos.view.is_none() {
             return false;
         }
-        self.save_soul_if_dirty(cx);
+        self.close_mono_settings(cx);
         self.monos.view = None;
         self.monos.pending_reset = false;
+        self.monos.overview.activity = None;
+        self.save_open_mono(cx);
         true
     }
 
-    /// The panel beside the Mono's chat shows: its Overview or its
-    /// settings, both the details panel for now.
-    pub fn mono_details_shown(&self) -> bool {
-        self.monos.overview_open || self.monos.settings_open
+    /// MonoCode `onToggleMono` (⌘I): out of the Mono's view, else into the
+    /// last Mono opened, or the first on the rail.
+    pub fn toggle_mono(&mut self, cx: &mut Context<Self>) {
+        if self.mono_covers() {
+            self.close_mono_view(cx);
+            self.refocus_prompt(cx);
+            return;
+        }
+        if !self.monos_enabled() {
+            return;
+        }
+        let id = toggle_target(self.monos.last_mono.as_deref(), &self.settings.monos);
+        if let Some(id) = id {
+            self.open_mono(&id, cx);
+        }
+    }
+
+    /// MonoCode's reopened Mono: the one in view when BenCode last closed
+    /// opens again at launch; one deleted since is forgotten.
+    pub(crate) fn reopen_saved_mono(&mut self, cx: &mut Context<Self>) {
+        let Some(id) = self.settings.open_mono.clone() else {
+            return;
+        };
+        if self.monos_enabled() && self.mono(&id).is_some() {
+            self.open_mono(&id, cx);
+        } else {
+            // Nothing is in view: the saved one is cleared.
+            self.save_open_mono(cx);
+        }
     }
 
     /// MonoCode `onToggleMonoOverview`: the title bar's Overview pill.
     pub fn toggle_mono_overview(&mut self, cx: &mut Context<Self>) {
         self.monos.overview_open = !self.monos.overview_open;
-        self.monos.settings_open = false;
-        self.mono_details_changed(cx);
-    }
-
-    /// MonoCode `onOpenMonoSettings`: the title bar's gear.
-    pub fn toggle_mono_settings(&mut self, cx: &mut Context<Self>) {
-        self.monos.settings_open = !self.monos.settings_open;
-        self.monos.overview_open = false;
-        self.mono_details_changed(cx);
-    }
-
-    /// The details panel's own Hide.
-    pub fn close_mono_details(&mut self, cx: &mut Context<Self>) {
-        self.monos.overview_open = false;
-        self.monos.settings_open = false;
-        self.mono_details_changed(cx);
-    }
-
-    fn mono_details_changed(&mut self, cx: &mut Context<Self>) {
-        if !self.mono_details_shown() {
-            self.save_soul_if_dirty(cx);
+        if !self.monos.overview_open {
+            // Hiding it leaves what was open over its list.
+            self.monos.overview.document = None;
         }
+        cx.notify();
+    }
+
+    /// MonoCode `onOpenMonoSettings`: the title bar's gear opens the
+    /// dialog on General.
+    pub fn open_mono_settings(&mut self, section: SettingsSection, cx: &mut Context<Self>) {
+        let Some(id) = self.monos.view.clone() else {
+            return;
+        };
+        self.monos.settings_open = true;
+        self.monos.settings_section = section;
+        self.monos.look_open = false;
+        self.show_mono_fields(&id, cx);
+        cx.notify();
+    }
+
+    /// The dialog's close: what its fields hold is saved first. Whether it
+    /// was open.
+    pub fn close_mono_settings(&mut self, cx: &mut Context<Self>) -> bool {
+        if !self.monos.settings_open {
+            return false;
+        }
+        self.save_mono_soul(false, cx);
+        self.commit_mono_name(cx);
+        self.monos.settings_open = false;
+        self.monos.look_open = false;
+        self.monos.files.memory_edit = None;
+        cx.notify();
+        true
+    }
+
+    /// Escape in the dialog: the look popover or the fact field closes
+    /// first, then the dialog.
+    pub fn close_mono_settings_layer(&mut self, cx: &mut Context<Self>) -> bool {
+        if !self.monos.settings_open {
+            return false;
+        }
+        if std::mem::take(&mut self.monos.look_open) {
+            cx.notify();
+            return true;
+        }
+        if self.close_memory_field(cx) {
+            return true;
+        }
+        self.close_mono_settings(cx)
+    }
+
+    /// A section of the dialog: the soul is saved on the way out of it.
+    pub fn select_mono_settings_section(
+        &mut self,
+        section: SettingsSection,
+        cx: &mut Context<Self>,
+    ) {
+        if self.monos.settings_section == SettingsSection::Soul && section != SettingsSection::Soul
+        {
+            self.save_mono_soul(false, cx);
+        }
+        self.monos.settings_section = section;
+        self.monos.files.memory_edit = None;
+        cx.notify();
+    }
+
+    /// MonoCode `onRuntimeModeChange` for the Mono: its thread's access,
+    /// not the default new threads start with.
+    pub fn set_mono_runtime_mode(&mut self, mode: crate::app::PermissionMode, cx: &mut Context<Self>) {
+        let Some(id) = self.mono_view_session().map(str::to_string) else {
+            return;
+        };
+        if let Some(session) = self.sessions.iter_mut().find(|s| s.id == id) {
+            session.runtime_mode = Some(mode.id().to_string());
+        }
+        self.persist_session(&id);
         cx.notify();
     }
 
@@ -488,6 +589,41 @@ impl BenCodeApp {
                 .is_some_and(|session| !session.blocks.iter().any(|b| b.role == "user"))
     }
 
+    /// The mascots drawn now that move with no agent running (MonoCode
+    /// `PixelMascot`'s idle bob and blink, the bulb over one that needs
+    /// you): when the app's clock must wake for them next, if at all.
+    pub fn idle_mascot_wake(&self) -> Option<std::time::Duration> {
+        use crate::ui::mascot::MascotLook;
+        let mut looks = Vec::new();
+        if let Some(mono) = self.mono_in_view().filter(|_| self.mono_covers()) {
+            let status = self.mono_state(mono).status;
+            looks.push(MascotLook::for_status(status, &mono.mascot));
+            if self.mono_greeting_shown() {
+                looks.push(MascotLook::greeting(status, &mono.mascot));
+            }
+            if self.monos.settings_open {
+                looks.push(MascotLook::idle(&mono.mascot));
+            }
+        }
+        if self.monos_enabled() {
+            looks.extend(self.settings.monos.iter().filter_map(|mono| {
+                let status = self.mono_state(mono).status;
+                (status == MonoStatus::NeedsYou)
+                    .then(|| MascotLook::for_status(status, &mono.mascot))
+            }));
+        }
+        looks
+            .into_iter()
+            .filter(|look| look.moves_at_rest())
+            .map(MascotLook::next_change)
+            .min()
+    }
+
+    /// MonoCode `loadMonosEnabled`.
+    pub fn monos_enabled(&self) -> bool {
+        !self.settings.monos_off
+    }
+
     /// MonoCode `removeMono`: its conversation goes with it; its folder of
     /// files stays on disk.
     pub fn delete_mono(&mut self, id: &str, cx: &mut Context<Self>) {
@@ -496,12 +632,13 @@ impl BenCodeApp {
             return;
         };
         if self.monos.view.as_deref() == Some(id) {
-            // Its soul is not saved on the way out: the Mono is going.
-            self.monos.soul_generation += 1;
-            self.monos.soul_of = None;
+            // Its fields are not saved on the way out: the Mono is going.
+            self.monos.settings_open = false;
+            self.monos.files.memory_edit = None;
             self.monos.view = None;
+            self.save_open_mono(cx);
         }
-        self.monos.souls.remove(id);
+        self.monos.files.loaded.remove(id);
         self.update_monos(|roster| roster.retain(|mono| mono.id != id), cx);
         match mono.session_id {
             Some(session_id) => self.drop_mono_session(&session_id, cx),
@@ -678,129 +815,10 @@ impl BenCodeApp {
         .detach();
     }
 
-    /// Reads the Mono's `SOUL.md` off the UI thread (seeding it the first
-    /// time) and shows it in the details field.
-    fn load_mono_soul(&mut self, id: &str, cx: &mut Context<Self>) {
-        let Some(dir) =
-            crate::storage::data_dir().and_then(|data| crate::monos::mono_dir(&data, id))
-        else {
-            return;
-        };
-        self.monos.soul_error = None;
-        match self.monos.souls.get(id).cloned() {
-            Some(soul) => self.show_soul(id, soul, cx),
-            // The field is nobody's until the read lands.
-            None => self.monos.soul_of = None,
-        }
-        let id = id.to_string();
-        let task = cx
-            .background_executor()
-            .spawn(async move { crate::monos::load_soul(&dir) });
-        cx.spawn(async move |this, cx| {
-            let loaded = task.await;
-            let landed = this.update(cx, |this, cx| match loaded {
-                Ok(soul) => {
-                    // Edits made while it loaded win over what was on disk.
-                    let editing = this.monos.soul_of.as_deref() == Some(id.as_str())
-                        && this.soul_field_dirty(cx);
-                    if !editing {
-                        this.monos.souls.insert(id.clone(), soul.clone());
-                        if this.monos.view.as_deref() == Some(id.as_str()) {
-                            this.show_soul(&id, soul, cx);
-                        }
-                    }
-                }
-                Err(err) => {
-                    log::error!("could not read the Mono's soul: {err:#}");
-                    this.monos.soul_error = Some(format!("Could not read SOUL.md: {err}"));
-                    cx.notify();
-                }
-            });
-            if let Err(err) = landed {
-                log::debug!("soul loaded after app drop: {err:#}");
-            }
-        })
-        .detach();
-    }
-
-    fn show_soul(&mut self, id: &str, soul: String, cx: &mut Context<Self>) {
-        self.monos.soul_of = Some(id.to_string());
-        // Not an edit: nothing is saved for it.
-        self.monos.soul_generation += 1;
-        if self.monos.soul_input.read(cx).text() != soul {
-            self.monos
-                .soul_input
-                .update(cx, |input, cx| input.set_text(soul, cx));
-        }
-        cx.notify();
-    }
-
-    fn soul_field_dirty(&self, cx: &gpui::App) -> bool {
-        let Some(id) = self.monos.soul_of.as_deref() else {
-            return false;
-        };
-        self.monos
-            .souls
-            .get(id)
-            .is_some_and(|saved| saved != self.monos.soul_input.read(cx).text())
-    }
-
-    fn schedule_soul_save(&mut self, cx: &mut Context<Self>) {
-        self.monos.soul_generation += 1;
-        let generation = self.monos.soul_generation;
-        let timer = cx.background_executor().timer(SOUL_SAVE_DELAY);
-        cx.spawn(async move |this, cx| {
-            timer.await;
-            let saved = this.update(cx, |this, cx| {
-                if this.monos.soul_generation == generation {
-                    this.save_soul_if_dirty(cx);
-                }
-            });
-            if let Err(err) = saved {
-                log::debug!("soul autosave after app drop: {err:#}");
-            }
-        })
-        .detach();
-    }
-
-    /// Saves the soul field when it differs from what is stored, so closing
-    /// the panel or switching Monos never drops edits.
-    pub(crate) fn save_soul_if_dirty(&mut self, cx: &mut Context<Self>) {
-        if !self.soul_field_dirty(cx) {
-            return;
-        }
-        let Some(id) = self.monos.soul_of.clone() else {
-            return;
-        };
-        let Some(dir) =
-            crate::storage::data_dir().and_then(|data| crate::monos::mono_dir(&data, &id))
-        else {
-            return;
-        };
-        let text = self.monos.soul_input.read(cx).text().to_string();
-        // What the next turn carries, whether or not the write has landed.
-        self.monos.souls.insert(id, text.clone());
-        let task = cx
-            .background_executor()
-            .spawn(async move { crate::monos::save_soul(&dir, &text) });
-        cx.spawn(async move |this, cx| {
-            let saved = task.await;
-            let landed = this.update(cx, |this, cx| {
-                this.monos.soul_error = saved
-                    .err()
-                    .map(|err| format!("Could not save SOUL.md: {err}"));
-                cx.notify();
-            });
-            if let Err(err) = landed {
-                log::debug!("soul saved after app drop: {err:#}");
-            }
-        })
-        .detach();
-    }
-
     /// MonoCode `monoTurn` over `monoContext`: a Mono's turn carries who it
-    /// is and its standing instructions, unless the provider session behind
-    /// its chat already holds them. Other threads' prompts pass through.
+    /// is, its standing instructions and its memory, each unless the
+    /// provider session behind its chat already holds that version. Other
+    /// threads' prompts pass through.
     pub(crate) fn apply_mono_context(
         &mut self,
         session_id: &str,
@@ -813,33 +831,32 @@ impl BenCodeApp {
         let Some(mono) = self.mono_for_session(session_id).cloned() else {
             return prompt;
         };
-        let soul = match self.monos.souls.get(&mono.id) {
-            Some(soul) => soul.clone(),
-            // Not opened this launch (a queued turn, a resumed one, the
-            // floating chat): a small file, read as skill bodies are right
-            // before the turn starts, and kept for the turns after it.
-            None => {
-                let read = crate::storage::data_dir()
-                    .and_then(|data| crate::monos::mono_dir(&data, &mono.id))
-                    .and_then(|dir| {
-                        crate::monos::load_soul(&dir)
-                            .map_err(|err| log::error!("could not read the Mono's soul: {err:#}"))
-                            .ok()
-                    });
-                if let Some(soul) = &read {
-                    self.monos.souls.insert(mono.id.clone(), soul.clone());
-                }
-                read.unwrap_or_else(crate::monos::default_soul)
-            }
+        let files = self.mono_turn_files(&mono.id);
+        let soul = crate::monos::soul_context(
+            &mono.display_name(),
+            &self.mono_projects(&mono),
+            &files.soul,
+        );
+        let topics_dir = crate::app::mono_files::mono_files_dir(&mono.id)
+            .map(|dir| dir.join("memory").to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let memory = crate::monos::memory_context(&files.memory, &files.topics, &topics_dir);
+        let carried = Carried {
+            soul_hash: crate::monos::context_hash(&soul),
+            memory_hash: files.memory_hash.clone(),
         };
-        let context =
-            crate::monos::standing_context(&mono.display_name(), &self.mono_projects(&mono), &soul);
-        let hash = crate::monos::context_hash(&context);
         let provider = provider.filter(|id| !id.is_empty());
-        if !crate::monos::needs_context(mono.handed.as_ref(), provider, &hash) {
+        let plan = crate::monos::plan_context(
+            mono.handed.as_ref(),
+            provider,
+            &carried.soul_hash,
+            &carried.memory_hash,
+        );
+        if !plan.any() {
             return prompt;
         }
-        self.monos.carrying.insert(session_id.to_string(), hash);
+        self.monos.carrying.insert(session_id.to_string(), carried);
+        let context = crate::monos::turn_context(plan, &soul, &memory);
         crate::monos::turn_with_context(&prompt, &context)
     }
 
@@ -878,6 +895,15 @@ impl BenCodeApp {
         cx: &mut Context<Self>,
     ) {
         let carried = self.monos.carrying.remove(session_id);
+        // MonoCode `useMonoFiles`: a turn ending is when its files, and the
+        // projects it works in, may have changed.
+        if let Some(id) = self.monos.view.clone()
+            && self.mono(&id).and_then(|m| m.session_id.as_deref()) == Some(session_id)
+        {
+            self.load_mono_files(&id, cx);
+            self.load_mono_overview(&id, cx);
+            self.load_mono_changes(cx);
+        }
         // MonoCode records what a turn the provider accepted carried: one
         // that failed or was cut short may never have reached it.
         if !accepted {
@@ -896,16 +922,20 @@ impl BenCodeApp {
             return;
         };
         // A provider that renames its session each turn keeps what it held.
-        let Some(context_hash) =
-            carried.or_else(|| mono.handed.as_ref().map(|h| h.context_hash.clone()))
-        else {
+        let Some(carried) = carried.or_else(|| {
+            mono.handed.as_ref().map(|h| Carried {
+                soul_hash: h.context_hash.clone(),
+                memory_hash: h.memory_hash.clone(),
+            })
+        }) else {
             return;
         };
         let (id, handed) = (
             mono.id.clone(),
             Handed {
                 provider: Some(provider),
-                context_hash,
+                context_hash: carried.soul_hash,
+                memory_hash: carried.memory_hash,
             },
         );
         self.update_monos(
@@ -916,5 +946,23 @@ impl BenCodeApp {
             },
             cx,
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_shortcut_opens_the_last_mono_or_the_first() {
+        let mono = |id: &str| Mono {
+            id: id.into(),
+            ..Default::default()
+        };
+        let roster = [mono("a"), mono("b")];
+        assert_eq!(toggle_target(Some("b"), &roster).as_deref(), Some("b"));
+        assert_eq!(toggle_target(Some("gone"), &roster).as_deref(), Some("a"));
+        assert_eq!(toggle_target(None, &roster).as_deref(), Some("a"));
+        assert_eq!(toggle_target(None, &[]), None);
     }
 }

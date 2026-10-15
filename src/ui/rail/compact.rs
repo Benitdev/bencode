@@ -197,6 +197,7 @@ impl BenCodeApp {
                             cx.notify();
                         })),
                     )
+                    .children(self.render_compact_monos(cx))
                     .child(self.render_compact_project_button(cx))
                     .children(tabs)
                     .child(surface_action(
@@ -263,6 +264,60 @@ impl BenCodeApp {
                         ),
                     ),
             )
+    }
+
+    /// MonoCode `railMonosPinned`: each Mono at the top of the icon rail,
+    /// above a divider (`CompactMonoButton`), its mascot moving with its
+    /// status. Unpinned, the icon rail shows none (MonoCode lists them in
+    /// its project picker, which BenCode's compact picker does not).
+    fn render_compact_monos(&self, cx: &Context<Self>) -> Option<AnyElement> {
+        if !self.monos_enabled() || !self.settings.rail_monos_pinned || self.settings.monos.is_empty()
+        {
+            return None;
+        }
+        let theme = cx.theme();
+        let fg = theme.colors.fg;
+        let selection = fg.opacity(if theme.is_dark() { 0.10 } else { 0.06 });
+        let buttons = self.settings.monos.iter().map(|mono| {
+            let state = self.mono_state(mono);
+            let selected = self.surface.is_none() && self.monos.view.as_deref() == Some(&mono.id);
+            let id = mono.id.clone();
+            div()
+                .id(SharedString::from(format!("compact-mono-{}", mono.id)))
+                .flex()
+                .flex_none()
+                .size(px(32.0))
+                .items_center()
+                .justify_center()
+                .rounded(px(6.0))
+                .cursor_pointer()
+                .map(|el| {
+                    if selected {
+                        el.bg(selection)
+                    } else {
+                        el.hover(move |s| s.bg(fg.opacity(0.10)))
+                    }
+                })
+                .tooltip(Tooltip::text(mono.display_name()))
+                .on_click(cx.listener(move |this, _, _, cx| this.open_mono(&id, cx)))
+                .child(crate::ui::mascot::pixel_mascot(
+                    self.mono_mascot(mono),
+                    16.0,
+                    self.mono_color(mono),
+                    crate::ui::mascot::MascotLook::for_status(state.status, &mono.mascot),
+                    cx,
+                ))
+        });
+        Some(
+            div()
+                .flex()
+                .flex_col()
+                .items_center()
+                .gap_1p5()
+                .children(buttons)
+                .child(div().w(px(20.0)).h(px(1.0)).bg(fg.opacity(0.1)))
+                .into_any_element(),
+        )
     }
 
     /// The current project's logo or mascot (MonoCode's `compact` project

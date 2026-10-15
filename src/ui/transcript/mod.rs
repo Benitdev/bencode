@@ -8,6 +8,7 @@ pub mod blocks;
 pub mod find;
 pub mod markdown;
 pub mod mono;
+mod mono_activity;
 mod outline;
 pub mod outline_model;
 mod review_card;
@@ -348,14 +349,16 @@ impl BenCodeApp {
                         false
                     };
                     let running = app.is_agent_running();
-                    // A Mono's greeting bobs its mascot (two steps a beat).
-                    let bobbing =
-                        !running && app.mono_greeting_shown() && !crate::ui::spinner::still(cx);
-                    if running || countdown || bobbing {
+                    // A Mono's mascots bob, blink and flicker their bulb at
+                    // rest (MonoCode `PixelMascot`), at their own steps.
+                    let idle = (!running && !crate::ui::spinner::still(cx))
+                        .then(|| app.idle_mascot_wake())
+                        .flatten();
+                    if running || countdown || idle.is_some() {
                         cx.notify();
                     }
-                    if bobbing {
-                        crate::ui::spinner::until_step(crate::ui::mascot::BOB / 2).min(CLOCK_TICK)
+                    if let Some(next) = idle {
+                        next.min(CLOCK_TICK)
                     } else if !running {
                         CLOCK_TICK
                     } else if app.alerts.window_active && app.running_thread_in_view() {

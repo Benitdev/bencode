@@ -21,6 +21,7 @@ actions!(
         Save,
         ToggleSidebar,
         ToggleTerminal,
+        ToggleMono,
         NewTerminal,
         OpenBrowser,
         SplitRight,
@@ -134,6 +135,7 @@ pub(crate) fn keymap() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-shift-=", ZoomIn, None),
         KeyBinding::new("cmd-0", ZoomReset, None),
         KeyBinding::new("cmd-j", ToggleTerminal, None),
+        KeyBinding::new("cmd-i", ToggleMono, None),
         KeyBinding::new("cmd-shift-o", OpenBrowser, None),
         KeyBinding::new("cmd-`", NewTerminal, None),
         // MonoCode "Terminal: New Tab"; every BenCode terminal is a dock tab.
@@ -282,6 +284,7 @@ fn menus(cx: &App) -> Vec<Menu> {
             MenuItem::action("Find in Conversation", FindInConversation),
             MenuItem::action("Find in Files…", FindInProject),
             MenuItem::action("Toggle Terminal", ToggleTerminal),
+            MenuItem::action("Toggle Mono", ToggleMono),
             MenuItem::action("New Terminal", NewTerminal),
             MenuItem::action("Open Browser", OpenBrowser),
             MenuItem::separator(),
@@ -564,6 +567,7 @@ impl BenCodeApp {
                 && !this.close_folder_picker(true, cx)
                 && !this.close_handoff_menu(cx)
                 && !this.close_composer_popovers(cx)
+                && !this.close_mono_settings_layer(cx)
                 && !this.close_usage_popover(cx)
                 && !this.close_find(cx)
                 && !this.close_project_search(cx)
@@ -582,6 +586,7 @@ impl BenCodeApp {
         .on_action(cx.listener(|this, action: &OpenInBrowser, window, cx| {
             this.open_url_in_browser(&action.0, window, cx);
         }))
+        .on_action(cx.listener(|this, _: &ToggleMono, _, cx| this.toggle_mono(cx)))
         .on_action(cx.listener(|this, _: &ToggleTerminal, _, cx| {
             this.set_terminal_open(!this.is_terminal_open(), cx)
         }))

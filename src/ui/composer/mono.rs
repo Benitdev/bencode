@@ -374,6 +374,102 @@ impl BenCodeApp {
             .into_any_element()
     }
 
+    /// MonoCode `ModelPicker variant="plain" side="bottom"` in a Mono's
+    /// settings: the provider's icon and the model, opening the models
+    /// below it.
+    pub(crate) fn render_mono_settings_model(
+        &self,
+        session: &SessionRow,
+        cx: &Context<Self>,
+    ) -> AnyElement {
+        let fg = cx.theme().colors.fg;
+        let open = self.composer_menus.models_only == Some(ModelsAnchor::MonoSettings);
+        let trigger = text_control("mono-settings-model".into(), open, fg)
+            .text_color(if open { fg } else { fg.opacity(0.85) })
+            .on_click(cx.listener(|this, _, _, cx| {
+                this.toggle_models_only(ModelsAnchor::MonoSettings, cx)
+            }))
+            .child(HarnessIcon::new(&session.harness).size(px(14.0)))
+            .child(
+                div()
+                    .min_w_0()
+                    .truncate()
+                    .child(catalog::label_for(&session.model)),
+            )
+            .child(
+                Icon::new(IconName::ChevronDown)
+                    .size(IconSize::Xs)
+                    .color(fg.opacity(0.45)),
+            );
+        div()
+            .relative()
+            .flex_none()
+            .min_w_0()
+            .child(popover_anchor(trigger, cx))
+            // Inside the dialog's layer: raised in it, never deferred (GPUI
+            // draws no deferred element inside another).
+            .children(
+                self.render_models_only(ModelsAnchor::MonoSettings, false, cx)
+                    .map(|flyout| {
+                        ely_gpui_component::primitives::raise("mono-settings-models", flyout)
+                            .with_priority(2)
+                    }),
+            )
+            .into_any_element()
+    }
+
+    /// MonoCode `ModelSettingRows`: each of the model's settings as a row's
+    /// name and its control, a switch or a select.
+    pub(crate) fn mono_settings_controls(
+        &self,
+        session: &SessionRow,
+        cx: &Context<Self>,
+    ) -> Vec<(String, AnyElement)> {
+        use ely_gpui_component::forms::{Choice, Select, Switch};
+        let values = session.model_settings.as_ref();
+        let weak = cx.entity().downgrade();
+        catalog::picker_settings(&session.model)
+            .into_iter()
+            .map(|setting| {
+                let id = SharedString::from(format!("mono-settings-{}", setting.id));
+                let weak = weak.clone();
+                let control = if setting.kind == SettingKind::Toggle {
+                    let toggled = setting.clone();
+                    Switch::new(id, setting.value(values) == "true")
+                        .on_change(move |_, _, cx| {
+                            if let Err(err) =
+                                weak.update(cx, |this, cx| this.toggle_model_setting(&toggled, cx))
+                            {
+                                log::debug!("model setting after app drop: {err:#}");
+                            }
+                        })
+                        .into_any_element()
+                } else {
+                    let setting_id = setting.id.clone();
+                    Select::new(
+                        id,
+                        setting
+                            .options
+                            .iter()
+                            .map(|(value, label)| Choice::new(value.clone(), label.clone())),
+                    )
+                    .label(setting.menu_label().to_string())
+                    .selected(setting.value(values).to_string())
+                    .on_change(move |value, _, cx| {
+                        let value = value.to_string();
+                        if let Err(err) = weak
+                            .update(cx, |this, cx| this.set_model_setting(&setting_id, &value, cx))
+                        {
+                            log::debug!("model setting after app drop: {err:#}");
+                        }
+                    })
+                    .into_any_element()
+                };
+                (setting.menu_label().to_string(), control)
+            })
+            .collect()
+    }
+
     /// MonoCode `ModelControlPills variant="text"`: a toggle reads its name,
     /// dimmed while off; a select its value (effort with a gauge, the
     /// service tier with a bolt) and opens its choices.

@@ -202,7 +202,7 @@ impl TimeTrigger {
     }
 }
 
-fn trigger_label(trigger: &TimeTrigger) -> String {
+pub(crate) fn trigger_label(trigger: &TimeTrigger) -> String {
     let time = &trigger.time;
     match trigger.kind {
         Some(ScheduleKind::Hourly) => format!("Hourly at :{:02}", trigger.minute),

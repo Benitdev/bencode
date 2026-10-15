@@ -220,7 +220,7 @@ pub struct PendingCommit {
 }
 
 /// MonoCode `statusLetter`.
-fn status_letter(status: &GitFileStatus) -> &'static str {
+pub(crate) fn status_letter(status: &GitFileStatus) -> &'static str {
     match status {
         GitFileStatus::Untracked => "U",
         GitFileStatus::Added => "A",
@@ -231,7 +231,7 @@ fn status_letter(status: &GitFileStatus) -> &'static str {
 
 /// MonoCode `statusColor`: `text-sky-400`, `text-diff-add-fg`,
 /// `text-diff-del-fg` (the chosen diff palette), `text-amber-400`.
-fn status_color(status: &GitFileStatus, diff: DiffColors) -> Hsla {
+pub(crate) fn status_color(status: &GitFileStatus, diff: DiffColors) -> Hsla {
     match status {
         GitFileStatus::Untracked => rgb(0x38bdf8).into(),
         GitFileStatus::Added => diff.add_fg,

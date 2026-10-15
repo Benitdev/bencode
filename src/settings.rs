@@ -150,6 +150,19 @@ pub struct AppSettings {
     /// The floating Mono chat's width and height as last left, before the
     /// interface scale; `None` is the default. BenCode's own.
     pub mono_float_size: Option<[f32; 2]>,
+    /// MonoCode `monocode.monosEnabled` switched off: no Monos on the rail.
+    /// On by default.
+    pub monos_off: bool,
+    /// MonoCode `monocode.railMonosPinned`: each Mono at the top of the
+    /// icon rail, above a divider. Off by default.
+    pub rail_monos_pinned: bool,
+    /// MonoCode `saveOpenMono`: the Mono in view when BenCode last closed,
+    /// opened again at launch.
+    pub open_mono: Option<String>,
+    /// MonoCode `MonoSidebar`'s `rememberedWidth`: the Overview's width
+    /// before the interface scale; `None` is the default. MonoCode keeps it
+    /// for the launch only.
+    pub mono_overview_width: Option<f32>,
     /// The project rail's order, width, archive, groups, appearance and
     /// notification mutes, under MonoCode's names (see `ui::rail::model`).
     /// Declared before `extra` so its keys are not also kept as unknown.
@@ -330,10 +343,15 @@ mod tests {
                 handed: Some(crate::monos::Handed {
                     provider: Some("p1".into()),
                     context_hash: "abc".into(),
+                    memory_hash: "def".into(),
                 }),
                 ..Default::default()
             }],
             mono_float_size: Some([480.0, 620.0]),
+            monos_off: true,
+            rail_monos_pinned: true,
+            open_mono: Some("mono-1".into()),
+            mono_overview_width: Some(520.0),
             rail: crate::ui::rail::model::RailPrefs {
                 project_rail_order: vec!["/repo".into()],
                 project_rail_width: Some(240.0),

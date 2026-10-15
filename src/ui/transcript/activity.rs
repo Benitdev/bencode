@@ -116,6 +116,10 @@ fn shimmer_label(text: String, cx: &App) -> AnyElement {
         .into_any_element()
 }
 
+fn gpui_tooltip(text: &'static str) -> impl Fn(&mut gpui::Window, &mut App) -> gpui::AnyView {
+    ely_gpui_component::primitives::Tooltip::text(text)
+}
+
 /// The blocks a list of work rows draws from: the thread's own, or the
 /// steps of a subagent's run standing in as blocks.
 #[derive(Clone, Copy)]
@@ -200,8 +204,9 @@ impl BenCodeApp {
 
     /// MonoCode `MonoTurnHeader`: a Mono signs its turn with its pill (the
     /// still mascot and its name), and while it works the status of the
-    /// latest step runs beside it. The pill opens the folded work, which
-    /// MonoCode shows in its activity panel instead.
+    /// latest step runs beside it. The pill shows the turn's work on the
+    /// Overview's Activity tab (MonoCode `onShowActivity`), and is marked
+    /// while it does.
     fn render_mono_fold_line(
         &self,
         session: &SessionRow,
@@ -212,9 +217,10 @@ impl BenCodeApp {
     ) -> AnyElement {
         let blocks = &session.blocks;
         let turn_id = turn.id(blocks).to_string();
-        let expandable = turn.fold.is_some();
+        let expandable = turn.fold.is_some() || turn.live;
         let group = format!("fold-{turn_id}");
         let fg = cx.theme().colors.fg;
+        let shown = self.mono_activity_shown(&session.id) == Some(turn_id.as_str());
         let mark = pixel_sprite(
             &self.mono_mascot(mono).rest,
             px(ICON_BOX),
@@ -222,7 +228,7 @@ impl BenCodeApp {
             false,
         );
         let pill = mono::signature_pill(
-            icon_slot(mark, open, expandable, &group, cx),
+            icon_slot(mark, open || shown, expandable, &group, cx),
             mono::signature_name(mono.display_name(), cx),
             cx,
         );
@@ -258,13 +264,11 @@ impl BenCodeApp {
         if !expandable {
             return row.into_any_element();
         }
+        let session_id = session.id.clone();
         row.cursor_pointer()
+            .tooltip(gpui_tooltip(if shown { "Hide activity" } else { "Show activity" }))
             .on_click(cx.listener(move |this, _, _, cx| {
-                let folds = &mut this.transcript_ui.open_folds;
-                if !folds.remove(&turn_id) {
-                    folds.insert(turn_id.clone());
-                }
-                cx.notify();
+                this.show_mono_activity(&session_id, &turn_id, cx)
             }))
             .into_any_element()
     }
