@@ -2,32 +2,47 @@
 
 The manual for AI coding agents and developers working in this repository.
 Read it before changing code. `README.md` is the short, human-facing overview;
-`docs/migration/` holds the parity backlog.
+`docs/migration/` holds what is left open from the port: pick items from it
+when they serve the principles below, not to match MonoCode.
 
 ---
 
 ## 1. What BenCode is
 
-**BenCode** is the native, GPU-rendered port of **MonoCode** (Tauri v2 + React 19 +
-TypeScript) to **Rust + Zed's GPUI + [Ely GPUI Components](https://elygpui.com/)**.
-It is a desktop control plane for coding-agent CLIs: it starts them, streams their
-output into a transcript, and puts the surrounding tools (files, git, terminal,
-notes, automations, GitHub inbox) in one window.
+**BenCode** is a native, GPU-rendered control plane for coding-agent CLIs, built
+on **Rust + Zed's GPUI + [Ely GPUI Components](https://elygpui.com/)**. It starts
+the agents, streams their output into a transcript, and puts the surrounding
+tools (files, git, terminal, browser, notes, automations, inbox) in one window.
+It began as a port of **MonoCode** (Tauri v2 + React 19); it is now its own
+product, and MonoCode is a reference, not the spec.
 
-Goals:
+### Principles
 
-1. **No Electron, WebKit or Chromium.** Everything is drawn by GPUI (Metal on macOS).
-   The one exception is the in-app browser's page: the system's WKWebView, in
-   a browser tab only (`browser/`).
-2. **Fast and small.** Targets: sub-50ms startup, about 30MB of RAM.
-3. **Local-first, with its own data.** Threads, checkpoints and account profiles
-   live in BenCode's folder. Nothing is shared with MonoCode; a first launch
-   copies a MonoCode install's data in once.
-4. **Agent control plane.** Agent CLIs are driven over stdio; BenCode adds no
-   token cost of its own.
+These are the yardstick for every feature, in this order when they conflict.
 
-The yardstick for every feature is MonoCode: same behaviour, same layout, same
-copy, unless there is a stated reason to differ.
+1. **Native and fast.** No Electron, WebKit or Chromium: GPUI draws everything
+   (Metal on macOS); the one exception is the in-app browser's page, the
+   system's WKWebView in a browser tab (`browser/`). Targets: sub-50ms startup,
+   about 30MB of RAM, no dropped frames in the longest thread. A feature that
+   costs launch time or frame time is measured (Verifying) before it lands.
+2. **Many agents, one person.** BenCode is for running several agents at once,
+   across harnesses, accounts, worktrees and machines, and supervising them
+   without babysitting each one. Prefer what lets the user see, approve,
+   compare and steer many runs over what polishes a single chat.
+3. **Keyboard-first.** Every action is a command in `app/commands.rs`,
+   reachable without the mouse; the mouse is a shortcut, not the only path.
+4. **Harness-neutral.** A feature works for every harness that can support it,
+   not only for Claude. What one CLI cannot do is stated, not silently missing.
+5. **Local-first, with its own data.** Threads, checkpoints and account
+   profiles live in BenCode's folder. Nothing is shared with MonoCode; a first
+   launch copies a MonoCode install's data in once.
+6. **No token cost of its own.** Agent CLIs are driven over stdio with the
+   user's own sign-ins; BenCode never adds an API key or a hidden turn.
+
+A new feature should save the user a step, a wait or a context switch, and be
+able to say which. When MonoCode already has the feature, read it first and
+borrow what works; then differ wherever these principles say so, without
+needing to justify the difference against MonoCode.
 
 ---
 
@@ -36,11 +51,17 @@ copy, unless there is a stated reason to differ.
 - System path: `/Users/benit/Documents/sources/monocode`
 - In-repo symlink: `reference/monocode` (git-ignored)
 
-When porting, read the TypeScript model and the React component in
-`reference/monocode/src/...`, and the Tauri backend in
-`reference/monocode/src-tauri/src/...`. Module doc comments in BenCode name the
-MonoCode file they port (for example ``//! MonoCode `UnifiedDiffView` ``); keep
-doing that, it is how the two codebases stay traceable.
+When a feature exists in MonoCode, read the TypeScript model and the React
+component in `reference/monocode/src/...`, and the Tauri backend in
+`reference/monocode/src-tauri/src/...`, before designing BenCode's. A module
+that ports one names the MonoCode file (for example
+``//! MonoCode `UnifiedDiffView` ``); a module of BenCode's own just says what
+it does.
+
+What stays compatible with MonoCode, because imported data relies on it: the
+database schema, the transcript block roles, the checkpoint manifest format and
+the `harness:model` keys. Everything else (layout, copy, behaviour) is
+BenCode's to change.
 
 ---
 
@@ -80,7 +101,7 @@ bencode/
 │   ├── icons/                Lucide SVGs Ely does not ship (ui/icons.rs)
 │   ├── file-icons/           Material Icon Theme SVGs and lookup tables (ui/file_tree/icons.rs)
 │   └── providers/            harness brand icons (ui/provider_icon.rs)
-├── docs/migration/           parity backlog and migration notes
+├── docs/migration/           what is left open from the MonoCode port, migration notes
 ├── docs/releasing.md         cutting a release; signing and notarization
 ├── docs/remote-access.md     machines: connecting, what runs where, the loopback SSH test
 ├── docs/readme/              README translations (README.vi.md)
@@ -329,7 +350,7 @@ pages in `examples/gallery/pages/<chapter>.rs`. Read the library's own
 ### Components and theme
 
 - **Use an Ely component whenever one fits.** Hand-roll only layout `div`s and
-  the places where MonoCode's exact look needs it. BenCode keeps no local
+  the places where BenCode's own look needs it. BenCode keeps no local
   button, modal or tab widgets.
 - **Colours come from `cx.theme().colors`** (`bg`, `surface`, `hover`, `active`,
   `border`, `fg`, `fg_muted`, `accent`, `success`, `danger`, …). Sizes come from
@@ -729,10 +750,12 @@ div()
 
 ## 10. Workflow
 
-### Porting a feature
+### Building a feature
 
-1. Read the MonoCode model and component in `reference/monocode/src/...`.
-2. Translate the data model into Serde structs; keep pure logic in pure
+1. Check it against the principles (section 1): what step, wait or context
+   switch it saves. If MonoCode has it, read its model and component in
+   `reference/monocode/src/...`.
+2. Model the data as Serde structs; keep pure logic in pure
    functions with tests (see `ui/diff_model.rs`, `app/file_pane.rs`).
 3. Pick the Ely components.
 4. Add or update the view in `src/ui/`.
@@ -803,8 +826,9 @@ in `docs/releasing.md`. Keep `CHANGELOG.md`'s section for the version current.
 
 ### Code style
 
-- Match the surrounding code: module doc comment naming the MonoCode source,
-  short comments that say why, `log::` for failures.
+- Match the surrounding code: a module doc comment (naming the MonoCode
+  source when it ports one), short comments that say why, `log::` for
+  failures.
 - Prefer small files split by concern (`ui/composer/`, `ui/rail/`) over growing
   a large one.
 - No new dependency without a reason; check Ely and GPUI first.

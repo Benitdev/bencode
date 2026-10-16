@@ -160,7 +160,7 @@ BenCode drives the agent CLIs over stdio and reads the JSON stream they print.
 | **Local-first** | Threads, notes, checkpoints and account profiles stay on your Mac, in BenCode's own folder. |
 | **No extra cost** | BenCode adds no API keys and no tokens. It runs the CLIs you are already signed in to. |
 
-BenCode is a native port of [MonoCode](https://github.com/hardbeat920/monocode) (Tauri + React): the same features, the same layout, the same database schema.
+BenCode began as a native port of [MonoCode](https://github.com/hardbeat920/monocode) (Tauri + React) and keeps its database schema, so a MonoCode install's threads come along; from here it goes its own way.
 
 ---
 
@@ -272,7 +272,7 @@ bencode/
 ├── AGENTS.md            the detailed guide for developers and AI agents
 ├── CHANGELOG.md         changes in each release
 ├── assets/              SVG icons (extra Lucide icons, file icons, provider logos)
-├── docs/migration/      the MonoCode parity backlog
+├── docs/migration/      what is left open from the MonoCode port
 ├── docs/releasing.md    how to cut a release
 ├── packaging/macos/     app icon, Info.plist, the .app / .dmg bundling script
 ├── site/                landing page (GitHub Pages)
@@ -329,10 +329,11 @@ A few core principles:
 
 1. Read [`AGENTS.md`](AGENTS.md) before changing code: it has the UI rules and
    the common pitfalls.
-2. When porting a feature, check it against the MonoCode source in
-   `reference/monocode` (a symlink, not tracked in git).
+2. Check a new feature against the principles in `AGENTS.md`. When MonoCode
+   has it, read its source in `reference/monocode` (a symlink, not tracked in
+   git) first.
 3. Run `cargo test`, then run the app and exercise what you changed.
-4. What is still missing compared to MonoCode is tracked in
+4. What is left open from the MonoCode port is in
    [`docs/migration/PARITY-BACKLOG.md`](docs/migration/PARITY-BACKLOG.md).
 
 ### Releasing
