@@ -3,7 +3,9 @@
 //! when it resets, and Resume (once reset) or Resume at reset, which sends
 //! "Continue from where you left off." on its own once the limit lifts.
 //! A Mono's chat has its own card instead (`MonoUsageLimitNotice`): the
-//! model and account to keep going on, and the same resume.
+//! model and account to keep going on, and the same resume. BenCode's
+//! own: a thread's tab offers another account too, resuming there with a
+//! Handoff recap (`switch_usage_limit_account`).
 //!
 //! BenCode's own: the limit is kept on the thread's blocks (`usageLimit`
 //! in the extra fields of a block after the last prompt), so the notice
@@ -20,7 +22,9 @@ use crate::ui::scale::px;
 use jiff::{Timestamp, tz::TimeZone};
 
 use super::menus::{over_composer, popover_anchor};
+use super::handoff::HandoffCard;
 use super::model_picker::ModelsAnchor;
+use crate::app::TurnInput;
 use crate::app::{BenCodeApp, now_ms};
 use crate::db::{Block, SessionRow};
 use crate::harness::HarnessKind;
@@ -306,7 +310,11 @@ impl BenCodeApp {
                                 .gap_x_3()
                                 .gap_y_1p5()
                                 .child(model)
-                                .children(self.render_mono_account_picker(session, cx))
+                                .children(self.render_limit_account_picker(
+                                    session,
+                                    ButtonVariant::Secondary,
+                                    cx,
+                                ))
                                 .child(self.resume_control(&session.id, limit, waiting, cx)),
                         ),
                 )
@@ -316,9 +324,10 @@ impl BenCodeApp {
 
     /// MonoCode `AccountPicker`: the provider's other accounts, the pick
     /// moving the conversation onto it and resuming.
-    fn render_mono_account_picker(
+    fn render_limit_account_picker(
         &self,
         session: &SessionRow,
+        variant: ButtonVariant,
         cx: &Context<Self>,
     ) -> Option<AnyElement> {
         if !supports_accounts(&session.harness) {
@@ -337,15 +346,75 @@ impl BenCodeApp {
             let (sid, id) = (session.id.clone(), account.id.clone());
             menu.item(
                 MenuItem::new(account.label.clone()).on_click(app_callback(cx, move |this, cx| {
-                    this.switch_mono_usage_limit_account(&sid, &id, cx)
+                    this.switch_usage_limit_account(&sid, &id, cx)
                 })),
             )
         });
+        let id = SharedString::from(format!("limit-account-{}", session.id));
         Some(
-            DropdownMenu::new("mono-limit-account", "Choose another account", menu)
-                .variant(ButtonVariant::Secondary)
+            DropdownMenu::new(id, "Choose another account", menu)
+                .variant(variant)
                 .into_any_element(),
         )
+    }
+
+    /// The notice's account pick: the thread carries on as another account.
+    /// A Mono's rotation briefs its new provider session; a thread's resume
+    /// carries a Handoff recap instead (BenCode's own: MonoCode's composer
+    /// notice offers no account), since the old account's provider session
+    /// cannot be resumed from the new one's profile.
+    pub fn switch_usage_limit_account(
+        &mut self,
+        session_id: &str,
+        account_id: &str,
+        cx: &mut Context<Self>,
+    ) {
+        if self.is_mono_session(session_id) {
+            self.switch_mono_usage_limit_account(session_id, account_id, cx);
+            return;
+        }
+        let limited = self
+            .thread(session_id)
+            .is_some_and(|thread| thread.usage_limit.is_some());
+        if !limited || self.is_agent_running_in(session_id) {
+            return;
+        }
+        let Some(session) = self.sessions.iter().find(|s| s.id == session_id) else {
+            return;
+        };
+        if self.session_account_id(session) == account_id
+            || !self.account_exists(&session.harness, account_id)
+        {
+            return;
+        }
+        let recap = HarnessKind::from_id(&session.harness).map(|kind| {
+            let request = session
+                .blocks
+                .iter()
+                .rev()
+                .find(|b| b.role == "user")
+                .and_then(|b| b.text.as_deref())
+                .unwrap_or("");
+            HandoffCard::new(kind, kind, &session.blocks, request).agent_prompt(CONTINUE_PROMPT)
+        });
+        if let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id) {
+            session.provider_account_id = Some(account_id.to_string());
+            session.provider_session_id = None;
+            session.context_used = None;
+            session.context_window = None;
+        }
+        self.persist_session(session_id);
+        if let Some(thread) = self.threads.get_mut(session_id) {
+            thread.usage_limit = None;
+        }
+        self.save_usage_limit(session_id, None);
+        let input = TurnInput {
+            text: CONTINUE_PROMPT.to_string(),
+            agent_prompt: recap,
+            ..Default::default()
+        };
+        self.send_turn(session_id, input, cx);
+        cx.notify();
     }
 
     /// Saved with the turn, which is still running.
@@ -466,6 +535,13 @@ impl BenCodeApp {
         let fg = colors.fg;
         let hover = fg.opacity(0.10);
         let action = self.resume_control(session_id, limit, waiting, cx);
+        let account = self
+            .sessions
+            .iter()
+            .find(|s| s.id == session_id)
+            .and_then(|session| {
+                self.render_limit_account_picker(session, ButtonVariant::Ghost, cx)
+            });
         let dismiss_sid = session_id.to_string();
         Some(
             div()
@@ -496,6 +572,7 @@ impl BenCodeApp {
                                 .child("Usage limit reached"),
                         )
                         .child(div().flex_1().min_w_0().truncate().child(status))
+                        .children(account)
                         .child(action)
                         .child(
                             div()

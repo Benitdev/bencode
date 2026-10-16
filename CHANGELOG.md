@@ -9,6 +9,9 @@ tagging (`docs/releasing.md`).
 - A Mono's account can be switched from the usage chip under its
   composer, not only at a usage limit. Its next message starts a new
   session on that account, briefed on the recent conversation.
+- A thread stopped by a usage limit can carry on as another account:
+  Choose another account on the limit's tab switches it and resumes,
+  with a Handoff recap of the conversation for the new session.
 - Moving a thread to another provider and back keeps the account picked
   for that provider in the project, instead of falling back to the
   default account.
