@@ -336,7 +336,7 @@ only read that cache.
 | none (Codex desktop's in-app browser) | `browser/`, `app/browser.rs`, `ui/browser_pane.rs` | BenCode's own. A WKWebView over a file-pane tab; picked elements and screenshots go to the composer; agents drive it through the `bencode-browser` MCP server while a browser tab is open |
 | `src-tauri/src/` (`checkpoint.rs`, `reminders.rs`, `fs.rs`, …) | `git/checkpoint.rs`, `db/`, `ui/file_tree/fs.rs` | In-process calls, no IPC |
 
-Open gaps are tracked in `docs/migration/PARITY-BACKLOG.md`.
+Open work, triaged by the principles, is in `docs/migration/PARITY-BACKLOG.md`.
 
 ---
 

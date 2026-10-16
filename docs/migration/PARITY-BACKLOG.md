@@ -1,7 +1,84 @@
-# MonoCode → BenCode parity backlog
+# BenCode backlog
 
-Item-level gaps between MonoCode and BenCode. The area-level picture is in
-[`feature-migration-matrix.md`](feature-migration-matrix.md).
+What is open, sorted by BenCode's principles (`AGENTS.md`, section 1), and
+below it the history of the MonoCode port. MonoCode parity alone is no longer
+a reason to do something: an item stays when it serves a principle, and says
+which.
+
+## Triage of 2026-10-16
+
+Every item still open in the port's history (`[ ]`, and the open part of a
+`[~]`) was sorted into one of the lists below. The history itself is left as
+it was. "Not compared with MonoCode on screen" is no longer a gap: those items
+count as done unless a list below names what is left of them.
+
+Priorities now: P0 = next, it serves principle 2 or 3 directly; P1 = soon;
+P2 = when it comes up.
+
+### Keep
+
+Keyboard-first (principle 3)
+- [ ] P0 M Command palette (⇧⌘P): every command in `commands.rs`, threads and models, by fuzzy search
+- [ ] P1 M Search: keyboard navigation, rows, open a hit in the editor; P2 L coverage and ranking
+- [ ] P1 M Rebindable keys (the Shortcuts page is read only)
+- [ ] P2 S Settings: remembered section, search
+- [ ] P2 S The icon rail's project list searchable
+- [ ] P2 S Edit menu; macOS terminal keys
+
+Many agents, one person (principle 2)
+- [ ] P1 M Session review: Keep / Undo per file (and later per hunk)
+- [ ] P1 M File pane per workspace tab, restored on launch; splitting editor panes
+- [ ] P1 S Session cards: live status, and a status filter, checked against the Working agents card
+- [ ] P2 S Worktree branch named from the first message (`generateHarnessBranchName`), so parallel worktrees read apart
+- [ ] P2 S Project colour from its name, so many projects read apart
+- [ ] P2 M Quick Composer, as "start an agent from anywhere" (the menu bar or a global key), not a copy of MonoCode's
+- [ ] P2 S Usage popover: Codex's banked resets
+- [ ] P2 M Automation event triggers: GitHub only (the Inbox's source)
+
+Harness-neutral (principle 4)
+- [ ] P1 M Per-provider default model, Use by default, Show in picker (one `default_model` today)
+- [ ] P1 M MCP discovery for Codex (`~/.codex/config.toml`) and OpenCode; P2 M add / remove / sign-in / show config
+- [ ] P1 S/M Disabled skills; a Skills settings page
+- [ ] P2 L OpenCode rewind (needs `opencode serve`)
+
+Polish
+- [ ] P2 S Tab context menu; a `git-compare` icon for review tabs; per-type file icons on editor tabs
+- [ ] P2 S Image preview in the file pane, here and on a machine
+- [ ] P2 M Terminal: links and find (`TerminalEvent`); dock side and resize
+- [ ] P2 S CLI path override
+- [ ] P2 M Mono Changes tab: discard, tree view, generated commit message
+- [ ] P2 S Emoji picker: search, recents kept between launches
+- [ ] P2 M Machines: copy files into a machine's folder; terminal tabs on a machine outlive BenCode
+
+### BenCode's own (proposed)
+
+New work, not in MonoCode. Each one is a design first; none is started.
+- [ ] P0 L Mission Control: every running agent across projects in one grid, its live tail, status, Stop, and approvals
+- [ ] P0 M Permission inbox: one queue of pending approvals across threads, answered by keys; per-project rules ("always allow `cargo test`")
+- [ ] P1 L Race / Compare: one prompt to two or three harnesses or models, each in its own worktree; the diffs side by side; keep one
+- [ ] P1 M Review feedback: comments on diff lines sent back to the agent as its next prompt
+- [ ] P2 L Checkpoint timeline: scrub a thread's file state tool call by tool call, restore to any point
+- [ ] P2 M Account routing: a per-provider order of accounts (and a fallback harness) for usage limits, the footer's forecast of the next limit
+- [ ] P2 M Browser check after a turn that changed a web UI: open the preview, screenshot it into the transcript
+
+### Dropped
+
+Not done, and why. Reopen one only with a reason from the principles.
+- Pixel parity of the shell: sidebar mode tabs at 24px, the search button as Go to File, project row opacity and sizes, Changes header and empty-state copy, switcher rows, discard wording, the editor's footer instead of its toolbar
+- Settings: the blur radius; per-project chat backgrounds; General / Chat pages as MonoCode lays them out
+- Notes: line numbers in Source
+- Inbox sources Jira, Linear, GitLab, Azure DevOps, and their automation triggers and templates: add one when someone uses it
+- MonoCode's editable side-by-side diff (`@codemirror/merge`): BenCode's review has its own side by side
+- ⇧⌘N New Window: BenCode is one window (and the Mono float)
+- Usage popover: "show remaining" and e-mail masking; the harness chip's "sign in" in the footer
+- Provider accounts listed in MonoCode both ways: nothing is shared with MonoCode (principle 5)
+- Monos look: the bounce, frosted glass, the bulb on the float's mascot (GPUI has no backdrop blur)
+- Machines: Connect by URL and device tokens, Windows hosts, threads shared between computers
+
+## History: the MonoCode port
+
+The audit and batches below are the port as it was tracked; their open items
+are triaged above.
 
 - Audit of 2026-10-02: five read-only passes compared `reference/monocode/src`
   (React 19) with `src/` (GPUI).
