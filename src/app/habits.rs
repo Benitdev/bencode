@@ -333,7 +333,7 @@ impl BenCodeApp {
             return;
         }
         self.watch_habit_run(run_id, cx);
-        self.refresh_mono_habits(mono_id, cx);
+        self.refresh_mono_overview(mono_id, cx);
         cx.notify();
     }
 
@@ -450,7 +450,7 @@ impl BenCodeApp {
                 if let Err(err) = task.await {
                     log::warn!("could not record a habit's run: {err}");
                 }
-                let landed = this.update(cx, |this, cx| this.refresh_mono_habits(&mono, cx));
+                let landed = this.update(cx, |this, cx| this.refresh_mono_overview(&mono, cx));
                 if let Err(err) = landed {
                     log::debug!("habit recorded after app drop: {err:#}");
                 }
@@ -499,8 +499,8 @@ impl BenCodeApp {
         cx.notify();
     }
 
-    /// The Overview's Habits read again, for the Mono in view.
-    fn refresh_mono_habits(&mut self, mono: &str, cx: &mut Context<Self>) {
+    /// The Overview's habits and board read again, for the Mono in view.
+    pub(crate) fn refresh_mono_overview(&mut self, mono: &str, cx: &mut Context<Self>) {
         if self.monos.view.as_deref() == Some(mono) {
             self.load_mono_overview(mono, cx);
         }
@@ -537,7 +537,7 @@ impl BenCodeApp {
                     }
                     Err(error) => call.fail(error, true),
                 }
-                this.refresh_mono_habits(&mono, cx);
+                this.refresh_mono_overview(&mono, cx);
             });
             if let Err(err) = landed {
                 log::debug!("habit call after app drop: {err:#}");
@@ -578,7 +578,7 @@ impl BenCodeApp {
                 if run_now && result.is_ok() {
                     this.check_habits(cx);
                 }
-                this.refresh_mono_habits(&mono, cx);
+                this.refresh_mono_overview(&mono, cx);
                 cx.notify();
             });
             if let Err(err) = landed {

@@ -57,6 +57,25 @@ pub const FIELDS: &[(&str, &[&str])] = &[
     ("habits.update", &["id", "name", "instructions", "schedule", "enabled"]),
     ("habits.run", &["id"]),
     ("habits.remove", &["id"]),
+    ("board.list", &[]),
+    ("board.add", &["title", "prompt", "project", "sessionId"]),
+    ("board.update", &["id", "title", "prompt", "done"]),
+    ("board.remove", &["id"]),
+    (
+        "board.start",
+        &[
+            "id",
+            "harness",
+            "model",
+            "modelSettings",
+            "effort",
+            "runtimeMode",
+            "workspaceMode",
+            "worktreeBase",
+            "worktreeCwd",
+            "notifyOnComplete",
+        ],
+    ),
     (
         "chat.card",
         &[

@@ -268,6 +268,20 @@ const PERMISSION_MODES: [(PermissionMode, &str, &str, IconName); 4] = [
     ),
 ];
 
+/// A menu row's title line (MonoCode `leading-5`).
+const TITLE_LINE: f32 = 20.0;
+
+/// A menu row's icon, centred on the title's first line rather than hung
+/// from the row's top.
+fn title_line_icon(icon: Icon) -> gpui::Div {
+    div()
+        .flex()
+        .flex_none()
+        .items_center()
+        .h(px(TITLE_LINE))
+        .child(icon)
+}
+
 /// MonoCode `AccessPicker`'s rows, for pickers outside the composer.
 pub(crate) fn permission_modes() -> &'static [(PermissionMode, &'static str, &'static str, IconName)] {
     &PERMISSION_MODES
@@ -1364,11 +1378,9 @@ impl BenCodeApp {
                                 action(this, cx);
                                 cx.notify();
                             }))
-                            .child(
-                                div()
-                                    .mt_0p5()
-                                    .child(Icon::new(icon).size(IconSize::Sm).color(tint)),
-                            )
+                            .child(title_line_icon(
+                                Icon::new(icon).size(IconSize::Sm).color(tint),
+                            ))
                             .child(
                                 div()
                                     .flex_1()
@@ -1376,6 +1388,7 @@ impl BenCodeApp {
                                     .child(
                                         div()
                                             .text_size(px(13.0))
+                                            .line_height(px(TITLE_LINE))
                                             .text_color(colors.fg)
                                             .child(title),
                                     )
@@ -1420,16 +1433,18 @@ impl BenCodeApp {
             .flex()
             .flex_col()
             .children(PERMISSION_MODES.iter().enumerate().map(|(ix, &(mode, label, hint, icon))| {
+                // MonoCode `text-amber-400/90` / `text-content/70`.
                 let icon_color = if mode == PermissionMode::FullAccess {
-                    colors.warning
+                    colors.warning.opacity(0.9)
                 } else {
-                    colors.fg_muted
+                    colors.fg.opacity(0.7)
                 };
+                // MonoCode `flex items-start gap-2.5 rounded-lg px-2 py-2`.
                 div()
                     .id(SharedString::from(format!("perm-opt-{}", mode.id())))
                     .flex()
                     .items_start()
-                    .gap_2()
+                    .gap(px(10.0))
                     .px_2()
                     .py_2()
                     .rounded(px(8.0))
@@ -1447,7 +1462,7 @@ impl BenCodeApp {
                         this.set_permission_mode(mode, cx);
                         this.refocus_prompt(cx);
                     }))
-                    .child(Icon::new(icon).size(IconSize::Sm).color(icon_color))
+                    .child(title_line_icon(Icon::new(icon).size(IconSize::Sm).color(icon_color)))
                     .child(
                         div()
                             .flex_1()
@@ -1455,11 +1470,19 @@ impl BenCodeApp {
                             .child(
                                 div()
                                     .text_size(px(13.0))
+                                    .line_height(px(TITLE_LINE))
                                     .font_weight(FontWeight::MEDIUM)
                                     .text_color(colors.fg)
                                     .child(label),
                             )
-                            .child(div().text_size(px(11.0)).text_color(colors.fg_muted).child(hint)),
+                            .child(
+                                div()
+                                    .mt(px(2.0))
+                                    .text_size(px(11.0))
+                                    .line_height(px(16.0))
+                                    .text_color(colors.fg.opacity(0.5))
+                                    .child(hint),
+                            ),
                     )
             }))
             .when(busy, |el| {
@@ -1468,7 +1491,8 @@ impl BenCodeApp {
                         .px_2()
                         .py_1p5()
                         .text_size(px(11.0))
-                        .text_color(colors.fg_muted)
+                        .line_height(px(16.0))
+                        .text_color(colors.fg.opacity(0.5))
                         .child("Access changes apply to the next turn. Stop and resend to apply them now."),
                 )
             });

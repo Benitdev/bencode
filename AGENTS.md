@@ -2,32 +2,47 @@
 
 The manual for AI coding agents and developers working in this repository.
 Read it before changing code. `README.md` is the short, human-facing overview;
-`docs/migration/` holds the parity backlog.
+`docs/migration/` holds what is left open from the port: pick items from it
+when they serve the principles below, not to match MonoCode.
 
 ---
 
 ## 1. What BenCode is
 
-**BenCode** is the native, GPU-rendered port of **MonoCode** (Tauri v2 + React 19 +
-TypeScript) to **Rust + Zed's GPUI + [Ely GPUI Components](https://elygpui.com/)**.
-It is a desktop control plane for coding-agent CLIs: it starts them, streams their
-output into a transcript, and puts the surrounding tools (files, git, terminal,
-notes, automations, GitHub inbox) in one window.
+**BenCode** is a native, GPU-rendered control plane for coding-agent CLIs, built
+on **Rust + Zed's GPUI + [Ely GPUI Components](https://elygpui.com/)**. It starts
+the agents, streams their output into a transcript, and puts the surrounding
+tools (files, git, terminal, browser, notes, automations, inbox) in one window.
+It began as a port of **MonoCode** (Tauri v2 + React 19); it is now its own
+product, and MonoCode is a reference, not the spec.
 
-Goals:
+### Principles
 
-1. **No Electron, WebKit or Chromium.** Everything is drawn by GPUI (Metal on macOS).
-   The one exception is the in-app browser's page: the system's WKWebView, in
-   a browser tab only (`browser/`).
-2. **Fast and small.** Targets: sub-50ms startup, about 30MB of RAM.
-3. **Local-first, with its own data.** Threads, checkpoints and account profiles
-   live in BenCode's folder. Nothing is shared with MonoCode; a first launch
-   copies a MonoCode install's data in once.
-4. **Agent control plane.** Agent CLIs are driven over stdio; BenCode adds no
-   token cost of its own.
+These are the yardstick for every feature, in this order when they conflict.
 
-The yardstick for every feature is MonoCode: same behaviour, same layout, same
-copy, unless there is a stated reason to differ.
+1. **Native and fast.** No Electron, WebKit or Chromium: GPUI draws everything
+   (Metal on macOS); the one exception is the in-app browser's page, the
+   system's WKWebView in a browser tab (`browser/`). Targets: sub-50ms startup,
+   about 30MB of RAM, no dropped frames in the longest thread. A feature that
+   costs launch time or frame time is measured (Verifying) before it lands.
+2. **Many agents, one person.** BenCode is for running several agents at once,
+   across harnesses, accounts, worktrees and machines, and supervising them
+   without babysitting each one. Prefer what lets the user see, approve,
+   compare and steer many runs over what polishes a single chat.
+3. **Keyboard-first.** Every action is a command in `app/commands.rs`,
+   reachable without the mouse; the mouse is a shortcut, not the only path.
+4. **Harness-neutral.** A feature works for every harness that can support it,
+   not only for Claude. What one CLI cannot do is stated, not silently missing.
+5. **Local-first, with its own data.** Threads, checkpoints and account
+   profiles live in BenCode's folder. Nothing is shared with MonoCode; a first
+   launch copies a MonoCode install's data in once.
+6. **No token cost of its own.** Agent CLIs are driven over stdio with the
+   user's own sign-ins; BenCode never adds an API key or a hidden turn.
+
+A new feature should save the user a step, a wait or a context switch, and be
+able to say which. When MonoCode already has the feature, read it first and
+borrow what works; then differ wherever these principles say so, without
+needing to justify the difference against MonoCode.
 
 ---
 
@@ -36,11 +51,17 @@ copy, unless there is a stated reason to differ.
 - System path: `/Users/benit/Documents/sources/monocode`
 - In-repo symlink: `reference/monocode` (git-ignored)
 
-When porting, read the TypeScript model and the React component in
-`reference/monocode/src/...`, and the Tauri backend in
-`reference/monocode/src-tauri/src/...`. Module doc comments in BenCode name the
-MonoCode file they port (for example ``//! MonoCode `UnifiedDiffView` ``); keep
-doing that, it is how the two codebases stay traceable.
+When a feature exists in MonoCode, read the TypeScript model and the React
+component in `reference/monocode/src/...`, and the Tauri backend in
+`reference/monocode/src-tauri/src/...`, before designing BenCode's. A module
+that ports one names the MonoCode file (for example
+``//! MonoCode `UnifiedDiffView` ``); a module of BenCode's own just says what
+it does.
+
+What stays compatible with MonoCode, because imported data relies on it: the
+database schema, the transcript block roles, the checkpoint manifest format and
+the `harness:model` keys. Everything else (layout, copy, behaviour) is
+BenCode's to change.
 
 ---
 
@@ -80,7 +101,7 @@ bencode/
 │   ├── icons/                Lucide SVGs Ely does not ship (ui/icons.rs)
 │   ├── file-icons/           Material Icon Theme SVGs and lookup tables (ui/file_tree/icons.rs)
 │   └── providers/            harness brand icons (ui/provider_icon.rs)
-├── docs/migration/           parity backlog and migration notes
+├── docs/migration/           what is left open from the MonoCode port, migration notes
 ├── docs/releasing.md         cutting a release; signing and notarization
 ├── docs/remote-access.md     machines: connecting, what runs where, the loopback SSH test
 ├── docs/readme/              README translations (README.vi.md)
@@ -121,7 +142,7 @@ bencode/
     ├── sounds/               the cues (cuelume 0.2.2's recipes, rendered once and played with NSSound)
     ├── monocode_import/      the one-time copy of a MonoCode install's data
     ├── app_cli/              `bencode app`: the CLI a Mono's agent runs, its socket server, the `artifacts.*` actions
-    ├── monos.rs, monos/      Monos: the roster's model, the context its turns carry; its files (`SOUL.md`, `MEMORY.md`, hash-checked saves), memory edits and habits
+    ├── monos.rs, monos/      Monos: the roster's model, the context its turns carry; its files (`SOUL.md`, `MEMORY.md`, hash-checked saves), memory edits, habits and its board (`board.json`)
     ├── external_editor.rs    finding and launching VS Code, Cursor, Zed, …
     └── workspace.rs          the file index for Go to File: core's, here or on the project's machine
 ```
@@ -156,6 +177,7 @@ bencode/
 | `reminders.rs`, `model_catalog.rs` | Session reminders; live model catalogs |
 | `monos.rs` | Monos: create / open / delete / reset, the one in view (over the tabs), the Overview and settings dialog toggles, ⌘I and the Mono reopened at launch, its projects, the standing context a turn carries (soul and memory, each only when its session lacks that version) and its record, the account switch on a usage limit, the idle mascots the clock wakes for |
 | `app_calls.rs`, `habits.rs`, `mono_sessions.rs` | `bencode app`'s calls: the socket's requests checked against the turn's token and dispatched; a Mono's habits run on schedule and on Run now, their posts in its chat; the sessions it starts, their worktrees and folders, and the report when one settles |
+| `mono_board.rs` | A Mono's board: `board.*` from its chat, `board.start` launching a task's session through `sessions.start` and linking the two, the Board tab's Mark done / Reopen / Remove |
 | `mono_background.rs`, `mono_menu_bar.rs` | A Mono's own chat background (saved copy, drawn under the Haze); the menu bar icon kept to the roster and its picks |
 | `mono_files.rs`, `mono_overview.rs`, `mono_changes.rs` | A Mono's files on the app (soul field saved on blur with its conflict check, name field, memory facts added / reworded / forgotten, Reset Mono); its Overview (tab, width, the turn on Activity, documents, habits); the Changes tab's per-project status, stage, commit and push |
 | `alerts.rs` | Sounds and notifications: the Settings switches, the macOS permission, the project's mutes, what a banner says, a click opening its thread or reminder |
@@ -190,7 +212,7 @@ bencode/
 | `composer/` | Prompt composer and its pickers, cards, runner; `mono.rs` is a Mono's composer in BenCode's window |
 | `file_pane.rs` | The pane beside the chat and its tab strip |
 | `browser_pane.rs` | A browser tab: toolbar, address bar, the page's box |
-| `monos.rs`, `mono_settings.rs`, `mono_overview/`, `rail/monos.rs`, `mono_float/`, `mono_background.rs`, `launched_session.rs` | A Mono in the main area (chat, greeting, its confirmations); its settings dialog (General, Soul, Memory); its Overview beside the chat (Sessions, Documents, Habits, Changes, Activity); the rail's Monos section; the floating chat, a window and view of its own (`MonoFloat`); its Background image dialog; the card of a session it started |
+| `monos.rs`, `mono_settings.rs`, `mono_overview/`, `rail/monos.rs`, `mono_float/`, `mono_background.rs`, `launched_session.rs` | A Mono in the main area (chat, greeting, its confirmations); its settings dialog (General, Soul, Memory); its Overview beside the chat (Board, Documents, Habits, Changes, Activity); the rail's Monos section; the floating chat, a window and view of its own (`MonoFloat`); its Background image dialog; the card of a session it started |
 | `editor_pane/` | Code editor: open files, saves, disk sync; a markdown file's Preview / Source (`preview.rs`) |
 | `diff_viewer.rs`, `diff_model.rs` | Review of working-tree changes and commits |
 | `terminal_pane/` | Terminal dock: tabs, splits (`split.rs`), menus, running jobs, host sessions (`sessions.rs`) |
@@ -310,12 +332,12 @@ only read that cache.
 | `integrations/harness/providers/grok/` | `harness/grok.rs` | Grok Build over ACP, one `grok agent stdio` per turn; `/compact` through `_x.ai/compact_conversation`. BenCode's own: follow-ups go into the running turn (`_x.ai/interject`), where MonoCode queues them, and the context meter reads the count Grok stamps on its updates |
 | `harness/providers/claude/claude.ts` (`handleAgentLifecycle`, `noteSubagent*`), `sessions/ui/AgentTranscript.tsx` `SubagentPanel`, `transcriptActivity.ts` | `harness/claude/tasks.rs`, `app/subagents.rs`, `ui/transcript/subagents.rs` | Claude's subagents and backgrounded commands: the turn stays open until they finish and Claude reports back ("· running in background" on the fold line); a run's row (mascot, name, model, steps) holds its place while the turn is live and opens onto its trail. Stop kills the process, so no `stop_task` |
 | `sessions/model/taskList.ts`, `sessions/ui/TaskListPreview.tsx`, `harness/core/apply.ts` `upsertTaskList` | `app/task_list.rs`, `ui/transcript/task_list.rs` | The Tasks card, from `AgentEvent::Tasks`. Only Grok Build's plan updates feed it; Claude's `TodoWrite` still shows as a tool row. Whole snapshots only (no `merge`, no `key`) |
-| `features/monos/` (`mono.ts`, `monoFiles.ts`, `monoMemory.ts`, `monoHabits.ts`, `monoWorkspace.ts`, `MonoOverview`, `MonoSidebar`, `MonoSettingsDialog`, `MonoFilePages`, `MonoProjects`, `MonoChangesView`, `MonoActivityView`, `FloatingMonoChat`), `app/shell/MonoRailSection.tsx`, Settings › Monos, `src-tauri/src/mono.rs` | `monos.rs`, `monos/`, `app/monos.rs`, `app/mono_files.rs`, `app/mono_overview.rs`, `app/mono_changes.rs`, `ui/monos.rs`, `ui/mono_settings.rs`, `ui/mono_overview/`, `ui/settings_monos.rs`, `ui/transcript/mono_activity.rs`, `ui/rail/monos.rs`, `ui/mono_float/`, `app_cli/`, `app/artifacts.rs`, `ui/artifacts.rs`, `db/artifacts.rs` | Agents of their own on the rail: one conversation each, in the home folder with Auto permissions, their projects, `SOUL.md` and the `<memory>` block of `MEMORY.md` handed over ahead of a message. The roster is in `settings.json`. In BenCode's window it is MonoCode's in-app Mono view: its own title bar (the mascot moving with its status, blinking, with a bulb while it needs you; the Overview pill and the gear, which opens the settings dialog: General with the face, name, model, permissions, projects, Reset and Delete; Soul saved on blur with Use theirs / Keep mine; Memory with its 200-line / 24KB gauge), the Overview at the chat's right (open by default, 340–960px, `monoOverviewWidth`; Sessions lists the sessions it started, Documents the artifacts it wrote, Habits its habits under Today with a habit's page and New habit, Changes each project's working tree with commit and push, Activity the work of the turn whose signature pill was clicked), a greeting filling the chat before the first message, day pills and the signature pill in the transcript (no turn metrics, handoff or outline), `MonoComposer`'s full layout with the emoji picker, the plan's usage, the model as text and its settings as pills, and `MonoUsageLimitNotice` (BenCode's own: the chip's popover also switches the Mono's account, `switch_mono_account`, between turns); it covers the footer as MonoCode's does. The floating chat opens from a Mono's rail menu or the Monos icon in the macOS menu bar (`mono_menu_bar.rs`, `app/mono_menu_bar.rs`; no header button, as MonoCode), at the top right of the screen under the pointer, with a reduced transcript of its own (approvals answered in the turn, a message that could not be sent kept with Retry) and MonoCode's inline composer (no emoji button); it resizes (BenCode adds the resizable style to its `NSWindow`, GPUI gives a window without a title bar none), its frame is drawn rounded on a clear window, and its size is `monoFloatSize` in `settings.json`. A reply that is only `<reaction>👍</reaction>` is a reaction: a badge on the user's message in both windows (the emoji alone only when no message precedes it). ⌘I toggles the last Mono; the one in view at quit opens at launch (`openMono`). Settings › Monos turns them off (`monosOff`), pins them to the icon rail (`railMonosPinned`) and hides the menu bar icon (`monoMenuBarOff`). A Mono's rail menu sets its own chat background (`app/mono_background.rs`, `ui/mono_background.rs`). At 80% of the context window its next turn starts a fresh provider session briefed on the recent exchanges (`monos/rotation.rs`). A Mono's turn gets `bencode app` (MonoCode's `app` CLI, `app_cli/`, dispatched in `app/app_calls.rs`: a Unix socket and a per-conversation token that works only while its turn runs) for `soul.*`, `memory.*`, `notes.*`, `models.list`, `habits.*` (run by `app/habits.rs`), `sessions.*`, `worktrees.*`, `folders.*` and `chat.card` (`app/mono_sessions.rs`, the started session's card in `ui/launched_session.rs`), and `artifacts.list` / `read` / `write`: documents (Markdown) and visuals (a sandboxed HTML page in a WKWebView, `browser/artifact.rs`) kept in `notes` as `content_kind = 'artifact'`, a card under the turn that wrote them, read over the Overview (`app/artifacts.rs`, `ui/artifacts.rs`). No review card |
+| `features/monos/` (`mono.ts`, `monoFiles.ts`, `monoMemory.ts`, `monoHabits.ts`, `monoWorkspace.ts`, `MonoOverview`, `MonoSidebar`, `MonoSettingsDialog`, `MonoFilePages`, `MonoProjects`, `MonoChangesView`, `MonoActivityView`, `FloatingMonoChat`), `app/shell/MonoRailSection.tsx`, Settings › Monos, `src-tauri/src/mono.rs` | `monos.rs`, `monos/`, `app/monos.rs`, `app/mono_files.rs`, `app/mono_overview.rs`, `app/mono_changes.rs`, `ui/monos.rs`, `ui/mono_settings.rs`, `ui/mono_overview/`, `ui/settings_monos.rs`, `ui/transcript/mono_activity.rs`, `ui/rail/monos.rs`, `ui/mono_float/`, `app_cli/`, `app/artifacts.rs`, `ui/artifacts.rs`, `db/artifacts.rs` | Agents of their own on the rail: one conversation each, in the home folder with Auto permissions, their projects, `SOUL.md` and the `<memory>` block of `MEMORY.md` handed over ahead of a message. The roster is in `settings.json`. In BenCode's window it is MonoCode's in-app Mono view: its own title bar (the mascot moving with its status, blinking, with a bulb while it needs you; the Overview pill and the gear, which opens the settings dialog: General with the face, name, model, permissions, projects, Reset and Delete; Soul saved on blur with Use theirs / Keep mine; Memory with its 200-line / 24KB gauge), the Overview at the chat's right (open by default, 340–960px, `monoOverviewWidth`; Board (BenCode's own, where MonoCode lists Sessions) holds its tasks under To do, Running, Review and Done, a task's column following its session until it is marked done, then the other sessions it started, Documents the artifacts it wrote, Habits its habits under Today with a habit's page and New habit, Changes each project's working tree with commit and push, Activity the work of the turn whose signature pill was clicked), a greeting filling the chat before the first message, day pills and the signature pill in the transcript (no turn metrics, handoff or outline), `MonoComposer`'s full layout with the emoji picker, the plan's usage, the model as text and its settings as pills, and `MonoUsageLimitNotice` (BenCode's own: the chip's popover also switches the Mono's account, `switch_mono_account`, between turns); it covers the footer as MonoCode's does. The floating chat opens from a Mono's rail menu or the Monos icon in the macOS menu bar (`mono_menu_bar.rs`, `app/mono_menu_bar.rs`; no header button, as MonoCode), at the top right of the screen under the pointer, with a reduced transcript of its own (approvals answered in the turn, a message that could not be sent kept with Retry) and MonoCode's inline composer (no emoji button); it resizes (BenCode adds the resizable style to its `NSWindow`, GPUI gives a window without a title bar none), its frame is drawn rounded on a clear window, and its size is `monoFloatSize` in `settings.json`. A reply that is only `<reaction>👍</reaction>` is a reaction: a badge on the user's message in both windows (the emoji alone only when no message precedes it). ⌘I toggles the last Mono; the one in view at quit opens at launch (`openMono`). Settings › Monos turns them off (`monosOff`), pins them to the icon rail (`railMonosPinned`) and hides the menu bar icon (`monoMenuBarOff`). A Mono's rail menu sets its own chat background (`app/mono_background.rs`, `ui/mono_background.rs`). At 80% of the context window its next turn starts a fresh provider session briefed on the recent exchanges (`monos/rotation.rs`). A Mono's turn gets `bencode app` (MonoCode's `app` CLI, `app_cli/`, dispatched in `app/app_calls.rs`: a Unix socket and a per-conversation token that works only while its turn runs) for `soul.*`, `memory.*`, `notes.*`, `models.list`, `habits.*` (run by `app/habits.rs`), `sessions.*`, `worktrees.*`, `folders.*`, `board.*` (`app/mono_board.rs`, `monos/board.rs`) and `chat.card` (`app/mono_sessions.rs`, the started session's card in `ui/launched_session.rs`), and `artifacts.list` / `read` / `write`: documents (Markdown) and visuals (a sandboxed HTML page in a WKWebView, `browser/artifact.rs`) kept in `notes` as `content_kind = 'artifact'`, a card under the turn that wrote them, read over the Overview (`app/artifacts.rs`, `ui/artifacts.rs`). No review card |
 | `features/connections/` (`ConnectionsSettings.tsx`, `AddRemoteProjectDialog.tsx`, `connections.ts`, `remotePaths.ts`), `src-tauri/src/remote.rs`, `remote_ssh.rs`, `ssh_askpass.rs`, `remote_bootstrap.sh`, `host/` | `src/remote/`, `app/remote.rs`, `app/remote_runs.rs`, `ui/settings_connections.rs`, `ui/remote_folder.rs`, `crates/bencode-host`, `crates/bencode-core/src/remote/` | Machines over SSH, `remote://` projects whose threads, Explorer, editor, search, git and PRs run there. BenCode's own: the host is Rust and shares the app's harnesses; the connection is SSH stdio (no device tokens, no Connect by URL, no Windows hosts); the host keeps only turns, threads stay in the app's database; terminal tabs are SSH sessions. See `docs/remote-access.md` |
 | none (Codex desktop's in-app browser) | `browser/`, `app/browser.rs`, `ui/browser_pane.rs` | BenCode's own. A WKWebView over a file-pane tab; picked elements and screenshots go to the composer; agents drive it through the `bencode-browser` MCP server while a browser tab is open |
 | `src-tauri/src/` (`checkpoint.rs`, `reminders.rs`, `fs.rs`, …) | `git/checkpoint.rs`, `db/`, `ui/file_tree/fs.rs` | In-process calls, no IPC |
 
-Open gaps are tracked in `docs/migration/PARITY-BACKLOG.md`.
+Open work, triaged by the principles, is in `docs/migration/PARITY-BACKLOG.md`.
 
 ---
 
@@ -329,7 +351,7 @@ pages in `examples/gallery/pages/<chapter>.rs`. Read the library's own
 ### Components and theme
 
 - **Use an Ely component whenever one fits.** Hand-roll only layout `div`s and
-  the places where MonoCode's exact look needs it. BenCode keeps no local
+  the places where BenCode's own look needs it. BenCode keeps no local
   button, modal or tab widgets.
 - **Colours come from `cx.theme().colors`** (`bg`, `surface`, `hover`, `active`,
   `border`, `fg`, `fg_muted`, `accent`, `success`, `danger`, …). Sizes come from
@@ -729,10 +751,12 @@ div()
 
 ## 10. Workflow
 
-### Porting a feature
+### Building a feature
 
-1. Read the MonoCode model and component in `reference/monocode/src/...`.
-2. Translate the data model into Serde structs; keep pure logic in pure
+1. Check it against the principles (section 1): what step, wait or context
+   switch it saves. If MonoCode has it, read its model and component in
+   `reference/monocode/src/...`.
+2. Model the data as Serde structs; keep pure logic in pure
    functions with tests (see `ui/diff_model.rs`, `app/file_pane.rs`).
 3. Pick the Ely components.
 4. Add or update the view in `src/ui/`.
@@ -803,8 +827,9 @@ in `docs/releasing.md`. Keep `CHANGELOG.md`'s section for the version current.
 
 ### Code style
 
-- Match the surrounding code: module doc comment naming the MonoCode source,
-  short comments that say why, `log::` for failures.
+- Match the surrounding code: a module doc comment (naming the MonoCode
+  source when it ports one), short comments that say why, `log::` for
+  failures.
 - Prefer small files split by concern (`ui/composer/`, `ui/rail/`) over growing
   a large one.
 - No new dependency without a reason; check Ely and GPUI first.

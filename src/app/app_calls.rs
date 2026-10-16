@@ -2,8 +2,8 @@
 //! `handleAgentApp`): the socket the CLI reaches, the credential each
 //! Mono's turn carries, and every call, checked for who sent it and then
 //! handed to its domain: `artifacts.rs`, `app_cli/memory.rs` (soul and
-//! memory), `app_cli/notes.rs`, `habits.rs`, `mono_sessions.rs` (sessions,
-//! worktrees, folders) and `mono_cards.rs`.
+//! memory), `app_cli/notes.rs`, `habits.rs`, `mono_board.rs`,
+//! `mono_sessions.rs` (sessions, worktrees, folders) and `mono_cards.rs`.
 //!
 //! A token belongs to one conversation and works only while a turn of it
 //! runs (MonoCode `APP_TURN_INACTIVE`): a Mono's own chat, or a run of one
@@ -158,6 +158,11 @@ impl BenCodeApp {
                 true,
             ),
             "habits" => self.habits_call(caller, &action, input, call, cx),
+            "board" if !caller.own => call.fail(
+                "Only a Mono's own conversation can manage its board",
+                true,
+            ),
+            "board" => self.board_call(caller, &action, input, call, cx),
             "sessions" | "worktrees" | "folders" => {
                 self.mono_sessions_call(caller, &action, input, call, cx)
             }

@@ -1,9 +1,9 @@
 //! A Mono's Overview on the app (MonoCode `MonoOverview`, `MonoSidebar`,
 //! `App.tsx`'s `monoOverviewTab` and `monoActivity`): the tab it shows, its
 //! width, the turn whose activity it shows, the artifact open over its
-//! Documents (`artifacts.rs`), the habits read from the Mono's folder, and
-//! the Changes tab's per-project state (`mono_changes.rs`). The views are
-//! `ui/mono_overview/`.
+//! Documents (`artifacts.rs`), the habits and board read from the Mono's
+//! folder, and the Changes tab's per-project state (`mono_changes.rs`). The
+//! views are `ui/mono_overview/`.
 
 use std::collections::HashSet;
 
@@ -12,6 +12,7 @@ use gpui::{AppContext as _, Context, Entity, Focusable as _, Window};
 
 use crate::app::BenCodeApp;
 use crate::app::mono_files::mono_files_dir;
+use crate::monos::board::Task;
 use crate::monos::habits::{Habit, HabitSchedule};
 
 /// MonoCode `MonoSidebar`: `MIN_WIDTH`, `DEFAULT_WIDTH`, and the widest it
@@ -23,11 +24,12 @@ pub const MAX_WIDTH: f32 = 960.0;
 /// the window.
 const MAX_SHARE: f32 = 0.62;
 
-/// MonoCode `MonoOverviewTab`.
+/// MonoCode `MonoOverviewTab`, with Board where MonoCode lists Sessions.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum OverviewTab {
+    /// The Mono's tasks by column, then the other sessions it started.
     #[default]
-    Sessions,
+    Board,
     Documents,
     Habits,
     Changes,
@@ -82,6 +84,12 @@ pub struct OverviewState {
     pub habit_form: Option<HabitForm>,
     /// Why the last change to its habits failed.
     pub habit_error: Option<String>,
+    /// `None` until read.
+    pub board: Option<Vec<Task>>,
+    /// Why the last change to its board failed.
+    pub board_error: Option<String>,
+    /// The Board's Done column shown.
+    pub done_open: bool,
     /// The runs opened on a habit's page, by (habit, when).
     pub open_runs: HashSet<(String, i64)>,
     generation: u64,
@@ -90,8 +98,8 @@ pub struct OverviewState {
 impl Default for OverviewState {
     fn default() -> Self {
         Self {
-            tab: OverviewTab::Sessions,
-            last_tab: OverviewTab::Sessions,
+            tab: OverviewTab::Board,
+            last_tab: OverviewTab::Board,
             width: DEFAULT_WIDTH,
             resizing: None,
             activity: None,
@@ -101,6 +109,9 @@ impl Default for OverviewState {
             habit_route: None,
             habit_form: None,
             habit_error: None,
+            board: None,
+            board_error: None,
+            done_open: false,
             open_runs: HashSet::new(),
             generation: 0,
         }
@@ -149,7 +160,7 @@ pub fn resized_width(start_x: f32, start: f32, x: f32, window: f32) -> f32 {
 }
 
 impl BenCodeApp {
-    /// The Mono's habits, read off the UI thread.
+    /// The Mono's habits and board, read off the UI thread.
     pub(crate) fn load_mono_overview(&mut self, id: &str, cx: &mut Context<Self>) {
         let Some(dir) = mono_files_dir(id) else {
             return;
@@ -158,24 +169,32 @@ impl BenCodeApp {
         if overview.of.as_deref() != Some(id) {
             overview.of = Some(id.to_string());
             overview.habits = None;
+            overview.board = None;
+            overview.board_error = None;
         }
         overview.generation += 1;
         let generation = overview.generation;
         let task = cx.background_executor().spawn(async move {
-            match crate::monos::files::read(&dir, crate::monos::files::HABITS_FILE) {
+            let habits = match crate::monos::files::read(&dir, crate::monos::files::HABITS_FILE) {
                 Ok((text, _)) => crate::monos::habits::parse_habits(text.as_deref().unwrap_or("")),
                 Err(err) => {
                     log::warn!("could not read the Mono's habits: {err:#}");
                     Vec::new()
                 }
-            }
+            };
+            let board = crate::monos::board::load_board(&dir).unwrap_or_else(|err| {
+                log::warn!("could not read the Mono's board: {err}");
+                Vec::new()
+            });
+            (habits, board)
         });
         cx.spawn(async move |this, cx| {
-            let habits = task.await;
+            let (habits, board) = task.await;
             let landed = this.update(cx, |this, cx| {
                 let overview = &mut this.monos.overview;
                 if overview.generation == generation {
                     overview.habits = Some(habits);
+                    overview.board = Some(board);
                     cx.notify();
                 }
             });
@@ -195,7 +214,10 @@ impl BenCodeApp {
                 OverviewTab::Habits => self.load_mono_overview(&id, cx),
                 OverviewTab::Documents => {}
                 OverviewTab::Changes => self.load_mono_changes(cx),
-                OverviewTab::Sessions => self.load_mono_project_sessions(cx),
+                OverviewTab::Board => {
+                    self.load_mono_overview(&id, cx);
+                    self.load_mono_project_sessions(cx);
+                }
                 OverviewTab::Activity => {}
             }
         }

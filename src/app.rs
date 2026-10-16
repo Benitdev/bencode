@@ -8,6 +8,7 @@ mod automation_runs;
 pub mod automations;
 pub mod habits;
 pub mod mono_background;
+pub mod mono_board;
 pub mod mono_menu_bar;
 pub mod mono_sessions;
 pub mod backlog;

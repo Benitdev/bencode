@@ -160,7 +160,7 @@ BenCode điều khiển CLI của agent qua stdio và đọc luồng JSON mà ch
 | **Dữ liệu ở máy bạn** | Thread, ghi chú, checkpoint và hồ sơ tài khoản nằm trên Mac của bạn, trong thư mục riêng của BenCode. |
 | **Không tốn thêm** | BenCode không cần thêm API key, không tốn thêm token. Nó chạy các CLI bạn đã đăng nhập sẵn. |
 
-BenCode là bản port native của [MonoCode](https://github.com/hardbeat920/monocode) (Tauri + React): cùng tính năng, cùng bố cục, cùng schema cơ sở dữ liệu.
+BenCode khởi đầu là bản port native của [MonoCode](https://github.com/hardbeat920/monocode) (Tauri + React) và giữ schema cơ sở dữ liệu của nó, nên các thread của một bản MonoCode được mang theo; từ đây BenCode đi theo hướng riêng.
 
 ---
 
@@ -271,10 +271,11 @@ xử lý một lượt chat.
 ### Đóng góp
 
 1. Đọc [`AGENTS.md`](../../AGENTS.md) trước khi sửa code.
-2. Khi port một tính năng, đối chiếu với mã nguồn MonoCode trong
-   `reference/monocode` (một symlink, không được git theo dõi).
+2. Đối chiếu tính năng mới với các nguyên tắc trong `AGENTS.md`. Nếu MonoCode
+   đã có, đọc mã nguồn của nó trong `reference/monocode` (một symlink, không
+   được git theo dõi) trước.
 3. Chạy `cargo test`, rồi chạy ứng dụng và thử đúng phần bạn đã sửa.
-4. Những gì còn thiếu so với MonoCode được theo dõi trong
+4. Những gì còn để ngỏ từ bản port MonoCode nằm trong
    [`docs/migration/PARITY-BACKLOG.md`](../migration/PARITY-BACKLOG.md).
 
 ### Phát hành
