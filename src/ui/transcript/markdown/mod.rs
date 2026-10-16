@@ -3,6 +3,8 @@
 //! prose at 78% ink with bold words at full strength, inline code as chips
 //! that open the file they name, fenced code in a rounded shell with its
 //! language or path and a copy button, and Streamdown's block spacing.
+//! A closed `mermaid` fence draws as its diagram (MonoCode `MermaidBlock`)
+//! and display math as its formula, both through Ely.
 //!
 //! Ely's `MarkdownRenderer` paints every paragraph at full ink with fixed
 //! gaps, so the transcript draws its own blocks from `parse`.
@@ -13,9 +15,11 @@ use std::ops::Range;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
+use ely_gpui_component::documents::Diagram;
 use ely_gpui_component::forms::code_highlights;
 use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize, Syntax};
+use ely_gpui_component::typography::Latex;
 use gpui::prelude::*;
 use gpui::{
     AnyElement, App, ClickEvent, CursorStyle, ElementId, Font, FontStyle, FontWeight, Hsla,
@@ -27,7 +31,7 @@ use crate::ui::scale::px;
 use pulldown_cmark::Alignment;
 use unicode_segmentation::UnicodeSegmentation;
 
-pub use parse::{Block, Fence, Inline, Span, inline_file, parse};
+pub use parse::{Block, Drawing, Fence, Inline, Span, inline_file, parse};
 
 use super::selection::{Joint, SegCtx, restyle};
 
@@ -805,7 +809,10 @@ impl Draw<'_> {
                 .border_color(look.fg.opacity(0.2))
                 .children(self.blocks(inner, true, fade, joint, window, cx))
                 .into_any_element(),
-            Block::Code(fence) => self.code(fence, joint, window, cx),
+            Block::Code(fence) => match fence.drawing() {
+                Some(drawing) => self.drawing(fence, drawing, joint, window, cx),
+                None => self.code(fence, joint, window, cx),
+            },
             Block::List { start, items } => {
                 let last = items.len().saturating_sub(1);
                 div()
@@ -884,6 +891,45 @@ impl Draw<'_> {
                         .into_any_element(),
                 }
             }
+        }
+    }
+
+    /// MonoCode `.mermaid-block` (`overflow-x-auto rounded-[10px] border
+    /// border-content/10 p-3`), the diagram centred on the ground Ely paints
+    /// it on (`surface`, near MonoCode's `bg-content/6`); a formula
+    /// centred on its own. A formula RaTeX cannot read shows as its code,
+    /// as MonoCode shows a diagram Mermaid cannot draw.
+    fn drawing(
+        &self,
+        fence: &Fence,
+        drawing: Drawing,
+        joint: Joint,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> AnyElement {
+        let look = self.look;
+        match drawing {
+            Drawing::Diagram => div()
+                .id(self.key("diagram-box"))
+                .overflow_x_scroll()
+                .rounded(px(10.0))
+                .border_1()
+                .border_color(look.fg.opacity(0.1))
+                .bg(cx.theme().colors.surface)
+                .p_3()
+                .child(Diagram::new(self.key("diagram"), fence.code.clone()))
+                .into_any_element(),
+            Drawing::Formula => match Latex::parse(self.key("formula"), &fence.code) {
+                Ok(formula) => div()
+                    .id(self.key("formula-box"))
+                    .overflow_x_scroll()
+                    .flex()
+                    .justify_center()
+                    .py_1()
+                    .child(formula.display())
+                    .into_any_element(),
+                Err(_) => self.code(fence, joint, window, cx),
+            },
         }
     }
 

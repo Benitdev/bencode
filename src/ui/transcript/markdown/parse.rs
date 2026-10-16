@@ -1,6 +1,7 @@
 //! Markdown as the blocks MonoCode's `AgentMarkdown` (Streamdown) draws:
 //! paragraphs, headings, quotes, lists and tasks, fenced code with its
 //! file path, tables and rules, each with its inline styles and links.
+//! Display math (`$$…$$`) becomes a `math` fence, for Ely to typeset.
 
 use std::ops::Range;
 
@@ -36,6 +37,29 @@ pub struct Fence {
     pub start_line: Option<u64>,
     pub line_numbers: bool,
     pub code: String,
+    /// Its closing fence has come: a streaming reply may still be writing
+    /// it, and a diagram or formula draws only once it is whole.
+    pub closed: bool,
+}
+
+impl Fence {
+    /// What Ely draws in place of the code: a Mermaid diagram, a formula.
+    pub fn drawing(&self) -> Option<Drawing> {
+        if !self.closed || self.path.is_some() {
+            return None;
+        }
+        match self.language.to_ascii_lowercase().as_str() {
+            "mermaid" => Some(Drawing::Diagram),
+            "math" => Some(Drawing::Formula),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Drawing {
+    Diagram,
+    Formula,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -469,6 +493,7 @@ fn fence(info: &str) -> Fence {
             start_line: Some(start),
             line_numbers,
             code: String::new(),
+            closed: false,
         };
     }
     if raw.contains(['/', '\\']) {
@@ -478,6 +503,7 @@ fn fence(info: &str) -> Fence {
             start_line: meta_start,
             line_numbers,
             code: String::new(),
+            closed: false,
         };
     }
     Fence {
@@ -486,6 +512,7 @@ fn fence(info: &str) -> Fence {
         start_line: meta_start,
         line_numbers,
         code: String::new(),
+        closed: false,
     }
 }
 
@@ -520,17 +547,71 @@ fn language_for(path: &str) -> String {
     .to_string()
 }
 
-/// `markdown` as blocks, GitHub flavoured (tables, tasks, strikethrough).
+/// `markdown` as blocks, GitHub flavoured (tables, tasks, strikethrough),
+/// and a paragraph that is all `$$…$$` as a formula. Inline math stays
+/// off: `$` is too common in replies (prices, `$HOME`) and the parser
+/// would take code spans into a formula.
 pub fn parse(markdown: &str) -> Vec<Block> {
     let options = Options::ENABLE_TABLES
         | Options::ENABLE_STRIKETHROUGH
         | Options::ENABLE_TASKLISTS
         | Options::ENABLE_FOOTNOTES;
     let mut builder = Builder::default();
-    for event in Parser::new_ext(markdown, options) {
+    let mut in_formula = false;
+    for (event, range) in Parser::new_ext(markdown, options).into_offset_iter() {
+        if in_formula {
+            in_formula = !matches!(event, Event::End(TagEnd::Paragraph));
+            continue;
+        }
+        if matches!(event, Event::Start(Tag::Paragraph))
+            && let Some(math) = display_math(&markdown[range.clone()])
+        {
+            builder.flush();
+            builder.push(Block::Code(Fence {
+                language: "math".into(),
+                code: math.to_string(),
+                closed: true,
+                ..Fence::default()
+            }));
+            in_formula = true;
+            continue;
+        }
+        if matches!(event, Event::End(TagEnd::CodeBlock))
+            && let Some(fence) = &mut builder.code
+        {
+            fence.closed = closes_fence(&markdown[range]);
+        }
         builder.event(event);
     }
     builder.finish()
+}
+
+/// The formula of a paragraph written as `$$…$$`, as written (escapes and
+/// all); none inside a quote, whose lines carry their `>`.
+fn display_math(paragraph: &str) -> Option<&str> {
+    let math = paragraph
+        .trim()
+        .strip_prefix("$$")?
+        .strip_suffix("$$")?
+        .trim();
+    (!math.is_empty() && !math.contains("$$") && !math.contains("\n>")).then_some(math)
+}
+
+/// Whether a fenced block's source ends with its closing fence (the
+/// parser ends an unclosed one at the end of the text).
+fn closes_fence(block: &str) -> bool {
+    let block = block.trim_end();
+    let Some((open, rest)) = block.split_once('\n') else {
+        return false;
+    };
+    let open = open.trim_start();
+    let mark = open.chars().next().filter(|c| matches!(c, '`' | '~'));
+    let Some(mark) = mark else {
+        return false;
+    };
+    let width = open.chars().take_while(|&c| c == mark).count();
+    let last = rest.rsplit('\n').next().unwrap_or(rest).trim();
+    last.len() >= width && last.chars().all(|c| c == mark)
 }
 
 /// The text of a `code` span when it names a file (MonoCode
@@ -803,6 +884,49 @@ mod tests {
         let blocks = parse("text\n\n```py\nprint(1)");
         assert_eq!(blocks.len(), 2);
         assert!(matches!(&blocks[1], Block::Code(f) if f.code.starts_with("print(1)")));
+    }
+
+    fn only_fence(markdown: &str) -> Fence {
+        match parse(markdown).into_iter().next() {
+            Some(Block::Code(fence)) => fence,
+            other => panic!("a fence: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn diagrams_draw_once_their_fence_closes() {
+        let open = only_fence("```mermaid\ngraph TD\n  A --> B");
+        assert!(!open.closed);
+        assert_eq!(open.drawing(), None);
+        let whole = only_fence("```mermaid\ngraph TD\n  A --> B\n```\n");
+        assert_eq!(whole.drawing(), Some(Drawing::Diagram));
+        assert_eq!(whole.code, "graph TD\n  A --> B");
+        // A longer opening fence needs as long a closing one.
+        assert!(!only_fence("````mermaid\ngraph TD\n```").closed);
+        assert!(only_fence("~~~math\nx^2\n~~~").closed);
+        assert_eq!(only_fence("```math\n```").drawing(), Some(Drawing::Formula));
+        assert_eq!(only_fence("```rust\nfn a() {}\n```").drawing(), None);
+    }
+
+    #[test]
+    fn display_math_is_a_formula_and_inline_math_stays_text() {
+        let blocks =
+            parse("Energy:\n\n$$\nE = mc^2 + \\frac{a\\,b}{2}\n$$\n\nCosts $5, see `$HOME/$PATH`.");
+        assert!(matches!(&blocks[0], Block::Paragraph(p) if p.text == "Energy:"));
+        let Block::Code(formula) = &blocks[1] else {
+            panic!("a formula: {blocks:?}");
+        };
+        // As written: `\,` is TeX, not a Markdown escape.
+        assert_eq!(formula.code, "E = mc^2 + \\frac{a\\,b}{2}");
+        assert_eq!(formula.drawing(), Some(Drawing::Formula));
+        let Block::Paragraph(prose) = &blocks[2] else {
+            panic!("prose: {blocks:?}");
+        };
+        assert_eq!(prose.text, "Costs $5, see $HOME/$PATH.");
+        assert!(prose.spans.iter().any(|(_, span)| *span == Span::Code));
+        // A formula inside a quote, or one sharing its paragraph, stays text.
+        assert!(matches!(&parse("> $$\n> x\n> $$")[0], Block::Quote(_)));
+        assert!(matches!(&parse("see $$x$$ here")[0], Block::Paragraph(_)));
     }
 
     #[test]
