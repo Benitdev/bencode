@@ -1,4 +1,5 @@
 mod app;
+mod app_cli;
 mod backlog;
 mod browser;
 mod db;
@@ -43,6 +44,10 @@ fn main() {
     }
     // So is the MCP server that gives agents the in-app browser.
     if let Some(code) = browser::run_from_args() {
+        std::process::exit(code);
+    }
+    // And `bencode app`, which a Mono's agent runs to reach the app.
+    if let Some(code) = app_cli::run_from_args() {
         std::process::exit(code);
     }
     // And the askpass OpenSSH runs while Settings connects a machine.

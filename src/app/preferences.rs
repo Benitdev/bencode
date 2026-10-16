@@ -142,6 +142,11 @@ impl BenCodeApp {
         crate::github_accounts::set_choices(self.github.choices.clone());
         self.changes_ui.tree = saved.changes_tree;
         self.diff_split = saved.diff_split;
+        self.editor.default_view_mode = if saved.file_source_view {
+            crate::ui::editor_pane::FileViewMode::Source
+        } else {
+            crate::ui::editor_pane::FileViewMode::Preview
+        };
         self.terminals.layouts = saved.terminal_docks.clone();
         self.terminals.saved = saved.terminal_sessions.clone();
         if let Some(width) = saved.inbox_list_width {
@@ -188,6 +193,8 @@ impl BenCodeApp {
             github_accounts: self.github.choices.clone(),
             changes_tree: self.changes_ui.tree,
             diff_split: self.diff_split,
+            file_source_view: self.editor.default_view_mode
+                == crate::ui::editor_pane::FileViewMode::Source,
             theme_hue: Some(self.appearance.tint.hue).filter(|v| *v != appearance::HUE_DEFAULT),
             theme_saturation: Some(self.appearance.tint.saturation)
                 .filter(|v| *v != appearance::SATURATION_DEFAULT),

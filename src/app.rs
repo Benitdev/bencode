@@ -1,6 +1,7 @@
 pub mod accounts;
 mod agent;
 pub mod agy_accounts;
+pub mod artifacts;
 pub mod alerts;
 mod automation_runs;
 pub mod automations;
@@ -150,6 +151,8 @@ pub struct BenCodeApp {
     pub file_pane_shares: [f32; 2],
     /// The in-app browser's tabs and the agents' way to them.
     pub browser: browser::BrowserState,
+    /// A Mono's artifacts: `bencode app`'s calls and the reader.
+    pub artifacts: artifacts::ArtifactsState,
     /// The sidebar's Sessions tab: filters, picks, inline renames.
     pub sessions_ui: crate::ui::sidebar_sessions::SessionsUi,
     /// The sidebar's width (MonoCode keeps it for the run, not on disk).
@@ -1165,6 +1168,7 @@ impl BenCodeApp {
         .detach();
 
         let browser = browser::BrowserState::new(window, cx);
+        let artifacts = artifacts::ArtifactsState::new(window, cx);
         let mut app = Self {
             sessions,
             selected_session_id,
@@ -1180,6 +1184,7 @@ impl BenCodeApp {
             file_pane_focused: false,
             file_pane_shares: [1.0, 1.0],
             browser,
+            artifacts,
             sessions_ui: Default::default(),
             sidebar_menu: None,
             sidebar_width: crate::ui::sidebar::SIDEBAR_MIN_WIDTH,
@@ -1543,6 +1548,7 @@ impl Render for BenCodeApp {
         if let Some(path) = self.file_tree.pending_open.take() {
             self.open_file_in_editor(&path, window, cx);
         }
+        self.sync_artifact_page(window, cx);
         self.sync_mention_marks(window, cx);
         // The browser tab the file pane draws shows; the others hide below.
         self.browser.drawn.set(None);
@@ -1592,6 +1598,7 @@ impl Render for BenCodeApp {
             any_elements(self.render_quit_confirm(cx)),
             any_elements(self.render_mono_settings(cx)),
             any_elements(self.render_mono_dialogs(cx)),
+            any_elements(self.render_artifact_delete(cx)),
         ]
         .into_iter()
         .flatten()
@@ -1715,6 +1722,7 @@ impl Render for BenCodeApp {
                     .children(dialogs),
             );
         self.browser.hide_undrawn();
+        self.artifacts.hide_undrawn();
         if crate::startup_trace::enabled() && !self.rendered_once {
             self.rendered_once = true;
             trace("app rendered (elements built)");

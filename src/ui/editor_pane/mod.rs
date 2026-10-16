@@ -4,6 +4,7 @@ mod disk_sync;
 mod external;
 pub mod files;
 pub mod open_files;
+mod preview;
 mod view;
 
 use std::collections::{HashMap, HashSet};
@@ -19,6 +20,7 @@ use files::{
     resolve_path,
 };
 use open_files::OpenFiles;
+pub use preview::FileViewMode;
 
 /// A live editor and the subscription that tracks its edits.
 pub struct EditorHandle {
@@ -81,6 +83,12 @@ pub struct EditorState {
     pub selection: Option<EditorSelection>,
     /// Where to put the cursor once this file is open (search results).
     reveal: Option<Reveal>,
+    /// Markdown files' own Preview / Source choice.
+    view_modes: HashMap<String, FileViewMode>,
+    /// What a markdown file opens in: the last choice made (`fileViewMode`).
+    pub(crate) default_view_mode: FileViewMode,
+    /// Previews whose frontmatter "Properties" is unfolded.
+    properties_open: HashSet<String>,
 }
 
 /// A spot in a file: line and byte column from one, and how many bytes
@@ -170,6 +178,12 @@ impl BenCodeApp {
             column,
             len,
         });
+        // MonoCode: a navigation into a previewable file shows its source.
+        if preview::is_markdown_path(path) {
+            self.editor
+                .view_modes
+                .insert(path.to_string(), FileViewMode::Source);
+        }
         self.open_file_in_editor(path, window, cx);
         // Already open: the editor is there to move now.
         self.apply_reveal(path, cx);
@@ -328,6 +342,8 @@ impl BenCodeApp {
         if self.editor.files.remove(path).is_some() {
             log::info!("editor: closed {path}");
         }
+        self.editor.view_modes.remove(path);
+        self.editor.properties_open.remove(path);
         self.drop_pane_tab(
             &PaneTab::File {
                 path: path.to_string(),

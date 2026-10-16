@@ -1,5 +1,6 @@
 pub mod app_callback;
 pub mod appearance;
+pub mod artifacts;
 pub mod attachment_chip;
 pub mod automations;
 pub mod background_effects;

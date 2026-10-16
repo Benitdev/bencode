@@ -832,10 +832,15 @@ impl BenCodeApp {
             return prompt;
         };
         let files = self.mono_turn_files(&mono.id);
+        // The CLI's path is part of who it is: a move hands it over again.
+        let app_cli = self
+            .has_app_access(session_id)
+            .then(crate::app_cli::command);
         let soul = crate::monos::soul_context(
             &mono.display_name(),
             &self.mono_projects(&mono),
             &files.soul,
+            app_cli.as_deref(),
         );
         let topics_dir = crate::app::mono_files::mono_files_dir(&mono.id)
             .map(|dir| dir.join("memory").to_string_lossy().into_owned())

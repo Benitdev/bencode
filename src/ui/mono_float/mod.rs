@@ -761,6 +761,17 @@ impl MonoFloat {
         self.app.update(cx, |app, cx| app.open_mono(&id, cx));
     }
 
+    /// MonoCode `openArtifact`: the Mono in BenCode's window, the artifact
+    /// over its Overview.
+    fn reveal_artifact(&mut self, artifact: &str, cx: &mut Context<Self>) {
+        let id = self.mono_id.clone();
+        self.activate_main(cx);
+        self.app.update(cx, |app, cx| {
+            app.open_mono(&id, cx);
+            app.open_artifact(artifact, cx);
+        });
+    }
+
     fn activate_main(&self, cx: &mut App) {
         cx.activate(true);
         if let Err(err) = self

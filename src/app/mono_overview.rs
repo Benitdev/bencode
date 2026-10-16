@@ -1,14 +1,14 @@
 //! A Mono's Overview on the app (MonoCode `MonoOverview`, `MonoSidebar`,
 //! `App.tsx`'s `monoOverviewTab` and `monoActivity`): the tab it shows, its
-//! width, the turn whose activity it shows, the documents and habits read
-//! from the Mono's folder, and the Changes tab's per-project state
-//! (`mono_changes.rs`). The views are `ui/mono_overview/`.
+//! width, the turn whose activity it shows, the artifact open over its
+//! Documents (`artifacts.rs`), the habits read from the Mono's folder, and
+//! the Changes tab's per-project state (`mono_changes.rs`). The views are
+//! `ui/mono_overview/`.
 
 use gpui::Context;
 
 use crate::app::BenCodeApp;
 use crate::app::mono_files::mono_files_dir;
-use crate::monos::files::Document;
 use crate::monos::habits::Habit;
 
 /// MonoCode `MonoSidebar`: `MIN_WIDTH`, `DEFAULT_WIDTH`, and the widest it
@@ -41,15 +41,6 @@ pub struct ActivitySelection {
     pub turn_id: String,
 }
 
-/// A document open over the Documents list until Back.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct OpenDocument {
-    pub name: String,
-    /// `None` while it is read.
-    pub text: Option<String>,
-    pub error: Option<String>,
-}
-
 pub struct OverviewState {
     pub tab: OverviewTab,
     /// The tab the Activity button goes back to.
@@ -59,10 +50,11 @@ pub struct OverviewState {
     /// (pointer x, width) when the resize started.
     pub resizing: Option<(f32, f32)>,
     pub activity: Option<ActivitySelection>,
-    /// The Mono whose documents and habits these are.
+    /// The Mono whose habits these are.
     of: Option<String>,
-    pub documents: Vec<Document>,
-    pub document: Option<OpenDocument>,
+    /// MonoCode `shownDocumentId`: the artifact open over the Documents
+    /// list until Back.
+    pub document: Option<String>,
     /// `None` until read.
     pub habits: Option<Vec<Habit>>,
     generation: u64,
@@ -77,7 +69,6 @@ impl Default for OverviewState {
             resizing: None,
             activity: None,
             of: None,
-            documents: Vec::new(),
             document: None,
             habits: None,
             generation: 0,
@@ -123,7 +114,7 @@ pub fn resized_width(start_x: f32, start: f32, x: f32, window: f32) -> f32 {
 }
 
 impl BenCodeApp {
-    /// The Mono's documents and habits, read off the UI thread.
+    /// The Mono's habits, read off the UI thread.
     pub(crate) fn load_mono_overview(&mut self, id: &str, cx: &mut Context<Self>) {
         let Some(dir) = mono_files_dir(id) else {
             return;
@@ -131,28 +122,24 @@ impl BenCodeApp {
         let overview = &mut self.monos.overview;
         if overview.of.as_deref() != Some(id) {
             overview.of = Some(id.to_string());
-            overview.documents.clear();
             overview.habits = None;
         }
         overview.generation += 1;
         let generation = overview.generation;
         let task = cx.background_executor().spawn(async move {
-            let documents = crate::monos::files::documents(&dir);
-            let habits = match crate::monos::files::read(&dir, crate::monos::files::HABITS_FILE) {
+            match crate::monos::files::read(&dir, crate::monos::files::HABITS_FILE) {
                 Ok((text, _)) => crate::monos::habits::parse_habits(text.as_deref().unwrap_or("")),
                 Err(err) => {
                     log::warn!("could not read the Mono's habits: {err:#}");
                     Vec::new()
                 }
-            };
-            (documents, habits)
+            }
         });
         cx.spawn(async move |this, cx| {
-            let (documents, habits) = task.await;
+            let habits = task.await;
             let landed = this.update(cx, |this, cx| {
                 let overview = &mut this.monos.overview;
                 if overview.generation == generation {
-                    overview.documents = documents;
                     overview.habits = Some(habits);
                     cx.notify();
                 }
@@ -170,7 +157,8 @@ impl BenCodeApp {
         self.monos.overview.select(tab);
         if let Some(id) = self.monos.view.clone() {
             match tab {
-                OverviewTab::Documents | OverviewTab::Habits => self.load_mono_overview(&id, cx),
+                OverviewTab::Habits => self.load_mono_overview(&id, cx),
+                OverviewTab::Documents => {}
                 OverviewTab::Changes => self.load_mono_changes(cx),
                 OverviewTab::Sessions => self.load_mono_project_sessions(cx),
                 OverviewTab::Activity => {}
@@ -233,62 +221,6 @@ impl BenCodeApp {
     /// The Overview is beside the Mono's chat.
     pub fn monos_overview_shown(&self) -> bool {
         self.mono_covers() && self.monos.overview_open
-    }
-
-    /// A document of the Mono's, read and shown over the list.
-    pub fn open_mono_document(&mut self, name: &str, cx: &mut Context<Self>) {
-        let Some(path) = self
-            .monos
-            .overview
-            .documents
-            .iter()
-            .find(|doc| doc.name == name)
-            .map(|doc| doc.path.clone())
-        else {
-            return;
-        };
-        self.monos.overview.document = Some(OpenDocument {
-            name: name.to_string(),
-            text: None,
-            error: None,
-        });
-        let name = name.to_string();
-        let task = cx
-            .background_executor()
-            .spawn(async move { std::fs::read_to_string(&path) });
-        cx.spawn(async move |this, cx| {
-            let read = task.await;
-            let landed = this.update(cx, |this, cx| {
-                let Some(open) = this
-                    .monos
-                    .overview
-                    .document
-                    .as_mut()
-                    .filter(|open| open.name == name)
-                else {
-                    return;
-                };
-                match read {
-                    Ok(text) => open.text = Some(text),
-                    Err(err) => {
-                        log::warn!("could not read the Mono's {name}: {err}");
-                        open.error = Some(format!("Could not read {name}: {err}"));
-                    }
-                }
-                cx.notify();
-            });
-            if let Err(err) = landed {
-                log::debug!("Mono document after app drop: {err:#}");
-            }
-        })
-        .detach();
-        cx.notify();
-    }
-
-    pub fn close_mono_document(&mut self, cx: &mut Context<Self>) {
-        if self.monos.overview.document.take().is_some() {
-            cx.notify();
-        }
     }
 
     /// The end of a drag on the Overview's edge: its width is kept.

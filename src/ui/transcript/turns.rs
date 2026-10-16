@@ -599,6 +599,9 @@ pub enum Row {
         item: usize,
         last: bool,
     },
+    /// MonoCode `data-artifact-results`: the cards of what a Mono's
+    /// settled turn wrote.
+    Artifacts { turn: usize },
     /// What a settled turn leaves under its answer.
     Footer { turn: usize },
     /// The permission prompt after the last block.
@@ -728,6 +731,7 @@ impl LayoutKey {
                     }
                 } else if block.role == "user" {
                     block.started_at.hash(&mut hasher);
+                    crate::app_cli::artifacts::has_cards(block).hash(&mut hasher);
                     (block.extra.get("draft").and_then(Value::as_bool) == Some(true))
                         .hash(&mut hasher);
                 }
@@ -860,6 +864,14 @@ fn turn_rows(blocks: &[Block], t: usize, turn: &TurnLayout, open: bool, rows: &m
     }
     if line_at >= turn.items.len() && show_line {
         rows.push(Row::FoldLine { turn: t });
+    }
+    if turn.mono
+        && !turn.live
+        && turn
+            .user
+            .is_some_and(|user| crate::app_cli::artifacts::has_cards(&blocks[user]))
+    {
+        rows.push(Row::Artifacts { turn: t });
     }
     if !turn.live && turn.duration_ms(blocks).is_some() && !turn.reacted_only(blocks) {
         rows.push(Row::Footer { turn: t });

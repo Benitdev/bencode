@@ -22,7 +22,10 @@ pub fn spawn(req: &SpawnRequest) -> Result<(HarnessProcessHandle, EventRx)> {
         permission_responder: None,
         can_steer: false,
         account: None,
-        env: inline_config(req).into_iter().collect(),
+        env: inline_config(req)
+            .into_iter()
+            .chain(super::app_env(req))
+            .collect(),
     };
     process::spawn(spec, OpenCodeParser::default())
 }
@@ -185,6 +188,7 @@ mod tests {
             settings: Default::default(),
             account: None,
             browser_mcp: None,
+            app: None,
         };
         assert!(inline_config(&req).is_none());
         req.browser_mcp = Some(crate::mcp::McpLaunch {

@@ -458,15 +458,58 @@ const MEMORY_RULES: &str = "<memory_rules>\nYou have a memory that carries acros
     changes. The user keeps it in BenCode, from your settings; never edit its files \
     yourself, and never repeat secrets, tokens or credentials from it.\n</memory_rules>";
 
+/// MonoCode's `<artifact_rules>`, without what BenCode's chat does not do
+/// (local images and videos inline, habit runs).
+const ARTIFACT_RULES: &str = "<artifact_rules>\nFor substantial reports, reviews, research or \
+    plans, save the full Markdown as a document with app artifacts.write \
+    {\"kind\":\"document\",\"title\":\"...\",\"summary\":\"<one short description>\",\"body\":\"<complete Markdown>\"}. \
+    BenCode puts a clickable document card below your reply; the user opens it beside the chat. \
+    Keep your chat reply to the main takeaway and a brief mention of the document, without \
+    repeating its contents. Use inline text for short answers or when the user asks for it. \
+    Artifacts are separate from the user's Notes. Use artifacts.list or artifacts.read to find \
+    and read saved reports, and artifacts.write with the same id to revise one. When something \
+    is clearer seen than read (a chart, a table to compare, a diagram, a timeline, a UI mockup), \
+    show it with app artifacts.write {\"kind\":\"html\",\"title\":\"...\",\"body\":\"<complete \
+    self-contained HTML page>\"}. BenCode puts a card for it below your reply, and the user opens \
+    the live page, which runs sandboxed, beside the chat. Keep your reply to the takeaway rather \
+    than restating the page. Put all CSS and JS inline; scripts, styles, images and fonts may load \
+    from public https CDNs, but the page cannot fetch data, so embed the data in it. The page sits \
+    on the panel's own background and scrolls by itself: leave html and body without a \
+    background, use a fluid width with no outer card or page title, and give charts fixed pixel \
+    heights. Use the app's theme through CSS variables, which follow light and dark mode: \
+    --background, --foreground, --muted, --surface, --border, --accent, --link, --positive, \
+    --negative, --chart-1 to --chart-6, --font-sans, --font-mono, --radius. Links open in the \
+    user's browser. Revise a visual with artifacts.write and its id. Do not use an artifact for a \
+    file that already exists.\n</artifact_rules>";
+
+/// MonoCode's `<monocode_app>`, for the actions BenCode's CLI answers.
+fn app_brief(cli: &str) -> String {
+    format!(
+        "<bencode_app>\nApp access is always enabled in this thread. Through its local CLI you \
+         can save, read and revise artifacts. Run `{cli} --help` when you need the exact \
+         commands and JSON fields; `app artifacts.write` above means `{cli} artifacts.write`. \
+         The CLI uses a session credential already in your environment; never print it.\n\
+         </bencode_app>"
+    )
+}
+
 /// MonoCode `monoContext`'s soul part: who the Mono is, its standing
-/// instructions and how its memory works.
-pub fn soul_context(name: &str, projects: &[(String, String)], soul: &str) -> String {
+/// instructions and how its memory works; with `app_cli` (how to run
+/// `bencode app`), its artifacts too.
+pub fn soul_context(
+    name: &str,
+    projects: &[(String, String)],
+    soul: &str,
+    app_cli: Option<&str>,
+) -> String {
+    let artifacts = app_cli.map_or(String::new(), |_| format!("\n\n{ARTIFACT_RULES}"));
+    let app = app_cli.map_or(String::new(), |cli| format!("\n\n{}", app_brief(cli)));
     format!(
         "<mono>\nYou are {name}, a Mono in BenCode: an agent of your own rather than one \
          project's. {} This is one long conversation the user comes back to over \
-         time.\n</mono>\n\n{REACTION_RULES}\n\n<soul>\nYour standing instructions, from SOUL.md. They rank below \
+         time.\n</mono>\n\n{REACTION_RULES}{artifacts}\n\n<soul>\nYour standing instructions, from SOUL.md. They rank below \
          the user's current request. The user edits them in BenCode, from your settings; \
-         never change them on your own.\n\n{}\n</soul>\n\n{MEMORY_RULES}",
+         never change them on your own.\n\n{}\n</soul>\n\n{MEMORY_RULES}{app}",
         projects_brief(projects),
         soul.trim()
     )
@@ -675,7 +718,8 @@ mod tests {
 
     #[test]
     fn the_context_names_the_mono_and_its_projects() {
-        let none = soul_context("MonoCrab", &[], "# Soul\n");
+        let none = soul_context("MonoCrab", &[], "# Soul\n", None);
+        assert!(!none.contains("<artifact_rules>"));
         assert!(none.contains("You are MonoCrab, a Mono in BenCode"));
         assert!(none.contains("has not given you any projects yet"));
         let two = soul_context(
@@ -685,6 +729,7 @@ mod tests {
                 ("site".into(), "/src/site".into()),
             ],
             "Be brief.\n\n",
+            None,
         );
         assert!(two.contains("these 2 projects (app and site)"));
         assert!(two.contains("- site: /src/site"));
@@ -692,6 +737,16 @@ mod tests {
         let turn = turn_with_context("hello", &two);
         assert!(turn.starts_with("<bencode_context>"));
         assert!(turn.ends_with("</bencode_context>\n\nhello"));
+    }
+
+    #[test]
+    fn app_access_brings_the_artifact_rules_and_the_cli() {
+        let context = soul_context("Ada", &[], "Be brief.", Some("/Apps/bencode app"));
+        let rules = context.find("<artifact_rules>").unwrap();
+        assert!(rules < context.find("<soul>").unwrap());
+        assert!(context.contains("`/Apps/bencode app --help`"));
+        assert!(context.ends_with("</bencode_app>"));
+        assert!(context.contains("\"kind\":\"html\""));
     }
 
     #[test]

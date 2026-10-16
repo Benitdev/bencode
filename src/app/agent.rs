@@ -875,6 +875,13 @@ impl BenCodeApp {
         cx: &mut Context<Self>,
     ) {
         let mode = self.session_permission_mode(self.sessions.iter().find(|s| s.id == session_id));
+        // A Mono's turn reaches the app through `bencode app`.
+        let app = self
+            .sessions
+            .iter()
+            .find(|s| s.id == session_id)
+            .map(|s| s.work_dir().to_string())
+            .and_then(|cwd| self.app_access_for(session_id, &cwd));
         let Some(session) = self.sessions.iter().find(|s| s.id == session_id) else {
             return;
         };
@@ -891,6 +898,7 @@ impl BenCodeApp {
                     && !crate::remote::is_remote(&session.cwd))
                     .then(|| self.browser_mcp_launch())
                     .flatten(),
+                app,
                 ..spawn
             });
         let remote = crate::remote::is_remote(session.work_dir());
@@ -1357,6 +1365,7 @@ fn spawn_request(
             AccountProfile::resolve(&session.harness, session.provider_account_id.as_deref())
         },
         browser_mcp: None,
+        app: None,
     })
 }
 

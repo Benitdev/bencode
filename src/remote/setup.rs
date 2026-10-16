@@ -559,6 +559,7 @@ echo '{"type":"result","subtype":"success","is_error":false,"result":"hi","sessi
             settings: Default::default(),
             account: None,
             browser_mcp: None,
+            app: None,
         })
         .unwrap();
         let mut events = turn.events;

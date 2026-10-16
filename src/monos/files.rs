@@ -241,56 +241,6 @@ pub fn edit(
     unreachable!("the loop returns")
 }
 
-/// A file in the Mono's folder, for its Overview's Documents.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Document {
-    /// Its path in the folder: `SOUL.md`, `memory/releases.md`.
-    pub name: String,
-    pub path: PathBuf,
-    pub bytes: u64,
-    /// When it last changed, in ms since the epoch.
-    pub modified_ms: i64,
-}
-
-/// Every file in the Mono's folder and its `memory/`, newest first; the
-/// temporary files saves leave behind are not documents.
-pub fn documents(dir: &Path) -> Vec<Document> {
-    let mut out = Vec::new();
-    let mut scan = |folder: &Path, prefix: &str| {
-        let Ok(entries) = std::fs::read_dir(folder) else {
-            return;
-        };
-        for entry in entries.flatten() {
-            let Ok(meta) = entry.metadata() else {
-                continue;
-            };
-            let name = entry.file_name().to_string_lossy().into_owned();
-            if !meta.is_file() || name.starts_with('.') || name.ends_with(".tmp") {
-                continue;
-            }
-            let modified_ms = meta
-                .modified()
-                .ok()
-                .and_then(|at| at.duration_since(std::time::UNIX_EPOCH).ok())
-                .map_or(0, |at| at.as_millis() as i64);
-            out.push(Document {
-                name: format!("{prefix}{name}"),
-                path: entry.path(),
-                bytes: meta.len(),
-                modified_ms,
-            });
-        }
-    };
-    scan(dir, "");
-    scan(&dir.join(MEMORY_DIR), "memory/");
-    out.sort_by(|a, b| {
-        b.modified_ms
-            .cmp(&a.modified_ms)
-            .then_with(|| a.name.cmp(&b.name))
-    });
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -359,11 +309,6 @@ mod tests {
         for bad in ["memory/../SOUL.md", "../x.md", "memory/.hidden.md", "notes.txt"] {
             assert!(read(&dir, bad).is_err(), "{bad}");
         }
-        let names: Vec<String> = documents(&dir).into_iter().map(|d| d.name).collect();
-        for name in ["SOUL.md", "MEMORY.md", "memory/releases.md", "memory/archive.md"] {
-            assert!(names.contains(&name.to_string()), "{name}");
-        }
-        assert!(!names.iter().any(|name| name.ends_with(".tmp")));
         std::fs::remove_dir_all(&dir).ok();
     }
 

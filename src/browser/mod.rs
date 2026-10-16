@@ -7,6 +7,7 @@
 //! GPUI's clipping does not reach it, so the app hides it while a dialog is
 //! open or its tab is not drawn (`app/browser.rs`).
 
+pub mod artifact;
 pub mod bridge;
 #[cfg(target_os = "macos")]
 mod container;

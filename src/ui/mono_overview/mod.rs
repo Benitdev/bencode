@@ -5,11 +5,12 @@
 //! the chat, and Hide overview; its left edge resizes it (340 to 960px,
 //! kept in `settings.json`).
 //!
-//! BenCode's Monos start no sessions, write no artifacts and run no habits
-//! (MonoCode's `app` CLI), so Sessions lists the threads in its projects,
-//! Documents the files in its folder, and Habits what `habits.json` holds
-//! (empty until habits are ported). Changes is `changes.rs`; Activity is
-//! the transcript's own work rows (`ui/transcript/mono_activity.rs`).
+//! Documents lists the artifacts it wrote, oldest first; one opens over the
+//! list (`ui/artifacts.rs`). BenCode's Monos start no sessions and run no
+//! habits (MonoCode's `app` CLI), so Sessions lists the threads in its
+//! projects and Habits what `habits.json` holds (empty until habits are
+//! ported). Changes is `changes.rs`; Activity is the transcript's own work
+//! rows (`ui/transcript/mono_activity.rs`).
 
 mod changes;
 
@@ -132,17 +133,6 @@ pub(super) fn list_row(
         )
 }
 
-/// "4.2 KB", "812 B".
-fn size_label(bytes: u64) -> String {
-    if bytes < 1024 {
-        format!("{bytes} B")
-    } else if bytes < 1024 * 1024 {
-        format!("{:.1} KB", bytes as f64 / 1024.0)
-    } else {
-        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
-    }
-}
-
 impl BenCodeApp {
     /// MonoCode `MonoSidebar kind="details"`: `relative flex h-full shrink-0
     /// flex-col border-l border-stroke`, with its resize edge.
@@ -186,8 +176,8 @@ impl BenCodeApp {
                     cx.notify();
                 }),
             );
-        let body = if let Some(document) = &overview.document {
-            self.render_mono_document(document, cx)
+        let body = if overview.document.is_some() {
+            self.render_artifact_reader(cx)
         } else if overview.tab == OverviewTab::Changes {
             self.render_mono_changes(mono, cx)
         } else {
@@ -235,7 +225,7 @@ impl BenCodeApp {
                 self.is_mono_session(id)
             })
             .len(),
-            OverviewTab::Documents => overview.documents.len(),
+            OverviewTab::Documents => self.mono_documents(mono).len(),
             OverviewTab::Habits => overview.habits.as_ref()?.len(),
             OverviewTab::Changes => self.mono_changes_count(),
             OverviewTab::Activity => return None,
@@ -340,7 +330,10 @@ impl BenCodeApp {
                     el.hover(move |s| s.bg(fg.opacity(0.05)).text_color(fg.opacity(0.8)))
                 }
             })
-            .when(!selected, |el| el.tooltip(Tooltip::text(label)))
+            // Activity's caller names it by what a click does.
+            .when(!selected && tab != OverviewTab::Activity, |el| {
+                el.tooltip(Tooltip::text(label))
+            })
             .child(
                 div()
                     .relative()
@@ -437,11 +430,21 @@ impl BenCodeApp {
             .into_any_element()
     }
 
-    /// Documents: the files in the Mono's folder, newest first; one opens
-    /// over the list.
+    /// MonoCode `documents`: the artifacts the Mono's chat holds cards for,
+    /// oldest first.
+    fn mono_documents(&self, mono: &Mono) -> Vec<crate::app_cli::artifacts::ArtifactCard> {
+        mono.session_id
+            .as_deref()
+            .and_then(|id| self.sessions.iter().find(|s| s.id == id))
+            .map(|session| crate::app_cli::artifacts::chat_cards(&session.blocks))
+            .unwrap_or_default()
+    }
+
+    /// Documents: what the Mono wrote (MonoCode `DocumentRow`, laid out
+    /// like a habit); one opens in the reader.
     fn render_mono_documents(&self, mono: &Mono, cx: &Context<Self>) -> AnyElement {
         let fg = cx.theme().colors.fg;
-        let documents = &self.monos.overview.documents;
+        let documents = self.mono_documents(mono);
         if documents.is_empty() {
             return empty_state(
                 OverviewTab::Documents,
@@ -452,123 +455,25 @@ impl BenCodeApp {
                 fg,
             );
         }
-        let now = crate::app::now_ms();
         div()
-            .children(documents.iter().map(|doc| {
-                let name = doc.name.clone();
-                let icon = if name.ends_with(".md") {
-                    IconName::FileText
-                } else {
-                    IconName::File
-                };
+            .children(documents.into_iter().map(|card| {
+                let id = card.id.clone();
+                let line = card
+                    .summary
+                    .clone()
+                    .unwrap_or_else(|| card.kind.label().to_string());
                 list_row(
-                    SharedString::from(format!("mono-document-{name}")),
-                    Icon::new(icon)
+                    SharedString::from(format!("mono-document-{id}")),
+                    crate::ui::artifacts::artifact_icon(card.kind)
                         .size(IconSize::Sm)
                         .color(fg.opacity(0.6))
                         .into_any_element(),
-                    name.clone(),
-                    format!(
-                        "{} · {}",
-                        size_label(doc.bytes),
-                        crate::ui::relative_time::since(doc.modified_ms, now)
-                    ),
+                    card.title.clone(),
+                    line,
                     fg,
                 )
-                .on_click(cx.listener(move |this, _, _, cx| this.open_mono_document(&name, cx)))
+                .on_click(cx.listener(move |this, _, _, cx| this.open_artifact(&id, cx)))
             }))
-            .into_any_element()
-    }
-
-    /// A document over the list: its name and Back, then its text (a
-    /// markdown file as the transcript renders it).
-    fn render_mono_document(
-        &self,
-        document: &crate::app::mono_overview::OpenDocument,
-        cx: &Context<Self>,
-    ) -> AnyElement {
-        let colors = &cx.theme().colors;
-        let fg = colors.fg;
-        let header = div()
-            .flex()
-            .flex_none()
-            .items_center()
-            .gap_1()
-            .h(px(40.0))
-            .pl_2()
-            .pr_3()
-            .border_b_1()
-            .border_color(fg.opacity(STROKE))
-            .child(
-                IconButton::new("mono-document-back", IconName::ChevronLeft)
-                    .size(ControlSize::Sm)
-                    .variant(ButtonVariant::Ghost)
-                    .tooltip("Back")
-                    .on_click(cx.listener(|this, _, _, cx| this.close_mono_document(cx))),
-            )
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .truncate()
-                    .text_size(px(13.0))
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_color(fg)
-                    .child(document.name.clone()),
-            )
-            .child(
-                IconButton::new("mono-document-hide", IconName::PanelRight)
-                    .size(ControlSize::Sm)
-                    .variant(ButtonVariant::Ghost)
-                    .tooltip("Hide overview")
-                    .on_click(cx.listener(|this, _, _, cx| this.toggle_mono_overview(cx))),
-            );
-        let content: AnyElement = match (&document.text, &document.error) {
-            (_, Some(err)) => div()
-                .text_size(px(12.0))
-                .text_color(colors.danger)
-                .child(err.clone())
-                .into_any_element(),
-            (None, None) => div()
-                .text_size(px(12.0))
-                .text_color(fg.opacity(0.45))
-                .child("Loading…")
-                .into_any_element(),
-            (Some(text), None) if text.trim().is_empty() => div()
-                .text_size(px(12.0))
-                .text_color(fg.opacity(0.45))
-                .child("Empty")
-                .into_any_element(),
-            (Some(text), None) if document.name.ends_with(".md") => {
-                crate::ui::transcript::markdown::AgentMarkdown::new(
-                    SharedString::from(format!("mono-document-md-{}", document.name)),
-                    text.clone(),
-                )
-                .into_any_element()
-            }
-            (Some(text), None) => div()
-                .font_family(cx.theme().mono_family.clone())
-                .text_size(px(12.0))
-                .line_height(px(18.0))
-                .text_color(fg.opacity(0.85))
-                .child(text.clone())
-                .into_any_element(),
-        };
-        let scroll = div()
-            .id("mono-document-body")
-            .flex_1()
-            .min_h_0()
-            .overflow_y_scroll()
-            .px_4()
-            .py_3()
-            .child(content);
-        div()
-            .flex()
-            .flex_col()
-            .flex_1()
-            .min_h_0()
-            .child(header)
-            .child(crate::ui::scrollbar::Scrolled::new("mono-document-scrollbar", scroll))
             .into_any_element()
     }
 
@@ -638,17 +543,5 @@ impl BenCodeApp {
                     fg,
                 )
             })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn sizes_read_short() {
-        assert_eq!(size_label(812), "812 B");
-        assert_eq!(size_label(4300), "4.2 KB");
-        assert_eq!(size_label(3 * 1024 * 1024), "3.0 MB");
     }
 }

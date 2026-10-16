@@ -26,7 +26,7 @@ pub fn spawn(req: &SpawnRequest) -> Result<(HarnessProcessHandle, EventRx)> {
         permission_responder: None,
         can_steer: false,
         account: req.account.clone(),
-        env: Vec::new(),
+        env: super::app_env(req),
     };
     process::spawn(spec, CodexParser::default())
 }
@@ -98,7 +98,17 @@ fn build_args(req: &SpawnRequest) -> Vec<String> {
         }
         // `codex exec` cannot ask mid-turn, so supervised stays read-only
         // (MonoCode's supervised sandbox) and the edit modes write the workspace.
-        PermissionPolicy::AcceptEdits | PermissionPolicy::Auto => args.push("--full-auto".into()),
+        PermissionPolicy::AcceptEdits | PermissionPolicy::Auto => {
+            args.push("--full-auto".into());
+            // MonoCode `withNetwork`: the workspace sandbox blocks loopback
+            // too, and `bencode app` needs the app's socket.
+            if req.app.is_some() {
+                args.extend([
+                    "-c".into(),
+                    "sandbox_workspace_write.network_access=true".into(),
+                ]);
+            }
+        }
         PermissionPolicy::Ask => args.extend(["--sandbox".into(), "read-only".into()]),
     }
     if let Some(model) = &req.model {
@@ -408,6 +418,7 @@ mod tests {
                 command: "/Apps/Ben Code/bencode".into(),
                 args: vec!["--browser-mcp".into(), "/tmp/b.sock".into()],
             }),
+            app: None,
         };
         let args = build_args(&req);
         assert!(args.windows(2).any(|w| w
@@ -445,6 +456,7 @@ mod tests {
             settings: Default::default(),
             account: None,
             browser_mcp: None,
+            app: None,
         };
         let args = build_args(&req);
         assert_eq!(&args[..3], ["exec", "--json", "--skip-git-repo-check"]);
@@ -454,6 +466,40 @@ mod tests {
         assert!(
             !args.contains(&"-p".to_string()),
             "-p is --profile in codex"
+        );
+    }
+
+    #[test]
+    fn app_access_opens_the_sandbox_to_the_apps_socket() {
+        let mut req = SpawnRequest {
+            harness: HarnessKind::Codex,
+            cwd: "/tmp".into(),
+            prompt: "hi".into(),
+            model: None,
+            permission: PermissionPolicy::Auto,
+            resume_id: None,
+            disable_hooks: false,
+            attachments: Vec::new(),
+            plan: false,
+            compact: false,
+            settings: Default::default(),
+            account: None,
+            browser_mcp: None,
+            app: None,
+        };
+        let network = "sandbox_workspace_write.network_access=true".to_string();
+        assert!(!build_args(&req).contains(&network));
+        req.app = Some(crate::harness::AppAccess {
+            socket: "/tmp/a.sock".into(),
+            token: "t".into(),
+        });
+        assert!(build_args(&req).contains(&network));
+        assert_eq!(
+            crate::harness::app_env(&req),
+            [
+                ("BENCODE_APP_SOCKET".to_string(), "/tmp/a.sock".to_string()),
+                ("BENCODE_APP_TOKEN".to_string(), "t".to_string()),
+            ]
         );
     }
 

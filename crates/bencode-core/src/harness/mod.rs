@@ -130,6 +130,33 @@ pub struct SpawnRequest {
     /// The in-app browser's MCP server, offered to the agent while a
     /// browser tab is open (`app/browser.rs`).
     pub browser_mcp: Option<crate::mcp::McpLaunch>,
+    /// BenCode's `app` CLI for this turn (MonoCode's `MONOCODE_APP_*`):
+    /// a Mono's turns reach the app through it (`bencode app …`).
+    pub app: Option<AppAccess>,
+}
+
+/// Where `bencode app` reaches the app, and the turn's credential.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AppAccess {
+    pub socket: String,
+    pub token: String,
+}
+
+/// The variables `bencode app` reads.
+pub const APP_SOCKET_ENV: &str = "BENCODE_APP_SOCKET";
+pub const APP_TOKEN_ENV: &str = "BENCODE_APP_TOKEN";
+
+/// The child's environment for `req.app`.
+pub(crate) fn app_env(req: &SpawnRequest) -> Vec<(String, String)> {
+    req.app
+        .iter()
+        .flat_map(|app| {
+            [
+                (APP_SOCKET_ENV.to_string(), app.socket.clone()),
+                (APP_TOKEN_ENV.to_string(), app.token.clone()),
+            ]
+        })
+        .collect()
 }
 
 /// Starts one agent turn. Non-blocking apart from a fork/exec; safe to call
@@ -244,6 +271,7 @@ mod tests {
             settings: Default::default(),
             account: None,
             browser_mcp: None,
+            app: None,
         };
         assert!(spawn(&req).is_err());
     }

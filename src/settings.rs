@@ -109,6 +109,8 @@ pub struct AppSettings {
     /// Reviews show the old file beside the new one. BenCode's own
     /// (MonoCode's `monocode.diffViewer` picks its editor diff instead).
     pub diff_split: bool,
+    /// MonoCode `monocode.fileViewMode`: markdown files open as source.
+    pub file_source_view: bool,
     /// MonoCode `monocode.favoriteModels`: starred model keys.
     pub favorite_models: Vec<String>,
     /// MonoCode recent model choices, newest first (⌘. menu).
@@ -251,6 +253,7 @@ mod tests {
             )]),
             changes_tree: true,
             diff_split: true,
+            file_source_view: true,
             theme_hue: Some(210.0),
             theme_saturation: Some(12.0),
             theme_dark_lightness: Some(4.0),

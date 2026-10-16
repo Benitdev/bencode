@@ -331,6 +331,23 @@ impl MonoFloat {
                     .update(cx, |app, cx| app.render_permission_prompt(&session_id, cx));
                 div().w_full().pt_1().children(prompt).into_any_element()
             }
+            // MonoCode's sheet opens in the chat; here the card opens it
+            // over the Mono's Overview in BenCode's window.
+            FloatItem::Artifact(card) => {
+                let id = card.id.clone();
+                row.pt_2()
+                    .flex()
+                    .child(
+                        crate::ui::artifacts::artifact_card(
+                            format!("mono-float-artifact-{ix}"),
+                            &card,
+                            cx,
+                        )
+                        .tooltip(Tooltip::text("Open in BenCode"))
+                        .on_click(cx.listener(move |this, _, _, cx| this.reveal_artifact(&id, cx))),
+                    )
+                    .into_any_element()
+            }
             FloatItem::Footer { copy, at } => self.render_footer(ix, turn, copy, at, cx),
         };
         if turn == usize::MAX {

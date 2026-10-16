@@ -303,6 +303,7 @@ pub(super) fn row_turn(row: &Row) -> Option<usize> {
         | Row::Item { turn, .. }
         | Row::FoldLine { turn }
         | Row::FoldItem { turn, .. }
+        | Row::Artifacts { turn }
         | Row::Footer { turn } => Some(*turn),
         Row::Trailer | Row::Spacer => None,
     }
@@ -546,6 +547,7 @@ impl BenCodeApp {
             Row::FoldItem { turn, item, .. } => {
                 self.render_fold_item(session, turn_of(*turn), *item, cx)
             }
+            Row::Artifacts { turn } => self.render_turn_artifacts(session, turn_of(*turn), cx),
             Row::Footer { turn } => self.render_turn_footer(session, turn_of(*turn), cx),
             Row::Trailer => self.render_trailer(session, cx),
             Row::Spacer => div().h(view.spacer_height()).into_any_element(),

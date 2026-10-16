@@ -120,6 +120,7 @@ impl SpawnWire {
             settings: self.settings,
             account: None,
             browser_mcp: None,
+            app: None,
         }
     }
 }

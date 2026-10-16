@@ -66,6 +66,8 @@ pub enum FloatItem {
     /// What the Mono said.
     Reply(String),
     Notice(String),
+    /// MonoCode `ArtifactCard`: what the settled turn wrote.
+    Artifact(crate::app_cli::artifacts::ArtifactCard),
     /// MonoCode `TurnDuration`: Copy and when the turn finished (ms), shown
     /// while the turn is hovered.
     Footer {
@@ -118,6 +120,9 @@ pub fn rows_key(blocks: &[Block], start: usize) -> u64 {
     for block in shown {
         hasher.write_usize(block.text.as_deref().map_or(0, str::len));
         block.duration_ms.hash(&mut hasher);
+        if crate::app_cli::artifacts::has_cards(block) {
+            crate::app_cli::artifacts::block_cards(block).hash(&mut hasher);
+        }
         if is_tool(block) {
             tool_kind_name(block).hash(&mut hasher);
         }
@@ -287,6 +292,13 @@ impl Turn<'_> {
                     }
                     _ => push(rows, FloatItem::Reply(said)),
                 }
+            }
+        }
+        if live.is_none()
+            && let Some(user) = self.user.map(|ix| &blocks[ix])
+        {
+            for card in crate::app_cli::artifacts::block_cards(user) {
+                push(rows, FloatItem::Artifact(card));
             }
         }
         if live.is_none() && reaction.is_none() {

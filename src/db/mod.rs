@@ -6,6 +6,7 @@
 //! model: unknown block fields, unknown automation definition fields, and
 //! session columns it never reads.
 
+mod artifacts;
 mod in_flight;
 mod orchestration;
 mod reminders;
@@ -14,6 +15,7 @@ mod work_item;
 mod worktree_removals;
 mod writer;
 
+pub use artifacts::{Artifact, ArtifactKind, ArtifactUpsert};
 pub use in_flight::InFlightSession;
 pub use orchestration::{OrchestrationSummary, OrchestrationTask, TaskTone};
 
@@ -470,6 +472,7 @@ impl AppDb {
         conn.execute_batch("PRAGMA foreign_keys = ON;")?;
         conn.execute_batch(SCHEMA_SQL)?;
         ensure_session_columns(&conn)?;
+        artifacts::ensure_note_columns(&conn)?;
         conn.execute_batch(SESSION_INDEX_SQL)?;
         conn.execute_batch(reminders::REMINDERS_SQL)?;
         conn.execute_batch(orchestration::ORCHESTRATION_SQL)?;
@@ -638,6 +641,7 @@ impl AppDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, slug, title, body, tags_json, source_session_id, source_cwd, created_at, updated_at
              FROM notes
+             WHERE content_kind = 'note'
              ORDER BY updated_at DESC, id ASC",
         )?;
         let rows = stmt.query_map([], |row| {
@@ -666,7 +670,7 @@ impl AppDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, slug, title, body, tags_json, source_session_id, source_cwd, created_at, updated_at
              FROM notes
-             WHERE id = ?1",
+             WHERE id = ?1 AND content_kind = 'note'",
         )?;
         let mut rows = stmt.query_map(params![id], |row| {
             let tags_json: String = row.get(4)?;
@@ -710,7 +714,7 @@ impl AppDb {
             self.conn.execute(
                 "UPDATE notes
                  SET title = ?1, body = ?2, tags_json = ?3, updated_at = ?4, source_cwd = ?5
-                 WHERE id = ?6",
+                 WHERE id = ?6 AND content_kind = 'note'",
                 params![
                     note.title,
                     note.body,
@@ -765,7 +769,10 @@ impl AppDb {
 
     pub fn delete_note(&self, id: &str) -> Result<()> {
         self.conn
-            .execute("DELETE FROM notes WHERE id = ?1", params![id])?;
+            .execute(
+                "DELETE FROM notes WHERE id = ?1 AND content_kind = 'note'",
+                params![id],
+            )?;
         Ok(())
     }
 

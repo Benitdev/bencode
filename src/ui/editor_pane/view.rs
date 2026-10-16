@@ -1,16 +1,19 @@
 //! Editor rendering inside the file pane: a toolbar, the active editor, notices and the discard dialog.
 
-use ely_gpui_component::buttons::{Button, ButtonVariant, IconButton};
+use ely_gpui_component::buttons::{Button, ButtonVariant, IconButton, SegmentedControl};
 use ely_gpui_component::data_display::Badge;
 use ely_gpui_component::feedback::{Alert, EmptyState};
 use ely_gpui_component::overlays::ConfirmDialog;
 use ely_gpui_component::primitives::{Icon, IconName, Severity};
 use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize, TextSize};
-use gpui::{AnyElement, Context, IntoElement, ParentElement, Styled, div, prelude::*};
+use gpui::{
+    AnyElement, Context, IntoElement, ParentElement, SharedString, Styled, div, prelude::*,
+};
 
 use super::EditorHandle;
 use super::files::{detect_language, file_name};
 use super::open_files::OpenFile;
+use super::preview::{FileViewMode, is_markdown_path};
 use crate::app::BenCodeApp;
 use crate::app::file_pane::PaneTab;
 use crate::ui::app_callback::app_callback;
@@ -32,7 +35,7 @@ impl BenCodeApp {
                     .flex_1()
                     .min_h_0()
                     .overflow_hidden()
-                    .child(self.render_editor_body()),
+                    .child(self.render_editor_body(cx)),
             )
     }
 
@@ -44,8 +47,14 @@ impl BenCodeApp {
         }
     }
 
-    fn render_editor_body(&self) -> AnyElement {
+    fn render_editor_body(&self, cx: &Context<Self>) -> AnyElement {
         if let Some(file) = self.shown_file() {
+            if is_markdown_path(&file.path)
+                && self.file_view_mode(&file.path) == FileViewMode::Preview
+            {
+                let text = file.handle.entity.read(cx).text();
+                return self.render_markdown_preview(&file.path, text, cx);
+            }
             return file.handle.entity.clone().into_any_element();
         }
         let (title, body) = if self.editor.is_loading() {
@@ -150,6 +159,7 @@ impl BenCodeApp {
                         .flex()
                         .items_center()
                         .gap_2()
+                        .children(self.view_mode_toggle(&path, cx))
                         .children(self.add_selection_button(&path, cx))
                         .child(Badge::new(detect_language(&path)))
                         .child(
@@ -186,6 +196,24 @@ impl BenCodeApp {
                         ),
                 )
             })
+    }
+
+    /// MonoCode `MarkdownModeToggle`, for a markdown file.
+    fn view_mode_toggle(&self, path: &str, cx: &Context<Self>) -> Option<AnyElement> {
+        if !is_markdown_path(path) {
+            return None;
+        }
+        let key = path.to_string();
+        Some(
+            SegmentedControl::new("editor-view-mode", self.file_view_mode(path).key())
+                .size(ControlSize::Sm)
+                .segment(FileViewMode::Preview.key(), "Preview", None)
+                .segment(FileViewMode::Source.key(), "Source", None)
+                .on_change(cx.listener(move |this, mode: &SharedString, _, cx| {
+                    this.set_file_view_mode(&key, FileViewMode::from_key(mode), cx);
+                }))
+                .into_any_element(),
+        )
     }
 
     /// MonoCode `EditorSelectionMenu`: "Add to chat" while lines of the

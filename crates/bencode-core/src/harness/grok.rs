@@ -46,7 +46,7 @@ pub fn spawn(req: &SpawnRequest) -> Result<(HarnessProcessHandle, EventRx)> {
         permission_responder: Some(permission_response),
         can_steer: super::can_steer(HarnessKind::Grok, req.compact),
         account: None,
-        env: Vec::new(),
+        env: super::app_env(req),
     };
     process::spawn(spec, parser)
 }
@@ -1465,6 +1465,7 @@ mod tests {
             settings: [("effort".to_string(), "high".to_string())].into(),
             account: None,
             browser_mcp: None,
+            app: None,
         }
     }
 
