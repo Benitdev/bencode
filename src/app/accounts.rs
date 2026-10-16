@@ -203,7 +203,8 @@ impl BenCodeApp {
 
     /// MonoCode `selectAccount` + `onSelectProviderAccount`: remembers the
     /// choice for the project; an empty active thread takes the account, a
-    /// started one stays on its own and a new thread opens for the choice.
+    /// started one moves to it in place (`switch_thread_account`; MonoCode
+    /// opens a new thread for the choice).
     pub fn select_provider_account(
         &mut self,
         provider: &str,
@@ -234,8 +235,7 @@ impl BenCodeApp {
             .provider_account_id
             .clone()
             .unwrap_or_else(|| DEFAULT_ACCOUNT_ID.into());
-        let (active_id, cwd) = (active.id.clone(), active.cwd.clone());
-        let (model, harness) = (active.model.clone(), active.harness.clone());
+        let active_id = active.id.clone();
         let empty = active.blocks.is_empty()
             && is_blank_session(active, self.is_agent_running_in(&active_id));
         if current == account_id && active.provider_account_id.is_some() {
@@ -248,25 +248,57 @@ impl BenCodeApp {
             }
             return;
         }
-        let target = if empty {
-            active_id
-        } else if current == account_id {
-            return;
-        } else {
-            let id = self.create_session_row(&cwd);
-            if let Some(session) = self.sessions.iter_mut().find(|s| s.id == id) {
-                session.model = model;
-                session.harness = harness;
+        if empty {
+            if let Some(session) = self.sessions.iter_mut().find(|s| s.id == active_id) {
+                session.provider_account_id = Some(account_id.to_string());
             }
-            self.tabs.open(&id);
-            self.sync_selection(cx);
-            self.refocus_prompt(cx);
-            id
-        };
-        if let Some(session) = self.sessions.iter_mut().find(|s| s.id == target) {
-            session.provider_account_id = Some(account_id.to_string());
+            self.persist_session(&active_id);
+            cx.notify();
+        } else if current != account_id {
+            self.switch_thread_account(&active_id, account_id, cx);
         }
-        self.persist_session(&target);
+    }
+
+    /// BenCode's own: a started thread moves to the account in place, where
+    /// MonoCode opens a new thread for it. The provider session belongs to
+    /// the old account's profile, so the next message starts a new one,
+    /// carrying a Handoff card's recap of the conversation so far. Not
+    /// while a turn runs: its process is the old account's.
+    fn switch_thread_account(&mut self, session_id: &str, account_id: &str, cx: &mut Context<Self>) {
+        use crate::ui::composer::cards::ComposerCard;
+        use crate::ui::composer::handoff::HandoffCard;
+        if self.is_agent_running_in(session_id) {
+            return;
+        }
+        let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id) else {
+            return;
+        };
+        let card = HarnessKind::from_id(&session.harness).map(|kind| {
+            let request = session
+                .blocks
+                .iter()
+                .rev()
+                .find(|b| b.role == "user")
+                .and_then(|b| b.text.as_deref())
+                .unwrap_or("");
+            HandoffCard::new(kind, kind, &session.blocks, request)
+        });
+        session.provider_account_id = Some(account_id.to_string());
+        session.provider_session_id = None;
+        session.context_used = None;
+        session.context_window = None;
+        self.persist_session(session_id);
+        let thread = self.thread_mut(session_id);
+        match (card, &thread.composer_card) {
+            (Some(card), None | Some(ComposerCard::Handoff(_))) => {
+                thread.composer_card = Some(ComposerCard::Handoff(card))
+            }
+            // A note or Inbox card waiting to be sent is the person's; it stays.
+            (Some(_), Some(_)) => log::info!("account switch: a composer card kept the recap out"),
+            (None, _) => {}
+        }
+        self.sync_prompt_placeholder(cx);
+        self.refocus_prompt(cx);
         cx.notify();
     }
 

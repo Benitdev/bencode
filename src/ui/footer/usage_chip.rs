@@ -107,7 +107,7 @@ pub(super) struct ChipAccounts<'a> {
     pub picker: bool,
     /// A Mono's composer chip: a pick moves its one conversation.
     pub mono: bool,
-    /// A Mono's turn is running: the pick waits for it to finish.
+    /// The thread's turn is running: the pick waits for it to finish.
     pub locked: bool,
     /// Empty for a provider without account profiles.
     pub accounts: &'a [ProviderAccount],
@@ -163,11 +163,9 @@ impl BenCodeApp {
             provider,
             picker: true,
             mono: composer,
-            locked: composer
-                && self
-                    .selected_session_id
-                    .as_deref()
-                    .is_some_and(|id| self.is_agent_running_in(id)),
+            locked: self
+                .selected_session()
+                .is_some_and(|s| !s.blocks.is_empty() && self.is_agent_running_in(&s.id)),
             accounts: &accounts,
             active_id: &target.account_id,
             limits,
