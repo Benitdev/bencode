@@ -157,6 +157,23 @@ impl BenCodeApp {
         )
     }
 
+    /// The account `session` takes when its model moves to `harness`: the
+    /// one chosen for its project on that harness, as a new thread would
+    /// get. A started thread with none would fall back to the default
+    /// account (`session_account_id`), not the one it had there. `None`
+    /// for an empty thread, which follows the project's choice anyway.
+    pub(crate) fn account_for_harness(&self, session: &SessionRow, harness: &str) -> Option<String> {
+        if !supports_accounts(harness) || !session.blocks.iter().any(|block| block.role == "user") {
+            return None;
+        }
+        Some(accounts::selected_account_id(
+            &self.settings.provider_account_selections,
+            &self.account_project_key(Some(session)),
+            harness,
+            &self.provider_accounts(harness),
+        ))
+    }
+
     /// Whether `provider` still has the account `id`.
     pub fn account_exists(&self, provider: &str, id: &str) -> bool {
         !self.accounts.loaded || self.provider_accounts(provider).iter().any(|a| a.id == id)
@@ -224,10 +241,16 @@ impl BenCodeApp {
         if current == account_id && active.provider_account_id.is_some() {
             return;
         }
+        if self.is_mono_session(&active_id) {
+            // A Mono has one conversation: it moves to the account.
+            if current != account_id || active.provider_account_id.is_none() {
+                self.switch_mono_account(&active_id, account_id, cx);
+            }
+            return;
+        }
         let target = if empty {
             active_id
-        // A Mono has one conversation: the pick waits for its next chat.
-        } else if current == account_id || self.is_mono_session(&active_id) {
+        } else if current == account_id {
             return;
         } else {
             let id = self.create_session_row(&cwd);

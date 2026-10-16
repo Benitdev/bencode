@@ -590,26 +590,53 @@ impl BenCodeApp {
         account_id: &str,
         cx: &mut Context<Self>,
     ) {
-        let limited = self
-            .thread(session_id)
-            .is_some_and(|thread| thread.usage_limit.is_some());
-        if !limited || self.is_agent_running_in(session_id) || !self.is_mono_session(session_id) {
+        if self.mono_usage_limited(session_id) {
+            self.switch_mono_account(session_id, account_id, cx);
+        }
+    }
+
+    fn mono_usage_limited(&self, session_id: &str) -> bool {
+        self.thread(session_id)
+            .is_some_and(|thread| thread.usage_limit.is_some())
+    }
+
+    /// The Mono's composer chip picks another account (BenCode's own;
+    /// MonoCode switches only at a usage limit): the provider session
+    /// belongs to the old account's profile, so the next message starts a
+    /// new one, briefed and handed the standing context again
+    /// (`plan_mono_rotation`). A Mono stopped by its limit resumes. Not
+    /// while a turn runs: its process is the old account's.
+    pub(crate) fn switch_mono_account(
+        &mut self,
+        session_id: &str,
+        account_id: &str,
+        cx: &mut Context<Self>,
+    ) {
+        if self.is_agent_running_in(session_id) || !self.is_mono_session(session_id) {
             return;
         }
         let Some(session) = self.sessions.iter().find(|s| s.id == session_id) else {
             return;
         };
-        if self.session_account_id(session) == account_id
-            || !self.account_exists(&session.harness, account_id)
-        {
+        if !self.account_exists(&session.harness, account_id) {
+            return;
+        }
+        let same = self.session_account_id(session) == account_id;
+        if same && session.provider_account_id.is_some() {
             return;
         }
         if let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id) {
             session.provider_account_id = Some(account_id.to_string());
-            session.provider_session_id = None;
+            if !same {
+                session.provider_session_id = None;
+                session.context_used = None;
+                session.context_window = None;
+            }
         }
         self.persist_session(session_id);
-        self.resume_after_limit(session_id, cx);
+        if !same && self.mono_usage_limited(session_id) {
+            self.resume_after_limit(session_id, cx);
+        }
         cx.notify();
     }
 

@@ -4,6 +4,17 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
+## [Unreleased]
+
+- A Mono's account can be switched from the usage chip under its
+  composer, not only at a usage limit. Its next message starts a new
+  session on that account, briefed on the recent conversation.
+- Moving a thread to another provider and back keeps the account picked
+  for that provider in the project, instead of falling back to the
+  default account.
+- With the window's glass on, a dialog's backdrop is lighter, so the
+  glass still shows around it.
+
 ## [0.1.17] - 2026-10-16
 
 - Monos do much more through `bencode app`, after MonoCode: they edit

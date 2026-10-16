@@ -208,7 +208,7 @@ impl BenCodeApp {
                 .rounded(px(8.0))
                 .border_1()
                 .text_size(px(11.0))
-                .cursor_pointer()
+                .when(!chip.locked, |el| el.cursor_pointer())
                 .map(|el| {
                     if selected {
                         el.bg(colors.accent.opacity(0.10))
@@ -220,10 +220,12 @@ impl BenCodeApp {
                             .hover(move |s| s.bg(fg.opacity(0.075)))
                     }
                 })
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    this.close_usage_popover(cx);
-                    this.select_provider_account(provider.id(), &account_id, cx);
-                }))
+                .when(!chip.locked, |el| {
+                    el.on_click(cx.listener(move |this, _, _, cx| {
+                        this.close_usage_popover(cx);
+                        this.select_provider_account(provider.id(), &account_id, cx);
+                    }))
+                })
                 .child(
                     div()
                         .flex_1()
@@ -315,7 +317,13 @@ impl BenCodeApp {
                 fg,
             ))
             .child(page_hint(
-                "Each conversation stays pinned to the account that started it.",
+                if chip.locked {
+                    "Switch accounts once the Mono's turn finishes."
+                } else if chip.mono {
+                    "The next message starts a new session on the account you pick, briefed on the recent conversation."
+                } else {
+                    "Each conversation stays pinned to the account that started it."
+                },
                 fg,
             ))
             .child(div().flex().flex_col().gap_1().mt_2().children(rows))

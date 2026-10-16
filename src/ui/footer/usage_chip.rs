@@ -105,6 +105,10 @@ pub(super) struct ChipAccounts<'a> {
     pub provider: RateLimitProvider,
     /// The popover may switch accounts (MonoCode `accountPicker`).
     pub picker: bool,
+    /// A Mono's composer chip: a pick moves its one conversation.
+    pub mono: bool,
+    /// A Mono's turn is running: the pick waits for it to finish.
+    pub locked: bool,
     /// Empty for a provider without account profiles.
     pub accounts: &'a [ProviderAccount],
     pub active_id: &'a str,
@@ -148,14 +152,22 @@ impl BenCodeApp {
             removed = ProviderRateLimits::unavailable(REMOVED_ACCOUNT, now);
             &removed
         };
-        let accounts = if supports_accounts(provider.id()) && !composer {
+        let accounts = if supports_accounts(provider.id()) {
             self.provider_accounts(provider.id())
         } else {
             Vec::new()
         };
+        // MonoCode's composer chip has no picker (`accountPicker={false}`);
+        // BenCode's switches the Mono's account (`switch_mono_account`).
         let chip_accounts = ChipAccounts {
             provider,
-            picker: !composer,
+            picker: true,
+            mono: composer,
+            locked: composer
+                && self
+                    .selected_session_id
+                    .as_deref()
+                    .is_some_and(|id| self.is_agent_running_in(id)),
             accounts: &accounts,
             active_id: &target.account_id,
             limits,
@@ -528,7 +540,7 @@ impl BenCodeApp {
 
         // MonoCode `SwitchSuggestion`: another account with room to spare.
         let tone = account_status(Some(limits), now).tone;
-        if matches!(tone, AccountTone::Exhausted | AccountTone::Low) {
+        if !chip.locked && matches!(tone, AccountTone::Exhausted | AccountTone::Low) {
             let others = chip
                 .accounts
                 .iter()

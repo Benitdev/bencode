@@ -1457,12 +1457,15 @@ impl BenCodeApp {
         }
         let settings = self.preferred_model_settings(&option.key, current.as_ref());
         let harness_id = option.harness.id();
+        let account = self
+            .selected_session()
+            .and_then(|session| self.account_for_harness(session, harness_id));
         let changed_session = self.selected_session_mut().map(|session| {
             if session.harness != harness_id {
                 // A provider session id is only meaningful to the harness that
                 // issued it, and so is the account it belongs to.
                 session.provider_session_id = None;
-                session.provider_account_id = None;
+                session.provider_account_id = account;
             }
             if session.model != option.key {
                 // MonoCode `dropContextWindow`: the old model's window no
