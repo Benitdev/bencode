@@ -4,6 +4,10 @@
 //! "Continue from where you left off." on its own once the limit lifts.
 //! A Mono's chat has its own card instead (`MonoUsageLimitNotice`): the
 //! model and account to keep going on, and the same resume.
+//!
+//! BenCode's own: the limit is kept on the thread's blocks (`usageLimit`
+//! in the extra fields of a block after the last prompt), so the notice
+//! and an armed resume outlive a restart. MonoCode keeps it in memory.
 
 use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
@@ -18,19 +22,23 @@ use jiff::{Timestamp, tz::TimeZone};
 use super::menus::{over_composer, popover_anchor};
 use super::model_picker::ModelsAnchor;
 use crate::app::{BenCodeApp, now_ms};
-use crate::db::SessionRow;
+use crate::db::{Block, SessionRow};
 use crate::harness::HarnessKind;
 use crate::harness::accounts::supports_accounts;
 use crate::ui::HarnessIcon;
 use crate::ui::app_callback::app_callback;
 use ely_gpui_component::buttons::ButtonVariant;
 use ely_gpui_component::menus::{DropdownMenu, Menu, MenuItem};
+use serde_json::{Value, json};
 
 /// MonoCode `USAGE_LIMIT_RESUME_GRACE_MS`: providers can still refuse right
 /// at the reset.
 const RESUME_GRACE_MS: i64 = 30_000;
 /// MonoCode `CONTINUE_PROMPT`.
 pub const CONTINUE_PROMPT: &str = "Continue from where you left off.";
+
+/// The block field a thread's limit is kept in.
+const STAMP: &str = "usageLimit";
 
 /// A thread stopped by its provider's usage limit.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -52,6 +60,57 @@ impl UsageLimit {
         self.resume_at_reset
             && !busy
             && self.resets_at.is_some_and(|at| now >= at + RESUME_GRACE_MS)
+    }
+
+    fn to_json(self) -> Value {
+        json!({ "resetsAt": self.resets_at, "resumeAtReset": self.resume_at_reset })
+    }
+
+    fn from_json(value: &Value) -> Option<Self> {
+        let fields = value.as_object()?;
+        Some(Self {
+            resets_at: fields.get("resetsAt").and_then(Value::as_i64),
+            resume_at_reset: fields
+                .get("resumeAtReset")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+        })
+    }
+}
+
+/// The block holding the thread's limit: one of the last turn's, its
+/// prompt included. A newer prompt means the thread went on.
+fn stamped(blocks: &[Block]) -> Option<usize> {
+    for (ix, block) in blocks.iter().enumerate().rev() {
+        if block.extra.contains_key(STAMP) {
+            return Some(ix);
+        }
+        if block.role == "user" {
+            return None;
+        }
+    }
+    None
+}
+
+/// The limit kept on a thread's blocks, if it still stands.
+fn stored_limit(blocks: &[Block]) -> Option<UsageLimit> {
+    UsageLimit::from_json(&blocks[stamped(blocks)?].extra[STAMP])
+}
+
+/// Keeps `limit` on the blocks (on the last one, if none holds it yet), or
+/// drops it. Whether anything changed.
+fn store_limit(blocks: &mut [Block], limit: Option<UsageLimit>) -> bool {
+    match (stamped(blocks), limit) {
+        (Some(ix), Some(limit)) => {
+            blocks[ix].extra.insert(STAMP.into(), limit.to_json());
+            true
+        }
+        (Some(ix), None) => blocks[ix].extra.remove(STAMP).is_some(),
+        (None, Some(limit)) => blocks.last_mut().is_some_and(|block| {
+            block.extra.insert(STAMP.into(), limit.to_json());
+            true
+        }),
+        (None, None) => false,
     }
 }
 
@@ -289,29 +348,68 @@ impl BenCodeApp {
         )
     }
 
+    /// Saved with the turn, which is still running.
     pub fn record_usage_limit(&mut self, session_id: &str, resets_at: Option<i64>) {
-        self.thread_mut(session_id).usage_limit = Some(UsageLimit {
+        let limit = UsageLimit {
             resets_at,
             resume_at_reset: false,
-        });
+        };
+        self.thread_mut(session_id).usage_limit = Some(limit);
+        if let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id) {
+            store_limit(&mut session.blocks, Some(limit));
+        }
+    }
+
+    /// Keeps the thread's limit on its blocks and saves them.
+    fn save_usage_limit(&mut self, session_id: &str, limit: Option<UsageLimit>) {
+        let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id) else {
+            return;
+        };
+        if store_limit(&mut session.blocks, limit) {
+            self.persist_session(session_id);
+        }
     }
 
     fn dismiss_usage_limit(&mut self, session_id: &str, cx: &mut Context<Self>) {
         if let Some(thread) = self.threads.get_mut(session_id) {
             thread.usage_limit = None;
         }
+        self.save_usage_limit(session_id, None);
         cx.notify();
     }
 
     fn arm_usage_resume(&mut self, session_id: &str, armed: bool, cx: &mut Context<Self>) {
-        if let Some(limit) = self
+        let Some(limit) = self
             .threads
             .get_mut(session_id)
             .and_then(|thread| thread.usage_limit.as_mut())
-        {
-            limit.resume_at_reset = armed;
-        }
+        else {
+            return;
+        };
+        limit.resume_at_reset = armed;
+        let limit = *limit;
+        self.save_usage_limit(session_id, Some(limit));
         cx.notify();
+    }
+
+    /// The limits kept on threads loaded since the last tick (at launch,
+    /// every one that was showing), back in their threads. A thread that
+    /// is running has gone on past its limit.
+    fn restore_usage_limits(&mut self) {
+        let stored: Vec<(String, UsageLimit)> = self
+            .sessions
+            .iter()
+            .filter(|s| {
+                self.threads
+                    .get(&s.id)
+                    .is_none_or(|thread| thread.usage_limit.is_none())
+            })
+            .filter_map(|s| Some((s.id.clone(), stored_limit(&s.blocks)?)))
+            .filter(|(id, _)| !self.is_agent_running_in(id))
+            .collect();
+        for (id, limit) in stored {
+            self.thread_mut(&id).usage_limit = Some(limit);
+        }
     }
 
     /// Resume: the continue turn now.
@@ -325,12 +423,15 @@ impl BenCodeApp {
         {
             return;
         }
+        // Also when the turn cannot start: the next tick must not find it.
+        self.save_usage_limit(session_id, None);
         self.send_prompt(session_id, CONTINUE_PROMPT, cx);
     }
 
     /// The clock's check: resumes armed threads whose limit has lifted, and
     /// says whether a countdown is on screen (so it should redraw).
     pub fn tick_usage_limits(&mut self, cx: &mut Context<Self>) -> bool {
+        self.restore_usage_limits();
         let now = now_ms();
         let due: Vec<String> = self
             .threads
@@ -447,6 +548,43 @@ mod tests {
             format_reset(tomorrow, now, &tz),
             "Oct 4, 6:00 AM · in 1d 2h"
         );
+    }
+
+    #[test]
+    fn the_limit_is_kept_until_the_next_prompt() {
+        let limit = UsageLimit {
+            resets_at: Some(1_000),
+            resume_at_reset: false,
+        };
+        let mut blocks = vec![
+            Block::new("u1", "user", "go"),
+            Block::new("a1", "assistant", "You've hit your session limit"),
+        ];
+        assert!(store_limit(&mut blocks, Some(limit)));
+        assert_eq!(stored_limit(&blocks), Some(limit));
+
+        let armed = UsageLimit {
+            resume_at_reset: true,
+            ..limit
+        };
+        blocks.push(Block::new("s1", "system", "notice"));
+        assert!(store_limit(&mut blocks, Some(armed)));
+        assert!(!blocks[2].extra.contains_key(STAMP));
+        assert_eq!(stored_limit(&blocks), Some(armed));
+
+        // Round-trips through the database's JSON.
+        let saved: Vec<Block> =
+            serde_json::from_str(&serde_json::to_string(&blocks).unwrap()).unwrap();
+        assert_eq!(stored_limit(&saved), Some(armed));
+
+        // A later prompt leaves it behind.
+        blocks.push(Block::new("u2", "user", CONTINUE_PROMPT));
+        assert_eq!(stored_limit(&blocks), None);
+        blocks.pop();
+
+        assert!(store_limit(&mut blocks, None));
+        assert_eq!(stored_limit(&blocks), None);
+        assert!(!store_limit(&mut blocks, None));
     }
 
     #[test]
