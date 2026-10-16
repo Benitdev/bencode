@@ -4,7 +4,7 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
-## [Unreleased]
+## [0.1.15] - 2026-10-16
 
 - Remote machines, after MonoCode's remote access. Settings › Connections
   adds a Mac or Linux machine over SSH: BenCode installs its host there
