@@ -133,6 +133,8 @@ pub struct ChangesUi {
     pub pr: Option<BranchPr>,
     /// `cwd` + branch the pull request was read for.
     pub(crate) pr_key: Option<String>,
+    /// When that read started, to space out the reads on focus.
+    pub(crate) pr_read_at: Option<std::time::Instant>,
     /// The commit field's disabled state as last set.
     input_disabled: Option<bool>,
     /// The Commit options / Branch actions triggers as last laid out, so
@@ -198,6 +200,7 @@ impl Default for ChangesUi {
             generate_cancel: None,
             pr: None,
             pr_key: None,
+            pr_read_at: None,
             input_disabled: None,
             commit_anchor: Rc::default(),
             branch_anchor: Rc::default(),

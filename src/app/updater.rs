@@ -1,17 +1,20 @@
 //! MonoCode `app/model/updater.ts` and `updateNotice.ts`: the update state
-//! the rail, Settings and the menu share. One probe at launch (MonoCode's
-//! `SidebarUpdateFooter` mount), the manual flow behind "Check for
-//! Updates…" with its dialogs, the install and the restart, and the
-//! "Updated to" notice the next launch shows. The work is `crate::updater`.
+//! the rail, Settings and the menu share. A probe at launch (MonoCode's
+//! `SidebarUpdateFooter` mount) and every 4 hours after, the manual flow
+//! behind "Check for Updates…" with its dialogs, the install and the
+//! restart, and the "Updated to" notice the next launch shows. The work is `crate::updater`.
 
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use gpui::{Context, PromptLevel, Window};
 
 use super::BenCodeApp;
 use crate::updater::{self, Check, NotConfigured, Progress, Update};
+
+/// How often a BenCode left open asks the release feed again.
+const PROBE_EVERY: Duration = Duration::from_secs(4 * 60 * 60);
 
 /// MonoCode `UpdaterPhase`, with `Ready` for an update installed while
 /// chats were running and the restart was put off.
@@ -45,6 +48,8 @@ pub struct UpdaterState {
     pub installed: Option<String>,
     /// The version whose notes the What's new dialog shows.
     pub whats_new: Option<String>,
+    /// When the last silent probe started.
+    probed_at: Option<Instant>,
 }
 
 impl UpdaterState {
@@ -113,29 +118,93 @@ fn not_configured_detail(reason: NotConfigured) -> String {
 
 impl BenCodeApp {
     /// At launch: the "Updated to" note a restart left, then one silent
-    /// check (MonoCode `SidebarUpdateFooter`'s probe).
+    /// check (MonoCode `SidebarUpdateFooter`'s probe). BenCode's own: the
+    /// probe runs again every `PROBE_EVERY`, and on focus once that long
+    /// has passed (a timer may sleep with the Mac), so a BenCode left open
+    /// hears of a release too.
     pub(crate) fn start_update_probe(&mut self, cx: &mut Context<Self>) {
-        let configured = updater::configured().is_ok();
-        let task = cx.background_executor().spawn(async move {
-            let installed = updater::take_installed();
-            let check = configured.then(updater::check);
-            (installed, check)
-        });
-        if configured {
-            self.updater.phase = Phase::Checking;
-        }
+        let task = cx
+            .background_executor()
+            .spawn(async { updater::take_installed() });
         cx.spawn(async move |this, cx| {
-            let (installed, check) = task.await;
+            let installed = task.await;
             let landed = this.update(cx, |this, cx| {
                 this.updater.installed = installed;
+                cx.notify();
+            });
+            if let Err(err) = landed {
+                log::debug!("update note after app drop: {err:#}");
+            }
+        })
+        .detach();
+        self.probe_for_update(cx);
+        if updater::configured().is_err() {
+            return;
+        }
+        cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor().timer(PROBE_EVERY).await;
+                if this.update(cx, |this, cx| this.probe_if_stale(cx)).is_err() {
+                    break;
+                }
+            }
+        })
+        .detach();
+    }
+
+    /// The window was focused: probe again if the last one is old.
+    pub(crate) fn probe_update_on_focus(&mut self, cx: &mut Context<Self>) {
+        self.probe_if_stale(cx);
+    }
+
+    fn probe_if_stale(&mut self, cx: &mut Context<Self>) {
+        let stale = self
+            .updater
+            .probed_at
+            .is_none_or(|at| at.elapsed() >= PROBE_EVERY);
+        if stale {
+            self.probe_for_update(cx);
+        }
+    }
+
+    /// One silent check. Leaves alone a check, download or restart under
+    /// way; an update already found is checked again for a newer one.
+    fn probe_for_update(&mut self, cx: &mut Context<Self>) {
+        if updater::configured().is_err()
+            || matches!(
+                self.updater.phase,
+                Phase::Checking | Phase::Downloading | Phase::Ready
+            )
+        {
+            return;
+        }
+        // Stamped before it runs, so a failing feed waits a full period too.
+        self.updater.probed_at = Some(Instant::now());
+        // An update already found keeps its rail card while it is checked
+        // again; otherwise Settings says it is checking.
+        let during = match self.updater.phase {
+            Phase::Available => Phase::Available,
+            _ => Phase::Checking,
+        };
+        self.updater.phase = during;
+        cx.notify();
+        let task = cx.background_executor().spawn(async { updater::check() });
+        cx.spawn(async move |this, cx| {
+            let check = task.await;
+            let landed = this.update(cx, |this, cx| {
+                // A manual check or an install started meanwhile owns the phase.
+                if this.updater.phase != during {
+                    return;
+                }
                 match check {
-                    Some(Ok(check)) => this.land_check(check),
-                    Some(Err(err)) => {
+                    Ok(check) => this.land_check(check),
+                    Err(err) => {
                         // MonoCode: a failed probe stays silent.
                         log::warn!("update check failed: {err:#}");
-                        this.updater.phase = Phase::Idle;
+                        if during == Phase::Checking {
+                            this.updater.phase = Phase::Idle;
+                        }
                     }
-                    None => {}
                 }
                 cx.notify();
             });

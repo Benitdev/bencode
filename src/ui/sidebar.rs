@@ -145,6 +145,7 @@ impl BenCodeApp {
                     this.show_sidebar(tab, cx);
                     if tab == SidebarMode::Changes {
                         this.refresh_workspace(cx);
+                        this.reload_branch_pr_if_stale(cx);
                     }
                 }))
                 .on_drag(DraggedSidebarTab(tab), |dragged, _, _, cx| {

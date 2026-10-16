@@ -17,6 +17,9 @@ use crate::ui::git_changes_panel::{Busy, GitConfirm, GitError, GitFailure, Pendi
 /// MonoCode clears its status line after 4s.
 const STATUS_FOR: Duration = Duration::from_secs(4);
 
+/// How often opening the Changes tab may read the branch's pull request again.
+const PR_READ_AGE: Duration = Duration::from_secs(10);
+
 impl BenCodeApp {
     pub(crate) fn on_default_branch(&self) -> bool {
         let sync = &self.git_sync;
@@ -106,14 +109,22 @@ impl BenCodeApp {
     }
 
     pub(crate) fn load_branch_pr(&mut self, key: String, cwd: String, cx: &mut Context<Self>) {
+        // A pull request does not disappear once opened: a miss on a read
+        // again for the same branch is `gh` failing (offline, signed out),
+        // and keeps what was found.
+        let again = self.changes_ui.pr_key.as_deref() == Some(key.as_str());
         self.changes_ui.pr_key = Some(key.clone());
+        self.changes_ui.pr_read_at = Some(std::time::Instant::now());
         let task = cx
             .background_executor()
             .spawn(async move { git_sync::pr_status(&cwd) });
         cx.spawn(async move |this, cx| {
             let pr = task.await;
             let updated = this.update(cx, |app, cx| {
-                if app.changes_ui.pr_key.as_deref() == Some(key.as_str()) {
+                if app.changes_ui.pr_key.as_deref() == Some(key.as_str())
+                    && (pr.is_some() || !again)
+                    && app.changes_ui.pr != pr
+                {
                     app.changes_ui.pr = pr;
                     cx.notify();
                 }
@@ -123,6 +134,18 @@ impl BenCodeApp {
             }
         })
         .detach();
+    }
+
+    /// Opening the Changes tab: a pull request opened on GitHub since the
+    /// last read shows.
+    pub(crate) fn reload_branch_pr_if_stale(&mut self, cx: &mut Context<Self>) {
+        let fresh = self
+            .changes_ui
+            .pr_read_at
+            .is_some_and(|at| at.elapsed() < PR_READ_AGE);
+        if !fresh && self.git_sync.remote.is_some() {
+            self.reload_branch_pr(cx);
+        }
     }
 
     pub(crate) fn reload_branch_pr(&mut self, cx: &mut Context<Self>) {

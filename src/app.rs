@@ -634,6 +634,7 @@ impl BenCodeApp {
                     // MonoCode re-reads stale project stats on focus.
                     this.refresh_project_stats(cx);
                     this.auto_fetch_on_focus(cx);
+                    this.probe_update_on_focus(cx);
                 }
             }),
             cx.observe_window_appearance(window, |this, window, cx| {

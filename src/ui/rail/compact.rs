@@ -93,6 +93,7 @@ impl BenCodeApp {
         self.show_sidebar(tab, cx);
         if tab == SidebarMode::Changes {
             self.refresh_workspace(cx);
+            self.reload_branch_pr_if_stale(cx);
         }
     }
 
