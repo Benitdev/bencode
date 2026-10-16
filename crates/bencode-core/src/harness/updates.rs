@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-use anyhow::{Context as _, Result, anyhow, bail};
+use anyhow::{Context as _, Result, bail};
 use serde_json::Value;
 
 use crate::harness::HarnessKind;
@@ -21,6 +21,12 @@ const HTTP_TIMEOUT: Duration = Duration::from_secs(10);
 const VERSION_TIMEOUT: Duration = Duration::from_secs(15);
 /// A download plus, for npm installs, a full dependency install.
 const UPDATE_TIMEOUT: Duration = Duration::from_secs(300);
+/// How often a running updater's CLI is asked its version: some updaters
+/// (Grok Build's) install the new release and then never exit.
+const INSTALLED_POLL: Duration = Duration::from_secs(10);
+/// How long a CLI's output is still read once it has exited: a daemon it
+/// started may hold the pipes open for good.
+const OUTPUT_GRACE: Duration = Duration::from_secs(2);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct HarnessUpdate {
@@ -97,16 +103,33 @@ pub fn find_update(kind: HarnessKind, listed: &Path) -> Option<HarnessUpdate> {
 
 /// Runs the CLI's self-update, then returns the version it reports
 /// afterwards. stdin is closed, so an updater that stops to ask fails
-/// instead of hanging.
-pub fn run_update(kind: HarnessKind, listed: &Path) -> Result<String> {
+/// instead of hanging. One still running once the CLI reports `latest` has
+/// done its work and is stopped.
+pub fn run_update(kind: HarnessKind, listed: &Path, latest: &str) -> Result<String> {
     let args = update_args(kind).with_context(|| format!("No updater for {}", kind.label()))?;
     let program = &updatable(kind, listed)
         .with_context(|| format!("{} is updated by the app it came with.", kind.label()))?;
-    let (ok, stdout, stderr) = run(program, args, UPDATE_TIMEOUT)?;
-    if !ok {
-        bail!("{}", update_failure(&stdout, &stderr));
+    let mut next_poll = Instant::now() + INSTALLED_POLL;
+    let mut installed = None;
+    let finished = run_while(program, args, UPDATE_TIMEOUT, || {
+        if Instant::now() < next_poll {
+            return true;
+        }
+        next_poll = Instant::now() + INSTALLED_POLL;
+        installed = installed_version(program)
+            .ok()
+            .filter(|version| compare_semver(version, latest).is_ge());
+        installed.is_none()
+    })?;
+    match finished {
+        Some((ok, stdout, stderr)) if !ok => bail!("{}", update_failure(&stdout, &stderr)),
+        Some(_) => installed_version(program),
+        None => {
+            let version = installed.context("updater stopped without a version")?;
+            log::info!("{} updater still running at {version}; stopped it", kind.label());
+            Ok(version)
+        }
     }
-    installed_version(program)
 }
 
 fn installed_version(program: &Path) -> Result<String> {
@@ -179,6 +202,17 @@ fn grok_channel(config: &str) -> &'static str {
 
 /// Runs `program args` to completion within `timeout`: (success, stdout, stderr).
 fn run(program: &Path, args: &[&str], timeout: Duration) -> Result<(bool, Vec<u8>, Vec<u8>)> {
+    run_while(program, args, timeout, || true)?.context("CLI stopped early")
+}
+
+/// `run`, asking `keep_going` between checks; `None` when it said no and
+/// the CLI was killed.
+fn run_while(
+    program: &Path,
+    args: &[&str],
+    timeout: Duration,
+    mut keep_going: impl FnMut() -> bool,
+) -> Result<Option<(bool, Vec<u8>, Vec<u8>)>> {
     let mut child = Command::new(program)
         .args(args)
         .env("PATH", child_path(program))
@@ -188,36 +222,48 @@ fn run(program: &Path, args: &[&str], timeout: Duration) -> Result<(bool, Vec<u8
         .spawn()
         .with_context(|| format!("could not start {}", program.display()))?;
     let drain = |mut pipe: Box<dyn Read + Send>| {
+        let (tx, rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
             let mut out = Vec::new();
             if let Err(err) = pipe.read_to_end(&mut out) {
                 log::debug!("reading CLI output: {err}");
             }
-            out
-        })
+            // The receiver is gone once the grace has passed.
+            tx.send(out).ok();
+        });
+        rx
     };
     let stdout = drain(Box::new(child.stdout.take().context("no stdout")?));
     let stderr = drain(Box::new(child.stderr.take().context("no stderr")?));
     let deadline = Instant::now() + timeout;
+    let stop = |child: &mut std::process::Child| {
+        if let Err(err) = child.kill() {
+            log::debug!("killing a CLI: {err}");
+        }
+        if let Err(err) = child.wait() {
+            log::debug!("reaping a CLI: {err}");
+        }
+    };
     let status = loop {
         if let Some(status) = child.try_wait()? {
             break status;
         }
         if Instant::now() >= deadline {
-            if let Err(err) = child.kill() {
-                log::debug!("killing a timed-out CLI: {err}");
-            }
-            if let Err(err) = child.wait() {
-                log::debug!("reaping a timed-out CLI: {err}");
-            }
+            stop(&mut child);
             bail!("Timed out after {}s.", timeout.as_secs());
+        }
+        if !keep_going() {
+            stop(&mut child);
+            return Ok(None);
         }
         std::thread::sleep(Duration::from_millis(100));
     };
-    let join = |handle: std::thread::JoinHandle<Vec<u8>>| {
-        handle.join().map_err(|_| anyhow!("output reader panicked"))
+    let grace = Instant::now() + OUTPUT_GRACE;
+    let collect = |rx: std::sync::mpsc::Receiver<Vec<u8>>| {
+        rx.recv_timeout(grace.saturating_duration_since(Instant::now()))
+            .unwrap_or_default()
     };
-    Ok((status.success(), join(stdout)?, join(stderr)?))
+    Ok(Some((status.success(), collect(stdout), collect(stderr))))
 }
 
 /// Updaters print their reason to either stream; the last line is the one
@@ -326,6 +372,35 @@ mod tests {
             "stable"
         );
         assert_eq!(grok_channel("[cli]\nchannel = \"nightly\"\n"), "stable");
+    }
+
+    #[test]
+    fn output_held_by_a_daemon_does_not_hang_the_run() {
+        let started = Instant::now();
+        let (ok, stdout, _) = run(
+            Path::new("/bin/sh"),
+            &["-c", "echo done; sleep 30 &"],
+            Duration::from_secs(20),
+        )
+        .unwrap();
+        assert!(ok);
+        assert!(started.elapsed() < Duration::from_secs(10));
+        // What it wrote before the daemon is still read when the pipe
+        // closes on time; with the daemon holding it, it may be cut.
+        assert!(stdout.is_empty() || stdout == b"done\n");
+    }
+
+    #[test]
+    fn a_run_stops_when_told_to() {
+        let started = Instant::now();
+        let mut asked = 0;
+        let finished = run_while(Path::new("/bin/sh"), &["-c", "sleep 30"], UPDATE_TIMEOUT, || {
+            asked += 1;
+            asked < 3
+        })
+        .unwrap();
+        assert!(finished.is_none());
+        assert!(started.elapsed() < Duration::from_secs(10));
     }
 
     #[test]

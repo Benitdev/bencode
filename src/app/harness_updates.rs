@@ -130,9 +130,10 @@ impl BenCodeApp {
                 continue;
             };
             self.harness_updates.rows.insert(kind, RowState::Updating);
+            let latest = update.latest.clone();
             let task = cx
                 .background_executor()
-                .spawn(async move { updates::run_update(kind, &program) });
+                .spawn(async move { updates::run_update(kind, &program, &latest) });
             cx.spawn(async move |this, cx| {
                 let result = task.await;
                 let landed = this.update(cx, |this, cx| {
