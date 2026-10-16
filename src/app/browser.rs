@@ -21,7 +21,7 @@ use super::BenCodeApp;
 use super::file_pane::PaneTab;
 use crate::browser::bridge::{self, ToolCall, ToolReply, ToolRequest};
 use crate::browser::page::{NO_RESULT, Page, PageEvent, PageEvents};
-use crate::browser::{McpLaunch, agent_may_open, is_web_url, normalize_url, scripts};
+use crate::browser::{McpLaunch, agent_may_open, is_web_url, mcp_launch, normalize_url, scripts};
 
 /// How long the agent's `browser_navigate` waits for the page to load.
 const LOAD_TIMEOUT: Duration = Duration::from_secs(20);
@@ -930,7 +930,7 @@ impl BenCodeApp {
             return None;
         }
         let socket = self.browser.socket.as_ref()?;
-        McpLaunch::new(socket)
+        mcp_launch(socket)
             .map_err(|err| log::warn!("browser tools are off for this turn: {err:#}"))
             .ok()
     }

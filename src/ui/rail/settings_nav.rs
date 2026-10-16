@@ -90,6 +90,11 @@ impl BenCodeApp {
             SettingsTab::Worktrees => self.open_worktrees_page(cx),
             SettingsTab::Providers => self.load_accounts_page(false, cx),
             SettingsTab::Integrations => self.open_integrations_page(cx),
+            // MonoCode checks each machine while the page shows.
+            SettingsTab::Connections => {
+                self.remote.checked = false;
+                self.check_machines(cx);
+            }
             _ => {}
         }
         cx.notify();

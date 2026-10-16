@@ -22,11 +22,6 @@ pub fn checkpoints_dir() -> Option<PathBuf> {
     data_dir().map(|dir| dir.join("checkpoints"))
 }
 
-/// One config directory per provider account.
-pub fn provider_accounts_dir() -> Option<PathBuf> {
-    data_dir().map(|dir| dir.join("provider-accounts"))
-}
-
 /// `~/Library/Logs/BenCode` on macOS, where Console looks; beside the data
 /// elsewhere.
 pub fn logs_dir() -> Option<PathBuf> {

@@ -715,7 +715,7 @@ mod tests {
     use super::*;
 
     fn claude_fixture() -> Vec<ModelOption> {
-        let line = include_str!("../../tests/fixtures/claude_list_models.jsonl");
+        let line = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/fixtures/claude_list_models.jsonl"));
         let rec: Value = serde_json::from_str(line.trim()).unwrap();
         claude_models(&rec["response"]["response"])
     }

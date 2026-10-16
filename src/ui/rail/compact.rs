@@ -421,7 +421,8 @@ impl BenCodeApp {
     }
 
     /// The icon rail's project list: the rail's projects in its order, the
-    /// current one marked, then "Open folder…". MonoCode's picker also
+    /// current one marked, then "Open folder…" and "Open folder on a
+    /// machine…". MonoCode's picker also
     /// searches and carries each project's menu; those stay on the full
     /// rail here.
     pub(crate) fn render_compact_projects_menu(
@@ -487,6 +488,17 @@ impl BenCodeApp {
                 this.close_sidebar_menu(cx);
                 this.open_project_dialog(cx);
             }));
+        let open_remote = row("compact-project-open-remote-folder".into())
+            .child(
+                Icon::new(IconName::Globe)
+                    .size(IconSize::Sm)
+                    .color(fg.opacity(0.8)),
+            )
+            .child("Open folder on a machine…")
+            .on_click(cx.listener(|this, _, _, cx| {
+                this.close_sidebar_menu(cx);
+                this.open_remote_folder_dialog(cx);
+            }));
         let list = div()
             .id("compact-projects-list")
             .flex()
@@ -510,7 +522,8 @@ impl BenCodeApp {
             }))
             .child(list)
             .child(div().my_1().h(px(1.0)).bg(fg.opacity(0.1)))
-            .child(open_folder);
+            .child(open_folder)
+            .child(open_remote);
         deferred(anchored().position(position).snap_to_window().child(menu))
             .with_priority(3)
             .into_any_element()

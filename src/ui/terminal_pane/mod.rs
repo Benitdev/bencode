@@ -190,9 +190,24 @@ impl TerminalDocks {
 /// A terminal showing host session `session`, whose shell starts in `cwd`
 /// when the session is new; Ely's own shell when the host cannot be used.
 fn spawn_attached(session: &str, cwd: &str, cx: &mut Context<Terminal>) -> Terminal {
-    let program = crate::pty_host::attach_command(session, cwd)
-        .inspect_err(|err| log::error!("terminal {session}: {err:#}; a shell of its own instead"))
-        .ok();
+    // A folder on a machine gets a shell there, over SSH (BenCode's own:
+    // MonoCode has no terminals in these projects). It does not outlive
+    // the app as the terminal host's shells do.
+    let program = match crate::remote::route(cwd) {
+        Some(Ok(route)) => Some(crate::remote::ssh::terminal_command(
+            &route.conn.machine(),
+            &route.host_path,
+        )),
+        Some(Err(err)) => {
+            log::warn!("terminal in {cwd}: {err}");
+            return Terminal::replay(format!("{err}\r\n").as_bytes(), 80, 24, cx);
+        }
+        None => crate::pty_host::attach_command(session, cwd)
+            .inspect_err(|err| {
+                log::error!("terminal {session}: {err:#}; a shell of its own instead")
+            })
+            .ok(),
+    };
     let launch = Launch {
         program,
         cwd: Some(PathBuf::from(cwd)).filter(|p| p.is_dir()),

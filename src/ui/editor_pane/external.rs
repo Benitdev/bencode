@@ -24,6 +24,15 @@ impl BenCodeApp {
         line: Option<u32>,
         cx: &mut Context<Self>,
     ) {
+        // The editors here cannot open a folder on a machine.
+        if crate::remote::is_remote(&self.workspace.cwd) {
+            self.show_editor_notice(
+                "Not on this computer".into(),
+                "This project is on a machine. Its files open in BenCode's own editor.".into(),
+                cx,
+            );
+            return;
+        }
         let Some(editor) = self.preferred_editor().cloned() else {
             let body = if self.integrations.editors.is_none() {
                 "Still looking for installed editors. Try again in a moment."

@@ -214,7 +214,7 @@ fn joined<T: Default>(handle: std::thread::ScopedJoinHandle<'_, T>) -> T {
 /// MonoCode `git_sync_for` with the branch and HEAD. The snapshot reads
 /// the base once for this and the history (`sync_info_from`).
 pub fn sync_info(cwd: &str) -> SyncInfo {
-    if !Path::new(cwd).exists() {
+    if crate::remote::missing_here(cwd) {
         return SyncInfo::default();
     }
     sync_info_from(cwd, &RepoBase::read(cwd))
@@ -608,18 +608,31 @@ fn gh(cwd: &str, args: &[&str]) -> Result<String, String> {
     crate::github::gh(Path::new(cwd), args)
 }
 
-/// MonoCode `parse_gh_pr_list`: the open one, else the latest.
-fn parse_pr_list(json: &str) -> Option<BranchPr> {
+/// MonoCode `parse_gh_pr_list`: the open one, else the latest, among
+/// those whose head is in `owner`'s repository (a fork's branch of the same
+/// name is someone else's).
+fn parse_pr_list(json: &str, owner: &str) -> Option<BranchPr> {
+    #[derive(Deserialize)]
+    struct Owner {
+        login: String,
+    }
     #[derive(Deserialize)]
     struct Row {
         number: i64,
         title: String,
         url: String,
         state: String,
+        #[serde(rename = "headRepositoryOwner")]
+        head_owner: Option<Owner>,
     }
     let rows: Vec<Row> = serde_json::from_str(json).ok()?;
     let prs: Vec<BranchPr> = rows
         .into_iter()
+        .filter(|r| {
+            r.head_owner
+                .as_ref()
+                .is_some_and(|o| o.login.eq_ignore_ascii_case(owner))
+        })
         .map(|r| BranchPr {
             number: r.number,
             title: r.title,
@@ -643,16 +656,17 @@ pub fn pr_status(cwd: &str) -> Option<BranchPr> {
     }
     let view: View =
         serde_json::from_str(&gh(cwd, &["repo", "view", "--json", "nameWithOwner"]).ok()?).ok()?;
-    let owner = view.name_with_owner.split_once('/')?.0.to_string();
+    let owner = view.name_with_owner.split_once('/')?.0;
+    // `--head` takes the bare branch: gh finds nothing for `owner:branch`.
     let json = gh(
         cwd,
         &[
             "pr",
             "list",
             "--head",
-            &format!("{owner}:{branch}"),
+            &branch,
             "--json",
-            "number,title,url,state",
+            "number,title,url,state,headRepositoryOwner",
             "--limit",
             "20",
             "--state",
@@ -660,7 +674,7 @@ pub fn pr_status(cwd: &str) -> Option<BranchPr> {
         ],
     )
     .ok()?;
-    parse_pr_list(&json)
+    parse_pr_list(&json, owner)
 }
 
 /// MonoCode `git_pr_create`: returns the new pull request's URL.
@@ -755,10 +769,17 @@ mod tests {
 
     #[test]
     fn pr_list_prefers_open() {
-        let json = r#"[{"number":2,"title":"Old","url":"u2","state":"MERGED"},{"number":3,"title":"Now","url":"u3","state":"OPEN"}]"#;
-        let pr = parse_pr_list(json).unwrap();
+        let json = r#"[{"number":2,"title":"Old","url":"u2","state":"MERGED","headRepositoryOwner":{"login":"me"}},{"number":3,"title":"Now","url":"u3","state":"OPEN","headRepositoryOwner":{"login":"Me"}}]"#;
+        let pr = parse_pr_list(json, "me").unwrap();
         assert_eq!((pr.number, pr.state.as_str()), (3, "open"));
-        assert!(parse_pr_list("[]").is_none());
+        assert!(parse_pr_list("[]", "me").is_none());
+    }
+
+    #[test]
+    fn pr_list_skips_forks_branches() {
+        let json = r#"[{"number":4,"title":"Fork","url":"u4","state":"OPEN","headRepositoryOwner":{"login":"other"}},{"number":1,"title":"Mine","url":"u1","state":"MERGED","headRepositoryOwner":{"login":"me"}}]"#;
+        let pr = parse_pr_list(json, "me").unwrap();
+        assert_eq!((pr.number, pr.state.as_str()), (1, "merged"));
     }
 
     #[test]

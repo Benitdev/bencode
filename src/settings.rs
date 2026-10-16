@@ -163,6 +163,10 @@ pub struct AppSettings {
     /// before the interface scale; `None` is the default. MonoCode keeps it
     /// for the launch only.
     pub mono_overview_width: Option<f32>,
+    /// Settings › Connections: the machines agents run on (MonoCode keeps
+    /// them in `remote-machines.json`, with a device token BenCode has no
+    /// need of: SSH signs in).
+    pub remote_machines: Vec<crate::remote::Machine>,
     /// The project rail's order, width, archive, groups, appearance and
     /// notification mutes, under MonoCode's names (see `ui::rail::model`).
     /// Declared before `extra` so its keys are not also kept as unknown.
@@ -174,12 +178,7 @@ pub struct AppSettings {
 
 /// `~/Library/Application Support/BenCode` on macOS, `~/.config/bencode` elsewhere.
 pub fn settings_dir() -> Option<PathBuf> {
-    let home = PathBuf::from(std::env::var_os("HOME")?);
-    Some(if cfg!(target_os = "macos") {
-        home.join("Library/Application Support/BenCode")
-    } else {
-        home.join(".config/bencode")
-    })
+    bencode_core::paths::data_dir()
 }
 
 /// Reads settings; a missing file yields defaults, a corrupt one is logged
@@ -352,6 +351,12 @@ mod tests {
             rail_monos_pinned: true,
             open_mono: Some("mono-1".into()),
             mono_overview_width: Some(520.0),
+            remote_machines: vec![crate::remote::Machine {
+                id: "3f2a91bc-0d1e-77aa".into(),
+                name: "Mac mini".into(),
+                target: "me@mini".into(),
+                port: Some(2222),
+            }],
             rail: crate::ui::rail::model::RailPrefs {
                 project_rail_order: vec!["/repo".into()],
                 project_rail_width: Some(240.0),

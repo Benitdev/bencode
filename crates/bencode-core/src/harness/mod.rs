@@ -36,7 +36,8 @@ pub type EventRx = mpsc::UnboundedReceiver<AgentEvent>;
 
 const SUMMARY_MAX_CHARS: usize = 160;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum HarnessKind {
     Claude,
     Antigravity,
@@ -88,7 +89,7 @@ impl HarnessKind {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum PermissionPolicy {
     /// Run every tool without asking (MonoCode full-access).
     AutoApprove,
@@ -128,7 +129,7 @@ pub struct SpawnRequest {
     pub account: Option<accounts::AccountProfile>,
     /// The in-app browser's MCP server, offered to the agent while a
     /// browser tab is open (`app/browser.rs`).
-    pub browser_mcp: Option<crate::browser::McpLaunch>,
+    pub browser_mcp: Option<crate::mcp::McpLaunch>,
 }
 
 /// Starts one agent turn. Non-blocking apart from a fork/exec; safe to call
@@ -143,6 +144,22 @@ pub fn spawn(req: &SpawnRequest) -> Result<(HarnessProcessHandle, EventRx)> {
         HarnessKind::Codex => codex::spawn(req),
         HarnessKind::Grok => grok::spawn(req),
         HarnessKind::OpenCode => opencode::spawn(req),
+    }
+}
+
+/// Whether `harness` answers permission prompts through BenCode (its spawn
+/// gives the handle a responder): a remote turn's handle says the same.
+pub fn answers_permissions(harness: HarnessKind) -> bool {
+    matches!(harness, HarnessKind::Claude | HarnessKind::Grok)
+}
+
+/// Whether a turn of `harness` takes follow-ups while it runs
+/// (`ProcessSpec.can_steer`); a compaction is not a turn to add to.
+pub fn can_steer(harness: HarnessKind, compact: bool) -> bool {
+    match harness {
+        HarnessKind::Claude => true,
+        HarnessKind::Grok => !compact,
+        HarnessKind::Antigravity | HarnessKind::Codex | HarnessKind::OpenCode => false,
     }
 }
 

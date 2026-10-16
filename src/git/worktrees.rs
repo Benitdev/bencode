@@ -97,7 +97,19 @@ pub fn list_worktrees(cwd: &str) -> Result<Vec<Worktree>> {
 
 fn list_registered(root: &Path) -> Result<Vec<Worktree>> {
     let output = git_cmd(root, &["worktree", "list", "--porcelain", "-z"])?;
-    Ok(parse_worktrees(&output))
+    let mut trees = parse_worktrees(&output);
+    // On a machine, git prints the host's paths; the app knows them as
+    // `remote://` paths, which every view and thread then routes there.
+    if let Some(machine) = root
+        .to_str()
+        .and_then(bencode_core::remote::path::parse)
+        .map(|parsed| parsed.machine.to_string())
+    {
+        for tree in &mut trees {
+            tree.path = crate::remote::remote_path(&machine, &tree.path);
+        }
+    }
+    Ok(trees)
 }
 
 fn repo_has_remotes(root: &Path) -> Result<bool> {
@@ -119,7 +131,13 @@ fn unpushed_count(path: &Path) -> Result<u64> {
 
 fn fill_status(tree: &mut Worktree, has_remotes: bool) {
     let path = PathBuf::from(&tree.path);
-    tree.missing = !path.is_dir();
+    // git marks a worktree whose folder is gone `prunable`; on a machine
+    // that is what there is to go on.
+    tree.missing = if crate::remote::is_remote(&tree.path) {
+        tree.prunable
+    } else {
+        !path.is_dir()
+    };
     if tree.missing {
         return;
     }
@@ -187,7 +205,11 @@ pub fn create_worktree(
         .ok_or_else(|| anyhow!("No working copies found"))?;
     let parent = default_worktrees_dir(Path::new(&main.path));
     let target_path = parent.join(branch_slug(branch));
-    if target_path.exists() {
+    let taken = match target_path.to_str().filter(|p| crate::remote::is_remote(p)) {
+        Some(remote) => crate::remote::files::metadata(remote)?.is_some(),
+        None => target_path.exists(),
+    };
+    if taken {
         bail!(
             "{} already exists. Choose another branch name.",
             target_path.display()
@@ -213,7 +235,11 @@ pub fn create_worktree(
         ],
     )?;
 
-    std::fs::create_dir_all(&parent)?;
+    // `git worktree add` makes the folders on its way; here they are made
+    // first so a permissions problem reads as one.
+    if !crate::remote::is_remote(cwd) {
+        std::fs::create_dir_all(&parent)?;
+    }
     let target_str = target_path.to_string_lossy();
     if existing_branch {
         git_cmd(root, &["worktree", "add", "--", &target_str, branch])?;
@@ -276,7 +302,12 @@ fn removal_target(root: &Path, path: &Path) -> Result<Worktree> {
 /// Refuses to drop work that exists only in this worktree unless `force`.
 fn check_removal_safety(root: &Path, tree: &Worktree) -> Result<()> {
     let path = Path::new(&tree.path);
-    if !path.is_dir() {
+    let present = if crate::remote::is_remote(&tree.path) {
+        crate::remote::files::is_dir(&tree.path)
+    } else {
+        path.is_dir()
+    };
+    if !present {
         bail!("This worktree's directory is missing. Prune worktrees instead.");
     }
     if is_dirty(path)? {

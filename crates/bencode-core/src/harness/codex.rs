@@ -112,7 +112,7 @@ fn build_args(req: &SpawnRequest) -> Vec<String> {
     }
     if let Some(launch) = &req.browser_mcp {
         // TOML values; a JSON string or array of strings is one.
-        let key = format!("mcp_servers.{}", crate::browser::MCP_SERVER_NAME);
+        let key = format!("mcp_servers.{}", crate::mcp::MCP_SERVER_NAME);
         let command = serde_json::to_string(&launch.command).unwrap_or_default();
         let launch_args = serde_json::to_string(&launch.args).unwrap_or_default();
         args.extend([
@@ -404,7 +404,7 @@ mod tests {
             compact: false,
             settings: Default::default(),
             account: None,
-            browser_mcp: Some(crate::browser::McpLaunch {
+            browser_mcp: Some(crate::mcp::McpLaunch {
                 command: "/Apps/Ben Code/bencode".into(),
                 args: vec!["--browser-mcp".into(), "/tmp/b.sock".into()],
             }),

@@ -99,7 +99,7 @@ struct Store {
 
 impl Store {
     fn open() -> Result<Self, String> {
-        let root = crate::storage::provider_accounts_dir()
+        let root = crate::paths::provider_accounts_dir()
             .ok_or("BenCode has no data folder for accounts.")?
             .join(PROVIDER);
         Ok(Self { root })

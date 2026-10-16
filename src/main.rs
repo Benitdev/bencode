@@ -6,8 +6,6 @@ pub mod external_editor;
 mod git;
 mod github;
 mod github_accounts;
-mod harness;
-mod keychain;
 mod launch;
 mod logging;
 pub mod mcp;
@@ -18,6 +16,7 @@ mod process_stats;
 mod project_search;
 mod pty_host;
 mod rate_limits;
+mod remote;
 mod schedule;
 mod settings;
 mod skills;
@@ -29,6 +28,8 @@ mod ui;
 mod updater;
 mod work_items;
 mod workspace;
+
+use bencode_core::{harness, keychain};
 
 use gpui::{
     App, AppContext, Bounds, TitlebarOptions, WindowBounds, WindowOptions, point, px, size,
@@ -42,6 +43,10 @@ fn main() {
     }
     // So is the MCP server that gives agents the in-app browser.
     if let Some(code) = browser::run_from_args() {
+        std::process::exit(code);
+    }
+    // And the askpass OpenSSH runs while Settings connects a machine.
+    if let Some(code) = remote::askpass::run_from_env() {
         std::process::exit(code);
     }
     logging::init();

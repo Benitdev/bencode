@@ -377,9 +377,8 @@ impl BenCodeApp {
         self.open_sidebar_menu(SidebarMenuKind::AddProject, at, cx);
     }
 
-    /// The "Open project" popover: `Popover width={230} className="p-1"`.
-    /// MonoCode's "Open folder on a machine…" needs its remote machines,
-    /// which BenCode does not have.
+    /// The "Open project" popover: `Popover width={230} className="p-1"`:
+    /// a folder here, or one on a machine (`ui/remote_folder.rs`).
     pub(crate) fn render_add_project_menu(
         &self,
         position: Point<Pixels>,
@@ -388,31 +387,44 @@ impl BenCodeApp {
         let fg = cx.theme().colors.fg;
         // `flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5
         // text-[13px] text-content/80 hover:bg-content/8 hover:text-content`
-        let row = div()
-            .id("rail-open-folder")
-            .group("rail-open-folder")
-            .flex()
-            .w_full()
-            .items_center()
-            .gap(px(10.0))
-            .rounded(px(8.0))
-            .px(px(10.0))
-            .py(px(6.0))
-            .text_size(px(13.0))
-            .text_color(fg.opacity(0.8))
-            .cursor_pointer()
-            .hover(move |s| s.bg(fg.opacity(0.08)).text_color(fg))
-            .on_click(cx.listener(|this, _, _, cx| {
+        let row = |id: &'static str, icon: IconName, label: &'static str| {
+            div()
+                .id(id)
+                .group(id)
+                .flex()
+                .w_full()
+                .items_center()
+                .gap(px(10.0))
+                .rounded(px(8.0))
+                .px(px(10.0))
+                .py(px(6.0))
+                .text_size(px(13.0))
+                .text_color(fg.opacity(0.8))
+                .cursor_pointer()
+                .hover(move |s| s.bg(fg.opacity(0.08)).text_color(fg))
+                .child(
+                    Icon::new(icon)
+                        .size(IconSize::Sm)
+                        .color(fg.opacity(0.8))
+                        .group_hover_color(id, fg),
+                )
+                .child(label)
+        };
+        let here = row("rail-open-folder", IconName::FolderPlus, "Open folder…").on_click(
+            cx.listener(|this, _, _, cx| {
                 this.close_sidebar_menu(cx);
                 this.open_project_dialog(cx);
-            }))
-            .child(
-                Icon::new(IconName::FolderPlus)
-                    .size(IconSize::Sm)
-                    .color(fg.opacity(0.8))
-                    .group_hover_color("rail-open-folder", fg),
-            )
-            .child("Open folder…");
+            }),
+        );
+        let there = row(
+            "rail-open-remote-folder",
+            IconName::Globe,
+            "Open folder on a machine…",
+        )
+        .on_click(cx.listener(|this, _, _, cx| {
+            this.close_sidebar_menu(cx);
+            this.open_remote_folder_dialog(cx);
+        }));
         let menu = crate::ui::sidebar_popovers::popover_frame(cx)
             .id("rail-add-project-menu")
             .occlude()
@@ -425,7 +437,8 @@ impl BenCodeApp {
                     }
                 });
             }))
-            .child(row);
+            .child(here)
+            .child(there);
         deferred(anchored().position(position).snap_to_window().child(menu))
             .with_priority(3)
             .into_any_element()

@@ -73,17 +73,21 @@ bencode/
 ├── README.md                 overview and quick start
 ├── CHANGELOG.md              per-release notes; the release workflow publishes a version's section
 ├── LICENSE                   MIT
-├── Cargo.toml                dependencies and build profiles
+├── Cargo.toml                the workspace (one version for all three crates), dependencies, build profiles
+├── crates/bencode-core/      what the app and its host share: `harness/`, the file index, search, the Explorer's disk ops (`tree/`), `remote/` (paths, protocol)
+├── crates/bencode-host/      BenCode Host, the daemon on a remote machine (`bencode-host connect | daemon | status | stop`)
 ├── assets/
 │   ├── icons/                Lucide SVGs Ely does not ship (ui/icons.rs)
 │   ├── file-icons/           Material Icon Theme SVGs and lookup tables (ui/file_tree/icons.rs)
 │   └── providers/            harness brand icons (ui/provider_icon.rs)
 ├── docs/migration/           parity backlog and migration notes
 ├── docs/releasing.md         cutting a release; signing and notarization
+├── docs/remote-access.md     machines: connecting, what runs where, the loopback SSH test
 ├── docs/readme/              README translations (README.vi.md)
 ├── docs/assets/readme/       README screenshots and GIF, taken from a demo project
 ├── packaging/macos/          app icon, Info.plist, entitlements, bundle.sh (.app / .dmg)
 ├── scripts/                  startup-bench.py (launch timings, see Verifying)
+├── packaging/host/           package.sh: the host's release archives for macOS and Linux
 ├── site/                     the landing page (GitHub Pages)
 ├── reference/monocode        symlink to the MonoCode source (git-ignored)
 ├── tests/fixtures/           recorded CLI output for parser tests
@@ -93,7 +97,7 @@ bencode/
     ├── app/                  app logic split by concern (no rendering)
     ├── db/                   BenCode's SQLite database (MonoCode's schema)
     ├── git/                  git through the `git` CLI
-    ├── harness/              agent CLIs over stdio
+    ├── remote/               machines: their SSH connections, routing `remote://` paths (git, gh, files, turns), Settings' setup and askpass
     ├── ui/                   every view (render functions on BenCodeApp)
     ├── github.rs             GitHub through `gh` (Inbox, PR actions)
     ├── github_accounts.rs    the accounts `gh` is signed in with; the one a project's `gh` runs as
@@ -101,6 +105,7 @@ bencode/
     ├── browser/              the in-app browser: the WKWebView (wry), its scripts, the agents' MCP server (`--browser-mcp`) and its socket
     ├── work_items.rs         the Inbox's items, whichever tracker they come from
     ├── mcp/                  MCP server discovery
+    ├── project_search.rs     search in files: core's, here or on the project's machine
     ├── rate_limits/          provider usage windows (footer): parsers and fetchers
     ├── skills/               SKILL.md discovery and `/skill` injection
     ├── schedule.rs           automation schedules (next run time)
@@ -111,14 +116,17 @@ bencode/
     ├── logging.rs            log to the terminal, else to ~/Library/Logs/BenCode; the panic hook
     ├── updater.rs            self-update: the release feed, the signed archive, the swap and restart
     ├── pty_host/             the terminal host (`bencode --pty-host`) and the tabs' attach client (`--pty-attach`)
-    ├── keychain.rs           the macOS `security` tool (Claude's usage token, Antigravity's sign-in)
     ├── notifications.rs      macOS notifications (UNUserNotificationCenter): permission, banners, clicks
     ├── sounds/               the cues (cuelume 0.2.2's recipes, rendered once and played with NSSound)
     ├── monocode_import/      the one-time copy of a MonoCode install's data
     ├── monos.rs, monos/      Monos: the roster's model, the context its turns carry; its files (`SOUL.md`, `MEMORY.md`, hash-checked saves), memory edits and habits
     ├── external_editor.rs    finding and launching VS Code, Cursor, Zed, …
-    └── workspace.rs          workspace file helpers
+    └── workspace.rs          the file index for Go to File: core's, here or on the project's machine
 ```
+
+`harness/`, `keychain.rs` and `rate_limits::http` live in `crates/bencode-core`;
+`main.rs` imports them (`use bencode_core::{harness, keychain}`), so
+`crate::harness::…` paths work as before.
 
 ### `src/app/` — state and logic
 
@@ -160,6 +168,7 @@ bencode/
 | `chat_background.rs` | Appearance › Chat background: the saved copy of the image, decoding and effects off the UI thread, the image the panes draw |
 | `frame_bench.rs` | Frame timings for perf work: `BENCODE_FRAME_BENCH=1` draws the window by hand, case by case, and prints what a redraw costs, what opening a view costs, and every frame of a fling through the longest thread (see Verifying) |
 | `in_flight.rs` | The turns running now, kept in `in_flight_sessions` (one BenCode per data folder, by `in-flight.lock`); at launch, the ones a quit, restart or crash cut off: marked interrupted and offered for resuming (`ui/resume_interrupted.rs`) |
+| `remote.rs`, `remote_runs.rs` | Machines: the list in `settings.json`, their status, Settings › Connections' Add / Reconnect / Update Host / Remove, Open folder on a machine, each host's CLIs and models for the picker; the turns machines run (`remote-runs.json`), followed again at launch |
 | `updater.rs`, `release_notes.rs` | Updates: the probe at launch, Check for Updates…, install and restart, the "Updated to" note; a version's CHANGELOG section for What's new |
 
 ### `src/ui/` — views
@@ -184,6 +193,7 @@ bencode/
 | `footer/` | Status bar: provider usage chip, its details popover and account pages, terminal toggle |
 | `inbox_view*`, `notes/`, `automations/`, `search_view.rs`, `settings_modal.rs` | The five surfaces |
 | `page_parts.rs`, `relative_time.rs` | What the Notes and Automations pages share: `content/N` tints, section titles, page tabs, boxed rows; "5 minutes ago" |
+| `settings_connections.rs`, `remote_folder.rs` | Settings › Connections (machines, the SSH form, a setup's progress and SSH's questions); the Open folder on a machine dialog |
 | `settings_parts.rs` | What every Settings page is built from: `SettingsPage` (title and line), `SettingsGroup` (a titled card), `SettingsRow` |
 | `settings_accounts.rs`, `settings_agy_accounts.rs`, `settings_appearance.rs`, `settings_shortcuts.rs`, `settings_worktrees.rs`, `settings_integrations.rs`, `settings_monos.rs` | Settings pages: provider accounts, appearance, shortcuts (read only, keys looked up in `commands.rs`'s keymap), worktrees, integrations (GitHub accounts, Backlog), Monos (on / off, pinned to the icon rail, Reset Mono) |
 | `quick_open.rs`, `lightbox.rs`, `link_dialog.rs`, `reminder_notices.rs`, `harness_update_notice.rs`, `whats_new.rs`, `resume_interrupted.rs` | Overlays |
@@ -297,6 +307,7 @@ only read that cache.
 | `harness/providers/claude/claude.ts` (`handleAgentLifecycle`, `noteSubagent*`), `sessions/ui/AgentTranscript.tsx` `SubagentPanel`, `transcriptActivity.ts` | `harness/claude/tasks.rs`, `app/subagents.rs`, `ui/transcript/subagents.rs` | Claude's subagents and backgrounded commands: the turn stays open until they finish and Claude reports back ("· running in background" on the fold line); a run's row (mascot, name, model, steps) holds its place while the turn is live and opens onto its trail. Stop kills the process, so no `stop_task` |
 | `sessions/model/taskList.ts`, `sessions/ui/TaskListPreview.tsx`, `harness/core/apply.ts` `upsertTaskList` | `app/task_list.rs`, `ui/transcript/task_list.rs` | The Tasks card, from `AgentEvent::Tasks`. Only Grok Build's plan updates feed it; Claude's `TodoWrite` still shows as a tool row. Whole snapshots only (no `merge`, no `key`) |
 | `features/monos/` (`mono.ts`, `monoFiles.ts`, `monoMemory.ts`, `monoHabits.ts`, `monoWorkspace.ts`, `MonoOverview`, `MonoSidebar`, `MonoSettingsDialog`, `MonoFilePages`, `MonoProjects`, `MonoChangesView`, `MonoActivityView`, `FloatingMonoChat`), `app/shell/MonoRailSection.tsx`, Settings › Monos, `src-tauri/src/mono.rs` | `monos.rs`, `monos/`, `app/monos.rs`, `app/mono_files.rs`, `app/mono_overview.rs`, `app/mono_changes.rs`, `ui/monos.rs`, `ui/mono_settings.rs`, `ui/mono_overview/`, `ui/settings_monos.rs`, `ui/transcript/mono_activity.rs`, `ui/rail/monos.rs`, `ui/mono_float/` | Agents of their own on the rail: one conversation each, in the home folder with Auto permissions, their projects, `SOUL.md` and the `<memory>` block of `MEMORY.md` handed over ahead of a message. The roster is in `settings.json`. In BenCode's window it is MonoCode's in-app Mono view: its own title bar (the mascot moving with its status, blinking, with a bulb while it needs you; the Overview pill and the gear, which opens the settings dialog: General with the face, name, model, permissions, projects, Reset and Delete; Soul saved on blur with Use theirs / Keep mine; Memory with its 200-line / 24KB gauge), the Overview at the chat's right (open by default, 340–960px, `monoOverviewWidth`; Sessions lists the threads in its projects, Documents its folder's files, Habits `habits.json` or the empty state, Changes each project's working tree with commit and push, Activity the work of the turn whose signature pill was clicked), a greeting filling the chat before the first message, day pills and the signature pill in the transcript (no turn metrics, handoff or outline), `MonoComposer`'s full layout with the emoji picker, the plan's usage, the model as text and its settings as pills, and `MonoUsageLimitNotice`; it covers the footer as MonoCode's does. The floating chat opens from a Mono's rail menu (no menu bar item, no header button, as MonoCode), at the top right of the screen under the pointer, with a reduced transcript of its own (approvals answered in the turn, a message that could not be sent kept with Retry) and MonoCode's inline composer (no emoji button); it resizes (BenCode adds the resizable style to its `NSWindow`, GPUI gives a window without a title bar none), its frame is drawn rounded on a clear window, and its size is `monoFloatSize` in `settings.json`. A reply that is only `<reaction>👍</reaction>` is a reaction: a badge on the user's message in both windows (the emoji alone only when no message precedes it). ⌘I toggles the last Mono; the one in view at quit opens at launch (`openMono`). Settings › Monos turns them off (`monosOff`) and pins them to the icon rail (`railMonosPinned`). No memory the agent writes itself, running habits, started sessions or artifacts (MonoCode's `app` CLI), no review card |
+| `features/connections/` (`ConnectionsSettings.tsx`, `AddRemoteProjectDialog.tsx`, `connections.ts`, `remotePaths.ts`), `src-tauri/src/remote.rs`, `remote_ssh.rs`, `ssh_askpass.rs`, `remote_bootstrap.sh`, `host/` | `src/remote/`, `app/remote.rs`, `app/remote_runs.rs`, `ui/settings_connections.rs`, `ui/remote_folder.rs`, `crates/bencode-host`, `crates/bencode-core/src/remote/` | Machines over SSH, `remote://` projects whose threads, Explorer, editor, search, git and PRs run there. BenCode's own: the host is Rust and shares the app's harnesses; the connection is SSH stdio (no device tokens, no Connect by URL, no Windows hosts); the host keeps only turns, threads stay in the app's database; terminal tabs are SSH sessions. See `docs/remote-access.md` |
 | none (Codex desktop's in-app browser) | `browser/`, `app/browser.rs`, `ui/browser_pane.rs` | BenCode's own. A WKWebView over a file-pane tab; picked elements and screenshots go to the composer; agents drive it through the `bencode-browser` MCP server while a browser tab is open |
 | `src-tauri/src/` (`checkpoint.rs`, `reminders.rs`, `fs.rs`, …) | `git/checkpoint.rs`, `db/`, `ui/file_tree/fs.rs` | In-process calls, no IPC |
 
@@ -573,6 +584,34 @@ div()
   entities belong to the app's window). The app's commands are bound on the
   app's window, so the float binds the ones it answers (⌘W, ⌘Q).
 
+### Machines (`src/remote/`, `crates/bencode-host`)
+
+- **A path on a machine is `remote://<machine>/<host path>`**
+  (`bencode_core::remote::path`); `<machine>` is the host's environment id.
+  Anything that takes a project path must route a remote one, never treat
+  it as local: `crate::remote::route(path)` is `None` for a local path.
+  A local check before a git call uses `remote::missing_here`, not `exists()`.
+- **git and gh go through `git::git_command` / `github::gh`**, which return
+  or use `remote::exec::Cmd`: a `remote://` cwd runs the command on the
+  machine, and arguments naming paths there become host paths. A new git
+  launch must not build a `std::process::Command` of its own.
+- **Work the host can do whole goes to it whole**: the Explorer's ops
+  (`Request::Tree`, `bencode_core::tree`), the file index, search, untracked
+  line counts. Code shared with the host lives in `bencode-core`, which
+  never links GPUI.
+- **A turn on a machine starts through `remote::spawn::spawn`**, which gives
+  the same handle and events as `harness::spawn`; `HarnessProcessHandle::relay`
+  sends approvals, stdin, follow-ups and cancel to the host. Such a turn
+  takes no checkpoints, no account profile and no browser tools. Quitting
+  leaves it running (`AgentRun.remote`); `remote-runs.json` brings it back.
+- **The host keeps runs, not threads**: events numbered from 1 in
+  `~/.bencode-host/runs`, replayed to a connection that asks again. A frame
+  changes meaning only with `PROTOCOL_VERSION`; the app and host share one
+  version (`[workspace.package]`), which setup installs.
+- Background connections never prompt (`BatchMode`); only Settings' setup
+  asks, through the askpass bridge (`remote/askpass.rs`, this binary run by
+  ssh). A password is never stored or put on argv.
+
 ### In-app browser (`src/browser/`)
 
 - A page is a native view above everything GPUI draws; GPUI's clipping
@@ -714,6 +753,8 @@ packaging/macos/bundle.sh    # BenCode.app and a dmg per architecture in target/
 - Run from Finder or the Dock, the app logs to
   `~/Library/Logs/BenCode/bencode.log` (Help › Show Logs), warnings and up
   unless `RUST_LOG` says otherwise.
+- `remote::setup::loopback` is `#[ignore]`d: it needs a loopback sshd
+  (`docs/remote-access.md`, Development).
 - Three tests are `#[ignore]`d because they are live: one calls the Claude CLI
   (`harness/claude.rs::live_permission_round_trip`), two read the Keychain
   and a usage endpoint (`rate_limits/claude.rs::live_usage_round_trip`,

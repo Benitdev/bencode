@@ -23,6 +23,8 @@ pub(super) const ROW_HEIGHT: f32 = 32.0;
 const MASCOT_BEAT: Duration = Duration::from_millis(460);
 /// MonoCode `text-amber-400`: the muted badge.
 pub(super) const AMBER_400: u32 = 0xfbbf24;
+/// Tailwind `emerald-400`: a machine that is connected.
+pub(super) const EMERALD_400: u32 = 0x34d399;
 
 /// MonoCode `formatInteger`: thousands grouped with commas.
 pub(super) fn format_diff_number(n: usize) -> String {

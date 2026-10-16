@@ -1,0 +1,16 @@
+[package]
+name = "bencode-core"
+version.workspace = true
+edition = "2024"
+license = "MIT"
+description = "What BenCode's app and its remote host share: the agent CLIs and the remote protocol"
+
+[dependencies]
+tokio = { version = "1", features = ["io-util", "macros", "process", "rt-multi-thread", "sync", "time"] }
+anyhow = "1"
+base64 = "0.22"
+log = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+jiff = "0.2"

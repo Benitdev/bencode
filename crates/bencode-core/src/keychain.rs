@@ -81,3 +81,44 @@ pub fn run_with_input(args: &[&str], input: Option<&str>) -> Result<Output, Stri
 pub fn not_found(output: &Output) -> bool {
     output.stderr.contains("could not be found")
 }
+
+/// Claude Code's Keychain item for the sign-in: `config_dir` is an account
+/// profile's directory, `None` the default one. Claude Code hashes the exact
+/// config dir string (NFC-normalized; BenCode's profile paths are ASCII
+/// under an ASCII home, where that changes nothing) and suffixes the first
+/// eight hex characters.
+pub fn claude_service(config_dir: Option<&std::path::Path>) -> String {
+    use sha2::{Digest, Sha256};
+    const SERVICE: &str = "Claude Code-credentials";
+    let Some(config_dir) = config_dir else {
+        return SERVICE.into();
+    };
+    let digest = Sha256::digest(config_dir.to_string_lossy().as_bytes());
+    let suffix: String = digest
+        .iter()
+        .take(4)
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    format!("{SERVICE}-{suffix}")
+}
+
+/// Deletes the Claude sign-in an account profile keeps in the Keychain
+/// (MonoCode `delete_claude_keychain_credentials`); one already gone is
+/// fine. Elsewhere it is `.credentials.json`, which goes with the
+/// directory. Blocking.
+#[cfg_attr(not(target_os = "macos"), allow(unused_variables))]
+pub fn delete_claude_credentials(config_dir: &std::path::Path) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let service = claude_service(Some(config_dir));
+        let failed = |detail: String| {
+            format!("Could not remove the Claude credentials from Keychain ({service}): {detail}")
+        };
+        let output =
+            run(&["delete-generic-password", "-s", service.as_str()]).map_err(failed)?;
+        if !(output.ok || not_found(&output)) {
+            return Err(failed(output.stderr));
+        }
+    }
+    Ok(())
+}

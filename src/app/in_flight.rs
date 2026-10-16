@@ -119,9 +119,10 @@ impl BenCodeApp {
             .sessions
             .iter()
             .filter(|s| {
-                self.runs
-                    .get(&s.id)
-                    .is_some_and(|run| run.purpose == super::agent::RunPurpose::Turn)
+                // A machine's turn goes on without BenCode (`remote_runs.rs`).
+                self.runs.get(&s.id).is_some_and(|run| {
+                    run.purpose == super::agent::RunPurpose::Turn && run.remote.is_none()
+                })
             })
             .filter(|s| worth_keeping(s))
             .map(|s| InFlightSession {

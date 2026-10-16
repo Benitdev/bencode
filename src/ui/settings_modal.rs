@@ -22,6 +22,8 @@ use crate::ui::sidebar_popovers::pretty_path;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum SettingsTab {
     General,
+    /// MonoCode Settings › Connections: machines (`ui/settings_connections.rs`).
+    Connections,
     #[default]
     Providers,
     Mcp,
@@ -40,12 +42,18 @@ pub enum SettingsTab {
     Monos,
 }
 
-const SECTIONS: [(SettingsTab, &str, &str, IconName); 11] = [
+const SECTIONS: [(SettingsTab, &str, &str, IconName); 12] = [
     (
         SettingsTab::General,
         "general",
         "General",
         IconName::Settings,
+    ),
+    (
+        SettingsTab::Connections,
+        "connections",
+        "Connections",
+        IconName::Globe,
     ),
     (
         SettingsTab::Providers,
@@ -102,6 +110,7 @@ pub(crate) const SETTINGS_GROUPS: [(&str, &[SettingsTab]); 3] = [
         "App",
         &[
             SettingsTab::General,
+            SettingsTab::Connections,
             SettingsTab::Appearance,
             SettingsTab::Shortcuts,
             SettingsTab::About,
@@ -151,6 +160,7 @@ impl SettingsTab {
                 "The model new threads start with, the panels BenCode shows, and the editors it \
                  opens files in."
             }
+            Self::Connections => "Connect your machines and run agents remotely through SSH.",
             Self::Appearance => {
                 "Theme, tint, translucency, workspace layout, and conversation backgrounds."
             }
@@ -236,6 +246,7 @@ impl BenCodeApp {
     fn render_settings_page(&self, cx: &Context<Self>) -> AnyElement {
         match self.settings_tab {
             SettingsTab::General => self.render_settings_general(cx).into_any_element(),
+            SettingsTab::Connections => self.render_settings_connections(cx).into_any_element(),
             SettingsTab::Providers => self.render_settings_providers(cx).into_any_element(),
             SettingsTab::Mcp => self.render_settings_mcp(cx).into_any_element(),
             SettingsTab::Skills => self.render_settings_skills(cx).into_any_element(),

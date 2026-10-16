@@ -165,3 +165,18 @@ Notes:
 - [x] P2 S Mono status copy: "Approve {call title}", "Waiting for approval", the question's own words, "Usage limit reached", "Writing a reply", the latest call's title, "Thinking" (`monoState`)
 - [~] P2 M A Mono's changes per project (its turns keep no checkpoints): the Overview's Changes tab shows each project's working tree — `MonoChangesView.tsx`
 - [~] P2 S Name edited in place (the settings dialog); a per-Mono chat background still to do
+
+## Connections (remote machines)
+MonoCode `features/connections/`, `src-tauri/src/remote*.rs`, `host/`; BenCode's
+design is in `docs/remote-access.md`.
+- [x] P0 L Settings › Connections: Add machine over SSH, host install and checksum, askpass prompts, Reconnect, Update Host, Remove — `connections/ui/ConnectionsSettings.tsx`
+- [x] P0 L Open folder on a machine; `remote://` projects on the rail with the machine's name and status dot — `AddRemoteProjectDialog.tsx`, `ProjectRail.tsx`
+- [x] P0 L Turns on the machine: approvals, questions, follow-ups, cancel, compaction; they outlive SSH drops and quitting — `RemoteSession.tsx`, `host/engine.ts`
+- [x] P1 L Explorer, editor, Go to File, search, Changes, history, branches, worktrees and PRs on the machine — `platform/tauri/fs.ts` `remoteRunner`, `host/workspace-commands.ts`
+- [x] P1 M The model picker lists the host's CLIs and models — `remoteModels.ts`
+- [ ] P2 M Connect by URL and device tokens (BenCode is SSH only, by design)
+- [ ] P2 L Windows hosts (`remote_bootstrap.ps1`, Task Scheduler)
+- [ ] P2 L Threads shared between computers connected to one machine (BenCode's host keeps turns; threads are in each app's database)
+- [ ] P2 S Image files of a machine's project preview in the file pane (they read locally)
+- [ ] P2 M Copying files from this computer into a machine's folder (Explorer paste and drop)
+- [ ] P2 M Terminal tabs on a machine outlive BenCode (they are plain SSH sessions)

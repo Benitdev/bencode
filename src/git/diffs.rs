@@ -66,13 +66,27 @@ pub(super) fn patch(text: &str) -> FileDiff {
 /// An untracked file, all of it added.
 fn untracked(cwd: &str, path: &str) -> Result<FileDiff> {
     let full = Path::new(cwd).join(path);
-    if std::fs::metadata(&full)?.len() > MAX_UNTRACKED_READ_BYTES {
-        return Ok(FileDiff {
-            too_large: true,
-            ..FileDiff::default()
-        });
-    }
-    let text = match String::from_utf8(std::fs::read(&full)?) {
+    let too_large = FileDiff {
+        too_large: true,
+        ..FileDiff::default()
+    };
+    let bytes = match full.to_str().filter(|p| crate::remote::is_remote(p)) {
+        // On a machine: one read, capped one byte past the limit.
+        Some(remote) => {
+            let file = crate::remote::files::read(remote, MAX_UNTRACKED_READ_BYTES + 1)?;
+            if file.truncated {
+                return Ok(too_large);
+            }
+            file.bytes.0
+        }
+        None => {
+            if std::fs::metadata(&full)?.len() > MAX_UNTRACKED_READ_BYTES {
+                return Ok(too_large);
+            }
+            std::fs::read(&full)?
+        }
+    };
+    let text = match String::from_utf8(bytes) {
         Ok(text) if !text.contains('\0') => text,
         _ => {
             return Ok(FileDiff {

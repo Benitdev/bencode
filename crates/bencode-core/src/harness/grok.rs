@@ -44,8 +44,7 @@ pub fn spawn(req: &SpawnRequest) -> Result<(HarnessProcessHandle, EventRx)> {
             initial: format!("{}\n", parser.initialize()),
         },
         permission_responder: Some(permission_response),
-        // A compaction is not a turn to add to.
-        can_steer: !req.compact,
+        can_steer: super::can_steer(HarnessKind::Grok, req.compact),
         account: None,
         env: Vec::new(),
     };
@@ -100,10 +99,10 @@ pub fn initialize_params() -> Value {
 
 /// The MCP servers a session gets, in ACP's stdio shape: the in-app
 /// browser's while a browser tab is open, else none.
-fn mcp_servers(browser: Option<&crate::browser::McpLaunch>) -> Value {
+fn mcp_servers(browser: Option<&crate::mcp::McpLaunch>) -> Value {
     match browser {
         Some(launch) => json!([{
-            "name": crate::browser::MCP_SERVER_NAME,
+            "name": crate::mcp::MCP_SERVER_NAME,
             "command": launch.command,
             "args": launch.args,
             "env": [],
@@ -1576,7 +1575,7 @@ mod tests {
 
     #[test]
     fn an_open_browser_tab_gives_the_session_its_tools() {
-        let launch = crate::browser::McpLaunch {
+        let launch = crate::mcp::McpLaunch {
             command: "/Applications/BenCode.app/Contents/MacOS/bencode".into(),
             args: vec!["--browser-mcp".into(), "/tmp/b.sock".into()],
         };
@@ -1679,7 +1678,7 @@ mod tests {
 
     /// Notifications in the shapes Grok Build 1.0.21 wrote to a session's
     /// `updates.jsonl`, their contents replaced.
-    const RECORDED: &str = include_str!("../../tests/fixtures/grok_acp_turn.jsonl");
+    const RECORDED: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/fixtures/grok_acp_turn.jsonl"));
 
     #[test]
     fn a_recorded_turn_folds_into_the_transcripts_events() {

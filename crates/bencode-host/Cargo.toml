@@ -1,0 +1,19 @@
+[package]
+name = "bencode-host"
+version.workspace = true
+edition = "2024"
+license = "MIT"
+description = "BenCode's host on another machine: runs the agents there for the app, over SSH"
+
+[dependencies]
+bencode-core = { path = "../bencode-core" }
+anyhow = "1"
+log = "0.4"
+env_logger = "0.11"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+libc = "0.2"
+jiff = "0.2"
+
+[dev-dependencies]
+tempfile = "3"

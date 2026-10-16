@@ -1,11 +1,23 @@
 [package]
 name = "bencode"
-version = "0.1.14"
+version.workspace = true
 edition = "2024"
 license = "MIT"
 description = "A native GPU-accelerated control plane for MonoCode using Rust and Ely GPUI"
 
+[workspace.package]
+# One version for the app, its host and what they share: Settings ›
+# Connections installs the host of the app's own version.
+version = "0.1.14"
+
+[workspace]
+members = [".", "crates/bencode-core", "crates/bencode-host"]
+default-members = [".", "crates/bencode-core", "crates/bencode-host"]
+
 [dependencies]
+# What the app shares with its remote host: the agent CLIs, the protocol.
+bencode-core = { path = "crates/bencode-core" }
+
 # Ely GPUI Component Library, from BenCode's mirror: the original
 # repository (ZacharyZhang-NY/Ely-GPUI-Components) is gone from GitHub.
 # Pinned: later Ely commits change ThemeSelector / SettingsLayout (ad47249).

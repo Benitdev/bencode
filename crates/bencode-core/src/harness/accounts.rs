@@ -191,7 +191,7 @@ pub fn selected_account_id(
 /// `(provider, account id)` of every profile directory on disk, so a thread
 /// pinned to one the list no longer names can still run. Blocking.
 pub fn profiles_on_disk() -> Vec<(String, String)> {
-    let Some(root) = crate::storage::provider_accounts_dir() else {
+    let Some(root) = crate::paths::provider_accounts_dir() else {
         return Vec::new();
     };
     let mut found = Vec::new();
@@ -229,7 +229,7 @@ impl AccountProfile {
         };
         Some(Self {
             provider,
-            dir: crate::storage::provider_accounts_dir()?
+            dir: crate::paths::provider_accounts_dir()?
                 .join(provider)
                 .join(id),
         })
@@ -289,7 +289,7 @@ impl AccountProfile {
     /// (Claude's is in the Keychain), then its directory. Blocking.
     pub fn remove(&self) -> Result<(), String> {
         if self.provider == "claude" {
-            crate::rate_limits::delete_claude_credentials(&self.dir)?;
+            crate::keychain::delete_claude_credentials(&self.dir)?;
         }
         let failed = |err: std::io::Error| {
             format!(

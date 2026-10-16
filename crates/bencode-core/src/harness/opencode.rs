@@ -36,7 +36,7 @@ fn inline_config(req: &SpawnRequest) -> Option<(String, String)> {
         .collect();
     let config = serde_json::json!({
         "mcp": {
-            crate::browser::MCP_SERVER_NAME: { "type": "local", "command": command, "enabled": true },
+            crate::mcp::MCP_SERVER_NAME: { "type": "local", "command": command, "enabled": true },
         },
     });
     Some(("OPENCODE_CONFIG_CONTENT".into(), config.to_string()))
@@ -187,7 +187,7 @@ mod tests {
             browser_mcp: None,
         };
         assert!(inline_config(&req).is_none());
-        req.browser_mcp = Some(crate::browser::McpLaunch {
+        req.browser_mcp = Some(crate::mcp::McpLaunch {
             command: "/bin/bencode".into(),
             args: vec!["--browser-mcp".into(), "/tmp/b.sock".into()],
         });

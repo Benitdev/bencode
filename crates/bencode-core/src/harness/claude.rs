@@ -40,7 +40,7 @@ pub fn spawn(req: &SpawnRequest) -> Result<(HarnessProcessHandle, EventRx)> {
             ),
         },
         permission_responder: Some(permission_response),
-        can_steer: true,
+        can_steer: super::can_steer(super::HarnessKind::Claude, req.compact),
         account: req.account.clone(),
         env: Vec::new(),
     };
@@ -64,7 +64,7 @@ fn build_args(req: &SpawnRequest) -> Vec<String> {
     if let Some(launch) = &req.browser_mcp {
         let config = serde_json::json!({
             "mcpServers": {
-                crate::browser::MCP_SERVER_NAME: {
+                crate::mcp::MCP_SERVER_NAME: {
                     "type": "stdio",
                     "command": launch.command,
                     "args": launch.args,
@@ -672,7 +672,7 @@ mod tests {
     fn an_open_browser_tab_adds_its_mcp_server() {
         assert!(!build_args(&request(PermissionPolicy::Ask)).contains(&"--mcp-config".into()));
         let req = SpawnRequest {
-            browser_mcp: Some(crate::browser::McpLaunch {
+            browser_mcp: Some(crate::mcp::McpLaunch {
                 command: "/bin/bencode".into(),
                 args: vec!["--browser-mcp".into(), "/tmp/b.sock".into()],
             }),
@@ -816,7 +816,7 @@ mod tests {
     /// launches it, says "waiting" and yields; the run's notification wakes
     /// it for a second turn in the same process.
     const BACKGROUND_AGENT: &str =
-        include_str!("../../tests/fixtures/claude_background_agent.jsonl");
+        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/fixtures/claude_background_agent.jsonl"));
     const AGENT_CALL: &str = "toolu_01FC4pYrE6VwX8WNYBuZzhe9";
 
     #[test]

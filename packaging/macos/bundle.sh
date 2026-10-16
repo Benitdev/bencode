@@ -65,7 +65,7 @@ for target in $targets; do
   # The build runs every dependency's build script and proc macro: none of
   # them gets the release key or the notarization password.
   env -u MINISIGN_SECRET_KEY -u APPLE_ID -u APPLE_TEAM_ID -u APPLE_APP_PASSWORD \
-    cargo build --release --locked --target "$target"
+    cargo build --release --locked -p bencode --target "$target"
 done
 
 rm -rf "$out"

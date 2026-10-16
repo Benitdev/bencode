@@ -597,6 +597,7 @@ dependencies = [
  "alacritty_terminal",
  "anyhow",
  "base64",
+ "bencode-core",
  "block",
  "cocoa",
  "ely-gpui-component",
@@ -618,6 +619,35 @@ dependencies = [
  "tokio",
  "unicode-segmentation",
  "wry",
+]
+
+[[package]]
+name = "bencode-core"
+version = "0.1.14"
+dependencies = [
+ "anyhow",
+ "base64",
+ "jiff",
+ "log",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tokio",
+]
+
+[[package]]
+name = "bencode-host"
+version = "0.1.14"
+dependencies = [
+ "anyhow",
+ "bencode-core",
+ "env_logger",
+ "jiff",
+ "libc",
+ "log",
+ "serde",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]

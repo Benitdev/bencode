@@ -4,7 +4,9 @@ name: Release
 # BenCode-arm64.dmg and BenCode-x86_64.dmg and publishes them as a GitHub
 # Release, with that version's CHANGELOG.md section as the notes. A tag with
 # a hyphen (v0.2.0-beta.1) is a pre-release. Running the workflow by hand only
-# builds the dmg and keeps it as a workflow artifact; by default that test
+# builds the dmg and keeps it as a workflow artifact; every build also
+# packages BenCode Host for macOS and Linux (packaging/host/package.sh),
+# which Settings › Connections installs on a machine; by default that test
 # build is Apple Silicon only with thin LTO, so it finishes much sooner.
 # Signing and notarization: docs/releasing.md.
 
@@ -48,7 +50,7 @@ jobs:
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-apple-darwin,x86_64-apple-darwin
+          targets: aarch64-apple-darwin,x86_64-apple-darwin,aarch64-unknown-linux-musl,x86_64-unknown-linux-musl
       - uses: Swatinem/rust-cache@v2
         with:
           key: release
@@ -113,10 +115,21 @@ jobs:
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
         run: packaging/macos/bundle.sh
 
+      - name: Package BenCode Host
+        env:
+          CARGO_PROFILE_RELEASE_LTO: ${{ inputs.quick == false && 'fat' || 'thin' }}
+          CARGO_PROFILE_RELEASE_CODEGEN_UNITS: ${{ inputs.quick == false && '1' || '16' }}
+        run: |
+          brew list zig >/dev/null 2>&1 || brew install zig
+          command -v cargo-zigbuild >/dev/null || cargo install cargo-zigbuild --locked
+          packaging/host/package.sh
+
       - uses: actions/upload-artifact@v4
         with:
           name: BenCode-${{ steps.version.outputs.version }}
           path: |
+            target/bundle/bencode-host-*.tar.gz
+            target/bundle/bencode-host-*.tar.gz.sha256
             target/bundle/BenCode-*.dmg
             target/bundle/BenCode-*.dmg.sha256
             target/bundle/BenCode-*.app.tar.gz
@@ -163,7 +176,9 @@ jobs:
           if [[ "$GITHUB_REF_NAME" == *-* ]]; then
             flags+=(--prerelease)
           fi
-          assets=(target/bundle/BenCode-*.dmg target/bundle/BenCode-*.dmg.sha256)
+          # The host packages Settings › Connections installs on a machine.
+          assets=(target/bundle/BenCode-*.dmg target/bundle/BenCode-*.dmg.sha256
+            target/bundle/bencode-host-*.tar.gz target/bundle/bencode-host-*.tar.gz.sha256)
           # The update archives and the feed the app checks (latest.json is
           # read from the newest release, so it ships with every one).
           if [[ "$UPDATES" == true ]]; then

@@ -81,7 +81,10 @@ impl BenCodeApp {
             MenuEntry::Separator,
             MenuEntry::Item(item("open-terminal", "Open in Terminal")),
         ];
-        entries.push(MenuEntry::Item(item("reveal", REVEAL_LABEL)));
+        // Finder cannot show a folder on a machine.
+        if !crate::remote::is_remote(&self.tree_root_path().to_string_lossy()) {
+            entries.push(MenuEntry::Item(item("reveal", REVEAL_LABEL)));
+        }
         entries
     }
 

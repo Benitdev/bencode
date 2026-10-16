@@ -273,18 +273,25 @@ impl BenCodeApp {
         } else {
             ExtraItem::new("pin", "Pin project", IconName::Pin)
         };
-        vec![
+        // A folder on a machine is not on this computer's disk: Finder and
+        // the editors here cannot open it (MonoCode has neither for it).
+        let here = !crate::remote::is_remote(path);
+        let mut items = vec![
             ExtraItem {
                 submenu: Some(SubmenuKind::MoveToGroup),
                 ..ExtraItem::new("project-group", "Move to group", ExtraIcon::FolderTree)
             },
             pin,
-            ExtraItem::new("reveal", REVEAL_LABEL, IconName::FolderOpen),
-            ExtraItem {
+        ];
+        if here {
+            items.push(ExtraItem::new("reveal", REVEAL_LABEL, IconName::FolderOpen));
+            items.push(ExtraItem {
                 submenu: Some(SubmenuKind::Editor),
                 disabled: self.integrations.editors.is_none(),
                 ..ExtraItem::new("external-editor", "Open in editor", IconName::AppWindow)
-            },
+            });
+        }
+        items.extend([
             ExtraItem {
                 submenu: Some(SubmenuKind::Mute),
                 sep_before: true,
@@ -302,7 +309,8 @@ impl BenCodeApp {
                 danger: true,
                 ..ExtraItem::new("delete", "Delete", IconName::Trash2)
             },
-        ]
+        ]);
+        items
     }
 
     /// MonoCode `MonoMenu`'s actions. Background image is left out: BenCode

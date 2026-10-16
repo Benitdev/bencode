@@ -4,12 +4,11 @@
 //! its upstream counts and whether `HEAD` exists.
 
 use std::hash::{Hash, Hasher};
-use std::path::Path;
 
 use super::{
     DEFAULT_BRANCH, GitDetailedStatus, GitFileChange, GitFileStatus, StatusEntry, combined_status,
     current_branch, diff_numstat, empty_tree, index_side_status, lossy, make_change, run_git,
-    worktree_side_status,
+    with_untracked, worktree_side_status,
 };
 
 /// `git status --porcelain=v2 -b -z -uall`, parsed once.
@@ -30,7 +29,7 @@ struct BranchHeader {
 impl StatusPass {
     /// `None` outside a repository or for a missing folder.
     pub fn read(cwd: &str) -> Option<Self> {
-        if !Path::new(cwd).exists() {
+        if crate::remote::missing_here(cwd) {
             return None;
         }
         let raw = match run_git(cwd, &["status", "--porcelain=v2", "-b", "-z", "-uall"]) {
@@ -89,11 +88,21 @@ impl StatusPass {
         self.entries.iter().filter(|e| !e.is_ignored())
     }
 
+    fn untracked_paths(&self) -> impl Iterator<Item = &str> {
+        self.visible()
+            .filter(|e| e.is_untracked())
+            .map(|e| e.path.as_str())
+    }
+
     /// The Changes panel's combined HEAD → work tree list.
     pub fn changes(&self, cwd: &str) -> Vec<GitFileChange> {
-        let stats = diff_numstat(cwd, &[self.diff_base(cwd).as_str()]);
+        let stats = with_untracked(
+            cwd,
+            diff_numstat(cwd, &[self.diff_base(cwd).as_str()]),
+            self.untracked_paths(),
+        );
         self.visible()
-            .map(|e| make_change(&e.path, combined_status(e), cwd, &stats))
+            .map(|e| make_change(&e.path, combined_status(e), &stats))
             .collect()
     }
 
@@ -101,12 +110,12 @@ impl StatusPass {
     pub fn detailed_status(&self, cwd: &str) -> GitDetailedStatus {
         let base = self.diff_base(cwd);
         let staged_stats = diff_numstat(cwd, &["--cached", base.as_str()]);
-        let unstaged_stats = diff_numstat(cwd, &[]);
+        let unstaged_stats = with_untracked(cwd, diff_numstat(cwd, &[]), self.untracked_paths());
         let staged = self
             .visible()
             .filter(|e| !e.is_unmerged())
             .filter_map(|e| {
-                index_side_status(e.index).map(|s| make_change(&e.path, s, cwd, &staged_stats))
+                index_side_status(e.index).map(|s| make_change(&e.path, s, &staged_stats))
             })
             .collect();
         let unstaged = self
@@ -117,7 +126,7 @@ impl StatusPass {
                 } else {
                     worktree_side_status(e.worktree)
                 };
-                status.map(|s| make_change(&e.path, s, cwd, &unstaged_stats))
+                status.map(|s| make_change(&e.path, s, &unstaged_stats))
             })
             .collect();
         GitDetailedStatus {

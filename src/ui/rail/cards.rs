@@ -19,7 +19,7 @@ use super::group_color;
 use super::model::{ProjectGroup, mute_status, notification_id, path_key};
 use super::reorder::{DraggedRailProject, preview_order};
 use super::widgets::{
-    AMBER_400, ROW_HEIGHT, hover_control, project_card_title, project_diff_stat,
+    AMBER_400, EMERALD_400, ROW_HEIGHT, hover_control, project_card_title, project_diff_stat,
     project_mascot_icon, rail_label, section_button,
 };
 use crate::app::{BenCodeApp, same_project_path};
@@ -399,7 +399,23 @@ impl BenCodeApp {
             .cloned();
         let (additions, deletions) = card.stats;
         let has_changes = additions > 0 || deletions > 0;
-        let title = project_card_title(&name, &card.path, card.stats, card.busy);
+        // MonoCode: a folder on a machine says where, and how the machine is.
+        let remote = self.remote_project_status(&card.path);
+        let title = match &remote {
+            Some((machine, online, host_path)) => {
+                let connection = match online {
+                    None => "Machine not connected on this computer",
+                    Some(true) => "Connected",
+                    Some(false) => "Reconnecting",
+                };
+                let place = format!(
+                    "{host_path} on {} ({connection})",
+                    machine.as_deref().unwrap_or("another machine")
+                );
+                project_card_title(&name, &place, card.stats, card.busy)
+            }
+            None => project_card_title(&name, &card.path, card.stats, card.busy),
+        };
         let title = match &card.mute {
             Some(status) => format!("{title}\n{status}"),
             None => title,
@@ -495,16 +511,33 @@ impl BenCodeApp {
                             .child(icon),
                     )
                     .child(
-                        // `min-w-0 flex-1 truncate text-sm font-medium leading-tight`
+                        // `min-w-0 flex-1 truncate text-sm font-medium leading-tight`;
+                        // beside a machine's name, `max-w-[75%] shrink-0`.
                         div()
                             .min_w_0()
-                            .flex_1()
+                            .map(|el| match remote.as_ref().and_then(|(m, ..)| m.as_ref()) {
+                                Some(_) => el.flex_none().max_w(relative(0.75)),
+                                None => el.flex_1(),
+                            })
                             .truncate()
                             .text_size(px(14.0))
                             .font_weight(FontWeight::MEDIUM)
                             .line_height(relative(1.25))
                             .child(label),
                     )
+                    .when_some(remote.as_ref().and_then(|(m, ..)| m.clone()), |el, machine| {
+                        // `min-w-0 flex-1 truncate text-[11px] leading-tight text-content/45`
+                        el.child(
+                            div()
+                                .min_w_0()
+                                .flex_1()
+                                .truncate()
+                                .text_size(px(11.0))
+                                .line_height(relative(1.25))
+                                .text_color(fg.opacity(0.45))
+                                .child(machine),
+                        )
+                    })
                     .when(has_changes, |el| {
                         // `project-card-stats shrink-0 group-hover:hidden`
                         el.child(
@@ -516,6 +549,35 @@ impl BenCodeApp {
                                     deletions,
                                     crate::ui::appearance::diff_colors(cx),
                                 )),
+                        )
+                    })
+                    .when_some(remote.as_ref().map(|(_, online, _)| *online), |el, online| {
+                        // `relative grid size-4 text-content/45`, `Internet size-3`
+                        // and a `size-1.5` dot: emerald while connected.
+                        el.child(
+                            div()
+                                .relative()
+                                .flex()
+                                .flex_none()
+                                .size_4()
+                                .items_center()
+                                .justify_center()
+                                .child(Icon::new(IconName::Globe).size(IconSize::Xs).color(fg.opacity(0.45)))
+                                .child(
+                                    div()
+                                        .absolute()
+                                        .right_0()
+                                        .bottom_0()
+                                        .size(px(6.0))
+                                        .rounded_full()
+                                        .border_1()
+                                        .border_color(cx.theme().colors.bg)
+                                        .bg(if online == Some(true) {
+                                            rgb(EMERALD_400).into()
+                                        } else {
+                                            fg.opacity(0.35)
+                                        }),
+                                ),
                         )
                     })
                     .when_some(card.mute, |el, status| {

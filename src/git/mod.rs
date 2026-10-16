@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Component, Path};
 use std::process::{Command, Output};
 
 use anyhow::{Context as _, Result, bail};
@@ -69,61 +69,16 @@ pub struct GitDetailedStatus {
 // Process helpers
 // ---------------------------------------------------------------------------
 
-/// The git BenCode runs: the first on PATH, except that macOS's
-/// `/usr/bin/git` is a stub that looks the developer tools' git up again on
-/// every launch, which doubles what a git call costs (about 6ms of each,
-/// more while BenCode starts). The git it would run is found once instead.
-fn git_program() -> &'static std::ffi::OsStr {
-    static PROGRAM: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
-    PROGRAM
-        .get_or_init(|| {
-            let on_path = std::env::var_os("PATH").and_then(|path| {
-                std::env::split_paths(&path)
-                    .map(|dir| dir.join("git"))
-                    .find(|git| git.is_file())
-            });
-            let stub = on_path
-                .as_deref()
-                .is_some_and(|git| git == Path::new("/usr/bin/git"));
-            let tools = if stub { developer_git() } else { None };
-            tools.unwrap_or_else(|| PathBuf::from("git"))
-        })
-        .as_os_str()
-}
-
-/// The git inside the developer folder `xcode-select` points at, as the
-/// stub finds it: `DEVELOPER_DIR`, else the folder chosen with
-/// `xcode-select -s`, else Xcode's or the Command Line Tools'. Read from
-/// disk, never through `xcrun`, which offers to install the tools when
-/// they are missing.
-fn developer_git() -> Option<PathBuf> {
-    let chosen = std::env::var_os("DEVELOPER_DIR")
-        .map(PathBuf::from)
-        .or_else(|| std::fs::read_link("/var/db/xcode_select_link").ok());
-    let folders = chosen.into_iter().chain([
-        PathBuf::from("/Applications/Xcode.app/Contents/Developer"),
-        PathBuf::from("/Library/Developer/CommandLineTools"),
-    ]);
-    folders
-        .map(|folder| folder.join("usr/bin/git"))
-        .find(|git| git.is_file())
-}
-
 /// `git` with BenCode's options, run where the caller says. For a launch
 /// outside any repository (`diff --no-index`); the others use `git_command`.
 pub(crate) fn git_base_command() -> Command {
-    let mut cmd = Command::new(git_program());
-    cmd.args(["-c", "core.quotepath=false", "-c", "color.ui=never"])
-        // Status polling from the UI must not fight other git processes for index.lock.
-        .env("GIT_OPTIONAL_LOCKS", "0");
-    cmd
+    bencode_core::git_cli::base_command()
 }
 
-/// `git -C cwd` with BenCode's options: every git launch starts here.
-pub(crate) fn git_command(cwd: impl AsRef<std::ffi::OsStr>) -> Command {
-    let mut cmd = git_base_command();
-    cmd.arg("-C").arg(cwd);
-    cmd
+/// `git -C cwd` with BenCode's options: every git launch starts here. A
+/// `cwd` on a machine runs it there (`remote::exec`).
+pub(crate) fn git_command(cwd: impl AsRef<std::ffi::OsStr>) -> crate::remote::exec::Cmd {
+    crate::remote::exec::Cmd::git(Some(cwd.as_ref()))
 }
 
 fn git_output(cwd: &str, args: &[&str]) -> Result<Output> {
@@ -255,7 +210,7 @@ pub fn state_fingerprint(cwd: &str) -> Option<StateFingerprint> {
 }
 
 fn read_status(cwd: &str) -> Result<Vec<StatusEntry>> {
-    if !Path::new(cwd).exists() {
+    if crate::remote::missing_here(cwd) {
         bail!("workspace path does not exist: {cwd}");
     }
     let raw = run_git(cwd, &["status", "--porcelain=v1", "-z", "-uall"])?;
@@ -300,24 +255,53 @@ fn diff_numstat(cwd: &str, extra: &[&str]) -> NumstatMap {
         .unwrap_or_default()
 }
 
-/// Counts lines of an untracked text file; binary / huge / unreadable files count as 0.
-fn count_untracked_lines(cwd: &str, file: &str) -> usize {
-    let full = Path::new(cwd).join(file);
-    let Ok(meta) = std::fs::metadata(&full) else {
-        return 0;
-    };
-    if !meta.is_file() || meta.len() > MAX_UNTRACKED_COUNT_BYTES {
-        return 0;
+/// Lines of each untracked text file, as additions: binary, huge or
+/// unreadable files count as 0. On a machine, one request for all of them.
+fn count_untracked_lines<'a>(cwd: &str, files: impl IntoIterator<Item = &'a str>) -> Vec<(String, usize)> {
+    let files: Vec<String> = files.into_iter().map(str::to_string).collect();
+    if files.is_empty() {
+        return Vec::new();
     }
-    let Ok(bytes) = std::fs::read(&full) else {
-        return 0;
+    let counts = match crate::remote::route(cwd) {
+        Some(route) => route
+            .and_then(|route| {
+                route.call::<Vec<usize>>(crate::remote::protocol::Request::CountLines {
+                    root: route.host_path.clone(),
+                    files: files.clone(),
+                    max_bytes: MAX_UNTRACKED_COUNT_BYTES,
+                })
+            })
+            .unwrap_or_else(|err| {
+                log::debug!("untracked line counts in {cwd}: {err}");
+                Vec::new()
+            }),
+        None => files
+            .iter()
+            .map(|file| {
+                bencode_core::files::count_text_lines(&Path::new(cwd).join(file), MAX_UNTRACKED_COUNT_BYTES)
+            })
+            .collect(),
     };
-    if bytes.contains(&0) {
-        return 0;
+    files
+        .into_iter()
+        .zip(counts.into_iter().chain(std::iter::repeat(0)))
+        .collect()
+}
+
+/// `stats` with the untracked files' line counts added, for `make_change`.
+fn with_untracked<'a>(
+    cwd: &str,
+    mut stats: NumstatMap,
+    untracked: impl IntoIterator<Item = &'a str>,
+) -> NumstatMap {
+    let missing: Vec<&str> = untracked
+        .into_iter()
+        .filter(|path| !stats.contains_key(*path))
+        .collect();
+    for (path, lines) in count_untracked_lines(cwd, missing) {
+        stats.insert(path, (lines, 0));
     }
-    let newlines = bytes.iter().filter(|b| **b == b'\n').count();
-    let trailing_partial = bytes.last().is_some_and(|b| *b != b'\n');
-    newlines + usize::from(trailing_partial)
+    stats
 }
 
 fn index_side_status(c: char) -> Option<GitFileStatus> {
@@ -361,12 +345,9 @@ fn combined_status(entry: &StatusEntry) -> GitFileStatus {
     }
 }
 
-fn make_change(path: &str, status: GitFileStatus, cwd: &str, stats: &NumstatMap) -> GitFileChange {
-    let (additions, deletions) = if status == GitFileStatus::Untracked {
-        (count_untracked_lines(cwd, path), 0)
-    } else {
-        stats.get(path).copied().unwrap_or((0, 0))
-    };
+/// `stats` holds the untracked files' counts too (`with_untracked`).
+fn make_change(path: &str, status: GitFileStatus, stats: &NumstatMap) -> GitFileChange {
+    let (additions, deletions) = stats.get(path).copied().unwrap_or((0, 0));
     GitFileChange {
         path: path.to_string(),
         status,
@@ -403,7 +384,7 @@ pub fn diff_stats(cwd: &str) -> Option<(usize, usize)> {
             .collect();
         run_git(cwd, &args).map(|raw| parse_numstat_z(&raw))
     };
-    let mut files = numstat(&["HEAD"]).unwrap_or_else(|_| {
+    let files = numstat(&["HEAD"]).unwrap_or_else(|_| {
         let mut files = numstat(&[]).unwrap_or_default();
         for (path, (adds, dels)) in numstat(&["--cached"]).unwrap_or_default() {
             let entry = files.entry(path).or_default();
@@ -411,14 +392,8 @@ pub fn diff_stats(cwd: &str) -> Option<(usize, usize)> {
         }
         files
     });
-    for path in String::from_utf8_lossy(&untracked)
-        .split('\0')
-        .filter(|p| !p.is_empty())
-    {
-        if !files.contains_key(path) {
-            files.insert(path.to_string(), (count_untracked_lines(cwd, path), 0));
-        }
-    }
+    let untracked = String::from_utf8_lossy(&untracked);
+    let files = with_untracked(cwd, files, untracked.split('\0').filter(|p| !p.is_empty()));
     Some(
         files
             .values()
@@ -442,7 +417,7 @@ fn current_branch(cwd: &str) -> String {
 }
 
 pub fn get_detailed_status(cwd: &str) -> GitDetailedStatus {
-    if !Path::new(cwd).exists() {
+    if crate::remote::missing_here(cwd) {
         return GitDetailedStatus::default();
     }
     match StatusPass::read(cwd) {
@@ -546,6 +521,15 @@ pub fn discard_file(cwd: &str, file: &str) -> Result<()> {
         bail!("refusing to discard {file}: it is neither tracked nor reported as untracked");
     }
 
+    if let Some(route) = crate::remote::route(cwd) {
+        let route = route.map_err(anyhow::Error::msg)?;
+        return route
+            .call::<()>(crate::remote::protocol::Request::Remove {
+                path: format!("{}/{file}", route.host_path.trim_end_matches('/')),
+            })
+            .map_err(anyhow::Error::msg)
+            .with_context(|| format!("failed to delete untracked path {file}"));
+    }
     let full = Path::new(cwd).join(file);
     let meta = std::fs::symlink_metadata(&full)
         .with_context(|| format!("cannot stat untracked path {}", full.display()))?;

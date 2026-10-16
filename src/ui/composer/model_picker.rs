@@ -67,12 +67,34 @@ fn model_menu_height() -> f32 {
     (tabs + 1.0) * PROVIDER_TAB_SIZE + tabs * 4.0 + 12.0 + 2.0
 }
 
-/// Models of `tab` matching `query` against name and provider.
-pub fn filtered_models(tab: ModelTab, favorites: &[String], query: &str) -> Vec<ModelOption> {
+/// Models of `tab` matching `query` against name and provider. In a
+/// project on a machine, `machine` holds the models its CLIs listed.
+pub fn filtered_models(
+    tab: ModelTab,
+    favorites: &[String],
+    query: &str,
+    machine: Option<&crate::app::remote::MachineCatalog>,
+) -> Vec<ModelOption> {
     let query = query.trim().to_lowercase();
+    let listed = |kind: HarnessKind| -> Vec<ModelOption> {
+        machine
+            .and_then(|m| m.models.get(&kind))
+            .filter(|models| !models.is_empty())
+            .cloned()
+            .unwrap_or_else(|| catalog::models_for(kind).to_vec())
+    };
     let pool: Vec<ModelOption> = match tab {
-        ModelTab::Favorites => favorites.iter().filter_map(|k| catalog::find(k)).collect(),
-        ModelTab::Harness(kind) => catalog::models_for(kind).to_vec(),
+        ModelTab::Favorites => favorites
+            .iter()
+            .filter_map(|k| {
+                let kind = HarnessKind::from_id(k.split_once(':')?.0)?;
+                listed(kind)
+                    .into_iter()
+                    .find(|m| &m.key == k)
+                    .or_else(|| catalog::find(k))
+            })
+            .collect(),
+        ModelTab::Harness(kind) => listed(kind),
     };
     pool.into_iter()
         .filter(|m| {
@@ -133,12 +155,20 @@ impl BenCodeApp {
             self.composer_menus.model_tab,
             &favorites,
             &self.model_query(cx),
+            self.composer_machine().and_then(|(_, catalog)| catalog),
         )
     }
 
     /// The CLI was found by the startup probe (unknown harnesses count as
     /// available).
     pub(crate) fn harness_available(&self, kind: HarnessKind) -> bool {
+        // On a machine: what its host found, once it said (MonoCode lists
+        // the providers the host reports).
+        if let Some((_, catalog)) = self.composer_machine() {
+            return catalog
+                .filter(|c| !c.harnesses.is_empty())
+                .is_none_or(|c| c.harnesses.iter().any(|h| h.harness == kind && h.available));
+        }
         self.harnesses
             .iter()
             .find(|h| h.id == kind.id())
@@ -147,6 +177,12 @@ impl BenCodeApp {
 
     /// MonoCode `harnessUnavailableHint`.
     fn harness_unavailable_hint(&self, kind: HarnessKind) -> String {
+        if let Some((machine, _)) = self.composer_machine() {
+            return format!(
+                "{} is not installed on {machine}. Install it there and sign in, then reconnect the machine.",
+                kind.label()
+            );
+        }
         let name = self
             .harnesses
             .iter()
@@ -188,8 +224,18 @@ impl BenCodeApp {
         self.close_composer_popovers(cx);
         self.composer_popover = Some(ComposerPopover::Model);
         let current = self.current_model_key();
-        if let Some(model) = catalog::find(&current) {
-            self.refresh_model_catalog(model.harness, cx);
+        match self.composer_machine_id() {
+            // A machine's CLIs and models, asked of its host once.
+            Some(machine) => {
+                if !self.remote.catalogs.contains_key(&machine) {
+                    self.load_machine_catalog(&machine, cx);
+                }
+            }
+            None => {
+                if let Some(model) = catalog::find(&current) {
+                    self.refresh_model_catalog(model.harness, cx);
+                }
+            }
         }
         let menus = &mut self.composer_menus;
         menus.model_entry = 0;
@@ -1022,13 +1068,13 @@ mod tests {
     #[test]
     fn search_matches_name_or_provider_within_the_tab() {
         let claude = ModelTab::Harness(HarnessKind::Claude);
-        assert_eq!(filtered_models(claude, &[], "").len(), 3);
-        assert_eq!(filtered_models(claude, &[], "opus").len(), 1);
-        assert_eq!(filtered_models(claude, &[], "claude code").len(), 3);
-        assert!(filtered_models(claude, &[], "zzzz-none").is_empty());
+        assert_eq!(filtered_models(claude, &[], "", None).len(), 3);
+        assert_eq!(filtered_models(claude, &[], "opus", None).len(), 1);
+        assert_eq!(filtered_models(claude, &[], "claude code", None).len(), 3);
+        assert!(filtered_models(claude, &[], "zzzz-none", None).is_empty());
         let gemini = "antigravity:gemini-3.1-pro-high".to_string();
         let favorites = [gemini.clone(), "gone:model".to_string()];
-        let starred = filtered_models(ModelTab::Favorites, &favorites, "");
+        let starred = filtered_models(ModelTab::Favorites, &favorites, "", None);
         assert_eq!(starred.len(), 1);
         assert_eq!(starred[0].key, gemini);
     }

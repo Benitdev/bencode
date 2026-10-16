@@ -66,7 +66,14 @@ pub fn detect_language(path: &str) -> &'static str {
 /// Resolves a workspace-relative or absolute path.
 pub fn resolve_path(cwd: &str, path: &str) -> PathBuf {
     let candidate = Path::new(path);
+    if crate::remote::is_remote(path) {
+        return candidate.to_path_buf();
+    }
     if candidate.is_absolute() {
+        // An absolute path in a project on a machine is a path there.
+        if let Some(parsed) = bencode_core::remote::path::parse(cwd) {
+            return PathBuf::from(crate::remote::remote_path(parsed.machine, path));
+        }
         candidate.to_path_buf()
     } else {
         Path::new(cwd).join(candidate)
@@ -87,6 +94,16 @@ pub fn count_lines(text: &str) -> usize {
 
 /// Reads a text file, refusing directories, oversized files, binaries and non-UTF-8.
 pub fn read_text_file(path: &Path, limit: u64) -> Result<String, ReadError> {
+    if let Some(remote) = path.to_str().filter(|p| crate::remote::is_remote(p)) {
+        let file = crate::remote::files::read(remote, limit + 1)
+            .map_err(|e| ReadError::Io(e.to_string()))?;
+        if file.meta.kind != bencode_core::remote::protocol::EntryKind::File {
+            return Err(ReadError::NotAFile);
+        }
+        check_size(file.meta.size, limit)?;
+        check_size(file.bytes.0.len() as u64, limit)?;
+        return decode_text(file.bytes.0);
+    }
     let meta = fs::metadata(path).map_err(|e| ReadError::Io(e.to_string()))?;
     if !meta.is_file() {
         return Err(ReadError::NotAFile);
@@ -115,6 +132,9 @@ pub fn decode_text(bytes: Vec<u8>) -> Result<String, ReadError> {
 
 /// Writes through a sibling temp file and a rename, keeping the original's permissions.
 pub fn atomic_write(path: &Path, contents: &str) -> io::Result<()> {
+    if let Some(remote) = path.to_str().filter(|p| crate::remote::is_remote(p)) {
+        return crate::remote::files::write(remote, contents.as_bytes());
+    }
     let target = match fs::symlink_metadata(path) {
         Ok(meta) if meta.file_type().is_symlink() => fs::canonicalize(path)?,
         _ => path.to_path_buf(),
@@ -247,6 +267,22 @@ mod tests {
         let dir = temp_dir("missing");
         assert!(atomic_write(&dir.join("nope/a.txt"), "x").is_err());
         fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn paths_in_a_project_on_a_machine_stay_there() {
+        assert_eq!(
+            resolve_path("remote://m-1/home/me/app", "src/a.rs"),
+            PathBuf::from("remote://m-1/home/me/app/src/a.rs")
+        );
+        assert_eq!(
+            resolve_path("remote://m-1/home/me/app", "/etc/hosts"),
+            PathBuf::from("remote://m-1/etc/hosts")
+        );
+        assert_eq!(
+            resolve_path("/Users/me/app", "remote://m-1/x"),
+            PathBuf::from("remote://m-1/x")
+        );
     }
 
     #[test]

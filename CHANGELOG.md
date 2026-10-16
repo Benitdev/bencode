@@ -4,6 +4,20 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
+## [Unreleased]
+
+- Remote machines, after MonoCode's remote access. Settings › Connections
+  adds a Mac or Linux machine over SSH: BenCode installs its host there
+  (`~/.bencode-host`, checked against the release's checksum) and keeps a
+  connection open. A host key or a password is asked for in Settings.
+- Rail **+** › **Open folder on a machine…** opens a folder there as a
+  project, marked with the machine's name and its connection's dot. Its
+  threads run on the machine, and keep running when the laptop sleeps or
+  BenCode quits; reopening BenCode picks them up again. The Explorer,
+  editor, Go to File, search, Changes, history, branches, worktrees, pull
+  requests and terminal tabs work on the machine, and the model picker
+  lists the machine's own CLIs and models.
+
 ## [0.1.14] - 2026-10-15
 
 - A Mono's settings open in a dialog of their own: General (its face and

@@ -15,7 +15,7 @@ use crate::ui::app_callback::app_callback;
 use crate::ui::composer::focus_later;
 
 impl BenCodeApp {
-    fn tree_root_path(&self) -> PathBuf {
+    pub(super) fn tree_root_path(&self) -> PathBuf {
         PathBuf::from(&self.file_tree.root)
     }
 

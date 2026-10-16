@@ -19,7 +19,7 @@ mod snapshot;
 const MCP_ARG: &str = "--browser-mcp";
 
 /// The MCP server's name, as the agents list its tools (`mcp__bencode-browser__…`).
-pub const MCP_SERVER_NAME: &str = "bencode-browser";
+pub use bencode_core::mcp::{MCP_SERVER_NAME, McpLaunch};
 
 /// Runs the MCP server when `main` was started as one; returns the exit
 /// code. `None`: this is the app.
@@ -33,21 +33,13 @@ pub fn run_from_args() -> Option<i32> {
 }
 
 /// How an agent CLI starts the browser's MCP server for this app.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct McpLaunch {
-    pub command: String,
-    pub args: Vec<String>,
-}
-
-impl McpLaunch {
-    pub fn new(socket: &std::path::Path) -> anyhow::Result<Self> {
-        use anyhow::Context as _;
-        let exe = std::env::current_exe().context("cannot find BenCode's executable")?;
-        Ok(Self {
-            command: exe.to_string_lossy().into_owned(),
-            args: vec![MCP_ARG.to_string(), socket.to_string_lossy().into_owned()],
-        })
-    }
+pub fn mcp_launch(socket: &std::path::Path) -> anyhow::Result<McpLaunch> {
+    use anyhow::Context as _;
+    let exe = std::env::current_exe().context("cannot find BenCode's executable")?;
+    Ok(McpLaunch {
+        command: exe.to_string_lossy().into_owned(),
+        args: vec![MCP_ARG.to_string(), socket.to_string_lossy().into_owned()],
+    })
 }
 
 /// What the address bar's text means: an address as typed, a bare host

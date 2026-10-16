@@ -117,7 +117,7 @@ fn installed_version(program: &Path) -> Result<String> {
 fn latest_version(feed: Feed) -> Result<String> {
     match feed {
         Feed::Npm(package) => {
-            let response = crate::rate_limits::http::get(
+            let response = crate::http::get(
                 &format!("{REGISTRY_URL}/{package}/latest"),
                 &[("Accept", "application/json")],
                 HTTP_TIMEOUT,
@@ -131,7 +131,7 @@ fn latest_version(feed: Feed) -> Result<String> {
         }
         Feed::Grok => {
             let channel = grok_channel(&grok_config());
-            let response = crate::rate_limits::http::get(
+            let response = crate::http::get(
                 &format!("{GROK_FEED_URL}/{channel}"),
                 &[],
                 HTTP_TIMEOUT,

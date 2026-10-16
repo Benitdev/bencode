@@ -232,6 +232,7 @@ impl BenCodeApp {
             open_mono: self.settings.open_mono.clone(),
             mono_overview_width: Some(self.monos.overview.width)
                 .filter(|w| *w != crate::app::mono_overview::DEFAULT_WIDTH),
+            remote_machines: self.settings.remote_machines.clone(),
             rail: self.settings.rail.clone(),
             extra: self.settings.extra.clone(),
         }

@@ -46,6 +46,15 @@ fn gh_path() -> Option<PathBuf> {
 /// MonoCode `gh_run`: stdout, or the CLI's own error text. Runs as the
 /// account the project in `cwd` uses (`github_accounts`).
 pub(crate) fn gh(cwd: &Path, args: &[&str]) -> Result<String, String> {
+    // A project on a machine uses the host's own `gh` sign-in (MonoCode's
+    // host runs `gh` there too); BenCode's accounts are this computer's.
+    if crate::remote::route(cwd).is_some() {
+        let output = crate::remote::exec::Cmd::gh(cwd.as_os_str())
+            .args(args)
+            .output()
+            .map_err(|err| err.to_string())?;
+        return gh_result(&output, args);
+    }
     let token = crate::github_accounts::token_for(cwd);
     run_gh(cwd, args, token.as_deref())
 }
@@ -66,6 +75,11 @@ pub(crate) fn run_gh(cwd: &Path, args: &[&str], token: Option<&str>) -> Result<S
         .env("GIT_PAGER", "cat")
         .output()
         .map_err(|err| err.to_string())?;
+    gh_result(&output, args)
+}
+
+/// stdout when `gh` succeeded, else its own error text.
+fn gh_result(output: &std::process::Output, args: &[&str]) -> Result<String, String> {
     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
     if output.status.success() {
         return Ok(stdout);

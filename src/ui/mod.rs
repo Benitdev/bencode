@@ -48,6 +48,8 @@ pub mod search_view;
 pub mod settings_accounts;
 mod settings_agy_accounts;
 pub mod settings_appearance;
+pub mod remote_folder;
+pub mod settings_connections;
 pub mod settings_integrations;
 pub mod settings_modal;
 mod settings_monos;

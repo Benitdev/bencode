@@ -79,6 +79,9 @@ pub struct AgentRun {
     /// The provider answered (text or a tool call): it took the prompt,
     /// whatever status it ends with.
     pub answered: bool,
+    /// A turn a machine runs (`remote::spawn`): quitting leaves it running
+    /// there, and the next launch follows it again (`app/remote_runs.rs`).
+    pub remote: Option<crate::app::remote_runs::RemoteRunRef>,
 }
 
 /// What a run is for.
@@ -883,27 +886,54 @@ impl BenCodeApp {
                 attachments: request.attachments.clone(),
                 plan: request.plan,
                 compact: request.purpose == RunPurpose::Compact,
-                browser_mcp: (request.purpose == RunPurpose::Turn)
+                // The browser is on this computer, out of a machine's reach.
+                browser_mcp: (request.purpose == RunPurpose::Turn
+                    && !crate::remote::is_remote(&session.cwd))
                     .then(|| self.browser_mcp_launch())
                     .flatten(),
                 ..spawn
             });
-        // The baseline is queued before the agent can edit anything.
-        if request.purpose == RunPurpose::Turn && !self.is_mono_session(session_id) {
+        let remote = crate::remote::is_remote(session.work_dir());
+        // The baseline is queued before the agent can edit anything. A
+        // machine's checkout is not snapshotted here (MonoCode's remote
+        // sessions have no review either).
+        if request.purpose == RunPurpose::Turn && !self.is_mono_session(session_id) && !remote {
             self.checkpoints.begin_turn(session_id, session.work_dir());
         }
+        let blocks_before = session.blocks.len();
         let started = spawn.and_then(|spawn| {
-            harness::spawn(&spawn)
-                .map_err(|err| format!("Failed to start {}: {err:#}", spawn.harness.label()))
+            let label = spawn.harness.label();
+            if remote {
+                crate::remote::spawn::spawn(&spawn).map(|turn| {
+                    let remote = crate::app::remote_runs::RemoteRunRef {
+                        machine: turn.machine,
+                        run: turn.run,
+                    };
+                    (turn.handle, turn.events, Some(remote))
+                })
+            } else {
+                harness::spawn(&spawn).map(|(handle, events)| (handle, events, None))
+            }
+            .map_err(|err| format!("Failed to start {label}: {err:#}"))
         });
         match started {
-            Ok((handle, events)) => {
+            Ok((handle, events, remote)) => {
                 let auto_approve = mode == PermissionMode::FullAccess && !request.plan;
                 let steers = handle.can_steer();
                 self.track_run(session_id.to_string(), handle, events, auto_approve, cx);
                 if let Some(run) = self.runs.get_mut(session_id) {
                     run.can_steer = steers && request.purpose == RunPurpose::Turn;
                     run.purpose = request.purpose;
+                    run.remote = remote.clone();
+                }
+                if let Some(remote) = remote {
+                    self.remember_remote_run(
+                        session_id,
+                        remote,
+                        blocks_before,
+                        request.purpose,
+                        auto_approve,
+                    );
                 }
                 self.sync_in_flight();
             }
@@ -921,7 +951,7 @@ impl BenCodeApp {
         cx.notify();
     }
 
-    fn track_run(
+    pub(super) fn track_run(
         &mut self,
         session_id: String,
         handle: HarnessProcessHandle,
@@ -947,6 +977,7 @@ impl BenCodeApp {
                 last_saved: Instant::now(),
                 background: Vec::new(),
                 answered: false,
+                remote: None,
             },
         );
 
@@ -991,9 +1022,11 @@ impl BenCodeApp {
     ) -> Option<PermissionRequest> {
         let focused = self.selected_session_id.as_deref() == Some(session_id);
         // A Mono works from the home folder, across projects: there is no
-        // one checkout to snapshot, so its turns have no review card.
-        let tracked = !self.is_mono_session(session_id);
+        // one checkout to snapshot, so its turns have no review card. Nor
+        // does a turn on a machine.
+        let mono = self.is_mono_session(session_id);
         let run = self.current_run(session_id, run_id)?;
+        let tracked = !mono && run.remote.is_none();
         let save = save_due(&event, run.last_saved.elapsed());
         run.answered |= matches!(
             event,
@@ -1059,6 +1092,9 @@ impl BenCodeApp {
         let Some(run) = self.runs.remove(session_id) else {
             return;
         };
+        if run.remote.is_some() {
+            self.forget_remote_run(session_id);
+        }
         self.sync_in_flight();
         if self
             .sessions
@@ -1193,6 +1229,12 @@ impl BenCodeApp {
     pub(crate) fn interrupt_runs_for_quit(&mut self) {
         let runs: Vec<(String, AgentRun)> = self.runs.drain().collect();
         for (session_id, run) in &runs {
+            // A machine's turn goes on there; the next launch follows it
+            // again from its record (`remote_runs.rs`).
+            if run.remote.is_some() {
+                self.persist_session(session_id);
+                continue;
+            }
             run.handle.cancel();
             self.close_automation_run(run, RunStatus::Cancelled);
             if let Some(session) = self.sessions.iter_mut().find(|s| &s.id == session_id) {
@@ -1308,7 +1350,12 @@ fn spawn_request(
         plan: false,
         compact: false,
         settings: catalog::resolved_settings(&session.model, session.model_settings.as_ref()),
-        account: AccountProfile::resolve(&session.harness, session.provider_account_id.as_deref()),
+        // On a machine the CLI runs under that machine's own sign-in.
+        account: if crate::remote::is_remote(session.work_dir()) {
+            None
+        } else {
+            AccountProfile::resolve(&session.harness, session.provider_account_id.as_deref())
+        },
         browser_mcp: None,
     })
 }

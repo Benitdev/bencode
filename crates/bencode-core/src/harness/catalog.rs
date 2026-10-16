@@ -13,7 +13,7 @@ use serde_json::{Map, Value};
 use crate::harness::HarnessKind;
 use crate::harness::resolver::HarnessInfo;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ModelOption {
     pub key: String,
     pub label: String,
@@ -26,14 +26,14 @@ pub struct ModelOption {
     pub settings: Vec<ModelSetting>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum SettingKind {
     Select,
     Toggle,
 }
 
 /// MonoCode `ModelSetting`: stored in the thread's `modelSettings` under `id`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ModelSetting {
     pub id: String,
     pub label: String,

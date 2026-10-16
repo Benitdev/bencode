@@ -14,7 +14,7 @@ pub const ATTACHMENT_ONLY_PROMPT: &str = "The user attached these files without 
 /// Images larger than this travel as a path instead of inline data.
 const MAX_INLINE_IMAGE_BYTES: u64 = 5 * 1024 * 1024;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Attachment {
     pub id: String,
     pub name: String,

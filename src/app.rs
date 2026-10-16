@@ -32,6 +32,8 @@ pub mod project_search;
 mod project_stats;
 mod projects;
 pub mod release_notes;
+pub mod remote;
+pub mod remote_runs;
 pub mod reminders;
 mod session_flags;
 pub mod session_folders;
@@ -431,6 +433,10 @@ pub struct BenCodeApp {
     pub rail_ui: crate::ui::rail::RailUi,
     /// The Mono in view, its details panel and its soul.
     pub monos: monos::MonosState,
+    /// Settings › Connections, the folder dialog and the machines' catalogs.
+    pub remote: remote::RemoteUi,
+    /// The turns machines run for this BenCode (`remote-runs.json`).
+    pub remote_runs: Vec<remote_runs::RemoteRunRecord>,
     pub theme_preference: crate::settings::ThemePreference,
     /// Run Claude with `disableAllHooks` (MonoCode "Claude Code hooks" off).
     pub claude_hooks_disabled: bool,
@@ -1337,6 +1343,8 @@ impl BenCodeApp {
             is_rail_open: true,
             rail_ui,
             monos: monos::MonosState::new(window, cx),
+            remote: remote::RemoteUi::new(window, cx),
+            remote_runs: Vec::new(),
             theme_preference: Default::default(),
             claude_hooks_disabled: false,
             tab_history: Default::default(),
@@ -1362,8 +1370,11 @@ impl BenCodeApp {
             app.start_frame_bench(window, cx);
             return app;
         }
+        app.init_remote(cx);
         // First on the writer, before any turn can write a new list.
         app.load_interrupted_turns(cx);
+        // After it: the lock it claims says whether this BenCode follows them.
+        app.follow_remote_runs(cx);
         app.start_git_poll(cx);
         app.start_auto_fetch(cx);
         app.start_project_stats_poll(cx);
@@ -1562,6 +1573,8 @@ impl Render for BenCodeApp {
             any_elements(self.render_account_removal(cx)),
             any_elements(self.render_agy_account_removal(cx)),
             any_elements(self.render_backlog_disconnect(cx)),
+            any_elements(self.render_machine_removal(cx)),
+            any_elements(self.render_remote_folder_dialog(cx)),
             any_elements(self.render_worktree_creation(cx)),
             any_elements(self.render_quick_open(cx)),
             any_elements(self.render_lightbox(cx)),

@@ -128,17 +128,14 @@ fn token_expired(expires_at_ms: Option<i64>, now_ms: i64) -> bool {
 mod keychain {
     use std::path::Path;
 
-    use sha2::{Digest, Sha256};
-
     use super::{Credentials, credentials_from_blob};
 
-    const SERVICE: &str = "Claude Code-credentials";
     const FALLBACK_USER: &str = "claude-code-user";
 
     /// Claude Code has stored the item under no account, the login name and
     /// a fixed fallback over time; the first that parses wins.
     pub fn read(config_dir: Option<&Path>) -> Option<Credentials> {
-        let service = service(config_dir);
+        let service = crate::keychain::claude_service(config_dir);
         let accounts = [None, Some(user()), Some(FALLBACK_USER.to_string())];
         accounts.iter().find_map(|account| {
             let mut args = vec!["find-generic-password", "-s", service.as_str()];
@@ -148,23 +145,6 @@ mod keychain {
             args.push("-w");
             credentials_from_blob(&security(&args)?)
         })
-    }
-
-    /// The Keychain item of a profile. Claude Code hashes the exact config
-    /// dir string (NFC-normalized; BenCode's profile paths are ASCII under
-    /// an ASCII home, where that changes nothing) and suffixes the first
-    /// eight hex characters.
-    pub(super) fn service(config_dir: Option<&Path>) -> String {
-        let Some(config_dir) = config_dir else {
-            return SERVICE.into();
-        };
-        let digest = Sha256::digest(config_dir.to_string_lossy().as_bytes());
-        let suffix: String = digest
-            .iter()
-            .take(4)
-            .map(|byte| format!("{byte:02x}"))
-            .collect();
-        format!("{SERVICE}-{suffix}")
     }
 
     fn user() -> String {
@@ -179,38 +159,12 @@ mod keychain {
         }
     }
 
-    /// Deletes a profile's Keychain item (MonoCode
-    /// `delete_claude_keychain_credentials`); one already gone is fine.
-    pub fn delete(config_dir: &Path) -> Result<(), String> {
-        let service = service(Some(config_dir));
-        let failed = |detail: String| {
-            format!("Could not remove the Claude credentials from Keychain ({service}): {detail}")
-        };
-        let output = crate::keychain::run(&["delete-generic-password", "-s", service.as_str()])
-            .map_err(failed)?;
-        if output.ok || crate::keychain::not_found(&output) {
-            Ok(())
-        } else {
-            Err(failed(output.stderr))
-        }
-    }
-
     /// `security`'s stdout, or None when it fails or hangs on a locked
     /// Keychain past the timeout.
     fn security(args: &[&str]) -> Option<String> {
         let output = crate::keychain::run(args).ok()?;
         (output.ok && !output.stdout.is_empty()).then_some(output.stdout)
     }
-}
-
-/// Deletes the Claude sign-in an account profile keeps in the Keychain;
-/// elsewhere it is `.credentials.json`, which goes with the directory.
-/// Blocking.
-#[cfg_attr(not(target_os = "macos"), allow(unused_variables))]
-pub fn delete_credentials(config_dir: &Path) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
-    keychain::delete(config_dir)?;
-    Ok(())
 }
 
 #[cfg(test)]
@@ -239,10 +193,10 @@ mod tests {
     #[test]
     fn custom_config_dir_selects_claudes_hashed_keychain_service() {
         assert_eq!(
-            keychain::service(Some(Path::new("/tmp/profile"))),
+            crate::keychain::claude_service(Some(Path::new("/tmp/profile"))),
             "Claude Code-credentials-902e721c"
         );
-        assert_eq!(keychain::service(None), "Claude Code-credentials");
+        assert_eq!(crate::keychain::claude_service(None), "Claude Code-credentials");
     }
 
     #[test]

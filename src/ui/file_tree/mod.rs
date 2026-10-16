@@ -7,7 +7,6 @@
 mod fs;
 mod icons;
 mod menu;
-mod name;
 mod ops;
 mod search;
 mod tints;
@@ -24,6 +23,8 @@ use gpui::{
     MouseDownEvent, ParentElement, Pixels, Point, ScrollHandle, SharedString, Styled, StyledText,
     div, relative, rgb,
 };
+
+use bencode_core::tree::name;
 
 use crate::app::BenCodeApp;
 use crate::ui::icons::ExtraIcon;
@@ -56,16 +57,7 @@ pub fn entry_icon(name: &str) -> icons::EntryIcon {
     icons::resolve_entry_icon(name, false, false)
 }
 
-/// A filesystem entry (directory or file) in the workspace tree.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct FsEntry {
-    pub name: String,
-    pub rel_path: String,
-    pub is_dir: bool,
-    /// Git-ignored (or `.git`): hidden unless Appearance › "Show excluded
-    /// files" is on, then dimmed and italic.
-    pub ignored: bool,
-}
+pub use bencode_core::tree::FsEntry;
 
 /// The inline name field (MonoCode `NameRow`): a new entry under `parent`,
 /// or a rename of `path`.

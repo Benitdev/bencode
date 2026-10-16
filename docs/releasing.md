@@ -34,7 +34,8 @@ architecture, `BenCode-arm64.dmg` (Apple Silicon) and `BenCode-x86_64.dmg`
 
 ## Every release
 
-1. Bump `version` in `Cargo.toml`, then run `cargo check` so `Cargo.lock`
+1. Bump `version` under `[workspace.package]` in `Cargo.toml` (the app, its
+   host and `bencode-core` share it), then run `cargo check` so `Cargo.lock`
    follows.
 2. In `CHANGELOG.md`, change `## [x.y.z] - Unreleased` to the release date
    (`## [0.1.0] - 2026-10-10`) and list the changes. That section becomes the
@@ -49,7 +50,10 @@ architecture, `BenCode-arm64.dmg` (Apple Silicon) and `BenCode-x86_64.dmg`
 
 5. Watch **Actions › Release**. The workflow builds both architectures with
    LTO, so it takes about 30 to 60 minutes. When it finishes, Release `v0.1.0`
-   has `BenCode-arm64.dmg` and `BenCode-x86_64.dmg`, each with its `.sha256`.
+   has `BenCode-arm64.dmg` and `BenCode-x86_64.dmg`, each with its `.sha256`,
+   and the host packages Settings › Connections installs on a machine:
+   `bencode-host-{darwin,linux}-{arm64,x64}.tar.gz` with theirs
+   (`packaging/host/package.sh`; Linux is cross-built with cargo-zigbuild).
 6. Test on another machine (or a fresh macOS user): download from the landing
    page, drag into Applications, launch for the first time, run a turn with an
    agent, open the terminal, Help › Show Logs.
