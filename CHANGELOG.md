@@ -4,6 +4,28 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
+## [0.1.17] - 2026-10-16
+
+- Monos do much more through `bencode app`, after MonoCode: they edit
+  their own soul and memory, read and write your notes, list models,
+  keep habits, and start sessions in your projects (in a worktree or a
+  folder) that report back when they settle. Habits run on their
+  schedule or on Run now and post in the Mono's chat; the Overview's
+  Habits tab lists them under Today, with a page for each and New habit.
+- A Monos icon in the macOS menu bar opens a Mono's floating chat; Settings
+  › Monos can hide it. A Mono can have its own chat background, set from
+  its rail menu.
+- A Mono's conversation carries on in a fresh session, briefed on the
+  recent exchanges, once it fills 80% of the context window.
+- The rail shows unread counts on Monos, introduces them ("Meet Monos"),
+  and lets you drag them into order.
+- Replies draw Mermaid diagrams, as MonoCode does, and `$$` formulas.
+  Both show in the transcript, the markdown Preview, Notes and artifacts.
+- Resume at reset now survives a quit or restart: the usage-limit notice
+  and its armed resume come back when BenCode opens again.
+- Updating Grok Build no longer spins forever when its updater stays
+  running after the install.
+
 ## [0.1.16] - 2026-10-16
 
 - A Mono can save its work as artifacts, after MonoCode's: a document
