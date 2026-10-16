@@ -6,6 +6,8 @@ use gpui::{
     actions,
 };
 
+use ely_gpui_component::forms as input;
+
 use crate::app::BenCodeApp;
 use crate::app::file_pane::PaneTab;
 use crate::ui::layout::{FocusDir, SplitDir};
@@ -225,42 +227,23 @@ pub fn install(cx: &mut App) {
 /// and takes AppKit a while (24ms), so it waits for the first frame; the
 /// shortcuts work before it, from the bindings `install` made.
 pub fn install_menus(cx: &mut App) {
-    let menus = menus(cx);
-    cx.set_menus(menus);
+    cx.set_menus(menus());
 }
 
 /// Edit (BenCode's own; MonoCode's is the webview's). Its items carry the
 /// system's selectors, so a browser page, a native view GPUI's key bindings
 /// do not reach, takes ⌘X ⌘C ⌘V ⌘A from the menu while it has the keyboard.
-/// GPUI's inputs answer the same keys from their bindings first. Ely keeps
-/// its input actions private: they are built by name.
-fn edit_menu(cx: &App) -> Menu {
-    let items = [
-        ("Cut", "Cut", OsAction::Cut),
-        ("Copy", "Copy", OsAction::Copy),
-        ("Paste", "Paste", OsAction::Paste),
-        ("Select All", "SelectAll", OsAction::SelectAll),
-    ]
-    .into_iter()
-    .filter_map(|(name, action, os_action)| {
-        match cx.build_action(&format!("ely_input::{action}"), None) {
-            Ok(action) => Some(MenuItem::Action {
-                name: name.into(),
-                action,
-                os_action: Some(os_action),
-                checked: false,
-                disabled: false,
-            }),
-            Err(err) => {
-                log::warn!("no Edit › {name}: {err}");
-                None
-            }
-        }
-    });
-    Menu::new("Edit").items(items)
+/// GPUI's inputs answer the same keys from their bindings first.
+fn edit_menu() -> Menu {
+    Menu::new("Edit").items([
+        MenuItem::os_action("Cut", input::Cut, OsAction::Cut),
+        MenuItem::os_action("Copy", input::Copy, OsAction::Copy),
+        MenuItem::os_action("Paste", input::Paste, OsAction::Paste),
+        MenuItem::os_action("Select All", input::SelectAll, OsAction::SelectAll),
+    ])
 }
 
-fn menus(cx: &App) -> Vec<Menu> {
+fn menus() -> Vec<Menu> {
     vec![
         Menu::new("BenCode").items([
             MenuItem::action("Settings…", OpenSettings),
@@ -282,7 +265,7 @@ fn menus(cx: &App) -> Vec<Menu> {
             MenuItem::separator(),
             MenuItem::action("Archive Session", ArchiveSession),
         ]),
-        edit_menu(cx),
+        edit_menu(),
         Menu::new("View").items([
             MenuItem::action("Toggle Projects", ToggleSidebar),
             MenuItem::action("Toggle Session Sidebar", ToggleSessionSidebar),
