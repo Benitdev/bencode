@@ -6,12 +6,10 @@
 
 use anyhow::{Result, anyhow, bail};
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value, json};
+use serde_json::{Value, json};
 
+use super::input::{body, check_fields, id_chars, is_id, optional, page, required};
 use crate::db::{AppDb, Artifact, ArtifactKind, ArtifactUpsert, Block};
-
-/// The actions BenCode's app CLI answers.
-pub const ACTIONS: [&str; 3] = ["artifacts.list", "artifacts.read", "artifacts.write"];
 
 /// The block field a chat keeps its cards in.
 const CARDS: &str = "artifactCards";
@@ -50,52 +48,6 @@ pub struct Write {
     pub summary: Option<String>,
 }
 
-/// MonoCode `FIELDS`: an unknown field is an error, not ignored.
-fn fields(action: &str, input: &Map<String, Value>) -> Result<(), String> {
-    let allowed: &[&str] = match action {
-        "artifacts.list" => &["kind", "limit", "offset"],
-        "artifacts.read" => &["id"],
-        "artifacts.write" => &["id", "kind", "title", "body", "summary"],
-        _ => return Err(format!("Unknown app action: {action}")),
-    };
-    let unknown: Vec<&str> = input
-        .keys()
-        .map(String::as_str)
-        .filter(|key| !allowed.contains(key))
-        .collect();
-    if unknown.is_empty() {
-        Ok(())
-    } else {
-        Err(format!("Unknown {action} fields: {}", unknown.join(", ")))
-    }
-}
-
-/// MonoCode `requiredString`: trimmed, not empty, at most `max` characters.
-fn required(value: Option<&Value>, name: &str, max: usize) -> Result<String, String> {
-    match value.and_then(Value::as_str) {
-        Some(text) if !text.trim().is_empty() && text.chars().count() <= max => {
-            Ok(text.trim().to_string())
-        }
-        _ => Err(format!(
-            "{name} must be a non-empty string under {max} characters"
-        )),
-    }
-}
-
-fn optional(value: Option<&Value>, name: &str, max: usize) -> Result<Option<String>, String> {
-    value.map(|_| required(value, name, max)).transpose()
-}
-
-/// MonoCode `noteBody`.
-fn body(value: &Value) -> Result<String, String> {
-    match value.as_str() {
-        Some(text) if text.chars().count() <= 240_000 => {
-            Ok(text.replace("\r\n", "\n").replace('\r', "\n"))
-        }
-        _ => Err("body must be a string under 240000 characters".into()),
-    }
-}
-
 /// MonoCode `artifactKind`: a document when left out.
 fn kind(value: Option<&Value>) -> Result<ArtifactKind, String> {
     match value {
@@ -107,40 +59,27 @@ fn kind(value: Option<&Value>) -> Result<ArtifactKind, String> {
     }
 }
 
-fn count(value: Option<&Value>, default: u64, name: &str, range: (u64, u64)) -> Result<usize, String> {
-    let Some(value) = value else {
-        return Ok(default as usize);
-    };
-    match value.as_u64() {
-        Some(n) if (range.0..=range.1).contains(&n) => Ok(n as usize),
-        _ if name == "limit" => Err("limit must be an integer from 1 to 100".into()),
-        _ => Err(format!("{name} must be a non-negative integer")),
-    }
-}
-
-fn is_artifact_id(id: &str) -> bool {
-    id.bytes()
-        .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'))
-}
-
 /// Checks one call's input.
 pub fn parse(action: &str, input: &Value) -> Result<Call, String> {
     let input = input
         .as_object()
         .ok_or_else(|| "Input must be a JSON object".to_string())?;
-    fields(action, input)?;
+    check_fields(action, input)?;
     match action {
-        "artifacts.list" => Ok(Call::List {
-            kind: input.get("kind").map(|v| kind(Some(v))).transpose()?,
-            limit: count(input.get("limit"), 30, "limit", (1, 100))?,
-            offset: count(input.get("offset"), 0, "offset", (0, u64::MAX))?,
-        }),
+        "artifacts.list" => {
+            let (limit, offset) = page(input)?;
+            Ok(Call::List {
+                kind: input.get("kind").map(|v| kind(Some(v))).transpose()?,
+                limit,
+                offset,
+            })
+        }
         "artifacts.read" => Ok(Call::Read {
             id: required(input.get("id"), "id", 256)?,
         }),
         _ => {
             let id = optional(input.get("id"), "id", 256)?;
-            if id.as_deref().is_some_and(|id| !is_artifact_id(id)) {
+            if id.as_deref().is_some_and(|id| !id_chars(id)) {
                 return Err("Invalid artifact ID".into());
             }
             Ok(Call::Write(Write {
@@ -195,7 +134,7 @@ pub fn save(db: &AppDb, session_id: &str, request_id: &str, write: &Write) -> Re
     let Some(body) = &write.body else {
         bail!("body is required to create an artifact");
     };
-    if request_id.is_empty() || request_id.len() > 128 || !is_artifact_id(request_id) {
+    if !is_id(request_id) {
         bail!("Invalid request ID");
     }
     let id = format!("artifact-{session_id}-{request_id}");

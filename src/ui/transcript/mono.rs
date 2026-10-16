@@ -53,6 +53,36 @@ pub fn is_message(block: &Block) -> bool {
     block.role == "user" && !flag(block, "internal") && !flag(block, "draft")
 }
 
+/// MonoCode `Block.monoHabit`: a message one of the Mono's habits posted
+/// on its own, outside any turn: (habit id, its name, when).
+pub fn habit_post(block: &Block) -> Option<(&str, &str, i64)> {
+    let habit = block.extra.get("monoHabit")?;
+    Some((
+        habit.get("id")?.as_str()?,
+        habit.get("name")?.as_str()?,
+        habit.get("at")?.as_i64()?,
+    ))
+}
+
+/// MonoCode `isMonoCompletionPrompt`: the hidden turn the app writes when
+/// sessions a Mono started report back.
+pub fn is_completion_prompt(block: &Block) -> bool {
+    block.role == "user"
+        && flag(block, "internal")
+        && (block.extra.contains_key("monoSessionCompletion")
+            || block
+                .extra
+                .get("appRequestId")
+                .and_then(|id| id.as_str())
+                .is_some_and(|id| id.starts_with("mono-completion-")))
+}
+
+/// MonoCode `groupMonoTurns`: where a turn of a Mono's chat starts, a
+/// message or a habit's post (which stands alone).
+pub fn starts_turn(block: &Block) -> bool {
+    is_message(block) || habit_post(block).is_some()
+}
+
 /// MonoCode `opensNewStretch`: the first message, a new day or after a break.
 pub fn opens_new_stretch(at: i64, previous: Option<i64>) -> bool {
     let Some(previous) = previous else {

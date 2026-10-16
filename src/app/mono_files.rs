@@ -125,6 +125,14 @@ impl BenCodeApp {
         self.monos.files.loaded.get(id)
     }
 
+    /// The Mono's files changed outside the dialog (its agent, through
+    /// `bencode app`): read again where they are shown.
+    pub(crate) fn mono_files_changed(&mut self, id: &str, cx: &mut Context<Self>) {
+        if self.monos.files.loaded.contains_key(id) || self.monos.view.as_deref() == Some(id) {
+            self.load_mono_files(id, cx);
+        }
+    }
+
     /// MonoCode `loadMonoFiles` off the UI thread (seeding `SOUL.md` the
     /// first time); the dialog's fields follow when they hold no edit.
     pub fn load_mono_files(&mut self, id: &str, cx: &mut Context<Self>) {

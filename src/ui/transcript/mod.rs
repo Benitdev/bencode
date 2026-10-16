@@ -402,14 +402,22 @@ impl BenCodeApp {
     /// re-measured while the agent streams.
     pub fn sync_transcript_list_for(&mut self, session_id: &str) {
         let running = self.is_agent_running_in(session_id);
-        let waiting = self.pending_permission_for(session_id).is_some();
+        // A habit's run asks in its Mono's chat too.
+        let relays = self.habit_runs_asking(session_id);
+        let waiting = self.pending_permission_for(session_id).is_some() || !relays.is_empty();
         // The review card takes the trailer row once the turn has settled.
         let review = !waiting && self.session_review_shown(session_id);
         let review_stamp = self
             .checkpoints
             .reviews
             .get(session_id)
-            .map_or(0, |review| review.stamp);
+            .map_or(0, |review| review.stamp)
+            ^ {
+                use std::hash::{Hash, Hasher};
+                let mut hasher = std::hash::DefaultHasher::new();
+                relays.hash(&mut hasher);
+                if relays.is_empty() { 0 } else { hasher.finish() }
+            };
         let mono = self.is_mono_session(session_id);
         let session = self.sessions.iter().find(|s| s.id == session_id);
         let open = &self.transcript_ui.open_folds;
@@ -600,6 +608,17 @@ impl BenCodeApp {
     /// The permission prompt, inline under the work like MonoCode's
     /// `ApprovalControls`: what the agent wants, then Allow / Deny.
     pub fn render_trailer(&self, session: &SessionRow, cx: &Context<Self>) -> AnyElement {
+        let relays: Vec<AnyElement> = self
+            .habit_runs_asking(&session.id)
+            .into_iter()
+            .filter_map(|(run, habit)| self.render_habit_approval(&run, &habit, cx))
+            .collect();
+        if !relays.is_empty() {
+            return div()
+                .children(self.render_permission_prompt(&session.id, cx))
+                .children(relays)
+                .into_any_element();
+        }
         if let Some(prompt) = self.render_permission_prompt(&session.id, cx) {
             return prompt;
         }
@@ -608,6 +627,31 @@ impl BenCodeApp {
             return self.render_session_review(&session.id, cx);
         }
         div().into_any_element()
+    }
+
+    /// MonoCode's relayed approval: what a habit's hidden run asks for, in
+    /// its Mono's chat, under the habit's name.
+    pub fn render_habit_approval(
+        &self,
+        run: &str,
+        habit: &str,
+        cx: &Context<Self>,
+    ) -> Option<AnyElement> {
+        let prompt = self.render_permission_prompt(run, cx)?;
+        let fg = cx.theme().colors.fg;
+        Some(
+            div()
+                .pt_1()
+                .child(
+                    div()
+                        .px_4()
+                        .text_size(px(11.0))
+                        .text_color(fg.opacity(0.45))
+                        .child(format!("{habit} · habit")),
+                )
+                .child(prompt)
+                .into_any_element(),
+        )
     }
 
     /// MonoCode `ApprovalControls` under what the agent asks to do, for

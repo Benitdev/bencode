@@ -1,14 +1,13 @@
 //! MonoCode Settings › Monos (`SettingsView`'s `MonosPage`): Monos on or
 //! off, pinned to the icon rail or not, then each Mono with Reset Mono
-//! (its soul and name back to their defaults). MonoCode's menu bar icon
-//! and each Mono's "Show sessions in sidebar" switch are left out: BenCode
-//! has no menu bar item, and its Monos start no sessions.
+//! (its soul and name back to their defaults) and the switch showing the
+//! sessions it starts in the sidebar.
 
 use ely_gpui_component::buttons::{ButtonVariant, IconButton};
 use ely_gpui_component::forms::Switch;
 use ely_gpui_component::primitives::IconName;
 use ely_gpui_component::theme::ControlSize;
-use gpui::{Context, IntoElement, SharedString};
+use gpui::{Context, IntoElement, ParentElement as _, SharedString, Styled as _};
 
 use crate::app::BenCodeApp;
 use crate::monos::projects_phrase;
@@ -59,6 +58,25 @@ impl BenCodeApp {
                         .disabled(!enabled),
                     ),
             );
+        let switches = if cfg!(target_os = "macos") {
+            switches.row(
+                    SettingsRow::new("Menu bar icon")
+                        .description(
+                            "Chat with a Mono from the macOS menu bar. Turn this off to hide \
+                             the icon.",
+                        )
+                        .control(
+                            toggle(
+                                "mono-menu-bar-icon",
+                                !self.settings.mono_menu_bar_off,
+                                BenCodeApp::set_mono_menu_bar,
+                            )
+                            .disabled(!enabled),
+                        ),
+                )
+        } else {
+            switches
+        };
         let list = SettingsGroup::new("Your monos").description(
             "Add a Mono with the plus on the rail and choose its projects from its settings.",
         );
@@ -78,6 +96,28 @@ impl BenCodeApp {
                 };
                 let id = mono.id.clone();
                 let name = mono.display_name();
+                let (entity, shown_id) = (cx.entity().downgrade(), mono.id.clone());
+                let shown = Switch::new(
+                    SharedString::from(format!("mono-started-sidebar-{}", mono.id)),
+                    mono.show_started_sessions_in_sidebar,
+                )
+                .on_change(move |on, _, cx| {
+                    let shown_id = shown_id.clone();
+                    let toggled = entity.update(cx, |this, cx| {
+                        this.update_monos(
+                            |roster| {
+                                if let Some(entry) = roster.iter_mut().find(|m| m.id == shown_id) {
+                                    entry.show_started_sessions_in_sidebar = on;
+                                }
+                            },
+                            cx,
+                        );
+                        this.play_cue(crate::sounds::Cue::Switch);
+                    });
+                    if let Err(err) = toggled {
+                        log::debug!("Mono sidebar switch after app drop: {err:#}");
+                    }
+                });
                 SettingsRow::new(name.clone())
                     .leading(pixel_sprite(
                         &self.mono_mascot(mono).rest,
@@ -87,7 +127,12 @@ impl BenCodeApp {
                     ))
                     .description(description)
                     .control(
-                        IconButton::new(
+                        gpui::div()
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .child(shown)
+                            .child(IconButton::new(
                             SharedString::from(format!("mono-defaults-{}", mono.id)),
                             IconName::RotateCcw,
                         )
@@ -98,7 +143,7 @@ impl BenCodeApp {
                             this.monos.reset_error = None;
                             this.monos.pending_defaults = Some(id.clone());
                             cx.notify();
-                        })),
+                        }))),
                     )
                     .into_any_element()
             }))

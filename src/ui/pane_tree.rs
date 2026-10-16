@@ -233,12 +233,14 @@ impl BenCodeApp {
     /// the part under it (`--chat-background-left` / `-top` / `-width` /
     /// `-height`).
     fn render_chat_background(&self, session_id: &str, session_empty: bool) -> Option<AnyElement> {
-        let (image, opacity) = self.chat_background_for(session_empty)?;
+        // A Mono's own image covers its chat (MonoCode `monoChatBackground`).
+        let own = self.mono_background_for(session_id);
+        let (image, opacity) = own.clone().or_else(|| self.chat_background_for(session_empty))?;
         let rect = self
             .pane_rects
             .get(session_id)
             .copied()
-            .filter(|rect| rect.w > 0.0 && rect.h > 0.0)
+            .filter(|rect| own.is_none() && rect.w > 0.0 && rect.h > 0.0)
             .unwrap_or_default();
         Some(
             div()

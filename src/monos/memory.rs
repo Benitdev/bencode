@@ -4,10 +4,10 @@
 //! 2026-11-01`), superseded rather than deleted, and never a secret. Lines
 //! without a date are the user's and are left as they wrote them.
 //!
-//! MonoCode's agent writes these through its `app` CLI (`memory.add`,
-//! `memory.replace`, …); BenCode has no such CLI, so only the user's edits
-//! (Settings › Memory) go through here. The secret patterns are MonoCode's,
-//! matched by hand (BenCode carries no regex engine).
+//! The agent writes these through `bencode app` (`memory.add`,
+//! `memory.replace`, …, `app_cli/memory.rs`), the user through Settings ›
+//! Memory. The secret patterns are MonoCode's, matched by hand (BenCode
+//! carries no regex engine).
 
 /// MonoCode `MEMORY_MAX_LINES` / `MEMORY_MAX_BYTES`: only this much of
 /// `MEMORY.md` loads into a turn, whichever cuts first.
@@ -270,6 +270,232 @@ pub fn add_memory_entry(text: &str, entry: &str) -> (String, bool) {
     }
     list.push(entry);
     (join(&list), true)
+}
+
+/// MonoCode `findLine`: the one live line containing `find`; anything
+/// else is an error the agent can act on.
+fn find_line(list: &[&str], find: &str) -> Result<usize, String> {
+    let needle = find.trim();
+    if needle.is_empty() {
+        return Err("find must not be empty".to_string());
+    }
+    let hits: Vec<usize> = list
+        .iter()
+        .enumerate()
+        .filter(|(_, line)| line.contains(needle) && !line.contains("~~"))
+        .map(|(ix, _)| ix)
+        .collect();
+    match hits.as_slice() {
+        [only] => Ok(*only),
+        [] => Err("No memory entry contains that text; read memory first".to_string()),
+        many => Err(format!(
+            "{} entries contain that text; quote more of the one you mean",
+            many.len()
+        )),
+    }
+}
+
+/// MonoCode `supersedeMemoryEntry`: strikes the old line through and adds
+/// the new fact after it, so the file itself shows what changed and when.
+pub fn supersede_memory_entry(
+    text: &str,
+    find: &str,
+    entry: &str,
+    date: &str,
+) -> Result<String, String> {
+    let mut list: Vec<String> = lines(text).into_iter().map(str::to_string).collect();
+    let refs: Vec<&str> = list.iter().map(String::as_str).collect();
+    let index = find_line(&refs, find)?;
+    let old = list[index].clone();
+    let struck = match old.strip_prefix("- ") {
+        Some(rest) => format!("- ~~{rest}~~{SEP}superseded {date}"),
+        None => format!("~~{old}~~{SEP}superseded {date}"),
+    };
+    list.splice(index..=index, [struck, entry.to_string()]);
+    let refs: Vec<&str> = list.iter().map(String::as_str).collect();
+    Ok(join(&refs))
+}
+
+/// MonoCode `removeMemoryEntry`: takes a line out entirely, for an entry
+/// that was simply wrong. The text, and the line removed.
+pub fn remove_memory_entry(text: &str, find: &str) -> Result<(String, String), String> {
+    let mut list = lines(text);
+    let index = find_line(&list, find)?;
+    let removed = list.remove(index).to_string();
+    Ok((join(&list), removed))
+}
+
+fn over_budget(list: &[&str]) -> bool {
+    list.len() > MEMORY_MAX_LINES || join(list).len() > MEMORY_MAX_BYTES
+}
+
+/// MonoCode `fitMemoryBudget`: keeps `MEMORY.md` within what loads by
+/// moving the oldest dated entries out to the archive: struck-through ones
+/// first, then expired ones, then the oldest live ones. The user's undated
+/// lines and `keep` (the entry just written) never move.
+pub fn fit_memory_budget(text: &str, keep: Option<&str>, date: &str) -> (String, Vec<String>) {
+    let mut list = lines(text);
+    let mut moved = Vec::new();
+    let movable = |line: &str| dated(line).is_some() && Some(line) != keep;
+    let expired = |line: &str| split_until(line).is_some_and(|(_, until)| until < date);
+    let passes: [&dyn Fn(&str) -> bool; 3] = [
+        &|line| movable(line) && line.contains("~~"),
+        &|line| movable(line) && expired(line),
+        &movable,
+    ];
+    for pick in passes {
+        while over_budget(&list) {
+            let Some(index) = list.iter().position(|line| pick(line)) else {
+                break;
+            };
+            moved.push(list.remove(index).to_string());
+        }
+    }
+    (join(&list), moved)
+}
+
+/// MonoCode `archiveMemoryEntries`: lines moved out of `MEMORY.md`, appended
+/// to the archive with the day.
+pub fn archive_memory_entries(archive: &str, moved: &[String], date: &str) -> String {
+    let mut list: Vec<String> = lines(archive).into_iter().map(str::to_string).collect();
+    if list.is_empty() {
+        list = vec!["# Archive".into(), String::new()];
+    }
+    list.extend(moved.iter().map(|line| format!("{line}{SEP}moved {date}")));
+    let refs: Vec<&str> = list.iter().map(String::as_str).collect();
+    join(&refs)
+}
+
+/// MonoCode `topicName`: a topic file's name, letters, numbers, spaces,
+/// dots and dashes.
+pub fn topic_name(value: &str) -> Result<String, String> {
+    let trimmed = value.trim();
+    let name = if trimmed.to_ascii_lowercase().ends_with(".md") {
+        &trimmed[..trimmed.len() - 3]
+    } else {
+        trimmed
+    };
+    let valid = !name.is_empty()
+        && name.len() <= 80
+        && !name.starts_with('.')
+        && !name.eq_ignore_ascii_case("archive")
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, ' ' | '.' | '_' | '-'));
+    if valid {
+        Ok(name.to_string())
+    } else {
+        Err("topic must be a short name of letters, numbers, spaces, dots and dashes".to_string())
+    }
+}
+
+/// MonoCode `MemoryHit`.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
+pub struct MemoryHit {
+    pub file: String,
+    pub line: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub date: Option<String>,
+}
+
+/// MonoCode `STOPWORDS`.
+const STOPWORDS: &[&str] = &[
+    "the", "and", "for", "are", "was", "were", "with", "that", "this", "what", "when", "where",
+    "which", "who", "how", "why", "did", "does", "have", "has", "had", "you", "your", "our",
+    "not", "but", "can", "will", "from", "into", "about", "there", "their", "them", "then",
+    "than", "just", "any", "all", "its", "it's",
+];
+
+fn query_words(query: &str) -> Vec<String> {
+    let mut words: Vec<String> = Vec::new();
+    for word in query
+        .to_lowercase()
+        .split(|c: char| !(c.is_alphanumeric() || matches!(c, '_' | '.' | '-')))
+    {
+        let word = word.trim_matches(|c| c == '.' || c == '-');
+        if word.chars().count() >= 3 && !STOPWORDS.contains(&word) && !words.iter().any(|w| w == word)
+        {
+            words.push(word.to_string());
+        }
+    }
+    words
+}
+
+/// MonoCode `sinceDate`: `2026-10-01`, or a span back from `today`: `7d`,
+/// `24h`, `2w`.
+pub fn since_date(value: &str, today: jiff::Zoned) -> Result<String, String> {
+    let value = value.trim();
+    if is_date(value) {
+        return Ok(value.to_string());
+    }
+    let error = || "since must be a date like 2026-10-01 or a span like \"7d\"".to_string();
+    let unit = value.chars().last().ok_or_else(error)?.to_ascii_lowercase();
+    let count: i64 = value[..value.len() - 1].trim().parse().map_err(|_| error())?;
+    if !(0..=9999).contains(&count) {
+        return Err(error());
+    }
+    let hours = match unit {
+        'h' => count,
+        'd' => count * 24,
+        'w' => count * 24 * 7,
+        _ => return Err(error()),
+    };
+    let then = today
+        .checked_sub(jiff::Span::new().hours(hours))
+        .map_err(|_| error())?;
+    Ok(then.date().strftime("%Y-%m-%d").to_string())
+}
+
+/// MonoCode `searchMemory`: lines across the agent's memory that share
+/// words with `query`, best first. A long query needs two of its words on
+/// a line; newer entries win ties.
+pub fn search_memory(
+    files: &[(String, String)],
+    query: &str,
+    since: Option<&str>,
+    limit: usize,
+) -> Result<Vec<MemoryHit>, String> {
+    let words = query_words(query);
+    if words.is_empty() && since.is_none() {
+        return Err("query needs at least one word of three letters or more".to_string());
+    }
+    let needed = match words.len() {
+        0 => 0,
+        1..=3 => 1,
+        _ => 2,
+    };
+    let mut hits: Vec<(usize, MemoryHit)> = Vec::new();
+    for (file, text) in files {
+        for line in text.split('\n') {
+            if line.trim().is_empty() || line.starts_with("# ") {
+                continue;
+            }
+            let date = dated(line);
+            if let Some(since) = since
+                && date.is_none_or(|date| date < since)
+            {
+                continue;
+            }
+            let lower = line.to_lowercase();
+            let score = words.iter().filter(|word| lower.contains(word.as_str())).count();
+            if score < needed {
+                continue;
+            }
+            hits.push((
+                score,
+                MemoryHit {
+                    file: file.clone(),
+                    line: line.to_string(),
+                    date: date.map(str::to_string),
+                },
+            ));
+        }
+    }
+    hits.sort_by(|(a, x), (b, y)| {
+        b.cmp(a)
+            .then_with(|| y.date.as_deref().unwrap_or("").cmp(x.date.as_deref().unwrap_or("")))
+    });
+    Ok(hits.into_iter().take(limit).map(|(_, hit)| hit).collect())
 }
 
 /// MonoCode `MemoryLine`: one line of `MEMORY.md` as the Memory page lists it.
@@ -548,4 +774,72 @@ mod tests {
         assert_eq!(budget.dropped_lines, 1);
         assert!(budget.share() > 1.0);
     }
+    #[test]
+    fn a_changed_fact_is_struck_and_followed() {
+        let memory = "- 2026-10-01 · desk by the window\n- 2026-10-01 · likes tea\n";
+        let next = supersede_memory_entry(memory, "desk", "- 2026-10-05 · desk upstairs", "2026-10-05").unwrap();
+        assert_eq!(
+            next,
+            "- ~~2026-10-01 · desk by the window~~ · superseded 2026-10-05\n- 2026-10-05 · desk upstairs\n- 2026-10-01 · likes tea\n"
+        );
+        // The struck line is not found again.
+        assert!(supersede_memory_entry(&next, "window", "- x", "2026-10-05").is_err());
+        assert!(supersede_memory_entry(memory, "2026", "- x", "2026-10-05").unwrap_err().starts_with("2 entries"));
+        let (left, removed) = remove_memory_entry(memory, "tea").unwrap();
+        assert_eq!(removed, "- 2026-10-01 · likes tea");
+        assert_eq!(left, "- 2026-10-01 · desk by the window\n");
+        assert!(remove_memory_entry(memory, " ").is_err());
+    }
+
+    #[test]
+    fn over_budget_moves_struck_then_expired_then_oldest() {
+        let mut list = vec!["mine".to_string()];
+        list.push("- ~~2026-01-01 · old~~ · superseded 2026-02-01".into());
+        list.push("- 2026-01-02 · trip · until 2026-03-01".into());
+        for n in 0..200 {
+            list.push(format!("- 2026-05-01 · fact {n}"));
+        }
+        let text = format!("{}\n", list.join("\n"));
+        let (fitted, moved) = fit_memory_budget(&text, Some("- 2026-05-01 · fact 0"), "2026-10-05");
+        assert_eq!(
+            moved,
+            [
+                "- ~~2026-01-01 · old~~ · superseded 2026-02-01",
+                "- 2026-01-02 · trip · until 2026-03-01",
+                "- 2026-05-01 · fact 1",
+            ]
+        );
+        assert!(fitted.starts_with("mine\n- 2026-05-01 · fact 0\n"));
+        assert_eq!(lines(&fitted).len(), 200);
+        let archive = archive_memory_entries("", &moved[..1], "2026-10-05");
+        assert_eq!(archive, "# Archive\n\n- ~~2026-01-01 · old~~ · superseded 2026-02-01 · moved 2026-10-05\n");
+    }
+
+    #[test]
+    fn topics_and_spans() {
+        assert_eq!(topic_name(" releases.md ").unwrap(), "releases");
+        for bad in ["", "archive", ".hidden", "a/b", &"x".repeat(81)] {
+            assert!(topic_name(bad).is_err(), "{bad}");
+        }
+        let today: jiff::Zoned = "2026-10-08T12:00:00[UTC]".parse().unwrap();
+        assert_eq!(since_date("7d", today.clone()).unwrap(), "2026-10-01");
+        assert_eq!(since_date("2w", today.clone()).unwrap(), "2026-09-24");
+        assert_eq!(since_date("2026-01-02", today.clone()).unwrap(), "2026-01-02");
+        assert!(since_date("soon", today).is_err());
+    }
+
+    #[test]
+    fn search_ranks_by_shared_words() {
+        let files = vec![
+            ("MEMORY.md".to_string(), "# Memory\n- 2026-10-01 · deploys go through fly\n- 2026-10-03 · the deploy key lives in 1password\nplain line about cats\n".to_string()),
+            ("memory/archive.md".to_string(), "- 2026-01-01 · deploy freeze in december\n".to_string()),
+        ];
+        let hits = search_memory(&files, "where is the deploy key?", None, 20).unwrap();
+        assert_eq!(hits[0].line, "- 2026-10-03 · the deploy key lives in 1password");
+        assert_eq!(hits.len(), 3);
+        let recent = search_memory(&files, "", Some("2026-10-02"), 20).unwrap();
+        assert_eq!(recent.len(), 1);
+        assert!(search_memory(&files, "is it", None, 20).is_err());
+    }
+
 }

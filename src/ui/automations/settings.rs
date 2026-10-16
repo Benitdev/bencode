@@ -48,17 +48,6 @@ fn schedule_prefix(kind: Option<ScheduleKind>) -> &'static str {
     }
 }
 
-/// MonoCode `timeOptions`: every half hour, and `current` when it is not one.
-fn time_options(current: &str) -> Vec<String> {
-    let mut options: Vec<String> = (0..24)
-        .flat_map(|hour| [format!("{hour:02}:00"), format!("{hour:02}:30")])
-        .collect();
-    if !current.is_empty() && !options.iter().any(|option| option == current) {
-        options.insert(0, current.to_string());
-    }
-    options
-}
-
 /// "GitHub · pull request opened" for a trigger BenCode cannot run.
 fn event_trigger_label(trigger: &Trigger) -> String {
     let text = |key: &str| trigger.get(key).and_then(Value::as_str).unwrap_or("");
@@ -254,7 +243,7 @@ impl BenCodeApp {
                             })),
                     ))
                 } else {
-                    let times = time_options(&time.time)
+                    let times = schedule::time_options(&time.time)
                         .into_iter()
                         .map(|option| Choice::new(option.clone(), option));
                     el.child(pill(
@@ -563,14 +552,14 @@ mod tests {
 
     #[test]
     fn times_offer_every_half_hour_and_an_odd_current_one() {
-        let options = time_options("09:00");
+        let options = schedule::time_options("09:00");
         assert_eq!(options.len(), 48);
         assert_eq!(
             (options[0].as_str(), options[47].as_str()),
             ("00:00", "23:30")
         );
-        assert_eq!(time_options("09:15")[0], "09:15");
-        assert_eq!(time_options("09:15").len(), 49);
+        assert_eq!(schedule::time_options("09:15")[0], "09:15");
+        assert_eq!(schedule::time_options("09:15").len(), 49);
     }
 
     #[test]

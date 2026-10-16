@@ -231,6 +231,10 @@ pub struct SessionRow {
     /// MonoCode's saved orchestration summary when this thread led one.
     #[serde(skip)]
     pub orchestration: Option<OrchestrationSummary>,
+    /// MonoCode `sidebarHidden`: a session a Mono started, kept out of the
+    /// project's list. Written only through `set_session_sidebar_hidden`.
+    #[serde(skip)]
+    pub sidebar_hidden: bool,
     /// Set when `blocks_json` could not be parsed. Such rows carry an empty
     /// `blocks` vector and `upsert_session` refuses to write them back.
     #[serde(skip)]
@@ -391,6 +395,7 @@ const LATE_SESSION_COLUMNS: &[(&str, &str)] = &[
     ("is_draft", "INTEGER NOT NULL DEFAULT 0"),
     ("automation_id", "TEXT"),
     ("inbox_ask", "TEXT"),
+    ("sidebar_hidden", "INTEGER NOT NULL DEFAULT 0"),
 ];
 
 /// The thread lists read newest first. It needs `inbox_ask`, which a database
@@ -406,7 +411,7 @@ const SESSION_SELECT: &str =
         runtime_mode, worktree_cwd, model_settings, worktree_removed, automation_id,
         linked_work_item_json,
         (SELECT summary FROM orchestration_sidebar WHERE lead_id = sessions.id),
-        provider_account_id
+        provider_account_id, sidebar_hidden
      FROM sessions";
 
 pub struct AppDb {
@@ -543,6 +548,16 @@ impl AppDb {
 
     /// Inserts or updates a session. Columns BenCode does not model are left
     /// untouched on update and get MonoCode's defaults on insert.
+    /// MonoCode `sidebar_hidden`, apart from the session's save, which
+    /// leaves it as it was.
+    pub fn set_session_sidebar_hidden(&self, id: &str, hidden: bool) -> Result<()> {
+        self.conn.execute(
+            "UPDATE sessions SET sidebar_hidden = ?2 WHERE id = ?1",
+            params![id, i64::from(hidden)],
+        )?;
+        Ok(())
+    }
+
     pub fn upsert_session(&self, session: &SessionRow) -> Result<()> {
         if session.blocks_parse_failed {
             bail!(
@@ -1129,6 +1144,7 @@ fn unparsed_session(row: &Row<'_>) -> rusqlite::Result<(SessionRow, String)> {
             .get::<_, Option<String>>(20)?
             .as_deref()
             .and_then(OrchestrationSummary::from_json),
+        sidebar_hidden: row.get::<_, Option<i64>>(22)?.unwrap_or(0) != 0,
         blocks_parse_failed: false,
     };
     Ok((session, blocks_json))

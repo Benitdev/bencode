@@ -142,7 +142,7 @@ impl BenCodeApp {
             .sessions
             .iter()
             // MonoCode `excludedIds`: a Mono's chat lives on its own rail row.
-            .filter(|session| !self.is_mono_session(&session.id))
+            .filter(|session| !self.is_mono_session(&session.id) && !self.is_habit_run(&session.id))
             .filter_map(|session| {
                 let run = self.runs.get(&session.id);
                 live_agent(

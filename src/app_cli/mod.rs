@@ -4,16 +4,20 @@
 //! this binary; it sends the call over a Unix socket (`server.rs`) to the
 //! app, which answers it on the UI thread (`app/artifacts.rs`).
 //!
-//! MonoCode's CLI also drives sessions, worktrees, folders, notes, the
-//! soul, memory, habits and chat cards. BenCode's answers its artifacts
-//! actions only (`artifacts.rs`); the rest are not ported yet.
+//! Every action MonoCode's answers: sessions, worktrees and folders
+//! (`app/mono_sessions.rs`), notes (`notes.rs`), artifacts
+//! (`artifacts.rs`), the soul and memory (`memory.rs`), habits
+//! (`app/habits.rs`) and chat cards; `input.rs` checks what each takes.
 //!
 //! The turn's credential reaches the CLI in `BENCODE_APP_TOKEN`, with the
 //! socket in `BENCODE_APP_SOCKET` (`SpawnRequest.app`). A token works only
-//! while its Mono's turn runs.
+//! while a turn of its conversation runs.
 
 pub mod artifacts;
 mod cli;
+pub mod input;
+pub mod memory;
+pub mod notes;
 pub mod server;
 
 use std::io::Read as _;

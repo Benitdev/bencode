@@ -158,6 +158,9 @@ pub struct AppSettings {
     /// MonoCode `monocode.railMonosPinned`: each Mono at the top of the
     /// icon rail, above a divider. Off by default.
     pub rail_monos_pinned: bool,
+    /// MonoCode `monocode.monoMenuBarIcon` switched off: no Monos icon in
+    /// the macOS menu bar. On by default.
+    pub mono_menu_bar_off: bool,
     /// MonoCode `saveOpenMono`: the Mono in view when BenCode last closed,
     /// opened again at launch.
     pub open_mono: Option<String>,
@@ -352,6 +355,7 @@ mod tests {
             mono_float_size: Some([480.0, 620.0]),
             monos_off: true,
             rail_monos_pinned: true,
+            mono_menu_bar_off: true,
             open_mono: Some("mono-1".into()),
             mono_overview_width: Some(520.0),
             remote_machines: vec![crate::remote::Machine {

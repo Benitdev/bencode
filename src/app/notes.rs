@@ -289,6 +289,12 @@ fn looks_like_project(path: &str, home: Option<&str>) -> bool {
     !(trimmed.is_empty() || trimmed == "~" || home == Some(trimmed) || path.contains(".app/"))
 }
 
+/// `looks_like_project` for the home folder of this user.
+pub fn is_project_folder(path: &str) -> bool {
+    let home = std::env::var("HOME").ok();
+    looks_like_project(path, home.as_deref())
+}
+
 /// MonoCode `noteSourceProject`: the folder name of the note's project.
 pub fn note_project(note: &Note) -> Option<&str> {
     let cwd = note.source_cwd.as_deref()?;
@@ -394,6 +400,11 @@ impl BenCodeApp {
     fn next_note_list(&mut self) -> u64 {
         self.notes.list_requests += 1;
         self.notes.list_requests
+    }
+
+    /// The list read again, after a note changed elsewhere (`bencode app`).
+    pub(crate) fn reload_notes(&mut self, cx: &mut Context<Self>) {
+        self.refresh_notes(cx);
     }
 
     fn refresh_notes(&mut self, cx: &mut Context<Self>) {

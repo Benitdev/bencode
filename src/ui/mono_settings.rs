@@ -5,8 +5,8 @@
 //!
 //! General: the face (opening its mascots and colours), the name edited in
 //! place, the Model and its settings, Permissions, its projects, then
-//! Reset conversation and Delete. MonoCode's "Sessions it starts" group is
-//! left out: BenCode's Monos start no sessions. Soul: `SOUL.md` as its
+//! "Sessions it starts" (in the sidebar, in a folder), then Reset
+//! conversation and Delete. Soul: `SOUL.md` as its
 //! markdown source, saved when the field is left, with "Use theirs / Keep
 //! mine" when it changed on disk meanwhile. Memory: one fact per row,
 //! added, reworded and forgotten in place, over the gauge of what loads.
@@ -428,6 +428,8 @@ impl BenCodeApp {
                 fg,
             ))
             .child(setting_group(self.render_mono_settings_projects(mono, cx), fg))
+            .child(group_heading("Sessions it starts", None, fg))
+            .child(setting_group(self.render_mono_started_sessions(mono, cx), fg))
             .child(group_heading("Conversation", None, fg))
             .child(setting_group(vec![reset, delete], fg))
             .children(self.monos.reset_error.clone().map(|err| {
@@ -440,6 +442,54 @@ impl BenCodeApp {
             }));
         crate::ui::scrollbar::Scrolled::new("mono-settings-general-scrollbar", page)
             .into_any_element()
+    }
+
+    /// MonoCode's "Sessions it starts": shown in the project sidebar, and
+    /// filed in a folder named after it (only while shown).
+    fn render_mono_started_sessions(&self, mono: &Mono, cx: &Context<Self>) -> Vec<AnyElement> {
+        let fg = cx.theme().colors.fg;
+        let shown = mono.show_started_sessions_in_sidebar;
+        let switch = |id: String, on: bool, set: fn(&mut Mono, bool)| {
+            let (entity, mono_id) = (cx.entity().downgrade(), mono.id.clone());
+            ely_gpui_component::forms::Switch::new(SharedString::from(id), on).on_change(move |on, _, cx| {
+                let mono_id = mono_id.clone();
+                let toggled = entity.update(cx, |this, cx| {
+                    this.update_monos(
+                        |roster| {
+                            if let Some(entry) = roster.iter_mut().find(|m| m.id == mono_id) {
+                                set(entry, on);
+                            }
+                        },
+                        cx,
+                    );
+                    this.play_cue(crate::sounds::Cue::Switch);
+                });
+                if let Err(err) = toggled {
+                    log::debug!("Mono switch after app drop: {err:#}");
+                }
+            })
+        };
+        vec![
+            setting_row(
+                "Show sessions in sidebar",
+                Some("Sessions it starts appear in your project sidebar. Hidden ones stay saved and open from its overview."),
+                switch(format!("mono-started-shown-{}", mono.id), shown, |m, on| {
+                    m.show_started_sessions_in_sidebar = on
+                })
+                .into_any_element(),
+                fg,
+            ),
+            setting_row(
+                "Group in a folder",
+                None,
+                switch(format!("mono-started-folder-{}", mono.id), shown && mono.use_sidebar_folders, |m, on| {
+                    m.use_sidebar_folders = on
+                })
+                .disabled(!shown)
+                .into_any_element(),
+                fg,
+            ),
+        ]
     }
 
     /// MonoCode `LookButton`: the face (`size-20 rounded-2xl border`, the

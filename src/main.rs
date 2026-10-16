@@ -11,6 +11,7 @@ mod launch;
 mod logging;
 pub mod mcp;
 mod monocode_import;
+mod mono_menu_bar;
 mod monos;
 mod notifications;
 mod process_stats;

@@ -6,13 +6,13 @@
 //! kept in `settings.json`).
 //!
 //! Documents lists the artifacts it wrote, oldest first; one opens over the
-//! list (`ui/artifacts.rs`). BenCode's Monos start no sessions and run no
-//! habits (MonoCode's `app` CLI), so Sessions lists the threads in its
-//! projects and Habits what `habits.json` holds (empty until habits are
-//! ported). Changes is `changes.rs`; Activity is the transcript's own work
-//! rows (`ui/transcript/mono_activity.rs`).
+//! list (`ui/artifacts.rs`). Habits is `habits.rs`. Sessions lists the
+//! sessions it started and the threads in its projects. Changes is
+//! `changes.rs`; Activity is the transcript's own work rows
+//! (`ui/transcript/mono_activity.rs`).
 
 mod changes;
+mod habits;
 
 use ely_gpui_component::buttons::{ButtonVariant, IconButton};
 use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
@@ -23,7 +23,7 @@ use gpui::{
 };
 
 use crate::app::BenCodeApp;
-use crate::app::mono_overview::{OverviewTab, visible_sessions};
+use crate::app::mono_overview::OverviewTab;
 use crate::monos::{Mono, MonoState};
 use crate::ui::HarnessIcon;
 use crate::ui::icons::ExtraIcon;
@@ -176,8 +176,14 @@ impl BenCodeApp {
                     cx.notify();
                 }),
             );
+        let habit_page = (overview.tab == OverviewTab::Habits)
+            .then(|| self.render_habit_route(mono, cx))
+            .flatten();
+        let paged = overview.document.is_some() || habit_page.is_some();
         let body = if overview.document.is_some() {
             self.render_artifact_reader(cx)
+        } else if let Some(page) = habit_page {
+            page
         } else if overview.tab == OverviewTab::Changes {
             self.render_mono_changes(mono, cx)
         } else {
@@ -209,9 +215,7 @@ impl BenCodeApp {
             .border_l_1()
             .border_color(fg.opacity(STROKE))
             .child(edge)
-            .when(overview.document.is_none(), |el| {
-                el.child(self.render_mono_overview_header(cx))
-            })
+            .when(!paged, |el| el.child(self.render_mono_overview_header(cx)))
             .child(body)
             .into_any_element()
     }
@@ -221,10 +225,7 @@ impl BenCodeApp {
         let mono = self.mono_in_view()?;
         let overview = &self.monos.overview;
         let count = match tab {
-            OverviewTab::Sessions => visible_sessions(&self.sessions, &mono.projects, |id| {
-                self.is_mono_session(id)
-            })
-            .len(),
+            OverviewTab::Sessions => self.mono_launches(mono).len(),
             OverviewTab::Documents => self.mono_documents(mono).len(),
             OverviewTab::Habits => overview.habits.as_ref()?.len(),
             OverviewTab::Changes => self.mono_changes_count(),
@@ -269,6 +270,24 @@ impl BenCodeApp {
                     .items_center()
                     .gap_0p5()
                     .px_3()
+                    .children((current == OverviewTab::Habits).then(|| {
+                        let full = self
+                            .monos
+                            .overview
+                            .habits
+                            .as_ref()
+                            .is_none_or(|list| list.len() >= crate::monos::habits::HABITS_MAX);
+                        IconButton::new("mono-overview-new-habit", IconName::Plus)
+                            .size(ControlSize::Sm)
+                            .variant(ButtonVariant::Ghost)
+                            .tooltip(if full && self.monos.overview.habits.is_some() {
+                                format!("At most {} habits", crate::monos::habits::HABITS_MAX)
+                            } else {
+                                "New habit".to_string()
+                            })
+                            .disabled(full)
+                            .on_click(cx.listener(|this, _, window, cx| this.open_new_habit(window, cx)))
+                    }))
                     .child(
                         self.render_tab_button(
                             OverviewTab::Activity,
@@ -384,50 +403,59 @@ impl BenCodeApp {
     fn render_mono_sessions(&self, mono: &Mono, cx: &Context<Self>) -> AnyElement {
         let fg = cx.theme().colors.fg;
         let name = mono.display_name();
-        if mono.projects.is_empty() {
+        let launches = self.mono_launches(mono);
+        if launches.is_empty() {
             return empty_state(
                 OverviewTab::Sessions,
                 format!(
-                    "Give {name} a project to work on, and the sessions in it show up here."
+                    "Ask {name} to start a session on one of your projects, like a bug fix or a review, and it shows up here."
                 ),
                 fg,
             );
         }
-        let sessions = visible_sessions(&self.sessions, &mono.projects, |id| {
-            self.is_mono_session(id)
-        });
-        if sessions.is_empty() {
-            return empty_state(
-                OverviewTab::Sessions,
-                format!("No sessions yet in the projects {name} works on."),
-                fg,
-            );
-        }
         let now = crate::app::now_ms();
+        // MonoCode `[...launches].reverse()`: the newest first.
         div()
-            .children(sessions.into_iter().take(100).map(|session| {
-                let id = session.id.clone();
-                let title = crate::app::session_list::display_title(&session.title, &session.harness);
-                let project = self.rail_project_label(&session.cwd);
-                let status = if self.pending_permission_for(&session.id).is_some() {
-                    "Needs approval".to_string()
-                } else if self.is_agent_running_in(&session.id) {
-                    "Working".to_string()
-                } else {
-                    crate::app::session_list::format_relative(session.updated_at, now)
+            .children(launches.into_iter().rev().map(|launch| {
+                let id = launch.session_id.clone();
+                let loaded = self.sessions.iter().find(|s| s.id == id);
+                let title = crate::app::session_list::display_title(
+                    loaded.map_or(&launch.title, |s| &s.title),
+                    &launch.harness,
+                );
+                let project = self.rail_project_label(&launch.cwd);
+                let status = match self.launched_state(&id) {
+                    Some(crate::app::mono_sessions::LaunchedState::Done) | None => loaded
+                        .map(|s| crate::app::session_list::format_relative(s.updated_at, now))
+                        .unwrap_or_default(),
+                    Some(state) => state.label().to_string(),
                 };
-                let model = crate::harness::catalog::display_label(&session.harness, &session.model);
+                let model = crate::harness::catalog::display_label(&launch.harness, &launch.model);
+                let line = [project, model, status]
+                    .into_iter()
+                    .filter(|part| !part.is_empty())
+                    .collect::<Vec<_>>()
+                    .join(" · ");
                 list_row(
                     SharedString::from(format!("mono-session-{id}")),
-                    HarnessIcon::new(&session.harness).size(px(14.0)).into_any_element(),
+                    HarnessIcon::new(&launch.harness).size(px(14.0)).into_any_element(),
                     title,
-                    format!("{project} · {model} · {status}"),
+                    line,
                     fg,
                 )
                 .tooltip(Tooltip::text("Open in workspace"))
-                .on_click(cx.listener(move |this, _, _, cx| this.open_session(id.clone(), cx)))
+                .on_click(cx.listener(move |this, _, _, cx| this.open_mono_launch(&id, cx)))
             }))
             .into_any_element()
+    }
+
+    /// MonoCode `monoSpawnedSessions` over the Mono's chat.
+    fn mono_launches(&self, mono: &Mono) -> Vec<crate::app::mono_sessions::SpawnedSession> {
+        mono.session_id
+            .as_deref()
+            .and_then(|id| self.sessions.iter().find(|s| s.id == id))
+            .map(|session| crate::app::mono_sessions::chat_launches(&session.blocks))
+            .unwrap_or_default()
     }
 
     /// MonoCode `documents`: the artifacts the Mono's chat holds cards for,
@@ -473,46 +501,6 @@ impl BenCodeApp {
                     fg,
                 )
                 .on_click(cx.listener(move |this, _, _, cx| this.open_artifact(&id, cx)))
-            }))
-            .into_any_element()
-    }
-
-    /// Habits: `habits.json`'s list (on ones first, soonest first), or
-    /// MonoCode's empty state.
-    fn render_mono_habits(&self, mono: &Mono, cx: &Context<Self>) -> AnyElement {
-        let fg = cx.theme().colors.fg;
-        let Some(habits) = &self.monos.overview.habits else {
-            // Blank while it loads, as MonoCode's list.
-            return div().into_any_element();
-        };
-        if habits.is_empty() {
-            return empty_state(
-                OverviewTab::Habits,
-                format!(
-                    "Ask {} to put recurring work on a schedule, like a morning digest or a weekly report.",
-                    mono.display_name()
-                ),
-                fg,
-            );
-        }
-        div()
-            .children(crate::monos::habits::ordered(habits).into_iter().map(|habit| {
-                let line = if habit.enabled {
-                    habit.schedule.label()
-                } else {
-                    format!("Paused · {}", habit.schedule.label())
-                };
-                list_row(
-                    SharedString::from(format!("mono-habit-{}", habit.id)),
-                    Icon::new(IconName::Clock)
-                        .size(IconSize::Sm)
-                        .color(fg.opacity(if habit.enabled { 0.6 } else { 0.3 }))
-                        .into_any_element(),
-                    habit.name.clone(),
-                    line,
-                    fg,
-                )
-                .tooltip(Tooltip::text(habit.instructions.clone()))
             }))
             .into_any_element()
     }

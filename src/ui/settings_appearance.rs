@@ -72,7 +72,9 @@ impl BenCodeApp {
             ThemePreference::Light => Appearance::Light,
             ThemePreference::System => Appearance::System,
         };
-        let theme = ThemeSelector::new("appearance-theme", appearance).on_change(
+        let theme = ThemeSelector::new(
+            "appearance-theme",
+            appearance,
             app_callback_with(cx, |this, picked: Appearance, cx| {
                 let pref = match picked {
                     Appearance::Dark => ThemePreference::Dark,

@@ -38,6 +38,8 @@ struct Carried {
 pub struct MonosState {
     /// The Mono whose conversation covers the workspace.
     pub view: Option<String>,
+    /// Replies each Mono's conversation has that the user has not seen.
+    pub unread: HashMap<String, usize>,
     /// MonoCode `monoOverviewOpen`: the title bar's Overview pill. A Mono
     /// opens with its Overview beside the chat until it is hidden.
     pub overview_open: bool,
@@ -104,6 +106,7 @@ impl MonosState {
             load_errors: HashMap::new(),
             float: None,
             carrying: HashMap::new(),
+            unread: HashMap::new(),
             _subscriptions: subscriptions,
         }
     }
@@ -124,6 +127,22 @@ impl BenCodeApp {
 
     pub fn is_mono_session(&self, session_id: &str) -> bool {
         self.mono_for_session(session_id).is_some()
+    }
+
+    /// MonoCode `useUnseenReplyCounts`: replies a Mono finished (or its
+    /// habits posted) while the user was not looking at it.
+    pub fn mono_unread(&self, mono: &Mono) -> Option<usize> {
+        let session = mono.session_id.as_deref()?;
+        self.monos.unread.get(session).copied().filter(|n| *n > 0)
+    }
+
+    /// MonoCode `noteReply`: one more unread reply, unless it is in view.
+    pub(crate) fn note_mono_reply(&mut self, session_id: &str, cx: &mut Context<Self>) {
+        if !self.is_mono_session(session_id) || self.mono_view_session() == Some(session_id) {
+            return;
+        }
+        *self.monos.unread.entry(session_id.to_string()).or_default() += 1;
+        cx.notify();
     }
 
     /// The Mono open in the main area.
@@ -307,6 +326,7 @@ impl BenCodeApp {
                 if let Some(mono) = roster.iter_mut().find(|mono| mono.id == id) {
                     mono.session_id = Some(session_id.clone());
                     mono.handed = None;
+                    mono.rotation = None;
                 }
             },
             cx,
@@ -319,12 +339,23 @@ impl BenCodeApp {
     /// MonoCode `FloatingMonoChat`: the Mono's chat in the window that
     /// floats above the others, opened or brought forward on this Mono.
     pub fn open_mono_float(&mut self, id: &str, window: &mut gpui::Window, cx: &mut Context<Self>) {
+        self.open_mono_float_over(id, window.window_handle(), cx);
+    }
+
+    /// `open_mono_float` from outside BenCode's window (the menu bar), with
+    /// the window the float belongs to.
+    pub fn open_mono_float_over(
+        &mut self,
+        id: &str,
+        main: gpui::AnyWindowHandle,
+        cx: &mut Context<Self>,
+    ) {
         if self.mono(id).is_none() {
             return;
         }
         self.close_rail_menu(cx);
         self.prepare_mono_session(id, cx);
-        let (app, main, mono_id) = (cx.entity(), window.window_handle(), id.to_string());
+        let (app, mono_id) = (cx.entity(), id.to_string());
         let existing = self.monos.float.take();
         // Opening a window updates the app it is drawn from: after this one.
         cx.defer(move |cx| {
@@ -399,6 +430,9 @@ impl BenCodeApp {
         }
         self.monos.view = Some(id.to_string());
         self.monos.last_mono = Some(id.to_string());
+        if let Some(session) = self.mono(id).and_then(|m| m.session_id.clone()) {
+            self.monos.unread.remove(&session);
+        }
         self.monos.pending_reset = false;
         self.monos.files.load_error = None;
         self.load_mono_files(id, cx);
@@ -639,6 +673,12 @@ impl BenCodeApp {
             self.save_open_mono(cx);
         }
         self.monos.files.loaded.remove(id);
+        if self.mono_backgrounds.dialog.as_deref() == Some(id) {
+            self.mono_backgrounds.dialog = None;
+        }
+        if mono.background.is_some() {
+            self.remove_mono_background(id, cx);
+        }
         self.update_monos(|roster| roster.retain(|mono| mono.id != id), cx);
         match mono.session_id {
             Some(session_id) => self.drop_mono_session(&session_id, cx),
@@ -701,6 +741,7 @@ impl BenCodeApp {
                 if let Some(entry) = roster.iter_mut().find(|entry| entry.id == mono.id) {
                     entry.session_id = Some(fresh.clone());
                     entry.handed = None;
+                    entry.rotation = None;
                 }
             },
             cx,
@@ -822,8 +863,8 @@ impl BenCodeApp {
     pub(crate) fn apply_mono_context(
         &mut self,
         session_id: &str,
-        provider: Option<&str>,
         prompt: String,
+        cx: &mut Context<Self>,
     ) -> String {
         // MonoCode keeps a raw slash command first only for harnesses that
         // take them typed (`isNativeCommandPrompt`); none of BenCode's do, so
@@ -831,21 +872,16 @@ impl BenCodeApp {
         let Some(mono) = self.mono_for_session(session_id).cloned() else {
             return prompt;
         };
+        let brief = self.plan_mono_rotation(&mono, session_id, cx);
+        let mono = self.mono(&mono.id).cloned().unwrap_or(mono);
+        let provider = self
+            .sessions
+            .iter()
+            .find(|s| s.id == session_id)
+            .and_then(|s| s.provider_session_id.clone());
+        let provider = provider.as_deref();
         let files = self.mono_turn_files(&mono.id);
-        // The CLI's path is part of who it is: a move hands it over again.
-        let app_cli = self
-            .has_app_access(session_id)
-            .then(crate::app_cli::command);
-        let soul = crate::monos::soul_context(
-            &mono.display_name(),
-            &self.mono_projects(&mono),
-            &files.soul,
-            app_cli.as_deref(),
-        );
-        let topics_dir = crate::app::mono_files::mono_files_dir(&mono.id)
-            .map(|dir| dir.join("memory").to_string_lossy().into_owned())
-            .unwrap_or_default();
-        let memory = crate::monos::memory_context(&files.memory, &files.topics, &topics_dir);
+        let (soul, memory) = self.mono_context_parts(&mono, &files, self.has_app_access(session_id));
         let carried = Carried {
             soul_hash: crate::monos::context_hash(&soul),
             memory_hash: files.memory_hash.clone(),
@@ -857,12 +893,101 @@ impl BenCodeApp {
             &carried.soul_hash,
             &carried.memory_hash,
         );
-        if !plan.any() {
+        // MonoCode `unseenHabitPosts`: what its habits posted since the
+        // user last wrote, which the provider session never saw.
+        let away = self
+            .sessions
+            .iter()
+            .find(|s| s.id == session_id)
+            .map(|s| crate::monos::habit_posts_context(&s.blocks))
+            .unwrap_or_default();
+        if !plan.any() && away.is_empty() && brief.is_none() {
             return prompt;
         }
-        self.monos.carrying.insert(session_id.to_string(), carried);
-        let context = crate::monos::turn_context(plan, &soul, &memory);
+        if plan.any() {
+            self.monos.carrying.insert(session_id.to_string(), carried);
+        }
+        let context = [brief.unwrap_or_default(), away, crate::monos::turn_context(plan, &soul, &memory)]
+            .into_iter()
+            .filter(|part| !part.is_empty())
+            .collect::<Vec<_>>()
+            .join("\n\n");
         crate::monos::turn_with_context(&prompt, &context)
+    }
+
+    /// MonoCode's rotation, before a Mono's turn: past 80% of its window the
+    /// provider session is let go, and a fresh one (that, or one a switch
+    /// of account started) is briefed on the conversation so far.
+    fn plan_mono_rotation(
+        &mut self,
+        mono: &crate::monos::Mono,
+        session_id: &str,
+        cx: &mut Context<Self>,
+    ) -> Option<String> {
+        let session = self.sessions.iter().find(|s| s.id == session_id)?;
+        let rotate = crate::monos::rotation::should_rotate(
+            session.provider_session_id.as_deref(),
+            session.context_used,
+            session.context_window,
+        );
+        // A provider session that went for another reason (a switch of
+        // account or model) had seen the chat: the new one has not.
+        let fresh = session.provider_session_id.as_deref().is_none_or(str::is_empty);
+        let replaced = rotate || (fresh && mono.handed.is_some());
+        // Without the turn just started.
+        let before = session.blocks.len().saturating_sub(1);
+        if !replaced || !session.blocks[..before].iter().any(|b| b.role == "user") {
+            return None;
+        }
+        let reason = if rotate { "context" } else { "restart" };
+        let (rotation, brief) = crate::monos::rotation::plan_rotation(
+            &session.blocks[..before],
+            mono.rotation.as_ref(),
+            reason,
+            crate::app::now_ms(),
+            session_id,
+        );
+        if let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id) {
+            session.provider_session_id = None;
+            session.context_used = None;
+            session.context_window = None;
+        }
+        let id = mono.id.clone();
+        self.update_monos(
+            |roster| {
+                if let Some(entry) = roster.iter_mut().find(|m| m.id == id) {
+                    entry.rotation = Some(rotation);
+                    // The fresh session holds none of it yet.
+                    entry.handed = None;
+                }
+            },
+            cx,
+        );
+        Some(brief)
+    }
+
+    /// MonoCode `monoContext`'s two parts for `mono`: who it is (with the
+    /// app CLI's rules when its turns get the CLI) and its memory block.
+    pub(crate) fn mono_context_parts(
+        &self,
+        mono: &crate::monos::Mono,
+        files: &crate::monos::files::MonoFiles,
+        app: bool,
+    ) -> (String, String) {
+        // The CLI's path is part of who it is: a move hands it over again.
+        let app_cli = app.then(crate::app_cli::command);
+        let soul = crate::monos::soul_context(
+            &mono.display_name(),
+            &self.mono_projects(mono),
+            &files.soul,
+            app_cli.as_deref(),
+        );
+        let topics_dir = crate::app::mono_files::mono_files_dir(&mono.id)
+            .map(|dir| dir.join("memory").to_string_lossy().into_owned())
+            .filter(|_| !app);
+        let memory =
+            crate::monos::memory_context(&files.memory, &files.topics, topics_dir.as_deref());
+        (soul, memory)
     }
 
     /// A turn that never finished (stopped, or never started) hands nothing over.

@@ -236,6 +236,7 @@ impl BenCodeApp {
             mono_float_size: self.settings.mono_float_size,
             monos_off: self.settings.monos_off,
             rail_monos_pinned: self.settings.rail_monos_pinned,
+            mono_menu_bar_off: self.settings.mono_menu_bar_off,
             open_mono: self.settings.open_mono.clone(),
             mono_overview_width: Some(self.monos.overview.width)
                 .filter(|w| *w != crate::app::mono_overview::DEFAULT_WIDTH),
@@ -298,6 +299,7 @@ impl BenCodeApp {
             return;
         }
         self.write_settings(next, cx);
+        self.sync_mono_menu_bar(cx);
         cx.notify();
     }
 
@@ -323,6 +325,7 @@ impl BenCodeApp {
         if next != self.settings {
             self.write_settings(next, cx);
         }
+        self.sync_mono_menu_bar(cx);
         cx.notify();
     }
 
@@ -333,6 +336,17 @@ impl BenCodeApp {
         if next != self.settings {
             self.write_settings(next, cx);
         }
+        cx.notify();
+    }
+
+    /// Settings › Monos › Menu bar icon.
+    pub fn set_mono_menu_bar(&mut self, on: bool, cx: &mut Context<Self>) {
+        let mut next = self.current_settings();
+        next.mono_menu_bar_off = !on;
+        if next != self.settings {
+            self.write_settings(next, cx);
+        }
+        self.sync_mono_menu_bar(cx);
         cx.notify();
     }
 

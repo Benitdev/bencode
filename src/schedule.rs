@@ -54,6 +54,17 @@ impl ScheduleKind {
     }
 }
 
+/// MonoCode `timeOptions`: every half hour, and `current` when it is not one.
+pub fn time_options(current: &str) -> Vec<String> {
+    let mut options: Vec<String> = (0..24)
+        .flat_map(|hour| [format!("{hour:02}:00"), format!("{hour:02}:30")])
+        .collect();
+    if !current.is_empty() && !options.iter().any(|option| option == current) {
+        options.insert(0, current.to_string());
+    }
+    options
+}
+
 /// `HH:MM`, 24-hour, exactly as MonoCode's backend accepts it.
 pub fn parse_time(value: &str) -> Option<(i8, i8)> {
     let (hour, minute) = value.split_once(':')?;

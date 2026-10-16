@@ -193,6 +193,9 @@ impl BenCodeApp {
         self.sessions
             .iter()
             .filter(|s| crate::app::same_project_path(&s.cwd, cwd))
+            // A session a Mono started is listed in its chat (MonoCode
+            // `sidebarHidden`), and a habit's run nowhere.
+            .filter(|s| !s.sidebar_hidden && !self.is_habit_run(&s.id))
             .filter(|s| s.has_user_message() || in_folder.contains(s.id.as_str()))
             .filter(|s| {
                 focus.is_none_or(|focus| crate::app::same_project_path(s.work_dir(), &focus.path))

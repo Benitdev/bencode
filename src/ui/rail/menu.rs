@@ -313,10 +313,10 @@ impl BenCodeApp {
         items
     }
 
-    /// MonoCode `MonoMenu`'s actions. Background image is left out: BenCode
-    /// has one chat background, not one per Mono.
+    /// MonoCode `MonoMenu`'s actions.
     pub(super) fn mono_extra_items() -> Vec<ExtraItem> {
         vec![
+            ExtraItem::new("mono-background", "Background image", ExtraIcon::ImagePlus),
             ExtraItem::new(
                 "float-mono",
                 "Open floating chat",
@@ -506,6 +506,7 @@ impl BenCodeApp {
                 self.close_rail_menu(cx);
             }
             (MenuTarget::Project(path), _) => self.pick_project_extra(&path, id, anchor, cx),
+            (MenuTarget::Mono(mono), "mono-background") => self.open_mono_background(&mono, cx),
             (MenuTarget::Mono(mono), "float-mono") => self.open_mono_float(&mono, window, cx),
             (MenuTarget::Mono(mono), "delete-mono") => {
                 self.close_rail_menu(cx);

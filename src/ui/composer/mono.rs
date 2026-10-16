@@ -343,25 +343,28 @@ impl BenCodeApp {
     /// icon and the model's name; it opens the models alone, above it.
     fn render_mono_model_picker(&self, session: &SessionRow, cx: &Context<Self>) -> AnyElement {
         let fg = cx.theme().colors.fg;
-        let open = self.composer_menus.models_only == Some(ModelsAnchor::MonoComposer);
-        let trigger =
-            text_control("mono-model".into(), open, fg)
-                // No recent-models menu here, so no word of it.
-                .tooltip(Tooltip::text(
-                    super::model_chip_tooltip(&session.model, session.model_settings.as_ref())
-                        .trim_end_matches(" · Recent models: right-click or ⌘.")
-                        .to_string(),
-                ))
-                .on_click(cx.listener(|this, _, _, cx| {
-                    this.toggle_models_only(ModelsAnchor::MonoComposer, cx)
-                }))
-                .child(HarnessIcon::new(&session.harness).size(px(14.0)))
-                .child(
-                    div()
-                        .min_w_0()
-                        .truncate()
-                        .child(catalog::label_for(&session.model)),
-                );
+        let recent = self.composer_menus.recent_open;
+        let open = recent || self.composer_menus.models_only == Some(ModelsAnchor::MonoComposer);
+        let trigger = text_control("mono-model".into(), open, fg)
+            .tooltip(Tooltip::text(super::model_chip_tooltip(
+                &session.model,
+                session.model_settings.as_ref(),
+            )))
+            .on_click(cx.listener(|this, _, _, cx| {
+                this.toggle_models_only(ModelsAnchor::MonoComposer, cx)
+            }))
+            // MonoCode `onContextMenu`: the recent models, as ⌘. opens them.
+            .on_mouse_down(
+                gpui::MouseButton::Right,
+                cx.listener(|this, _, _, cx| this.toggle_recent_models(cx)),
+            )
+            .child(HarnessIcon::new(&session.harness).size(px(14.0)))
+            .child(
+                div()
+                    .min_w_0()
+                    .truncate()
+                    .child(catalog::label_for(&session.model)),
+            );
         div()
             .relative()
             .flex_none()
@@ -371,6 +374,12 @@ impl BenCodeApp {
                 self.render_models_only(ModelsAnchor::MonoComposer, true, cx)
                     .map(over_composer),
             )
+            .when(recent, |el| {
+                el.child(over_composer(super::popover_surface(
+                    self.render_recent_models_popover(cx),
+                    cx,
+                )))
+            })
             .into_any_element()
     }
 

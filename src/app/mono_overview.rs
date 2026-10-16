@@ -5,11 +5,14 @@
 //! the Changes tab's per-project state (`mono_changes.rs`). The views are
 //! `ui/mono_overview/`.
 
-use gpui::Context;
+use std::collections::HashSet;
+
+use ely_gpui_component::forms::{InputEvent, TextInput};
+use gpui::{AppContext as _, Context, Entity, Focusable as _, Window};
 
 use crate::app::BenCodeApp;
 use crate::app::mono_files::mono_files_dir;
-use crate::monos::habits::Habit;
+use crate::monos::habits::{Habit, HabitSchedule};
 
 /// MonoCode `MonoSidebar`: `MIN_WIDTH`, `DEFAULT_WIDTH`, and the widest it
 /// may grow (`Math.min(960, …)`).
@@ -41,6 +44,22 @@ pub struct ActivitySelection {
     pub turn_id: String,
 }
 
+/// MonoCode `Route` over the Habits list: a habit's page, or New habit.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum HabitRoute {
+    New,
+    Habit(String),
+}
+
+/// MonoCode `NewHabitPage`'s fields.
+pub struct HabitForm {
+    pub name: Entity<TextInput>,
+    pub instructions: Entity<TextInput>,
+    pub schedule: HabitSchedule,
+    pub saving: bool,
+    pub error: Option<String>,
+}
+
 pub struct OverviewState {
     pub tab: OverviewTab,
     /// The tab the Activity button goes back to.
@@ -57,6 +76,14 @@ pub struct OverviewState {
     pub document: Option<String>,
     /// `None` until read.
     pub habits: Option<Vec<Habit>>,
+    /// A habit's page, or New habit, over the Habits list until Back.
+    pub habit_route: Option<HabitRoute>,
+    /// New habit's fields, while it is open.
+    pub habit_form: Option<HabitForm>,
+    /// Why the last change to its habits failed.
+    pub habit_error: Option<String>,
+    /// The runs opened on a habit's page, by (habit, when).
+    pub open_runs: HashSet<(String, i64)>,
     generation: u64,
 }
 
@@ -71,6 +98,10 @@ impl Default for OverviewState {
             of: None,
             document: None,
             habits: None,
+            habit_route: None,
+            habit_form: None,
+            habit_error: None,
+            open_runs: HashSet::new(),
             generation: 0,
         }
     }
@@ -81,6 +112,8 @@ impl OverviewState {
     pub fn mono_changed(&mut self) {
         self.activity = None;
         self.document = None;
+        self.habit_route = None;
+        self.habit_form = None;
         if self.tab == OverviewTab::Activity {
             self.tab = self.last_tab;
         }
@@ -102,6 +135,8 @@ impl OverviewState {
         }
         self.tab = tab;
         self.document = None;
+        self.habit_route = None;
+        self.habit_form = None;
     }
 }
 
@@ -179,6 +214,31 @@ impl BenCodeApp {
         }
     }
 
+    /// A session the Mono started, opened in the workspace; one this launch
+    /// has not read yet comes from the database first.
+    pub fn open_mono_launch(&mut self, id: &str, cx: &mut Context<Self>) {
+        if self.sessions.iter().any(|s| s.id == id) {
+            self.open_launched_session(id, cx);
+            return;
+        }
+        let row = id.to_string();
+        self.db_then(
+            cx,
+            move |db| db.get_session(&row),
+            move |this, loaded, cx| match loaded {
+                Ok(Some(session)) => {
+                    let id = session.id.clone();
+                    if !this.sessions.iter().any(|s| s.id == id) {
+                        this.sessions.push(session);
+                    }
+                    this.open_launched_session(&id, cx);
+                }
+                Ok(None) => log::info!("a Mono's session was deleted since"),
+                Err(err) => log::error!("could not read a Mono's session: {err:#}"),
+            },
+        );
+    }
+
     pub fn toggle_mono_activity(&mut self, cx: &mut Context<Self>) {
         self.monos.overview.toggle_activity();
         self.monos.overview.document = None;
@@ -232,61 +292,9 @@ impl BenCodeApp {
     }
 }
 
-/// The threads a Mono can see: those in its projects (a worktree's too),
-/// newest first, without drafts, archived ones or Monos' own chats.
-/// MonoCode's Sessions tab lists the ones a Mono started; BenCode's start
-/// none.
-pub fn visible_sessions<'a>(
-    sessions: &'a [crate::db::SessionRow],
-    projects: &[String],
-    is_mono: impl Fn(&str) -> bool,
-) -> Vec<&'a crate::db::SessionRow> {
-    let mut out: Vec<&crate::db::SessionRow> = sessions
-        .iter()
-        .filter(|s| !s.archived && !s.is_draft() && !is_mono(&s.id))
-        .filter(|s| {
-            projects
-                .iter()
-                .any(|project| crate::app::same_project_path(project, &s.cwd))
-        })
-        .collect();
-    out.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn a_mono_sees_the_threads_in_its_projects() {
-        let row = |id: &str, cwd: &str, at: i64| crate::db::SessionRow {
-            id: id.into(),
-            cwd: cwd.into(),
-            title: format!("t {id}"),
-            updated_at: at,
-            blocks: vec![crate::db::Block {
-                id: format!("b-{id}"),
-                role: "user".into(),
-                ..Default::default()
-            }],
-            ..Default::default()
-        };
-        let mut archived = row("a", "/app", 9);
-        archived.archived = true;
-        let sessions = vec![
-            row("1", "/app", 1),
-            row("2", "/other", 5),
-            row("3", "/app/", 3),
-            archived,
-            row("mono", "/app", 7),
-        ];
-        let seen: Vec<&str> = visible_sessions(&sessions, &["/app".into()], |id| id == "mono")
-            .into_iter()
-            .map(|s| s.id.as_str())
-            .collect();
-        assert_eq!(seen, ["3", "1"]);
-    }
 
     #[test]
     fn the_overview_grows_leftwards_within_its_bounds() {
@@ -312,3 +320,206 @@ mod tests {
         assert_eq!(overview.tab, OverviewTab::Habits);
     }
 }
+
+impl BenCodeApp {
+    /// MonoCode `push({ kind: "habit", id })`.
+    pub fn open_mono_habit(&mut self, id: &str, cx: &mut Context<Self>) {
+        self.monos.overview.habit_route = Some(HabitRoute::Habit(id.to_string()));
+        cx.notify();
+    }
+
+    /// MonoCode `push({ kind: "new-habit" })`: the page with its fields,
+    /// the name focused.
+    pub fn open_new_habit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let name = cx.new(|cx| TextInput::new(window, cx).max_len(80).placeholder("Name"));
+        let instructions = cx.new(|cx| {
+            TextInput::new(window, cx)
+                .multi_line(3, usize::MAX)
+                .max_len(4_000)
+                .placeholder("What it should do on each run, and when it's worth telling you about.")
+        });
+        cx.subscribe(&name, |this: &mut BenCodeApp, _, event: &InputEvent, cx| {
+            if matches!(event, InputEvent::Submit) {
+                this.create_mono_habit(cx);
+            }
+        })
+        .detach();
+        cx.observe(&name, |_, _, cx| cx.notify()).detach();
+        cx.observe(&instructions, |_, _, cx| cx.notify()).detach();
+        let focus = name.read(cx).focus_handle(cx);
+        window.focus(&focus, cx);
+        self.monos.overview.habit_form = Some(HabitForm {
+            name,
+            instructions,
+            schedule: HabitSchedule {
+                schedule_kind: "daily".into(),
+                minute: 0,
+                time: "09:00".into(),
+                day_of_week: 1,
+            },
+            saving: false,
+            error: None,
+        });
+        self.monos.overview.habit_route = Some(HabitRoute::New);
+        cx.notify();
+    }
+
+    /// Back from a habit's page or New habit to the list.
+    pub fn close_mono_habit_page(&mut self, cx: &mut Context<Self>) {
+        self.monos.overview.habit_route = None;
+        self.monos.overview.habit_form = None;
+        cx.notify();
+    }
+
+    /// New habit's schedule, one field at a time.
+    pub fn set_new_habit_schedule(&mut self, change: impl FnOnce(&mut HabitSchedule), cx: &mut Context<Self>) {
+        if let Some(form) = self.monos.overview.habit_form.as_mut() {
+            change(&mut form.schedule);
+            cx.notify();
+        }
+    }
+
+    /// Whether New habit can be created: a name and instructions, not saving.
+    pub fn new_habit_ready(&self, cx: &gpui::App) -> bool {
+        self.monos.overview.habit_form.as_ref().is_some_and(|form| {
+            !form.saving
+                && !form.name.read(cx).text().trim().is_empty()
+                && !form.instructions.read(cx).text().trim().is_empty()
+        })
+    }
+
+    /// MonoCode `addHabit` from New habit, then back to the list.
+    pub fn create_mono_habit(&mut self, cx: &mut Context<Self>) {
+        if !self.new_habit_ready(cx) {
+            return;
+        }
+        let (Some(mono), Some(form)) = (self.monos.view.clone(), self.monos.overview.habit_form.as_mut())
+        else {
+            return;
+        };
+        form.saving = true;
+        form.error = None;
+        let name: String = form.name.read(cx).text().trim().chars().take(80).collect();
+        let instructions: String = form.instructions.read(cx).text().trim().chars().take(4_000).collect();
+        let schedule = form.schedule.clone();
+        let Some(dir) = mono_files_dir(&mono) else {
+            return;
+        };
+        let task = cx.background_executor().spawn(async move {
+            crate::monos::habits::update_habits(&dir, |mut list| {
+                if list.len() >= crate::monos::habits::HABITS_MAX {
+                    return Err(format!(
+                        "A Mono can have at most {} habits",
+                        crate::monos::habits::HABITS_MAX
+                    ));
+                }
+                let habit = crate::monos::habits::new_habit(&name, &instructions, schedule.clone(), crate::app::now_ms());
+                list.push(habit);
+                Ok((list, ()))
+            })
+        });
+        cx.spawn(async move |this, cx| {
+            let result = task.await;
+            let landed = this.update(cx, |this, cx| {
+                match result {
+                    Ok(()) => {
+                        this.monos.overview.habit_route = None;
+                        this.monos.overview.habit_form = None;
+                        this.load_mono_overview(&mono, cx);
+                    }
+                    Err(err) => {
+                        if let Some(form) = this.monos.overview.habit_form.as_mut() {
+                            form.saving = false;
+                            form.error = Some(err);
+                        }
+                    }
+                }
+                cx.notify();
+            });
+            if let Err(err) = landed {
+                log::debug!("habit created after app drop: {err:#}");
+            }
+        })
+        .detach();
+        cx.notify();
+    }
+
+    /// MonoCode `habitActions.runNow`.
+    pub fn run_mono_habit_now(&mut self, id: &str, cx: &mut Context<Self>) {
+        let Some(mono) = self.monos.view.clone() else {
+            return;
+        };
+        let id = id.to_string();
+        self.edit_mono_habits(
+            &mono,
+            move |list, _| {
+                Ok(list
+                    .into_iter()
+                    .map(|mut habit| {
+                        if habit.id == id {
+                            habit.run_requested = true;
+                        }
+                        habit
+                    })
+                    .collect())
+            },
+            true,
+            cx,
+        );
+    }
+
+    /// MonoCode `habitActions.toggle`: pause, or resume counting from now.
+    pub fn toggle_mono_habit(&mut self, id: &str, cx: &mut Context<Self>) {
+        let Some(mono) = self.monos.view.clone() else {
+            return;
+        };
+        let id = id.to_string();
+        self.edit_mono_habits(
+            &mono,
+            move |list, now| {
+                Ok(list
+                    .into_iter()
+                    .map(|mut habit| {
+                        if habit.id == id {
+                            habit.enabled = !habit.enabled;
+                            if habit.enabled {
+                                habit.next_run_at = habit.schedule.next_run_at(now);
+                            }
+                        }
+                        habit
+                    })
+                    .collect())
+            },
+            false,
+            cx,
+        );
+    }
+
+    /// MonoCode `habitActions.remove`; its page, if open, closes.
+    pub fn remove_mono_habit(&mut self, id: &str, cx: &mut Context<Self>) {
+        let Some(mono) = self.monos.view.clone() else {
+            return;
+        };
+        if self.monos.overview.habit_route == Some(HabitRoute::Habit(id.to_string())) {
+            self.monos.overview.habit_route = None;
+        }
+        let id = id.to_string();
+        self.edit_mono_habits(
+            &mono,
+            move |list, _| Ok(list.into_iter().filter(|habit| habit.id != id).collect()),
+            false,
+            cx,
+        );
+    }
+
+    /// A run's report on a habit's page, opened or closed.
+    pub fn toggle_habit_run(&mut self, habit: &str, at: i64, cx: &mut Context<Self>) {
+        let key = (habit.to_string(), at);
+        let open = &mut self.monos.overview.open_runs;
+        if !open.remove(&key) {
+            open.insert(key);
+        }
+        cx.notify();
+    }
+}
+

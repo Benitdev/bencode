@@ -331,6 +331,12 @@ impl MonoFloat {
                     .update(cx, |app, cx| app.render_permission_prompt(&session_id, cx));
                 div().w_full().pt_1().children(prompt).into_any_element()
             }
+            FloatItem::HabitApproval { run, habit } => {
+                let prompt = self
+                    .app
+                    .update(cx, |app, cx| app.render_habit_approval(&run, &habit, cx));
+                div().w_full().pt_1().children(prompt).into_any_element()
+            }
             // MonoCode's sheet opens in the chat; here the card opens it
             // over the Mono's Overview in BenCode's window.
             FloatItem::Artifact(card) => {
@@ -345,6 +351,22 @@ impl MonoFloat {
                         )
                         .tooltip(Tooltip::text("Open in BenCode"))
                         .on_click(cx.listener(move |this, _, _, cx| this.reveal_artifact(&id, cx))),
+                    )
+                    .into_any_element()
+            }
+            FloatItem::Launch(launch) => {
+                let id = launch.session_id.clone();
+                let state = self.app.read(cx).launched_state(&id);
+                row.pt_2()
+                    .flex()
+                    .child(
+                        crate::ui::launched_session::launched_card(
+                            format!("mono-float-launch-{ix}"),
+                            &launch,
+                            state,
+                            cx,
+                        )
+                        .on_click(cx.listener(move |this, _, _, cx| this.reveal_launch(&id, cx))),
                     )
                     .into_any_element()
             }

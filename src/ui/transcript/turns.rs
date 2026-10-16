@@ -193,19 +193,45 @@ pub enum Item {
 }
 
 /// Blocks split at each user message (MonoCode `groupTurns`), as index ranges.
-pub fn group_turns(blocks: &[Block]) -> Vec<Range<usize>> {
-    let mut turns = Vec::new();
+/// As a Mono's chat when `mono` (MonoCode `groupMonoTurns`): a habit's
+/// post is a turn of its own.
+fn group_turns_as(blocks: &[Block], mono: bool) -> Vec<Range<usize>> {
+    let mut turns: Vec<Range<usize>> = Vec::new();
     let mut start = 0;
     for (ix, block) in blocks.iter().enumerate() {
-        if block.role == "user" && ix > start {
+        let habit = mono && super::mono::habit_post(block).is_some();
+        // MonoCode `groupMonoChatTurns`: the Mono's own follow-up, once the
+        // sessions it started report back, continues the message above it,
+        // unless it opens a new stretch of the conversation.
+        let follow_up = mono
+            && super::mono::is_completion_prompt(block)
+            && ix > start
+            && super::mono::habit_post(&blocks[start]).is_none()
+            && block.started_at.is_none_or(|at| {
+                !super::mono::opens_new_stretch(at, latest_start(&blocks[start..ix]))
+            });
+        if (block.role == "user" || habit) && ix > start && !follow_up {
             turns.push(start..ix);
             start = ix;
+        }
+        if habit {
+            turns.push(ix..ix + 1);
+            start = ix + 1;
         }
     }
     if start < blocks.len() {
         turns.push(start..blocks.len());
     }
     turns
+}
+
+/// MonoCode `monoTurnLatestStart`: when the latest run in a turn started.
+fn latest_start(turn: &[Block]) -> Option<i64> {
+    turn.iter()
+        .filter(|block| block.role == "user")
+        .filter_map(|block| block.started_at)
+        .chain(turn.first().and_then(|b| super::mono::habit_post(b)).map(|(_, _, at)| at))
+        .max()
 }
 
 /// MonoCode `groupTurnItems`: runs of activity fold into one item; prose,
@@ -225,7 +251,10 @@ pub fn group_items(
     let mut activity: Vec<usize> = Vec::new();
     for ix in range {
         let block = &blocks[ix];
-        if is_ignored(block) || !shown(ix) {
+        // A message the app wrote for the agent is not the user's.
+        let internal = block.role == "user"
+            && block.extra.get("internal").and_then(Value::as_bool) == Some(true);
+        if is_ignored(block) || internal || !shown(ix) {
             continue;
         }
         if is_subagent(block) && (live || tool_state(block) == ToolState::Failed) {
@@ -629,6 +658,8 @@ pub struct TurnLayout {
     /// When the message was sent, on a Mono's turn that opens a new stretch
     /// of the conversation (ms): the day pill over it.
     pub stamp: Option<i64>,
+    /// A habit's post, standing as its own turn (MonoCode `monoHabit`).
+    pub habit: Option<usize>,
 }
 
 impl TurnLayout {
@@ -637,12 +668,52 @@ impl TurnLayout {
         &blocks[self.range.start].id
     }
 
+    /// How long the turn worked: a Mono's merged turn adds up its runs
+    /// (MonoCode `sumDurations`).
     pub fn duration_ms(&self, blocks: &[Block]) -> Option<i64> {
-        self.user.and_then(|ix| blocks[ix].duration_ms)
+        if !self.mono {
+            return self.user.and_then(|ix| blocks[ix].duration_ms);
+        }
+        self.range
+            .clone()
+            .filter(|&ix| blocks[ix].role == "user")
+            .filter_map(|ix| blocks[ix].duration_ms)
+            .reduce(|a, b| a + b)
+    }
+
+    /// The sessions the turn started (MonoCode `monoSpawnedSessions`), on
+    /// its messages or a habit's post.
+    pub fn launches(&self, blocks: &[Block]) -> Vec<crate::app::mono_sessions::SpawnedSession> {
+        crate::app::mono_sessions::chat_launches(&blocks[self.range.clone()])
+    }
+
+    /// When the turn's last run finished.
+    pub fn finished_at(&self, blocks: &[Block]) -> Option<i64> {
+        if let Some(at) = self.habit_at(blocks) {
+            return Some(at);
+        }
+        self.range
+            .clone()
+            .filter(|&ix| blocks[ix].role == "user")
+            .filter_map(|ix| Some(blocks[ix].started_at? + blocks[ix].duration_ms?))
+            .max()
     }
 
     pub fn started_at(&self, blocks: &[Block]) -> Option<i64> {
-        self.user.and_then(|ix| blocks[ix].started_at)
+        self.user
+            .and_then(|ix| blocks[ix].started_at)
+            .or_else(|| self.habit_at(blocks))
+    }
+
+    /// When a habit's post was posted.
+    pub fn habit_at(&self, blocks: &[Block]) -> Option<i64> {
+        super::mono::habit_post(&blocks[self.habit?]).map(|(_, _, at)| at)
+    }
+
+    /// The block a turn's artifact cards are kept on: its message, or the
+    /// habit's post.
+    pub fn cards_block(&self) -> Option<usize> {
+        self.user.or(self.habit)
     }
 
     /// The model the turn ran on, from the user message's provenance.
@@ -662,7 +733,15 @@ impl TurnLayout {
         if self.reacted_only(blocks) {
             return false;
         }
-        self.live || self.duration_ms(blocks).is_some() || self.fold.is_some()
+        self.live || self.duration_ms(blocks).is_some() || self.fold.is_some() || self.habit.is_some()
+    }
+
+    /// MonoCode `TurnDuration` under a settled turn: one that took time, or
+    /// a habit's post.
+    pub fn shows_footer(&self, blocks: &[Block]) -> bool {
+        !self.live
+            && (self.duration_ms(blocks).is_some() || self.habit.is_some())
+            && !self.reacted_only(blocks)
     }
 
     /// MonoCode `reactedOnly`: a Mono's reaction answered the message, and
@@ -732,11 +811,16 @@ impl LayoutKey {
                 } else if block.role == "user" {
                     block.started_at.hash(&mut hasher);
                     crate::app_cli::artifacts::has_cards(block).hash(&mut hasher);
+                    crate::app::mono_sessions::spawned_sessions(block).len().hash(&mut hasher);
                     (block.extra.get("draft").and_then(Value::as_bool) == Some(true))
                         .hash(&mut hasher);
                 }
             }
             block.role.hash(&mut hasher);
+            if mono {
+                super::mono::habit_post(block).hash(&mut hasher);
+                crate::app_cli::artifacts::has_cards(block).hash(&mut hasher);
+            }
             text(block).trim().is_empty().hash(&mut hasher);
             block.extra.contains_key("notice").hash(&mut hasher);
             block.duration_ms.is_some().hash(&mut hasher);
@@ -777,7 +861,7 @@ pub fn layout_turns(blocks: &[Block], running: bool, mono: bool) -> Vec<TurnLayo
         }
         shown
     });
-    let turns = group_turns(blocks);
+    let turns = group_turns_as(blocks, mono);
     let count = turns.len();
     let mut previous_at = None;
     let mut layouts = Vec::with_capacity(count);
@@ -788,17 +872,21 @@ pub fn layout_turns(blocks: &[Block], running: bool, mono: bool) -> Vec<TurnLayo
         });
         let fold = foldable_work(blocks, &items);
         let user = range.clone().find(|i| blocks[*i].role == "user");
+        let habit = Some(range.start)
+            .filter(|&ix| mono && super::mono::habit_post(&blocks[ix]).is_some());
         let reaction = reactions
             .as_ref()
             .zip(user)
             .and_then(|(reactions, user)| reactions.on(user))
             .map(str::to_string);
         let mut stamp = None;
+        let posted = habit.and_then(|ix| super::mono::habit_post(&blocks[ix])).map(|(_, _, at)| at);
         if let Some(at) = user
             .filter(|_| mono)
             .map(|user| &blocks[user])
-            .filter(|block| super::mono::is_message(block))
+            .filter(|block| super::mono::is_message(block) || super::mono::is_completion_prompt(block))
             .and_then(|block| block.started_at)
+            .or(posted)
         {
             if super::mono::opens_new_stretch(at, previous_at) {
                 stamp = Some(at);
@@ -814,6 +902,7 @@ pub fn layout_turns(blocks: &[Block], running: bool, mono: bool) -> Vec<TurnLayo
             mono,
             reaction,
             stamp,
+            habit,
         });
     }
     layouts
@@ -867,13 +956,14 @@ fn turn_rows(blocks: &[Block], t: usize, turn: &TurnLayout, open: bool, rows: &m
     }
     if turn.mono
         && !turn.live
-        && turn
-            .user
-            .is_some_and(|user| crate::app_cli::artifacts::has_cards(&blocks[user]))
+        && (turn
+            .cards_block()
+            .is_some_and(|at| crate::app_cli::artifacts::has_cards(&blocks[at]))
+            || !turn.launches(blocks).is_empty())
     {
         rows.push(Row::Artifacts { turn: t });
     }
-    if !turn.live && turn.duration_ms(blocks).is_some() && !turn.reacted_only(blocks) {
+    if turn.shows_footer(blocks) {
         rows.push(Row::Footer { turn: t });
     }
 }

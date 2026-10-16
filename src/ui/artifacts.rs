@@ -168,9 +168,10 @@ impl BenCodeApp {
         cx: &Context<Self>,
     ) -> AnyElement {
         let cards = turn
-            .user
-            .map(|user| crate::app_cli::artifacts::block_cards(&session.blocks[user]))
+            .cards_block()
+            .map(|at| crate::app_cli::artifacts::block_cards(&session.blocks[at]))
             .unwrap_or_default();
+        let launches = turn.launches(&session.blocks);
         div()
             .flex()
             .flex_col()
@@ -184,6 +185,12 @@ impl BenCodeApp {
                 artifact_card(format!("artifact-card-{id}"), &card, cx)
                     .tooltip(Tooltip::text(format!("Open {}", card.kind.label().to_lowercase())))
                     .on_click(cx.listener(move |this, _, _, cx| this.open_artifact(&id, cx)))
+            }))
+            .children(launches.into_iter().map(|launch| {
+                let id = launch.session_id.clone();
+                let state = self.launched_state(&id);
+                crate::ui::launched_session::launched_card(format!("launched-{id}"), &launch, state, cx)
+                    .on_click(cx.listener(move |this, _, _, cx| this.open_launched_session(&id, cx)))
             }))
             .into_any_element()
     }

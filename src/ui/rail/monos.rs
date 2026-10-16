@@ -2,11 +2,11 @@
 //! opens like a project does, but into its conversation. Its menu is the
 //! rail's own (`menu`, `MenuTarget::Mono`).
 //!
-//! Not ported: the "Meet Monos" intro, unread counts and drag to reorder.
+//! A Mono with replies the user has not read shows their count.
 
 use ely_gpui_component::primitives::{IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
-use gpui::{
+use gpui::{AnimationExt as _,
     AnyElement, Context, FontWeight, InteractiveElement, IntoElement, MouseButton, MouseDownEvent,
     ParentElement, SharedString, Styled, div, prelude::*, relative,
 };
@@ -16,12 +16,23 @@ use crate::app::BenCodeApp;
 use crate::monos::{Mono, MonoState, MonoStatus, projects_phrase};
 use crate::ui::scale::px;
 
+/// The rail list the Monos' rows are reordered in.
+pub(super) const MONO_LIST: &str = "monos";
+
 impl BenCodeApp {
     /// `mb-2 shrink-0`: the "Monos" header with its New mono button, then
     /// the rows; with none yet, a dashed row is the way to add one.
-    pub(super) fn render_rail_monos(&self, cx: &Context<Self>) -> impl IntoElement {
+    pub(super) fn render_rail_monos(&self, cx: &Context<Self>) -> AnyElement {
         let fg = cx.theme().colors.fg;
         let monos = &self.settings.monos;
+        // With no Mono yet, the card stands in for the section.
+        if monos.is_empty() {
+            return div().flex_none().mb_2().child(self.render_mono_intro(cx)).into_any_element();
+        }
+        // MonoCode `useAnimatedReorder(ids, reorderMonos)`.
+        let ids: Vec<String> = monos.iter().map(|m| m.id.clone()).collect();
+        let shown = super::reorder::preview_order(MONO_LIST, &ids, self.rail_ui.reorder.as_ref());
+        let draggable = ids.len() > 1;
         let add = (!monos.is_empty()).then(|| {
             section_button("rail-new-mono", IconName::Plus, "New mono", false, fg)
                 .on_click(cx.listener(|this, _, _, cx| this.create_mono(cx)))
@@ -37,42 +48,168 @@ impl BenCodeApp {
                     .flex_col()
                     .gap(px(1.0))
                     .px_2()
-                    .when(monos.is_empty(), |el| {
-                        // `grid h-8 w-full place-items-center rounded-md
-                        // border border-dashed border-content/15 text-content/50`
-                        el.child(
-                            div()
-                                .id("rail-add-mono")
-                                .group("rail-add-mono")
-                                .flex()
-                                .h(px(ROW_HEIGHT))
-                                .w_full()
-                                .items_center()
-                                .justify_center()
-                                .rounded(px(6.0))
-                                .border_1()
-                                .border_dashed()
-                                .border_color(fg.opacity(0.15))
-                                .hover(move |s| {
-                                    s.border_color(fg.opacity(0.3)).bg(fg.opacity(0.05))
-                                })
-                                .tooltip(Tooltip::text("New mono"))
-                                .on_click(cx.listener(|this, _, _, cx| this.create_mono(cx)))
-                                .child(
-                                    ely_gpui_component::primitives::Icon::new(IconName::Plus)
-                                        .size(IconSize::Sm)
-                                        .color(fg.opacity(0.5))
-                                        .group_hover_color("rail-add-mono", fg),
-                                ),
-                        )
-                    })
-                    .children(monos.iter().map(|mono| self.render_mono_card(mono, cx))),
+                    .on_drag_move::<super::reorder::DraggedRailProject>(cx.listener(
+                        move |this, event: &gpui::DragMoveEvent<super::reorder::DraggedRailProject>, _, cx| {
+                            if event.bounds.contains(&event.event.position)
+                                || this.rail_ui.reorder.is_some()
+                            {
+                                this.track_rail_reorder(MONO_LIST, &ids, event, cx);
+                            }
+                        },
+                    ))
+                    .children(shown.iter().filter_map(|id| {
+                        let mono = monos.iter().find(|m| &m.id == id)?;
+                        Some(self.slide_rail_row(id, self.render_mono_card(mono, draggable, cx)))
+                    })),
             )
+            .into_any_element()
+    }
+
+    /// MonoCode `MonoIntroCard`: "Meet Monos", the other mascots marching in
+    /// behind the one the first Mono will have, Create mono, and the switch
+    /// that hides Monos (Settings › Monos › Show monos).
+    fn render_mono_intro(&self, cx: &Context<Self>) -> AnyElement {
+        use crate::ui::mascot::{MASCOTS, MASCOT_NAMES, pixel_sprite};
+        let colors = &cx.theme().colors;
+        let fg = colors.fg;
+        let (mascot, color_index) = crate::monos::next_look(&self.settings.monos);
+        let color = crate::monos::mono_palette_color(color_index).unwrap_or(colors.accent);
+        // MonoCode `monoIntroCrowd`: the rest, each in its own colour.
+        let palette: Vec<gpui::Hsla> = (1..crate::app::session_folders::FOLDER_COLORS.len())
+            .filter(|ix| *ix != color_index)
+            .filter_map(crate::app::session_folders::palette_color)
+            .collect();
+        let crowd: Vec<(usize, gpui::Hsla)> = MASCOT_NAMES
+            .iter()
+            .enumerate()
+            .filter(|(_, name)| **name != mascot)
+            .enumerate()
+            .map(|(i, (ix, _))| (ix, palette[i % palette.len().max(1)]))
+            .collect();
+        let middle = (crowd.len() as f32 - 1.0) / 2.0;
+        let own = MASCOT_NAMES.iter().position(|n| *n == mascot).unwrap_or(0);
+        let stage = div()
+            .relative()
+            .h(px(48.0))
+            .overflow_hidden()
+            .children(crowd.iter().enumerate().map(|(i, &(ix, tint))| {
+                let offset = (i as f32 - middle) * 17.0;
+                let order = (i.min(crowd.len() - 1 - i) * 2 + usize::from(i as f32 >= middle)) as f32;
+                let from = if offset < 0.0 { -140.0 } else { 140.0 };
+                // `mono-intro-march`: in from the side, outside first.
+                div()
+                    .absolute()
+                    .bottom(px(16.0))
+                    .left(gpui::relative(0.5))
+                    .opacity(0.45)
+                    .child(pixel_sprite(&MASCOTS[ix].rest, px(14.0), tint, false))
+                    .with_animation(
+                        SharedString::from(format!("mono-intro-march-{i}")),
+                        gpui::Animation::new(std::time::Duration::from_millis(500 + order as u64 * 70))
+                            .with_easing(gpui::ease_out_quint()),
+                        move |el, delta| {
+                            let start = (order * 70.0) / (500.0 + order * 70.0);
+                            let t = ((delta - start) / (1.0 - start)).clamp(0.0, 1.0);
+                            el.ml(px(offset - 7.0 + from * (1.0 - t)))
+                        },
+                    )
+                    .into_any_element()
+            }))
+            .child(
+                // `mono-intro-drop`: the user's own lands in front.
+                div()
+                    .absolute()
+                    .bottom(px(4.0))
+                    .left(gpui::relative(0.5))
+                    .ml(px(-16.0))
+                    .child(pixel_sprite(&MASCOTS[own].rest, px(32.0), color, false))
+                    .with_animation(
+                        "mono-intro-drop",
+                        gpui::Animation::new(std::time::Duration::from_millis(1100))
+                            .with_easing(gpui::ease_out_quint()),
+                        |el, delta| {
+                            let t = ((delta - 0.55) / 0.45).clamp(0.0, 1.0);
+                            el.opacity(t).mb(px(-24.0 * (1.0 - t)))
+                        },
+                    ),
+            );
+        let entity = cx.entity().downgrade();
+        let hide = ely_gpui_component::forms::Switch::new("mono-intro-show", true).on_change(move |on, _, cx| {
+            let hidden = entity.update(cx, |this, cx| {
+                this.set_monos_enabled(on, cx);
+                this.play_cue(crate::sounds::Cue::Switch);
+            });
+            if let Err(err) = hidden {
+                log::debug!("intro switch after app drop: {err:#}");
+            }
+        });
+        div()
+            .mx_2()
+            .overflow_hidden()
+            .rounded(px(8.0))
+            .bg(fg.opacity(0.03))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .pl(px(10.0))
+                    .pr_2()
+                    .pt_2()
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .truncate()
+                            .text_size(px(13.0))
+                            .font_weight(FontWeight::MEDIUM)
+                            .text_color(fg)
+                            .child("Meet Monos"),
+                    )
+                    .child(
+                        div()
+                            .id("mono-intro-switch")
+                            .tooltip(Tooltip::text(
+                                "Hide monos from the rail. Turn them back on in Settings › Monos.",
+                            ))
+                            .child(hide),
+                    ),
+            )
+            .child(stage)
+            .child(
+                div()
+                    .px(px(10.0))
+                    .pt(px(6.0))
+                    .text_size(px(11.0))
+                    .line_height(relative(1.375))
+                    .text_color(fg.opacity(0.55))
+                    .child("Agents of your own that work across your projects and run habits on their own."),
+            )
+            .child(
+                div().p_2().child(
+                    div()
+                        .id("mono-intro-create")
+                        .flex()
+                        .h(px(28.0))
+                        .w_full()
+                        .items_center()
+                        .justify_center()
+                        .rounded(px(6.0))
+                        .bg(fg)
+                        .text_color(colors.bg)
+                        .text_size(px(12.0))
+                        .font_weight(FontWeight::MEDIUM)
+                        .hover(move |s| s.bg(fg.opacity(0.85)))
+                        .on_click(cx.listener(|this, _, _, cx| this.create_mono(cx)))
+                        .child("Create mono"),
+                ),
+            )
+            .into_any_element()
     }
 
     /// One Mono's row: `group relative flex h-8 items-stretch rounded-md
     /// px-2`, `bg-selection-strong` while open, else `opacity-65`.
-    fn render_mono_card(&self, mono: &Mono, cx: &Context<Self>) -> AnyElement {
+    fn render_mono_card(&self, mono: &Mono, draggable: bool, cx: &Context<Self>) -> AnyElement {
         let theme = cx.theme();
         let fg = theme.colors.fg;
         let id = format!("rail-mono-{}", mono.id);
@@ -89,6 +226,19 @@ impl BenCodeApp {
             name.clone().into_any_element()
         };
         let (open_id, menu_id, options_id) = (mono.id.clone(), mono.id.clone(), mono.id.clone());
+        let held = self
+            .rail_ui
+            .reorder
+            .as_ref()
+            .is_some_and(|r| r.list == MONO_LIST && r.path == mono.id);
+        let drag = super::reorder::DraggedRailProject {
+            list: MONO_LIST.to_string(),
+            path: mono.id.clone(),
+            label: name.clone(),
+            color: self.mono_color(mono),
+            mascot: self.mono_mascot(mono),
+            width: self.rail_width() - 16.0,
+        };
         div()
             .id(SharedString::from(id.clone()))
             .group(group.clone())
@@ -104,6 +254,11 @@ impl BenCodeApp {
                 } else {
                     el.opacity(0.65).hover(move |s| s.bg(hover))
                 }
+            })
+            // The held row's slot stays open while it rides the pointer.
+            .when(held, |el| el.opacity(0.0))
+            .when(draggable, |el| {
+                el.on_drag(drag, |dragged, _, _, cx| cx.new(|_| dragged.clone()))
             })
             .on_click(cx.listener(move |this, _, _, cx| this.open_mono(&open_id, cx)))
             .on_mouse_down(
@@ -135,7 +290,8 @@ impl BenCodeApp {
                             .font_weight(FontWeight::MEDIUM)
                             .line_height(relative(1.25))
                             .child(label),
-                    ),
+                    )
+                    .children(self.render_mono_unread(mono, &group, cx)),
             )
             .child(
                 hover_control(
@@ -160,6 +316,38 @@ impl BenCodeApp {
             .into_any_element()
     }
 
+    /// MonoCode's unread badge (`h-4 min-w-4 rounded-full bg-accent px-1
+    /// text-[10px]`), out of sight while the row is hovered and its options
+    /// button shows.
+    fn render_mono_unread(
+        &self,
+        mono: &Mono,
+        group: &SharedString,
+        cx: &Context<Self>,
+    ) -> Option<AnyElement> {
+        let count = self.mono_unread(mono)?;
+        let colors = &cx.theme().colors;
+        Some(
+            div()
+                .id(SharedString::from(format!("rail-mono-unread-{}", mono.id)))
+                .flex()
+                .flex_none()
+                .h(px(16.0))
+                .min_w(px(16.0))
+                .px_1()
+                .items_center()
+                .justify_center()
+                .rounded_full()
+                .bg(colors.accent)
+                .text_size(px(10.0))
+                .font_weight(FontWeight::MEDIUM)
+                .text_color(gpui::white())
+                .group_hover(group.clone(), |s| s.invisible())
+                .child(crate::monos::unread_badge(count))
+                .into_any_element(),
+        )
+    }
+
     /// The row's title: its name, its projects, and what it is doing.
     fn mono_card_title(&self, mono: &Mono, state: &MonoState) -> String {
         let names: Vec<String> = self
@@ -178,7 +366,8 @@ impl BenCodeApp {
                 .clone()
                 .unwrap_or_else(|| state.status.label().to_string())
         });
-        [Some(mono.display_name()), Some(projects), status]
+        let unread = self.mono_unread(mono).map(crate::monos::unread_label);
+        [Some(mono.display_name()), Some(projects), status, unread]
             .into_iter()
             .flatten()
             .collect::<Vec<_>>()

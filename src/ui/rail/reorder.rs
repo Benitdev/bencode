@@ -232,6 +232,20 @@ impl BenCodeApp {
     /// MonoCode `onReorderPinned` / `onReorderProjects`: the list's new
     /// order takes its members' slots in the saved rail order.
     fn commit_rail_reorder(&mut self, reorder: &RailReorder, cx: &mut Context<Self>) {
+        // MonoCode `reorderMonos`: the roster's own order.
+        if reorder.list == super::monos::MONO_LIST {
+            let (path, to) = (reorder.path.clone(), reorder.to);
+            self.update_monos(
+                move |roster| {
+                    if let Some(from) = roster.iter().position(|m| m.id == path) {
+                        let mono = roster.remove(from);
+                        roster.insert(to.min(roster.len()), mono);
+                    }
+                },
+                cx,
+            );
+            return;
+        }
         let order = self.rail_order();
         let sections = self.rail_sections_for(&order);
         let ids = match reorder.list.as_str() {

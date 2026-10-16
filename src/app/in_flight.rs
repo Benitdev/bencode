@@ -124,7 +124,7 @@ impl BenCodeApp {
                     run.purpose == super::agent::RunPurpose::Turn && run.remote.is_none()
                 })
             })
-            .filter(|s| worth_keeping(s))
+            .filter(|s| worth_keeping(s) && !self.is_habit_run(&s.id))
             .map(|s| InFlightSession {
                 session_id: s.id.clone(),
                 cwd: s.cwd.clone(),

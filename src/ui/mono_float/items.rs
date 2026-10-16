@@ -18,7 +18,7 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 
 use crate::db::Block;
 use crate::ui::attachment_chip::ChipFile;
-pub use crate::ui::transcript::mono::{Live, is_message};
+pub use crate::ui::transcript::mono::{Live, habit_post, is_message, starts_turn};
 use crate::ui::transcript::mono::{Reactions, mono_reactions, opens_new_stretch, work_status};
 use crate::ui::transcript::turns::{
     is_notice, is_prose, is_thinking, is_tool, text, tool_kind_name,
@@ -68,6 +68,8 @@ pub enum FloatItem {
     Notice(String),
     /// MonoCode `ArtifactCard`: what the settled turn wrote.
     Artifact(crate::app_cli::artifacts::ArtifactCard),
+    /// MonoCode `LaunchedSessionCard`: a session the turn started.
+    Launch(crate::app::mono_sessions::SpawnedSession),
     /// MonoCode `TurnDuration`: Copy and when the turn finished (ms), shown
     /// while the turn is hovered.
     Footer {
@@ -77,6 +79,9 @@ pub enum FloatItem {
     /// MonoCode `MonoWorkApprovals`: the approval the running turn waits
     /// on, by its request id, answered in place.
     Approval(String),
+    /// What one of its habits' hidden runs asks for (MonoCode
+    /// `askApproval`): the run's thread and the habit's name.
+    HabitApproval { run: String, habit: String },
 }
 
 /// A row and the turn it belongs to (the index of its first block), which
@@ -91,11 +96,11 @@ pub struct FloatRow {
 pub fn window_start(blocks: &[Block], turns: usize) -> usize {
     let mut seen = 0;
     for (ix, block) in blocks.iter().enumerate().rev() {
-        if is_message(block) {
+        if starts_turn(block) {
             seen += 1;
             if seen == turns {
                 // Nothing before it but what no message heads: all of it.
-                return if blocks[..ix].iter().any(is_message) {
+                return if blocks[..ix].iter().any(starts_turn) {
                     ix
                 } else {
                     0
@@ -123,6 +128,7 @@ pub fn rows_key(blocks: &[Block], start: usize) -> u64 {
         if crate::app_cli::artifacts::has_cards(block) {
             crate::app_cli::artifacts::block_cards(block).hash(&mut hasher);
         }
+        crate::app::mono_sessions::spawned_sessions(block).len().hash(&mut hasher);
         if is_tool(block) {
             tool_kind_name(block).hash(&mut hasher);
         }
@@ -151,7 +157,7 @@ pub fn float_rows(blocks: &[Block], start: usize, live: Option<Live>) -> Vec<Flo
     let mut heads: Vec<usize> = shown
         .iter()
         .enumerate()
-        .filter(|(_, ix)| is_message(&blocks[**ix]))
+        .filter(|(_, ix)| starts_turn(&blocks[**ix]))
         .map(|(at, _)| at)
         .collect();
     if heads.first() != Some(&0) {
@@ -160,8 +166,8 @@ pub fn float_rows(blocks: &[Block], start: usize, live: Option<Live>) -> Vec<Flo
     let mut previous_at = blocks[..start]
         .iter()
         .rev()
-        .find(|block| is_message(block))
-        .and_then(|block| block.started_at);
+        .find(|block| starts_turn(block))
+        .and_then(|block| block.started_at.or_else(|| habit_post(block).map(|(_, _, at)| at)));
     let count = heads.len();
     for (turn, &head) in heads.iter().enumerate() {
         let end = heads.get(turn + 1).copied().unwrap_or(shown.len());
@@ -176,9 +182,14 @@ pub fn float_rows(blocks: &[Block], start: usize, live: Option<Live>) -> Vec<Flo
         let live = live.filter(|_| turn + 1 == count);
         // Named by where it starts in the whole conversation, so bringing
         // in earlier turns leaves the rows after them as they were.
+        let habit = range
+            .first()
+            .copied()
+            .filter(|&ix| user.is_none() && habit_post(&blocks[ix]).is_some());
         let turn = Turn {
             blocks,
             user,
+            habit,
             rest: rest
                 .iter()
                 .copied()
@@ -196,6 +207,8 @@ pub fn float_rows(blocks: &[Block], start: usize, live: Option<Live>) -> Vec<Flo
 struct Turn<'a> {
     blocks: &'a [Block],
     user: Option<usize>,
+    /// A habit's post, standing as its own turn.
+    habit: Option<usize>,
     rest: Vec<usize>,
     reactions: &'a Reactions,
     live: Option<Live>,
@@ -254,6 +267,13 @@ impl Turn<'_> {
                 },
             );
         }
+        let posted = self.habit.and_then(|ix| habit_post(&blocks[ix])).map(|(_, _, at)| at);
+        if let Some(at) = posted {
+            if opens_new_stretch(at, *previous_at) {
+                push(rows, FloatItem::Day(at));
+            }
+            *previous_at = Some(at);
+        }
         // MonoCode `reactedOnly`: the reaction answered it; its notices stay.
         if reaction.is_some() && rest.iter().all(|(_, block)| is_notice(block)) {
             for (_, block) in &rest {
@@ -295,10 +315,17 @@ impl Turn<'_> {
             }
         }
         if live.is_none()
-            && let Some(user) = self.user.map(|ix| &blocks[ix])
+            && let Some(user) = self.user.or(self.habit).map(|ix| &blocks[ix])
         {
             for card in crate::app_cli::artifacts::block_cards(user) {
                 push(rows, FloatItem::Artifact(card));
+            }
+        }
+        if live.is_none() {
+            let mut turn_blocks: Vec<Block> = self.user.or(self.habit).map(|ix| blocks[ix].clone()).into_iter().collect();
+            turn_blocks.extend(self.rest.iter().map(|&ix| blocks[ix].clone()));
+            for launch in crate::app::mono_sessions::chat_launches(&turn_blocks) {
+                push(rows, FloatItem::Launch(launch));
             }
         }
         if live.is_none() && reaction.is_none() {
@@ -306,7 +333,8 @@ impl Turn<'_> {
             let at = self
                 .user
                 .map(|ix| &blocks[ix])
-                .and_then(|user| Some(user.started_at? + user.duration_ms.unwrap_or(0)));
+                .and_then(|user| Some(user.started_at? + user.duration_ms.unwrap_or(0)))
+                .or(posted);
             push(
                 rows,
                 FloatItem::Footer {

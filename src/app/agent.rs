@@ -26,7 +26,7 @@ use crate::ui::composer::mode_commands::{self, ModeCommand};
 
 const TITLE_PREVIEW_CHARS: usize = 48;
 const MAX_TOOL_OUTPUT_CHARS: usize = 4_000;
-const STOPPED_NOTICE: &str = "Agent execution stopped by user.";
+pub const STOPPED_NOTICE: &str = "Agent execution stopped by user.";
 /// MonoCode `INTERRUPT_MESSAGE` (inFlight.ts), with BenCode's name.
 const INTERRUPT_NOTICE: &str = "Turn interrupted when BenCode quit.";
 /// A streaming turn is saved at most this often, so a crash or quit loses
@@ -49,6 +49,9 @@ pub struct TurnInput {
     /// What the agent reads instead of `text`, which the thread shows
     /// (MonoCode `ciRepair`: a one-line ask over the CI evidence).
     pub agent_prompt: Option<String>,
+    /// Fields the message's block carries (MonoCode `appRequestId`,
+    /// `internal`, `monoSessionCompletion`).
+    pub extra: serde_json::Map<String, Value>,
 }
 
 /// Claude's clarifying-question tool, answered in the composer.
@@ -582,6 +585,7 @@ impl BenCodeApp {
                 || command == Some(ModeCommand::Plan),
             card: card.map(Box::new),
             agent_prompt: None,
+            extra: Default::default(),
         };
         self.sync_prompt_placeholder(cx);
         self.prompt_input
@@ -754,6 +758,7 @@ impl BenCodeApp {
             attachments,
             card: None,
             agent_prompt: None,
+            extra: Default::default(),
         })
     }
 
@@ -793,6 +798,11 @@ impl BenCodeApp {
         if let (Some(card), Some(block)) = (&input.card, session.blocks.last_mut()) {
             card.stamp(block);
         }
+        if let Some(block) = session.blocks.last_mut().filter(|b| b.role == "user") {
+            block
+                .extra
+                .extend(input.extra.iter().map(|(k, v)| (k.clone(), v.clone())));
+        }
         if let Some(thread) = self.threads.get_mut(session_id) {
             thread.usage_limit = None;
         }
@@ -819,8 +829,7 @@ impl BenCodeApp {
         // MonoCode `applyNotesToTurn`: `@note/slug` brings the note along.
         let agent_prompt = super::notes::apply_notes_to_turn(&agent_prompt, &self.notes.items);
         // MonoCode `monoTurn`: a Mono reads who it is ahead of the message.
-        let provider = session.provider_session_id.clone();
-        let agent_prompt = self.apply_mono_context(session_id, provider.as_deref(), agent_prompt);
+        let agent_prompt = self.apply_mono_context(session_id, agent_prompt, cx);
         self.persist_session(session_id);
         let request = RunRequest {
             prompt: agent_prompt,
@@ -905,7 +914,11 @@ impl BenCodeApp {
         // The baseline is queued before the agent can edit anything. A
         // machine's checkout is not snapshotted here (MonoCode's remote
         // sessions have no review either).
-        if request.purpose == RunPurpose::Turn && !self.is_mono_session(session_id) && !remote {
+        if request.purpose == RunPurpose::Turn
+            && !self.is_mono_session(session_id)
+            && !self.is_habit_run(session_id)
+            && !remote
+        {
             self.checkpoints.begin_turn(session_id, session.work_dir());
         }
         let blocks_before = session.blocks.len();
@@ -1104,6 +1117,11 @@ impl BenCodeApp {
             self.forget_remote_run(session_id);
         }
         self.sync_in_flight();
+        if self.is_habit_run(session_id) {
+            let completed = run.outcome == Some(DoneStatus::Completed);
+            self.habit_run_settled(session_id, completed, cx);
+            return;
+        }
         if self
             .sessions
             .iter()
@@ -1144,7 +1162,9 @@ impl BenCodeApp {
             self.forget_mono_context(session_id, cx);
         }
         if run.purpose == RunPurpose::Turn {
+            self.note_mono_reply(session_id, cx);
             self.announce_turn_finished(session_id, cx);
+            self.session_turn_settled(session_id, run.outcome, cx);
         }
         // The agent has most likely edited files.
         self.refresh_workspace(cx);
@@ -1196,8 +1216,13 @@ impl BenCodeApp {
         };
         run.handle.cancel();
         self.sync_in_flight();
+        if self.is_habit_run(session_id) {
+            self.habit_run_settled(session_id, false, cx);
+            return;
+        }
         self.drop_mono_context(session_id);
         self.close_automation_run(&run, RunStatus::Cancelled);
+        self.session_turn_stopped(session_id, cx);
         if let Some(thread) = self.threads.get_mut(session_id)
             && !thread.queue.is_empty()
         {
@@ -1316,6 +1341,10 @@ impl BenCodeApp {
     /// Saves one session to SQLite: queued on the writer thread, so the UI
     /// does not wait for it. Errors are logged, not swallowed.
     pub fn persist_session(&self, session_id: &str) {
+        // A habit's run is never kept (MonoCode `ephemeral`).
+        if self.is_habit_run(session_id) {
+            return;
+        }
         let Some(session) = self.sessions.iter().find(|s| s.id == session_id) else {
             return;
         };

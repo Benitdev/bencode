@@ -1,29 +1,22 @@
 //! A Mono's artifacts on the app (MonoCode `App.tsx`'s agent-app host:
 //! `saveArtifact`, `postArtifact`, `openArtifact`; `ArtifactReader`'s
-//! state): the credential each Mono's turn carries for `bencode app`, the
-//! calls it makes (`app_cli/artifacts.rs`), the card a write leaves on its
-//! turn, and the artifact the Overview shows over its Documents list, with
-//! the native view an `html` one is drawn in (`browser/artifact.rs`).
+//! state): the `artifacts.*` calls (`app_cli/artifacts.rs`, dispatched by
+//! `app_calls.rs`), the card a write leaves on its turn, and the artifact
+//! the Overview shows over its Documents list, with the native view an
+//! `html` one is drawn in (`browser/artifact.rs`).
 
-use std::collections::HashMap;
-use std::path::PathBuf;
 use std::rc::Rc;
 
-use gpui::{Context, Subscription, Window};
+use gpui::{Context, Window};
 use serde_json::json;
 use tokio::sync::mpsc;
 
 use crate::app::BenCodeApp;
 use crate::app::mono_overview::OverviewTab;
 use crate::app_cli::artifacts::{self as calls, ArtifactCard, Call};
-use crate::app_cli::server::{self, AppCall};
+use crate::app_cli::server::AppCall;
 use crate::browser::artifact::{ArtifactEvent, ArtifactPage};
 use crate::db::Artifact;
-use bencode_core::harness::AppAccess;
-
-/// MonoCode `APP_TURN_INACTIVE`.
-const TURN_INACTIVE: &str = "BenCode app access is inactive: it works only during a Mono's \
-    running turn. Retrying this request now will not enable access.";
 
 /// The artifact open over the Documents list (MonoCode `useArtifact`).
 pub struct Reader {
@@ -38,11 +31,6 @@ pub struct Reader {
 }
 
 pub struct ArtifactsState {
-    /// Where `bencode app` reaches this app; None when the socket could not
-    /// be opened.
-    socket: Option<PathBuf>,
-    /// Each Mono conversation's credential, made at its first turn.
-    tokens: HashMap<String, String>,
     pub reader: Option<Reader>,
     /// The view an `html` artifact is drawn in, made the first time one is
     /// shown and kept for the next.
@@ -53,27 +41,10 @@ pub struct ArtifactsState {
     /// The artifact awaiting Delete's confirmation: (id, title).
     pub pending_delete: Option<(String, String)>,
     next_generation: u64,
-    _subscriptions: Vec<Subscription>,
 }
 
 impl ArtifactsState {
     pub fn new(window: &mut Window, cx: &mut Context<BenCodeApp>) -> Self {
-        let (calls_tx, mut calls_rx) = mpsc::unbounded_channel::<AppCall>();
-        let socket = match server::listen(calls_tx) {
-            Ok(path) => Some(path),
-            Err(err) => {
-                log::error!("app access is off: {err:#}");
-                None
-            }
-        };
-        cx.spawn(async move |this, cx| {
-            while let Some(call) = calls_rx.recv().await {
-                if this.update(cx, |this, cx| this.handle_app_call(call, cx)).is_err() {
-                    break;
-                }
-            }
-        })
-        .detach();
         let (page_events, mut events_rx) = mpsc::unbounded_channel::<ArtifactEvent>();
         cx.spawn_in(window, async move |this, cx| {
             while let Some(event) = events_rx.recv().await {
@@ -92,23 +63,13 @@ impl ArtifactsState {
             }
         })
         .detach();
-        let mut subscriptions = Vec::new();
-        if let Some(path) = socket.clone() {
-            subscriptions.push(cx.on_app_quit(move |_, _| {
-                server::remove(&path);
-                async {}
-            }));
-        }
         Self {
-            socket,
-            tokens: HashMap::new(),
             reader: None,
             page: None,
             page_drawn: std::cell::Cell::new(false),
             page_events,
             pending_delete: None,
             next_generation: 0,
-            _subscriptions: subscriptions,
         }
     }
 
@@ -123,49 +84,9 @@ impl ArtifactsState {
 }
 
 impl BenCodeApp {
-    /// What a turn of `session_id` carries for `bencode app`: a Mono's own
-    /// conversation only (MonoCode: "App access is always enabled in this
-    /// thread"), on this computer.
-    pub(crate) fn app_access_for(&mut self, session_id: &str, cwd: &str) -> Option<AppAccess> {
-        if !self.has_app_access(session_id) || crate::remote::is_remote(cwd) {
-            return None;
-        }
-        let socket = self.artifacts.socket.as_ref()?.to_string_lossy().into_owned();
-        let token = self
-            .artifacts
-            .tokens
-            .entry(session_id.to_string())
-            .or_insert_with(|| crate::app_cli::random_hex(32))
-            .clone();
-        Some(AppAccess { socket, token })
-    }
-
-    /// Whether `session_id`'s turns get `bencode app`: a Mono's, while the
-    /// socket is open.
-    pub(crate) fn has_app_access(&self, session_id: &str) -> bool {
-        self.artifacts.socket.is_some() && self.is_mono_session(session_id)
-    }
-
-    /// One `bencode app` call: whose turn sent it, then the action.
-    fn handle_app_call(&mut self, call: AppCall, cx: &mut Context<Self>) {
-        let session = self
-            .artifacts
-            .tokens
-            .iter()
-            .find(|(_, token)| **token == call.request.token)
-            .map(|(session, _)| session.clone());
-        let Some(session) = session else {
-            call.fail("Connection revoked or unauthorized", false);
-            return;
-        };
-        if !self.is_mono_session(&session) {
-            call.fail("Only a Mono can create or read artifacts", false);
-            return;
-        }
-        if !self.is_agent_running_in(&session) {
-            call.fail(TURN_INACTIVE, false);
-            return;
-        }
+    /// One `artifacts.*` call from `session`'s turn (a Mono's own
+    /// conversation, checked by `handle_app_call`).
+    pub(crate) fn artifact_call(&mut self, session: String, call: AppCall, cx: &mut Context<Self>) {
         let parsed = calls::parse(&call.request.action, &call.request.input);
         let parsed = match parsed {
             Ok(parsed) => parsed,

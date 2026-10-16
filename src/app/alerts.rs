@@ -351,7 +351,12 @@ impl BenCodeApp {
         request: &PermissionRequest,
         cx: &mut Context<Self>,
     ) {
-        self.notify_session(session_id, Event::Input(request), Category::AgentInput, cx)
+        // A habit's hidden run asks in its Mono's chat.
+        let session_id = match self.habits.runs.get(session_id) {
+            Some(run) => run.mono_session.clone(),
+            None => session_id.to_string(),
+        };
+        self.notify_session(&session_id, Event::Input(request), Category::AgentInput, cx)
             .detach();
     }
 

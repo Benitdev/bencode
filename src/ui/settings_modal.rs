@@ -224,15 +224,13 @@ impl BenCodeApp {
                 .iter()
                 .map(|(_, key, name, icon)| (*key, *name, *icon)),
             self.settings_tab.key(),
-        )
-        // The page's `max-w-5xl`, as with the rail open.
-        .page(div().max_w(px(1024.0)).child(self.render_settings_page(cx)))
-        .on_select(cx.listener(|this, key: &SharedString, _, cx| {
-            match SettingsTab::from_key(key) {
+            cx.listener(|this, key: &SharedString, _, cx| match SettingsTab::from_key(key) {
                 Some(tab) => this.select_settings_tab(tab, cx),
                 None => log::warn!("unknown settings section {key}"),
-            }
-        }));
+            }),
+        )
+        // The page's `max-w-5xl`, as with the rail open.
+        .page(div().max_w(px(1024.0)).child(self.render_settings_page(cx)));
         // Ely's layout has no insets and does not scroll: the page's
         // `px-8 py-8 pb-16`, with the sections nearer the window's edge.
         let page = div()

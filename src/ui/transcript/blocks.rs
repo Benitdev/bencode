@@ -621,10 +621,7 @@ impl BenCodeApp {
     ) -> AnyElement {
         let blocks = &session.blocks;
         let copy = turns::turn_copy_text(blocks, turn.range.clone());
-        let finished = turn
-            .started_at(blocks)
-            .zip(turn.duration_ms(blocks))
-            .and_then(|(start, ms)| clock_time(start + ms));
+        let finished = turn.finished_at(blocks).and_then(clock_time);
         let id = turn.id(blocks).to_string();
         let colors = &cx.theme().colors;
         let note_text = copy.clone();

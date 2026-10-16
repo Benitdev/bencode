@@ -114,6 +114,8 @@ struct Shown {
     question: Option<(QuestionUi, bool)>,
     /// The approval waiting, by its request id.
     permission: Option<String>,
+    /// Habit runs waiting on an approval: (run thread, habit name).
+    relays: Vec<(String, String)>,
     usage_limited: bool,
     /// The messages queued behind the running turn (text and file count),
     /// and whether the queue is paused.
@@ -479,6 +481,7 @@ impl MonoFloat {
             || shown.blocks != self.shown.blocks
             || shown.live != self.shown.live
             || shown.permission != self.shown.permission
+            || shown.relays != self.shown.relays
             || shown.queued != self.shown.queued;
         // A Mono renamed: "Message <name>" follows.
         let roster = shown.monos != self.shown.monos;
@@ -608,6 +611,7 @@ impl MonoFloat {
                 .and_then(|s| app.pending_permission_for(&s.id))
                 .filter(|request| request.tool != crate::app::QUESTION_TOOL)
                 .map(|request| request.request_id.clone()),
+            relays: session.map_or_else(Vec::new, |s| app.habit_runs_asking(&s.id)),
             usage_limited: session
                 .and_then(|s| app.thread(&s.id))
                 .is_some_and(|thread| thread.usage_limit.is_some()),
@@ -661,6 +665,13 @@ impl MonoFloat {
             rows.push(FloatRow {
                 turn,
                 item: FloatItem::Approval(request),
+            });
+        }
+        // MonoCode `askApproval`: a habit's run asks here, in its chat.
+        for (run, habit) in self.shown.relays.clone() {
+            rows.push(FloatRow {
+                turn: usize::MAX,
+                item: FloatItem::HabitApproval { run, habit },
             });
         }
         let queued = |text: &str, files: &[Attachment], delivery| FloatRow {
@@ -770,6 +781,12 @@ impl MonoFloat {
             app.open_mono(&id, cx);
             app.open_artifact(artifact, cx);
         });
+    }
+
+    /// A launch card: its session in BenCode's window.
+    fn reveal_launch(&mut self, session: &str, cx: &mut Context<Self>) {
+        self.activate_main(cx);
+        self.app.update(cx, |app, cx| app.open_mono_launch(session, cx));
     }
 
     fn activate_main(&self, cx: &mut App) {

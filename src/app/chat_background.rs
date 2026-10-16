@@ -51,7 +51,7 @@ impl ChatBackground {
 }
 
 /// BenCode's `backgrounds` folder, beside `settings.json`.
-fn backgrounds_dir() -> Result<PathBuf> {
+pub(crate) fn backgrounds_dir() -> Result<PathBuf> {
     let dir = crate::settings::settings_dir()
         .context("no home directory")?
         .join("backgrounds");
@@ -75,14 +75,19 @@ fn background_extension(source: &Path) -> Result<String> {
 
 /// MonoCode `remove_existing_backgrounds`.
 fn remove_existing_backgrounds(dir: &Path) -> Result<()> {
-    let prefix = format!("{FILE_STEM}.");
+    remove_backgrounds_named(dir, FILE_STEM)
+}
+
+/// Every saved copy named `stem` (any extension).
+pub(crate) fn remove_backgrounds_named(dir: &Path, stem: &str) -> Result<()> {
+    let prefix = format!("{stem}.");
     for entry in std::fs::read_dir(dir).with_context(|| format!("reading {}", dir.display()))? {
         let entry = entry?;
         let name = entry.file_name();
         let Some(name) = name.to_str() else {
             continue;
         };
-        if name == FILE_STEM || name.starts_with(&prefix) {
+        if name == stem || name.starts_with(&prefix) {
             match std::fs::remove_file(entry.path()) {
                 Ok(()) => {}
                 Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
@@ -98,6 +103,11 @@ fn remove_existing_backgrounds(dir: &Path) -> Result<()> {
 
 /// MonoCode `save_chat_background_sync`: the saved copy's path.
 fn save_background(dir: &Path, source: &Path) -> Result<PathBuf> {
+    save_background_named(dir, source, FILE_STEM)
+}
+
+/// `save_background` under `stem` (a Mono's own, `mono-<id>`).
+pub(crate) fn save_background_named(dir: &Path, source: &Path, stem: &str) -> Result<PathBuf> {
     let meta = std::fs::metadata(source).with_context(|| source.display().to_string())?;
     if !meta.is_file() {
         bail!("Not a file");
@@ -109,16 +119,16 @@ fn save_background(dir: &Path, source: &Path) -> Result<PathBuf> {
         );
     }
     let ext = background_extension(source)?;
-    let dest = dir.join(format!("{FILE_STEM}.{ext}"));
-    let temp = dir.join(format!(".{FILE_STEM}-upload"));
+    let dest = dir.join(format!("{stem}.{ext}"));
+    let temp = dir.join(format!(".{stem}-upload"));
     // Copy first so choosing the currently saved image remains safe.
     std::fs::copy(source, &temp).with_context(|| temp.display().to_string())?;
-    remove_existing_backgrounds(dir)?;
+    remove_backgrounds_named(dir, stem)?;
     std::fs::rename(&temp, &dest).with_context(|| dest.display().to_string())?;
     Ok(dest)
 }
 
-fn decode(path: &Path) -> Result<Source> {
+pub(crate) fn decode(path: &Path) -> Result<Source> {
     let image = image::ImageReader::open(path)
         .with_context(|| path.display().to_string())?
         .with_guessed_format()?
@@ -128,7 +138,7 @@ fn decode(path: &Path) -> Result<Source> {
 }
 
 /// The artwork under `effect` as GPUI draws it (BGRA).
-fn render_image(source: &Source, effect: BackgroundEffect, light: bool) -> Result<RenderImage> {
+pub(crate) fn render_image(source: &Source, effect: BackgroundEffect, light: bool) -> Result<RenderImage> {
     let mut pixels = background_effects::render(source, effect, light);
     for pixel in pixels.chunks_exact_mut(4) {
         pixel.swap(0, 2);

@@ -1,10 +1,15 @@
 pub mod accounts;
 mod agent;
 pub mod agy_accounts;
+pub mod app_calls;
 pub mod artifacts;
 pub mod alerts;
 mod automation_runs;
 pub mod automations;
+pub mod habits;
+pub mod mono_background;
+pub mod mono_menu_bar;
+pub mod mono_sessions;
 pub mod backlog;
 pub mod browser;
 pub mod chat_background;
@@ -14,7 +19,7 @@ pub mod file_pane;
 pub mod frame_bench;
 pub mod github_accounts;
 pub mod harness_updates;
-mod ids;
+pub mod ids;
 pub mod in_flight;
 mod integrations;
 pub mod live_agents;
@@ -151,7 +156,17 @@ pub struct BenCodeApp {
     pub file_pane_shares: [f32; 2],
     /// The in-app browser's tabs and the agents' way to them.
     pub browser: browser::BrowserState,
-    /// A Mono's artifacts: `bencode app`'s calls and the reader.
+    /// `bencode app`: its socket and the credentials turns carry.
+    pub app_access: app_calls::AppAccessState,
+    /// Monos' habits: the runs in flight and the scheduler's queue.
+    pub habits: habits::HabitsState,
+    /// Sessions Monos watch, until their results go back to them.
+    pub mono_sessions: mono_sessions::MonoSessionsState,
+    /// Monos' own chat backgrounds, as drawn.
+    pub mono_backgrounds: mono_background::MonoBackgrounds,
+    /// The Monos icon in the macOS menu bar.
+    pub mono_menu_bar: mono_menu_bar::MonoMenuBar,
+    /// A Mono's artifacts: the reader and its page.
     pub artifacts: artifacts::ArtifactsState,
     /// The sidebar's Sessions tab: filters, picks, inline renames.
     pub sessions_ui: crate::ui::sidebar_sessions::SessionsUi,
@@ -1161,6 +1176,7 @@ impl BenCodeApp {
                     return;
                 }
                 this.start_automation_scheduler(cx);
+                this.start_habit_scheduler(cx);
                 // The open dock's shell starts once the saved tabs are back.
                 this.restore_terminals(cx);
             });
@@ -1168,6 +1184,7 @@ impl BenCodeApp {
         .detach();
 
         let browser = browser::BrowserState::new(window, cx);
+        let app_access = app_calls::AppAccessState::new(cx);
         let artifacts = artifacts::ArtifactsState::new(window, cx);
         let mut app = Self {
             sessions,
@@ -1184,6 +1201,11 @@ impl BenCodeApp {
             file_pane_focused: false,
             file_pane_shares: [1.0, 1.0],
             browser,
+            app_access,
+            habits: Default::default(),
+            mono_sessions: Default::default(),
+            mono_backgrounds: Default::default(),
+            mono_menu_bar: Default::default(),
             artifacts,
             sessions_ui: Default::default(),
             sidebar_menu: None,
@@ -1393,6 +1415,7 @@ impl BenCodeApp {
         app.refresh_installed_catalogs(cx);
         app.start_harness_update_check(cx);
         app.listen_for_notification_clicks(cx);
+        app.listen_for_mono_menu_bar(window.window_handle(), cx);
         app.load_backlog_account(cx);
         app.start_inbox_poll(cx);
         app.start_update_probe(cx);
@@ -1538,6 +1561,7 @@ impl Render for BenCodeApp {
         self.live_agents_ui.window_height =
             crate::ui::scale::logical(window.viewport_size().height);
         self.sync_chat_background(!cx.theme().is_dark(), cx);
+        self.sync_mono_background(!cx.theme().is_dark(), cx);
         if std::mem::take(&mut self.question_focus_wanted) {
             window.focus(&self.question_focus, cx);
         }
@@ -1598,6 +1622,7 @@ impl Render for BenCodeApp {
             any_elements(self.render_quit_confirm(cx)),
             any_elements(self.render_mono_settings(cx)),
             any_elements(self.render_mono_dialogs(cx)),
+            any_elements(self.render_mono_background_dialog(cx)),
             any_elements(self.render_artifact_delete(cx)),
         ]
         .into_iter()

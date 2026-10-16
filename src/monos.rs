@@ -21,6 +21,7 @@
 pub mod files;
 pub mod habits;
 pub mod memory;
+pub mod rotation;
 
 use std::path::{Path, PathBuf};
 
@@ -72,6 +73,20 @@ pub struct Mono {
     pub projects: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub handed: Option<Handed>,
+    /// MonoCode `showStartedSessionsInSidebar`: sessions it starts are
+    /// listed in the project's sidebar too.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub show_started_sessions_in_sidebar: bool,
+    /// MonoCode `useSidebarFolders`: and filed in a folder named after it.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub use_sidebar_folders: bool,
+    /// MonoCode `MonoRotation` (its `mono-rotations` storage): what the
+    /// latest fresh provider session was briefed with.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rotation: Option<rotation::Rotation>,
+    /// MonoCode `monoBackgroundKey`: its own chat background's saved copy.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub background: Option<String>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
@@ -451,74 +466,188 @@ pub fn reply_text(text: &str) -> String {
     }
 }
 
-/// MonoCode's `<memory_rules>`, for a Mono that cannot write its memory:
-/// BenCode has no `app memory.add`, so the user keeps it.
+/// MonoCode's `<memory_rules>`, for a Mono without the app CLI (its
+/// socket could not open): the user keeps its memory.
 const MEMORY_RULES: &str = "<memory_rules>\nYou have a memory that carries across \
     conversations: MEMORY.md, in the <memory> block. Its first 200 lines load whenever it \
     changes. The user keeps it in BenCode, from your settings; never edit its files \
     yourself, and never repeat secrets, tokens or credentials from it.\n</memory_rules>";
 
 /// MonoCode's `<artifact_rules>`, without what BenCode's chat does not do
-/// (local images and videos inline, habit runs).
+/// (local images and videos inline).
 const ARTIFACT_RULES: &str = "<artifact_rules>\nFor substantial reports, reviews, research or \
     plans, save the full Markdown as a document with app artifacts.write \
     {\"kind\":\"document\",\"title\":\"...\",\"summary\":\"<one short description>\",\"body\":\"<complete Markdown>\"}. \
     BenCode puts a clickable document card below your reply; the user opens it beside the chat. \
     Keep your chat reply to the main takeaway and a brief mention of the document, without \
     repeating its contents. Use inline text for short answers or when the user asks for it. \
-    Artifacts are separate from the user's Notes. Use artifacts.list or artifacts.read to find \
-    and read saved reports, and artifacts.write with the same id to revise one. When something \
-    is clearer seen than read (a chart, a table to compare, a diagram, a timeline, a UI mockup), \
-    show it with app artifacts.write {\"kind\":\"html\",\"title\":\"...\",\"body\":\"<complete \
-    self-contained HTML page>\"}. BenCode puts a card for it below your reply, and the user opens \
-    the live page, which runs sandboxed, beside the chat. Keep your reply to the takeaway rather \
-    than restating the page. Put all CSS and JS inline; scripts, styles, images and fonts may load \
-    from public https CDNs, but the page cannot fetch data, so embed the data in it. The page sits \
-    on the panel's own background and scrolls by itself: leave html and body without a \
-    background, use a fluid width with no outer card or page title, and give charts fixed pixel \
-    heights. Use the app's theme through CSS variables, which follow light and dark mode: \
-    --background, --foreground, --muted, --surface, --border, --accent, --link, --positive, \
-    --negative, --chart-1 to --chart-6, --font-sans, --font-mono, --radius. Links open in the \
-    user's browser. Revise a visual with artifacts.write and its id. Do not use an artifact for a \
-    file that already exists.\n</artifact_rules>";
+    Artifacts are separate from the user's Notes: do not save reports with notes.write. Use \
+    artifacts.list or artifacts.read to find and read saved reports, and artifacts.write with \
+    the same id to revise one. When something is clearer seen than read (a chart, a table to \
+    compare, a diagram, a timeline, a UI mockup), show it with app artifacts.write \
+    {\"kind\":\"html\",\"title\":\"...\",\"body\":\"<complete self-contained HTML page>\"}. \
+    BenCode puts a card for it below your reply, and the user opens the live page, which runs \
+    sandboxed, beside the chat. Keep your reply to the takeaway rather than restating the page. \
+    Put all CSS and JS inline; scripts, styles, images and fonts may load from public https \
+    CDNs, but the page cannot fetch data, so embed the data in it. The page sits on the panel's \
+    own background and scrolls by itself: leave html and body without a background, use a fluid \
+    width with no outer card or page title, and give charts fixed pixel heights. Use the app's \
+    theme through CSS variables, which follow light and dark mode: --background, --foreground, \
+    --muted, --surface, --border, --accent, --link, --positive, --negative, --chart-1 to \
+    --chart-6, --font-sans, --font-mono, --radius. Links open in the user's browser. Revise a \
+    visual with artifacts.write and its id. Do not use an artifact for a file that already \
+    exists. In a habit run, its cards accompany the final report only if it is posted.\n</artifact_rules>";
 
-/// MonoCode's `<monocode_app>`, for the actions BenCode's CLI answers.
+/// MonoCode's `<memory_rules>`: the agent keeps its memory through the CLI.
+const APP_MEMORY_RULES: &str = "<memory_rules>\nYou have a memory that carries across \
+    conversations. Its first 200 lines load whenever it changes, so keep it to facts that stay \
+    useful later: decisions, the user's preferences, how their projects work, people and where \
+    things live. Save them as you learn them; don't wait to be asked. Change it only through \
+    the app CLI, never by editing its files: `app memory.add {\"fact\":\"...\"}` adds one dated \
+    entry (add \"until\":\"YYYY-MM-DD\" for a fact that expires), `app memory.replace \
+    {\"find\":\"<text of the old entry>\",\"fact\":\"...\"}` supersedes one that changed, and \
+    `app memory.remove {\"find\":\"...\"}` drops one that was wrong. Pass \"topic\":\"<name>\" to \
+    keep longer notes on one subject in a topic file, and `app memory.read \
+    {\"topic\":\"<name>\"}` to read one. Before answering about something you may have learned \
+    earlier and is not in the block below, look with `app memory.search {\"query\":\"...\"}`; it \
+    also covers topic notes and the archive. Never save secrets, tokens or credentials; they are \
+    redacted anyway.\n</memory_rules>";
+
+/// MonoCode's `<habits_rules>`.
+const HABITS_RULES: &str = "<habits_rules>\nYou can have habits: things you do on your own on \
+    a schedule, like checking CI every weekday morning or looking over open PRs on Fridays. \
+    Each one runs in a separate session with full access, since nobody is watching it, and \
+    messages the user in this chat only when there is something worth saying; if it needs a \
+    permission anyway, it asks the user here. So only suggest habits you would trust to run \
+    unattended, and say plainly in their instructions when they may change things (push, \
+    comment, close) rather than only look. When something the user asks for would be better as \
+    a habit, suggest it, and add it with `app habits.add` only once they agree; `app \
+    habits.list`, `habits.update`, `habits.run` and `habits.remove` manage them.\n</habits_rules>";
+
+/// MonoCode's `<session_delegation_rules>`.
+const DELEGATION_RULES: &str = "<session_delegation_rules>\nWhen working on a user's request in \
+    your Mono chat, use app sessions.start on your own for substantial work that is \
+    long-running, needs a focused specialist, or has independent parts that benefit from \
+    separate sessions. You can choose to delegate without the user explicitly asking for new \
+    sessions; briefly tell them what you are starting and why. Respect their preferences about \
+    delegation, models and resources. Handle simple questions and small, tightly coupled \
+    changes directly. Check app sessions.list for related work before launching, and use only \
+    as many sessions as the task needs. Give each session a clear objective, the project and \
+    checkout, relevant context, the user's constraints, what it may change, and the checks and \
+    result you expect. Inherit your provider and model unless another is useful or requested; \
+    use app models.list when choosing a different one. Launch independent parts during the \
+    same turn so their results arrive together; run dependent parts in stages once their inputs \
+    are ready. Give concurrent editing sessions separate worktrees or disjoint file ownership, \
+    and avoid editing their files yourself while they run. New worktrees do not include \
+    uncommitted changes from another checkout; arrange any needed changes and context before \
+    delegating. Keep responsibility for the whole task: when the completion notification \
+    arrives, inspect the combined results, resolve disagreements, integrate changes and run the \
+    relevant checks within the user's requested scope. Continue any dependent work before \
+    reporting the task complete.\n</session_delegation_rules>";
+
+/// MonoCode's `<delegated_work_handoff_rules>`.
+const HANDOFF_RULES: &str = "<delegated_work_handoff_rules>\nDelegated sessions own the work \
+    you assign to them. Once a sessions.start or sessions.send submission is accepted, you must \
+    not perform the delegated task yourself, run a parallel second pass, or treat that session \
+    as a second opinion while you do the same task. Prepare the required context before \
+    submitting. Finish only the remaining launch and organization steps for this stage, tell \
+    the user what was delegated, and end your turn. Do not continue investigating the task, run \
+    its checks, poll, wait, or give preliminary findings. For a delegated PR review, leave diff \
+    inspection, code review and validation to the review sessions. Resume that task when the \
+    completion notification arrives, then inspect the evidence, resolve gaps, integrate the \
+    results and give one consolidated report. Only an explicit user request for overlapping \
+    independent work overrides this restriction. Unsent drafts and rejected submissions do not \
+    hand off work.\n</delegated_work_handoff_rules>";
+
+/// MonoCode's `<session_completion_rules>`.
+const COMPLETION_RULES: &str = "<session_completion_rules>\nSessions you start through app \
+    sessions.start open in the background so the user can stay in this chat. Submitted \
+    sessions notify you on completion by default: tell the user the work has started and that \
+    you will report back when it finishes. Sessions you monitor during the same Mono turn form \
+    one group. BenCode waits for every session in that group to stop, including failures and \
+    cancellations, then sends you all their results together as a new turn once you are idle. \
+    Review the full set and give one consolidated report, rather than reporting each session \
+    separately. Sessions launched during later turns form separate groups. Only when the user \
+    asks not to receive a completion report, set \"notifyOnComplete\":false on sessions.start \
+    and do not promise one. Unsent drafts do not run or notify. For app sessions.send to an \
+    existing session, include \"notifyOnComplete\":true when delegating part of the current \
+    task or when the user asks you to report back on that follow-up, unless they have opted out \
+    of completion reports. If you successfully stop, archive or delete a monitored session \
+    yourself, acknowledge the action in your current reply; BenCode dismisses your pending \
+    report for that session, so do not promise another update about it. Rejected launches or \
+    follow-ups are reported by the CLI in this turn and do not generate a later completion \
+    notification. Calls still return immediately after acceptance. After completing launch and \
+    organization steps, acknowledge the handoff and end your turn; do not keep working on the \
+    delegated task, polling or waiting. Inspect the results and report back when \
+    notified.\n</session_completion_rules>";
+
+/// MonoCode's `<monocode_app>` for a Mono: what the CLI does and how to
+/// run it.
 fn app_brief(cli: &str) -> String {
     format!(
-        "<bencode_app>\nApp access is always enabled in this thread. Through its local CLI you \
-         can save, read and revise artifacts. Run `{cli} --help` when you need the exact \
-         commands and JSON fields; `app artifacts.write` above means `{cli} artifacts.write`. \
-         The CLI uses a session credential already in your environment; never print it.\n\
-         </bencode_app>"
+        "<bencode_app>\nApp access is always enabled in this thread. You can start sessions in \
+         your projects, list and create project worktrees, choose a new session's checkout, \
+         read, continue, stop, archive or delete other project sessions, save unsent drafts, \
+         organize session folders, and read or write saved notes through its local CLI. Run \
+         `{cli} --help` when you need the exact commands and JSON fields; `app <action>` above \
+         means `{cli} <action>`. When reading another session, start with its latest two or \
+         three user/assistant exchanges. Request older exchanges with nextBefore or a larger \
+         excerpt only if needed. The CLI uses a session credential already in your \
+         environment; never print it. New sessions inherit this session's permission mode \
+         unless runtimeMode is set explicitly. For a new session with a draft, call \
+         sessions.start with its prompt and draft:true; do not submit a seed prompt. The \
+         returned ID can be moved into a folder immediately. A normal sessions.start submits \
+         its prompt but returns after acceptance, so do not wait for that agent to finish \
+         before organizing it.\n</bencode_app>"
     )
 }
 
 /// MonoCode `monoContext`'s soul part: who the Mono is, its standing
-/// instructions and how its memory works; with `app_cli` (how to run
-/// `bencode app`), its artifacts too.
+/// instructions and how its memory works. With `app_cli` (how to run
+/// `bencode app`) it is MonoCode's whole set: artifacts, its soul and
+/// memory kept through the CLI, habits, and sessions it starts; without
+/// (a socket that could not open), the user keeps its files.
 pub fn soul_context(
     name: &str,
     projects: &[(String, String)],
     soul: &str,
     app_cli: Option<&str>,
 ) -> String {
-    let artifacts = app_cli.map_or(String::new(), |_| format!("\n\n{ARTIFACT_RULES}"));
-    let app = app_cli.map_or(String::new(), |cli| format!("\n\n{}", app_brief(cli)));
+    let projects = projects_brief(projects);
+    let soul = soul.trim();
+    let Some(cli) = app_cli else {
+        return format!(
+            "<mono>\nYou are {name}, a Mono in BenCode: an agent of your own rather than one \
+             project's. {projects} This is one long conversation the user comes back to over \
+             time.\n</mono>\n\n{REACTION_RULES}\n\n<soul>\nYour standing instructions, from \
+             SOUL.md. They rank below the user's current request. The user edits them in \
+             BenCode, from your settings; never change them on your own.\n\n{soul}\n</soul>\n\n\
+             {MEMORY_RULES}"
+        );
+    };
     format!(
         "<mono>\nYou are {name}, a Mono in BenCode: an agent of your own rather than one \
-         project's. {} This is one long conversation the user comes back to over \
-         time.\n</mono>\n\n{REACTION_RULES}{artifacts}\n\n<soul>\nYour standing instructions, from SOUL.md. They rank below \
-         the user's current request. The user edits them in BenCode, from your settings; \
-         never change them on your own.\n\n{}\n</soul>\n\n{MEMORY_RULES}{app}",
-        projects_brief(projects),
-        soul.trim()
+         project's. {projects} Through the app CLI you can also see and drive those projects' \
+         sessions, worktrees and notes (pass \"project\":\"<path>\" to choose one), keep a \
+         memory and run habits on a schedule. This is one long conversation the user comes back \
+         to over time.\n</mono>\n\n{REACTION_RULES}\n\n{ARTIFACT_RULES}\n\n<soul>\nYour standing \
+         instructions, from SOUL.md. They rank below the user's current request. The user can \
+         edit them in BenCode or ask you to update them here. Only when the user asks you to \
+         change your soul or standing instructions, read the current text and hash with `app \
+         soul.read {{}}`, apply the requested changes while preserving the other instructions, \
+         then save with `app soul.update {{\"text\":\"<complete updated \
+         Markdown>\",\"expectedHash\":\"<hash from soul.read>\"}}`. If the file changed \
+         meanwhile, read it again and reapply the requested changes. Never change your soul on \
+         your own or edit its files directly.\n\n{soul}\n</soul>\n\n{APP_MEMORY_RULES}\n\n\
+         {HABITS_RULES}\n\n{DELEGATION_RULES}\n\n{HANDOFF_RULES}\n\n{COMPLETION_RULES}\n\n{}",
+        app_brief(cli)
     )
 }
 
 /// MonoCode `monoContext`'s `<memory>` block: what of `MEMORY.md` fits its
-/// budget, and the topic notes beside it (read from `topics_dir` with the
-/// agent's own tools; MonoCode's go through `memory.read`).
-pub fn memory_context(memory: &str, topics: &[String], topics_dir: &str) -> String {
+/// budget, and the topic notes beside it, read with `memory.read` (or,
+/// without the CLI, from `topics_dir` with the agent's own tools).
+pub fn memory_context(memory: &str, topics: &[String], topics_dir: Option<&str>) -> String {
     let budget = memory::memory_within_budget(memory);
     let text = if budget.text.is_empty() {
         "(Empty. Nothing has been remembered yet.)".to_string()
@@ -527,17 +656,68 @@ pub fn memory_context(memory: &str, topics: &[String], topics_dir: &str) -> Stri
     };
     let dropped = match budget.dropped_lines {
         0 => String::new(),
-        n => format!("\n[{n} more lines in MEMORY.md did not load.]"),
+        n => format!(
+            "\n[{n} more lines in MEMORY.md did not load; move older detail into topic files.]"
+        ),
     };
-    let topics = if topics.is_empty() {
-        String::new()
-    } else {
-        format!(
-            "\n\nTopic notes, read on demand from {topics_dir}: {}",
+    let topics = match (topics.is_empty(), topics_dir) {
+        (true, _) => String::new(),
+        (false, None) => format!(
+            "\n\nTopic notes, read on demand with memory.read: {}",
             topics.join(", ")
-        )
+        ),
+        (false, Some(dir)) => format!(
+            "\n\nTopic notes, read on demand from {dir}: {}",
+            topics.join(", ")
+        ),
     };
     format!("<memory>\n{text}{dropped}{topics}\n</memory>")
+}
+
+/// MonoCode `unseenHabitPosts` and `habitPostsContext`: what the Mono's
+/// habits posted to its chat since the user's last message, which its own
+/// session has not seen; empty when nothing was.
+pub fn habit_posts_context(blocks: &[crate::db::Block]) -> String {
+    let mut posts = Vec::new();
+    for block in blocks.iter().rev() {
+        let internal = block.extra.get("internal").and_then(serde_json::Value::as_bool) == Some(true);
+        let draft = block.extra.get("draft").and_then(serde_json::Value::as_bool) == Some(true);
+        if block.role == "user" && !internal && !draft {
+            break;
+        }
+        let text = block.text.as_deref().unwrap_or("").trim();
+        if let Some((_, name, at)) = crate::ui::transcript::mono::habit_post(block)
+            && !text.is_empty()
+        {
+            let line = text.split_whitespace().collect::<Vec<_>>().join(" ");
+            let line = if line.chars().count() > 600 {
+                format!("{}…", line.chars().take(599).collect::<String>())
+            } else {
+                line
+            };
+            posts.push(format!("- {} · {name}: {line}", habits::local_time(at)));
+        }
+    }
+    if posts.is_empty() {
+        return String::new();
+    }
+    posts.reverse();
+    format!(
+        "<while_you_were_away>\nYour habits posted these to this chat on their own since the \
+         user's last message. The user has seen them; build on them rather than repeating \
+         them.\n{}\n</while_you_were_away>",
+        posts.join("\n")
+    )
+}
+
+/// MonoCode `unreadBadge`.
+pub fn unread_badge(count: usize) -> String {
+    if count > 99 { "99+".to_string() } else { count.to_string() }
+}
+
+/// MonoCode `unreadLabel`.
+pub fn unread_label(count: usize) -> String {
+    if count == 1 { "1 new reply".to_string() } else { format!("{count} new replies") }
 }
 
 /// MonoCode `monoContext`: the blocks this turn adds, as `plan` says.
@@ -692,13 +872,13 @@ mod tests {
     #[test]
     fn the_memory_block_is_what_fits() {
         assert_eq!(
-            memory_context("", &[], "/m"),
+            memory_context("", &[], Some("/m")),
             "<memory>\n(Empty. Nothing has been remembered yet.)\n</memory>"
         );
         let block = memory_context(
             "- 2026-10-01 · likes tea\n",
             &["releases".into(), "team".into()],
-            "/data/monos/m/memory",
+            Some("/data/monos/m/memory"),
         );
         assert_eq!(
             block,
@@ -706,7 +886,8 @@ mod tests {
              /data/monos/m/memory: releases, team\n</memory>"
         );
         let long: String = (0..205).map(|n| format!("- {n}\n")).collect();
-        assert!(memory_context(&long, &[], "/m").contains("\n[5 more lines in MEMORY.md did not load.]"));
+        assert!(memory_context(&long, &[], None).contains("\n[5 more lines in MEMORY.md did not load;"));
+        assert!(memory_context("x", &["team".into()], None).contains("read on demand with memory.read: team"));
         let plan = ContextPlan {
             soul: false,
             memory: true,
@@ -746,6 +927,11 @@ mod tests {
         assert!(rules < context.find("<soul>").unwrap());
         assert!(context.contains("`/Apps/bencode app --help`"));
         assert!(context.ends_with("</bencode_app>"));
+        for rules in ["<habits_rules>", "<session_completion_rules>", "app memory.add", "app soul.read"] {
+            assert!(context.contains(rules), "{rules}");
+        }
+        let without = soul_context("Ada", &[], "Be brief.", None);
+        assert!(without.contains("never change them on your own") && !without.contains("<habits_rules>"));
         assert!(context.contains("\"kind\":\"html\""));
     }
 
