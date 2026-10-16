@@ -318,11 +318,11 @@ impl BenCodeApp {
             ))
             .child(page_hint(
                 if chip.locked {
-                    "Switch accounts once this turn finishes."
+                    "Switch accounts once the Mono's turn finishes."
                 } else if chip.mono {
                     "The next message starts a new session on the account you pick, briefed on the recent conversation."
                 } else {
-                    "The conversation continues here on the account you pick: its next message starts a new session with a recap of it."
+                    "Each conversation stays pinned to the account that started it."
                 },
                 fg,
             ))
