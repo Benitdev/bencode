@@ -22,6 +22,8 @@ use sha2::{Digest, Sha256};
 pub const SOUL_FILE: &str = "SOUL.md";
 pub const MEMORY_FILE: &str = "MEMORY.md";
 pub const HABITS_FILE: &str = "habits.json";
+/// The Mono's board (`board.rs`): BenCode's own.
+pub const BOARD_FILE: &str = "board.json";
 const MEMORY_DIR: &str = "memory";
 /// MonoCode `FILE_MAX`: far over what loads, it only stops a runaway write.
 const FILE_MAX: usize = 256 * 1024;
@@ -66,11 +68,11 @@ pub fn content_hash(text: &str) -> String {
         .collect()
 }
 
-/// MonoCode `resolve_file`: SOUL.md, MEMORY.md, habits.json or one
+/// MonoCode `resolve_file`: SOUL.md, MEMORY.md, habits.json, board.json or one
 /// `memory/<name>.md`. Nothing nested and nothing hidden, so a name can
 /// never leave the folder.
 fn resolve(dir: &Path, relative: &str) -> Option<PathBuf> {
-    if [SOUL_FILE, MEMORY_FILE, HABITS_FILE].contains(&relative) {
+    if [SOUL_FILE, MEMORY_FILE, HABITS_FILE, BOARD_FILE].contains(&relative) {
         return Some(dir.join(relative));
     }
     let name = relative.strip_prefix("memory/")?.strip_suffix(".md")?;

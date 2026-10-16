@@ -1,16 +1,18 @@
 //! MonoCode `MonoOverview` in `MonoSidebar`: the Mono's work at a glance,
-//! at the right of its chat. A 40px header of tabs (Sessions, Documents,
+//! at the right of its chat. A 40px header of tabs (Board, Documents,
 //! Habits, Changes: the open one names itself and its count, the others
 //! are their icons), the Activity button apart from them since it follows
 //! the chat, and Hide overview; its left edge resizes it (340 to 960px,
 //! kept in `settings.json`).
 //!
 //! Documents lists the artifacts it wrote, oldest first; one opens over the
-//! list (`ui/artifacts.rs`). Habits is `habits.rs`. Sessions lists the
-//! sessions it started and the threads in its projects. Changes is
+//! list (`ui/artifacts.rs`). Habits is `habits.rs`. Board (`board.rs`,
+//! where MonoCode lists Sessions) holds its tasks by column and the other
+//! sessions it started. Changes is
 //! `changes.rs`; Activity is the transcript's own work rows
 //! (`ui/transcript/mono_activity.rs`).
 
+mod board;
 mod changes;
 mod habits;
 
@@ -25,16 +27,15 @@ use gpui::{
 use crate::app::BenCodeApp;
 use crate::app::mono_overview::OverviewTab;
 use crate::monos::{Mono, MonoState};
-use crate::ui::HarnessIcon;
 use crate::ui::icons::ExtraIcon;
 use crate::ui::scale::px;
 
 /// `border-stroke`.
 const STROKE: f32 = 0.07;
 
-/// MonoCode `TABS`, in its order.
+/// MonoCode `TABS`, in its order, with Board for Sessions.
 const TABS: [(OverviewTab, &str); 4] = [
-    (OverviewTab::Sessions, "Sessions"),
+    (OverviewTab::Board, "Board"),
     (OverviewTab::Documents, "Documents"),
     (OverviewTab::Habits, "Habits"),
     (OverviewTab::Changes, "Changes"),
@@ -42,7 +43,7 @@ const TABS: [(OverviewTab, &str); 4] = [
 
 fn tab_icon(tab: OverviewTab, color: Hsla) -> Icon {
     let icon = match tab {
-        OverviewTab::Sessions => Icon::new(IconName::MessageSquare),
+        OverviewTab::Board => Icon::new(IconName::LayoutDashboard),
         OverviewTab::Documents => Icon::new(IconName::File),
         OverviewTab::Habits => Icon::new(IconName::Clock),
         OverviewTab::Changes => ExtraIcon::FileDiff.icon(),
@@ -87,18 +88,24 @@ pub(super) fn list_row(
     line: String,
     fg: Hsla,
 ) -> gpui::Stateful<gpui::Div> {
-    div()
+    row_content(tile, title, line, fg)
         .id(id)
-        .flex()
         .w_full()
+        .cursor_pointer()
+        .hover(move |s| s.bg(fg.opacity(0.05)))
+}
+
+/// A list row's tile and two lines, without its hover: for a row whose
+/// hover covers buttons beside it.
+pub(super) fn row_content(tile: AnyElement, title: String, line: String, fg: Hsla) -> gpui::Div {
+    div()
+        .flex()
         .min_w_0()
         .items_center()
         .gap(px(10.0))
         .rounded(px(6.0))
         .px_2()
         .py_2()
-        .cursor_pointer()
-        .hover(move |s| s.bg(fg.opacity(0.05)))
         .child(
             div()
                 .flex()
@@ -188,7 +195,7 @@ impl BenCodeApp {
             self.render_mono_changes(mono, cx)
         } else {
             let list = match overview.tab {
-                OverviewTab::Sessions => self.render_mono_sessions(mono, cx),
+                OverviewTab::Board => self.render_mono_board(mono, cx),
                 OverviewTab::Documents => self.render_mono_documents(mono, cx),
                 OverviewTab::Habits => self.render_mono_habits(mono, cx),
                 _ => self.render_mono_activity_tab(mono, state, cx),
@@ -225,7 +232,8 @@ impl BenCodeApp {
         let mono = self.mono_in_view()?;
         let overview = &self.monos.overview;
         let count = match tab {
-            OverviewTab::Sessions => self.mono_launches(mono).len(),
+            // Its open tasks.
+            OverviewTab::Board => overview.board.as_ref()?.iter().filter(|t| t.done_at.is_none()).count(),
             OverviewTab::Documents => self.mono_documents(mono).len(),
             OverviewTab::Habits => overview.habits.as_ref()?.len(),
             OverviewTab::Changes => self.mono_changes_count(),
@@ -397,60 +405,8 @@ impl BenCodeApp {
             })
     }
 
-    /// Sessions: the threads in the Mono's projects, as the sidebar's
-    /// cards would say them (model, title, project, when, status). One
-    /// opens in the workspace.
-    fn render_mono_sessions(&self, mono: &Mono, cx: &Context<Self>) -> AnyElement {
-        let fg = cx.theme().colors.fg;
-        let name = mono.display_name();
-        let launches = self.mono_launches(mono);
-        if launches.is_empty() {
-            return empty_state(
-                OverviewTab::Sessions,
-                format!(
-                    "Ask {name} to start a session on one of your projects, like a bug fix or a review, and it shows up here."
-                ),
-                fg,
-            );
-        }
-        let now = crate::app::now_ms();
-        // MonoCode `[...launches].reverse()`: the newest first.
-        div()
-            .children(launches.into_iter().rev().map(|launch| {
-                let id = launch.session_id.clone();
-                let loaded = self.sessions.iter().find(|s| s.id == id);
-                let title = crate::app::session_list::display_title(
-                    loaded.map_or(&launch.title, |s| &s.title),
-                    &launch.harness,
-                );
-                let project = self.rail_project_label(&launch.cwd);
-                let status = match self.launched_state(&id) {
-                    Some(crate::app::mono_sessions::LaunchedState::Done) | None => loaded
-                        .map(|s| crate::app::session_list::format_relative(s.updated_at, now))
-                        .unwrap_or_default(),
-                    Some(state) => state.label().to_string(),
-                };
-                let model = crate::harness::catalog::display_label(&launch.harness, &launch.model);
-                let line = [project, model, status]
-                    .into_iter()
-                    .filter(|part| !part.is_empty())
-                    .collect::<Vec<_>>()
-                    .join(" · ");
-                list_row(
-                    SharedString::from(format!("mono-session-{id}")),
-                    HarnessIcon::new(&launch.harness).size(px(14.0)).into_any_element(),
-                    title,
-                    line,
-                    fg,
-                )
-                .tooltip(Tooltip::text("Open in workspace"))
-                .on_click(cx.listener(move |this, _, _, cx| this.open_mono_launch(&id, cx)))
-            }))
-            .into_any_element()
-    }
-
     /// MonoCode `monoSpawnedSessions` over the Mono's chat.
-    fn mono_launches(&self, mono: &Mono) -> Vec<crate::app::mono_sessions::SpawnedSession> {
+    pub(super) fn mono_launches(&self, mono: &Mono) -> Vec<crate::app::mono_sessions::SpawnedSession> {
         mono.session_id
             .as_deref()
             .and_then(|id| self.sessions.iter().find(|s| s.id == id))

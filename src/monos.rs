@@ -18,6 +18,7 @@
 //! sessions a Mono starts and artifacts (they go through MonoCode's `app`
 //! CLI, which BenCode lacks).
 
+pub mod board;
 pub mod files;
 pub mod habits;
 pub mod memory;
@@ -581,6 +582,20 @@ const COMPLETION_RULES: &str = "<session_completion_rules>\nSessions you start t
     delegated task, polling or waiting. Inspect the results and report back when \
     notified.\n</session_completion_rules>";
 
+/// BenCode's own `<board_rules>`: work split into sessions goes on the
+/// Mono's board, which the user watches in its Overview.
+const BOARD_RULES: &str = "<board_rules>\nYou have a board the user watches beside this chat: \
+    tasks under To do, Running, Review and Done. When a request splits into several pieces of \
+    work for separate sessions, put each on the board first with `app board.add \
+    {\"title\":\"...\",\"prompt\":\"<the full brief for its session>\",\"project\":\"...\"}`, \
+    then start the ones that can run now with `app board.start {\"id\":\"...\"}` (it takes \
+    sessions.start's options) instead of sessions.start; leave dependent ones in To do until \
+    their inputs are ready. A started task's column follows its session: Running while it \
+    works, Review once it stops. When the completion notification arrives, review each task's \
+    result; mark the ones that are finished with `app board.update \
+    {\"id\":\"...\",\"done\":true}` and say what is left on the rest. `app board.list` shows \
+    the board. A single session or a small request needs no board.\n</board_rules>";
+
 /// MonoCode's `<monocode_app>` for a Mono: what the CLI does and how to
 /// run it.
 fn app_brief(cli: &str) -> String {
@@ -639,7 +654,7 @@ pub fn soul_context(
          Markdown>\",\"expectedHash\":\"<hash from soul.read>\"}}`. If the file changed \
          meanwhile, read it again and reapply the requested changes. Never change your soul on \
          your own or edit its files directly.\n\n{soul}\n</soul>\n\n{APP_MEMORY_RULES}\n\n\
-         {HABITS_RULES}\n\n{DELEGATION_RULES}\n\n{HANDOFF_RULES}\n\n{COMPLETION_RULES}\n\n{}",
+         {HABITS_RULES}\n\n{DELEGATION_RULES}\n\n{HANDOFF_RULES}\n\n{COMPLETION_RULES}\n\n{BOARD_RULES}\n\n{}",
         app_brief(cli)
     )
 }

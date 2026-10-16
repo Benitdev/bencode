@@ -6,6 +6,12 @@ tagging (`docs/releasing.md`).
 
 ## [Unreleased]
 
+- A Mono can plan bigger work on a board: it splits a request into
+  tasks, starts each in a session of its own, and reviews the results
+  when they come back. The Overview's Board tab (where Sessions was)
+  shows the tasks under To do, Running, Review and Done, and the other
+  sessions the Mono started below them. A task opens its session; Mark
+  done, Reopen and Remove are on hover.
 - A Mono's account can be switched from the usage chip under its
   composer, not only at a usage limit. Its next message starts a new
   session on that account, briefed on the recent conversation.

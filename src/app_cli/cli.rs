@@ -143,6 +143,24 @@ Actions:
                   "schedule":{...},"enabled":false}  Change or pause one.
   habits.run     {"id":"..."}  Run one within a minute, to try it out.
   habits.remove  {"id":"..."}
+  board.list     {}  Mono only. Your board: each task's id, title, project,
+                  column (todo, running, review, done) and session.
+  board.add      {"title":"Fix the login redirect","prompt":"...",
+                  "project":"..."}
+                  Add a task to To do. prompt is the full brief its session
+                  gets (the title when omitted). Pass "sessionId" instead to
+                  put a session already started on the board.
+                  Reuse --request-id on retries.
+  board.start    {"id":"...","workspaceMode":"worktree"}
+                  Start the task's session with its prompt and project and
+                  link the two; it takes sessions.start's options (harness,
+                  model, effort, runtimeMode, workspace, notifyOnComplete).
+                  Its column then follows the session: Running while it
+                  works, Review once it stops. Reuse --request-id on retries.
+  board.update   {"id":"...","done":true}  Mark a reviewed task done, or
+                  done:false to reopen it. title changes it; prompt only
+                  before the task has started.
+  board.remove   {"id":"..."}
   chat.card      Mono or habit only. Post a card to the Mono's chat:
                   {"type":"pr","repo":"owner/repo","number":123,"note":"..."}
                   {"type":"session","sessionId":"...","note":"..."}

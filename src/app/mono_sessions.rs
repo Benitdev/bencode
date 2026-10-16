@@ -347,7 +347,7 @@ impl BenCodeApp {
     /// MonoCode `requireProject`: the project an action works in. A Mono
     /// works on several, so it names one with "project" (its path or
     /// name), and may leave it out when it has only one.
-    fn require_project(&self, caller: &Caller, input: &Map<String, Value>) -> Result<String, String> {
+    pub(crate) fn require_project(&self, caller: &Caller, input: &Map<String, Value>) -> Result<String, String> {
         let projects = self.mono(&caller.mono).map(|m| m.projects.clone()).unwrap_or_default();
         let choices = || {
             if projects.is_empty() {
@@ -383,7 +383,7 @@ impl BenCodeApp {
     }
 
     /// The project's sessions a Mono may see: not its own chat, not a run.
-    fn project_sessions(&self, cwd: &str) -> Vec<&SessionRow> {
+    pub(crate) fn project_sessions(&self, cwd: &str) -> Vec<&SessionRow> {
         self.sessions
             .iter()
             .filter(|s| crate::app::same_project_path(&s.cwd, cwd))
@@ -738,7 +738,7 @@ impl BenCodeApp {
 
     /// MonoCode `sessions.start`: a new session in one of its projects, in
     /// the background, with the Mono's model unless another is asked for.
-    fn start_session(&mut self, caller: Caller, input: Map<String, Value>, call: AppCall, cx: &mut Context<Self>) {
+    pub(crate) fn start_session(&mut self, caller: Caller, input: Map<String, Value>, call: AppCall, cx: &mut Context<Self>) {
         let request_id = call.request.request_id.clone();
         let plan = match self.plan_start(&caller, &input, &request_id) {
             Ok(plan) => plan,
@@ -754,6 +754,9 @@ impl BenCodeApp {
                 "submitted": !plan.draft,
                 "draft": plan.draft,
             });
+            if let Some(task) = &plan.task {
+                self.link_board_task(&caller.mono, task, &plan.id, cx);
+            }
             return call.answer(value);
         }
         if plan.new_worktree {
@@ -890,6 +893,8 @@ impl BenCodeApp {
             return Err("besideSessionId requires placement right or down".into());
         }
         let report = self.wants_report(caller, input, true)?;
+        // Set by `board.start` only: its task is linked once launched.
+        let task = optional(input.get("taskId"), "taskId", 256)?;
         let mono = self.mono(&caller.mono);
         Ok(StartPlan {
             id: format!("app-{}-{request_id}", caller.session),
@@ -904,6 +909,7 @@ impl BenCodeApp {
             worktree_base,
             worktree: worktree_cwd.map(|path| (path, None)),
             report,
+            task,
             shown: mono.is_some_and(|m| m.show_started_sessions_in_sidebar),
             folder: mono
                 .filter(|m| m.show_started_sessions_in_sidebar && m.use_sidebar_folders)
@@ -976,6 +982,9 @@ impl BenCodeApp {
             }
         }
         self.record_launch(&caller, launched);
+        if let Some(task) = &plan.task {
+            self.link_board_task(&caller.mono, task, &plan.id, cx);
+        }
         let mut out = json!({
             "id": plan.id,
             "cwd": plan.cwd,
@@ -1196,6 +1205,8 @@ struct StartPlan {
     /// The checkout it runs in: (path, branch).
     worktree: Option<(String, Option<String>)>,
     report: bool,
+    /// The board task it starts (`board.start`).
+    task: Option<String>,
     shown: bool,
     folder: Option<(String, String)>,
 }

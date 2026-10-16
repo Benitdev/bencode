@@ -52,7 +52,8 @@ Polish
 
 ### BenCode's own (proposed)
 
-New work, not in MonoCode. Each one is a design first; none is started.
+New work, not in MonoCode. Each one is a design first.
+- [x] P1 M A Mono's board: tasks it splits a request into, each started as a session (`board.*`, `board.start`), under To do / Running / Review / Done in the Overview's Board tab (`monos/board.rs`, `app/mono_board.rs`, `ui/mono_overview/board.rs`). Open: Start from the Board tab, keys for the board, a task's id in the completion report
 - [ ] P0 L Mission Control: every running agent across projects in one grid, its live tail, status, Stop, and approvals
 - [ ] P0 M Permission inbox: one queue of pending approvals across threads, answered by keys; per-project rules ("always allow `cargo test`")
 - [ ] P1 L Race / Compare: one prompt to two or three harnesses or models, each in its own worktree; the diffs side by side; keep one
