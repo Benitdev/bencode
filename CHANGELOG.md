@@ -4,7 +4,7 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
-## [Unreleased]
+## [0.1.18] - 2026-10-16
 
 - A Mono can plan bigger work on a board: it splits a request into
   tasks, starts each in a session of its own, and reviews the results
