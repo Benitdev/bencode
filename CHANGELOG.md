@@ -4,6 +4,26 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
+## [0.1.16] - 2026-10-16
+
+- A Mono can save its work as artifacts, after MonoCode's: a document
+  (Markdown) for a report, review or plan, or a visual (a self-contained
+  HTML page, for a chart, table or diagram). A card under its reply opens
+  it over the Overview, where Documents now lists everything it wrote;
+  Copy and Delete are in the reader's header. Visuals run sandboxed, take
+  the app's theme, and open links in your browser. The Mono reaches the
+  app through `bencode app`, with a credential that works only while its
+  turn runs. Artifacts stay out of your Notes.
+- Markdown files open as a rendered Preview, with a Preview / Source
+  switch in the editor's toolbar; the last choice is what the next file
+  opens in. Frontmatter folds into Properties, and a search result opens
+  the source at its line.
+- BenCode checks for updates every 4 hours and when its window comes to
+  the front, not only at launch.
+- The Changes tab's pull request reads are cached for a few seconds, and
+  a failed read keeps the last one instead of clearing it.
+- The app is a fifth smaller (29MB to 24MB).
+
 ## [0.1.15] - 2026-10-16
 
 - Remote machines, after MonoCode's remote access. Settings › Connections
