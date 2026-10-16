@@ -9,11 +9,16 @@
 #                           disk image (BenCode-arm64.dmg, BenCode-x86_64.dmg).
 #                           Default: "aarch64-apple-darwin x86_64-apple-darwin".
 #   BUILD_NUMBER            CFBundleVersion. Default: the commit count.
-#   MACOS_SIGNING_IDENTITY  A "Developer ID Application: …" identity in the
-#                           keychain. Unset, the app is signed ad hoc and
-#                           Gatekeeper asks users to confirm the first launch.
+#   MACOS_SIGNING_IDENTITY  A signing identity in the keychain: a
+#                           "Developer ID Application: …" name, or the SHA-1
+#                           of BenCode's self-signed certificate
+#                           (make-signing-cert.sh). Either keeps the
+#                           permissions users grant across updates; unset,
+#                           the app is signed ad hoc and loses them. Without
+#                           a Developer ID, Gatekeeper asks users to confirm
+#                           the first launch.
 #   APPLE_ID, APPLE_TEAM_ID, APPLE_APP_PASSWORD
-#                           With a signing identity, each dmg is notarized and
+#                           With a Developer ID, each dmg is notarized and
 #                           the ticket stapled to it.
 #   BENCODE_UPDATE_PUBKEY   The release key's public half (minisign). Built
 #                           into the app, which then updates itself.
@@ -32,6 +37,13 @@ version="$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)"
 build="${BUILD_NUMBER:-$(git rev-list --count HEAD)}"
 targets="${TARGETS:-aarch64-apple-darwin x86_64-apple-darwin}"
 identity="${MACOS_SIGNING_IDENTITY:-}"
+# A Developer ID gets the hardened runtime and notarization; a self-signed
+# certificate cannot be notarized, and the runtime's library validation
+# would only get in its way.
+developer_id=false
+if [[ "$identity" == "Developer ID Application"* ]]; then
+  developer_id=true
+fi
 # Matches LSMinimumSystemVersion in Info.plist.
 export MACOSX_DEPLOYMENT_TARGET=11.0
 
@@ -111,9 +123,11 @@ for target in $targets; do
   cp "$icon" "$app/Contents/Resources/AppIcon.icns"
 
   echo "==> Sign ($arch)"
-  if [[ -n "$identity" ]]; then
+  if [[ "$developer_id" == true ]]; then
     codesign --force --options runtime --timestamp \
       --entitlements "$here/entitlements.plist" --sign "$identity" "$app"
+  elif [[ -n "$identity" ]]; then
+    codesign --force --sign "$identity" "$app"
   else
     echo "No MACOS_SIGNING_IDENTITY: signing ad hoc (users confirm the first launch)."
     codesign --force --sign - "$app"
@@ -138,7 +152,7 @@ for target in $targets; do
   done
   rm -rf "$staging"
 
-  if [[ -n "$identity" ]]; then
+  if [[ "$developer_id" == true ]]; then
     codesign --force --timestamp --sign "$identity" "$dmg"
     if [[ -n "${APPLE_ID:-}" && -n "${APPLE_TEAM_ID:-}" && -n "${APPLE_APP_PASSWORD:-}" ]]; then
       echo "==> Notarize ($arch)"

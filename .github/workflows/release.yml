@@ -86,9 +86,16 @@ jobs:
           security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
           rm -f "$cert"
           identity="$(security find-identity -v -p codesigning "$keychain" | sed -n 's/.*"\(Developer ID Application[^"]*\)".*/\1/p' | head -n 1)"
-          if [[ -z "$identity" ]]; then
-            echo "::error::No Developer ID Application identity in MACOS_CERTIFICATE"
-            exit 1
+          if [[ -n "$identity" ]]; then
+            echo "DEVELOPER_ID=true" >>"$GITHUB_ENV"
+          else
+            # BenCode's self-signed certificate (make-signing-cert.sh): not
+            # trusted, so not listed by -v, and named by its SHA-1.
+            identity="$(security find-identity -p codesigning "$keychain" | awk '/^ *1\)/ { print $2; exit }')"
+            if [[ -z "$identity" ]]; then
+              echo "::error::No code signing identity in MACOS_CERTIFICATE"
+              exit 1
+            fi
           fi
           echo "MACOS_SIGNING_IDENTITY=$identity" >>"$GITHUB_ENV"
 
@@ -159,7 +166,7 @@ jobs:
           - **Apple Silicon** (M1 and later): `BenCode-arm64.dmg`
           - **Intel**: `BenCode-x86_64.dmg`
           EOF
-          if [[ "$SIGNED" != true ]]; then
+          if [[ "${DEVELOPER_ID:-}" != true ]]; then
             cat >>"$notes" <<'EOF'
 
           ### First launch

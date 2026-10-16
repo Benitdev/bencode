@@ -10,6 +10,7 @@ architecture, `BenCode-arm64.dmg` (Apple Silicon) and `BenCode-x86_64.dmg`
 | App icon (source: `icon.mjs`; generates the SVG and the 1024 PNG) | `packaging/macos/icon.mjs`, `icon.svg`, `icon-1024.png` |
 | `Info.plist`, entitlements | `packaging/macos/` |
 | `.app` / `.dmg` bundling script | `packaging/macos/bundle.sh` |
+| Self-signed signing certificate (run once) | `packaging/macos/make-signing-cert.sh` |
 | Release workflow (`v*` tags) | `.github/workflows/release.yml` |
 | Landing page | `site/index.html`, deployed by `.github/workflows/pages.yml` |
 | Release notes | `CHANGELOG.md` |
@@ -28,7 +29,9 @@ architecture, `BenCode-arm64.dmg` (Apple Silicon) and `BenCode-x86_64.dmg`
    permissions a user has granted (Documents, Desktop…) to the bundle ID.
 3. **Update keys** let the app update itself, see "Self-update" below. Without
    them the app still runs; it just does not update itself.
-4. **Signing and notarization** are optional, see the last section.
+4. **Signing** keeps users' permissions across updates; a self-signed
+   certificate is enough for that, notarization needs a Developer ID. See the
+   last two sections.
 
 ---
 
@@ -146,15 +149,34 @@ users have to download the new version by hand.
 
 ---
 
-## Without an Apple Developer ID (the current state)
+## Without an Apple Developer ID: the self-signed certificate
 
-With no secrets set, the app is ad hoc signed. Users who download it have to
-confirm the first launch (System Settings › Privacy & Security › Open Anyway,
-or `xattr -dr com.apple.quarantine /Applications/BenCode.app`). The release
-notes, the README and the landing page already carry these instructions.
+macOS keeps the permissions a user grants (Screen Recording, Accessibility,
+Documents, Keychain items…) against the app's designated requirement. An ad
+hoc signature's requirement is the binary's hash, which every build changes:
+after each update the switch in System Settings still shows on, but for the
+old build, and macOS asks again. A certificate fixes that, even one Apple
+does not know: the requirement becomes `identifier "com.benitdev.bencode" and
+certificate leaf = H"…"`, the same for every release.
 
-An ad hoc signature differs from one build to the next, so after each update
-macOS may ask again for permissions already granted (Documents, Desktop…).
+1. Create it once (`packaging/macos/make-signing-cert.sh`): a 20-year,
+   self-signed code signing certificate, as a `.p12` and its password.
+2. Add the `MACOS_CERTIFICATE` and `MACOS_CERTIFICATE_PASSWORD` secrets the
+   script prints (the same two a Developer ID uses, below).
+3. Keep both files in a password manager. A lost or replaced certificate
+   makes every user grant their permissions once more; a leaked one lets
+   anyone sign an app macOS treats as BenCode for those permissions.
+
+The workflow signs with it without the hardened runtime (only notarization
+needs it) and does not notarize, so users still confirm the first launch
+(System Settings › Privacy & Security › Open Anyway, or
+`xattr -dr com.apple.quarantine /Applications/BenCode.app`); the release
+notes, the README and the landing page carry these instructions. The first
+release signed with it, and later the move to a Developer ID, each change the
+requirement once, so users grant their permissions again that one time.
+
+With neither secret set, the app is signed ad hoc and loses the permissions
+on every update.
 
 ## Turning on signing and notarization
 
@@ -171,7 +193,7 @@ downloaded from the web.
 
    | Secret | Value |
    | :--- | :--- |
-   | `MACOS_CERTIFICATE` | `base64 -i DeveloperID.p12 \| pbcopy` |
+   | `MACOS_CERTIFICATE` | `base64 -i DeveloperID.p12 \| pbcopy` (replaces the self-signed one) |
    | `MACOS_CERTIFICATE_PASSWORD` | the `.p12` file's password |
    | `APPLE_ID` | the developer account's Apple ID email |
    | `APPLE_TEAM_ID` | the 10-character Team ID (developer.apple.com › Membership) |

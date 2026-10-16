@@ -26,6 +26,9 @@ tagging (`docs/releasing.md`).
   default account.
 - With the window's glass on, a dialog's backdrop is lighter, so the
   glass still shows around it.
+- Releases are signed with BenCode's own certificate, so permissions
+  granted to BenCode (Screen Recording, Accessibility, Keychain items…)
+  stay granted after an update. This release asks for them one last time.
 
 ## [0.1.17] - 2026-10-16
 
