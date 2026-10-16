@@ -74,6 +74,13 @@ fn monocode_dark(tint: &ThemeTint) -> Palette {
     p.danger_subtle = a(0xf8717126);
     p.info_subtle = a(0x38bdf826);
     p.glass = bg.opacity(0.85);
+    // Under the window's glass (dark mode, `ui/glass.rs`) a dialog's scrim
+    // lies over the tint: Ely's black at 50% leaves the blurred desktop
+    // 7.5% of the pixel and the window reads as opaque. A lighter scrim
+    // keeps the glass showing around the dialog.
+    if crate::ui::glass::SUPPORTED {
+        p.backdrop = gpui::black().opacity(0.25);
+    }
     p.tooltip_bg = p.active;
     p.tooltip_fg = fg;
     p
