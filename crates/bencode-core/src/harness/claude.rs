@@ -17,6 +17,7 @@ use crate::harness::process::{self, LineParser, ProcessSpec, StdinMode};
 use crate::harness::resolver::HarnessResolver;
 use crate::harness::{EventRx, PermissionPolicy, SpawnRequest, str_field, summarize_tool_input};
 
+pub mod session_files;
 mod tasks;
 
 use tasks::{is_agent_tool, is_subagent_message};

@@ -4,8 +4,9 @@
 //! "Continue from where you left off." on its own once the limit lifts.
 //! A Mono's chat has its own card instead (`MonoUsageLimitNotice`): the
 //! model and account to keep going on, and the same resume. BenCode's
-//! own: a thread's tab offers another account too, resuming there with a
-//! Handoff recap (`switch_usage_limit_account`).
+//! own: a thread's tab offers another account too, resuming the same
+//! Claude session there or else a new one given a Handoff recap
+//! (`switch_usage_limit_account`).
 //!
 //! BenCode's own: the limit is kept on the thread's blocks (`usageLimit`
 //! in the extra fields of a block after the last prompt), so the notice
@@ -358,11 +359,11 @@ impl BenCodeApp {
         )
     }
 
-    /// The notice's account pick: the thread carries on as another account.
-    /// A Mono's rotation briefs its new provider session; a thread's resume
-    /// carries a Handoff recap instead (BenCode's own: MonoCode's composer
-    /// notice offers no account), since the old account's provider session
-    /// cannot be resumed from the new one's profile.
+    /// The notice's account pick: the thread carries on as another account
+    /// (BenCode's own: MonoCode's composer notice offers no account). A
+    /// Claude session's files are carried to the account's profile and
+    /// resumed there (`carry_session_to_account`); when they cannot be, a
+    /// new provider session starts with a Handoff recap.
     pub fn switch_usage_limit_account(
         &mut self,
         session_id: &str,
@@ -387,18 +388,47 @@ impl BenCodeApp {
         {
             return;
         }
-        let recap = HarnessKind::from_id(&session.harness).map(|kind| {
-            let request = session
-                .blocks
-                .iter()
-                .rev()
-                .find(|b| b.role == "user")
-                .and_then(|b| b.text.as_deref())
-                .unwrap_or("");
-            HandoffCard::new(kind, kind, &session.blocks, request).agent_prompt(CONTINUE_PROMPT)
+        let (sid, account) = (session_id.to_string(), account_id.to_string());
+        self.carry_session_to_account(session_id, account_id, cx, move |app, carried, cx| {
+            app.resume_on_account(&sid, &account, carried, cx)
         });
-        if let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id) {
-            session.provider_account_id = Some(account_id.to_string());
+    }
+
+    /// `switch_usage_limit_account` once the session's files are or are not
+    /// on the account: carried, the same session resumes there; otherwise
+    /// a new one starts, given a Handoff recap of the conversation.
+    fn resume_on_account(
+        &mut self,
+        session_id: &str,
+        account_id: &str,
+        carried: bool,
+        cx: &mut Context<Self>,
+    ) {
+        let limited = self
+            .thread(session_id)
+            .is_some_and(|thread| thread.usage_limit.is_some());
+        if !limited || self.is_agent_running_in(session_id) {
+            return;
+        }
+        let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id) else {
+            return;
+        };
+        let recap = (!carried)
+            .then(|| HarnessKind::from_id(&session.harness))
+            .flatten()
+            .map(|kind| {
+                let request = session
+                    .blocks
+                    .iter()
+                    .rev()
+                    .find(|b| b.role == "user")
+                    .and_then(|b| b.text.as_deref())
+                    .unwrap_or("");
+                HandoffCard::new(kind, kind, &session.blocks, request)
+                    .agent_prompt(CONTINUE_PROMPT)
+            });
+        session.provider_account_id = Some(account_id.to_string());
+        if !carried {
             session.provider_session_id = None;
             session.context_used = None;
             session.context_window = None;

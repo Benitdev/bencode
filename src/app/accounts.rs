@@ -174,6 +174,53 @@ impl BenCodeApp {
         ))
     }
 
+    /// BenCode's own: before a started Claude thread runs as another
+    /// account, its session's files are copied into that account's profile
+    /// (`claude::session_files`), so the session resumes whole there.
+    /// `then` runs on the app once that is done, told whether it worked;
+    /// when it did not, the thread has to start a new provider session.
+    pub(crate) fn carry_session_to_account(
+        &mut self,
+        session_id: &str,
+        account_id: &str,
+        cx: &mut Context<Self>,
+        then: impl FnOnce(&mut Self, bool, &mut Context<Self>) + 'static,
+    ) {
+        use crate::harness::claude::session_files;
+        let job = self.sessions.iter().find(|s| s.id == session_id).and_then(|s| {
+            // A machine's turn runs with no account profile.
+            if s.harness != "claude" || crate::remote::route(&s.cwd).is_some() {
+                return None;
+            }
+            let id = s.provider_session_id.clone().filter(|id| !id.is_empty())?;
+            let from = AccountProfile::resolve("claude", Some(&self.session_account_id(s)));
+            let to = AccountProfile::resolve("claude", Some(account_id));
+            Some((
+                session_files::config_dir(from.as_ref())?,
+                session_files::config_dir(to.as_ref())?,
+                id,
+            ))
+        });
+        let Some((from, to, id)) = job else {
+            then(self, false, cx);
+            return;
+        };
+        let task = cx
+            .background_executor()
+            .spawn(async move { session_files::copy_session(&from, &to, &id) });
+        cx.spawn(async move |this, cx| {
+            let result = task.await;
+            if let Err(err) = &result {
+                log::warn!("could not carry the Claude session to the account: {err}");
+            }
+            let landed = this.update(cx, |app, cx| then(app, result.is_ok(), cx));
+            if let Err(err) = landed {
+                log::debug!("session carried after app drop: {err:#}");
+            }
+        })
+        .detach();
+    }
+
     /// Whether `provider` still has the account `id`.
     pub fn account_exists(&self, provider: &str, id: &str) -> bool {
         !self.accounts.loaded || self.provider_accounts(provider).iter().any(|a| a.id == id)

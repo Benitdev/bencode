@@ -10,8 +10,11 @@ tagging (`docs/releasing.md`).
   composer, not only at a usage limit. Its next message starts a new
   session on that account, briefed on the recent conversation.
 - A thread stopped by a usage limit can carry on as another account:
-  Choose another account on the limit's tab switches it and resumes,
-  with a Handoff recap of the conversation for the new session.
+  Choose another account on the limit's tab switches it and resumes.
+  A Claude session's files are copied to the new account, so the same
+  session goes on with all of its context; when they cannot be, a new
+  session starts with a Handoff recap of the conversation. A Mono's
+  account switch carries its Claude session the same way.
 - Moving a thread to another provider and back keeps the account picked
   for that provider in the project, instead of falling back to the
   default account.

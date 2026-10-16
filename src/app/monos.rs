@@ -601,11 +601,12 @@ impl BenCodeApp {
     }
 
     /// The Mono's composer chip picks another account (BenCode's own;
-    /// MonoCode switches only at a usage limit): the provider session
-    /// belongs to the old account's profile, so the next message starts a
-    /// new one, briefed and handed the standing context again
-    /// (`plan_mono_rotation`). A Mono stopped by its limit resumes. Not
-    /// while a turn runs: its process is the old account's.
+    /// MonoCode switches only at a usage limit). A Claude session's files
+    /// are carried to the account's profile and resumed there; otherwise
+    /// the next message starts a new provider session, briefed and handed
+    /// the standing context again (`plan_mono_rotation`). A Mono stopped by
+    /// its limit resumes. Not while a turn runs: its process is the old
+    /// account's.
     pub(crate) fn switch_mono_account(
         &mut self,
         session_id: &str,
@@ -625,16 +626,41 @@ impl BenCodeApp {
         if same && session.provider_account_id.is_some() {
             return;
         }
-        if let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id) {
-            session.provider_account_id = Some(account_id.to_string());
-            if !same {
-                session.provider_session_id = None;
-                session.context_used = None;
-                session.context_window = None;
-            }
+        if same {
+            self.move_mono_account(session_id, account_id, true, false, cx);
+            return;
+        }
+        let (sid, account) = (session_id.to_string(), account_id.to_string());
+        self.carry_session_to_account(session_id, account_id, cx, move |app, carried, cx| {
+            app.move_mono_account(&sid, &account, carried, true, cx)
+        });
+    }
+
+    /// `switch_mono_account` once the session's files are or are not on
+    /// the account: without them the provider session starts afresh, and
+    /// the rotation briefs it.
+    fn move_mono_account(
+        &mut self,
+        session_id: &str,
+        account_id: &str,
+        carried: bool,
+        moved: bool,
+        cx: &mut Context<Self>,
+    ) {
+        if self.is_agent_running_in(session_id) {
+            return;
+        }
+        let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id) else {
+            return;
+        };
+        session.provider_account_id = Some(account_id.to_string());
+        if !carried {
+            session.provider_session_id = None;
+            session.context_used = None;
+            session.context_window = None;
         }
         self.persist_session(session_id);
-        if !same && self.mono_usage_limited(session_id) {
+        if moved && self.mono_usage_limited(session_id) {
             self.resume_after_limit(session_id, cx);
         }
         cx.notify();
