@@ -20,25 +20,27 @@ pub mod tint {
     pub const RULE: f32 = 0.08;
     /// `bg-content/15`: the short divider in a toolbar.
     pub const DIVIDER: f32 = 0.15;
+    use crate::ui::tokens::{Fill, Ink};
+
     /// `bg-content/8`: icon discs and hovered pills.
-    pub const FILL: f32 = 0.08;
+    pub const FILL: f32 = Fill::Selected.alpha();
     /// `hover:bg-content/5`.
-    pub const HOVER: f32 = 0.05;
+    pub const HOVER: f32 = Fill::Hover.alpha();
     /// `bg-content/3`: the instructions box.
-    pub const WELL: f32 = 0.03;
+    pub const WELL: f32 = Fill::Faint.alpha();
     /// A status pill's fill, of its own colour.
     pub const PILL: f32 = 0.12;
     /// An alert's outline, of its own colour.
     pub const ALERT_STROKE: f32 = 0.2;
-    // Text, from a row's label down to an aside.
-    pub const STRONG: f32 = 0.75;
-    pub const BODY: f32 = 0.7;
-    pub const SOFT: f32 = 0.55;
-    pub const QUIET: f32 = 0.45;
-    pub const HINT: f32 = 0.4;
-    pub const FAINT: f32 = 0.35;
+    // Text, from a row's label down to an aside: the app's ink levels.
+    pub const STRONG: f32 = Ink::Strong.alpha();
+    pub const BODY: f32 = Ink::Body.alpha();
+    pub const SOFT: f32 = Ink::Secondary.alpha();
+    pub const QUIET: f32 = Ink::Muted.alpha();
+    pub const HINT: f32 = Ink::Muted.alpha();
+    pub const FAINT: f32 = Ink::Faint.alpha();
     /// `text-content/85`: markdown source.
-    pub const SOURCE: f32 = 0.85;
+    pub const SOURCE: f32 = Ink::Strong.alpha();
 }
 
 /// The width a row's control gets.

@@ -223,6 +223,7 @@ bencode/
 | `settings_parts.rs` | What every Settings page is built from: `SettingsPage` (title and line), `SettingsGroup` (a titled card), `SettingsRow` |
 | `settings_accounts.rs`, `settings_agy_accounts.rs`, `settings_appearance.rs`, `settings_shortcuts.rs`, `settings_worktrees.rs`, `settings_integrations.rs`, `settings_monos.rs` | Settings pages: provider accounts, appearance, shortcuts (read only, keys looked up in `commands.rs`'s keymap), worktrees, integrations (GitHub accounts, Backlog), Monos (on / off, pinned to the icon rail, menu bar icon, Reset Mono) |
 | `quick_open.rs`, `lightbox.rs`, `link_dialog.rs`, `reminder_notices.rs`, `harness_update_notice.rs`, `whats_new.rs`, `resume_interrupted.rs` | Overlays |
+| `tokens.rs`, `rows.rs` | The design tokens (ink, fills, type sizes, the status palette) and `ListRow`, the list row with a tile, two lines and buttons on hover |
 | `theme.rs`, `appearance.rs`, `scale.rs`, `background_effects.rs`, `icons.rs`, `provider_icon.rs`, `mascot.rs`, `motion.rs`, `spinner.rs` | Look and shared drawing: palettes, tint / accent / diff colours, interface scale, chat background effects; the mascots and their motion by status (`moving_sprite`) |
 | `app_callback.rs`, `virtual_rows.rs`, `explorer_menu.rs`, `drag_drop.rs`, `thumbnail.rs`, `emoji_picker.rs` | Shared helpers; `emoji_picker.rs` is the emoji picker (its groups and the popover, for any view); `thumbnail.rs` draws a file image scaled down to its size (use it, not `img(path)`, for anything drawn smaller than the file) |
 
@@ -353,6 +354,14 @@ pages in `examples/gallery/pages/<chapter>.rs`. Read the library's own
 - **Use an Ely component whenever one fits.** Hand-roll only layout `div`s and
   the places where BenCode's own look needs it. BenCode keeps no local
   button, modal or tab widgets.
+- **Ink, washes, type sizes and state colours come from `ui/tokens.rs`**:
+  `fg.ink(Ink::Muted)`, `fg.fill(Fill::Hover)`, `text_size(Text::Sm.px())`,
+  `Status::Attention.color(fg)`, never a bare `fg.opacity(0.45)` or a hex
+  value. A state (working, needs you, done, failed, idle) has one colour in
+  every view. A level the scale lacks is a change to the scale, not a new
+  literal.
+- **A list row is `ui::rows::ListRow`** (tile, title, second line, buttons
+  shown on hover). It owns the row's hover; do not add one around it.
 - **Colours come from `cx.theme().colors`** (`bg`, `surface`, `hover`, `active`,
   `border`, `fg`, `fg_muted`, `accent`, `success`, `danger`, …). Sizes come from
   `theme.text_size(..)`, `theme.radius(..)`, `IconSize`. Borrow `colors`; do not

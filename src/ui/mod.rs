@@ -43,6 +43,7 @@ pub mod quick_open;
 pub mod quit_confirm;
 pub mod rail;
 pub mod relative_time;
+pub mod rows;
 pub mod reminder_notices;
 pub mod resume_interrupted;
 pub mod scale;

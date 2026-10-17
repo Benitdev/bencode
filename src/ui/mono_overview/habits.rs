@@ -20,6 +20,7 @@ use crate::monos::Mono;
 use crate::monos::habits::{self, Habit, HabitOutcome, HabitRun, TodayState};
 use crate::schedule::{ScheduleKind, WEEKDAYS};
 use crate::ui::app_callback::on_value;
+use crate::ui::rows::{ListRow, row_button};
 use crate::ui::scale::px;
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
@@ -225,7 +226,6 @@ impl BenCodeApp {
         let running = self.habit_running_since(&habit.id);
         let starting = running.is_none() && habits::habit_starting(habit, now);
         let lit = habit.enabled || running.is_some();
-        let group = SharedString::from(format!("mono-habit-{}", habit.id));
         let line = match running {
             Some(since) => format!("Running now · {}", duration(now - since)),
             None if starting => "Starting…".to_string(),
@@ -241,7 +241,7 @@ impl BenCodeApp {
                 .into_any_element(),
             None => Icon::new(IconName::Clock)
                 .size(IconSize::Sm)
-                .color(fg.opacity(if lit { 0.6 } else { 0.3 }))
+                .color(fg.ink(if lit { Ink::Secondary } else { Ink::Faint }))
                 .into_any_element(),
         };
         let (run_id, toggle_id, remove_id, open_id) = (
@@ -250,108 +250,37 @@ impl BenCodeApp {
             habit.id.clone(),
             habit.id.clone(),
         );
-        let button = |id: String, icon: IconName, label: &'static str, disabled: bool| {
-            IconButton::new(SharedString::from(id), icon)
-                .size(ControlSize::Sm)
-                .variant(ButtonVariant::Ghost)
-                .tooltip(label)
-                .disabled(disabled)
-        };
-        div()
-            .id(group.clone())
-            .group(group.clone())
-            .flex()
-            .w_full()
-            .min_w_0()
-            .items_center()
-            .rounded(px(6.0))
-            .hover(move |s| s.bg(fg.fill(Fill::Hover)))
-            .child(
-                div()
-                    .id(SharedString::from(format!("mono-habit-open-{}", habit.id)))
-                    .flex()
-                    .flex_1()
-                    .min_w_0()
-                    .items_center()
-                    .gap(px(10.0))
-                    .px_2()
-                    .py_2()
-                    .cursor_pointer()
-                    .on_click(cx.listener(move |this, _, _, cx| this.open_mono_habit(&open_id, cx)))
-                    .child(
-                        div()
-                            .flex()
-                            .flex_none()
-                            .size(px(28.0))
-                            .items_center()
-                            .justify_center()
-                            .rounded(px(6.0))
-                            .bg(fg.fill(Fill::Hover))
-                            .child(tile),
-                    )
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .child(
-                                div()
-                                    .truncate()
-                                    .text_size(Text::Base.px())
-                                    .line_height(px(20.0))
-                                    .text_color(fg.opacity(if lit { 0.85 } else { 0.45 }))
-                                    .child(habit.name.clone()),
-                            )
-                            .child(
-                                div()
-                                    .truncate()
-                                    .text_size(Text::Sm.px())
-                                    .line_height(px(16.0))
-                                    .text_color(fg.ink(Ink::Muted))
-                                    .child(line),
-                            ),
-                    ),
+        ListRow::new(format!("mono-habit-{}", habit.id), habit.name.clone())
+            .tile(tile)
+            .line(line)
+            .dim(!lit)
+            .on_click(cx.listener(move |this, _, _, cx| this.open_mono_habit(&open_id, cx)))
+            .action(
+                row_button(
+                    format!("mono-habit-run-{}", habit.id),
+                    IconName::Zap,
+                    if running.is_some() {
+                        "Already running"
+                    } else if starting {
+                        "Starting"
+                    } else {
+                        "Run now"
+                    },
+                )
+                .disabled(running.is_some() || starting)
+                .on_click(cx.listener(move |this, _, _, cx| this.run_mono_habit_now(&run_id, cx))),
             )
-            .child(
-                div()
-                    .flex()
-                    .flex_none()
-                    .items_center()
-                    .pr_2()
-                    .invisible()
-                    .group_hover(group, |s| s.visible())
-                    .child(
-                        button(
-                            format!("mono-habit-run-{}", habit.id),
-                            IconName::Zap,
-                            if running.is_some() {
-                                "Already running"
-                            } else if starting {
-                                "Starting"
-                            } else {
-                                "Run now"
-                            },
-                            running.is_some() || starting,
-                        )
-                        .on_click(cx.listener(move |this, _, _, cx| this.run_mono_habit_now(&run_id, cx))),
-                    )
-                    .child(
-                        button(
-                            format!("mono-habit-toggle-{}", habit.id),
-                            if habit.enabled { IconName::Pause } else { IconName::Play },
-                            if habit.enabled { "Pause" } else { "Resume" },
-                            false,
-                        )
-                        .on_click(cx.listener(move |this, _, _, cx| this.toggle_mono_habit(&toggle_id, cx))),
-                    )
-                    .child(
-                        button(
-                            format!("mono-habit-remove-{}", habit.id),
-                            IconName::Trash2,
-                            "Remove",
-                            false,
-                        )
-                        .on_click(cx.listener(move |this, _, _, cx| this.remove_mono_habit(&remove_id, cx))),
-                    ),
+            .action(
+                row_button(
+                    format!("mono-habit-toggle-{}", habit.id),
+                    if habit.enabled { IconName::Pause } else { IconName::Play },
+                    if habit.enabled { "Pause" } else { "Resume" },
+                )
+                .on_click(cx.listener(move |this, _, _, cx| this.toggle_mono_habit(&toggle_id, cx))),
+            )
+            .action(
+                row_button(format!("mono-habit-remove-{}", habit.id), IconName::Trash2, "Remove")
+                    .on_click(cx.listener(move |this, _, _, cx| this.remove_mono_habit(&remove_id, cx))),
             )
             .into_any_element()
     }
