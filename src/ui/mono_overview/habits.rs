@@ -21,6 +21,7 @@ use crate::monos::habits::{self, Habit, HabitOutcome, HabitRun, TodayState};
 use crate::schedule::{ScheduleKind, WEEKDAYS};
 use crate::ui::app_callback::on_value;
 use crate::ui::scale::px;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// MonoCode `when`: "Today 09:00", "Mon 09:00" within the week, else
 /// "Oct 8, 09:00".
@@ -65,7 +66,7 @@ fn outcome_label(outcome: HabitOutcome) -> &'static str {
 fn outcome_dot(outcome: HabitOutcome, mono: Hsla, fg: Hsla) -> Hsla {
     match outcome {
         HabitOutcome::Posted => mono,
-        HabitOutcome::Quiet => fg.opacity(0.25),
+        HabitOutcome::Quiet => fg.ink(Ink::Faint),
         HabitOutcome::Failed => gpui::rgba(0xef4444b3).into(),
     }
 }
@@ -74,13 +75,13 @@ fn group_title(title: &str, count: usize, fg: Hsla) -> impl IntoElement {
     div()
         .px_2()
         .pb(px(6.0))
-        .text_size(px(11.0))
+        .text_size(Text::Sm.px())
         .font_weight(FontWeight::MEDIUM)
-        .text_color(fg.opacity(0.4))
+        .text_color(fg.ink(Ink::Muted))
         .child(format!("{} ", title.to_uppercase()))
         .child(
             div()
-                .text_color(fg.opacity(0.3))
+                .text_color(fg.ink(Ink::Faint))
                 .child(count.to_string()),
         )
 }
@@ -114,7 +115,7 @@ fn page_header(
                 .flex_1()
                 .min_w_0()
                 .truncate()
-                .text_size(px(13.0))
+                .text_size(Text::Md.px())
                 .font_weight(FontWeight::MEDIUM)
                 .text_color(fg)
                 .child(title),
@@ -133,9 +134,9 @@ fn section(title: &str, fg: Hsla) -> gpui::Div {
             div()
                 .px_2()
                 .pb_2()
-                .text_size(px(11.0))
+                .text_size(Text::Sm.px())
                 .font_weight(FontWeight::MEDIUM)
-                .text_color(fg.opacity(0.4))
+                .text_color(fg.ink(Ink::Muted))
                 .child(title.to_uppercase()),
         )
 }
@@ -145,15 +146,15 @@ fn property(label: &str, value: impl IntoElement, fg: Hsla) -> impl IntoElement 
         .flex()
         .items_center()
         .min_h(px(28.0))
-        .text_size(px(12.0))
+        .text_size(Text::Base.px())
         .child(
             div()
                 .flex_none()
                 .w(px(88.0))
-                .text_color(fg.opacity(0.45))
+                .text_color(fg.ink(Ink::Muted))
                 .child(label.to_string()),
         )
-        .child(div().flex_1().min_w_0().text_color(fg.opacity(0.85)).child(value))
+        .child(div().flex_1().min_w_0().text_color(fg.ink(Ink::Strong)).child(value))
 }
 
 impl BenCodeApp {
@@ -209,7 +210,7 @@ impl BenCodeApp {
             .children(self.monos.overview.habit_error.clone().map(|error| {
                 div()
                     .px_2()
-                    .text_size(px(12.0))
+                    .text_size(Text::Base.px())
                     .text_color(cx.theme().colors.danger)
                     .child(error)
             }))
@@ -264,7 +265,7 @@ impl BenCodeApp {
             .min_w_0()
             .items_center()
             .rounded(px(6.0))
-            .hover(move |s| s.bg(fg.opacity(0.05)))
+            .hover(move |s| s.bg(fg.fill(Fill::Hover)))
             .child(
                 div()
                     .id(SharedString::from(format!("mono-habit-open-{}", habit.id)))
@@ -285,7 +286,7 @@ impl BenCodeApp {
                             .items_center()
                             .justify_center()
                             .rounded(px(6.0))
-                            .bg(fg.opacity(0.06))
+                            .bg(fg.fill(Fill::Hover))
                             .child(tile),
                     )
                     .child(
@@ -295,7 +296,7 @@ impl BenCodeApp {
                             .child(
                                 div()
                                     .truncate()
-                                    .text_size(px(12.0))
+                                    .text_size(Text::Base.px())
                                     .line_height(px(20.0))
                                     .text_color(fg.opacity(if lit { 0.85 } else { 0.45 }))
                                     .child(habit.name.clone()),
@@ -303,9 +304,9 @@ impl BenCodeApp {
                             .child(
                                 div()
                                     .truncate()
-                                    .text_size(px(11.0))
+                                    .text_size(Text::Sm.px())
                                     .line_height(px(16.0))
-                                    .text_color(fg.opacity(0.4))
+                                    .text_color(fg.ink(Ink::Muted))
                                     .child(line),
                             ),
                     ),
@@ -420,7 +421,7 @@ impl BenCodeApp {
                     .gap(px(10.0))
                     .px_2()
                     .py_2()
-                    .text_size(px(12.0))
+                    .text_size(Text::Base.px())
                     .child(
                         div()
                             .size(px(8.0))
@@ -428,16 +429,16 @@ impl BenCodeApp {
                             .bg(color)
                             .opacity(crate::ui::spinner::pulse(cx)),
                     )
-                    .child(div().flex_1().text_color(fg.opacity(0.85)).child("Running now"))
-                    .child(div().text_color(fg.opacity(0.4)).child(duration(now - since)))
+                    .child(div().flex_1().text_color(fg.ink(Ink::Strong)).child("Running now"))
+                    .child(div().text_color(fg.ink(Ink::Muted)).child(duration(now - since)))
             }))
             .when(runs.is_empty() && running.is_none(), |el| {
                 el.child(
                     div()
                         .px_2()
                         .py_3()
-                        .text_size(px(12.0))
-                        .text_color(fg.opacity(0.4))
+                        .text_size(Text::Base.px())
+                        .text_color(fg.ink(Ink::Muted))
                         .child("It hasn't run yet."),
                 )
             })
@@ -466,7 +467,7 @@ impl BenCodeApp {
                 section("What it does", fg).child(
                     div()
                         .px_2()
-                        .text_size(px(12.0))
+                        .text_size(Text::Base.px())
                         .line_height(px(20.0))
                         .text_color(fg.opacity(0.75))
                         .child(habit.instructions.clone()),
@@ -501,7 +502,7 @@ impl BenCodeApp {
         };
         div()
             .rounded(px(6.0))
-            .when(open, |el| el.bg(fg.opacity(0.05)))
+            .when(open, |el| el.bg(fg.fill(Fill::Hover)))
             .child(
                 div()
                     .id(SharedString::from(format!("habit-run-{}-{}", habit.id, run.at)))
@@ -511,10 +512,10 @@ impl BenCodeApp {
                     .px_2()
                     .py_2()
                     .rounded(px(6.0))
-                    .text_size(px(12.0))
+                    .text_size(Text::Base.px())
                     .when(detail.is_some(), |el| {
                         el.cursor_pointer()
-                            .when(!open, |el| el.hover(move |s| s.bg(fg.opacity(0.05))))
+                            .when(!open, |el| el.hover(move |s| s.bg(fg.fill(Fill::Hover))))
                             .on_click(cx.listener(move |this, _, _, cx| this.toggle_habit_run(&habit_id, at, cx)))
                     })
                     .child(
@@ -529,10 +530,10 @@ impl BenCodeApp {
                             .flex_1()
                             .min_w_0()
                             .truncate()
-                            .text_color(fg.opacity(0.85))
+                            .text_color(fg.ink(Ink::Strong))
                             .child(outcome_label(run.outcome)),
                     )
-                    .child(div().flex_none().text_color(fg.opacity(0.4)).child(timing)),
+                    .child(div().flex_none().text_color(fg.ink(Ink::Muted)).child(timing)),
             )
             .when(open, |el| {
                 let content: AnyElement = match (&run.report, &run.error) {
@@ -552,7 +553,7 @@ impl BenCodeApp {
                         .pb_3()
                         .pl(px(26.0))
                         .pr_3()
-                        .text_size(px(12.0))
+                        .text_size(Text::Base.px())
                         .line_height(px(20.0))
                         .text_color(fg.opacity(0.75))
                         .child(content),
@@ -576,8 +577,8 @@ impl BenCodeApp {
             .h(px(24.0))
             .px_2()
             .rounded(px(6.0))
-            .text_size(px(12.0))
-            .bg(fg.opacity(0.1))
+            .text_size(Text::Base.px())
+            .bg(fg.fill(Fill::Strong))
             .text_color(fg)
             .map(|el| {
                 if ready {
@@ -623,7 +624,7 @@ impl BenCodeApp {
                 .into_iter()
                 .enumerate()
                 .map(|(day, label)| Choice::new(day.to_string(), label));
-            fields = fields.child(div().text_color(fg.opacity(0.45)).child("on")).child(pill(
+            fields = fields.child(div().text_color(fg.ink(Ink::Muted)).child("on")).child(pill(
                 120.0,
                 Select::new("new-habit-day", days)
                     .label("Day")
@@ -635,7 +636,7 @@ impl BenCodeApp {
                     })),
             ));
         }
-        fields = fields.child(div().text_color(fg.opacity(0.45)).child("at"));
+        fields = fields.child(div().text_color(fg.ink(Ink::Muted)).child("at"));
         fields = if kind == ScheduleKind::Hourly {
             let minutes = [0u8, 15, 30, 45]
                 .into_iter()
@@ -688,7 +689,7 @@ impl BenCodeApp {
                         div()
                             .px_2()
                             .pt_2()
-                            .text_size(px(12.0))
+                            .text_size(Text::Base.px())
                             .text_color(gpui::rgba(0xef4444cc))
                             .child(error)
                     })),

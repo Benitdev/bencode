@@ -15,6 +15,7 @@ use super::focus_later;
 use super::search_popover::SearchPopover;
 use crate::app::BenCodeApp;
 use crate::app::session_folders::{FolderTarget, picker_rows};
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// MonoCode `max-h-[min(240px,40vh)]`.
 const LIST_MAX_HEIGHT: f32 = 240.0;
@@ -146,7 +147,7 @@ impl BenCodeApp {
             .px_2()
             .py_2()
             .rounded(px(6.0))
-            .text_size(px(13.0))
+            .text_size(Text::Md.px())
             .cursor_pointer()
             .when(active, |el| el.bg(skill.opacity(0.15)))
             .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
@@ -161,7 +162,7 @@ impl BenCodeApp {
                 let Some(folder) = self.project_folders().iter().find(|f| f.id == id) else {
                     return row.into_any_element();
                 };
-                row.when(!active, |el| el.hover(move |s| s.bg(fg.opacity(0.05))))
+                row.when(!active, |el| el.hover(move |s| s.bg(fg.fill(Fill::Hover))))
                     .child(
                         Icon::new(IconName::Folder)
                             .size(IconSize::Xs)
@@ -172,14 +173,14 @@ impl BenCodeApp {
                             .flex_1()
                             .min_w_0()
                             .truncate()
-                            .text_color(if active { fg } else { fg.opacity(0.8) })
+                            .text_color(if active { fg } else { fg.ink(Ink::Strong) })
                             .child(SharedString::from(folder.name.clone())),
                     )
                     .child(
                         div()
                             .flex_none()
-                            .text_size(px(11.0))
-                            .text_color(fg.opacity(0.45))
+                            .text_size(Text::Sm.px())
+                            .text_color(fg.ink(Ink::Muted))
                             .child(folder.session_ids.len().to_string()),
                     )
                     .into_any_element()

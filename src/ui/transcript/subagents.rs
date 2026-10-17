@@ -22,6 +22,7 @@ use crate::ui::mascot::project_mascot;
 use crate::ui::rail::widgets::mascot_icon;
 use crate::ui::scale::px;
 use crate::ui::spinner;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 impl BenCodeApp {
     /// The runs a live turn keeps in place, one row each.
@@ -88,9 +89,9 @@ impl BenCodeApp {
         let ink = if failed {
             colors.danger
         } else if state == ToolState::Pending {
-            fg.opacity(0.7)
+            fg.ink(Ink::Body)
         } else {
-            fg.opacity(0.45)
+            fg.ink(Ink::Muted)
         };
         // The slot keeps the rows' 14px icon width; the sprite sits a size
         // smaller so it weighs the same as the line icons around it.
@@ -107,7 +108,7 @@ impl BenCodeApp {
                 .flex_1()
                 .min_w_0()
                 .truncate()
-                .text_size(px(14.0))
+                .text_size(Text::Lg.px())
                 .child(spinner::shimmer(name, cx))
         } else {
             let name_color = if failed {
@@ -120,7 +121,7 @@ impl BenCodeApp {
                 .flex_1()
                 .min_w_0()
                 .truncate()
-                .text_size(px(14.0))
+                .text_size(Text::Lg.px())
                 .text_color(name_color)
                 .group_hover(group.clone(), move |s| s.text_color(hover))
                 .child(name)
@@ -133,8 +134,8 @@ impl BenCodeApp {
                 .min_w_0()
                 .items_center()
                 .gap_2()
-                .text_size(px(12.0))
-                .text_color(fg.opacity(0.4))
+                .text_size(Text::Base.px())
+                .text_color(fg.ink(Ink::Muted))
                 .when_some(model, |el, model| {
                     el.child(div().min_w_0().truncate().child(model))
                 })
@@ -148,8 +149,8 @@ impl BenCodeApp {
             IconName::ChevronRight
         })
         .size(IconSize::Xs)
-        .color(fg.opacity(0.35));
-        let hover_bg = fg.opacity(0.08);
+        .color(fg.ink(Ink::Faint));
+        let hover_bg = fg.fill(Fill::Selected);
         let header = div()
             .id(SharedString::from(format!("subagent-row-{key}")))
             .group(group)
@@ -225,7 +226,7 @@ impl BenCodeApp {
                         let body = if failed {
                             div()
                                 .font_family(mono)
-                                .text_size(px(12.0))
+                                .text_size(Text::Base.px())
                                 .line_height(px(20.0))
                                 .text_color(danger.opacity(0.8))
                                 .child(report)

@@ -19,6 +19,7 @@ use crate::app::BenCodeApp;
 use crate::harness::catalog;
 use crate::ui::provider_icon::HarnessIcon;
 use crate::ui::settings_modal::SettingsTab;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// MonoCode `max-h-[min(184px,45vh)]` and its 44px rows.
 const LIST_MAX_HEIGHT: f32 = 184.0;
@@ -283,7 +284,7 @@ impl BenCodeApp {
         let available = row.availability == Availability::Available;
         let status_color = match row.availability {
             Availability::Authentication => colors.warning,
-            _ => fg.opacity(0.45),
+            _ => fg.ink(Ink::Muted),
         };
         // MonoCode draws Claude Desktop servers with the Claude mark.
         let icon = match row.server.provider.as_str() {
@@ -303,10 +304,10 @@ impl BenCodeApp {
             .h(px(ROW_HEIGHT))
             .px_2()
             .rounded(px(6.0))
-            .text_color(if available { fg } else { fg.opacity(0.4) })
+            .text_color(if available { fg } else { fg.ink(Ink::Muted) })
             .when(available && active, |el| el.bg(super::selection(cx)))
             .when(available && !active, |el| {
-                el.cursor_pointer().hover(move |s| s.bg(fg.opacity(0.05)))
+                el.cursor_pointer().hover(move |s| s.bg(fg.fill(Fill::Hover)))
             })
             .when(available, |el| {
                 el.on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
@@ -332,14 +333,14 @@ impl BenCodeApp {
                     .child(
                         div()
                             .truncate()
-                            .text_size(px(13.0))
+                            .text_size(Text::Md.px())
                             .child(SharedString::from(row.server.name.clone())),
                     )
                     .child(
                         div()
                             .truncate()
-                            .text_size(px(11.0))
-                            .text_color(fg.opacity(0.45))
+                            .text_size(Text::Sm.px())
+                            .text_color(fg.ink(Ink::Muted))
                             .child(subtitle),
                     ),
             )
@@ -348,7 +349,7 @@ impl BenCodeApp {
                     .flex_none()
                     .max_w(gpui::relative(0.4))
                     .truncate()
-                    .text_size(px(11.0))
+                    .text_size(Text::Sm.px())
                     .text_color(status_color)
                     .child(row.status()),
             )

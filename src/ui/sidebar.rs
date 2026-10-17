@@ -14,6 +14,7 @@ use crate::ui::app_callback::app_callback;
 use crate::ui::diff_counts::diff_counts;
 use crate::ui::scale::px;
 use crate::ui::window_drag::claim_press;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// MonoCode `border-stroke`: content at 7%.
 pub const STROKE_OPACITY: f32 = 0.07;
@@ -129,7 +130,7 @@ impl BenCodeApp {
                         el.child(
                             diff_counts(added, removed, crate::ui::appearance::diff_colors(cx))
                                 .gap_1p5()
-                                .text_size(px(11.0)),
+                                .text_size(Text::Sm.px()),
                         )
                     } else {
                         el.child(
@@ -211,12 +212,12 @@ impl BenCodeApp {
             .justify_center()
             .px_2()
             .rounded(px(6.0))
-            .text_size(px(12.0))
+            .text_size(Text::Base.px())
             .line_height(relative(1.0))
             .text_color(if active {
                 colors.fg
             } else {
-                colors.fg.opacity(0.5)
+                colors.fg.ink(Ink::Secondary)
             })
             .when(active, |el| el.bg(colors.active))
     }
@@ -358,8 +359,8 @@ impl BenCodeApp {
             .right(px(-1.0))
             .w(px(6.0))
             .cursor_col_resize()
-            .when(dragging, |el| el.bg(fg.opacity(0.15)))
-            .when(!dragging, |el| el.hover(move |s| s.bg(fg.opacity(0.10))))
+            .when(dragging, |el| el.bg(fg.fill(Fill::Bold)))
+            .when(!dragging, |el| el.hover(move |s| s.bg(fg.fill(Fill::Strong))))
             .on_mouse_down(
                 gpui::MouseButton::Left,
                 cx.listener(|this, event: &gpui::MouseDownEvent, _, cx| {
@@ -418,7 +419,7 @@ impl BenCodeApp {
                     div()
                         .min_w_0()
                         .truncate()
-                        .text_size(px(14.0))
+                        .text_size(Text::Lg.px())
                         .line_height(relative(1.25))
                         .font_weight(FontWeight::MEDIUM)
                         .child("Workspace")
@@ -483,11 +484,11 @@ impl BenCodeApp {
             .h(px(26.0))
             .px(px(6.0))
             .rounded(px(6.0))
-            .text_size(px(14.0))
+            .text_size(Text::Lg.px())
             .line_height(relative(1.25))
             .font_weight(FontWeight::MEDIUM)
-            .when(open, |el| el.bg(fg.opacity(0.08)))
-            .hover(move |s| s.bg(fg.opacity(0.08)))
+            .when(open, |el| el.bg(fg.fill(Fill::Selected)))
+            .hover(move |s| s.bg(fg.fill(Fill::Selected)))
             .tooltip(Tooltip::text(tip))
             .on_mouse_down(
                 gpui::MouseButton::Left,
@@ -500,7 +501,7 @@ impl BenCodeApp {
             .child(
                 Icon::new(IconName::ChevronsUpDown)
                     .size(IconSize::Sm)
-                    .color(fg.opacity(0.45)),
+                    .color(fg.ink(Ink::Muted)),
             )
     }
 
@@ -593,13 +594,13 @@ fn title_icon_button(
         .items_center()
         .justify_center()
         .rounded(px(6.0))
-        .hover(move |s| s.bg(fg.opacity(0.10)))
+        .hover(move |s| s.bg(fg.fill(Fill::Strong)))
         .tooltip(Tooltip::text(tip))
         .on_click(on_click)
         .child(
             Icon::new(icon)
                 .size(IconSize::Sm)
-                .color(fg.opacity(0.5))
+                .color(fg.ink(Ink::Secondary))
                 .group_hover_color(group, fg),
         )
 }

@@ -15,6 +15,7 @@ use crate::app::BenCodeApp;
 use crate::db::Note;
 use crate::skills::Skill;
 use crate::ui::quick_open::fuzzy_match;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// MonoCode `MAX_PICKER`, and the `/` list's cap.
 const MAX_PICKER: usize = 30;
@@ -351,8 +352,8 @@ impl BenCodeApp {
                                 div()
                                     .px_2()
                                     .py_2()
-                                    .text_size(px(12.0))
-                                    .text_color(colors.fg.opacity(0.5))
+                                    .text_size(Text::Base.px())
+                                    .text_color(colors.fg.ink(Ink::Secondary))
                                     .child(empty),
                             )
                         })
@@ -408,7 +409,7 @@ impl BenCodeApp {
             .gap_0p5()
             .px_2()
             .py_1p5()
-            .when(highlighted, |el| el.bg(colors.fg.opacity(0.10)))
+            .when(highlighted, |el| el.bg(colors.fg.fill(Fill::Strong)))
             .child(
                 div()
                     .flex()
@@ -419,23 +420,23 @@ impl BenCodeApp {
                         div()
                             .min_w_0()
                             .truncate()
-                            .text_size(px(13.0))
+                            .text_size(Text::Md.px())
                             .text_color(colors.fg)
                             .child(paint_matches(&item.label, &item.matched, colors.fg, cx)),
                     )
                     .children(item.tag.map(|tag| {
                         div()
                             .flex_none()
-                            .text_size(px(10.0))
-                            .text_color(colors.fg.opacity(0.4))
+                            .text_size(Text::Xs.px())
+                            .text_color(colors.fg.ink(Ink::Muted))
                             .child(tag.to_uppercase())
                     })),
             )
             .children(item.detail.map(|detail| {
                 div()
-                    .text_size(px(11.0))
+                    .text_size(Text::Sm.px())
                     .line_height(px(15.0))
-                    .text_color(colors.fg.opacity(0.5))
+                    .text_color(colors.fg.ink(Ink::Secondary))
                     .line_clamp(2)
                     .child(detail)
             }))
@@ -459,7 +460,7 @@ impl BenCodeApp {
         let icon = match item.kind {
             SuggestionKind::Note => Icon::new(IconName::StickyNote)
                 .size(IconSize::Sm)
-                .color(colors.fg.opacity(0.6))
+                .color(colors.fg.ink(Ink::Secondary))
                 .into_any_element(),
             SuggestionKind::Folder => entry(true),
             _ => entry(false),
@@ -475,7 +476,7 @@ impl BenCodeApp {
             .gap_2()
             .h(px(ROW_HEIGHT))
             .px_2()
-            .text_size(px(13.0))
+            .text_size(Text::Md.px())
             .when(highlighted, |el| el.bg(colors.active))
             .child(icon)
             .child(
@@ -492,8 +493,8 @@ impl BenCodeApp {
                     .max_w(relative(0.45))
                     .truncate()
                     .font_family(cx.theme().mono_family.clone())
-                    .text_size(px(11.0))
-                    .text_color(colors.fg.opacity(0.4))
+                    .text_size(Text::Sm.px())
+                    .text_color(colors.fg.ink(Ink::Muted))
                     .child(detail)
             }))
     }

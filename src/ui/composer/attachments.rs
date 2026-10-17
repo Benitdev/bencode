@@ -16,6 +16,7 @@ use super::mode_commands::{self, ModeCommand};
 use crate::app::{BenCodeApp, now_ms};
 use crate::harness::attachments;
 use crate::ui::attachment_chip::{ChipFile, OnRemove, attachment_chip};
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// MonoCode `MAX_ATTACHMENTS`: files one turn carries.
 const MAX_ATTACHMENTS: usize = 20;
@@ -308,7 +309,7 @@ impl BenCodeApp {
                     .h(px(26.0))
                     .px_1p5()
                     .rounded(px(6.0))
-                    .text_size(px(11.0))
+                    .text_size(Text::Sm.px())
                     .cursor_pointer()
                     .tooltip(Tooltip::text(title))
                     .on_click(cx.listener(move |this, _, _, cx| this.set_mode(mode, false, cx)));
@@ -321,18 +322,18 @@ impl BenCodeApp {
                             .text_color(colors.warning.opacity(0.9))
                     }
                     ModeCommand::Draft => {
-                        let hover = colors.fg.opacity(0.10);
+                        let hover = colors.fg.fill(Fill::Strong);
                         pill.border_1()
                             .border_dashed()
-                            .border_color(colors.fg.opacity(0.25))
-                            .bg(colors.fg.opacity(0.05))
+                            .border_color(colors.fg.ink(Ink::Faint))
+                            .bg(colors.fg.fill(Fill::Hover))
                             .hover(move |s| s.bg(hover))
-                            .text_color(colors.fg.opacity(0.7))
+                            .text_color(colors.fg.ink(Ink::Body))
                     }
                 };
                 let ink = match mode {
                     ModeCommand::Plan => colors.warning.opacity(0.9),
-                    ModeCommand::Draft => colors.fg.opacity(0.7),
+                    ModeCommand::Draft => colors.fg.ink(Ink::Body),
                 };
                 pill.child(Icon::new(icon).size(IconSize::Xs).color(ink))
                     .child(label)

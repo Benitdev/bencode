@@ -19,6 +19,8 @@ use crate::monos::Mono;
 use crate::monos::board::{self, Column, Task};
 use crate::ui::HarnessIcon;
 use crate::ui::scale::px;
+use crate::ui::tokens::Status;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// A column's title and count; Done's folds the column.
 fn column_title(title: &str, count: usize, fg: Hsla) -> gpui::Div {
@@ -28,11 +30,11 @@ fn column_title(title: &str, count: usize, fg: Hsla) -> gpui::Div {
         .gap_1()
         .px_2()
         .pb(px(6.0))
-        .text_size(px(11.0))
+        .text_size(Text::Sm.px())
         .font_weight(FontWeight::MEDIUM)
-        .text_color(fg.opacity(0.4))
+        .text_color(fg.ink(Ink::Muted))
         .child(title.to_uppercase())
-        .child(div().text_color(fg.opacity(0.3)).child(count.to_string()))
+        .child(div().text_color(fg.ink(Ink::Faint)).child(count.to_string()))
 }
 
 impl BenCodeApp {
@@ -57,7 +59,7 @@ impl BenCodeApp {
                 div()
                     .px_2()
                     .pb_2()
-                    .text_size(px(11.0))
+                    .text_size(Text::Sm.px())
                     .text_color(cx.theme().colors.danger)
                     .child(error.clone())
                     .into_any_element(),
@@ -75,11 +77,11 @@ impl BenCodeApp {
                     .id("mono-board-done")
                     .cursor_pointer()
                     .rounded(px(6.0))
-                    .hover(move |s| s.text_color(fg.opacity(0.7)))
+                    .hover(move |s| s.text_color(fg.ink(Ink::Body)))
                     .child(
                         Icon::new(if open { IconName::ChevronDown } else { IconName::ChevronRight })
                             .size(IconSize::Xs)
-                            .color(fg.opacity(0.35)),
+                            .color(fg.ink(Ink::Faint)),
                     )
                     .on_click(cx.listener(|this, _, _, cx| this.toggle_board_done(cx)));
                 div()
@@ -160,25 +162,21 @@ impl BenCodeApp {
             (Column::Running, _) => div()
                 .size(px(8.0))
                 .rounded_full()
-                .bg(if state == Some(LaunchedState::Input) {
-                    cx.theme().colors.accent
-                } else {
-                    fg.opacity(0.6)
-                })
+                .bg(state.map_or(Status::Working, Status::from).color(fg))
                 .opacity(crate::ui::spinner::pulse(cx))
                 .into_any_element(),
             (Column::Done, _) => Icon::new(IconName::CircleCheck)
                 .size(IconSize::Sm)
-                .color(fg.opacity(0.35))
+                .color(fg.ink(Ink::Faint))
                 .into_any_element(),
             (Column::Review, _) if state == Some(LaunchedState::Failed) => Icon::new(IconName::CircleAlert)
                 .size(IconSize::Sm)
-                .color(cx.theme().colors.danger)
+                .color(Status::Failed.color(fg))
                 .into_any_element(),
             (_, Some(session)) => HarnessIcon::new(&session.harness).size(px(14.0)).into_any_element(),
             (_, None) => Icon::new(IconName::CircleDashed)
                 .size(IconSize::Sm)
-                .color(fg.opacity(0.4))
+                .color(fg.ink(Ink::Muted))
                 .into_any_element(),
         };
         let group = SharedString::from(format!("mono-task-{}", task.id));
@@ -213,7 +211,7 @@ impl BenCodeApp {
             .min_w_0()
             .items_center()
             .rounded(px(6.0))
-            .hover(move |s| s.bg(fg.opacity(0.05)))
+            .hover(move |s| s.bg(fg.fill(Fill::Hover)))
             .child(row)
             .child(
                 div()

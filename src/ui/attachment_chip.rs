@@ -19,6 +19,7 @@ use crate::app::BenCodeApp;
 use crate::harness::Attachment;
 use crate::ui::file_tree::resolve_entry_icon;
 use crate::ui::thumbnail::thumbnail;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// An image chip's side.
 const CHIP: f32 = 36.0;
@@ -96,7 +97,7 @@ pub fn attachment_chip(
                 .child(Icon::new(IconName::X).size(IconSize::Xs).color(if badge {
                     colors.fg
                 } else {
-                    colors.fg.opacity(0.4)
+                    colors.fg.ink(Ink::Muted)
                 }))
         })
     };
@@ -131,15 +132,15 @@ pub fn attachment_chip(
         .py_0p5()
         .px_1()
         .rounded(px(6.0))
-        .bg(colors.fg.opacity(0.10))
+        .bg(colors.fg.fill(Fill::Strong))
         .tooltip(Tooltip::text(file.path.clone()))
         .child(icon.size(IconSize::Sm))
         .child(
             div()
                 .max_w(px(140.0))
                 .truncate()
-                .text_size(px(11.0))
-                .text_color(colors.fg.opacity(0.8))
+                .text_size(Text::Sm.px())
+                .text_color(colors.fg.ink(Ink::Strong))
                 .child(file.name.clone()),
         )
         .children(remove(16.0, false))

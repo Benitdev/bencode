@@ -17,6 +17,7 @@ use crate::ui::page_parts::{page_tab, tint};
 use crate::ui::scale::px;
 use crate::ui::scrollbar::Scrolled;
 use crate::ui::transcript::markdown::AgentMarkdown;
+use crate::ui::tokens::{Ink, Text, Tone as _};
 
 /// MonoCode `max-w-5xl`.
 const PAGE_WIDTH: f32 = 1024.0;
@@ -38,11 +39,11 @@ impl BenCodeApp {
                 .child(
                     Icon::new(IconName::File)
                         .size(IconSize::Lg)
-                        .color(fg.opacity(0.3)),
+                        .color(fg.ink(Ink::Faint)),
                 )
                 .child(
                     div()
-                        .text_size(px(13.0))
+                        .text_size(Text::Md.px())
                         .text_color(fg.opacity(tint::QUIET))
                         .child("Select a note"),
                 )
@@ -79,12 +80,12 @@ impl BenCodeApp {
         let body: AnyElement = match mode {
             NoteMode::Source => div()
                 .font_family(cx.theme().mono_family.clone())
-                .text_size(px(13.0))
+                .text_size(Text::Md.px())
                 .line_height(px(20.0))
                 .child(self.notes.body_input.clone())
                 .into_any_element(),
             NoteMode::Preview if note.body.trim().is_empty() => div()
-                .text_size(px(13.0))
+                .text_size(Text::Md.px())
                 .text_color(fg.opacity(tint::QUIET))
                 .child("No description")
                 .into_any_element(),
@@ -143,7 +144,7 @@ impl BenCodeApp {
                         .justify_center()
                         .rounded(px(8.0))
                         .bg(bg.opacity(0.8))
-                        .text_size(px(12.0))
+                        .text_size(Text::Base.px())
                         .text_color(colors.fg.opacity(tint::BODY))
                         .child("Adding images…"),
                 )
@@ -164,7 +165,7 @@ impl BenCodeApp {
                     .items_center()
                     .gap_2()
                     .min_w_0()
-                    .text_size(px(12.0))
+                    .text_size(Text::Base.px())
                     .text_color(muted)
                     .child(Icon::new(IconName::File).size(IconSize::Sm).color(muted))
                     .child(div().flex_none().child("Note"))
@@ -182,7 +183,7 @@ impl BenCodeApp {
             )
             .children(self.note_updated().map(|time| {
                 div()
-                    .text_size(px(12.0))
+                    .text_size(Text::Base.px())
                     .text_color(muted)
                     .child(format!("Updated {time}"))
             }))
@@ -220,7 +221,7 @@ impl BenCodeApp {
                         .flex()
                         .items_center()
                         .gap_2()
-                        .text_size(px(12.0))
+                        .text_size(Text::Base.px())
                         .text_color(colors.danger)
                         .child(error)
                         .child(
@@ -272,7 +273,7 @@ impl BenCodeApp {
                 .pr_1()
                 .rounded(px(6.0))
                 .bg(fg.opacity(tint::FILL))
-                .text_size(px(11.0))
+                .text_size(Text::Sm.px())
                 .text_color(fg.opacity(tint::BODY))
                 .child(div().min_w_0().truncate().child(format!("#{tag}")))
                 .child(
@@ -294,7 +295,7 @@ impl BenCodeApp {
             .child(
                 div()
                     .mr(px(2.0))
-                    .text_size(px(11.0))
+                    .text_size(Text::Sm.px())
                     .text_color(fg.opacity(tint::QUIET))
                     .child("Tags"),
             )
@@ -304,7 +305,7 @@ impl BenCodeApp {
                     div()
                         .flex_1()
                         .min_w(px(80.0))
-                        .text_size(px(11.0))
+                        .text_size(Text::Sm.px())
                         .child(self.notes.tag_input.clone()),
                 )
             })

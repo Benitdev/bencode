@@ -5,6 +5,7 @@
 use gpui::{Div, FontWeight, Hsla, IntoElement, ParentElement, Stateful, Styled, div, prelude::*};
 
 use crate::ui::scale::px;
+use crate::ui::tokens::Text;
 
 /// MonoCode's `content/N` tints: how much of the foreground colour a
 /// line, a fill or a quieter text takes.
@@ -60,7 +61,7 @@ pub fn rule(fg: Hsla) -> Div {
 pub fn section_title(title: &'static str, muted: Hsla) -> Div {
     div()
         .px_1()
-        .text_size(px(12.0))
+        .text_size(Text::Base.px())
         .font_weight(FontWeight::MEDIUM)
         .text_color(muted)
         .child(title)
@@ -88,13 +89,13 @@ pub fn settings_row(
                 .min_w_0()
                 .child(
                     div()
-                        .text_size(px(12.0))
+                        .text_size(Text::Base.px())
                         .text_color(fg.opacity(tint::STRONG))
                         .child(label),
                 )
                 .child(
                     div()
-                        .text_size(px(11.0))
+                        .text_size(Text::Sm.px())
                         .text_color(fg.opacity(tint::HINT))
                         .child(hint),
                 ),
@@ -116,7 +117,7 @@ pub fn page_tab(
         .flex()
         .items_center()
         .h(px(36.0))
-        .text_size(px(12.0))
+        .text_size(Text::Base.px())
         .cursor_pointer()
         .text_color(if selected { fg } else { muted })
         .hover(|style| style.text_color(fg))

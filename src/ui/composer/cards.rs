@@ -20,6 +20,7 @@ use crate::app::BenCodeApp;
 use crate::db::{Block, SessionRow};
 use crate::monos::Mono;
 use crate::ui::attachment_chip::OnRemove;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ComposerCard {
@@ -82,13 +83,13 @@ pub fn turn_cards(block: &Block, cx: &Context<BenCodeApp>) -> Option<AnyElement>
 /// with the corner × when it can be removed.
 pub fn card_frame(id: &str, on_dismiss: Option<OnRemove>, cx: &Context<BenCodeApp>) -> Div {
     let fg = cx.theme().colors.fg;
-    let hover = fg.opacity(0.1);
+    let hover = fg.fill(Fill::Strong);
     div()
         .relative()
         .rounded(px(6.0))
         .border_1()
-        .border_color(fg.opacity(0.1))
-        .bg(fg.opacity(0.06))
+        .border_color(fg.fill(Fill::Strong))
+        .bg(fg.fill(Fill::Hover))
         .px(px(10.0))
         .py_2()
         .when_some(on_dismiss, |el, dismiss| {
@@ -110,7 +111,7 @@ pub fn card_frame(id: &str, on_dismiss: Option<OnRemove>, cx: &Context<BenCodeAp
                     .child(
                         Icon::new(IconName::X)
                             .size(IconSize::Xs)
-                            .color(fg.opacity(0.4)),
+                            .color(fg.ink(Ink::Muted)),
                     ),
             )
         })
@@ -124,7 +125,7 @@ pub enum CardIcon {
 
 /// A card's first line: its icon and kind ("Note · slug", "Handoff").
 pub fn card_kind(icon: CardIcon, kind: String, cx: &Context<BenCodeApp>) -> Div {
-    let tint = cx.theme().colors.fg.opacity(0.45);
+    let tint = cx.theme().colors.fg.ink(Ink::Muted);
     let glyph = match icon {
         CardIcon::Named(name) => Icon::new(name)
             .size(IconSize::Xs)
@@ -147,8 +148,8 @@ pub fn card_kind(icon: CardIcon, kind: String, cx: &Context<BenCodeApp>) -> Div 
             div()
                 .min_w_0()
                 .truncate()
-                .text_size(px(11.0))
-                .text_color(fg.opacity(0.5))
+                .text_size(Text::Sm.px())
+                .text_color(fg.ink(Ink::Secondary))
                 .child(kind),
         )
 }

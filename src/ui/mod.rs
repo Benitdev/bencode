@@ -70,6 +70,7 @@ pub mod spinner;
 pub mod terminal_pane;
 pub mod theme;
 pub mod thumbnail;
+pub mod tokens;
 pub mod titlebar;
 pub mod transcript;
 pub mod virtual_rows;

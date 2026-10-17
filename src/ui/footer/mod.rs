@@ -21,6 +21,7 @@ use crate::rate_limits::{RateLimitProvider, RateLimitStatus};
 use crate::ui::HarnessIcon;
 use crate::ui::git_changes_panel::spinning_icon;
 use crate::ui::scale::px;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// Room for "112%" and "1023 MB" with their icons.
 const PROCESS_SLOT_WIDTH: f32 = 124.0;
@@ -70,8 +71,8 @@ impl BenCodeApp {
             .bg(glass.fill(colors.bg))
             .border_t_1()
             .border_color(colors.border)
-            .text_size(px(11.0))
-            .text_color(fg.opacity(0.55))
+            .text_size(Text::Sm.px())
+            .text_color(fg.ink(Ink::Secondary))
             .map(|el| match (&target, harness) {
                 (Some(target), _) => el
                     .child(self.render_usage_chip(target, UsageChipVariant::Footer, cx))
@@ -130,10 +131,10 @@ impl BenCodeApp {
                         .text_color(if terminal_open {
                             colors.accent
                         } else {
-                            fg.opacity(0.4)
+                            fg.ink(Ink::Muted)
                         })
                         .hover(move |s| {
-                            let s = s.bg(fg.opacity(0.10));
+                            let s = s.bg(fg.fill(Fill::Strong));
                             if terminal_open { s } else { s.text_color(fg) }
                         })
                         .on_click(cx.listener(|this, _, _, cx| {
@@ -148,7 +149,7 @@ impl BenCodeApp {
                             if terminal_open {
                                 colors.accent
                             } else {
-                                fg.opacity(0.4)
+                                fg.ink(Ink::Muted)
                             },
                         ))
                         .child("Terminal"),
@@ -184,7 +185,7 @@ impl BenCodeApp {
                         "usage-refresh-spin".into(),
                         IconName::RefreshCw,
                         IconSize::Xs,
-                        fg.opacity(0.4),
+                        fg.ink(Ink::Muted),
                     ))
                 } else {
                     el.cursor_pointer()
@@ -193,7 +194,7 @@ impl BenCodeApp {
                         .child(
                             Icon::new(IconName::RefreshCw)
                                 .size(IconSize::Xs)
-                                .color(fg.opacity(0.4)),
+                                .color(fg.ink(Ink::Muted)),
                         )
                 }
             })
@@ -209,7 +210,7 @@ impl BenCodeApp {
         let tint = if shown {
             colors.accent
         } else {
-            fg.opacity(0.4)
+            fg.ink(Ink::Muted)
         };
         div()
             .id("footer-browser-toggle")
@@ -223,7 +224,7 @@ impl BenCodeApp {
             .cursor_pointer()
             .text_color(tint)
             .hover(move |s| {
-                let s = s.bg(fg.opacity(0.10));
+                let s = s.bg(fg.fill(Fill::Strong));
                 if shown { s } else { s.text_color(fg) }
             })
             .on_click(cx.listener(|this, _, window, cx| this.show_browser(window, cx)))

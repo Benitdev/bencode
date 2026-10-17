@@ -38,6 +38,7 @@ use crate::work_items::Provider;
 pub use checks::{Repair, RepairForm};
 pub use comments::ReplyTarget;
 pub use pr_actions::PrActionUi;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// MonoCode keeps a fetched list this long before refetching on open.
 const FRESH_FOR: Duration = Duration::from_secs(60);
@@ -338,7 +339,7 @@ pub fn status_mark(item: &WorkItem, cx: &gpui::App) -> (IconName, gpui::Hsla, Sh
         (Kind::Pr, "CLOSED") => (IconName::GitPullRequestClosed, colors.danger, "Closed"),
         (Kind::Pr, _) if item.draft => (
             IconName::GitPullRequestDraft,
-            colors.fg.opacity(0.5),
+            colors.fg.ink(Ink::Secondary),
             "Draft",
         ),
         (Kind::Pr, _) => (IconName::GitPullRequest, colors.success, "Open"),
@@ -791,8 +792,8 @@ impl BenCodeApp {
         let colors = &cx.theme().colors;
         let width = self.inbox.list_width;
         let resizing = self.inbox.resizing.is_some();
-        let handle_hover = colors.fg.opacity(0.10);
-        let handle_drag = colors.fg.opacity(0.15);
+        let handle_hover = colors.fg.fill(Fill::Strong);
+        let handle_drag = colors.fg.fill(Fill::Bold);
         div()
             .id("inbox")
             .size_full()
@@ -918,11 +919,11 @@ impl BenCodeApp {
                             .flex()
                             .items_center()
                             .rounded(px(6.0))
-                            .text_size(px(12.0))
+                            .text_size(Text::Base.px())
                             .cursor_pointer()
-                            .text_color(if mine { fg } else { fg.opacity(0.5) })
-                            .when(mine, |el| el.bg(fg.opacity(0.10)))
-                            .hover(move |s| s.bg(fg.opacity(0.08)))
+                            .text_color(if mine { fg } else { fg.ink(Ink::Secondary) })
+                            .when(mine, |el| el.bg(fg.fill(Fill::Strong)))
+                            .hover(move |s| s.bg(fg.fill(Fill::Selected)))
                             .tooltip(Tooltip::text("Only items assigned to you"))
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.inbox.assigned_to_me = !this.inbox.assigned_to_me;
@@ -943,13 +944,13 @@ impl BenCodeApp {
                     .child(
                         Icon::new(IconName::Search)
                             .size(IconSize::Xs)
-                            .color(fg.opacity(0.5)),
+                            .color(fg.ink(Ink::Secondary)),
                     )
                     .child(
                         div()
                             .flex_1()
                             .min_w_0()
-                            .text_size(px(12.0))
+                            .text_size(Text::Base.px())
                             .child(self.inbox_search_input.clone()),
                     )
                     .child(self.render_inbox_filter_button(cx))
@@ -1033,7 +1034,7 @@ impl BenCodeApp {
             .rounded(px(6.0))
             .cursor_pointer()
             .when(active, |el| el.bg(colors.active))
-            .when(!active, |el| el.hover(move |s| s.bg(fg.opacity(0.10))))
+            .when(!active, |el| el.hover(move |s| s.bg(fg.fill(Fill::Strong))))
             .tooltip(Tooltip::text("Filter inbox"))
             .on_mouse_down(
                 MouseButton::Left,
@@ -1056,7 +1057,7 @@ impl BenCodeApp {
                     el.child(
                         div()
                             .group_hover(group.clone(), |s| s.invisible())
-                            .child(glyph(fg.opacity(0.5))),
+                            .child(glyph(fg.ink(Ink::Secondary))),
                     )
                     .child(
                         div()
@@ -1080,9 +1081,9 @@ impl BenCodeApp {
                 .px_2()
                 .pt_2()
                 .pb(px(2.0))
-                .text_size(px(10.0))
+                .text_size(Text::Xs.px())
                 .font_weight(FontWeight::SEMIBOLD)
-                .text_color(fg.opacity(0.4))
+                .text_color(fg.ink(Ink::Muted))
                 .child(label.to_uppercase())
         };
         let row = |id: SharedString, label: SharedString, checked: bool| {
@@ -1094,11 +1095,11 @@ impl BenCodeApp {
                 .h(px(28.0))
                 .px_2()
                 .rounded(px(8.0))
-                .text_size(px(13.0))
+                .text_size(Text::Md.px())
                 .line_height(gpui::relative(1.0))
                 .text_color(fg)
                 .cursor_pointer()
-                .hover(move |s| s.bg(fg.opacity(0.05)))
+                .hover(move |s| s.bg(fg.fill(Fill::Hover)))
                 .child(div().flex_1().min_w_0().truncate().child(label))
                 .when(checked, |el| {
                     el.child(Icon::new(IconName::Check).size(IconSize::Sm).color(fg))
@@ -1136,8 +1137,8 @@ impl BenCodeApp {
                     .h(px(28.0))
                     .flex()
                     .items_center()
-                    .text_size(px(13.0))
-                    .text_color(fg.opacity(0.4))
+                    .text_size(Text::Md.px())
+                    .text_color(fg.ink(Ink::Muted))
                     .child("No statuses yet"),
             );
         }
@@ -1163,7 +1164,7 @@ impl BenCodeApp {
         }
         if source.is_some() || !self.inbox.statuses.is_empty() {
             body = body
-                .child(div().my_1().h(px(1.0)).bg(fg.opacity(0.1)))
+                .child(div().my_1().h(px(1.0)).bg(fg.fill(Fill::Strong)))
                 .child(
                     div()
                         .id("inbox-filter-clear")
@@ -1172,11 +1173,11 @@ impl BenCodeApp {
                         .h(px(28.0))
                         .px_2()
                         .rounded(px(8.0))
-                        .text_size(px(13.0))
+                        .text_size(Text::Md.px())
                         .line_height(gpui::relative(1.0))
-                        .text_color(fg.opacity(0.7))
+                        .text_color(fg.ink(Ink::Body))
                         .cursor_pointer()
-                        .hover(move |s| s.bg(fg.opacity(0.05)).text_color(fg))
+                        .hover(move |s| s.bg(fg.fill(Fill::Hover)).text_color(fg))
                         .on_click(cx.listener(|this, _, _, cx| {
                             this.inbox.source = None;
                             this.inbox.statuses.clear();
@@ -1221,8 +1222,8 @@ impl BenCodeApp {
             div()
                 .px_3()
                 .py_3()
-                .text_size(px(12.0))
-                .text_color(fg.opacity(0.5))
+                .text_size(Text::Base.px())
+                .text_color(fg.ink(Ink::Secondary))
                 .child(text)
                 .into_any_element()
         };
@@ -1300,7 +1301,7 @@ impl BenCodeApp {
         let unseen = self.inbox.is_unseen(item);
         let (icon, tint, _) = status_mark(item, cx);
         let selection = fg.opacity(if cx.theme().is_dark() { 0.10 } else { 0.06 });
-        let hover = fg.opacity(0.05);
+        let hover = fg.fill(Fill::Hover);
         let repairs = self
             .inbox
             .repairs
@@ -1336,8 +1337,8 @@ impl BenCodeApp {
                                     .flex_1()
                                     .min_w_0()
                                     .truncate()
-                                    .text_size(px(11.0))
-                                    .text_color(fg.opacity(0.5))
+                                    .text_size(Text::Sm.px())
+                                    .text_color(fg.ink(Ink::Secondary))
                                     .child(format!(
                                         "{} · {}",
                                         kind_label(item.kind),
@@ -1350,7 +1351,7 @@ impl BenCodeApp {
                                         .flex()
                                         .items_center()
                                         .gap_0p5()
-                                        .text_size(px(11.0))
+                                        .text_size(Text::Sm.px())
                                         .text_color(colors.accent)
                                         .child(
                                             Icon::new(IconName::MessageSquare)
@@ -1363,8 +1364,8 @@ impl BenCodeApp {
                             .child(
                                 div()
                                     .flex_none()
-                                    .text_size(px(11.0))
-                                    .text_color(fg.opacity(0.45))
+                                    .text_size(Text::Sm.px())
+                                    .text_color(fg.ink(Ink::Muted))
                                     .child(relative_time(&item.updated_at, now)),
                             )
                             .when(unseen, |el| {
@@ -1381,7 +1382,7 @@ impl BenCodeApp {
                         div()
                             .mt_1()
                             .truncate()
-                            .text_size(px(13.0))
+                            .text_size(Text::Md.px())
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_color(fg)
                             .child(SharedString::from(item.title.clone())),
@@ -1397,8 +1398,8 @@ impl BenCodeApp {
                                     .flex_1()
                                     .min_w_0()
                                     .truncate()
-                                    .text_size(px(11.0))
-                                    .text_color(fg.opacity(0.45))
+                                    .text_size(Text::Sm.px())
+                                    .text_color(fg.ink(Ink::Muted))
                                     .child(SharedString::from(source_label(item))),
                             )
                             .children(item.labels.iter().take(2).map(|l| label_chip(l, cx))),
@@ -1423,7 +1424,7 @@ pub(super) fn refreshing(id: &'static str, cx: &gpui::App) -> AnyElement {
         .flex_none()
         .items_center()
         .justify_center()
-        .child(loading_icon(id, theme.colors.fg.opacity(0.5)))
+        .child(loading_icon(id, theme.colors.fg.ink(Ink::Secondary)))
         .into_any_element()
 }
 

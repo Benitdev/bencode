@@ -16,6 +16,8 @@ use crate::app::BenCodeApp;
 use crate::app::reminders::format_reminder_time;
 use crate::ui::scale::px;
 use crate::ui::sidebar_menus::SidebarMenuKind;
+use crate::ui::tokens::AMBER_400;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// MonoCode: `min(320px, 100vw - 24px)` wide.
 const PANEL_WIDTH: f32 = 320.0;
@@ -26,8 +28,6 @@ const PREFLIGHT_LEADING: f32 = 1.5;
 
 /// MonoCode `max-h-[min(320px,50vh)]` on the list.
 const LIST_MAX_HEIGHT: f32 = 320.0;
-/// MonoCode `text-amber-400` on the clock.
-const AMBER_400: u32 = 0xfbbf24;
 
 impl BenCodeApp {
     pub(super) fn render_reminder_notices(&self, cx: &Context<Self>) -> Option<AnyElement> {
@@ -38,7 +38,7 @@ impl BenCodeApp {
         let colors = &cx.theme().colors;
         let fg = colors.fg;
         // `border-stroke` / `divide-stroke`: content at 7%.
-        let stroke = fg.opacity(0.07);
+        let stroke = fg.fill(Fill::Line);
         // MonoCode's row buttons: `rounded-md px-2 py-1` at the row's
         // `text-[11px]`, each with its own ink and fills.
         let button = |id: SharedString, label: &'static str, ink: f32, fill: f32, hover: f32| {
@@ -83,7 +83,7 @@ impl BenCodeApp {
                             div()
                                 .id(SharedString::from(format!("due-title-text-{sid}")))
                                 .truncate()
-                                .text_size(px(13.0))
+                                .text_size(Text::Md.px())
                                 .font_weight(FontWeight::MEDIUM)
                                 .hover(|s| s.underline())
                                 .child(title),
@@ -93,8 +93,8 @@ impl BenCodeApp {
                             div()
                                 .mt_1()
                                 .truncate()
-                                .text_size(px(11.0))
-                                .text_color(fg.opacity(0.5))
+                                .text_size(Text::Sm.px())
+                                .text_color(fg.ink(Ink::Secondary))
                                 .child(format!("{project} · {}", format_reminder_time(due_at))),
                         ),
                 )
@@ -105,7 +105,7 @@ impl BenCodeApp {
                         .flex()
                         .items_center()
                         .gap(px(6.0))
-                        .text_size(px(11.0))
+                        .text_size(Text::Sm.px())
                         .child(
                             // `bg-content/10 hover:bg-content/15`
                             button(
@@ -184,7 +184,7 @@ impl BenCodeApp {
             .flex_col()
             .rounded(px(12.0))
             .border_1()
-            .border_color(fg.opacity(0.15))
+            .border_color(fg.fill(Fill::Bold))
             .bg(colors.bg.opacity(0.95))
             .text_color(fg)
             .line_height(relative(PREFLIGHT_LEADING))
@@ -208,15 +208,15 @@ impl BenCodeApp {
                     .child(
                         div()
                             .flex_1()
-                            .text_size(px(12.0))
+                            .text_size(Text::Base.px())
                             .font_weight(FontWeight::SEMIBOLD)
                             .child("Due reminders"),
                     )
                     .when(count > 0, |el| {
                         el.child(
                             div()
-                                .text_size(px(11.0))
-                                .text_color(fg.opacity(0.5))
+                                .text_size(Text::Sm.px())
+                                .text_color(fg.ink(Ink::Secondary))
                                 .child(count.to_string()),
                         )
                     }),
@@ -230,10 +230,10 @@ impl BenCodeApp {
                         .gap_2()
                         .px_3()
                         .py_2()
-                        .text_size(px(12.0))
+                        .text_size(Text::Base.px())
                         .text_color(colors.danger)
                         .child(div().flex_1().child(failure))
-                        .child(div().text_size(px(11.0)).child(
+                        .child(div().text_size(Text::Sm.px()).child(
                             button("due-failure-ok".into(), "OK", 1.0, 0.1, 0.15).on_click(
                                 cx.listener(|this, _, _, cx| {
                                     this.reminder_failure = None;
@@ -253,8 +253,8 @@ impl BenCodeApp {
                         .gap_1()
                         .px_3()
                         .py_2()
-                        .text_size(px(12.0))
-                        .text_color(fg.opacity(0.7))
+                        .text_size(Text::Base.px())
+                        .text_color(fg.ink(Ink::Body))
                         .child("Couldn’t load reminders.")
                         .child(
                             div()

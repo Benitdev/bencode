@@ -42,6 +42,7 @@ use crate::ui::icons::ExtraIcon;
 use crate::ui::scale::px;
 use crate::ui::scrollbar;
 use crate::ui::virtual_rows;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// MonoCode `GRAPH_PANEL_MIN`, `GRAPH_PANEL_DEFAULT`.
 const GRAPH_MIN: f32 = 120.0;
@@ -246,7 +247,7 @@ pub(crate) fn status_color(status: &GitFileStatus, diff: DiffColors) -> Hsla {
 /// MonoCode `border-stroke`: content at 7% (BenCode's `colors.border` is
 /// 10%).
 fn stroke(fg: Hsla) -> Hsla {
-    fg.opacity(0.07)
+    fg.fill(Fill::Line)
 }
 
 /// MonoCode `animate-spin` (one turn a second, linear) on `icon`.
@@ -276,9 +277,9 @@ impl BenCodeApp {
             return div()
                 .px_3()
                 .py_2()
-                .text_size(px(12.0))
+                .text_size(Text::Base.px())
                 .line_height(relative(1.5))
-                .text_color(colors.fg.opacity(0.5))
+                .text_color(colors.fg.ink(Ink::Secondary))
                 .child("No project folder")
                 .into_any_element();
         }
@@ -374,15 +375,15 @@ impl BenCodeApp {
             .border_color(stroke(fg))
             .child(
                 div()
-                    .text_size(px(12.0))
+                    .text_size(Text::Base.px())
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(fg)
                     .child("Changes"),
             )
             .children(self.changes_ui.status.clone().map(|status| {
                 div()
-                    .text_size(px(11.0))
-                    .text_color(fg.opacity(0.5))
+                    .text_size(Text::Sm.px())
+                    .text_color(fg.ink(Ink::Secondary))
                     .child(status)
             }))
             .child(div().flex_1())
@@ -398,19 +399,19 @@ impl BenCodeApp {
                             .min_w_0()
                             .items_center()
                             .gap_1()
-                            .text_size(px(11.0))
-                            .text_color(fg.opacity(0.5))
+                            .text_size(Text::Sm.px())
+                            .text_color(fg.ink(Ink::Secondary))
                             .child(
                                 Icon::new(IconName::GitBranch)
                                     .size(IconSize::Xs)
-                                    .color(fg.opacity(0.5)),
+                                    .color(fg.ink(Ink::Secondary)),
                             )
                             .child(div().min_w_0().truncate().child(branch))
                             .when(sync.ahead > 0, |el| {
                                 el.child(
                                     div()
                                         .flex_none()
-                                        .text_color(fg.opacity(0.4))
+                                        .text_color(fg.ink(Ink::Muted))
                                         .child(format!("↑{}", sync.ahead)),
                                 )
                             })
@@ -418,7 +419,7 @@ impl BenCodeApp {
                                 el.child(
                                     div()
                                         .flex_none()
-                                        .text_color(fg.opacity(0.4))
+                                        .text_color(fg.ink(Ink::Muted))
                                         .child(format!("↓{}", sync.behind)),
                                 )
                             }),
@@ -439,11 +440,11 @@ impl BenCodeApp {
                                     },
                                     size: if pulling { IconSize::Sm } else { IconSize::Md },
                                     spin: pulling,
-                                    color: fg.opacity(0.5),
+                                    color: fg.ink(Ink::Secondary),
                                     hover_color: fg,
                                     fill: None,
-                                    hover: fg.opacity(0.10),
-                                    open: fg.opacity(0.10),
+                                    hover: fg.fill(Fill::Strong),
+                                    open: fg.fill(Fill::Strong),
                                     dim_disabled: true,
                                 },
                                 !busy,
@@ -508,7 +509,7 @@ impl BenCodeApp {
         // MonoCode `canEditMessage`: the textarea's `disabled:opacity-40`.
         let can_edit = (!self.git_status.staged.is_empty() || amend) && ui.busy.is_none();
         // `bg-content` / `bg-content/40`, `text-background-base`.
-        let fill = if can_commit { fg } else { fg.opacity(0.4) };
+        let fill = if can_commit { fg } else { fg.ink(Ink::Muted) };
         // MonoCode `canOpenMenu`.
         let can_open_menu = sync.branch.is_some() && ui.busy.is_none();
         let wand_hover = fg.opacity(0.20);
@@ -530,11 +531,11 @@ impl BenCodeApp {
                         div()
                             .id("git-commit-message")
                             .rounded(px(6.0))
-                            .bg(fg.opacity(0.10))
+                            .bg(fg.fill(Fill::Strong))
                             .pl_2()
                             .pr_8()
                             .py_1()
-                            .text_size(px(13.0))
+                            .text_size(Text::Md.px())
                             .line_height(px(20.0))
                             .text_color(fg)
                             .max_h(px(160.0))
@@ -560,7 +561,7 @@ impl BenCodeApp {
                             .items_center()
                             .justify_center()
                             .rounded(px(6.0))
-                            .bg(fg.opacity(0.10))
+                            .bg(fg.fill(Fill::Strong))
                             .when(!generating && !can_generate, |el| el.opacity(0.4))
                             .when(generating || can_generate, |el| {
                                 el.cursor_pointer()
@@ -625,7 +626,7 @@ impl BenCodeApp {
                             .gap_1p5()
                             .rounded_l(px(6.0))
                             .bg(fill)
-                            .text_size(px(12.0))
+                            .text_size(Text::Base.px())
                             .font_weight(FontWeight::MEDIUM)
                             .text_color(bg)
                             .when(can_commit, |el| {
@@ -660,7 +661,7 @@ impl BenCodeApp {
                                     color: bg,
                                     hover_color: bg,
                                     fill: Some(fill),
-                                    hover: if can_commit { fg.opacity(0.8) } else { fg },
+                                    hover: if can_commit { fg.ink(Ink::Strong) } else { fg },
                                     open: fg,
                                     dim_disabled: false,
                                 },
@@ -719,7 +720,7 @@ impl BenCodeApp {
             )
         };
         let button = |id: &'static str, enabled: bool, tip: String| {
-            let hover = fg.opacity(0.15);
+            let hover = fg.fill(Fill::Bold);
             div()
                 .id(id)
                 .flex()
@@ -731,8 +732,8 @@ impl BenCodeApp {
                 .gap_1p5()
                 .px_2()
                 .rounded(px(6.0))
-                .bg(fg.opacity(0.10))
-                .text_size(px(12.0))
+                .bg(fg.fill(Fill::Strong))
+                .text_size(Text::Base.px())
                 .font_weight(FontWeight::MEDIUM)
                 .text_color(fg)
                 .tooltip(Tooltip::text(tip))
@@ -750,7 +751,7 @@ impl BenCodeApp {
         };
         let spinner =
             |id: &'static str, name: IconName| spinning_icon(id.into(), name, IconSize::Sm, fg);
-        let count = |text: String| div().flex_none().text_color(fg.opacity(0.55)).child(text);
+        let count = |text: String| div().flex_none().text_color(fg.ink(Ink::Secondary)).child(text);
         let mut col = div().flex().flex_col().gap(px(6.0));
         if can_publish {
             col = col.child(
@@ -856,8 +857,8 @@ impl BenCodeApp {
             div()
                 .px_3()
                 .py_2()
-                .text_size(px(12.0))
-                .text_color(fg.opacity(0.45))
+                .text_size(Text::Base.px())
+                .text_color(fg.ink(Ink::Muted))
                 .child(text)
                 .into_any_element()
         } else {
@@ -933,7 +934,7 @@ impl BenCodeApp {
         let tree = ui.tree;
         // MonoCode `IconAction`: `size-5 rounded text-content/55
         // hover:bg-content/10 hover:text-content`, `size-3.5` icons.
-        let tint = fg.opacity(0.55);
+        let tint = fg.ink(Ink::Secondary);
         let action_group = |key: &str| SharedString::from(format!("git-{id}-{key}"));
         // In `tint`, `fg` while its button is hovered (MonoCode
         // `hover:text-content`).
@@ -946,7 +947,7 @@ impl BenCodeApp {
         let named = |key: &str, icon: IconName| glyph(key, Icon::new(icon));
         let extra = |key: &str, icon: ExtraIcon| glyph(key, icon.icon());
         let action = |key: &str, icon: AnyElement, tip: &'static str| {
-            let hover = fg.opacity(0.10);
+            let hover = fg.fill(Fill::Strong);
             div()
                 .id(action_group(key))
                 .group(action_group(key))
@@ -994,7 +995,7 @@ impl BenCodeApp {
                             IconName::ChevronRight
                         })
                         .size(IconSize::Sm)
-                        .color(fg.opacity(0.5)),
+                        .color(fg.ink(Ink::Secondary)),
                     )
                     // `text-[10px] font-semibold tracking-[0.04em]
                     // text-content/55 uppercase` (GPUI has no letter spacing).
@@ -1002,9 +1003,9 @@ impl BenCodeApp {
                         div()
                             .min_w_0()
                             .truncate()
-                            .text_size(px(10.0))
+                            .text_size(Text::Xs.px())
                             .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(fg.opacity(0.55))
+                            .text_color(fg.ink(Ink::Secondary))
                             .child(title),
                     )
                     .child(
@@ -1195,7 +1196,7 @@ impl BenCodeApp {
             Side::Staged => ("Unstage", IconName::Minus),
             Side::Unstaged => ("Stage", IconName::Plus),
         };
-        let action_hover = fg.opacity(0.10);
+        let action_hover = fg.fill(Fill::Strong);
         let action_group = SharedString::from(format!("{group}-stage"));
         // `hidden group-hover:flex`: no room is kept while hidden.
         let hovered = self.changes_ui.hovered_row.as_ref() == Some(&group);
@@ -1222,14 +1223,14 @@ impl BenCodeApp {
                 .child(
                     Icon::new(action_icon)
                         .size(IconSize::Sm)
-                        .color(fg.opacity(0.55))
+                        .color(fg.ink(Ink::Secondary))
                         .group_hover_color(action_group, fg),
                 ),
         );
-        let dot = dir.status.as_ref().map_or(fg.opacity(0.4), |status| {
+        let dot = dir.status.as_ref().map_or(fg.ink(Ink::Muted), |status| {
             status_color(status, crate::ui::appearance::diff_colors(cx))
         });
-        let hover = fg.opacity(0.05);
+        let hover = fg.fill(Fill::Hover);
         // `group flex h-7 items-center gap-1 pr-2 leading-none text-content
         // hover:bg-content/5`, indented `8 + depth * 12`.
         div()
@@ -1278,7 +1279,7 @@ impl BenCodeApp {
                                     IconName::ChevronRight
                                 })
                                 .size(IconSize::Sm)
-                                .color(fg.opacity(0.5)),
+                                .color(fg.ink(Ink::Secondary)),
                             ),
                     )
                     .child(icon.size(IconSize::Md))
@@ -1287,7 +1288,7 @@ impl BenCodeApp {
                             .flex_1()
                             .min_w_0()
                             .truncate()
-                            .text_size(px(13.0))
+                            .text_size(Text::Md.px())
                             .font_weight(FontWeight::MEDIUM)
                             .child(SharedString::from(dir.name.clone())),
                     ),
@@ -1332,9 +1333,9 @@ impl BenCodeApp {
         let group = SharedString::from(format!("git-row-{side:?}-{}", file.path));
         // MonoCode `bg-selection`.
         let selection = colors.active;
-        let hover = fg.opacity(0.05);
+        let hover = fg.fill(Fill::Hover);
         let action = |key: &str, icon: IconName, tip: &'static str| {
-            let action_hover = fg.opacity(0.10);
+            let action_hover = fg.fill(Fill::Strong);
             let action_group = SharedString::from(format!("{group}-{key}"));
             div()
                 .id(action_group.clone())
@@ -1354,7 +1355,7 @@ impl BenCodeApp {
                 .child(
                     Icon::new(icon)
                         .size(IconSize::Sm)
-                        .color(fg.opacity(0.55))
+                        .color(fg.ink(Ink::Secondary))
                         .group_hover_color(action_group, fg),
                 )
         };
@@ -1431,7 +1432,7 @@ impl BenCodeApp {
                                 .gap_1p5()
                                 .child(
                                     div()
-                                        .text_size(px(13.0))
+                                        .text_size(Text::Md.px())
                                         .font_weight(FontWeight::MEDIUM)
                                         .child(name),
                                 )
@@ -1440,8 +1441,8 @@ impl BenCodeApp {
                                         div()
                                             .min_w_0()
                                             .truncate()
-                                            .text_size(px(11.0))
-                                            .text_color(fg.opacity(0.4))
+                                            .text_size(Text::Sm.px())
+                                            .text_color(fg.ink(Ink::Muted))
                                             .child(dir.to_string()),
                                     )
                                 }),
@@ -1455,7 +1456,7 @@ impl BenCodeApp {
                     .flex_none()
                     .text_right()
                     .font_family(cx.theme().mono_family.clone())
-                    .text_size(px(11.0))
+                    .text_size(Text::Sm.px())
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(status_color(
                         &file.status,

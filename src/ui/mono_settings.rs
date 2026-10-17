@@ -33,6 +33,7 @@ use crate::ui::app_callback::app_callback;
 use crate::ui::mascot::{MASCOT_NAMES, MascotLook, mascot_for, pixel_mascot};
 use crate::ui::scale::px;
 use crate::ui::sidebar_popovers::pretty_path;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// MonoCode `w-[min(880px,…)]` and `h-[min(680px,…)]`.
 const DIALOG_WIDTH: f32 = 880.0;
@@ -64,16 +65,16 @@ fn group_heading(title: &'static str, description: Option<&'static str>, fg: Hsl
         .pt_7()
         .child(
             div()
-                .text_size(px(12.0))
+                .text_size(Text::Base.px())
                 .font_weight(FontWeight::MEDIUM)
-                .text_color(fg.opacity(0.7))
+                .text_color(fg.ink(Ink::Body))
                 .child(title),
         )
         .children(description.map(|text| {
             div()
-                .text_size(px(12.0))
+                .text_size(Text::Base.px())
                 .line_height(px(20.0))
-                .text_color(fg.opacity(0.4))
+                .text_color(fg.ink(Ink::Muted))
                 .child(text)
         }))
 }
@@ -114,16 +115,16 @@ fn setting_row(
                 .min_w_0()
                 .child(
                     div()
-                        .text_size(px(13.0))
+                        .text_size(Text::Md.px())
                         .line_height(px(20.0))
                         .text_color(fg.opacity(0.9))
                         .child(label.into()),
                 )
                 .children(description.map(|text| {
                     div()
-                        .text_size(px(12.0))
+                        .text_size(Text::Base.px())
                         .line_height(px(20.0))
-                        .text_color(fg.opacity(0.4))
+                        .text_color(fg.ink(Ink::Muted))
                         .child(text)
                 })),
         )
@@ -135,8 +136,8 @@ fn setting_row(
                 .items_center()
                 .justify_end()
                 .pr_1p5()
-                .text_size(px(12.0))
-                .text_color(fg.opacity(0.85))
+                .text_size(Text::Base.px())
+                .text_color(fg.ink(Ink::Strong))
                 .child(control),
         )
         .into_any_element()
@@ -160,7 +161,7 @@ fn page_header(title: &'static str, action: Option<AnyElement>, fg: Hsla) -> gpu
                 .flex_1()
                 .min_w_0()
                 .truncate()
-                .text_size(px(13.0))
+                .text_size(Text::Md.px())
                 .font_weight(FontWeight::MEDIUM)
                 .text_color(fg)
                 .child(title),
@@ -175,8 +176,8 @@ fn empty(text: &'static str, fg: Hsla) -> gpui::Div {
         .py_6()
         .flex()
         .justify_center()
-        .text_size(px(12.0))
-        .text_color(fg.opacity(0.45))
+        .text_size(Text::Base.px())
+        .text_color(fg.ink(Ink::Muted))
         .child(text)
 }
 
@@ -185,11 +186,11 @@ fn empty(text: &'static str, fg: Hsla) -> gpui::Div {
 fn outline_button(id: &'static str, label: &'static str, danger: bool, cx: &Context<BenCodeApp>) -> gpui::Stateful<gpui::Div> {
     let colors = &cx.theme().colors;
     let fg = colors.fg;
-    let ink = if danger { colors.danger } else { fg.opacity(0.8) };
+    let ink = if danger { colors.danger } else { fg.ink(Ink::Strong) };
     let hover = if danger {
         colors.danger.opacity(0.1)
     } else {
-        fg.opacity(0.05)
+        fg.fill(Fill::Hover)
     };
     div()
         .id(id)
@@ -199,7 +200,7 @@ fn outline_button(id: &'static str, label: &'static str, danger: bool, cx: &Cont
         .border_color(fg.opacity(STROKE))
         .px_3()
         .py_1p5()
-        .text_size(px(12.0))
+        .text_size(Text::Base.px())
         .text_color(ink)
         .cursor_pointer()
         .hover(move |s| s.bg(hover))
@@ -232,8 +233,8 @@ impl BenCodeApp {
                     .px(px(10.0))
                     .pb_2()
                     .pt_1p5()
-                    .text_size(px(11.0))
-                    .text_color(fg.opacity(0.45))
+                    .text_size(Text::Sm.px())
+                    .text_color(fg.ink(Ink::Muted))
                     .child("Settings"),
             )
             .children(SECTIONS.iter().map(|&(id, label, icon)| {
@@ -248,14 +249,14 @@ impl BenCodeApp {
                     .rounded(px(8.0))
                     .px(px(10.0))
                     .py_1p5()
-                    .text_size(px(13.0))
+                    .text_size(Text::Md.px())
                     .text_color(ink)
                     .cursor_pointer()
                     .map(|el| {
                         if selected {
-                            el.bg(fg.opacity(0.08))
+                            el.bg(fg.fill(Fill::Selected))
                         } else {
-                            el.hover(move |s| s.bg(fg.opacity(0.05)).text_color(fg))
+                            el.hover(move |s| s.bg(fg.fill(Fill::Hover)).text_color(fg))
                         }
                     })
                     .on_click(cx.listener(move |this, _, _, cx| {
@@ -325,7 +326,7 @@ impl BenCodeApp {
             .items_center()
             .px_2()
             .rounded(px(6.0))
-            .hover(move |s| s.bg(fg.opacity(0.05)))
+            .hover(move |s| s.bg(fg.fill(Fill::Hover)))
             .text_size(px(15.0))
             .font_weight(FontWeight::MEDIUM)
             .child(div().flex_1().min_w_0().child(self.monos.files.name_input.clone()));
@@ -403,7 +404,7 @@ impl BenCodeApp {
             .pt_6()
             .child(
                 div()
-                    .text_size(px(14.0))
+                    .text_size(Text::Lg.px())
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(fg)
                     .child("General"),
@@ -436,7 +437,7 @@ impl BenCodeApp {
                 div()
                     .pt_2()
                     .px_1()
-                    .text_size(px(12.0))
+                    .text_size(Text::Base.px())
                     .text_color(colors.danger)
                     .child(err)
             }));
@@ -509,7 +510,7 @@ impl BenCodeApp {
             .border_1()
             .border_color(fg.opacity(STROKE))
             .bg(fg.opacity(if open { 0.08 } else { 0.04 }))
-            .hover(move |s| s.bg(fg.opacity(0.08)))
+            .hover(move |s| s.bg(fg.fill(Fill::Selected)))
             .cursor_pointer()
             .tooltip(Tooltip::text("Change mascot and color"))
             .on_click(cx.listener(|this, _, _, cx| {
@@ -539,7 +540,7 @@ impl BenCodeApp {
                 .bg(crate::ui::sidebar_popovers::popover_glass(cx))
                 .shadow_xl()
                 .child(self.render_mono_mascot_grid(mono, cx))
-                .child(div().my_3().h(px(1.0)).bg(fg.opacity(0.1)))
+                .child(div().my_3().h(px(1.0)).bg(fg.fill(Fill::Strong)))
                 .child(self.render_mono_color_grid(mono, cx));
             raise("mono-settings-look-layer", card).with_priority(1)
         });
@@ -578,7 +579,7 @@ impl BenCodeApp {
                     if selected {
                         el.bg(selected_bg).border_1().border_color(fg.opacity(0.2))
                     } else {
-                        el.hover(move |s| s.bg(fg.opacity(0.06)))
+                        el.hover(move |s| s.bg(fg.fill(Fill::Hover)))
                     }
                 })
                 .tooltip(Tooltip::text(title))
@@ -625,7 +626,7 @@ impl BenCodeApp {
                         .items_center()
                         .justify_center()
                         .rounded_full()
-                        .when(selected, |el| el.border_2().border_color(fg.opacity(0.8)))
+                        .when(selected, |el| el.border_2().border_color(fg.ink(Ink::Strong)))
                         .child(
                             div()
                                 .size(px(if selected { 16.0 } else { 22.0 }))
@@ -674,7 +675,7 @@ impl BenCodeApp {
                             .items_center()
                             .justify_center()
                             .rounded(px(8.0))
-                            .bg(fg.opacity(0.05))
+                            .bg(fg.fill(Fill::Hover))
                             .child(crate::ui::mascot::pixel_sprite(
                                 &self.project_mascot(&path).rest,
                                 px(16.0),
@@ -689,7 +690,7 @@ impl BenCodeApp {
                             .child(
                                 div()
                                     .truncate()
-                                    .text_size(px(13.0))
+                                    .text_size(Text::Md.px())
                                     .line_height(px(20.0))
                                     .text_color(fg.opacity(0.9))
                                     .child(name.clone()),
@@ -697,9 +698,9 @@ impl BenCodeApp {
                             .child(
                                 div()
                                     .truncate()
-                                    .text_size(px(11.0))
+                                    .text_size(Text::Sm.px())
                                     .line_height(px(16.0))
-                                    .text_color(fg.opacity(0.4))
+                                    .text_color(fg.ink(Ink::Muted))
                                     .child(pretty_path(&path)),
                             ),
                     )
@@ -714,12 +715,12 @@ impl BenCodeApp {
                             .rounded(px(6.0))
                             .invisible()
                             .group_hover(group, |s| s.visible())
-                            .hover(move |s| s.bg(fg.opacity(0.08)))
+                            .hover(move |s| s.bg(fg.fill(Fill::Selected)))
                             .tooltip(Tooltip::text(format!("Remove {name}")))
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 this.remove_mono_project(&id, &target, cx)
                             }))
-                            .child(Icon::new(IconName::X).size(IconSize::Sm).color(fg.opacity(0.45))),
+                            .child(Icon::new(IconName::X).size(IconSize::Sm).color(fg.ink(Ink::Muted))),
                     )
                     .into_any_element()
             })
@@ -775,7 +776,7 @@ impl BenCodeApp {
                 .px_4()
                 .py_3()
                 .font_family(cx.theme().mono_family.clone())
-                .text_size(px(12.0))
+                .text_size(Text::Base.px())
                 .line_height(px(19.0))
                 .child(files.soul_input.clone())
                 .into_any_element()
@@ -788,8 +789,8 @@ impl BenCodeApp {
                     .px_1p5()
                     .py_0p5()
                     .cursor_pointer()
-                    .text_color(fg.opacity(0.7))
-                    .hover(move |s| s.bg(fg.opacity(0.08)).text_color(fg))
+                    .text_color(fg.ink(Ink::Body))
+                    .hover(move |s| s.bg(fg.fill(Fill::Selected)).text_color(fg))
                     .child(label)
             };
             div()
@@ -799,9 +800,9 @@ impl BenCodeApp {
                 .gap_2()
                 .mt_2()
                 .px_4()
-                .text_size(px(11.0))
+                .text_size(Text::Sm.px())
                 .line_height(px(16.0))
-                .text_color(fg.opacity(0.6))
+                .text_color(fg.ink(Ink::Secondary))
                 .child(
                     div()
                         .flex_1()
@@ -825,7 +826,7 @@ impl BenCodeApp {
                 div()
                     .px_4()
                     .pt_2()
-                    .text_size(px(12.0))
+                    .text_size(Text::Base.px())
                     .text_color(colors.danger)
                     .child(err)
             });
@@ -913,7 +914,7 @@ impl BenCodeApp {
                 div()
                     .px_4()
                     .py_2()
-                    .text_size(px(12.0))
+                    .text_size(Text::Base.px())
                     .text_color(colors.danger)
                     .child(err)
             }))
@@ -946,9 +947,9 @@ impl BenCodeApp {
                 .justify_center()
                 .rounded(px(6.0))
                 .cursor_pointer()
-                .hover(move |s| s.bg(fg.opacity(0.08)))
+                .hover(move |s| s.bg(fg.fill(Fill::Selected)))
                 .tooltip(Tooltip::text(tip))
-                .child(Icon::new(icon).size(IconSize::Sm).color(fg.opacity(0.55)))
+                .child(Icon::new(icon).size(IconSize::Sm).color(fg.ink(Ink::Secondary)))
         };
         let (edit_fact, forget_fact, click_fact) = (fact.clone(), fact.clone(), fact.clone());
         div()
@@ -957,7 +958,7 @@ impl BenCodeApp {
             .flex()
             .items_center()
             .rounded(px(6.0))
-            .hover(move |s| s.bg(fg.opacity(0.05)))
+            .hover(move |s| s.bg(fg.fill(Fill::Hover)))
             .child(
                 div()
                     .id(("mono-fact-body", ix))
@@ -981,22 +982,22 @@ impl BenCodeApp {
                             .child(
                                 div()
                                     .truncate()
-                                    .text_size(px(12.0))
+                                    .text_size(Text::Base.px())
                                     .line_height(px(20.0))
                                     .map(|el| {
                                         if struck {
-                                            el.text_color(fg.opacity(0.35)).line_through()
+                                            el.text_color(fg.ink(Ink::Faint)).line_through()
                                         } else {
-                                            el.text_color(fg.opacity(0.85))
+                                            el.text_color(fg.ink(Ink::Strong))
                                         }
                                     })
                                     .child(fact.text.clone()),
                             )
                             .children(fact.date.as_deref().map(|date| {
                                 div()
-                                    .text_size(px(11.0))
+                                    .text_size(Text::Sm.px())
                                     .line_height(px(16.0))
-                                    .text_color(fg.opacity(0.4))
+                                    .text_color(fg.ink(Ink::Muted))
                                     .child(short_date(date))
                             })),
                     ),
@@ -1039,7 +1040,7 @@ impl BenCodeApp {
             .items_center()
             .gap(px(10.0))
             .rounded(px(6.0))
-            .bg(fg.opacity(0.05))
+            .bg(fg.fill(Fill::Hover))
             .px_2()
             .py_2()
             .child(fact_icon(false, fg))
@@ -1050,7 +1051,7 @@ impl BenCodeApp {
                     .min_h(px(28.0))
                     .flex()
                     .items_center()
-                    .text_size(px(12.0))
+                    .text_size(Text::Base.px())
                     .when(self.monos.files.memory_saving, |el| el.opacity(0.6))
                     .child(self.monos.files.memory_input.clone()),
             )
@@ -1067,7 +1068,7 @@ fn fact_icon(dim: bool, fg: Hsla) -> impl IntoElement {
         .items_center()
         .justify_center()
         .rounded(px(6.0))
-        .bg(fg.opacity(0.06))
+        .bg(fg.fill(Fill::Hover))
         .child(
             Icon::new(IconName::StickyNote)
                 .size(IconSize::Sm)
@@ -1087,7 +1088,7 @@ fn memory_gauge(memory: &str, cx: &Context<BenCodeApp>) -> impl IntoElement {
     } else if share >= 0.8 {
         colors.warning.opacity(0.7)
     } else {
-        fg.opacity(0.3)
+        fg.ink(Ink::Faint)
     };
     div()
         .mt_2()
@@ -1095,16 +1096,16 @@ fn memory_gauge(memory: &str, cx: &Context<BenCodeApp>) -> impl IntoElement {
         .items_center()
         .gap_2()
         .px_2()
-        .text_size(px(11.0))
+        .text_size(Text::Sm.px())
         .line_height(px(16.0))
-        .text_color(fg.opacity(0.45))
+        .text_color(fg.ink(Ink::Muted))
         .child(
             div()
                 .flex_1()
                 .h(px(4.0))
                 .overflow_hidden()
                 .rounded_full()
-                .bg(fg.opacity(0.08))
+                .bg(fg.fill(Fill::Selected))
                 .child(
                     div()
                         .h_full()

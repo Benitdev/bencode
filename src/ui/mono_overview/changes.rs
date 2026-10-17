@@ -21,6 +21,7 @@ use crate::git::GitFileChange;
 use crate::monos::Mono;
 use crate::ui::git_changes_panel::{status_color, status_letter};
 use crate::ui::scale::px;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 impl BenCodeApp {
     pub(super) fn render_mono_changes(&self, mono: &Mono, cx: &Context<Self>) -> AnyElement {
@@ -62,15 +63,15 @@ impl BenCodeApp {
                     .h(px(24.0))
                     .px_2()
                     .rounded(px(6.0))
-                    .text_size(px(12.0))
+                    .text_size(Text::Base.px())
                     .cursor_pointer()
                     .tooltip(Tooltip::text(path.clone()))
                     .map(|el| {
                         if active {
-                            el.bg(fg.opacity(0.08)).text_color(fg)
+                            el.bg(fg.fill(Fill::Selected)).text_color(fg)
                         } else {
-                            el.text_color(fg.opacity(0.5))
-                                .hover(move |s| s.text_color(fg.opacity(0.8)))
+                            el.text_color(fg.ink(Ink::Secondary))
+                                .hover(move |s| s.text_color(fg.ink(Ink::Strong)))
                         }
                     })
                     .on_click(cx.listener(move |this, _, _, cx| {
@@ -89,15 +90,15 @@ impl BenCodeApp {
                             .child(self.rail_project_label(path)),
                     )
                     .when(count > 0, |el| {
-                        el.child(div().text_color(fg.opacity(0.4)).child(count.to_string()))
+                        el.child(div().text_color(fg.ink(Ink::Muted)).child(count.to_string()))
                     })
             }));
         let project = changes.projects.get(&root);
         let body: AnyElement = match project {
             None => div()
                 .p_4()
-                .text_size(px(12.0))
-                .text_color(fg.opacity(0.45))
+                .text_size(Text::Base.px())
+                .text_color(fg.ink(Ink::Muted))
                 .child("Loading…")
                 .into_any_element(),
             Some(project) if !project.repo => empty_state(
@@ -111,7 +112,7 @@ impl BenCodeApp {
             .error
             .clone()
             .map(|err| (err, colors.danger))
-            .or_else(|| changes.status.clone().map(|text| (text, fg.opacity(0.55))))
+            .or_else(|| changes.status.clone().map(|text| (text, fg.ink(Ink::Secondary))))
             .map(|(text, color)| {
                 div()
                     .flex_none()
@@ -119,7 +120,7 @@ impl BenCodeApp {
                     .border_color(fg.opacity(STROKE))
                     .px_4()
                     .py_2()
-                    .text_size(px(12.0))
+                    .text_size(Text::Base.px())
                     .text_color(color)
                     .child(text)
             });
@@ -206,20 +207,20 @@ impl BenCodeApp {
                     .items_center()
                     .gap_1p5()
                     .mb_2()
-                    .text_size(px(11.0))
-                    .text_color(fg.opacity(0.45))
-                    .child(Icon::new(IconName::GitBranch).size(IconSize::Xs).color(fg.opacity(0.45)))
+                    .text_size(Text::Sm.px())
+                    .text_color(fg.ink(Ink::Muted))
+                    .child(Icon::new(IconName::GitBranch).size(IconSize::Xs).color(fg.ink(Ink::Muted)))
                     .child(div().min_w_0().truncate().child(branch)),
             )
             .child(
                 div()
                     .rounded(px(8.0))
                     .border_1()
-                    .border_color(fg.opacity(0.1))
-                    .bg(fg.opacity(0.03))
+                    .border_color(fg.fill(Fill::Strong))
+                    .bg(fg.fill(Fill::Faint))
                     .px_2()
                     .py_1p5()
-                    .text_size(px(12.0))
+                    .text_size(Text::Base.px())
                     .child(changes.message.clone()),
             )
             .child(actions);
@@ -228,8 +229,8 @@ impl BenCodeApp {
                 .py_6()
                 .flex()
                 .justify_center()
-                .text_size(px(12.0))
-                .text_color(fg.opacity(0.45))
+                .text_size(Text::Base.px())
+                .text_color(fg.ink(Ink::Muted))
                 .child("No changes")
                 .into_any_element()
         } else {
@@ -281,9 +282,9 @@ impl BenCodeApp {
             .items_center()
             .h(px(28.0))
             .px_3()
-            .text_size(px(11.0))
+            .text_size(Text::Sm.px())
             .font_weight(FontWeight::MEDIUM)
-            .text_color(fg.opacity(0.5))
+            .text_color(fg.ink(Ink::Secondary))
             .child(div().flex_1().child(format!("{} {}", title.to_uppercase(), files.len())))
             .child(
                 div()
@@ -295,7 +296,7 @@ impl BenCodeApp {
                     .rounded(px(4.0))
                     .invisible()
                     .group_hover(section.clone(), |s| s.visible())
-                    .hover(move |s| s.bg(fg.opacity(0.08)))
+                    .hover(move |s| s.bg(fg.fill(Fill::Selected)))
                     .tooltip(Tooltip::text(if staged {
                         "Unstage All Changes"
                     } else {
@@ -306,7 +307,7 @@ impl BenCodeApp {
                             this.mono_stage_all(!staged, cx)
                         }))
                     })
-                    .child(Icon::new(all_icon).size(IconSize::Xs).color(fg.opacity(0.6))),
+                    .child(Icon::new(all_icon).size(IconSize::Xs).color(fg.ink(Ink::Secondary))),
             );
         div()
             .child(header)
@@ -326,7 +327,7 @@ impl BenCodeApp {
                     .h(px(26.0))
                     .px_3()
                     .cursor_pointer()
-                    .hover(move |s| s.bg(fg.opacity(0.05)))
+                    .hover(move |s| s.bg(fg.fill(Fill::Hover)))
                     .tooltip(Tooltip::text(file.path.clone()))
                     .on_click(cx.listener(move |this, _, _, cx| {
                         this.open_mono_change(open_path.clone(), staged, cx)
@@ -341,16 +342,16 @@ impl BenCodeApp {
                             .child(
                                 div()
                                     .flex_none()
-                                    .text_size(px(12.0))
-                                    .text_color(fg.opacity(0.85))
+                                    .text_size(Text::Base.px())
+                                    .text_color(fg.ink(Ink::Strong))
                                     .child(name),
                             )
                             .child(
                                 div()
                                     .min_w_0()
                                     .truncate()
-                                    .text_size(px(11.0))
-                                    .text_color(fg.opacity(0.4))
+                                    .text_size(Text::Sm.px())
+                                    .text_color(fg.ink(Ink::Muted))
                                     .child(folder),
                             ),
                     )
@@ -365,7 +366,7 @@ impl BenCodeApp {
                             .rounded(px(4.0))
                             .invisible()
                             .group_hover(row.clone(), |s| s.visible())
-                            .hover(move |s| s.bg(fg.opacity(0.08)))
+                            .hover(move |s| s.bg(fg.fill(Fill::Selected)))
                             .tooltip(Tooltip::text(if staged { "Unstage" } else { "Stage" }))
                             .when(!busy, |el| {
                                 el.on_click(cx.listener(move |this, _, _, cx| {
@@ -373,13 +374,13 @@ impl BenCodeApp {
                                     this.mono_stage_file(stage_path.clone(), !staged, cx)
                                 }))
                             })
-                            .child(Icon::new(all_icon).size(IconSize::Xs).color(fg.opacity(0.6))),
+                            .child(Icon::new(all_icon).size(IconSize::Xs).color(fg.ink(Ink::Secondary))),
                     )
                     .child(
                         div()
                             .flex_none()
                             .w(px(12.0))
-                            .text_size(px(11.0))
+                            .text_size(Text::Sm.px())
                             .font_weight(FontWeight::MEDIUM)
                             .text_color(status_letter_color(file, diff))
                             .child(status_letter(&file.status)),

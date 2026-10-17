@@ -18,6 +18,8 @@ use crate::ui::provider_icon::HarnessIcon;
 use crate::ui::scale::px;
 use crate::ui::sidebar_sessions::ListDrop;
 use crate::ui::spinner::terminal_spinner;
+use crate::ui::tokens::{AMBER_400, EMERALD_400};
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// The slide-in opens to this height (a usual card's); the cap comes off
 /// when it finishes.
@@ -26,9 +28,6 @@ const CARD_MAX_HEIGHT: f32 = 160.0;
 /// MonoCode's `text-[13px] leading-snug` card title.
 const TITLE_LINE_HEIGHT: f32 = 13.0 * 1.375;
 
-/// MonoCode's amber-400 and emerald-400 status colours.
-const AMBER: u32 = 0xfbbf24;
-const EMERALD: u32 = 0x34d399;
 
 impl BenCodeApp {
     /// MonoCode's card status: approval, working, done, draft, else age.
@@ -47,13 +46,13 @@ impl BenCodeApp {
                 .flex_none()
                 .items_center()
                 .gap_1()
-                .text_size(px(11.0))
+                .text_size(Text::Sm.px())
                 .text_color(color)
         };
         let icon =
             |name: IconName, color: gpui::Hsla| Icon::new(name).size(IconSize::Xs).color(color);
         if states.approval.contains(&session.id) {
-            let amber: gpui::Hsla = rgb(AMBER).into();
+            let amber: gpui::Hsla = rgb(AMBER_400).into();
             return row(amber)
                 .child(icon(IconName::CircleAlert, amber))
                 .child(if session.orchestration.is_some() {
@@ -70,20 +69,20 @@ impl BenCodeApp {
                 .into_any_element();
         }
         if states.done.contains(&session.id) {
-            let green: gpui::Hsla = rgb(EMERALD).into();
+            let green: gpui::Hsla = rgb(EMERALD_400).into();
             return row(green)
                 .child(icon(IconName::Check, green))
                 .child("Done")
                 .into_any_element();
         }
         if draft {
-            let muted = colors.fg.opacity(0.55);
+            let muted = colors.fg.ink(Ink::Secondary);
             return row(muted)
                 .child(icon(IconName::CircleDashed, muted))
                 .child("Draft")
                 .into_any_element();
         }
-        row(colors.fg.opacity(0.45))
+        row(colors.fg.ink(Ink::Muted))
             .child(format_relative(session.updated_at, now))
             .into_any_element()
     }
@@ -96,7 +95,7 @@ impl BenCodeApp {
             div()
                 .min_w_0()
                 .truncate()
-                .text_size(px(13.0))
+                .text_size(Text::Md.px())
                 .line_height(px(TITLE_LINE_HEIGHT))
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_color(fg)
@@ -207,7 +206,7 @@ impl BenCodeApp {
                 el.child(
                     Icon::new(IconName::Pin)
                         .size(IconSize::Xs)
-                        .color(fg.opacity(0.45)),
+                        .color(fg.ink(Ink::Muted)),
                 )
             })
             .child(self.render_card_title(&id, &title, cx));
@@ -231,8 +230,8 @@ impl BenCodeApp {
                             div()
                                 .min_w_0()
                                 .truncate()
-                                .text_size(px(11.0))
-                                .text_color(fg.opacity(0.5))
+                                .text_size(Text::Sm.px())
+                                .text_color(fg.ink(Ink::Secondary))
                                 .child(model),
                         ),
                 )
@@ -268,14 +267,14 @@ impl BenCodeApp {
                             .min_w_0()
                             .items_center()
                             .gap_1()
-                            .text_size(px(11.0))
-                            .text_color(fg.opacity(0.45))
+                            .text_size(Text::Sm.px())
+                            .text_color(fg.ink(Ink::Muted))
                             .tooltip(Tooltip::text(git_tip))
                             .child(
                                 div().flex_none().child(
                                     Icon::new(IconName::GitBranch)
                                         .size(IconSize::Xs)
-                                        .color(fg.opacity(0.45)),
+                                        .color(fg.ink(Ink::Muted)),
                                 ),
                             )
                             .child(div().min_w_0().truncate().child(git)),
@@ -300,7 +299,7 @@ impl BenCodeApp {
                             .invisible()
                             .group_hover(group.clone(), |s| s.visible())
                             .cursor_pointer()
-                            .hover(move |s| s.bg(fg.opacity(0.10)))
+                            .hover(move |s| s.bg(fg.fill(Fill::Strong)))
                             .tooltip(Tooltip::text(archive_label))
                             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                             .on_click(cx.listener(move |this, _, _, cx| {
@@ -310,7 +309,7 @@ impl BenCodeApp {
                             .child(
                                 Icon::new(IconName::Archive)
                                     .size(IconSize::Xs)
-                                    .color(fg.opacity(0.5))
+                                    .color(fg.ink(Ink::Secondary))
                                     .group_hover_color(format!("{group}-archive"), fg),
                             ),
                     )
@@ -328,7 +327,7 @@ impl BenCodeApp {
                                 .child(
                                     Icon::new(IconName::Zap)
                                         .size(IconSize::Xs)
-                                        .color(rgb(AMBER)),
+                                        .color(rgb(AMBER_400)),
                                 ),
                         )
                     })
@@ -389,12 +388,12 @@ impl BenCodeApp {
                 } else if draft {
                     el.border_dashed()
                         .border_color(dashed)
-                        .hover(move |s| s.bg(fg.opacity(0.05)))
+                        .hover(move |s| s.bg(fg.fill(Fill::Hover)))
                 } else if expanded {
-                    el.bg(fg.opacity(0.05))
-                        .hover(move |s| s.bg(fg.opacity(0.10)))
+                    el.bg(fg.fill(Fill::Hover))
+                        .hover(move |s| s.bg(fg.fill(Fill::Strong)))
                 } else {
-                    el.hover(move |s| s.bg(fg.opacity(0.05)))
+                    el.hover(move |s| s.bg(fg.fill(Fill::Hover)))
                 }
             })
             .tooltip(Tooltip::text(title))
@@ -470,7 +469,7 @@ impl BenCodeApp {
         cx: &Context<Self>,
     ) -> AnyElement {
         let colors = &cx.theme().colors;
-        let amber: gpui::Hsla = rgb(AMBER).into();
+        let amber: gpui::Hsla = rgb(AMBER_400).into();
         div()
             .w_full()
             .px(px(10.0))
@@ -486,10 +485,10 @@ impl BenCodeApp {
                     .rounded(px(4.0))
                     .px(px(7.0))
                     .py(px(3.0))
-                    .bg(colors.fg.opacity(0.10))
+                    .bg(colors.fg.fill(Fill::Strong))
                     .border_1()
                     .border_color(colors.accent.opacity(0.4))
-                    .text_size(px(13.0))
+                    .text_size(Text::Md.px())
                     .line_height(px(TITLE_LINE_HEIGHT))
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(colors.fg)

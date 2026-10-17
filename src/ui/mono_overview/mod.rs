@@ -29,6 +29,7 @@ use crate::app::mono_overview::OverviewTab;
 use crate::monos::{Mono, MonoState};
 use crate::ui::icons::ExtraIcon;
 use crate::ui::scale::px;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// `border-stroke`.
 const STROKE: f32 = 0.07;
@@ -65,14 +66,14 @@ pub(super) fn empty_state(tab: OverviewTab, text: String, fg: Hsla) -> AnyElemen
         .gap_3()
         .px_6()
         .py_10()
-        .child(tab_icon(tab, fg.opacity(0.55)))
+        .child(tab_icon(tab, fg.ink(Ink::Secondary)))
         .child(
             div()
                 .max_w(px(288.0))
                 .text_center()
-                .text_size(px(12.0))
+                .text_size(Text::Base.px())
                 .line_height(px(18.0))
-                .text_color(fg.opacity(0.55))
+                .text_color(fg.ink(Ink::Secondary))
                 .child(text),
         )
         .into_any_element()
@@ -92,7 +93,7 @@ pub(super) fn list_row(
         .id(id)
         .w_full()
         .cursor_pointer()
-        .hover(move |s| s.bg(fg.opacity(0.05)))
+        .hover(move |s| s.bg(fg.fill(Fill::Hover)))
 }
 
 /// A list row's tile and two lines, without its hover: for a row whose
@@ -114,7 +115,7 @@ pub(super) fn row_content(tile: AnyElement, title: String, line: String, fg: Hsl
                 .items_center()
                 .justify_center()
                 .rounded(px(6.0))
-                .bg(fg.opacity(0.06))
+                .bg(fg.fill(Fill::Hover))
                 .child(tile),
         )
         .child(
@@ -124,17 +125,17 @@ pub(super) fn row_content(tile: AnyElement, title: String, line: String, fg: Hsl
                 .child(
                     div()
                         .truncate()
-                        .text_size(px(12.0))
+                        .text_size(Text::Base.px())
                         .line_height(px(20.0))
-                        .text_color(fg.opacity(0.85))
+                        .text_color(fg.ink(Ink::Strong))
                         .child(title),
                 )
                 .child(
                     div()
                         .truncate()
-                        .text_size(px(11.0))
+                        .text_size(Text::Sm.px())
                         .line_height(px(16.0))
-                        .text_color(fg.opacity(0.4))
+                        .text_color(fg.ink(Ink::Muted))
                         .child(line),
                 ),
         )
@@ -162,9 +163,9 @@ impl BenCodeApp {
             .cursor_col_resize()
             .map(|el| {
                 if resizing {
-                    el.bg(fg.opacity(0.15))
+                    el.bg(fg.fill(Fill::Bold))
                 } else {
-                    el.hover(move |s| s.bg(fg.opacity(0.1)))
+                    el.hover(move |s| s.bg(fg.fill(Fill::Strong)))
                 }
             })
             .tooltip(Tooltip::text("Resize Mono details"))
@@ -336,7 +337,7 @@ impl BenCodeApp {
         let colors = &cx.theme().colors;
         let fg = colors.fg;
         let accent = colors.accent;
-        let ink = if selected { fg } else { fg.opacity(0.45) };
+        let ink = if selected { fg } else { fg.ink(Ink::Muted) };
         let group = SharedString::from(format!("mono-overview-tab-{label}"));
         div()
             .id(group.clone())
@@ -347,14 +348,14 @@ impl BenCodeApp {
             .h(px(24.0))
             .px_2()
             .rounded(px(6.0))
-            .text_size(px(12.0))
+            .text_size(Text::Base.px())
             .cursor_pointer()
             .text_color(ink)
             .map(|el| {
                 if selected {
-                    el.bg(fg.opacity(0.08))
+                    el.bg(fg.fill(Fill::Selected))
                 } else {
-                    el.hover(move |s| s.bg(fg.opacity(0.05)).text_color(fg.opacity(0.8)))
+                    el.hover(move |s| s.bg(fg.fill(Fill::Hover)).text_color(fg.ink(Ink::Strong)))
                 }
             })
             // Activity's caller names it by what a click does.
@@ -366,7 +367,7 @@ impl BenCodeApp {
                     .relative()
                     .flex_none()
                     .child(
-                        tab_icon(tab, ink).group_hover_color(group.clone(), fg.opacity(0.8)),
+                        tab_icon(tab, ink).group_hover_color(group.clone(), fg.ink(Ink::Strong)),
                     )
                     .when(dot, |el| {
                         el.child(
@@ -395,7 +396,7 @@ impl BenCodeApp {
                                 .bg(accent)
                                 .px_1()
                                 .text_center()
-                                .text_size(px(10.0))
+                                .text_size(Text::Xs.px())
                                 .line_height(px(16.0))
                                 .font_weight(FontWeight::MEDIUM)
                                 .text_color(gpui::white())
@@ -450,7 +451,7 @@ impl BenCodeApp {
                     SharedString::from(format!("mono-document-{id}")),
                     crate::ui::artifacts::artifact_icon(card.kind)
                         .size(IconSize::Sm)
-                        .color(fg.opacity(0.6))
+                        .color(fg.ink(Ink::Secondary))
                         .into_any_element(),
                     card.title.clone(),
                     line,

@@ -14,6 +14,7 @@ use crate::app::release_notes;
 use crate::ui::app_callback::app_callback;
 use crate::ui::scale::px;
 use crate::ui::transcript::markdown::AgentMarkdown;
+use crate::ui::tokens::{Ink, Text, Tone as _};
 
 /// MonoCode `h-[min(72vh,640px)]`, less the dialog's title and buttons.
 const NOTES_HEIGHT: f32 = 480.0;
@@ -31,8 +32,8 @@ impl BenCodeApp {
                 AgentMarkdown::new("whats-new-notes", notes.markdown).into_any_element()
             }
             _ => div()
-                .text_size(px(13.0))
-                .text_color(cx.theme().colors.fg.opacity(0.6))
+                .text_size(Text::Md.px())
+                .text_color(cx.theme().colors.fg.ink(Ink::Secondary))
                 .child("Release notes for this version are not available in this build.")
                 .into_any_element(),
         };

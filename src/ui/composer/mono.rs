@@ -30,6 +30,7 @@ use crate::ui::HarnessIcon;
 use crate::ui::footer::UsageChipVariant;
 use crate::ui::scale::px;
 use crate::ui::sidebar_popovers::popover_glass;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// MonoCode `MAX_HEIGHT`: the field grows to this before it scrolls.
 const MAX_FIELD_HEIGHT: f32 = 160.0;
@@ -78,14 +79,14 @@ fn text_control(id: SharedString, open: bool, fg: Hsla) -> gpui::Stateful<gpui::
         .h(px(26.0))
         .px_1p5()
         .rounded(px(6.0))
-        .text_size(px(12.0))
+        .text_size(Text::Base.px())
         .cursor_pointer()
         .map(|el| {
             if open {
-                el.bg(fg.opacity(0.08)).text_color(fg)
+                el.bg(fg.fill(Fill::Selected)).text_color(fg)
             } else {
-                el.text_color(fg.opacity(0.55))
-                    .hover(move |s| s.bg(fg.opacity(0.08)).text_color(fg))
+                el.text_color(fg.ink(Ink::Secondary))
+                    .hover(move |s| s.bg(fg.fill(Fill::Selected)).text_color(fg))
             }
         })
 }
@@ -98,7 +99,7 @@ fn tool_button(
     open: bool,
     fg: Hsla,
 ) -> gpui::Stateful<gpui::Div> {
-    let ink = if open { fg } else { fg.opacity(0.55) };
+    let ink = if open { fg } else { fg.ink(Ink::Secondary) };
     div()
         .id(id)
         .group(id)
@@ -109,8 +110,8 @@ fn tool_button(
         .justify_center()
         .rounded(px(6.0))
         .cursor_pointer()
-        .when(open, |el| el.bg(fg.opacity(0.08)))
-        .hover(move |s| s.bg(fg.opacity(0.08)))
+        .when(open, |el| el.bg(fg.fill(Fill::Selected)))
+        .hover(move |s| s.bg(fg.fill(Fill::Selected)))
         .child(
             Icon::new(icon)
                 .size(IconSize::Sm)
@@ -181,7 +182,7 @@ impl BenCodeApp {
             } else {
                 fg.opacity(if self.prompt_focused { 0.2 } else { 0.1 })
             })
-            .bg(fg.opacity(0.03))
+            .bg(fg.fill(Fill::Faint))
             // MonoCode light theme: the page colour, lifted by a shadow.
             .when(!cx.theme().is_dark(), |el| el.bg(colors.bg).shadow_md())
             // A press on the box that no button took puts the caret in the
@@ -200,7 +201,7 @@ impl BenCodeApp {
                 div()
                     .px_3()
                     .pt_2()
-                    .text_size(px(12.0))
+                    .text_size(Text::Base.px())
                     .text_color(colors.danger)
                     .child(error)
             }))
@@ -220,7 +221,7 @@ impl BenCodeApp {
                             .px_1p5()
                             .py_1()
                             .max_h(px(MAX_FIELD_HEIGHT + 8.0))
-                            .text_size(px(13.0))
+                            .text_size(Text::Md.px())
                             .line_height(px(18.0))
                             .child(self.prompt_input.clone()),
                     )
@@ -236,8 +237,8 @@ impl BenCodeApp {
                         .flex()
                         .items_center()
                         .justify_center()
-                        .text_size(px(12.0))
-                        .text_color(fg.opacity(0.7))
+                        .text_size(Text::Base.px())
+                        .text_color(fg.ink(Ink::Body))
                         .child("Drop files to attach"),
                 )
             })
@@ -303,7 +304,7 @@ impl BenCodeApp {
                             .items_center()
                             .justify_center()
                             .rounded(px(6.0))
-                            .hover(move |s| s.bg(fg.opacity(0.08)))
+                            .hover(move |s| s.bg(fg.fill(Fill::Selected)))
                             .children(self.context_meter(session, false, cx)),
                     ),
             )
@@ -331,8 +332,8 @@ impl BenCodeApp {
                 .flex_none()
                 .items_center()
                 .gap_0p5()
-                .text_size(px(11.0))
-                .text_color(cx.theme().colors.fg.opacity(0.55))
+                .text_size(Text::Sm.px())
+                .text_color(cx.theme().colors.fg.ink(Ink::Secondary))
                 .child(self.render_usage_chip(&target, UsageChipVariant::Composer, cx))
                 .child(self.render_usage_refresh(UsageChipVariant::Composer, cx))
                 .into_any_element(),
@@ -394,7 +395,7 @@ impl BenCodeApp {
         let fg = cx.theme().colors.fg;
         let open = self.composer_menus.models_only == Some(ModelsAnchor::MonoSettings);
         let trigger = text_control("mono-settings-model".into(), open, fg)
-            .text_color(if open { fg } else { fg.opacity(0.85) })
+            .text_color(if open { fg } else { fg.ink(Ink::Strong) })
             .on_click(cx.listener(|this, _, _, cx| {
                 this.toggle_models_only(ModelsAnchor::MonoSettings, cx)
             }))
@@ -408,7 +409,7 @@ impl BenCodeApp {
             .child(
                 Icon::new(IconName::ChevronDown)
                     .size(IconSize::Xs)
-                    .color(fg.opacity(0.45)),
+                    .color(fg.ink(Ink::Muted)),
             );
         div()
             .relative()
@@ -537,7 +538,7 @@ impl BenCodeApp {
                         Icon::new(icon).size(IconSize::Xs).color(if open {
                             fg
                         } else {
-                            fg.opacity(0.55)
+                            fg.ink(Ink::Secondary)
                         })
                     }))
                     .child(div().min_w_0().truncate().child(label));
@@ -581,9 +582,9 @@ impl BenCodeApp {
                     .px_2()
                     .rounded(px(8.0))
                     .cursor_pointer()
-                    .text_size(px(13.0))
+                    .text_size(Text::Md.px())
                     .text_color(fg)
-                    .hover(move |s| s.bg(fg.opacity(0.05)))
+                    .hover(move |s| s.bg(fg.fill(Fill::Hover)))
                     .on_click(cx.listener(move |this, _, _, cx| {
                         this.set_model_setting(&id, &picked, cx);
                         this.composer_menus.pill_menu = None;
@@ -595,7 +596,7 @@ impl BenCodeApp {
                         el.child(
                             Icon::new(IconName::Check)
                                 .size(IconSize::Xs)
-                                .color(fg.opacity(0.5)),
+                                .color(fg.ink(Ink::Secondary)),
                         )
                     })
             });
@@ -606,8 +607,8 @@ impl BenCodeApp {
                             .px_2()
                             .pt_1p5()
                             .pb_1()
-                            .text_size(px(11.0))
-                            .text_color(fg.opacity(0.45))
+                            .text_size(Text::Sm.px())
+                            .text_color(fg.ink(Ink::Muted))
                             .child(setting.menu_label().to_string()),
                     )
                 })

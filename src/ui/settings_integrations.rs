@@ -21,6 +21,7 @@ use crate::ui::scale::px;
 use crate::ui::settings_modal::SettingsTab;
 use crate::ui::settings_parts::{SettingsGroup, SettingsPage, SettingsRow, icon_tile};
 use crate::ui::sidebar_popovers::pretty_path;
+use crate::ui::tokens::{Ink, Text, Tone as _};
 
 /// The connection form's fields.
 const FIELD_WIDTH: f32 = 280.0;
@@ -61,7 +62,7 @@ impl BenCodeApp {
                 let row = SettingsRow::new(account.login.clone()).leading(icon_tile(
                     Icon::new(IconName::User)
                         .size(IconSize::Sm)
-                        .color(fg.opacity(0.6)),
+                        .color(fg.ink(Ink::Secondary)),
                     fg,
                 ));
                 if account.active {
@@ -261,7 +262,7 @@ impl BenCodeApp {
         let dialog = Dialog::new("backlog-disconnect-dialog", "Disconnect Backlog", close)
             .child(
                 div()
-                    .text_size(px(13.0))
+                    .text_size(Text::Md.px())
                     .line_height(relative(1.5))
                     .text_color(cx.theme().colors.fg_muted)
                     .child(format!(

@@ -21,6 +21,7 @@ use super::turns::{self, Item, Row};
 use crate::app::BenCodeApp;
 use crate::db::Block;
 use crate::ui::composer::focus_later;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// MonoCode scrolls the match to 42px under the top, clear of the bar.
 const MATCH_TOP_GAP: f32 = 42.0;
@@ -394,7 +395,7 @@ impl BenCodeApp {
             format!("{} of {matches}", active.min(matches - 1) + 1)
         };
         let button = |id: &'static str, tip: &'static str, icon: IconName, enabled: bool| {
-            let hover = colors.fg.opacity(0.1);
+            let hover = colors.fg.fill(Fill::Strong);
             div()
                 .id(id)
                 .size(px(24.0))
@@ -411,7 +412,7 @@ impl BenCodeApp {
                 .child(
                     Icon::new(icon)
                         .size(IconSize::Xs)
-                        .color(colors.fg.opacity(0.55)),
+                        .color(colors.fg.ink(Ink::Secondary)),
                 )
         };
         Some(
@@ -429,21 +430,21 @@ impl BenCodeApp {
                         .p_1()
                         .rounded(px(8.0))
                         .border_1()
-                        .border_color(colors.fg.opacity(0.1))
+                        .border_color(colors.fg.fill(Fill::Strong))
                         .bg(colors.surface)
                         .shadow_lg()
                         .child(
                             div().ml_1().child(
                                 Icon::new(IconName::Search)
                                     .size(IconSize::Xs)
-                                    .color(colors.fg.opacity(0.5)),
+                                    .color(colors.fg.ink(Ink::Secondary)),
                             ),
                         )
                         .child(
                             div()
                                 .flex_1()
                                 .min_w_0()
-                                .text_size(px(12.0))
+                                .text_size(Text::Base.px())
                                 .child(self.find_input.clone()),
                         )
                         .child(
@@ -452,8 +453,8 @@ impl BenCodeApp {
                                 .min_w(px(70.0))
                                 .text_right()
                                 .font_family(cx.theme().mono_family.clone())
-                                .text_size(px(11.0))
-                                .text_color(colors.fg.opacity(0.5))
+                                .text_size(Text::Sm.px())
+                                .text_color(colors.fg.ink(Ink::Secondary))
                                 .child(count),
                         )
                         .child(

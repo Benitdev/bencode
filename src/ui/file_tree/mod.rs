@@ -58,6 +58,7 @@ pub fn entry_icon(name: &str) -> icons::EntryIcon {
 }
 
 pub use bencode_core::tree::FsEntry;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// The inline name field (MonoCode `NameRow`): a new entry under `parent`,
 /// or a rename of `path`.
@@ -351,8 +352,8 @@ impl BenCodeApp {
             return div()
                 .px_3()
                 .py_2()
-                .text_size(px(12.0))
-                .text_color(fg.opacity(0.5))
+                .text_size(Text::Base.px())
+                .text_color(fg.ink(Ink::Secondary))
                 .child("No project folder")
                 .into_any_element();
         }
@@ -380,8 +381,8 @@ impl BenCodeApp {
                     .pl(px(28.0 + *depth as f32 * INDENT))
                     .pr_2()
                     .truncate()
-                    .text_size(px(12.0))
-                    .text_color(fg.opacity(0.5))
+                    .text_size(Text::Base.px())
+                    .text_color(fg.ink(Ink::Secondary))
                     .child(text.clone())
                     .into_any_element(),
             })
@@ -432,7 +433,7 @@ impl BenCodeApp {
                             div()
                                 .px_3()
                                 .py_1()
-                                .text_size(px(12.0))
+                                .text_size(Text::Base.px())
                                 .line_height(px(16.0))
                                 .text_color(rgb(0xf87171))
                                 .child(error),
@@ -484,11 +485,11 @@ impl BenCodeApp {
                 .items_center()
                 .justify_center()
                 .rounded(px(6.0))
-                .hover(move |s| s.bg(fg.opacity(0.05)))
+                .hover(move |s| s.bg(fg.fill(Fill::Hover)))
                 .tooltip(Tooltip::text(tip))
                 .child(icon)
         };
-        let muted = fg.opacity(0.5);
+        let muted = fg.ink(Ink::Secondary);
         let icon = |group: &'static str, name: IconName| {
             Icon::new(name)
                 .size(GLYPH)
@@ -505,7 +506,7 @@ impl BenCodeApp {
             .px_2()
             .border_b_1()
             // `border-stroke`: content at 7%.
-            .border_color(fg.opacity(0.07))
+            .border_color(fg.fill(Fill::Line))
             .child(
                 button(
                     "tree-toolbar-new-file",
@@ -608,7 +609,7 @@ impl BenCodeApp {
                             IconName::ChevronRight
                         })
                         .size(GLYPH)
-                        .color(fg.opacity(0.5)),
+                        .color(fg.ink(Ink::Secondary)),
                     ),
             )
             .child(
@@ -616,9 +617,9 @@ impl BenCodeApp {
                     .flex_1()
                     .min_w_0()
                     .truncate()
-                    .text_size(px(11.0))
+                    .text_size(Text::Sm.px())
                     .font_weight(gpui::FontWeight::SEMIBOLD)
-                    .text_color(fg.opacity(0.5))
+                    .text_color(fg.ink(Ink::Secondary))
                     .child(label.to_uppercase()),
             )
     }
@@ -664,7 +665,7 @@ impl BenCodeApp {
         let icon = resolve_entry_icon(&entry.name, is_dir, open);
         // MonoCode `entry.ignored ? "italic text-content/50" : gitColor`.
         let name_color = if entry.ignored {
-            fg.opacity(0.5)
+            fg.ink(Ink::Secondary)
         } else {
             tints
                 .color(&rel, is_dir, crate::ui::appearance::diff_colors(cx))
@@ -686,14 +687,14 @@ impl BenCodeApp {
             .pl(px(INSET + depth as f32 * INDENT))
             .pr_2()
             // `text-[14px] leading-none`
-            .text_size(px(14.0))
+            .text_size(Text::Lg.px())
             .line_height(relative(1.0))
             .when(cut, |el| el.opacity(0.5))
             .map(|el| {
                 if selected || drop {
                     el.bg(selection)
                 } else {
-                    el.hover(move |s| s.bg(fg.opacity(0.05)))
+                    el.hover(move |s| s.bg(fg.fill(Fill::Hover)))
                 }
             })
             .tooltip(Tooltip::text(rel.clone()))
@@ -748,7 +749,7 @@ impl BenCodeApp {
                                 IconName::ChevronRight
                             })
                             .size(GLYPH)
-                            .color(fg.opacity(0.5)),
+                            .color(fg.ink(Ink::Secondary)),
                         )
                     }),
             )
@@ -817,7 +818,7 @@ impl BenCodeApp {
                     .gap_1()
                     .pl(px(INSET + depth as f32 * INDENT))
                     .pr_2()
-                    .bg(fg.opacity(0.10))
+                    .bg(fg.fill(Fill::Strong))
                     .child(
                         div()
                             .size(px(16.0))
@@ -829,7 +830,7 @@ impl BenCodeApp {
                                 el.child(
                                     Icon::new(IconName::ChevronRight)
                                         .size(GLYPH)
-                                        .color(fg.opacity(0.5)),
+                                        .color(fg.ink(Ink::Secondary)),
                                 )
                             }),
                     )
@@ -856,10 +857,10 @@ impl BenCodeApp {
                             .items_center()
                             .px(px(5.0))
                             .rounded(px(5.0))
-                            .bg(fg.opacity(0.10))
+                            .bg(fg.fill(Fill::Strong))
                             .border_1()
                             .border_color(colors.accent)
-                            .text_size(px(14.0))
+                            .text_size(Text::Lg.px())
                             .line_height(relative(1.0))
                             .when(state.busy, |el| el.opacity(0.6))
                             .child(self.file_dialog_input.clone()),
@@ -871,7 +872,7 @@ impl BenCodeApp {
                         .pl(px(28.0 + depth as f32 * INDENT))
                         .pr_2()
                         .pb_1()
-                        .text_size(px(12.0))
+                        .text_size(Text::Base.px())
                         .line_height(px(16.0))
                         .text_color(rgb(if error { 0xf87171 } else { 0xfbbf24 }))
                         .child(match emphasis {

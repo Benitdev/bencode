@@ -28,6 +28,7 @@ use crate::ui::icons::ExtraIcon;
 use crate::ui::scale::px;
 use crate::ui::settings_modal::SettingsTab;
 use crate::ui::settings_parts::{SettingsGroup, SettingsPage, SettingsRow};
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// MonoCode `ColorPickerPopover`'s `width={248}`.
 const ACCENT_PICKER_WIDTH: f32 = 248.0;
@@ -57,10 +58,10 @@ impl BenCodeApp {
             .rounded(px(6.0))
             .px_2()
             .py_1()
-            .text_size(px(12.0))
-            .text_color(fg.opacity(0.5))
+            .text_size(Text::Base.px())
+            .text_color(fg.ink(Ink::Secondary))
             .cursor_pointer()
-            .hover(|el| el.bg(fg.opacity(0.1)).text_color(fg))
+            .hover(|el| el.bg(fg.fill(Fill::Strong)).text_color(fg))
             .child(Icon::new(IconName::RotateCcw).size(IconSize::Sm))
             .child("Restore defaults")
             .on_click(cx.listener(|this, _, _, cx| this.restore_appearance_defaults(cx)))
@@ -152,10 +153,10 @@ impl BenCodeApp {
                         .items_center()
                         .justify_center()
                         .rounded_full()
-                        .when(selected, |el| el.border_2().border_color(fg.opacity(0.8)))
+                        .when(selected, |el| el.border_2().border_color(fg.ink(Ink::Strong)))
                         .child(div().size(px(14.0)).rounded_full().map(|el| match color {
                             Some(color) => el.bg(color),
-                            None => el.border_1().border_color(fg.opacity(0.3)),
+                            None => el.border_1().border_color(fg.ink(Ink::Faint)),
                         })),
                 )
         };
@@ -203,7 +204,7 @@ impl BenCodeApp {
                     div().absolute().child(
                         Icon::new(IconName::Pipette)
                             .size(IconSize::Xs)
-                            .color(fg.opacity(0.6)),
+                            .color(fg.ink(Ink::Secondary)),
                     ),
                 )
             }),
@@ -381,7 +382,7 @@ impl BenCodeApp {
             .overflow_hidden()
             .rounded(px(8.0))
             .border_1()
-            .border_color(fg.opacity(0.1));
+            .border_color(fg.fill(Fill::Strong));
         let preview = if has_image {
             frame
                 .children(state.image().map(|image| {
@@ -398,8 +399,8 @@ impl BenCodeApp {
                         .absolute()
                         .bottom_2()
                         .left_2()
-                        .text_size(px(11.0))
-                        .text_color(fg.opacity(0.4))
+                        .text_size(Text::Sm.px())
+                        .text_color(fg.ink(Ink::Muted))
                         .child(format!("Empty chat preview at {empty_percent}%")),
                 )
         } else {
@@ -411,12 +412,12 @@ impl BenCodeApp {
                 .items_center()
                 .justify_center()
                 .gap_2()
-                .text_size(px(12.0))
-                .text_color(fg.opacity(0.4))
+                .text_size(Text::Base.px())
+                .text_color(fg.ink(Ink::Muted))
                 .when(busy, |el| el.opacity(0.4))
                 .when(!busy, |el| {
                     el.cursor_pointer()
-                        .hover(|el| el.bg(fg.opacity(0.05)).text_color(fg.opacity(0.7)))
+                        .hover(|el| el.bg(fg.fill(Fill::Hover)).text_color(fg.ink(Ink::Body)))
                         .on_click(cx.listener(|this, _, _, cx| this.choose_chat_background(cx)))
                 })
                 .child(if busy {
@@ -424,14 +425,14 @@ impl BenCodeApp {
                         "chat-background-busy".into(),
                         IconName::LoaderCircle,
                         IconSize::Lg,
-                        fg.opacity(0.4),
+                        fg.ink(Ink::Muted),
                     )
                     .into_any_element()
                 } else {
                     ExtraIcon::ImagePlus
                         .icon()
                         .size(IconSize::Lg)
-                        .color(fg.opacity(0.4))
+                        .color(fg.ink(Ink::Muted))
                         .into_any_element()
                 })
                 .child("Choose an image")
@@ -473,7 +474,7 @@ impl BenCodeApp {
                 // `mt-2 text-[12px] text-red-400`
                 div()
                     .mt_2()
-                    .text_size(px(12.0))
+                    .text_size(Text::Base.px())
                     .text_color(colors.danger)
                     .child(error)
             }));
@@ -640,7 +641,7 @@ fn slider(
         .child(
             div()
                 .w(px(36.0))
-                .text_size(px(12.0))
+                .text_size(Text::Base.px())
                 .text_color(cx.theme().colors.fg_muted)
                 .child(display),
         )

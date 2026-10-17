@@ -25,6 +25,7 @@ use crate::ui::icons::ExtraIcon;
 use crate::ui::scale::px;
 use crate::ui::sidebar_folders::SessionGroup;
 use crate::ui::virtual_rows;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// The list's padding, and the gap between its rows.
 const LIST_PAD: f32 = 6.0;
@@ -231,7 +232,7 @@ impl BenCodeApp {
     pub fn render_session_list(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let colors = cx.theme().colors.clone();
         if matches!(self.current_cwd.trim(), "" | "~") {
-            return quiet_line("No project folder", colors.fg.opacity(0.5)).into_any_element();
+            return quiet_line("No project folder", colors.fg.ink(Ink::Secondary)).into_any_element();
         }
         let states = self.session_live_states();
         let listed = self.listed_sessions();
@@ -260,7 +261,7 @@ impl BenCodeApp {
                     } else {
                         "No sessions match these filters"
                     },
-                    colors.fg.opacity(0.5),
+                    colors.fg.ink(Ink::Secondary),
                 )
                 .into_any_element()
             } else {
@@ -500,7 +501,7 @@ impl BenCodeApp {
                         div().absolute().left(px(8.0)).child(
                             Icon::new(IconName::Search)
                                 .size(IconSize::Xs)
-                                .color(fg.opacity(0.5)),
+                                .color(fg.ink(Ink::Secondary)),
                         ),
                     )
                     .child(
@@ -509,7 +510,7 @@ impl BenCodeApp {
                             .min_w_0()
                             .pl(px(28.0))
                             .pr_2()
-                            .text_size(px(12.0))
+                            .text_size(Text::Base.px())
                             .text_color(fg)
                             .child(self.search_input.clone()),
                     ),
@@ -527,7 +528,7 @@ impl BenCodeApp {
                     .rounded(px(6.0))
                     .cursor_pointer()
                     .when(active, |el| el.bg(colors.active))
-                    .when(!active, |el| el.hover(move |s| s.bg(fg.opacity(0.10))))
+                    .when(!active, |el| el.hover(move |s| s.bg(fg.fill(Fill::Strong))))
                     .tooltip(Tooltip::text("Filter sessions"))
                     .on_mouse_down(
                         MouseButton::Left,
@@ -543,7 +544,7 @@ impl BenCodeApp {
                             el.child(
                                 div()
                                     .group_hover(filter_group.clone(), |s| s.invisible())
-                                    .child(filter_glyph(fg.opacity(0.5))),
+                                    .child(filter_glyph(fg.ink(Ink::Secondary))),
                             )
                             .child(
                                 div()
@@ -698,7 +699,7 @@ fn quiet_line(text: &'static str, color: gpui::Hsla) -> impl IntoElement {
     div()
         .px_3()
         .py_2()
-        .text_size(px(12.0))
+        .text_size(Text::Base.px())
         .text_color(color)
         .child(text)
 }
@@ -741,7 +742,7 @@ const EMPTY_CELL: f32 = 96.0 / 16.0;
 /// glow at 40%), `gap-5 px-6 py-10`.
 fn sessions_empty(cx: &Context<BenCodeApp>) -> impl IntoElement {
     let fg = cx.theme().colors.fg;
-    let art = fg.opacity(0.25);
+    let art = fg.ink(Ink::Faint);
     let glow = fg.opacity(0.25 * 0.4);
     let rows = EMPTY_TERMINAL
         .iter()
@@ -769,9 +770,9 @@ fn sessions_empty(cx: &Context<BenCodeApp>) -> impl IntoElement {
         .py_10()
         .child(
             div()
-                .text_size(px(13.0))
+                .text_size(Text::Md.px())
                 .line_height(gpui::relative(1.625))
-                .text_color(fg.opacity(0.45))
+                .text_color(fg.ink(Ink::Muted))
                 .text_center()
                 .child("Sessions you start will show up here"),
         )

@@ -21,6 +21,8 @@ use super::state::{MutePicker, SubmenuKind};
 use crate::app::BenCodeApp;
 use crate::ui::app_callback::app_callback_with;
 use crate::ui::explorer_menu::{self, MenuAction, MenuEntry, MenuPlace, MenuView};
+use crate::ui::tokens::RED_400;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// MonoCode's `Popover width={280}` around the date picker.
 const PICKER_WIDTH: f32 = 280.0;
@@ -30,8 +32,6 @@ const ROW: f32 = 28.0;
 const SEPARATOR: f32 = 9.0;
 const MINUTE_MS: i64 = 60_000;
 const HOUR_MS: i64 = 3_600_000;
-/// MonoCode `text-red-400`.
-const RED_400: u32 = 0xf87171;
 
 /// Local wall time of `ms`.
 fn local_datetime(ms: i64) -> Option<DateTime> {
@@ -294,9 +294,9 @@ impl BenCodeApp {
                 div()
                     .truncate()
                     .px_1()
-                    .text_size(px(12.0))
+                    .text_size(Text::Base.px())
                     .font_weight(FontWeight::MEDIUM)
-                    .text_color(fg.opacity(0.85))
+                    .text_color(fg.ink(Ink::Strong))
                     .child(picker.title.clone()),
             )
             .child(
@@ -304,8 +304,8 @@ impl BenCodeApp {
                 div()
                     .mb_3()
                     .px_1()
-                    .text_size(px(11.0))
-                    .text_color(fg.opacity(0.45))
+                    .text_size(Text::Sm.px())
+                    .text_color(fg.ink(Ink::Muted))
                     .child("Mute all notifications until"),
             )
             .child(date_time)
@@ -314,7 +314,7 @@ impl BenCodeApp {
                 div()
                     .mt_3()
                     .px_1()
-                    .text_size(px(12.0))
+                    .text_size(Text::Base.px())
                     .text_color(rgb(RED_400))
                     .child(err)
             }))
@@ -327,7 +327,7 @@ impl BenCodeApp {
                     .justify_between()
                     .gap_2()
                     .border_t_1()
-                    .border_color(fg.opacity(0.07))
+                    .border_color(fg.fill(Fill::Line))
                     .pt(px(10.0))
                     .child(
                         Button::new("rail-mute-cancel", "Cancel")

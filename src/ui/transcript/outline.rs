@@ -25,6 +25,7 @@ use super::{TranscriptView, row_turn, turns};
 use crate::app::BenCodeApp;
 use crate::ui::motion::cubic_bezier;
 use crate::ui::sidebar_popovers::popover_frame;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 const OPEN_DELAY: Duration = Duration::from_millis(25);
 const SCROLL_INSET: f32 = 8.0;
@@ -355,14 +356,14 @@ impl BenCodeApp {
                             .flex_col()
                             .gap(px(6.0))
                             .p_3()
-                            .text_size(px(14.0))
+                            .text_size(Text::Lg.px())
                             .line_height(relative(1.375))
                             .child(line(preview.title, fg))
-                            .children(preview.reply.map(|reply| line(reply, fg.opacity(0.45))))
+                            .children(preview.reply.map(|reply| line(reply, fg.ink(Ink::Muted))))
                             .children(preview.detail.map(|detail| {
-                                line(detail, fg.opacity(0.35))
+                                line(detail, fg.ink(Ink::Faint))
                                     .border_l_2()
-                                    .border_color(fg.opacity(0.15))
+                                    .border_color(fg.fill(Fill::Bold))
                                     .pl_3()
                             })),
                     ),

@@ -33,6 +33,7 @@ use crate::ui::window_drag::claim_press;
 use tabs::{
     CloseMany, TitleTab, closable, close_ids, next_unseen_finished, strip_overflow, tab_copy,
 };
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// MonoCode `w-56 min-w-28`.
 const TAB_WIDTH: f32 = 224.0;
@@ -109,7 +110,7 @@ impl Render for DraggedTitleTab {
             .border_1()
             .border_color(colors.border)
             .shadow_lg()
-            .text_size(px(13.0))
+            .text_size(Text::Md.px())
             .text_color(colors.fg)
             .child(div().truncate().child(self.headline.clone()))
     }
@@ -618,11 +619,11 @@ impl BenCodeApp {
                 el.child(
                     div()
                         .pl_0p5()
-                        .text_size(px(10.0))
+                        .text_size(Text::Xs.px())
                         .text_color(if active {
                             colors.fg
                         } else {
-                            colors.fg.opacity(0.5)
+                            colors.fg.ink(Ink::Secondary)
                         })
                         .child(format!("+{extra}")),
                 )
@@ -644,7 +645,7 @@ impl BenCodeApp {
         let (headline, meta, tooltip) = tab_copy(tab);
         let two_line = !meta.is_empty() && width >= TWO_LINE_WIDTH;
         let group = SharedString::from(format!("title-tab-{}", tab.id));
-        let hover_bg = colors.fg.opacity(0.05);
+        let hover_bg = colors.fg.fill(Fill::Hover);
         let fg = colors.fg;
         let (select_id, close_id, middle_id) = (tab.id.clone(), tab.id.clone(), tab.id.clone());
         let drag = DraggedTitleTab {
@@ -664,9 +665,9 @@ impl BenCodeApp {
                     .line_height(px(15.0))
                     .map(|el| {
                         if two_line {
-                            el.text_size(px(10.0)).font_weight(FontWeight::MEDIUM)
+                            el.text_size(Text::Xs.px()).font_weight(FontWeight::MEDIUM)
                         } else {
-                            el.text_size(px(13.0))
+                            el.text_size(Text::Md.px())
                         }
                     })
                     .child(headline),
@@ -677,8 +678,8 @@ impl BenCodeApp {
                         .min_w_0()
                         .truncate()
                         .line_height(px(13.0))
-                        .text_size(px(10.0))
-                        .text_color(colors.fg.opacity(0.45))
+                        .text_size(Text::Xs.px())
+                        .text_color(colors.fg.ink(Ink::Muted))
                         .child(meta),
                 )
             });
@@ -699,7 +700,7 @@ impl BenCodeApp {
                 if active {
                     el.bg(colors.active).text_color(fg)
                 } else {
-                    el.text_color(fg.opacity(0.5))
+                    el.text_color(fg.ink(Ink::Secondary))
                         .hover(move |s| s.bg(hover_bg).text_color(fg))
                 }
             })
@@ -708,7 +709,7 @@ impl BenCodeApp {
             .child(self.tab_harnesses(tab, active, cx))
             .child(text);
         let close = can_close.then(|| {
-            let hover = colors.fg.opacity(0.1);
+            let hover = colors.fg.fill(Fill::Strong);
             div()
                 .absolute()
                 .top_0()
@@ -736,7 +737,7 @@ impl BenCodeApp {
                         .child(
                             Icon::new(IconName::X)
                                 .size(IconSize::Xs)
-                                .color(colors.fg.opacity(0.5)),
+                                .color(colors.fg.ink(Ink::Secondary)),
                         ),
                 )
         });
@@ -888,8 +889,8 @@ impl BenCodeApp {
                     .px_2()
                     .flex()
                     .items_center()
-                    .text_size(px(13.0))
-                    .text_color(colors.fg.opacity(0.5))
+                    .text_size(Text::Md.px())
+                    .text_color(colors.fg.ink(Ink::Secondary))
                     .child(div().truncate().child(headline)),
             )
             .with_animation(
@@ -903,7 +904,7 @@ impl BenCodeApp {
     /// MonoCode `TabStripChevron`.
     fn strip_chevron(&self, left: bool, cx: &Context<Self>) -> AnyElement {
         let colors = &cx.theme().colors;
-        let hover = colors.fg.opacity(0.15);
+        let hover = colors.fg.fill(Fill::Bold);
         claim_press(div())
             .id(if left {
                 "title-strip-left"
@@ -931,7 +932,7 @@ impl BenCodeApp {
                     .rounded(px(6.0))
                     .bg(colors.surface)
                     .border_1()
-                    .border_color(colors.fg.opacity(0.1))
+                    .border_color(colors.fg.fill(Fill::Strong))
                     .hover(move |s| s.bg(hover))
                     .tooltip(Tooltip::text(if left {
                         "Scroll tabs left"
@@ -955,7 +956,7 @@ impl BenCodeApp {
                             IconName::ChevronRight
                         })
                         .size(IconSize::Xs)
-                        .color(colors.fg.opacity(0.7)),
+                        .color(colors.fg.ink(Ink::Body)),
                     ),
             )
             .into_any_element()

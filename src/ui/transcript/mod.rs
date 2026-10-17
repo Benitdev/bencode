@@ -37,6 +37,7 @@ use crate::ui::motion::cubic_bezier;
 use crate::ui::scale::px;
 use blocks::MESSAGE_MAX_WIDTH;
 use turns::{Row, TurnLayout};
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// Rows near the end that may still change height while an agent runs.
 const LIVE_TAIL_ROWS: usize = 3;
@@ -645,8 +646,8 @@ impl BenCodeApp {
                 .child(
                     div()
                         .px_4()
-                        .text_size(px(11.0))
-                        .text_color(fg.opacity(0.45))
+                        .text_size(Text::Sm.px())
+                        .text_color(fg.ink(Ink::Muted))
                         .child(format!("{habit} · habit")),
                 )
                 .child(prompt)
@@ -670,11 +671,11 @@ impl BenCodeApp {
         let (allow_id, deny_id) = (session_id.to_string(), session_id.to_string());
         let button = |id: &str, label: &'static str, primary: bool| {
             let (bg, fg, hover) = if primary {
-                (colors.fg, colors.bg, colors.fg.opacity(0.8))
+                (colors.fg, colors.bg, colors.fg.ink(Ink::Strong))
             } else {
                 (
-                    colors.fg.opacity(0.1),
-                    colors.fg.opacity(0.7),
+                    colors.fg.fill(Fill::Strong),
+                    colors.fg.ink(Ink::Body),
                     colors.fg.opacity(0.2),
                 )
             };
@@ -683,7 +684,7 @@ impl BenCodeApp {
                 .px_2p5()
                 .py_0p5()
                 .rounded(px(6.0))
-                .text_size(px(11.0))
+                .text_size(Text::Sm.px())
                 .font_weight(FontWeight::MEDIUM)
                 .bg(bg)
                 .text_color(fg)
@@ -700,16 +701,16 @@ impl BenCodeApp {
                 .py_1()
                 .child(
                     div()
-                        .text_size(px(14.0))
-                        .text_color(colors.fg.opacity(0.7))
+                        .text_size(Text::Lg.px())
+                        .text_color(colors.fg.ink(Ink::Body))
                         .child(format!("Allow {}?", request.tool)),
                 )
                 .when(!request.description.is_empty(), |el| {
                     el.child(
                         div()
                             .font_family(cx.theme().mono_family.clone())
-                            .text_size(px(12.0))
-                            .text_color(colors.fg.opacity(0.5))
+                            .text_size(Text::Base.px())
+                            .text_color(colors.fg.ink(Ink::Secondary))
                             .child(request.description.clone()),
                     )
                 })

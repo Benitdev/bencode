@@ -10,6 +10,7 @@ use gpui::{
 };
 
 use crate::ui::scale::px;
+use crate::ui::tokens::{Fill, Text, Tone as _};
 
 /// `text-content/45`: descriptions and asides.
 const QUIET: f32 = 0.45;
@@ -67,7 +68,7 @@ impl RenderOnce for SettingsPage {
                         div()
                             .mt(px(6.0))
                             .max_w(px(576.0))
-                            .text_size(px(13.0))
+                            .text_size(Text::Md.px())
                             .line_height(relative(RELAXED))
                             .text_color(fg.opacity(QUIET))
                             .child(text)
@@ -141,14 +142,14 @@ impl RenderOnce for SettingsGroup {
                     .min_w_0()
                     .child(
                         div()
-                            .text_size(px(13.0))
+                            .text_size(Text::Md.px())
                             .font_weight(FontWeight::SEMIBOLD)
                             .child(self.title),
                     )
                     .children(self.description.map(|text| {
                         div()
                             .mt_1()
-                            .text_size(px(12.0))
+                            .text_size(Text::Base.px())
                             .line_height(relative(RELAXED))
                             .text_color(fg.opacity(QUIET))
                             .child(text)
@@ -167,7 +168,7 @@ impl RenderOnce for SettingsGroup {
         // rows `border-b border-content/5 last:border-b-0`.
         let rows = self.rows.into_iter().enumerate().map(|(ix, row)| {
             div()
-                .when(ix > 0, |el| el.border_t_1().border_color(fg.opacity(0.05)))
+                .when(ix > 0, |el| el.border_t_1().border_color(fg.fill(Fill::Hover)))
                 .child(row)
         });
         div().flex().flex_col().child(head).child(
@@ -177,8 +178,8 @@ impl RenderOnce for SettingsGroup {
                 .overflow_hidden()
                 .rounded(px(12.0))
                 .border_1()
-                .border_color(fg.opacity(0.1))
-                .bg(fg.opacity(0.03))
+                .border_color(fg.fill(Fill::Strong))
+                .bg(fg.fill(Fill::Faint))
                 .children(rows),
         )
     }
@@ -278,7 +279,7 @@ impl RenderOnce for SettingsRow {
                                         div()
                                             .min_w_0()
                                             .truncate()
-                                            .text_size(px(13.0))
+                                            .text_size(Text::Md.px())
                                             .font_weight(FontWeight::MEDIUM)
                                             .child(self.label),
                                     )
@@ -286,7 +287,7 @@ impl RenderOnce for SettingsRow {
                                         div()
                                             .flex_none()
                                             .font_family(mono)
-                                            .text_size(px(12.0))
+                                            .text_size(Text::Base.px())
                                             .text_color(fg.opacity(QUIET))
                                             .child(aside)
                                     })),
@@ -294,7 +295,7 @@ impl RenderOnce for SettingsRow {
                             .children(self.description.map(|text| {
                                 div()
                                     .mt_1()
-                                    .text_size(px(12.0))
+                                    .text_size(Text::Base.px())
                                     .line_height(relative(RELAXED))
                                     .text_color(description_color)
                                     .child(text)
@@ -325,7 +326,7 @@ impl RenderOnce for SettingsNote {
         div()
             .px_4()
             .py(px(14.0))
-            .text_size(px(12.0))
+            .text_size(Text::Base.px())
             .line_height(relative(RELAXED))
             .text_color(cx.theme().colors.fg.opacity(QUIET))
             .child(self.0)
@@ -342,8 +343,8 @@ pub fn icon_tile(icon: impl IntoElement, fg: Hsla) -> Div {
         .justify_center()
         .size(px(28.0))
         .rounded(px(8.0))
-        .bg(fg.opacity(0.05))
+        .bg(fg.fill(Fill::Hover))
         .border_1()
-        .border_color(fg.opacity(0.06))
+        .border_color(fg.fill(Fill::Hover))
         .child(icon)
 }

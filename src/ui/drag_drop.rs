@@ -6,6 +6,7 @@ use gpui::{App, Context, IntoElement, ParentElement, Render, Styled, Window, div
 
 use crate::ui::layout::PaneEdge;
 use crate::ui::scale::px;
+use crate::ui::tokens::Text;
 
 /// Payload when dragging a split pane by its grip. The preview is an Ely
 /// `DragGhost`.
@@ -78,7 +79,7 @@ impl Render for DraggedSession {
             .border_color(colors.border)
             .shadow_lg()
             .opacity(0.9)
-            .text_size(px(13.0))
+            .text_size(Text::Md.px())
             .font_weight(gpui::FontWeight::SEMIBOLD)
             .text_color(colors.fg)
             .child(div().truncate().child(self.title.clone()))

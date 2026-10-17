@@ -17,6 +17,7 @@ use crate::app::project_search::SearchToggle;
 use crate::project_search::SearchMatch;
 use crate::ui::scale::px;
 use crate::ui::virtual_rows;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// A file's two lines: its name, then its folder path.
 const FILE_ROW: f32 = 44.0;
@@ -96,12 +97,12 @@ impl BenCodeApp {
             return div()
                 .px_3()
                 .py_2()
-                .text_size(px(12.0))
-                .text_color(fg.opacity(0.5))
+                .text_size(Text::Base.px())
+                .text_color(fg.ink(Ink::Secondary))
                 .child("No project folder")
                 .into_any_element();
         }
-        let stroke = fg.opacity(0.07);
+        let stroke = fg.fill(Fill::Line);
         let search = &self.project_search;
         div()
             .id("project-search")
@@ -129,7 +130,7 @@ impl BenCodeApp {
                             .items_center()
                             .justify_center()
                             .rounded(px(6.0))
-                            .hover(move |s| s.bg(fg.opacity(0.10)))
+                            .hover(move |s| s.bg(fg.fill(Fill::Strong)))
                             .tooltip(Tooltip::text("Back to files"))
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.close_project_search(cx);
@@ -137,7 +138,7 @@ impl BenCodeApp {
                             .child(
                                 Icon::new(IconName::ChevronLeft)
                                     .size(IconSize::Md)
-                                    .color(fg.opacity(0.5))
+                                    .color(fg.ink(Ink::Secondary))
                                     .group_hover_color("project-search-back", fg),
                             ),
                     )
@@ -146,8 +147,8 @@ impl BenCodeApp {
                             .flex_1()
                             .min_w_0()
                             .truncate()
-                            .text_size(px(12.0))
-                            .text_color(fg.opacity(0.55))
+                            .text_size(Text::Base.px())
+                            .text_color(fg.ink(Ink::Secondary))
                             .child("Search in files"),
                     ),
             )
@@ -200,7 +201,7 @@ impl BenCodeApp {
             .justify_center()
             .rounded(px(4.0))
             .when(on, |el| el.bg(colors.active))
-            .when(!on, |el| el.hover(move |s| s.bg(fg.opacity(0.10))))
+            .when(!on, |el| el.hover(move |s| s.bg(fg.fill(Fill::Strong))))
             .tooltip(Tooltip::text(tip))
             .on_click(
                 cx.listener(move |this, _, _, cx| this.toggle_project_search_option(toggle, cx)),
@@ -208,8 +209,8 @@ impl BenCodeApp {
             .child(
                 Icon::new(icon)
                     .size(GLYPH)
-                    .color(if on { fg } else { fg.opacity(0.4) })
-                    .group_hover_color(id, if on { fg } else { fg.opacity(0.7) }),
+                    .color(if on { fg } else { fg.ink(Ink::Muted) })
+                    .group_hover_color(id, if on { fg } else { fg.ink(Ink::Body) }),
             )
     }
 
@@ -225,14 +226,14 @@ impl BenCodeApp {
             .min_h(px(32.0))
             .px_3()
             .py(px(6.0))
-            .text_size(px(11.0))
-            .text_color(fg.opacity(0.45));
+            .text_size(Text::Sm.px())
+            .text_color(fg.ink(Ink::Muted));
         if search.loading {
             return line
                 .child(
                     Icon::new(IconName::LoaderCircle)
                         .size(IconSize::Xs)
-                        .color(fg.opacity(0.45)),
+                        .color(fg.ink(Ink::Muted)),
                 )
                 .child("Searching…");
         }
@@ -315,18 +316,18 @@ impl BenCodeApp {
             .gap_2()
             .h(px(MATCH_ROW))
             .px_2()
-            .hover(move |s| s.bg(fg.opacity(0.05)))
+            .hover(move |s| s.bg(fg.fill(Fill::Hover)))
             .on_click(
                 cx.listener(move |this, _, window, cx| this.open_search_match(&hit, window, cx)),
             )
             .font_family(theme.mono_family.clone())
-            .text_size(px(11.0))
+            .text_size(Text::Sm.px())
             .child(
                 div()
                     .w(px(28.0))
                     .flex_none()
                     .text_right()
-                    .text_color(fg.opacity(0.35))
+                    .text_color(fg.ink(Ink::Faint))
                     .child(line),
             )
             .child(
@@ -334,7 +335,7 @@ impl BenCodeApp {
                     .flex_1()
                     .min_w_0()
                     .truncate()
-                    .text_color(fg.opacity(0.8))
+                    .text_color(fg.ink(Ink::Strong))
                     .child(
                         StyledText::new(preview.to_string())
                             .with_highlights(mark.map(|range| (range, style))),
@@ -355,7 +356,7 @@ fn render_file_row(name: &str, path: &str, count: usize, cx: &gpui::App) -> impl
         .h(px(FILE_ROW))
         .px_2()
         .border_t_1()
-        .border_color(fg.opacity(0.07))
+        .border_color(fg.fill(Fill::Line))
         .child(
             div()
                 .flex()
@@ -367,7 +368,7 @@ fn render_file_row(name: &str, path: &str, count: usize, cx: &gpui::App) -> impl
                         .flex_1()
                         .min_w_0()
                         .truncate()
-                        .text_size(px(12.0))
+                        .text_size(Text::Base.px())
                         .text_color(fg)
                         .child(SharedString::from(name.to_string())),
                 )
@@ -377,7 +378,7 @@ fn render_file_row(name: &str, path: &str, count: usize, cx: &gpui::App) -> impl
                         .px(px(6.0))
                         .rounded_full()
                         .bg(colors.accent.opacity(0.2))
-                        .text_size(px(10.0))
+                        .text_size(Text::Xs.px())
                         .line_height(relative(1.6))
                         .font_weight(FontWeight::MEDIUM)
                         .text_color(colors.accent)
@@ -387,8 +388,8 @@ fn render_file_row(name: &str, path: &str, count: usize, cx: &gpui::App) -> impl
         .child(
             div()
                 .truncate()
-                .text_size(px(10.0))
-                .text_color(fg.opacity(0.4))
+                .text_size(Text::Xs.px())
+                .text_color(fg.ink(Ink::Muted))
                 .child(SharedString::from(path.to_string())),
         )
 }
@@ -403,8 +404,8 @@ fn field(input: &Entity<ely_gpui_component::forms::TextInput>, size: f32, fg: Hs
         .pl_2()
         .rounded(px(6.0))
         .border_1()
-        .border_color(fg.opacity(0.10))
-        .bg(fg.opacity(0.05))
+        .border_color(fg.fill(Fill::Strong))
+        .bg(fg.fill(Fill::Hover))
         .text_size(px(size))
         .child(div().flex_1().min_w_0().child(input.clone()))
 }
