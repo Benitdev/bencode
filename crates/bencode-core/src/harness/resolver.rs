@@ -231,7 +231,7 @@ fn candidates(spec: &'static BinarySpec) -> impl Iterator<Item = PathBuf> {
 }
 
 /// What `<binary> --version` reports, as numbers; `None` when it fails.
-fn cli_version(path: &Path) -> Option<Vec<u64>> {
+pub(crate) fn cli_version(path: &Path) -> Option<Vec<u64>> {
     let output = Command::new(path)
         .arg("--version")
         .stdin(Stdio::null())

@@ -57,6 +57,15 @@ fn feed(kind: HarnessKind) -> Option<Feed> {
     }
 }
 
+/// OpenCode 2 is published as another package; `opencode-ai` stays on 1.x.
+fn release_line(feed: Feed, installed: &str) -> Feed {
+    let major = installed.split('.').next().and_then(|m| m.parse::<u64>().ok());
+    match feed {
+        Feed::Npm("opencode-ai") if major.is_some_and(|m| m >= 2) => Feed::Npm("@opencode/cli"),
+        feed => feed,
+    }
+}
+
 /// Each CLI's own updater, which knows how it was installed (native, npm,
 /// Homebrew) better than BenCode could guess from the binary path.
 fn update_args(kind: HarnessKind) -> Option<&'static [&'static str]> {
@@ -91,6 +100,7 @@ pub fn find_update(kind: HarnessKind, listed: &Path) -> Option<HarnessUpdate> {
     let installed = installed_version(program)
         .map_err(|err| log::debug!("{} --version: {err:#}", kind.label()))
         .ok()?;
+    let feed = release_line(feed, &installed);
     let latest = latest_version(feed)
         .map_err(|err| log::debug!("{} latest version: {err:#}", kind.label()))
         .ok()?;
@@ -334,6 +344,14 @@ mod tests {
     use super::*;
     use serde_json::json;
     use std::cmp::Ordering;
+
+    #[test]
+    fn opencode_2_follows_its_own_package() {
+        let v1 = Feed::Npm("opencode-ai");
+        assert_eq!(release_line(v1, "1.19.3"), v1);
+        assert_eq!(release_line(v1, "2.0.32"), Feed::Npm("@opencode/cli"));
+        assert_eq!(release_line(Feed::Grok, "2.0.0"), Feed::Grok);
+    }
 
     #[test]
     fn maps_only_harnesses_with_a_version_feed() {

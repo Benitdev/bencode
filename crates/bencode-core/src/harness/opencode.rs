@@ -2,6 +2,16 @@
 //! line (`text`, `reasoning`, `tool_use`, `step_finish`, `error`). MonoCode
 //! drives `opencode serve` over HTTP instead; the one-shot CLI keeps this
 //! port dependency-free at the cost of interactive approvals.
+//!
+//! OpenCode 2 (`@opencode/cli`) prints the same events but takes other
+//! flags: the variant goes in the model (`provider/model#variant`), and
+//! `run` talks to a shared background server unless given `--standalone`.
+//! A turn runs standalone, so the server sees this turn's environment (the
+//! browser's inline config, `bencode app`) and dies with it on Stop.
+
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+use std::time::SystemTime;
 
 use anyhow::Result;
 use serde_json::Value;
@@ -10,20 +20,28 @@ use crate::harness::events::{AgentEvent, TurnMetrics};
 use crate::harness::handle::HarnessProcessHandle;
 use crate::harness::process::{self, LineParser, ProcessSpec, StdinMode};
 use crate::harness::resolver::HarnessResolver;
-use crate::harness::{EventRx, SpawnRequest, str_field};
+use crate::harness::{EventRx, PermissionPolicy, SpawnRequest, str_field};
 
 pub fn spawn(req: &SpawnRequest) -> Result<(HarnessProcessHandle, EventRx)> {
     let program = HarnessResolver::resolve_opencode().unwrap_or_else(|| "opencode".into());
+    let args = if is_v2(&program) {
+        build_args_v2(req)
+    } else {
+        build_args(req)
+    };
     let spec = ProcessSpec {
         program,
-        args: build_args(req),
+        args,
         cwd: req.cwd.clone(),
         stdin: StdinMode::Null,
         permission_responder: None,
         can_steer: false,
         account: None,
-        env: inline_config(req)
+        // OpenCode 2's `run` takes its project from `$PWD`, not the
+        // process' folder: BenCode's own would put the turn in the wrong one.
+        env: [("PWD".to_string(), req.cwd.clone())]
             .into_iter()
+            .chain(inline_config(req))
             .chain(super::app_env(req))
             .collect(),
     };
@@ -62,6 +80,52 @@ fn build_args(req: &SpawnRequest) -> Vec<String> {
     let prompt = crate::harness::attachments::plain_prompt(&req.prompt, &req.attachments);
     args.extend(["--".into(), prompt]);
     args
+}
+
+fn build_args_v2(req: &SpawnRequest) -> Vec<String> {
+    let mut args: Vec<String> = ["run", "--standalone", "--format", "json"]
+        .map(String::from)
+        .into();
+    if let Some(model) = &req.model {
+        let model = match req.settings.get("variant") {
+            Some(variant) => format!("{model}#{variant}"),
+            None => model.clone(),
+        };
+        args.extend(["--model".into(), model]);
+    }
+    if let Some(agent) = req.settings.get("agent") {
+        args.extend(["--agent".into(), agent.clone()]);
+    }
+    if let Some(session) = &req.resume_id {
+        args.extend(["--session".into(), session.clone()]);
+    }
+    if req.permission == PermissionPolicy::AutoApprove {
+        args.push("--auto".into());
+    }
+    let prompt = crate::harness::attachments::plain_prompt(&req.prompt, &req.attachments);
+    args.extend(["--".into(), prompt]);
+    args
+}
+
+/// Whether the OpenCode at `program` is 2 or later. Asking it takes a
+/// process, so the answer is kept until the file changes (an update). The
+/// model catalog asks first, off the UI thread, so a turn's spawn finds it
+/// kept.
+pub fn is_v2(program: &Path) -> bool {
+    static SEEN: Mutex<Option<(PathBuf, Option<SystemTime>, bool)>> = Mutex::new(None);
+    let modified = std::fs::metadata(program).and_then(|m| m.modified()).ok();
+    let mut seen = SEEN.lock().unwrap_or_else(|err| err.into_inner());
+    if let Some((path, at, v2)) = seen.as_ref()
+        && path == program
+        && *at == modified
+    {
+        return *v2;
+    }
+    let v2 = crate::harness::resolver::cli_version(program)
+        .and_then(|version| version.first().copied())
+        .is_some_and(|major| major >= 2);
+    *seen = Some((program.to_path_buf(), modified, v2));
+    v2
 }
 
 #[derive(Default)]
@@ -201,6 +265,57 @@ mod tests {
         assert_eq!(
             config["mcp"]["bencode-browser"],
             json!({ "type": "local", "command": ["/bin/bencode", "--browser-mcp", "/tmp/b.sock"], "enabled": true })
+        );
+    }
+
+    #[test]
+    fn opencode_2_takes_the_variant_in_the_model() {
+        let mut req = SpawnRequest {
+            harness: crate::harness::HarnessKind::OpenCode,
+            cwd: "/tmp".into(),
+            prompt: "go".into(),
+            model: Some("opencode/glm-5.3-flash-free".into()),
+            permission: PermissionPolicy::AutoApprove,
+            resume_id: Some("ses_1".into()),
+            disable_hooks: false,
+            attachments: Vec::new(),
+            plan: false,
+            compact: false,
+            settings: [("variant".to_string(), "low".to_string())].into_iter().collect(),
+            account: None,
+            browser_mcp: None,
+            app: None,
+        };
+        assert_eq!(
+            build_args_v2(&req),
+            [
+                "run", "--standalone", "--format", "json", "--model",
+                "opencode/glm-5.3-flash-free#low", "--session", "ses_1", "--auto", "--", "go",
+            ]
+        );
+        req.permission = PermissionPolicy::Ask;
+        assert!(!build_args_v2(&req).contains(&"--auto".to_string()));
+    }
+
+    #[test]
+    fn parses_opencode_2_tool_calls() {
+        // `opencode run --format json`, OpenCode 2.0.32 (trimmed).
+        let line = r#"{"type":"tool_use","timestamp":1,"sessionID":"ses_2","part":{"partID":"prt_1","sessionID":"ses_2","messageID":"msg_1","type":"tool","id":"call_1","tool":"shell","state":{"status":"completed","input":{"command":"touch made.txt"},"output":"(no output)","title":"shell"}}}"#;
+        let events = OpenCodeParser::default().parse_line(line);
+        assert_eq!(
+            events[1..],
+            [
+                AgentEvent::ToolCallStart {
+                    id: "call_1".into(),
+                    name: "shell".into(),
+                    input: json!({"command": "touch made.txt"})
+                },
+                AgentEvent::ToolCallFinish {
+                    id: "call_1".into(),
+                    output: "(no output)".into(),
+                    success: true
+                },
+            ]
         );
     }
 

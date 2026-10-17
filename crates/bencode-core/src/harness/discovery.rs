@@ -4,7 +4,8 @@
 //! - Codex: `model/list` on `codex app-server`;
 //! - Antigravity: `agy models` (MonoCode asks its ACP server, which BenCode
 //!   does not run; the CLI lists the same models);
-//! - OpenCode: `opencode models --verbose` and `opencode agent list`;
+//! - OpenCode: `opencode models --verbose` and `opencode agent list`; for
+//!   OpenCode 2, its server's `/api/model` and `/api/agent`;
 //! - Grok Build: `initialize`, else `session/new`, on `grok agent stdio`
 //!   (ACP), else `grok models`.
 //!
@@ -548,6 +549,9 @@ const VARIANT_ORDER: [&str; 9] = [
 
 fn discover_opencode() -> Result<Vec<ModelOption>> {
     let program = HarnessResolver::resolve_opencode().context("OpenCode is not installed")?;
+    if crate::harness::opencode::is_v2(&program) {
+        return discover_opencode_v2(&program);
+    }
     let models = run_to_end(
         Command::new(&program).args(["models", "--verbose"]),
         &home(),
@@ -565,6 +569,93 @@ fn discover_opencode() -> Result<Vec<ModelOption>> {
         }
     };
     Ok(opencode_models(&models, &agents))
+}
+
+/// OpenCode 2 dropped `models --verbose` and `agent list`; its server
+/// answers both, here a private one so no background server is left behind.
+/// A server that has just started lists no agents yet; then no `--agent`
+/// is passed and OpenCode runs its default, `build`.
+fn discover_opencode_v2(program: &std::path::Path) -> Result<Vec<ModelOption>> {
+    let api = |path: &str| {
+        run_to_end(
+            Command::new(program).args(["api", "--standalone", "GET", path]),
+            &home(),
+            DISCOVERY_TIMEOUT,
+        )
+        .and_then(|out| serde_json::from_str::<Value>(&out).context("OpenCode answered no JSON"))
+        .with_context(|| format!("opencode api GET {path}"))
+    };
+    // Each call starts a server of its own; the two start side by side.
+    let (models, agents) = std::thread::scope(|scope| {
+        let agents = scope.spawn(|| api("/api/agent"));
+        (api("/api/model"), agents.join())
+    });
+    let agents = match agents {
+        Ok(Ok(out)) => opencode_v2_agents(&out),
+        Ok(Err(err)) => {
+            log::debug!("{err:#}");
+            Vec::new()
+        }
+        Err(_) => Vec::new(),
+    };
+    Ok(opencode_v2_models(&models?, &agents))
+}
+
+/// `/api/agent`'s `data`: the primary, visible agents.
+pub fn opencode_v2_agents(body: &Value) -> Vec<String> {
+    let Some(agents) = body.get("data").and_then(Value::as_array) else {
+        return Vec::new();
+    };
+    agents
+        .iter()
+        .filter(|agent| {
+            str_field(agent, "mode").is_none_or(|mode| matches!(mode, "primary" | "all"))
+                && agent.get("hidden").and_then(Value::as_bool) != Some(true)
+        })
+        // `--agent` takes the id (`build`); `name` is its label (`Build`).
+        .filter_map(|agent| str_field(agent, "id").or_else(|| str_field(agent, "name")))
+        .filter(|name| !HIDDEN_AGENTS.contains(name))
+        .map(String::from)
+        .collect()
+}
+
+/// `/api/model`'s `data`: one model per entry, its variants a list of ids.
+pub fn opencode_v2_models(body: &Value, agents: &[String]) -> Vec<ModelOption> {
+    let Some(entries) = body.get("data").and_then(Value::as_array) else {
+        return Vec::new();
+    };
+    let mut models: Vec<ModelOption> = entries
+        .iter()
+        .filter(|model| model.get("enabled").and_then(Value::as_bool) != Some(false))
+        .filter_map(|model| {
+            let provider = str_field(model, "providerID")?;
+            let id = str_field(model, "id")?;
+            // The v1 shape `opencode_settings` reads: variants keyed by id.
+            let variants: serde_json::Map<String, Value> = model
+                .get("variants")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(|v| str_field(v, "id"))
+                .map(|v| (v.to_string(), json!({})))
+                .collect();
+            let native = format!("{provider}/{id}");
+            let label = str_field(model, "name")
+                .map(str::trim)
+                .filter(|n| !n.is_empty())
+                .map_or_else(|| title_case_slug(id), String::from);
+            Some(ModelOption {
+                key: format!("opencode:{native}"),
+                label,
+                harness: HarnessKind::OpenCode,
+                native,
+                provider: Some(opencode_provider_name(provider)),
+                settings: opencode_settings(provider, &json!({ "variants": variants }), agents),
+            })
+        })
+        .collect();
+    models.sort_by(|a, b| a.label.cmp(&b.label));
+    models
 }
 
 /// MonoCode `parseAgentListCliOutput`: `name (mode)` headers; the primary,
@@ -814,5 +905,38 @@ mod tests {
         assert_eq!(values, ["low", "high", "max"]);
         assert_eq!(models[1].provider.as_deref(), Some("OpenCode"));
         assert_eq!(models[1].settings[0].id, "agent");
+    }
+
+    #[test]
+    fn opencode_v2_models_and_agents() {
+        // `opencode api GET /api/model` and `/api/agent`, OpenCode 2.0.32.
+        let body = json!({
+            "location": { "directory": "/tmp" },
+            "data": [
+                { "id": "big-pickle", "providerID": "opencode", "name": "Big Pickle", "variants": [], "enabled": true },
+                { "id": "glm-5.3-flash-free", "providerID": "opencode", "name": "GLM-5.3-Flash Free",
+                  "variants": [
+                      { "id": "max", "settings": { "reasoningEffort": "max" } },
+                      { "id": "low", "settings": { "reasoningEffort": "low" } },
+                      { "id": "high", "settings": { "reasoningEffort": "high" } }
+                  ], "enabled": true },
+                { "id": "off", "providerID": "openai", "name": "Off", "variants": [], "enabled": false }
+            ]
+        });
+        let agents = opencode_v2_agents(&json!({ "data": [
+            { "id": "build", "name": "Build", "mode": "primary", "hidden": false },
+            { "id": "general", "name": "General", "mode": "subagent", "hidden": false },
+            { "id": "title", "name": "Title", "mode": "primary", "hidden": true },
+            { "id": "plan", "name": "Plan", "mode": "primary", "hidden": false }
+        ] }));
+        assert_eq!(agents, ["build", "plan"]);
+        let models = opencode_v2_models(&body, &agents);
+        let keys: Vec<_> = models.iter().map(|m| m.key.as_str()).collect();
+        assert_eq!(keys, ["opencode:opencode/big-pickle", "opencode:opencode/glm-5.3-flash-free"]);
+        assert_eq!(models[0].settings[0].id, "agent");
+        let variant = &models[1].settings[0];
+        let values: Vec<_> = variant.options.iter().map(|(v, _)| v.as_str()).collect();
+        assert_eq!(values, ["low", "high", "max"]);
+        assert!(opencode_v2_agents(&json!({ "data": [] })).is_empty());
     }
 }
