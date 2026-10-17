@@ -22,6 +22,7 @@ use crate::harness::catalog::{self, ModelOption, ModelSetting, SettingKind};
 use crate::ui::HarnessIcon;
 use crate::ui::composer::ComposerPopover;
 use crate::ui::sidebar_popovers::popover_glass;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// MonoCode `MENU_WIDTH`, `MODEL_MENU_WIDTH`, `SETTING_MENU_WIDTH`.
 const MENU_WIDTH: f32 = 250.0;
@@ -466,7 +467,7 @@ impl BenCodeApp {
         let values = self.current_model_values();
         let active = self.composer_menus.model_entry;
         let row = |ix: usize, id: SharedString| {
-            let hover = colors.fg.opacity(0.05);
+            let hover = colors.fg.fill(Fill::Hover);
             div()
                 .id(id)
                 .flex()
@@ -476,7 +477,7 @@ impl BenCodeApp {
                 .px_2()
                 .rounded(px(8.0))
                 .cursor_pointer()
-                .text_size(px(13.0))
+                .text_size(Text::Md.px())
                 .text_color(colors.fg)
                 .when(ix == active, |el| el.bg(colors.active))
                 .when(ix != active, |el| el.hover(move |s| s.bg(hover)))
@@ -490,7 +491,7 @@ impl BenCodeApp {
         let chevron = || {
             Icon::new(IconName::ChevronRight)
                 .size(IconSize::Xs)
-                .color(colors.fg.opacity(0.45))
+                .color(colors.fg.ink(Ink::Muted))
         };
         let setting_rows = settings.iter().enumerate().map(|(ix, setting)| {
             let base = row(
@@ -518,7 +519,7 @@ impl BenCodeApp {
                         div()
                             .max_w(px(112.0))
                             .truncate()
-                            .text_color(colors.fg.opacity(0.55))
+                            .text_color(colors.fg.ink(Ink::Secondary))
                             .child(setting.value_label(values).to_string()),
                     )
                     .child(chevron()),
@@ -536,7 +537,7 @@ impl BenCodeApp {
                     .gap_1()
                     .min_w_0()
                     .max_w(px(144.0))
-                    .text_color(colors.fg.opacity(0.55))
+                    .text_color(colors.fg.ink(Ink::Secondary))
                     .children(current.map(|m| HarnessIcon::new(m.harness.id()).size(px(14.0))))
                     .child(
                         div()
@@ -593,7 +594,7 @@ impl BenCodeApp {
             .iter()
             .enumerate()
             .map(|(ix, (value, label))| {
-                let hover = colors.fg.opacity(0.05);
+                let hover = colors.fg.fill(Fill::Hover);
                 div()
                     .id(SharedString::from(format!(
                         "setting-opt-{}-{value}",
@@ -606,7 +607,7 @@ impl BenCodeApp {
                     .px_2()
                     .rounded(px(8.0))
                     .cursor_pointer()
-                    .text_size(px(13.0))
+                    .text_size(Text::Md.px())
                     .text_color(colors.fg)
                     .when(ix == active, |el| el.bg(colors.active))
                     .when(ix != active, |el| el.hover(move |s| s.bg(hover)))
@@ -628,7 +629,7 @@ impl BenCodeApp {
                         el.child(
                             Icon::new(IconName::Check)
                                 .size(IconSize::Xs)
-                                .color(colors.fg.opacity(0.5)),
+                                .color(colors.fg.ink(Ink::Secondary)),
                         )
                     })
             });
@@ -713,7 +714,7 @@ impl BenCodeApp {
                           this_tab: ModelTab,
                           icon: AnyElement| {
             let selected = tab == this_tab;
-            let hover = colors.fg.opacity(0.08);
+            let hover = colors.fg.fill(Fill::Selected);
             div()
                 .id(id)
                 .size(px(PROVIDER_TAB_SIZE))
@@ -743,7 +744,7 @@ impl BenCodeApp {
                 .color(if tab == ModelTab::Favorites {
                     colors.fg
                 } else {
-                    colors.fg.opacity(0.45)
+                    colors.fg.ink(Ink::Muted)
                 })
                 .into_any_element(),
         );
@@ -788,13 +789,13 @@ impl BenCodeApp {
             .child(
                 Icon::new(IconName::Search)
                     .size(IconSize::Xs)
-                    .color(colors.fg.opacity(0.5)),
+                    .color(colors.fg.ink(Ink::Secondary)),
             )
             .child(
                 div()
                     .flex_1()
                     .min_w_0()
-                    .text_size(px(13.0))
+                    .text_size(Text::Md.px())
                     .child(self.model_search_input.clone()),
             );
         let empty = if models.is_empty() {
@@ -803,8 +804,8 @@ impl BenCodeApp {
                 div()
                     .px_2()
                     .py_3()
-                    .text_size(px(12.0))
-                    .text_color(colors.fg.opacity(0.5))
+                    .text_size(Text::Base.px())
+                    .text_color(colors.fg.ink(Ink::Secondary))
                     .child(if tab == ModelTab::Favorites && query.trim().is_empty() {
                         "No favorite models"
                     } else {
@@ -821,8 +822,8 @@ impl BenCodeApp {
                 let favorited = self.favorite_models.contains(&key);
                 let (pick_key, star_key) = (key.clone(), key.clone());
                 let group = SharedString::from(format!("model-row-{key}"));
-                let hover = colors.fg.opacity(0.05);
-                let star_hover = colors.fg.opacity(0.08);
+                let hover = colors.fg.fill(Fill::Hover);
+                let star_hover = colors.fg.fill(Fill::Selected);
                 let star_tip = if favorited {
                     "Remove from favorites"
                 } else {
@@ -853,7 +854,7 @@ impl BenCodeApp {
                             .min_w_0()
                             .px_1p5()
                             .truncate()
-                            .text_size(px(13.0))
+                            .text_size(Text::Md.px())
                             .child(model.label.clone()),
                     )
                     // Favorites mix providers, so each row names its own.
@@ -863,8 +864,8 @@ impl BenCodeApp {
                                 .max_w(px(96.0))
                                 .flex_none()
                                 .truncate()
-                                .text_size(px(10.0))
-                                .text_color(colors.fg.opacity(0.4))
+                                .text_size(Text::Xs.px())
+                                .text_color(colors.fg.ink(Ink::Muted))
                                 .child(
                                     model
                                         .provider
@@ -894,9 +895,9 @@ impl BenCodeApp {
                             }))
                             .child(Icon::new(IconName::Star).size(IconSize::Xs).color(
                                 if favorited {
-                                    colors.fg.opacity(0.6)
+                                    colors.fg.ink(Ink::Secondary)
                                 } else {
-                                    colors.fg.opacity(0.35)
+                                    colors.fg.ink(Ink::Faint)
                                 },
                             )),
                     )
@@ -911,7 +912,7 @@ impl BenCodeApp {
                                 .child(
                                     Icon::new(IconName::Check)
                                         .size(IconSize::Xs)
-                                        .color(colors.fg.opacity(0.55)),
+                                        .color(colors.fg.ink(Ink::Secondary)),
                                 ),
                         )
                     })
@@ -962,7 +963,7 @@ impl BenCodeApp {
             .map(|(ix, model)| {
                 let key = model.key.clone();
                 let pick_key = key.clone();
-                let hover = colors.fg.opacity(0.05);
+                let hover = colors.fg.fill(Fill::Hover);
                 let available = self.harness_available(model.harness);
                 let subtitle = match &model.provider {
                     Some(provider) => format!("{} · {provider}", model.harness.label()),
@@ -999,16 +1000,16 @@ impl BenCodeApp {
                             .child(
                                 div()
                                     .truncate()
-                                    .text_size(px(13.0))
+                                    .text_size(Text::Md.px())
                                     .line_height(px(16.0))
                                     .child(model.label),
                             )
                             .child(
                                 div()
                                     .truncate()
-                                    .text_size(px(11.0))
+                                    .text_size(Text::Sm.px())
                                     .line_height(px(16.0))
-                                    .text_color(colors.fg.opacity(0.45))
+                                    .text_color(colors.fg.ink(Ink::Muted))
                                     .child(subtitle),
                             ),
                     )
@@ -1016,7 +1017,7 @@ impl BenCodeApp {
                         el.child(
                             Icon::new(IconName::Check)
                                 .size(IconSize::Xs)
-                                .color(colors.fg.opacity(0.55)),
+                                .color(colors.fg.ink(Ink::Secondary)),
                         )
                     })
             });

@@ -23,6 +23,7 @@ use crate::github::Kind;
 use crate::ui::app_callback::app_callback;
 use crate::ui::composer::inbox_card::label_chip;
 use crate::work_items::Provider;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 impl BenCodeApp {
     pub(super) fn render_inbox_detail(&self, cx: &Context<Self>) -> AnyElement {
@@ -61,8 +62,8 @@ impl BenCodeApp {
             .flex()
             .items_center()
             .gap_2()
-            .text_size(px(12.0))
-            .text_color(fg.opacity(0.5))
+            .text_size(Text::Base.px())
+            .text_color(fg.ink(Ink::Secondary))
             .child(state_pill(item, cx))
             .child(div().min_w_0().truncate().child(format!(
                 "{} · {}",
@@ -110,7 +111,7 @@ impl BenCodeApp {
             _ => "",
         };
         if !review.is_empty() {
-            let color = review_tint(decision, colors).unwrap_or(fg.opacity(0.6));
+            let color = review_tint(decision, colors).unwrap_or(fg.ink(Ink::Secondary));
             meta = meta
                 .child(dot())
                 .child(div().text_color(color).child(review));
@@ -126,7 +127,7 @@ impl BenCodeApp {
                 .child(
                     Icon::new(IconName::ArrowRight)
                         .size(IconSize::Xs)
-                        .color(fg.opacity(0.4)),
+                        .color(fg.ink(Ink::Muted)),
                 )
                 .child(branch_chip(&base, cx))
         });
@@ -159,19 +160,19 @@ impl BenCodeApp {
 
         let body = match details {
             None => div()
-                .text_size(px(13.0))
-                .text_color(fg.opacity(0.45))
+                .text_size(Text::Md.px())
+                .text_color(fg.ink(Ink::Muted))
                 .child("Loading…")
                 .into_any_element(),
             Some(Err(err)) => div()
-                .text_size(px(12.0))
+                .text_size(Text::Base.px())
                 .text_color(colors.danger.opacity(0.9))
                 .child(SharedString::from(err.clone()))
                 .into_any_element(),
             Some(Ok(d)) if d.body.trim().is_empty() => div()
-                .text_size(px(13.0))
+                .text_size(Text::Md.px())
                 .italic()
-                .text_color(fg.opacity(0.45))
+                .text_color(fg.ink(Ink::Muted))
                 .child("No description provided.")
                 .into_any_element(),
             Some(Ok(d)) => MarkdownRenderer::new(
@@ -192,7 +193,7 @@ impl BenCodeApp {
                     .when_some(author, |el, author| el.child(author_name(author, fg)))
                     .child("Description"),
             )
-            .child(div().px_4().py_3().text_size(px(14.0)).child(body));
+            .child(div().px_4().py_3().text_size(Text::Lg.px()).child(body));
 
         let detail =
             div()
@@ -243,7 +244,7 @@ impl BenCodeApp {
                                 .filter(|_| item.provider == Provider::Backlog)
                                 .map(|err| {
                                     div()
-                                        .text_size(px(12.0))
+                                        .text_size(Text::Base.px())
                                         .text_color(colors.danger.opacity(0.9))
                                         .child(SharedString::from(err))
                                 }),
@@ -356,9 +357,9 @@ fn branch_chip(name: &str, cx: &gpui::App) -> impl IntoElement {
         .px_1p5()
         .py_0p5()
         .rounded(px(4.0))
-        .bg(fg.opacity(0.07))
+        .bg(fg.fill(Fill::Line))
         .font_family(cx.theme().mono_family.clone())
         .text_size(px(11.5))
-        .text_color(fg.opacity(0.7))
+        .text_color(fg.ink(Ink::Body))
         .child(SharedString::from(name.to_string()))
 }

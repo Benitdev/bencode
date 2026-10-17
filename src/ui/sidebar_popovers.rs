@@ -16,6 +16,7 @@ use crate::harness::HarnessKind;
 use crate::ui::provider_icon::HarnessIcon;
 use crate::ui::scale::px;
 use crate::ui::sidebar_menus::{SidebarMenu, SidebarMenuKind};
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// MonoCode's filter popover is 228px wide.
 const MENU_WIDTH: f32 = 228.0;
@@ -42,7 +43,7 @@ pub(crate) fn popover_frame(cx: &App) -> Div {
     div()
         .rounded(px(12.0))
         .border_1()
-        .border_color(colors.fg.opacity(0.10))
+        .border_color(colors.fg.fill(Fill::Strong))
         .bg(popover_glass(cx))
         .shadow_xl()
         .text_color(colors.fg)
@@ -99,7 +100,7 @@ impl BenCodeApp {
                 .py(px(6.0))
                 .rounded(px(6.0))
                 .cursor_pointer()
-                .hover(move |s| s.bg(fg.opacity(0.05)))
+                .hover(move |s| s.bg(fg.fill(Fill::Hover)))
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.close_sidebar_menu(cx);
                     this.select_workspace(pick.clone(), cx);
@@ -112,15 +113,15 @@ impl BenCodeApp {
                         .child(
                             div()
                                 .truncate()
-                                .text_size(px(12.0))
+                                .text_size(Text::Base.px())
                                 .text_color(fg)
                                 .child(label),
                         )
                         .child(
                             div()
                                 .truncate()
-                                .text_size(px(10.0))
-                                .text_color(fg.opacity(0.4))
+                                .text_size(Text::Xs.px())
+                                .text_color(fg.ink(Ink::Muted))
                                 .child(detail),
                         ),
                 )
@@ -128,7 +129,7 @@ impl BenCodeApp {
                     el.child(Icon::new(IconName::Check).size(IconSize::Sm).color(fg))
                 })
         };
-        let muted = fg.opacity(0.5);
+        let muted = fg.ink(Ink::Secondary);
         let mut list = div().flex().flex_col().child(row(
             "worktree-default".into(),
             Icon::new(IconName::GitBranch)
@@ -210,7 +211,7 @@ impl BenCodeApp {
                         .size(px(14.0))
                         .rounded_full()
                         .bg(color)
-                        .when(selected, |el| el.border_2().border_color(fg.opacity(0.8))),
+                        .when(selected, |el| el.border_2().border_color(fg.ink(Ink::Strong))),
                 )
         };
         let mut row = div()
@@ -258,15 +259,15 @@ impl BenCodeApp {
                     .items_center()
                     .justify_center()
                     .border_1()
-                    .border_color(fg.opacity(0.3))
+                    .border_color(fg.ink(Ink::Faint))
                     .when_some(custom, |el, color| {
-                        el.bg(color).border_2().border_color(fg.opacity(0.8))
+                        el.bg(color).border_2().border_color(fg.ink(Ink::Strong))
                     })
                     .when(custom.is_none(), |el| {
                         el.child(
                             Icon::new(IconName::Pipette)
                                 .size(IconSize::Xs)
-                                .color(fg.opacity(0.6)),
+                                .color(fg.ink(Ink::Secondary)),
                         )
                     }),
             );
@@ -296,7 +297,7 @@ impl BenCodeApp {
                             )),
                     )
                 })
-                .child(div().my_1().h(px(1.0)).bg(fg.opacity(0.1)))
+                .child(div().my_1().h(px(1.0)).bg(fg.fill(Fill::Strong)))
                 .into_any_element(),
         )
     }
@@ -323,9 +324,9 @@ impl BenCodeApp {
                 .px_2()
                 .pt_2()
                 .pb(px(2.0))
-                .text_size(px(10.0))
+                .text_size(Text::Xs.px())
                 .font_weight(gpui::FontWeight::SEMIBOLD)
-                .text_color(fg.opacity(0.4))
+                .text_color(fg.ink(Ink::Muted))
                 .child(label.to_uppercase())
         };
         let row = |id: SharedString,
@@ -342,11 +343,11 @@ impl BenCodeApp {
                 .h(px(28.0))
                 .px_2()
                 .rounded(px(8.0))
-                .text_size(px(13.0))
+                .text_size(Text::Md.px())
                 .line_height(relative(1.0))
                 .text_color(fg)
                 .cursor_pointer()
-                .hover(move |s| s.bg(fg.opacity(0.05)))
+                .hover(move |s| s.bg(fg.fill(Fill::Hover)))
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.set_session_filters(next.clone(), cx);
                     if close {
@@ -427,7 +428,7 @@ impl BenCodeApp {
         }
         if filters.is_active() {
             body = body
-                .child(div().my_1().h(px(1.0)).bg(fg.opacity(0.1)))
+                .child(div().my_1().h(px(1.0)).bg(fg.fill(Fill::Strong)))
                 .child(
                     div()
                         .id("filter-clear")
@@ -436,11 +437,11 @@ impl BenCodeApp {
                         .h(px(28.0))
                         .px_2()
                         .rounded(px(8.0))
-                        .text_size(px(13.0))
+                        .text_size(Text::Md.px())
                         .line_height(relative(1.0))
-                        .text_color(fg.opacity(0.7))
+                        .text_color(fg.ink(Ink::Body))
                         .cursor_pointer()
-                        .hover(move |s| s.bg(fg.opacity(0.05)).text_color(fg))
+                        .hover(move |s| s.bg(fg.fill(Fill::Hover)).text_color(fg))
                         .on_click(cx.listener(|this, _, _, cx| {
                             this.set_session_filters(SessionFilters::default(), cx)
                         }))

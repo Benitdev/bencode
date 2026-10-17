@@ -18,9 +18,9 @@ use crate::app::BenCodeApp;
 use crate::ui::app_callback::app_callback;
 use crate::ui::scale::px;
 use crate::ui::settings_modal::SettingsTab;
+use crate::ui::tokens::RED_400;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
-/// MonoCode `text-red-400/90`.
-const RED_400: u32 = 0xf87171;
 
 impl BenCodeApp {
     pub fn render_remote_folder_dialog(&self, cx: &Context<Self>) -> Option<AnyElement> {
@@ -46,9 +46,9 @@ impl BenCodeApp {
                 built
                     .child(
                         div()
-                            .text_size(px(12.0))
+                            .text_size(Text::Base.px())
                             .line_height(relative(1.375))
-                            .text_color(fg.opacity(0.55))
+                            .text_color(fg.ink(Ink::Secondary))
                             .child(
                                 "No machines are connected yet. Add one in Settings, then open a \
                                  folder on it here.",
@@ -83,12 +83,12 @@ impl BenCodeApp {
                 .into_any_element()
         } else {
             div()
-                .text_size(px(12.0))
-                .text_color(fg.opacity(0.55))
+                .text_size(Text::Base.px())
+                .text_color(fg.ink(Ink::Secondary))
                 .child("On ")
                 .child(
                     div()
-                        .text_color(fg.opacity(0.8))
+                        .text_color(fg.ink(Ink::Strong))
                         .child(machine.name.clone()),
                 )
                 .flex()
@@ -109,28 +109,28 @@ impl BenCodeApp {
                 .py(px(6.0))
                 .rounded(px(6.0))
                 .cursor_pointer()
-                .text_size(px(12.0))
+                .text_size(Text::Base.px())
                 .text_color(fg.opacity(0.75))
-                .hover(move |s| s.bg(fg.opacity(0.08)).text_color(fg))
+                .hover(move |s| s.bg(fg.fill(Fill::Selected)).text_color(fg))
                 .on_click(move |_, window, cx| open(window, cx))
                 .child(
                     Icon::new(IconName::Folder)
                         .size(IconSize::Xs)
-                        .color(fg.opacity(0.45)),
+                        .color(fg.ink(Ink::Muted)),
                 )
                 .child(div().flex_1().min_w_0().truncate().child(name))
                 .child(
                     Icon::new(IconName::ChevronRight)
                         .size(IconSize::Xs)
-                        .color(fg.opacity(0.3)),
+                        .color(fg.ink(Ink::Faint)),
                 )
         };
         let quiet = |text: &'static str| {
             div()
                 .px_2()
                 .py(px(6.0))
-                .text_size(px(12.0))
-                .text_color(fg.opacity(0.45))
+                .text_size(Text::Base.px())
+                .text_color(fg.ink(Ink::Muted))
                 .child(text)
         };
         let mut folders = div().p_1();
@@ -159,7 +159,7 @@ impl BenCodeApp {
             .overflow_y_scroll()
             .rounded(px(6.0))
             .border_1()
-            .border_color(fg.opacity(0.1))
+            .border_color(fg.fill(Fill::Strong))
             .child(folders);
         let red_400: Hsla = rgb(RED_400).into();
         let body = div()
@@ -171,7 +171,7 @@ impl BenCodeApp {
             .child(list)
             .children(dialog.error.clone().map(|error| {
                 div()
-                    .text_size(px(12.0))
+                    .text_size(Text::Base.px())
                     .line_height(relative(1.375))
                     .text_color(red_400.opacity(0.9))
                     .child(error)

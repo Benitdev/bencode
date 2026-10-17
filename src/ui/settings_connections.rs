@@ -22,6 +22,7 @@ use crate::ui::app_callback::app_callback;
 use crate::ui::scale::px;
 use crate::ui::settings_modal::SettingsTab;
 use crate::ui::settings_parts::{SettingsGroup, SettingsPage, SettingsRow, icon_tile};
+use crate::ui::tokens::{Ink, Text, Tone as _};
 
 /// The form's fields.
 const FIELD_WIDTH: f32 = 300.0;
@@ -102,7 +103,7 @@ impl BenCodeApp {
             let row = SettingsRow::new(machine.name.clone()).leading(icon_tile(
                 Icon::new(IconName::Globe)
                     .size(IconSize::Sm)
-                    .color(fg.opacity(0.45)),
+                    .color(fg.ink(Ink::Muted)),
                 fg,
             ));
             let row = if matches!(status, Status::Offline(_)) {
@@ -234,15 +235,15 @@ impl BenCodeApp {
             .flex()
             .items_center()
             .gap_2()
-            .text_size(px(13.0))
+            .text_size(Text::Md.px())
             .child(Spinner::new("connections-setup-spinner"))
             .child(view.message.clone());
         let mut group = SettingsGroup::new("Connecting").row(SettingsRow::new("").control(status));
         if let Some(prompt) = view.prompt {
             let message = div()
-                .text_size(px(12.0))
+                .text_size(Text::Base.px())
                 .line_height(relative(1.625))
-                .text_color(fg.opacity(0.7))
+                .text_color(fg.ink(Ink::Body))
                 .child(prompt.message.clone());
             let answer: AnyElement = if prompt.confirm {
                 div()

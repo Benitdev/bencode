@@ -19,6 +19,7 @@ use crate::ui::app_callback::app_callback;
 use crate::ui::page_parts::{page_tab, tint};
 use crate::ui::scale::px;
 use crate::ui::scrollbar::Scrolled;
+use crate::ui::tokens::Text;
 
 fn divider(fg: Hsla) -> Div {
     div()
@@ -121,7 +122,7 @@ impl BenCodeApp {
             .items_center()
             .gap_2()
             .min_w_0()
-            .text_size(px(12.0))
+            .text_size(Text::Base.px())
             .text_color(muted)
             .child(
                 Switch::new("automation-enabled", draft.enabled)

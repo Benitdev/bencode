@@ -16,6 +16,7 @@ use super::turns::{self, Item, Row};
 use crate::app::BenCodeApp;
 use crate::ui::icons::ExtraIcon;
 use crate::ui::sidebar_popovers::popover_frame;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// MonoCode `MAX_TITLE` for notes.
 const NOTE_TITLE_CHARS: usize = 200;
@@ -312,10 +313,10 @@ impl BenCodeApp {
                 .px(px(10.0))
                 .rounded(px(8.0))
                 .whitespace_nowrap()
-                .text_size(px(13.0))
+                .text_size(Text::Md.px())
                 .line_height(px(13.0))
                 .text_color(fg)
-                .hover(move |s| s.bg(fg.opacity(0.05)))
+                .hover(move |s| s.bg(fg.fill(Fill::Hover)))
                 .child(icon.icon().size(IconSize::Sm).color(fg))
                 .child(label)
         };
@@ -357,7 +358,7 @@ impl BenCodeApp {
                     .px(px(10.0))
                     .py_1()
                     .text_xs()
-                    .text_color(fg.opacity(0.7))
+                    .text_color(fg.ink(Ink::Body))
                     .child(format!("Could not save note. {error}"))
             }))
             .child(

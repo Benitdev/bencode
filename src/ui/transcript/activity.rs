@@ -23,6 +23,7 @@ use crate::app::{BenCodeApp, now_ms};
 use crate::db::{Block, SessionRow};
 use crate::ui::HarnessIcon;
 use crate::ui::mascot::pixel_sprite;
+use crate::ui::tokens::Text;
 
 /// MonoCode fades a step in as it lands (`zen-step-in`).
 const STEP_ENTRANCE: Duration = Duration::from_millis(180);
@@ -97,7 +98,7 @@ fn dim_label(text: impl Into<SharedString>, group: &str, cx: &App) -> AnyElement
         .flex_1()
         .min_w_0()
         .truncate()
-        .text_size(px(14.0))
+        .text_size(Text::Lg.px())
         .text_color(muted(fg, 0.5))
         .group_hover(SharedString::from(group.to_string()), move |s| {
             s.text_color(muted(fg, 0.8))
@@ -111,7 +112,7 @@ fn shimmer_label(text: String, cx: &App) -> AnyElement {
         .flex_1()
         .min_w_0()
         .truncate()
-        .text_size(px(14.0))
+        .text_size(Text::Lg.px())
         .child(spinner::shimmer(text, cx))
         .into_any_element()
 }
@@ -252,7 +253,7 @@ impl BenCodeApp {
             .gap_1p5()
             .px_4()
             .py_1()
-            .text_size(px(14.0))
+            .text_size(Text::Lg.px())
             .text_color(muted(fg, 0.5))
             .map(|el| match ticker {
                 Some(status) => el
@@ -621,7 +622,7 @@ impl BenCodeApp {
                 el.child(
                     div()
                         .flex_none()
-                        .text_size(px(14.0))
+                        .text_size(Text::Lg.px())
                         .text_color(if failed {
                             colors.danger
                         } else {
@@ -636,7 +637,7 @@ impl BenCodeApp {
                     .flex_1()
                     .min_w_0()
                     .font_family(mono.clone())
-                    .text_size(px(13.0))
+                    .text_size(Text::Md.px())
                     .text_color(target_color)
                     .child(self.tool_target_el(&key, target, file, cx)),
             )
@@ -649,7 +650,7 @@ impl BenCodeApp {
                     div()
                         .py_1()
                         .font_family(mono)
-                        .text_size(px(12.0))
+                        .text_size(Text::Base.px())
                         .line_height(px(20.0))
                         .text_color(colors.danger.opacity(0.8))
                         .child(detail),
@@ -782,7 +783,7 @@ fn initial_thinking(cx: &App) -> AnyElement {
         .px_4()
         .pt_3()
         .pb_1()
-        .text_size(px(14.0))
+        .text_size(Text::Lg.px())
         .child(spinner::shimmer("Thinking…", cx))
         .into_any_element()
 }

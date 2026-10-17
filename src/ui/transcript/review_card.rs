@@ -15,6 +15,7 @@ use crate::git::checkpoint::CheckpointFile;
 use crate::ui::app_callback::app_callback;
 use crate::ui::icons::ExtraIcon;
 use crate::ui::scale::px;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// MonoCode `text-amber-300/80`, "Mixed changes".
 const MIXED: u32 = 0xfcd34d;
@@ -58,12 +59,12 @@ impl BenCodeApp {
                 .flex_none()
                 .items_center()
                 .rounded(px(6.0))
-                .text_size(px(11.0))
+                .text_size(Text::Sm.px())
                 .text_color(fg.opacity(text))
                 .when(filled, |el| {
                     el.border_1()
-                        .border_color(fg.opacity(0.12))
-                        .bg(fg.opacity(0.08))
+                        .border_color(fg.fill(Fill::Strong))
+                        .bg(fg.fill(Fill::Selected))
                         .font_weight(FontWeight::MEDIUM)
                 })
                 .tooltip(Tooltip::text(tip))
@@ -103,12 +104,12 @@ impl BenCodeApp {
                     .items_center()
                     .justify_center()
                     .rounded(px(8.0))
-                    .bg(fg.opacity(0.08))
+                    .bg(fg.fill(Fill::Selected))
                     .child(
                         ExtraIcon::FileDiff
                             .icon()
                             .size(IconSize::Md)
-                            .color(fg.opacity(0.55)),
+                            .color(fg.ink(Ink::Secondary)),
                     ),
             )
             .child(
@@ -118,9 +119,9 @@ impl BenCodeApp {
                     .child(
                         div()
                             .truncate()
-                            .text_size(px(12.0))
+                            .text_size(Text::Base.px())
                             .font_weight(FontWeight::MEDIUM)
-                            .text_color(fg.opacity(0.8))
+                            .text_color(fg.ink(Ink::Strong))
                             .child(format!(
                                 "Changed {count} {}",
                                 if count == 1 { "file" } else { "files" }
@@ -131,7 +132,7 @@ impl BenCodeApp {
                             .flex()
                             .items_center()
                             .gap_1p5()
-                            .text_size(px(11.0))
+                            .text_size(Text::Sm.px())
                             .font_weight(FontWeight::SEMIBOLD)
                             .child(div().text_color(diff.add_fg).child(format!("+{additions}")))
                             .child(div().text_color(diff.del_fg).child(format!("-{deletions}"))),
@@ -177,11 +178,9 @@ impl BenCodeApp {
             .map(|file| self.render_review_file(session_id, file, cx));
         let list = div()
             .id(SharedString::from(format!("review-files-{session_id}")))
-            .flex()
-            .flex_col()
             .py_1()
             .border_t_1()
-            .border_color(fg.opacity(0.07))
+            .border_color(fg.fill(Fill::Line))
             .when(review.expanded, |el| {
                 el.max_h(px(256.0)).overflow_y_scroll()
             })
@@ -194,19 +193,17 @@ impl BenCodeApp {
             .pb_2()
             .child(
                 div()
-                    .flex()
-                    .flex_col()
                     .overflow_hidden()
                     .rounded(px(12.0))
                     .border_1()
-                    .border_color(fg.opacity(0.12))
-                    .bg(fg.opacity(0.03))
+                    .border_color(fg.fill(Fill::Strong))
+                    .bg(fg.fill(Fill::Faint))
                     .child(header)
                     .children(review.error.clone().map(|error| {
                         div()
                             .px_3()
                             .pb_2()
-                            .text_size(px(11.0))
+                            .text_size(Text::Sm.px())
                             .text_color(colors.danger)
                             .child(error)
                     }))
@@ -221,11 +218,11 @@ impl BenCodeApp {
                                 .h(px(32.0))
                                 .px_3()
                                 .border_t_1()
-                                .border_color(fg.opacity(0.07))
-                                .text_size(px(11.0))
-                                .text_color(fg.opacity(0.45))
+                                .border_color(fg.fill(Fill::Line))
+                                .text_size(Text::Sm.px())
+                                .text_color(fg.ink(Ink::Muted))
                                 .cursor_pointer()
-                                .hover(|s| s.bg(fg.opacity(0.05)).text_color(fg.opacity(0.7)))
+                                .hover(|s| s.bg(fg.fill(Fill::Hover)).text_color(fg.ink(Ink::Body)))
                                 .on_click(cx.listener(move |this, _, _, cx| {
                                     this.toggle_session_review(&toggle_id, cx)
                                 }))
@@ -236,7 +233,7 @@ impl BenCodeApp {
                                         IconName::ChevronRight
                                     })
                                     .size(IconSize::Xs)
-                                    .color(fg.opacity(0.45)),
+                                    .color(fg.ink(Ink::Muted)),
                                 )
                                 .child(if review.expanded {
                                     "Show fewer files".to_string()
@@ -280,7 +277,7 @@ impl BenCodeApp {
             .px_3()
             .text_color(fg.opacity(0.65))
             .cursor_pointer()
-            .hover(|s| s.bg(fg.opacity(0.05)).text_color(fg))
+            .hover(|s| s.bg(fg.fill(Fill::Hover)).text_color(fg))
             .tooltip(Tooltip::text(file.relative.clone()))
             .on_click(cx.listener(move |this, _, _, cx| {
                 this.open_session_changes(&open_id, Some(focus.clone()), cx)
@@ -292,7 +289,7 @@ impl BenCodeApp {
                     .min_w_0()
                     .truncate()
                     .font_family(theme.mono_family.clone())
-                    .text_size(px(12.0))
+                    .text_size(Text::Base.px())
                     .child(file.relative.clone()),
             )
             .child(if file.exact {
@@ -300,7 +297,7 @@ impl BenCodeApp {
                     .flex()
                     .flex_none()
                     .gap_2()
-                    .text_size(px(11.0))
+                    .text_size(Text::Sm.px())
                     .font_weight(FontWeight::SEMIBOLD)
                     .child(
                         div()
@@ -315,7 +312,7 @@ impl BenCodeApp {
             } else {
                 div()
                     .flex_none()
-                    .text_size(px(11.0))
+                    .text_size(Text::Sm.px())
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(gpui::rgb(MIXED).opacity(0.8))
                     .child("Mixed changes")

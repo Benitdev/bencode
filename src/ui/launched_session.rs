@@ -14,20 +14,25 @@ use crate::app::BenCodeApp;
 use crate::app::mono_sessions::{LaunchedState, SpawnedSession};
 use crate::ui::provider_icon::HarnessIcon;
 use crate::ui::scale::px;
+use crate::ui::tokens::Status;
+use crate::ui::tokens::{Fill, Text, Tone as _};
 
 fn state_icon(state: Option<LaunchedState>, cx: &App) -> AnyElement {
     let fg = cx.theme().colors.fg;
     let icon = |name: IconName, color: gpui::Hsla| {
         Icon::new(name).size(IconSize::Sm).color(color).into_any_element()
     };
+    let Some(state) = state else {
+        return icon(IconName::MessageSquare, Status::Quiet.color(fg));
+    };
+    let color = Status::from(state).color(fg);
     match state {
-        Some(LaunchedState::Working) => crate::ui::spinner::ring(IconSize::Sm, cx),
-        Some(LaunchedState::Input) => icon(IconName::Clock, gpui::rgb(0xfbbf24).into()),
-        Some(LaunchedState::Draft) => icon(IconName::CircleDashed, fg.opacity(0.45)),
-        Some(LaunchedState::Failed) => icon(IconName::CircleAlert, gpui::rgb(0xf87171).into()),
-        Some(LaunchedState::Stopped) => icon(IconName::CircleX, fg.opacity(0.45)),
-        Some(LaunchedState::Done) => icon(IconName::CircleCheck, gpui::rgba(0x34d399e6).into()),
-        None => icon(IconName::MessageSquare, fg.opacity(0.45)),
+        LaunchedState::Working => crate::ui::spinner::ring(IconSize::Sm, cx),
+        LaunchedState::Input => icon(IconName::Clock, color),
+        LaunchedState::Draft => icon(IconName::CircleDashed, color),
+        LaunchedState::Failed => icon(IconName::CircleAlert, color),
+        LaunchedState::Stopped => icon(IconName::CircleX, color),
+        LaunchedState::Done => icon(IconName::CircleCheck, color.opacity(0.9)),
     }
 }
 
@@ -59,19 +64,19 @@ pub fn launched_card(
         .gap(px(10.0))
         .rounded(px(12.0))
         .border_1()
-        .border_color(fg.opacity(0.1))
+        .border_color(fg.fill(Fill::Strong))
         .py(px(6.0))
         .pl_3()
         .pr(px(6.0))
         .cursor_pointer()
-        .hover(move |s| s.border_color(fg.opacity(0.2)).bg(fg.opacity(0.05)))
+        .hover(move |s| s.border_color(fg.opacity(0.2)).bg(fg.fill(Fill::Hover)))
         .tooltip(Tooltip::text(tip))
         .child(state_icon(state, cx))
         .child(
             div()
                 .min_w_0()
                 .truncate()
-                .text_size(px(13.0))
+                .text_size(Text::Md.px())
                 .text_color(fg)
                 .child(title),
         )
@@ -85,11 +90,11 @@ pub fn launched_card(
                 .gap_1()
                 .rounded_full()
                 .border_1()
-                .border_color(fg.opacity(0.1))
-                .bg(fg.opacity(0.05))
+                .border_color(fg.fill(Fill::Strong))
+                .bg(fg.fill(Fill::Hover))
                 .px_2()
                 .py_0p5()
-                .text_size(px(12.0))
+                .text_size(Text::Base.px())
                 .text_color(fg.opacity(0.65))
                 .child(HarnessIcon::new(&launch.harness).size(px(14.0)))
                 .child(div().min_w_0().truncate().child(project)),

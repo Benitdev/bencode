@@ -15,6 +15,7 @@ use super::widgets::{ROW_HEIGHT, hover_control, section_button};
 use crate::app::BenCodeApp;
 use crate::monos::{Mono, MonoState, MonoStatus, projects_phrase};
 use crate::ui::scale::px;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// The rail list the Monos' rows are reordered in.
 pub(super) const MONO_LIST: &str = "monos";
@@ -147,7 +148,7 @@ impl BenCodeApp {
             .mx_2()
             .overflow_hidden()
             .rounded(px(8.0))
-            .bg(fg.opacity(0.03))
+            .bg(fg.fill(Fill::Faint))
             .child(
                 div()
                     .flex()
@@ -161,7 +162,7 @@ impl BenCodeApp {
                             .flex_1()
                             .min_w_0()
                             .truncate()
-                            .text_size(px(13.0))
+                            .text_size(Text::Md.px())
                             .font_weight(FontWeight::MEDIUM)
                             .text_color(fg)
                             .child("Meet Monos"),
@@ -180,9 +181,9 @@ impl BenCodeApp {
                 div()
                     .px(px(10.0))
                     .pt(px(6.0))
-                    .text_size(px(11.0))
+                    .text_size(Text::Sm.px())
                     .line_height(relative(1.375))
-                    .text_color(fg.opacity(0.55))
+                    .text_color(fg.ink(Ink::Secondary))
                     .child("Agents of your own that work across your projects and run habits on their own."),
             )
             .child(
@@ -197,9 +198,9 @@ impl BenCodeApp {
                         .rounded(px(6.0))
                         .bg(fg)
                         .text_color(colors.bg)
-                        .text_size(px(12.0))
+                        .text_size(Text::Base.px())
                         .font_weight(FontWeight::MEDIUM)
-                        .hover(move |s| s.bg(fg.opacity(0.85)))
+                        .hover(move |s| s.bg(fg.ink(Ink::Strong)))
                         .on_click(cx.listener(|this, _, _, cx| this.create_mono(cx)))
                         .child("Create mono"),
                 ),
@@ -219,7 +220,7 @@ impl BenCodeApp {
         let working = state.status == MonoStatus::Working;
         let selected = self.surface.is_none() && self.monos.view.as_deref() == Some(&mono.id);
         let strong = fg.opacity(if theme.is_dark() { 0.12 } else { 0.07 });
-        let hover = fg.opacity(0.05);
+        let hover = fg.fill(Fill::Hover);
         let label = if working {
             crate::ui::spinner::shimmer(name.clone(), cx)
         } else {
@@ -286,7 +287,7 @@ impl BenCodeApp {
                             .min_w_0()
                             .flex_1()
                             .truncate()
-                            .text_size(px(14.0))
+                            .text_size(Text::Lg.px())
                             .font_weight(FontWeight::MEDIUM)
                             .line_height(relative(1.25))
                             .child(label),
@@ -339,7 +340,7 @@ impl BenCodeApp {
                 .justify_center()
                 .rounded_full()
                 .bg(colors.accent)
-                .text_size(px(10.0))
+                .text_size(Text::Xs.px())
                 .font_weight(FontWeight::MEDIUM)
                 .text_color(gpui::white())
                 .group_hover(group.clone(), |s| s.invisible())
@@ -388,7 +389,7 @@ impl BenCodeApp {
         let dot = match state.status {
             MonoStatus::Working => color,
             MonoStatus::NeedsYou => colors.accent,
-            MonoStatus::Idle => colors.fg.opacity(0.3),
+            MonoStatus::Idle => colors.fg.ink(Ink::Faint),
         };
         div()
             .relative()

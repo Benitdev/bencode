@@ -6,6 +6,7 @@ use ely_gpui_component::theme::{ActiveTheme, Mode, Palette, Theme};
 use gpui::{App, Hsla, rgb, rgba};
 
 use crate::ui::appearance::{ThemeTint, UserAccent, mix};
+use crate::ui::tokens::{Fill, Tone as _};
 
 fn c(hex: u32) -> Hsla {
     rgb(hex).into()
@@ -53,7 +54,7 @@ fn monocode_dark(tint: &ThemeTint) -> Palette {
     p.overlay = p.surface;
     p.hover = ink(0.05);
     p.active = ink(0.10);
-    p.border = fg.opacity(0.10);
+    p.border = fg.fill(Fill::Strong);
     p.border_strong = fg.opacity(0.20);
     p.fg = fg;
     p.fg_muted = ink(0.5425);
@@ -100,7 +101,7 @@ fn monocode_light(tint: &ThemeTint) -> Palette {
     p.overlay = p.surface;
     p.hover = ink(0.05);
     p.active = ink(0.06);
-    p.border = fg.opacity(0.10);
+    p.border = fg.fill(Fill::Strong);
     p.border_strong = fg.opacity(0.20);
     p.fg = fg;
     p.fg_muted = ink(0.542);

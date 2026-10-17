@@ -19,6 +19,7 @@ use gpui::{
 use super::{CARD_GAP, FailedSend, MonoFloat, RAIL_WIDTH};
 use crate::ui::attachment_chip::ChipFile;
 use crate::ui::scale::px;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// MonoCode `FIELD_CLASSES`: `py-1 text-[13px] leading-4.5`.
 const FIELD_SIZE: f32 = 13.0;
@@ -85,8 +86,8 @@ impl MonoFloat {
                 .flex_none()
                 .px_3()
                 .pb_2()
-                .text_size(px(12.0))
-                .text_color(fg.opacity(0.6))
+                .text_size(Text::Base.px())
+                .text_color(fg.ink(Ink::Secondary))
                 .child("The provider’s usage limit was reached.")
                 .child(
                     div()
@@ -101,7 +102,7 @@ impl MonoFloat {
                                 },
                             )),
                         )
-                        .child(div().mx_2().text_color(fg.opacity(0.25)).child("·"))
+                        .child(div().mx_2().text_color(fg.ink(Ink::Faint)).child("·"))
                         .child(
                             link("mono-float-limit-model", "Change model in BenCode")
                                 .on_click(cx.listener(|this, _, _, cx| this.reveal(cx))),
@@ -137,7 +138,7 @@ impl MonoFloat {
         } else if focused {
             fg.opacity(0.2)
         } else {
-            fg.opacity(0.1)
+            fg.fill(Fill::Strong)
         };
         let field = div()
             .min_w_0()
@@ -176,7 +177,7 @@ impl MonoFloat {
                     .rounded(px(8.0))
                     .border_1()
                     .border_color(border)
-                    .bg(fg.opacity(0.03))
+                    .bg(fg.fill(Fill::Faint))
                     .on_mouse_down(gpui::MouseButton::Left, move |_, window, cx| {
                         window.focus(&handle, cx)
                     })
@@ -185,7 +186,7 @@ impl MonoFloat {
                         div()
                             .px_3()
                             .pt_2()
-                            .text_size(px(12.0))
+                            .text_size(Text::Base.px())
                             .text_color(danger)
                             .child(error)
                     }))
@@ -211,8 +212,8 @@ impl MonoFloat {
                                 .justify_center()
                                 .rounded(px(8.0))
                                 .bg(accent.opacity(0.08))
-                                .text_size(px(12.0))
-                                .text_color(fg.opacity(0.7))
+                                .text_size(Text::Base.px())
+                                .text_color(fg.ink(Ink::Body))
                                 .child("Drop files to attach"),
                         )
                     }),
@@ -265,12 +266,12 @@ impl MonoFloat {
             .items_center()
             .justify_center()
             .rounded(px(6.0))
-            .bg(fg.opacity(0.08))
+            .bg(fg.fill(Fill::Selected))
             .tooltip(Tooltip::text("Attach files"))
             .map(|el| {
                 if enabled {
                     el.cursor_pointer()
-                        .hover(move |s| s.bg(fg.opacity(0.12)))
+                        .hover(move |s| s.bg(fg.fill(Fill::Strong)))
                         .on_click(cx.listener(|this, _, _, cx| this.pick_files(cx)))
                 } else {
                     el.opacity(0.5)
@@ -279,7 +280,7 @@ impl MonoFloat {
             .child(
                 Icon::new(IconName::Plus)
                     .size(IconSize::Sm)
-                    .color(fg.opacity(0.55))
+                    .color(fg.ink(Ink::Secondary))
                     .group_hover_color("mono-float-attach", fg),
             )
             .into_any_element()

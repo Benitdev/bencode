@@ -48,6 +48,7 @@ use reorder::RailResize;
 use widgets::{
     RailTrailing, TitleButtonState, rail_action, rail_search, section_button, title_icon_button,
 };
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// MonoCode `w-[78px]`: room for the traffic lights.
 const TRAFFIC_LIGHT_SPACE: f32 = 78.0;
@@ -398,14 +399,14 @@ impl BenCodeApp {
                 .rounded(px(8.0))
                 .px(px(10.0))
                 .py(px(6.0))
-                .text_size(px(13.0))
-                .text_color(fg.opacity(0.8))
+                .text_size(Text::Md.px())
+                .text_color(fg.ink(Ink::Strong))
                 .cursor_pointer()
-                .hover(move |s| s.bg(fg.opacity(0.08)).text_color(fg))
+                .hover(move |s| s.bg(fg.fill(Fill::Selected)).text_color(fg))
                 .child(
                     Icon::new(icon)
                         .size(IconSize::Sm)
-                        .color(fg.opacity(0.8))
+                        .color(fg.ink(Ink::Strong))
                         .group_hover_color(id, fg),
                 )
                 .child(label)

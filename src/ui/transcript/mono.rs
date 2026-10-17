@@ -20,6 +20,7 @@ use crate::ui::scale::px;
 use crate::ui::transcript::turns::{
     WorkKind, is_notice, is_prose, is_thinking, is_tool, text, tool_kind, tool_kind_name,
 };
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// MonoCode `STRETCH_GAP`: a message this long after the one before gets
 /// its own day and time.
@@ -254,14 +255,14 @@ pub fn day_separator(id: impl Into<ElementId>, at: i64, cx: &App) -> Stateful<gp
         .px_4()
         .pt_6()
         .pb_3()
-        .text_size(px(12.0))
+        .text_size(Text::Base.px())
         .line_height(px(16.0))
         .child(
             div()
                 .flex()
                 .gap_1()
                 .rounded_full()
-                .bg(fg.opacity(0.07))
+                .bg(fg.fill(Fill::Line))
                 .px_3()
                 .py_1()
                 .child(
@@ -270,7 +271,7 @@ pub fn day_separator(id: impl Into<ElementId>, at: i64, cx: &App) -> Stateful<gp
                         .text_color(fg.opacity(0.75))
                         .child(day),
                 )
-                .child(div().text_color(fg.opacity(0.45)).child(time)),
+                .child(div().text_color(fg.ink(Ink::Muted)).child(time)),
         )
 }
 
@@ -285,7 +286,7 @@ pub fn signature_pill(mark: AnyElement, label: AnyElement, cx: &App) -> gpui::Di
         .items_center()
         .gap_1p5()
         .rounded_full()
-        .bg(fg.opacity(0.07))
+        .bg(fg.fill(Fill::Line))
         .py_0p5()
         .pl_2()
         .pr_3()
@@ -299,10 +300,10 @@ pub fn signature_name(name: String, cx: &App) -> AnyElement {
     div()
         .min_w_0()
         .truncate()
-        .text_size(px(14.0))
+        .text_size(Text::Lg.px())
         .line_height(px(20.0))
         .font_weight(FontWeight::MEDIUM)
-        .text_color(cx.theme().colors.fg.opacity(0.8))
+        .text_color(cx.theme().colors.fg.ink(Ink::Strong))
         .child(name)
         .into_any_element()
 }
@@ -326,7 +327,7 @@ pub fn reaction_badge(emoji: &str, cx: &App) -> gpui::Div {
             bg.blend(fg.opacity(0.17)),
             vec![
                 shadow(0.0, 0.5, 0.0, 0.0, fg.opacity(0.22), true),
-                shadow(0.0, 0.0, 0.0, 0.5, fg.opacity(0.1), false),
+                shadow(0.0, 0.0, 0.0, 0.5, fg.fill(Fill::Strong), false),
                 shadow(0.0, 2.0, 6.0, 0.0, gpui::black().opacity(0.28), false),
             ],
         )
@@ -351,7 +352,7 @@ pub fn reaction_badge(emoji: &str, cx: &App) -> gpui::Div {
         .rounded(px(8.0))
         .bg(fill)
         .shadow(shadows)
-        .text_size(px(11.0))
+        .text_size(Text::Sm.px())
         .line_height(px(11.0))
         .child(emoji.to_string())
 }

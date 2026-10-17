@@ -17,6 +17,7 @@ use super::relative_time;
 use crate::app::BenCodeApp;
 use crate::github::{self, Comment, Kind, WorkItem};
 use crate::work_items::Provider;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// The review thread a reply goes to (MonoCode `InboxReplyTarget`).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -51,7 +52,7 @@ pub(super) fn review_tint(
 
 /// The `·` between the parts of a byline.
 pub(super) fn byline_dot(fg: Hsla) -> Div {
-    div().text_color(fg.opacity(0.35)).child("·")
+    div().text_color(fg.ink(Ink::Faint)).child("·")
 }
 
 /// A byline: muted 12px parts in a wrapping row.
@@ -63,14 +64,14 @@ pub(super) fn byline(fg: Hsla) -> Div {
         .items_center()
         .gap_x_2()
         .gap_y_1()
-        .text_size(px(12.0))
-        .text_color(fg.opacity(0.5))
+        .text_size(Text::Base.px())
+        .text_color(fg.ink(Ink::Secondary))
 }
 
 /// Who wrote it, stronger than the rest of the byline.
 pub(super) fn author_name(name: impl Into<SharedString>, fg: Hsla) -> Div {
     div()
-        .text_color(fg.opacity(0.8))
+        .text_color(fg.ink(Ink::Strong))
         .font_weight(FontWeight::MEDIUM)
         .child(name.into())
 }
@@ -80,7 +81,7 @@ pub(super) fn comment_card(fg: Hsla) -> Div {
     div()
         .rounded(px(6.0))
         .border_1()
-        .border_color(fg.opacity(0.10))
+        .border_color(fg.fill(Fill::Strong))
         .bg(fg.opacity(0.02))
         .flex()
         .flex_col()
@@ -171,8 +172,8 @@ impl BenCodeApp {
                 return section
                     .child(
                         div()
-                            .text_size(px(12.0))
-                            .text_color(fg.opacity(0.45))
+                            .text_size(Text::Base.px())
+                            .text_color(fg.ink(Ink::Muted))
                             .child(SharedString::from(err.clone())),
                     )
                     .child(self.render_comment_form(cx))
@@ -187,11 +188,11 @@ impl BenCodeApp {
                         .flex()
                         .items_center()
                         .gap_2()
-                        .text_size(px(12.0))
-                        .text_color(fg.opacity(0.45))
+                        .text_size(Text::Base.px())
+                        .text_color(fg.ink(Ink::Muted))
                         .child(super::loading_icon(
                             "inbox-comments-loading",
-                            fg.opacity(0.45),
+                            fg.ink(Ink::Muted),
                         ))
                         .child("Loading comments"),
                 )
@@ -212,9 +213,9 @@ impl BenCodeApp {
                         .flex()
                         .items_center()
                         .gap_2()
-                        .text_size(px(12.0))
-                        .text_color(fg.opacity(0.5))
-                        .child(div().text_color(fg.opacity(0.7)).child(label))
+                        .text_size(Text::Base.px())
+                        .text_color(fg.ink(Ink::Secondary))
+                        .child(div().text_color(fg.ink(Ink::Body)).child(label))
                         .when(thread.truncated, |el| {
                             el.child(format!(
                                 "Latest comments · more on {}",
@@ -224,7 +225,7 @@ impl BenCodeApp {
                         .when(loading, |el| {
                             el.child(super::loading_icon(
                                 "inbox-comments-reloading",
-                                fg.opacity(0.35),
+                                fg.ink(Ink::Faint),
                             ))
                         }),
                 )
@@ -273,7 +274,7 @@ impl BenCodeApp {
                 fg,
             ));
         if !review.is_empty() {
-            let tint = review_tint(&comment.state, colors).unwrap_or(fg.opacity(0.5));
+            let tint = review_tint(&comment.state, colors).unwrap_or(fg.ink(Ink::Secondary));
             header = header
                 .child(dot())
                 .child(div().text_color(tint).child(review));
@@ -284,7 +285,7 @@ impl BenCodeApp {
                     .min_w_0()
                     .truncate()
                     .font_family(cx.theme().mono_family.clone())
-                    .text_size(px(11.0))
+                    .text_size(Text::Sm.px())
                     .child(location),
             );
         }
@@ -335,7 +336,7 @@ impl BenCodeApp {
         let body = has_body.then(|| {
             div()
                 .when(!nested, |el| el.px_3().py_2())
-                .text_size(px(13.0))
+                .text_size(Text::Md.px())
                 .child(MarkdownRenderer::new(
                     SharedString::from(format!("comment-{}", comment.id)),
                     comment.body.clone(),
@@ -383,7 +384,7 @@ impl BenCodeApp {
             .flex()
             .flex_col()
             .gap_1()
-            .child(div().text_size(px(12.0)).text_color(fg.opacity(0.7)).child(
+            .child(div().text_size(Text::Base.px()).text_color(fg.ink(Ink::Body)).child(
                 if commits.len() == 1 {
                     "1 commit".to_string()
                 } else {
@@ -392,7 +393,7 @@ impl BenCodeApp {
             ))
             .children(commits.iter().enumerate().map(|(ix, commit)| {
                 let url = commit.url.clone();
-                let hover = fg.opacity(0.05);
+                let hover = fg.fill(Fill::Hover);
                 div()
                     .id(("commit", ix))
                     .flex()
@@ -401,7 +402,7 @@ impl BenCodeApp {
                     .px_2()
                     .py_1()
                     .rounded(px(6.0))
-                    .text_size(px(12.0))
+                    .text_size(Text::Base.px())
                     .when(!url.is_empty(), |el| {
                         el.cursor_pointer()
                             .hover(move |s| s.bg(hover))
@@ -410,28 +411,28 @@ impl BenCodeApp {
                     .child(
                         Icon::new(IconName::GitCommitHorizontal)
                             .size(IconSize::Xs)
-                            .color(fg.opacity(0.45)),
+                            .color(fg.ink(Ink::Muted)),
                     )
                     .child(
                         div()
                             .flex_1()
                             .min_w_0()
                             .truncate()
-                            .text_color(fg.opacity(0.85))
+                            .text_color(fg.ink(Ink::Strong))
                             .child(SharedString::from(commit.headline.clone())),
                     )
                     .child(
                         div()
                             .flex_none()
                             .font_family(cx.theme().mono_family.clone())
-                            .text_size(px(11.0))
-                            .text_color(fg.opacity(0.45))
+                            .text_size(Text::Sm.px())
+                            .text_color(fg.ink(Ink::Muted))
                             .child(commit.oid.chars().take(7).collect::<String>()),
                     )
                     .child(
                         div()
                             .flex_none()
-                            .text_color(fg.opacity(0.45))
+                            .text_color(fg.ink(Ink::Muted))
                             .child(format!(
                                 "{} · {}",
                                 commit.author,
@@ -457,12 +458,12 @@ impl BenCodeApp {
                     .flex()
                     .items_center()
                     .gap_2()
-                    .text_size(px(12.0))
-                    .text_color(fg.opacity(0.55))
+                    .text_size(Text::Base.px())
+                    .text_color(fg.ink(Ink::Secondary))
                     .child(
                         Icon::new(IconName::Reply)
                             .size(IconSize::Xs)
-                            .color(fg.opacity(0.5)),
+                            .color(fg.ink(Ink::Secondary)),
                     )
                     .child(format!(
                         "Replying to {}",
@@ -476,7 +477,7 @@ impl BenCodeApp {
                         div()
                             .id("comment-cancel-reply")
                             .cursor_pointer()
-                            .text_color(fg.opacity(0.45))
+                            .text_color(fg.ink(Ink::Muted))
                             .hover(move |s| s.text_color(fg))
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.inbox.reply_to = None;
@@ -489,15 +490,15 @@ impl BenCodeApp {
                 div()
                     .rounded(px(6.0))
                     .border_1()
-                    .border_color(fg.opacity(0.10))
-                    .bg(fg.opacity(0.05))
+                    .border_color(fg.fill(Fill::Strong))
+                    .bg(fg.fill(Fill::Hover))
                     .flex()
                     .flex_col()
                     .child(
                         div()
                             .px_3()
                             .py_2()
-                            .text_size(px(13.0))
+                            .text_size(Text::Md.px())
                             .when(posting, |el| el.opacity(0.4))
                             .child(self.inbox_comment_input.clone()),
                     )
@@ -522,7 +523,7 @@ impl BenCodeApp {
             )
             .children(self.inbox.comment_error.clone().map(|error| {
                 div()
-                    .text_size(px(12.0))
+                    .text_size(Text::Base.px())
                     .text_color(colors.danger.opacity(0.9))
                     .child(error)
             }))

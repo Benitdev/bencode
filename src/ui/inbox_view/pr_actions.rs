@@ -12,7 +12,7 @@ use gpui::{AnyElement, Context, IntoElement, ParentElement, SharedString, Styled
 use crate::app::BenCodeApp;
 use crate::github::{self, PrAction, WorkItem};
 use crate::ui::app_callback::app_callback;
-use crate::ui::scale::px;
+use crate::ui::tokens::{Ink, Text, Tone as _};
 
 /// MonoCode `GITHUB_PR_MERGE_OPTIONS`.
 const MERGE_OPTIONS: [(PrAction, &str); 3] = [
@@ -267,16 +267,16 @@ impl BenCodeApp {
         let (text, color) = if let Some(action) = pr.busy {
             (
                 action_copy(action, "", "").3.to_string(),
-                colors.fg.opacity(0.55),
+                colors.fg.ink(Ink::Secondary),
             )
         } else if let Some(error) = &pr.error {
             (error.clone(), colors.danger.opacity(0.9))
         } else {
-            (pr.notice.clone()?, colors.fg.opacity(0.55))
+            (pr.notice.clone()?, colors.fg.ink(Ink::Secondary))
         };
         Some(
             div()
-                .text_size(px(11.0))
+                .text_size(Text::Sm.px())
                 .text_color(color)
                 .child(SharedString::from(text))
                 .into_any_element(),

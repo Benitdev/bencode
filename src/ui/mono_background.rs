@@ -16,6 +16,7 @@ use crate::ui::app_callback::app_callback;
 use crate::ui::appearance::CHAT_BACKGROUND_OPACITY_DEFAULT;
 use crate::ui::git_changes_panel::spinning_icon;
 use crate::ui::scale::px;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 impl BenCodeApp {
     /// Full-window: in `BenCodeApp::render`'s `dialogs` list.
@@ -37,7 +38,7 @@ impl BenCodeApp {
             .overflow_hidden()
             .rounded(px(12.0))
             .border_1()
-            .border_color(fg.opacity(0.1))
+            .border_color(fg.fill(Fill::Strong))
             .bg(cx.theme().colors.bg)
             .map(|el| match self.mono_background_image(&id) {
                 Some(image) => el.child(
@@ -53,8 +54,8 @@ impl BenCodeApp {
                     .flex()
                     .items_center()
                     .justify_center()
-                    .text_size(px(12.0))
-                    .text_color(fg.opacity(0.4))
+                    .text_size(Text::Base.px())
+                    .text_color(fg.ink(Ink::Muted))
                     .child("No background selected"),
             });
 
@@ -72,15 +73,15 @@ impl BenCodeApp {
             .gap(px(6.0))
             .rounded(px(6.0))
             .border_1()
-            .border_color(fg.opacity(0.1))
+            .border_color(fg.fill(Fill::Strong))
             .px(px(10.0))
             .py(px(6.0))
-            .text_size(px(12.0))
-            .text_color(fg.opacity(0.7))
+            .text_size(Text::Base.px())
+            .text_color(fg.ink(Ink::Body))
             .when(busy, |el| el.opacity(0.4))
             .when(!busy, |el| {
                 el.cursor_pointer()
-                    .hover(|el| el.bg(fg.opacity(0.1)).text_color(fg))
+                    .hover(|el| el.bg(fg.fill(Fill::Strong)).text_color(fg))
                     .on_click(move |_, window, cx| choose(window, cx))
             })
             .when(busy, |el| {
@@ -88,7 +89,7 @@ impl BenCodeApp {
                     "mono-background-busy".into(),
                     IconName::LoaderCircle,
                     IconSize::Sm,
-                    fg.opacity(0.7),
+                    fg.ink(Ink::Body),
                 ))
             })
             .child(if has_image { "Change image" } else { "Choose image" });
@@ -100,14 +101,14 @@ impl BenCodeApp {
             .child(
                 div()
                     .mt(px(6.0))
-                    .text_size(px(11.0))
-                    .text_color(fg.opacity(0.45))
+                    .text_size(Text::Sm.px())
+                    .text_color(fg.ink(Ink::Muted))
                     .child(format!("Shown behind {name}'s chat, dimmed with the Haze effect.")),
             )
             .children(self.mono_backgrounds.error.clone().map(|error| {
                 div()
                     .mt(px(6.0))
-                    .text_size(px(12.0))
+                    .text_size(Text::Base.px())
                     .text_color(red_400)
                     .child(error)
             }));
@@ -125,10 +126,10 @@ impl BenCodeApp {
                     .justify_center()
                     .rounded(px(6.0))
                     .border_1()
-                    .border_color(fg.opacity(0.1))
+                    .border_color(fg.fill(Fill::Strong))
                     .px(px(10.0))
                     .py(px(6.0))
-                    .text_size(px(12.0))
+                    .text_size(Text::Base.px())
                     .text_color(red_400)
                     .when(busy, |el| el.opacity(0.4))
                     .when(!busy, |el| {

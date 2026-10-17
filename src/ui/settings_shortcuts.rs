@@ -14,6 +14,7 @@ use crate::app::BenCodeApp;
 use crate::app::commands::{self as cmd, chord_for};
 use crate::ui::settings_modal::SettingsTab;
 use crate::ui::settings_parts::{SettingsGroup, SettingsPage, SettingsRow};
+use crate::ui::tokens::{Ink, Tone as _};
 
 /// A group of the page: its title, the line under it, its shortcuts.
 struct Group<T> {
@@ -235,7 +236,7 @@ fn shown() -> &'static [Group<Shown>] {
 
 impl BenCodeApp {
     pub(crate) fn render_settings_shortcuts(&self, cx: &Context<Self>) -> SettingsPage {
-        let muted = cx.theme().colors.fg.opacity(0.6);
+        let muted = cx.theme().colors.fg.ink(Ink::Secondary);
         shown()
             .iter()
             .fold(SettingsTab::Shortcuts.page(), |page, group| {

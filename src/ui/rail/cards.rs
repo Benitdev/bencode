@@ -24,6 +24,7 @@ use super::widgets::{
 };
 use crate::app::{BenCodeApp, same_project_path};
 use crate::ui::mascot::mascot_for;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// The rows' `px-2` on each side, for the held row's width.
 const LIST_INSET: f32 = 16.0;
@@ -115,8 +116,8 @@ impl BenCodeApp {
                     .flex_1()
                     .truncate()
                     .px_1()
-                    .text_size(px(12.0))
-                    .text_color(fg.opacity(0.5))
+                    .text_size(Text::Base.px())
+                    .text_color(fg.ink(Ink::Secondary))
                     .child(label),
             )
             .children(button)
@@ -144,9 +145,9 @@ impl BenCodeApp {
                     div()
                         .px_4()
                         .pb_1()
-                        .text_size(px(11.0))
+                        .text_size(Text::Sm.px())
                         .line_height(relative(1.25))
-                        .text_color(fg.opacity(0.4))
+                        .text_color(fg.ink(Ink::Muted))
                         .child("No projects yet"),
                 )
             })
@@ -293,7 +294,7 @@ impl BenCodeApp {
             .px_2()
             .rounded(px(6.0))
             .opacity(0.65)
-            .hover(move |s| s.bg(fg.opacity(0.05)))
+            .hover(move |s| s.bg(fg.fill(Fill::Hover)))
             .on_mouse_down(
                 MouseButton::Right,
                 cx.listener(move |this, event: &MouseDownEvent, _, cx| {
@@ -372,7 +373,7 @@ impl BenCodeApp {
             .flex_none()
             .overflow_hidden()
             .rounded(px(6.0))
-            .when(expanded, |el| el.mb(px(6.0)).bg(fg.opacity(0.05)))
+            .when(expanded, |el| el.mb(px(6.0)).bg(fg.fill(Fill::Hover)))
             .child(header)
             .when(expanded, |el| {
                 // `flex flex-col gap-px p-1`
@@ -442,7 +443,7 @@ impl BenCodeApp {
         // `bg-selection-strong` (content 12%, 7% in light), else `opacity-65`
         // with the `content/5` hover from `.project-reorder-item`.
         let strong = fg.opacity(if dark { 0.12 } else { 0.07 });
-        let hover = fg.opacity(0.05);
+        let hover = fg.fill(Fill::Hover);
         let label = if card.busy {
             crate::ui::spinner::shimmer(name, cx)
         } else {
@@ -520,7 +521,7 @@ impl BenCodeApp {
                                 None => el.flex_1(),
                             })
                             .truncate()
-                            .text_size(px(14.0))
+                            .text_size(Text::Lg.px())
                             .font_weight(FontWeight::MEDIUM)
                             .line_height(relative(1.25))
                             .child(label),
@@ -532,9 +533,9 @@ impl BenCodeApp {
                                 .min_w_0()
                                 .flex_1()
                                 .truncate()
-                                .text_size(px(11.0))
+                                .text_size(Text::Sm.px())
                                 .line_height(relative(1.25))
-                                .text_color(fg.opacity(0.45))
+                                .text_color(fg.ink(Ink::Muted))
                                 .child(machine),
                         )
                     })
@@ -562,7 +563,7 @@ impl BenCodeApp {
                                 .size_4()
                                 .items_center()
                                 .justify_center()
-                                .child(Icon::new(IconName::Globe).size(IconSize::Xs).color(fg.opacity(0.45)))
+                                .child(Icon::new(IconName::Globe).size(IconSize::Xs).color(fg.ink(Ink::Muted)))
                                 .child(
                                     div()
                                         .absolute()
@@ -575,7 +576,7 @@ impl BenCodeApp {
                                         .bg(if online == Some(true) {
                                             rgb(EMERALD_400).into()
                                         } else {
-                                            fg.opacity(0.35)
+                                            fg.ink(Ink::Faint)
                                         }),
                                 ),
                         )

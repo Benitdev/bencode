@@ -20,6 +20,7 @@ use crate::monos::{Mono, MonoState, MonoStatus};
 use crate::ui::mascot::{MascotLook, pixel_mascot};
 use crate::ui::scale::px;
 use crate::ui::window_drag::claim_press;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 impl BenCodeApp {
     /// MonoCode `TitleBar` in a Mono's view: `h-10 border-b border-stroke`,
@@ -105,7 +106,7 @@ impl BenCodeApp {
                 div()
                     .min_w_0()
                     .truncate()
-                    .text_size(px(13.0))
+                    .text_size(Text::Md.px())
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(colors.fg)
                     .child(mono.display_name()),
@@ -113,11 +114,11 @@ impl BenCodeApp {
             .child(
                 div()
                     .flex_none()
-                    .text_size(px(12.0))
+                    .text_size(Text::Base.px())
                     .text_color(if state.status == MonoStatus::NeedsYou {
                         colors.accent
                     } else {
-                        colors.fg.opacity(0.45)
+                        colors.fg.ink(Ink::Muted)
                     })
                     .child(state.status.label()),
             )
@@ -129,7 +130,7 @@ impl BenCodeApp {
     fn render_mono_title_controls(&self, mono: &Mono, cx: &Context<Self>) -> impl IntoElement {
         let fg = cx.theme().colors.fg;
         let overview = self.monos.overview_open;
-        let ink = if overview { fg } else { fg.opacity(0.7) };
+        let ink = if overview { fg } else { fg.ink(Ink::Body) };
         claim_press(div())
             .flex()
             .flex_none()
@@ -145,12 +146,12 @@ impl BenCodeApp {
                     .h(px(24.0))
                     .px_2()
                     .rounded(px(6.0))
-                    .text_size(px(12.0))
+                    .text_size(Text::Base.px())
                     .cursor_pointer()
                     .text_color(ink)
                     .bg(fg.opacity(if overview { 0.10 } else { 0.05 }))
                     .when(!overview, |el| {
-                        el.hover(move |s| s.bg(fg.opacity(0.08)).text_color(fg))
+                        el.hover(move |s| s.bg(fg.fill(Fill::Selected)).text_color(fg))
                     })
                     .tooltip(Tooltip::text(if overview {
                         "Hide overview"

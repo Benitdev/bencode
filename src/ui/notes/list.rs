@@ -14,6 +14,7 @@ use crate::ui::page_parts::tint;
 use crate::ui::relative_time;
 use crate::ui::scale::px;
 use crate::ui::scrollbar::Scrolled;
+use crate::ui::tokens::Text;
 
 /// MonoCode shows this many tags on a card, then "+N".
 const CARD_TAGS: usize = 3;
@@ -42,7 +43,7 @@ impl BenCodeApp {
             div()
                 .px_3()
                 .py_2()
-                .text_size(px(12.0))
+                .text_size(Text::Base.px())
                 .text_color(fg.opacity(tint::SOFT))
                 .child(text)
                 .into_any_element()
@@ -92,7 +93,7 @@ impl BenCodeApp {
                         div()
                             .flex_1()
                             .min_w_0()
-                            .text_size(px(12.0))
+                            .text_size(Text::Base.px())
                             .child(self.notes.filter_input.clone()),
                     )
                     .child(
@@ -153,7 +154,7 @@ impl BenCodeApp {
                         .py(px(2.0))
                         .rounded(px(4.0))
                         .bg(fg.opacity(tint::FILL))
-                        .text_size(px(10.0))
+                        .text_size(Text::Xs.px())
                         .text_color(fg.opacity(tint::SOFT))
                         .child(format!("#{tag}"))
                 }))
@@ -161,7 +162,7 @@ impl BenCodeApp {
                     el.child(
                         div()
                             .flex_none()
-                            .text_size(px(10.0))
+                            .text_size(Text::Xs.px())
                             .text_color(fg.opacity(tint::HINT))
                             .child(format!("+{extra}")),
                     )
@@ -190,7 +191,7 @@ impl BenCodeApp {
                     .flex()
                     .items_center()
                     .gap_2()
-                    .text_size(px(11.0))
+                    .text_size(Text::Sm.px())
                     .child(
                         div()
                             .flex_1()
@@ -209,7 +210,7 @@ impl BenCodeApp {
                 div()
                     .mt_1()
                     .truncate()
-                    .text_size(px(13.0))
+                    .text_size(Text::Md.px())
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(fg)
                     .child(note.title.clone()),
@@ -219,7 +220,7 @@ impl BenCodeApp {
                     div()
                         .mt_1()
                         .truncate()
-                        .text_size(px(12.0))
+                        .text_size(Text::Base.px())
                         .text_color(fg.opacity(tint::QUIET))
                         .child(preview),
                 )

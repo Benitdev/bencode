@@ -21,10 +21,8 @@ use crate::ui::spinner;
 pub(super) const ROW_HEIGHT: f32 = 32.0;
 /// MonoCode `--mascot-beat`.
 const MASCOT_BEAT: Duration = Duration::from_millis(460);
-/// MonoCode `text-amber-400`: the muted badge.
-pub(super) const AMBER_400: u32 = 0xfbbf24;
-/// Tailwind `emerald-400`: a machine that is connected.
-pub(super) const EMERALD_400: u32 = 0x34d399;
+pub(super) use crate::ui::tokens::{AMBER_400, EMERALD_400};
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// MonoCode `formatInteger`: thousands grouped with commas.
 pub(super) fn format_diff_number(n: usize) -> String {
@@ -77,7 +75,7 @@ pub(super) fn project_diff_stat(
         .flex_none()
         .items_center()
         .gap_1()
-        .text_size(px(11.0))
+        .text_size(Text::Sm.px())
         .font_weight(FontWeight::SEMIBOLD)
         .when(additions > 0, |el| {
             el.child(
@@ -158,13 +156,13 @@ pub(super) fn hover_control(
             6.0
         }))
         .when(!matches!(size, IconSize::Sm), |el| {
-            el.hover(move |s| s.bg(fg.opacity(0.08)))
+            el.hover(move |s| s.bg(fg.fill(Fill::Selected)))
         })
         .tooltip(Tooltip::text(tip))
         .child(
             Icon::new(icon)
                 .size(size)
-                .color(fg.opacity(0.55))
+                .color(fg.ink(Ink::Secondary))
                 .group_hover_color(id, fg),
         )
 }
@@ -184,7 +182,7 @@ pub(super) fn rail_label(label: impl Into<SharedString>) -> impl IntoElement {
         .min_w_0()
         .flex_1()
         .truncate()
-        .text_size(px(14.0))
+        .text_size(Text::Lg.px())
         .font_weight(FontWeight::MEDIUM)
         .line_height(relative(1.25))
         .child(label.into())
@@ -227,7 +225,7 @@ pub(super) fn rail_search(active: bool, cx: &Context<BenCodeApp>) -> impl IntoEl
     rail_row(id, active, selection, fg)
         .px(px(6.0))
         .border_1()
-        .border_color(fg.opacity(0.08))
+        .border_color(fg.fill(Fill::Selected))
         .shadow_sm()
         .on_click(cx.listener(|this, _, _, cx| this.open_search_modal(cx)))
         .child(rail_icon(id, IconName::Search, active, fg))
@@ -251,26 +249,26 @@ fn rail_row(id: &'static str, active: bool, selection: Hsla, fg: Hsla) -> Statef
             if active {
                 el.bg(selection).text_color(fg)
             } else {
-                el.text_color(fg.opacity(0.5))
-                    .hover(move |s| s.bg(fg.opacity(0.10)).text_color(fg))
+                el.text_color(fg.ink(Ink::Secondary))
+                    .hover(move |s| s.bg(fg.fill(Fill::Strong)).text_color(fg))
             }
         })
 }
 
 /// `size-4 shrink-0 opacity-70` in the row's ink.
 fn rail_icon(group: &'static str, icon: IconName, active: bool, fg: Hsla) -> impl IntoElement {
-    let ink = if active { fg } else { fg.opacity(0.5) };
+    let ink = if active { fg } else { fg.ink(Ink::Secondary) };
     Icon::new(icon)
         .size(IconSize::Md)
         .color(ink.opacity(0.7))
-        .group_hover_color(group, fg.opacity(0.7))
+        .group_hover_color(group, fg.ink(Ink::Body))
 }
 
 fn shortcut_hint(keys: &'static str, fg: Hsla) -> impl IntoElement {
     div()
         .flex_none()
-        .text_size(px(11.0))
-        .text_color(fg.opacity(0.4))
+        .text_size(Text::Sm.px())
+        .text_color(fg.ink(Ink::Muted))
         .child(keys)
 }
 
@@ -294,13 +292,13 @@ pub(super) fn section_button(
         .items_center()
         .justify_center()
         .rounded(px(6.0))
-        .when(open, |el| el.bg(fg.opacity(0.08)))
-        .hover(move |s| s.bg(fg.opacity(0.08)))
+        .when(open, |el| el.bg(fg.fill(Fill::Selected)))
+        .hover(move |s| s.bg(fg.fill(Fill::Selected)))
         .tooltip(Tooltip::text(tip))
         .child(
             Icon::new(icon)
                 .size(IconSize::Sm)
-                .color(if open { fg } else { fg.opacity(0.5) })
+                .color(if open { fg } else { fg.ink(Ink::Secondary) })
                 .group_hover_color(id, fg),
         )
 }
@@ -327,9 +325,9 @@ pub(super) fn title_icon_button(
     let fg = cx.theme().colors.fg;
     let id: SharedString = id.into();
     let color = match state {
-        TitleButtonState::Normal => fg.opacity(0.5),
+        TitleButtonState::Normal => fg.ink(Ink::Secondary),
         TitleButtonState::Active => fg,
-        TitleButtonState::Disabled => fg.opacity(0.25),
+        TitleButtonState::Disabled => fg.ink(Ink::Faint),
     };
     let enabled = state != TitleButtonState::Disabled;
     div()
@@ -343,7 +341,7 @@ pub(super) fn title_icon_button(
         .rounded(px(6.0))
         .tooltip(Tooltip::text(tip))
         .when(enabled, |el| {
-            el.hover(move |s| s.bg(fg.opacity(0.10)))
+            el.hover(move |s| s.bg(fg.fill(Fill::Strong)))
                 .on_click(cx.listener(on_click))
         })
         .child(

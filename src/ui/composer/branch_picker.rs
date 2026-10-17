@@ -21,6 +21,7 @@ use crate::git;
 use crate::ui::app_callback::app_callback;
 use crate::ui::composer::ComposerPopover;
 use crate::ui::sidebar_popovers::popover_glass;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// MonoCode `MENU_WIDTH`, `MENU_MIN_HEIGHT`, `MENU_MAX_HEIGHT`.
 const MENU_WIDTH: f32 = 280.0;
@@ -295,7 +296,7 @@ impl BenCodeApp {
             .child(
                 Icon::new(IconName::Search)
                     .size(IconSize::Xs)
-                    .color(fg.opacity(0.5)),
+                    .color(fg.ink(Ink::Secondary)),
             )
             .child(
                 div()
@@ -318,14 +319,14 @@ impl BenCodeApp {
             div()
                 .px_3()
                 .py_4()
-                .text_size(px(12.0))
-                .text_color(fg.opacity(0.5))
+                .text_size(Text::Base.px())
+                .text_color(fg.ink(Ink::Secondary))
                 .child(text)
         });
         let busy = ui.busy;
         let list = rows.into_iter().enumerate().map(|(ix, row)| {
             let highlighted = ix == ui.active;
-            let hover = fg.opacity(0.05);
+            let hover = fg.fill(Fill::Hover);
             let picked = row.clone();
             div()
                 .id(("branch-row", ix))
@@ -336,7 +337,7 @@ impl BenCodeApp {
                 .h(px(ROW_HEIGHT))
                 .px_2()
                 .rounded(px(8.0))
-                .text_size(px(13.0))
+                .text_size(Text::Md.px())
                 .text_color(fg)
                 .when(highlighted || row.selected, |el| el.bg(selection))
                 .when(!highlighted && !row.selected, |el| {
@@ -360,7 +361,7 @@ impl BenCodeApp {
                 } else {
                     Icon::new(IconName::GitBranch)
                         .size(IconSize::Xs)
-                        .color(fg.opacity(0.5))
+                        .color(fg.ink(Ink::Secondary))
                 })
                 .child(
                     div()
@@ -376,9 +377,9 @@ impl BenCodeApp {
                         .px_1p5()
                         .py_0p5()
                         .rounded(px(4.0))
-                        .bg(fg.opacity(0.06))
-                        .text_size(px(10.0))
-                        .text_color(fg.opacity(0.4))
+                        .bg(fg.fill(Fill::Hover))
+                        .text_size(Text::Xs.px())
+                        .text_color(fg.ink(Ink::Muted))
                         .child(SharedString::from(remote))
                 }))
         });
@@ -392,7 +393,7 @@ impl BenCodeApp {
                 .py_2()
                 .border_t_1()
                 .border_color(colors.border)
-                .text_size(px(11.0))
+                .text_size(Text::Sm.px())
                 .line_height(px(16.0))
                 .text_color(colors.danger.opacity(0.9))
                 .child(error)
@@ -406,7 +407,7 @@ impl BenCodeApp {
                 } else {
                     format!("Create and checkout {name}")
                 };
-                let hover = fg.opacity(0.08);
+                let hover = fg.fill(Fill::Selected);
                 div()
                     .flex_none()
                     .border_t_1()
@@ -421,7 +422,7 @@ impl BenCodeApp {
                             .h(px(30.0))
                             .px(px(10.0))
                             .rounded(px(8.0))
-                            .text_size(px(13.0))
+                            .text_size(Text::Md.px())
                             .text_color(fg.opacity(0.75))
                             .when(busy, |el| el.opacity(0.6))
                             .when(!busy, |el| {

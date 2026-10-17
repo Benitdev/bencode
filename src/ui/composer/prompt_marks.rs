@@ -21,6 +21,7 @@ use super::mentions::{MentionIndex, MentionTarget};
 use super::mode_commands::{self, ModeCommand};
 use crate::app::BenCodeApp;
 use crate::ui::file_tree::{EntryIcon, resolve_entry_icon};
+use crate::ui::tokens::{Ink, Tone as _};
 
 /// MonoCode's mention icon: 13px over the `@`.
 const MARK_SIZE: f32 = 13.0;
@@ -39,7 +40,7 @@ pub fn prompt_highlights(
     if let Some((mode, range)) = mode_commands::leading_mode(text) {
         let color = match mode {
             ModeCommand::Plan => colors.warning.opacity(0.9),
-            ModeCommand::Draft => colors.fg.opacity(0.7),
+            ModeCommand::Draft => colors.fg.ink(Ink::Body),
         };
         spans.push((range, Highlight::new(color)));
     }

@@ -9,6 +9,7 @@
 
 use gpui::{App, Global, Hsla, Rgba, rgb};
 use serde::{Deserialize, Serialize};
+use crate::ui::tokens::{Ink, Tone as _};
 
 /// MonoCode `THEME_HUE_*`.
 pub const HUE_MIN: f32 = 0.0;
@@ -467,9 +468,9 @@ pub fn primary_action(enabled: bool, cx: &App) -> (Hsla, Hsla, Hsla) {
     let accent = user_accent(cx);
     let (bg, ink) = match (accent, enabled) {
         (Some(accent), true) => (accent.color, accent.foreground),
-        (Some(accent), false) => (accent.color.opacity(0.28), colors.fg.opacity(0.35)),
+        (Some(accent), false) => (accent.color.opacity(0.28), colors.fg.ink(Ink::Faint)),
         (None, true) => (colors.fg, colors.bg),
-        (None, false) => (colors.fg.opacity(0.3), colors.bg.opacity(0.4)),
+        (None, false) => (colors.fg.ink(Ink::Faint), colors.bg.opacity(0.4)),
     };
     let hover = match accent {
         Some(accent) => mix(accent.color, colors.fg, 0.12),

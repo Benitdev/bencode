@@ -13,7 +13,7 @@ use crate::app::BenCodeApp;
 use crate::app::in_flight::CONTINUE_PROMPT;
 use crate::harness::HarnessKind;
 use crate::ui::app_callback::{app_callback, app_callback_with};
-use crate::ui::scale::px;
+use crate::ui::tokens::{Ink, Text, Tone as _};
 
 impl BenCodeApp {
     pub fn render_resume_interrupted(&self, cx: &Context<Self>) -> Option<AnyElement> {
@@ -40,9 +40,9 @@ impl BenCodeApp {
             .flex()
             .flex_col()
             .gap_3()
-            .text_size(px(13.0))
+            .text_size(Text::Md.px())
             .line_height(relative(1.5))
-            .child(div().text_color(fg.opacity(0.6)).child(format!(
+            .child(div().text_color(fg.ink(Ink::Secondary)).child(format!(
                 "BenCode stopped {} mid-turn. Resuming sends “{CONTINUE_PROMPT}” and asks the agent \
                  to check its last step before carrying on. Your own prompt is not sent again.",
                 if count == 1 { "this chat" } else { "these chats" },

@@ -41,6 +41,7 @@ use crate::ui::icons::ExtraIcon;
 use crate::ui::layout::{
     LayoutNode, PaneEdge, SplitDir, pane_edge_from_point, set_split_sizes, split_shares,
 };
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 const TAB_HEIGHT: f32 = 28.0;
 /// The least a split's sash leaves a terminal.
@@ -538,7 +539,7 @@ impl BenCodeApp {
                 .flex()
                 .items_center()
                 .justify_center()
-                .text_size(px(12.0))
+                .text_size(Text::Base.px())
                 .text_color(cx.theme().colors.fg_muted)
                 .child("No terminal. Press ⌘` to open one.")
                 .into_any_element(),
@@ -723,7 +724,7 @@ impl BenCodeApp {
                     .px_2()
                     .pb_1()
                     .font_family(cx.theme().mono_family.clone())
-                    .text_size(px(12.0))
+                    .text_size(Text::Base.px())
                     .text_color(colors.fg_muted)
                     .child(running::exited_line(status.code()))
             }))
@@ -764,7 +765,7 @@ impl BenCodeApp {
             .child(
                 Icon::new(IconName::GripVertical)
                     .size(IconSize::Xs)
-                    .color(colors.fg.opacity(0.35)),
+                    .color(colors.fg.ink(Ink::Faint)),
             )
             .child(
                 div()
@@ -782,7 +783,7 @@ impl BenCodeApp {
                     .flex_1()
                     .min_w_0()
                     .truncate()
-                    .text_size(px(12.0))
+                    .text_size(Text::Base.px())
                     .text_color(if active { colors.fg } else { colors.fg_muted })
                     .child(title),
             )
@@ -841,8 +842,8 @@ impl BenCodeApp {
                     .w(px(6.0))
                     .cursor_col_resize(),
             })
-            .when(dragging, |el| el.bg(fg.opacity(0.15)))
-            .when(!dragging, |el| el.hover(move |s| s.bg(fg.opacity(0.10))))
+            .when(dragging, |el| el.bg(fg.fill(Fill::Bold)))
+            .when(!dragging, |el| el.hover(move |s| s.bg(fg.fill(Fill::Strong))))
             .on_mouse_down(
                 gpui::MouseButton::Left,
                 cx.listener(|this, event: &gpui::MouseDownEvent, _, cx| {
@@ -943,7 +944,7 @@ impl BenCodeApp {
                         this.toggle_dock_side_menu(event.position(), cx)
                     }))
                     .tooltip(Tooltip::text("Move Terminal"))
-                    .child(side_icon(side).size(IconSize::Sm).color(fg.opacity(0.7))),
+                    .child(side_icon(side).size(IconSize::Sm).color(fg.ink(Ink::Body))),
             )
             .child(
                 IconButton::new("terminal-drawer-hide", hide_icon(side))
@@ -992,7 +993,7 @@ impl BenCodeApp {
             .border_1()
             .border_color(gpui::transparent_black())
             .cursor_pointer()
-            .text_size(px(12.0))
+            .text_size(Text::Base.px())
             .text_color(if active || shown {
                 colors.fg
             } else {

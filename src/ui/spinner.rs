@@ -23,6 +23,7 @@ use gpui::{
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::ui::scale::px;
+use crate::ui::tokens::Text;
 
 const FRAMES: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 /// How long each glyph shows; the app's clock redraws this often while
@@ -121,7 +122,7 @@ pub fn terminal_spinner(color: Hsla, cx: &App) -> impl IntoElement {
     div()
         .w(px(12.0))
         .flex_none()
-        .text_size(px(11.0))
+        .text_size(Text::Sm.px())
         .line_height(px(11.0))
         .text_color(color)
         .child(frame_at(epoch().elapsed(), cx.reduce_motion()))

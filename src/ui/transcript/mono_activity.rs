@@ -11,6 +11,7 @@ use super::turns::{self, Item, TurnLayout};
 use crate::app::BenCodeApp;
 use crate::ui::scale::px;
 use crate::ui::spinner;
+use crate::ui::tokens::{Ink, Text, Tone as _};
 
 impl BenCodeApp {
     /// The turn `turn_id` of `session_id`, laid out as the chat lays it
@@ -65,7 +66,7 @@ impl BenCodeApp {
         let dot = if live {
             color.opacity(0.4 + 0.6 * spinner::pulse(cx))
         } else {
-            fg.opacity(0.3)
+            fg.ink(Ink::Faint)
         };
         let line = div()
             .flex()
@@ -75,14 +76,14 @@ impl BenCodeApp {
             .px_2()
             .pb_3()
             .pt_1()
-            .text_size(px(11.0))
+            .text_size(Text::Sm.px())
             .line_height(px(16.0))
-            .text_color(fg.opacity(0.45))
+            .text_color(fg.ink(Ink::Muted))
             .child(div().flex_none().size(px(6.0)).rounded_full().bg(dot))
             .child(
                 div()
                     .flex_none()
-                    .text_color(fg.opacity(0.7))
+                    .text_color(fg.ink(Ink::Body))
                     .child(if live { "Working" } else { "Finished" }),
             )
             .children(summary.map(|summary| div().min_w_0().truncate().child(format!("· {summary}"))));

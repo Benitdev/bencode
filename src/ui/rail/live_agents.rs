@@ -12,20 +12,20 @@ use gpui::{
 };
 
 use super::project_name;
-use super::widgets::{AMBER_400, mascot_icon};
+use super::widgets::mascot_icon;
 use crate::app::BenCodeApp;
 use crate::app::live_agents::{LiveAgent, format_live_elapsed};
 use crate::ui::provider_icon::HarnessIcon;
 use crate::ui::scale::px;
 use crate::ui::spinner::{self, terminal_spinner};
+use crate::ui::tokens::{AMBER_400, EMERALD_400};
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// MonoCode `LIVE_AGENT_MIN` / `LIVE_AGENT_CAP`.
 const LIVE_AGENT_MIN: usize = 2;
 const LIVE_AGENT_CAP: usize = 4;
 /// MonoCode `max-h-[45vh]`: the expanded list's share of the window.
 const EXPANDED_HEIGHT: f32 = 0.45;
-/// MonoCode `text-emerald-400`.
-const EMERALD_400: u32 = 0x34d399;
 
 /// What the card keeps between frames.
 #[derive(Default)]
@@ -71,14 +71,14 @@ impl BenCodeApp {
                     .min_w_0()
                     .flex_1()
                     .truncate()
-                    .text_size(px(12.0))
-                    .text_color(fg.opacity(0.5))
+                    .text_size(Text::Base.px())
+                    .text_color(fg.ink(Ink::Secondary))
                     .child("Working"),
             )
             .child(
                 div()
-                    .text_size(px(11.0))
-                    .text_color(fg.opacity(0.4))
+                    .text_size(Text::Sm.px())
+                    .text_color(fg.ink(Ink::Muted))
                     .child(agents.len().to_string()),
             );
         // `flex flex-col gap-px px-1`, scrolling once expanded.
@@ -111,10 +111,10 @@ impl BenCodeApp {
                 .gap_1()
                 .px_2()
                 .py(px(6.0))
-                .text_size(px(11.0))
-                .text_color(fg.opacity(0.5))
+                .text_size(Text::Sm.px())
+                .text_color(fg.ink(Ink::Secondary))
                 .cursor_pointer()
-                .hover(move |s| s.bg(fg.opacity(0.08)).text_color(fg))
+                .hover(move |s| s.bg(fg.fill(Fill::Selected)).text_color(fg))
                 .on_click(cx.listener(|this, _, _, cx| {
                     this.live_agents_ui.expanded = !this.live_agents_ui.expanded;
                     cx.notify();
@@ -126,7 +126,7 @@ impl BenCodeApp {
                         IconName::ChevronDown
                     })
                     .size(IconSize::Xs)
-                    .color(fg.opacity(0.5))
+                    .color(fg.ink(Ink::Secondary))
                     .group_hover_color("live-agents-more", fg),
                 )
                 .child(if expanded {
@@ -145,7 +145,7 @@ impl BenCodeApp {
                     div()
                         .overflow_hidden()
                         .rounded(px(8.0))
-                        .bg(fg.opacity(0.05))
+                        .bg(fg.fill(Fill::Hover))
                         .child(header)
                         .child(list)
                         .children(more),
@@ -195,7 +195,7 @@ impl BenCodeApp {
         } else if agent.done {
             rgb(EMERALD_400).into()
         } else {
-            fg.opacity(0.5)
+            fg.ink(Ink::Secondary)
         };
         // `mt-1 flex min-w-0 items-center gap-1.5 pl-4 text-[11px] leading-tight`
         let line = |color: Hsla| {
@@ -206,7 +206,7 @@ impl BenCodeApp {
                 .items_center()
                 .gap(px(6.0))
                 .pl_4()
-                .text_size(px(11.0))
+                .text_size(Text::Sm.px())
                 .line_height(px(11.0 * 1.25))
                 .text_color(color)
         };
@@ -214,10 +214,8 @@ impl BenCodeApp {
         // `flex w-full flex-col rounded-md px-2 py-1.5 text-left`
         div()
             .id(id.clone())
-            .flex()
             .w_full()
             .flex_none()
-            .flex_col()
             .rounded(px(6.0))
             .px_2()
             .py(px(6.0))
@@ -226,7 +224,7 @@ impl BenCodeApp {
                 if selected {
                     el.bg(selection)
                 } else {
-                    el.hover(move |s| s.bg(fg.opacity(0.08)))
+                    el.hover(move |s| s.bg(fg.fill(Fill::Selected)))
                 }
             })
             .tooltip(Tooltip::text(tip))
@@ -249,7 +247,7 @@ impl BenCodeApp {
                             .min_w_0()
                             .flex_1()
                             .truncate()
-                            .text_size(px(13.0))
+                            .text_size(Text::Md.px())
                             .line_height(px(13.0 * 1.375))
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_color(fg)
@@ -274,7 +272,7 @@ impl BenCodeApp {
                     .child(div().min_w_0().truncate().child(activity.to_string())),
             )
             .child(
-                line(fg.opacity(0.45))
+                line(fg.ink(Ink::Muted))
                     .child(HarnessIcon::new(agent.harness.clone()).size(px(12.0)))
                     .child(div().min_w_0().flex_1().truncate().child(project))
                     .children(elapsed.map(|elapsed| div().flex_none().child(elapsed))),

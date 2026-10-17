@@ -13,6 +13,7 @@ use gpui::{
 
 use crate::app::BenCodeApp;
 use crate::ui::scale::px;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 type Action = fn(&mut BenCodeApp, &mut Context<BenCodeApp>);
 
@@ -51,13 +52,13 @@ impl SearchPopover<'_> {
             .child(
                 Icon::new(self.icon)
                     .size(IconSize::Xs)
-                    .color(fg.opacity(0.45)),
+                    .color(fg.ink(Ink::Muted)),
             )
             .child(
                 div()
                     .flex_1()
                     .min_w_0()
-                    .text_size(px(13.0))
+                    .text_size(Text::Md.px())
                     .child(self.input.clone()),
             )
             .child(
@@ -73,13 +74,13 @@ impl SearchPopover<'_> {
                     .justify_center()
                     .rounded(px(6.0))
                     .cursor_pointer()
-                    .hover(move |s| s.bg(fg.opacity(0.08)))
+                    .hover(move |s| s.bg(fg.fill(Fill::Selected)))
                     .tooltip(Tooltip::text(close_tip))
                     .on_click(cx.listener(move |this, _, _, cx| close(this, cx)))
                     .child(
                         Icon::new(close_icon)
                             .size(IconSize::Sm)
-                            .color(fg.opacity(0.45)),
+                            .color(fg.ink(Ink::Muted)),
                     ),
             );
         let list = div()
@@ -96,8 +97,8 @@ impl SearchPopover<'_> {
                     div()
                         .px_2()
                         .py_2()
-                        .text_size(px(12.0))
-                        .text_color(fg.opacity(0.5))
+                        .text_size(Text::Base.px())
+                        .text_color(fg.ink(Ink::Secondary))
                         .child(text),
                 )
             })
@@ -141,10 +142,10 @@ pub fn footer_action(
         .py_2()
         .border_t_1()
         .border_color(colors.border)
-        .text_size(px(12.0))
+        .text_size(Text::Base.px())
         .text_color(fg.opacity(0.65))
         .cursor_pointer()
-        .hover(move |s| s.bg(fg.opacity(0.05)).text_color(fg))
+        .hover(move |s| s.bg(fg.fill(Fill::Hover)).text_color(fg))
         .on_click(cx.listener(move |this, _, _, cx| action(this, cx)))
         .child(Icon::new(icon).size(IconSize::Xs))
         .child(label)

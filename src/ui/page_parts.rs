@@ -5,6 +5,7 @@
 use gpui::{Div, FontWeight, Hsla, IntoElement, ParentElement, Stateful, Styled, div, prelude::*};
 
 use crate::ui::scale::px;
+use crate::ui::tokens::Text;
 
 /// MonoCode's `content/N` tints: how much of the foreground colour a
 /// line, a fill or a quieter text takes.
@@ -19,25 +20,27 @@ pub mod tint {
     pub const RULE: f32 = 0.08;
     /// `bg-content/15`: the short divider in a toolbar.
     pub const DIVIDER: f32 = 0.15;
+    use crate::ui::tokens::{Fill, Ink};
+
     /// `bg-content/8`: icon discs and hovered pills.
-    pub const FILL: f32 = 0.08;
+    pub const FILL: f32 = Fill::Selected.alpha();
     /// `hover:bg-content/5`.
-    pub const HOVER: f32 = 0.05;
+    pub const HOVER: f32 = Fill::Hover.alpha();
     /// `bg-content/3`: the instructions box.
-    pub const WELL: f32 = 0.03;
+    pub const WELL: f32 = Fill::Faint.alpha();
     /// A status pill's fill, of its own colour.
     pub const PILL: f32 = 0.12;
     /// An alert's outline, of its own colour.
     pub const ALERT_STROKE: f32 = 0.2;
-    // Text, from a row's label down to an aside.
-    pub const STRONG: f32 = 0.75;
-    pub const BODY: f32 = 0.7;
-    pub const SOFT: f32 = 0.55;
-    pub const QUIET: f32 = 0.45;
-    pub const HINT: f32 = 0.4;
-    pub const FAINT: f32 = 0.35;
+    // Text, from a row's label down to an aside: the app's ink levels.
+    pub const STRONG: f32 = Ink::Strong.alpha();
+    pub const BODY: f32 = Ink::Body.alpha();
+    pub const SOFT: f32 = Ink::Secondary.alpha();
+    pub const QUIET: f32 = Ink::Muted.alpha();
+    pub const HINT: f32 = Ink::Muted.alpha();
+    pub const FAINT: f32 = Ink::Faint.alpha();
     /// `text-content/85`: markdown source.
-    pub const SOURCE: f32 = 0.85;
+    pub const SOURCE: f32 = Ink::Strong.alpha();
 }
 
 /// The width a row's control gets.
@@ -60,7 +63,7 @@ pub fn rule(fg: Hsla) -> Div {
 pub fn section_title(title: &'static str, muted: Hsla) -> Div {
     div()
         .px_1()
-        .text_size(px(12.0))
+        .text_size(Text::Base.px())
         .font_weight(FontWeight::MEDIUM)
         .text_color(muted)
         .child(title)
@@ -88,13 +91,13 @@ pub fn settings_row(
                 .min_w_0()
                 .child(
                     div()
-                        .text_size(px(12.0))
+                        .text_size(Text::Base.px())
                         .text_color(fg.opacity(tint::STRONG))
                         .child(label),
                 )
                 .child(
                     div()
-                        .text_size(px(11.0))
+                        .text_size(Text::Sm.px())
                         .text_color(fg.opacity(tint::HINT))
                         .child(hint),
                 ),
@@ -116,7 +119,7 @@ pub fn page_tab(
         .flex()
         .items_center()
         .h(px(36.0))
-        .text_size(px(12.0))
+        .text_size(Text::Base.px())
         .cursor_pointer()
         .text_color(if selected { fg } else { muted })
         .hover(|style| style.text_color(fg))

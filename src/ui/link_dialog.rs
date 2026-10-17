@@ -14,9 +14,9 @@ use crate::app::BenCodeApp;
 use crate::db::{LinkedWorkItem, WorkItemKind};
 use crate::ui::app_callback::app_callback;
 use crate::ui::scale::px;
+use crate::ui::tokens::RED_400;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
-/// MonoCode `text-red-400`.
-const RED_400: u32 = 0xf87171;
 /// Tailwind preflight's `line-height: 1.5` (GPUI defaults to ~1.618).
 const PREFLIGHT_LEADING: f32 = 1.5;
 
@@ -125,13 +125,13 @@ impl BenCodeApp {
             .flex()
             .flex_col()
             .gap_1p5()
-            .text_size(px(12.0))
+            .text_size(Text::Base.px())
             .line_height(relative(PREFLIGHT_LEADING))
             // `font-medium text-content/80`
             .child(
                 div()
                     .font_weight(FontWeight::MEDIUM)
-                    .text_color(fg.opacity(0.8))
+                    .text_color(fg.ink(Ink::Strong))
                     .child("Issue or pull request URL"),
             )
             // `h-9 rounded-md border bg-content/5 px-2.5 text-[13px]
@@ -147,9 +147,9 @@ impl BenCodeApp {
                     .px(px(10.0))
                     .rounded(px(6.0))
                     .border_1()
-                    .border_color(if invalid { red_400.opacity(0.6) } else { fg.opacity(0.3) })
-                    .bg(fg.opacity(0.05))
-                    .text_size(px(13.0))
+                    .border_color(if invalid { red_400.opacity(0.6) } else { fg.ink(Ink::Faint) })
+                    .bg(fg.fill(Fill::Hover))
+                    .text_size(Text::Md.px())
                     .text_color(fg)
                     // Like Ely `Input`: a press on the frame focuses the field.
                     .on_mouse_down(MouseButton::Left, {
@@ -161,10 +161,10 @@ impl BenCodeApp {
             // `text-[11px]`: the error in `text-red-400`, else the hint in
             // `text-content/45`.
             .child(match dialog.error.clone() {
-                Some(error) => div().text_size(px(11.0)).text_color(red_400).child(error),
+                Some(error) => div().text_size(Text::Sm.px()).text_color(red_400).child(error),
                 None => div()
-                    .text_size(px(11.0))
-                    .text_color(fg.opacity(0.45))
+                    .text_size(Text::Sm.px())
+                    .text_color(fg.ink(Ink::Muted))
                     .child("Paste the full github.com URL. The linked item will appear on the session card."),
             });
         let remove = app_callback(cx, |this, cx| {
@@ -195,7 +195,7 @@ impl BenCodeApp {
                     .py(px(6.0))
                     .rounded(px(6.0))
                     .cursor_pointer()
-                    .text_size(px(12.0))
+                    .text_size(Text::Base.px())
                     .line_height(relative(PREFLIGHT_LEADING))
                     .text_color(red_400)
                     .hover(move |s| s.bg(red_400.opacity(0.1)))

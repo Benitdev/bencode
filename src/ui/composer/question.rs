@@ -18,6 +18,7 @@ use serde_json::{Map, Value, json};
 
 use crate::app::BenCodeApp;
 use crate::app::QUESTION_TOOL;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// MonoCode `CUSTOM_OPTION_ID`.
 const CUSTOM: &str = "__custom__";
@@ -514,7 +515,7 @@ impl BenCodeApp {
             let on = picked.contains(&option.id);
             let highlighted = ix == ui.active;
             let (sid, id) = (session_id.to_string(), option.id.clone());
-            let hover = fg.opacity(0.05);
+            let hover = fg.fill(Fill::Hover);
             let glyph = div()
                 .mt_0p5()
                 .size(px(14.0))
@@ -538,7 +539,7 @@ impl BenCodeApp {
                                 .color(colors.bg),
                         )
                     } else {
-                        el.border_color(fg.opacity(0.3))
+                        el.border_color(fg.ink(Ink::Faint))
                     }
                 });
             div()
@@ -554,9 +555,9 @@ impl BenCodeApp {
                 .map(|el| {
                     if on || highlighted {
                         el.border_color(fg.opacity(if on { 0.35 } else { 0.2 }))
-                            .bg(fg.opacity(0.10))
+                            .bg(fg.fill(Fill::Strong))
                     } else {
-                        el.border_color(fg.opacity(0.10))
+                        el.border_color(fg.fill(Fill::Strong))
                             .hover(move |s| s.bg(hover))
                     }
                 })
@@ -570,19 +571,19 @@ impl BenCodeApp {
                         .min_w_0()
                         .child(
                             div()
-                                .text_size(px(13.0))
+                                .text_size(Text::Md.px())
                                 .text_color(fg)
                                 .child(option.label.clone()),
                         )
                         .children(option.description.clone().map(|d| {
                             div()
-                                .text_size(px(11.0))
-                                .text_color(fg.opacity(0.5))
+                                .text_size(Text::Sm.px())
+                                .text_color(fg.ink(Ink::Secondary))
                                 .child(d)
                         })),
                 )
         });
-        let button_hover = fg.opacity(0.10);
+        let button_hover = fg.fill(Fill::Strong);
         Some(
             div()
                 .px_1p5()
@@ -593,8 +594,8 @@ impl BenCodeApp {
                         .when_some(focus, |el, focus| el.track_focus(focus))
                         .rounded(px(8.0))
                         .border_1()
-                        .border_color(fg.opacity(0.10))
-                        .bg(fg.opacity(0.03))
+                        .border_color(fg.fill(Fill::Strong))
+                        .bg(fg.fill(Fill::Faint))
                         .px_3()
                         .py(px(10.0))
                         .flex()
@@ -605,12 +606,12 @@ impl BenCodeApp {
                                 .flex()
                                 .items_center()
                                 .gap_1p5()
-                                .text_size(px(11.0))
-                                .text_color(fg.opacity(0.5))
+                                .text_size(Text::Sm.px())
+                                .text_color(fg.ink(Ink::Secondary))
                                 .child(
                                     Icon::new(IconName::MessageSquare)
                                         .size(IconSize::Xs)
-                                        .color(fg.opacity(0.5)),
+                                        .color(fg.ink(Ink::Secondary)),
                                 )
                                 .child(div().min_w_0().truncate().child(title))
                                 .when(questions.len() > 1, |el| {
@@ -625,7 +626,7 @@ impl BenCodeApp {
                                         .flex()
                                         .items_center()
                                         .rounded(px(6.0))
-                                        .text_color(fg.opacity(0.55))
+                                        .text_color(fg.ink(Ink::Secondary))
                                         .cursor_pointer()
                                         .hover(move |s| s.bg(button_hover))
                                         .on_click(cx.listener(move |this, _, _, cx| {
@@ -636,7 +637,7 @@ impl BenCodeApp {
                         )
                         .child(
                             div()
-                                .text_size(px(13.0))
+                                .text_size(Text::Md.px())
                                 .font_weight(FontWeight::MEDIUM)
                                 .text_color(fg)
                                 .child(question.prompt.clone()),
@@ -644,8 +645,8 @@ impl BenCodeApp {
                         .when(question.multi_select, |el| {
                             el.child(
                                 div()
-                                    .text_size(px(11.0))
-                                    .text_color(fg.opacity(0.5))
+                                    .text_size(Text::Sm.px())
+                                    .text_color(fg.ink(Ink::Secondary))
                                     .child("Select all that apply"),
                             )
                         })
@@ -666,9 +667,9 @@ impl BenCodeApp {
                                     .py_1()
                                     .rounded(px(6.0))
                                     .border_1()
-                                    .border_color(fg.opacity(0.15))
-                                    .bg(fg.opacity(0.05))
-                                    .text_size(px(13.0))
+                                    .border_color(fg.fill(Fill::Bold))
+                                    .bg(fg.fill(Fill::Hover))
+                                    .text_size(Text::Md.px())
                                     .children(other.take()),
                             )
                         })
@@ -683,7 +684,7 @@ impl BenCodeApp {
                                     .rounded(px(6.0))
                                     .bg(fg)
                                     .text_color(colors.bg)
-                                    .text_size(px(11.0))
+                                    .text_size(Text::Sm.px())
                                     .font_weight(FontWeight::MEDIUM)
                                     .when(!complete, |el| el.opacity(0.4))
                                     .when(complete, |el| {

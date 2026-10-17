@@ -35,6 +35,7 @@ use crate::ui::app_callback::app_callback;
 use ely_gpui_component::buttons::ButtonVariant;
 use ely_gpui_component::menus::{DropdownMenu, Menu, MenuItem};
 use serde_json::{Value, json};
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// MonoCode `USAGE_LIMIT_RESUME_GRACE_MS`: providers can still refuse right
 /// at the reset.
@@ -179,7 +180,7 @@ impl BenCodeApp {
     ) -> gpui::Stateful<gpui::Div> {
         let colors = &cx.theme().colors;
         let fg = colors.fg;
-        let hover = fg.opacity(0.10);
+        let hover = fg.fill(Fill::Strong);
         let button = |id: &'static str, icon: IconName, label: &'static str| {
             div()
                 .id(id)
@@ -192,7 +193,7 @@ impl BenCodeApp {
                 .rounded(px(6.0))
                 .cursor_pointer()
                 .hover(move |s| s.bg(hover).text_color(fg))
-                .child(Icon::new(icon).size(IconSize::Xs).color(fg.opacity(0.7)))
+                .child(Icon::new(icon).size(IconSize::Xs).color(fg.ink(Ink::Body)))
                 .child(label)
         };
         let sid = session_id.to_string();
@@ -271,8 +272,8 @@ impl BenCodeApp {
                 .bg(colors.warning.opacity(0.06))
                 .px_3()
                 .py(px(10.0))
-                .text_size(px(12.0))
-                .text_color(fg.opacity(0.6))
+                .text_size(Text::Base.px())
+                .text_color(fg.ink(Ink::Secondary))
                 .child(
                     div()
                         .flex()
@@ -286,7 +287,7 @@ impl BenCodeApp {
                         .child(
                             div()
                                 .flex_none()
-                                .text_color(fg.opacity(0.85))
+                                .text_color(fg.ink(Ink::Strong))
                                 .child(provider),
                         ),
                 )
@@ -300,7 +301,7 @@ impl BenCodeApp {
                         ))
                         .children(
                             resets
-                                .map(|line| div().mt_1().text_color(fg.opacity(0.45)).child(line)),
+                                .map(|line| div().mt_1().text_color(fg.ink(Ink::Muted)).child(line)),
                         )
                         .child(
                             div()
@@ -563,7 +564,7 @@ impl BenCodeApp {
             Some(_) => "Limit has reset".to_string(),
         };
         let fg = colors.fg;
-        let hover = fg.opacity(0.10);
+        let hover = fg.fill(Fill::Strong);
         let action = self.resume_control(session_id, limit, waiting, cx);
         let account = self
             .sessions
@@ -576,7 +577,7 @@ impl BenCodeApp {
         Some(
             div()
                 .px_2()
-                .text_color(fg.opacity(0.55))
+                .text_color(fg.ink(Ink::Secondary))
                 .child(
                     div()
                         .flex()
@@ -589,7 +590,7 @@ impl BenCodeApp {
                         .border_b_0()
                         .border_color(colors.warning.opacity(0.25))
                         .bg(colors.warning.opacity(0.10))
-                        .text_size(px(12.0))
+                        .text_size(Text::Base.px())
                         .child(
                             Icon::new(IconName::Gauge)
                                 .size(IconSize::Xs)
@@ -598,7 +599,7 @@ impl BenCodeApp {
                         .child(
                             div()
                                 .flex_none()
-                                .text_color(fg.opacity(0.85))
+                                .text_color(fg.ink(Ink::Strong))
                                 .child("Usage limit reached"),
                         )
                         .child(div().flex_1().min_w_0().truncate().child(status))
@@ -622,7 +623,7 @@ impl BenCodeApp {
                                 .child(
                                     Icon::new(IconName::X)
                                         .size(IconSize::Xs)
-                                        .color(fg.opacity(0.55)),
+                                        .color(fg.ink(Ink::Secondary)),
                                 ),
                         ),
                 )

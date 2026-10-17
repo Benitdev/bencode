@@ -3,15 +3,15 @@
 //! it started off the board. A task with a session opens it; Mark done,
 //! Reopen and Remove show on hover. Done is folded until opened.
 
-use ely_gpui_component::buttons::{ButtonVariant, IconButton};
-use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
-use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
+use ely_gpui_component::primitives::{Icon, IconName};
+use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, Context, FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement,
-    SharedString, StatefulInteractiveElement, Styled, div, prelude::*,
+    StatefulInteractiveElement, Styled, div, prelude::*,
 };
 
-use super::{empty_state, list_row, row_content};
+use super::empty_state;
+use crate::ui::rows::{ListRow, row_button};
 use crate::app::BenCodeApp;
 use crate::app::mono_overview::OverviewTab;
 use crate::app::mono_sessions::{LaunchedState, SpawnedSession};
@@ -19,6 +19,8 @@ use crate::monos::Mono;
 use crate::monos::board::{self, Column, Task};
 use crate::ui::HarnessIcon;
 use crate::ui::scale::px;
+use crate::ui::tokens::Status;
+use crate::ui::tokens::{Ink, Text, Tone as _};
 
 /// A column's title and count; Done's folds the column.
 fn column_title(title: &str, count: usize, fg: Hsla) -> gpui::Div {
@@ -28,11 +30,11 @@ fn column_title(title: &str, count: usize, fg: Hsla) -> gpui::Div {
         .gap_1()
         .px_2()
         .pb(px(6.0))
-        .text_size(px(11.0))
+        .text_size(Text::Sm.px())
         .font_weight(FontWeight::MEDIUM)
-        .text_color(fg.opacity(0.4))
+        .text_color(fg.ink(Ink::Muted))
         .child(title.to_uppercase())
-        .child(div().text_color(fg.opacity(0.3)).child(count.to_string()))
+        .child(div().text_color(fg.ink(Ink::Faint)).child(count.to_string()))
 }
 
 impl BenCodeApp {
@@ -57,7 +59,7 @@ impl BenCodeApp {
                 div()
                     .px_2()
                     .pb_2()
-                    .text_size(px(11.0))
+                    .text_size(Text::Sm.px())
                     .text_color(cx.theme().colors.danger)
                     .child(error.clone())
                     .into_any_element(),
@@ -75,11 +77,11 @@ impl BenCodeApp {
                     .id("mono-board-done")
                     .cursor_pointer()
                     .rounded(px(6.0))
-                    .hover(move |s| s.text_color(fg.opacity(0.7)))
+                    .hover(move |s| s.text_color(fg.ink(Ink::Body)))
                     .child(
                         Icon::new(if open { IconName::ChevronDown } else { IconName::ChevronRight })
                             .size(IconSize::Xs)
-                            .color(fg.opacity(0.35)),
+                            .color(fg.ink(Ink::Faint)),
                     )
                     .on_click(cx.listener(|this, _, _, cx| this.toggle_board_done(cx)));
                 div()
@@ -160,82 +162,50 @@ impl BenCodeApp {
             (Column::Running, _) => div()
                 .size(px(8.0))
                 .rounded_full()
-                .bg(if state == Some(LaunchedState::Input) {
-                    cx.theme().colors.accent
-                } else {
-                    fg.opacity(0.6)
-                })
+                .bg(state.map_or(Status::Working, Status::from).color(fg))
                 .opacity(crate::ui::spinner::pulse(cx))
                 .into_any_element(),
             (Column::Done, _) => Icon::new(IconName::CircleCheck)
                 .size(IconSize::Sm)
-                .color(fg.opacity(0.35))
+                .color(fg.ink(Ink::Faint))
                 .into_any_element(),
             (Column::Review, _) if state == Some(LaunchedState::Failed) => Icon::new(IconName::CircleAlert)
                 .size(IconSize::Sm)
-                .color(cx.theme().colors.danger)
+                .color(Status::Failed.color(fg))
                 .into_any_element(),
             (_, Some(session)) => HarnessIcon::new(&session.harness).size(px(14.0)).into_any_element(),
             (_, None) => Icon::new(IconName::CircleDashed)
                 .size(IconSize::Sm)
-                .color(fg.opacity(0.4))
+                .color(fg.ink(Ink::Muted))
                 .into_any_element(),
-        };
-        let group = SharedString::from(format!("mono-task-{}", task.id));
-        let row = row_content(tile, task.title.clone(), self.task_line(task, column), fg)
-            .id(SharedString::from(format!("mono-task-open-{}", task.id)))
-            .flex_1();
-        let row = match task.session_id.clone() {
-            Some(session) => row
-                .cursor_pointer()
-                .tooltip(Tooltip::text("Open in workspace"))
-                .on_click(cx.listener(move |this, _, _, cx| this.open_mono_launch(&session, cx))),
-            None => row.tooltip(Tooltip::text(truncate(task.brief(), 400))),
-        };
-        let button = |suffix: &str, icon: IconName, label: &'static str| {
-            IconButton::new(SharedString::from(format!("mono-task-{suffix}-{}", task.id)), icon)
-                .size(ControlSize::Sm)
-                .variant(ButtonVariant::Ghost)
-                .tooltip(label)
         };
         let (done_id, remove_id) = (task.id.clone(), task.id.clone());
         let done = match column {
-            Column::Done => button("reopen", IconName::RotateCcw, "Reopen")
+            Column::Done => row_button(format!("mono-task-reopen-{}", task.id), IconName::RotateCcw, "Reopen")
                 .on_click(cx.listener(move |this, _, _, cx| this.set_board_task_done(&done_id, false, cx))),
-            _ => button("done", IconName::Check, "Mark done")
+            _ => row_button(format!("mono-task-done-{}", task.id), IconName::Check, "Mark done")
                 .on_click(cx.listener(move |this, _, _, cx| this.set_board_task_done(&done_id, true, cx))),
         };
-        div()
-            .id(group.clone())
-            .group(group.clone())
-            .flex()
-            .w_full()
-            .min_w_0()
-            .items_center()
-            .rounded(px(6.0))
-            .hover(move |s| s.bg(fg.opacity(0.05)))
-            .child(row)
-            .child(
-                div()
-                    .flex()
-                    .flex_none()
-                    .items_center()
-                    .pr_2()
-                    .invisible()
-                    .group_hover(group, |s| s.visible())
-                    .child(done)
-                    .child(
-                        button("remove", IconName::Trash2, "Remove from board")
-                            .on_click(cx.listener(move |this, _, _, cx| this.remove_board_task(&remove_id, cx))),
-                    ),
-            )
-            .into_any_element()
+        let row = ListRow::new(format!("mono-task-{}", task.id), task.title.clone())
+            .tile(tile)
+            .line(self.task_line(task, column))
+            .action(done)
+            .action(
+                row_button(format!("mono-task-remove-{}", task.id), IconName::Trash2, "Remove from board")
+                    .on_click(cx.listener(move |this, _, _, cx| this.remove_board_task(&remove_id, cx))),
+            );
+        match task.session_id.clone() {
+            Some(session) => row
+                .tooltip("Open in workspace")
+                .on_click(cx.listener(move |this, _, _, cx| this.open_mono_launch(&session, cx))),
+            None => row.tooltip(truncate(task.brief(), 400)),
+        }
+        .into_any_element()
     }
 
     /// A session it started off the board, as the sidebar's card would say
     /// it (model, title, project, when, status).
     fn render_launch(&self, launch: SpawnedSession, cx: &Context<Self>) -> AnyElement {
-        let fg = cx.theme().colors.fg;
         let now = crate::app::now_ms();
         let id = launch.session_id.clone();
         let loaded = self.sessions.iter().find(|s| s.id == id);
@@ -256,16 +226,12 @@ impl BenCodeApp {
             .filter(|part| !part.is_empty())
             .collect::<Vec<_>>()
             .join(" · ");
-        list_row(
-            SharedString::from(format!("mono-session-{id}")),
-            HarnessIcon::new(&launch.harness).size(px(14.0)).into_any_element(),
-            title,
-            line,
-            fg,
-        )
-        .tooltip(Tooltip::text("Open in workspace"))
-        .on_click(cx.listener(move |this, _, _, cx| this.open_mono_launch(&id, cx)))
-        .into_any_element()
+        ListRow::new(format!("mono-session-{id}"), title)
+            .tile(HarnessIcon::new(&launch.harness).size(px(14.0)))
+            .line(line)
+            .tooltip("Open in workspace")
+            .on_click(cx.listener(move |this, _, _, cx| this.open_mono_launch(&id, cx)))
+            .into_any_element()
     }
 }
 

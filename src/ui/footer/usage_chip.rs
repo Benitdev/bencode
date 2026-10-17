@@ -24,6 +24,7 @@ use crate::ui::HarnessIcon;
 use crate::ui::git_changes_panel::spinning_icon;
 use crate::ui::scale::px;
 use crate::ui::sidebar_popovers::popover_frame;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// MonoCode's notice on the chip of a thread whose account is gone.
 const REMOVED_ACCOUNT: &str = "This conversation uses a removed account";
@@ -40,7 +41,7 @@ pub(super) fn bar_color(used_percent: f64, colors: &Palette) -> Hsla {
     } else if used_percent >= 80.0 {
         colors.warning
     } else {
-        colors.fg.opacity(0.45)
+        colors.fg.ink(Ink::Muted)
     }
 }
 
@@ -51,7 +52,7 @@ pub(super) fn usage_bar(used_percent: f64, height: f32, colors: &Palette) -> gpu
         .h(px(height))
         .rounded_full()
         .overflow_hidden()
-        .bg(colors.fg.opacity(0.10))
+        .bg(colors.fg.fill(Fill::Strong))
         .child(
             div()
                 .h_full()
@@ -174,7 +175,7 @@ impl BenCodeApp {
             now,
         };
         let windows = limits.windows();
-        let faint = |text: &'static str| div().text_color(fg.opacity(0.35)).child(text);
+        let faint = |text: &'static str| div().text_color(fg.ink(Ink::Faint)).child(text);
 
         // MonoCode `USAGE_CHIP_CLASSES`: `h-5 rounded px-1
         // hover:bg-content/10` in the footer, `h-6.5 rounded-md px-1.5
@@ -192,7 +193,7 @@ impl BenCodeApp {
             .h(px(if composer { 26.0 } else { 20.0 }))
             .map(|el| if composer { el.px_1p5() } else { el.px_1() })
             .rounded(px(if composer { 6.0 } else { 4.0 }))
-            .text_color(fg.opacity(0.55))
+            .text_color(fg.ink(Ink::Secondary))
             .whitespace_nowrap()
             .cursor_pointer()
             .hover(move |s| {
@@ -230,7 +231,7 @@ impl BenCodeApp {
                             div()
                                 .max_w(px(width))
                                 .truncate()
-                                .text_color(fg.opacity(0.45))
+                                .text_color(fg.ink(Ink::Muted))
                                 .child(label),
                         )
                     })
@@ -242,7 +243,7 @@ impl BenCodeApp {
                                 .items_center()
                                 .gap_1()
                                 .when(ix > 0, |el| {
-                                    el.child(div().text_color(fg.opacity(0.25)).child("·"))
+                                    el.child(div().text_color(fg.ink(Ink::Faint)).child("·"))
                                 })
                                 .child(format!(
                                     "{} {}",
@@ -341,7 +342,7 @@ impl BenCodeApp {
             el.rounded(px(8.0))
                 .bg(fg.opacity(0.045))
                 .border_1()
-                .border_color(fg.opacity(0.06))
+                .border_color(fg.fill(Fill::Hover))
         };
 
         let header = div()
@@ -359,9 +360,9 @@ impl BenCodeApp {
                     .justify_center()
                     .size(px(28.0))
                     .rounded(px(8.0))
-                    .bg(fg.opacity(0.06))
+                    .bg(fg.fill(Fill::Hover))
                     .border_1()
-                    .border_color(fg.opacity(0.07))
+                    .border_color(fg.fill(Fill::Line))
                     .child(HarnessIcon::new(provider.id()).size(px(16.0))),
             )
             .child(
@@ -370,7 +371,7 @@ impl BenCodeApp {
                     .min_w_0()
                     .child(
                         div()
-                            .text_size(px(13.0))
+                            .text_size(Text::Md.px())
                             .font_weight(FontWeight::MEDIUM)
                             .line_height(px(16.0))
                             .child(format!("{} usage", provider.title())),
@@ -378,9 +379,9 @@ impl BenCodeApp {
                     .child(
                         div()
                             .mt(px(2.0))
-                            .text_size(px(10.0))
+                            .text_size(Text::Xs.px())
                             .line_height(px(16.0))
-                            .text_color(fg.opacity(0.4))
+                            .text_color(fg.ink(Ink::Muted))
                             .child(updated_label(limits, now)),
                     )
                     .when(chip.can_manage(), |el| {
@@ -402,10 +403,10 @@ impl BenCodeApp {
                                     .px_1()
                                     .py(px(2.0))
                                     .rounded(px(4.0))
-                                    .text_size(px(10.0))
-                                    .text_color(fg.opacity(0.55))
+                                    .text_size(Text::Xs.px())
+                                    .text_color(fg.ink(Ink::Secondary))
                                     .cursor_pointer()
-                                    .hover(move |s| s.bg(fg.opacity(0.10)))
+                                    .hover(move |s| s.bg(fg.fill(Fill::Strong)))
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         this.set_usage_view(UsageView::Accounts, cx)
                                     }))
@@ -421,14 +422,14 @@ impl BenCodeApp {
                                             div()
                                                 .min_w_0()
                                                 .truncate()
-                                                .text_color(fg.opacity(0.35))
+                                                .text_color(fg.ink(Ink::Faint))
                                                 .child(subtitle),
                                         )
                                     })
                                     .child(
                                         Icon::new(IconName::ChevronRight)
                                             .size(IconSize::Xs)
-                                            .color(fg.opacity(0.55)),
+                                            .color(fg.ink(Ink::Secondary)),
                                     ),
                             ),
                         )
@@ -442,13 +443,13 @@ impl BenCodeApp {
                         .items_center()
                         .gap_1()
                         .mt(px(2.0))
-                        .text_size(px(10.0))
-                        .text_color(fg.opacity(0.4))
+                        .text_size(Text::Xs.px())
+                        .text_color(fg.ink(Ink::Muted))
                         .child(spinning_icon(
                             "usage-popover-spin".into(),
                             IconName::RefreshCw,
                             IconSize::Xs,
-                            fg.opacity(0.4),
+                            fg.ink(Ink::Muted),
                         ))
                         .child("Updating"),
                 )
@@ -464,7 +465,7 @@ impl BenCodeApp {
                 .items_center()
                 .child(
                     div()
-                        .text_size(px(11.0))
+                        .text_size(Text::Sm.px())
                         .font_weight(FontWeight::MEDIUM)
                         .text_color(fg.opacity(0.65))
                         .child(if limits.is_loading() {
@@ -480,10 +481,10 @@ impl BenCodeApp {
                         div()
                             .mt_1()
                             .max_w(px(240.0))
-                            .text_size(px(10.0))
+                            .text_size(Text::Xs.px())
                             .line_height(px(16.0))
                             .text_center()
-                            .text_color(fg.opacity(0.4))
+                            .text_color(fg.ink(Ink::Muted))
                             .child(error),
                     )
                 })
@@ -500,9 +501,9 @@ impl BenCodeApp {
                     let title = div()
                         .px_1()
                         .pt_1()
-                        .text_size(px(10.0))
+                        .text_size(Text::Xs.px())
                         .font_weight(FontWeight::MEDIUM)
-                        .text_color(fg.opacity(0.4))
+                        .text_color(fg.ink(Ink::Muted))
                         .child(antigravity::group_title(group));
                     (!windows.is_empty())
                         .then_some(title)
@@ -529,7 +530,7 @@ impl BenCodeApp {
                     .py_2()
                     .rounded(px(8.0))
                     .bg(colors.warning.opacity(0.10))
-                    .text_size(px(10.0))
+                    .text_size(Text::Xs.px())
                     .line_height(px(16.0))
                     .text_color(colors.warning)
                     .child("Couldn’t refresh. Showing the last available snapshot.")
@@ -577,7 +578,7 @@ fn usage_window_card(
         .child(
             row()
                 .items_baseline()
-                .text_size(px(11.0))
+                .text_size(Text::Sm.px())
                 .font_weight(FontWeight::MEDIUM)
                 .child(div().text_color(fg.opacity(0.65)).child(kind.title()))
                 .child(
@@ -591,9 +592,9 @@ fn usage_window_card(
             row()
                 .items_center()
                 .mt(px(6.0))
-                .text_size(px(10.0))
+                .text_size(Text::Xs.px())
                 .line_height(px(16.0))
-                .text_color(fg.opacity(0.4))
+                .text_color(fg.ink(Ink::Muted))
                 .child(format!("{} remaining", format_usage_percent(100.0 - used)))
                 .child(div().truncate().child(match window.resets_at {
                     Some(resets_at) => format_reset_countdown(resets_at - now),

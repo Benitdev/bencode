@@ -16,6 +16,7 @@ use crate::ui::scale::px;
 use super::focus_later;
 use crate::app::BenCodeApp;
 use crate::skills;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// The open form: where the skill goes, and the last failure.
 #[derive(Clone, Debug, Default)]
@@ -140,10 +141,10 @@ impl BenCodeApp {
             .py_2()
             .border_t_1()
             .border_color(cx.theme().colors.border)
-            .text_size(px(12.0))
-            .text_color(fg.opacity(0.7))
+            .text_size(Text::Base.px())
+            .text_color(fg.ink(Ink::Body))
             .cursor_pointer()
-            .hover(move |s| s.bg(fg.opacity(0.10)).text_color(fg))
+            .hover(move |s| s.bg(fg.fill(Fill::Strong)).text_color(fg))
             .on_click(cx.listener(|this, _, _, cx| this.start_new_skill(cx)))
             .child(Icon::new(IconName::Plus).size(IconSize::Xs))
             .child("New skill")
@@ -162,10 +163,10 @@ impl BenCodeApp {
         let typed = !self.skill_name_input.read(cx).text().trim().is_empty();
         let valid = skills::is_valid_skill_name(&name);
         let message = match &draft.error {
-            Some(error) => Some((error.clone(), fg.opacity(0.7))),
+            Some(error) => Some((error.clone(), fg.ink(Ink::Body))),
             None if typed && !valid => Some((
                 "Use lowercase letters, numbers, and hyphens.".to_string(),
-                fg.opacity(0.5),
+                fg.ink(Ink::Secondary),
             )),
             None => None,
         };
@@ -190,13 +191,13 @@ impl BenCodeApp {
                         cx.listener(move |this, _, _, cx| this.set_new_skill_scope(project, cx)),
                     )
                 })
-                .child(div().text_size(px(12.0)).child(label))
+                .child(div().text_size(Text::Base.px()).child(label))
                 .child(
                     div()
                         .truncate()
                         .font_family(cx.theme().mono_family.clone())
-                        .text_size(px(10.0))
-                        .text_color(fg.opacity(0.4))
+                        .text_size(Text::Xs.px())
+                        .text_color(fg.ink(Ink::Muted))
                         .child(hint),
                 )
         };
@@ -208,8 +209,8 @@ impl BenCodeApp {
             .gap_2()
             .child(
                 div()
-                    .text_size(px(11.0))
-                    .text_color(fg.opacity(0.5))
+                    .text_size(Text::Sm.px())
+                    .text_color(fg.ink(Ink::Secondary))
                     .child("Writes a starter SKILL.md you can edit."),
             )
             .child(
@@ -236,7 +237,7 @@ impl BenCodeApp {
             )
             .children(message.map(|(text, color)| {
                 div()
-                    .text_size(px(12.0))
+                    .text_size(Text::Base.px())
                     .text_color(color)
                     .child(SharedString::from(text))
             }))
