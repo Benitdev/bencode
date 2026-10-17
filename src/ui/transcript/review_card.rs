@@ -178,8 +178,6 @@ impl BenCodeApp {
             .map(|file| self.render_review_file(session_id, file, cx));
         let list = div()
             .id(SharedString::from(format!("review-files-{session_id}")))
-            .flex()
-            .flex_col()
             .py_1()
             .border_t_1()
             .border_color(fg.fill(Fill::Line))
@@ -195,8 +193,6 @@ impl BenCodeApp {
             .pb_2()
             .child(
                 div()
-                    .flex()
-                    .flex_col()
                     .overflow_hidden()
                     .rounded(px(12.0))
                     .border_1()

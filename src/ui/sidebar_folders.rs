@@ -219,8 +219,6 @@ impl BenCodeApp {
         let new_group = SharedString::from(format!("folder-new-{new_in}"));
         div()
             .id(SharedString::from(format!("folder-shell-{}", folder.id)))
-            .flex()
-            .flex_col()
             .overflow_hidden()
             .rounded(px(6.0))
             // MonoCode `folderShellFill`: the tint at 18%.
@@ -347,8 +345,6 @@ impl BenCodeApp {
             )
             .child(self.folder_count(sessions.len(), open, folder_state(sessions, states), cx));
         div()
-            .flex()
-            .flex_col()
             .overflow_hidden()
             .rounded(px(6.0))
             .bg(tint.map_or(fg.fill(Fill::Hover), |tint| tint.opacity(0.18)))

@@ -594,8 +594,6 @@ impl BenCodeApp {
                 div()
                     .w_full()
                     .max_w(px(MESSAGE_MAX_WIDTH))
-                    .flex()
-                    .flex_col()
                     .when(find_hit, |el| {
                         el.rounded(px(8.0))
                             .bg(cx.theme().colors.accent.opacity(0.1))

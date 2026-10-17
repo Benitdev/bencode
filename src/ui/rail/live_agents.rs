@@ -214,10 +214,8 @@ impl BenCodeApp {
         // `flex w-full flex-col rounded-md px-2 py-1.5 text-left`
         div()
             .id(id.clone())
-            .flex()
             .w_full()
             .flex_none()
-            .flex_col()
             .rounded(px(6.0))
             .px_2()
             .py(px(6.0))

@@ -1116,8 +1116,6 @@ impl Draw<'_> {
             .children(numbers)
             .child(div().flex_none().whitespace_nowrap().child(code_text));
         div()
-            .flex()
-            .flex_col()
             .min_w_0()
             .rounded(px(10.0))
             .border_1()
@@ -1202,8 +1200,6 @@ impl Draw<'_> {
             );
         }
         div()
-            .flex()
-            .flex_col()
             .rounded(px(10.0))
             .border_1()
             .border_color(look.shell_border)
