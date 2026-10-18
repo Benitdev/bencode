@@ -132,11 +132,16 @@ pub enum Request {
     /// First on every connection: the host answers with `HostInfo`, and
     /// refuses anything else until it has been said.
     #[serde(rename_all = "camelCase")]
-    Hello { protocol: u32, client: String },
+    Hello {
+        protocol: u32,
+        client: String,
+    },
     /// The agent CLIs installed on the host (`Vec<HarnessWire>`).
     Harnesses,
     /// A CLI's live model list (`Vec<ModelOption>`).
-    Models { harness: HarnessKind },
+    Models {
+        harness: HarnessKind,
+    },
     /// Runs `git` or `gh` (`ExecOutput`).
     #[serde(rename_all = "camelCase")]
     Exec {
@@ -149,11 +154,18 @@ pub enum Request {
         timeout_ms: Option<u64>,
     },
     /// A directory's entries (`Vec<EntryWire>`), unsorted.
-    ReadDir { path: String },
+    ReadDir {
+        path: String,
+    },
     /// Up to `max` bytes of a file (`FileWire`).
-    ReadFile { path: String, max: u64 },
+    ReadFile {
+        path: String,
+        max: u64,
+    },
     /// What is at `path` (`Option<MetaWire>`), without following a link.
-    Stat { path: String },
+    Stat {
+        path: String,
+    },
     /// Writes a file whole, through a temporary file and a rename. With
     /// `create_new` it fails when the file exists.
     #[serde(rename_all = "camelCase")]
@@ -162,14 +174,27 @@ pub enum Request {
         bytes: B64,
         create_new: bool,
     },
-    CreateDir { path: String },
-    Rename { from: String, to: String },
+    CreateDir {
+        path: String,
+    },
+    Rename {
+        from: String,
+        to: String,
+    },
     /// Removes a file, or a directory and everything in it.
-    Remove { path: String },
+    Remove {
+        path: String,
+    },
     /// Copies a file, or a directory and everything in it.
-    Copy { from: String, to: String },
+    Copy {
+        from: String,
+        to: String,
+    },
     /// An Explorer change or listing, `tree::*` on the host (see `TreeOp`).
-    Tree { root: String, op: TreeOp },
+    Tree {
+        root: String,
+        op: TreeOp,
+    },
     /// `files::count_text_lines` of each of `files`, relative to `root`
     /// (`Vec<usize>`, in order).
     #[serde(rename_all = "camelCase")]
@@ -179,23 +204,37 @@ pub enum Request {
         max_bytes: u64,
     },
     /// `files::list_project_files` on the host (`Vec<String>`).
-    ProjectFiles { root: String },
+    ProjectFiles {
+        root: String,
+    },
     /// `search::search` on the host (`SearchResult`).
     Search {
         root: String,
         options: crate::search::SearchOptions,
     },
     /// Keeps an attachment on the host; answers its host path (`String`).
-    Upload { name: String, bytes: B64 },
+    Upload {
+        name: String,
+        bytes: B64,
+    },
     /// Starts an agent turn under the id the app made for it (`valid_run_id`),
     /// so it follows the run before the first event arrives. Its events are
     /// pushed to this connection from the first.
-    RunStart { run: String, spawn: Box<SpawnWire> },
+    RunStart {
+        run: String,
+        spawn: Box<SpawnWire>,
+    },
     /// Follows a run again, from the event after `after` (0: all of them):
     /// on a new connection, or after the app restarted (`RunAttached`).
-    RunAttach { run: String, after: u64 },
+    RunAttach {
+        run: String,
+        after: u64,
+    },
     /// A line for the CLI's stdin (`bool`: whether it went).
-    RunStdin { run: String, line: String },
+    RunStdin {
+        run: String,
+        line: String,
+    },
     /// The user's answer to a permission prompt, which the host's handle
     /// puts in the harness' own words (`bool`: whether it could).
     RunPermission {
@@ -210,9 +249,13 @@ pub enum Request {
         attachments: Vec<Attachment>,
     },
     /// Stops the CLI.
-    RunCancel { run: String },
+    RunCancel {
+        run: String,
+    },
     /// The app has everything; the host may forget the run once it ended.
-    RunForget { run: String },
+    RunForget {
+        run: String,
+    },
     /// The runs the host still keeps (`Vec<RunSummary>`).
     Runs,
     /// Stops the host once this reply is out: Update Host restarts it.
@@ -225,7 +268,9 @@ pub enum Request {
 #[serde(tag = "op", rename_all = "camelCase")]
 pub enum TreeOp {
     /// `Vec<FsEntry>`.
-    List { rel: String },
+    List {
+        rel: String,
+    },
     /// The new entry's relative path.
     #[serde(rename_all = "camelCase")]
     Create {
@@ -233,13 +278,24 @@ pub enum TreeOp {
         name: String,
         is_dir: bool,
     },
-    Rename { rel: String, name: String },
-    Delete { rel: String },
+    Rename {
+        rel: String,
+        name: String,
+    },
+    Delete {
+        rel: String,
+    },
     #[serde(rename_all = "camelCase")]
-    MoveInto { rel: String, dest_parent: String },
+    MoveInto {
+        rel: String,
+        dest_parent: String,
+    },
     /// `from` is an absolute path on the host.
     #[serde(rename_all = "camelCase")]
-    CopyInto { from: String, dest_parent: String },
+    CopyInto {
+        from: String,
+        dest_parent: String,
+    },
 }
 
 /// The host's answer to `Hello` (MonoCode `HostDescriptor`).

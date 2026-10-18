@@ -312,7 +312,9 @@ impl BenCodeApp {
                 .px_2()
                 .py(px(6.0))
                 .rounded(px(6.0))
-                .when(!open, move |el| el.hover(move |s| s.bg(fg.fill(Fill::Strong))))
+                .when(!open, move |el| {
+                    el.hover(move |s| s.bg(fg.fill(Fill::Strong)))
+                })
                 .tooltip(Tooltip::text(tip))
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .on_click(cx.listener(move |this, _, _, cx| {

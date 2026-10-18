@@ -17,10 +17,10 @@ use gpui::{
 use crate::db::Block;
 use crate::monos::{mono_reaction, partial_reaction};
 use crate::ui::scale::px;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 use crate::ui::transcript::turns::{
     WorkKind, is_notice, is_prose, is_thinking, is_tool, text, tool_kind, tool_kind_name,
 };
-use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// MonoCode `STRETCH_GAP`: a message this long after the one before gets
 /// its own day and time.

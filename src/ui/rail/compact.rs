@@ -273,7 +273,9 @@ impl BenCodeApp {
     /// status. Unpinned, the icon rail shows none (MonoCode lists them in
     /// its project picker, which BenCode's compact picker does not).
     fn render_compact_monos(&self, cx: &Context<Self>) -> Option<AnyElement> {
-        if !self.monos_enabled() || !self.settings.rail_monos_pinned || self.settings.monos.is_empty()
+        if !self.monos_enabled()
+            || !self.settings.rail_monos_pinned
+            || self.settings.monos.is_empty()
         {
             return None;
         }

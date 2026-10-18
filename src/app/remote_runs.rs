@@ -71,7 +71,9 @@ fn write_records(seq: u64, records: &[RemoteRunRecord]) {
     let Some(path) = path() else {
         return;
     };
-    let mut written = WRITTEN.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut written = WRITTEN
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     if *written > seq {
         return;
     }
@@ -203,9 +205,19 @@ impl BenCodeApp {
             match attached {
                 Ok(turn) => {
                     rewind(session, record.blocks_before);
-                    log::info!("following turn {} on {} again", record.run.run, record.run.machine);
+                    log::info!(
+                        "following turn {} on {} again",
+                        record.run.run,
+                        record.run.machine
+                    );
                     let steers = turn.handle.can_steer();
-                    self.track_run(id.clone(), turn.handle, turn.events, record.auto_approve, cx);
+                    self.track_run(
+                        id.clone(),
+                        turn.handle,
+                        turn.events,
+                        record.auto_approve,
+                        cx,
+                    );
                     if let Some(run) = self.runs.get_mut(&id) {
                         run.purpose = if record.compact {
                             RunPurpose::Compact
@@ -249,7 +261,10 @@ mod tests {
         let text = serde_json::to_string(&record).unwrap();
         assert!(text.contains(r#""sessionId":"s""#), "{text}");
         assert!(text.contains(r#""machine":"m-1""#), "{text}");
-        assert_eq!(serde_json::from_str::<RemoteRunRecord>(&text).unwrap(), record);
+        assert_eq!(
+            serde_json::from_str::<RemoteRunRecord>(&text).unwrap(),
+            record
+        );
     }
 
     #[test]

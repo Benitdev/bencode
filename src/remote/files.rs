@@ -16,7 +16,10 @@ fn routed(path: &str) -> io::Result<Route> {
 }
 
 fn not_found(path: &str) -> io::Error {
-    io::Error::new(io::ErrorKind::NotFound, format!("{path}: no such file or folder"))
+    io::Error::new(
+        io::ErrorKind::NotFound,
+        format!("{path}: no such file or folder"),
+    )
 }
 
 /// What is at `path` on its machine; `None` when nothing is.

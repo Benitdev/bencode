@@ -38,7 +38,11 @@ pub struct SpawnedSession {
 /// The launch cards on one block (MonoCode `sanitizeMonoSpawnedSessions`).
 pub fn spawned_sessions(block: &Block) -> Vec<SpawnedSession> {
     let mut out: Vec<SpawnedSession> = Vec::new();
-    let Some(list) = block.extra.get("monoSpawnedSessions").and_then(Value::as_array) else {
+    let Some(list) = block
+        .extra
+        .get("monoSpawnedSessions")
+        .and_then(Value::as_array)
+    else {
         return out;
     };
     for item in list {
@@ -75,13 +79,19 @@ fn record_spawned(blocks: &mut [Block], launched: &SpawnedSession) -> bool {
     let Some(anchor) = blocks
         .iter_mut()
         .rev()
-        .find(|block| block.role == "user" && block.extra.get("internal").and_then(Value::as_bool) != Some(true))
+        .find(|block| {
+            block.role == "user"
+                && block.extra.get("internal").and_then(Value::as_bool) != Some(true)
+        })
         .or(None)
     else {
         return false;
     };
     let mut list = spawned_sessions(anchor);
-    if list.iter().any(|entry| entry.session_id == launched.session_id) {
+    if list
+        .iter()
+        .any(|entry| entry.session_id == launched.session_id)
+    {
         return true;
     }
     list.push(launched.clone());
@@ -152,7 +162,8 @@ pub fn completion_result(
     error: Option<String>,
 ) -> CompletionResult {
     let start = session.blocks.iter().position(|block| {
-        block.role == "user" && block.extra.get("appRequestId").and_then(Value::as_str) == Some(request)
+        block.role == "user"
+            && block.extra.get("appRequestId").and_then(Value::as_str) == Some(request)
     });
     let mut reply = String::new();
     if let Some(start) = start {
@@ -276,7 +287,8 @@ pub fn conversation_page(
     limit: usize,
     max_chars: usize,
 ) -> Result<Value, String> {
-    let flag = |block: &Block, key: &str| block.extra.get(key).and_then(Value::as_bool) == Some(true);
+    let flag =
+        |block: &Block, key: &str| block.extra.get(key).and_then(Value::as_bool) == Some(true);
     let mut exchanges: Vec<(&Block, Vec<&Block>)> = Vec::new();
     for block in &session.blocks {
         let text = block.text.as_deref().unwrap_or("");
@@ -340,15 +352,25 @@ pub fn conversation_page(
 }
 
 fn project_name(path: &str) -> &str {
-    path.trim_end_matches('/').rsplit('/').next().unwrap_or(path)
+    path.trim_end_matches('/')
+        .rsplit('/')
+        .next()
+        .unwrap_or(path)
 }
 
 impl BenCodeApp {
     /// MonoCode `requireProject`: the project an action works in. A Mono
     /// works on several, so it names one with "project" (its path or
     /// name), and may leave it out when it has only one.
-    pub(crate) fn require_project(&self, caller: &Caller, input: &Map<String, Value>) -> Result<String, String> {
-        let projects = self.mono(&caller.mono).map(|m| m.projects.clone()).unwrap_or_default();
+    pub(crate) fn require_project(
+        &self,
+        caller: &Caller,
+        input: &Map<String, Value>,
+    ) -> Result<String, String> {
+        let projects = self
+            .mono(&caller.mono)
+            .map(|m| m.projects.clone())
+            .unwrap_or_default();
         let choices = || {
             if projects.is_empty() {
                 "none yet; the user adds them from your settings".to_string()
@@ -361,10 +383,19 @@ impl BenCodeApp {
             }
         };
         if let Some(named) = optional(input.get("project"), "project", 4096)? {
-            let by_path = projects.iter().find(|path| crate::app::same_project_path(path, &named));
-            let by_name: Vec<&String> = projects.iter().filter(|path| project_name(path) == named).collect();
+            let by_path = projects
+                .iter()
+                .find(|path| crate::app::same_project_path(path, &named));
+            let by_name: Vec<&String> = projects
+                .iter()
+                .filter(|path| project_name(path) == named)
+                .collect();
             return by_path
-                .or(if by_name.len() == 1 { Some(by_name[0]) } else { None })
+                .or(if by_name.len() == 1 {
+                    Some(by_name[0])
+                } else {
+                    None
+                })
                 .cloned()
                 .ok_or_else(|| format!("Not one of your projects. Yours: {}", choices()));
         }
@@ -372,13 +403,20 @@ impl BenCodeApp {
             .sessions
             .iter()
             .find(|s| s.id == caller.session)
-            .and_then(|s| projects.iter().find(|p| crate::app::same_project_path(p, &s.cwd)));
+            .and_then(|s| {
+                projects
+                    .iter()
+                    .find(|p| crate::app::same_project_path(p, &s.cwd))
+            });
         if let Some(own) = own {
             return Ok(own.clone());
         }
         match projects.as_slice() {
             [only] => Ok(only.clone()),
-            _ => Err(format!("Pass \"project\" to choose one. Yours: {}", choices())),
+            _ => Err(format!(
+                "Pass \"project\" to choose one. Yours: {}",
+                choices()
+            )),
         }
     }
 
@@ -392,7 +430,11 @@ impl BenCodeApp {
     }
 
     /// MonoCode `projectSession`: `id` in the chosen project.
-    fn project_session(&self, caller: &Caller, input: &Map<String, Value>) -> Result<(String, String), String> {
+    fn project_session(
+        &self,
+        caller: &Caller,
+        input: &Map<String, Value>,
+    ) -> Result<(String, String), String> {
         let cwd = self.require_project(caller, input)?;
         let id = required(input.get("sessionId"), "sessionId", 256)?;
         if !self.project_sessions(&cwd).iter().any(|s| s.id == id) {
@@ -410,17 +452,24 @@ impl BenCodeApp {
         if self.is_agent_running_in(session_id) {
             return Some(LaunchedState::Working);
         }
-        if self.thread(session_id).and_then(|t| t.draft.as_deref()).is_some_and(|d| !d.trim().is_empty())
+        if self
+            .thread(session_id)
+            .and_then(|t| t.draft.as_deref())
+            .is_some_and(|d| !d.trim().is_empty())
             && !session.has_user_message()
         {
             return Some(LaunchedState::Draft);
         }
         let last = session.blocks.last();
-        let notice = last.and_then(|b| b.extra.get("notice")).and_then(Value::as_str);
+        let notice = last
+            .and_then(|b| b.extra.get("notice"))
+            .and_then(Value::as_str);
         Some(match notice {
             Some("error") => LaunchedState::Failed,
             Some("interrupt") => LaunchedState::Stopped,
-            _ if last.is_some_and(|b| b.text.as_deref() == Some(crate::app::agent::STOPPED_NOTICE)) => {
+            _ if last
+                .is_some_and(|b| b.text.as_deref() == Some(crate::app::agent::STOPPED_NOTICE)) =>
+            {
                 LaunchedState::Stopped
             }
             _ => LaunchedState::Done,
@@ -550,21 +599,34 @@ impl BenCodeApp {
             Some(value) => value
                 .as_u64()
                 .filter(|n| (1..=3).contains(n))
-                .ok_or_else(|| "limit must be an integer from 1 to 3".to_string())? as usize,
+                .ok_or_else(|| "limit must be an integer from 1 to 3".to_string())?
+                as usize,
         };
         let max_chars = match input.get("maxChars") {
             None => 1200,
             Some(value) => value
                 .as_u64()
                 .filter(|n| (200..=6000).contains(n))
-                .ok_or_else(|| "maxChars must be an integer from 200 to 6000".to_string())? as usize,
+                .ok_or_else(|| "maxChars must be an integer from 200 to 6000".to_string())?
+                as usize,
         };
         let before = optional(input.get("before"), "before", 256)?;
-        conversation_page(session, self.is_agent_running_in(&target), before.as_deref(), limit, max_chars)
+        conversation_page(
+            session,
+            self.is_agent_running_in(&target),
+            before.as_deref(),
+            limit,
+            max_chars,
+        )
     }
 
     /// MonoCode `completionRecipient`: whether this call asks for a report.
-    fn wants_report(&self, caller: &Caller, input: &Map<String, Value>, default: bool) -> Result<bool, String> {
+    fn wants_report(
+        &self,
+        caller: &Caller,
+        input: &Map<String, Value>,
+        default: bool,
+    ) -> Result<bool, String> {
         let draft = flag(input.get("draft"), "draft", false)?;
         let requested = match input.get("notifyOnComplete") {
             None => None,
@@ -602,9 +664,9 @@ impl BenCodeApp {
         let (cwd, id) = self.project_session(caller, input)?;
         let receipt = format!("app-{}-{request_id}", caller.session);
         let already = self.sessions.iter().find(|s| s.id == id).is_some_and(|s| {
-            s.blocks
-                .iter()
-                .any(|b| b.extra.get("appRequestId").and_then(Value::as_str) == Some(receipt.as_str()))
+            s.blocks.iter().any(|b| {
+                b.extra.get("appRequestId").and_then(Value::as_str) == Some(receipt.as_str())
+            })
         });
         if !already {
             if self.is_agent_running_in(&id) {
@@ -615,7 +677,15 @@ impl BenCodeApp {
             }
             let mut extra = Map::new();
             extra.insert("appRequestId".into(), json!(receipt));
-            self.send_turn(&id, TurnInput { text: prompt.clone(), extra, ..Default::default() }, cx);
+            self.send_turn(
+                &id,
+                TurnInput {
+                    text: prompt.clone(),
+                    extra,
+                    ..Default::default()
+                },
+                cx,
+            );
             if report {
                 self.watch_session(caller, &receipt, &id, &cwd, &prompt);
             }
@@ -647,12 +717,19 @@ impl BenCodeApp {
         if self.is_agent_running_in(&id) {
             return Err("That session is busy; save the draft once it is idle".into());
         }
-        let current = self.thread(&id).and_then(|t| t.draft.clone()).unwrap_or_default();
+        let current = self
+            .thread(&id)
+            .and_then(|t| t.draft.clone())
+            .unwrap_or_default();
         if current.trim() == prompt.trim() {
-            return Ok(json!({ "sessionId": id, "saved": true, "alreadySaved": true, "draft": true }));
+            return Ok(
+                json!({ "sessionId": id, "saved": true, "alreadySaved": true, "draft": true }),
+            );
         }
         if !current.trim().is_empty() {
-            return Err("That session already has a draft; send or remove it in BenCode first".into());
+            return Err(
+                "That session already has a draft; send or remove it in BenCode first".into(),
+            );
         }
         self.thread_mut(&id).draft = Some(prompt);
         cx.notify();
@@ -703,7 +780,12 @@ impl BenCodeApp {
         }
     }
 
-    fn move_to_folder(&mut self, caller: &Caller, input: &Map<String, Value>, cx: &mut Context<Self>) -> Result<Value, String> {
+    fn move_to_folder(
+        &mut self,
+        caller: &Caller,
+        input: &Map<String, Value>,
+        cx: &mut Context<Self>,
+    ) -> Result<Value, String> {
         let cwd = self.require_project(caller, input)?;
         let session = required(input.get("sessionId"), "sessionId", 256)?;
         let folder = optional(input.get("folderId"), "folderId", 256)?;
@@ -726,7 +808,10 @@ impl BenCodeApp {
             _ => unreachable!("checked above"),
         };
         let next = crate::app::session_folders::place_session(&folders, &session, &target);
-        let placed = next.iter().find(|f| f.session_ids.contains(&session)).cloned();
+        let placed = next
+            .iter()
+            .find(|f| f.session_ids.contains(&session))
+            .cloned();
         self.session_folders.insert(cwd, next);
         self.save_settings(cx);
         Ok(json!({
@@ -738,7 +823,13 @@ impl BenCodeApp {
 
     /// MonoCode `sessions.start`: a new session in one of its projects, in
     /// the background, with the Mono's model unless another is asked for.
-    pub(crate) fn start_session(&mut self, caller: Caller, input: Map<String, Value>, call: AppCall, cx: &mut Context<Self>) {
+    pub(crate) fn start_session(
+        &mut self,
+        caller: Caller,
+        input: Map<String, Value>,
+        call: AppCall,
+        cx: &mut Context<Self>,
+    ) {
         let request_id = call.request.request_id.clone();
         let plan = match self.plan_start(&caller, &input, &request_id) {
             Ok(plan) => plan,
@@ -760,15 +851,18 @@ impl BenCodeApp {
             return call.answer(value);
         }
         if plan.new_worktree {
-            let (cwd, base) = (plan.cwd.clone(), plan.worktree_base.clone().unwrap_or_else(|| "HEAD".into()));
+            let (cwd, base) = (
+                plan.cwd.clone(),
+                plan.worktree_base.clone().unwrap_or_else(|| "HEAD".into()),
+            );
             let seed = {
                 use std::hash::{BuildHasher, RandomState};
                 RandomState::new().hash_one(&plan.id)
             };
             let branch = crate::ui::composer::new_worktree::temporary_branch_name(seed);
-            let task = cx
-                .background_executor()
-                .spawn(async move { crate::git::worktrees::create_worktree(&cwd, &branch, &base, false) });
+            let task = cx.background_executor().spawn(async move {
+                crate::git::worktrees::create_worktree(&cwd, &branch, &base, false)
+            });
             cx.spawn(async move |this, cx| {
                 let created = task.await;
                 let landed = this.update(cx, |this, cx| match created {
@@ -790,7 +884,12 @@ impl BenCodeApp {
     }
 
     /// MonoCode `startLaunch`: the launch checked against the catalog.
-    fn plan_start(&self, caller: &Caller, input: &Map<String, Value>, request_id: &str) -> Result<StartPlan, String> {
+    fn plan_start(
+        &self,
+        caller: &Caller,
+        input: &Map<String, Value>,
+        request_id: &str,
+    ) -> Result<StartPlan, String> {
         if !is_id(request_id) {
             return Err("request ID must use letters, digits, underscores or hyphens".into());
         }
@@ -807,13 +906,19 @@ impl BenCodeApp {
             Some(value) => {
                 let id = value.as_str().unwrap_or("");
                 HarnessKind::from_id(id)
-                    .ok_or_else(|| "Unknown harness; run models.list for available providers".to_string())?
+                    .ok_or_else(|| {
+                        "Unknown harness; run models.list for available providers".to_string()
+                    })?
                     .id()
                     .to_string()
             }
         };
         let kind = HarnessKind::from_id(&harness).ok_or_else(|| "Unknown harness".to_string())?;
-        if !self.harnesses.iter().any(|info| info.id == kind.id() && info.available) {
+        if !self
+            .harnesses
+            .iter()
+            .any(|info| info.id == kind.id() && info.available)
+        {
             return Err(format!("{harness} is not available in BenCode"));
         }
         let model = match optional(input.get("model"), "model", 512)? {
@@ -828,15 +933,16 @@ impl BenCodeApp {
                 .map(|m| m.key.clone())
                 .ok_or_else(|| "Unknown model; run models.list for exact model IDs".to_string())?,
         };
-        let mut settings: Map<String, Value> = if harness == source.harness && model == source.model {
+        let mut settings: Map<String, Value> = if harness == source.harness && model == source.model
+        {
             source.model_settings.clone().unwrap_or_default()
         } else {
             Map::new()
         };
         if let Some(raw) = input.get("modelSettings") {
-            let raw = raw
-                .as_object()
-                .ok_or_else(|| "modelSettings must be an object of setting IDs and values".to_string())?;
+            let raw = raw.as_object().ok_or_else(|| {
+                "modelSettings must be an object of setting IDs and values".to_string()
+            })?;
             settings.extend(raw.iter().map(|(k, v)| (k.clone(), v.clone())));
         }
         if let Some(effort) = input.get("effort") {
@@ -844,7 +950,9 @@ impl BenCodeApp {
                 .ok_or_else(|| format!("{model} does not expose an effort setting"))?;
             settings.insert(setting.id, json!(required(Some(effort), "effort", 128)?));
         }
-        let known = catalog::find(&model).map(|m| m.settings).unwrap_or_default();
+        let known = catalog::find(&model)
+            .map(|m| m.settings)
+            .unwrap_or_default();
         for (key, value) in &settings {
             let ok = known.iter().any(|setting| {
                 &setting.id == key
@@ -852,20 +960,34 @@ impl BenCodeApp {
                         .as_str()
                         .is_some_and(|value| setting.options.iter().any(|(v, _)| v == value))
             });
-            if !ok && input.get("modelSettings").and_then(|m| m.get(key)).is_some() {
-                return Err(format!("Invalid model setting {key}; run models.list for allowed values"));
+            if !ok
+                && input
+                    .get("modelSettings")
+                    .and_then(|m| m.get(key))
+                    .is_some()
+            {
+                return Err(format!(
+                    "Invalid model setting {key}; run models.list for allowed values"
+                ));
             }
         }
         let settings = catalog::merge_settings(&model, Some(&settings));
         let runtime_mode = match input.get("runtimeMode") {
-            None => source.runtime_mode.clone().unwrap_or_else(|| PermissionMode::Supervised.id().into()),
+            None => source
+                .runtime_mode
+                .clone()
+                .unwrap_or_else(|| PermissionMode::Supervised.id().into()),
             Some(value) => {
                 let id = value.as_str().unwrap_or("");
                 PermissionMode::from_id(id)
                     .ok_or_else(|| {
                         format!(
                             "runtimeMode must be one of: {}",
-                            PermissionMode::ALL.iter().map(|m| m.id()).collect::<Vec<_>>().join(", ")
+                            PermissionMode::ALL
+                                .iter()
+                                .map(|m| m.id())
+                                .collect::<Vec<_>>()
+                                .join(", ")
                         )
                     })?
                     .id()
@@ -873,8 +995,13 @@ impl BenCodeApp {
             }
         };
         flag(input.get("reveal"), "reveal", false)?;
-        let mode = input.get("workspaceMode").and_then(Value::as_str).unwrap_or("current");
-        if input.get("workspaceMode").is_some_and(|v| !v.is_string()) || !matches!(mode, "current" | "worktree") {
+        let mode = input
+            .get("workspaceMode")
+            .and_then(Value::as_str)
+            .unwrap_or("current");
+        if input.get("workspaceMode").is_some_and(|v| !v.is_string())
+            || !matches!(mode, "current" | "worktree")
+        {
             return Err("workspaceMode must be current or worktree".into());
         }
         let worktree_base = optional(input.get("worktreeBase"), "worktreeBase", 512)?;
@@ -885,7 +1012,10 @@ impl BenCodeApp {
         if worktree_cwd.is_some() && mode != "current" {
             return Err("worktreeCwd requires workspaceMode current".into());
         }
-        let placement = input.get("placement").and_then(Value::as_str).unwrap_or("tab");
+        let placement = input
+            .get("placement")
+            .and_then(Value::as_str)
+            .unwrap_or("tab");
         if !matches!(placement, "tab" | "right" | "down") {
             return Err("placement must be tab, right or down".into());
         }
@@ -913,11 +1043,22 @@ impl BenCodeApp {
             shown: mono.is_some_and(|m| m.show_started_sessions_in_sidebar),
             folder: mono
                 .filter(|m| m.show_started_sessions_in_sidebar && m.use_sidebar_folders)
-                .map(|m| (m.display_name(), crate::app::session_folders::to_hex(self.mono_color(m)))),
+                .map(|m| {
+                    (
+                        m.display_name(),
+                        crate::app::session_folders::to_hex(self.mono_color(m)),
+                    )
+                }),
         })
     }
 
-    fn launch_session(&mut self, caller: Caller, plan: StartPlan, call: AppCall, cx: &mut Context<Self>) {
+    fn launch_session(
+        &mut self,
+        caller: Caller,
+        plan: StartPlan,
+        call: AppCall,
+        cx: &mut Context<Self>,
+    ) {
         // A checkout named by path must be one of the project's.
         if let Some((path, _)) = &plan.worktree
             && !plan.new_worktree
@@ -929,7 +1070,10 @@ impl BenCodeApp {
                 .any(|tree| crate::app::same_project_path(&tree.path, path) && !tree.missing)
                 || crate::app::same_project_path(path, &plan.cwd);
             if !known && crate::app::same_project_path(&self.workspace.cwd, &plan.cwd) {
-                return call.fail("Worktree is unavailable in this project; run worktrees.list", true);
+                return call.fail(
+                    "Worktree is unavailable in this project; run worktrees.list",
+                    true,
+                );
             }
         }
         let now = crate::app::now_ms();
@@ -963,7 +1107,9 @@ impl BenCodeApp {
         self.persist_session(&plan.id);
         let hidden = !plan.shown;
         let id = plan.id.clone();
-        self.db_write("hide a Mono's session", move |db| db.set_session_sidebar_hidden(&id, hidden));
+        self.db_write("hide a Mono's session", move |db| {
+            db.set_session_sidebar_hidden(&id, hidden)
+        });
         if let Some((name, color)) = &plan.folder {
             self.file_in_mono_folder(&plan.cwd, &plan.id, name, color, cx);
         }
@@ -974,7 +1120,11 @@ impl BenCodeApp {
             extra.insert("appRequestId".into(), json!(plan.id));
             self.send_turn(
                 &plan.id,
-                TurnInput { text: plan.prompt.clone(), extra, ..Default::default() },
+                TurnInput {
+                    text: plan.prompt.clone(),
+                    extra,
+                    ..Default::default()
+                },
                 cx,
             );
             if plan.report {
@@ -1002,13 +1152,21 @@ impl BenCodeApp {
 
     /// MonoCode `fileInMonoFolder`: into the folder named after it, made in
     /// its colour the first time.
-    fn file_in_mono_folder(&mut self, cwd: &str, session: &str, name: &str, color: &str, cx: &mut Context<Self>) {
+    fn file_in_mono_folder(
+        &mut self,
+        cwd: &str,
+        session: &str,
+        name: &str,
+        color: &str,
+        cx: &mut Context<Self>,
+    ) {
         use crate::app::session_folders::{FolderTarget, place_session};
         let folders = self.session_folders.get(cwd).cloned().unwrap_or_default();
         let next = match folders.iter().find(|f| f.name == name) {
             Some(own) => place_session(&folders, session, &FolderTarget::Existing(own.id.clone())),
             None => {
-                let mut next = place_session(&folders, session, &FolderTarget::New(name.to_string()));
+                let mut next =
+                    place_session(&folders, session, &FolderTarget::New(name.to_string()));
                 if let Some(made) = next.iter_mut().find(|f| f.name == name) {
                     made.custom_color = Some(color.to_string());
                 }
@@ -1025,7 +1183,10 @@ impl BenCodeApp {
         if !caller.own {
             if let Some(run) = self.habits.runs.get_mut(&caller.session)
                 && let Ok(value) = serde_json::to_value(&launched)
-                && !run.launches.iter().any(|known| known.get("sessionId") == value.get("sessionId"))
+                && !run
+                    .launches
+                    .iter()
+                    .any(|known| known.get("sessionId") == value.get("sessionId"))
             {
                 run.launches.push(value);
             }
@@ -1057,7 +1218,14 @@ impl BenCodeApp {
 
     /// MonoCode `MonoSessionCompletionBatches.watch`, in the group of the
     /// Mono's running turn.
-    fn watch_session(&mut self, caller: &Caller, request: &str, session: &str, project: &str, prompt: &str) {
+    fn watch_session(
+        &mut self,
+        caller: &Caller,
+        request: &str,
+        session: &str,
+        project: &str,
+        prompt: &str,
+    ) {
         let Some(turn) = self
             .sessions
             .iter()
@@ -1107,17 +1275,30 @@ impl BenCodeApp {
     /// A turn ended somewhere: a watched session's result is frozen, and a
     /// Mono's own turn closes the groups it opened. Any group then ready
     /// goes back to its Mono.
-    pub(crate) fn session_turn_settled(&mut self, session_id: &str, outcome: Option<DoneStatus>, cx: &mut Context<Self>) {
+    pub(crate) fn session_turn_settled(
+        &mut self,
+        session_id: &str,
+        outcome: Option<DoneStatus>,
+        cx: &mut Context<Self>,
+    ) {
         let mut frozen = Vec::new();
         if let Some(session) = self.sessions.iter().find(|s| s.id == session_id) {
             for (bi, batch) in self.mono_sessions.batches.iter().enumerate() {
                 for (wi, watched) in batch.watched.iter().enumerate() {
                     if watched.session == session_id && watched.result.is_none() {
-                        let error = (outcome == Some(DoneStatus::Failed)).then(|| "The agent turn failed.".to_string());
+                        let error = (outcome == Some(DoneStatus::Failed))
+                            .then(|| "The agent turn failed.".to_string());
                         frozen.push((
                             bi,
                             wi,
-                            completion_result(session, &watched.request, &watched.project, &watched.prompt, outcome, error),
+                            completion_result(
+                                session,
+                                &watched.request,
+                                &watched.project,
+                                &watched.prompt,
+                                outcome,
+                                error,
+                            ),
                         ));
                     }
                 }
@@ -1159,25 +1340,45 @@ impl BenCodeApp {
             }
         }
         for batch in ready {
-            let results: Vec<CompletionResult> = batch.watched.iter().filter_map(|w| w.result.clone()).collect();
+            let results: Vec<CompletionResult> = batch
+                .watched
+                .iter()
+                .filter_map(|w| w.result.clone())
+                .collect();
             let id = if batch.watched.len() == 1 {
                 format!("mono-completion-{}", batch.watched[0].request)
             } else {
-                format!("mono-completion-batch-{}", crate::app::ids::unique_id("batch"))
+                format!(
+                    "mono-completion-batch-{}",
+                    crate::app::ids::unique_id("batch")
+                )
             };
             let (text, meta) = completion_message(&results);
             let mut extra = Map::new();
             extra.insert("internal".into(), json!(true));
             extra.insert("appRequestId".into(), json!(id));
             extra.insert("monoSessionCompletion".into(), meta);
-            let input = TurnInput { text, extra, ..Default::default() };
+            let input = TurnInput {
+                text,
+                extra,
+                ..Default::default()
+            };
             let session = batch.mono_session;
             // Receipt ids keep a report from going twice.
-            let delivered = self.sessions.iter().find(|s| s.id == session).is_some_and(|s| {
-                s.blocks.iter().any(|b| b.extra.get("appRequestId").and_then(Value::as_str) == Some(id.as_str()))
-            }) || self
-                .thread(&session)
-                .is_some_and(|t| t.queue.iter().any(|q| q.extra.get("appRequestId").and_then(Value::as_str) == Some(id.as_str())));
+            let delivered = self
+                .sessions
+                .iter()
+                .find(|s| s.id == session)
+                .is_some_and(|s| {
+                    s.blocks.iter().any(|b| {
+                        b.extra.get("appRequestId").and_then(Value::as_str) == Some(id.as_str())
+                    })
+                })
+                || self.thread(&session).is_some_and(|t| {
+                    t.queue.iter().any(|q| {
+                        q.extra.get("appRequestId").and_then(Value::as_str) == Some(id.as_str())
+                    })
+                });
             if delivered {
                 continue;
             }
@@ -1248,14 +1449,24 @@ mod tests {
             Block::new("a1", "assistant", "Looking"),
             Block::new("a2", "assistant", "Fixed: the import was wrong."),
         ];
-        let result = completion_result(&session(blocks), "app-m-r1", "/src/app", "fix it", Some(DoneStatus::Completed), None);
+        let result = completion_result(
+            &session(blocks),
+            "app-m-r1",
+            "/src/app",
+            "fix it",
+            Some(DoneStatus::Completed),
+            None,
+        );
         assert_eq!(result.result, "Fixed: the import was wrong.");
         assert_eq!(result.status, "completed");
         let (text, meta) = completion_message(&[result.clone()]);
         assert!(text.starts_with("BenCode completion notification: a session you are monitoring"));
         assert_eq!(meta["status"], "completed");
         assert!(meta.get("sessionCount").is_none());
-        let failed = CompletionResult { status: "failed", ..result.clone() };
+        let failed = CompletionResult {
+            status: "failed",
+            ..result.clone()
+        };
         let (text, meta) = completion_message(&[result, failed]);
         assert!(text.contains("all monitored sessions"));
         assert_eq!(meta["sessionCount"], 2);
@@ -1280,7 +1491,8 @@ mod tests {
         assert_eq!(page["turns"][0]["assistant"]["text"], "second");
         assert_eq!(page["turns"][0]["earlierAssistantMessages"], 1);
         assert_eq!(page["nextBefore"], "u2");
-        let older = conversation_page(&session(blocks.clone()), false, Some("u2"), 3, 1200).unwrap();
+        let older =
+            conversation_page(&session(blocks.clone()), false, Some("u2"), 3, 1200).unwrap();
         assert_eq!(older["turns"][0]["turnId"], "u1");
         assert_eq!(older["nextBefore"], Value::Null);
         assert!(conversation_page(&session(blocks), false, Some("nope"), 3, 1200).is_err());
@@ -1288,7 +1500,10 @@ mod tests {
 
     #[test]
     fn launches_land_on_the_message_once() {
-        let mut blocks = vec![Block::new("u1", "user", "go"), Block::new("a1", "assistant", "ok")];
+        let mut blocks = vec![
+            Block::new("u1", "user", "go"),
+            Block::new("a1", "assistant", "ok"),
+        ];
         let launched = SpawnedSession {
             session_id: "app-m-r1".into(),
             cwd: "/src/app".into(),

@@ -476,7 +476,9 @@ impl BenCodeApp {
                         .items_center()
                         .justify_center()
                         .rounded_full()
-                        .when(selected, |el| el.border_2().border_color(fg.ink(Ink::Strong)))
+                        .when(selected, |el| {
+                            el.border_2().border_color(fg.ink(Ink::Strong))
+                        })
                         .child(
                             div()
                                 .size(px(14.0))
@@ -585,7 +587,9 @@ impl BenCodeApp {
                             .cursor_pointer()
                             .map(|el| {
                                 if selected {
-                                    el.bg(selected_bg).border_1().border_color(fg.ink(Ink::Secondary))
+                                    el.bg(selected_bg)
+                                        .border_1()
+                                        .border_color(fg.ink(Ink::Secondary))
                                 } else {
                                     el.hover(move |s| s.bg(fg.fill(Fill::Selected)))
                                 }

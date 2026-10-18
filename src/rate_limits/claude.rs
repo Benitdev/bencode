@@ -196,7 +196,10 @@ mod tests {
             crate::keychain::claude_service(Some(Path::new("/tmp/profile"))),
             "Claude Code-credentials-902e721c"
         );
-        assert_eq!(crate::keychain::claude_service(None), "Claude Code-credentials");
+        assert_eq!(
+            crate::keychain::claude_service(None),
+            "Claude Code-credentials"
+        );
     }
 
     #[test]

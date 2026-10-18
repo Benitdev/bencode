@@ -57,8 +57,8 @@ pub fn entry_icon(name: &str) -> icons::EntryIcon {
     icons::resolve_entry_icon(name, false, false)
 }
 
-pub use bencode_core::tree::FsEntry;
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
+pub use bencode_core::tree::FsEntry;
 
 /// The inline name field (MonoCode `NameRow`): a new entry under `parent`,
 /// or a rename of `path`.

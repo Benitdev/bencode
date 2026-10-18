@@ -168,7 +168,9 @@ impl RenderOnce for SettingsGroup {
         // rows `border-b border-content/5 last:border-b-0`.
         let rows = self.rows.into_iter().enumerate().map(|(ix, row)| {
             div()
-                .when(ix > 0, |el| el.border_t_1().border_color(fg.fill(Fill::Hover)))
+                .when(ix > 0, |el| {
+                    el.border_t_1().border_color(fg.fill(Fill::Hover))
+                })
                 .child(row)
         });
         div().flex().flex_col().child(head).child(

@@ -51,10 +51,7 @@ pub struct FilesState {
 }
 
 impl FilesState {
-    pub fn new(
-        window: &mut Window,
-        cx: &mut Context<BenCodeApp>,
-    ) -> (Self, Vec<Subscription>) {
+    pub fn new(window: &mut Window, cx: &mut Context<BenCodeApp>) -> (Self, Vec<Subscription>) {
         let soul_input = cx.new(|cx| {
             TextInput::new(window, cx)
                 .multi_line(12, usize::MAX)
@@ -140,12 +137,19 @@ impl BenCodeApp {
             return;
         };
         let generation = {
-            let slot = self.monos.files.generations.entry(id.to_string()).or_default();
+            let slot = self
+                .monos
+                .files
+                .generations
+                .entry(id.to_string())
+                .or_default();
             *slot += 1;
             *slot
         };
         let id = id.to_string();
-        let task = cx.background_executor().spawn(async move { files::load(&dir) });
+        let task = cx
+            .background_executor()
+            .spawn(async move { files::load(&dir) });
         cx.spawn(async move |this, cx| {
             let loaded = task.await;
             let landed = this.update(cx, |this, cx| {
@@ -175,11 +179,17 @@ impl BenCodeApp {
         if self.monos.view.as_deref() == Some(id) {
             self.monos.files.load_error = None;
         }
-        self.monos.files.loaded.insert(id.to_string(), loaded.clone());
+        self.monos
+            .files
+            .loaded
+            .insert(id.to_string(), loaded.clone());
         if self.monos.files.soul_of.as_deref() == Some(id) {
-            let clean = self.monos.files.soul_base.as_ref().is_none_or(|(value, _)| {
-                value == self.monos.files.soul_input.read(cx).text()
-            });
+            let clean = self
+                .monos
+                .files
+                .soul_base
+                .as_ref()
+                .is_none_or(|(value, _)| value == self.monos.files.soul_input.read(cx).text());
             let moved = self
                 .monos
                 .files
@@ -340,7 +350,10 @@ impl BenCodeApp {
             .chars()
             .take(crate::monos::NAME_MAX)
             .collect();
-        let saved = self.mono(&id).and_then(|mono| mono.name.clone()).unwrap_or_default();
+        let saved = self
+            .mono(&id)
+            .and_then(|mono| mono.name.clone())
+            .unwrap_or_default();
         if draft != saved {
             self.set_mono_name(&id, &draft, cx);
         }
@@ -434,16 +447,21 @@ impl BenCodeApp {
                 }
             }
         };
-        self.edit_mono_memory(&id, change, move |this, cx| {
-            if keep_open {
-                this.monos
-                    .files
-                    .memory_input
-                    .update(cx, |input, cx| input.set_text("", cx));
-            } else {
-                this.monos.files.memory_edit = None;
-            }
-        }, cx);
+        self.edit_mono_memory(
+            &id,
+            change,
+            move |this, cx| {
+                if keep_open {
+                    this.monos
+                        .files
+                        .memory_input
+                        .update(cx, |input, cx| input.set_text("", cx));
+                } else {
+                    this.monos.files.memory_edit = None;
+                }
+            },
+            cx,
+        );
     }
 
     /// MonoCode's Forget: the fact's line taken out.
@@ -556,7 +574,10 @@ impl BenCodeApp {
         });
         match read {
             Some(files) => {
-                self.monos.files.loaded.insert(id.to_string(), files.clone());
+                self.monos
+                    .files
+                    .loaded
+                    .insert(id.to_string(), files.clone());
                 files
             }
             None => {

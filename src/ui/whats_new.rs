@@ -13,8 +13,8 @@ use crate::app::BenCodeApp;
 use crate::app::release_notes;
 use crate::ui::app_callback::app_callback;
 use crate::ui::scale::px;
-use crate::ui::transcript::markdown::AgentMarkdown;
 use crate::ui::tokens::{Ink, Text, Tone as _};
+use crate::ui::transcript::markdown::AgentMarkdown;
 
 /// MonoCode `h-[min(72vh,640px)]`, less the dialog's title and buttons.
 const NOTES_HEIGHT: f32 = 480.0;

@@ -167,13 +167,22 @@ pub enum Edit {
         done: Option<bool>,
     },
     /// The session started for it.
-    Link { id: String, session_id: String },
-    Remove { id: String },
+    Link {
+        id: String,
+        session_id: String,
+    },
+    Remove {
+        id: String,
+    },
 }
 
 /// `edit` applied to `tasks`: the board after it, and the task it touched
 /// (`None` once removed).
-pub fn apply(mut tasks: Vec<Task>, edit: &Edit, now: i64) -> Result<(Vec<Task>, Option<Task>), String> {
+pub fn apply(
+    mut tasks: Vec<Task>,
+    edit: &Edit,
+    now: i64,
+) -> Result<(Vec<Task>, Option<Task>), String> {
     let find = |tasks: &[Task], id: &str| {
         tasks
             .iter()
@@ -181,13 +190,21 @@ pub fn apply(mut tasks: Vec<Task>, edit: &Edit, now: i64) -> Result<(Vec<Task>, 
             .ok_or_else(|| "No task with that id; run board.list".to_string())
     };
     let touched = match edit {
-        Edit::Add { id, title, prompt, project, session_id } => {
+        Edit::Add {
+            id,
+            title,
+            prompt,
+            project,
+            session_id,
+        } => {
             if let Some(known) = tasks.iter().find(|t| &t.id == id) {
                 // A retry of the same call.
                 return Ok((tasks.clone(), Some(known.clone())));
             }
             if let Some(session) = session_id
-                && tasks.iter().any(|t| t.session_id.as_ref() == Some(session) && t.done_at.is_none())
+                && tasks
+                    .iter()
+                    .any(|t| t.session_id.as_ref() == Some(session) && t.done_at.is_none())
             {
                 return Err("That session is already on the board".into());
             }
@@ -208,7 +225,12 @@ pub fn apply(mut tasks: Vec<Task>, edit: &Edit, now: i64) -> Result<(Vec<Task>, 
             });
             tasks.len() - 1
         }
-        Edit::Update { id, title, prompt, done } => {
+        Edit::Update {
+            id,
+            title,
+            prompt,
+            done,
+        } => {
             let index = find(&tasks, id)?;
             let task = &mut tasks[index];
             if let Some(title) = title {
@@ -216,7 +238,9 @@ pub fn apply(mut tasks: Vec<Task>, edit: &Edit, now: i64) -> Result<(Vec<Task>, 
             }
             if let Some(prompt) = prompt {
                 if task.session_id.is_some() {
-                    return Err("This task's session has started; follow up with sessions.send".into());
+                    return Err(
+                        "This task's session has started; follow up with sessions.send".into(),
+                    );
                 }
                 task.prompt = prompt.clone();
             }
@@ -244,7 +268,8 @@ pub fn apply(mut tasks: Vec<Task>, edit: &Edit, now: i64) -> Result<(Vec<Task>, 
 
 /// The open tasks in their order, then the newest [`DONE_KEPT`] done ones.
 fn prune_done(tasks: Vec<Task>) -> Vec<Task> {
-    let (open, mut done): (Vec<Task>, Vec<Task>) = tasks.into_iter().partition(|t| t.done_at.is_none());
+    let (open, mut done): (Vec<Task>, Vec<Task>) =
+        tasks.into_iter().partition(|t| t.done_at.is_none());
     done.sort_by_key(|t| std::cmp::Reverse(t.done_at));
     done.truncate(DONE_KEPT);
     open.into_iter().chain(done).collect()
@@ -324,18 +349,36 @@ mod tests {
         let (tasks, _) = apply(tasks, &add, 11).unwrap();
         assert_eq!(tasks.len(), 1);
 
-        let link = Edit::Link { id: "a".into(), session_id: "s1".into() };
+        let link = Edit::Link {
+            id: "a".into(),
+            session_id: "s1".into(),
+        };
         let (tasks, _) = apply(tasks, &link, 12).unwrap();
-        let reprompt = Edit::Update { id: "a".into(), title: None, prompt: Some("x".into()), done: None };
+        let reprompt = Edit::Update {
+            id: "a".into(),
+            title: None,
+            prompt: Some("x".into()),
+            done: None,
+        };
         assert!(apply(tasks.clone(), &reprompt, 13).is_err());
 
-        let done = Edit::Update { id: "a".into(), title: None, prompt: None, done: Some(true) };
+        let done = Edit::Update {
+            id: "a".into(),
+            title: None,
+            prompt: None,
+            done: Some(true),
+        };
         let (tasks, touched) = apply(tasks, &done, 14).unwrap();
         assert_eq!(touched.unwrap().done_at, Some(14));
         // Marked done again keeps when it was.
         let (tasks, touched) = apply(tasks, &done, 15).unwrap();
         assert_eq!(touched.unwrap().done_at, Some(14));
-        let reopen = Edit::Update { id: "a".into(), title: None, prompt: None, done: Some(false) };
+        let reopen = Edit::Update {
+            id: "a".into(),
+            title: None,
+            prompt: None,
+            done: Some(false),
+        };
         let (tasks, touched) = apply(tasks, &reopen, 16).unwrap();
         assert_eq!(touched.unwrap().done_at, None);
 
@@ -387,7 +430,12 @@ mod tests {
         c.done_at = Some(2);
         let tasks = vec![a, task("d"), b, c];
         let state = |id: &str| (id == "s1").then_some(LaunchedState::Working);
-        let ids = |col| in_column(&tasks, col, state).iter().map(|t| t.id.clone()).collect::<Vec<_>>();
+        let ids = |col| {
+            in_column(&tasks, col, state)
+                .iter()
+                .map(|t| t.id.clone())
+                .collect::<Vec<_>>()
+        };
         assert_eq!(ids(Column::Running), ["a"]);
         assert_eq!(ids(Column::Todo), ["d"]);
         assert_eq!(ids(Column::Done), ["c", "b"]);

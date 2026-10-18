@@ -94,7 +94,9 @@ impl BenCodeApp {
             .habits
             .runs
             .iter()
-            .filter(|(id, run)| run.mono_session == mono_session && self.pending_permission_for(id).is_some())
+            .filter(|(id, run)| {
+                run.mono_session == mono_session && self.pending_permission_for(id).is_some()
+            })
             .map(|(id, run)| (id.clone(), run.habit.name.clone()))
             .collect();
         asking.sort();
@@ -163,7 +165,10 @@ impl BenCodeApp {
                         log::warn!("could not move missed habits on: {err}");
                     }
                 }
-                due.extend(run.into_iter().map(|habit| (mono.clone(), habit.id.clone())));
+                due.extend(
+                    run.into_iter()
+                        .map(|habit| (mono.clone(), habit.id.clone())),
+                );
             }
             due
         });
@@ -232,11 +237,16 @@ impl BenCodeApp {
             let now = crate::app::now_ms();
             let claimed = habits::update_habits(&dir, |list| {
                 let only: Vec<Habit> = list.iter().filter(|h| h.id == habit_id).cloned().collect();
-                let claimed = habits::due_habits(&only, now, &running).0.first().map(|h| (*h).clone());
+                let claimed = habits::due_habits(&only, now, &running)
+                    .0
+                    .first()
+                    .map(|h| (*h).clone());
                 let next = list
                     .iter()
                     .map(|habit| match &claimed {
-                        Some(claimed) if claimed.id == habit.id => habits::after_run(habit, now, None),
+                        Some(claimed) if claimed.id == habit.id => {
+                            habits::after_run(habit, now, None)
+                        }
                         _ => habit.clone(),
                     })
                     .collect();
@@ -314,8 +324,12 @@ impl BenCodeApp {
         );
         self.habits.running.insert(habit.id.clone(), now);
         self.sessions.push(row);
-        let (soul, memory) = self.mono_context_parts(&mono, files, self.app_access.socket.is_some());
-        let prompt = format!("{soul}\n\n{memory}\n\n{}", habits::habit_run_brief(&habit, now));
+        let (soul, memory) =
+            self.mono_context_parts(&mono, files, self.app_access.socket.is_some());
+        let prompt = format!(
+            "{soul}\n\n{memory}\n\n{}",
+            habits::habit_run_brief(&habit, now)
+        );
         self.send_turn(
             &run_id,
             TurnInput {
@@ -381,7 +395,12 @@ impl BenCodeApp {
     /// A run's turn ended (`completed`) or was stopped: its report posted,
     /// the habit's record updated, its thread dropped, and the next one
     /// started (MonoCode `runHabit`'s end).
-    pub(crate) fn habit_run_settled(&mut self, run_id: &str, completed: bool, cx: &mut Context<Self>) {
+    pub(crate) fn habit_run_settled(
+        &mut self,
+        run_id: &str,
+        completed: bool,
+        cx: &mut Context<Self>,
+    ) {
         let Some(run) = self.habits.runs.remove(run_id) else {
             return;
         };
@@ -486,9 +505,10 @@ impl BenCodeApp {
             block.extra.insert("artifactCards".into(), value);
         }
         if !launches.is_empty() {
-            block
-                .extra
-                .insert("monoSpawnedSessions".into(), Value::Array(launches.to_vec()));
+            block.extra.insert(
+                "monoSpawnedSessions".into(),
+                Value::Array(launches.to_vec()),
+            );
         }
         session.blocks.push(block);
         session.updated_at = now;
@@ -521,9 +541,9 @@ impl BenCodeApp {
         };
         let running: HashMap<String, i64> = self.habits.running.clone();
         let action = action.to_string();
-        let task = cx
-            .background_executor()
-            .spawn(async move { habits_action(&dir, &action, &input, &running, crate::app::now_ms()) });
+        let task = cx.background_executor().spawn(async move {
+            habits_action(&dir, &action, &input, &running, crate::app::now_ms())
+        });
         let mono = caller.mono;
         cx.spawn(async move |this, cx| {
             let result = task.await;
@@ -623,7 +643,10 @@ pub fn habits_action(
     match action {
         "habits.list" => {
             let list = habits::load_habits(dir)?;
-            Ok((json!({ "habits": list.iter().map(view).collect::<Vec<_>>() }), false))
+            Ok((
+                json!({ "habits": list.iter().map(view).collect::<Vec<_>>() }),
+                false,
+            ))
         }
         "habits.add" => {
             let name = required(input.get("name"), "name", 80)?;
@@ -631,7 +654,10 @@ pub fn habits_action(
             let schedule = habits::habit_schedule(input.get("schedule"))?;
             let habit = habits::update_habits(dir, |mut list| {
                 if list.len() >= habits::HABITS_MAX {
-                    return Err(format!("A Mono can have at most {} habits", habits::HABITS_MAX));
+                    return Err(format!(
+                        "A Mono can have at most {} habits",
+                        habits::HABITS_MAX
+                    ));
                 }
                 let created = habits::new_habit(&name, &instructions, schedule.clone(), now);
                 list.push(created.clone());
@@ -678,7 +704,13 @@ pub fn habits_action(
                 }
                 let list = list
                     .into_iter()
-                    .map(|habit| if habit.id == next.id { next.clone() } else { habit })
+                    .map(|habit| {
+                        if habit.id == next.id {
+                            next.clone()
+                        } else {
+                            habit
+                        }
+                    })
                     .collect();
                 Ok((list, next))
             })?;
@@ -697,7 +729,13 @@ pub fn habits_action(
                 next.run_requested = true;
                 let list = list
                     .into_iter()
-                    .map(|habit| if habit.id == next.id { next.clone() } else { habit })
+                    .map(|habit| {
+                        if habit.id == next.id {
+                            next.clone()
+                        } else {
+                            habit
+                        }
+                    })
                     .collect();
                 Ok((list, next))
             })?;
@@ -731,7 +769,10 @@ mod tests {
 
     #[test]
     fn habits_are_managed_through_the_cli() {
-        let dir = std::env::temp_dir().join(format!("bencode-habit-calls-{}", crate::app_cli::random_hex(6)));
+        let dir = std::env::temp_dir().join(format!(
+            "bencode-habit-calls-{}",
+            crate::app_cli::random_hex(6)
+        ));
         crate::monos::files::load(&dir).unwrap();
         let none = HashMap::new();
         let now = 1_760_000_000_000;
@@ -745,18 +786,45 @@ mod tests {
         .unwrap();
         let id = added["habit"]["id"].as_str().unwrap().to_string();
         assert_eq!(added["habit"]["schedule"], "Weekdays at 09:00");
-        let (paused, _) = habits_action(&dir, "habits.update", &input(json!({ "id": id, "enabled": false })), &none, now).unwrap();
+        let (paused, _) = habits_action(
+            &dir,
+            "habits.update",
+            &input(json!({ "id": id, "enabled": false })),
+            &none,
+            now,
+        )
+        .unwrap();
         assert_eq!(paused["habit"]["enabled"], false);
         assert_eq!(paused["habit"]["nextRun"], Value::Null);
-        let (_, run_now) = habits_action(&dir, "habits.run", &input(json!({ "id": id })), &none, now).unwrap();
+        let (_, run_now) =
+            habits_action(&dir, "habits.run", &input(json!({ "id": id })), &none, now).unwrap();
         assert!(run_now);
         assert!(habits::load_habits(&dir).unwrap()[0].run_requested);
         let busy: HashMap<String, i64> = [(id.clone(), now)].into();
-        assert!(habits_action(&dir, "habits.run", &input(json!({ "id": id })), &busy, now).is_err());
-        let (listed, _) = habits_action(&dir, "habits.list", &input(json!({})), &busy, now).unwrap();
+        assert!(
+            habits_action(&dir, "habits.run", &input(json!({ "id": id })), &busy, now).is_err()
+        );
+        let (listed, _) =
+            habits_action(&dir, "habits.list", &input(json!({})), &busy, now).unwrap();
         assert_eq!(listed["habits"][0]["running"], true);
-        assert!(habits_action(&dir, "habits.remove", &input(json!({ "id": "nope" })), &none, now).is_err());
-        let (removed, _) = habits_action(&dir, "habits.remove", &input(json!({ "id": id })), &none, now).unwrap();
+        assert!(
+            habits_action(
+                &dir,
+                "habits.remove",
+                &input(json!({ "id": "nope" })),
+                &none,
+                now
+            )
+            .is_err()
+        );
+        let (removed, _) = habits_action(
+            &dir,
+            "habits.remove",
+            &input(json!({ "id": id })),
+            &none,
+            now,
+        )
+        .unwrap();
         assert_eq!(removed["removed"], "CI");
         std::fs::remove_dir_all(&dir).ok();
     }

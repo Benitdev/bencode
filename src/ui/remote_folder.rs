@@ -21,7 +21,6 @@ use crate::ui::settings_modal::SettingsTab;
 use crate::ui::tokens::RED_400;
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
-
 impl BenCodeApp {
     pub fn render_remote_folder_dialog(&self, cx: &Context<Self>) -> Option<AnyElement> {
         let dialog = self.remote.folder.as_ref()?;
@@ -72,10 +71,10 @@ impl BenCodeApp {
             let menu = self.machines().iter().fold(Menu::new(), |menu, m| {
                 let id = m.id.clone();
                 menu.item(
-                    MenuItem::radio(m.name.clone(), m.id == machine.id).on_click(app_callback(
-                        cx,
-                        move |this, cx| this.pick_remote_folder_machine(&id, cx),
-                    )),
+                    MenuItem::radio(m.name.clone(), m.id == machine.id)
+                        .on_click(app_callback(cx, move |this, cx| {
+                            this.pick_remote_folder_machine(&id, cx)
+                        })),
                 )
             });
             DropdownMenu::new("remote-folder-machine", machine.name.clone(), menu)
@@ -136,7 +135,8 @@ impl BenCodeApp {
         let mut folders = div().p_1();
         if let Some(listing) = &dialog.listing {
             if let Some(parent) = &listing.parent {
-                folders = folders.child(row("remote-folder-up".into(), "..".into(), parent.clone()));
+                folders =
+                    folders.child(row("remote-folder-up".into(), "..".into(), parent.clone()));
             }
             for (ix, name) in listing.folders.iter().enumerate() {
                 let path = format!("{}/{name}", listing.path.trim_end_matches('/'));
@@ -188,10 +188,13 @@ impl BenCodeApp {
                         .on_click(move |_, window, cx| close(window, cx))
                 })
                 .action(move |_| {
-                    Button::new("remote-folder-open", if opening { "Opening…" } else { "Open" })
-                        .primary()
-                        .disabled(opening || !typed)
-                        .on_click(move |_, window, cx| open(window, cx))
+                    Button::new(
+                        "remote-folder-open",
+                        if opening { "Opening…" } else { "Open" },
+                    )
+                    .primary()
+                    .disabled(opening || !typed)
+                    .on_click(move |_, window, cx| open(window, cx))
                 })
                 .into_any_element(),
         )

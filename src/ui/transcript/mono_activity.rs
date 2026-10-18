@@ -86,17 +86,18 @@ impl BenCodeApp {
                     .text_color(fg.ink(Ink::Body))
                     .child(if live { "Working" } else { "Finished" }),
             )
-            .children(summary.map(|summary| div().min_w_0().truncate().child(format!("· {summary}"))));
+            .children(
+                summary.map(|summary| div().min_w_0().truncate().child(format!("· {summary}"))),
+            );
         Some(
             div()
                 .child(line)
                 .child(
-                    div()
-                        .px_1()
-                        .pb_2()
-                        .children(items.into_iter().map(|item| {
-                            self.render_fold_item(session, &turn, item, cx)
-                        })),
+                    div().px_1().pb_2().children(
+                        items
+                            .into_iter()
+                            .map(|item| self.render_fold_item(session, &turn, item, cx)),
+                    ),
                 )
                 .into_any_element(),
         )

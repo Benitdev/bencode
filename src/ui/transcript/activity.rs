@@ -267,10 +267,16 @@ impl BenCodeApp {
         }
         let session_id = session.id.clone();
         row.cursor_pointer()
-            .tooltip(gpui_tooltip(if shown { "Hide activity" } else { "Show activity" }))
-            .on_click(cx.listener(move |this, _, _, cx| {
-                this.show_mono_activity(&session_id, &turn_id, cx)
+            .tooltip(gpui_tooltip(if shown {
+                "Hide activity"
+            } else {
+                "Show activity"
             }))
+            .on_click(
+                cx.listener(move |this, _, _, cx| {
+                    this.show_mono_activity(&session_id, &turn_id, cx)
+                }),
+            )
             .into_any_element()
     }
 

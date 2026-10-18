@@ -35,10 +35,10 @@ use crate::ui::scale::px;
 use crate::ui::sidebar_popovers::popover_frame;
 use crate::work_items::Provider;
 
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 pub use checks::{Repair, RepairForm};
 pub use comments::ReplyTarget;
 pub use pr_actions::PrActionUi;
-use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// MonoCode keeps a fetched list this long before refetching on open.
 const FRESH_FOR: Duration = Duration::from_secs(60);

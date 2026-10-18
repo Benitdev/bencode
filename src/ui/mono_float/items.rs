@@ -81,7 +81,10 @@ pub enum FloatItem {
     Approval(String),
     /// What one of its habits' hidden runs asks for (MonoCode
     /// `askApproval`): the run's thread and the habit's name.
-    HabitApproval { run: String, habit: String },
+    HabitApproval {
+        run: String,
+        habit: String,
+    },
 }
 
 /// A row and the turn it belongs to (the index of its first block), which
@@ -128,7 +131,9 @@ pub fn rows_key(blocks: &[Block], start: usize) -> u64 {
         if crate::app_cli::artifacts::has_cards(block) {
             crate::app_cli::artifacts::block_cards(block).hash(&mut hasher);
         }
-        crate::app::mono_sessions::spawned_sessions(block).len().hash(&mut hasher);
+        crate::app::mono_sessions::spawned_sessions(block)
+            .len()
+            .hash(&mut hasher);
         if is_tool(block) {
             tool_kind_name(block).hash(&mut hasher);
         }
@@ -167,7 +172,11 @@ pub fn float_rows(blocks: &[Block], start: usize, live: Option<Live>) -> Vec<Flo
         .iter()
         .rev()
         .find(|block| starts_turn(block))
-        .and_then(|block| block.started_at.or_else(|| habit_post(block).map(|(_, _, at)| at)));
+        .and_then(|block| {
+            block
+                .started_at
+                .or_else(|| habit_post(block).map(|(_, _, at)| at))
+        });
     let count = heads.len();
     for (turn, &head) in heads.iter().enumerate() {
         let end = heads.get(turn + 1).copied().unwrap_or(shown.len());
@@ -267,7 +276,10 @@ impl Turn<'_> {
                 },
             );
         }
-        let posted = self.habit.and_then(|ix| habit_post(&blocks[ix])).map(|(_, _, at)| at);
+        let posted = self
+            .habit
+            .and_then(|ix| habit_post(&blocks[ix]))
+            .map(|(_, _, at)| at);
         if let Some(at) = posted {
             if opens_new_stretch(at, *previous_at) {
                 push(rows, FloatItem::Day(at));
@@ -322,7 +334,12 @@ impl Turn<'_> {
             }
         }
         if live.is_none() {
-            let mut turn_blocks: Vec<Block> = self.user.or(self.habit).map(|ix| blocks[ix].clone()).into_iter().collect();
+            let mut turn_blocks: Vec<Block> = self
+                .user
+                .or(self.habit)
+                .map(|ix| blocks[ix].clone())
+                .into_iter()
+                .collect();
             turn_blocks.extend(self.rest.iter().map(|&ix| blocks[ix].clone()));
             for launch in crate::app::mono_sessions::chat_launches(&turn_blocks) {
                 push(rows, FloatItem::Launch(launch));

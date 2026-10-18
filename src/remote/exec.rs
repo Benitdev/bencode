@@ -105,7 +105,10 @@ impl Cmd {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()?;
-        let mut stdin = child.stdin.take().ok_or_else(|| io::Error::other("no stdin"))?;
+        let mut stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| io::Error::other("no stdin"))?;
         // A large answer can fill stdout while the command still reads stdin.
         let writer = std::thread::spawn(move || stdin.write_all(&input));
         let output = child.wait_with_output()?;
@@ -138,10 +141,12 @@ impl Cmd {
         for arg in &self.args {
             let arg = text(arg)?;
             // A path under this machine's `remote://` is its host path there.
-            args.push(match bencode_core::remote::path::host_path_on(&arg, &route.machine) {
-                Some(host) => host,
-                None => arg,
-            });
+            args.push(
+                match bencode_core::remote::path::host_path_on(&arg, &route.machine) {
+                    Some(host) => host,
+                    None => arg,
+                },
+            );
         }
         let env = self
             .env

@@ -11,13 +11,13 @@ use gpui::{
 };
 
 use super::empty_state;
-use crate::ui::rows::{ListRow, row_button};
 use crate::app::BenCodeApp;
 use crate::app::mono_overview::OverviewTab;
 use crate::app::mono_sessions::{LaunchedState, SpawnedSession};
 use crate::monos::Mono;
 use crate::monos::board::{self, Column, Task};
 use crate::ui::HarnessIcon;
+use crate::ui::rows::{ListRow, row_button};
 use crate::ui::scale::px;
 use crate::ui::tokens::Status;
 use crate::ui::tokens::{Ink, Text, Tone as _};
@@ -34,7 +34,11 @@ fn column_title(title: &str, count: usize, fg: Hsla) -> gpui::Div {
         .font_weight(FontWeight::MEDIUM)
         .text_color(fg.ink(Ink::Muted))
         .child(title.to_uppercase())
-        .child(div().text_color(fg.ink(Ink::Faint)).child(count.to_string()))
+        .child(
+            div()
+                .text_color(fg.ink(Ink::Faint))
+                .child(count.to_string()),
+        )
 }
 
 impl BenCodeApp {
@@ -79,14 +83,18 @@ impl BenCodeApp {
                     .rounded(px(6.0))
                     .hover(move |s| s.text_color(fg.ink(Ink::Body)))
                     .child(
-                        Icon::new(if open { IconName::ChevronDown } else { IconName::ChevronRight })
-                            .size(IconSize::Xs)
-                            .color(fg.ink(Ink::Faint)),
+                        Icon::new(if open {
+                            IconName::ChevronDown
+                        } else {
+                            IconName::ChevronRight
+                        })
+                        .size(IconSize::Xs)
+                        .color(fg.ink(Ink::Faint)),
                     )
                     .on_click(cx.listener(|this, _, _, cx| this.toggle_board_done(cx)));
-                div()
-                    .child(header)
-                    .when(open, |el| el.children(list.iter().map(|task| self.render_task(task, column, cx))))
+                div().child(header).when(open, |el| {
+                    el.children(list.iter().map(|task| self.render_task(task, column, cx)))
+                })
             } else {
                 div()
                     .child(title)
@@ -98,7 +106,12 @@ impl BenCodeApp {
             sections.push(
                 div()
                     .child(column_title("Other sessions", others.len(), fg))
-                    .children(others.into_iter().rev().map(|launch| self.render_launch(launch, cx)))
+                    .children(
+                        others
+                            .into_iter()
+                            .rev()
+                            .map(|launch| self.render_launch(launch, cx)),
+                    )
                     .into_any_element(),
             );
         }
@@ -116,7 +129,11 @@ impl BenCodeApp {
     fn off_board_launches(&self, mono: &Mono, tasks: &[Task]) -> Vec<SpawnedSession> {
         self.mono_launches(mono)
             .into_iter()
-            .filter(|launch| !tasks.iter().any(|t| t.session_id.as_deref() == Some(&launch.session_id)))
+            .filter(|launch| {
+                !tasks
+                    .iter()
+                    .any(|t| t.session_id.as_deref() == Some(&launch.session_id))
+            })
             .collect()
     }
 
@@ -132,7 +149,12 @@ impl BenCodeApp {
             Column::Todo => "Not started".to_string(),
             Column::Done => task
                 .done_at
-                .map(|at| format!("Done {}", crate::app::session_list::format_relative(at, crate::app::now_ms())))
+                .map(|at| {
+                    format!(
+                        "Done {}",
+                        crate::app::session_list::format_relative(at, crate::app::now_ms())
+                    )
+                })
                 .unwrap_or_default(),
             _ => task
                 .session_id
@@ -157,7 +179,10 @@ impl BenCodeApp {
             .session_id
             .as_deref()
             .and_then(|id| self.sessions.iter().find(|s| s.id == id));
-        let state = task.session_id.as_deref().and_then(|id| self.launched_state(id));
+        let state = task
+            .session_id
+            .as_deref()
+            .and_then(|id| self.launched_state(id));
         let tile = match (column, session) {
             (Column::Running, _) => div()
                 .size(px(8.0))
@@ -169,11 +194,15 @@ impl BenCodeApp {
                 .size(IconSize::Sm)
                 .color(fg.ink(Ink::Faint))
                 .into_any_element(),
-            (Column::Review, _) if state == Some(LaunchedState::Failed) => Icon::new(IconName::CircleAlert)
-                .size(IconSize::Sm)
-                .color(Status::Failed.color(fg))
+            (Column::Review, _) if state == Some(LaunchedState::Failed) => {
+                Icon::new(IconName::CircleAlert)
+                    .size(IconSize::Sm)
+                    .color(Status::Failed.color(fg))
+                    .into_any_element()
+            }
+            (_, Some(session)) => HarnessIcon::new(&session.harness)
+                .size(px(14.0))
                 .into_any_element(),
-            (_, Some(session)) => HarnessIcon::new(&session.harness).size(px(14.0)).into_any_element(),
             (_, None) => Icon::new(IconName::CircleDashed)
                 .size(IconSize::Sm)
                 .color(fg.ink(Ink::Muted))
@@ -181,18 +210,36 @@ impl BenCodeApp {
         };
         let (done_id, remove_id) = (task.id.clone(), task.id.clone());
         let done = match column {
-            Column::Done => row_button(format!("mono-task-reopen-{}", task.id), IconName::RotateCcw, "Reopen")
-                .on_click(cx.listener(move |this, _, _, cx| this.set_board_task_done(&done_id, false, cx))),
-            _ => row_button(format!("mono-task-done-{}", task.id), IconName::Check, "Mark done")
-                .on_click(cx.listener(move |this, _, _, cx| this.set_board_task_done(&done_id, true, cx))),
+            Column::Done => row_button(
+                format!("mono-task-reopen-{}", task.id),
+                IconName::RotateCcw,
+                "Reopen",
+            )
+            .on_click(
+                cx.listener(move |this, _, _, cx| this.set_board_task_done(&done_id, false, cx)),
+            ),
+            _ => row_button(
+                format!("mono-task-done-{}", task.id),
+                IconName::Check,
+                "Mark done",
+            )
+            .on_click(
+                cx.listener(move |this, _, _, cx| this.set_board_task_done(&done_id, true, cx)),
+            ),
         };
         let row = ListRow::new(format!("mono-task-{}", task.id), task.title.clone())
             .tile(tile)
             .line(self.task_line(task, column))
             .action(done)
             .action(
-                row_button(format!("mono-task-remove-{}", task.id), IconName::Trash2, "Remove from board")
-                    .on_click(cx.listener(move |this, _, _, cx| this.remove_board_task(&remove_id, cx))),
+                row_button(
+                    format!("mono-task-remove-{}", task.id),
+                    IconName::Trash2,
+                    "Remove from board",
+                )
+                .on_click(
+                    cx.listener(move |this, _, _, cx| this.remove_board_task(&remove_id, cx)),
+                ),
             );
         match task.session_id.clone() {
             Some(session) => row

@@ -16,8 +16,8 @@ use crate::ui::app_callback::app_callback;
 use crate::ui::page_parts::{page_tab, tint};
 use crate::ui::scale::px;
 use crate::ui::scrollbar::Scrolled;
-use crate::ui::transcript::markdown::AgentMarkdown;
 use crate::ui::tokens::{Ink, Text, Tone as _};
+use crate::ui::transcript::markdown::AgentMarkdown;
 
 /// MonoCode `max-w-5xl`.
 const PAGE_WIDTH: f32 = 1024.0;

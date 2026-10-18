@@ -41,8 +41,8 @@ use crate::ui::git_menus::{GitMenuKind, TriggerLook};
 use crate::ui::icons::ExtraIcon;
 use crate::ui::scale::px;
 use crate::ui::scrollbar;
-use crate::ui::virtual_rows;
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
+use crate::ui::virtual_rows;
 
 /// MonoCode `GRAPH_PANEL_MIN`, `GRAPH_PANEL_DEFAULT`.
 const GRAPH_MIN: f32 = 120.0;
@@ -751,7 +751,12 @@ impl BenCodeApp {
         };
         let spinner =
             |id: &'static str, name: IconName| spinning_icon(id.into(), name, IconSize::Sm, fg);
-        let count = |text: String| div().flex_none().text_color(fg.ink(Ink::Secondary)).child(text);
+        let count = |text: String| {
+            div()
+                .flex_none()
+                .text_color(fg.ink(Ink::Secondary))
+                .child(text)
+        };
         let mut col = div().flex().flex_col().gap(px(6.0));
         if can_publish {
             col = col.child(

@@ -33,11 +33,11 @@ use crate::ui::attachment_chip::{ChipFile, attachment_chip};
 use crate::ui::mascot::pixel_sprite;
 use crate::ui::scale::px;
 use crate::ui::thumbnail::thumbnail;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 use crate::ui::transcript::markdown::AgentMarkdown;
 use crate::ui::transcript::mono::{
     clock_time, day_separator, reaction_badge, signature_name, signature_pill,
 };
-use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// MonoCode `user-message-row`'s `pl-14 pr-4`.
 const MESSAGE_LEFT: f32 = 56.0;

@@ -38,7 +38,10 @@ impl BenCodeApp {
     /// The image behind a Mono's chat, if it has one of its own.
     pub fn mono_background_for(&self, session_id: &str) -> Option<(Arc<RenderImage>, f32)> {
         let mono = self.mono_for_session(session_id)?;
-        Some((self.mono_background_image(&mono.id)?, CHAT_BACKGROUND_OPACITY_DEFAULT))
+        Some((
+            self.mono_background_image(&mono.id)?,
+            CHAT_BACKGROUND_OPACITY_DEFAULT,
+        ))
     }
 
     /// A Mono's own image as drawn, if it has one and it is ready.
@@ -66,7 +69,13 @@ impl BenCodeApp {
         }
     }
 
-    fn draw_mono_background(&mut self, id: String, path: String, light: bool, cx: &mut Context<Self>) {
+    fn draw_mono_background(
+        &mut self,
+        id: String,
+        path: String,
+        light: bool,
+        cx: &mut Context<Self>,
+    ) {
         let key = (path.clone(), light && EFFECT.follows_theme());
         let state = &mut self.mono_backgrounds;
         if state.images.get(&id).is_some_and(|(made, _)| *made == key)
@@ -89,7 +98,9 @@ impl BenCodeApp {
                 this.mono_backgrounds.loading.remove(&id);
                 match result {
                     Ok(image) => {
-                        if let Some((_, old)) = this.mono_backgrounds.images.insert(id, (key, image)) {
+                        if let Some((_, old)) =
+                            this.mono_backgrounds.images.insert(id, (key, image))
+                        {
                             cx.drop_image(old, None);
                         }
                     }
@@ -207,7 +218,9 @@ impl BenCodeApp {
         let name = stem(mono);
         cx.background_executor()
             .spawn(async move {
-                if let Err(err) = backgrounds_dir().and_then(|dir| remove_backgrounds_named(&dir, &name)) {
+                if let Err(err) =
+                    backgrounds_dir().and_then(|dir| remove_backgrounds_named(&dir, &name))
+                {
                     log::warn!("removing a Mono's background: {err:#}");
                 }
             })

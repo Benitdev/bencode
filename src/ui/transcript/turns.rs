@@ -230,7 +230,11 @@ fn latest_start(turn: &[Block]) -> Option<i64> {
     turn.iter()
         .filter(|block| block.role == "user")
         .filter_map(|block| block.started_at)
-        .chain(turn.first().and_then(|b| super::mono::habit_post(b)).map(|(_, _, at)| at))
+        .chain(
+            turn.first()
+                .and_then(|b| super::mono::habit_post(b))
+                .map(|(_, _, at)| at),
+        )
         .max()
 }
 
@@ -733,7 +737,10 @@ impl TurnLayout {
         if self.reacted_only(blocks) {
             return false;
         }
-        self.live || self.duration_ms(blocks).is_some() || self.fold.is_some() || self.habit.is_some()
+        self.live
+            || self.duration_ms(blocks).is_some()
+            || self.fold.is_some()
+            || self.habit.is_some()
     }
 
     /// MonoCode `TurnDuration` under a settled turn: one that took time, or
@@ -811,7 +818,9 @@ impl LayoutKey {
                 } else if block.role == "user" {
                     block.started_at.hash(&mut hasher);
                     crate::app_cli::artifacts::has_cards(block).hash(&mut hasher);
-                    crate::app::mono_sessions::spawned_sessions(block).len().hash(&mut hasher);
+                    crate::app::mono_sessions::spawned_sessions(block)
+                        .len()
+                        .hash(&mut hasher);
                     (block.extra.get("draft").and_then(Value::as_bool) == Some(true))
                         .hash(&mut hasher);
                 }
@@ -872,19 +881,23 @@ pub fn layout_turns(blocks: &[Block], running: bool, mono: bool) -> Vec<TurnLayo
         });
         let fold = foldable_work(blocks, &items);
         let user = range.clone().find(|i| blocks[*i].role == "user");
-        let habit = Some(range.start)
-            .filter(|&ix| mono && super::mono::habit_post(&blocks[ix]).is_some());
+        let habit =
+            Some(range.start).filter(|&ix| mono && super::mono::habit_post(&blocks[ix]).is_some());
         let reaction = reactions
             .as_ref()
             .zip(user)
             .and_then(|(reactions, user)| reactions.on(user))
             .map(str::to_string);
         let mut stamp = None;
-        let posted = habit.and_then(|ix| super::mono::habit_post(&blocks[ix])).map(|(_, _, at)| at);
+        let posted = habit
+            .and_then(|ix| super::mono::habit_post(&blocks[ix]))
+            .map(|(_, _, at)| at);
         if let Some(at) = user
             .filter(|_| mono)
             .map(|user| &blocks[user])
-            .filter(|block| super::mono::is_message(block) || super::mono::is_completion_prompt(block))
+            .filter(|block| {
+                super::mono::is_message(block) || super::mono::is_completion_prompt(block)
+            })
             .and_then(|block| block.started_at)
             .or(posted)
         {

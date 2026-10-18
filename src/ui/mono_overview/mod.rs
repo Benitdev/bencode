@@ -172,7 +172,12 @@ impl BenCodeApp {
         let overview = &self.monos.overview;
         let count = match tab {
             // Its open tasks.
-            OverviewTab::Board => overview.board.as_ref()?.iter().filter(|t| t.done_at.is_none()).count(),
+            OverviewTab::Board => overview
+                .board
+                .as_ref()?
+                .iter()
+                .filter(|t| t.done_at.is_none())
+                .count(),
             OverviewTab::Documents => self.mono_documents(mono).len(),
             OverviewTab::Habits => overview.habits.as_ref()?.len(),
             OverviewTab::Changes => self.mono_changes_count(),
@@ -202,13 +207,14 @@ impl BenCodeApp {
             .border_b_1()
             .border_color(fg.opacity(STROKE))
             .child(
-                div()
-                    .flex()
-                    .flex_1()
-                    .min_w_0()
-                    .items_center()
-                    .pl_4()
-                    .child(div().flex().items_center().gap_0p5().ml(px(-8.0)).children(tabs)),
+                div().flex().flex_1().min_w_0().items_center().pl_4().child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap_0p5()
+                        .ml(px(-8.0))
+                        .children(tabs),
+                ),
             )
             .child(
                 div()
@@ -233,7 +239,9 @@ impl BenCodeApp {
                                 "New habit".to_string()
                             })
                             .disabled(full)
-                            .on_click(cx.listener(|this, _, window, cx| this.open_new_habit(window, cx)))
+                            .on_click(
+                                cx.listener(|this, _, window, cx| this.open_new_habit(window, cx)),
+                            )
                     }))
                     .child(
                         self.render_tab_button(
@@ -304,9 +312,7 @@ impl BenCodeApp {
                 div()
                     .relative()
                     .flex_none()
-                    .child(
-                        tab_icon(tab, ink).group_hover_color(group.clone(), fg.ink(Ink::Strong)),
-                    )
+                    .child(tab_icon(tab, ink).group_hover_color(group.clone(), fg.ink(Ink::Strong)))
                     .when(dot, |el| {
                         el.child(
                             div()
@@ -345,7 +351,10 @@ impl BenCodeApp {
     }
 
     /// MonoCode `monoSpawnedSessions` over the Mono's chat.
-    pub(super) fn mono_launches(&self, mono: &Mono) -> Vec<crate::app::mono_sessions::SpawnedSession> {
+    pub(super) fn mono_launches(
+        &self,
+        mono: &Mono,
+    ) -> Vec<crate::app::mono_sessions::SpawnedSession> {
         mono.session_id
             .as_deref()
             .and_then(|id| self.sessions.iter().find(|s| s.id == id))

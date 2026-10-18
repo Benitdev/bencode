@@ -35,7 +35,11 @@ pub fn artifact_icon(kind: ArtifactKind) -> Icon {
 /// MonoCode `ArtifactCard`: one line under the reply, its icon and its
 /// title (`min-h-[38px] rounded-xl border border-content/10 py-2 pr-3.5
 /// pl-3`, `hover:border-content/20 hover:bg-content/5`).
-pub fn artifact_card(id: impl Into<SharedString>, card: &ArtifactCard, cx: &App) -> Stateful<gpui::Div> {
+pub fn artifact_card(
+    id: impl Into<SharedString>,
+    card: &ArtifactCard,
+    cx: &App,
+) -> Stateful<gpui::Div> {
     let fg = cx.theme().colors.fg;
     div()
         .id(gpui::ElementId::Name(id.into()))
@@ -124,8 +128,15 @@ pub fn theme_css(cx: &App) -> String {
         .enumerate()
         .map(|(ix, hex)| (format!("--chart-{}", ix + 2), css(gpui::rgb(*hex).into())))
         .collect();
-    vars.extend(charts.iter().map(|(name, value)| (name.as_str(), value.clone())));
-    let sans = format!("\"{}\",-apple-system,system-ui,sans-serif", theme.font_family);
+    vars.extend(
+        charts
+            .iter()
+            .map(|(name, value)| (name.as_str(), value.clone())),
+    );
+    let sans = format!(
+        "\"{}\",-apple-system,system-ui,sans-serif",
+        theme.font_family
+    );
     let mono = format!("\"{}\",ui-monospace,Menlo,monospace", theme.mono_family);
     let mut rule = format!(
         ":root{{color-scheme:{};",
@@ -150,7 +161,14 @@ pub fn theme_key(cx: &App) -> u64 {
     let diff = crate::ui::appearance::diff_colors(cx);
     let mut hasher = std::hash::DefaultHasher::new();
     theme.is_dark().hash(&mut hasher);
-    for color in [colors.bg, colors.fg, colors.accent, colors.link, diff.add, diff.del] {
+    for color in [
+        colors.bg,
+        colors.fg,
+        colors.accent,
+        colors.link,
+        diff.add,
+        diff.del,
+    ] {
         format!("{color:?}").hash(&mut hasher);
     }
     theme.font_family.hash(&mut hasher);
@@ -184,14 +202,22 @@ impl BenCodeApp {
             .children(cards.into_iter().map(|card| {
                 let id = card.id.clone();
                 artifact_card(format!("artifact-card-{id}"), &card, cx)
-                    .tooltip(Tooltip::text(format!("Open {}", card.kind.label().to_lowercase())))
+                    .tooltip(Tooltip::text(format!(
+                        "Open {}",
+                        card.kind.label().to_lowercase()
+                    )))
                     .on_click(cx.listener(move |this, _, _, cx| this.open_artifact(&id, cx)))
             }))
             .children(launches.into_iter().map(|launch| {
                 let id = launch.session_id.clone();
                 let state = self.launched_state(&id);
-                crate::ui::launched_session::launched_card(format!("launched-{id}"), &launch, state, cx)
-                    .on_click(cx.listener(move |this, _, _, cx| this.open_launched_session(&id, cx)))
+                crate::ui::launched_session::launched_card(
+                    format!("launched-{id}"),
+                    &launch,
+                    state,
+                    cx,
+                )
+                .on_click(cx.listener(move |this, _, _, cx| this.open_launched_session(&id, cx)))
             }))
             .into_any_element()
     }
@@ -245,7 +271,11 @@ impl BenCodeApp {
                 .child(
                     IconButton::new(
                         "artifact-copy",
-                        if copied { IconName::Check } else { IconName::Copy },
+                        if copied {
+                            IconName::Check
+                        } else {
+                            IconName::Copy
+                        },
                     )
                     .size(ControlSize::Sm)
                     .variant(ButtonVariant::Ghost)

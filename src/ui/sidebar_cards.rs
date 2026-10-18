@@ -28,7 +28,6 @@ const CARD_MAX_HEIGHT: f32 = 160.0;
 /// MonoCode's `text-[13px] leading-snug` card title.
 const TITLE_LINE_HEIGHT: f32 = 13.0 * 1.375;
 
-
 impl BenCodeApp {
     /// MonoCode's card status: approval, working, done, draft, else age.
     fn session_status(

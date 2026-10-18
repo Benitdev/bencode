@@ -695,8 +695,16 @@ pub fn memory_context(memory: &str, topics: &[String], topics_dir: Option<&str>)
 pub fn habit_posts_context(blocks: &[crate::db::Block]) -> String {
     let mut posts = Vec::new();
     for block in blocks.iter().rev() {
-        let internal = block.extra.get("internal").and_then(serde_json::Value::as_bool) == Some(true);
-        let draft = block.extra.get("draft").and_then(serde_json::Value::as_bool) == Some(true);
+        let internal = block
+            .extra
+            .get("internal")
+            .and_then(serde_json::Value::as_bool)
+            == Some(true);
+        let draft = block
+            .extra
+            .get("draft")
+            .and_then(serde_json::Value::as_bool)
+            == Some(true);
         if block.role == "user" && !internal && !draft {
             break;
         }
@@ -727,12 +735,20 @@ pub fn habit_posts_context(blocks: &[crate::db::Block]) -> String {
 
 /// MonoCode `unreadBadge`.
 pub fn unread_badge(count: usize) -> String {
-    if count > 99 { "99+".to_string() } else { count.to_string() }
+    if count > 99 {
+        "99+".to_string()
+    } else {
+        count.to_string()
+    }
 }
 
 /// MonoCode `unreadLabel`.
 pub fn unread_label(count: usize) -> String {
-    if count == 1 { "1 new reply".to_string() } else { format!("{count} new replies") }
+    if count == 1 {
+        "1 new reply".to_string()
+    } else {
+        format!("{count} new replies")
+    }
 }
 
 /// MonoCode `monoContext`: the blocks this turn adds, as `plan` says.
@@ -817,7 +833,10 @@ mod tests {
         assert_eq!(next_look(&roster).1, 9);
         assert_eq!(MONO_COLOR_LABELS[8], "Indigo");
         assert!(mono_palette_color(9).is_some());
-        assert_eq!(mono_palette_color(1), crate::app::session_folders::palette_color(1));
+        assert_eq!(
+            mono_palette_color(1),
+            crate::app::session_folders::palette_color(1)
+        );
         assert_eq!(mono_palette_color(0), None);
         assert_eq!(mono_palette_color(10), None);
     }
@@ -901,8 +920,13 @@ mod tests {
              /data/monos/m/memory: releases, team\n</memory>"
         );
         let long: String = (0..205).map(|n| format!("- {n}\n")).collect();
-        assert!(memory_context(&long, &[], None).contains("\n[5 more lines in MEMORY.md did not load;"));
-        assert!(memory_context("x", &["team".into()], None).contains("read on demand with memory.read: team"));
+        assert!(
+            memory_context(&long, &[], None).contains("\n[5 more lines in MEMORY.md did not load;")
+        );
+        assert!(
+            memory_context("x", &["team".into()], None)
+                .contains("read on demand with memory.read: team")
+        );
         let plan = ContextPlan {
             soul: false,
             memory: true,
@@ -942,11 +966,19 @@ mod tests {
         assert!(rules < context.find("<soul>").unwrap());
         assert!(context.contains("`/Apps/bencode app --help`"));
         assert!(context.ends_with("</bencode_app>"));
-        for rules in ["<habits_rules>", "<session_completion_rules>", "app memory.add", "app soul.read"] {
+        for rules in [
+            "<habits_rules>",
+            "<session_completion_rules>",
+            "app memory.add",
+            "app soul.read",
+        ] {
             assert!(context.contains(rules), "{rules}");
         }
         let without = soul_context("Ada", &[], "Be brief.", None);
-        assert!(without.contains("never change them on your own") && !without.contains("<habits_rules>"));
+        assert!(
+            without.contains("never change them on your own")
+                && !without.contains("<habits_rules>")
+        );
         assert!(context.contains("\"kind\":\"html\""));
     }
 
@@ -1005,8 +1037,14 @@ mod tests {
         let reply = Block::new("a", "assistant", "Sure");
         let thought = Block::new("r", "reasoning", "hmm");
         assert_eq!(working_activity(&[user.clone()]), "Thinking");
-        assert_eq!(working_activity(&[user.clone(), tool.clone(), thought]), "Read src/main.rs");
-        assert_eq!(working_activity(&[user.clone(), tool.clone(), reply]), "Writing a reply");
+        assert_eq!(
+            working_activity(&[user.clone(), tool.clone(), thought]),
+            "Read src/main.rs"
+        );
+        assert_eq!(
+            working_activity(&[user.clone(), tool.clone(), reply]),
+            "Writing a reply"
+        );
         // A call from an earlier turn is not what it is on now.
         assert_eq!(working_activity(&[tool, user]), "Thinking");
     }

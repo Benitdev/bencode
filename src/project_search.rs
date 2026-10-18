@@ -9,7 +9,11 @@ pub use bencode_core::search::{SearchMatch, SearchOptions, SearchResult};
 
 /// Searches `root`; a set `cancel` ends it early with no matches (on a
 /// machine, the answer is dropped once it comes).
-pub fn search(root: &Path, options: &SearchOptions, cancel: &AtomicBool) -> Result<SearchResult, String> {
+pub fn search(
+    root: &Path,
+    options: &SearchOptions,
+    cancel: &AtomicBool,
+) -> Result<SearchResult, String> {
     let Some(route) = crate::remote::route(root) else {
         return bencode_core::search::search(root, options, cancel);
     };

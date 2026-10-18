@@ -16,8 +16,8 @@ use crate::app::BenCodeApp;
 use crate::app::project_search::SearchToggle;
 use crate::project_search::SearchMatch;
 use crate::ui::scale::px;
-use crate::ui::virtual_rows;
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
+use crate::ui::virtual_rows;
 
 /// A file's two lines: its name, then its folder path.
 const FILE_ROW: f32 = 44.0;

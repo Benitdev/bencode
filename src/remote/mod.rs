@@ -81,7 +81,10 @@ pub fn sync_machines(machines: &[Machine]) {
         match registry.get(&machine.id) {
             Some(conn) => conn.set_machine(machine.clone()),
             None => {
-                registry.insert(machine.id.clone(), Connection::new(machine.clone(), on_change()));
+                registry.insert(
+                    machine.id.clone(),
+                    Connection::new(machine.clone(), on_change()),
+                );
             }
         }
     }
@@ -120,7 +123,10 @@ pub struct Route {
 }
 
 impl Route {
-    pub fn call<T: serde::de::DeserializeOwned>(&self, request: protocol::Request) -> Result<T, String> {
+    pub fn call<T: serde::de::DeserializeOwned>(
+        &self,
+        request: protocol::Request,
+    ) -> Result<T, String> {
         self.conn.call(request, connection::DEFAULT_TIMEOUT)
     }
 
@@ -135,9 +141,8 @@ impl Route {
     /// `path` on this route's machine as a host path; a local path or one
     /// on another machine is refused.
     pub fn host_path_of(&self, path: &str) -> Result<String, String> {
-        bencode_core::remote::path::host_path_on(path, &self.machine).ok_or_else(|| {
-            format!("{path} is not on {}.", self.conn.machine().name)
-        })
+        bencode_core::remote::path::host_path_on(path, &self.machine)
+            .ok_or_else(|| format!("{path} is not on {}.", self.conn.machine().name))
     }
 }
 

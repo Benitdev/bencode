@@ -146,7 +146,9 @@ fn topics(dir: &Path) -> Vec<String> {
 pub fn load(dir: &Path) -> Result<MonoFiles> {
     std::fs::create_dir_all(dir.join(MEMORY_DIR))
         .with_context(|| format!("creating {}", dir.display()))?;
-    let _lock = FILES_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _lock = FILES_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let memory_path = dir.join(MEMORY_FILE);
     let memory = match read_optional(&memory_path)? {
         Some(memory) => memory,
@@ -203,7 +205,9 @@ pub fn save(
             .with_context(|| format!("creating {}", parent.display()))
             .map_err(SaveError::Failed)?;
     }
-    let _lock = FILES_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _lock = FILES_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     if let Some(expected) = expected {
         let current = read_optional(&path).map_err(SaveError::Failed)?;
         if content_hash(current.as_deref().unwrap_or("")) != expected {
@@ -248,10 +252,8 @@ mod tests {
     use super::*;
 
     fn temp_dir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "bencode-mono-files-{name}-{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("bencode-mono-files-{name}-{}", std::process::id()));
         std::fs::remove_dir_all(&dir).ok();
         dir
     }
@@ -308,7 +310,12 @@ mod tests {
         save(&dir, "memory/releases.md", "# Releases", None).unwrap();
         save(&dir, "memory/archive.md", "- old", None).unwrap();
         assert_eq!(load(&dir).unwrap().topics, ["releases"]);
-        for bad in ["memory/../SOUL.md", "../x.md", "memory/.hidden.md", "notes.txt"] {
+        for bad in [
+            "memory/../SOUL.md",
+            "../x.md",
+            "memory/.hidden.md",
+            "notes.txt",
+        ] {
             assert!(read(&dir, bad).is_err(), "{bad}");
         }
         std::fs::remove_dir_all(&dir).ok();

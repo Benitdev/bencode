@@ -150,7 +150,12 @@ mod tests {
 
     #[test]
     fn ssh_targets_cannot_inject_options_or_shell_commands() {
-        for target in ["home", "me@mac-mini.local", "user@192.168.1.4", "user@[::1]"] {
+        for target in [
+            "home",
+            "me@mac-mini.local",
+            "user@192.168.1.4",
+            "user@[::1]",
+        ] {
             assert!(validate_target(target, None).is_ok(), "{target}");
         }
         for target in [
@@ -180,7 +185,10 @@ mod tests {
         };
         let (program, args) = terminal_command(&machine, "/home/me/$it");
         assert_eq!(program, "ssh");
-        assert_eq!(args[..5], ["-t", "-o", "ServerAliveInterval=15", "-p", "2222"]);
+        assert_eq!(
+            args[..5],
+            ["-t", "-o", "ServerAliveInterval=15", "-p", "2222"]
+        );
         assert_eq!(args[5..7], ["--", "me@mini"]);
         assert_eq!(
             args[7],

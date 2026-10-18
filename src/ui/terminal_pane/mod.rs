@@ -843,7 +843,9 @@ impl BenCodeApp {
                     .cursor_col_resize(),
             })
             .when(dragging, |el| el.bg(fg.fill(Fill::Bold)))
-            .when(!dragging, |el| el.hover(move |s| s.bg(fg.fill(Fill::Strong))))
+            .when(!dragging, |el| {
+                el.hover(move |s| s.bg(fg.fill(Fill::Strong)))
+            })
             .on_mouse_down(
                 gpui::MouseButton::Left,
                 cx.listener(|this, event: &gpui::MouseDownEvent, _, cx| {

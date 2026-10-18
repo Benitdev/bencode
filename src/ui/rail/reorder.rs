@@ -162,7 +162,9 @@ impl BenCodeApp {
             .w(px(6.0))
             .cursor_col_resize()
             .when(dragging, |el| el.bg(fg.fill(Fill::Bold)))
-            .when(!dragging, |el| el.hover(move |s| s.bg(fg.fill(Fill::Strong))))
+            .when(!dragging, |el| {
+                el.hover(move |s| s.bg(fg.fill(Fill::Strong)))
+            })
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|this, event: &MouseDownEvent, _, cx| {

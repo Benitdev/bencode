@@ -337,7 +337,11 @@ impl EmojiPicker {
                 .rounded(px(12.0))
                 .border_1()
                 .border_color(fg.fill(Fill::Strong))
-                .bg(if dark { bg.blend(fg.fill(Fill::Hover)) } else { bg })
+                .bg(if dark {
+                    bg.blend(fg.fill(Fill::Hover))
+                } else {
+                    bg
+                })
                 .shadow_lg()
                 .p_2()
                 .on_mouse_down_out(cx.listener(move |view, _, _, cx| {

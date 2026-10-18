@@ -15,8 +15,8 @@ impl Dirs {
         let root = match std::env::var_os("BENCODE_HOST_DIR") {
             Some(dir) => PathBuf::from(dir),
             None => {
-                let home = std::env::var_os("HOME")
-                    .ok_or_else(|| io::Error::other("HOME is not set"))?;
+                let home =
+                    std::env::var_os("HOME").ok_or_else(|| io::Error::other("HOME is not set"))?;
                 PathBuf::from(home).join(".bencode-host")
             }
         };

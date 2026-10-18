@@ -877,7 +877,10 @@ impl Draw<'_> {
             Block::Table { aligns, head, rows } => {
                 self.table(aligns, head, rows, joint, window, cx)
             }
-            Block::Rule => div().h(px(1.0)).bg(look.fg.fill(Fill::Strong)).into_any_element(),
+            Block::Rule => div()
+                .h(px(1.0))
+                .bg(look.fg.fill(Fill::Strong))
+                .into_any_element(),
             Block::Image { src, alt } => {
                 let file = crate::storage::data_dir()
                     .and_then(|dir| crate::app::note_images::note_image_file(&dir, src));

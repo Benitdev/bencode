@@ -281,7 +281,9 @@ mod tests {
             attachments: Vec::new(),
             plan: false,
             compact: false,
-            settings: [("variant".to_string(), "low".to_string())].into_iter().collect(),
+            settings: [("variant".to_string(), "low".to_string())]
+                .into_iter()
+                .collect(),
             account: None,
             browser_mcp: None,
             app: None,
@@ -289,8 +291,17 @@ mod tests {
         assert_eq!(
             build_args_v2(&req),
             [
-                "run", "--standalone", "--format", "json", "--model",
-                "opencode/glm-5.3-flash-free#low", "--session", "ses_1", "--auto", "--", "go",
+                "run",
+                "--standalone",
+                "--format",
+                "json",
+                "--model",
+                "opencode/glm-5.3-flash-free#low",
+                "--session",
+                "ses_1",
+                "--auto",
+                "--",
+                "go",
             ]
         );
         req.permission = PermissionPolicy::Ask;

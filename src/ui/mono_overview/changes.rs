@@ -31,7 +31,9 @@ impl BenCodeApp {
         let Some(root) = self.mono_changes_root() else {
             return empty_state(
                 OverviewTab::Changes,
-                format!("Give {name} a project to work on, and its changes show up here to commit."),
+                format!(
+                    "Give {name} a project to work on, and its changes show up here to commit."
+                ),
                 fg,
             );
         };
@@ -90,7 +92,11 @@ impl BenCodeApp {
                             .child(self.rail_project_label(path)),
                     )
                     .when(count > 0, |el| {
-                        el.child(div().text_color(fg.ink(Ink::Muted)).child(count.to_string()))
+                        el.child(
+                            div()
+                                .text_color(fg.ink(Ink::Muted))
+                                .child(count.to_string()),
+                        )
                     })
             }));
         let project = changes.projects.get(&root);
@@ -112,7 +118,12 @@ impl BenCodeApp {
             .error
             .clone()
             .map(|err| (err, colors.danger))
-            .or_else(|| changes.status.clone().map(|text| (text, fg.ink(Ink::Secondary))))
+            .or_else(|| {
+                changes
+                    .status
+                    .clone()
+                    .map(|text| (text, fg.ink(Ink::Secondary)))
+            })
             .map(|(text, color)| {
                 div()
                     .flex_none()
@@ -154,17 +165,12 @@ impl BenCodeApp {
             .branch
             .clone()
             .unwrap_or_else(|| project.status.branch.clone());
-        let mut actions = div()
-            .flex()
-            .items_center()
-            .gap_2()
-            .mt_2()
-            .child(
-                Button::new("mono-commit", "Commit")
-                    .size(ControlSize::Sm)
-                    .disabled(!can_commit)
-                    .on_click(cx.listener(|this, _, _, cx| this.mono_commit(false, cx))),
-            );
+        let mut actions = div().flex().items_center().gap_2().mt_2().child(
+            Button::new("mono-commit", "Commit")
+                .size(ControlSize::Sm)
+                .disabled(!can_commit)
+                .on_click(cx.listener(|this, _, _, cx| this.mono_commit(false, cx))),
+        );
         if can_push(sync) {
             actions = actions.child(
                 Button::new("mono-commit-push", "Commit & Push")
@@ -209,7 +215,11 @@ impl BenCodeApp {
                     .mb_2()
                     .text_size(Text::Sm.px())
                     .text_color(fg.ink(Ink::Muted))
-                    .child(Icon::new(IconName::GitBranch).size(IconSize::Xs).color(fg.ink(Ink::Muted)))
+                    .child(
+                        Icon::new(IconName::GitBranch)
+                            .size(IconSize::Xs)
+                            .color(fg.ink(Ink::Muted)),
+                    )
                     .child(div().min_w_0().truncate().child(branch)),
             )
             .child(
@@ -256,7 +266,10 @@ impl BenCodeApp {
             .flex_1()
             .min_h_0()
             .child(commit_box)
-            .child(crate::ui::scrollbar::Scrolled::new("mono-changes-scrollbar", scroll))
+            .child(crate::ui::scrollbar::Scrolled::new(
+                "mono-changes-scrollbar",
+                scroll,
+            ))
             .into_any_element()
     }
 
@@ -274,7 +287,11 @@ impl BenCodeApp {
         let diff = crate::ui::appearance::diff_colors(cx);
         let busy = self.monos.changes.busy.is_some();
         let section = SharedString::from(format!("mono-changes-{title}"));
-        let all_icon = if staged { IconName::Minus } else { IconName::Plus };
+        let all_icon = if staged {
+            IconName::Minus
+        } else {
+            IconName::Plus
+        };
         let header = div()
             .id(section.clone())
             .group(section.clone())
@@ -285,7 +302,11 @@ impl BenCodeApp {
             .text_size(Text::Sm.px())
             .font_weight(FontWeight::MEDIUM)
             .text_color(fg.ink(Ink::Secondary))
-            .child(div().flex_1().child(format!("{} {}", title.to_uppercase(), files.len())))
+            .child(
+                div()
+                    .flex_1()
+                    .child(format!("{} {}", title.to_uppercase(), files.len())),
+            )
             .child(
                 div()
                     .id(SharedString::from(format!("{section}-all")))
@@ -303,11 +324,15 @@ impl BenCodeApp {
                         "Stage All Changes"
                     }))
                     .when(!busy, |el| {
-                        el.on_click(cx.listener(move |this, _, _, cx| {
-                            this.mono_stage_all(!staged, cx)
-                        }))
+                        el.on_click(
+                            cx.listener(move |this, _, _, cx| this.mono_stage_all(!staged, cx)),
+                        )
                     })
-                    .child(Icon::new(all_icon).size(IconSize::Xs).color(fg.ink(Ink::Secondary))),
+                    .child(
+                        Icon::new(all_icon)
+                            .size(IconSize::Xs)
+                            .color(fg.ink(Ink::Secondary)),
+                    ),
             );
         div()
             .child(header)
@@ -374,7 +399,11 @@ impl BenCodeApp {
                                     this.mono_stage_file(stage_path.clone(), !staged, cx)
                                 }))
                             })
-                            .child(Icon::new(all_icon).size(IconSize::Xs).color(fg.ink(Ink::Secondary))),
+                            .child(
+                                Icon::new(all_icon)
+                                    .size(IconSize::Xs)
+                                    .color(fg.ink(Ink::Secondary)),
+                            ),
                     )
                     .child(
                         div()

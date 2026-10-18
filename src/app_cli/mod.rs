@@ -61,11 +61,7 @@ pub fn random_hex(bytes: usize) -> String {
     if let Err(err) = read {
         // Never a predictable credential: the time and pid at least differ.
         log::error!("no random source ({err}); falling back to the clock");
-        let seed = format!(
-            "{:?}{}",
-            std::time::SystemTime::now(),
-            std::process::id()
-        );
+        let seed = format!("{:?}{}", std::time::SystemTime::now(), std::process::id());
         use sha2::Digest as _;
         let digest = sha2::Sha256::digest(seed.as_bytes());
         for (ix, byte) in buf.iter_mut().enumerate() {

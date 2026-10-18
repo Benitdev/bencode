@@ -13,8 +13,8 @@ use crate::app::{BenCodeApp, SidebarMode};
 use crate::ui::app_callback::app_callback;
 use crate::ui::diff_counts::diff_counts;
 use crate::ui::scale::px;
-use crate::ui::window_drag::claim_press;
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
+use crate::ui::window_drag::claim_press;
 
 /// MonoCode `border-stroke`: content at 7%.
 pub const STROKE_OPACITY: f32 = 0.07;
@@ -360,7 +360,9 @@ impl BenCodeApp {
             .w(px(6.0))
             .cursor_col_resize()
             .when(dragging, |el| el.bg(fg.fill(Fill::Bold)))
-            .when(!dragging, |el| el.hover(move |s| s.bg(fg.fill(Fill::Strong))))
+            .when(!dragging, |el| {
+                el.hover(move |s| s.bg(fg.fill(Fill::Strong)))
+            })
             .on_mouse_down(
                 gpui::MouseButton::Left,
                 cx.listener(|this, event: &gpui::MouseDownEvent, _, cx| {

@@ -59,7 +59,10 @@ fn feed(kind: HarnessKind) -> Option<Feed> {
 
 /// OpenCode 2 is published as another package; `opencode-ai` stays on 1.x.
 fn release_line(feed: Feed, installed: &str) -> Feed {
-    let major = installed.split('.').next().and_then(|m| m.parse::<u64>().ok());
+    let major = installed
+        .split('.')
+        .next()
+        .and_then(|m| m.parse::<u64>().ok());
     match feed {
         Feed::Npm("opencode-ai") if major.is_some_and(|m| m >= 2) => Feed::Npm("@opencode/cli"),
         feed => feed,
@@ -136,7 +139,10 @@ pub fn run_update(kind: HarnessKind, listed: &Path, latest: &str) -> Result<Stri
         Some(_) => installed_version(program),
         None => {
             let version = installed.context("updater stopped without a version")?;
-            log::info!("{} updater still running at {version}; stopped it", kind.label());
+            log::info!(
+                "{} updater still running at {version}; stopped it",
+                kind.label()
+            );
             Ok(version)
         }
     }
@@ -164,11 +170,8 @@ fn latest_version(feed: Feed) -> Result<String> {
         }
         Feed::Grok => {
             let channel = grok_channel(&grok_config());
-            let response = crate::http::get(
-                &format!("{GROK_FEED_URL}/{channel}"),
-                &[],
-                HTTP_TIMEOUT,
-            )?;
+            let response =
+                crate::http::get(&format!("{GROK_FEED_URL}/{channel}"), &[], HTTP_TIMEOUT)?;
             if response.status != 200 {
                 bail!("x.ai answered {}", response.status);
             }
@@ -412,10 +415,15 @@ mod tests {
     fn a_run_stops_when_told_to() {
         let started = Instant::now();
         let mut asked = 0;
-        let finished = run_while(Path::new("/bin/sh"), &["-c", "sleep 30"], UPDATE_TIMEOUT, || {
-            asked += 1;
-            asked < 3
-        })
+        let finished = run_while(
+            Path::new("/bin/sh"),
+            &["-c", "sleep 30"],
+            UPDATE_TIMEOUT,
+            || {
+                asked += 1;
+                asked < 3
+            },
+        )
         .unwrap();
         assert!(finished.is_none());
         assert!(started.elapsed() < Duration::from_secs(10));

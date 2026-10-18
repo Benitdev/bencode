@@ -526,19 +526,22 @@ impl BenCodeApp {
                             .line_height(relative(1.25))
                             .child(label),
                     )
-                    .when_some(remote.as_ref().and_then(|(m, ..)| m.clone()), |el, machine| {
-                        // `min-w-0 flex-1 truncate text-[11px] leading-tight text-content/45`
-                        el.child(
-                            div()
-                                .min_w_0()
-                                .flex_1()
-                                .truncate()
-                                .text_size(Text::Sm.px())
-                                .line_height(relative(1.25))
-                                .text_color(fg.ink(Ink::Muted))
-                                .child(machine),
-                        )
-                    })
+                    .when_some(
+                        remote.as_ref().and_then(|(m, ..)| m.clone()),
+                        |el, machine| {
+                            // `min-w-0 flex-1 truncate text-[11px] leading-tight text-content/45`
+                            el.child(
+                                div()
+                                    .min_w_0()
+                                    .flex_1()
+                                    .truncate()
+                                    .text_size(Text::Sm.px())
+                                    .line_height(relative(1.25))
+                                    .text_color(fg.ink(Ink::Muted))
+                                    .child(machine),
+                            )
+                        },
+                    )
                     .when(has_changes, |el| {
                         // `project-card-stats shrink-0 group-hover:hidden`
                         el.child(
@@ -552,35 +555,42 @@ impl BenCodeApp {
                                 )),
                         )
                     })
-                    .when_some(remote.as_ref().map(|(_, online, _)| *online), |el, online| {
-                        // `relative grid size-4 text-content/45`, `Internet size-3`
-                        // and a `size-1.5` dot: emerald while connected.
-                        el.child(
-                            div()
-                                .relative()
-                                .flex()
-                                .flex_none()
-                                .size_4()
-                                .items_center()
-                                .justify_center()
-                                .child(Icon::new(IconName::Globe).size(IconSize::Xs).color(fg.ink(Ink::Muted)))
-                                .child(
-                                    div()
-                                        .absolute()
-                                        .right_0()
-                                        .bottom_0()
-                                        .size(px(6.0))
-                                        .rounded_full()
-                                        .border_1()
-                                        .border_color(cx.theme().colors.bg)
-                                        .bg(if online == Some(true) {
-                                            rgb(EMERALD_400).into()
-                                        } else {
-                                            fg.ink(Ink::Faint)
-                                        }),
-                                ),
-                        )
-                    })
+                    .when_some(
+                        remote.as_ref().map(|(_, online, _)| *online),
+                        |el, online| {
+                            // `relative grid size-4 text-content/45`, `Internet size-3`
+                            // and a `size-1.5` dot: emerald while connected.
+                            el.child(
+                                div()
+                                    .relative()
+                                    .flex()
+                                    .flex_none()
+                                    .size_4()
+                                    .items_center()
+                                    .justify_center()
+                                    .child(
+                                        Icon::new(IconName::Globe)
+                                            .size(IconSize::Xs)
+                                            .color(fg.ink(Ink::Muted)),
+                                    )
+                                    .child(
+                                        div()
+                                            .absolute()
+                                            .right_0()
+                                            .bottom_0()
+                                            .size(px(6.0))
+                                            .rounded_full()
+                                            .border_1()
+                                            .border_color(cx.theme().colors.bg)
+                                            .bg(if online == Some(true) {
+                                                rgb(EMERALD_400).into()
+                                            } else {
+                                                fg.ink(Ink::Faint)
+                                            }),
+                                    ),
+                            )
+                        },
+                    )
                     .when_some(card.mute, |el, status| {
                         // `grid size-4 shrink-0 place-items-center text-amber-400`, `BellOff size-3.5`
                         el.child(

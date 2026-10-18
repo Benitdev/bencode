@@ -65,7 +65,10 @@ fn find_project(projects: &Path, file: &str) -> Option<PathBuf> {
 fn copy_dir(from: &Path, to: &Path) -> Result<(), String> {
     let failed = |what: &Path, err: std::io::Error| format!("{}: {err}", what.display());
     std::fs::create_dir_all(to).map_err(|err| failed(to, err))?;
-    for entry in std::fs::read_dir(from).map_err(|err| failed(from, err))?.flatten() {
+    for entry in std::fs::read_dir(from)
+        .map_err(|err| failed(from, err))?
+        .flatten()
+    {
         let (source, target) = (entry.path(), to.join(entry.file_name()));
         let kind = entry.file_type().map_err(|err| failed(&source, err))?;
         if kind.is_dir() {

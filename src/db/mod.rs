@@ -783,11 +783,10 @@ impl AppDb {
     }
 
     pub fn delete_note(&self, id: &str) -> Result<()> {
-        self.conn
-            .execute(
-                "DELETE FROM notes WHERE id = ?1 AND content_kind = 'note'",
-                params![id],
-            )?;
+        self.conn.execute(
+            "DELETE FROM notes WHERE id = ?1 AND content_kind = 'note'",
+            params![id],
+        )?;
         Ok(())
     }
 

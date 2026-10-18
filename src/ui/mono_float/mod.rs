@@ -62,9 +62,9 @@ mod items;
 mod ticker;
 mod transcript;
 
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 use items::{Delivery, FloatItem, FloatRow, Live, PAGE_TURNS, float_rows, rows_key, window_start};
 use ticker::WorkTicker;
-use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// MonoCode `mono_chat.rs`: a 384pt conversation plus the 56pt rail.
 const WIDTH: f32 = 440.0;
@@ -787,7 +787,8 @@ impl MonoFloat {
     /// A launch card: its session in BenCode's window.
     fn reveal_launch(&mut self, session: &str, cx: &mut Context<Self>) {
         self.activate_main(cx);
-        self.app.update(cx, |app, cx| app.open_mono_launch(session, cx));
+        self.app
+            .update(cx, |app, cx| app.open_mono_launch(session, cx));
     }
 
     fn activate_main(&self, cx: &mut App) {
@@ -1318,7 +1319,8 @@ fn header_button(
         .tooltip(Tooltip::text(tip))
         .map(|el| {
             if enabled {
-                el.cursor_pointer().hover(move |s| s.bg(fg.fill(Fill::Selected)))
+                el.cursor_pointer()
+                    .hover(move |s| s.bg(fg.fill(Fill::Selected)))
             } else {
                 el.opacity(0.3)
             }

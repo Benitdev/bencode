@@ -287,9 +287,9 @@ fn parse_args(args: &[String]) -> Result<Parsed, String> {
                 "Unexpected argument: {flag}. Pass the JSON object as --json '<JSON>'."
             ));
         }
-        let value = args
-            .get(index + 1)
-            .ok_or_else(|| format!("Missing value for {flag}. Run app --help for the argument list."))?;
+        let value = args.get(index + 1).ok_or_else(|| {
+            format!("Missing value for {flag}. Run app --help for the argument list.")
+        })?;
         match flag.as_str() {
             "--request-id" => request_id = value.clone(),
             "--json" | "--input" => {

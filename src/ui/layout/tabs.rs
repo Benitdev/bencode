@@ -245,12 +245,7 @@ impl TabSet {
     /// MonoCode `applyPlaceTabOnPane`: tab `source` joins the tab holding
     /// `target`, beside it on `edge`. The merged tab becomes active, focused
     /// on the source's pane.
-    pub fn place_tab_on_pane(
-        &mut self,
-        source: &str,
-        target: &str,
-        edge: PaneEdge,
-    ) -> bool {
+    pub fn place_tab_on_pane(&mut self, source: &str, target: &str, edge: PaneEdge) -> bool {
         let Some(from) = self.index_of(source) else {
             return false;
         };

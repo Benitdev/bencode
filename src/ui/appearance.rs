@@ -7,9 +7,9 @@
 //! has no room for (the user accent, the diff colours) lives in the
 //! [`AppearanceTokens`] global for views to read.
 
+use crate::ui::tokens::{Ink, Tone as _};
 use gpui::{App, Global, Hsla, Rgba, rgb};
 use serde::{Deserialize, Serialize};
-use crate::ui::tokens::{Ink, Tone as _};
 
 /// MonoCode `THEME_HUE_*`.
 pub const HUE_MIN: f32 = 0.0;

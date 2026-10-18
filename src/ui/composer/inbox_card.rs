@@ -16,8 +16,8 @@ use super::cards::card_frame;
 use crate::app::BenCodeApp;
 use crate::github::{Kind, Label, WorkItem};
 use crate::ui::attachment_chip::OnRemove;
-use crate::work_items::Provider;
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
+use crate::work_items::Provider;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct InboxCard {

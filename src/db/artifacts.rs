@@ -96,9 +96,10 @@ const SELECT: &str = "SELECT id, artifact_kind, title, body, source_session_id, 
 
 fn read_artifact(row: &rusqlite::Row<'_>) -> rusqlite::Result<Artifact> {
     let kind: Option<String> = row.get(1)?;
-    let kind = kind.as_deref().and_then(ArtifactKind::parse).ok_or_else(|| {
-        rusqlite::Error::InvalidParameterName("Unsupported artifact kind".into())
-    })?;
+    let kind = kind
+        .as_deref()
+        .and_then(ArtifactKind::parse)
+        .ok_or_else(|| rusqlite::Error::InvalidParameterName("Unsupported artifact kind".into()))?;
     Ok(Artifact {
         id: row.get(0)?,
         kind,
@@ -275,19 +276,24 @@ mod tests {
             .unwrap();
         db.upsert_artifact(&upsert("chart", ArtifactKind::Html, "<p>hi</p>"))
             .unwrap();
-        assert_eq!(db.get_artifact("chart").unwrap().unwrap().kind, ArtifactKind::Html);
+        assert_eq!(
+            db.get_artifact("chart").unwrap().unwrap().kind,
+            ArtifactKind::Html
+        );
         assert_eq!(db.list_artifacts().unwrap().len(), 2);
         let notes = db.list_notes().unwrap();
         assert_eq!(notes.len(), 1);
         assert!(db.get_note("doc").unwrap().is_none());
         assert!(db.get_artifact("note-1").unwrap().is_none());
         // Never reclassified, either way.
-        assert!(db
-            .upsert_artifact(&upsert("note-1", ArtifactKind::Document, "x"))
-            .is_err());
-        assert!(db
-            .upsert_artifact(&upsert("doc", ArtifactKind::Html, "x"))
-            .is_err());
+        assert!(
+            db.upsert_artifact(&upsert("note-1", ArtifactKind::Document, "x"))
+                .is_err()
+        );
+        assert!(
+            db.upsert_artifact(&upsert("doc", ArtifactKind::Html, "x"))
+                .is_err()
+        );
         let json = serde_json::to_value(db.get_artifact("doc").unwrap().unwrap()).unwrap();
         assert_eq!(json["kind"], "document");
         assert_eq!(json["sourceSessionId"], "mono-1");
@@ -342,7 +348,11 @@ mod tests {
         assert!(db.get_artifact("keep").unwrap().is_some());
         let raw: String = db
             .conn
-            .query_row("SELECT blocks_json FROM sessions WHERE id = 's'", [], |row| row.get(0))
+            .query_row(
+                "SELECT blocks_json FROM sessions WHERE id = 's'",
+                [],
+                |row| row.get(0),
+            )
             .unwrap();
         let saved: serde_json::Value = serde_json::from_str(&raw).unwrap();
         assert_eq!(

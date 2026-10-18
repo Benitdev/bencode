@@ -817,8 +817,10 @@ mod tests {
     /// A run in the background, recorded from Claude Code 2.1: Claude
     /// launches it, says "waiting" and yields; the run's notification wakes
     /// it for a second turn in the same process.
-    const BACKGROUND_AGENT: &str =
-        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/fixtures/claude_background_agent.jsonl"));
+    const BACKGROUND_AGENT: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tests/fixtures/claude_background_agent.jsonl"
+    ));
     const AGENT_CALL: &str = "toolu_01FC4pYrE6VwX8WNYBuZzhe9";
 
     #[test]

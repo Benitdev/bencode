@@ -99,7 +99,9 @@ impl ArtifactPage {
                 if message.get("type").and_then(|v| v.as_str()) == Some("open-link")
                     && let Some(url) = message.get("url").and_then(|v| v.as_str())
                     && crate::browser::is_web_url(url)
-                    && events.send(ArtifactEvent::OpenLink(url.to_string())).is_err()
+                    && events
+                        .send(ArtifactEvent::OpenLink(url.to_string()))
+                        .is_err()
                 {
                     log::debug!("artifact page: link after the app left");
                 }
@@ -250,7 +252,10 @@ mod tests {
 
     #[test]
     fn the_bootstrap_goes_first_in_head_and_never_before_the_doctype() {
-        let page = page_html("<!DOCTYPE html><html><HEAD><title>x</title></HEAD></html>", "");
+        let page = page_html(
+            "<!DOCTYPE html><html><HEAD><title>x</title></HEAD></html>",
+            "",
+        );
         assert!(page.starts_with("<!DOCTYPE html><html><HEAD><style>"));
         let page = page_html("<!doctype html>\n<body><header>x</header></body>", "");
         assert!(page.starts_with("<!doctype html><style>"));

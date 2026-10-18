@@ -257,7 +257,10 @@ fn diff_numstat(cwd: &str, extra: &[&str]) -> NumstatMap {
 
 /// Lines of each untracked text file, as additions: binary, huge or
 /// unreadable files count as 0. On a machine, one request for all of them.
-fn count_untracked_lines<'a>(cwd: &str, files: impl IntoIterator<Item = &'a str>) -> Vec<(String, usize)> {
+fn count_untracked_lines<'a>(
+    cwd: &str,
+    files: impl IntoIterator<Item = &'a str>,
+) -> Vec<(String, usize)> {
     let files: Vec<String> = files.into_iter().map(str::to_string).collect();
     if files.is_empty() {
         return Vec::new();
@@ -278,7 +281,10 @@ fn count_untracked_lines<'a>(cwd: &str, files: impl IntoIterator<Item = &'a str>
         None => files
             .iter()
             .map(|file| {
-                bencode_core::files::count_text_lines(&Path::new(cwd).join(file), MAX_UNTRACKED_COUNT_BYTES)
+                bencode_core::files::count_text_lines(
+                    &Path::new(cwd).join(file),
+                    MAX_UNTRACKED_COUNT_BYTES,
+                )
             })
             .collect(),
     };

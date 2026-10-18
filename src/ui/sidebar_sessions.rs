@@ -24,8 +24,8 @@ use crate::db::SessionRow;
 use crate::ui::icons::ExtraIcon;
 use crate::ui::scale::px;
 use crate::ui::sidebar_folders::SessionGroup;
-use crate::ui::virtual_rows;
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
+use crate::ui::virtual_rows;
 
 /// The list's padding, and the gap between its rows.
 const LIST_PAD: f32 = 6.0;
@@ -232,7 +232,8 @@ impl BenCodeApp {
     pub fn render_session_list(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let colors = cx.theme().colors.clone();
         if matches!(self.current_cwd.trim(), "" | "~") {
-            return quiet_line("No project folder", colors.fg.ink(Ink::Secondary)).into_any_element();
+            return quiet_line("No project folder", colors.fg.ink(Ink::Secondary))
+                .into_any_element();
         }
         let states = self.session_live_states();
         let listed = self.listed_sessions();

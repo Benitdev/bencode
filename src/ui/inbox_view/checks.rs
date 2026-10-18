@@ -564,7 +564,11 @@ impl BenCodeApp {
         let details = match self.inbox.jobs.get(job) {
             None => {
                 return wrap
-                    .child(div().text_color(fg.ink(Ink::Secondary)).child("Loading steps…"))
+                    .child(
+                        div()
+                            .text_color(fg.ink(Ink::Secondary))
+                            .child("Loading steps…"),
+                    )
                     .into_any_element();
             }
             Some(Err(err)) => {

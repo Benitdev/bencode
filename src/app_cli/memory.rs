@@ -82,7 +82,8 @@ fn edit_memory<T>(
 /// user made in between leaves the trim for the next write.
 fn keep_in_budget(dir: &Path, keep: &str, date: &str) -> Result<Vec<String>, String> {
     let (text, hash) = files::read(dir, MEMORY_FILE).map_err(|err| format!("{err:#}"))?;
-    let (fitted, moved) = memory::fit_memory_budget(text.as_deref().unwrap_or(""), Some(keep), date);
+    let (fitted, moved) =
+        memory::fit_memory_budget(text.as_deref().unwrap_or(""), Some(keep), date);
     if moved.is_empty() {
         return Ok(moved);
     }
@@ -144,7 +145,9 @@ pub fn memory(
                 .transpose()?;
             let hits = memory::search_memory(&search_files(dir)?, &query, since.as_deref(), 20)?;
             if hits.is_empty() {
-                Ok(json!({ "hits": [], "note": "Nothing in memory matches. It may never have been saved." }))
+                Ok(
+                    json!({ "hits": [], "note": "Nothing in memory matches. It may never have been saved." }),
+                )
             } else {
                 Ok(json!({ "hits": hits }))
             }
@@ -182,15 +185,16 @@ pub fn memory(
             let fact = required(input.get("fact"), "fact", 30_000)?;
             let entry = memory::memory_entry(&fact, &date, until.as_deref())?;
             edit_memory(dir, &path, |text| {
-                Ok((memory::supersede_memory_entry(text, &find, &entry, &date)?, ()))
+                Ok((
+                    memory::supersede_memory_entry(text, &find, &entry, &date)?,
+                    (),
+                ))
             })?;
             report(json!({ "superseded": find, "added": entry }), Some(&entry))
         }
         "memory.remove" => {
             let find = required(input.get("find"), "find", 2000)?;
-            let removed = edit_memory(dir, &path, |text| {
-                memory::remove_memory_entry(text, &find)
-            })?;
+            let removed = edit_memory(dir, &path, |text| memory::remove_memory_entry(text, &find))?;
             Ok(json!({ "file": path, "removed": removed }))
         }
         _ => Err(format!("Unknown app action: {action}")),
@@ -202,7 +206,10 @@ mod tests {
     use super::*;
 
     fn dir() -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!("bencode-app-memory-{}", crate::app_cli::random_hex(6)));
+        let dir = std::env::temp_dir().join(format!(
+            "bencode-app-memory-{}",
+            crate::app_cli::random_hex(6)
+        ));
         files::load(&dir).unwrap();
         dir
     }
@@ -218,34 +225,103 @@ mod tests {
     #[test]
     fn the_agent_keeps_its_memory_through_the_cli() {
         let dir = dir();
-        let added = memory(&dir, "memory.add", &input(json!({ "fact": "likes tea" })), today()).unwrap();
+        let added = memory(
+            &dir,
+            "memory.add",
+            &input(json!({ "fact": "likes tea" })),
+            today(),
+        )
+        .unwrap();
         assert_eq!(added["added"], "- 2026-10-08 · likes tea");
-        let again = memory(&dir, "memory.add", &input(json!({ "fact": "likes  tea" })), today()).unwrap();
+        let again = memory(
+            &dir,
+            "memory.add",
+            &input(json!({ "fact": "likes  tea" })),
+            today(),
+        )
+        .unwrap();
         assert_eq!(again["alreadyRemembered"], true);
-        memory(&dir, "memory.replace", &input(json!({ "find": "tea", "fact": "likes coffee" })), today()).unwrap();
+        memory(
+            &dir,
+            "memory.replace",
+            &input(json!({ "find": "tea", "fact": "likes coffee" })),
+            today(),
+        )
+        .unwrap();
         let read = memory(&dir, "memory.read", &input(json!({})), today()).unwrap();
         assert_eq!(
             read["text"],
             "- ~~2026-10-08 · likes tea~~ · superseded 2026-10-08\n- 2026-10-08 · likes coffee\n"
         );
-        memory(&dir, "memory.add", &input(json!({ "fact": "tags are vX.Y.Z", "topic": "releases" })), today()).unwrap();
-        let topic = memory(&dir, "memory.read", &input(json!({ "topic": "releases" })), today()).unwrap();
-        assert_eq!(topic["text"], "# releases\n- 2026-10-08 · tags are vX.Y.Z\n");
-        let hits = memory(&dir, "memory.search", &input(json!({ "query": "coffee" })), today()).unwrap();
+        memory(
+            &dir,
+            "memory.add",
+            &input(json!({ "fact": "tags are vX.Y.Z", "topic": "releases" })),
+            today(),
+        )
+        .unwrap();
+        let topic = memory(
+            &dir,
+            "memory.read",
+            &input(json!({ "topic": "releases" })),
+            today(),
+        )
+        .unwrap();
+        assert_eq!(
+            topic["text"],
+            "# releases\n- 2026-10-08 · tags are vX.Y.Z\n"
+        );
+        let hits = memory(
+            &dir,
+            "memory.search",
+            &input(json!({ "query": "coffee" })),
+            today(),
+        )
+        .unwrap();
         assert_eq!(hits["hits"][0]["file"], "MEMORY.md");
-        let removed = memory(&dir, "memory.remove", &input(json!({ "find": "coffee" })), today()).unwrap();
+        let removed = memory(
+            &dir,
+            "memory.remove",
+            &input(json!({ "find": "coffee" })),
+            today(),
+        )
+        .unwrap();
         assert_eq!(removed["removed"], "- 2026-10-08 · likes coffee");
-        assert!(memory(&dir, "memory.read", &input(json!({ "topic": "nope" })), today()).is_err());
-        assert!(memory(&dir, "memory.add", &input(json!({ "fact": "x", "topic": "../soul" })), today()).is_err());
+        assert!(
+            memory(
+                &dir,
+                "memory.read",
+                &input(json!({ "topic": "nope" })),
+                today()
+            )
+            .is_err()
+        );
+        assert!(
+            memory(
+                &dir,
+                "memory.add",
+                &input(json!({ "fact": "x", "topic": "../soul" })),
+                today()
+            )
+            .is_err()
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
     fn a_full_memory_moves_its_oldest_to_the_archive() {
         let dir = dir();
-        let full: String = (0..200).map(|n| format!("- 2026-01-01 · fact {n}\n")).collect();
+        let full: String = (0..200)
+            .map(|n| format!("- 2026-01-01 · fact {n}\n"))
+            .collect();
         files::save(&dir, MEMORY_FILE, &full, None).unwrap();
-        let added = memory(&dir, "memory.add", &input(json!({ "fact": "newest" })), today()).unwrap();
+        let added = memory(
+            &dir,
+            "memory.add",
+            &input(json!({ "fact": "newest" })),
+            today(),
+        )
+        .unwrap();
         assert_eq!(added["movedToArchive"], 1);
         let (archive, _) = files::read(&dir, "memory/archive.md").unwrap();
         assert_eq!(
@@ -260,9 +336,18 @@ mod tests {
         let dir = dir();
         let read = soul(&dir, "soul.read", &input(json!({}))).unwrap();
         let hash = read["hash"].as_str().unwrap().to_string();
-        let saved = soul(&dir, "soul.update", &input(json!({ "text": "Be brief.", "expectedHash": hash }))).unwrap();
+        let saved = soul(
+            &dir,
+            "soul.update",
+            &input(json!({ "text": "Be brief.", "expectedHash": hash })),
+        )
+        .unwrap();
         assert_eq!(saved["updated"], true);
-        let stale = soul(&dir, "soul.update", &input(json!({ "text": "x", "expectedHash": hash })));
+        let stale = soul(
+            &dir,
+            "soul.update",
+            &input(json!({ "text": "x", "expectedHash": hash })),
+        );
         assert!(stale.unwrap_err().starts_with("SOUL.md changed"));
         std::fs::remove_dir_all(&dir).ok();
     }

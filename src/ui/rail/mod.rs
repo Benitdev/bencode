@@ -42,13 +42,13 @@ use crate::app::{BenCodeApp, Surface, same_project_path};
 use crate::ui::mascot::{Mascot, mascot_for};
 use crate::ui::sidebar::TITLEBAR_HEIGHT;
 use crate::ui::sidebar_menus::SidebarMenuKind;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 use crate::ui::window_drag::claim_press;
 use model::{ProjectGroup, RailSections, path_key, rail_sections, sync_rail_order};
 use reorder::RailResize;
 use widgets::{
     RailTrailing, TitleButtonState, rail_action, rail_search, section_button, title_icon_button,
 };
-use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// MonoCode `w-[78px]`: room for the traffic lights.
 const TRAFFIC_LIGHT_SPACE: f32 = 78.0;
@@ -315,7 +315,9 @@ impl BenCodeApp {
             .overflow_y_scroll()
             .pb_2()
             // MonoCode: the Monos section above the projects.
-            .when(self.monos_enabled(), |el| el.child(self.render_rail_monos(cx)))
+            .when(self.monos_enabled(), |el| {
+                el.child(self.render_rail_monos(cx))
+            })
             .when(!pinned.is_empty(), |el| {
                 el.child(self.render_project_section("Pinned", "pinned", &pinned, false, false, cx))
             })

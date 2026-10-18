@@ -14,8 +14,8 @@ use anyhow::{Context as _, Result, bail};
 use bencode_core::harness::catalog::ModelOption;
 use bencode_core::harness::{ALL_HARNESSES, HarnessKind, HarnessResolver, discovery};
 use bencode_core::remote::protocol::{
-    B64, EntryKind, EntryWire, ExecOutput, FileWire, HarnessWire, MAX_READ_BYTES,
-    MAX_UPLOAD_BYTES, MetaWire, Program, ServerFrame, TreeOp, exec_env_allowed,
+    B64, EntryKind, EntryWire, ExecOutput, FileWire, HarnessWire, MAX_READ_BYTES, MAX_UPLOAD_BYTES,
+    MetaWire, Program, ServerFrame, TreeOp, exec_env_allowed,
 };
 
 /// How long `Exec` may run when the app names no limit.
@@ -43,7 +43,10 @@ pub fn tree(id: u64, root: &str, op: TreeOp) -> Result<ServerFrame> {
             parent,
             name,
             is_dir,
-        } => ServerFrame::ok(id, tree::create(&root, &parent, &name, is_dir).map_err(failed)?),
+        } => ServerFrame::ok(
+            id,
+            tree::create(&root, &parent, &name, is_dir).map_err(failed)?,
+        ),
         TreeOp::Rename { rel, name } => {
             ServerFrame::ok(id, tree::rename(&root, &rel, &name).map_err(failed)?)
         }
@@ -51,12 +54,16 @@ pub fn tree(id: u64, root: &str, op: TreeOp) -> Result<ServerFrame> {
             tree::delete(&root, &rel).map_err(failed)?;
             ServerFrame::ok(id, ())
         }
-        TreeOp::MoveInto { rel, dest_parent } => {
-            ServerFrame::ok(id, tree::move_into(&root, &rel, &dest_parent).map_err(failed)?)
-        }
+        TreeOp::MoveInto { rel, dest_parent } => ServerFrame::ok(
+            id,
+            tree::move_into(&root, &rel, &dest_parent).map_err(failed)?,
+        ),
         TreeOp::CopyInto { from, dest_parent } => {
             let from = PathBuf::from(absolute(&from)?);
-            ServerFrame::ok(id, tree::copy_into(&root, &from, &dest_parent).map_err(failed)?)
+            ServerFrame::ok(
+                id,
+                tree::copy_into(&root, &from, &dest_parent).map_err(failed)?,
+            )
         }
     })
 }
@@ -287,7 +294,8 @@ pub fn copy(from: &str, to: &str) -> Result<()> {
     if to.starts_with(&from) {
         bail!("cannot copy a folder into itself");
     }
-    copy_tree(&from, &to).with_context(|| format!("cannot copy {} to {}", from.display(), to.display()))
+    copy_tree(&from, &to)
+        .with_context(|| format!("cannot copy {} to {}", from.display(), to.display()))
 }
 
 fn copy_tree(from: &Path, to: &Path) -> std::io::Result<()> {
@@ -314,7 +322,13 @@ pub fn upload(dir: &Path, name: &str, bytes: &[u8]) -> Result<String> {
     }
     let name: String = name
         .chars()
-        .map(|c| if c == '/' || c == '\0' || c.is_control() { '_' } else { c })
+        .map(|c| {
+            if c == '/' || c == '\0' || c.is_control() {
+                '_'
+            } else {
+                c
+            }
+        })
         .collect();
     let name = match name.trim_start_matches('.') {
         "" => "attachment".to_string(),
@@ -355,10 +369,17 @@ mod tests {
         copy(&format!("{root}/d"), &format!("{root}/e")).unwrap();
         assert!(copy(&format!("{root}/d"), &format!("{root}/d/inner")).is_err());
         rename(&format!("{root}/e"), &format!("{root}/f")).unwrap();
-        let mut names: Vec<String> = read_dir(&root).unwrap().into_iter().map(|e| e.name).collect();
+        let mut names: Vec<String> = read_dir(&root)
+            .unwrap()
+            .into_iter()
+            .map(|e| e.name)
+            .collect();
         names.sort();
         assert_eq!(names, ["a.txt", "d", "f"]);
-        assert_eq!(read_file(&format!("{root}/f/b.txt"), 100).unwrap().bytes.0, b"hello world");
+        assert_eq!(
+            read_file(&format!("{root}/f/b.txt"), 100).unwrap().bytes.0,
+            b"hello world"
+        );
         remove(&format!("{root}/f")).unwrap();
         assert!(stat(&format!("{root}/f")).is_none());
     }
@@ -379,7 +400,15 @@ mod tests {
             String::from_utf8_lossy(&out.stdout.0).trim(),
             "c1b0730e0133447badcfd47fd144e254807b06e1"
         );
-        let failed = exec(Program::Git, &["no-such-command".into()], None, None, &[], None).unwrap();
+        let failed = exec(
+            Program::Git,
+            &["no-such-command".into()],
+            None,
+            None,
+            &[],
+            None,
+        )
+        .unwrap();
         assert_ne!(failed.status, Some(0));
     }
 

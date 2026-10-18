@@ -153,7 +153,9 @@ impl BenCodeApp {
                         .items_center()
                         .justify_center()
                         .rounded_full()
-                        .when(selected, |el| el.border_2().border_color(fg.ink(Ink::Strong)))
+                        .when(selected, |el| {
+                            el.border_2().border_color(fg.ink(Ink::Strong))
+                        })
                         .child(div().size(px(14.0)).rounded_full().map(|el| match color {
                             Some(color) => el.bg(color),
                             None => el.border_1().border_color(fg.ink(Ink::Faint)),

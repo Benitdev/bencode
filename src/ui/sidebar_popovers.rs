@@ -211,7 +211,9 @@ impl BenCodeApp {
                         .size(px(14.0))
                         .rounded_full()
                         .bg(color)
-                        .when(selected, |el| el.border_2().border_color(fg.ink(Ink::Strong))),
+                        .when(selected, |el| {
+                            el.border_2().border_color(fg.ink(Ink::Strong))
+                        }),
                 )
         };
         let mut row = div()

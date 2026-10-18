@@ -68,7 +68,9 @@ pub fn delete(root: &Path, rel: &str) -> Result<(), String> {
 /// project on a machine copies only what is on that machine.
 pub fn copy_into(root: &Path, from: &Path, dest_parent: &str) -> Result<String, String> {
     on_machine(root, |route| {
-        let from = from.to_str().ok_or("This file's name cannot go to a machine.")?;
+        let from = from
+            .to_str()
+            .ok_or("This file's name cannot go to a machine.")?;
         let from = route.host_path_of(from).map_err(|_| {
             "Files from this computer cannot be copied into a folder on a machine yet.".to_string()
         })?;

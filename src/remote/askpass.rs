@@ -38,8 +38,12 @@ pub fn run_from_env() -> Option<i32> {
     let socket = std::env::var_os(SOCKET_ENV)?;
     let ask = || -> Option<i32> {
         let mut stream = UnixStream::connect(PathBuf::from(&socket)).ok()?;
-        stream.set_read_timeout(Some(Duration::from_secs(130))).ok()?;
-        stream.set_write_timeout(Some(Duration::from_secs(3))).ok()?;
+        stream
+            .set_read_timeout(Some(Duration::from_secs(130)))
+            .ok()?;
+        stream
+            .set_write_timeout(Some(Duration::from_secs(3)))
+            .ok()?;
         let prompt = std::env::args()
             .nth(1)
             .unwrap_or_else(|| "SSH authentication".into());
@@ -63,7 +67,10 @@ pub fn run_from_env() -> Option<i32> {
 
 fn read_line(stream: &mut UnixStream) -> Option<String> {
     let mut line = String::new();
-    BufReader::new(stream).take(MAX_LINE).read_line(&mut line).ok()?;
+    BufReader::new(stream)
+        .take(MAX_LINE)
+        .read_line(&mut line)
+        .ok()?;
     line.ends_with('\n').then_some(line)
 }
 
@@ -82,7 +89,9 @@ impl Askpass {
         let secret = random_hex(32).map_err(|err| err.to_string())?;
         let socket = std::env::temp_dir().join(format!("bencode-askpass-{}.sock", &secret[..12]));
         let listener = UnixListener::bind(&socket).map_err(|err| err.to_string())?;
-        listener.set_nonblocking(true).map_err(|err| err.to_string())?;
+        listener
+            .set_nonblocking(true)
+            .map_err(|err| err.to_string())?;
         let stopped = Arc::new(AtomicBool::new(false));
         let shutdown = stopped.clone();
         let expected = secret.clone();
@@ -98,7 +107,8 @@ impl Askpass {
                             .filter(|q| q.secret == expected);
                         if let Some(question) = question {
                             let answer = handler(question.prompt, question.confirm);
-                            let line = serde_json::to_string(&answer).unwrap_or_else(|_| "null".into());
+                            let line =
+                                serde_json::to_string(&answer).unwrap_or_else(|_| "null".into());
                             let _ = writeln!(stream, "{line}");
                         }
                     }
@@ -178,6 +188,9 @@ mod tests {
         };
         assert_eq!(ask("wrong"), None);
         let answer = ask(&bridge.secret.clone()).unwrap();
-        assert_eq!(serde_json::from_str::<String>(&answer).unwrap(), "test secret");
+        assert_eq!(
+            serde_json::from_str::<String>(&answer).unwrap(),
+            "test secret"
+        );
     }
 }

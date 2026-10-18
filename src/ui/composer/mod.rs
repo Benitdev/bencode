@@ -47,11 +47,11 @@ use crate::ui::HarnessIcon;
 use crate::ui::app_callback::app_callback;
 use crate::ui::scale::px;
 use crate::ui::sidebar_popovers::popover_glass;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 pub use mcp_picker::McpPicker;
 pub use menus::{MenuState, focus_later};
 use menus::{over_composer, popover_anchor, popover_surface};
 pub use prompt_marks::{MentionMark, prompt_highlights};
-use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// MonoCode `max-w-4xl`, the same column as the transcript.
 const COMPOSER_MAX_WIDTH: f32 = 896.0;
@@ -116,7 +116,13 @@ fn composer_chip(
         .bg(fill)
         .hover(move |s| s.bg(hover))
         .child(div().flex_none().child(icon))
-        .child(div().min_w_0().truncate().text_size(Text::Sm.px()).child(label))
+        .child(
+            div()
+                .min_w_0()
+                .truncate()
+                .text_size(Text::Sm.px())
+                .child(label),
+        )
         .children(detail.map(|detail| {
             div()
                 .flex_none()
@@ -284,7 +290,8 @@ fn title_line_icon(icon: Icon) -> gpui::Div {
 }
 
 /// MonoCode `AccessPicker`'s rows, for pickers outside the composer.
-pub(crate) fn permission_modes() -> &'static [(PermissionMode, &'static str, &'static str, IconName)] {
+pub(crate) fn permission_modes() -> &'static [(PermissionMode, &'static str, &'static str, IconName)]
+{
     &PERMISSION_MODES
 }
 

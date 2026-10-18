@@ -20,7 +20,10 @@ use crate::ui::tokens::{Fill, Text, Tone as _};
 fn state_icon(state: Option<LaunchedState>, cx: &App) -> AnyElement {
     let fg = cx.theme().colors.fg;
     let icon = |name: IconName, color: gpui::Hsla| {
-        Icon::new(name).size(IconSize::Sm).color(color).into_any_element()
+        Icon::new(name)
+            .size(IconSize::Sm)
+            .color(color)
+            .into_any_element()
     };
     let Some(state) = state else {
         return icon(IconName::MessageSquare, Status::Quiet.color(fg));

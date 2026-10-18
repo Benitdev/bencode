@@ -38,7 +38,8 @@ const RETRY_AFTER: Duration = Duration::from_secs(10);
 const RECONNECT_BACKOFF: [u64; 6] = [1, 2, 5, 10, 20, 30];
 
 /// What `LOST_RUN` says on this side: the host no longer has the turn.
-const RUN_GONE: &str = "The machine no longer has this turn, so it was cut off. Send a message to continue.";
+const RUN_GONE: &str =
+    "The machine no longer has this turn, so it was cut off. Send a message to continue.";
 
 /// What the Settings page and the rail show.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -137,7 +138,9 @@ impl Connection {
                 .clone()
                 .map_or(Status::Connecting, Status::Connected),
             Link::Connecting => Status::Connecting,
-            Link::Down { error: Some(error), .. } => Status::Offline(error.clone()),
+            Link::Down {
+                error: Some(error), ..
+            } => Status::Offline(error.clone()),
             Link::Down { error: None, .. } => Status::Idle,
         }
     }
@@ -353,7 +356,10 @@ impl Connection {
                     return;
                 }
                 if seq != follower.seen + 1 {
-                    log::warn!("remote run {run}: event {seq} after {}; reading again", follower.seen);
+                    log::warn!(
+                        "remote run {run}: event {seq} after {}; reading again",
+                        follower.seen
+                    );
                     let after = follower.seen;
                     drop(inner);
                     self.send_attach(&run, after);
@@ -430,7 +436,9 @@ impl Connection {
             loop {
                 let wanted = {
                     let inner = lock(&this.inner);
-                    !inner.closed && !inner.runs.is_empty() && !matches!(inner.link, Link::Up { .. })
+                    !inner.closed
+                        && !inner.runs.is_empty()
+                        && !matches!(inner.link, Link::Up { .. })
                 };
                 if !wanted {
                     break;
@@ -453,7 +461,12 @@ impl Connection {
         });
     }
 
-    fn register(&self) -> (u64, std::sync::mpsc::Receiver<Result<serde_json::Value, String>>) {
+    fn register(
+        &self,
+    ) -> (
+        u64,
+        std::sync::mpsc::Receiver<Result<serde_json::Value, String>>,
+    ) {
         let mut inner = lock(&self.inner);
         inner.next_id += 1;
         let id = inner.next_id;
@@ -477,7 +490,9 @@ impl Connection {
         timeout: Duration,
     ) -> Result<serde_json::Value, String> {
         self.connect(None, None)?;
-        let stdin = self.stdin().ok_or("The connection to the machine dropped.")?;
+        let stdin = self
+            .stdin()
+            .ok_or("The connection to the machine dropped.")?;
         let (id, reply) = self.register();
         if let Err(err) = write_frame(&stdin, &ClientFrame { id, request }) {
             lock(&self.inner).pending.remove(&id);
@@ -497,7 +512,8 @@ impl Connection {
         timeout: Duration,
     ) -> Result<T, String> {
         let value = self.call_value(request, timeout)?;
-        serde_json::from_value(value).map_err(|err| format!("The machine's answer is unreadable: {err}"))
+        serde_json::from_value(value)
+            .map_err(|err| format!("The machine's answer is unreadable: {err}"))
     }
 
     /// Passes `run`'s events after `after` to `tx` from now on. A new run
@@ -573,7 +589,8 @@ impl Connection {
         };
         let run = run.to_string();
         std::thread::spawn(move || {
-            let forgot: Result<(), String> = this.call(Request::RunForget { run: run.clone() }, DEFAULT_TIMEOUT);
+            let forgot: Result<(), String> =
+                this.call(Request::RunForget { run: run.clone() }, DEFAULT_TIMEOUT);
             if let Err(err) = forgot {
                 log::info!("remote: the host keeps run {run} a while: {err}");
             }
@@ -660,7 +677,9 @@ fn keep_tail(mut stderr: impl std::io::Read, tail: &Mutex<String>) {
         tail.push_str(&String::from_utf8_lossy(&buffer[..n]));
         if tail.len() > 8192 {
             let cut = tail.len() - 4096;
-            let cut = (cut..tail.len()).find(|&i| tail.is_char_boundary(i)).unwrap_or(0);
+            let cut = (cut..tail.len())
+                .find(|&i| tail.is_char_boundary(i))
+                .unwrap_or(0);
             tail.drain(..cut);
         }
     }
@@ -676,7 +695,9 @@ fn offline_message(machine: &Machine, error: &str, ssh_said: &str) -> String {
         .chars()
         .take(600)
         .collect();
-    if said.contains("bencode-host") && (said.contains("not found") || said.contains("No such file")) {
+    if said.contains("bencode-host")
+        && (said.contains("not found") || said.contains("No such file"))
+    {
         return format!(
             "BenCode Host is not installed on {}. Open Settings › Connections and click Reconnect.",
             machine.name

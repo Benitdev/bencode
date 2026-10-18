@@ -50,7 +50,11 @@ fn relay(stream: UnixStream) -> u8 {
         match from_daemon.read(&mut buffer) {
             Ok(0) => return 0,
             Ok(n) => {
-                if stdout.write_all(&buffer[..n]).and_then(|()| stdout.flush()).is_err() {
+                if stdout
+                    .write_all(&buffer[..n])
+                    .and_then(|()| stdout.flush())
+                    .is_err()
+                {
                     return 0;
                 }
             }
@@ -107,7 +111,10 @@ fn start_daemon(dirs: &Dirs) -> io::Result<()> {
             .status();
         match started {
             Ok(status) if status.success() => return Ok(()),
-            Ok(status) => log_line(dirs, &format!("systemd-run failed ({status}); starting it here")),
+            Ok(status) => log_line(
+                dirs,
+                &format!("systemd-run failed ({status}); starting it here"),
+            ),
             Err(err) => log_line(dirs, &format!("systemd-run: {err}; starting it here")),
         }
     }
@@ -146,9 +153,8 @@ fn lingering() -> bool {
 }
 
 fn which(program: &str) -> bool {
-    std::env::var_os("PATH").is_some_and(|path| {
-        std::env::split_paths(&path).any(|dir| dir.join(program).is_file())
-    })
+    std::env::var_os("PATH")
+        .is_some_and(|path| std::env::split_paths(&path).any(|dir| dir.join(program).is_file()))
 }
 
 fn log_line(dirs: &Dirs, line: &str) {
@@ -188,7 +194,12 @@ fn ask(request: Request) -> io::Result<Option<serde_json::Value>> {
         if reader.read_line(&mut line)? == 0 {
             return Ok(None);
         }
-        if let Ok(ServerFrame::Reply { id: 2, result, error }) = serde_json::from_str(&line) {
+        if let Ok(ServerFrame::Reply {
+            id: 2,
+            result,
+            error,
+        }) = serde_json::from_str(&line)
+        {
             return match error {
                 Some(error) => Err(io::Error::other(error)),
                 None => Ok(result),

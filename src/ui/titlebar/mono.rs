@@ -19,8 +19,8 @@ use crate::app::BenCodeApp;
 use crate::monos::{Mono, MonoState, MonoStatus};
 use crate::ui::mascot::{MascotLook, pixel_mascot};
 use crate::ui::scale::px;
-use crate::ui::window_drag::claim_press;
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
+use crate::ui::window_drag::claim_press;
 
 impl BenCodeApp {
     /// MonoCode `TitleBar` in a Mono's view: `h-10 border-b border-stroke`,
@@ -174,7 +174,9 @@ impl BenCodeApp {
                         "{} settings",
                         mono.display_name()
                     )))
-                    .on_click(cx.listener(|this, _, _, cx| this.open_mono_settings(crate::app::monos::SettingsSection::General, cx))),
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.open_mono_settings(crate::app::monos::SettingsSection::General, cx)
+                    })),
             )
     }
 }

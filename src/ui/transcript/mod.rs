@@ -35,9 +35,9 @@ use crate::app::BenCodeApp;
 use crate::db::SessionRow;
 use crate::ui::motion::cubic_bezier;
 use crate::ui::scale::px;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 use blocks::MESSAGE_MAX_WIDTH;
 use turns::{Row, TurnLayout};
-use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// Rows near the end that may still change height while an agent runs.
 const LIVE_TAIL_ROWS: usize = 3;
@@ -417,7 +417,11 @@ impl BenCodeApp {
                 use std::hash::{Hash, Hasher};
                 let mut hasher = std::hash::DefaultHasher::new();
                 relays.hash(&mut hasher);
-                if relays.is_empty() { 0 } else { hasher.finish() }
+                if relays.is_empty() {
+                    0
+                } else {
+                    hasher.finish()
+                }
             };
         let mono = self.is_mono_session(session_id);
         let session = self.sessions.iter().find(|s| s.id == session_id);

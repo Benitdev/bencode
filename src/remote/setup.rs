@@ -218,7 +218,12 @@ fn run(job: &Arc<Job>, purpose: Purpose) -> Result<(Arc<Connection>, Option<Stri
             (
                 Machine {
                     id: String::new(),
-                    name: name.trim().chars().filter(|c| !c.is_control()).take(80).collect(),
+                    name: name
+                        .trim()
+                        .chars()
+                        .filter(|c| !c.is_control())
+                        .take(80)
+                        .collect(),
                     target,
                     port,
                 },
@@ -230,7 +235,10 @@ fn run(job: &Arc<Job>, purpose: Purpose) -> Result<(Arc<Connection>, Option<Stri
     };
     let asker = job.clone();
     let askpass = Askpass::start(move |message, confirm| asker.prompt(message, confirm))?;
-    let master = std::env::temp_dir().join(format!("bencode-ssh-{}", random_hex(6).map_err(|e| e.to_string())?));
+    let master = std::env::temp_dir().join(format!(
+        "bencode-ssh-{}",
+        random_hex(6).map_err(|e| e.to_string())?
+    ));
 
     job.message("Checking the remote machine…");
     let probe = run_remote(
@@ -255,11 +263,19 @@ fn run(job: &Arc<Job>, purpose: Purpose) -> Result<(Arc<Connection>, Option<Stri
     if installed != VERSION || upgrade {
         if let Some(binary) = local_host_binary(&os, &arch) {
             job.message("Copying BenCode Host to the machine…");
-            let bytes = std::fs::read(&binary).map_err(|err| format!("{}: {err}", binary.display()))?;
+            let bytes =
+                std::fs::read(&binary).map_err(|err| format!("{}: {err}", binary.display()))?;
             let script = format!(
                 "set -eu; umask 077; D=\"$HOME/.bencode-host/versions/{VERSION}\"; mkdir -p \"$D\"; cat > \"$D/bencode-host.part\"; chmod 700 \"$D/bencode-host.part\"; mv -f \"$D/bencode-host.part\" \"$D/bencode-host\""
             );
-            run_remote(job, &askpass, &machine, &master, &format!("sh -c {}", super::ssh::shell_quote(&script)), bytes)?;
+            run_remote(
+                job,
+                &askpass,
+                &machine,
+                &master,
+                &format!("sh -c {}", super::ssh::shell_quote(&script)),
+                bytes,
+            )?;
         }
         job.message(if upgrade {
             "Updating BenCode Host…"
@@ -270,7 +286,14 @@ fn run(job: &Arc<Job>, purpose: Purpose) -> Result<(Arc<Connection>, Option<Stri
         job.message("Starting BenCode Host…");
     }
     let script = bootstrap_script(upgrade);
-    let output = run_remote(job, &askpass, &machine, &master, "sh -s", script.into_bytes())?;
+    let output = run_remote(
+        job,
+        &askpass,
+        &machine,
+        &master,
+        "sh -s",
+        script.into_bytes(),
+    )?;
     if !output.contains("BENCODE_HOST_READY") {
         return Err("BenCode Host did not finish installing. Try again.".into());
     }
@@ -368,7 +391,8 @@ fn run_remote(
             break Err(if job.is_cancelled() {
                 "Connection cancelled".to_string()
             } else {
-                "SSH setup timed out. Check the machine's network connection and try again.".to_string()
+                "SSH setup timed out. Check the machine's network connection and try again."
+                    .to_string()
             });
         }
         match child.try_wait() {
@@ -433,7 +457,11 @@ mod tests {
             .args(["-n", "-c", &script])
             .output()
             .unwrap();
-        assert!(check.status.success(), "{}", String::from_utf8_lossy(&check.stderr));
+        assert!(
+            check.status.success(),
+            "{}",
+            String::from_utf8_lossy(&check.stderr)
+        );
     }
 
     #[test]
@@ -481,7 +509,8 @@ echo '{"type":"result","subtype":"success","is_error":false,"result":"hi","sessi
     #[test]
     #[ignore = "needs the loopback sshd fixture"]
     fn a_machine_is_added_and_runs_a_turn_over_ssh() {
-        let dir = PathBuf::from(std::env::var("BENCODE_TEST_SSH_DIR").expect("BENCODE_TEST_SSH_DIR"));
+        let dir =
+            PathBuf::from(std::env::var("BENCODE_TEST_SSH_DIR").expect("BENCODE_TEST_SSH_DIR"));
         let home = dir.join("home");
         *super::super::ssh::TEST_OPTIONS.lock().unwrap() = vec![
             "-F".into(),
@@ -501,7 +530,8 @@ echo '{"type":"result","subtype":"success","is_error":false,"result":"hi","sessi
         let bin = home.join(".local/bin");
         std::fs::create_dir_all(&bin).unwrap();
         std::fs::write(bin.join("claude"), FAKE_CLAUDE).unwrap();
-        std::fs::set_permissions(bin.join("claude"), std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::fs::set_permissions(bin.join("claude"), std::fs::Permissions::from_mode(0o755))
+            .unwrap();
         let work = home.join("work");
         std::fs::create_dir_all(work.join("src")).unwrap();
         std::fs::write(work.join("src/a.rs"), "fn main() {}\n").unwrap();
@@ -517,7 +547,11 @@ echo '{"type":"result","subtype":"success","is_error":false,"result":"hi","sessi
         );
         let started = Instant::now();
         while !job.view().done {
-            assert!(started.elapsed() < Duration::from_secs(120), "setup hung: {:?}", job.view());
+            assert!(
+                started.elapsed() < Duration::from_secs(120),
+                "setup hung: {:?}",
+                job.view()
+            );
             std::thread::sleep(Duration::from_millis(50));
         }
         let view = job.view();
@@ -531,9 +565,16 @@ echo '{"type":"result","subtype":"success","is_error":false,"result":"hi","sessi
             .args(["init", "-q"])
             .output()
             .unwrap();
-        assert!(init.status.success(), "{}", String::from_utf8_lossy(&init.stderr));
+        assert!(
+            init.status.success(),
+            "{}",
+            String::from_utf8_lossy(&init.stderr)
+        );
         let status = crate::git::get_detailed_status(&root);
-        assert!(status.unstaged.iter().any(|c| c.path == "src/a.rs"), "{status:?}");
+        assert!(
+            status.unstaged.iter().any(|c| c.path == "src/a.rs"),
+            "{status:?}"
+        );
 
         let route = crate::remote::route(&root).unwrap().unwrap();
         let listed: Vec<FsEntry> = route
@@ -543,7 +584,10 @@ echo '{"type":"result","subtype":"success","is_error":false,"result":"hi","sessi
             })
             .unwrap();
         assert!(listed.iter().any(|e| e.name == "src" && e.is_dir));
-        assert_eq!(crate::workspace::list_project_files(root.as_ref()), ["src/a.rs"]);
+        assert_eq!(
+            crate::workspace::list_project_files(root.as_ref()),
+            ["src/a.rs"]
+        );
 
         let turn = crate::remote::spawn::spawn(&SpawnRequest {
             harness: HarnessKind::Claude,
@@ -568,7 +612,8 @@ echo '{"type":"result","subtype":"success","is_error":false,"result":"hi","sessi
             seen.push(event);
         }
         assert!(
-            seen.iter().any(|e| matches!(e, AgentEvent::TextDelta(t) if t.contains("machine"))),
+            seen.iter()
+                .any(|e| matches!(e, AgentEvent::TextDelta(t) if t.contains("machine"))),
             "{seen:?}"
         );
         assert!(seen.iter().any(|e| matches!(e, AgentEvent::Done(_))));

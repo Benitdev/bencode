@@ -22,8 +22,8 @@ use crate::app::BenCodeApp;
 use crate::github::Kind;
 use crate::ui::app_callback::app_callback;
 use crate::ui::composer::inbox_card::label_chip;
-use crate::work_items::Provider;
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
+use crate::work_items::Provider;
 
 impl BenCodeApp {
     pub(super) fn render_inbox_detail(&self, cx: &Context<Self>) -> AnyElement {

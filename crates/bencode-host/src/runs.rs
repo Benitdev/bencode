@@ -232,7 +232,10 @@ impl Runs {
     }
 
     pub fn running(&self) -> usize {
-        self.table().values().filter(|run| !run.state().ended).count()
+        self.table()
+            .values()
+            .filter(|run| !run.state().ended)
+            .count()
     }
 
     pub fn summaries(&self) -> Vec<RunSummary> {
@@ -242,7 +245,13 @@ impl Runs {
     }
 
     /// Starts a turn and makes `outbox` its first follower.
-    pub fn start(self: &Arc<Self>, id: &str, spawn: SpawnWire, conn: u64, outbox: Arc<Outbox>) -> Result<()> {
+    pub fn start(
+        self: &Arc<Self>,
+        id: &str,
+        spawn: SpawnWire,
+        conn: u64,
+        outbox: Arc<Outbox>,
+    ) -> Result<()> {
         if !valid_run_id(id) {
             bail!("not a run id: {id}");
         }
@@ -261,10 +270,7 @@ impl Runs {
             .attachments
             .retain(|file| Path::new(&file.path).starts_with(&self.attachments));
         let (handle, mut events) = harness::spawn(&request)?;
-        crate::dirs::write_private(
-            &meta_path(&self.dir, &id),
-            &serde_json::to_vec(&meta)?,
-        )?;
+        crate::dirs::write_private(&meta_path(&self.dir, &id), &serde_json::to_vec(&meta)?)?;
         let journal = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
@@ -409,7 +415,9 @@ impl Runs {
                 .and_then(|meta| meta.modified())
                 .ok()
                 .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
-                .is_some_and(|age| now - age.as_millis() as i64 > 4 * KEEP_ENDED.as_millis() as i64);
+                .is_some_and(|age| {
+                    now - age.as_millis() as i64 > 4 * KEEP_ENDED.as_millis() as i64
+                });
             if old && let Err(err) = std::fs::remove_dir_all(entry.path()) {
                 log::warn!("could not remove {}: {err}", entry.path().display());
             }

@@ -22,8 +22,8 @@ use gpui::{
 use crate::ui::scale::px;
 use jiff::{Timestamp, tz::TimeZone};
 
-use super::menus::{over_composer, popover_anchor};
 use super::handoff::HandoffCard;
+use super::menus::{over_composer, popover_anchor};
 use super::model_picker::ModelsAnchor;
 use crate::app::TurnInput;
 use crate::app::{BenCodeApp, now_ms};
@@ -32,10 +32,10 @@ use crate::harness::HarnessKind;
 use crate::harness::accounts::supports_accounts;
 use crate::ui::HarnessIcon;
 use crate::ui::app_callback::app_callback;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 use ely_gpui_component::buttons::ButtonVariant;
 use ely_gpui_component::menus::{DropdownMenu, Menu, MenuItem};
 use serde_json::{Value, json};
-use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// MonoCode `USAGE_LIMIT_RESUME_GRACE_MS`: providers can still refuse right
 /// at the reset.
@@ -300,8 +300,9 @@ impl BenCodeApp {
                                  keep going.",
                         ))
                         .children(
-                            resets
-                                .map(|line| div().mt_1().text_color(fg.ink(Ink::Muted)).child(line)),
+                            resets.map(|line| {
+                                div().mt_1().text_color(fg.ink(Ink::Muted)).child(line)
+                            }),
                         )
                         .child(
                             div()
@@ -425,8 +426,7 @@ impl BenCodeApp {
                     .find(|b| b.role == "user")
                     .and_then(|b| b.text.as_deref())
                     .unwrap_or("");
-                HandoffCard::new(kind, kind, &session.blocks, request)
-                    .agent_prompt(CONTINUE_PROMPT)
+                HandoffCard::new(kind, kind, &session.blocks, request).agent_prompt(CONTINUE_PROMPT)
             });
         session.provider_account_id = Some(account_id.to_string());
         if !carried {

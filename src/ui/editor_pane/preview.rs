@@ -16,8 +16,8 @@ use gpui::{
 
 use crate::app::BenCodeApp;
 use crate::ui::scale::px;
-use crate::ui::transcript::markdown::AgentMarkdown;
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
+use crate::ui::transcript::markdown::AgentMarkdown;
 
 /// How a previewable file is shown.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

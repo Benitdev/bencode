@@ -905,8 +905,8 @@ impl BenCodeApp {
                 // The browser is on this computer, out of a machine's reach.
                 browser_mcp: (request.purpose == RunPurpose::Turn
                     && !crate::remote::is_remote(&session.cwd))
-                    .then(|| self.browser_mcp_launch())
-                    .flatten(),
+                .then(|| self.browser_mcp_launch())
+                .flatten(),
                 app,
                 ..spawn
             });

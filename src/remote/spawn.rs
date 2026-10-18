@@ -34,7 +34,11 @@ pub fn spawn(req: &SpawnRequest) -> Result<RemoteTurn> {
     let route = super::route(&req.cwd)
         .context("not a folder on a machine")?
         .map_err(anyhow::Error::msg)?;
-    if req.attachments.iter().any(|file| file.mime_type == "inode/directory") {
+    if req
+        .attachments
+        .iter()
+        .any(|file| file.mime_type == "inode/directory")
+    {
         bail!("Folders cannot be attached in a project on a machine; attach the files instead.");
     }
     let run = super::askpass::random_hex(8).context("no random source")?;
@@ -71,9 +75,8 @@ pub fn spawn(req: &SpawnRequest) -> Result<RemoteTurn> {
 /// the first, then the ones to come. The handle can still cancel it and
 /// answer its prompts.
 pub fn attach(machine: &str, run: &str, harness: harness::HarnessKind) -> Result<RemoteTurn> {
-    let conn = super::connection(machine).with_context(|| {
-        format!("BenCode is not connected to the machine {machine}")
-    })?;
+    let conn = super::connection(machine)
+        .with_context(|| format!("BenCode is not connected to the machine {machine}"))?;
     let (event_tx, events) = mpsc::unbounded_channel();
     conn.follow(run, event_tx);
     let (relay_tx, relay_rx) = mpsc::unbounded_channel();
@@ -126,7 +129,9 @@ async fn drive(
     .unwrap_or_else(|err| Err(format!("starting the turn panicked: {err}")));
     if let Err(err) = started {
         conn.unfollow(&run);
-        let _ = event_tx.send(AgentEvent::Error(format!("Could not start the turn on the machine: {err}")));
+        let _ = event_tx.send(AgentEvent::Error(format!(
+            "Could not start the turn on the machine: {err}"
+        )));
         let _ = event_tx.send(AgentEvent::Done(DoneStatus::Failed));
         return;
     }
@@ -182,13 +187,12 @@ async fn relay(
 
 async fn send(conn: &Arc<Connection>, request: Request) {
     let conn = conn.clone();
-    let sent = tokio::task::spawn_blocking(move || {
-        conn.call_value(request, DEFAULT_TIMEOUT)
-    })
-    .await;
+    let sent = tokio::task::spawn_blocking(move || conn.call_value(request, DEFAULT_TIMEOUT)).await;
     match sent {
         Ok(Ok(_)) => {}
-        Ok(Err(err)) => log::warn!("remote: the machine did not take a request for the turn: {err}"),
+        Ok(Err(err)) => {
+            log::warn!("remote: the machine did not take a request for the turn: {err}")
+        }
         Err(err) => log::error!("remote: a request for the turn panicked: {err}"),
     }
 }

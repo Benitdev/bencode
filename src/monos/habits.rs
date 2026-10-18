@@ -138,7 +138,11 @@ fn string(value: &Value, key: &str) -> Option<String> {
 }
 
 fn number(value: &Value, key: &str) -> Option<i64> {
-    value.get(key)?.as_f64().filter(|n| n.is_finite()).map(|n| n as i64)
+    value
+        .get(key)?
+        .as_f64()
+        .filter(|n| n.is_finite())
+        .map(|n| n as i64)
 }
 
 const KNOWN: [&str; 12] = [
@@ -525,11 +529,21 @@ pub fn habits_today<'a>(
     let mut items = Vec::new();
     for habit in habits {
         if let Some(since) = running_since(&habit.id) {
-            items.push(HabitToday { habit, state: TodayState::Running, at: since, outcome: None });
+            items.push(HabitToday {
+                habit,
+                state: TodayState::Running,
+                at: since,
+                outcome: None,
+            });
             continue;
         }
         if habit_starting(habit, now) {
-            items.push(HabitToday { habit, state: TodayState::Starting, at: now, outcome: None });
+            items.push(HabitToday {
+                habit,
+                state: TodayState::Starting,
+                at: now,
+                outcome: None,
+            });
             continue;
         }
         if habit.enabled && habit.next_run_at > now && same_day(habit.next_run_at, now) {
@@ -605,7 +619,10 @@ mod tests {
 
     #[test]
     fn schedules_from_the_cli_are_checked() {
-        let schedule = habit_schedule(Some(&json!({ "kind": "weekly", "time": "16:30", "dayOfWeek": 5 }))).unwrap();
+        let schedule = habit_schedule(Some(
+            &json!({ "kind": "weekly", "time": "16:30", "dayOfWeek": 5 }),
+        ))
+        .unwrap();
         assert_eq!(schedule.label(), "Friday at 16:30");
         let hourly = habit_schedule(Some(&json!({ "kind": "hourly", "minute": 15 }))).unwrap();
         assert_eq!((hourly.minute, hourly.time.as_str()), (15, "09:00"));
@@ -664,14 +681,21 @@ mod tests {
     fn a_quiet_run_posts_nothing() {
         assert_eq!(habit_report("NOTHING_TO_REPORT"), None);
         assert_eq!(habit_report(" `NOTHING_TO_REPORT`. "), None);
-        assert_eq!(habit_report("Checked CI, all green.\n\nNOTHING_TO_REPORT"), None);
-        assert_eq!(habit_report("CI is red on main."), Some("CI is red on main.".into()));
+        assert_eq!(
+            habit_report("Checked CI, all green.\n\nNOTHING_TO_REPORT"),
+            None
+        );
+        assert_eq!(
+            habit_report("CI is red on main."),
+            Some("CI is red on main.".into())
+        );
         assert_eq!(habit_report("   "), None);
     }
 
     #[test]
     fn the_file_changes_over_what_was_read() {
-        let dir = std::env::temp_dir().join(format!("bencode-habits-{}", crate::app_cli::random_hex(6)));
+        let dir =
+            std::env::temp_dir().join(format!("bencode-habits-{}", crate::app_cli::random_hex(6)));
         files::load(&dir).unwrap();
         let schedule = habit_schedule(Some(&json!({ "kind": "daily" }))).unwrap();
         let added = update_habits(&dir, |mut list| {

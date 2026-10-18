@@ -31,11 +31,19 @@ const START_OPTIONS: [&str; 9] = [
 
 impl BenCodeApp {
     pub fn board_column(&self, task: &Task) -> Column {
-        board::column(task, task.session_id.as_deref().and_then(|id| self.launched_state(id)))
+        board::column(
+            task,
+            task.session_id
+                .as_deref()
+                .and_then(|id| self.launched_state(id)),
+        )
     }
 
     fn task_view(&self, task: &Task) -> Value {
-        let state = task.session_id.as_deref().and_then(|id| self.launched_state(id));
+        let state = task
+            .session_id
+            .as_deref()
+            .and_then(|id| self.launched_state(id));
         let brief = task.brief();
         let mut view = json!({
             "id": task.id,
@@ -98,21 +106,19 @@ impl BenCodeApp {
         let action = action.to_string();
         cx.spawn(async move |this, cx| {
             let result = task.await;
-            let landed = this.update(cx, |this, cx| {
-                match result {
-                    Ok((tasks, touched, changed)) => {
-                        let value = match (action.as_str(), touched) {
-                            ("board.list", _) => this.board_view(&tasks),
-                            (_, Some(task)) => json!({ "task": this.task_view(&task) }),
-                            (_, None) => json!({ "removed": true }),
-                        };
-                        call.answer(value);
-                        if changed {
-                            this.refresh_mono_overview(&mono, cx);
-                        }
+            let landed = this.update(cx, |this, cx| match result {
+                Ok((tasks, touched, changed)) => {
+                    let value = match (action.as_str(), touched) {
+                        ("board.list", _) => this.board_view(&tasks),
+                        (_, Some(task)) => json!({ "task": this.task_view(&task) }),
+                        (_, None) => json!({ "removed": true }),
+                    };
+                    call.answer(value);
+                    if changed {
+                        this.refresh_mono_overview(&mono, cx);
                     }
-                    Err(error) => call.fail(error, true),
                 }
+                Err(error) => call.fail(error, true),
             });
             if let Err(err) = landed {
                 log::debug!("board call after app drop: {err:#}");
@@ -135,11 +141,15 @@ impl BenCodeApp {
                     return Err("Invalid request ID".into());
                 }
                 let title = required(input.get("title"), "title", TITLE_MAX)?;
-                let prompt = optional(input.get("prompt"), "prompt", PROMPT_MAX)?.unwrap_or_default();
+                let prompt =
+                    optional(input.get("prompt"), "prompt", PROMPT_MAX)?.unwrap_or_default();
                 let project = self.require_project(caller, input)?;
                 let session_id = optional(input.get("sessionId"), "sessionId", 256)?;
                 if let Some(session) = &session_id
-                    && !self.project_sessions(&project).iter().any(|s| &s.id == session)
+                    && !self
+                        .project_sessions(&project)
+                        .iter()
+                        .any(|s| &s.id == session)
                 {
                     return Err("Session was not found in this project".into());
                 }
@@ -164,14 +174,22 @@ impl BenCodeApp {
                     done,
                 })
             }
-            "board.remove" => Ok(Edit::Remove { id: required(input.get("id"), "id", 256)? }),
+            "board.remove" => Ok(Edit::Remove {
+                id: required(input.get("id"), "id", 256)?,
+            }),
             _ => Err(format!("Unknown app action: {action}")),
         }
     }
 
     /// `board.start`: the task's session, launched as `sessions.start`
     /// would with the task's prompt and project, then linked to it.
-    fn start_board_task(&mut self, caller: Caller, input: Map<String, Value>, call: AppCall, cx: &mut Context<Self>) {
+    fn start_board_task(
+        &mut self,
+        caller: Caller,
+        input: Map<String, Value>,
+        call: AppCall,
+        cx: &mut Context<Self>,
+    ) {
         let id = match required(input.get("id"), "id", 256) {
             Ok(id) => id,
             Err(error) => return call.fail(error, true),
@@ -179,7 +197,9 @@ impl BenCodeApp {
         let Some(dir) = mono_files_dir(&caller.mono) else {
             return call.fail("This Mono's folder is unavailable", true);
         };
-        let read = cx.background_executor().spawn(async move { board::load_board(&dir) });
+        let read = cx
+            .background_executor()
+            .spawn(async move { board::load_board(&dir) });
         cx.spawn(async move |this, cx| {
             let tasks = read.await;
             let landed = this.update(cx, |this, cx| {
@@ -197,7 +217,9 @@ impl BenCodeApp {
                 let retry = format!("app-{}-{}", caller.session, call.request.request_id);
                 if let Some(session) = task.session_id.as_ref().filter(|s| **s != retry) {
                     return call.fail(
-                        format!("That task already has session {session}; follow up with sessions.send"),
+                        format!(
+                            "That task already has session {session}; follow up with sessions.send"
+                        ),
                         true,
                     );
                 }
@@ -220,8 +242,17 @@ impl BenCodeApp {
     }
 
     /// The task `board.start` launched now names its session.
-    pub(crate) fn link_board_task(&mut self, mono: &str, task: &str, session: &str, cx: &mut Context<Self>) {
-        let edit = Edit::Link { id: task.to_string(), session_id: session.to_string() };
+    pub(crate) fn link_board_task(
+        &mut self,
+        mono: &str,
+        task: &str,
+        session: &str,
+        cx: &mut Context<Self>,
+    ) {
+        let edit = Edit::Link {
+            id: task.to_string(),
+            session_id: session.to_string(),
+        };
         self.edit_mono_board(mono, edit, cx);
     }
 
@@ -230,7 +261,12 @@ impl BenCodeApp {
         let Some(mono) = self.monos.view.clone() else {
             return;
         };
-        let edit = Edit::Update { id: task.to_string(), title: None, prompt: None, done: Some(done) };
+        let edit = Edit::Update {
+            id: task.to_string(),
+            title: None,
+            prompt: None,
+            done: Some(done),
+        };
         self.edit_mono_board(&mono, edit, cx);
     }
 
@@ -238,7 +274,13 @@ impl BenCodeApp {
         let Some(mono) = self.monos.view.clone() else {
             return;
         };
-        self.edit_mono_board(&mono, Edit::Remove { id: task.to_string() }, cx);
+        self.edit_mono_board(
+            &mono,
+            Edit::Remove {
+                id: task.to_string(),
+            },
+            cx,
+        );
     }
 
     pub fn toggle_board_done(&mut self, cx: &mut Context<Self>) {

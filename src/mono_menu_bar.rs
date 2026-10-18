@@ -66,14 +66,26 @@ pub fn portrait(rows: &[&str; 8], rgb: [u8; 3]) -> Vec<u8> {
         }
     }
     let inset = (PORTRAIT_PIXELS - 8 * CELL) / 2;
-    paint(&mut rgba, PORTRAIT_PIXELS, rows, inset, [rgb[0], rgb[1], rgb[2], 255]);
+    paint(
+        &mut rgba,
+        PORTRAIT_PIXELS,
+        rows,
+        inset,
+        [rgb[0], rgb[1], rgb[2], 255],
+    );
     rgba
 }
 
 /// The menu bar icon: the sprite in black, for a template image.
 pub fn icon(rows: &[&str; 8]) -> Vec<u8> {
     let mut rgba = vec![0u8; ICON_PIXELS * ICON_PIXELS * 4];
-    paint(&mut rgba, ICON_PIXELS, rows, (ICON_PIXELS - 8 * CELL) / 2, [0, 0, 0, 255]);
+    paint(
+        &mut rgba,
+        ICON_PIXELS,
+        rows,
+        (ICON_PIXELS - 8 * CELL) / 2,
+        [0, 0, 0, 255],
+    );
     rgba
 }
 
@@ -164,7 +176,11 @@ mod platform {
         if utf8.is_null() {
             return None;
         }
-        Some(unsafe { std::ffi::CStr::from_ptr(utf8) }.to_string_lossy().into_owned())
+        Some(
+            unsafe { std::ffi::CStr::from_ptr(utf8) }
+                .to_string_lossy()
+                .into_owned(),
+        )
     }
 
     fn image(rgba: &[u8], side: usize, points: f64, template: bool) -> Option<Id> {
@@ -373,7 +389,11 @@ mod tests {
         let pixel = |x: usize, y: usize| &image[(y * PORTRAIT_PIXELS + x) * 4..][..4];
         assert_eq!(pixel(0, 0), [128, 128, 128, 0], "corners stay clear");
         assert_eq!(pixel(12, 12), [255, 0, 0, 255], "the sprite starts 12 in");
-        assert_eq!(pixel(43, 43), [128, 128, 128, 31], "a clear cell shows the circle");
+        assert_eq!(
+            pixel(43, 43),
+            [128, 128, 128, 31],
+            "a clear cell shows the circle"
+        );
         assert_eq!(pixel(8, 28)[3], 31, "the margin is the circle");
     }
 

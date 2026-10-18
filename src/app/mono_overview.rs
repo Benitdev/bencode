@@ -358,7 +358,9 @@ impl BenCodeApp {
             TextInput::new(window, cx)
                 .multi_line(3, usize::MAX)
                 .max_len(4_000)
-                .placeholder("What it should do on each run, and when it's worth telling you about.")
+                .placeholder(
+                    "What it should do on each run, and when it's worth telling you about.",
+                )
         });
         cx.subscribe(&name, |this: &mut BenCodeApp, _, event: &InputEvent, cx| {
             if matches!(event, InputEvent::Submit) {
@@ -394,7 +396,11 @@ impl BenCodeApp {
     }
 
     /// New habit's schedule, one field at a time.
-    pub fn set_new_habit_schedule(&mut self, change: impl FnOnce(&mut HabitSchedule), cx: &mut Context<Self>) {
+    pub fn set_new_habit_schedule(
+        &mut self,
+        change: impl FnOnce(&mut HabitSchedule),
+        cx: &mut Context<Self>,
+    ) {
         if let Some(form) = self.monos.overview.habit_form.as_mut() {
             change(&mut form.schedule);
             cx.notify();
@@ -415,14 +421,23 @@ impl BenCodeApp {
         if !self.new_habit_ready(cx) {
             return;
         }
-        let (Some(mono), Some(form)) = (self.monos.view.clone(), self.monos.overview.habit_form.as_mut())
-        else {
+        let (Some(mono), Some(form)) = (
+            self.monos.view.clone(),
+            self.monos.overview.habit_form.as_mut(),
+        ) else {
             return;
         };
         form.saving = true;
         form.error = None;
         let name: String = form.name.read(cx).text().trim().chars().take(80).collect();
-        let instructions: String = form.instructions.read(cx).text().trim().chars().take(4_000).collect();
+        let instructions: String = form
+            .instructions
+            .read(cx)
+            .text()
+            .trim()
+            .chars()
+            .take(4_000)
+            .collect();
         let schedule = form.schedule.clone();
         let Some(dir) = mono_files_dir(&mono) else {
             return;
@@ -435,7 +450,12 @@ impl BenCodeApp {
                         crate::monos::habits::HABITS_MAX
                     ));
                 }
-                let habit = crate::monos::habits::new_habit(&name, &instructions, schedule.clone(), crate::app::now_ms());
+                let habit = crate::monos::habits::new_habit(
+                    &name,
+                    &instructions,
+                    schedule.clone(),
+                    crate::app::now_ms(),
+                );
                 list.push(habit);
                 Ok((list, ()))
             })
@@ -544,4 +564,3 @@ impl BenCodeApp {
         cx.notify();
     }
 }
-

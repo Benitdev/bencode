@@ -280,9 +280,9 @@ pub struct MascotLook {
 
 /// MonoCode `blinkDelay(seed)`: a stable offset into the blink's cycle.
 fn blink_offset(seed: &str) -> u64 {
-    let hash = seed
-        .encode_utf16()
-        .fold(0u32, |hash, unit| hash.wrapping_mul(31).wrapping_add(u32::from(unit)));
+    let hash = seed.encode_utf16().fold(0u32, |hash, unit| {
+        hash.wrapping_mul(31).wrapping_add(u32::from(unit))
+    });
     u64::from(hash % 5200)
 }
 
@@ -377,7 +377,11 @@ pub fn pixel_mascot(
     cx: &App,
 ) -> AnyElement {
     let still = spinner::still(cx);
-    let motion = if still { MascotMotion::Still } else { look.motion };
+    let motion = if still {
+        MascotMotion::Still
+    } else {
+        look.motion
+    };
     let beat = match motion {
         MascotMotion::Hop => spinner::cycle(HOP),
         _ => spinner::cycle(BOB),
@@ -390,7 +394,11 @@ pub fn pixel_mascot(
         .position(|m| std::ptr::eq(m, mascot))
         .unwrap_or(0);
     let cell = size / 8.0;
-    let eyes = if talking { EYES[index].1 } else { EYES[index].0 };
+    let eyes = if talking {
+        EYES[index].1
+    } else {
+        EYES[index].0
+    };
     // The lid: the face's colour over the eye, the lash line left open.
     let lids = shut.then(|| {
         eyes.iter().flat_map(move |&(x, y)| {
@@ -473,7 +481,12 @@ mod tests {
         for (ix, mascot) in MASCOTS.iter().enumerate() {
             for (rows, eyes) in [(&mascot.rest, EYES[ix].0), (&mascot.talk, EYES[ix].1)] {
                 for &(x, y) in eyes {
-                    assert_eq!(rows[y].as_bytes()[x], b'.', "{} at {x},{y}", MASCOT_NAMES[ix]);
+                    assert_eq!(
+                        rows[y].as_bytes()[x],
+                        b'.',
+                        "{} at {x},{y}",
+                        MASCOT_NAMES[ix]
+                    );
                 }
             }
         }

@@ -236,7 +236,9 @@ impl BenCodeApp {
     fn render_chat_background(&self, session_id: &str, session_empty: bool) -> Option<AnyElement> {
         // A Mono's own image covers its chat (MonoCode `monoChatBackground`).
         let own = self.mono_background_for(session_id);
-        let (image, opacity) = own.clone().or_else(|| self.chat_background_for(session_empty))?;
+        let (image, opacity) = own
+            .clone()
+            .or_else(|| self.chat_background_for(session_empty))?;
         let rect = self
             .pane_rects
             .get(session_id)

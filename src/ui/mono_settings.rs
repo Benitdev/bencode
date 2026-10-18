@@ -89,7 +89,9 @@ fn setting_group(rows: Vec<AnyElement>, fg: Hsla) -> gpui::Div {
         .bg(fg.opacity(0.02))
         .children(rows.into_iter().enumerate().map(move |(ix, row)| {
             div()
-                .when(ix > 0, |el| el.border_t_1().border_color(fg.opacity(STROKE)))
+                .when(ix > 0, |el| {
+                    el.border_t_1().border_color(fg.opacity(STROKE))
+                })
                 .child(row)
         }))
 }
@@ -183,10 +185,19 @@ fn empty(text: &'static str, fg: Hsla) -> gpui::Div {
 
 /// A small text button: `rounded-md border border-stroke px-3 py-1.5
 /// text-[12px]`, red for what deletes.
-fn outline_button(id: &'static str, label: &'static str, danger: bool, cx: &Context<BenCodeApp>) -> gpui::Stateful<gpui::Div> {
+fn outline_button(
+    id: &'static str,
+    label: &'static str,
+    danger: bool,
+    cx: &Context<BenCodeApp>,
+) -> gpui::Stateful<gpui::Div> {
     let colors = &cx.theme().colors;
     let fg = colors.fg;
-    let ink = if danger { colors.danger } else { fg.ink(Ink::Strong) };
+    let ink = if danger {
+        colors.danger
+    } else {
+        fg.ink(Ink::Strong)
+    };
     let hover = if danger {
         colors.danger.opacity(0.1)
     } else {
@@ -218,58 +229,59 @@ impl BenCodeApp {
         let colors = &cx.theme().colors;
         let fg = colors.fg;
         let section = self.monos.settings_section;
-        let nav = div()
-            .flex()
-            .flex_col()
-            .flex_none()
-            .gap(px(1.0))
-            .w(px(NAV_WIDTH))
-            .h_full()
-            .p_2()
-            .border_r_1()
-            .border_color(fg.opacity(STROKE))
-            .child(
-                div()
-                    .px(px(10.0))
-                    .pb_2()
-                    .pt_1p5()
-                    .text_size(Text::Sm.px())
-                    .text_color(fg.ink(Ink::Muted))
-                    .child("Settings"),
-            )
-            .children(SECTIONS.iter().map(|&(id, label, icon)| {
-                let selected = id == section;
-                let ink = if selected { fg } else { fg.opacity(0.65) };
-                div()
-                    .id(SharedString::from(format!("mono-settings-nav-{label}")))
-                    .group(SharedString::from(format!("mono-settings-nav-{label}")))
-                    .flex()
-                    .items_center()
-                    .gap(px(10.0))
-                    .rounded(px(8.0))
-                    .px(px(10.0))
-                    .py_1p5()
-                    .text_size(Text::Md.px())
-                    .text_color(ink)
-                    .cursor_pointer()
-                    .map(|el| {
-                        if selected {
-                            el.bg(fg.fill(Fill::Selected))
-                        } else {
-                            el.hover(move |s| s.bg(fg.fill(Fill::Hover)).text_color(fg))
-                        }
-                    })
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.select_mono_settings_section(id, cx)
-                    }))
-                    .child(
-                        Icon::new(icon)
-                            .size(IconSize::Sm)
-                            .color(ink)
-                            .group_hover_color(format!("mono-settings-nav-{label}"), fg),
-                    )
-                    .child(label)
-            }));
+        let nav =
+            div()
+                .flex()
+                .flex_col()
+                .flex_none()
+                .gap(px(1.0))
+                .w(px(NAV_WIDTH))
+                .h_full()
+                .p_2()
+                .border_r_1()
+                .border_color(fg.opacity(STROKE))
+                .child(
+                    div()
+                        .px(px(10.0))
+                        .pb_2()
+                        .pt_1p5()
+                        .text_size(Text::Sm.px())
+                        .text_color(fg.ink(Ink::Muted))
+                        .child("Settings"),
+                )
+                .children(SECTIONS.iter().map(|&(id, label, icon)| {
+                    let selected = id == section;
+                    let ink = if selected { fg } else { fg.opacity(0.65) };
+                    div()
+                        .id(SharedString::from(format!("mono-settings-nav-{label}")))
+                        .group(SharedString::from(format!("mono-settings-nav-{label}")))
+                        .flex()
+                        .items_center()
+                        .gap(px(10.0))
+                        .rounded(px(8.0))
+                        .px(px(10.0))
+                        .py_1p5()
+                        .text_size(Text::Md.px())
+                        .text_color(ink)
+                        .cursor_pointer()
+                        .map(|el| {
+                            if selected {
+                                el.bg(fg.fill(Fill::Selected))
+                            } else {
+                                el.hover(move |s| s.bg(fg.fill(Fill::Hover)).text_color(fg))
+                            }
+                        })
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.select_mono_settings_section(id, cx)
+                        }))
+                        .child(
+                            Icon::new(icon)
+                                .size(IconSize::Sm)
+                                .color(ink)
+                                .group_hover_color(format!("mono-settings-nav-{label}"), fg),
+                        )
+                        .child(label)
+                }));
         let body = match section {
             SettingsSection::General => self.render_mono_general(&mono, cx),
             SettingsSection::Soul => self.render_mono_soul_page(&mono, cx),
@@ -301,8 +313,22 @@ impl BenCodeApp {
             .shadow_2xl()
             .text_color(fg)
             .child(nav)
-            .child(div().flex().flex_col().flex_1().min_w_0().h_full().child(body))
-            .child(div().absolute().top(px(6.0)).right(px(8.0)).child(close_button));
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .flex_1()
+                    .min_w_0()
+                    .h_full()
+                    .child(body),
+            )
+            .child(
+                div()
+                    .absolute()
+                    .top(px(6.0))
+                    .right(px(8.0))
+                    .child(close_button),
+            );
         Some(
             Backdrop::new("mono-settings-scrim")
                 .on_dismiss(close)
@@ -329,7 +355,12 @@ impl BenCodeApp {
             .hover(move |s| s.bg(fg.fill(Fill::Hover)))
             .text_size(px(15.0))
             .font_weight(FontWeight::MEDIUM)
-            .child(div().flex_1().min_w_0().child(self.monos.files.name_input.clone()));
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .child(self.monos.files.name_input.clone()),
+            );
         let session = self
             .mono_view_session()
             .and_then(|id| self.sessions.iter().find(|s| s.id == id));
@@ -428,9 +459,15 @@ impl BenCodeApp {
                 Some("It can see every session, note and folder in these."),
                 fg,
             ))
-            .child(setting_group(self.render_mono_settings_projects(mono, cx), fg))
+            .child(setting_group(
+                self.render_mono_settings_projects(mono, cx),
+                fg,
+            ))
             .child(group_heading("Sessions it starts", None, fg))
-            .child(setting_group(self.render_mono_started_sessions(mono, cx), fg))
+            .child(setting_group(
+                self.render_mono_started_sessions(mono, cx),
+                fg,
+            ))
             .child(group_heading("Conversation", None, fg))
             .child(setting_group(vec![reset, delete], fg))
             .children(self.monos.reset_error.clone().map(|err| {
@@ -452,28 +489,32 @@ impl BenCodeApp {
         let shown = mono.show_started_sessions_in_sidebar;
         let switch = |id: String, on: bool, set: fn(&mut Mono, bool)| {
             let (entity, mono_id) = (cx.entity().downgrade(), mono.id.clone());
-            ely_gpui_component::forms::Switch::new(SharedString::from(id), on).on_change(move |on, _, cx| {
-                let mono_id = mono_id.clone();
-                let toggled = entity.update(cx, |this, cx| {
-                    this.update_monos(
-                        |roster| {
-                            if let Some(entry) = roster.iter_mut().find(|m| m.id == mono_id) {
-                                set(entry, on);
-                            }
-                        },
-                        cx,
-                    );
-                    this.play_cue(crate::sounds::Cue::Switch);
-                });
-                if let Err(err) = toggled {
-                    log::debug!("Mono switch after app drop: {err:#}");
-                }
-            })
+            ely_gpui_component::forms::Switch::new(SharedString::from(id), on).on_change(
+                move |on, _, cx| {
+                    let mono_id = mono_id.clone();
+                    let toggled = entity.update(cx, |this, cx| {
+                        this.update_monos(
+                            |roster| {
+                                if let Some(entry) = roster.iter_mut().find(|m| m.id == mono_id) {
+                                    set(entry, on);
+                                }
+                            },
+                            cx,
+                        );
+                        this.play_cue(crate::sounds::Cue::Switch);
+                    });
+                    if let Err(err) = toggled {
+                        log::debug!("Mono switch after app drop: {err:#}");
+                    }
+                },
+            )
         };
         vec![
             setting_row(
                 "Show sessions in sidebar",
-                Some("Sessions it starts appear in your project sidebar. Hidden ones stay saved and open from its overview."),
+                Some(
+                    "Sessions it starts appear in your project sidebar. Hidden ones stay saved and open from its overview.",
+                ),
                 switch(format!("mono-started-shown-{}", mono.id), shown, |m, on| {
                     m.show_started_sessions_in_sidebar = on
                 })
@@ -483,9 +524,11 @@ impl BenCodeApp {
             setting_row(
                 "Group in a folder",
                 None,
-                switch(format!("mono-started-folder-{}", mono.id), shown && mono.use_sidebar_folders, |m, on| {
-                    m.use_sidebar_folders = on
-                })
+                switch(
+                    format!("mono-started-folder-{}", mono.id),
+                    shown && mono.use_sidebar_folders,
+                    |m, on| m.use_sidebar_folders = on,
+                )
                 .disabled(!shown)
                 .into_any_element(),
                 fg,
@@ -626,7 +669,9 @@ impl BenCodeApp {
                         .items_center()
                         .justify_center()
                         .rounded_full()
-                        .when(selected, |el| el.border_2().border_color(fg.ink(Ink::Strong)))
+                        .when(selected, |el| {
+                            el.border_2().border_color(fg.ink(Ink::Strong))
+                        })
                         .child(
                             div()
                                 .size(px(if selected { 16.0 } else { 22.0 }))
@@ -720,7 +765,11 @@ impl BenCodeApp {
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 this.remove_mono_project(&id, &target, cx)
                             }))
-                            .child(Icon::new(IconName::X).size(IconSize::Sm).color(fg.ink(Ink::Muted))),
+                            .child(
+                                Icon::new(IconName::X)
+                                    .size(IconSize::Sm)
+                                    .color(fg.ink(Ink::Muted)),
+                            ),
                     )
                     .into_any_element()
             })
@@ -744,7 +793,9 @@ impl BenCodeApp {
         let menu = menu.separator().item(
             MenuItem::new("Choose folder…")
                 .icon(IconName::FolderPlus)
-                .on_click(app_callback(cx, move |this, cx| this.pick_mono_project(&pick_id, cx))),
+                .on_click(app_callback(cx, move |this, cx| {
+                    this.pick_mono_project(&pick_id, cx)
+                })),
         );
         rows.push(
             div()
@@ -803,12 +854,10 @@ impl BenCodeApp {
                 .text_size(Text::Sm.px())
                 .line_height(px(16.0))
                 .text_color(fg.ink(Ink::Secondary))
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .child(format!("{} changed this while you were editing.", mono.display_name())),
-                )
+                .child(div().flex_1().min_w_0().child(format!(
+                    "{} changed this while you were editing.",
+                    mono.display_name()
+                )))
                 .child(
                     link("mono-soul-theirs", "Use theirs")
                         .on_click(cx.listener(|this, _, _, cx| this.use_their_soul(cx))),
@@ -844,7 +893,10 @@ impl BenCodeApp {
             .flex_col()
             .size_full()
             .child(page_header("Soul", None, fg))
-            .child(crate::ui::scrollbar::Scrolled::new("mono-settings-soul-scrollbar", body))
+            .child(crate::ui::scrollbar::Scrolled::new(
+                "mono-settings-soul-scrollbar",
+                body,
+            ))
             .into_any_element()
     }
 
@@ -918,7 +970,10 @@ impl BenCodeApp {
                     .text_color(colors.danger)
                     .child(err)
             }))
-            .child(crate::ui::scrollbar::Scrolled::new("mono-settings-memory-scrollbar", body))
+            .child(crate::ui::scrollbar::Scrolled::new(
+                "mono-settings-memory-scrollbar",
+                body,
+            ))
             .children(gauge.map(|gauge| {
                 div()
                     .flex_none()
@@ -949,7 +1004,11 @@ impl BenCodeApp {
                 .cursor_pointer()
                 .hover(move |s| s.bg(fg.fill(Fill::Selected)))
                 .tooltip(Tooltip::text(tip))
-                .child(Icon::new(icon).size(IconSize::Sm).color(fg.ink(Ink::Secondary)))
+                .child(
+                    Icon::new(icon)
+                        .size(IconSize::Sm)
+                        .color(fg.ink(Ink::Secondary)),
+                )
         };
         let (edit_fact, forget_fact, click_fact) = (fact.clone(), fact.clone(), fact.clone());
         div()
@@ -970,9 +1029,10 @@ impl BenCodeApp {
                     .px_2()
                     .py_2()
                     .when(!struck, |el| {
-                        el.cursor_pointer().on_click(cx.listener(move |this, _, window, cx| {
-                            this.start_editing_memory(click_fact.clone(), window, cx)
-                        }))
+                        el.cursor_pointer()
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.start_editing_memory(click_fact.clone(), window, cx)
+                            }))
                     })
                     .child(fact_icon(struck, fg))
                     .child(
@@ -1011,11 +1071,12 @@ impl BenCodeApp {
                     .invisible()
                     .group_hover(group, |s| s.visible())
                     .when(!struck, |el| {
-                        el.child(action(("mono-fact-edit", ix), IconName::Pencil, "Edit".into()).on_click(
-                            cx.listener(move |this, _, window, cx| {
-                                this.start_editing_memory(edit_fact.clone(), window, cx)
-                            }),
-                        ))
+                        el.child(
+                            action(("mono-fact-edit", ix), IconName::Pencil, "Edit".into())
+                                .on_click(cx.listener(move |this, _, window, cx| {
+                                    this.start_editing_memory(edit_fact.clone(), window, cx)
+                                })),
+                        )
                     })
                     .child(
                         action(

@@ -45,7 +45,10 @@ impl AppAccessState {
         };
         cx.spawn(async move |this, cx| {
             while let Some(call) = calls_rx.recv().await {
-                if this.update(cx, |this, cx| this.handle_app_call(call, cx)).is_err() {
+                if this
+                    .update(cx, |this, cx| this.handle_app_call(call, cx))
+                    .is_err()
+                {
                     break;
                 }
             }
@@ -83,7 +86,12 @@ impl BenCodeApp {
         if !self.has_app_access(session_id) || crate::remote::is_remote(cwd) {
             return None;
         }
-        let socket = self.app_access.socket.as_ref()?.to_string_lossy().into_owned();
+        let socket = self
+            .app_access
+            .socket
+            .as_ref()?
+            .to_string_lossy()
+            .into_owned();
         let token = self
             .app_access
             .tokens
@@ -153,15 +161,13 @@ impl BenCodeApp {
             "soul" | "memory" => self.mono_file_call(caller, &action, input, call, cx),
             "notes" => self.notes_call(caller, &action, &input, call, cx),
             "models" => call.answer(models_listing(&self.harnesses)),
-            "habits" if !caller.own => call.fail(
-                "Only a Mono's own conversation can manage its habits",
-                true,
-            ),
+            "habits" if !caller.own => {
+                call.fail("Only a Mono's own conversation can manage its habits", true)
+            }
             "habits" => self.habits_call(caller, &action, input, call, cx),
-            "board" if !caller.own => call.fail(
-                "Only a Mono's own conversation can manage its board",
-                true,
-            ),
+            "board" if !caller.own => {
+                call.fail("Only a Mono's own conversation can manage its board", true)
+            }
             "board" => self.board_call(caller, &action, input, call, cx),
             "sessions" | "worktrees" | "folders" => {
                 self.mono_sessions_call(caller, &action, input, call, cx)
@@ -239,11 +245,21 @@ impl BenCodeApp {
             .iter()
             .find(|s| s.id == caller.session)
             .map(|s| s.work_dir().to_string())
-            .filter(|cwd| !self.is_mono_session(&caller.session) && crate::app::notes::is_project_folder(cwd));
+            .filter(|cwd| {
+                !self.is_mono_session(&caller.session) && crate::app::notes::is_project_folder(cwd)
+            });
         let request_id = call.request.request_id.clone();
         self.db_then(
             cx,
-            move |db| crate::app_cli::notes::run(db, &parsed, &caller.session, cwd.as_deref(), &request_id),
+            move |db| {
+                crate::app_cli::notes::run(
+                    db,
+                    &parsed,
+                    &caller.session,
+                    cwd.as_deref(),
+                    &request_id,
+                )
+            },
             move |this, result, cx| {
                 match result {
                     Ok(value) => call.answer(value),
@@ -302,7 +318,13 @@ impl BenCodeApp {
     /// MonoCode `chat.card`: its app never hands the CLI a way to post one
     /// (`AgentAppHost.postCard` is not given), so the call is refused as
     /// MonoCode refuses it.
-    pub(crate) fn chat_card_call(&mut self, _caller: Caller, _input: Map<String, Value>, call: AppCall, _cx: &mut Context<Self>) {
+    pub(crate) fn chat_card_call(
+        &mut self,
+        _caller: Caller,
+        _input: Map<String, Value>,
+        call: AppCall,
+        _cx: &mut Context<Self>,
+    ) {
         call.fail("Only a Mono can put cards in its chat", true);
     }
 }

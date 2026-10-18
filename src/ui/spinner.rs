@@ -80,7 +80,11 @@ fn until_edge_at(elapsed: Duration, period: Duration, edges: &[f32]) -> Duration
         .iter()
         .map(|edge| {
             let edge = edge * period_ms;
-            if edge > at { edge - at } else { edge + period_ms - at }
+            if edge > at {
+                edge - at
+            } else {
+                edge + period_ms - at
+            }
         })
         .fold(period_ms, f32::min);
     Duration::from_millis(left.ceil() as u64 + 1)

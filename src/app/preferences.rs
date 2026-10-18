@@ -152,11 +152,15 @@ impl BenCodeApp {
         if let Some(width) = saved.inbox_list_width {
             self.inbox.list_width = width;
         }
-        self.monos.overview.width = saved
-            .mono_overview_width
-            .map_or(crate::app::mono_overview::DEFAULT_WIDTH, |w| {
-                w.clamp(crate::app::mono_overview::MIN_WIDTH, crate::app::mono_overview::MAX_WIDTH)
-            });
+        self.monos.overview.width =
+            saved
+                .mono_overview_width
+                .map_or(crate::app::mono_overview::DEFAULT_WIDTH, |w| {
+                    w.clamp(
+                        crate::app::mono_overview::MIN_WIDTH,
+                        crate::app::mono_overview::MAX_WIDTH,
+                    )
+                });
         self.favorite_models = saved.favorite_models.clone();
         self.recent_models = saved.recent_models.clone();
         self.last_model_settings = saved.last_model_settings.clone();

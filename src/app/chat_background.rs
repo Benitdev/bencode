@@ -138,7 +138,11 @@ pub(crate) fn decode(path: &Path) -> Result<Source> {
 }
 
 /// The artwork under `effect` as GPUI draws it (BGRA).
-pub(crate) fn render_image(source: &Source, effect: BackgroundEffect, light: bool) -> Result<RenderImage> {
+pub(crate) fn render_image(
+    source: &Source,
+    effect: BackgroundEffect,
+    light: bool,
+) -> Result<RenderImage> {
     let mut pixels = background_effects::render(source, effect, light);
     for pixel in pixels.chunks_exact_mut(4) {
         pixel.swap(0, 2);

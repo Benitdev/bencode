@@ -164,9 +164,22 @@ mod tests {
 
     #[test]
     fn levels_step_down() {
-        let ink = [Ink::Strong, Ink::Body, Ink::Secondary, Ink::Muted, Ink::Faint];
+        let ink = [
+            Ink::Strong,
+            Ink::Body,
+            Ink::Secondary,
+            Ink::Muted,
+            Ink::Faint,
+        ];
         assert!(ink.windows(2).all(|w| w[0].alpha() > w[1].alpha()));
-        let fill = [Fill::Faint, Fill::Hover, Fill::Line, Fill::Selected, Fill::Strong, Fill::Bold];
+        let fill = [
+            Fill::Faint,
+            Fill::Hover,
+            Fill::Line,
+            Fill::Selected,
+            Fill::Strong,
+            Fill::Bold,
+        ];
         assert!(fill.windows(2).all(|w| w[0].alpha() < w[1].alpha()));
         // Ink never washes out into a fill.
         assert!(Ink::Faint.alpha() > Fill::Bold.alpha());
@@ -176,9 +189,18 @@ mod tests {
     fn a_state_has_one_colour_everywhere() {
         use crate::app::mono_sessions::LaunchedState;
         let fg: Hsla = gpui::white();
-        assert_eq!(Status::from(LaunchedState::Input).color(fg), rgb(AMBER_400).into());
-        assert_eq!(Status::from(LaunchedState::Failed).color(fg), rgb(RED_400).into());
-        assert_eq!(Status::from(LaunchedState::Done).color(fg), rgb(EMERALD_400).into());
+        assert_eq!(
+            Status::from(LaunchedState::Input).color(fg),
+            rgb(AMBER_400).into()
+        );
+        assert_eq!(
+            Status::from(LaunchedState::Failed).color(fg),
+            rgb(RED_400).into()
+        );
+        assert_eq!(
+            Status::from(LaunchedState::Done).color(fg),
+            rgb(EMERALD_400).into()
+        );
         assert_eq!(Status::from(LaunchedState::Stopped), Status::Quiet);
     }
 }

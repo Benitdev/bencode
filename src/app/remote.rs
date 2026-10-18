@@ -292,7 +292,11 @@ impl BenCodeApp {
         let Some(machine) = self.machines().iter().find(|m| m.id == id).cloned() else {
             return;
         };
-        self.begin_machine_setup(Purpose::Reconnect(machine), JobKind::Reconnect(id.into()), cx);
+        self.begin_machine_setup(
+            Purpose::Reconnect(machine),
+            JobKind::Reconnect(id.into()),
+            cx,
+        );
     }
 
     pub fn update_machine_host(&mut self, id: &str, cx: &mut Context<Self>) {
@@ -324,7 +328,9 @@ impl BenCodeApp {
             return;
         }
         self.remote.job = None;
-        self.remote.answer_input.update(cx, |input, cx| input.set_text("", cx));
+        self.remote
+            .answer_input
+            .update(cx, |input, cx| input.set_text("", cx));
         if let Some(error) = view.error {
             self.remote.error = Some(error);
             return;
@@ -341,7 +347,10 @@ impl BenCodeApp {
                 } else {
                     saved.name.clone()
                 };
-                *saved = Machine { name, ..machine.clone() };
+                *saved = Machine {
+                    name,
+                    ..machine.clone()
+                };
             }
             None => machines.push(machine.clone()),
         }
@@ -391,7 +400,9 @@ impl BenCodeApp {
         if let Err(err) = job.answer(&prompt.id, answer) {
             self.remote.error = Some(err);
         }
-        self.remote.answer_input.update(cx, |input, cx| input.set_text("", cx));
+        self.remote
+            .answer_input
+            .update(cx, |input, cx| input.set_text("", cx));
         cx.notify();
     }
 
@@ -497,7 +508,9 @@ impl BenCodeApp {
             machine: self.machines().first().map(|m| m.id.clone()),
             ..FolderDialog::default()
         });
-        self.remote.path_input.update(cx, |input, cx| input.set_text("", cx));
+        self.remote
+            .path_input
+            .update(cx, |input, cx| input.set_text("", cx));
         if let Some(id) = self.remote.folder.as_ref().and_then(|f| f.machine.clone()) {
             self.browse_remote_folder(&id, None, cx);
         }
@@ -515,12 +528,19 @@ impl BenCodeApp {
         };
         dialog.machine = Some(id.to_string());
         dialog.listing = None;
-        self.remote.path_input.update(cx, |input, cx| input.set_text("", cx));
+        self.remote
+            .path_input
+            .update(cx, |input, cx| input.set_text("", cx));
         self.browse_remote_folder(id, None, cx);
     }
 
     /// Lists `path`'s subfolders on the machine; `None` is its home.
-    pub fn browse_remote_folder(&mut self, machine: &str, path: Option<String>, cx: &mut Context<Self>) {
+    pub fn browse_remote_folder(
+        &mut self,
+        machine: &str,
+        path: Option<String>,
+        cx: &mut Context<Self>,
+    ) {
         let Some(dialog) = self.remote.folder.as_mut() else {
             return;
         };
@@ -662,7 +682,11 @@ fn listing(path: &str, entries: Vec<EntryWire>) -> Listing {
         None => None,
     };
     Listing {
-        path: if trimmed.is_empty() { "/".into() } else { trimmed.into() },
+        path: if trimmed.is_empty() {
+            "/".into()
+        } else {
+            trimmed.into()
+        },
         parent,
         folders,
     }

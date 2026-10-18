@@ -114,8 +114,7 @@ pub fn delete_claude_credentials(config_dir: &std::path::Path) -> Result<(), Str
         let failed = |detail: String| {
             format!("Could not remove the Claude credentials from Keychain ({service}): {detail}")
         };
-        let output =
-            run(&["delete-generic-password", "-s", service.as_str()]).map_err(failed)?;
+        let output = run(&["delete-generic-password", "-s", service.as_str()]).map_err(failed)?;
         if !(output.ok || not_found(&output)) {
             return Err(failed(output.stderr));
         }

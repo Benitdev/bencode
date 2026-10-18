@@ -16,8 +16,8 @@ use crate::ui::scale::px;
 use super::relative_time;
 use crate::app::BenCodeApp;
 use crate::github::{self, Comment, Kind, WorkItem};
-use crate::work_items::Provider;
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
+use crate::work_items::Provider;
 
 /// The review thread a reply goes to (MonoCode `InboxReplyTarget`).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -384,13 +384,16 @@ impl BenCodeApp {
             .flex()
             .flex_col()
             .gap_1()
-            .child(div().text_size(Text::Base.px()).text_color(fg.ink(Ink::Body)).child(
-                if commits.len() == 1 {
-                    "1 commit".to_string()
-                } else {
-                    format!("{} commits", commits.len())
-                },
-            ))
+            .child(
+                div()
+                    .text_size(Text::Base.px())
+                    .text_color(fg.ink(Ink::Body))
+                    .child(if commits.len() == 1 {
+                        "1 commit".to_string()
+                    } else {
+                        format!("{} commits", commits.len())
+                    }),
+            )
             .children(commits.iter().enumerate().map(|(ix, commit)| {
                 let url = commit.url.clone();
                 let hover = fg.fill(Fill::Hover);

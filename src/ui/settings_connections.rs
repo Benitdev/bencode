@@ -7,8 +7,8 @@
 //! existing host by URL" and its device tokens (Revoke access) are not here.
 
 use ely_gpui_component::buttons::{Button, ButtonVariant, IconButton};
-use ely_gpui_component::motion::Spinner;
 use ely_gpui_component::forms::{Input, PasswordInput};
+use ely_gpui_component::motion::Spinner;
 use ely_gpui_component::primitives::{Icon, IconName};
 use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
@@ -128,9 +128,9 @@ impl BenCodeApp {
                             .variant(ButtonVariant::Outline)
                             .size(ControlSize::Sm)
                             .disabled(busy)
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.update_machine_host(&update_id, cx)
-                            })),
+                            .on_click(cx.listener(
+                                move |this, _, _, cx| this.update_machine_host(&update_id, cx),
+                            )),
                         )
                     })
                     .child(
@@ -141,7 +141,9 @@ impl BenCodeApp {
                         .variant(ButtonVariant::Outline)
                         .size(ControlSize::Sm)
                         .disabled(busy)
-                        .on_click(cx.listener(move |this, _, _, cx| this.reconnect_machine(&id, cx))),
+                        .on_click(
+                            cx.listener(move |this, _, _, cx| this.reconnect_machine(&id, cx)),
+                        ),
                     )
                     .child(
                         IconButton::new(
@@ -186,17 +188,25 @@ impl BenCodeApp {
             .row(
                 SettingsRow::new("SSH address")
                     .description("An SSH host or an alias from your SSH config.")
-                    .control(field(Input::new(&self.remote.target_input).into_any_element())),
+                    .control(field(
+                        Input::new(&self.remote.target_input).into_any_element(),
+                    )),
             )
             .row(
                 SettingsRow::new("Name")
                     .description("Optional. The machine's own name otherwise.")
-                    .control(field(Input::new(&self.remote.name_input).into_any_element())),
+                    .control(field(
+                        Input::new(&self.remote.name_input).into_any_element(),
+                    )),
             )
             .row(
                 SettingsRow::new("SSH port")
                     .description("Advanced. Leave empty to use your SSH config.")
-                    .control(div().w(px(160.0)).child(Input::new(&self.remote.port_input))),
+                    .control(
+                        div()
+                            .w(px(160.0))
+                            .child(Input::new(&self.remote.port_input)),
+                    ),
             );
         if let Some(error) = self.remote.error.clone() {
             group = group.row(SettingsRow::new("Could not connect").error(error));
@@ -215,12 +225,15 @@ impl BenCodeApp {
                             .on_click(cx.listener(|this, _, _, cx| this.cancel_add_machine(cx))),
                     )
                     .child(
-                        Button::new("connections-add-connect", if busy { "Connecting…" } else { "Connect" })
-                            .primary()
-                            .size(ControlSize::Sm)
-                            .loading(busy)
-                            .disabled(busy || !typed)
-                            .on_click(cx.listener(|this, _, _, cx| this.add_machine(cx))),
+                        Button::new(
+                            "connections-add-connect",
+                            if busy { "Connecting…" } else { "Connect" },
+                        )
+                        .primary()
+                        .size(ControlSize::Sm)
+                        .loading(busy)
+                        .disabled(busy || !typed)
+                        .on_click(cx.listener(|this, _, _, cx| this.add_machine(cx))),
                     ),
             ),
         )
@@ -245,37 +258,48 @@ impl BenCodeApp {
                 .line_height(relative(1.625))
                 .text_color(fg.ink(Ink::Body))
                 .child(prompt.message.clone());
-            let answer: AnyElement = if prompt.confirm {
-                div()
-                    .flex()
-                    .gap_2()
-                    .child(
-                        Button::new("connections-trust", "Trust host and continue")
-                            .primary()
-                            .size(ControlSize::Sm)
-                            .on_click(cx.listener(|this, _, _, cx| this.answer_ssh_prompt(Some("yes"), cx))),
-                    )
-                    .child(
-                        Button::new("connections-reject", "Reject")
-                            .variant(ButtonVariant::Outline)
-                            .size(ControlSize::Sm)
-                            .on_click(cx.listener(|this, _, _, cx| this.answer_ssh_prompt(Some("no"), cx))),
-                    )
-                    .into_any_element()
-            } else {
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .child(div().w(px(FIELD_WIDTH)).child(PasswordInput::new(&self.remote.answer_input)))
-                    .child(
-                        Button::new("connections-answer", "Continue")
-                            .primary()
-                            .size(ControlSize::Sm)
-                            .on_click(cx.listener(|this, _, _, cx| this.answer_ssh_prompt(None, cx))),
-                    )
-                    .into_any_element()
-            };
+            let answer: AnyElement =
+                if prompt.confirm {
+                    div()
+                        .flex()
+                        .gap_2()
+                        .child(
+                            Button::new("connections-trust", "Trust host and continue")
+                                .primary()
+                                .size(ControlSize::Sm)
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.answer_ssh_prompt(Some("yes"), cx)
+                                })),
+                        )
+                        .child(
+                            Button::new("connections-reject", "Reject")
+                                .variant(ButtonVariant::Outline)
+                                .size(ControlSize::Sm)
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.answer_ssh_prompt(Some("no"), cx)
+                                })),
+                        )
+                        .into_any_element()
+                } else {
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap_2()
+                        .child(
+                            div()
+                                .w(px(FIELD_WIDTH))
+                                .child(PasswordInput::new(&self.remote.answer_input)),
+                        )
+                        .child(
+                            Button::new("connections-answer", "Continue")
+                                .primary()
+                                .size(ControlSize::Sm)
+                                .on_click(
+                                    cx.listener(|this, _, _, cx| this.answer_ssh_prompt(None, cx)),
+                                ),
+                        )
+                        .into_any_element()
+                };
             group = group.row(
                 div()
                     .px_4()

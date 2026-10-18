@@ -29,11 +29,11 @@ use crate::ui::explorer_menu::{self, MenuAction, MenuEntry};
 use crate::ui::layout::WorkspaceTab;
 use crate::ui::scale::px;
 use crate::ui::sidebar::SessionDialog;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 use crate::ui::window_drag::claim_press;
 use tabs::{
     CloseMany, TitleTab, closable, close_ids, next_unseen_finished, strip_overflow, tab_copy,
 };
-use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// MonoCode `w-56 min-w-28`.
 const TAB_WIDTH: f32 = 224.0;

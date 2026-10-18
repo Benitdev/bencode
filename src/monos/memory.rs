@@ -94,7 +94,10 @@ fn secret_at(text: &str) -> Option<usize> {
         return Some(11 + n);
     }
     // `\bxox[abprs]-[A-Za-z0-9-]{10,}`
-    if text.starts_with("xox") && bytes.len() > 5 && b"abprs".contains(&bytes[3]) && bytes[4] == b'-'
+    if text.starts_with("xox")
+        && bytes.len() > 5
+        && b"abprs".contains(&bytes[3])
+        && bytes[4] == b'-'
     {
         let n = run(&text[5..], |b| b.is_ascii_alphanumeric() || b == b'-');
         if n >= 10 {
@@ -125,9 +128,11 @@ fn secret_at(text: &str) -> Option<usize> {
     }
     // `\b(?:password|passwd|secret|token|api[_-]?key)\s*[:=]\s*\S+`, any case.
     let lower = text.get(..text.len().min(8))?.to_ascii_lowercase();
-    let word = ["password", "passwd", "secret", "token", "api_key", "api-key", "apikey"]
-        .iter()
-        .find(|word| lower.starts_with(**word))?;
+    let word = [
+        "password", "passwd", "secret", "token", "api_key", "api-key", "apikey",
+    ]
+    .iter()
+    .find(|word| lower.starts_with(**word))?;
     let mut at = word.len();
     at += text[at..].len() - text[at..].trim_start().len();
     if !text[at..].starts_with([':', '=']) {
@@ -401,9 +406,9 @@ pub struct MemoryHit {
 /// MonoCode `STOPWORDS`.
 const STOPWORDS: &[&str] = &[
     "the", "and", "for", "are", "was", "were", "with", "that", "this", "what", "when", "where",
-    "which", "who", "how", "why", "did", "does", "have", "has", "had", "you", "your", "our",
-    "not", "but", "can", "will", "from", "into", "about", "there", "their", "them", "then",
-    "than", "just", "any", "all", "its", "it's",
+    "which", "who", "how", "why", "did", "does", "have", "has", "had", "you", "your", "our", "not",
+    "but", "can", "will", "from", "into", "about", "there", "their", "them", "then", "than",
+    "just", "any", "all", "its", "it's",
 ];
 
 fn query_words(query: &str) -> Vec<String> {
@@ -413,7 +418,9 @@ fn query_words(query: &str) -> Vec<String> {
         .split(|c: char| !(c.is_alphanumeric() || matches!(c, '_' | '.' | '-')))
     {
         let word = word.trim_matches(|c| c == '.' || c == '-');
-        if word.chars().count() >= 3 && !STOPWORDS.contains(&word) && !words.iter().any(|w| w == word)
+        if word.chars().count() >= 3
+            && !STOPWORDS.contains(&word)
+            && !words.iter().any(|w| w == word)
         {
             words.push(word.to_string());
         }
@@ -430,7 +437,10 @@ pub fn since_date(value: &str, today: jiff::Zoned) -> Result<String, String> {
     }
     let error = || "since must be a date like 2026-10-01 or a span like \"7d\"".to_string();
     let unit = value.chars().last().ok_or_else(error)?.to_ascii_lowercase();
-    let count: i64 = value[..value.len() - 1].trim().parse().map_err(|_| error())?;
+    let count: i64 = value[..value.len() - 1]
+        .trim()
+        .parse()
+        .map_err(|_| error())?;
     if !(0..=9999).contains(&count) {
         return Err(error());
     }
@@ -477,7 +487,10 @@ pub fn search_memory(
                 continue;
             }
             let lower = line.to_lowercase();
-            let score = words.iter().filter(|word| lower.contains(word.as_str())).count();
+            let score = words
+                .iter()
+                .filter(|word| lower.contains(word.as_str()))
+                .count();
             if score < needed {
                 continue;
             }
@@ -492,8 +505,12 @@ pub fn search_memory(
         }
     }
     hits.sort_by(|(a, x), (b, y)| {
-        b.cmp(a)
-            .then_with(|| y.date.as_deref().unwrap_or("").cmp(x.date.as_deref().unwrap_or("")))
+        b.cmp(a).then_with(|| {
+            y.date
+                .as_deref()
+                .unwrap_or("")
+                .cmp(x.date.as_deref().unwrap_or(""))
+        })
     });
     Ok(hits.into_iter().take(limit).map(|(_, hit)| hit).collect())
 }
@@ -520,9 +537,9 @@ pub fn memory_lines(text: &str) -> Vec<MemoryLine> {
     let mut out = Vec::new();
     for (index, raw) in text.split('\n').enumerate() {
         let line = raw.trim();
-        let heading = line
-            .find(|c: char| c != '#')
-            .is_some_and(|hashes| (1..=6).contains(&hashes) && line[hashes..].starts_with(char::is_whitespace));
+        let heading = line.find(|c: char| c != '#').is_some_and(|hashes| {
+            (1..=6).contains(&hashes) && line[hashes..].starts_with(char::is_whitespace)
+        });
         if line.is_empty() || heading {
             continue;
         }
@@ -530,10 +547,7 @@ pub fn memory_lines(text: &str) -> Vec<MemoryLine> {
         let date = dated(line).map(str::to_string);
         let until = split_until(line).map(|(_, until)| until.to_string());
         let mut fact = line;
-        if let Some(rest) = fact
-            .strip_prefix("- ")
-            .or_else(|| fact.strip_prefix("* "))
-        {
+        if let Some(rest) = fact.strip_prefix("- ").or_else(|| fact.strip_prefix("* ")) {
             fact = rest.trim_start();
         }
         let fact = fact.replace("~~", "");
@@ -585,7 +599,12 @@ pub fn without_line(text: &str, index: usize) -> String {
 /// MonoCode `withLineEdited`: the file with one fact reworded in place. A
 /// dated entry is redated to `date` and keeps its until; a line the user
 /// wrote stays undated, with its bullet.
-pub fn with_line_edited(text: &str, index: usize, fact: &str, date: &str) -> Result<String, String> {
+pub fn with_line_edited(
+    text: &str,
+    index: usize,
+    fact: &str,
+    date: &str,
+) -> Result<String, String> {
     let mut list: Vec<String> = text.split('\n').map(str::to_string).collect();
     let old = list.get(index).cloned().unwrap_or_default();
     let line = if dated(old.trim()).is_some() {
@@ -694,15 +713,32 @@ mod tests {
             redact_secrets(&format!("gh{}_{}", "p", "A".repeat(24))),
             "«redacted 28 chars»"
         );
-        assert_eq!(redact_secrets("AKIAABCDEFGHIJKLMNOP"), "«redacted 20 chars»");
-        assert_eq!(redact_secrets("password: hunter2 ok"), "«redacted 17 chars» ok");
+        assert_eq!(
+            redact_secrets("AKIAABCDEFGHIJKLMNOP"),
+            "«redacted 20 chars»"
+        );
+        assert_eq!(
+            redact_secrets("password: hunter2 ok"),
+            "«redacted 17 chars» ok"
+        );
         assert_eq!(redact_secrets("API_KEY=abc"), "«redacted 11 chars»");
         let jwt = format!("eyJ{0}.{0}.{0}", "x".repeat(12));
-        assert_eq!(redact_secrets(&jwt), format!("«redacted {} chars»", jwt.len()));
+        assert_eq!(
+            redact_secrets(&jwt),
+            format!("«redacted {} chars»", jwt.len())
+        );
         let pem = "-----BEGIN RSA PRIVATE KEY-----\nabc\n-----END RSA PRIVATE KEY-----";
-        assert_eq!(redact_secrets(&format!("k {pem} done")), "k «redacted 65 chars» done");
+        assert_eq!(
+            redact_secrets(&format!("k {pem} done")),
+            "k «redacted 65 chars» done"
+        );
         // Inside a word, or too short, it is not a key.
-        for plain in ["task-runner", "risk-aaaaaaaaaaaaaaaaaaaa", "tokens are fine", "sk-short"] {
+        for plain in [
+            "task-runner",
+            "risk-aaaaaaaaaaaaaaaaaaaa",
+            "tokens are fine",
+            "sk-short",
+        ] {
             assert_eq!(redact_secrets(plain), plain);
         }
     }
@@ -715,7 +751,10 @@ mod tests {
         assert_eq!(text, memory);
         let (text, added) = add_memory_entry(memory, "- 2026-10-04 · likes coffee");
         assert!(added);
-        assert_eq!(text, "- 2026-10-01 · likes tea\n- 2026-10-04 · likes coffee\n");
+        assert_eq!(
+            text,
+            "- 2026-10-01 · likes tea\n- 2026-10-04 · likes coffee\n"
+        );
         let (text, added) = add_memory_entry("", "- 2026-10-04 · first");
         assert!(added);
         assert_eq!(text, "- 2026-10-04 · first\n");
@@ -748,7 +787,10 @@ mod tests {
         let edited = with_line_edited(memory, 2, "and this", "2026-10-05").unwrap();
         assert!(edited.ends_with("\n* and this"));
         assert!(with_line_edited(memory, 1, " ", "2026-10-05").is_err());
-        assert_eq!(without_line(memory, 1), "- 2026-10-01 · away · until 2026-11-01\n* also mine");
+        assert_eq!(
+            without_line(memory, 1),
+            "- 2026-10-01 · away · until 2026-11-01\n* also mine"
+        );
     }
 
     #[test]
@@ -777,14 +819,20 @@ mod tests {
     #[test]
     fn a_changed_fact_is_struck_and_followed() {
         let memory = "- 2026-10-01 · desk by the window\n- 2026-10-01 · likes tea\n";
-        let next = supersede_memory_entry(memory, "desk", "- 2026-10-05 · desk upstairs", "2026-10-05").unwrap();
+        let next =
+            supersede_memory_entry(memory, "desk", "- 2026-10-05 · desk upstairs", "2026-10-05")
+                .unwrap();
         assert_eq!(
             next,
             "- ~~2026-10-01 · desk by the window~~ · superseded 2026-10-05\n- 2026-10-05 · desk upstairs\n- 2026-10-01 · likes tea\n"
         );
         // The struck line is not found again.
         assert!(supersede_memory_entry(&next, "window", "- x", "2026-10-05").is_err());
-        assert!(supersede_memory_entry(memory, "2026", "- x", "2026-10-05").unwrap_err().starts_with("2 entries"));
+        assert!(
+            supersede_memory_entry(memory, "2026", "- x", "2026-10-05")
+                .unwrap_err()
+                .starts_with("2 entries")
+        );
         let (left, removed) = remove_memory_entry(memory, "tea").unwrap();
         assert_eq!(removed, "- 2026-10-01 · likes tea");
         assert_eq!(left, "- 2026-10-01 · desk by the window\n");
@@ -812,7 +860,10 @@ mod tests {
         assert!(fitted.starts_with("mine\n- 2026-05-01 · fact 0\n"));
         assert_eq!(lines(&fitted).len(), 200);
         let archive = archive_memory_entries("", &moved[..1], "2026-10-05");
-        assert_eq!(archive, "# Archive\n\n- ~~2026-01-01 · old~~ · superseded 2026-02-01 · moved 2026-10-05\n");
+        assert_eq!(
+            archive,
+            "# Archive\n\n- ~~2026-01-01 · old~~ · superseded 2026-02-01 · moved 2026-10-05\n"
+        );
     }
 
     #[test]
@@ -824,7 +875,10 @@ mod tests {
         let today: jiff::Zoned = "2026-10-08T12:00:00[UTC]".parse().unwrap();
         assert_eq!(since_date("7d", today.clone()).unwrap(), "2026-10-01");
         assert_eq!(since_date("2w", today.clone()).unwrap(), "2026-09-24");
-        assert_eq!(since_date("2026-01-02", today.clone()).unwrap(), "2026-01-02");
+        assert_eq!(
+            since_date("2026-01-02", today.clone()).unwrap(),
+            "2026-01-02"
+        );
         assert!(since_date("soon", today).is_err());
     }
 
@@ -835,11 +889,13 @@ mod tests {
             ("memory/archive.md".to_string(), "- 2026-01-01 · deploy freeze in december\n".to_string()),
         ];
         let hits = search_memory(&files, "where is the deploy key?", None, 20).unwrap();
-        assert_eq!(hits[0].line, "- 2026-10-03 · the deploy key lives in 1password");
+        assert_eq!(
+            hits[0].line,
+            "- 2026-10-03 · the deploy key lives in 1password"
+        );
         assert_eq!(hits.len(), 3);
         let recent = search_memory(&files, "", Some("2026-10-02"), 20).unwrap();
         assert_eq!(recent.len(), 1);
         assert!(search_memory(&files, "is it", None, 20).is_err());
     }
-
 }

@@ -52,7 +52,12 @@ impl ArtifactsState {
                     ArtifactEvent::OpenLink(url) => {
                         // Only a link the user just pressed: the page has
                         // the keyboard then.
-                        if this.artifacts.page.as_ref().is_some_and(|page| page.has_keys()) {
+                        if this
+                            .artifacts
+                            .page
+                            .as_ref()
+                            .is_some_and(|page| page.has_keys())
+                        {
                             cx.open_url(&url);
                         }
                     }
@@ -297,8 +302,7 @@ impl BenCodeApp {
                     }
                     Err(err) => {
                         log::error!("could not delete artifact {id}: {err:#}");
-                        if let Some(reader) =
-                            this.artifacts.reader.as_mut().filter(|r| r.id == id)
+                        if let Some(reader) = this.artifacts.reader.as_mut().filter(|r| r.id == id)
                         {
                             reader.error = Some("Could not delete this document.".into());
                         }
@@ -339,7 +343,12 @@ impl BenCodeApp {
             &artifact.id,
             artifact.updated_at,
             crate::ui::artifacts::theme_key(cx),
-            || crate::browser::artifact::page_html(&artifact.body, &crate::ui::artifacts::theme_css(cx)),
+            || {
+                crate::browser::artifact::page_html(
+                    &artifact.body,
+                    &crate::ui::artifacts::theme_css(cx),
+                )
+            },
         );
     }
 }

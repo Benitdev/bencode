@@ -346,26 +346,27 @@ impl BenCodeApp {
         let fg = cx.theme().colors.fg;
         let recent = self.composer_menus.recent_open;
         let open = recent || self.composer_menus.models_only == Some(ModelsAnchor::MonoComposer);
-        let trigger = text_control("mono-model".into(), open, fg)
-            .tooltip(Tooltip::text(super::model_chip_tooltip(
-                &session.model,
-                session.model_settings.as_ref(),
-            )))
-            .on_click(cx.listener(|this, _, _, cx| {
-                this.toggle_models_only(ModelsAnchor::MonoComposer, cx)
-            }))
-            // MonoCode `onContextMenu`: the recent models, as ⌘. opens them.
-            .on_mouse_down(
-                gpui::MouseButton::Right,
-                cx.listener(|this, _, _, cx| this.toggle_recent_models(cx)),
-            )
-            .child(HarnessIcon::new(&session.harness).size(px(14.0)))
-            .child(
-                div()
-                    .min_w_0()
-                    .truncate()
-                    .child(catalog::label_for(&session.model)),
-            );
+        let trigger =
+            text_control("mono-model".into(), open, fg)
+                .tooltip(Tooltip::text(super::model_chip_tooltip(
+                    &session.model,
+                    session.model_settings.as_ref(),
+                )))
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.toggle_models_only(ModelsAnchor::MonoComposer, cx)
+                }))
+                // MonoCode `onContextMenu`: the recent models, as ⌘. opens them.
+                .on_mouse_down(
+                    gpui::MouseButton::Right,
+                    cx.listener(|this, _, _, cx| this.toggle_recent_models(cx)),
+                )
+                .child(HarnessIcon::new(&session.harness).size(px(14.0)))
+                .child(
+                    div()
+                        .min_w_0()
+                        .truncate()
+                        .child(catalog::label_for(&session.model)),
+                );
         div()
             .relative()
             .flex_none()
@@ -394,23 +395,24 @@ impl BenCodeApp {
     ) -> AnyElement {
         let fg = cx.theme().colors.fg;
         let open = self.composer_menus.models_only == Some(ModelsAnchor::MonoSettings);
-        let trigger = text_control("mono-settings-model".into(), open, fg)
-            .text_color(if open { fg } else { fg.ink(Ink::Strong) })
-            .on_click(cx.listener(|this, _, _, cx| {
-                this.toggle_models_only(ModelsAnchor::MonoSettings, cx)
-            }))
-            .child(HarnessIcon::new(&session.harness).size(px(14.0)))
-            .child(
-                div()
-                    .min_w_0()
-                    .truncate()
-                    .child(catalog::label_for(&session.model)),
-            )
-            .child(
-                Icon::new(IconName::ChevronDown)
-                    .size(IconSize::Xs)
-                    .color(fg.ink(Ink::Muted)),
-            );
+        let trigger =
+            text_control("mono-settings-model".into(), open, fg)
+                .text_color(if open { fg } else { fg.ink(Ink::Strong) })
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.toggle_models_only(ModelsAnchor::MonoSettings, cx)
+                }))
+                .child(HarnessIcon::new(&session.harness).size(px(14.0)))
+                .child(
+                    div()
+                        .min_w_0()
+                        .truncate()
+                        .child(catalog::label_for(&session.model)),
+                )
+                .child(
+                    Icon::new(IconName::ChevronDown)
+                        .size(IconSize::Xs)
+                        .color(fg.ink(Ink::Muted)),
+                );
         div()
             .relative()
             .flex_none()
@@ -467,9 +469,9 @@ impl BenCodeApp {
                     .selected(setting.value(values).to_string())
                     .on_change(move |value, _, cx| {
                         let value = value.to_string();
-                        if let Err(err) = weak
-                            .update(cx, |this, cx| this.set_model_setting(&setting_id, &value, cx))
-                        {
+                        if let Err(err) = weak.update(cx, |this, cx| {
+                            this.set_model_setting(&setting_id, &value, cx)
+                        }) {
                             log::debug!("model setting after app drop: {err:#}");
                         }
                     })

@@ -60,7 +60,9 @@ impl BenCodeApp {
             });
 
         let choose_id = id.clone();
-        let choose = app_callback(cx, move |this, cx| this.choose_mono_background(&choose_id, cx));
+        let choose = app_callback(cx, move |this, cx| {
+            this.choose_mono_background(&choose_id, cx)
+        });
         // `mt-2 w-full justify-center gap-1.5 rounded-md border
         // border-content/10 px-2.5 py-1.5 text-[12px] text-content/70`
         let choose_button = div()
@@ -92,7 +94,11 @@ impl BenCodeApp {
                     fg.ink(Ink::Body),
                 ))
             })
-            .child(if has_image { "Change image" } else { "Choose image" });
+            .child(if has_image {
+                "Change image"
+            } else {
+                "Choose image"
+            });
 
         let mut body = div()
             .p_4()
@@ -103,7 +109,9 @@ impl BenCodeApp {
                     .mt(px(6.0))
                     .text_size(Text::Sm.px())
                     .text_color(fg.ink(Ink::Muted))
-                    .child(format!("Shown behind {name}'s chat, dimmed with the Haze effect.")),
+                    .child(format!(
+                        "Shown behind {name}'s chat, dimmed with the Haze effect."
+                    )),
             )
             .children(self.mono_backgrounds.error.clone().map(|error| {
                 div()
@@ -114,7 +122,9 @@ impl BenCodeApp {
             }));
         if has_image {
             let remove_id = id.clone();
-            let remove = app_callback(cx, move |this, cx| this.remove_mono_background(&remove_id, cx));
+            let remove = app_callback(cx, move |this, cx| {
+                this.remove_mono_background(&remove_id, cx)
+            });
             // `w-full rounded-md border border-content/10 text-red-400
             // hover:border-red-400/40 hover:bg-red-400/10`
             body = body.child(
@@ -134,7 +144,10 @@ impl BenCodeApp {
                     .when(busy, |el| el.opacity(0.4))
                     .when(!busy, |el| {
                         el.cursor_pointer()
-                            .hover(move |el| el.border_color(red_400.opacity(0.4)).bg(red_400.opacity(0.1)))
+                            .hover(move |el| {
+                                el.border_color(red_400.opacity(0.4))
+                                    .bg(red_400.opacity(0.1))
+                            })
                             .on_click(move |_, window, cx| remove(window, cx))
                     })
                     .child("Remove background image"),

@@ -92,7 +92,12 @@ impl BenCodeApp {
     /// The project whose tab shows.
     pub fn mono_changes_root(&self) -> Option<String> {
         let mono = self.mono_in_view()?;
-        let picked = self.monos.changes.root.as_ref().filter(|root| mono.works_on(root));
+        let picked = self
+            .monos
+            .changes
+            .root
+            .as_ref()
+            .filter(|root| mono.works_on(root));
         picked.cloned().or_else(|| mono.projects.first().cloned())
     }
 
@@ -243,13 +248,24 @@ impl BenCodeApp {
     /// MonoCode `commit(push)`: the staged files committed with the
     /// message, then pushed when asked.
     pub fn mono_commit(&mut self, push: bool, cx: &mut Context<Self>) {
-        let message = self.monos.changes.message.read(cx).text().trim().to_string();
+        let message = self
+            .monos
+            .changes
+            .message
+            .read(cx)
+            .text()
+            .trim()
+            .to_string();
         if message.is_empty() {
             return;
         }
         self.run_mono_git(
             if push { "commit-push" } else { "commit" },
-            Some(if push { "Committed and pushed" } else { "Committed" }),
+            Some(if push {
+                "Committed and pushed"
+            } else {
+                "Committed"
+            }),
             move |root| {
                 crate::git::sync::commit(root, &message, false)
                     .map_err(|err| format!("Couldn't commit: {err}"))?;
@@ -288,12 +304,7 @@ impl BenCodeApp {
 
     /// A changed file's review, in the workspace (MonoCode opens it over
     /// the list; BenCode's review lives in the file pane).
-    pub fn open_mono_change(
-        &mut self,
-        path: String,
-        staged: bool,
-        cx: &mut Context<Self>,
-    ) {
+    pub fn open_mono_change(&mut self, path: String, staged: bool, cx: &mut Context<Self>) {
         let Some(root) = self.mono_changes_root() else {
             return;
         };

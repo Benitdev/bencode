@@ -162,7 +162,11 @@ impl BenCodeApp {
     /// get. A started thread with none would fall back to the default
     /// account (`session_account_id`), not the one it had there. `None`
     /// for an empty thread, which follows the project's choice anyway.
-    pub(crate) fn account_for_harness(&self, session: &SessionRow, harness: &str) -> Option<String> {
+    pub(crate) fn account_for_harness(
+        &self,
+        session: &SessionRow,
+        harness: &str,
+    ) -> Option<String> {
         if !supports_accounts(harness) || !session.blocks.iter().any(|block| block.role == "user") {
             return None;
         }
@@ -187,20 +191,24 @@ impl BenCodeApp {
         then: impl FnOnce(&mut Self, bool, &mut Context<Self>) + 'static,
     ) {
         use crate::harness::claude::session_files;
-        let job = self.sessions.iter().find(|s| s.id == session_id).and_then(|s| {
-            // A machine's turn runs with no account profile.
-            if s.harness != "claude" || crate::remote::route(&s.cwd).is_some() {
-                return None;
-            }
-            let id = s.provider_session_id.clone().filter(|id| !id.is_empty())?;
-            let from = AccountProfile::resolve("claude", Some(&self.session_account_id(s)));
-            let to = AccountProfile::resolve("claude", Some(account_id));
-            Some((
-                session_files::config_dir(from.as_ref())?,
-                session_files::config_dir(to.as_ref())?,
-                id,
-            ))
-        });
+        let job = self
+            .sessions
+            .iter()
+            .find(|s| s.id == session_id)
+            .and_then(|s| {
+                // A machine's turn runs with no account profile.
+                if s.harness != "claude" || crate::remote::route(&s.cwd).is_some() {
+                    return None;
+                }
+                let id = s.provider_session_id.clone().filter(|id| !id.is_empty())?;
+                let from = AccountProfile::resolve("claude", Some(&self.session_account_id(s)));
+                let to = AccountProfile::resolve("claude", Some(account_id));
+                Some((
+                    session_files::config_dir(from.as_ref())?,
+                    session_files::config_dir(to.as_ref())?,
+                    id,
+                ))
+            });
         let Some((from, to, id)) = job else {
             then(self, false, cx);
             return;

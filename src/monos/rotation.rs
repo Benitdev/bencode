@@ -80,7 +80,12 @@ fn exchanges(blocks: &[Block], after: Option<&str>) -> Vec<Exchange> {
                 user: String::new(),
                 reply: String::new(),
                 habit: None,
-                completion: Some(meta.get("title").and_then(Value::as_str).unwrap_or("").to_string()),
+                completion: Some(
+                    meta.get("title")
+                        .and_then(Value::as_str)
+                        .unwrap_or("")
+                        .to_string(),
+                ),
             });
             continue;
         }
@@ -140,13 +145,20 @@ fn one_line(text: &str, max: usize) -> String {
     if flat.chars().count() <= max {
         flat
     } else {
-        format!("{}…", flat.chars().take(max - 1).collect::<String>().trim_end())
+        format!(
+            "{}…",
+            flat.chars().take(max - 1).collect::<String>().trim_end()
+        )
     }
 }
 
 fn stamp(at: Option<i64>) -> String {
     at.and_then(|ms| jiff::Timestamp::from_millisecond(ms).ok())
-        .map(|t| t.to_zoned(jiff::tz::TimeZone::system()).strftime("%b %-d, %H:%M").to_string())
+        .map(|t| {
+            t.to_zoned(jiff::tz::TimeZone::system())
+                .strftime("%b %-d, %H:%M")
+                .to_string()
+        })
         .unwrap_or_default()
 }
 
@@ -159,17 +171,29 @@ fn when(at: Option<i64>) -> String {
 
 fn exchange_line(e: &Exchange) -> String {
     if let Some(title) = &e.completion {
-        return format!("- {}You, reviewing session \"{title}\": {}", when(e.at), one_line(&e.reply, LINE_CHARS));
+        return format!(
+            "- {}You, reviewing session \"{title}\": {}",
+            when(e.at),
+            one_line(&e.reply, LINE_CHARS)
+        );
     }
     if let Some(habit) = &e.habit {
-        return format!("- {}You, from your habit \"{habit}\": {}", when(e.at), one_line(&e.reply, LINE_CHARS));
+        return format!(
+            "- {}You, from your habit \"{habit}\": {}",
+            when(e.at),
+            one_line(&e.reply, LINE_CHARS)
+        );
     }
     let reply = if e.reply.is_empty() {
         String::new()
     } else {
         format!(" → You: {}", one_line(&e.reply, LINE_CHARS))
     };
-    format!("- {}User: {}{reply}", when(e.at), one_line(&e.user, LINE_CHARS))
+    format!(
+        "- {}User: {}{reply}",
+        when(e.at),
+        one_line(&e.user, LINE_CHARS)
+    )
 }
 
 /// MonoCode `newestWithin`: the newest lines that fit, oldest first.
@@ -235,22 +259,40 @@ pub fn plan_rotation(
             .iter()
             .map(|e| {
                 if let Some(habit) = &e.habit {
-                    format!("You, on your own from your habit \"{habit}\" ({}):\n{}", at(e), clip(&e.reply, VERBATIM_REPLY_CHARS))
+                    format!(
+                        "You, on your own from your habit \"{habit}\" ({}):\n{}",
+                        at(e),
+                        clip(&e.reply, VERBATIM_REPLY_CHARS)
+                    )
                 } else if let Some(title) = &e.completion {
-                    format!("You, reviewing session \"{title}\" ({}):\n{}", at(e), clip(&e.reply, VERBATIM_REPLY_CHARS))
+                    format!(
+                        "You, reviewing session \"{title}\" ({}):\n{}",
+                        at(e),
+                        clip(&e.reply, VERBATIM_REPLY_CHARS)
+                    )
                 } else {
                     let reply = if e.reply.is_empty() {
                         String::new()
                     } else {
                         format!("\n\nYou:\n{}", clip(&e.reply, VERBATIM_REPLY_CHARS))
                     };
-                    format!("User ({}):\n{}{reply}", at(e), clip(&e.user, VERBATIM_USER_CHARS))
+                    format!(
+                        "User ({}):\n{}{reply}",
+                        at(e),
+                        clip(&e.user, VERBATIM_USER_CHARS)
+                    )
                 }
             })
             .collect();
-        parts.push(format!("Most recent, word for word:\n\n{}", shown.join("\n\n---\n\n")));
+        parts.push(format!(
+            "Most recent, word for word:\n\n{}",
+            shown.join("\n\n---\n\n")
+        ));
     }
-    let brief = format!("<previous_conversation>\n{}\n</previous_conversation>", parts.join("\n\n"));
+    let brief = format!(
+        "<previous_conversation>\n{}\n</previous_conversation>",
+        parts.join("\n\n")
+    );
     (rotation, brief)
 }
 
@@ -283,7 +325,9 @@ mod tests {
         ];
         let (rotation, brief) = plan_rotation(&blocks, None, "context", 1, "mono-1");
         assert_eq!(rotation.after_block_id.as_deref(), Some("a3"));
-        assert!(brief.contains("Earlier, oldest first:\n- User: first question → You: first answer"));
+        assert!(
+            brief.contains("Earlier, oldest first:\n- User: first question → You: first answer")
+        );
         assert!(brief.contains("User (earlier):\nsecond\n\nYou:\nsecond answer"));
         assert!(brief.contains("{\"sessionId\":\"mono-1\"}"));
         assert!(!brief.contains("narration"));

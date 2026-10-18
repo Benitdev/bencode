@@ -33,9 +33,7 @@ fn tags(value: &Value) -> Result<Vec<String>, String> {
         Some(list) => Ok(normalize_note_tags(
             &list.iter().filter_map(Value::as_str).collect::<Vec<_>>(),
         )),
-        None => Err(
-            "tags must be an array of at most 20 strings under 48 characters each".into(),
-        ),
+        None => Err("tags must be an array of at most 20 strings under 48 characters each".into()),
     }
 }
 
@@ -135,7 +133,9 @@ pub fn run(
                 if write.title.is_none() && write.body.is_none() && write.tags.is_none() {
                     bail!("Supply title, body or tags to update a note");
                 }
-                let current = db.get_note(id)?.ok_or_else(|| anyhow!("Note was not found"))?;
+                let current = db
+                    .get_note(id)?
+                    .ok_or_else(|| anyhow!("Note was not found"))?;
                 let saved = db.upsert_note(&NoteUpsert {
                     id: id.clone(),
                     title: write.title.clone().unwrap_or(current.title),
@@ -185,20 +185,50 @@ mod tests {
     #[test]
     fn notes_are_listed_read_and_written_once() {
         let db = AppDb::open_in_memory().unwrap();
-        let write = parse("notes.write", &input(json!({ "body": "# Plan\n\nSteps", "tags": ["#Work"] }))).unwrap();
+        let write = parse(
+            "notes.write",
+            &input(json!({ "body": "# Plan\n\nSteps", "tags": ["#Work"] })),
+        )
+        .unwrap();
         let saved = run(&db, &write, "s1", Some("/src/app"), "r1").unwrap();
         assert_eq!(saved["id"], "app-s1-r1");
         assert_eq!(saved["title"], "Plan");
         assert_eq!(saved["tags"], json!(["work"]));
-        assert_eq!(run(&db, &write, "s1", Some("/src/app"), "r1").unwrap()["id"], "app-s1-r1");
+        assert_eq!(
+            run(&db, &write, "s1", Some("/src/app"), "r1").unwrap()["id"],
+            "app-s1-r1"
+        );
         let other = parse("notes.write", &input(json!({ "body": "other" }))).unwrap();
         assert!(run(&db, &other, "s1", None, "r1").is_err());
-        let edit = parse("notes.write", &input(json!({ "id": "app-s1-r1", "title": "Plan v2" }))).unwrap();
-        assert_eq!(run(&db, &edit, "s1", None, "r2").unwrap()["body"], "# Plan\n\nSteps");
-        let list = run(&db, &parse("notes.list", &input(json!({}))).unwrap(), "s1", None, "r3").unwrap();
+        let edit = parse(
+            "notes.write",
+            &input(json!({ "id": "app-s1-r1", "title": "Plan v2" })),
+        )
+        .unwrap();
+        assert_eq!(
+            run(&db, &edit, "s1", None, "r2").unwrap()["body"],
+            "# Plan\n\nSteps"
+        );
+        let list = run(
+            &db,
+            &parse("notes.list", &input(json!({}))).unwrap(),
+            "s1",
+            None,
+            "r3",
+        )
+        .unwrap();
         assert_eq!(list["total"], 1);
         assert_eq!(list["notes"][0]["preview"], "# Plan\n\nSteps");
         assert!(parse("notes.write", &input(json!({ "tags": "x" }))).is_err());
-        assert!(run(&db, &parse("notes.read", &input(json!({ "id": "nope" }))).unwrap(), "s1", None, "r").is_err());
+        assert!(
+            run(
+                &db,
+                &parse("notes.read", &input(json!({ "id": "nope" }))).unwrap(),
+                "s1",
+                None,
+                "r"
+            )
+            .is_err()
+        );
     }
 }

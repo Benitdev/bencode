@@ -806,7 +806,10 @@ mod tests {
     use super::*;
 
     fn claude_fixture() -> Vec<ModelOption> {
-        let line = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/fixtures/claude_list_models.jsonl"));
+        let line = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tests/fixtures/claude_list_models.jsonl"
+        ));
         let rec: Value = serde_json::from_str(line.trim()).unwrap();
         claude_models(&rec["response"]["response"])
     }
@@ -932,7 +935,13 @@ mod tests {
         assert_eq!(agents, ["build", "plan"]);
         let models = opencode_v2_models(&body, &agents);
         let keys: Vec<_> = models.iter().map(|m| m.key.as_str()).collect();
-        assert_eq!(keys, ["opencode:opencode/big-pickle", "opencode:opencode/glm-5.3-flash-free"]);
+        assert_eq!(
+            keys,
+            [
+                "opencode:opencode/big-pickle",
+                "opencode:opencode/glm-5.3-flash-free"
+            ]
+        );
         assert_eq!(models[0].settings[0].id, "agent");
         let variant = &models[1].settings[0];
         let values: Vec<_> = variant.options.iter().map(|(v, _)| v.as_str()).collect();

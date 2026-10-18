@@ -189,7 +189,11 @@ fn uname(flag: &str) -> String {
         .output()
         .ok()
         .filter(|out| out.status.success())
-        .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_ascii_lowercase())
+        .map(|out| {
+            String::from_utf8_lossy(&out.stdout)
+                .trim()
+                .to_ascii_lowercase()
+        })
         .unwrap_or_default()
 }
 

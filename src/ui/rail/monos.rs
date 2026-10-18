@@ -6,9 +6,9 @@
 
 use ely_gpui_component::primitives::{IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
-use gpui::{AnimationExt as _,
-    AnyElement, Context, FontWeight, InteractiveElement, IntoElement, MouseButton, MouseDownEvent,
-    ParentElement, SharedString, Styled, div, prelude::*, relative,
+use gpui::{
+    AnimationExt as _, AnyElement, Context, FontWeight, InteractiveElement, IntoElement,
+    MouseButton, MouseDownEvent, ParentElement, SharedString, Styled, div, prelude::*, relative,
 };
 
 use super::widgets::{ROW_HEIGHT, hover_control, section_button};
@@ -28,7 +28,11 @@ impl BenCodeApp {
         let monos = &self.settings.monos;
         // With no Mono yet, the card stands in for the section.
         if monos.is_empty() {
-            return div().flex_none().mb_2().child(self.render_mono_intro(cx)).into_any_element();
+            return div()
+                .flex_none()
+                .mb_2()
+                .child(self.render_mono_intro(cx))
+                .into_any_element();
         }
         // MonoCode `useAnimatedReorder(ids, reorderMonos)`.
         let ids: Vec<String> = monos.iter().map(|m| m.id.clone()).collect();
@@ -50,7 +54,10 @@ impl BenCodeApp {
                     .gap(px(1.0))
                     .px_2()
                     .on_drag_move::<super::reorder::DraggedRailProject>(cx.listener(
-                        move |this, event: &gpui::DragMoveEvent<super::reorder::DraggedRailProject>, _, cx| {
+                        move |this,
+                              event: &gpui::DragMoveEvent<super::reorder::DraggedRailProject>,
+                              _,
+                              cx| {
                             if event.bounds.contains(&event.event.position)
                                 || this.rail_ui.reorder.is_some()
                             {
@@ -70,7 +77,7 @@ impl BenCodeApp {
     /// behind the one the first Mono will have, Create mono, and the switch
     /// that hides Monos (Settings › Monos › Show monos).
     fn render_mono_intro(&self, cx: &Context<Self>) -> AnyElement {
-        use crate::ui::mascot::{MASCOTS, MASCOT_NAMES, pixel_sprite};
+        use crate::ui::mascot::{MASCOT_NAMES, MASCOTS, pixel_sprite};
         let colors = &cx.theme().colors;
         let fg = colors.fg;
         let (mascot, color_index) = crate::monos::next_look(&self.settings.monos);
@@ -95,7 +102,8 @@ impl BenCodeApp {
             .overflow_hidden()
             .children(crowd.iter().enumerate().map(|(i, &(ix, tint))| {
                 let offset = (i as f32 - middle) * 17.0;
-                let order = (i.min(crowd.len() - 1 - i) * 2 + usize::from(i as f32 >= middle)) as f32;
+                let order =
+                    (i.min(crowd.len() - 1 - i) * 2 + usize::from(i as f32 >= middle)) as f32;
                 let from = if offset < 0.0 { -140.0 } else { 140.0 };
                 // `mono-intro-march`: in from the side, outside first.
                 div()
@@ -106,8 +114,10 @@ impl BenCodeApp {
                     .child(pixel_sprite(&MASCOTS[ix].rest, px(14.0), tint, false))
                     .with_animation(
                         SharedString::from(format!("mono-intro-march-{i}")),
-                        gpui::Animation::new(std::time::Duration::from_millis(500 + order as u64 * 70))
-                            .with_easing(gpui::ease_out_quint()),
+                        gpui::Animation::new(std::time::Duration::from_millis(
+                            500 + order as u64 * 70,
+                        ))
+                        .with_easing(gpui::ease_out_quint()),
                         move |el, delta| {
                             let start = (order * 70.0) / (500.0 + order * 70.0);
                             let t = ((delta - start) / (1.0 - start)).clamp(0.0, 1.0);
@@ -135,15 +145,17 @@ impl BenCodeApp {
                     ),
             );
         let entity = cx.entity().downgrade();
-        let hide = ely_gpui_component::forms::Switch::new("mono-intro-show", true).on_change(move |on, _, cx| {
-            let hidden = entity.update(cx, |this, cx| {
-                this.set_monos_enabled(on, cx);
-                this.play_cue(crate::sounds::Cue::Switch);
-            });
-            if let Err(err) = hidden {
-                log::debug!("intro switch after app drop: {err:#}");
-            }
-        });
+        let hide = ely_gpui_component::forms::Switch::new("mono-intro-show", true).on_change(
+            move |on, _, cx| {
+                let hidden = entity.update(cx, |this, cx| {
+                    this.set_monos_enabled(on, cx);
+                    this.play_cue(crate::sounds::Cue::Switch);
+                });
+                if let Err(err) = hidden {
+                    log::debug!("intro switch after app drop: {err:#}");
+                }
+            },
+        );
         div()
             .mx_2()
             .overflow_hidden()

@@ -37,7 +37,10 @@ impl Client {
             .arg("connect")
             .env("BENCODE_HOST_DIR", root.join("host"))
             .env("HOME", root.join("home"))
-            .env("PATH", format!("{}:/usr/bin:/bin", root.join("bin").display()))
+            .env(
+                "PATH",
+                format!("{}:/usr/bin:/bin", root.join("bin").display()),
+            )
             .env("BENCODE_HOST_KEEP_PATH", "1")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -155,7 +158,12 @@ fn turns_run_on_the_host_and_outlive_the_connection() {
         env: vec![],
         timeout_ms: None,
     });
-    assert_eq!(out.status, Some(0), "{}", String::from_utf8_lossy(&out.stderr.0));
+    assert_eq!(
+        out.status,
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&out.stderr.0)
+    );
 
     let run = "test-run-0001".to_string();
     let _: () = client.call(Request::RunStart {
@@ -202,9 +210,7 @@ fn turns_run_on_the_host_and_outlive_the_connection() {
     });
     assert!(!attached.known);
 
-    let _: () = client.call(Request::RunForget {
-        run: run.clone(),
-    });
+    let _: () = client.call(Request::RunForget { run: run.clone() });
     let runs: Vec<RunSummary> = client.call(Request::Runs);
     assert!(runs.is_empty());
 

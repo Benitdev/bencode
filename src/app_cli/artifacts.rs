@@ -94,7 +94,12 @@ pub fn parse(action: &str, input: &Value) -> Result<Call, String> {
 }
 
 /// `artifacts.list`'s answer: titles only, a page of them.
-pub fn listing(all: Vec<Artifact>, kind: Option<ArtifactKind>, limit: usize, offset: usize) -> Value {
+pub fn listing(
+    all: Vec<Artifact>,
+    kind: Option<ArtifactKind>,
+    limit: usize,
+    offset: usize,
+) -> Value {
     let matching: Vec<Artifact> = all
         .into_iter()
         .filter(|artifact| kind.is_none_or(|kind| artifact.kind == kind))
@@ -281,7 +286,10 @@ mod tests {
         let saved = save(&db, "mono", "r1", &write("# Plan\n\nSteps")).unwrap();
         assert_eq!(saved.id, "artifact-mono-r1");
         assert_eq!(saved.title, "Plan");
-        assert_eq!(save(&db, "mono", "r1", &write("# Plan\n\nSteps")).unwrap(), saved);
+        assert_eq!(
+            save(&db, "mono", "r1", &write("# Plan\n\nSteps")).unwrap(),
+            saved
+        );
         assert!(save(&db, "mono", "r1", &write("other")).is_err());
         assert_eq!(db.list_artifacts().unwrap().len(), 1);
     }
@@ -300,7 +308,10 @@ mod tests {
             },
         )
         .unwrap();
-        assert_eq!((revised.title.as_str(), revised.body.as_str()), ("Plan", "# Plan v2"));
+        assert_eq!(
+            (revised.title.as_str(), revised.body.as_str()),
+            ("Plan", "# Plan v2")
+        );
         let as_html = Write {
             id: Some(saved.id.clone()),
             kind: ArtifactKind::Html,
@@ -318,13 +329,24 @@ mod tests {
     fn listing_pages_titles() {
         let db = AppDb::open_in_memory().unwrap();
         for ix in 0..3 {
-            save(&db, "mono", &format!("r{ix}"), &write(&format!("# Doc {ix}"))).unwrap();
+            save(
+                &db,
+                "mono",
+                &format!("r{ix}"),
+                &write(&format!("# Doc {ix}")),
+            )
+            .unwrap();
         }
         let page = listing(db.list_artifacts().unwrap(), None, 2, 1);
         assert_eq!(page["total"], 3);
         assert_eq!(page["artifacts"].as_array().unwrap().len(), 2);
         assert!(page["artifacts"][0].get("body").is_none());
-        let none = listing(db.list_artifacts().unwrap(), Some(ArtifactKind::Html), 30, 0);
+        let none = listing(
+            db.list_artifacts().unwrap(),
+            Some(ArtifactKind::Html),
+            30,
+            0,
+        );
         assert_eq!(none["total"], 0);
     }
 
@@ -354,13 +376,19 @@ mod tests {
             vec![card("e", "Other"), card("d", "Final")]
         );
         let json = serde_json::to_value(&blocks[2]).unwrap();
-        assert_eq!(json["artifactCards"][1], json!({ "id": "d", "kind": "document", "title": "Final" }));
+        assert_eq!(
+            json["artifactCards"][1],
+            json!({ "id": "d", "kind": "document", "title": "Final" })
+        );
         assert_eq!(chat_cards(&blocks).len(), 2);
         assert!(remove_card(&mut blocks, "d"));
         assert!(!remove_card(&mut blocks, "d"));
         assert_eq!(chat_cards(&blocks), vec![card("e", "Other")]);
         assert!(remove_card(&mut blocks, "e"));
         assert!(!blocks[2].extra.contains_key("artifactCards"));
-        assert!(!record_card(&mut [Block::new("a", "assistant", "x")], &card("d", "D")));
+        assert!(!record_card(
+            &mut [Block::new("a", "assistant", "x")],
+            &card("d", "D")
+        ));
     }
 }

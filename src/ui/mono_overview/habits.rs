@@ -28,7 +28,11 @@ use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 /// "Oct 8, 09:00".
 pub fn when(at: i64, now: i64) -> String {
     let tz = jiff::tz::TimeZone::system();
-    let zoned = |ms: i64| jiff::Timestamp::from_millisecond(ms).ok().map(|t| t.to_zoned(tz.clone()));
+    let zoned = |ms: i64| {
+        jiff::Timestamp::from_millisecond(ms)
+            .ok()
+            .map(|t| t.to_zoned(tz.clone()))
+    };
     let (Some(then), Some(today)) = (zoned(at), zoned(now)) else {
         return String::new();
     };
@@ -155,7 +159,13 @@ fn property(label: &str, value: impl IntoElement, fg: Hsla) -> impl IntoElement 
                 .text_color(fg.ink(Ink::Muted))
                 .child(label.to_string()),
         )
-        .child(div().flex_1().min_w_0().text_color(fg.ink(Ink::Strong)).child(value))
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .text_color(fg.ink(Ink::Strong))
+                .child(value),
+        )
 }
 
 impl BenCodeApp {
@@ -192,12 +202,18 @@ impl BenCodeApp {
             .into_iter()
             .filter(|habit| !today.iter().any(|item| item.habit.id == habit.id))
             .collect();
-        let later_title = if today.is_empty() { "Scheduled" } else { "Later" };
+        let later_title = if today.is_empty() {
+            "Scheduled"
+        } else {
+            "Later"
+        };
         let group = |title: &str, items: Vec<&Habit>| {
             (!items.is_empty()).then(|| {
-                div()
-                    .child(group_title(title, items.len(), fg))
-                    .children(items.into_iter().map(|habit| self.render_habit_row(mono, habit, cx)))
+                div().child(group_title(title, items.len(), fg)).children(
+                    items
+                        .into_iter()
+                        .map(|habit| self.render_habit_row(mono, habit, cx)),
+                )
             })
         };
         div()
@@ -273,14 +289,26 @@ impl BenCodeApp {
             .action(
                 row_button(
                     format!("mono-habit-toggle-{}", habit.id),
-                    if habit.enabled { IconName::Pause } else { IconName::Play },
+                    if habit.enabled {
+                        IconName::Pause
+                    } else {
+                        IconName::Play
+                    },
                     if habit.enabled { "Pause" } else { "Resume" },
                 )
-                .on_click(cx.listener(move |this, _, _, cx| this.toggle_mono_habit(&toggle_id, cx))),
+                .on_click(
+                    cx.listener(move |this, _, _, cx| this.toggle_mono_habit(&toggle_id, cx)),
+                ),
             )
             .action(
-                row_button(format!("mono-habit-remove-{}", habit.id), IconName::Trash2, "Remove")
-                    .on_click(cx.listener(move |this, _, _, cx| this.remove_mono_habit(&remove_id, cx))),
+                row_button(
+                    format!("mono-habit-remove-{}", habit.id),
+                    IconName::Trash2,
+                    "Remove",
+                )
+                .on_click(
+                    cx.listener(move |this, _, _, cx| this.remove_mono_habit(&remove_id, cx)),
+                ),
             )
             .into_any_element()
     }
@@ -291,7 +319,13 @@ impl BenCodeApp {
             HabitRoute::New => Some(self.render_new_habit(cx)),
             HabitRoute::Habit(id) => {
                 // A habit removed while open closes its page.
-                let habit = self.monos.overview.habits.as_ref()?.iter().find(|h| &h.id == id)?;
+                let habit = self
+                    .monos
+                    .overview
+                    .habits
+                    .as_ref()?
+                    .iter()
+                    .find(|h| &h.id == id)?;
                 Some(self.render_habit_page(mono, habit, cx))
             }
         }
@@ -322,7 +356,11 @@ impl BenCodeApp {
                 .into_any_element(),
             IconButton::new(
                 "habit-page-toggle",
-                if habit.enabled { IconName::Pause } else { IconName::Play },
+                if habit.enabled {
+                    IconName::Pause
+                } else {
+                    IconName::Play
+                },
             )
             .size(ControlSize::Sm)
             .variant(ButtonVariant::Ghost)
@@ -358,8 +396,17 @@ impl BenCodeApp {
                             .bg(color)
                             .opacity(crate::ui::spinner::pulse(cx)),
                     )
-                    .child(div().flex_1().text_color(fg.ink(Ink::Strong)).child("Running now"))
-                    .child(div().text_color(fg.ink(Ink::Muted)).child(duration(now - since)))
+                    .child(
+                        div()
+                            .flex_1()
+                            .text_color(fg.ink(Ink::Strong))
+                            .child("Running now"),
+                    )
+                    .child(
+                        div()
+                            .text_color(fg.ink(Ink::Muted))
+                            .child(duration(now - since)),
+                    )
             }))
             .when(runs.is_empty() && running.is_none(), |el| {
                 el.child(
@@ -371,7 +418,10 @@ impl BenCodeApp {
                         .child("It hasn't run yet."),
                 )
             })
-            .children(runs.iter().map(|run| self.render_habit_run(habit, run, color, cx)));
+            .children(
+                runs.iter()
+                    .map(|run| self.render_habit_run(habit, run, color, cx)),
+            );
         let body = div()
             .id("habit-page-body")
             .flex_1()
@@ -409,12 +459,21 @@ impl BenCodeApp {
             .flex_1()
             .min_h_0()
             .child(page_header(habit.name.clone(), buttons, cx))
-            .child(crate::ui::scrollbar::Scrolled::new("habit-page-scrollbar", body))
+            .child(crate::ui::scrollbar::Scrolled::new(
+                "habit-page-scrollbar",
+                body,
+            ))
             .into_any_element()
     }
 
     /// MonoCode `RunRow`: one past run, opening onto what it said.
-    fn render_habit_run(&self, habit: &Habit, run: &HabitRun, color: Hsla, cx: &Context<Self>) -> AnyElement {
+    fn render_habit_run(
+        &self,
+        habit: &Habit,
+        run: &HabitRun,
+        color: Hsla,
+        cx: &Context<Self>,
+    ) -> AnyElement {
         let fg = cx.theme().colors.fg;
         let now = crate::app::now_ms();
         let detail = run.report.clone().or_else(|| run.error.clone());
@@ -434,7 +493,10 @@ impl BenCodeApp {
             .when(open, |el| el.bg(fg.fill(Fill::Hover)))
             .child(
                 div()
-                    .id(SharedString::from(format!("habit-run-{}-{}", habit.id, run.at)))
+                    .id(SharedString::from(format!(
+                        "habit-run-{}-{}",
+                        habit.id, run.at
+                    )))
                     .flex()
                     .items_center()
                     .gap(px(10.0))
@@ -445,7 +507,9 @@ impl BenCodeApp {
                     .when(detail.is_some(), |el| {
                         el.cursor_pointer()
                             .when(!open, |el| el.hover(move |s| s.bg(fg.fill(Fill::Hover))))
-                            .on_click(cx.listener(move |this, _, _, cx| this.toggle_habit_run(&habit_id, at, cx)))
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.toggle_habit_run(&habit_id, at, cx)
+                            }))
                     })
                     .child(
                         div()
@@ -462,7 +526,12 @@ impl BenCodeApp {
                             .text_color(fg.ink(Ink::Strong))
                             .child(outcome_label(run.outcome)),
                     )
-                    .child(div().flex_none().text_color(fg.ink(Ink::Muted)).child(timing)),
+                    .child(
+                        div()
+                            .flex_none()
+                            .text_color(fg.ink(Ink::Muted))
+                            .child(timing),
+                    ),
             )
             .when(open, |el| {
                 let content: AnyElement = match (&run.report, &run.error) {
@@ -553,17 +622,19 @@ impl BenCodeApp {
                 .into_iter()
                 .enumerate()
                 .map(|(day, label)| Choice::new(day.to_string(), label));
-            fields = fields.child(div().text_color(fg.ink(Ink::Muted)).child("on")).child(pill(
-                120.0,
-                Select::new("new-habit-day", days)
-                    .label("Day")
-                    .size(ControlSize::Sm)
-                    .selected(schedule.day_of_week.to_string())
-                    .on_change(on_value(cx, |this, value, cx| {
-                        let day = value.parse::<u8>().unwrap_or(1).min(6);
-                        this.set_new_habit_schedule(|s| s.day_of_week = day, cx);
-                    })),
-            ));
+            fields = fields
+                .child(div().text_color(fg.ink(Ink::Muted)).child("on"))
+                .child(pill(
+                    120.0,
+                    Select::new("new-habit-day", days)
+                        .label("Day")
+                        .size(ControlSize::Sm)
+                        .selected(schedule.day_of_week.to_string())
+                        .on_change(on_value(cx, |this, value, cx| {
+                            let day = value.parse::<u8>().unwrap_or(1).min(6);
+                            this.set_new_habit_schedule(|s| s.day_of_week = day, cx);
+                        })),
+                ));
         }
         fields = fields.child(div().text_color(fg.ink(Ink::Muted)).child("at"));
         fields = if kind == ScheduleKind::Hourly {
@@ -597,7 +668,10 @@ impl BenCodeApp {
                     })),
             ))
         };
-        let next = when(schedule.next_run_at(crate::app::now_ms()), crate::app::now_ms());
+        let next = when(
+            schedule.next_run_at(crate::app::now_ms()),
+            crate::app::now_ms(),
+        );
         let body = div()
             .id("new-habit-body")
             .flex_1()
@@ -629,7 +703,10 @@ impl BenCodeApp {
             .flex_1()
             .min_h_0()
             .child(page_header("New habit".to_string(), vec![create], cx))
-            .child(crate::ui::scrollbar::Scrolled::new("new-habit-scrollbar", body))
+            .child(crate::ui::scrollbar::Scrolled::new(
+                "new-habit-scrollbar",
+                body,
+            ))
             .into_any_element()
     }
 }

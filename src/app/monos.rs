@@ -569,7 +569,11 @@ impl BenCodeApp {
 
     /// MonoCode `onRuntimeModeChange` for the Mono: its thread's access,
     /// not the default new threads start with.
-    pub fn set_mono_runtime_mode(&mut self, mode: crate::app::PermissionMode, cx: &mut Context<Self>) {
+    pub fn set_mono_runtime_mode(
+        &mut self,
+        mode: crate::app::PermissionMode,
+        cx: &mut Context<Self>,
+    ) {
         let Some(id) = self.mono_view_session().map(str::to_string) else {
             return;
         };
@@ -934,7 +938,8 @@ impl BenCodeApp {
             .and_then(|s| s.provider_session_id.clone());
         let provider = provider.as_deref();
         let files = self.mono_turn_files(&mono.id);
-        let (soul, memory) = self.mono_context_parts(&mono, &files, self.has_app_access(session_id));
+        let (soul, memory) =
+            self.mono_context_parts(&mono, &files, self.has_app_access(session_id));
         let carried = Carried {
             soul_hash: crate::monos::context_hash(&soul),
             memory_hash: files.memory_hash.clone(),
@@ -960,11 +965,15 @@ impl BenCodeApp {
         if plan.any() {
             self.monos.carrying.insert(session_id.to_string(), carried);
         }
-        let context = [brief.unwrap_or_default(), away, crate::monos::turn_context(plan, &soul, &memory)]
-            .into_iter()
-            .filter(|part| !part.is_empty())
-            .collect::<Vec<_>>()
-            .join("\n\n");
+        let context = [
+            brief.unwrap_or_default(),
+            away,
+            crate::monos::turn_context(plan, &soul, &memory),
+        ]
+        .into_iter()
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n\n");
         crate::monos::turn_with_context(&prompt, &context)
     }
 
@@ -985,7 +994,10 @@ impl BenCodeApp {
         );
         // A provider session that went for another reason (a switch of
         // account or model) had seen the chat: the new one has not.
-        let fresh = session.provider_session_id.as_deref().is_none_or(str::is_empty);
+        let fresh = session
+            .provider_session_id
+            .as_deref()
+            .is_none_or(str::is_empty);
         let replaced = rotate || (fresh && mono.handed.is_some());
         // Without the turn just started.
         let before = session.blocks.len().saturating_sub(1);

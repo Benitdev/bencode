@@ -1679,7 +1679,10 @@ mod tests {
 
     /// Notifications in the shapes Grok Build 1.0.21 wrote to a session's
     /// `updates.jsonl`, their contents replaced.
-    const RECORDED: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/fixtures/grok_acp_turn.jsonl"));
+    const RECORDED: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tests/fixtures/grok_acp_turn.jsonl"
+    ));
 
     #[test]
     fn a_recorded_turn_folds_into_the_transcripts_events() {

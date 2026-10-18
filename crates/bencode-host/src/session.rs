@@ -102,7 +102,10 @@ fn read_frames(stream: UnixStream, conn: u64, host: &Arc<Host>, outbox: &Arc<Out
                     .and_then(|value| value.get("id").and_then(|id| id.as_u64()));
                 match id {
                     Some(id) => {
-                        outbox.send(&ServerFrame::fail(id, format!("the host cannot read this request: {err}")));
+                        outbox.send(&ServerFrame::fail(
+                            id,
+                            format!("the host cannot read this request: {err}"),
+                        ));
                     }
                     None => log::warn!("connection {conn}: unreadable frame: {err}"),
                 }
@@ -164,7 +167,9 @@ fn handle(host: &Arc<Host>, conn: u64, outbox: &Arc<Outbox>, frame: ClientFrame)
                 crate::ops::exec(program, &args, cwd.as_deref(), stdin, &env, timeout_ms)?,
             ),
             Request::ReadDir { path } => ServerFrame::ok(id, crate::ops::read_dir(&path)?),
-            Request::ReadFile { path, max } => ServerFrame::ok(id, crate::ops::read_file(&path, max)?),
+            Request::ReadFile { path, max } => {
+                ServerFrame::ok(id, crate::ops::read_file(&path, max)?)
+            }
             Request::Stat { path } => ServerFrame::ok(id, crate::ops::stat(&path)),
             Request::WriteFile {
                 path,
@@ -205,18 +210,22 @@ fn handle(host: &Arc<Host>, conn: u64, outbox: &Arc<Outbox>, frame: ClientFrame)
             }
             Request::ProjectFiles { root } => ServerFrame::ok(
                 id,
-                bencode_core::files::list_project_files(std::path::Path::new(&crate::ops::absolute(&root)?)),
+                bencode_core::files::list_project_files(std::path::Path::new(
+                    &crate::ops::absolute(&root)?,
+                )),
             ),
             Request::Search { root, options } => {
                 let never = std::sync::atomic::AtomicBool::new(false);
                 let root = crate::ops::absolute(&root)?;
-                let found = bencode_core::search::search(std::path::Path::new(&root), &options, &never)
-                    .map_err(anyhow::Error::msg)?;
+                let found =
+                    bencode_core::search::search(std::path::Path::new(&root), &options, &never)
+                        .map_err(anyhow::Error::msg)?;
                 ServerFrame::ok(id, found)
             }
-            Request::Upload { name, bytes } => {
-                ServerFrame::ok(id, crate::ops::upload(&host.dirs.attachments(), &name, &bytes.0)?)
-            }
+            Request::Upload { name, bytes } => ServerFrame::ok(
+                id,
+                crate::ops::upload(&host.dirs.attachments(), &name, &bytes.0)?,
+            ),
             Request::RunStart { run, spawn } => {
                 host.runs.start(&run, *spawn, conn, outbox.clone())?;
                 ServerFrame::ok(id, ())
