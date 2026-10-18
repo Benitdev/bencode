@@ -45,7 +45,7 @@ struct ProjectCard {
 }
 
 impl BenCodeApp {
-    fn rail_card(&self, path: &str, list: &str, draggable: bool) -> ProjectCard {
+    fn rail_card(&self, path: &str, list: &str, draggable: bool, cx: &gpui::App) -> ProjectCard {
         // No project is highlighted while a view or a Mono is open.
         let current = same_project_path(path, &self.current_cwd);
         let busy = self
@@ -68,7 +68,7 @@ impl BenCodeApp {
                 self.current_diff_stats()
             } else {
                 self.project_diff_stats(path)
-                    .or_else(|| self.workspace.cached_diff_stats(path))
+                    .or_else(|| self.workspace(cx).cached_diff_stats(path))
                     .unwrap_or((0, 0))
             },
             mute: mute_status(
@@ -181,7 +181,7 @@ impl BenCodeApp {
                 },
             ))
             .children(shown.iter().map(|path| {
-                let card = self.rail_card(path, list, draggable);
+                let card = self.rail_card(path, list, draggable, cx);
                 let row = self.render_project_card(card, cx);
                 self.slide_rail_row(path, row)
             }))

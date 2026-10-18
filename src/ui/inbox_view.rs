@@ -389,13 +389,25 @@ pub fn project_name(path: &str) -> String {
 }
 
 impl BenCodeApp {
+    /// The Inbox's state (a model: `inbox_state`).
+    pub fn inbox<'a>(&self, cx: &'a gpui::App) -> &'a InboxState {
+        self.inbox_state.read(cx)
+    }
+
+    /// Changes the Inbox's state; the caller redraws (the app's notify, or
+    /// the model's: `inbox_state.update` / `as_mut`, which the regions
+    /// showing the Inbox follow).
+    pub fn inbox_mut<R>(&self, cx: &mut gpui::App, change: impl FnOnce(&mut InboxState) -> R) -> R {
+        self.inbox_state.update(cx, |inbox, _| change(inbox))
+    }
+
     pub fn open_inbox_modal(&mut self, cx: &mut Context<Self>) {
         self.show_surface(Surface::Inbox, cx);
         let stale = self
-            .inbox
+            .inbox(cx)
             .fetched_at
             .is_none_or(|at| at.elapsed() > FRESH_FOR);
-        if stale && !self.inbox.fetching {
+        if stale && !self.inbox(cx).fetching {
             self.refresh_inbox(cx);
         }
     }
@@ -403,8 +415,9 @@ impl BenCodeApp {
     /// The rail's projects that are still folders (MonoCode
     /// `collectRailProjects`), as the last list found them on disk: for
     /// drawing, which asks the disk nothing.
-    pub(crate) fn inbox_projects_shown(&self) -> Vec<String> {
-        self.inbox_projects_where(|path| !self.inbox.missing_dirs.contains(path))
+    pub(crate) fn inbox_projects_shown(&self, cx: &gpui::App) -> Vec<String> {
+        let missing = &self.inbox(cx).missing_dirs;
+        self.inbox_projects_where(|path| !missing.contains(path))
     }
 
     /// The rail's projects, once each, that `exists` keeps.
@@ -436,7 +449,7 @@ impl BenCodeApp {
             cx.background_executor().timer(POLL_DELAY).await;
             loop {
                 let polled = this.update(cx, |app, cx| {
-                    if !app.inbox.fetching {
+                    if !app.inbox(cx).fetching {
                         app.fetch_inbox(true, cx);
                     }
                 });
@@ -452,8 +465,8 @@ impl BenCodeApp {
     /// MonoCode `markInboxItemsSeen` over every item ("Mark all as read").
     pub fn mark_all_inbox_seen(&mut self, cx: &mut Context<Self>) {
         let mut changed = false;
-        for item in self.inbox.items.clone() {
-            changed |= self.inbox.mark_seen(&item);
+        for item in self.inbox(cx).items.clone() {
+            changed |= self.inbox_state.as_mut(cx).mark_seen(&item);
         }
         if changed {
             self.save_settings(cx);
@@ -462,11 +475,9 @@ impl BenCodeApp {
     }
 
     /// Any listed item has activity the user has not read.
-    pub fn inbox_has_unseen(&self) -> bool {
-        self.inbox
-            .items
-            .iter()
-            .any(|item| self.inbox.is_unseen(item))
+    pub fn inbox_has_unseen(&self, cx: &gpui::App) -> bool {
+        let inbox = self.inbox(cx);
+        inbox.items.iter().any(|item| inbox.is_unseen(item))
     }
 
     /// Fetches the list. A `quiet` fetch (the poll) shows no spinner and
@@ -476,21 +487,23 @@ impl BenCodeApp {
         // other folders the inbox may name.
         let candidates = self.inbox_projects_where(|_| true);
         let named: Vec<String> = self
-            .inbox
+            .inbox(cx)
             .start_project
             .values()
             .chain(self.backlog.project_folders.values())
             .cloned()
             .collect();
-        let assigned = self.inbox.assigned_to_me;
+        let assigned = self.inbox(cx).assigned_to_me;
         let hidden = self.backlog.hidden_projects.clone();
-        self.inbox.fetching = true;
-        self.inbox.list_generation += 1;
-        let list_generation = self.inbox.list_generation;
-        if !quiet {
-            self.inbox.loading = true;
-            self.inbox.generation += 1;
-        }
+        let list_generation = self.inbox_mut(cx, |inbox| {
+            inbox.fetching = true;
+            inbox.list_generation += 1;
+            if !quiet {
+                inbox.loading = true;
+                inbox.generation += 1;
+            }
+            inbox.list_generation
+        });
         let task = cx.background_executor().spawn(async move {
             let (projects, mut missing): (Vec<String>, Vec<String>) =
                 candidates.into_iter().partition(|path| is_dir(path));
@@ -516,61 +529,70 @@ impl BenCodeApp {
         cx.spawn(async move |this, cx| {
             let (status, list, backlog_statuses, missing) = task.await;
             let updated = this.update(cx, |app, cx| {
-                if app.inbox.list_generation != list_generation {
+                if app.inbox(cx).list_generation != list_generation {
                     return;
                 }
-                app.inbox.missing_dirs = missing.into_iter().collect();
                 // A fresh Backlog connection: its first list counts as read.
                 let seed_backlog =
                     std::mem::take(&mut app.backlog.seed_seen) && backlog_statuses.is_some();
                 app.backlog.statuses = backlog_statuses.clone().unwrap_or_default();
-                let inbox = &mut app.inbox;
-                inbox.status = Some(status);
-                inbox.backlog_connected = backlog_statuses.is_some();
-                // A linked thread's item opened before the list landed
-                // stays, even when the list does not include it.
-                let kept = inbox
-                    .selected
-                    .as_deref()
-                    .and_then(|key| inbox.items.iter().find(|i| i.key() == key))
-                    .filter(|item| !list.items.iter().any(|l| l.key() == item.key()))
-                    .cloned();
-                let failed = !list.errors.is_empty();
-                inbox.items = list.items;
-                inbox.items.extend(kept);
-                inbox.errors = list.errors;
-                inbox.loading = false;
-                inbox.fetching = false;
-                inbox.fetched_at = Some(Instant::now());
-                if !quiet {
-                    inbox.details.clear();
-                    inbox.threads.clear();
-                    inbox.checks.clear();
-                    inbox.jobs.clear();
-                }
-                let mut seeded = inbox.seed_seen();
-                if seed_backlog {
-                    for item in inbox.items.clone() {
-                        if item.provider == Provider::Backlog {
-                            seeded |= inbox.mark_seen(&item);
+                let (failed, seeded) = app.inbox_state.update(cx, |inbox, cx| {
+                    inbox.missing_dirs = missing.into_iter().collect();
+                    let status_same = inbox.status == Some(status);
+                    inbox.status = Some(status);
+                    inbox.backlog_connected = backlog_statuses.is_some();
+                    // A linked thread's item opened before the list landed
+                    // stays, even when the list does not include it.
+                    let kept = inbox
+                        .selected
+                        .as_deref()
+                        .and_then(|key| inbox.items.iter().find(|i| i.key() == key))
+                        .filter(|item| !list.items.iter().any(|l| l.key() == item.key()))
+                        .cloned();
+                    let failed = !list.errors.is_empty();
+                    let mut items = list.items;
+                    items.extend(kept);
+                    // The poll's usual answer: nothing new, nothing to redraw.
+                    let same = status_same && inbox.items == items && inbox.errors == list.errors;
+                    inbox.items = items;
+                    inbox.errors = list.errors;
+                    inbox.loading = false;
+                    inbox.fetching = false;
+                    inbox.fetched_at = Some(Instant::now());
+                    if !quiet {
+                        inbox.details.clear();
+                        inbox.threads.clear();
+                        inbox.checks.clear();
+                        inbox.jobs.clear();
+                    }
+                    let mut seeded = inbox.seed_seen();
+                    if seed_backlog {
+                        for item in inbox.items.clone() {
+                            if item.provider == Provider::Backlog {
+                                seeded |= inbox.mark_seen(&item);
+                            }
                         }
                     }
-                }
-                let gone = inbox
-                    .selected
-                    .as_ref()
-                    .is_some_and(|key| inbox.item(key).is_none());
-                if gone {
-                    inbox.selected = None;
-                }
+                    let gone = inbox
+                        .selected
+                        .as_ref()
+                        .is_some_and(|key| inbox.item(key).is_none());
+                    if gone {
+                        inbox.selected = None;
+                    }
+                    // What shows the Inbox follows it (`ui/region.rs`).
+                    if !(quiet && same && !seeded) {
+                        cx.notify();
+                    }
+                    (failed, seeded)
+                });
                 if seeded {
                     app.save_settings(cx);
                 }
-                app.announce_inbox_changes(failed);
-                if let Some(key) = app.inbox.selected.clone().filter(|_| !quiet) {
+                app.announce_inbox_changes(failed, cx);
+                if let Some(key) = app.inbox(cx).selected.clone().filter(|_| !quiet) {
                     app.load_inbox_item(&key, cx);
                 }
-                cx.notify();
             });
             if let Err(err) = updated {
                 log::debug!("inbox fetched after app drop: {err:#}");
@@ -589,16 +611,21 @@ impl BenCodeApp {
             .trim()
             .to_lowercase();
         let number = query.trim_start_matches('#');
-        let source = self.inbox.source_filter();
-        self.inbox
+        let inbox = self.inbox(cx);
+        let source = inbox.source_filter();
+        inbox
             .items
             .iter()
             .enumerate()
-            .filter(|(_, item)| self.inbox.kind.admits(item.kind))
+            .filter(|(_, item)| inbox.kind.admits(item.kind))
             .filter(|(_, item)| source.is_none_or(|only| item.provider == only))
             .filter(|(_, item)| {
-                self.inbox.statuses.is_empty()
-                    || self.inbox.statuses.iter().any(|s| s == status_name(item))
+                self.inbox(cx).statuses.is_empty()
+                    || self
+                        .inbox(cx)
+                        .statuses
+                        .iter()
+                        .any(|s| s == status_name(item))
             })
             .filter(|(_, item)| {
                 query.is_empty()
@@ -622,16 +649,16 @@ impl BenCodeApp {
 
     /// MonoCode `onSelect`: the item is read and opens on the right.
     fn select_inbox_item(&mut self, key: String, cx: &mut Context<Self>) {
-        if self.inbox.selected.as_deref() != Some(key.as_str()) {
-            self.inbox.reply_to = None;
-            self.inbox.comment_error = None;
-            self.inbox.pr = PrActionUi::default();
-            self.inbox.repair = None;
+        if self.inbox(cx).selected.as_deref() != Some(key.as_str()) {
+            self.inbox_state.as_mut(cx).reply_to = None;
+            self.inbox_state.as_mut(cx).comment_error = None;
+            self.inbox_state.as_mut(cx).pr = PrActionUi::default();
+            self.inbox_state.as_mut(cx).repair = None;
             self.backlog.status_error = None;
         }
-        self.inbox.selected = Some(key.clone());
-        if let Some(item) = self.inbox.item(&key).cloned()
-            && self.inbox.mark_seen(&item)
+        self.inbox_state.as_mut(cx).selected = Some(key.clone());
+        if let Some(item) = self.inbox(cx).item(&key).cloned()
+            && self.inbox_state.as_mut(cx).mark_seen(&item)
         {
             self.save_settings(cx);
         }
@@ -641,8 +668,8 @@ impl BenCodeApp {
 
     /// Counts item `key` as read as it stands now.
     pub(crate) fn mark_inbox_key_seen(&mut self, key: &str, cx: &mut Context<Self>) {
-        if let Some(item) = self.inbox.item(key).cloned()
-            && self.inbox.mark_seen(&item)
+        if let Some(item) = self.inbox(cx).item(key).cloned()
+            && self.inbox_state.as_mut(cx).mark_seen(&item)
         {
             self.save_settings(cx);
         }
@@ -655,18 +682,18 @@ impl BenCodeApp {
         if shown.is_empty() {
             return;
         }
-        let current = self.inbox.selected.as_deref().and_then(|key| {
+        let current = self.inbox(cx).selected.as_deref().and_then(|key| {
             shown
                 .iter()
-                .position(|ix| self.inbox.items[*ix].key() == key)
+                .position(|ix| self.inbox(cx).items[*ix].key() == key)
         });
         let row = match current {
             Some(row) => row.saturating_add_signed(delta).min(shown.len() - 1),
             None if delta < 0 => shown.len() - 1,
             None => 0,
         };
-        let key = self.inbox.items[shown[row]].key();
-        self.inbox
+        let key = self.inbox(cx).items[shown[row]].key();
+        self.inbox(cx)
             .scroll
             .scroll_to_item(row, gpui::ScrollStrategy::Top);
         self.select_inbox_item(key, cx);
@@ -677,11 +704,11 @@ impl BenCodeApp {
         let shown: Vec<WorkItem> = self
             .shown_inbox_items(cx)
             .into_iter()
-            .map(|ix| self.inbox.items[ix].clone())
+            .map(|ix| self.inbox(cx).items[ix].clone())
             .collect();
         let mut changed = false;
         for item in &shown {
-            changed |= self.inbox.mark_seen(item);
+            changed |= self.inbox_state.as_mut(cx).mark_seen(item);
         }
         if changed {
             self.save_settings(cx);
@@ -691,7 +718,7 @@ impl BenCodeApp {
 
     /// The body, the conversation and, for a pull request, its checks.
     fn load_inbox_item(&mut self, key: &str, cx: &mut Context<Self>) {
-        let Some(item) = self.inbox.item(key).cloned() else {
+        let Some(item) = self.inbox(cx).item(key).cloned() else {
             return;
         };
         load(
@@ -715,20 +742,20 @@ impl BenCodeApp {
         self.load_inbox_thread(key, false, cx);
         if item.kind == Kind::Pr {
             self.load_pr_checks(key, false, cx);
-            if self.inbox.pr_tab == PrTab::Files {
+            if self.inbox(cx).pr_tab == PrTab::Files {
                 self.ensure_pr_diff_doc(&item, cx);
             }
         }
     }
 
     fn set_inbox_pr_tab(&mut self, tab: PrTab, cx: &mut Context<Self>) {
-        self.inbox.pr_tab = tab;
+        self.inbox_state.as_mut(cx).pr_tab = tab;
         if tab == PrTab::Files
             && let Some(item) = self
-                .inbox
+                .inbox(cx)
                 .selected
                 .as_deref()
-                .and_then(|key| self.inbox.item(key))
+                .and_then(|key| self.inbox(cx).item(key))
                 .cloned()
         {
             self.ensure_pr_diff_doc(&item, cx);
@@ -737,11 +764,11 @@ impl BenCodeApp {
     }
 
     pub(crate) fn load_inbox_thread(&mut self, key: &str, force: bool, cx: &mut Context<Self>) {
-        let Some(item) = self.inbox.item(key).cloned() else {
+        let Some(item) = self.inbox(cx).item(key).cloned() else {
             return;
         };
         if force {
-            self.inbox.threads.value.remove(key);
+            self.inbox_state.as_mut(cx).threads.value.remove(key);
         }
         load(
             self,
@@ -764,13 +791,13 @@ impl BenCodeApp {
     /// "#42 Title", its composer holding the issue card. A Backlog issue's
     /// card carries the description too: the agent cannot open its URL.
     fn start_inbox_item(&mut self, key: &str, cx: &mut Context<Self>) {
-        let Some(item) = self.inbox.item(key).cloned() else {
+        let Some(item) = self.inbox(cx).item(key).cloned() else {
             return;
         };
         let title = format!("{} {}", item.identifier, item.title.trim());
         let body = (item.provider == Provider::Backlog)
             .then(|| {
-                self.inbox
+                self.inbox(cx)
                     .details
                     .get(key)?
                     .as_ref()
@@ -778,7 +805,7 @@ impl BenCodeApp {
                     .map(|d| d.body.clone())
             })
             .flatten();
-        let cwd = self.inbox_start_project(&item);
+        let cwd = self.inbox_start_project(&item, cx);
         if !crate::app::same_project_path(&cwd, &self.current_cwd) {
             self.switch_project(cwd.clone(), cx);
         }
@@ -792,18 +819,24 @@ impl BenCodeApp {
     }
 
     /// The project "Send to agent" (and CI repair) starts in.
-    pub(crate) fn inbox_start_project(&self, item: &WorkItem) -> String {
-        self.start_project_where(item, is_dir)
+    pub(crate) fn inbox_start_project(&self, item: &WorkItem, cx: &gpui::App) -> String {
+        self.start_project_where(item, is_dir, cx)
     }
 
     /// `inbox_start_project` as the last list found the folders on disk:
     /// for drawing, which asks the disk nothing.
-    pub(crate) fn inbox_start_project_shown(&self, item: &WorkItem) -> String {
-        self.start_project_where(item, |path| !self.inbox.missing_dirs.contains(path))
+    pub(crate) fn inbox_start_project_shown(&self, item: &WorkItem, cx: &gpui::App) -> String {
+        let missing = &self.inbox(cx).missing_dirs;
+        self.start_project_where(item, |path| !missing.contains(path), cx)
     }
 
-    fn start_project_where(&self, item: &WorkItem, exists: impl Fn(&str) -> bool) -> String {
-        self.inbox
+    fn start_project_where(
+        &self,
+        item: &WorkItem,
+        exists: impl Fn(&str) -> bool,
+        cx: &gpui::App,
+    ) -> String {
+        self.inbox(cx)
             .start_project
             .get(&item.key())
             .cloned()
@@ -821,8 +854,8 @@ impl BenCodeApp {
 
     pub(crate) fn render_inbox_body(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let colors = &cx.theme().colors;
-        let width = self.inbox.list_width;
-        let resizing = self.inbox.resizing.is_some();
+        let width = self.inbox(cx).list_width;
+        let resizing = self.inbox(cx).resizing.is_some();
         let handle_hover = colors.fg.fill(Fill::Strong);
         let handle_drag = colors.fg.fill(Fill::Bold);
         div()
@@ -834,9 +867,9 @@ impl BenCodeApp {
             .when(resizing, |el| {
                 el.cursor_col_resize()
                     .on_mouse_move(cx.listener(|this, event: &gpui::MouseMoveEvent, _, cx| {
-                        if let Some((start_x, start_width)) = this.inbox.resizing {
+                        if let Some((start_x, start_width)) = this.inbox(cx).resizing {
                             let x = crate::ui::scale::logical(event.position.x);
-                            this.inbox.list_width =
+                            this.inbox_state.as_mut(cx).list_width =
                                 (start_width + x - start_x).clamp(MIN_LIST_WIDTH, MAX_LIST_WIDTH);
                             cx.notify();
                         }
@@ -878,12 +911,12 @@ impl BenCodeApp {
                                 MouseButton::Left,
                                 cx.listener(|this, event: &gpui::MouseDownEvent, _, cx| {
                                     if event.click_count >= 2 {
-                                        this.inbox.list_width = DEFAULT_LIST_WIDTH;
+                                        this.inbox_state.as_mut(cx).list_width = DEFAULT_LIST_WIDTH;
                                         this.save_settings(cx);
                                     } else {
-                                        this.inbox.resizing = Some((
+                                        this.inbox_state.as_mut(cx).resizing = Some((
                                             crate::ui::scale::logical(event.position.x),
-                                            this.inbox.list_width,
+                                            this.inbox(cx).list_width,
                                         ));
                                     }
                                     cx.notify();
@@ -902,7 +935,7 @@ impl BenCodeApp {
     }
 
     fn end_inbox_resize(&mut self, cx: &mut Context<Self>) {
-        if self.inbox.resizing.take().is_some() {
+        if self.inbox_state.as_mut(cx).resizing.take().is_some() {
             self.save_settings(cx);
             cx.notify();
         }
@@ -913,15 +946,15 @@ impl BenCodeApp {
     fn render_inbox_toolbar(&self, cx: &Context<Self>) -> impl IntoElement {
         let colors = &cx.theme().colors;
         let kinds = KindFilter::ALL.iter().fold(
-            SegmentedControl::new("inbox-kind", self.inbox.kind.key()).size(ControlSize::Sm),
+            SegmentedControl::new("inbox-kind", self.inbox(cx).kind.key()).size(ControlSize::Sm),
             |control, (_, key, label)| control.segment(*key, *label, None),
         );
-        let mine = self.inbox.assigned_to_me;
+        let mine = self.inbox(cx).assigned_to_me;
         let fg = colors.fg;
         let any_unseen = self
             .shown_inbox_items(cx)
             .into_iter()
-            .any(|ix| self.inbox.is_unseen(&self.inbox.items[ix]));
+            .any(|ix| self.inbox(cx).is_unseen(&self.inbox(cx).items[ix]));
         div()
             .flex_none()
             .flex()
@@ -937,7 +970,7 @@ impl BenCodeApp {
                     .px_2()
                     .child(
                         kinds.on_change(cx.listener(|this, key: &SharedString, _, cx| {
-                            this.inbox.kind = KindFilter::from_key(key);
+                            this.inbox_state.as_mut(cx).kind = KindFilter::from_key(key);
                             cx.notify();
                         })),
                     )
@@ -957,7 +990,8 @@ impl BenCodeApp {
                             .hover(move |s| s.bg(fg.fill(Fill::Selected)))
                             .tooltip(Tooltip::text("Only items assigned to you"))
                             .on_click(cx.listener(|this, _, _, cx| {
-                                this.inbox.assigned_to_me = !this.inbox.assigned_to_me;
+                                this.inbox_state.as_mut(cx).assigned_to_me =
+                                    !this.inbox(cx).assigned_to_me;
                                 this.refresh_inbox(cx);
                             }))
                             .child("Mine"),
@@ -994,7 +1028,7 @@ impl BenCodeApp {
                             .disabled(!any_unseen)
                             .on_click(cx.listener(|this, _, _, cx| this.mark_inbox_read(cx))),
                     )
-                    .child(if self.inbox.loading {
+                    .child(if self.inbox(cx).loading {
                         refreshing("inbox-refreshing", cx)
                     } else {
                         IconButton::new("inbox-refresh", IconName::RefreshCw)
@@ -1009,13 +1043,13 @@ impl BenCodeApp {
 
     /// The statuses the filter lists: those of the items the other
     /// filters leave, Backlog's in their workflow's order.
-    fn inbox_status_choices(&self) -> Vec<String> {
-        let source = self.inbox.source_filter();
+    fn inbox_status_choices(&self, cx: &gpui::App) -> Vec<String> {
+        let source = self.inbox(cx).source_filter();
         let items: Vec<&WorkItem> = self
-            .inbox
+            .inbox(cx)
             .items
             .iter()
-            .filter(|item| self.inbox.kind.admits(item.kind))
+            .filter(|item| self.inbox(cx).kind.admits(item.kind))
             .filter(|item| source.is_none_or(|only| item.provider == only))
             .collect();
         let mut ordered: Vec<String> = Vec::new();
@@ -1034,7 +1068,7 @@ impl BenCodeApp {
         }
         let mut choices = status_choices(&items, &ordered);
         // A picked status stays listed, so it can be unpicked.
-        for picked in &self.inbox.statuses {
+        for picked in &self.inbox(cx).statuses {
             if !choices.contains(picked) {
                 choices.push(picked.clone());
             }
@@ -1047,9 +1081,9 @@ impl BenCodeApp {
     fn render_inbox_filter_button(&self, cx: &Context<Self>) -> impl IntoElement + use<> {
         let colors = &cx.theme().colors;
         let fg = colors.fg;
-        let active = self.inbox.filter_menu.is_some()
-            || self.inbox.source_filter().is_some()
-            || !self.inbox.statuses.is_empty();
+        let active = self.inbox(cx).filter_menu.is_some()
+            || self.inbox(cx).source_filter().is_some()
+            || !self.inbox(cx).statuses.is_empty();
         let group = SharedString::from("inbox-filters");
         let glyph =
             |color: gpui::Hsla| ExtraIcon::ListFilter.icon().size(IconSize::Xs).color(color);
@@ -1070,8 +1104,8 @@ impl BenCodeApp {
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|this, event: &gpui::MouseDownEvent, _, cx| {
-                    this.inbox.filter_button_hit = true;
-                    this.inbox.filter_menu = match this.inbox.filter_menu {
+                    this.inbox_mut(cx, |inbox| inbox.filter_button_hit = true);
+                    this.inbox_state.as_mut(cx).filter_menu = match this.inbox(cx).filter_menu {
                         Some(_) => None,
                         None => Some(gpui::point(
                             event.position.x - px(FILTER_MENU_WIDTH - 12.0),
@@ -1105,7 +1139,7 @@ impl BenCodeApp {
     /// GitHub), the statuses to show, and Clear filters once anything is
     /// set.
     fn render_inbox_filter_menu(&self, cx: &Context<Self>) -> Option<AnyElement> {
-        let position = self.inbox.filter_menu?;
+        let position = self.inbox(cx).filter_menu?;
         let fg = cx.theme().colors.fg;
         let section = |label: &'static str| {
             div()
@@ -1136,9 +1170,9 @@ impl BenCodeApp {
                     el.child(Icon::new(IconName::Check).size(IconSize::Sm).color(fg))
                 })
         };
-        let source = self.inbox.source_filter();
+        let source = self.inbox(cx).source_filter();
         let mut body = div().flex().flex_col();
-        if self.inbox.backlog_connected {
+        if self.inbox(cx).backlog_connected {
             body = body.child(section("Source"));
             let choices = [
                 (None, "All sources"),
@@ -1153,14 +1187,14 @@ impl BenCodeApp {
                         source == choice,
                     )
                     .on_click(cx.listener(move |this, _, _, cx| {
-                        this.inbox.source = choice;
+                        this.inbox_state.as_mut(cx).source = choice;
                         cx.notify();
                     })),
                 );
             }
         }
         body = body.child(section("Status"));
-        let statuses = self.inbox_status_choices();
+        let statuses = self.inbox_status_choices(cx);
         if statuses.is_empty() {
             body = body.child(
                 div()
@@ -1174,7 +1208,7 @@ impl BenCodeApp {
             );
         }
         for status in statuses {
-            let on = self.inbox.statuses.contains(&status);
+            let on = self.inbox(cx).statuses.contains(&status);
             body = body.child(
                 row(
                     SharedString::from(format!("inbox-filter-status-{status}")),
@@ -1182,18 +1216,20 @@ impl BenCodeApp {
                     on,
                 )
                 .on_click(cx.listener(move |this, _, _, cx| {
-                    let statuses = &mut this.inbox.statuses;
-                    match statuses.iter().position(|s| *s == status) {
-                        Some(ix) => {
-                            statuses.remove(ix);
+                    this.inbox_mut(cx, |inbox| {
+                        let statuses = &mut inbox.statuses;
+                        match statuses.iter().position(|s| *s == status) {
+                            Some(ix) => {
+                                statuses.remove(ix);
+                            }
+                            None => statuses.push(status.clone()),
                         }
-                        None => statuses.push(status.clone()),
-                    }
+                    });
                     cx.notify();
                 })),
             );
         }
-        if source.is_some() || !self.inbox.statuses.is_empty() {
+        if source.is_some() || !self.inbox(cx).statuses.is_empty() {
             body = body
                 .child(div().my_1().h(px(1.0)).bg(fg.fill(Fill::Strong)))
                 .child(
@@ -1210,8 +1246,8 @@ impl BenCodeApp {
                         .cursor_pointer()
                         .hover(move |s| s.bg(fg.fill(Fill::Hover)).text_color(fg))
                         .on_click(cx.listener(|this, _, _, cx| {
-                            this.inbox.source = None;
-                            this.inbox.statuses.clear();
+                            this.inbox_state.as_mut(cx).source = None;
+                            this.inbox_state.as_mut(cx).statuses.clear();
                             cx.notify();
                         }))
                         .child("Clear filters"),
@@ -1228,8 +1264,10 @@ impl BenCodeApp {
             // once every handler ran is it known whether it was outside.
             .on_mouse_down_out(cx.listener(|_, _, window, cx| {
                 cx.defer_in(window, |this, _, cx| {
-                    if !std::mem::take(&mut this.inbox.filter_button_hit) {
-                        this.inbox.filter_menu = None;
+                    let hit =
+                        this.inbox_mut(cx, |inbox| std::mem::take(&mut inbox.filter_button_hit));
+                    if !hit {
+                        this.inbox_state.as_mut(cx).filter_menu = None;
                         cx.notify();
                     }
                 });
@@ -1260,14 +1298,14 @@ impl BenCodeApp {
         };
         // Backlog alone fills the list too; GitHub's setup hint shows
         // only while nothing is connected.
-        match self.inbox.status {
+        match self.inbox(cx).status {
             None => return message("Loading…".into()),
-            Some(Status::NotInstalled) if !self.inbox.backlog_connected => {
+            Some(Status::NotInstalled) if !self.inbox(cx).backlog_connected => {
                 return message(
                     "Install the GitHub CLI (`brew install gh`) to fill the Inbox, or connect Backlog in Settings › Integrations.".into(),
                 );
             }
-            Some(Status::SignedOut) if !self.inbox.backlog_connected => {
+            Some(Status::SignedOut) if !self.inbox(cx).backlog_connected => {
                 return message(
                     "Run `gh auth login` in a terminal to connect GitHub, or connect Backlog in Settings › Integrations.".into(),
                 );
@@ -1277,15 +1315,16 @@ impl BenCodeApp {
         let shown = self.shown_inbox_items(cx);
         if shown.is_empty() {
             let narrowed = !self.inbox_search_input.read(cx).text().trim().is_empty()
-                || self.inbox.kind != KindFilter::All
-                || self.inbox.source_filter().is_some()
-                || !self.inbox.statuses.is_empty()
-                || self.inbox.assigned_to_me;
-            let text = if self.inbox.loading {
+                || self.inbox(cx).kind != KindFilter::All
+                || self.inbox(cx).source_filter().is_some()
+                || !self.inbox(cx).statuses.is_empty()
+                || self.inbox(cx).assigned_to_me;
+            let text = if self.inbox(cx).loading {
                 "Loading…".to_string()
-            } else if let Some(error) = self.inbox.errors.first() {
+            } else if let Some(error) = self.inbox(cx).errors.first() {
                 error.clone()
-            } else if self.inbox_projects_shown().is_empty() && !self.inbox.backlog_connected {
+            } else if self.inbox_projects_shown(cx).is_empty() && !self.inbox(cx).backlog_connected
+            {
                 "Open a project to fill the inbox".to_string()
             } else if narrowed {
                 "No issues or pull requests match these filters".to_string()
@@ -1311,12 +1350,12 @@ impl BenCodeApp {
             .flex_col()
             .child(crate::ui::scrollbar::framed(
                 "inbox-list-scrollbar",
-                &self.inbox.scroll,
+                &self.inbox(cx).scroll,
                 uniform_list("inbox-list", len, rows)
-                    .track_scroll(&self.inbox.scroll)
+                    .track_scroll(&self.inbox(cx).scroll)
                     .size_full()
                     .p(px(6.0))
-                    .pr(px(6.0) + crate::ui::scrollbar::gutter(&self.inbox.scroll)),
+                    .pr(px(6.0) + crate::ui::scrollbar::gutter(&self.inbox(cx).scroll)),
             ))
             .into_any_element()
     }
@@ -1324,17 +1363,17 @@ impl BenCodeApp {
     /// MonoCode `InboxCard`: kind · #n, the time and the unread dot, the
     /// title, the repo and up to two labels.
     fn render_inbox_row(&self, ix: usize, now: i64, cx: &Context<Self>) -> AnyElement {
-        let item = &self.inbox.items[ix];
+        let item = &self.inbox(cx).items[ix];
         let colors = &cx.theme().colors;
         let fg = colors.fg;
         let key = item.key();
-        let active = self.inbox.selected.as_deref() == Some(key.as_str());
-        let unseen = self.inbox.is_unseen(item);
+        let active = self.inbox(cx).selected.as_deref() == Some(key.as_str());
+        let unseen = self.inbox(cx).is_unseen(item);
         let (icon, tint, _) = status_mark(item, cx);
         let selection = fg.opacity(if cx.theme().is_dark() { 0.10 } else { 0.06 });
         let hover = fg.fill(Fill::Hover);
         let repairs = self
-            .inbox
+            .inbox(cx)
             .repairs
             .iter()
             .filter(|r| r.item_key == key)
@@ -1483,11 +1522,14 @@ fn load<T: Send + 'static>(
     fetch: impl FnOnce() -> Result<T, String> + Send + 'static,
     cx: &mut Context<BenCodeApp>,
 ) {
-    let loaded = slot(&mut app.inbox);
-    if loaded.value.contains_key(key) || !loaded.loading.insert(key.to_string()) {
+    let started = app.inbox_mut(cx, |inbox| {
+        let loaded = slot(inbox);
+        !loaded.value.contains_key(key) && loaded.loading.insert(key.to_string())
+    });
+    if !started {
         return;
     }
-    let generation = app.inbox.generation;
+    let generation = app.inbox(cx).generation;
     let key = key.to_string();
     let task = cx.background_executor().spawn(async move { fetch() });
     cx.spawn(async move |this, cx| {
@@ -1496,13 +1538,15 @@ fn load<T: Send + 'static>(
             log::warn!("inbox: could not load {key}: {err}");
         }
         let updated = this.update(cx, |app, cx| {
-            let loaded = slot(&mut app.inbox);
-            loaded.loading.remove(&key);
-            // A refresh started since; its own load replaces this one.
-            if app.inbox.generation == generation {
-                slot(&mut app.inbox).value.insert(key, result);
-            }
-            cx.notify();
+            // What shows the Inbox follows it (`ui/region.rs`).
+            app.inbox_state.update(cx, |inbox, cx| {
+                slot(inbox).loading.remove(&key);
+                // A refresh started since; its own load replaces this one.
+                if inbox.generation == generation {
+                    slot(inbox).value.insert(key, result);
+                }
+                cx.notify();
+            });
         });
         if let Err(err) = updated {
             log::debug!("inbox load after app drop: {err:#}");

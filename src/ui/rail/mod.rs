@@ -6,6 +6,7 @@
 
 mod cards;
 mod compact;
+pub use compact::COMPACT_RAIL_WIDTH;
 mod live_agents;
 mod menu;
 mod menu_view;
@@ -243,7 +244,7 @@ impl BenCodeApp {
                     IconName::Inbox,
                     "Inbox",
                     self.surface_open(Surface::Inbox),
-                    if self.inbox_has_unseen() {
+                    if self.inbox_has_unseen(cx) {
                         RailTrailing::Dot
                     } else {
                         RailTrailing::None

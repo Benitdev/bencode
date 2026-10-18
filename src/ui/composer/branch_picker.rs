@@ -117,19 +117,21 @@ impl BenCodeApp {
     }
 
     /// The branch the focused checkout is on.
-    fn current_branch(&self) -> String {
-        self.composer_branch(self.selected_session())
+    fn current_branch(&self, cx: &gpui::App) -> String {
+        self.composer_branch(self.selected_session(), cx)
             .unwrap_or_default()
     }
 
     fn picker_rows(&self, kind: BranchPickerKind, cx: &App) -> Vec<BranchRow> {
         let query = self.branch_search_input.read(cx).text();
         match kind {
-            BranchPickerKind::Branch => {
-                branch_rows(&self.workspace.branches, query, &self.current_branch())
-            }
+            BranchPickerKind::Branch => branch_rows(
+                &self.workspace(cx).branches,
+                query,
+                &self.current_branch(cx),
+            ),
             BranchPickerKind::Base => base_rows(
-                &self.workspace.branches,
+                &self.workspace(cx).branches,
                 query,
                 self.new_worktree_base().unwrap_or("HEAD"),
             ),
@@ -196,7 +198,7 @@ impl BenCodeApp {
                 Some(row) => self.pick_branch_row(kind, row.clone(), cx),
                 None if kind == BranchPickerKind::Branch => {
                     let query = self.branch_search_input.read(cx).text().to_string();
-                    if let Some(name) = create_name(&self.workspace.branches, &query)
+                    if let Some(name) = create_name(&self.workspace(cx).branches, &query)
                         .filter(|name| !name.is_empty())
                     {
                         self.create_from_picker(name, cx);
@@ -397,7 +399,7 @@ impl BenCodeApp {
                 .child(error)
         });
         let create = (kind == BranchPickerKind::Branch)
-            .then(|| create_name(&self.workspace.branches, &query))
+            .then(|| create_name(&self.workspace(cx).branches, &query))
             .flatten()
             .map(|name| {
                 let label = if name.is_empty() {

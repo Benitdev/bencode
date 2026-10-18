@@ -581,6 +581,14 @@ impl BenCodeApp {
         // Sized by hand: taffy gives a row no width at all once a child has
         // a negative margin, and the headline would start under the icons.
         let stack_width = 14.0 + 12.0 * shown.len().saturating_sub(1) as f32;
+        // The dragged tab's slot is see-through while it rides the pointer;
+        // a spinner is drawn over the regions (`ui/marks.rs`) and would
+        // stay behind in the gap, so it shows the harness instead.
+        let dragged = self
+            .title_strip
+            .reorder
+            .as_ref()
+            .is_some_and(|(id, _)| *id == tab.id);
         let stack = div()
             .flex()
             .flex_none()
@@ -594,7 +602,7 @@ impl BenCodeApp {
                     .items_center()
                     .justify_center()
                     .when(ix > 0, |el| el.ml(px(-2.0)));
-                if tab.busy.contains(harness) {
+                if tab.busy.contains(harness) && !dragged {
                     slot.child(crate::ui::spinner::terminal_spinner(colors.accent, cx))
                         .into_any_element()
                 } else if tab.done.contains(harness) {
@@ -1142,7 +1150,7 @@ impl BenCodeApp {
                             button(
                                 "titlebar-inbox",
                                 IconName::Inbox,
-                                if self.inbox_has_unseen() {
+                                if self.inbox_has_unseen(cx) {
                                     "Inbox, new items"
                                 } else {
                                     "Inbox"
@@ -1150,7 +1158,7 @@ impl BenCodeApp {
                             )
                             .on_click(cx.listener(|this, _, _, cx| this.open_inbox_modal(cx))),
                         )
-                        .when(self.inbox_has_unseen(), |el| {
+                        .when(self.inbox_has_unseen(cx), |el| {
                             el.child(
                                 div()
                                     .absolute()

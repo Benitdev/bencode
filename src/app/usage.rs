@@ -45,11 +45,19 @@ pub struct UsageTarget {
     pub available: bool,
 }
 
+/// Each account's last usage and the reads running: a model, followed by
+/// the regions that show usage (`Region::Footer`, `Mono`, `Surface`), so a
+/// read landing redraws those and not the app (`docs/regions.md`).
 #[derive(Default)]
-pub struct UsageState {
+pub struct UsageSnapshots {
     snapshots: HashMap<UsageKey, ProviderRateLimits>,
     /// Accounts being read, and whether Refresh asked for it.
     pending: HashMap<UsageKey, bool>,
+}
+
+/// The footer's usage chip and popover: what is open and in progress.
+#[derive(Default)]
+pub struct UsageState {
     /// The provider whose details popover is open, and its page.
     pub popover: Option<RateLimitProvider>,
     pub view: UsageView,
@@ -63,7 +71,7 @@ pub struct UsageState {
     pub add_error: Option<String>,
 }
 
-impl UsageState {
+impl UsageSnapshots {
     pub fn limits(&self, provider: RateLimitProvider, account_id: &str) -> &ProviderRateLimits {
         self.cached(provider, account_id).unwrap_or(&IDLE)
     }
@@ -129,13 +137,17 @@ impl BenCodeApp {
         cx: &mut Context<Self>,
     ) {
         let key = (provider, account_id.to_string());
-        let cached = self.usage.snapshots.get(&key);
-        if self.usage.pending.contains_key(&key) || (cached.is_some() && !force) {
+        let data = self.usage_data.read(cx);
+        let cached = data.snapshots.get(&key);
+        if data.pending.contains_key(&key) || (cached.is_some() && !force) {
             return;
         }
         let fetching = ProviderRateLimits::fetching(cached);
-        self.usage.snapshots.insert(key.clone(), fetching);
-        self.usage.pending.insert(key.clone(), force);
+        self.usage_data.update(cx, |data, cx| {
+            data.snapshots.insert(key.clone(), fetching);
+            data.pending.insert(key.clone(), force);
+            cx.notify();
+        });
         let profile = AccountProfile::resolve(provider.id(), Some(account_id));
         let account_id = account_id.to_string();
         let task = cx.background_executor().spawn(async move {
@@ -144,13 +156,15 @@ impl BenCodeApp {
         cx.spawn(async move |this, cx| {
             let fetched = task.await;
             let landed = this.update(cx, |app, cx| {
-                let limits = fetched.into_limits(app.usage.snapshots.get(&key), now_ms());
-                if let Some(error) = &limits.error {
-                    log::info!("{} usage: {error}", provider.title());
-                }
-                app.usage.snapshots.insert(key.clone(), limits);
-                app.usage.pending.remove(&key);
-                cx.notify();
+                app.usage_data.update(cx, |data, cx| {
+                    let limits = fetched.into_limits(data.snapshots.get(&key), now_ms());
+                    if let Some(error) = &limits.error {
+                        log::info!("{} usage: {error}", provider.title());
+                    }
+                    data.snapshots.insert(key.clone(), limits);
+                    data.pending.remove(&key);
+                    cx.notify();
+                });
             });
             if let Err(err) = landed {
                 log::debug!("usage after app drop: {err:#}");
@@ -216,7 +230,8 @@ impl BenCodeApp {
     pub(crate) fn reload_antigravity_usage(&mut self, cx: &mut Context<Self>) {
         for group in rate_limits::antigravity::GROUPS {
             if self
-                .usage
+                .usage_data
+                .read(cx)
                 .cached(RateLimitProvider::Antigravity, group)
                 .is_some()
             {
@@ -232,7 +247,9 @@ impl BenCodeApp {
                 cx.background_executor().timer(CLOCK_TICK).await;
                 let ticked = this.update(cx, |app, cx| {
                     if app.usage_target().is_some() {
-                        cx.notify();
+                        // The countdowns move: the regions that follow
+                        // usage redraw.
+                        app.usage_data.update(cx, |_, cx| cx.notify());
                     }
                 });
                 if ticked.is_err() {

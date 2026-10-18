@@ -68,8 +68,8 @@ use ely_gpui_component::forms::{InputEvent, TextInput};
 use ely_gpui_component::primitives::FocusScope;
 use ely_gpui_component::theme::ActiveTheme;
 use gpui::{
-    AnyElement, AppContext, Context, Entity, Focusable, IntoElement, ParentElement, Render, Styled,
-    Subscription, Window, div, prelude::*,
+    AnyElement, AppContext, Context, Entity, Focusable, IntoElement, ParentElement, Render,
+    StyleRefinement, Styled, Subscription, Window, div, prelude::*,
 };
 
 pub use agent::{AgentRun, NEW_SESSION_TITLE, QUESTION_TOOL, TurnInput, can_compact, now_ms};
@@ -82,6 +82,7 @@ pub use workspace_sync::WorkspaceCache;
 use crate::db::{AppDb, SessionRow};
 use crate::harness::{HarnessInfo, HarnessResolver, catalog};
 use crate::startup_trace::mark as trace;
+use crate::ui::region::Region;
 use crate::ui::settings_modal::SettingsTab;
 
 const INITIAL_OPEN_TABS: usize = 3;
@@ -211,7 +212,9 @@ pub struct BenCodeApp {
     pub branch_create_input: Entity<TextInput>,
     /// MonoCode Inbox (GitHub source): the fetched list, filters,
     /// selection and loaded bodies, and its search field.
-    pub inbox: crate::ui::inbox_view::InboxState,
+    /// The Inbox's data and selection, a model the regions showing it
+    /// follow; read through `inbox(cx)`, changed through `inbox_mut`.
+    pub inbox_state: Entity<crate::ui::inbox_view::InboxState>,
     pub inbox_search_input: Entity<TextInput>,
     pub inbox_comment_input: Entity<TextInput>,
     /// Settings › Integrations: the Backlog connection and its form.
@@ -292,6 +295,10 @@ pub struct BenCodeApp {
     /// The footer's slot for the CPU and memory readout, measured by layout
     /// and drawn over by `ProcessLayer`.
     pub process_slot: std::rc::Rc<std::cell::Cell<Option<crate::ui::composer::runner::Rect>>>,
+    /// The window's parts as cached views (`ui/region.rs`).
+    pub regions: crate::ui::region::Regions,
+    /// The busy marks over the regions (`ui/marks.rs`), made on first draw.
+    pub mark_layer: Option<Entity<crate::ui::marks::MarkLayer>>,
     pub composer_mascot_off: bool,
     /// MonoCode `LiveAgentsPreview`: the Working agents card and its setting.
     pub live_agents_ui: crate::ui::rail::LiveAgentsUi,
@@ -347,7 +354,9 @@ pub struct BenCodeApp {
     pub transcript_selection: Entity<crate::ui::transcript::selection::TranscriptSelection>,
     pub transcript_focus: gpui::FocusHandle,
     /// Each project's terminals (MonoCode project terminal docks).
-    pub terminals: crate::ui::terminal_pane::TerminalDocks,
+    /// The terminal docks, a model the regions showing them follow; read
+    /// through `terminals(cx)`, changed through `terminals_mut`.
+    pub terminals_state: Entity<crate::ui::terminal_pane::TerminalDocks>,
     pub settings_tab: SettingsTab,
     /// The full-height view replacing the workspace, if any.
     pub surface: Option<Surface>,
@@ -379,11 +388,16 @@ pub struct BenCodeApp {
     /// graph, the branch's pull request).
     pub changes_ui: crate::ui::git_changes_panel::ChangesUi,
     /// Git/filesystem snapshot for the active workspace; see `workspace_sync`.
-    pub workspace: WorkspaceCache,
+    /// The open folder's git and file snapshot, a model the regions that
+    /// show it follow; read through `workspace(cx)`, changed through
+    /// `workspace_mut`.
+    pub workspace_state: Entity<WorkspaceCache>,
     /// Every rail project's +/- lines (MonoCode `useProjectDiffStats`).
     pub project_stats: project_stats::ProjectStats,
     /// Provider usage for the footer (MonoCode `rateLimitsCache`).
     pub usage: usage::UsageState,
+    /// Each account's usage, a model the usage regions follow.
+    pub usage_data: Entity<usage::UsageSnapshots>,
     /// The footer's CPU and memory readout for BenCode itself.
     /// Provider account profiles (MonoCode `providerAccounts`).
     pub accounts: accounts::AccountsState,
@@ -606,6 +620,41 @@ impl BenCodeApp {
         let menu_focus = cx.focus_handle();
         let menu_keys_focus = menu_focus.clone();
         let weak_app = cx.weak_entity();
+        // Models the regions follow (`docs/regions.md`, stage 5): a change
+        // redraws the regions that show it, not the app.
+        let usage_data = cx.new(|_| usage::UsageSnapshots::default());
+        let inbox_state = cx.new(|_| crate::ui::inbox_view::InboxState::default());
+        let terminals_state = cx.new(|_| crate::ui::terminal_pane::TerminalDocks::default());
+        let workspace_state = cx.new(|_| WorkspaceCache::default());
+        let mut regions = crate::ui::region::Regions::default();
+        regions.follow(
+            &usage_data,
+            &[Region::Footer, Region::Mono, Region::Surface],
+        );
+        regions.follow(
+            &inbox_state,
+            &[
+                Region::Surface,
+                Region::Sidebar,
+                Region::Rail,
+                Region::CompactRail,
+                Region::Titlebar,
+            ],
+        );
+        regions.follow(&terminals_state, &[Region::Terminal, Region::Footer]);
+        regions.follow(
+            &workspace_state,
+            &[
+                Region::Titlebar,
+                Region::Rail,
+                Region::CompactRail,
+                Region::Sidebar,
+                Region::Chat,
+                Region::FilePane,
+                Region::Surface,
+                Region::Mono,
+            ],
+        );
         let mut subscriptions = vec![
             cx.subscribe(
                 &prompt_input,
@@ -659,8 +708,8 @@ impl BenCodeApp {
             cx.observe_window_appearance(window, |this, window, cx| {
                 this.on_system_appearance_changed(window.appearance(), cx)
             }),
-            cx.observe_window_visibility(window, |this, visibility, _, _| {
-                this.workspace.hidden = !visibility.is_visible();
+            cx.observe_window_visibility(window, |this, visibility, _, cx| {
+                this.workspace_mut(cx, |cache| cache.hidden = !visibility.is_visible());
             }),
             cx.subscribe(
                 &model_search_input,
@@ -875,11 +924,11 @@ impl BenCodeApp {
         ];
         // Every quit path (⌘Q, Dock, logout) ends here. The work happens in the
         // callback itself: GPUI polls the returned future for only 200 ms.
-        subscriptions.push(cx.on_app_quit(|this, _cx| {
+        subscriptions.push(cx.on_app_quit(|this, cx| {
             this.interrupt_runs_for_quit();
             // ⌘Q ends the dock's shells; an update's restart keeps them.
             if !this.updater.keep_terminals {
-                this.end_all_terminal_sessions();
+                this.end_all_terminal_sessions(cx);
             }
             async {}
         }));
@@ -1231,7 +1280,7 @@ impl BenCodeApp {
             branch_search_input,
             branch_create_open: false,
             branch_create_input,
-            inbox: Default::default(),
+            inbox_state,
             inbox_search_input,
             inbox_comment_input,
             backlog: Default::default(),
@@ -1281,6 +1330,8 @@ impl BenCodeApp {
             new_worktrees: HashMap::new(),
             runner_geometry: Default::default(),
             process_slot: Default::default(),
+            regions,
+            mark_layer: None,
             composer_mascot_off: false,
             live_agents_ui: Default::default(),
             live_agents_off: false,
@@ -1309,7 +1360,7 @@ impl BenCodeApp {
             transcript_ui: Default::default(),
             transcript_selection,
             transcript_focus: cx.focus_handle(),
-            terminals: Default::default(),
+            terminals_state,
             settings_tab: SettingsTab::Providers,
             surface: None,
             settings_return: None,
@@ -1326,9 +1377,10 @@ impl BenCodeApp {
             git_history: Vec::new(),
             git_commit_input,
             changes_ui: Default::default(),
-            workspace: WorkspaceCache::default(),
+            workspace_state,
             project_stats: Default::default(),
             usage: Default::default(),
+            usage_data,
             accounts: Default::default(),
             agy_accounts: Default::default(),
             account_name_input,
@@ -1384,7 +1436,7 @@ impl BenCodeApp {
             _subscriptions: subscriptions,
         };
         trace("app state built");
-        app.apply_settings(saved);
+        app.apply_settings(saved, cx);
         // Git and the folder's listings load on the background executor
         // while the first frame draws; the folder is the one the restored
         // worktree focus (`apply_settings`) picks.
@@ -1578,12 +1630,6 @@ impl Render for BenCodeApp {
         }
         self.sync_artifact_page(window, cx);
         self.sync_mention_marks(window, cx);
-        // The browser tab the file pane draws shows; the others hide below.
-        self.browser.drawn.set(None);
-        // The runner layer reads what this layout measures.
-        self.runner_geometry.clear();
-        // A footer that is not drawn leaves no readout behind.
-        self.process_slot.set(None);
         if !self.focus_handle.contains_focused(window, cx) && window.focused(cx).is_none() {
             window.focus(&self.focus_handle, cx);
         }
@@ -1593,10 +1639,10 @@ impl Render for BenCodeApp {
         let (bg, fg) = (colors.bg, colors.fg);
         // Search, Inbox, Notes, Automations and Settings replace the
         // sidebar and the workspace column (MonoCode in-shell views).
-        let surface = self.render_surface(cx);
+        let surface_open = self.surface.is_some();
         // A Mono's conversation does too (MonoCode `monoCovers`).
-        let mono_view = self.render_mono_view(cx);
-        let workspace_visible = surface.is_none() && mono_view.is_none();
+        let mono_open = self.mono_covers() && self.mono_in_view().is_some();
+        let workspace_visible = !surface_open && !mono_open;
         let compact_rail = self.compact_rail_active();
         let title_bar_above = self.compact_title_bar();
         // A browser page is a native view above everything GPUI draws: it
@@ -1634,8 +1680,101 @@ impl Render for BenCodeApp {
         .collect();
         self.browser.obscured.set(!dialogs.is_empty());
 
+        // The regions this frame lays out (`ui/region.rs`): each is a
+        // cached view, at a size given here.
+        self.regions.begin_frame();
+        let mut drawn: Vec<Region> = Vec::new();
+        let mut region = |this: &mut Self, region: Region, style, cx: &mut Context<Self>| {
+            drawn.push(region);
+            this.regions.element(region, style, cx)
+        };
+        let titlebar_style = || {
+            StyleRefinement::default()
+                .w_full()
+                .flex_none()
+                .h(crate::ui::scale::px(crate::ui::sidebar::TITLEBAR_HEIGHT))
+        };
+        let titlebar_above =
+            title_bar_above.then(|| region(self, Region::Titlebar, titlebar_style(), cx));
+        let rail = self.is_rail_open.then(|| {
+            let width = crate::ui::scale::px(self.rail_width());
+            let style = StyleRefinement::default().flex_none().h_full().w(width);
+            region(self, Region::Rail, style, cx)
+        });
+        let compact = compact_rail.then(|| {
+            let width = crate::ui::scale::px(crate::ui::rail::COMPACT_RAIL_WIDTH);
+            let style = StyleRefinement::default().flex_none().h_full().w(width);
+            region(self, Region::CompactRail, style, cx)
+        });
+        let sidebar = (self.sidebar_shown() && workspace_visible).then(|| {
+            let width = crate::ui::scale::px(self.sidebar_width);
+            let style = StyleRefinement::default().flex_none().h_full().w(width);
+            let drawer = self.sidebar_is_drawer();
+            div()
+                .flex()
+                .flex_none()
+                .h_full()
+                .when(drawer, |el| {
+                    el.on_mouse_down_out(cx.listener(
+                        |this, event: &gpui::MouseDownEvent, _, cx| {
+                            this.dismiss_sidebar_drawer(event, cx)
+                        },
+                    ))
+                })
+                .child(region(self, Region::Sidebar, style, cx))
+        });
+        let main = workspace_visible.then(|| {
+            let titlebar =
+                (!title_bar_above).then(|| region(self, Region::Titlebar, titlebar_style(), cx));
+            let footer = region(
+                self,
+                Region::Footer,
+                StyleRefinement::default()
+                    .w_full()
+                    .flex_none()
+                    .h(crate::ui::scale::px(28.0)),
+                cx,
+            );
+            div()
+                .flex()
+                .flex_col()
+                .flex_1()
+                .h_full()
+                .min_w_0()
+                .overflow_hidden()
+                .children(titlebar)
+                // MonoCode `body-glass`: the pane under the title bar.
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .flex_1()
+                        .min_h_0()
+                        .bg(glass.body(bg))
+                        .child(self.render_workspace_with_dock(window, cx))
+                        .child(footer),
+                )
+        });
+        let column = || StyleRefinement::default().flex_1().min_w_0().h_full();
+        let surface = surface_open.then(|| region(self, Region::Surface, column(), cx));
+        let mono_view = mono_open.then(|| region(self, Region::Mono, column(), cx));
+        if workspace_visible {
+            drawn.push(Region::Chat);
+            if !(self.file_pane.is_empty() && self.editor.notice.is_none()) {
+                drawn.push(Region::FilePane);
+            }
+            if self.terminals(cx).layout(&self.current_cwd).open {
+                drawn.push(Region::Terminal);
+            }
+        }
+        self.settle_undrawn_regions(&drawn);
+        let mark_layer = self
+            .mark_layer
+            .get_or_insert_with(|| cx.new(|_| crate::ui::marks::MarkLayer))
+            .clone();
+
         // Full size explicitly: the app is laid out inside `WindowRoot`'s
-        // cached slot, not as the window's root.
+        // slot, not as the window's root.
         let app = FocusScope::new(&self.focus_handle)
             .root()
             .size_full()
@@ -1678,9 +1817,7 @@ impl Render for BenCodeApp {
                     .bg(glass.root(bg))
                     .text_color(fg)
                     // MonoCode `compactTitleBar`: above the icon rail.
-                    .when(title_bar_above, |el| {
-                        el.child(self.render_titlebar(window, cx))
-                    })
+                    .children(titlebar_above)
                     .child(
                         div()
                             .flex()
@@ -1688,60 +1825,20 @@ impl Render for BenCodeApp {
                             .size_full()
                             .min_h_0()
                             .overflow_hidden()
-                            // Column 1: Leftmost Project Rail, or its icons
-                            .when(self.is_rail_open, |el| {
-                                el.child(self.render_project_rail(cx))
-                            })
-                            .when(compact_rail, |el| el.child(self.render_compact_rail(cx)))
-                            // Column 2: Workspace Sidebar (when open, or
-                            // drawn out from the icon rail)
-                            .when(self.sidebar_shown() && workspace_visible, |el| {
-                                let drawer = self.sidebar_is_drawer();
-                                el.child(
-                                    div()
-                                        .flex()
-                                        .flex_none()
-                                        .h_full()
-                                        .when(drawer, |el| {
-                                            el.on_mouse_down_out(cx.listener(
-                                                |this, event: &gpui::MouseDownEvent, _, cx| {
-                                                    this.dismiss_sidebar_drawer(event, cx)
-                                                },
-                                            ))
-                                        })
-                                        .child(self.render_sidebar(cx)),
-                                )
-                            })
-                            // Column 3: Main Area (TitleBar + Views + Terminal Drawer + UsageFooter)
-                            .when(workspace_visible, |el| {
-                                el.child(
-                                    div()
-                                        .flex()
-                                        .flex_col()
-                                        .flex_1()
-                                        .h_full()
-                                        .min_w_0()
-                                        .overflow_hidden()
-                                        .when(!title_bar_above, |el| {
-                                            el.child(self.render_titlebar(window, cx))
-                                        })
-                                        // MonoCode `body-glass`: the pane under
-                                        // the title bar.
-                                        .child(
-                                            div()
-                                                .flex()
-                                                .flex_col()
-                                                .flex_1()
-                                                .min_h_0()
-                                                .bg(glass.body(bg))
-                                                .child(self.render_workspace_with_dock(window, cx))
-                                                .child(self.render_usage_footer(cx)),
-                                        ),
-                                )
-                            })
+                            // Column 1: the project rail, or its icons
+                            .children(rail)
+                            .children(compact)
+                            // Column 2: the sidebar (when open, or drawn
+                            // out from the icon rail)
+                            .children(sidebar)
+                            // Column 3: title bar, chat and file pane,
+                            // terminal dock, footer
+                            .children(main)
                             .children(surface)
                             .children(mono_view),
                     )
+                    // Over the regions, under the menus and dialogs.
+                    .child(mark_layer)
                     .children(self.render_sidebar_menu(cx))
                     .children(self.render_rail_overlays(cx))
                     .children(self.render_tree_menu(cx))
@@ -1750,8 +1847,6 @@ impl Render for BenCodeApp {
                     .children(self.render_corner_notices(window, cx))
                     .children(dialogs),
             );
-        self.browser.hide_undrawn();
-        self.artifacts.hide_undrawn();
         if crate::startup_trace::enabled() && !self.rendered_once {
             self.rendered_once = true;
             trace("app rendered (elements built)");

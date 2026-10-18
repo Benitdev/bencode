@@ -100,7 +100,7 @@ impl BenCodeApp {
             self.changes_ui.pr_key = None;
             return;
         };
-        let cwd = self.workspace.cwd.clone();
+        let cwd = self.workspace(cx).cwd.clone();
         let key = format!("{cwd}\0{branch}");
         if self.changes_ui.pr_key.as_deref() == Some(key.as_str()) {
             return;
@@ -150,7 +150,7 @@ impl BenCodeApp {
 
     pub(crate) fn reload_branch_pr(&mut self, cx: &mut Context<Self>) {
         if let Some(key) = self.changes_ui.pr_key.clone() {
-            let cwd = self.workspace.cwd.clone();
+            let cwd = self.workspace(cx).cwd.clone();
             self.load_branch_pr(key, cwd, cx);
         }
     }
@@ -188,7 +188,7 @@ impl BenCodeApp {
             return;
         }
         self.changes_ui.busy = Some(busy.clone());
-        self.workspace.git_error = None;
+        self.workspace_state.as_mut(cx).git_error = None;
         let cwd = self.workspace_cwd();
         let task = cx.background_executor().spawn(async move { work(&cwd) });
         cx.spawn(async move |this, cx| {
@@ -204,7 +204,7 @@ impl BenCodeApp {
                     }
                     Err(failure) => {
                         log::warn!("git action failed: {}", failure.output());
-                        app.workspace.git_error = Some(failure.into_error(&busy));
+                        app.workspace_state.as_mut(cx).git_error = Some(failure.into_error(&busy));
                     }
                 }
                 app.refresh_workspace(cx);
@@ -304,14 +304,14 @@ impl BenCodeApp {
         if deleted {
             return;
         }
-        let cwd = self.workspace.cwd.clone();
+        let cwd = self.workspace(cx).cwd.clone();
         self.open_pane_tab(PaneTab::Review { cwd, path, side }, pin, cx);
     }
 
     /// MonoCode "Open All Changes": that section's files stacked in one review.
     pub(crate) fn open_all_changes(&mut self, side: Side, cx: &mut Context<Self>) {
         let tab = PaneTab::Changes {
-            cwd: self.workspace.cwd.clone(),
+            cwd: self.workspace(cx).cwd.clone(),
             side: Some(side),
             focus: None,
         };
@@ -501,7 +501,7 @@ impl BenCodeApp {
             let updated = this.update(cx, |app, cx| match message {
                 Ok(message) => cx.write_to_clipboard(gpui::ClipboardItem::new_string(message)),
                 Err(err) => {
-                    app.workspace.git_error =
+                    app.workspace_state.as_mut(cx).git_error =
                         Some(GitError::new("Couldn't read the commit message", err));
                     cx.notify();
                 }
@@ -546,7 +546,8 @@ impl BenCodeApp {
                             Some((app.git_sync.branch.clone(), app.git_sync.head.clone()));
                     }
                     Err(err) => {
-                        app.workspace.git_error = Some(GitError::new("Couldn't amend", err))
+                        app.workspace_state.as_mut(cx).git_error =
+                            Some(GitError::new("Couldn't amend", err))
                     }
                 }
                 cx.notify();
@@ -590,7 +591,8 @@ impl BenCodeApp {
                         .git_commit_input
                         .update(cx, |input, cx| input.set_text(message, cx)),
                     Err(err) => {
-                        app.workspace.git_error = Some(GitError::for_busy(&Busy::Generate, err))
+                        app.workspace_state.as_mut(cx).git_error =
+                            Some(GitError::for_busy(&Busy::Generate, err))
                     }
                 }
                 cx.notify();

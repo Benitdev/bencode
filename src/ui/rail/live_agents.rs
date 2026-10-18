@@ -284,11 +284,5 @@ impl BenCodeApp {
 /// `size-1.5 rounded-full bg-accent motion-safe:animate-pulse`, stepped by
 /// the app's clock (`ui/spinner.rs`).
 fn pulse_dot(accent: Hsla, cx: &App) -> AnyElement {
-    div()
-        .flex_none()
-        .size(px(6.0))
-        .rounded_full()
-        .bg(accent)
-        .opacity(spinner::pulse(cx))
-        .into_any_element()
+    spinner::pulse_dot(accent, 6.0, cx)
 }

@@ -216,7 +216,7 @@ impl BenCodeApp {
             );
         }
         if self.rail_ui.inbox_menu.is_some() {
-            let entries = self.inbox_menu_entries();
+            let entries = self.inbox_menu_entries(cx);
             let active = self.rail_ui.inbox_active;
             return self.step_or_pick(
                 key,

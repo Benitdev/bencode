@@ -39,7 +39,7 @@ impl BenCodeApp {
     /// The sidebar worktree switcher (MonoCode `onSelectWorkspace`).
     pub fn select_workspace(&mut self, focus: Option<WorktreeFocus>, cx: &mut Context<Self>) {
         let project = self.current_cwd.clone();
-        self.navigate_workspace(&project, focus, WorkspaceRequest::Workspace);
+        self.navigate_workspace(&project, focus, WorkspaceRequest::Workspace, cx);
         // Refreshes git/files when the workspace directory changed.
         self.sync_selection(cx);
     }
@@ -52,6 +52,7 @@ impl BenCodeApp {
         project: &str,
         focus: Option<WorktreeFocus>,
         request: WorkspaceRequest,
+        cx: &gpui::App,
     ) {
         let path = focus
             .as_ref()
@@ -93,7 +94,7 @@ impl BenCodeApp {
                 }
                 None if request == WorkspaceRequest::Project => active_id,
                 None => {
-                    let id = self.create_session_row(project);
+                    let id = self.create_session_row(project, cx);
                     self.tabs.open(&id)
                 }
             },

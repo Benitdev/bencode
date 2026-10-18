@@ -215,13 +215,13 @@ impl BenCodeApp {
             }
             SearchScope::Files
                 if self
-                    .workspace
+                    .workspace(cx)
                     .changes
                     .iter()
                     .any(|c| c.path == hit.target_id) =>
             {
                 let tab = PaneTab::Changes {
-                    cwd: self.workspace.cwd.clone(),
+                    cwd: self.workspace(cx).cwd.clone(),
                     side: None,
                     focus: Some(hit.target_id),
                 };

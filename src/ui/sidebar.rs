@@ -388,7 +388,7 @@ impl BenCodeApp {
     fn render_sidebar_header(&self, cx: &Context<Self>) -> impl IntoElement {
         let colors = &cx.theme().colors;
         let valid_worktrees: Vec<&crate::git::Worktree> = self
-            .workspace
+            .workspace(cx)
             .worktrees
             .iter()
             .filter(|w| !w.missing)
@@ -465,7 +465,7 @@ impl BenCodeApp {
         let tip = match focus {
             Some(f) => format!("{}\n{}", f.branch.as_deref().unwrap_or("detached"), f.path),
             None => self
-                .workspace
+                .workspace(cx)
                 .worktrees
                 .iter()
                 .find(|w| w.is_main)

@@ -79,11 +79,11 @@ fn check_key(item_key: &str, name: &str) -> String {
 
 impl BenCodeApp {
     pub(super) fn load_pr_checks(&mut self, key: &str, force: bool, cx: &mut Context<Self>) {
-        let Some(item) = self.inbox.item(key).cloned() else {
+        let Some(item) = self.inbox(cx).item(key).cloned() else {
             return;
         };
         if force {
-            self.inbox.checks.value.remove(key);
+            self.inbox_state.as_mut(cx).checks.value.remove(key);
         }
         super::load(
             self,
@@ -96,8 +96,8 @@ impl BenCodeApp {
 
     fn toggle_check(&mut self, item: &WorkItem, check: &Check, cx: &mut Context<Self>) {
         let id = check_key(&item.key(), &check.name);
-        if !self.inbox.expanded_checks.remove(&id) {
-            self.inbox.expanded_checks.insert(id);
+        if !self.inbox_state.as_mut(cx).expanded_checks.remove(&id) {
+            self.inbox_state.as_mut(cx).expanded_checks.insert(id);
             if let Some(job) = check
                 .url
                 .as_deref()
@@ -124,7 +124,7 @@ impl BenCodeApp {
         all: bool,
         cx: &mut Context<Self>,
     ) {
-        self.inbox.repair = Some(RepairForm {
+        self.inbox_state.as_mut(cx).repair = Some(RepairForm {
             item_key: item.key(),
             checks,
             all,
@@ -134,8 +134,8 @@ impl BenCodeApp {
     }
 
     /// The project's chats a repair can go to: idle ones, newest first.
-    fn repair_targets(&self, item: &WorkItem) -> Vec<(String, String)> {
-        let project = self.inbox_start_project_shown(item);
+    fn repair_targets(&self, item: &WorkItem, cx: &gpui::App) -> Vec<(String, String)> {
+        let project = self.inbox_start_project_shown(item, cx);
         let mut sessions: Vec<_> = self
             .sessions
             .iter()
@@ -157,16 +157,19 @@ impl BenCodeApp {
     /// MonoCode `CheckRepairForm.start`: reads each check's job, builds the
     /// request, and sends it to `target` (or a new chat).
     fn start_repair(&mut self, target: Option<String>, cx: &mut Context<Self>) {
-        let Some(form) = self.inbox.repair.as_mut().filter(|f| !f.busy) else {
+        let form = self.inbox_mut(cx, |inbox| {
+            let form = inbox.repair.as_mut().filter(|f| !f.busy)?;
+            form.busy = true;
+            form.error = None;
+            Some(form.clone())
+        });
+        let Some(form) = form else {
             return;
         };
-        form.busy = true;
-        form.error = None;
-        let form = form.clone();
-        let Some(item) = self.inbox.item(&form.item_key).cloned() else {
+        let Some(item) = self.inbox(cx).item(&form.item_key).cloned() else {
             return;
         };
-        let Some(Ok(checks)) = self.inbox.checks.get(&form.item_key).cloned() else {
+        let Some(Ok(checks)) = self.inbox(cx).checks.get(&form.item_key).cloned() else {
             return;
         };
         let selected: Vec<Check> = checks
@@ -215,11 +218,11 @@ impl BenCodeApp {
         head_oid: &str,
         cx: &mut Context<Self>,
     ) {
-        let cwd = self.inbox_start_project(item);
+        let cwd = self.inbox_start_project(item, cx);
         if let Some(id) = &target
             && self.is_agent_running_in(id)
         {
-            if let Some(f) = &mut self.inbox.repair {
+            if let Some(f) = &mut self.inbox_state.as_mut(cx).repair {
                 f.busy = false;
                 f.error = Some("This chat is busy. Choose another chat or start a new one.".into());
             }
@@ -232,7 +235,7 @@ impl BenCodeApp {
         let session_id = match target {
             Some(id) => id,
             None => {
-                let id = self.create_session_row(&cwd);
+                let id = self.create_session_row(&cwd, cx);
                 if let Some(session) = self.sessions.iter_mut().find(|s| s.id == id) {
                     session.title = format!("Fix CI #{}: {}", item.number, item.title.trim());
                 }
@@ -240,15 +243,15 @@ impl BenCodeApp {
                 id
             }
         };
-        self.inbox.repair = None;
-        self.inbox.repairs.push(Repair {
+        self.inbox_state.as_mut(cx).repair = None;
+        self.inbox_state.as_mut(cx).repairs.push(Repair {
             item_key: form.item_key,
             head_oid: head_oid.to_string(),
             checks: form.checks,
             session_id: session_id.clone(),
         });
-        let extra = self.inbox.repairs.len().saturating_sub(REPAIRS_KEPT);
-        self.inbox.repairs.drain(..extra);
+        let extra = self.inbox(cx).repairs.len().saturating_sub(REPAIRS_KEPT);
+        self.inbox_state.as_mut(cx).repairs.drain(..extra);
         self.save_settings(cx);
         self.close_surface(cx);
         self.open_session(session_id.clone(), cx);
@@ -265,9 +268,15 @@ impl BenCodeApp {
     }
 
     /// MonoCode `CheckRepairStatus`: the latest repair covering `name`.
-    fn repair_status(&self, item_key: &str, head_oid: &str, name: &str) -> Option<(String, bool)> {
+    fn repair_status(
+        &self,
+        item_key: &str,
+        head_oid: &str,
+        name: &str,
+        cx: &gpui::App,
+    ) -> Option<(String, bool)> {
         // A chat deleted since leaves nothing to open.
-        let repair = self.inbox.repairs.iter().rev().find(|r| {
+        let repair = self.inbox(cx).repairs.iter().rev().find(|r| {
             r.item_key == item_key
                 && r.head_oid == head_oid
                 && r.checks.iter().any(|c| c == name)
@@ -284,12 +293,12 @@ impl BenCodeApp {
         let colors = &cx.theme().colors;
         let fg = colors.fg;
         let key = item.key();
-        let loading = self.inbox.checks.is_loading(&key);
+        let loading = self.inbox(cx).checks.is_loading(&key);
         let refresh_key = key.clone();
         let header = |summary: String, failed: Vec<String>| {
             let item_for_fix = item.clone();
             let all_open = self
-                .inbox
+                .inbox(cx)
                 .repair
                 .as_ref()
                 .is_some_and(|f| f.all && f.item_key == item.key());
@@ -347,7 +356,7 @@ impl BenCodeApp {
             .flex()
             .flex_col()
             .gap_1();
-        let checks = match self.inbox.checks.get(&key) {
+        let checks = match self.inbox(cx).checks.get(&key) {
             None => {
                 return section
                     .child(header("Loading…".into(), Vec::new()))
@@ -411,20 +420,20 @@ impl BenCodeApp {
         let (icon, tint) = check_mark(check.state, cx);
         let item_key = item.key();
         let expanded = self
-            .inbox
+            .inbox(cx)
             .expanded_checks
             .contains(&check_key(&item_key, &check.name));
         let job = check
             .url
             .as_deref()
             .and_then(|url| github::actions_job_id(url, &item.repo));
-        let repair = self.repair_status(&item_key, head_oid, &check.name);
+        let repair = self.repair_status(&item_key, head_oid, &check.name, cx);
         let hover = fg.opacity(0.02);
         let (toggle_item, toggle_check) = (item.clone(), check.clone());
         let (fix_item, fix_name) = (item.clone(), check.name.clone());
         let url = check.url.clone();
         let form_open =
-            self.inbox.repair.as_ref().is_some_and(|f| {
+            self.inbox(cx).repair.as_ref().is_some_and(|f| {
                 !f.all && f.item_key == item_key && f.checks == [check.name.clone()]
             });
         let status = match &repair {
@@ -561,7 +570,7 @@ impl BenCodeApp {
         let Some(job) = job else {
             return wrap.into_any_element();
         };
-        let details = match self.inbox.jobs.get(job) {
+        let details = match self.inbox(cx).jobs.get(job) {
             None => {
                 return wrap
                     .child(
@@ -669,12 +678,12 @@ impl BenCodeApp {
     fn render_repair_form(&self, item: &WorkItem, cx: &Context<Self>) -> AnyElement {
         let colors = &cx.theme().colors;
         let fg = colors.fg;
-        let Some(form) = &self.inbox.repair else {
+        let Some(form) = &self.inbox(cx).repair else {
             return div().into_any_element();
         };
         let busy = form.busy;
         let choices = std::iter::once((None, "New project chat".to_string())).chain(
-            self.repair_targets(item)
+            self.repair_targets(item, cx)
                 .into_iter()
                 .map(|(id, title)| (Some(id), title)),
         );
@@ -725,8 +734,8 @@ impl BenCodeApp {
             .bg(colors.surface)
             .shadow_xl()
             .on_mouse_down_out(cx.listener(|this, _, _, cx| {
-                if this.inbox.repair.as_ref().is_some_and(|f| !f.busy) {
-                    this.inbox.repair = None;
+                if this.inbox(cx).repair.as_ref().is_some_and(|f| !f.busy) {
+                    this.inbox_state.as_mut(cx).repair = None;
                     cx.notify();
                 }
             }))

@@ -92,7 +92,9 @@ impl BenCodeApp {
             self.index_project_files(cx);
         }
         self.prompt_token = slash.or(mention);
-        cx.notify();
+        // The prompt and its pickers are the focused composer's: a
+        // keystroke redraws its pane, not the app.
+        self.redraw_composer(cx);
     }
 
     /// Puts `text` in the prompt with the caret at `caret`.

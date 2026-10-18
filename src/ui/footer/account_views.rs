@@ -188,7 +188,7 @@ impl BenCodeApp {
             let usage = if selected {
                 Some(chip.limits)
             } else {
-                self.usage.cached(provider, &account.id)
+                self.usage_data.read(cx).cached(provider, &account.id)
             };
             let identity = self.accounts.identity(account);
             let meters: Vec<gpui::Div> = usage

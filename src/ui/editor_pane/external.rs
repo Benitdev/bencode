@@ -25,7 +25,7 @@ impl BenCodeApp {
         cx: &mut Context<Self>,
     ) {
         // The editors here cannot open a folder on a machine.
-        if crate::remote::is_remote(&self.workspace.cwd) {
+        if crate::remote::is_remote(&self.workspace(cx).cwd) {
             self.show_editor_notice(
                 "Not on this computer".into(),
                 "This project is on a machine. Its files open in BenCode's own editor.".into(),
@@ -42,7 +42,7 @@ impl BenCodeApp {
             self.show_editor_notice("No external editor found".into(), body.into(), cx);
             return;
         };
-        let cwd = self.workspace.cwd.clone();
+        let cwd = self.workspace(cx).cwd.clone();
         let rel_path = rel_path.map(str::to_string);
         let task = cx.background_executor().spawn(async move {
             launch_external_editor_with(

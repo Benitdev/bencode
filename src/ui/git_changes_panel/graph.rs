@@ -53,7 +53,7 @@ impl BenCodeApp {
         let commits = &self.git_history;
         let rows = self.graph_rows();
         let selected = match self.file_pane.active() {
-            Some(PaneTab::Commit { cwd, sha, .. }) if *cwd == self.workspace.cwd => {
+            Some(PaneTab::Commit { cwd, sha, .. }) if *cwd == self.workspace(cx).cwd => {
                 Some(sha.clone())
             }
             _ => None,
@@ -217,7 +217,7 @@ impl BenCodeApp {
             }))
             .on_click(cx.listener(move |this, event: &gpui::ClickEvent, _, cx| {
                 let tab = PaneTab::Commit {
-                    cwd: this.workspace.cwd.clone(),
+                    cwd: this.workspace(cx).cwd.clone(),
                     sha: open.sha.clone(),
                     short_sha: open.short_sha.clone(),
                     subject: open.subject.clone(),

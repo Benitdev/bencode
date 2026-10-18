@@ -22,6 +22,7 @@ use crate::app::session_list::{
 };
 use crate::db::SessionRow;
 use crate::ui::icons::ExtraIcon;
+use crate::ui::region::Region;
 use crate::ui::scale::px;
 use crate::ui::sidebar_folders::SessionGroup;
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
@@ -124,7 +125,10 @@ impl BenCodeApp {
                 cx.background_executor().timer(AGE_TICK).await;
                 let ticked = this.update(cx, |app, cx| {
                     if app.sidebar_mode == crate::app::SidebarMode::Sessions {
-                        cx.notify();
+                        app.redraw_regions(
+                            &[Region::Sidebar, Region::Rail, Region::CompactRail],
+                            cx,
+                        );
                     }
                 });
                 if ticked.is_err() {
@@ -209,9 +213,10 @@ impl BenCodeApp {
         &self,
         listed: &[&'a SessionRow],
         states: &LiveStates,
+        cx: &gpui::App,
     ) -> Vec<&'a SessionRow> {
         let now = crate::app::now_ms();
-        let repo = self.workspace.repo.as_deref();
+        let repo = self.workspace(cx).repo.as_deref();
         let mut visible: Vec<&SessionRow> = listed
             .iter()
             .copied()
@@ -237,7 +242,7 @@ impl BenCodeApp {
         }
         let states = self.session_live_states();
         let listed = self.listed_sessions();
-        let visible = self.visible_sessions(&listed, &states);
+        let visible = self.visible_sessions(&listed, &states, cx);
         let searching = !self.search_query.trim().is_empty();
         let narrowed = searching || self.sessions_ui.filters.is_active();
         let folders = self.project_folders();
@@ -604,7 +609,8 @@ impl BenCodeApp {
                     app.sessions_ui
                         .title_changes
                         .retain(|_, change| change.at.elapsed() < TITLE_SWEEP);
-                    cx.notify();
+                    // The sweep is drawn on the sidebar's cards alone.
+                    app.redraw_regions(&[Region::Sidebar], cx);
                 });
                 if let Err(err) = cleared {
                     log::debug!("title sweep after app drop: {err:#}");

@@ -121,15 +121,21 @@ fn frame_at(elapsed: Duration, reduced: bool) -> &'static str {
     FRAMES[(elapsed.as_millis() / FRAME.as_millis()) as usize % FRAMES.len()]
 }
 
-/// The spinner in `color`.
+/// The spinner in `color`, a busy mark (`ui/marks.rs`).
 pub fn terminal_spinner(color: Hsla, cx: &App) -> impl IntoElement {
-    div()
-        .w(px(12.0))
-        .flex_none()
-        .text_size(Text::Sm.px())
-        .line_height(px(11.0))
-        .text_color(color)
-        .child(frame_at(epoch().elapsed(), cx.reduce_motion()))
+    crate::ui::marks::mark(
+        move |cx| {
+            div()
+                .w(px(12.0))
+                .flex_none()
+                .text_size(Text::Sm.px())
+                .line_height(px(11.0))
+                .text_color(color)
+                .child(frame_at(epoch().elapsed(), cx.reduce_motion()))
+                .into_any_element()
+        },
+        cx,
+    )
 }
 
 /// Tailwind `animate-pulse` as an opacity: full, down to half at the
@@ -141,15 +147,37 @@ pub fn pulse(cx: &App) -> f32 {
     pulse_at(cycle(PULSE))
 }
 
+/// A round dot `size` across in `color`, pulsing: a busy mark
+/// (`ui/marks.rs`).
+pub fn pulse_dot(color: Hsla, size: f32, cx: &App) -> AnyElement {
+    crate::ui::marks::mark(
+        move |cx| {
+            div()
+                .flex_none()
+                .size(px(size))
+                .rounded_full()
+                .bg(color)
+                .opacity(pulse(cx))
+                .into_any_element()
+        },
+        cx,
+    )
+}
+
 fn pulse_at(t: f32) -> f32 {
     (t * TAU).cos() * 0.25 + 0.75
 }
 
-/// Ely `ShimmerText`: a band of light sweeping `text` while it waits.
+/// Ely `ShimmerText`: a band of light sweeping `text` while it waits, a
+/// busy mark (`ui/marks.rs`).
 pub fn shimmer(text: impl Into<gpui::SharedString>, cx: &App) -> AnyElement {
+    let text = text.into();
+    crate::ui::marks::mark(move |cx| shimmer_now(text.clone(), cx), cx)
+}
+
+fn shimmer_now(text: gpui::SharedString, cx: &App) -> AnyElement {
     let colors = &cx.theme().colors;
     let (dim, lit) = (colors.fg_subtle, colors.fg);
-    let text = text.into();
     if still(cx) {
         return div().text_color(dim).child(text).into_any_element();
     }
@@ -188,8 +216,12 @@ fn shimmer_runs(
 }
 
 /// Ely `Spinner`'s ring at `size` in muted ink: an arc running around a
-/// faint circle.
+/// faint circle; a busy mark (`ui/marks.rs`).
 pub fn ring(size: IconSize, cx: &App) -> AnyElement {
+    crate::ui::marks::mark(move |cx| ring_now(size, cx), cx)
+}
+
+fn ring_now(size: IconSize, cx: &App) -> AnyElement {
     let theme = cx.theme();
     let color = theme.colors.fg_muted;
     let t = if still(cx) { RING_STILL } else { cycle(RING) };

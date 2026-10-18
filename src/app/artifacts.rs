@@ -317,7 +317,6 @@ impl BenCodeApp {
     /// The page view for the reader's `html` artifact, made once a window
     /// is at hand (`render`), and handed the page it shows.
     pub(crate) fn sync_artifact_page(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.artifacts.page_drawn.set(false);
         let Some(artifact) = self
             .artifacts
             .reader

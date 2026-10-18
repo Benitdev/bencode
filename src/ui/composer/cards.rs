@@ -164,7 +164,7 @@ impl BenCodeApp {
         card: ComposerCard,
         cx: &mut Context<Self>,
     ) {
-        let id = self.create_session_row(cwd);
+        let id = self.create_session_row(cwd, cx);
         if let Some(session) = self.sessions.iter_mut().find(|s| s.id == id) {
             configure(session);
         }

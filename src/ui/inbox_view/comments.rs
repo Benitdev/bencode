@@ -91,21 +91,25 @@ impl BenCodeApp {
     /// Posts the comment box (MonoCode `onSubmit`); the thread reloads.
     pub fn post_inbox_comment(&mut self, cx: &mut Context<Self>) {
         let body = self.inbox_comment_input.read(cx).text().trim().to_string();
-        if body.is_empty() || self.inbox.comment_posting {
+        if body.is_empty() || self.inbox(cx).comment_posting {
             return;
         }
         let Some(item) = self
-            .inbox
+            .inbox(cx)
             .selected
             .as_deref()
-            .and_then(|key| self.inbox.item(key))
+            .and_then(|key| self.inbox(cx).item(key))
             .cloned()
         else {
             return;
         };
-        let reply = self.inbox.reply_to.as_ref().map(|r| r.thread_id.clone());
-        self.inbox.comment_posting = true;
-        self.inbox.comment_error = None;
+        let reply = self
+            .inbox(cx)
+            .reply_to
+            .as_ref()
+            .map(|r| r.thread_id.clone());
+        self.inbox_state.as_mut(cx).comment_posting = true;
+        self.inbox_state.as_mut(cx).comment_error = None;
         let task = cx.background_executor().spawn(async move {
             match item.provider {
                 Provider::GitHub => github::post_comment(
@@ -123,19 +127,19 @@ impl BenCodeApp {
         cx.spawn(async move |this, cx| {
             let result = task.await;
             let updated = this.update(cx, |app, cx| {
-                app.inbox.comment_posting = false;
+                app.inbox_state.as_mut(cx).comment_posting = false;
                 match result {
                     Ok(key) => {
                         // The user's own comment is not news to them.
                         app.mark_inbox_key_seen(&key, cx);
-                        app.inbox.reply_to = None;
+                        app.inbox_state.as_mut(cx).reply_to = None;
                         app.inbox_comment_input
                             .update(cx, |input, cx| input.set_text("", cx));
                         app.load_inbox_thread(&key, true, cx);
                     }
                     Err(err) => {
                         log::warn!("could not post comment: {err}");
-                        app.inbox.comment_error = Some(err);
+                        app.inbox_state.as_mut(cx).comment_error = Some(err);
                     }
                 }
                 cx.notify();
@@ -157,7 +161,7 @@ impl BenCodeApp {
         let colors = &cx.theme().colors;
         let fg = colors.fg;
         let key = item.key();
-        let loading = self.inbox.threads.is_loading(&key);
+        let loading = self.inbox(cx).threads.is_loading(&key);
         let section = div()
             .mt_4()
             .pt_5()
@@ -166,7 +170,7 @@ impl BenCodeApp {
             .flex()
             .flex_col()
             .gap_3();
-        let thread = match self.inbox.threads.get(&key) {
+        let thread = match self.inbox(cx).threads.get(&key) {
             Some(Ok(thread)) => Some(thread),
             Some(Err(err)) => {
                 return section
@@ -322,7 +326,7 @@ impl BenCodeApp {
                     .cursor_pointer()
                     .hover(move |s| s.text_color(fg))
                     .on_click(cx.listener(move |this, _, _, cx| {
-                        this.inbox.reply_to = Some(target.clone());
+                        this.inbox_state.as_mut(cx).reply_to = Some(target.clone());
                         crate::ui::composer::focus_later(
                             gpui::Focusable::focus_handle(this.inbox_comment_input.read(cx), cx),
                             cx,
@@ -449,9 +453,9 @@ impl BenCodeApp {
     fn render_comment_form(&self, cx: &Context<Self>) -> impl IntoElement {
         let colors = &cx.theme().colors;
         let fg = colors.fg;
-        let posting = self.inbox.comment_posting;
+        let posting = self.inbox(cx).comment_posting;
         let typed = !self.inbox_comment_input.read(cx).text().trim().is_empty();
-        let reply = self.inbox.reply_to.clone();
+        let reply = self.inbox(cx).reply_to.clone();
         div()
             .flex()
             .flex_col()
@@ -483,7 +487,7 @@ impl BenCodeApp {
                             .text_color(fg.ink(Ink::Muted))
                             .hover(move |s| s.text_color(fg))
                             .on_click(cx.listener(|this, _, _, cx| {
-                                this.inbox.reply_to = None;
+                                this.inbox_state.as_mut(cx).reply_to = None;
                                 cx.notify();
                             }))
                             .child("Cancel"),
@@ -524,7 +528,7 @@ impl BenCodeApp {
                         ),
                     ),
             )
-            .children(self.inbox.comment_error.clone().map(|error| {
+            .children(self.inbox(cx).comment_error.clone().map(|error| {
                 div()
                     .text_size(Text::Base.px())
                     .text_color(colors.danger.opacity(0.9))

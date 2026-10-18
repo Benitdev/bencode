@@ -215,7 +215,7 @@ impl BenCodeApp {
         tree: Option<Worktree>,
         cx: &mut Context<Self>,
     ) -> String {
-        let session_id = self.create_session_row(&auto.cwd);
+        let session_id = self.create_session_row(&auto.cwd, cx);
         if let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id) {
             session.title = auto.name.clone();
             // The worktree a run uses is the automation's, not the one in view.

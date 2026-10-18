@@ -140,7 +140,7 @@ impl BenCodeApp {
             self.rail_menu_key(key, cx)
         } else if self.tab_menu_open() {
             self.tab_menu_key(key, cx)
-        } else if self.terminal_menu_open() {
+        } else if self.terminal_menu_open(cx) {
             self.terminal_menu_key(key, cx)
         } else if self.composer_menus.handoff.is_some() {
             self.handoff_menu_key(key, cx)
@@ -186,7 +186,7 @@ impl BenCodeApp {
     /// MonoCode `WorkspacePicker` rows: the project checkout, a new
     /// worktree (made on the first send), then each existing worktree by
     /// branch with its folder underneath.
-    fn workspace_menu_entries(&self) -> Vec<MenuEntry> {
+    fn workspace_menu_entries(&self, cx: &gpui::App) -> Vec<MenuEntry> {
         let focused = self.worktree_focus().map(|f| f.path.clone());
         let new_tree = self.new_worktree_base().is_some();
         let mut entries = vec![
@@ -201,7 +201,7 @@ impl BenCodeApp {
             ),
         ];
         let trees: Vec<_> = self
-            .workspace
+            .workspace(cx)
             .worktrees
             .iter()
             .filter(|w| !w.is_main && !w.missing)
@@ -229,7 +229,7 @@ impl BenCodeApp {
         } else {
             self.close_composer_popovers(cx);
             self.composer_menus.workspace_menu =
-                Some(explorer_menu::first_item(&self.workspace_menu_entries()));
+                Some(explorer_menu::first_item(&self.workspace_menu_entries(cx)));
             self.focus_composer_menu(cx);
         }
         cx.notify();
@@ -240,7 +240,7 @@ impl BenCodeApp {
     fn pick_workspace(&mut self, index: usize, cx: &mut Context<Self>) {
         self.composer_menus.workspace_menu = None;
         self.refocus_prompt(cx);
-        let entries = self.workspace_menu_entries();
+        let entries = self.workspace_menu_entries(cx);
         let Some(MenuEntry::Item(action)) = entries.get(index) else {
             return;
         };
@@ -252,7 +252,7 @@ impl BenCodeApp {
                     .description
                     .as_deref()
                     .filter(|_| id == "tree")
-                    .and_then(|path| self.workspace.worktrees.iter().find(|w| w.path == path))
+                    .and_then(|path| self.workspace(cx).worktrees.iter().find(|w| w.path == path))
                     .map(|tree| crate::app::WorktreeFocus {
                         path: tree.path.clone(),
                         branch: tree.branch.clone(),
@@ -267,7 +267,7 @@ impl BenCodeApp {
         let Some(active) = self.composer_menus.workspace_menu else {
             return false;
         };
-        let entries = self.workspace_menu_entries();
+        let entries = self.workspace_menu_entries(cx);
         match key {
             "down" => {
                 self.composer_menus.workspace_menu = Some(explorer_menu::step(&entries, active, 1))
@@ -287,7 +287,7 @@ impl BenCodeApp {
     }
 
     pub(super) fn render_workspace_menu(&self, cx: &Context<Self>) -> gpui::AnyElement {
-        let entries = self.workspace_menu_entries();
+        let entries = self.workspace_menu_entries(cx);
         let entity = cx.entity().downgrade();
         let (hover_app, pick_app, close_app) = (entity.clone(), entity.clone(), entity);
         explorer_menu::render_menu(

@@ -63,11 +63,24 @@ impl BenCodeApp {
             .mono_for_session(session_id)
             .map(|mono| self.mono_color(mono))
             .unwrap_or(fg);
-        let dot = if live {
-            color.opacity(0.4 + 0.6 * spinner::pulse(cx))
-        } else {
-            fg.ink(Ink::Faint)
-        };
+        let faint = fg.ink(Ink::Faint);
+        // Pulsing while live: a busy mark (`ui/marks.rs`).
+        let dot = crate::ui::marks::mark(
+            move |cx| {
+                let dot = if live {
+                    color.opacity(0.4 + 0.6 * spinner::pulse(cx))
+                } else {
+                    faint
+                };
+                div()
+                    .flex_none()
+                    .size(px(6.0))
+                    .rounded_full()
+                    .bg(dot)
+                    .into_any_element()
+            },
+            cx,
+        );
         let line = div()
             .flex()
             .min_w_0()
@@ -79,7 +92,7 @@ impl BenCodeApp {
             .text_size(Text::Sm.px())
             .line_height(px(16.0))
             .text_color(fg.ink(Ink::Muted))
-            .child(div().flex_none().size(px(6.0)).rounded_full().bg(dot))
+            .child(dot)
             .child(
                 div()
                     .flex_none()

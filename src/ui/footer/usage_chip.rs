@@ -148,7 +148,9 @@ impl BenCodeApp {
         let provider = target.provider;
         let removed;
         let limits = if target.available {
-            self.usage.limits(provider, &target.account_id)
+            self.usage_data
+                .read(cx)
+                .limits(provider, &target.account_id)
         } else {
             removed = ProviderRateLimits::unavailable(REMOVED_ACCOUNT, now);
             &removed
@@ -497,7 +499,7 @@ impl BenCodeApp {
                 .flex_col()
                 .gap(px(6.0))
                 .children(groups.into_iter().flat_map(|group| {
-                    let windows = self.usage.limits(provider, group).windows();
+                    let windows = self.usage_data.read(cx).limits(provider, group).windows();
                     let title = div()
                         .px_1()
                         .pt_1()
@@ -546,11 +548,16 @@ impl BenCodeApp {
                 .accounts
                 .iter()
                 .filter(|account| account.id != chip.active_id)
-                .map(|account| (account, self.usage.cached(provider, &account.id)));
+                .map(|account| {
+                    (
+                        account,
+                        self.usage_data.read(cx).cached(provider, &account.id),
+                    )
+                });
             if let Some(suggestion) = best_alternative(others, now) {
                 parts.push(self.render_switch_suggestion(
                     suggestion,
-                    self.usage.cached(provider, &suggestion.id),
+                    self.usage_data.read(cx).cached(provider, &suggestion.id),
                     tone == AccountTone::Exhausted,
                     now,
                     cx,

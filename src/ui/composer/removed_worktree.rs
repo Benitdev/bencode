@@ -77,7 +77,7 @@ impl BenCodeApp {
                 }))
         };
         let menu =
-            self.workspace
+            self.workspace(cx)
                 .worktrees
                 .iter()
                 .filter(|tree| !tree.is_main && !tree.missing && !tree.prunable)

@@ -107,7 +107,7 @@ impl BenCodeApp {
             cx.notify();
             return;
         }
-        self.return_to_project(&cwd);
+        self.return_to_project(&cwd, cx);
         self.set_current_project(cwd.clone());
         // Open panes already hold their threads, so the plan above does not
         // need the rest; they arrive from a background read.
@@ -115,7 +115,7 @@ impl BenCodeApp {
         // A project new to the rail gets its stats.
         self.refresh_project_stats(cx);
         let focus = self.worktree_focuses.get(&cwd).cloned();
-        self.navigate_workspace(&cwd, focus, WorkspaceRequest::Project);
+        self.navigate_workspace(&cwd, focus, WorkspaceRequest::Project, cx);
         // Refreshes git/files for the new directory and records the landing.
         self.sync_selection(cx);
     }
@@ -161,7 +161,7 @@ impl BenCodeApp {
         }
     }
 
-    fn return_to_project(&mut self, cwd: &str) {
+    fn return_to_project(&mut self, cwd: &str, cx: &gpui::App) {
         let focused = self
             .selected_session()
             .map(|s| (s, self.is_agent_running_in(&s.id)));
@@ -179,7 +179,7 @@ impl BenCodeApp {
             }
             ProjectReturn::ReuseBlank { session_id } => self.move_session(&session_id, cwd, None),
             ProjectReturn::Create => {
-                let id = self.create_session_row(cwd);
+                let id = self.create_session_row(cwd, cx);
                 self.tabs.open(&id);
             }
         }

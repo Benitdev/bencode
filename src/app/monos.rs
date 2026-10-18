@@ -315,7 +315,7 @@ impl BenCodeApp {
             log::error!("no home folder to start a Mono in");
             return;
         };
-        let session_id = self.create_session_row(&home);
+        let session_id = self.create_session_row(&home, cx);
         if let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id) {
             session.runtime_mode = Some(MONO_RUNTIME_MODE.to_string());
             session.worktree_cwd = None;
@@ -684,6 +684,13 @@ impl BenCodeApp {
     /// The mascots drawn now that move with no agent running (MonoCode
     /// `PixelMascot`'s idle bob and blink, the bulb over one that needs
     /// you): when the app's clock must wake for them next, if at all.
+    /// The floating chat's window, while it is open.
+    pub(crate) fn mono_float_window(
+        &self,
+    ) -> Option<gpui::WindowHandle<crate::ui::mono_float::MonoFloat>> {
+        self.monos.float
+    }
+
     pub fn idle_mascot_wake(&self) -> Option<std::time::Duration> {
         use crate::ui::mascot::MascotLook;
         let mut looks = Vec::new();
@@ -785,7 +792,7 @@ impl BenCodeApp {
         else {
             return;
         };
-        let fresh = self.create_session_row(&cwd);
+        let fresh = self.create_session_row(&cwd, cx);
         if let Some(session) = self.sessions.iter_mut().find(|s| s.id == fresh) {
             session.harness = harness;
             session.model = model;

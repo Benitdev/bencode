@@ -83,7 +83,7 @@ impl BenCodeApp {
         let colors = &cx.theme().colors;
         let fg = colors.fg;
         let focus = self.worktree_focus().map(|f| f.path.clone());
-        let trees = &self.workspace.worktrees;
+        let trees = &self.workspace(cx).worktrees;
         let main = trees.iter().find(|t| t.is_main);
         let row = |id: SharedString,
                    icon: AnyElement,

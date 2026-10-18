@@ -91,7 +91,7 @@ impl BenCodeApp {
             return;
         }
         self.follow_focused_session_project();
-        if self.is_terminal_open() {
+        if self.is_terminal_open(cx) {
             // Each project has its own dock; a new one starts with a shell.
             self.ensure_project_terminal(cx);
         }
@@ -189,7 +189,7 @@ impl BenCodeApp {
         if is_blank_session(&old, self.is_agent_running_in(&old.id)) {
             return;
         }
-        let fresh = self.create_session_row(&old.cwd);
+        let fresh = self.create_session_row(&old.cwd, cx);
         if let Some(session) = self.sessions.iter_mut().find(|s| s.id == fresh) {
             // The blank replacement keeps the thread's harness, model and
             // worktree, so the tab stays where it was.
@@ -254,8 +254,8 @@ impl BenCodeApp {
             .find(|s| s.id == pane_id)
             .map(|s| s.cwd.clone())
             .filter(|cwd| !cwd.is_empty())
-            .unwrap_or_else(|| self.workspace.cwd.clone());
-        let new_id = self.create_session_row(&cwd);
+            .unwrap_or_else(|| self.workspace(cx).cwd.clone());
+        let new_id = self.create_session_row(&cwd, cx);
         self.tabs.split(pane_id, dir, &new_id);
         self.sync_selection(cx);
     }
@@ -397,7 +397,7 @@ impl BenCodeApp {
             log::warn!("refusing to delete session {id} while its agent is running");
             return;
         }
-        self.vacate_pane(id);
+        self.vacate_pane(id, cx);
         // Out of the list first, so nothing saves the thread again; the
         // delete then runs behind its queued saves, which would otherwise
         // bring it back.
@@ -448,7 +448,7 @@ impl BenCodeApp {
     /// Takes `id` out of the tabs without leaving its project: a tab it fills
     /// alone moves focus like closing it would, and the project's last tab
     /// gets a fresh thread instead of closing.
-    fn vacate_pane(&mut self, id: &str) {
+    fn vacate_pane(&mut self, id: &str, cx: &gpui::App) {
         let alone_in = self
             .tabs
             .tab_of(id)
@@ -469,7 +469,7 @@ impl BenCodeApp {
                     .iter()
                     .find(|s| s.id == id)
                     .map_or_else(|| self.current_cwd.clone(), |s| s.cwd.clone());
-                let fresh = self.create_session_row(&cwd);
+                let fresh = self.create_session_row(&cwd, cx);
                 self.tabs.replace_pane(id, &fresh);
             }
         }
@@ -531,7 +531,7 @@ impl BenCodeApp {
     }
 
     /// Creates and persists a new session row with the welcome block.
-    pub fn create_session_row(&mut self, cwd: &str) -> String {
+    pub fn create_session_row(&mut self, cwd: &str, cx: &gpui::App) -> String {
         let now = now_ms();
         let seq = NEXT_SESSION.fetch_add(1, Ordering::Relaxed);
         let id = format!("bencode-{now}-{seq}");
@@ -550,7 +550,7 @@ impl BenCodeApp {
             .filter(|_| {
                 crate::app::same_project_path(
                     worktree_cwd.as_deref().unwrap_or(cwd),
-                    &self.workspace.cwd,
+                    &self.workspace(cx).cwd,
                 )
             });
 
@@ -588,7 +588,7 @@ impl BenCodeApp {
     pub fn create_new_session_id(&mut self, cx: &mut Context<Self>) -> String {
         self.leave_mono_view(cx);
         let cwd = self.current_cwd.clone();
-        let id = self.create_session_row(&cwd);
+        let id = self.create_session_row(&cwd, cx);
         self.tabs.open(&id);
         self.sync_selection(cx);
         id

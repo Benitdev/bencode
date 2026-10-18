@@ -54,7 +54,7 @@ impl BenCodeApp {
     }
 
     /// The focused thread has not started, so its workspace can change.
-    pub fn is_draft_workspace(&self) -> bool {
+    pub fn is_draft_workspace(&self, cx: &gpui::App) -> bool {
         let session = self.selected_session();
         let fresh = session.is_none_or(|s| {
             !s.blocks.iter().any(|b| b.role == "user")
@@ -62,12 +62,12 @@ impl BenCodeApp {
         });
         fresh
             && session.is_none_or(|s| !self.is_agent_running_in(&s.id))
-            && !self.workspace.worktrees.is_empty()
+            && !self.workspace(cx).worktrees.is_empty()
     }
 
     /// MonoCode `onWorkspaceModeChange`: "New worktree" on or off.
     pub fn set_new_worktree(&mut self, on: bool, cx: &mut Context<Self>) {
-        if !self.is_draft_workspace() {
+        if !self.is_draft_workspace(cx) {
             return;
         }
         let key = self.draft_key();

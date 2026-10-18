@@ -75,7 +75,7 @@ impl BenCodeApp {
         cx: &Context<Self>,
     ) -> impl IntoElement + use<> {
         let fg = cx.theme().colors.fg;
-        let open = self.is_terminal_open();
+        let open = self.is_terminal_open(cx);
         let first = terminals.first().map(|t| t.id);
         let many = terminals.len() > 1;
         div()
@@ -93,20 +93,24 @@ impl BenCodeApp {
                     .px(px(4.0))
                     .rounded(px(4.0))
                     .cursor_pointer()
-                    .when(self.running_terminals_menu_open(), |el| {
+                    .when(self.running_terminals_menu_open(cx), |el| {
                         el.bg(fg.fill(Fill::Strong))
                     })
                     .hover(move |s| s.bg(fg.fill(Fill::Strong)).text_color(fg))
                     // The open list closes on this press, as on any press
                     // outside it; the click must then not reopen it.
-                    .capture_any_mouse_down(cx.listener(|this, _, _, _| {
-                        this.terminals.running_menu_at_press = this.running_terminals_menu_open();
+                    .capture_any_mouse_down(cx.listener(|this, _, _, cx| {
+                        let open = this.running_terminals_menu_open(cx);
+                        this.terminals_mut(cx, |docks| docks.running_menu_at_press = open);
                     }))
                     .on_mouse_down(gpui::MouseButton::Left, |_, window, _| {
                         window.prevent_default()
                     })
                     .on_click(cx.listener(move |this, _, _, cx| {
-                        if std::mem::take(&mut this.terminals.running_menu_at_press) {
+                        let pressed = this.terminals_mut(cx, |docks| {
+                            std::mem::take(&mut docks.running_menu_at_press)
+                        });
+                        if pressed {
                             this.close_terminal_menu(cx);
                         } else if open || !many {
                             this.close_terminal_menu(cx);

@@ -46,12 +46,12 @@ pub fn plan_restore(
 
 impl BenCodeApp {
     /// The dock's tabs as `settings.json` keeps them.
-    pub(crate) fn saved_terminals(&self) -> BTreeMap<String, Vec<SavedTerminal>> {
+    pub(crate) fn saved_terminals(&self, cx: &gpui::App) -> BTreeMap<String, Vec<SavedTerminal>> {
         // Not shown again yet: a save meanwhile keeps them.
-        if self.terminals.restoring {
-            return self.terminals.saved.clone();
+        if self.terminals(cx).restoring {
+            return self.terminals(cx).saved.clone();
         }
-        self.terminals
+        self.terminals(cx)
             .docks
             .iter()
             .filter(|(_, dock)| !dock.tabs.is_empty())
@@ -79,10 +79,10 @@ impl BenCodeApp {
         // which is showing them, and the host gives a session to one client.
         let owner = self.owns_data_folder();
         if !owner {
-            self.terminals.saved.clear();
+            self.terminals_mut(cx, |docks| docks.saved.clear());
         }
-        let saved = self.terminals.saved.clone();
-        self.terminals.restoring = true;
+        let saved = self.terminals(cx).saved.clone();
+        self.terminals_mut(cx, |docks| docks.restoring = true);
         let task = cx
             .background_executor()
             .spawn(async move { pty_host::list_sessions() });
@@ -126,9 +126,11 @@ impl BenCodeApp {
                         }
                     }
                 }
-                this.terminals.saved.clear();
-                this.terminals.restoring = false;
-                if this.is_terminal_open() {
+                this.terminals_mut(cx, |docks| {
+                    docks.saved.clear();
+                    docks.restoring = false;
+                });
+                if this.is_terminal_open(cx) {
                     this.ensure_project_terminal(cx);
                 }
                 this.save_settings(cx);
@@ -173,14 +175,16 @@ impl BenCodeApp {
                 return;
             };
             let landed = this.update(cx, |this, cx| {
-                if let Some(tab) = this
-                    .terminals
-                    .docks
-                    .values_mut()
-                    .flat_map(|d| &mut d.tabs)
-                    .find(|t| t.id == id)
-                {
+                let found = this.terminals_mut(cx, |docks| {
+                    let tab = docks
+                        .docks
+                        .values_mut()
+                        .flat_map(|d| &mut d.tabs)
+                        .find(|t| t.id == id)?;
                     tab.process = Some(pid);
+                    Some(())
+                });
+                if found.is_some() {
                     this.start_terminal_poll(cx);
                 }
             });
@@ -202,15 +206,15 @@ impl BenCodeApp {
     }
 
     /// ⌘Q: this BenCode's sessions end (blocking, on the way out).
-    pub(crate) fn end_all_terminal_sessions(&self) {
+    pub(crate) fn end_all_terminal_sessions(&self, cx: &gpui::App) {
         let sessions = self
-            .terminals
+            .terminals(cx)
             .docks
             .values()
             .flat_map(|dock| &dock.tabs)
             .map(|tab| tab.session.clone())
             .chain(
-                self.terminals
+                self.terminals(cx)
                     .saved
                     .values()
                     .flatten()

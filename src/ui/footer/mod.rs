@@ -39,7 +39,8 @@ impl BenCodeApp {
         let target = target.filter(|target| {
             target.provider != RateLimitProvider::OpenCode
                 || self
-                    .usage
+                    .usage_data
+                    .read(cx)
                     .limits(target.provider, &target.account_id)
                     .status
                     != RateLimitStatus::Unavailable
@@ -58,8 +59,8 @@ impl BenCodeApp {
         let glass = self.glass(cx);
         let colors = &cx.theme().colors;
         let fg = colors.fg;
-        let terminal_open = self.is_terminal_open();
-        let running = self.running_terminals();
+        let terminal_open = self.is_terminal_open(cx);
+        let running = self.running_terminals(cx);
 
         div()
             .flex()
@@ -138,7 +139,7 @@ impl BenCodeApp {
                             if terminal_open { s } else { s.text_color(fg) }
                         })
                         .on_click(cx.listener(|this, _, _, cx| {
-                            this.set_terminal_open(!this.is_terminal_open(), cx)
+                            this.set_terminal_open(!this.is_terminal_open(cx), cx)
                         }))
                         .tooltip(Tooltip::text(if terminal_open {
                             "Hide Terminal (⌘J)"
@@ -180,7 +181,7 @@ impl BenCodeApp {
             .size(px(if composer { 26.0 } else { 18.0 }))
             .rounded(px(if composer { 6.0 } else { 4.0 }))
             .map(|el| {
-                if self.usage.refreshing() {
+                if self.usage_data.read(cx).refreshing() {
                     el.opacity(0.5).child(spinning_icon(
                         "usage-refresh-spin".into(),
                         IconName::RefreshCw,

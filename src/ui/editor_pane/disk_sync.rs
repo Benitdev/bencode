@@ -29,7 +29,7 @@ impl BenCodeApp {
             .files
             .iter()
             .map(|f| {
-                let abs = resolve_path(&self.workspace.cwd, &f.path);
+                let abs = resolve_path(&self.workspace(cx).cwd, &f.path);
                 (f.path.clone(), abs, f.handle.disk_hash)
             })
             .collect();

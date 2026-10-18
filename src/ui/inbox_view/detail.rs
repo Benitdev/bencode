@@ -31,10 +31,10 @@ use crate::work_items::Provider;
 impl BenCodeApp {
     pub(super) fn render_inbox_detail(&self, cx: &Context<Self>) -> AnyElement {
         let Some(item) = self
-            .inbox
+            .inbox(cx)
             .selected
             .as_deref()
-            .and_then(|key| self.inbox.item(key))
+            .and_then(|key| self.inbox(cx).item(key))
         else {
             return div()
                 .size_full()
@@ -52,7 +52,7 @@ impl BenCodeApp {
         let fg = colors.fg;
         let key = item.key();
         let now = crate::app::now_ms();
-        let details = self.inbox.details.get(&key);
+        let details = self.inbox(cx).details.get(&key);
         let loaded = details.and_then(|d| d.as_ref().ok());
         let author = loaded.map(|d| d.author.clone()).filter(|a| !a.is_empty());
         let (base, head) = loaded
@@ -249,7 +249,7 @@ impl BenCodeApp {
 
         // The review scrolls on its own (a virtual list), under a header
         // that stays.
-        if item.kind == Kind::Pr && self.inbox.pr_tab == PrTab::Files {
+        if item.kind == Kind::Pr && self.inbox(cx).pr_tab == PrTab::Files {
             let column = || div().w_full().max_w(px(1024.0)).mx_auto().px_8();
             return div()
                 .size_full()
@@ -304,7 +304,7 @@ impl BenCodeApp {
     ) -> impl IntoElement {
         let colors = &cx.theme().colors;
         let fg = colors.fg;
-        let tab = self.inbox.pr_tab;
+        let tab = self.inbox(cx).pr_tab;
         let files = self
             .diff_docs
             .get(&pr_doc_key(item))
@@ -354,12 +354,12 @@ impl BenCodeApp {
         item: &crate::github::WorkItem,
         cx: &Context<Self>,
     ) -> impl IntoElement {
-        let chosen = self.inbox_start_project_shown(item);
+        let chosen = self.inbox_start_project_shown(item, cx);
         let key = item.key();
         // A Backlog project keeps the folder picked for one of its issues.
         let backlog_project = (item.provider == Provider::Backlog).then(|| item.repo.clone());
         let menu = self
-            .inbox_projects_shown()
+            .inbox_projects_shown(cx)
             .into_iter()
             .fold(Menu::new(), |menu, path| {
                 let (key, target) = (key.clone(), path.clone());
@@ -370,7 +370,10 @@ impl BenCodeApp {
                         crate::app::same_project_path(&path, &chosen),
                     )
                     .on_click(app_callback(cx, move |this, cx| {
-                        this.inbox.start_project.insert(key.clone(), target.clone());
+                        this.inbox_state
+                            .as_mut(cx)
+                            .start_project
+                            .insert(key.clone(), target.clone());
                         if let Some(project) = &backlog_project {
                             this.set_backlog_project_folder(project, &target, cx);
                         }

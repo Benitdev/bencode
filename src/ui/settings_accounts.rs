@@ -78,7 +78,7 @@ pub(crate) fn provider_header(
 impl BenCodeApp {
     /// MonoCode `ProviderAccountsSettings`.
     pub(crate) fn render_settings_accounts(&self, cx: &Context<Self>) -> SettingsGroup {
-        let refreshing = self.usage.refreshing();
+        let refreshing = self.usage_data.read(cx).refreshing();
         let group = SettingsGroup::new("Accounts")
             .description(
                 "Isolated sign-ins for providers that support account profiles. Switch \
@@ -188,7 +188,7 @@ impl BenCodeApp {
                 account.id.clone(),
             ));
         let identity = self.accounts.identity(account);
-        let usage = self.usage.cached(provider, &account.id);
+        let usage = self.usage_data.read(cx).cached(provider, &account.id);
         let id = format!("{}-{}", provider.id(), account.id);
 
         let meters: Vec<gpui::Div> = usage

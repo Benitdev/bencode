@@ -102,7 +102,7 @@ pub(super) fn preview_order(
 
 impl BenCodeApp {
     /// The rail's width: the drag's while the sash is held.
-    pub(super) fn rail_width(&self) -> f32 {
+    pub(crate) fn rail_width(&self) -> f32 {
         self.rail_ui
             .drag_width
             .unwrap_or_else(|| self.settings.rail.rail_width())

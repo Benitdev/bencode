@@ -426,7 +426,7 @@ impl BenCodeApp {
 
     /// MonoCode `assertWorktreeFilesClosed`: a file tab or a terminal still
     /// open inside the worktree.
-    fn worktree_in_use(&self, path: &str) -> bool {
+    fn worktree_in_use(&self, path: &str, cx: &gpui::App) -> bool {
         let workspace = self.workspace_path();
         let files = self
             .file_pane
@@ -447,7 +447,7 @@ impl BenCodeApp {
                 | PaneTab::Commit { cwd, .. } => is_path_in_project(cwd, path),
                 PaneTab::Browser { .. } => false,
             });
-        files || self.terminals.any_in(path)
+        files || self.terminals(cx).any_in(path)
     }
 
     fn fail_worktree_deletion(&mut self, message: String, cx: &mut Context<Self>) {
@@ -480,7 +480,7 @@ impl BenCodeApp {
         let Some(main) = self.worktrees_page.main().map(|t| t.path.clone()) else {
             return;
         };
-        if self.worktree_in_use(&path) {
+        if self.worktree_in_use(&path, cx) {
             return self.fail_worktree_deletion(
                 "Close the files and terminals open in this worktree first.".into(),
                 cx,

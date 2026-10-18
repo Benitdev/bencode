@@ -110,24 +110,29 @@ fn action_copy(
 
 impl BenCodeApp {
     fn ask_pr_action(&mut self, key: &str, action: PrAction, cx: &mut Context<Self>) {
-        let pr = &mut self.inbox.pr;
-        if pr.busy.is_some() {
-            return;
+        let asked = self.inbox_mut(cx, |inbox| {
+            let pr = &mut inbox.pr;
+            if pr.busy.is_some() {
+                return false;
+            }
+            pr.error = None;
+            pr.notice = None;
+            pr.confirm = Some((key.to_string(), action));
+            true
+        });
+        if asked {
+            cx.notify();
         }
-        pr.error = None;
-        pr.notice = None;
-        pr.confirm = Some((key.to_string(), action));
-        cx.notify();
     }
 
     fn run_pr_action(&mut self, cx: &mut Context<Self>) {
-        let Some((key, action)) = self.inbox.pr.confirm.take() else {
+        let Some((key, action)) = self.inbox_state.as_mut(cx).pr.confirm.take() else {
             return;
         };
-        let Some(item) = self.inbox.item(&key).cloned() else {
+        let Some(item) = self.inbox(cx).item(&key).cloned() else {
             return;
         };
-        self.inbox.pr.busy = Some(action);
+        self.inbox_state.as_mut(cx).pr.busy = Some(action);
         let task = cx.background_executor().spawn(async move {
             github::pr_action(
                 std::path::Path::new(&item.project),
@@ -143,23 +148,29 @@ impl BenCodeApp {
         cx.spawn(async move |this, cx| {
             let result = task.await;
             let updated = this.update(cx, |app, cx| {
-                app.inbox.pr.busy = None;
+                app.inbox_state.as_mut(cx).pr.busy = None;
                 match result {
                     Ok(next) => {
                         // MonoCode: a merge that did not land was queued.
-                        app.inbox.pr.notice = (action.is_merge()
+                        app.inbox_state.as_mut(cx).pr.notice = (action.is_merge()
                             && !next.state.eq_ignore_ascii_case("merged"))
                         .then(|| "Merge queued or auto-merge enabled.".to_string());
-                        if let Some(slot) = app.inbox.items.iter_mut().find(|i| i.key() == key) {
+                        if let Some(slot) = app
+                            .inbox_state
+                            .as_mut(cx)
+                            .items
+                            .iter_mut()
+                            .find(|i| i.key() == key)
+                        {
                             *slot = next;
                         }
-                        app.inbox.details.value.remove(&key);
-                        app.inbox.checks.value.remove(&key);
+                        app.inbox_state.as_mut(cx).details.value.remove(&key);
+                        app.inbox_state.as_mut(cx).checks.value.remove(&key);
                         app.load_inbox_item(&key, cx);
                     }
                     Err(err) => {
                         log::warn!("pull request action failed: {err}");
-                        app.inbox.pr.error = Some(err);
+                        app.inbox_state.as_mut(cx).pr.error = Some(err);
                     }
                 }
                 cx.notify();
@@ -182,7 +193,7 @@ impl BenCodeApp {
         cx: &Context<Self>,
     ) -> Vec<AnyElement> {
         let state = item.state.to_lowercase();
-        let busy = self.inbox.pr.busy.is_some();
+        let busy = self.inbox(cx).pr.busy.is_some();
         let key = item.key();
         let button = |id: &'static str, label: &'static str, icon: IconName, action: PrAction| {
             let key = key.clone();
@@ -195,7 +206,7 @@ impl BenCodeApp {
         };
         let mut out = Vec::new();
         if state == "open" && !item.draft {
-            let method = self.inbox.pr.merge_method;
+            let method = self.inbox(cx).pr.merge_method;
             let label = match method {
                 PrAction::Merge => "Merge pull request",
                 PrAction::Squash => "Squash and merge",
@@ -210,7 +221,7 @@ impl BenCodeApp {
                         MenuItem::radio(*label, action == method).on_click(app_callback(
                             cx,
                             move |this, cx| {
-                                this.inbox.pr.merge_method = action;
+                                this.inbox_state.as_mut(cx).pr.merge_method = action;
                                 cx.notify();
                             },
                         )),
@@ -222,7 +233,7 @@ impl BenCodeApp {
                 SplitButton::new("inbox-pr-merge", label, methods)
                     .variant(ButtonVariant::Primary)
                     .on_click(cx.listener(move |this, _, _, cx| {
-                        this.ask_pr_action(&merge_key, this.inbox.pr.merge_method, cx)
+                        this.ask_pr_action(&merge_key, this.inbox(cx).pr.merge_method, cx)
                     }))
                     .into_any_element(),
             );
@@ -263,7 +274,7 @@ impl BenCodeApp {
     /// "Merging…", the failure, or MonoCode's merge-queued notice.
     pub(super) fn render_pr_action_status(&self, cx: &Context<Self>) -> Option<AnyElement> {
         let colors = &cx.theme().colors;
-        let pr = &self.inbox.pr;
+        let pr = &self.inbox(cx).pr;
         let (text, color) = if let Some(action) = pr.busy {
             (
                 action_copy(action, "", "").3.to_string(),
@@ -285,14 +296,18 @@ impl BenCodeApp {
 
     /// The confirmation, over the window (MonoCode's confirm popover).
     pub fn render_pr_action_confirm(&self, cx: &Context<Self>) -> Option<AnyElement> {
-        let (key, action) = self.inbox.pr.confirm.clone()?;
-        let details = self.inbox.details.get(&key).and_then(|d| d.as_ref().ok());
+        let (key, action) = self.inbox(cx).pr.confirm.clone()?;
+        let details = self
+            .inbox(cx)
+            .details
+            .get(&key)
+            .and_then(|d| d.as_ref().ok());
         let (base, head) = details
             .map(|d| (d.base_ref.as_str(), d.head_ref.as_str()))
             .unwrap_or_default();
         let (title, detail, confirm, _) = action_copy(action, base, head);
         let cancel = app_callback(cx, |this, cx| {
-            this.inbox.pr.confirm = None;
+            this.inbox_state.as_mut(cx).pr.confirm = None;
             cx.notify();
         });
         let run = app_callback(cx, |this, cx| this.run_pr_action(cx));

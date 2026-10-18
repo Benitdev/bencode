@@ -240,7 +240,7 @@ impl BenCodeApp {
             item.number
         );
         self.open_inbox_modal(cx);
-        if self.inbox.item(&key).is_some() {
+        if self.inbox(cx).item(&key).is_some() {
             self.select_inbox_key(key, cx);
             return;
         }
@@ -265,8 +265,8 @@ impl BenCodeApp {
             let updated = this.update(cx, |this, cx| match fetched {
                 Ok(found) => {
                     let key = found.key();
-                    if this.inbox.item(&key).is_none() {
-                        this.inbox.items.push(found);
+                    if this.inbox(cx).item(&key).is_none() {
+                        this.inbox_state.as_mut(cx).items.push(found);
                     }
                     this.select_inbox_key(key, cx);
                 }

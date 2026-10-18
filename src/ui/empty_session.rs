@@ -263,7 +263,8 @@ impl BenCodeApp {
     fn render_starters(&self, session: &SessionRow, cx: &Context<Self>) -> gpui::Div {
         let colors = &cx.theme().colors;
         let typed = !self.prompt_input.read(cx).text().is_empty();
-        let changed = self.workspace.cwd == session.cwd && !self.workspace.changes.is_empty();
+        let changed =
+            self.workspace(cx).cwd == session.cwd && !self.workspace(cx).changes.is_empty();
         let border = colors.fg.fill(Fill::Line);
         let hover_bg = colors.fg.fill(Fill::Hover);
         let hover_border = colors.fg.fill(Fill::Strong);

@@ -117,18 +117,30 @@ pub(crate) fn mascot_icon(
     if !busy {
         return pixel_sprite(&mascot.rest, size, color, false);
     }
-    let talking = !spinner::still(cx) && spinner::cycle(MASCOT_BEAT) >= 0.5;
-    div()
-        .relative()
-        .size(size)
-        .top(px(if talking { -1.0 } else { 0.0 }))
-        .child(pixel_sprite(
-            if talking { &mascot.talk } else { &mascot.rest },
-            size,
-            color,
-            false,
-        ))
-        .into_any_element()
+    // A busy mark (`ui/marks.rs`): the sprite talks inside a box that
+    // holds still.
+    crate::ui::marks::mark(
+        move |cx| {
+            let talking = !spinner::still(cx) && spinner::cycle(MASCOT_BEAT) >= 0.5;
+            div()
+                .flex_none()
+                .size(size)
+                .child(
+                    div()
+                        .relative()
+                        .size(size)
+                        .top(px(if talking { -1.0 } else { 0.0 }))
+                        .child(pixel_sprite(
+                            if talking { &mascot.talk } else { &mascot.rest },
+                            size,
+                            color,
+                            false,
+                        )),
+                )
+                .into_any_element()
+        },
+        cx,
+    )
 }
 
 /// A card control shown only while the card is hovered: `hidden

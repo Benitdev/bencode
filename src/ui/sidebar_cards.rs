@@ -139,11 +139,11 @@ impl BenCodeApp {
 
     /// MonoCode's card git line: `repo/branch`, or "No branch selected"
     /// once the thread's worktree is gone.
-    fn session_git_label(&self, session: &SessionRow) -> String {
+    fn session_git_label(&self, session: &SessionRow, cx: &gpui::App) -> String {
         if session.worktree_removed {
             return NO_BRANCH_LABEL.to_string();
         }
-        let repo = self.workspace.repo.clone().or_else(|| {
+        let repo = self.workspace(cx).repo.clone().or_else(|| {
             std::path::Path::new(&session.cwd)
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())
@@ -238,7 +238,7 @@ impl BenCodeApp {
             (Some(row), title_row)
         };
 
-        let git = self.session_git_label(session);
+        let git = self.session_git_label(session, cx);
         let git_tip = match session.worktree_cwd.as_deref().filter(|w| !w.is_empty()) {
             Some(tree) if !git.is_empty() => format!("{git}\n{tree}"),
             _ => git.clone(),

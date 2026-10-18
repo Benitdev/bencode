@@ -71,10 +71,11 @@ impl BenCodeApp {
 
     /// MonoCode `InboxNotificationMenu` items (no "Notification settings…":
     /// BenCode has no such page).
-    pub(super) fn inbox_menu_entries(&self) -> Vec<MenuEntry> {
+    pub(super) fn inbox_menu_entries(&self, cx: &gpui::App) -> Vec<MenuEntry> {
         vec![
             MenuEntry::Item(
-                MenuAction::new("read-all", "Mark all as read").disabled(!self.inbox_has_unseen()),
+                MenuAction::new("read-all", "Mark all as read")
+                    .disabled(!self.inbox_has_unseen(cx)),
             ),
             MenuEntry::Separator,
             MenuEntry::Item(
@@ -93,7 +94,7 @@ impl BenCodeApp {
     pub(super) fn open_inbox_menu(&mut self, at: Point<Pixels>, cx: &mut Context<Self>) {
         self.close_rail_menu(cx);
         self.close_sidebar_menu(cx);
-        self.rail_ui.inbox_active = explorer_menu::first_item(&self.inbox_menu_entries());
+        self.rail_ui.inbox_active = explorer_menu::first_item(&self.inbox_menu_entries(cx));
         self.rail_ui.inbox_menu = Some(at);
         self.focus_composer_menu(cx);
         cx.notify();
@@ -111,7 +112,7 @@ impl BenCodeApp {
 
     fn hover_inbox_menu(&mut self, ix: usize, cx: &mut Context<Self>) {
         self.rail_ui.inbox_active = ix;
-        let entries = self.inbox_menu_entries();
+        let entries = self.inbox_menu_entries(cx);
         let on_mute = matches!(
             entries.get(ix),
             Some(MenuEntry::Item(MenuAction {
@@ -140,7 +141,7 @@ impl BenCodeApp {
     }
 
     pub(super) fn pick_inbox_menu(&mut self, ix: usize, cx: &mut Context<Self>) {
-        let entries = self.inbox_menu_entries();
+        let entries = self.inbox_menu_entries(cx);
         let Some(action) = explorer_menu::pick_action(&entries, ix).cloned() else {
             return;
         };
@@ -162,7 +163,7 @@ impl BenCodeApp {
 
     pub(super) fn render_inbox_menu(&self, cx: &Context<Self>) -> Option<AnyElement> {
         let at = self.rail_ui.inbox_menu?;
-        let entries = self.inbox_menu_entries();
+        let entries = self.inbox_menu_entries(cx);
         let entity = cx.entity().downgrade();
         let (hover_app, pick_app, close_app) = (entity.clone(), entity.clone(), entity);
         Some(explorer_menu::render_menu(

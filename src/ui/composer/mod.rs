@@ -467,7 +467,7 @@ impl BenCodeApp {
                 session.map_or("none", |s| s.id.as_str())
             )))
             // MonoCode binds ⌘⇧G to the workspace only in a new thread.
-            .when(focused && self.is_draft_workspace(), |el| {
+            .when(focused && self.is_draft_workspace(cx), |el| {
                 el.key_context("DraftComposer")
             })
             .flex_none()
@@ -749,7 +749,7 @@ impl BenCodeApp {
         } else {
             ("Current checkout", TriggerIcon::Named(IconName::Folder))
         };
-        let switchable = can_switch && !preparing && self.is_draft_workspace();
+        let switchable = can_switch && !preparing && self.is_draft_workspace(cx);
         let open = self.composer_menus.workspace_menu.is_some();
         let trigger = git_label(
             "composer-workspace",
@@ -1516,7 +1516,7 @@ impl BenCodeApp {
         cx: &Context<Self>,
     ) -> impl IntoElement {
         let current = self
-            .composer_branch(session)
+            .composer_branch(session, cx)
             .unwrap_or_else(|| "main".to_string());
         // Only the focused composer's chip owns the open popover.
         let focused = session.map(|s| s.id.as_str()) == self.selected_session_id.as_deref();

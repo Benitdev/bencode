@@ -34,6 +34,7 @@ use gpui::{
 use crate::app::BenCodeApp;
 use crate::db::SessionRow;
 use crate::ui::motion::cubic_bezier;
+use crate::ui::region::Region;
 use crate::ui::scale::px;
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 use blocks::MESSAGE_MAX_WIDTH;
@@ -333,10 +334,12 @@ pub struct TranscriptUiState {
 const CLOCK_TICK: std::time::Duration = std::time::Duration::from_secs(1);
 
 impl BenCodeApp {
-    /// Redraws while any agent runs, which is all the busy marks
-    /// (`ui/spinner.rs`) ask for: a step every spinner frame (80ms), and
-    /// smoothly (`WATCHED_FRAME`) while a running thread is in view.
-    /// Usage-limit countdowns tick once a second.
+    /// Steps the busy marks (`ui/spinner.rs`) while any agent runs: a step
+    /// every spinner frame (80ms), and smoothly (`WATCHED_FRAME`) while a
+    /// running thread is in view. A step redraws the mark layer
+    /// (`ui/marks.rs`) and the floating chat, never a region; the regions
+    /// that show a run's time redraw once a second. Usage-limit countdowns
+    /// tick once a second.
     pub fn start_clock(&mut self, cx: &mut Context<Self>) {
         cx.spawn(async move |this, cx| {
             let mut wait = CLOCK_TICK;
@@ -344,7 +347,8 @@ impl BenCodeApp {
             loop {
                 cx.background_executor().timer(wait).await;
                 let ticked = this.update(cx, |app, cx| {
-                    let countdown = if last_second.elapsed() >= CLOCK_TICK {
+                    let second = last_second.elapsed() >= CLOCK_TICK;
+                    let countdown = if second {
                         last_second = Instant::now();
                         app.tick_usage_limits(cx)
                     } else {
@@ -356,10 +360,20 @@ impl BenCodeApp {
                     let idle = (!running && !crate::ui::spinner::still(cx))
                         .then(|| app.idle_mascot_wake())
                         .flatten();
-                    if running || countdown || idle.is_some() {
+                    if countdown {
                         cx.notify();
+                    } else if running || idle.is_some() {
+                        // The marks move on the layer (`ui/marks.rs`); the
+                        // shell's own (a Mono's settings dialog) are drawn
+                        // with it.
+                        app.step_marks(cx);
+                        // What the regions show of a run's time ("Working
+                        // for 12s", a habit's run) moves once a second.
+                        if running && second {
+                            app.redraw_regions(&Region::BUSY_MARKS, cx);
+                        }
                     }
-                    if let Some(next) = idle {
+                    let next = if let Some(next) = idle {
                         next.min(CLOCK_TICK)
                     } else if !running {
                         CLOCK_TICK
@@ -368,10 +382,28 @@ impl BenCodeApp {
                     } else {
                         // The rail's busy mascots show over the views too.
                         crate::ui::spinner::FRAME
-                    }
+                    };
+                    // The floating chat follows the app's notifies; a step
+                    // that did not notify the app reaches it here.
+                    let float = (!countdown && (running || idle.is_some()))
+                        .then(|| app.mono_float_window())
+                        .flatten();
+                    (next, float)
                 });
                 match ticked {
-                    Ok(next) => wait = next,
+                    Ok((next, float)) => {
+                        wait = next;
+                        if let Some(float) = float {
+                            let stepped = float.update(cx, |float, _, cx| {
+                                if float.refresh(cx) {
+                                    cx.notify();
+                                }
+                            });
+                            if let Err(err) = stepped {
+                                log::debug!("floating chat closed before its step: {err:#}");
+                            }
+                        }
+                    }
                     Err(_) => return,
                 }
             }
@@ -520,11 +552,6 @@ impl BenCodeApp {
             view.rise = None;
         }
         view.live = running;
-    }
-
-    pub fn render_transcript_panel(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
-        // Delegate to multi-pane tree layout
-        self.render_pane_tree(cx)
     }
 
     pub fn render_transcript_row_for(

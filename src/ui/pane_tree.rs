@@ -1,5 +1,7 @@
 //! Pane tree view: the active tab's split chat panes, resized with Ely
 //! `SplitPane`, docked by drag-and-drop, each streaming its own transcript.
+//! The tree is the shell's; each pane is a region of its own
+//! (`ui/region.rs`), drawn by `render_session_pane`.
 
 use ely_gpui_component::buttons::{ButtonVariant, IconButton};
 use ely_gpui_component::feedback::EmptyState;
@@ -15,9 +17,7 @@ use gpui::{
 use crate::app::BenCodeApp;
 use crate::db::SessionRow;
 use crate::ui::drag_drop::{DraggedFile, DraggedPane, DraggedSession, render_pane_drop_hint};
-use crate::ui::layout::{
-    LayoutNode, SplitDir, layout_leaves, leaf_count, pane_edge_from_point, split_shares,
-};
+use crate::ui::layout::{LayoutNode, SplitDir, layout_leaves, pane_edge_from_point, split_shares};
 use crate::ui::scale::px;
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
@@ -67,30 +67,24 @@ impl BenCodeApp {
                     .body("Pick a thread from the sidebar or start a new one."),
             );
         };
-        let in_split = leaf_count(&layout) > 1;
         self.pane_rects.clear();
         if self.appearance.chat_background.path.is_some() {
             let leaves = layout_leaves(&layout, Default::default());
             self.pane_rects
                 .extend(leaves.into_iter().map(|leaf| (leaf.id, leaf.rect)));
         }
-        shell.child(self.render_layout_node(&layout, in_split, cx))
+        shell.child(self.render_layout_node(&layout, cx))
     }
 
-    fn render_layout_node(
-        &mut self,
-        node: &LayoutNode,
-        in_split: bool,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
+    fn render_layout_node(&mut self, node: &LayoutNode, cx: &mut Context<Self>) -> AnyElement {
         match node {
-            LayoutNode::Leaf { id } => self.render_session_pane(id, in_split, cx),
+            LayoutNode::Leaf { id } => self.regions.pane_element(id, cx),
             LayoutNode::Split {
                 id,
                 dir,
                 children,
                 sizes,
-            } => self.render_split(id, *dir, children, sizes, in_split, cx),
+            } => self.render_split(id, *dir, children, sizes, cx),
         }
     }
 
@@ -101,11 +95,10 @@ impl BenCodeApp {
         dir: SplitDir,
         children: &[LayoutNode],
         sizes: &[f32],
-        in_split: bool,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         if let [only] = children {
-            return self.render_layout_node(only, in_split, cx);
+            return self.render_layout_node(only, cx);
         }
         if children.is_empty() {
             return div().into_any_element();
@@ -128,7 +121,7 @@ impl BenCodeApp {
                 }
             });
         for child in children {
-            let pane = self.render_layout_node(child, in_split, cx);
+            let pane = self.render_layout_node(child, cx);
             split = split.pane(div().size_full().child(pane));
         }
         split.into_any_element()

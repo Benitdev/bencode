@@ -249,12 +249,7 @@ impl BenCodeApp {
             None => format!("Paused · {}", habit.schedule.label()),
         };
         let tile = match running {
-            Some(_) => div()
-                .size(px(8.0))
-                .rounded_full()
-                .bg(self.mono_color(mono))
-                .opacity(crate::ui::spinner::pulse(cx))
-                .into_any_element(),
+            Some(_) => crate::ui::spinner::pulse_dot(self.mono_color(mono), 8.0, cx),
             None => Icon::new(IconName::Clock)
                 .size(IconSize::Sm)
                 .color(fg.ink(if lit { Ink::Secondary } else { Ink::Faint }))
@@ -389,13 +384,7 @@ impl BenCodeApp {
                     .px_2()
                     .py_2()
                     .text_size(Text::Base.px())
-                    .child(
-                        div()
-                            .size(px(8.0))
-                            .rounded_full()
-                            .bg(color)
-                            .opacity(crate::ui::spinner::pulse(cx)),
-                    )
+                    .child(crate::ui::spinner::pulse_dot(color, 8.0, cx))
                     .child(
                         div()
                             .flex_1()

@@ -184,12 +184,20 @@ impl BenCodeApp {
             .as_deref()
             .and_then(|id| self.launched_state(id));
         let tile = match (column, session) {
-            (Column::Running, _) => div()
-                .size(px(8.0))
-                .rounded_full()
-                .bg(state.map_or(Status::Working, Status::from).color(fg))
-                .opacity(crate::ui::spinner::pulse(cx))
-                .into_any_element(),
+            (Column::Running, _) => {
+                let color = state.map_or(Status::Working, Status::from).color(fg);
+                crate::ui::marks::mark(
+                    move |cx| {
+                        div()
+                            .size(px(8.0))
+                            .rounded_full()
+                            .bg(color)
+                            .opacity(crate::ui::spinner::pulse(cx))
+                            .into_any_element()
+                    },
+                    cx,
+                )
+            }
             (Column::Done, _) => Icon::new(IconName::CircleCheck)
                 .size(IconSize::Sm)
                 .color(fg.ink(Ink::Faint))

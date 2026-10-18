@@ -21,6 +21,7 @@ use gpui::{AsyncWindowContext, Context, ListOffset, WeakEntity, Window, px, size
 use crate::app::file_pane::PaneTab;
 use crate::app::surfaces::Surface;
 use crate::app::{BenCodeApp, subagents};
+use crate::ui::region::Region;
 use crate::ui::transcript::turns::{self, Item, Row};
 
 /// Draws per case, unless `BENCODE_FRAME_BENCH` gives a number (a long run
@@ -238,6 +239,47 @@ fn cases(thread: Option<String>) -> Vec<Case> {
                 app.file_tree.pending_open = Some(FILE.to_string());
             }),
             notify_app,
+        ),
+        // What the regions save (`ui/region.rs`): the same window, with
+        // only some of it asked to redraw.
+        case(
+            "long thread and a file: clock step (mark layer)",
+            Box::new(nothing),
+            |app, cx| app.step_marks(cx),
+        ),
+        case(
+            "long thread and a file: busy-mark regions (once a second)",
+            Box::new(nothing),
+            |app, cx| app.redraw_regions(&Region::BUSY_MARKS, cx),
+        ),
+        case(
+            "long thread and a file: every chat pane redrawn",
+            Box::new(nothing),
+            |app, cx| app.redraw_regions(&[Region::Chat], cx),
+        ),
+        case(
+            "long thread and a file: a token (its pane)",
+            Box::new(nothing),
+            |app, cx| {
+                if let Some(id) = app.selected_session_id.clone() {
+                    app.redraw_thread(&id, cx);
+                }
+            },
+        ),
+        case(
+            "long thread and a file: a keystroke (the composer's pane)",
+            Box::new(nothing),
+            |app, cx| app.redraw_composer(cx),
+        ),
+        case(
+            "long thread and a file: file pane redrawn (a keystroke)",
+            Box::new(nothing),
+            |app, cx| app.redraw_regions(&[Region::FilePane], cx),
+        ),
+        case(
+            "long thread and a file: footer redrawn",
+            Box::new(nothing),
+            |app, cx| app.redraw_regions(&[Region::Footer], cx),
         ),
         case(
             "app notified, long thread, Changes beside it",

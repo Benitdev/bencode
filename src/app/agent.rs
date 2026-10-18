@@ -212,6 +212,21 @@ fn plan_event(
     }
 }
 
+/// Whether an event only changes its thread's transcript (and the status
+/// its card shows, which the clock's next step redraws).
+fn streams_only(event: &AgentEvent) -> bool {
+    matches!(
+        event,
+        AgentEvent::TextDelta(_)
+            | AgentEvent::ThinkingDelta(_)
+            | AgentEvent::ToolCallStart { .. }
+            | AgentEvent::ToolCallFinish { .. }
+            | AgentEvent::AgentStep { .. }
+            | AgentEvent::Status(_)
+            | AgentEvent::Usage { .. }
+    )
+}
+
 /// Whether this event should save the running thread now, given how long
 /// ago the run last saved.
 fn save_due(event: &AgentEvent, since_last_save: Duration) -> bool {
@@ -1009,16 +1024,46 @@ impl BenCodeApp {
                 while let Ok(next) = events.try_recv() {
                     batch.push(next);
                 }
+                // Text and tool rows change the thread's transcript alone:
+                // they redraw the region showing it, or nothing while it
+                // is not on screen. Anything else may show anywhere.
+                let streaming = batch.iter().all(streams_only);
+                // A usage report also moves the footer's context meter.
+                let usage = batch
+                    .iter()
+                    .any(|event| matches!(event, AgentEvent::Usage { .. }));
                 let applied = this.update(cx, |app, cx| {
                     for event in batch {
                         if let Some(request) = app.on_agent_event(&session_id, run_id, event) {
                             app.announce_input(&session_id, &request, cx);
                         }
                     }
-                    cx.notify();
+                    if !streaming {
+                        cx.notify();
+                        return None;
+                    }
+                    app.redraw_thread(&session_id, cx);
+                    if usage {
+                        app.redraw_regions(&[crate::ui::region::Region::Footer], cx);
+                    }
+                    // The floating chat follows the app's notifies.
+                    app.is_mono_session(&session_id)
+                        .then(|| app.mono_float_window())
+                        .flatten()
                 });
-                if applied.is_err() {
-                    return;
+                match applied {
+                    Ok(Some(float)) => {
+                        let stepped = float.update(cx, |float, _, cx| {
+                            if float.refresh(cx) {
+                                cx.notify();
+                            }
+                        });
+                        if let Err(err) = stepped {
+                            log::debug!("floating chat closed while streaming: {err:#}");
+                        }
+                    }
+                    Ok(None) => {}
+                    Err(_) => return,
                 }
             }
             if let Err(err) = this.update(cx, |app, cx| app.finish_run(&session_id, run_id, cx)) {
@@ -1167,7 +1212,7 @@ impl BenCodeApp {
             self.session_turn_settled(session_id, run.outcome, cx);
         }
         // The agent has most likely edited files, and may have switched branch.
-        self.workspace.turn_ended.insert(session_id.to_string());
+        self.workspace_mut(cx, |cache| cache.turn_ended.insert(session_id.to_string()));
         self.refresh_workspace(cx);
         self.load_session_review(session_id, cx);
         self.send_next_queued(session_id, cx);
@@ -1235,7 +1280,7 @@ impl BenCodeApp {
             finish_turn(session, now);
         }
         self.persist_session(session_id);
-        self.workspace.turn_ended.insert(session_id.to_string());
+        self.workspace_mut(cx, |cache| cache.turn_ended.insert(session_id.to_string()));
         self.refresh_workspace(cx);
         cx.notify();
     }

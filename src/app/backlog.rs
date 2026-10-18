@@ -238,7 +238,7 @@ impl BenCodeApp {
             return;
         }
         let Some(item) = self
-            .inbox
+            .inbox(cx)
             .item(key)
             .filter(|item| item.provider == Provider::Backlog)
             .cloned()
@@ -258,7 +258,13 @@ impl BenCodeApp {
                 app.backlog.status_busy = None;
                 match result {
                     Ok(next) => {
-                        if let Some(slot) = app.inbox.items.iter_mut().find(|i| i.key() == key) {
+                        if let Some(slot) = app
+                            .inbox_state
+                            .as_mut(cx)
+                            .items
+                            .iter_mut()
+                            .find(|i| i.key() == key)
+                        {
                             *slot = next;
                         }
                         // The user's own change is not news to them.

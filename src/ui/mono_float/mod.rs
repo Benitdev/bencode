@@ -506,7 +506,7 @@ impl MonoFloat {
     }
 
     /// Takes in what the app holds now; whether any of it is drawn here.
-    fn refresh(&mut self, cx: &mut Context<Self>) -> bool {
+    pub(crate) fn refresh(&mut self, cx: &mut Context<Self>) -> bool {
         let shown = self.shown_now(cx);
         if shown == self.shown {
             return false;

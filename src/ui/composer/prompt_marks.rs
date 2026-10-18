@@ -123,7 +123,17 @@ impl BenCodeApp {
             .collect();
         if marks != self.mention_marks {
             self.mention_marks = marks;
-            window.request_animation_frame();
+            // The marks are the composer's: one more frame of the regions a
+            // composer is drawn in, not of the app (`ui/region.rs`).
+            let views = self.regions.views(&[
+                crate::ui::region::Region::Chat,
+                crate::ui::region::Region::Mono,
+            ]);
+            window.on_next_frame(move |_, cx| {
+                for view in views {
+                    view.update(cx, |_, cx| cx.notify());
+                }
+            });
         }
     }
 

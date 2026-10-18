@@ -376,6 +376,27 @@ pub fn pixel_mascot(
     look: MascotLook,
     cx: &App,
 ) -> AnyElement {
+    // A busy mark (`ui/marks.rs`) in a box that holds still: the sprite
+    // bobs inside it, so the box the layer draws it in never moves.
+    crate::ui::marks::mark(
+        move |cx| {
+            div()
+                .flex_none()
+                .size(px(size))
+                .child(mascot_now(mascot, size, color, look, cx))
+                .into_any_element()
+        },
+        cx,
+    )
+}
+
+fn mascot_now(
+    mascot: &'static Mascot,
+    size: f32,
+    color: Hsla,
+    look: MascotLook,
+    cx: &App,
+) -> AnyElement {
     let still = spinner::still(cx);
     let motion = if still {
         MascotMotion::Still

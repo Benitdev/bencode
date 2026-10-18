@@ -294,17 +294,17 @@ impl BenCodeApp {
                 |path| path.to_string_lossy().into_owned(),
             );
         self.new_terminal(cx);
-        let Some(tab) = self
-            .terminals
+        let Some(entity) = self
+            .terminals(cx)
             .dock(&self.current_cwd)
             .and_then(|dock| dock.tabs.last())
+            .map(|tab| tab.entity.clone())
         else {
             return;
         };
         // The shell reads this once it is up.
         let line = format!("'{}'\n", program.replace('\'', "'\\''"));
-        tab.entity
-            .update(cx, |terminal, _| terminal.write(line.into_bytes()));
+        entity.update(cx, |terminal, _| terminal.write(line.into_bytes()));
     }
 
     /// Gives a sign-in up: `agy` is signed back in as it was.

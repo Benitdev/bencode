@@ -109,7 +109,7 @@ pub struct SettingsWrite {
 
 impl BenCodeApp {
     /// Seeds app state from saved preferences; unknown model keys are ignored.
-    pub fn apply_settings(&mut self, saved: AppSettings) {
+    pub fn apply_settings(&mut self, saved: AppSettings, cx: &mut gpui::App) {
         // Live catalogs arrive after startup, so any harness-prefixed key
         // is kept rather than only the built-in ones.
         if let Some(model) = saved
@@ -133,9 +133,11 @@ impl BenCodeApp {
             crate::ui::glass::clamp_opacity,
         );
         self.body_glass = !saved.body_glass_off;
-        self.inbox.seen = saved.inbox_seen.clone();
-        self.inbox.seen_seeded = saved.inbox_seen_seeded;
-        self.inbox.repairs = saved.inbox_repairs.clone();
+        self.inbox_mut(cx, |inbox| {
+            inbox.seen = saved.inbox_seen.clone();
+            inbox.seen_seeded = saved.inbox_seen_seeded;
+            inbox.repairs = saved.inbox_repairs.clone();
+        });
         self.backlog.hidden_projects = saved.backlog_hidden_projects.clone();
         self.backlog.project_folders = saved.backlog_project_folders.clone();
         self.github.choices = saved.github_accounts.clone();
@@ -147,10 +149,12 @@ impl BenCodeApp {
         } else {
             crate::ui::editor_pane::FileViewMode::Preview
         };
-        self.terminals.layouts = saved.terminal_docks.clone();
-        self.terminals.saved = saved.terminal_sessions.clone();
+        self.terminals_mut(cx, |docks| {
+            docks.layouts = saved.terminal_docks.clone();
+            docks.saved = saved.terminal_sessions.clone();
+        });
         if let Some(width) = saved.inbox_list_width {
-            self.inbox.list_width = width;
+            self.inbox_mut(cx, |inbox| inbox.list_width = width);
         }
         self.monos.overview.width =
             saved
@@ -174,7 +178,7 @@ impl BenCodeApp {
         self.settings = saved;
     }
 
-    fn current_settings(&self) -> AppSettings {
+    fn current_settings(&self, cx: &gpui::App) -> AppSettings {
         AppSettings {
             theme: self.theme_preference,
             default_model: Some(self.selected_model.clone()),
@@ -189,9 +193,9 @@ impl BenCodeApp {
             sidebar_opacity: Some(self.sidebar_opacity)
                 .filter(|o| (o - crate::ui::glass::OPACITY_DEFAULT).abs() > f32::EPSILON),
             body_glass_off: !self.body_glass,
-            inbox_seen: self.inbox.seen.clone(),
-            inbox_seen_seeded: self.inbox.seen_seeded,
-            inbox_repairs: self.inbox.repairs.clone(),
+            inbox_seen: self.inbox(cx).seen.clone(),
+            inbox_seen_seeded: self.inbox(cx).seen_seeded,
+            inbox_repairs: self.inbox(cx).repairs.clone(),
             backlog_hidden_projects: self.backlog.hidden_projects.clone(),
             backlog_project_folders: self.backlog.project_folders.clone(),
             github_accounts: self.github.choices.clone(),
@@ -217,9 +221,9 @@ impl BenCodeApp {
             chat_background_scope: self.appearance.chat_background.scope,
             new_thread_background_effect: self.appearance.chat_background.effect,
             collapsed_project_rail_mode: self.appearance.collapsed_rail,
-            terminal_docks: self.terminals.layouts.clone(),
-            terminal_sessions: self.saved_terminals(),
-            inbox_list_width: Some(self.inbox.list_width)
+            terminal_docks: self.terminals(cx).layouts.clone(),
+            terminal_sessions: self.saved_terminals(cx),
+            inbox_list_width: Some(self.inbox(cx).list_width)
                 .filter(|w| *w != crate::ui::inbox_view::DEFAULT_LIST_WIDTH),
             favorite_models: self.favorite_models.clone(),
             recent_models: self.recent_models.clone(),
@@ -252,7 +256,7 @@ impl BenCodeApp {
 
     /// Persists preferences if they differ from what was last saved.
     pub fn save_settings(&mut self, cx: &mut Context<Self>) {
-        let next = self.current_settings();
+        let next = self.current_settings(cx);
         if next == self.settings {
             return;
         }
@@ -261,7 +265,7 @@ impl BenCodeApp {
 
     /// MonoCode `savePinnedProjects`.
     pub fn set_pinned_projects(&mut self, paths: Vec<String>, cx: &mut Context<Self>) {
-        let mut next = self.current_settings();
+        let mut next = self.current_settings(cx);
         next.pinned_projects = paths;
         if next == self.settings {
             return;
@@ -279,7 +283,7 @@ impl BenCodeApp {
         ),
         cx: &mut Context<Self>,
     ) {
-        let mut next = self.current_settings();
+        let mut next = self.current_settings(cx);
         update(
             &mut next.provider_accounts,
             &mut next.provider_account_selections,
@@ -297,7 +301,7 @@ impl BenCodeApp {
         update: impl FnOnce(&mut Vec<crate::monos::Mono>),
         cx: &mut Context<Self>,
     ) {
-        let mut next = self.current_settings();
+        let mut next = self.current_settings(cx);
         update(&mut next.monos);
         if next == self.settings {
             return;
@@ -313,7 +317,7 @@ impl BenCodeApp {
         if self.settings.open_mono == open {
             return;
         }
-        let mut next = self.current_settings();
+        let mut next = self.current_settings(cx);
         next.open_mono = open;
         self.write_settings(next, cx);
     }
@@ -324,7 +328,7 @@ impl BenCodeApp {
         if !on {
             self.close_mono_view(cx);
         }
-        let mut next = self.current_settings();
+        let mut next = self.current_settings(cx);
         next.monos_off = !on;
         if next != self.settings {
             self.write_settings(next, cx);
@@ -335,7 +339,7 @@ impl BenCodeApp {
 
     /// MonoCode `saveRailMonosPinned`.
     pub fn set_rail_monos_pinned(&mut self, on: bool, cx: &mut Context<Self>) {
-        let mut next = self.current_settings();
+        let mut next = self.current_settings(cx);
         next.rail_monos_pinned = on;
         if next != self.settings {
             self.write_settings(next, cx);
@@ -345,7 +349,7 @@ impl BenCodeApp {
 
     /// Settings › Monos › Menu bar icon.
     pub fn set_mono_menu_bar(&mut self, on: bool, cx: &mut Context<Self>) {
-        let mut next = self.current_settings();
+        let mut next = self.current_settings(cx);
         next.mono_menu_bar_off = !on;
         if next != self.settings {
             self.write_settings(next, cx);
@@ -359,7 +363,7 @@ impl BenCodeApp {
         if self.settings.mono_float_size == Some(size) {
             return;
         }
-        let mut next = self.current_settings();
+        let mut next = self.current_settings(cx);
         next.mono_float_size = Some(size);
         self.write_settings(next, cx);
     }
@@ -371,7 +375,7 @@ impl BenCodeApp {
         update: impl FnOnce(&crate::ui::rail::model::RailPrefs) -> crate::ui::rail::model::RailPrefs,
         cx: &mut Context<Self>,
     ) {
-        let mut next = self.current_settings();
+        let mut next = self.current_settings(cx);
         next.rail = update(&next.rail);
         if next == self.settings {
             return;

@@ -7,12 +7,14 @@ use ely_gpui_component::navigation::{EditorTab, EditorTabs};
 use ely_gpui_component::primitives::IconName;
 use ely_gpui_component::theme::ActiveTheme;
 use gpui::{
-    AnyElement, Axis, Context, IntoElement, ParentElement, SharedString, Styled, div, prelude::*,
+    AnyElement, Axis, Context, IntoElement, ParentElement, SharedString, StyleRefinement, Styled,
+    div, prelude::*,
 };
 
 use crate::app::BenCodeApp;
 use crate::app::file_pane::PaneTab;
 use crate::ui::diff_viewer::DocFocus;
+use crate::ui::region::Region;
 
 impl BenCodeApp {
     /// Focuses `tab` or opens it (MonoCode `openEditorTab`, `openChangesTab`,
@@ -113,7 +115,8 @@ impl BenCodeApp {
             .size_full()
             .flex()
             .capture_any_mouse_down(cx.listener(|this, _, _, _| this.file_pane_focused = false))
-            .child(self.render_transcript_panel(cx));
+            // The splits are the shell's; each pane is a region.
+            .child(self.render_pane_tree(cx));
         if self.file_pane.is_empty() && self.editor.notice.is_none() {
             return chat.into_any_element();
         }
@@ -126,7 +129,11 @@ impl BenCodeApp {
             .size_full()
             .flex()
             .capture_any_mouse_down(cx.listener(|this, _, _, _| this.file_pane_focused = true))
-            .child(self.render_file_pane(cx));
+            .child(self.regions.element(
+                Region::FilePane,
+                StyleRefinement::default().size_full(),
+                cx,
+            ));
         SplitPane::new("workspace-file-split", Axis::Horizontal, min)
             .sizes(&self.file_pane_shares)
             .on_resize(move |shares, _window, cx| {
@@ -144,7 +151,7 @@ impl BenCodeApp {
             .into_any_element()
     }
 
-    fn render_file_pane(&self, cx: &Context<Self>) -> impl IntoElement {
+    pub(crate) fn render_file_pane(&self, cx: &Context<Self>) -> impl IntoElement {
         let glass = self.glass(cx);
         let colors = &cx.theme().colors;
         let body = match self.file_pane.active() {

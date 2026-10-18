@@ -217,7 +217,7 @@ impl BenCodeApp {
             cx.notify();
             return;
         }
-        let abs_path = resolve_path(&self.workspace.cwd, &path);
+        let abs_path = resolve_path(&self.workspace(cx).cwd, &path);
         let task = cx
             .background_executor()
             .spawn(async move { read_text_file(&abs_path, MAX_EDITOR_FILE_BYTES) });
@@ -291,7 +291,9 @@ impl BenCodeApp {
                 }
                 let lines = count_lines(editor.read(cx).text());
                 this.editor.files.mark_changed(&key, lines);
-                cx.notify();
+                // The tab's unsaved mark and the line count are the file
+                // pane's alone.
+                this.redraw_regions(&[crate::ui::region::Region::FilePane], cx);
             }
         });
         // Only a change in the selected lines redraws the app.
@@ -377,7 +379,7 @@ impl BenCodeApp {
         let Some(version) = self.editor.files.begin_save(&path) else {
             return;
         };
-        let abs_path = resolve_path(&self.workspace.cwd, &path);
+        let abs_path = resolve_path(&self.workspace(cx).cwd, &path);
         let task = cx
             .background_executor()
             .spawn(async move { save_unless_changed(&abs_path, &text, known) });

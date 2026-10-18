@@ -40,11 +40,11 @@ impl TerminalMenu {
 }
 
 impl BenCodeApp {
-    fn terminal_menu_entries(&self, target: MenuTarget) -> Vec<MenuEntry> {
+    fn terminal_menu_entries(&self, target: MenuTarget, cx: &gpui::App) -> Vec<MenuEntry> {
         match target {
             MenuTarget::Tab(_) => {
                 let tabs = self
-                    .terminals
+                    .terminals(cx)
                     .dock(&self.current_cwd)
                     .map_or(0, |dock| dock.tabs.len());
                 vec![
@@ -55,7 +55,7 @@ impl BenCodeApp {
                 ]
             }
             MenuTarget::Side => {
-                let current = self.terminals.layout(&self.current_cwd).side;
+                let current = self.terminals(cx).layout(&self.current_cwd).side;
                 DockSide::ALL
                     .into_iter()
                     .map(|side| {
@@ -67,7 +67,7 @@ impl BenCodeApp {
             }
             // MonoCode's rows: the job, its folder muted at the end.
             MenuTarget::Running => self
-                .running_terminals()
+                .running_terminals(cx)
                 .into_iter()
                 .map(|terminal| {
                     MenuEntry::Item(
@@ -86,8 +86,8 @@ impl BenCodeApp {
         position: Point<Pixels>,
         cx: &mut Context<Self>,
     ) {
-        let entries = self.terminal_menu_entries(target);
-        self.terminals.menu = Some(TerminalMenu {
+        let entries = self.terminal_menu_entries(target, cx);
+        self.terminals_state.as_mut(cx).menu = Some(TerminalMenu {
             target,
             position,
             active: explorer_menu::first_item(&entries),
@@ -112,7 +112,7 @@ impl BenCodeApp {
         cx: &mut Context<Self>,
     ) {
         if self
-            .terminals
+            .terminals(cx)
             .menu
             .as_ref()
             .is_some_and(TerminalMenu::is_side)
@@ -126,7 +126,7 @@ impl BenCodeApp {
     /// The footer chip's list: opens above the chip, or closes when open.
     pub(crate) fn toggle_running_terminals_menu(&mut self, cx: &mut Context<Self>) {
         if self
-            .terminals
+            .terminals(cx)
             .menu
             .as_ref()
             .is_some_and(TerminalMenu::is_running)
@@ -137,19 +137,19 @@ impl BenCodeApp {
         self.open_terminal_menu(MenuTarget::Running, Point::default(), cx);
     }
 
-    pub(crate) fn running_terminals_menu_open(&self) -> bool {
-        self.terminals
+    pub(crate) fn running_terminals_menu_open(&self, cx: &gpui::App) -> bool {
+        self.terminals(cx)
             .menu
             .as_ref()
             .is_some_and(TerminalMenu::is_running)
     }
 
-    pub fn terminal_menu_open(&self) -> bool {
-        self.terminals.menu.is_some()
+    pub fn terminal_menu_open(&self, cx: &gpui::App) -> bool {
+        self.terminals(cx).menu.is_some()
     }
 
     pub fn close_terminal_menu(&mut self, cx: &mut Context<Self>) -> bool {
-        if self.terminals.menu.take().is_none() {
+        if self.terminals_state.as_mut(cx).menu.take().is_none() {
             return false;
         }
         self.refocus_prompt(cx);
@@ -158,12 +158,12 @@ impl BenCodeApp {
     }
 
     fn pick_terminal_menu(&mut self, index: usize, cx: &mut Context<Self>) {
-        let Some(menu) = self.terminals.menu.take() else {
+        let Some(menu) = self.terminals_state.as_mut(cx).menu.take() else {
             return;
         };
-        let entries = self.terminal_menu_entries(menu.target);
+        let entries = self.terminal_menu_entries(menu.target, cx);
         let Some(action) = explorer_menu::pick_action(&entries, index) else {
-            self.terminals.menu = Some(menu);
+            self.terminals_state.as_mut(cx).menu = Some(menu);
             return;
         };
         let (id, value) = (action.id, action.value.clone());
@@ -175,7 +175,7 @@ impl BenCodeApp {
             }
             (MenuTarget::Tab(tab), "close-others") => {
                 let others = self
-                    .terminals
+                    .terminals(cx)
                     .dock(&project)
                     .map(|dock| {
                         dock.tabs
@@ -204,15 +204,15 @@ impl BenCodeApp {
 
     /// Keys while a terminal menu holds focus (MonoCode `ExplorerMenu.onMenuKey`).
     pub fn terminal_menu_key(&mut self, key: &str, cx: &mut Context<Self>) -> bool {
-        let Some(menu) = self.terminals.menu.as_ref() else {
+        let Some(menu) = self.terminals(cx).menu.as_ref() else {
             return false;
         };
-        let entries = self.terminal_menu_entries(menu.target);
+        let entries = self.terminal_menu_entries(menu.target, cx);
         let active = menu.active;
         match key {
             "down" | "up" => {
                 let dir = if key == "down" { 1 } else { -1 };
-                if let Some(menu) = self.terminals.menu.as_mut() {
+                if let Some(menu) = self.terminals_state.as_mut(cx).menu.as_mut() {
                     menu.active = explorer_menu::step(&entries, active, dir);
                 }
             }
@@ -229,7 +229,7 @@ impl BenCodeApp {
     /// The tab and Move Terminal menus, at the pointer.
     pub fn render_terminal_menu(&self, cx: &Context<Self>) -> Option<AnyElement> {
         let menu = self
-            .terminals
+            .terminals(cx)
             .menu
             .as_ref()
             .filter(|menu| !menu.is_running())?;
@@ -239,7 +239,7 @@ impl BenCodeApp {
     /// The running terminals' list, placed in the footer chip.
     pub(crate) fn render_running_terminals_menu(&self, cx: &Context<Self>) -> Option<AnyElement> {
         let menu = self
-            .terminals
+            .terminals(cx)
             .menu
             .as_ref()
             .filter(|menu| menu.is_running())?;
@@ -252,7 +252,7 @@ impl BenCodeApp {
         place: explorer_menu::MenuPlace,
         cx: &Context<Self>,
     ) -> AnyElement {
-        let entries = self.terminal_menu_entries(menu.target);
+        let entries = self.terminal_menu_entries(menu.target, cx);
         let entity = cx.entity().downgrade();
         let (hover_app, pick_app, close_app) = (entity.clone(), entity.clone(), entity);
         explorer_menu::render_menu(
@@ -271,10 +271,14 @@ impl BenCodeApp {
             },
             move |ix, _, cx| {
                 let updated = hover_app.update(cx, |this, cx| {
-                    if let Some(menu) = this.terminals.menu.as_mut()
-                        && menu.active != ix
-                    {
-                        menu.active = ix;
+                    let moved = this.terminals_mut(cx, |docks| match docks.menu.as_mut() {
+                        Some(menu) if menu.active != ix => {
+                            menu.active = ix;
+                            true
+                        }
+                        _ => false,
+                    });
+                    if moved {
                         cx.notify();
                     }
                 });

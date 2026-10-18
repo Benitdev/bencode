@@ -308,7 +308,7 @@ impl BenCodeApp {
         } else if current == account_id {
             return;
         } else {
-            let id = self.create_session_row(&cwd);
+            let id = self.create_session_row(&cwd, cx);
             if let Some(session) = self.sessions.iter_mut().find(|s| s.id == id) {
                 session.model = model;
                 session.harness = harness;
@@ -603,7 +603,8 @@ impl BenCodeApp {
         self.accounts.on_disk.remove(&key);
         self.accounts.identities.remove(&key);
         if let Some(provider) = RateLimitProvider::from_harness(&account.provider) {
-            self.usage.forget(provider, &account.id);
+            self.usage_data
+                .update(cx, |data, _| data.forget(provider, &account.id));
         }
         if self
             .accounts

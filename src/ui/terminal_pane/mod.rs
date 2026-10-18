@@ -26,7 +26,7 @@ use ely_gpui_component::terminal::{Launch, Terminal, TerminalEvent};
 use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
     AnyElement, Axis, Context, Entity, InteractiveElement, IntoElement, ParentElement,
-    SharedString, Styled, Subscription, Window, div, prelude::*,
+    SharedString, StyleRefinement, Styled, Subscription, Window, div, prelude::*,
 };
 
 use crate::ui::scale::px;
@@ -41,6 +41,7 @@ use crate::ui::icons::ExtraIcon;
 use crate::ui::layout::{
     LayoutNode, PaneEdge, SplitDir, pane_edge_from_point, set_split_sizes, split_shares,
 };
+use crate::ui::region::Region;
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 const TAB_HEIGHT: f32 = 28.0;
@@ -131,6 +132,23 @@ pub struct TerminalDocks {
     pub saved: BTreeMap<String, Vec<SavedTerminal>>,
     /// The launch is showing the saved tabs: no shell is started meanwhile.
     restoring: bool,
+}
+
+impl BenCodeApp {
+    /// The terminal docks (a model: `terminals_state`).
+    pub fn terminals<'a>(&self, cx: &'a gpui::App) -> &'a TerminalDocks {
+        self.terminals_state.read(cx)
+    }
+
+    /// Changes the terminal docks; the caller redraws (the app's notify,
+    /// or the model's, which the dock and the footer follow).
+    pub fn terminals_mut<R>(
+        &self,
+        cx: &mut gpui::App,
+        change: impl FnOnce(&mut TerminalDocks) -> R,
+    ) -> R {
+        self.terminals_state.update(cx, |docks, _| change(docks))
+    }
 }
 
 /// Drag payload of the dock's resize sash.
@@ -253,15 +271,15 @@ fn hide_icon(side: DockSide) -> IconName {
 
 impl BenCodeApp {
     /// Whether the current project's dock is shown.
-    pub fn is_terminal_open(&self) -> bool {
-        self.terminals.layout(&self.current_cwd).open
+    pub fn is_terminal_open(&self, cx: &gpui::App) -> bool {
+        self.terminals(cx).layout(&self.current_cwd).open
     }
 
     /// Shows or hides the current project's dock; showing it starts a
     /// shell when the project has none.
     pub fn set_terminal_open(&mut self, open: bool, cx: &mut Context<Self>) {
         let project = self.current_cwd.clone();
-        self.terminals.set_open(&project, open);
+        self.terminals_state.as_mut(cx).set_open(&project, open);
         if open {
             self.ensure_project_terminal(cx);
         }
@@ -271,11 +289,11 @@ impl BenCodeApp {
 
     /// Makes sure the current project has at least one terminal.
     pub fn ensure_project_terminal(&mut self, cx: &mut Context<Self>) {
-        if self.terminals.restoring {
+        if self.terminals(cx).restoring {
             return;
         }
         let has_tab = self
-            .terminals
+            .terminals(cx)
             .dock(&self.current_cwd)
             .is_some_and(|dock| !dock.tabs.is_empty());
         if !has_tab {
@@ -285,7 +303,7 @@ impl BenCodeApp {
 
     /// A terminal has the keyboard: its keys (Escape above all) are its own.
     pub(crate) fn terminal_focused(&self, window: &gpui::Window, cx: &gpui::App) -> bool {
-        self.terminals
+        self.terminals(cx)
             .docks
             .values()
             .flat_map(|dock| &dock.tabs)
@@ -305,7 +323,7 @@ impl BenCodeApp {
         let session = crate::pty_host::new_session_id();
         let id = self.add_terminal_tab(&project, session.clone(), cwd, None, cx);
         self.find_terminal_process(id, session, cx);
-        if !self.is_terminal_open() {
+        if !self.is_terminal_open(cx) {
             self.set_terminal_open(true, cx);
         }
         self.save_settings(cx);
@@ -324,28 +342,32 @@ impl BenCodeApp {
         let cwd = cwd.to_string();
         let entity = cx.new(|cx| spawn_attached(&session, &cwd, cx));
         let view = cx.new(|_| ime::TerminalIme::new(entity.clone()));
-        self.terminals.next_id += 1;
-        let id = self.terminals.next_id;
+        let id = self.terminals_mut(cx, |docks| {
+            docks.next_id += 1;
+            docks.next_id
+        });
         let key = project.to_string();
         let events = cx.subscribe(&entity, move |this, _, event: &TerminalEvent, cx| {
             if let TerminalEvent::Exited(_) = event {
                 this.terminal_exited(&key, id, cx);
             }
         });
-        let dock = self.terminals.docks.entry(project.to_string()).or_default();
-        dock.tabs.push(TerminalTab {
-            id,
-            session,
-            entity,
-            view,
-            cwd,
-            process: pid,
-            shell: None,
-            foreground: None,
-            dir: None,
-            _events: events,
+        self.terminals_mut(cx, |docks| {
+            let dock = docks.docks.entry(project.to_string()).or_default();
+            dock.tabs.push(TerminalTab {
+                id,
+                session,
+                entity,
+                view,
+                cwd,
+                process: pid,
+                shell: None,
+                foreground: None,
+                dir: None,
+                _events: events,
+            });
+            dock.active = id;
         });
-        dock.active = id;
         if pid.is_some() {
             self.start_terminal_poll(cx);
         }
@@ -355,23 +377,26 @@ impl BenCodeApp {
 
     /// Closes terminal `id` of `project`; its neighbour becomes active.
     pub fn close_terminal(&mut self, project: &str, id: u64, cx: &mut Context<Self>) {
-        let Some(dock) = self.terminals.docks.get_mut(project) else {
+        let closed = self.terminals_mut(cx, |docks| {
+            let dock = docks.docks.get_mut(project)?;
+            let ix = dock.tabs.iter().position(|t| t.id == id)?;
+            let closed = dock.tabs.remove(ix);
+            if split::group_of(&dock.splits, id).is_some() {
+                dock.leave_split(id);
+            } else if dock.active == id {
+                let next = dock.tabs.get(ix).or_else(|| dock.tabs.last());
+                dock.active = next.map_or(0, |t| t.id);
+            }
+            // MonoCode `closeTerminalInDock` drops an emptied dock, which
+            // hides it.
+            if dock.tabs.is_empty() && docks.layout(project).open {
+                docks.set_open(project, false);
+            }
+            Some(closed)
+        });
+        let Some(closed) = closed else {
             return;
         };
-        let Some(ix) = dock.tabs.iter().position(|t| t.id == id) else {
-            return;
-        };
-        let closed = dock.tabs.remove(ix);
-        if split::group_of(&dock.splits, id).is_some() {
-            dock.leave_split(id);
-        } else if dock.active == id {
-            let next = dock.tabs.get(ix).or_else(|| dock.tabs.last());
-            dock.active = next.map_or(0, |t| t.id);
-        }
-        // MonoCode `closeTerminalInDock` drops an emptied dock, which hides it.
-        if dock.tabs.is_empty() && self.terminals.layout(project).open {
-            self.terminals.set_open(project, false);
-        }
         self.end_terminal_sessions(vec![closed.session], cx);
         self.save_settings(cx);
         cx.notify();
@@ -386,8 +411,9 @@ impl BenCodeApp {
         keep: u64,
         cx: &mut Context<Self>,
     ) {
-        if let Some(dock) = self.terminals.docks.get_mut(project) {
-            let sessions = dock
+        let sessions = self.terminals_mut(cx, |docks| {
+            let dock = docks.docks.get_mut(project)?;
+            let sessions: Vec<String> = dock
                 .tabs
                 .iter()
                 .filter(|tab| closing.contains(&tab.id))
@@ -400,6 +426,9 @@ impl BenCodeApp {
             if dock.tabs.iter().any(|tab| tab.id == keep) {
                 dock.active = keep;
             }
+            Some(sessions)
+        });
+        if let Some(sessions) = sessions {
             self.end_terminal_sessions(sessions, cx);
             self.save_settings(cx);
             cx.notify();
@@ -407,75 +436,80 @@ impl BenCodeApp {
     }
 
     /// MonoCode `reorderDockTerminals`: a tab dropped on another.
+    /// Changes the current project's dock; the dock and the footer, which
+    /// follow the model, redraw.
+    fn change_current_dock(&self, cx: &mut Context<Self>, change: impl FnOnce(&mut TerminalDock)) {
+        let project = self.current_cwd.clone();
+        self.terminals_state.update(cx, |docks, cx| {
+            if let Some(dock) = docks.docks.get_mut(&project) {
+                change(dock);
+                cx.notify();
+            }
+        });
+    }
+
     fn reorder_terminals(&mut self, from: usize, to: usize, cx: &mut Context<Self>) {
-        if let Some(dock) = self.terminals.docks.get_mut(&self.current_cwd) {
-            layout::reorder(&mut dock.tabs, from, to);
-            cx.notify();
-        }
+        self.change_current_dock(cx, |dock| layout::reorder(&mut dock.tabs, from, to));
     }
 
     fn select_terminal(&mut self, id: u64, cx: &mut Context<Self>) {
-        if let Some(dock) = self.terminals.docks.get_mut(&self.current_cwd) {
-            dock.active = id;
-            cx.notify();
-        }
+        self.change_current_dock(cx, |dock| dock.active = id);
     }
 
     /// A press inside the pane of terminal `id` makes it the active one.
     fn focus_terminal_pane(&mut self, id: u64, cx: &mut Context<Self>) {
-        if let Some(dock) = self.terminals.docks.get_mut(&self.current_cwd)
-            && dock.active != id
-        {
-            dock.active = id;
-            cx.notify();
+        let active = self
+            .terminals(cx)
+            .dock(&self.current_cwd)
+            .is_some_and(|dock| dock.active == id);
+        if !active {
+            self.change_current_dock(cx, |dock| dock.active = id);
         }
     }
 
     /// A tab dropped on the pane of terminal `target`: it docks on the
     /// hinted edge and becomes the active terminal.
     fn drop_terminal_on_pane(&mut self, dragged: u64, target: u64, cx: &mut Context<Self>) {
-        let edge = self
-            .terminals
-            .pane_drop
-            .take()
-            .filter(|(over, _)| *over == target)
-            .map(|(_, edge)| edge);
-        if let (Some(edge), Some(dock)) = (edge, self.terminals.docks.get_mut(&self.current_cwd))
-            && dragged != target
-            && dock.tabs.iter().any(|tab| tab.id == dragged)
-        {
-            split::dock(&mut dock.splits, target, dragged, edge);
-            dock.active = dragged;
-        }
+        let project = self.current_cwd.clone();
+        self.terminals_mut(cx, |docks| {
+            let edge = docks
+                .pane_drop
+                .take()
+                .filter(|(over, _)| *over == target)
+                .map(|(_, edge)| edge);
+            if let (Some(edge), Some(dock)) = (edge, docks.docks.get_mut(&project))
+                && dragged != target
+                && dock.tabs.iter().any(|tab| tab.id == dragged)
+            {
+                split::dock(&mut dock.splits, target, dragged, edge);
+                dock.active = dragged;
+            }
+        });
         cx.notify();
     }
 
     /// A split pane's Close: the terminal leaves the split and keeps its tab.
     fn close_terminal_pane(&mut self, id: u64, cx: &mut Context<Self>) {
-        if let Some(dock) = self.terminals.docks.get_mut(&self.current_cwd) {
-            dock.leave_split(id);
-            cx.notify();
-        }
+        self.change_current_dock(cx, |dock| dock.leave_split(id));
     }
 
     fn resize_terminal_split(&mut self, split_id: &str, shares: &[f32], cx: &mut Context<Self>) {
-        if let Some(dock) = self.terminals.docks.get_mut(&self.current_cwd) {
+        self.change_current_dock(cx, |dock| {
             // Split ids are unique: only the tree that has it changes.
             for tree in &mut dock.splits {
                 *tree = set_split_sizes(tree, split_id, shares);
             }
-            cx.notify();
-        }
+        });
     }
 
     /// MonoCode `onProjectTerminalSide`: moves the current project's dock.
     fn set_dock_side(&mut self, side: DockSide, cx: &mut Context<Self>) {
         let project = self.current_cwd.clone();
         let layout = self
-            .terminals
+            .terminals(cx)
             .layout(&project)
-            .with_side(side, self.terminals.viewport);
-        self.terminals.set_layout(&project, layout);
+            .with_side(side, self.terminals(cx).viewport);
+        self.terminals_state.as_mut(cx).set_layout(&project, layout);
         self.save_settings(cx);
         cx.notify();
     }
@@ -494,12 +528,26 @@ impl BenCodeApp {
             .min_h_0()
             .overflow_hidden()
             .child(self.render_workspace_split(cx));
-        let layout = self.terminals.layout(&self.current_cwd);
+        let layout = self.terminals(cx).layout(&self.current_cwd);
         if !layout.open {
             return main.into_any_element();
         }
-        self.terminals.viewport = window_size(window);
-        let dock = self.render_terminal_dock(layout, self.terminals.viewport, cx);
+        let viewport = window_size(window);
+        self.terminals_mut(cx, |docks| docks.viewport = viewport);
+        // The dock's box, as `render_terminal_dock` sizes itself: a cached
+        // region is laid out from its style.
+        let size = px(layout::clamp_size(
+            layout.side,
+            layout.size,
+            self.terminals(cx).viewport,
+        ));
+        let style = StyleRefinement::default().flex_none().min_w_0().min_h_0();
+        let style = if layout.side.is_vertical() {
+            style.w_full().h(size)
+        } else {
+            style.h_full().w(size)
+        };
+        let dock = self.regions.element(Region::Terminal, style, cx);
         let frame = div().flex().flex_1().min_w_0().min_h_0().overflow_hidden();
         match layout.side {
             DockSide::Bottom => frame.flex_col().child(main).child(dock),
@@ -510,6 +558,13 @@ impl BenCodeApp {
         .into_any_element()
     }
 
+    /// The dock as its region draws it, at the size the shell gave it.
+    pub(crate) fn render_terminal_region(&mut self, cx: &mut Context<Self>) -> AnyElement {
+        let layout = self.terminals(cx).layout(&self.current_cwd);
+        self.render_terminal_dock(layout, self.terminals(cx).viewport, cx)
+            .into_any_element()
+    }
+
     fn render_terminal_dock(
         &mut self,
         layout: DockLayout,
@@ -518,19 +573,19 @@ impl BenCodeApp {
     ) -> impl IntoElement + use<> {
         // A drag let go anywhere but on a pane leaves its hint behind.
         if !cx.has_active_drag() {
-            self.terminals.pane_drop = None;
+            self.terminals_mut(cx, |docks| docks.pane_drop = None);
         }
-        let (split, active) = self
-            .terminals
-            .dock(&self.current_cwd)
-            .map_or((None, None), |dock| {
-                let active = dock
-                    .tabs
-                    .iter()
-                    .any(|t| t.id == dock.active)
-                    .then_some(dock.active);
-                (split::group_of(&dock.splits, dock.active).cloned(), active)
-            });
+        let (split, active) =
+            self.terminals(cx)
+                .dock(&self.current_cwd)
+                .map_or((None, None), |dock| {
+                    let active = dock
+                        .tabs
+                        .iter()
+                        .any(|t| t.id == dock.active)
+                        .then_some(dock.active);
+                    (split::group_of(&dock.splits, dock.active).cloned(), active)
+                });
         let body = match (split, active) {
             (Some(tree), _) => self.render_terminal_split(&tree, cx),
             (None, Some(id)) => self.render_terminal_pane(id, false, cx),
@@ -565,11 +620,11 @@ impl BenCodeApp {
             .bg(glass.fill(colors.bg))
             .on_drag_move::<TerminalResize>(cx.listener(
                 |this, event: &gpui::DragMoveEvent<TerminalResize>, window, cx| {
-                    let Some((start, start_size)) = this.terminals.resize_from else {
+                    let Some((start, start_size)) = this.terminals(cx).resize_from else {
                         return;
                     };
                     let project = this.current_cwd.clone();
-                    let layout = this.terminals.layout(&project);
+                    let layout = this.terminals(cx).layout(&project);
                     let point = if layout.side.is_vertical() {
                         event.event.position.y
                     } else {
@@ -581,9 +636,9 @@ impl BenCodeApp {
                         crate::ui::scale::logical(point),
                         window_size(window),
                     );
-                    if next != layout || !this.terminals.resizing {
-                        this.terminals.set_layout(&project, next);
-                        this.terminals.resizing = true;
+                    if next != layout || !this.terminals(cx).resizing {
+                        this.terminals_state.as_mut(cx).set_layout(&project, next);
+                        this.terminals_state.as_mut(cx).resizing = true;
                         cx.notify();
                     }
                 },
@@ -650,7 +705,7 @@ impl BenCodeApp {
     /// A dragged tab docks on the edge of it the pointer is nearest.
     fn render_terminal_pane(&self, id: u64, in_split: bool, cx: &Context<Self>) -> AnyElement {
         let colors = &cx.theme().colors;
-        let Some((ix, tab, active)) = self.terminals.dock(&self.current_cwd).and_then(|dock| {
+        let Some((ix, tab, active)) = self.terminals(cx).dock(&self.current_cwd).and_then(|dock| {
             let ix = dock.tabs.iter().position(|tab| tab.id == id)?;
             Some((ix, &dock.tabs[ix], dock.active == id))
         }) else {
@@ -658,7 +713,7 @@ impl BenCodeApp {
         };
         let exited = tab.entity.read(cx).exit_status();
         let drop_hint = self
-            .terminals
+            .terminals(cx)
             .pane_drop
             .filter(|(over, _)| *over == id)
             .map(|(_, edge)| edge);
@@ -691,12 +746,15 @@ impl BenCodeApp {
                         );
                         (id, edge)
                     });
-                    let mine = this.terminals.pane_drop.is_some_and(|(over, _)| over == id);
-                    if hint.is_some() && this.terminals.pane_drop != hint {
-                        this.terminals.pane_drop = hint;
+                    let mine = this
+                        .terminals(cx)
+                        .pane_drop
+                        .is_some_and(|(over, _)| over == id);
+                    if hint.is_some() && this.terminals(cx).pane_drop != hint {
+                        this.terminals_state.as_mut(cx).pane_drop = hint;
                         cx.notify();
                     } else if hint.is_none() && mine {
-                        this.terminals.pane_drop = None;
+                        this.terminals_state.as_mut(cx).pane_drop = None;
                         cx.notify();
                     }
                 },
@@ -805,11 +863,11 @@ impl BenCodeApp {
     /// when the drag ends.
     fn render_terminal_sash(&self, side: DockSide, cx: &Context<Self>) -> impl IntoElement + use<> {
         let fg = cx.theme().colors.fg;
-        let dragging = self.terminals.resizing;
+        let dragging = self.terminals(cx).resizing;
         let end_drag =
             |this: &mut Self, _: &gpui::MouseUpEvent, _: &mut Window, cx: &mut Context<Self>| {
-                this.terminals.resize_from = None;
-                if std::mem::take(&mut this.terminals.resizing) {
+                this.terminals_state.as_mut(cx).resize_from = None;
+                if std::mem::take(&mut this.terminals_state.as_mut(cx).resizing) {
                     this.save_settings(cx);
                     cx.notify();
                 }
@@ -851,14 +909,14 @@ impl BenCodeApp {
                 gpui::MouseButton::Left,
                 cx.listener(|this, event: &gpui::MouseDownEvent, _, cx| {
                     let project = this.current_cwd.clone();
-                    let layout = this.terminals.layout(&project);
+                    let layout = this.terminals(cx).layout(&project);
                     if event.click_count >= 2 {
                         let reset = DockLayout {
                             size: layout.side.default_size(),
                             ..layout
                         };
-                        this.terminals.set_layout(&project, reset);
-                        this.terminals.resize_from = None;
+                        this.terminals_state.as_mut(cx).set_layout(&project, reset);
+                        this.terminals_state.as_mut(cx).resize_from = None;
                         this.save_settings(cx);
                         cx.notify();
                         return;
@@ -868,7 +926,7 @@ impl BenCodeApp {
                     } else {
                         event.position.x
                     };
-                    this.terminals.resize_from =
+                    this.terminals_state.as_mut(cx).resize_from =
                         Some((crate::ui::scale::logical(point), layout.size));
                 }),
             )
@@ -881,7 +939,7 @@ impl BenCodeApp {
         let colors = &cx.theme().colors;
         let fg = colors.fg;
         let tabs = self
-            .terminals
+            .terminals(cx)
             .dock(&self.current_cwd)
             .map(|dock| {
                 dock.tabs
@@ -895,7 +953,7 @@ impl BenCodeApp {
             })
             .unwrap_or_default();
         let menu_open = self
-            .terminals
+            .terminals(cx)
             .menu
             .as_ref()
             .is_some_and(|menu| menu.is_side());

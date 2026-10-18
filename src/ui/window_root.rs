@@ -1,14 +1,12 @@
-//! The window's root: the app, cached, between the composer runner's layer
+//! The window's root: the app's shell between the composer runner's layer
 //! and the process readout's.
-//! The runner redraws every frame of a turn; caching keeps those frames
-//! from re-rendering the whole app, which redraws only when it notifies
-//! (or a view it draws does). An entity it only reads is not enough: the
-//! app observes it and notifies (`transcript_selection`).
+//! The runner redraws every frame of a turn; the app's regions are cached
+//! (`ui/region.rs`), so those frames re-render only the shell. A region
+//! redraws when the app notifies, when asked alone, or when a view it
+//! draws notifies. An entity it only reads is not enough: the app
+//! observes it and notifies (`transcript_selection`).
 
-use gpui::{
-    AppContext, Context, Entity, IntoElement, ParentElement, Render, StyleRefinement, Styled,
-    Window, div,
-};
+use gpui::{AppContext, Context, Entity, IntoElement, ParentElement, Render, Styled, Window, div};
 
 use crate::app::BenCodeApp;
 use crate::launch::LaunchData;
@@ -60,11 +58,11 @@ impl Render for WindowRoot {
             .flex()
             .flex_col()
             .child(self.runner.clone())
-            .child(
-                self.app
-                    .clone()
-                    .cached(StyleRefinement::default().size_full()),
-            )
+            // Not cached: the app's own render is the shell (layout,
+            // overlays, dialogs), and its parts are cached regions
+            // (`ui/region.rs`). A cached app would re-render every region
+            // whenever one of them redraws, being their ancestor.
+            .child(self.app.clone())
             // After the app: it lays its readout out over the footer slot
             // the app has just measured, and paints above it.
             .child(self.process.clone())

@@ -208,6 +208,23 @@ fn joined<T: Default>(handle: ScopedJoinHandle<'_, T>, what: &str) -> T {
 }
 
 impl BenCodeApp {
+    /// The open folder's snapshot (a model: `workspace_state`).
+    pub fn workspace<'a>(&self, cx: &'a gpui::App) -> &'a WorkspaceCache {
+        self.workspace_state.read(cx)
+    }
+
+    /// Changes the snapshot; the caller redraws (the app's notify, or the
+    /// model's, which the regions showing git state follow).
+    pub fn workspace_mut<R>(
+        &self,
+        cx: &mut gpui::App,
+        change: impl FnOnce(&mut WorkspaceCache) -> R,
+    ) -> R {
+        self.workspace_state.update(cx, |cache, _| change(cache))
+    }
+}
+
+impl BenCodeApp {
     /// The directory the workspace views describe: the focused worktree cwd,
     /// or the open thread's cwd, falling back to the current project directory.
     pub fn workspace_cwd(&self) -> String {
@@ -235,7 +252,7 @@ impl BenCodeApp {
     fn refresh_workspace_scoped(&mut self, mut scope: RefreshScope, cx: &mut Context<Self>) {
         self.refresh_skills(false, cx);
         let cwd = self.workspace_cwd();
-        if self.workspace.cwd != cwd {
+        if self.workspace(cx).cwd != cwd {
             self.show_cached_snapshot(&cwd, cx);
             scope = RefreshScope::FULL;
         }
@@ -246,12 +263,14 @@ impl BenCodeApp {
         }
         // Without a snapshot that knows its refs, everything is read.
         let reuse = (!scope.refs)
-            .then(|| self.workspace.snapshots.get(&cwd))
+            .then(|| self.workspace(cx).snapshots.get(&cwd))
             .flatten()
             .and_then(|last| Some((last.refs.clone(), last.fingerprint?.refs)));
         let refs_reloaded = reuse.is_none();
-        self.workspace.generation += 1;
-        let generation = self.workspace.generation;
+        let generation = self.workspace_mut(cx, |cache| {
+            cache.generation += 1;
+            cache.generation
+        });
         let load_cwd = cwd.clone();
         let task = cx
             .background_executor()
@@ -260,20 +279,22 @@ impl BenCodeApp {
         cx.spawn(async move |this, cx| {
             let snapshot = task.await;
             let landed = this.update(cx, |app, cx| {
-                if app.workspace.generation != generation {
+                if app.workspace(cx).generation != generation {
                     return; // a newer refresh superseded this one
                 }
-                app.workspace.loaded_generation = generation;
-                app.workspace
-                    .snapshots
-                    .insert(cwd.clone(), snapshot.clone());
+                app.workspace_mut(cx, |cache| {
+                    cache.loaded_generation = generation;
+                    cache.snapshots.insert(cwd.clone(), snapshot.clone());
+                });
                 app.apply_snapshot(cwd.clone(), snapshot, refs_reloaded, cx);
-                app.follow_agent_checkout(&cwd);
+                app.follow_agent_checkout(&cwd, cx);
                 app.reload_working_tree_docs(&cwd, cx);
                 app.reload_session_reviews(&cwd, cx);
                 app.refresh_file_tree(cx);
                 app.recheck_open_files_on_disk(cx);
-                cx.notify();
+                // No app notify: `apply_snapshot` notified the snapshot's
+                // model, which the regions showing git state follow; the
+                // terminal dock and the footer show none.
                 crate::startup_trace::landed(
                     crate::startup_trace::WORKSPACE,
                     "workspace snapshot landed",
@@ -290,9 +311,10 @@ impl BenCodeApp {
     /// Moving to another directory: its last snapshot if there is one,
     /// otherwise an empty workspace, never the previous directory's data.
     fn show_cached_snapshot(&mut self, cwd: &str, cx: &mut Context<Self>) {
-        let cache = &mut self.workspace;
-        cache.git_error = None;
-        let snapshot = cache.snapshots.get(cwd).cloned().unwrap_or_default();
+        let snapshot = self.workspace_mut(cx, |cache| {
+            cache.git_error = None;
+            cache.snapshots.get(cwd).cloned().unwrap_or_default()
+        });
         self.apply_snapshot(cwd.to_string(), snapshot, true, cx);
         cx.notify();
     }
@@ -309,19 +331,24 @@ impl BenCodeApp {
         self.git_status = snapshot.status;
         self.follow_checkout_branch(&cwd);
         self.file_tree.invalidate_tints();
-        let cache = &mut self.workspace;
-        cache.cwd = cwd;
-        cache.fingerprint = snapshot.fingerprint;
-        cache.changes = snapshot.changes;
-        if refs_changed {
-            let refs = snapshot.refs;
-            self.git_sync = refs.sync;
-            self.git_history = refs.history;
+        let refs = refs_changed.then_some(snapshot.refs);
+        if let Some(refs) = &refs {
+            self.git_sync = refs.sync.clone();
+            self.git_history = refs.history.clone();
             self.changes_ui.invalidate_graph();
-            cache.branches = refs.branches;
-            cache.worktrees = refs.worktrees;
-            cache.repo = refs.repo;
         }
+        // The regions showing git state follow the snapshot.
+        self.workspace_state.update(cx, |cache, cx| {
+            cache.cwd = cwd;
+            cache.fingerprint = snapshot.fingerprint;
+            cache.changes = snapshot.changes;
+            if let Some(refs) = refs {
+                cache.branches = refs.branches;
+                cache.worktrees = refs.worktrees;
+                cache.repo = refs.repo;
+            }
+            cx.notify();
+        });
         self.refresh_branch_pr(cx);
     }
 
@@ -333,8 +360,9 @@ impl BenCodeApp {
                 cx.background_executor().timer(GIT_POLL_INTERVAL).await;
                 // Three git commands a tick: none while nobody can see the
                 // result. The next tick after the window shows catches up.
-                let Ok(cwd) = this.update(cx, |app, _| {
-                    (!app.workspace.hidden).then(|| app.workspace.cwd.clone())
+                let Ok(cwd) = this.update(cx, |app, cx| {
+                    let cache = app.workspace(cx);
+                    (!cache.hidden).then(|| cache.cwd.clone())
                 }) else {
                     return; // app dropped
                 };
@@ -347,14 +375,15 @@ impl BenCodeApp {
                     .spawn(async move { git::state_fingerprint(&probe) })
                     .await;
                 let changed = this.update(cx, |app, cx| {
-                    let same_dir = app.workspace.cwd == cwd;
+                    let same_dir = app.workspace(cx).cwd == cwd;
                     // A load in flight already reads the newer state;
                     // restarting it would keep a slow repo from landing.
-                    let settled = app.workspace.loaded_generation == app.workspace.generation;
+                    let settled =
+                        app.workspace(cx).loaded_generation == app.workspace(cx).generation;
                     if same_dir
                         && settled
                         && let Some(new) = fingerprint
-                        && let Some(scope) = scope_for(app.workspace.fingerprint, new)
+                        && let Some(scope) = scope_for(app.workspace(cx).fingerprint, new)
                     {
                         app.refresh_workspace_scoped(scope, cx);
                     }
@@ -374,7 +403,7 @@ impl BenCodeApp {
             loop {
                 cx.background_executor().timer(AUTO_FETCH_TICK).await;
                 let fetched = this.update(cx, |app, cx| {
-                    if !app.workspace.hidden {
+                    if !app.workspace(cx).hidden {
                         app.auto_fetch(AUTO_FETCH_INTERVAL, cx);
                     }
                 });
@@ -394,9 +423,9 @@ impl BenCodeApp {
     /// Fetches the open directory when its last fetch is older than
     /// `min_age`, then reloads the snapshot if a remote ref moved.
     fn auto_fetch(&mut self, min_age: Duration, cx: &mut Context<Self>) {
-        let cwd = self.workspace.cwd.clone();
+        let cwd = self.workspace(cx).cwd.clone();
         let fresh = self
-            .workspace
+            .workspace(cx)
             .fetched_at
             .get(&cwd)
             .is_some_and(|at| at.elapsed() < min_age);
@@ -404,15 +433,16 @@ impl BenCodeApp {
         // remote, and two fetches would fight over the ref locks.
         if cwd.is_empty()
             || fresh
-            || self.workspace.fetching
+            || self.workspace(cx).fetching
             || self.git_sync.remote.is_none()
             || self.changes_ui.busy.is_some()
         {
             return;
         }
-        self.workspace.fetching = true;
+        self.workspace_state.as_mut(cx).fetching = true;
         // Stamped before it runs, so a failing remote waits a full period too.
-        self.workspace
+        self.workspace_state
+            .as_mut(cx)
             .fetched_at
             .insert(cwd.clone(), Instant::now());
         let fetch_cwd = cwd.clone();
@@ -422,9 +452,9 @@ impl BenCodeApp {
         cx.spawn(async move |this, cx| {
             let result = task.await;
             let landed = this.update(cx, |app, cx| {
-                app.workspace.fetching = false;
+                app.workspace_state.as_mut(cx).fetching = false;
                 match result {
-                    Ok(true) if app.workspace.cwd == cwd => app.refresh_workspace(cx),
+                    Ok(true) if app.workspace(cx).cwd == cwd => app.refresh_workspace(cx),
                     Ok(_) => {}
                     // Offline or signed out: expected, and nothing to show.
                     Err(err) => log::info!("auto-fetch in {cwd} failed: {err}"),
@@ -461,8 +491,8 @@ impl BenCodeApp {
 
     /// A thread whose agent is running, or whose turn just ended, shows the
     /// branch its checkout is on now: the agent may have switched it.
-    fn follow_agent_checkout(&mut self, cwd: &str) {
-        let ended = std::mem::take(&mut self.workspace.turn_ended);
+    fn follow_agent_checkout(&mut self, cwd: &str, cx: &mut gpui::App) {
+        let ended = self.workspace_mut(cx, |cache| std::mem::take(&mut cache.turn_ended));
         let branch = Some(self.git_status.branch.clone()).filter(|b| !b.is_empty());
         if branch.is_none() {
             return;
@@ -485,10 +515,14 @@ impl BenCodeApp {
 
     /// The branch the composer shows for `session`: the one its checkout is
     /// on when that checkout is the one loaded, as the chip acts on it.
-    pub fn composer_branch(&self, session: Option<&crate::db::SessionRow>) -> Option<String> {
+    pub fn composer_branch(
+        &self,
+        session: Option<&crate::db::SessionRow>,
+        cx: &gpui::App,
+    ) -> Option<String> {
         let live = Some(self.git_status.branch.clone()).filter(|b| !b.is_empty());
         match session {
-            Some(s) if !crate::app::same_project_path(s.work_dir(), &self.workspace.cwd) => {
+            Some(s) if !crate::app::same_project_path(s.work_dir(), &self.workspace(cx).cwd) => {
                 s.branch.clone().or(live)
             }
             Some(s) => live.or_else(|| s.branch.clone()),
@@ -498,7 +532,7 @@ impl BenCodeApp {
 
     /// Refreshes only if the active thread points at a different directory.
     pub fn refresh_workspace_if_moved(&mut self, cx: &mut Context<Self>) {
-        if self.workspace.cwd != self.workspace_cwd() {
+        if self.workspace(cx).cwd != self.workspace_cwd() {
             self.refresh_workspace(cx);
         }
     }
@@ -529,7 +563,7 @@ impl BenCodeApp {
             let updated = this.update(cx, |app, cx| {
                 match result {
                     Ok(name) => {
-                        app.workspace.git_error = None;
+                        app.workspace_state.as_mut(cx).git_error = None;
                         if let Some(session) = app.selected_session_mut() {
                             session.branch = Some(name);
                         }
@@ -544,7 +578,7 @@ impl BenCodeApp {
                         log::error!("branch switch failed: {err:#}");
                         // Shown in the popover when the switch came from it.
                         if !app.finish_branch_switch(Some(format!("{err:#}")), cx) {
-                            app.workspace.git_error =
+                            app.workspace_state.as_mut(cx).git_error =
                                 Some(crate::ui::git_changes_panel::GitError::new(
                                     "Couldn't switch branch",
                                     format!("{err:#}"),

@@ -99,8 +99,8 @@ pub(super) fn exited_line(code: Option<i32>) -> String {
 
 impl BenCodeApp {
     /// MonoCode `listRunningTerminals` for the current project's dock.
-    pub fn running_terminals(&self) -> Vec<RunningTerminal> {
-        let Some(dock) = self.terminals.dock(&self.current_cwd) else {
+    pub fn running_terminals(&self, cx: &gpui::App) -> Vec<RunningTerminal> {
+        let Some(dock) = self.terminals(cx).dock(&self.current_cwd) else {
             return Vec::new();
         };
         dock.tabs
@@ -119,13 +119,13 @@ impl BenCodeApp {
     /// Reads every live terminal's shell each `POLL_EVERY` until none is
     /// left; started by each new terminal.
     pub(super) fn start_terminal_poll(&mut self, cx: &mut Context<Self>) {
-        if std::mem::replace(&mut self.terminals.polling, true) {
+        if self.terminals_mut(cx, |docks| std::mem::replace(&mut docks.polling, true)) {
             return;
         }
         cx.spawn(async move |this, cx| {
             loop {
                 cx.background_executor().timer(POLL_EVERY).await;
-                let jobs = this.update(cx, |this, _| this.terminal_probe_jobs());
+                let jobs = this.update(cx, |this, cx| this.terminal_probe_jobs(cx));
                 let jobs = match jobs {
                     Ok(Some(jobs)) => jobs,
                     Ok(None) => return,
@@ -155,64 +155,83 @@ impl BenCodeApp {
     }
 
     /// What the next poll reads; `None` stops it, no shell being left.
-    fn terminal_probe_jobs(&mut self) -> Option<Vec<(u64, u32, Option<u32>, Option<Foreground>)>> {
+    fn terminal_probe_jobs(
+        &mut self,
+        cx: &mut gpui::App,
+    ) -> Option<Vec<(u64, u32, Option<u32>, Option<Foreground>)>> {
         let jobs: Vec<_> = self
-            .terminals
+            .terminals(cx)
             .docks
             .values()
             .flat_map(|dock| &dock.tabs)
             .filter_map(|tab| Some((tab.id, tab.process?, tab.shell, tab.foreground.clone())))
             .collect();
         if jobs.is_empty() {
-            self.terminals.polling = false;
+            self.terminals_mut(cx, |docks| docks.polling = false);
             return None;
         }
         Some(jobs)
     }
 
     fn apply_terminal_probes(&mut self, probes: Vec<(u64, Probe)>, cx: &mut Context<Self>) {
-        let mut changed = false;
-        for (id, probe) in probes {
-            let Some(tab) = self
-                .terminals
-                .docks
-                .values_mut()
-                .flat_map(|dock| &mut dock.tabs)
-                .find(|tab| tab.id == id)
-            else {
-                continue;
-            };
-            // The shell ended while this was read.
-            if tab.process.is_none() {
-                continue;
+        let changed = self.terminals_mut(cx, |docks| {
+            let mut changed = false;
+            for (id, probe) in probes {
+                let Some(tab) = docks
+                    .docks
+                    .values_mut()
+                    .flat_map(|dock| &mut dock.tabs)
+                    .find(|tab| tab.id == id)
+                else {
+                    continue;
+                };
+                // The shell ended while this was read.
+                if tab.process.is_none() {
+                    continue;
+                }
+                let dir = probe.cwd.or_else(|| tab.dir.clone());
+                if tab.shell != probe.shell || tab.foreground != probe.foreground || tab.dir != dir
+                {
+                    tab.shell = probe.shell;
+                    tab.foreground = probe.foreground;
+                    tab.dir = dir;
+                    changed = true;
+                }
             }
-            let dir = probe.cwd.or_else(|| tab.dir.clone());
-            if tab.shell != probe.shell || tab.foreground != probe.foreground || tab.dir != dir {
-                tab.shell = probe.shell;
-                tab.foreground = probe.foreground;
-                tab.dir = dir;
-                changed = true;
-            }
-        }
-        // The footer's live mark steps with each read while it shows.
-        let live_mark = !cx.reduce_motion() && !self.running_terminals().is_empty();
-        if changed || live_mark {
-            cx.notify();
+            changed
+        });
+        // The footer's live mark steps with each read while it shows: that
+        // step redraws the footer alone.
+        let live_mark = !cx.reduce_motion() && !self.running_terminals(cx).is_empty();
+        if changed {
+            // A tab's job and folder show in the dock and the footer's chip
+            // alone (the close confirmations are the shell's, drawn with
+            // any region).
+            self.redraw_regions(
+                &[
+                    crate::ui::region::Region::Terminal,
+                    crate::ui::region::Region::Footer,
+                ],
+                cx,
+            );
+        } else if live_mark {
+            self.redraw_regions(&[crate::ui::region::Region::Footer], cx);
         }
     }
 
     /// The shell of `id` ended: its tab stays with MonoCode's exit line.
     pub(super) fn terminal_exited(&mut self, project: &str, id: u64, cx: &mut Context<Self>) {
-        if let Some(tab) = self
-            .terminals
-            .docks
-            .get_mut(project)
-            .and_then(|dock| dock.tabs.iter_mut().find(|tab| tab.id == id))
-        {
-            tab.process = None;
-            tab.shell = None;
-            tab.foreground = None;
-        }
+        self.terminals_mut(cx, |docks| {
+            if let Some(tab) = docks
+                .docks
+                .get_mut(project)
+                .and_then(|dock| dock.tabs.iter_mut().find(|tab| tab.id == id))
+            {
+                tab.process = None;
+                tab.shell = None;
+                tab.foreground = None;
+            }
+        });
         cx.notify();
     }
 
@@ -230,7 +249,7 @@ impl BenCodeApp {
             return;
         }
         let running: Vec<RunningTerminal> = self
-            .terminals
+            .terminals(cx)
             .dock(project)
             .map(|dock| {
                 dock.tabs
@@ -252,7 +271,7 @@ impl BenCodeApp {
             self.finish_close_terminals(project, &ids, keep, cx);
             return;
         }
-        self.terminals.close_confirm = Some(CloseConfirm {
+        self.terminals_state.as_mut(cx).close_confirm = Some(CloseConfirm {
             project: project.to_string(),
             message: close_message(&running),
             ids,
@@ -281,31 +300,35 @@ impl BenCodeApp {
     /// MonoCode `onToggleRunningTerminal`: hides the dock when it shows,
     /// else shows it on terminal `id` with the keyboard.
     pub(crate) fn toggle_running_terminal(&mut self, id: u64, cx: &mut Context<Self>) {
-        if self.is_terminal_open() {
+        if self.is_terminal_open(cx) {
             self.set_terminal_open(false, cx);
             self.refocus_prompt(cx);
             return;
         }
-        let Some(dock) = self.terminals.docks.get_mut(&self.current_cwd) else {
+        let project = self.current_cwd.clone();
+        let entity = self.terminals_mut(cx, |docks| {
+            let dock = docks.docks.get_mut(&project)?;
+            let entity = dock.tabs.iter().find(|tab| tab.id == id)?.entity.clone();
+            dock.active = id;
+            Some(entity)
+        });
+        let Some(entity) = entity else {
             return;
         };
-        let Some(tab) = dock.tabs.iter().find(|tab| tab.id == id) else {
-            return;
-        };
-        let focus = gpui::Focusable::focus_handle(tab.entity.read(cx), cx);
-        dock.active = id;
+        let focus = gpui::Focusable::focus_handle(entity.read(cx), cx);
         self.set_terminal_open(true, cx);
         crate::ui::composer::focus_later(focus, cx);
     }
 
     pub(crate) fn render_terminal_close_confirm(&self, cx: &Context<Self>) -> Option<AnyElement> {
-        let confirm = self.terminals.close_confirm.as_ref()?;
+        let confirm = self.terminals(cx).close_confirm.as_ref()?;
         let cancel = app_callback(cx, |this, cx| {
-            this.terminals.close_confirm = None;
+            this.terminals_state.as_mut(cx).close_confirm = None;
             cx.notify();
         });
         let close = app_callback(cx, |this, cx| {
-            if let Some(confirm) = this.terminals.close_confirm.take() {
+            let confirm = this.terminals_mut(cx, |docks| docks.close_confirm.take());
+            if let Some(confirm) = confirm {
                 this.finish_close_terminals(&confirm.project, &confirm.ids, confirm.keep, cx);
             }
             cx.notify();

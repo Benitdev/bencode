@@ -321,7 +321,8 @@ impl BenCodeApp {
         let target = self.usage_target().filter(|target| {
             target.provider != RateLimitProvider::OpenCode
                 || self
-                    .usage
+                    .usage_data
+                    .read(cx)
                     .limits(target.provider, &target.account_id)
                     .status
                     != crate::rate_limits::RateLimitStatus::Unavailable

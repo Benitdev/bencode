@@ -404,8 +404,8 @@ impl BenCodeApp {
 
     /// MonoCode `useInboxUnseen`: at most one cue per poll, for the first
     /// changed item whose project is not muted.
-    pub fn announce_inbox_changes(&mut self, failed: bool) {
-        let items = std::mem::take(&mut self.inbox.items);
+    pub fn announce_inbox_changes(&mut self, failed: bool, cx: &mut gpui::App) {
+        let items = self.inbox_mut(cx, |inbox| std::mem::take(&mut inbox.items));
         let changed = self.alerts.inbox.observe(&items, failed);
         for item in changed {
             let category = match item.kind {
@@ -417,7 +417,7 @@ impl BenCodeApp {
                 break;
             }
         }
-        self.inbox.items = items;
+        self.inbox_mut(cx, |inbox| inbox.items = items);
     }
 
     /// Settings › General › "Sounds".

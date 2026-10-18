@@ -1212,7 +1212,7 @@ impl BenCodeApp {
             .to_string();
         // Stage and Discard act on the open workspace's tree only.
         let live =
-            self.file_pane.get(key).and_then(PaneTab::cwd) == Some(self.workspace.cwd.as_str());
+            self.file_pane.get(key).and_then(PaneTab::cwd) == Some(self.workspace(cx).cwd.as_str());
         let unstaged = live && file.side == Some(Side::Unstaged);
         let busy_here = matches!(&self.changes_ui.busy, Some(Busy::File(p)) if *p == file.path);
         let prefix = if pinned { "diff-pinned" } else { "diff" };

@@ -1064,12 +1064,12 @@ impl BenCodeApp {
             && !plan.new_worktree
         {
             let known = self
-                .workspace
+                .workspace(cx)
                 .worktrees
                 .iter()
                 .any(|tree| crate::app::same_project_path(&tree.path, path) && !tree.missing)
                 || crate::app::same_project_path(path, &plan.cwd);
-            if !known && crate::app::same_project_path(&self.workspace.cwd, &plan.cwd) {
+            if !known && crate::app::same_project_path(&self.workspace(cx).cwd, &plan.cwd) {
                 return call.fail(
                     "Worktree is unavailable in this project; run worktrees.list",
                     true,

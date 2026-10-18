@@ -150,7 +150,7 @@ impl BenCodeApp {
                 compact_action(id, icon, label, self.surface_open(surface), dot, cx)
                     .on_click(cx.listener(move |this, _, _, cx| this.toggle_surface(surface, cx)))
             };
-        let unseen = self.inbox_has_unseen();
+        let unseen = self.inbox_has_unseen(cx);
         div()
             .id("compact-project-rail")
             .flex()

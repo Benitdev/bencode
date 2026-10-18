@@ -144,19 +144,19 @@ fn capitalize(text: &str) -> String {
 
 impl BenCodeApp {
     pub fn render_git_error(&self, cx: &Context<Self>) -> Option<AnyElement> {
-        let error = self.workspace.git_error.as_ref()?;
+        let error = self.workspace(cx).git_error.as_ref()?;
         let reading = read(&error.output);
         let theme = cx.theme();
         let colors = &theme.colors;
         let long = reading.rest.len() > MAX_REST;
         let close = app_callback(cx, |this, cx| {
-            this.workspace.git_error = None;
+            this.workspace_state.as_mut(cx).git_error = None;
             cx.notify();
         });
         let output = error.output.clone();
         let copy = app_callback(cx, move |this, cx| {
             cx.write_to_clipboard(gpui::ClipboardItem::new_string(output.clone()));
-            if let Some(error) = this.workspace.git_error.as_mut() {
+            if let Some(error) = this.workspace_state.as_mut(cx).git_error.as_mut() {
                 error.copied = true;
             }
             cx.notify();

@@ -152,7 +152,7 @@ impl BenCodeApp {
             if item.noun() == "PR" { "pr" } else { "issue" },
             item.number
         );
-        let listed = self.inbox.item(&key)?;
+        let listed = self.inbox(cx).item(&key)?;
         if crate::ui::inbox_view::updated_ms(listed) <= session.updated_at {
             return None;
         }
