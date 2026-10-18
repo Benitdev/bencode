@@ -331,18 +331,27 @@ impl MonoFloat {
         let sent = self.app.update(cx, |app, cx| {
             app.send_mono_message(&session_id, text.clone(), cx)
         });
-        self.input.update(cx, |input, cx| input.set_text("", cx));
-        self.own_attach = false;
-        if let Err(error) = sent {
-            let files = self.take_attachments(&session_id, cx);
-            self.failed = Some(FailedSend {
-                session_id,
-                text,
-                files,
-                error,
-            });
-        } else {
-            self.failed = None;
+        match sent {
+            // One that could not be sent waits for its Retry: this one
+            // stays in the composer, its files with it, rather than take
+            // its place.
+            Err(_) if self.failed.is_some() => {}
+            Err(error) => {
+                self.input.update(cx, |input, cx| input.set_text("", cx));
+                self.own_attach = false;
+                let files = self.take_attachments(&session_id, cx);
+                self.failed = Some(FailedSend {
+                    session_id,
+                    text,
+                    files,
+                    error,
+                });
+            }
+            // A message sent does not drop the one still waiting for Retry.
+            Ok(()) => {
+                self.input.update(cx, |input, cx| input.set_text("", cx));
+                self.own_attach = false;
+            }
         }
         self.relist(cx);
         cx.notify();

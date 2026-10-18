@@ -130,6 +130,15 @@ impl BenCodeApp {
         }
     }
 
+    /// Its files are what its turns carry: read off the UI thread once,
+    /// before the first turn, so it finds them read (`mono_turn_files`).
+    pub(crate) fn warm_mono_files(&mut self, id: &str, cx: &mut Context<Self>) {
+        let files = &self.monos.files;
+        if !files.loaded.contains_key(id) && !files.generations.contains_key(id) {
+            self.load_mono_files(id, cx);
+        }
+    }
+
     /// MonoCode `loadMonoFiles` off the UI thread (seeding `SOUL.md` the
     /// first time); the dialog's fields follow when they hold no edit.
     pub fn load_mono_files(&mut self, id: &str, cx: &mut Context<Self>) {
@@ -560,9 +569,9 @@ impl BenCodeApp {
         .detach();
     }
 
-    /// What a Mono's turn reads: its files as last read, else read now (a
-    /// queued or resumed turn, the floating chat), as skill bodies are
-    /// right before a turn starts. Small files.
+    /// What a Mono's turn reads: its files as last read (opening its chat
+    /// reads them, `ensure_mono_session`), else read now, when that read
+    /// failed or has not landed yet. Small files.
     pub(crate) fn mono_turn_files(&mut self, id: &str) -> MonoFiles {
         if let Some(files) = self.monos.files.loaded.get(id) {
             return files.clone();

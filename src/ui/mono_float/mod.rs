@@ -52,6 +52,7 @@ use crate::harness::Attachment;
 use crate::monos::{Mono, MonoState, MonoStatus};
 use crate::ui::attachment_chip::ChipFile;
 use crate::ui::composer::question::QuestionUi;
+use crate::ui::mascot::Mascot;
 use crate::ui::mascot::pixel_sprite;
 use crate::ui::rail::widgets::mascot_icon;
 use crate::ui::scale::px;
@@ -92,6 +93,40 @@ const CARD_RADIUS: f32 = 10.0;
 /// MonoCode `BUTTON`: the header's `size-7` buttons.
 const HEADER_BUTTON: f32 = 28.0;
 
+/// What the window draws of a Mono: its look and what it is doing, not its
+/// whole record (the rotation's brief, unknown fields), as [`Shown`] is
+/// rebuilt on every redraw of the app.
+#[derive(Clone)]
+struct MonoFace {
+    id: String,
+    name: String,
+    mascot: &'static Mascot,
+    color: gpui::Hsla,
+    state: MonoState,
+}
+
+impl MonoFace {
+    fn of(mono: &Mono, app: &BenCodeApp) -> Self {
+        Self {
+            id: mono.id.clone(),
+            name: mono.display_name(),
+            mascot: app.mono_mascot(mono),
+            color: app.mono_color(mono),
+            state: app.mono_state(mono),
+        }
+    }
+}
+
+impl PartialEq for MonoFace {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+            && self.name == other.name
+            && std::ptr::eq(self.mascot, other.mascot)
+            && self.color == other.color
+            && self.state == other.state
+    }
+}
+
 /// What the window draws from the app. The app redraws many times a second
 /// while any agent works (a token in any thread, a spinner's frame, its
 /// clock); this window redraws only when what it shows changed. Anything
@@ -99,7 +134,7 @@ const HEADER_BUTTON: f32 = 28.0;
 #[derive(Default, PartialEq)]
 struct Shown {
     /// The rail: every Mono and what it is doing.
-    monos: Vec<(Mono, MonoState)>,
+    monos: Vec<MonoFace>,
     /// The conversation, once the app holds it.
     session: Option<String>,
     running: bool,
@@ -585,15 +620,15 @@ impl MonoFloat {
                 background: app.background_tasks_for(&s.id).len(),
             }
         });
-        let monos: Vec<(Mono, MonoState)> = app
+        let monos: Vec<MonoFace> = app
             .settings
             .monos
             .iter()
-            .map(|mono| (mono.clone(), app.mono_state(mono)))
+            .map(|mono| MonoFace::of(mono, app))
             .collect();
         let working = monos
             .iter()
-            .any(|(_, state)| state.status == MonoStatus::Working);
+            .any(|face| face.state.status == MonoStatus::Working);
         Shown {
             running,
             start,
@@ -879,7 +914,6 @@ impl MonoFloat {
     /// mascot at `size-7`, a bar at the edge for the one shown (and a short
     /// one on hover for the others), its status dot, then +.
     fn render_rail(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let app = self.app.read(cx);
         let colors = &cx.theme().colors;
         let (fg, bg, accent) = (colors.fg, colors.bg, colors.accent);
         let pulse = spinner::pulse(cx);
@@ -897,10 +931,10 @@ impl MonoFloat {
             // `pt-[17px]`: the first mascot level with the header's.
             .pt(px(17.0))
             .pb_3();
-        for (mono, state) in &self.shown.monos {
+        for mono in &self.shown.monos {
             let selected = mono.id == self.mono_id;
-            let color = app.mono_color(mono);
-            let (dot, dot_alpha) = match state.status {
+            let color = mono.color;
+            let (dot, dot_alpha) = match mono.state.status {
                 MonoStatus::Working => (color, pulse),
                 MonoStatus::NeedsYou => (accent, 1.0),
                 MonoStatus::Idle => (fg.ink(Ink::Faint), 1.0),
@@ -944,16 +978,11 @@ impl MonoFloat {
                             .justify_center()
                             .rounded(px(8.0))
                             .when(!selected, |el| el.opacity(0.4).hover(|s| s.opacity(1.0)))
-                            .tooltip(Tooltip::text(mono.display_name()))
+                            .tooltip(Tooltip::text(mono.name.clone()))
                             .on_click(
                                 cx.listener(move |this, _, window, cx| this.show(&id, window, cx)),
                             )
-                            .child(pixel_sprite(
-                                &app.mono_mascot(mono).rest,
-                                px(28.0),
-                                color,
-                                false,
-                            )),
+                            .child(pixel_sprite(&mono.mascot.rest, px(28.0), color, false)),
                     )
                     .child(
                         // MonoCode `MonoStatusDot`: `top-0.5 right-2.5 size-2
@@ -978,11 +1007,7 @@ impl MonoFloat {
                     ),
             );
         }
-        let has_current = self
-            .shown
-            .monos
-            .iter()
-            .any(|(mono, _)| mono.id == self.mono_id);
+        let has_current = self.shown.monos.iter().any(|mono| mono.id == self.mono_id);
         rail.child(
             div()
                 .id("mono-float-new")
@@ -1020,17 +1045,10 @@ impl MonoFloat {
     /// py-3`: the mascot at `size-7`, moving while it works, the name over
     /// the status, then Stop (while it replies), Open in BenCode and Hide
     /// chat. Its background drags the window.
-    fn render_header(
-        &self,
-        mono: &Mono,
-        state: &MonoState,
-        loading: bool,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let app = self.app.read(cx);
+    fn render_header(&self, mono: &MonoFace, loading: bool, cx: &mut Context<Self>) -> AnyElement {
         let fg = cx.theme().colors.fg;
-        let color = app.mono_color(mono);
-        let working = state.status == MonoStatus::Working;
+        let color = mono.color;
+        let working = mono.state.status == MonoStatus::Working;
         // A turn waiting on an approval still runs, and can still be stopped.
         let busy = self.shown.running;
         self.drag_region(div(), cx)
@@ -1042,7 +1060,7 @@ impl MonoFloat {
             .py_3()
             .border_b_1()
             .border_color(fg.fill(Fill::Selected))
-            .child(mascot_icon(app.mono_mascot(mono), color, working, 28.0, cx))
+            .child(mascot_icon(mono.mascot, color, working, 28.0, cx))
             .child(
                 div()
                     .flex()
@@ -1058,9 +1076,9 @@ impl MonoFloat {
                             .line_height(px(16.0))
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_color(fg)
-                            .child(mono.display_name()),
+                            .child(mono.name.clone()),
                     )
-                    .child(mono_status(state, color, cx)),
+                    .child(mono_status(&mono.state, color, cx)),
             )
             .when(busy, |el| {
                 el.child(
@@ -1102,16 +1120,10 @@ impl MonoFloat {
 
     /// The card while there is no conversation to show: the Mono's mascot
     /// (BenCode's icon, once it is gone) over a line.
-    fn render_placeholder(&self, mono: Option<&Mono>, line: String, cx: &App) -> AnyElement {
-        let app = self.app.read(cx);
+    fn render_placeholder(&self, mono: Option<&MonoFace>, line: String, cx: &App) -> AnyElement {
         let fg = cx.theme().colors.fg;
         let mark = match mono {
-            Some(mono) => pixel_sprite(
-                &app.mono_mascot(mono).rest,
-                px(48.0),
-                app.mono_color(mono),
-                false,
-            ),
+            Some(mono) => pixel_sprite(&mono.mascot.rest, px(48.0), mono.color, false),
             // MonoCode `/monocode.png` at `size-18`.
             None => gpui::img(crate::ui::rail::APP_ICON.clone())
                 .size(px(72.0))
@@ -1160,13 +1172,12 @@ impl Render for MonoFloat {
         let dark = cx.theme().is_dark();
         // Drawn from what `refresh` took in: the items and the list are
         // already laid out for it.
-        let (mono, state) = self
+        let mono = self
             .shown
             .monos
             .iter()
-            .find(|(mono, _)| mono.id == self.mono_id)
-            .cloned()
-            .map_or((None, MonoState::IDLE), |(mono, state)| (Some(mono), state));
+            .find(|mono| mono.id == self.mono_id)
+            .cloned();
         let session_id = self.shown.session.clone();
 
         let card = div()
@@ -1204,11 +1215,11 @@ impl Render for MonoFloat {
                     .load_error
                     .clone()
                     .unwrap_or_else(|| "Loading conversation…".to_string());
-                card.child(self.render_header(mono, &state, true, cx))
+                card.child(self.render_header(mono, true, cx))
                     .child(self.render_placeholder(Some(mono), line, cx))
             }
             (Some(mono), Some(session_id)) => card
-                .child(self.render_header(mono, &state, false, cx))
+                .child(self.render_header(mono, false, cx))
                 .child(self.render_conversation(mono, session_id, window, cx)),
         };
         // MonoCode `CARD`'s spread shadow (`0 0 0 100vmax`) shades all

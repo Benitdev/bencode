@@ -28,7 +28,7 @@ use gpui::{
 use super::items::{Delivery, FloatItem, FloatRow};
 use super::ticker::TICK;
 use super::{CARD_GAP, MonoFloat, RAIL_WIDTH};
-use crate::monos::{Mono, is_emoji_only};
+use crate::monos::is_emoji_only;
 use crate::ui::attachment_chip::{ChipFile, attachment_chip};
 use crate::ui::mascot::pixel_sprite;
 use crate::ui::scale::px;
@@ -150,7 +150,7 @@ impl MonoFloat {
     /// question form or the usage-limit notice, then the composer.
     pub(super) fn render_conversation(
         &mut self,
-        mono: &Mono,
+        mono: &super::MonoFace,
         session_id: &str,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -161,7 +161,7 @@ impl MonoFloat {
                 Some(mono),
                 format!(
                     "Say hello to {}, ask a question, or hand over some work.",
-                    mono.display_name()
+                    mono.name
                 ),
                 cx,
             )

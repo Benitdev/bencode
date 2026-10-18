@@ -689,11 +689,18 @@ pub fn memory_context(memory: &str, topics: &[String], topics_dir: Option<&str>)
     format!("<memory>\n{text}{dropped}{topics}\n</memory>")
 }
 
+/// What `<while_you_were_away>` may hold of the posts themselves: a habit
+/// that ran many times while the user was away hands over its newest.
+/// BenCode's own; MonoCode hands over every post.
+const AWAY_CHARS: usize = 4_000;
+
 /// MonoCode `unseenHabitPosts` and `habitPostsContext`: what the Mono's
 /// habits posted to its chat since the user's last message, which its own
-/// session has not seen; empty when nothing was.
+/// session has not seen; empty when nothing was. The newest posts that fit
+/// `AWAY_CHARS`, with a count of the ones left out.
 pub fn habit_posts_context(blocks: &[crate::db::Block]) -> String {
     let mut posts = Vec::new();
+    let (mut used, mut left_out) = (0, 0);
     for block in blocks.iter().rev() {
         let internal = block
             .extra
@@ -718,13 +725,24 @@ pub fn habit_posts_context(blocks: &[crate::db::Block]) -> String {
             } else {
                 line
             };
-            posts.push(format!("- {} · {name}: {line}", habits::local_time(at)));
+            let post = format!("- {} · {name}: {line}", habits::local_time(at));
+            let size = post.chars().count();
+            if left_out > 0 || used + size > AWAY_CHARS {
+                left_out += 1;
+                continue;
+            }
+            used += size;
+            posts.push(post);
         }
     }
     if posts.is_empty() {
         return String::new();
     }
     posts.reverse();
+    if left_out > 0 {
+        let s = if left_out == 1 { "" } else { "s" };
+        posts.insert(0, format!("- ({left_out} earlier post{s} left out)"));
+    }
     format!(
         "<while_you_were_away>\nYour habits posted these to this chat on their own since the \
          user's last message. The user has seen them; build on them rather than repeating \
@@ -1056,6 +1074,48 @@ mod tests {
             "Reacted 👍 to your message"
         );
         assert_eq!(reply_text("Done."), "Done.");
+    }
+
+    #[test]
+    fn habit_posts_since_the_last_message_are_handed_over() {
+        use crate::db::Block;
+        let mut post = Block::new("h", "assistant", "Three PRs wait for review.");
+        post.extra.insert(
+            "monoHabit".into(),
+            serde_json::json!({"id": "hb", "name": "Morning check", "at": 1_760_443_200_000_i64}),
+        );
+        let blocks = [
+            Block::new("u0", "user", "hi"),
+            Block::new("a0", "assistant", "Hello."),
+            post.clone(),
+        ];
+        let away = habit_posts_context(&blocks);
+        assert!(away.contains("Morning check: Three PRs wait for review."));
+        // Once the user has written since, it is no longer news.
+        let answered = [post, Block::new("u1", "user", "thanks")];
+        assert_eq!(habit_posts_context(&answered), "");
+    }
+
+    #[test]
+    fn many_habit_posts_hand_over_the_newest() {
+        use crate::db::Block;
+        let posts: Vec<Block> = (0..20)
+            .map(|n| {
+                let mut post = Block::new(format!("h{n}"), "assistant", &format!("{n} {}", "x".repeat(500)));
+                post.extra.insert(
+                    "monoHabit".into(),
+                    serde_json::json!({"id": "hb", "name": "Poll", "at": 1_760_443_200_000_i64 + n}),
+                );
+                post
+            })
+            .collect();
+        let away = habit_posts_context(&posts);
+        let kept = away.lines().filter(|l| l.contains("Poll: ")).count();
+        assert!(kept > 0 && kept < 20);
+        assert!(away.contains(&format!("({} earlier posts left out)", 20 - kept)));
+        // The newest is kept, the oldest is not.
+        assert!(away.contains("Poll: 19 "));
+        assert!(!away.contains("Poll: 0 "));
     }
 
     #[test]

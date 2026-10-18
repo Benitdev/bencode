@@ -127,19 +127,24 @@ fn find(list: &[(usize, String)], ix: usize) -> Option<&str> {
 }
 
 /// Moves each reaction reply onto the user's message before it, dropping
-/// the steps between them but their notices: the reaction is the whole
-/// answer, and the work behind it would only draw an empty reply.
+/// the steps since the prompt it answers but their notices: the reaction is
+/// the whole answer, and the work behind it would only draw an empty reply.
+/// What came before an internal prompt (a report coming in) answered the
+/// message already, and stays.
 /// `streaming`: the last block is still coming in, and is held back while
 /// it may yet turn out to be a reaction.
 pub fn mono_reactions(blocks: &[Block], streaming: bool) -> Reactions {
     let mut out = Reactions::default();
-    // Where in `kept` the message a reaction lands on is.
+    // Where in `kept` the message a reaction lands on is, and the prompt
+    // it answers (that message, or an internal one after it).
     let mut target = None;
+    let mut prompt = 0;
     for (ix, block) in blocks.iter().enumerate() {
         if block.role == "user" {
             if !flag(block, "internal") {
                 target = Some(out.kept.len());
             }
+            prompt = out.kept.len();
             out.kept.push(ix);
             continue;
         }
@@ -156,7 +161,7 @@ pub fn mono_reactions(blocks: &[Block], streaming: bool) -> Reactions {
         };
         match target {
             Some(at) => {
-                let after = out.kept.split_off(at + 1);
+                let after = out.kept.split_off(prompt + 1);
                 out.kept
                     .extend(after.into_iter().filter(|&step| is_notice(&blocks[step])));
                 let message = out.kept[at];
@@ -426,8 +431,9 @@ mod tests {
             Block::new("a1", "assistant", "<reaction>🙌</reaction>"),
         ];
         let reactions = mono_reactions(&blocks, false);
-        // The internal prompt is no message: the reaction lands on "thanks".
-        assert_eq!(reactions.kept, [0, 3]);
+        // The internal prompt is no message: the reaction lands on "thanks",
+        // and only the work since that prompt goes.
+        assert_eq!(reactions.kept, [0, 1, 2, 3, 4]);
         assert_eq!(reactions.on_message, [(0, "🙌".to_string())]);
         assert!(reactions.alone.is_empty());
         // A later reaction to the same message takes its place.
@@ -437,6 +443,37 @@ mod tests {
             mono_reactions(&again, false).on_message,
             [(0, "👍".to_string())]
         );
+    }
+
+    #[test]
+    fn a_reaction_drops_the_work_since_its_prompt() {
+        let blocks = [
+            Block::new("u", "user", "thanks"),
+            tool("read"),
+            notice("Retrying."),
+            Block::new("a", "assistant", "<reaction>🙌</reaction>"),
+        ];
+        let reactions = mono_reactions(&blocks, false);
+        assert_eq!(reactions.kept, [0, 2]);
+        assert_eq!(reactions.on(0), Some("🙌"));
+    }
+
+    #[test]
+    fn a_reaction_to_a_report_keeps_the_reply_before_it() {
+        let mut report = Block::new("i", "user", "the session finished");
+        report
+            .extra
+            .insert("internal".into(), serde_json::json!(true));
+        let blocks = [
+            Block::new("u", "user", "start the session"),
+            Block::new("a0", "assistant", "Started it."),
+            report,
+            tool("read"),
+            Block::new("a1", "assistant", "<reaction>👍</reaction>"),
+        ];
+        let reactions = mono_reactions(&blocks, false);
+        assert_eq!(reactions.kept, [0, 1, 2]);
+        assert_eq!(reactions.on(0), Some("👍"));
     }
 
     #[test]

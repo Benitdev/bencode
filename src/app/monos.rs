@@ -254,6 +254,7 @@ impl BenCodeApp {
         let Some(session) = self.mono(id).map(|mono| mono.session_id.clone()) else {
             return;
         };
+        self.warm_mono_files(id, cx);
         let Some(session_id) = session else {
             self.start_mono_session(id, show, cx);
             return;
@@ -766,7 +767,7 @@ impl BenCodeApp {
             return;
         };
         // What carries over, not the whole row: its blocks can be huge.
-        let Some((old_id, cwd, harness, model, runtime_mode, model_settings)) = mono
+        let Some((old_id, cwd, harness, model, runtime_mode, model_settings, account)) = mono
             .session_id
             .as_deref()
             .and_then(|id| self.sessions.iter().find(|s| s.id == id))
@@ -778,6 +779,7 @@ impl BenCodeApp {
                     s.model.clone(),
                     s.runtime_mode.clone(),
                     s.model_settings.clone(),
+                    s.provider_account_id.clone(),
                 )
             })
         else {
@@ -789,6 +791,7 @@ impl BenCodeApp {
             session.model = model;
             session.runtime_mode = runtime_mode;
             session.model_settings = model_settings;
+            session.provider_account_id = account;
             session.worktree_cwd = None;
             session.branch = None;
         }
@@ -952,12 +955,16 @@ impl BenCodeApp {
             &carried.memory_hash,
         );
         // MonoCode `unseenHabitPosts`: what its habits posted since the
-        // user last wrote, which the provider session never saw.
+        // user last wrote, which the provider session never saw. Read
+        // before the message just sent, which would end the search at once.
         let away = self
             .sessions
             .iter()
             .find(|s| s.id == session_id)
-            .map(|s| crate::monos::habit_posts_context(&s.blocks))
+            .map(|s| {
+                let before = s.blocks.len().saturating_sub(1);
+                crate::monos::habit_posts_context(&s.blocks[..before])
+            })
             .unwrap_or_default();
         if !plan.any() && away.is_empty() && brief.is_none() {
             return prompt;
@@ -1091,13 +1098,16 @@ impl BenCodeApp {
     ) {
         let carried = self.monos.carrying.remove(session_id);
         // MonoCode `useMonoFiles`: a turn ending is when its files, and the
-        // projects it works in, may have changed.
-        if let Some(id) = self.monos.view.clone()
-            && self.mono(&id).and_then(|m| m.session_id.as_deref()) == Some(session_id)
-        {
-            self.load_mono_files(&id, cx);
-            self.load_mono_overview(&id, cx);
-            self.load_mono_changes(cx);
+        // projects it works in, may have changed. The files are read again
+        // wherever they are held, as the next turn carries them (a Mono
+        // without the app CLI edits them on disk); the Overview only while
+        // it is shown.
+        if let Some(id) = self.mono_for_session(session_id).map(|m| m.id.clone()) {
+            self.mono_files_changed(&id, cx);
+            if self.monos.view.as_deref() == Some(id.as_str()) {
+                self.load_mono_overview(&id, cx);
+                self.load_mono_changes(cx);
+            }
         }
         // MonoCode records what a turn the provider accepted carried: one
         // that failed or was cut short may never have reached it.
