@@ -12,6 +12,7 @@ pub mod diff_viewer;
 pub mod drag_drop;
 pub mod editor_pane;
 pub mod emoji_picker;
+pub mod empty_session;
 pub mod explorer_menu;
 pub mod file_pane;
 pub mod file_tree;

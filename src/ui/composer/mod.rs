@@ -54,7 +54,7 @@ use menus::{over_composer, popover_anchor, popover_surface};
 pub use prompt_marks::{MentionMark, prompt_highlights};
 
 /// MonoCode `max-w-4xl`, the same column as the transcript.
-const COMPOSER_MAX_WIDTH: f32 = 896.0;
+pub(crate) const COMPOSER_MAX_WIDTH: f32 = 896.0;
 /// MonoCode's default placeholder (trailing space included).
 pub const PROMPT_PLACEHOLDER: &str = "Ask, build, / for commands, @ for references... ";
 /// MonoCode `CwdPicker` `PREVIEW`.

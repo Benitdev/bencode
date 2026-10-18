@@ -14,7 +14,6 @@ use gpui::{
 
 use crate::app::BenCodeApp;
 use crate::db::SessionRow;
-use crate::ui::composer::DockProbe;
 use crate::ui::drag_drop::{DraggedFile, DraggedPane, DraggedSession, render_pane_drop_hint};
 use crate::ui::layout::{
     LayoutNode, SplitDir, layout_leaves, leaf_count, pane_edge_from_point, split_shares,
@@ -530,48 +529,5 @@ impl BenCodeApp {
                             .color(colors.fg_muted),
                     ),
             )
-    }
-
-    /// MonoCode `EmptySession`: the composer itself, centred, under
-    /// "What should we work on in {project}?".
-    fn render_empty_session(&self, session: &SessionRow, cx: &Context<Self>) -> AnyElement {
-        let project = std::path::Path::new(&session.cwd)
-            .file_name()
-            .and_then(|n| n.to_str())
-            .filter(|n| !n.is_empty() && *n != "~");
-        let title = match project {
-            Some(name) => format!("What should we work on in {name}?"),
-            None => "What should we work on?".to_string(),
-        };
-        // MonoCode `EmptySession`: the headline sits over the composer in
-        // the same column (`px-1.5`, then `px-2.5`).
-        let headline = div()
-            .w_full()
-            .max_w(px(896.0))
-            .mx_auto()
-            .px(px(16.0))
-            .mb_4()
-            .truncate()
-            .text_size(px(18.0))
-            .line_height(px(28.0))
-            .text_color(cx.theme().colors.fg)
-            .child(title);
-        div()
-            .flex()
-            .flex_col()
-            .flex_1()
-            .min_h_0()
-            .justify_center()
-            .py_12()
-            .child(headline)
-            .child(
-                div()
-                    .relative()
-                    .w_full()
-                    .child(self.render_composer_view(Some(session), true, true, cx))
-                    .child(self.dock_probe_canvas(DockProbe::Composer)),
-            )
-            .child(self.dock_probe_canvas(DockProbe::Pane))
-            .into_any_element()
     }
 }
