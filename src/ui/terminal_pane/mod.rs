@@ -545,6 +545,7 @@ impl BenCodeApp {
                 .into_any_element(),
         };
         let colors = &cx.theme().colors;
+        let glass = self.glass(cx);
         // A window made smaller since keeps the dock within its bounds.
         let size = px(layout::clamp_size(layout.side, layout.size, viewport));
         div()
@@ -561,7 +562,7 @@ impl BenCodeApp {
                 DockSide::Right => el.h_full().w(size).border_l_1(),
             })
             .border_color(colors.border)
-            .bg(colors.bg)
+            .bg(glass.fill(colors.bg))
             .on_drag_move::<TerminalResize>(cx.listener(
                 |this, event: &gpui::DragMoveEvent<TerminalResize>, window, cx| {
                     let Some((start, start_size)) = this.terminals.resize_from else {
