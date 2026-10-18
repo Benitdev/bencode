@@ -4,6 +4,33 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
+## [0.1.19] - 2026-10-18
+
+- A new thread opens on a livelier screen: the harness' mark in a soft
+  glow, a greeting for the time of day, the question in large type with
+  the project in the harness' colour, and a glow around the composer
+  that brightens while you type. Starter prompts under it (Explain this
+  codebase, Find a bug, Write tests, and Review my changes when the
+  project has uncommitted changes) fill in the prompt with one click.
+  It all rises in once as the thread opens; with Reduce Motion it
+  simply appears.
+- A pull request in the Inbox has a Files changed tab: its diff, file by
+  file, in the same review as working-tree changes. The tab you picked
+  stays for the next pull request.
+- OpenCode 2 works again: its models and agents are listed, variants are
+  passed the way it now expects, and each turn runs in the thread's own
+  folder.
+- The composer's branch chip follows the branch the agent checked out.
+- With the window's glass on, the terminal dock's frame is see-through
+  too. The terminal itself still draws its own solid background.
+- Monos: their files are read as their chat opens, so the first turn
+  never waits on the disk, and again after every turn; a fresh session
+  keeps the Mono's account; what its habits posted while you were away
+  is handed over newest first, capped at 4,000 characters; a reaction
+  after a session's report no longer hides the report.
+- Faster redraws: stacks that only stack are laid out once, and every
+  view draws its ink, fills and status colours from one set of tokens.
+
 ## [0.1.18] - 2026-10-16
 
 - A Mono can plan bigger work on a board: it splits a request into
