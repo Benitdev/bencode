@@ -53,6 +53,15 @@ const MAX_LIST_WIDTH: f32 = 560.0;
 const FILTER_MENU_WIDTH: f32 = 228.0;
 const ROW_HEIGHT: f32 = 76.0;
 
+/// MonoCode's pull request sections: the description, checks and
+/// conversation, or the code it changes.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum PrTab {
+    #[default]
+    Summary,
+    Files,
+}
+
 /// MonoCode's kind filter (`hiddenKinds`), as one choice.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum KindFilter {
@@ -160,6 +169,9 @@ pub struct InboxState {
     pub comment_posting: bool,
     pub comment_error: Option<String>,
     pub pr: PrActionUi,
+    /// The section a pull request opens on; kept from one to the next, so
+    /// reading several pull requests' code takes no click each.
+    pub pr_tab: PrTab,
     /// The project "Send to agent" starts in, when changed from the item's.
     pub start_project: HashMap<String, String>,
     /// Folders the inbox may name that the last list found gone from disk:
@@ -207,6 +219,7 @@ impl Default for InboxState {
             comment_posting: false,
             comment_error: None,
             pr: PrActionUi::default(),
+            pr_tab: PrTab::default(),
             start_project: HashMap::new(),
             missing_dirs: HashSet::new(),
             seen: BTreeMap::new(),
@@ -702,7 +715,25 @@ impl BenCodeApp {
         self.load_inbox_thread(key, false, cx);
         if item.kind == Kind::Pr {
             self.load_pr_checks(key, false, cx);
+            if self.inbox.pr_tab == PrTab::Files {
+                self.ensure_pr_diff_doc(&item, cx);
+            }
         }
+    }
+
+    fn set_inbox_pr_tab(&mut self, tab: PrTab, cx: &mut Context<Self>) {
+        self.inbox.pr_tab = tab;
+        if tab == PrTab::Files
+            && let Some(item) = self
+                .inbox
+                .selected
+                .as_deref()
+                .and_then(|key| self.inbox.item(key))
+                .cloned()
+        {
+            self.ensure_pr_diff_doc(&item, cx);
+        }
+        cx.notify();
     }
 
     pub(crate) fn load_inbox_thread(&mut self, key: &str, force: bool, cx: &mut Context<Self>) {

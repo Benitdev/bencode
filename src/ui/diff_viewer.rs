@@ -108,12 +108,14 @@ enum DocRow {
         hidden: usize,
     },
     Message(usize, SharedString),
+    /// Lines a patch left out, under the next hunk's header.
+    Gap(usize, SharedString),
 }
 
 impl DocRow {
     fn file(&self) -> usize {
         match self {
-            Self::Header(f) | Self::Line(f, _) | Self::Message(f, _) => *f,
+            Self::Header(f) | Self::Line(f, _) | Self::Message(f, _) | Self::Gap(f, _) => *f,
             Self::Fold { file, .. } | Self::Pair { file, .. } => *file,
         }
     }
@@ -269,6 +271,7 @@ impl DiffDoc {
                                     id,
                                     hidden,
                                 },
+                                SplitRow::Gap(header) => DocRow::Gap(ix, header.into()),
                             }),
                     );
                 } else {
@@ -279,6 +282,7 @@ impl DiffDoc {
                             id,
                             hidden,
                         },
+                        BodyRow::Gap(header) => DocRow::Gap(ix, header.into()),
                     }));
                 }
             }
@@ -570,6 +574,55 @@ fn load_doc(tab: &PaneTab, store: &CheckpointStore) -> Result<Vec<DocFile>, Stri
     Ok(loaded.into_iter().map(|(_, file)| file).collect())
 }
 
+/// Where an Inbox pull request's review is kept in `diff_docs`; no file
+/// pane tab has such a key.
+pub(crate) const PR_DOC_PREFIX: &str = "pr-diff:";
+
+/// The review of `item` as it was last updated: an update makes a new key.
+pub(crate) fn pr_doc_key(item: &crate::work_items::WorkItem) -> String {
+    format!("{PR_DOC_PREFIX}{}@{}", item.key(), item.updated_at)
+}
+
+/// A pull request's patch as review files: its hunks as GitHub cut them.
+fn pr_doc_files(text: &str) -> Vec<DocFile> {
+    git::split_patch(text)
+        .into_iter()
+        .map(|file| {
+            let label = match &file.old_path {
+                Some(old) if *old != file.path => format!("{old} → {}", file.path),
+                _ => file.path.clone(),
+            };
+            let (mut additions, mut deletions) = (0, 0);
+            let body = if file.diff.binary {
+                FileBody::Binary
+            } else if file.diff.too_large {
+                FileBody::TooLarge
+            } else {
+                let unified = diff_model::build_hunks(file.diff.lines);
+                (additions, deletions) = (unified.additions, unified.deletions);
+                if unified.blocks.is_empty() {
+                    FileBody::Empty(if file.old_path.is_some() {
+                        "File renamed without changes"
+                    } else {
+                        "No textual diff"
+                    })
+                } else {
+                    FileBody::Diff(unified.blocks)
+                }
+            };
+            DocFile {
+                id: file.path.clone(),
+                path: file.path,
+                label,
+                side: None,
+                additions,
+                deletions,
+                body,
+            }
+        })
+        .collect()
+}
+
 impl BenCodeApp {
     /// Opens `key`'s review, loading it the first time.
     pub(crate) fn ensure_diff_doc(
@@ -609,6 +662,17 @@ impl BenCodeApp {
         let task = cx
             .background_executor()
             .spawn(async move { load_doc(&tab, &store) });
+        self.land_diff_doc(key, generation, task, cx);
+    }
+
+    /// Puts what a load read into review `key`, unless a newer load started.
+    fn land_diff_doc(
+        &mut self,
+        key: &str,
+        generation: u64,
+        task: gpui::Task<Result<Vec<DocFile>, String>>,
+        cx: &mut Context<Self>,
+    ) {
         let key = key.to_string();
         cx.spawn(async move |this, cx| {
             let result = task.await;
@@ -653,6 +717,31 @@ impl BenCodeApp {
             }
         })
         .detach();
+    }
+
+    /// Opens pull request `item`'s review for the Inbox, reading it the
+    /// first time and again once the item was updated. Only the one shown
+    /// is kept.
+    pub(crate) fn ensure_pr_diff_doc(
+        &mut self,
+        item: &crate::work_items::WorkItem,
+        cx: &mut Context<Self>,
+    ) {
+        let key = pr_doc_key(item);
+        self.diff_docs
+            .retain(|k, _| !k.starts_with(PR_DOC_PREFIX) || *k == key);
+        if self.diff_docs.contains_key(&key) {
+            return;
+        }
+        let mut doc = DiffDoc::new(None, self.diff_split);
+        doc.generation = 1;
+        self.diff_docs.insert(key.clone(), doc);
+        let (project, repo, number) = (item.project.clone(), item.repo.clone(), item.number);
+        let task = cx.background_executor().spawn(async move {
+            let text = crate::github::pr_diff(std::path::Path::new(&project), &repo, number)?;
+            Ok(pr_doc_files(&text))
+        });
+        self.land_diff_doc(&key, 1, task, cx);
     }
 
     /// The working tree moved: reviews of it read the new state.
@@ -802,6 +891,8 @@ impl BenCodeApp {
                     "commit"
                 } else if key.starts_with("session-changes:") {
                     "session changes"
+                } else if key.starts_with(PR_DOC_PREFIX) {
+                    "the pull request’s changes"
                 } else {
                     "changes"
                 };
@@ -1046,6 +1137,28 @@ impl BenCodeApp {
                     .into_any_element()
             }
             DocRow::Fold { file, id, hidden } => self.render_fold(key, *file, *id, *hidden, cx),
+            DocRow::Gap(_, header) => {
+                let fg = cx.theme().colors.fg;
+                div()
+                    .flex()
+                    .items_center()
+                    .w_full()
+                    .h(px(LINE_HEIGHT + 4.0))
+                    .bg(fg.fill(Fill::Selected))
+                    .font_family(cx.theme().mono_family.clone())
+                    .text_size(Text::Sm.px())
+                    .text_color(fg.ink(Ink::Muted))
+                    .child(div().w_12().flex_none())
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .px_3()
+                            .truncate()
+                            .child(header.clone()),
+                    )
+                    .into_any_element()
+            }
             DocRow::Message(_, text) => div()
                 .px_3()
                 .py_3()

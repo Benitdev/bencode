@@ -2,7 +2,10 @@
 //! tints, `SectionTitle`, `SettingsRow`, `PageTab` and the bordered box
 //! sections sit in.
 
-use gpui::{Div, FontWeight, Hsla, IntoElement, ParentElement, Stateful, Styled, div, prelude::*};
+use gpui::{
+    Div, FontWeight, Hsla, IntoElement, ParentElement, SharedString, Stateful, Styled, div,
+    prelude::*,
+};
 
 use crate::ui::scale::px;
 use crate::ui::tokens::Text;
@@ -108,7 +111,7 @@ pub fn settings_row(
 /// MonoCode `PageTab`: a label with a 2px line under the open page.
 pub fn page_tab(
     id: &'static str,
-    label: &'static str,
+    label: impl Into<SharedString>,
     selected: bool,
     fg: Hsla,
     muted: Hsla,
@@ -123,7 +126,7 @@ pub fn page_tab(
         .cursor_pointer()
         .text_color(if selected { fg } else { muted })
         .hover(|style| style.text_color(fg))
-        .child(label)
+        .child(label.into())
         .when(selected, |el| {
             el.child(
                 div()

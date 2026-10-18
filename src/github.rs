@@ -910,6 +910,17 @@ pub fn pr_checks(cwd: &Path, repo: &str, number: i64) -> Result<Checks, String> 
     parse_checks(&json)
 }
 
+/// MonoCode `git_github_pr_diff`: the pull request's patch as GitHub
+/// gives it, three lines of context around each change.
+pub fn pr_diff(cwd: &Path, repo: &str, number: i64) -> Result<String, String> {
+    split_repo(repo)?;
+    let number = number.to_string();
+    gh(
+        cwd,
+        &["pr", "diff", &number, "--repo", repo, "--color", "never"],
+    )
+}
+
 fn parse_checks(json: &str) -> Result<Checks, String> {
     #[derive(Deserialize, Default)]
     #[serde(default, rename_all = "camelCase")]

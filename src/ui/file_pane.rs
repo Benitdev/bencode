@@ -58,8 +58,11 @@ impl BenCodeApp {
     /// After tabs opened, closed or changed: reviews and pages of closed
     /// tabs go, and the editor follows the active file.
     fn settle_file_pane(&mut self, cx: &mut Context<Self>) {
-        self.diff_docs
-            .retain(|key, _| self.file_pane.get(key).is_some());
+        // The Inbox's pull request review is not a tab.
+        self.diff_docs.retain(|key, _| {
+            key.starts_with(crate::ui::diff_viewer::PR_DOC_PREFIX)
+                || self.file_pane.get(key).is_some()
+        });
         if let Some(PaneTab::File { path }) = self.file_pane.active() {
             self.editor.requested = Some(path.clone());
             self.editor.files.activate(path);

@@ -131,6 +131,103 @@ pub fn file_diff(cwd: &str, path: &str, source: &DiffSource) -> Result<FileDiff>
     }
 }
 
+/// One file of a patch that covers several (`gh pr diff`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PatchFile {
+    pub path: String,
+    /// Where a renamed file came from.
+    pub old_path: Option<String>,
+    pub diff: FileDiff,
+}
+
+/// A path as a patch header writes it: `a/` or `b/` dropped, git's quotes
+/// for unusual names taken off.
+fn header_path(raw: &str) -> Option<String> {
+    let raw = raw.trim_end_matches('\t').trim();
+    if raw == "/dev/null" {
+        return None;
+    }
+    let raw = raw
+        .strip_prefix('"')
+        .and_then(|r| r.strip_suffix('"'))
+        .unwrap_or(raw);
+    let path = raw
+        .strip_prefix("a/")
+        .or_else(|| raw.strip_prefix("b/"))
+        .unwrap_or(raw);
+    Some(path.to_string())
+}
+
+/// Splits a multi-file patch at each `diff --git`, naming each file by its
+/// new path (its old one when deleted) and reading its lines as `patch`.
+pub fn split_patch(text: &str) -> Vec<PatchFile> {
+    struct Open<'a> {
+        path: String,
+        old_path: Option<String>,
+        from: Option<String>,
+        lines: Vec<&'a str>,
+        in_hunk: bool,
+    }
+    fn close(open: Open<'_>) -> PatchFile {
+        let path = if open.path.is_empty() {
+            open.from.clone().unwrap_or_default()
+        } else {
+            open.path
+        };
+        PatchFile {
+            path,
+            old_path: open.old_path,
+            diff: patch(&open.lines.join("\n")),
+        }
+    }
+    let mut files = Vec::new();
+    let mut open: Option<Open> = None;
+    for line in text.lines() {
+        if let Some(rest) = line.strip_prefix("diff --git ") {
+            files.extend(open.take().map(close));
+            // `a/x b/x`: the new path is the second half, as long as the
+            // two halves name the same file (they do unless renamed, and a
+            // rename names both again below).
+            let path = rest
+                .rfind(" b/")
+                .and_then(|at| header_path(&rest[at + 1..]))
+                .unwrap_or_default();
+            open = Some(Open {
+                path,
+                old_path: None,
+                from: None,
+                lines: vec![line],
+                in_hunk: false,
+            });
+            continue;
+        }
+        let Some(file) = open.as_mut() else {
+            continue;
+        };
+        file.lines.push(line);
+        if file.in_hunk {
+            continue;
+        }
+        if line.starts_with("@@") {
+            file.in_hunk = true;
+        } else if let Some(from) = line.strip_prefix("rename from ") {
+            file.old_path = Some(from.to_string());
+        } else if let Some(to) = line.strip_prefix("rename to ") {
+            file.path = to.to_string();
+        } else if let Some(from) = line.strip_prefix("--- ") {
+            file.from = header_path(from);
+        } else if let Some(to) = line.strip_prefix("+++ ") {
+            match header_path(to) {
+                Some(to) => file.path = to,
+                // Deleted: named by the side it had.
+                None => file.path = file.from.clone().unwrap_or_default(),
+            }
+        }
+    }
+    files.extend(open.map(close));
+    files
+}
+
 /// Parses `git diff-tree --name-status -z`: `S\0path\0`, or for renames and
 /// copies `R100\0old\0new\0`. Keyed by the new path.
 fn parse_name_status_z(raw: &[u8]) -> Vec<(GitFileStatus, String)> {
@@ -201,6 +298,41 @@ mod tests {
         assert!(!text.binary);
         assert_eq!(text.lines.len(), 3);
         assert!(patch(&"x".repeat(MAX_PATCH_BYTES + 1)).too_large);
+    }
+
+    #[test]
+    fn a_pull_request_patch_splits_by_file() {
+        let text = "\
+diff --git a/src/a.rs b/src/a.rs
+index 1..2 100644
+--- a/src/a.rs
++++ b/src/a.rs
+@@ -1,2 +1,2 @@
+-old
++new
+--- not a header
+diff --git a/old.rs b/new.rs
+similarity index 90%
+rename from old.rs
+rename to new.rs
+diff --git a/gone.txt b/gone.txt
+deleted file mode 100644
+--- a/gone.txt
++++ /dev/null
+@@ -1 +0,0 @@
+-bye
+diff --git a/logo.png b/logo.png
+Binary files a/logo.png and b/logo.png differ
+";
+        let files = split_patch(text);
+        let names: Vec<_> = files.iter().map(|f| f.path.as_str()).collect();
+        assert_eq!(names, ["src/a.rs", "new.rs", "gone.txt", "logo.png"]);
+        // The hunk's own `---` line stays content.
+        assert_eq!(files[0].diff.lines.len(), 4);
+        assert_eq!(files[1].old_path.as_deref(), Some("old.rs"));
+        assert!(files[1].diff.lines.is_empty() && !files[1].diff.binary);
+        assert_eq!(files[2].diff.lines.len(), 2);
+        assert!(files[3].diff.binary);
     }
 
     #[test]

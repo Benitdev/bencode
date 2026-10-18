@@ -14,7 +14,7 @@ pub mod text;
 pub use branches::{
     Branch, SwitchError, create_branch, list_branches, stash_changes, switch_branch,
 };
-pub use diffs::{DiffSource, commit_files, file_diff};
+pub use diffs::{DiffSource, commit_files, file_diff, split_patch};
 pub use rows::number_rows;
 
 pub mod worktrees;

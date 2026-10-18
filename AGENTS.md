@@ -207,7 +207,7 @@ bencode/
 | `file_tree/` | Sidebar: Explorer tab |
 | `git_changes_panel/` (`tree.rs`, `graph.rs`, `confirm.rs`), `git_menus.rs` | Sidebar: Changes tab and commit graph |
 | `titlebar/` | Title bar and workspace tabs; `mono.rs` is the one over a Mono (its title, Overview, settings) |
-| `pane_tree.rs`, `layout/` | Split chat panes and the layout tree |
+| `pane_tree.rs`, `empty_session.rs`, `layout/` | Split chat panes, a new thread's centred composer (greeting, glow, starter prompts), and the layout tree |
 | `transcript/` | Turns, blocks, activity folds, the Tasks card (`task_list.rs`), subagent rows and their trail (`subagents.rs`), find in conversation, prompt outline, text selection; `mono.rs` is what a Mono's chat draws in either window (day pills, reactions, the signature pill, the work status) |
 | `composer/` | Prompt composer and its pickers, cards, runner; `mono.rs` is a Mono's composer in BenCode's window |
 | `file_pane.rs` | The pane beside the chat and its tab strip |
@@ -312,7 +312,7 @@ only read that cache.
 | `features/terminal/` | `ui/terminal_pane/`, `pty_host/` | Ely terminal, one dock per project. BenCode's own: terminals side by side (a tab dragged onto a terminal's edge), and shells that outlive an update's restart or a crash (the terminal host; ⌘Q ends them) |
 | `features/notes/` | `ui/notes/`, `app/notes.rs`, `db/mod.rs` | Cards, tags, project, Preview / Source, dropped images, autosave, Add to chat. Source has no line numbers |
 | `features/automations/` | `ui/automations/`, `app/automations.rs`, `app/automation_runs.rs`, `schedule.rs`, `db/schedule.rs` | Templates, time triggers, session settings, run history, 30s scheduler. No event triggers |
-| `features/inbox/` | `ui/inbox_view*`, `github.rs`, `work_items.rs` | GitHub issues and PRs, checks, CI repair, comments |
+| `features/inbox/` | `ui/inbox_view*`, `github.rs`, `work_items.rs` | GitHub issues and PRs, checks, CI repair, comments; a PR's Files changed (`gh pr diff` in `ui/diff_viewer.rs`'s review, hunks only: no Full file mode) |
 | none (MonoCode runs `gh` as its active account) | `github_accounts.rs`, `app/github_accounts.rs`, `ui/settings_integrations.rs` | A `gh` account per project. BenCode's own: Automatic falls back to another signed-in account when the active one cannot see the repository |
 | `features/inbox/model/jira.ts`, `src-tauri/src/jira.rs` (as the pattern) | `backlog.rs`, `app/backlog.rs`, `ui/settings_integrations.rs` | Nulab Backlog issues in the Inbox: comments, status change, Send to agent. BenCode's own; MonoCode has Jira, Linear, GitLab and Azure DevOps instead |
 | `features/search/` | `ui/search_view.rs`, `ui/quick_open.rs` | Universal search; Go to File (⌘P) |

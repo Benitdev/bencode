@@ -39,7 +39,12 @@ impl Line {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Block {
     Hunk(Vec<Line>),
-    Fold { id: usize, lines: Vec<Line> },
+    Fold {
+        id: usize,
+        lines: Vec<Line>,
+    },
+    /// Lines a patch with little context leaves out, under its hunk header.
+    Gap(Arc<str>),
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -91,6 +96,44 @@ pub fn build(patch: Vec<DiffLineKind>) -> UnifiedFile {
         }
     }
     file.blocks = fold_lines(lines, CONTEXT);
+    file
+}
+
+/// A patch with its own context (a pull request's, from GitHub) as it
+/// came: each hunk after a gap bar naming its header, since the lines
+/// between hunks are not there to fold.
+pub fn build_hunks(patch: Vec<DiffLineKind>) -> UnifiedFile {
+    let mut file = UnifiedFile::default();
+    let mut hunk: Vec<Line> = Vec::new();
+    for row in number_rows(patch) {
+        let (kind, text) = match row.kind {
+            DiffLineKind::Header(header) => {
+                if !hunk.is_empty() {
+                    file.blocks.push(Block::Hunk(std::mem::take(&mut hunk)));
+                }
+                file.blocks.push(Block::Gap(header.into()));
+                continue;
+            }
+            DiffLineKind::Addition(text) => {
+                file.additions += 1;
+                (LineKind::Add, text)
+            }
+            DiffLineKind::Deletion(text) => {
+                file.deletions += 1;
+                (LineKind::Del, text)
+            }
+            DiffLineKind::Context(text) => (LineKind::Context, text),
+        };
+        hunk.push(Line {
+            kind,
+            text: text.into(),
+            old: row.old,
+            new: row.new,
+        });
+    }
+    if !hunk.is_empty() {
+        file.blocks.push(Block::Hunk(hunk));
+    }
     file
 }
 
@@ -169,6 +212,7 @@ pub fn expand(reveal: Reveal, total: usize, how: Expand) -> Reveal {
 pub enum BodyRow {
     Line(Line),
     Fold { id: usize, hidden: usize },
+    Gap(Arc<str>),
 }
 
 /// MonoCode `flattenVisibleRows`: the rows a file shows with its folds as
@@ -178,6 +222,7 @@ pub fn body_rows(blocks: &[Block], reveal_for: impl Fn(usize) -> Reveal) -> Vec<
     for block in blocks {
         match block {
             Block::Hunk(lines) => rows.extend(lines.iter().cloned().map(BodyRow::Line)),
+            Block::Gap(header) => rows.push(BodyRow::Gap(header.clone())),
             Block::Fold { id, lines } => {
                 let (head, tail, hidden) = revealed(lines.len(), reveal_for(*id));
                 rows.extend(lines[..head].iter().cloned().map(BodyRow::Line));
@@ -208,6 +253,7 @@ pub enum SplitRow {
         id: usize,
         hidden: usize,
     },
+    Gap(Arc<str>),
 }
 
 /// `rows` side by side. An unchanged line is on both sides; a run of
@@ -246,6 +292,10 @@ pub fn split_rows(rows: Vec<BodyRow>) -> Vec<SplitRow> {
             BodyRow::Fold { id, hidden } => {
                 flush(&mut dels, &mut adds, &mut out);
                 out.push(SplitRow::Fold { id, hidden });
+            }
+            BodyRow::Gap(header) => {
+                flush(&mut dels, &mut adds, &mut out);
+                out.push(SplitRow::Gap(header));
             }
         }
     }
@@ -372,6 +422,7 @@ mod tests {
             .map(|b| match b {
                 Block::Hunk(l) => (false, l.len()),
                 Block::Fold { lines, .. } => (true, lines.len()),
+                Block::Gap(_) => (true, 0),
             })
             .collect()
     }
@@ -395,6 +446,29 @@ mod tests {
         let file = build(patch(2, 5));
         assert_eq!(shape(&file.blocks), [(false, 6)]);
         assert!(build(Vec::new()).blocks.is_empty());
+    }
+
+    #[test]
+    fn hunks_keep_their_numbers_after_a_gap_bar() {
+        let file = build_hunks(vec![
+            DiffLineKind::Header("@@ -1,2 +1,2 @@".into()),
+            DiffLineKind::Deletion("a".into()),
+            DiffLineKind::Addition("A".into()),
+            DiffLineKind::Context("b".into()),
+            DiffLineKind::Header("@@ -40,1 +40,2 @@ fn f()".into()),
+            DiffLineKind::Context("c".into()),
+            DiffLineKind::Addition("d".into()),
+        ]);
+        assert_eq!((file.additions, file.deletions), (2, 1));
+        assert_eq!(
+            shape(&file.blocks),
+            [(true, 0), (false, 3), (true, 0), (false, 2)]
+        );
+        let Block::Hunk(lines) = &file.blocks[3] else {
+            panic!("expected the second hunk")
+        };
+        assert_eq!((lines[0].old, lines[0].new), (Some(40), Some(40)));
+        assert_eq!(lines[1].number(), Some(41));
     }
 
     #[test]
@@ -442,7 +516,7 @@ mod tests {
         rows.iter()
             .map(|row| match row {
                 SplitRow::Pair { old, new } => (text(old), text(new)),
-                SplitRow::Fold { .. } => ("…", "…"),
+                SplitRow::Fold { .. } | SplitRow::Gap(_) => ("…", "…"),
             })
             .collect()
     }

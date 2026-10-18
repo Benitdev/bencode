@@ -1,7 +1,8 @@
 //! MonoCode `InboxDetail`: identity, title, people and times, the actions
 //! (Send to agent with its project, pull request actions or a Backlog
 //! issue's status, Open in its tracker), labels, the body, then a pull
-//! request's checks and the conversation.
+//! request's checks and the conversation. A pull request's Files changed
+//! section shows its patch in the review list (`ui/diff_viewer.rs`).
 
 use ely_gpui_component::buttons::{Button, ButtonVariant, IconButton};
 use ely_gpui_component::documents::MarkdownRenderer;
@@ -17,11 +18,13 @@ use gpui::{
 use crate::ui::scale::px;
 
 use super::comments::{author_name, byline, byline_dot, comment_card, review_tint};
-use super::{kind_label, project_name, relative_time, source_label, status_mark};
+use super::{PrTab, kind_label, project_name, relative_time, source_label, status_mark};
 use crate::app::BenCodeApp;
 use crate::github::Kind;
 use crate::ui::app_callback::app_callback;
 use crate::ui::composer::inbox_card::label_chip;
+use crate::ui::diff_viewer::pr_doc_key;
+use crate::ui::page_parts::page_tab;
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 use crate::work_items::Provider;
 
@@ -195,67 +198,154 @@ impl BenCodeApp {
             )
             .child(div().px_4().py_3().text_size(Text::Lg.px()).child(body));
 
-        let detail =
-            div()
-                .id("inbox-detail")
-                .size_full()
-                .overflow_y_scroll()
-                .child(
-                    div()
-                        .max_w(px(1024.0))
-                        .mx_auto()
-                        .flex()
-                        .flex_col()
-                        .gap_3()
-                        .px_8()
-                        .pt_4()
-                        .pb_8()
-                        .child(
+        let head = div()
+            .flex()
+            .flex_col()
+            .gap_3()
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .child(identity)
+                    .child(
+                        div()
+                            .text_size(px(22.0))
+                            .line_height(px(28.0))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(fg)
+                            .line_clamp(3)
+                            .child(SharedString::from(item.title.clone())),
+                    )
+                    .child(meta)
+                    .children(branches)
+                    .when(!item.labels.is_empty(), |el| {
+                        el.child(
                             div()
                                 .flex()
-                                .flex_col()
-                                .gap_2()
-                                .child(identity)
-                                .child(
-                                    div()
-                                        .text_size(px(22.0))
-                                        .line_height(px(28.0))
-                                        .font_weight(FontWeight::SEMIBOLD)
-                                        .text_color(fg)
-                                        .line_clamp(3)
-                                        .child(SharedString::from(item.title.clone())),
-                                )
-                                .child(meta)
-                                .children(branches)
-                                .when(!item.labels.is_empty(), |el| {
-                                    el.child(
-                                        div().flex().flex_wrap().gap_1().children(
-                                            item.labels.iter().map(|l| label_chip(l, cx)),
-                                        ),
-                                    )
-                                }),
+                                .flex_wrap()
+                                .gap_1()
+                                .children(item.labels.iter().map(|l| label_chip(l, cx))),
                         )
-                        .child(actions)
-                        .children(self.render_pr_action_status(cx))
-                        .children(
-                            self.backlog
-                                .status_error
-                                .clone()
-                                .filter(|_| item.provider == Provider::Backlog)
-                                .map(|err| {
-                                    div()
-                                        .text_size(Text::Base.px())
-                                        .text_color(colors.danger.opacity(0.9))
-                                        .child(SharedString::from(err))
-                                }),
-                        )
-                        .child(description)
-                        .when(item.kind == Kind::Pr, |el| {
-                            el.child(self.render_pr_checks(item, cx))
-                        })
-                        .child(self.render_inbox_conversation(item, cx)),
-                );
+                    }),
+            )
+            .child(actions)
+            .children(self.render_pr_action_status(cx))
+            .children(
+                self.backlog
+                    .status_error
+                    .clone()
+                    .filter(|_| item.provider == Provider::Backlog)
+                    .map(|err| {
+                        div()
+                            .text_size(Text::Base.px())
+                            .text_color(colors.danger.opacity(0.9))
+                            .child(SharedString::from(err))
+                    }),
+            )
+            .when(item.kind == Kind::Pr, |el| {
+                el.child(self.render_pr_tabs(item, cx))
+            });
+
+        // The review scrolls on its own (a virtual list), under a header
+        // that stays.
+        if item.kind == Kind::Pr && self.inbox.pr_tab == PrTab::Files {
+            let column = || div().w_full().max_w(px(1024.0)).mx_auto().px_8();
+            return div()
+                .size_full()
+                .flex()
+                .flex_col()
+                .child(column().flex_none().pt_4().child(head))
+                .child(
+                    column().flex_1().min_h_0().pt_3().pb_4().child(
+                        div()
+                            .size_full()
+                            .flex()
+                            .flex_col()
+                            .rounded_lg()
+                            .border_1()
+                            .border_color(colors.border)
+                            .overflow_hidden()
+                            .child(self.render_diff_doc(&pr_doc_key(item), cx)),
+                    ),
+                )
+                .into_any_element();
+        }
+
+        let detail = div()
+            .id("inbox-detail")
+            .size_full()
+            .overflow_y_scroll()
+            .child(
+                div()
+                    .max_w(px(1024.0))
+                    .mx_auto()
+                    .flex()
+                    .flex_col()
+                    .gap_3()
+                    .px_8()
+                    .pt_4()
+                    .pb_8()
+                    .child(head)
+                    .child(description)
+                    .when(item.kind == Kind::Pr, |el| {
+                        el.child(self.render_pr_checks(item, cx))
+                    })
+                    .child(self.render_inbox_conversation(item, cx)),
+            );
         crate::ui::scrollbar::Scrolled::new("inbox-detail-scrollbar", detail).into_any_element()
+    }
+
+    /// MonoCode's `Summary` / `Code` tabs, with the file count once read.
+    fn render_pr_tabs(
+        &self,
+        item: &crate::github::WorkItem,
+        cx: &Context<Self>,
+    ) -> impl IntoElement {
+        let colors = &cx.theme().colors;
+        let fg = colors.fg;
+        let tab = self.inbox.pr_tab;
+        let files = self
+            .diff_docs
+            .get(&pr_doc_key(item))
+            .filter(|doc| doc.status == crate::ui::diff_viewer::DocStatus::Ready)
+            .map(|doc| doc.files.len());
+        div()
+            .flex()
+            .gap_4()
+            .h(px(36.0))
+            .border_b_1()
+            .border_color(colors.border)
+            .child(
+                page_tab(
+                    "inbox-pr-tab-summary",
+                    "Summary",
+                    tab == PrTab::Summary,
+                    fg,
+                    colors.fg_muted,
+                )
+                .on_click(cx.listener(|this, _, _, cx| this.set_inbox_pr_tab(PrTab::Summary, cx))),
+            )
+            .child(
+                page_tab(
+                    "inbox-pr-tab-files",
+                    "Files changed",
+                    tab == PrTab::Files,
+                    fg,
+                    colors.fg_muted,
+                )
+                .gap_1p5()
+                .children(files.map(|n| {
+                    div()
+                        .px_1p5()
+                        .rounded_full()
+                        .bg(fg.fill(Fill::Line))
+                        .text_size(Text::Xs.px())
+                        .text_color(fg.ink(Ink::Secondary))
+                        .child(n.to_string())
+                }))
+                .on_click(cx.listener(|this, _, _, cx| this.set_inbox_pr_tab(PrTab::Files, cx))),
+            )
     }
 
     /// MonoCode `InboxProjectPicker`: which rail project the agent works in.
