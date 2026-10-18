@@ -4,6 +4,21 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
+## [0.1.20] - 2026-10-18
+
+- Much less CPU while agents work. The window is now drawn in parts (the
+  rail, the sidebar, each chat pane, the file pane, the terminal dock,
+  the footer), and a change redraws only the part that shows it: a
+  streamed token redraws its own pane, or nothing when the thread is off
+  screen; a keystroke redraws its composer; terminal output, an edit in a
+  file, hovering and scrolling redraw only where they happen.
+- Spinners, shimmers and mascots step on a layer of their own instead of
+  redrawing the window around them: a step of the clock while an agent
+  runs costs under a millisecond where it took about seven.
+- The Inbox poll redraws nothing when nothing changed, and a git refresh,
+  the usage countdowns and the terminal dock's changes redraw only what
+  shows them.
+
 ## [0.1.19] - 2026-10-18
 
 - A new thread opens on a livelier screen: the harness' mark in a soft
