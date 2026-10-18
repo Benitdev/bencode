@@ -19,6 +19,7 @@ use crate::app::{BenCodeApp, TurnInput};
 use crate::db::{Block, SessionRow};
 use crate::harness::{Attachment, HarnessKind, codex};
 use crate::ui::scale::px;
+use crate::ui::tokens::{Fill, Text, Tone as _};
 
 /// MonoCode `isLastUserTurnBlock`: a user turn the person wrote (not an
 /// internal one) that was sent (not a draft).
@@ -159,12 +160,12 @@ impl BenCodeApp {
                 .border_color(accent.opacity(0.2))
                 .bg(accent.opacity(0.1))
                 .text_color(accent)
-                .text_size(px(11.0))
+                .text_size(Text::Sm.px())
                 .font_weight(FontWeight::MEDIUM)
                 .cursor_pointer()
                 .hover(move |s| {
                     s.border_color(accent.opacity(0.35))
-                        .bg(fg.opacity(0.15))
+                        .bg(fg.fill(Fill::Bold))
                         .text_color(fg)
                 })
                 .tooltip(Tooltip::text("Stop editing last message"))

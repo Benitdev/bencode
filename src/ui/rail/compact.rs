@@ -20,6 +20,7 @@ use crate::ui::appearance::CollapsedRailMode;
 use crate::ui::scale::px;
 use crate::ui::sidebar_menus::SidebarMenuKind;
 use crate::ui::thumbnail::{LOGO, thumbnail};
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// MonoCode `w-12`.
 pub const COMPACT_RAIL_WIDTH: f32 = 48.0;
@@ -296,7 +297,7 @@ impl BenCodeApp {
                     if selected {
                         el.bg(selection)
                     } else {
-                        el.hover(move |s| s.bg(fg.opacity(0.10)))
+                        el.hover(move |s| s.bg(fg.fill(Fill::Strong)))
                     }
                 })
                 .tooltip(Tooltip::text(mono.display_name()))
@@ -316,7 +317,7 @@ impl BenCodeApp {
                 .items_center()
                 .gap_1p5()
                 .children(buttons)
-                .child(div().w(px(20.0)).h(px(1.0)).bg(fg.opacity(0.1)))
+                .child(div().w(px(20.0)).h(px(1.0)).bg(fg.fill(Fill::Strong)))
                 .into_any_element(),
         )
     }
@@ -347,8 +348,8 @@ impl BenCodeApp {
             .justify_center()
             .rounded(px(6.0))
             .cursor_pointer()
-            .when(open, |el| el.bg(fg.opacity(0.1)))
-            .hover(move |el| el.bg(fg.opacity(0.1)))
+            .when(open, |el| el.bg(fg.fill(Fill::Strong)))
+            .hover(move |el| el.bg(fg.fill(Fill::Strong)))
             .tooltip(Tooltip::text(label))
             .child(
                 canvas(
@@ -377,7 +378,7 @@ impl BenCodeApp {
             let fg = cx.theme().colors.fg;
             return Icon::new(IconName::FolderPlus)
                 .size(IconSize::Md)
-                .color(fg.opacity(0.5))
+                .color(fg.ink(Ink::Secondary))
                 .into_any_element();
         }
         let busy = self
@@ -444,16 +445,16 @@ impl BenCodeApp {
                 .rounded(px(8.0))
                 .px(px(10.0))
                 .py(px(6.0))
-                .text_size(px(13.0))
-                .text_color(fg.opacity(0.8))
+                .text_size(Text::Md.px())
+                .text_color(fg.ink(Ink::Strong))
                 .cursor_pointer()
-                .hover(move |s| s.bg(fg.opacity(0.08)).text_color(fg))
+                .hover(move |s| s.bg(fg.fill(Fill::Selected)).text_color(fg))
         };
         let projects = self.rail_order().into_iter().enumerate().map(|(ix, path)| {
             let current = same_project_path(&path, &self.current_cwd);
             let target = path.clone();
             row(SharedString::from(format!("compact-project-{ix}")))
-                .when(current, |el| el.bg(fg.opacity(0.08)).text_color(fg))
+                .when(current, |el| el.bg(fg.fill(Fill::Selected)).text_color(fg))
                 .child(
                     div()
                         .flex()
@@ -482,7 +483,7 @@ impl BenCodeApp {
             .child(
                 Icon::new(IconName::FolderPlus)
                     .size(IconSize::Sm)
-                    .color(fg.opacity(0.8)),
+                    .color(fg.ink(Ink::Strong)),
             )
             .child("Open folder…")
             .on_click(cx.listener(|this, _, _, cx| {
@@ -493,7 +494,7 @@ impl BenCodeApp {
             .child(
                 Icon::new(IconName::Globe)
                     .size(IconSize::Sm)
-                    .color(fg.opacity(0.8)),
+                    .color(fg.ink(Ink::Strong)),
             )
             .child("Open folder on a machine…")
             .on_click(cx.listener(|this, _, _, cx| {
@@ -522,7 +523,7 @@ impl BenCodeApp {
                 });
             }))
             .child(list)
-            .child(div().my_1().h(px(1.0)).bg(fg.opacity(0.1)))
+            .child(div().my_1().h(px(1.0)).bg(fg.fill(Fill::Strong)))
             .child(open_folder)
             .child(open_remote);
         deferred(anchored().position(position).snap_to_window().child(menu))
@@ -562,13 +563,13 @@ fn compact_action(
             if active {
                 el.bg(selection)
             } else {
-                el.hover(move |s| s.bg(fg.opacity(0.10)))
+                el.hover(move |s| s.bg(fg.fill(Fill::Strong)))
             }
         })
         .child(
             Icon::new(icon)
                 .size(IconSize::Md)
-                .color(if active { fg } else { fg.opacity(0.5) })
+                .color(if active { fg } else { fg.ink(Ink::Secondary) })
                 .when(!active, |icon| icon.group_hover_color(id, fg)),
         )
         .when(dot, |el| {

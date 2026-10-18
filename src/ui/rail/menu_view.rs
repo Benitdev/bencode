@@ -25,6 +25,8 @@ use crate::ui::app_callback::app_callback_with;
 use crate::ui::explorer_menu::{self, MenuEntry, MenuPlace, MenuView};
 use crate::ui::icons::ExtraIcon;
 use crate::ui::mascot::{MASCOT_NAMES, mascot_for, mascot_name_for, pixel_sprite};
+use crate::ui::tokens::RED_400;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// MonoCode `TabGroupMenu` `MENU_WIDTH`.
 const MENU_WIDTH: f32 = 260.0;
@@ -37,7 +39,6 @@ const SUBMENU_ROW: f32 = 28.0;
 const SUBMENU_SEPARATOR: f32 = 9.0;
 /// MonoCode `text-red-300` / `text-red-400` / `bg-red-500`.
 const RED_300: u32 = 0xfca5a5;
-const RED_400: u32 = 0xf87171;
 const RED_500: u32 = 0xef4444;
 
 type Anchor = Rc<Cell<Option<Bounds<Pixels>>>>;
@@ -189,7 +190,7 @@ impl BenCodeApp {
             MenuTarget::Group(_) | MenuTarget::Mono(_) => None,
         };
         let target = menu.target.clone();
-        let separator = || div().my_1().h(px(1.0)).bg(fg.opacity(0.1));
+        let separator = || div().my_1().h(px(1.0)).bg(fg.fill(Fill::Strong));
         let frame = crate::ui::sidebar_popovers::popover_frame(cx)
             .id("rail-menu")
             .occlude()
@@ -255,7 +256,7 @@ impl BenCodeApp {
                 div()
                     .px_2()
                     .py_1()
-                    .text_size(px(12.0))
+                    .text_size(Text::Base.px())
                     .text_color(rgb(RED_400))
                     .child(err)
             }));
@@ -332,11 +333,11 @@ impl BenCodeApp {
             .items_center()
             .rounded(px(8.0))
             .border_1()
-            .border_color(fg.opacity(0.1))
-            .bg(fg.opacity(0.05))
+            .border_color(fg.fill(Fill::Strong))
+            .bg(fg.fill(Fill::Hover))
             .px(px(10.0))
             .py(px(6.0))
-            .text_size(px(13.0))
+            .text_size(Text::Md.px())
             .text_color(fg)
             .on_mouse_down(MouseButton::Left, move |_, window, cx| {
                 window.focus(&handle, cx)
@@ -376,9 +377,9 @@ impl BenCodeApp {
                     .justify_center()
                     .rounded(px(8.0))
                     .border_1()
-                    .border_color(fg.opacity(0.1))
-                    .bg(fg.opacity(0.05))
-                    .hover(move |s| s.bg(fg.opacity(0.1)))
+                    .border_color(fg.fill(Fill::Strong))
+                    .bg(fg.fill(Fill::Hover))
+                    .hover(move |s| s.bg(fg.fill(Fill::Strong)))
                     .tooltip(ely_gpui_component::primitives::Tooltip::text(if has_logo {
                         "Change project logo"
                     } else {
@@ -392,7 +393,7 @@ impl BenCodeApp {
                         None => ExtraIcon::ImagePlus
                             .icon()
                             .size(IconSize::Lg)
-                            .color(fg.opacity(0.7))
+                            .color(fg.ink(Ink::Body))
                             .into_any_element(),
                     }),
             )
@@ -402,15 +403,15 @@ impl BenCodeApp {
                     .flex_1()
                     .child(
                         div()
-                            .text_size(px(11.0))
-                            .text_color(fg.opacity(0.5))
+                            .text_size(Text::Sm.px())
+                            .text_color(fg.ink(Ink::Secondary))
                             .child("Project logo"),
                     )
                     .child(
                         div()
                             .truncate()
-                            .text_size(px(12.0))
-                            .text_color(fg.opacity(0.7))
+                            .text_size(Text::Base.px())
+                            .text_color(fg.ink(Ink::Body))
                             .child(if has_logo {
                                 "Shown in tabs and composer"
                             } else {
@@ -430,7 +431,7 @@ impl BenCodeApp {
                         .items_center()
                         .justify_center()
                         .rounded(px(6.0))
-                        .hover(move |s| s.bg(fg.opacity(0.1)))
+                        .hover(move |s| s.bg(fg.fill(Fill::Strong)))
                         .tooltip(ely_gpui_component::primitives::Tooltip::text(
                             "Remove project logo",
                         ))
@@ -440,7 +441,7 @@ impl BenCodeApp {
                         .child(
                             Icon::new(IconName::Trash2)
                                 .size(IconSize::Sm)
-                                .color(fg.opacity(0.5))
+                                .color(fg.ink(Ink::Secondary))
                                 .group_hover_color("rail-logo-clear", fg),
                         ),
                 )
@@ -475,7 +476,7 @@ impl BenCodeApp {
                         .items_center()
                         .justify_center()
                         .rounded_full()
-                        .when(selected, |el| el.border_2().border_color(fg.opacity(0.8)))
+                        .when(selected, |el| el.border_2().border_color(fg.ink(Ink::Strong)))
                         .child(
                             div()
                                 .size(px(14.0))
@@ -485,7 +486,7 @@ impl BenCodeApp {
                                 .justify_center()
                                 .map(|el| match color {
                                     Some(color) => el.bg(color),
-                                    None => el.border_1().border_color(fg.opacity(0.3)),
+                                    None => el.border_1().border_color(fg.ink(Ink::Faint)),
                                 }),
                         ),
                 )
@@ -532,7 +533,7 @@ impl BenCodeApp {
                         div().absolute().child(
                             Icon::new(IconName::Pipette)
                                 .size(IconSize::Xs)
-                                .color(fg.opacity(0.6)),
+                                .color(fg.ink(Ink::Secondary)),
                         ),
                     )
                 }),
@@ -559,8 +560,8 @@ impl BenCodeApp {
             .child(
                 div()
                     .mb_1()
-                    .text_size(px(11.0))
-                    .text_color(fg.opacity(0.5))
+                    .text_size(Text::Sm.px())
+                    .text_color(fg.ink(Ink::Secondary))
                     .child("Mascot"),
             )
             .child(
@@ -584,9 +585,9 @@ impl BenCodeApp {
                             .cursor_pointer()
                             .map(|el| {
                                 if selected {
-                                    el.bg(selected_bg).border_1().border_color(fg.opacity(0.5))
+                                    el.bg(selected_bg).border_1().border_color(fg.ink(Ink::Secondary))
                                 } else {
-                                    el.hover(move |s| s.bg(fg.opacity(0.08)))
+                                    el.hover(move |s| s.bg(fg.fill(Fill::Selected)))
                                 }
                             })
                             .tooltip(ely_gpui_component::primitives::Tooltip::text(*mascot))
@@ -622,7 +623,7 @@ impl BenCodeApp {
         let hover_bg = if item.danger {
             red_500.opacity(0.15)
         } else {
-            fg.opacity(0.05)
+            fg.fill(Fill::Hover)
         };
         div()
             .id(SharedString::from(format!("rail-menu-{id}")))
@@ -634,11 +635,11 @@ impl BenCodeApp {
             .gap(px(10.0))
             .rounded(px(8.0))
             .px_2()
-            .text_size(px(13.0))
+            .text_size(Text::Md.px())
             .line_height(relative(1.0))
             .map(|el| {
                 if disabled {
-                    el.text_color(fg.opacity(0.3))
+                    el.text_color(fg.ink(Ink::Faint))
                 } else if item.danger {
                     el.text_color(red_300.opacity(0.9))
                         .hover(move |s| s.bg(hover_bg))
@@ -677,7 +678,7 @@ impl BenCodeApp {
                         this.pick_rail_extra(id, click_anchor.get(), window, cx);
                     }))
             })
-            .child(item.icon.render(fg.opacity(0.55)))
+            .child(item.icon.render(fg.ink(Ink::Secondary)))
             .child(
                 // `min-w-0 flex-1 leading-label`, `py-2` with a description.
                 div()
@@ -690,9 +691,9 @@ impl BenCodeApp {
                         // `mt-1 block text-[11px] leading-snug text-content/60`
                         div()
                             .mt_1()
-                            .text_size(px(11.0))
+                            .text_size(Text::Sm.px())
                             .line_height(relative(1.375))
-                            .text_color(fg.opacity(0.6))
+                            .text_color(fg.ink(Ink::Secondary))
                             .child(text)
                     })),
             )
@@ -700,7 +701,7 @@ impl BenCodeApp {
                 el.child(
                     Icon::new(IconName::ChevronRight)
                         .size(IconSize::Sm)
-                        .color(fg.opacity(0.5)),
+                        .color(fg.ink(Ink::Secondary)),
                 )
             })
     }

@@ -14,6 +14,7 @@ use crate::app::BenCodeApp;
 use crate::ui::composer::focus_later;
 use crate::ui::file_tree::resolve_entry_icon;
 use crate::ui::scale::px;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// MonoCode `MAX_RECENTS`, `MAX_RESULTS`.
 const MAX_RECENTS: usize = 30;
@@ -351,7 +352,7 @@ impl BenCodeApp {
             .h(px(32.0))
             .px_2()
             .rounded(px(6.0))
-            .text_size(px(14.0))
+            .text_size(Text::Lg.px())
             .text_color(colors.fg)
             .cursor_pointer()
             .when(highlighted, |el| el.bg(colors.active))
@@ -417,8 +418,8 @@ impl BenCodeApp {
                                     .max_w(px(PICKER_WIDTH * 0.45))
                                     .truncate()
                                     .font_family(cx.theme().mono_family.clone())
-                                    .text_size(px(11.0))
-                                    .text_color(colors.fg.opacity(0.4))
+                                    .text_size(Text::Sm.px())
+                                    .text_color(colors.fg.ink(Ink::Muted))
                                     .child(match_text(dir, &dir_hits, cx)),
                             )
                         })
@@ -434,7 +435,7 @@ impl BenCodeApp {
                         .child(
                             Icon::new(IconName::RefreshCw)
                                 .size(IconSize::Sm)
-                                .color(colors.fg.opacity(0.5)),
+                                .color(colors.fg.ink(Ink::Secondary)),
                         )
                         .child(div().flex_1().min_w_0().truncate().child(match_text(
                             action.label,
@@ -448,11 +449,11 @@ impl BenCodeApp {
                                 .py_0p5()
                                 .rounded(px(4.0))
                                 .border_1()
-                                .border_color(colors.fg.opacity(0.1))
-                                .bg(colors.fg.opacity(0.05))
+                                .border_color(colors.fg.fill(Fill::Strong))
+                                .bg(colors.fg.fill(Fill::Hover))
                                 .font_family(cx.theme().mono_family.clone())
-                                .text_size(px(10.0))
-                                .text_color(colors.fg.opacity(0.5))
+                                .text_size(Text::Xs.px())
+                                .text_color(colors.fg.ink(Ink::Secondary))
                                 .child(action.hint),
                         )
                         .into_any_element()
@@ -476,7 +477,7 @@ impl BenCodeApp {
                     .overflow_hidden()
                     .rounded(px(8.0))
                     .border_1()
-                    .border_color(colors.fg.opacity(0.1))
+                    .border_color(colors.fg.fill(Fill::Strong))
                     .bg(colors.surface)
                     .shadow_lg()
                     .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
@@ -493,13 +494,13 @@ impl BenCodeApp {
                                 .child(
                                     Icon::new(IconName::Search)
                                         .size(IconSize::Xs)
-                                        .color(colors.fg.opacity(0.5)),
+                                        .color(colors.fg.ink(Ink::Secondary)),
                                 )
                                 .child(
                                     div()
                                         .flex_1()
                                         .min_w_0()
-                                        .text_size(px(13.0))
+                                        .text_size(Text::Md.px())
                                         .child(self.quick_open_input.clone()),
                                 ),
                         ),
@@ -510,8 +511,8 @@ impl BenCodeApp {
                                 .px_3()
                                 .pt_1()
                                 .pb_3()
-                                .text_size(px(12.0))
-                                .text_color(colors.fg.opacity(0.5))
+                                .text_size(Text::Base.px())
+                                .text_color(colors.fg.ink(Ink::Secondary))
                                 .child(label),
                         ),
                         None => el.child(

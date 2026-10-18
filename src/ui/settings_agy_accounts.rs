@@ -20,6 +20,7 @@ use crate::ui::app_callback::app_callback;
 use crate::ui::git_changes_panel::spinning_icon;
 use crate::ui::scale::px;
 use crate::ui::settings_accounts::{plural_accounts, provider_header};
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 impl BenCodeApp {
     /// Antigravity's header with Add account, then its accounts.
@@ -62,7 +63,7 @@ impl BenCodeApp {
                 div()
                     .pl(px(40.0))
                     .border_t_1()
-                    .border_color(fg.opacity(0.05))
+                    .border_color(fg.fill(Fill::Hover))
                     .children(rows)
                     .when(signing_in, |el| el.child(self.render_agy_sign_in_row(cx)))
                     .when(signed_out, |el| {
@@ -70,8 +71,8 @@ impl BenCodeApp {
                             div()
                                 .px_4()
                                 .py_2()
-                                .text_size(px(10.0))
-                                .text_color(fg.opacity(0.4))
+                                .text_size(Text::Xs.px())
+                                .text_color(fg.ink(Ink::Muted))
                                 .child("Antigravity is signed out. Switch to an account to sign it in."),
                         )
                     }),
@@ -114,7 +115,7 @@ impl BenCodeApp {
             .px_4()
             .py_2()
             .border_b_1()
-            .border_color(fg.opacity(0.05))
+            .border_color(fg.fill(Fill::Hover))
             .child(
                 div()
                     .flex_1()
@@ -122,8 +123,8 @@ impl BenCodeApp {
                     .child(
                         div()
                             .truncate()
-                            .text_size(px(12.0))
-                            .text_color(fg.opacity(0.85))
+                            .text_size(Text::Base.px())
+                            .text_color(fg.ink(Ink::Strong))
                             .child(account.label.clone()),
                     )
                     .child(
@@ -133,7 +134,7 @@ impl BenCodeApp {
                             .gap(px(10.0))
                             .min_w_0()
                             .mt(px(2.0))
-                            .text_size(px(10.0))
+                            .text_size(Text::Xs.px())
                             .when(active, |el| {
                                 el.child(
                                     div().flex_none().text_color(colors.success).child("In use"),
@@ -143,7 +144,7 @@ impl BenCodeApp {
                                 div()
                                     .min_w_0()
                                     .truncate()
-                                    .text_color(fg.opacity(0.3))
+                                    .text_color(fg.ink(Ink::Faint))
                                     .child(subtitle),
                             ),
                     ),
@@ -159,9 +160,9 @@ impl BenCodeApp {
                         el.child(
                             div()
                                 .mr_1()
-                                .text_size(px(10.0))
+                                .text_size(Text::Xs.px())
                                 .font_weight(FontWeight::MEDIUM)
-                                .text_color(fg.opacity(0.3))
+                                .text_color(fg.ink(Ink::Faint))
                                 .child("ACTIVE"),
                         )
                     })
@@ -207,7 +208,7 @@ impl BenCodeApp {
                                         SharedString::from(format!("agy-account-removing-{id}")),
                                         IconName::RefreshCw,
                                         IconSize::Sm,
-                                        fg.opacity(0.5),
+                                        fg.ink(Ink::Secondary),
                                     )),
                             );
                         }
@@ -248,20 +249,20 @@ impl BenCodeApp {
             .px_4()
             .py_2()
             .border_b_1()
-            .border_color(fg.opacity(0.05))
+            .border_color(fg.fill(Fill::Hover))
             .child(spinning_icon(
                 "agy-account-signing-in".into(),
                 IconName::RefreshCw,
                 IconSize::Sm,
-                fg.opacity(0.5),
+                fg.ink(Ink::Secondary),
             ))
             .child(
                 div()
                     .flex_1()
                     .min_w_0()
                     .truncate()
-                    .text_size(px(12.0))
-                    .text_color(fg.opacity(0.6))
+                    .text_size(Text::Base.px())
+                    .text_color(fg.ink(Ink::Secondary))
                     .child("Waiting for the sign-in in the terminal…"),
             )
             .child(
@@ -290,7 +291,7 @@ impl BenCodeApp {
         let dialog = Dialog::new("agy-account-remove", "Remove Antigravity account", close)
             .child(
                 div()
-                    .text_size(px(13.0))
+                    .text_size(Text::Md.px())
                     .line_height(relative(1.5))
                     .text_color(cx.theme().colors.fg_muted)
                     .child(message),

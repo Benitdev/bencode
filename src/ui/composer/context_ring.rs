@@ -19,6 +19,7 @@ use crate::app::{BenCodeApp, can_compact};
 use crate::db::SessionRow;
 use crate::ui::sidebar_popovers::popover_glass;
 use crate::ui::transcript::turns::format_metric_count;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 const SIZE: f32 = 14.0;
 const STROKE: f32 = 2.0;
@@ -33,7 +34,7 @@ pub fn ring_color(share: f32, cx: &App) -> Hsla {
     } else if share >= 0.75 {
         colors.warning
     } else {
-        colors.fg.opacity(0.45)
+        colors.fg.ink(Ink::Muted)
     }
 }
 
@@ -115,10 +116,10 @@ impl BenCodeApp {
                     div()
                         .flex()
                         .flex_col()
-                        .child(div().text_size(px(12.0)).child(headline.clone()))
+                        .child(div().text_size(Text::Base.px()).child(headline.clone()))
                         .child(
                             div()
-                                .text_size(px(11.0))
+                                .text_size(Text::Sm.px())
                                 .text_color(colors.tooltip_fg.opacity(0.5))
                                 .child(detail.clone()),
                         )
@@ -154,7 +155,7 @@ impl BenCodeApp {
         let colors = &cx.theme().colors;
         let busy = self.is_agent_running_in(&session.id);
         let sid = session.id.clone();
-        let hover = colors.fg.opacity(0.15);
+        let hover = colors.fg.fill(Fill::Bold);
         let button = div()
             .id("compact-now")
             .mt_1p5()
@@ -162,8 +163,8 @@ impl BenCodeApp {
             .px_2()
             .py_1()
             .rounded(px(6.0))
-            .bg(colors.fg.opacity(0.10))
-            .text_size(px(11.0))
+            .bg(colors.fg.fill(Fill::Strong))
+            .text_size(Text::Sm.px())
             .text_color(colors.fg)
             .map(|el| {
                 if busy {
@@ -190,14 +191,14 @@ impl BenCodeApp {
             .shadow_xl()
             .child(
                 div()
-                    .text_size(px(12.0))
+                    .text_size(Text::Base.px())
                     .text_color(colors.fg)
                     .child(headline),
             )
             .child(
                 div()
-                    .text_size(px(11.0))
-                    .text_color(colors.fg.opacity(0.5))
+                    .text_size(Text::Sm.px())
+                    .text_color(colors.fg.ink(Ink::Secondary))
                     .child(detail),
             )
             .child(button);

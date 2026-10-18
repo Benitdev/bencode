@@ -31,6 +31,7 @@ use crate::ui::git_changes_panel::{Busy, Side};
 use crate::ui::icons::ExtraIcon;
 use crate::ui::scale::{self, px};
 use crate::ui::scrollbar::{self, ScrollBar};
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// MonoCode `UNIFIED_LINE_PX` / `UNIFIED_FOLD_PX`.
 const LINE_HEIGHT: f32 = 20.0;
@@ -359,7 +360,7 @@ impl DiffDoc {
         let Some(line) = line else {
             return div()
                 .h(px(LINE_HEIGHT))
-                .bg(cx.theme().colors.fg.opacity(0.03));
+                .bg(cx.theme().colors.fg.fill(Fill::Faint));
         };
         let file = &self.files[ix];
         let scrolled = self.side_scroll.get(&file.id).copied().unwrap_or_default();
@@ -792,7 +793,7 @@ impl BenCodeApp {
                         SharedString::from(format!("diff-loading-{key}")),
                         IconName::LoaderCircle,
                         IconSize::Sm,
-                        fg.opacity(0.4),
+                        fg.ink(Ink::Muted),
                     ))
                     .into_any_element();
             }
@@ -816,14 +817,14 @@ impl BenCodeApp {
                     .child(
                         div()
                             .mt_2()
-                            .text_size(px(13.0))
+                            .text_size(Text::Md.px())
                             .text_color(fg)
                             .child(format!("Couldn’t load {what}")),
                     )
                     .child(
                         div()
-                            .text_size(px(12.0))
-                            .text_color(fg.opacity(0.5))
+                            .text_size(Text::Base.px())
+                            .text_color(fg.ink(Ink::Secondary))
                             .child(err.clone()),
                     )
                     .into_any_element();
@@ -834,8 +835,8 @@ impl BenCodeApp {
             return div()
                 .px_4()
                 .py_6()
-                .text_size(px(13.0))
-                .text_color(fg.opacity(0.45))
+                .text_size(Text::Md.px())
+                .text_color(fg.ink(Ink::Muted))
                 .child("No file changes")
                 .into_any_element();
         }
@@ -928,11 +929,11 @@ impl BenCodeApp {
                 .justify_center()
                 .rounded_md()
                 .when(enabled, |el| {
-                    el.cursor_pointer().hover(|s| s.bg(fg.opacity(0.10)))
+                    el.cursor_pointer().hover(|s| s.bg(fg.fill(Fill::Strong)))
                 })
                 .when(!enabled, |el| el.opacity(0.4))
                 .tooltip(Tooltip::text(tip))
-                .child(icon.size(IconSize::Sm).color(fg.opacity(0.45)))
+                .child(icon.size(IconSize::Sm).color(fg.ink(Ink::Muted)))
         };
         let split = doc.split;
         let expand_key = key.to_string();
@@ -946,15 +947,15 @@ impl BenCodeApp {
             .px_3()
             .border_b_1()
             .border_color(colors.border)
-            .text_size(px(12.0))
-            .child(div().text_color(fg.opacity(0.7)).child(if count == 1 {
+            .text_size(Text::Base.px())
+            .child(div().text_color(fg.ink(Ink::Body)).child(if count == 1 {
                 "1 file".to_string()
             } else {
                 format!("{count} files")
             }))
             .child(
                 diff_counts(additions, deletions, crate::ui::appearance::diff_colors(cx))
-                    .text_size(px(11.0)),
+                    .text_size(Text::Sm.px()),
             )
             .child(
                 div()
@@ -1048,8 +1049,8 @@ impl BenCodeApp {
             DocRow::Message(_, text) => div()
                 .px_3()
                 .py_3()
-                .text_size(px(12.0))
-                .text_color(cx.theme().colors.fg.opacity(0.45))
+                .text_size(Text::Base.px())
+                .text_color(cx.theme().colors.fg.ink(Ink::Muted))
                 .child(text.clone())
                 .into_any_element(),
         }
@@ -1135,7 +1136,7 @@ impl BenCodeApp {
                                 IconName::ChevronRight
                             })
                             .size(IconSize::Xs)
-                            .color(fg.opacity(0.45)),
+                            .color(fg.ink(Ink::Muted)),
                         )
                         .child(
                             div()
@@ -1148,8 +1149,8 @@ impl BenCodeApp {
                                 .min_w_0()
                                 .truncate()
                                 .font_family(theme.mono_family.clone())
-                                .text_size(px(12.0))
-                                .text_color(fg.opacity(0.85))
+                                .text_size(Text::Base.px())
+                                .text_color(fg.ink(Ink::Strong))
                                 .child(file.label.clone()),
                         )
                         .child(
@@ -1159,7 +1160,7 @@ impl BenCodeApp {
                                 crate::ui::appearance::diff_colors(cx),
                             )
                             .flex_none()
-                            .text_size(px(11.0)),
+                            .text_size(Text::Sm.px()),
                         ),
                 )
                 .when(unstaged, |el| {
@@ -1181,7 +1182,7 @@ impl BenCodeApp {
                             .when(busy, |el| el.opacity(0.4))
                             .when(!busy, |el| {
                                 el.cursor_pointer()
-                                    .hover(|s| s.bg(fg.opacity(0.10)))
+                                    .hover(|s| s.bg(fg.fill(Fill::Strong)))
                                     .on_click(cx.listener(move |this, _, _, cx| {
                                         this.file_action(
                                             discard_path.clone(),
@@ -1194,7 +1195,7 @@ impl BenCodeApp {
                             .child(
                                 Icon::new(IconName::Undo2)
                                     .size(IconSize::Xs)
-                                    .color(fg.opacity(0.45)),
+                                    .color(fg.ink(Ink::Muted)),
                             ),
                     )
                     .child(
@@ -1259,12 +1260,12 @@ impl BenCodeApp {
                 .justify_center()
                 .rounded_sm()
                 .cursor_pointer()
-                .hover(|s| s.bg(fg.opacity(0.10)))
+                .hover(|s| s.bg(fg.fill(Fill::Strong)))
                 .tooltip(Tooltip::text(tip))
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.reveal_diff_fold(&key, file, fold, how, cx)
                 }))
-                .child(Icon::new(icon).size(IconSize::Xs).color(fg.opacity(0.4)))
+                .child(Icon::new(icon).size(IconSize::Xs).color(fg.ink(Ink::Muted)))
         };
         let all_key = key.to_string();
         div()
@@ -1274,7 +1275,7 @@ impl BenCodeApp {
             .w_full()
             .h(px(FOLD_HEIGHT))
             .px_2()
-            .bg(fg.opacity(0.08))
+            .bg(fg.fill(Fill::Selected))
             .child(arrow(
                 "up",
                 IconName::ChevronUp,
@@ -1295,9 +1296,9 @@ impl BenCodeApp {
                     .py_1()
                     .cursor_pointer()
                     .font_family(theme.mono_family.clone())
-                    .text_size(px(11.0))
-                    .text_color(fg.opacity(0.45))
-                    .hover(|s| s.text_color(fg.opacity(0.7)))
+                    .text_size(Text::Sm.px())
+                    .text_color(fg.ink(Ink::Muted))
+                    .hover(|s| s.text_color(fg.ink(Ink::Body)))
                     .on_click(cx.listener(move |this, _, _, cx| {
                         this.reveal_diff_fold(&all_key, file, fold, Expand::All, cx)
                     }))
@@ -1374,7 +1375,7 @@ fn render_line(
     let (tint, number_color): (Option<(Hsla, Hsla)>, Hsla) = match line.kind {
         LineKind::Add => (Some((diff.add_bg, diff.add_gutter)), diff.add_fg),
         LineKind::Del => (Some((diff.del_bg, diff.del_gutter)), diff.del_fg),
-        LineKind::Context => (None, fg.opacity(0.35)),
+        LineKind::Context => (None, fg.ink(Ink::Faint)),
     };
     let text = (!line.text.is_empty()).then(|| {
         StyledText::new(SharedString::from(line.text.clone())).with_highlights(line_highlights(
@@ -1405,7 +1406,7 @@ fn render_line(
                 .when_some(tint, |el, (row, gutter)| {
                     el.bg(gutter.opacity(1.0 - (1.0 - gutter.a) / (1.0 - row.a)))
                 })
-                .text_size(px(11.0))
+                .text_size(Text::Sm.px())
                 .text_color(number_color)
                 .children(number.map(|n| n.to_string())),
         )

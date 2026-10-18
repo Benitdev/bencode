@@ -19,6 +19,7 @@ use crate::app_cli::artifacts::ArtifactCard;
 use crate::db::ArtifactKind;
 use crate::ui::app_callback::app_callback;
 use crate::ui::scale::px;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// `border-stroke`, as the Overview draws its edges.
 const STROKE: f32 = 0.07;
@@ -47,22 +48,22 @@ pub fn artifact_card(id: impl Into<SharedString>, card: &ArtifactCard, cx: &App)
         .gap(px(10.0))
         .rounded(px(12.0))
         .border_1()
-        .border_color(fg.opacity(0.1))
+        .border_color(fg.fill(Fill::Strong))
         .py_2()
         .pl_3()
         .pr(px(14.0))
         .cursor_pointer()
-        .hover(move |s| s.border_color(fg.opacity(0.2)).bg(fg.opacity(0.05)))
+        .hover(move |s| s.border_color(fg.opacity(0.2)).bg(fg.fill(Fill::Hover)))
         .child(
             artifact_icon(card.kind)
                 .size(IconSize::Sm)
-                .color(fg.opacity(0.55)),
+                .color(fg.ink(Ink::Secondary)),
         )
         .child(
             div()
                 .min_w_0()
                 .truncate()
-                .text_size(px(13.0))
+                .text_size(Text::Md.px())
                 .text_color(fg)
                 .child(card.title.clone()),
         )
@@ -228,7 +229,7 @@ impl BenCodeApp {
                     .flex_1()
                     .min_w_0()
                     .truncate()
-                    .text_size(px(13.0))
+                    .text_size(Text::Md.px())
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(fg)
                     .child(title),
@@ -267,7 +268,7 @@ impl BenCodeApp {
             div()
                 .px_4()
                 .py_3()
-                .text_size(px(13.0))
+                .text_size(Text::Md.px())
                 .text_color(fg.opacity(tone))
                 .child(text)
                 .into_any_element()
@@ -296,8 +297,8 @@ impl BenCodeApp {
                         .children(error.map(|error| {
                             div()
                                 .mt_3()
-                                .text_size(px(12.0))
-                                .text_color(fg.opacity(0.6))
+                                .text_size(Text::Base.px())
+                                .text_color(fg.ink(Ink::Secondary))
                                 .child(error)
                         }));
                     crate::ui::scrollbar::Scrolled::new("artifact-scrollbar", scroll)
@@ -358,8 +359,8 @@ impl BenCodeApp {
                 div()
                     .px_4()
                     .pb_3()
-                    .text_size(px(12.0))
-                    .text_color(fg.opacity(0.6))
+                    .text_size(Text::Base.px())
+                    .text_color(fg.ink(Ink::Secondary))
                     .child(error)
             }))
             .into_any_element()

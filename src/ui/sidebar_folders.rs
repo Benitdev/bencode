@@ -18,6 +18,7 @@ use crate::ui::drag_drop::DraggedSession;
 use crate::ui::scale::px;
 use crate::ui::sidebar_sessions::ListDrop;
 use crate::ui::spinner::terminal_spinner;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// MonoCode's `text-[13px] font-semibold leading-snug` row label.
 const NAME_LINE_HEIGHT: f32 = 13.0 * 1.375;
@@ -111,8 +112,8 @@ impl BenCodeApp {
             .flex_none()
             .items_center()
             .gap_1()
-            .text_size(px(11.0))
-            .text_color(colors.fg.opacity(0.45))
+            .text_size(Text::Sm.px())
+            .text_color(colors.fg.ink(Ink::Muted))
             .map(|el| {
                 if open {
                     el
@@ -176,7 +177,7 @@ impl BenCodeApp {
                 .h(px(32.0))
                 .px_2()
                 .when(open, |el| el.rounded(px(6.0)))
-                .hover(move |s| s.bg(fg.opacity(0.10)))
+                .hover(move |s| s.bg(fg.fill(Fill::Strong)))
                 .tooltip(Tooltip::text(folder.name.clone()))
                 .on_click(cx.listener(move |this, _, _, cx| {
                     if !searching {
@@ -205,7 +206,7 @@ impl BenCodeApp {
                         .flex_1()
                         .min_w_0()
                         .truncate()
-                        .text_size(px(13.0))
+                        .text_size(Text::Md.px())
                         .line_height(px(NAME_LINE_HEIGHT))
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(fg)
@@ -218,14 +219,12 @@ impl BenCodeApp {
         let new_group = SharedString::from(format!("folder-new-{new_in}"));
         div()
             .id(SharedString::from(format!("folder-shell-{}", folder.id)))
-            .flex()
-            .flex_col()
             .overflow_hidden()
             .rounded(px(6.0))
             // MonoCode `folderShellFill`: the tint at 18%.
             .bg(folder
                 .accent()
-                .map_or(fg.opacity(0.05), |accent| accent.opacity(0.18)))
+                .map_or(fg.fill(Fill::Hover), |accent| accent.opacity(0.18)))
             .when(open || before_loose, |el| el.mb(px(6.0)))
             .on_drag_move::<DraggedSession>(cx.listener(
                 move |this, event: &gpui::DragMoveEvent<DraggedSession>, _, cx| {
@@ -258,8 +257,8 @@ impl BenCodeApp {
                                     .rounded(px(6.0))
                                     .border_1()
                                     .border_color(gpui::transparent_black())
-                                    .text_color(fg.opacity(0.45))
-                                    .hover(move |s| s.bg(fg.opacity(0.10)).text_color(fg))
+                                    .text_color(fg.ink(Ink::Muted))
+                                    .hover(move |s| s.bg(fg.fill(Fill::Strong)).text_color(fg))
                                     .tooltip(Tooltip::text("New session"))
                                     .on_click(cx.listener(move |this, _, _, cx| {
                                         this.new_session_in_folder(&new_in, cx)
@@ -267,12 +266,12 @@ impl BenCodeApp {
                                     .child(
                                         Icon::new(IconName::Plus)
                                             .size(IconSize::Xs)
-                                            .color(fg.opacity(0.45))
+                                            .color(fg.ink(Ink::Muted))
                                             .group_hover_color(new_group, fg),
                                     )
                                     .child(
                                         div()
-                                            .text_size(px(13.0))
+                                            .text_size(Text::Md.px())
                                             .line_height(px(NAME_LINE_HEIGHT))
                                             .font_weight(FontWeight::SEMIBOLD)
                                             .child("New session"),
@@ -323,7 +322,7 @@ impl BenCodeApp {
             .h(px(32.0))
             .px_2()
             .when(open, |el| el.rounded(px(6.0)))
-            .hover(move |s| s.bg(fg.opacity(0.10)))
+            .hover(move |s| s.bg(fg.fill(Fill::Strong)))
             .on_click(cx.listener(move |this, _, _, cx| {
                 if !searching {
                     match kind {
@@ -338,7 +337,7 @@ impl BenCodeApp {
                     .flex_1()
                     .min_w_0()
                     .truncate()
-                    .text_size(px(13.0))
+                    .text_size(Text::Md.px())
                     .line_height(px(NAME_LINE_HEIGHT))
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(fg)
@@ -346,11 +345,9 @@ impl BenCodeApp {
             )
             .child(self.folder_count(sessions.len(), open, folder_state(sessions, states), cx));
         div()
-            .flex()
-            .flex_col()
             .overflow_hidden()
             .rounded(px(6.0))
-            .bg(tint.map_or(fg.opacity(0.05), |tint| tint.opacity(0.18)))
+            .bg(tint.map_or(fg.fill(Fill::Hover), |tint| tint.opacity(0.18)))
             .when(open || before_loose, |el| el.mb(px(6.0)))
             .child(header)
             .when_some(cards, |el, cards| {
@@ -378,7 +375,7 @@ impl BenCodeApp {
                     .child(
                         Icon::new(IconName::ChevronDown)
                             .size(IconSize::Sm)
-                            .color(colors.fg.opacity(0.5)),
+                            .color(colors.fg.ink(Ink::Secondary)),
                     ),
             )
             .child(
@@ -391,10 +388,10 @@ impl BenCodeApp {
                     .rounded(px(4.0))
                     .px(px(7.0))
                     .py(px(1.0))
-                    .bg(colors.fg.opacity(0.10))
+                    .bg(colors.fg.fill(Fill::Strong))
                     .border_1()
                     .border_color(colors.accent.opacity(0.4))
-                    .text_size(px(13.0))
+                    .text_size(Text::Md.px())
                     .line_height(px(NAME_LINE_HEIGHT))
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(colors.fg)
@@ -403,8 +400,8 @@ impl BenCodeApp {
             .child(
                 div()
                     .flex_none()
-                    .text_size(px(11.0))
-                    .text_color(colors.fg.opacity(0.45))
+                    .text_size(Text::Sm.px())
+                    .text_color(colors.fg.ink(Ink::Muted))
                     .child(count.to_string()),
             )
             .into_any_element()

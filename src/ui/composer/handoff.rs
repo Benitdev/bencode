@@ -21,6 +21,7 @@ use crate::harness::{HarnessKind, catalog};
 use crate::ui::attachment_chip::OnRemove;
 use crate::ui::explorer_menu::{self, MenuAction, MenuEntry, MenuPlace, MenuView};
 use crate::ui::provider_icon::HarnessIcon;
+use crate::ui::tokens::{Ink, Text, Tone as _};
 
 /// The Handoff menu's width (MonoCode `SecondOpinionButton` menu).
 const HANDOFF_MENU_WIDTH: f32 = 240.0;
@@ -158,8 +159,8 @@ pub fn handoff_mini_card(
         div()
             .mt_1()
             .truncate()
-            .text_size(px(11.0))
-            .text_color(fg.opacity(0.45))
+            .text_size(Text::Sm.px())
+            .text_color(fg.ink(Ink::Muted))
             .child(text)
     };
     let files = match meta.files {
@@ -184,14 +185,14 @@ pub fn handoff_mini_card(
             .min_w_0()
             .items_center()
             .gap_1p5()
-            .text_size(px(13.0))
+            .text_size(Text::Md.px())
             .font_weight(FontWeight::SEMIBOLD)
             .text_color(fg)
             .child(harness(meta.from))
             .child(
                 Icon::new(IconName::ChevronRight)
                     .size(IconSize::Xs)
-                    .color(fg.opacity(0.35)),
+                    .color(fg.ink(Ink::Faint)),
             )
             .child(harness(meta.to)),
     )

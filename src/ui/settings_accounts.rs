@@ -22,6 +22,7 @@ use crate::ui::footer::{account_status_label, usage_meter};
 use crate::ui::git_changes_panel::spinning_icon;
 use crate::ui::scale::px;
 use crate::ui::settings_parts::{SettingsGroup, SettingsRow, icon_tile};
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// MonoCode `UsageMeter`'s `w-36`.
 const METER_WIDTH: f32 = 144.0;
@@ -58,15 +59,15 @@ pub(crate) fn provider_header(
                         .min_w_0()
                         .child(
                             div()
-                                .text_size(px(13.0))
+                                .text_size(Text::Md.px())
                                 .font_weight(FontWeight::MEDIUM)
                                 .child(title),
                         )
                         .child(
                             div()
                                 .mt(px(2.0))
-                                .text_size(px(11.0))
-                                .text_color(fg.opacity(0.4))
+                                .text_size(Text::Sm.px())
+                                .text_color(fg.ink(Ink::Muted))
                                 .child(detail),
                         ),
                 ),
@@ -160,7 +161,7 @@ impl BenCodeApp {
                 div()
                     .pl(px(40.0))
                     .border_t_1()
-                    .border_color(fg.opacity(0.05))
+                    .border_color(fg.fill(Fill::Hover))
                     .children(rows)
                     .when(adding, |el| {
                         el.child(self.render_account_editor(provider.id(), true, cx))
@@ -222,7 +223,7 @@ impl BenCodeApp {
             .px_4()
             .py_2()
             .border_b_1()
-            .border_color(fg.opacity(0.05))
+            .border_color(fg.fill(Fill::Hover))
             .child(
                 div()
                     .flex_1()
@@ -237,8 +238,8 @@ impl BenCodeApp {
                                 div()
                                     .min_w_0()
                                     .truncate()
-                                    .text_size(px(12.0))
-                                    .text_color(fg.opacity(0.85))
+                                    .text_size(Text::Base.px())
+                                    .text_color(fg.ink(Ink::Strong))
                                     .child(account.label.clone()),
                             )
                             .when_some(
@@ -251,10 +252,10 @@ impl BenCodeApp {
                                             .truncate()
                                             .px_1()
                                             .rounded(px(4.0))
-                                            .bg(fg.opacity(0.07))
+                                            .bg(fg.fill(Fill::Line))
                                             .text_size(px(9.0))
                                             .line_height(px(16.0))
-                                            .text_color(fg.opacity(0.5))
+                                            .text_color(fg.ink(Ink::Secondary))
                                             .child(tag.to_string()),
                                     )
                                 },
@@ -267,7 +268,7 @@ impl BenCodeApp {
                             .gap(px(10.0))
                             .min_w_0()
                             .mt(px(2.0))
-                            .text_size(px(10.0))
+                            .text_size(Text::Xs.px())
                             .child(
                                 account_status_label(&account_status(usage, now), colors)
                                     .flex_none(),
@@ -276,7 +277,7 @@ impl BenCodeApp {
                                 div()
                                     .min_w_0()
                                     .truncate()
-                                    .text_color(fg.opacity(0.3))
+                                    .text_color(fg.ink(Ink::Faint))
                                     .child(subtitle),
                             ),
                     ),
@@ -294,9 +295,9 @@ impl BenCodeApp {
                         el.child(
                             div()
                                 .mr_1()
-                                .text_size(px(10.0))
+                                .text_size(Text::Xs.px())
                                 .font_weight(FontWeight::MEDIUM)
-                                .text_color(fg.opacity(0.3))
+                                .text_color(fg.ink(Ink::Faint))
                                 .child("DEFAULT"),
                         )
                     })
@@ -325,7 +326,7 @@ impl BenCodeApp {
                                         SharedString::from(format!("account-removing-{id}")),
                                         IconName::RefreshCw,
                                         IconSize::Sm,
-                                        fg.opacity(0.5),
+                                        fg.ink(Ink::Secondary),
                                     )),
                             );
                         }
@@ -374,7 +375,7 @@ impl BenCodeApp {
             .px_4()
             .py_2()
             .border_b_1()
-            .border_color(fg.opacity(0.05))
+            .border_color(fg.fill(Fill::Hover))
             .child(
                 div()
                     .flex()
@@ -387,9 +388,9 @@ impl BenCodeApp {
                     .pr_1()
                     .rounded(px(6.0))
                     .border_1()
-                    .border_color(fg.opacity(0.10))
-                    .bg(fg.opacity(0.04))
-                    .text_size(px(12.0))
+                    .border_color(fg.fill(Fill::Strong))
+                    .bg(fg.fill(Fill::Faint))
+                    .text_size(Text::Base.px())
                     .child(
                         div()
                             .flex_1()
@@ -436,7 +437,7 @@ impl BenCodeApp {
         )
         .child(
             div()
-                .text_size(px(13.0))
+                .text_size(Text::Md.px())
                 .line_height(relative(1.5))
                 .text_color(cx.theme().colors.fg_muted)
                 .child(message),

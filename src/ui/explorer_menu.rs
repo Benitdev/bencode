@@ -11,6 +11,7 @@ use gpui::{
 };
 
 use crate::ui::scale::px;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct MenuAction {
@@ -206,8 +207,8 @@ fn row_look(style: MenuStyle, fg: Hsla) -> RowLook {
             gap: 12.0,
             text: 13.0,
             leading: 1.0,
-            hover: fg.opacity(0.05),
-            disabled: fg.opacity(0.3),
+            hover: fg.fill(Fill::Hover),
+            disabled: fg.ink(Ink::Faint),
         },
         // `gap-2 px-3 text-[12px]` (preflight leading 1.5), `hover:bg-content/10`,
         // `disabled:opacity-40`.
@@ -217,8 +218,8 @@ fn row_look(style: MenuStyle, fg: Hsla) -> RowLook {
             gap: 8.0,
             text: 12.0,
             leading: 1.5,
-            hover: fg.opacity(0.1),
-            disabled: fg.opacity(0.4),
+            hover: fg.fill(Fill::Strong),
+            disabled: fg.ink(Ink::Muted),
         },
     }
 }
@@ -260,7 +261,7 @@ pub fn render_menu_styled(
     let on_pick = std::rc::Rc::new(on_pick);
     let separator = || {
         // `my-1 h-px bg-content/10`
-        div().my_1().h(px(1.0)).bg(colors.fg.opacity(0.1))
+        div().my_1().h(px(1.0)).bg(colors.fg.fill(Fill::Strong))
     };
     let rows = entries.iter().enumerate().map(|(ix, entry)| {
         let MenuEntry::Item(item) = entry else {
@@ -358,9 +359,9 @@ pub fn render_menu_styled(
                         // `mt-1 text-[11px] leading-snug text-content/50`
                         div()
                             .mt_1()
-                            .text_size(px(11.0))
+                            .text_size(Text::Sm.px())
                             .line_height(relative(1.375))
-                            .text_color(colors.fg.opacity(0.5))
+                            .text_color(colors.fg.ink(Ink::Secondary))
                             .child(text)
                     })),
             )
@@ -377,15 +378,15 @@ pub fn render_menu_styled(
                 el.child(
                     Icon::new(IconName::ChevronRight)
                         .size(IconSize::Sm)
-                        .color(colors.fg.opacity(0.5)),
+                        .color(colors.fg.ink(Ink::Secondary)),
                 )
             })
             .children(item.shortcut.clone().filter(|_| !item.checked).map(|keys| {
                 // `shrink-0 text-[11px] text-content/40`
                 div()
                     .flex_none()
-                    .text_size(px(11.0))
-                    .text_color(colors.fg.opacity(0.4))
+                    .text_size(Text::Sm.px())
+                    .text_color(colors.fg.ink(Ink::Muted))
                     .child(keys)
             }))
             .into_any_element()
@@ -404,7 +405,7 @@ pub fn render_menu_styled(
         .flex_col()
         .overflow_hidden()
         .border_1()
-        .border_color(colors.fg.opacity(0.1))
+        .border_color(colors.fg.fill(Fill::Strong))
         .on_mouse_down_out(move |_, window, cx| on_dismiss(window, cx))
         // The header brings its own `my-1 h-px` separator.
         .children(header)

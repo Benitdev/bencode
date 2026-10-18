@@ -18,6 +18,7 @@ use crate::monos::{Mono, projects_phrase};
 use crate::ui::app_callback::app_callback;
 use crate::ui::mascot::{MascotLook, pixel_mascot};
 use crate::ui::scale::px;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 impl BenCodeApp {
     /// MonoCode `monoCovers`: a Mono's conversation is what the main area
@@ -209,14 +210,14 @@ impl BenCodeApp {
             .px(px(14.0))
             .map(|el| {
                 if theme.is_dark() {
-                    el.border_color(fg.opacity(0.14)).bg(fg.opacity(0.06))
+                    el.border_color(fg.opacity(0.14)).bg(fg.fill(Fill::Hover))
                 } else {
                     el.border_color(gpui::black().opacity(0.06))
                         .bg(gpui::white())
                         .shadow_md()
                 }
             })
-            .text_size(px(13.0))
+            .text_size(Text::Md.px())
             .font_weight(FontWeight::SEMIBOLD)
             .text_color(fg)
             .child(mono.display_name());
@@ -267,9 +268,9 @@ impl BenCodeApp {
                         div()
                             .mt_3()
                             .max_w(px(384.0))
-                            .text_size(px(13.0))
+                            .text_size(Text::Md.px())
                             .line_height(px(21.0))
-                            .text_color(fg.opacity(0.5))
+                            .text_color(fg.ink(Ink::Secondary))
                             .child(greeting_text(&names)),
                     ),
             )

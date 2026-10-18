@@ -13,6 +13,7 @@ use crate::app::BenCodeApp;
 use crate::ui::page_parts::tint;
 use crate::ui::scale::px;
 use crate::ui::scrollbar::Scrolled;
+use crate::ui::tokens::Text;
 
 /// MonoCode `min-h-37`.
 const CARD_MIN_HEIGHT: f32 = 148.0;
@@ -51,14 +52,14 @@ fn card_head(
                 .min_w_0()
                 .child(
                     div()
-                        .text_size(px(13.0))
+                        .text_size(Text::Md.px())
                         .font_weight(FontWeight::MEDIUM)
                         .text_color(fg)
                         .child(name),
                 )
                 .child(
                     div()
-                        .text_size(px(12.0))
+                        .text_size(Text::Base.px())
                         .line_height(px(17.0))
                         .text_color(muted)
                         .child(description),
@@ -82,7 +83,7 @@ impl BenCodeApp {
                     .h(px(28.0))
                     .px_3()
                     .rounded_full()
-                    .text_size(px(12.0))
+                    .text_size(Text::Base.px())
                     .font_weight(FontWeight::MEDIUM)
                     .cursor_pointer()
                     .map(|el| {
@@ -150,7 +151,7 @@ impl BenCodeApp {
                     .child(
                         div()
                             .mt(px(6.0))
-                            .text_size(px(13.0))
+                            .text_size(Text::Md.px())
                             .text_color(muted)
                             .child("Pick an example or start from scratch."),
                     )
@@ -206,7 +207,7 @@ impl BenCodeApp {
                     .items_center()
                     .gap(px(6.0))
                     .pt_3()
-                    .text_size(px(11.0))
+                    .text_size(Text::Sm.px())
                     .text_color(muted)
                     .child(Icon::new(IconName::Clock).size(IconSize::Xs).color(muted))
                     .child(template.trigger_label),

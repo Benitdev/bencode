@@ -17,6 +17,7 @@ use crate::app::BenCodeApp;
 use crate::github::{Kind, Label, WorkItem};
 use crate::ui::attachment_chip::OnRemove;
 use crate::work_items::Provider;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct InboxCard {
@@ -128,9 +129,9 @@ pub fn label_chip(label: &Label, cx: &gpui::App) -> impl IntoElement {
         .gap_1()
         .px_1p5()
         .rounded(px(4.0))
-        .bg(fg.opacity(0.08))
-        .text_size(px(10.0))
-        .text_color(fg.opacity(0.5))
+        .bg(fg.fill(Fill::Selected))
+        .text_size(Text::Xs.px())
+        .text_color(fg.ink(Ink::Secondary))
         .children(
             label_color(&label.color)
                 .map(|color| div().size(px(6.0)).flex_none().rounded_full().bg(color)),
@@ -181,14 +182,14 @@ pub fn inbox_mini_card(
                         .child(
                             Icon::new(kind_icon)
                                 .size(IconSize::Xs)
-                                .color(fg.opacity(0.45)),
+                                .color(fg.ink(Ink::Muted)),
                         )
                         .child(
                             div()
                                 .min_w_0()
                                 .truncate()
-                                .text_size(px(11.0))
-                                .text_color(fg.opacity(0.5))
+                                .text_size(Text::Sm.px())
+                                .text_color(fg.ink(Ink::Secondary))
                                 .child(format!("{} · {}", card.kind_label(), card.identifier)),
                         ),
                 )
@@ -196,7 +197,7 @@ pub fn inbox_mini_card(
                     div()
                         .mt_1()
                         .truncate()
-                        .text_size(px(13.0))
+                        .text_size(Text::Md.px())
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(fg)
                         .child(SharedString::from(card.title.clone())),
@@ -213,8 +214,8 @@ pub fn inbox_mini_card(
                                 .flex_1()
                                 .min_w_0()
                                 .truncate()
-                                .text_size(px(11.0))
-                                .text_color(fg.opacity(0.45))
+                                .text_size(Text::Sm.px())
+                                .text_color(fg.ink(Ink::Muted))
                                 .child(SharedString::from(source)),
                         )
                         .children(card.labels.iter().map(|label| label_chip(label, cx))),

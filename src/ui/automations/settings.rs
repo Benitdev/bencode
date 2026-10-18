@@ -24,6 +24,7 @@ use crate::ui::composer::permission_entry;
 use crate::ui::page_parts::{panel, rule, section_title, settings_row, tint};
 use crate::ui::provider_icon::HarnessIcon;
 use crate::ui::scale::px;
+use crate::ui::tokens::Text;
 
 /// MonoCode `GRACE_OPTIONS`.
 const GRACE_OPTIONS: [(i64, &str); 5] = [
@@ -145,7 +146,7 @@ impl BenCodeApp {
             .gap_x(px(6.0))
             .gap_y(px(4.0))
             .min_w_0()
-            .text_size(px(13.0))
+            .text_size(Text::Md.px())
             .text_color(fg.opacity(tint::BODY));
         let (icon, sentence) = match schedule::time_trigger(trigger) {
             Some(time) => (
@@ -331,7 +332,7 @@ impl BenCodeApp {
                             .px_3()
                             .pt_3()
                             .pb_2()
-                            .text_size(px(13.0))
+                            .text_size(Text::Md.px())
                             .text_color(fg)
                             .child(self.automations.prompt_input.clone()),
                     )
@@ -361,7 +362,7 @@ impl BenCodeApp {
             .child(
                 div()
                     .px_1()
-                    .text_size(px(11.0))
+                    .text_size(Text::Sm.px())
                     .text_color(fg.opacity(tint::FAINT))
                     .child("Skills work here: start a line with /skill-name."),
             )
@@ -504,14 +505,14 @@ impl BenCodeApp {
                             .gap(px(2.0))
                             .child(
                                 div()
-                                    .text_size(px(13.0))
+                                    .text_size(Text::Md.px())
                                     .font_weight(FontWeight::MEDIUM)
                                     .text_color(fg.opacity(tint::STRONG))
                                     .child("Advanced"),
                             )
                             .child(
                                 div()
-                                    .text_size(px(11.0))
+                                    .text_size(Text::Sm.px())
                                     .text_color(fg.opacity(tint::HINT))
                                     .child("Catch-up window for missed runs"),
                             ),

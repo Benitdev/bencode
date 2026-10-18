@@ -25,6 +25,7 @@ use crate::ui::scale::px;
 use crate::ui::settings_modal::SettingsTab;
 use crate::ui::settings_parts::{SettingsGroup, SettingsPage, SettingsRow, icon_tile};
 use crate::ui::sidebar_popovers::pretty_path;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 fn plural(n: usize, one: &str, many: &str) -> String {
     format!("{n} {}", if n == 1 { one } else { many })
@@ -181,7 +182,7 @@ impl BenCodeApp {
                         ExtraIcon::FolderTree
                             .icon()
                             .size(IconSize::Sm)
-                            .color(fg.opacity(0.6)),
+                            .color(fg.ink(Ink::Secondary)),
                         fg,
                     ))
                     .description(format!(
@@ -235,8 +236,8 @@ impl BenCodeApp {
         let busy = creation.busy;
         let label = |text: &'static str| {
             div()
-                .text_size(px(12.0))
-                .text_color(fg.opacity(0.7))
+                .text_size(Text::Base.px())
+                .text_color(fg.ink(Ink::Body))
                 .child(text)
         };
         let field = |title: &'static str, control: AnyElement| {
@@ -310,7 +311,7 @@ impl BenCodeApp {
             .flex()
             .flex_col()
             .gap_4()
-            .child(div().text_size(px(12.0)).text_color(fg.opacity(0.55)).child(format!(
+            .child(div().text_size(Text::Base.px()).text_color(fg.ink(Ink::Secondary)).child(format!(
                 "An independent working copy of {}. Existing uncommitted changes stay in their current working copy.",
                 pretty_path(&page.project)
             )))
@@ -324,13 +325,13 @@ impl BenCodeApp {
             })
             .children(root.map(|root| {
                 div()
-                    .text_size(px(11.0))
-                    .text_color(fg.opacity(0.4))
+                    .text_size(Text::Sm.px())
+                    .text_color(fg.ink(Ink::Muted))
                     .child(format!("Created in {}", pretty_path(&root.to_string_lossy())))
             }))
             .children(creation.error.clone().map(|error| {
                 div()
-                    .text_size(px(12.0))
+                    .text_size(Text::Base.px())
                     .text_color(cx.theme().colors.danger)
                     .child(error)
             }));
@@ -366,7 +367,7 @@ impl BenCodeApp {
         let (red, amber, muted) = (
             cx.theme().colors.danger,
             cx.theme().colors.warning,
-            fg.opacity(0.35),
+            fg.ink(Ink::Faint),
         );
         let consequence = |icon: AnyElement, text: String| {
             div()
@@ -390,7 +391,7 @@ impl BenCodeApp {
             .mt(px(10.0))
             .pt(px(10.0))
             .border_t_1()
-            .border_color(fg.opacity(0.08))
+            .border_color(fg.fill(Fill::Selected))
             .text_size(px(12.5))
             .text_color(fg.opacity(0.75));
         if count > 0 {
@@ -453,16 +454,16 @@ impl BenCodeApp {
         let card = div()
             .rounded(px(8.0))
             .border_1()
-            .border_color(fg.opacity(0.10))
-            .bg(fg.opacity(0.05))
+            .border_color(fg.fill(Fill::Strong))
+            .bg(fg.fill(Fill::Hover))
             .p_3()
             .child(
                 div()
                     .flex()
                     .items_start()
                     .gap(px(10.0))
-                    .text_size(px(12.0))
-                    .text_color(fg.opacity(0.55))
+                    .text_size(Text::Base.px())
+                    .text_color(fg.ink(Ink::Secondary))
                     .child(Icon::new(IconName::Folder).size(IconSize::Sm).color(muted))
                     .child(
                         div()
@@ -490,7 +491,7 @@ impl BenCodeApp {
                     .flex()
                     .flex_col()
                     .gap(px(14.0))
-                    .text_size(px(13.0))
+                    .text_size(Text::Md.px())
                     .line_height(relative(1.5))
                     .child(div().text_color(fg.opacity(0.75)).child(
                         "This permanently deletes the working copy and everything inside it.",
@@ -501,7 +502,7 @@ impl BenCodeApp {
                             div()
                                 .rounded(px(8.0))
                                 .border_1()
-                                .border_color(fg.opacity(0.10))
+                                .border_color(fg.fill(Fill::Strong))
                                 .p_3()
                                 .child(
                                     Switch::new(

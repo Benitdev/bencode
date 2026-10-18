@@ -19,6 +19,7 @@ use crate::app::updater::Phase;
 use crate::ui::git_changes_panel::spinning_icon;
 use crate::ui::icons::ExtraIcon;
 use crate::ui::scale::px;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// MonoCode's `/monocode.png` beside "Updated to" (and in the floating
 /// chat when its Mono is gone): BenCode's own icon.
@@ -106,7 +107,7 @@ impl BenCodeApp {
                     .child(
                         div()
                             .truncate()
-                            .text_size(px(12.0))
+                            .text_size(Text::Base.px())
                             .font_weight(FontWeight::MEDIUM)
                             .text_color(fg)
                             .child(format!("Updated to {version}")),
@@ -115,8 +116,8 @@ impl BenCodeApp {
                         div()
                             .mt(px(2.0))
                             .truncate()
-                            .text_size(px(11.0))
-                            .text_color(fg.opacity(0.5))
+                            .text_size(Text::Sm.px())
+                            .text_color(fg.ink(Ink::Secondary))
                             .child("What's new"),
                     ),
             );
@@ -133,8 +134,8 @@ impl BenCodeApp {
             .justify_center()
             .rounded(px(6.0))
             .cursor_pointer()
-            .text_color(fg.opacity(0.45))
-            .hover(move |s| s.bg(fg.opacity(0.08)).text_color(fg))
+            .text_color(fg.ink(Ink::Muted))
+            .hover(move |s| s.bg(fg.fill(Fill::Selected)).text_color(fg))
             // It sits over the row; without this the row's click opens
             // What's new too.
             .occlude()
@@ -145,7 +146,7 @@ impl BenCodeApp {
             .relative()
             .overflow_hidden()
             .rounded(px(8.0))
-            .bg(fg.opacity(0.12))
+            .bg(fg.fill(Fill::Strong))
             .child(open)
             .child(close)
             .into_any_element()
@@ -172,7 +173,7 @@ impl BenCodeApp {
                 "update-busy".into(),
                 IconName::LoaderCircle,
                 IconSize::Sm,
-                fg.opacity(0.7),
+                fg.ink(Ink::Body),
             )
         } else {
             ExtraIcon::CircleArrowDown
@@ -194,9 +195,9 @@ impl BenCodeApp {
             .map(|el| {
                 if busy {
                     // `bg-content/5 text-content/75 hover:bg-content/10`
-                    el.bg(fg.opacity(0.05))
+                    el.bg(fg.fill(Fill::Hover))
                         .text_color(fg.opacity(0.75))
-                        .hover(move |s| s.bg(fg.opacity(0.1)).text_color(fg))
+                        .hover(move |s| s.bg(fg.fill(Fill::Strong)).text_color(fg))
                 } else {
                     // `bg-accent/15 text-content hover:bg-accent/20`
                     el.cursor_pointer()
@@ -226,7 +227,7 @@ impl BenCodeApp {
                     .child(
                         div()
                             .truncate()
-                            .text_size(px(12.0))
+                            .text_size(Text::Base.px())
                             .font_weight(FontWeight::MEDIUM)
                             .child(label),
                     )
@@ -235,8 +236,8 @@ impl BenCodeApp {
                             .ml_auto()
                             .pl_2()
                             .flex_none()
-                            .text_size(px(11.0))
-                            .text_color(fg.opacity(0.4))
+                            .text_size(Text::Sm.px())
+                            .text_color(fg.ink(Ink::Muted))
                             .child(format!("v{}", state.current_version())),
                     ),
             )

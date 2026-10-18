@@ -18,6 +18,7 @@ use crate::ui::scale::px;
 use super::ci_repair::{Evidence, build_request};
 use crate::app::{BenCodeApp, TurnInput};
 use crate::github::{self, Check, CheckState, WorkItem};
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// A CI repair sent to a thread (MonoCode `ciRepairTracking`), kept in
 /// `settings.json` so its checks still read "Fix sent" after a restart.
@@ -300,7 +301,7 @@ impl BenCodeApp {
                 .when(all_open, |el| el.child(self.render_repair_form(item, cx)))
                 .child(
                     div()
-                        .text_size(px(13.0))
+                        .text_size(Text::Md.px())
                         .font_weight(FontWeight::MEDIUM)
                         .text_color(fg)
                         .child("Checks"),
@@ -310,8 +311,8 @@ impl BenCodeApp {
                         .flex_1()
                         .min_w_0()
                         .truncate()
-                        .text_size(px(12.0))
-                        .text_color(fg.opacity(0.5))
+                        .text_size(Text::Base.px())
+                        .text_color(fg.ink(Ink::Secondary))
                         .child(summary),
                 )
                 .when(!failed.is_empty(), |el| {
@@ -357,7 +358,7 @@ impl BenCodeApp {
                     .child(header(String::new(), Vec::new()))
                     .child(
                         div()
-                            .text_size(px(12.0))
+                            .text_size(Text::Base.px())
                             .text_color(colors.danger.opacity(0.9))
                             .child(SharedString::from(err.clone())),
                     )
@@ -382,8 +383,8 @@ impl BenCodeApp {
             return section
                 .child(
                     div()
-                        .text_size(px(13.0))
-                        .text_color(fg.opacity(0.45))
+                        .text_size(Text::Md.px())
+                        .text_color(fg.ink(Ink::Muted))
                         .child("No checks reported"),
                 )
                 .into_any_element();
@@ -480,7 +481,7 @@ impl BenCodeApp {
                         div()
                             .min_w_0()
                             .truncate()
-                            .text_size(px(14.0))
+                            .text_size(Text::Lg.px())
                             .font_weight(FontWeight::MEDIUM)
                             .text_color(fg)
                             .child(SharedString::from(check.name.clone())),
@@ -490,8 +491,8 @@ impl BenCodeApp {
                             div()
                                 .min_w_0()
                                 .truncate()
-                                .text_size(px(11.0))
-                                .text_color(fg.opacity(0.4))
+                                .text_size(Text::Sm.px())
+                                .text_color(fg.ink(Ink::Muted))
                                 .child(SharedString::from(check.workflow.clone())),
                         )
                     }),
@@ -500,15 +501,15 @@ impl BenCodeApp {
                 div()
                     .w(px(64.0))
                     .flex_none()
-                    .text_size(px(11.0))
+                    .text_size(Text::Sm.px())
                     .child(status),
             )
             .child(
                 div()
                     .w(px(44.0))
                     .flex_none()
-                    .text_size(px(10.0))
-                    .text_color(fg.opacity(0.4))
+                    .text_size(Text::Xs.px())
+                    .text_color(fg.ink(Ink::Muted))
                     .child(duration(
                         check.started_at.as_deref(),
                         check.completed_at.as_deref(),
@@ -556,27 +557,27 @@ impl BenCodeApp {
             .flex()
             .flex_col()
             .gap_2()
-            .text_size(px(12.0));
+            .text_size(Text::Base.px());
         let Some(job) = job else {
             return wrap.into_any_element();
         };
         let details = match self.inbox.jobs.get(job) {
             None => {
                 return wrap
-                    .child(div().text_color(fg.opacity(0.5)).child("Loading steps…"))
+                    .child(div().text_color(fg.ink(Ink::Secondary)).child("Loading steps…"))
                     .into_any_element();
             }
             Some(Err(err)) => {
                 return wrap
                     .child(
                         div()
-                            .text_color(fg.opacity(0.6))
+                            .text_color(fg.ink(Ink::Secondary))
                             .child("Could not load job details."),
                     )
                     .child(
                         div()
-                            .text_size(px(11.0))
-                            .text_color(fg.opacity(0.5))
+                            .text_size(Text::Sm.px())
+                            .text_color(fg.ink(Ink::Secondary))
                             .child(SharedString::from(err.clone())),
                     )
                     .into_any_element();
@@ -600,13 +601,13 @@ impl BenCodeApp {
                 .child(
                     div()
                         .font_family(cx.theme().mono_family.clone())
-                        .text_size(px(11.0))
-                        .text_color(fg.opacity(0.55))
+                        .text_size(Text::Sm.px())
+                        .text_color(fg.ink(Ink::Secondary))
                         .child(format!("{}:{}", a.path, a.line)),
                 )
                 .child(
                     div()
-                        .text_color(fg.opacity(0.85))
+                        .text_color(fg.ink(Ink::Strong))
                         .child(SharedString::from(a.message.clone())),
                 )
         });
@@ -627,13 +628,13 @@ impl BenCodeApp {
                     div()
                         .flex_1()
                         .min_w_0()
-                        .text_color(fg.opacity(0.8))
+                        .text_color(fg.ink(Ink::Strong))
                         .child(SharedString::from(step.name.clone())),
                 )
                 .child(
                     div()
                         .flex_none()
-                        .text_color(fg.opacity(0.45))
+                        .text_color(fg.ink(Ink::Muted))
                         .child(duration(
                             step.started_at.as_deref(),
                             step.completed_at.as_deref(),
@@ -643,15 +644,15 @@ impl BenCodeApp {
         wrap.children(annotations)
             .children(details.notice.clone().map(|notice| {
                 div()
-                    .text_size(px(11.0))
-                    .text_color(fg.opacity(0.5))
+                    .text_size(Text::Sm.px())
+                    .text_color(fg.ink(Ink::Secondary))
                     .child(notice)
             }))
             .when(!details.steps.is_empty(), |el| {
                 el.child(
                     div()
-                        .text_size(px(11.0))
-                        .text_color(fg.opacity(0.5))
+                        .text_size(Text::Sm.px())
+                        .text_color(fg.ink(Ink::Secondary))
                         .child("Run steps"),
                 )
                 .children(steps)
@@ -674,7 +675,7 @@ impl BenCodeApp {
                 .map(|(id, title)| (Some(id), title)),
         );
         let rows = choices.enumerate().map(|(ix, (target, title))| {
-            let hover = fg.opacity(0.08);
+            let hover = fg.fill(Fill::Selected);
             div()
                 .id(("repair-target", ix))
                 .flex()
@@ -683,8 +684,8 @@ impl BenCodeApp {
                 .h(px(30.0))
                 .px_2()
                 .rounded(px(6.0))
-                .text_size(px(12.0))
-                .text_color(fg.opacity(0.85))
+                .text_size(Text::Base.px())
+                .text_color(fg.ink(Ink::Strong))
                 .when(!busy, |el| {
                     el.cursor_pointer().hover(move |s| s.bg(hover)).on_click(
                         cx.listener(move |this, _, _, cx| this.start_repair(target.clone(), cx)),
@@ -697,7 +698,7 @@ impl BenCodeApp {
                         IconName::MessageSquare
                     })
                     .size(IconSize::Xs)
-                    .color(fg.opacity(0.5)),
+                    .color(fg.ink(Ink::Secondary)),
                 )
                 .child(div().min_w_0().truncate().child(if title.is_empty() {
                     "Untitled chat".to_string()
@@ -729,8 +730,8 @@ impl BenCodeApp {
                 div()
                     .px_1()
                     .pb_1()
-                    .text_size(px(11.0))
-                    .text_color(fg.opacity(0.5))
+                    .text_size(Text::Sm.px())
+                    .text_color(fg.ink(Ink::Secondary))
                     .child(if busy {
                         "Reading job logs…".to_string()
                     } else {
@@ -745,7 +746,7 @@ impl BenCodeApp {
                 div()
                     .px_1()
                     .pt_1()
-                    .text_size(px(11.0))
+                    .text_size(Text::Sm.px())
                     .text_color(colors.danger.opacity(0.9))
                     .child(error)
             }));
@@ -773,9 +774,9 @@ fn check_mark(state: CheckState, cx: &gpui::App) -> (IconName, gpui::Hsla) {
         CheckState::Pass => (IconName::CircleCheck, colors.success),
         CheckState::Fail => (IconName::CircleX, colors.danger),
         CheckState::Pending => (IconName::LoaderCircle, colors.warning),
-        CheckState::Skipping => (IconName::Ban, colors.fg.opacity(0.4)),
-        CheckState::Cancel => (IconName::Ban, colors.fg.opacity(0.5)),
-        CheckState::Unknown => (IconName::Circle, colors.fg.opacity(0.4)),
+        CheckState::Skipping => (IconName::Ban, colors.fg.ink(Ink::Muted)),
+        CheckState::Cancel => (IconName::Ban, colors.fg.ink(Ink::Secondary)),
+        CheckState::Unknown => (IconName::Circle, colors.fg.ink(Ink::Muted)),
     }
 }
 

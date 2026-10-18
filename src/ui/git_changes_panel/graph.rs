@@ -2,19 +2,20 @@
 //! sash and row painting.
 
 use super::*;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 impl BenCodeApp {
     /// MonoCode `GraphResizeSash`.
     pub(super) fn render_graph_sash(&self, cx: &Context<Self>) -> impl IntoElement {
         let fg = cx.theme().colors.fg;
         let dragging = self.changes_ui.graph_drag.is_some();
-        let hover = fg.opacity(0.10);
+        let hover = fg.fill(Fill::Strong);
         div()
             .id("git-graph-sash")
             .h(px(6.0))
             .flex_none()
             .cursor_row_resize()
-            .when(dragging, |el| el.bg(fg.opacity(0.15)))
+            .when(dragging, |el| el.bg(fg.fill(Fill::Bold)))
             .when(!dragging, |el| el.hover(move |s| s.bg(hover)))
             .on_mouse_down(
                 MouseButton::Left,
@@ -48,7 +49,7 @@ impl BenCodeApp {
         let open = !self.changes_ui.graph_closed;
         let max = (self.changes_ui.panel_height.get() - 160.0).max(GRAPH_MIN);
         let height = self.changes_ui.graph_height.min(max);
-        let hover = fg.opacity(0.05);
+        let hover = fg.fill(Fill::Hover);
         let commits = &self.git_history;
         let rows = self.graph_rows();
         let selected = match self.file_pane.active() {
@@ -91,9 +92,9 @@ impl BenCodeApp {
                     }))
                     .child(
                         div()
-                            .text_size(px(10.0))
+                            .text_size(Text::Xs.px())
                             .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(fg.opacity(0.55))
+                            .text_color(fg.ink(Ink::Secondary))
                             .child("GRAPH"),
                     )
                     // `ml-auto size-3.5`
@@ -105,7 +106,7 @@ impl BenCodeApp {
                             IconName::ChevronRight
                         })
                         .size(IconSize::Sm)
-                        .color(fg.opacity(0.5)),
+                        .color(fg.ink(Ink::Secondary)),
                     ),
             )
             .when(open, |el| {
@@ -126,8 +127,8 @@ impl BenCodeApp {
                                     div()
                                         .px_3()
                                         .py_2()
-                                        .text_size(px(12.0))
-                                        .text_color(fg.opacity(0.45))
+                                        .text_size(Text::Base.px())
+                                        .text_color(fg.ink(Ink::Muted))
                                         .child("No commits yet"),
                                 )
                             } else {
@@ -181,7 +182,7 @@ impl BenCodeApp {
             .cloned();
         // MonoCode `bg-selection`.
         let selection = colors.active;
-        let hover = fg.opacity(0.05);
+        let hover = fg.fill(Fill::Hover);
         let hovered = self.changes_ui.hovered_commit.as_deref() == Some(commit.sha.as_str());
         let node = node_look(bg, fg, hovered, active);
         let open = commit.clone();
@@ -254,7 +255,7 @@ impl BenCodeApp {
                         div()
                             .min_w_0()
                             .truncate()
-                            .text_size(px(12.0))
+                            .text_size(Text::Base.px())
                             .line_height(px(git_graph::SWIMLANE_HEIGHT))
                             .text_color(fg)
                             .when(commit.head, |el| el.font_weight(FontWeight::SEMIBOLD))
@@ -270,9 +271,9 @@ impl BenCodeApp {
                                 .ml_2()
                                 .min_w_0()
                                 .truncate()
-                                .text_size(px(12.0))
+                                .text_size(Text::Base.px())
                                 .line_height(px(git_graph::SWIMLANE_HEIGHT))
-                                .text_color(fg.opacity(0.45))
+                                .text_color(fg.ink(Ink::Muted))
                                 .child(commit.author.clone()),
                         )
                     }),
@@ -281,7 +282,7 @@ impl BenCodeApp {
                 let local = r.kind == "local";
                 let (fill, ink) = match r.color {
                     Some(color) => (rgb(color).into(), bg),
-                    None => (fg.opacity(0.10), fg.opacity(0.55)),
+                    None => (fg.fill(Fill::Strong), fg.ink(Ink::Secondary)),
                 };
                 // MonoCode `RefPill`: `ml-1 h-3.5 max-w-[6.5rem] gap-0.5
                 // rounded-full px-1.5 text-[10px] leading-none`, a
@@ -297,7 +298,7 @@ impl BenCodeApp {
                     .px_1p5()
                     .rounded_full()
                     .bg(fill)
-                    .text_size(px(10.0))
+                    .text_size(Text::Xs.px())
                     .line_height(relative(1.0))
                     .text_color(ink)
                     .when(local, |el| {
@@ -328,9 +329,9 @@ struct NodeLook {
 
 fn node_look(bg: Hsla, fg: Hsla, hovered: bool, selected: bool) -> NodeLook {
     let inner = if selected {
-        bg.blend(fg.opacity(0.10))
+        bg.blend(fg.fill(Fill::Strong))
     } else if hovered {
-        bg.blend(fg.opacity(0.05))
+        bg.blend(fg.fill(Fill::Hover))
     } else {
         bg
     };

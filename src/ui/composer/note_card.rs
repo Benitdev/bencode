@@ -11,7 +11,6 @@ use gpui::{
     prelude::*,
 };
 
-use crate::ui::scale::px;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -19,6 +18,7 @@ use super::cards::{CardIcon, ComposerCard, card_frame, card_kind};
 use crate::app::BenCodeApp;
 use crate::db::Note;
 use crate::ui::attachment_chip::OnRemove;
+use crate::ui::tokens::{Ink, Text, Tone as _};
 
 /// MonoCode `NoteComposerCard`: the note as it was added.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -111,7 +111,7 @@ pub fn note_mini_card(
             div()
                 .mt_1()
                 .truncate()
-                .text_size(px(13.0))
+                .text_size(Text::Md.px())
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_color(fg)
                 .child(SharedString::from(meta.heading().to_string())),
@@ -124,12 +124,12 @@ pub fn note_mini_card(
                     .min_w_0()
                     .items_center()
                     .gap_1p5()
-                    .text_size(px(11.0))
-                    .text_color(fg.opacity(0.45))
+                    .text_size(Text::Sm.px())
+                    .text_color(fg.ink(Ink::Muted))
                     .child(
                         Icon::new(IconName::Folder)
                             .size(IconSize::Xs)
-                            .color(fg.opacity(0.45)),
+                            .color(fg.ink(Ink::Muted)),
                     )
                     .child(div().min_w_0().truncate().child(project)),
             )

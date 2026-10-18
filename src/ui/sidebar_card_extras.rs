@@ -15,9 +15,9 @@ use crate::db::{OrchestrationSummary, OrchestrationTask, SessionRow, TaskTone};
 use crate::harness::{HarnessKind, catalog};
 use crate::ui::provider_icon::HarnessIcon;
 use crate::ui::scale::px;
+use crate::ui::tokens::Status;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
-const AMBER: u32 = 0xfbbf24;
-const EMERALD: u32 = 0x34d399;
 /// Rows the subagents card lists before "+N more".
 const TIP_ROWS: usize = 12;
 /// MonoCode's `text-fuchsia-300/65`, `hover:text-fuchsia-200/90`.
@@ -26,9 +26,9 @@ const FUCHSIA_HOVER: u32 = 0xf5d0fe;
 
 fn tone_color(tone: TaskTone, fg: Hsla) -> Hsla {
     match tone {
-        TaskTone::Attention => rgb(AMBER).into(),
-        TaskTone::Done => rgb(EMERALD).into(),
-        TaskTone::Quiet => fg.opacity(0.45),
+        TaskTone::Attention => Status::Attention.color(fg),
+        TaskTone::Done => Status::Done.color(fg),
+        TaskTone::Quiet => Status::Quiet.color(fg),
     }
 }
 
@@ -77,14 +77,14 @@ impl Render for OrchestrationTip {
                             .flex_1()
                             .min_w_0()
                             .truncate()
-                            .text_size(px(11.0))
+                            .text_size(Text::Sm.px())
                             .text_color(fg.opacity(0.75))
                             .child(task.title.clone()),
                     )
                     .child(
                         div()
                             .flex_none()
-                            .text_size(px(10.0))
+                            .text_size(Text::Xs.px())
                             .text_color(tone_color(task.tone(*needs), fg))
                             .child(label),
                     )
@@ -102,16 +102,16 @@ impl Render for OrchestrationTip {
                     .gap_3()
                     .child(
                         div()
-                            .text_size(px(11.0))
+                            .text_size(Text::Sm.px())
                             .font_weight(gpui::FontWeight::SEMIBOLD)
-                            .text_color(fg.opacity(0.85))
+                            .text_color(fg.ink(Ink::Strong))
                             .child("Subagents"),
                     )
                     .child(
                         div()
                             .flex_none()
-                            .text_size(px(10.0))
-                            .text_color(fg.opacity(0.45))
+                            .text_size(Text::Xs.px())
+                            .text_color(fg.ink(Ink::Muted))
                             .child(format!("{}/{total} done", self.summary.done())),
                     ),
             )
@@ -121,8 +121,8 @@ impl Render for OrchestrationTip {
                     div()
                         .px_1()
                         .pt_1()
-                        .text_size(px(10.0))
-                        .text_color(fg.opacity(0.45))
+                        .text_size(Text::Xs.px())
+                        .text_color(fg.ink(Ink::Muted))
                         .child(format!("+{hidden} more")),
                 )
             })
@@ -202,7 +202,7 @@ impl BenCodeApp {
                 .px(px(2.0))
                 .rounded(px(4.0))
                 .cursor_pointer()
-                .text_size(px(11.0))
+                .text_size(Text::Sm.px())
                 .text_color(accent)
                 .hover(|s| s.underline())
                 .tooltip(Tooltip::text(tip))
@@ -254,7 +254,7 @@ impl BenCodeApp {
                 .justify_center()
                 .rounded(px(6.0))
                 .cursor_pointer()
-                .hover(move |s| s.bg(fg.opacity(0.10)))
+                .hover(move |s| s.bg(fg.fill(Fill::Strong)))
                 .tooltip(move |_, cx: &mut App| {
                     let tip = OrchestrationTip {
                         summary: summary.clone(),
@@ -312,7 +312,7 @@ impl BenCodeApp {
                 .px_2()
                 .py(px(6.0))
                 .rounded(px(6.0))
-                .when(!open, move |el| el.hover(move |s| s.bg(fg.opacity(0.10))))
+                .when(!open, move |el| el.hover(move |s| s.bg(fg.fill(Fill::Strong))))
                 .tooltip(Tooltip::text(tip))
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .on_click(cx.listener(move |this, _, _, cx| {
@@ -327,7 +327,7 @@ impl BenCodeApp {
                         el.child(
                             Icon::new(IconName::ChevronDown)
                                 .size(IconSize::Xs)
-                                .color(fg.opacity(0.45)),
+                                .color(fg.ink(Ink::Muted)),
                         )
                     } else {
                         el.child(
@@ -347,7 +347,7 @@ impl BenCodeApp {
                                 .child(
                                     Icon::new(IconName::ChevronRight)
                                         .size(IconSize::Xs)
-                                        .color(fg.opacity(0.45)),
+                                        .color(fg.ink(Ink::Muted)),
                                 ),
                         )
                     }
@@ -357,9 +357,9 @@ impl BenCodeApp {
                         .flex_1()
                         .min_w_0()
                         .truncate()
-                        .text_size(px(12.0))
+                        .text_size(Text::Base.px())
                         .line_height(px(12.0 * 1.375))
-                        .text_color(fg.opacity(0.8))
+                        .text_color(fg.ink(Ink::Strong))
                         .child(task.title.clone()),
                 )
                 .child(
@@ -368,7 +368,7 @@ impl BenCodeApp {
                         .flex_none()
                         .items_center()
                         .gap_1()
-                        .text_size(px(11.0))
+                        .text_size(Text::Sm.px())
                         .text_color(tone)
                         .map(|el| match task.tone(needs) {
                             TaskTone::Attention => el.child(
@@ -396,8 +396,8 @@ impl BenCodeApp {
                             .flex()
                             .items_center()
                             .gap_1p5()
-                            .text_size(px(11.0))
-                            .text_color(fg.opacity(0.45))
+                            .text_size(Text::Sm.px())
+                            .text_color(fg.ink(Ink::Muted))
                             .child(HarnessIcon::new(&task.harness).size(px(14.0)))
                             .child(model.clone()),
                     )
@@ -410,10 +410,10 @@ impl BenCodeApp {
                                 .px(px(6.0))
                                 .py(px(2.0))
                                 .rounded(px(4.0))
-                                .bg(fg.opacity(0.15))
-                                .hover(move |s| s.bg(fg.opacity(0.25)).text_color(fg))
+                                .bg(fg.fill(Fill::Bold))
+                                .hover(move |s| s.bg(fg.ink(Ink::Faint)).text_color(fg))
                                 .cursor_pointer()
-                                .text_size(px(11.0))
+                                .text_size(Text::Sm.px())
                                 .text_color(fg.opacity(0.75))
                                 .tooltip(Tooltip::text("Open this agent beside the orchestrator"))
                                 .on_click(cx.listener(move |this, _, _, cx| {
@@ -441,8 +441,8 @@ impl BenCodeApp {
                         .flex()
                         .items_center()
                         .justify_between()
-                        .text_size(px(11.0))
-                        .text_color(fg.opacity(0.45))
+                        .text_size(Text::Sm.px())
+                        .text_color(fg.ink(Ink::Muted))
                         .child(plural(total, "agent"))
                         .child(format!("{}/{total} done", summary.done())),
                 )

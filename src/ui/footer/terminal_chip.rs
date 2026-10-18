@@ -12,6 +12,7 @@ use gpui::{Context, Hsla, IntoElement, ParentElement, Styled, div, prelude::*, r
 use crate::app::BenCodeApp;
 use crate::ui::scale::px;
 use crate::ui::terminal_pane::{POLL_EVERY, RunningTerminal, chip_label};
+use crate::ui::tokens::{Fill, Text, Tone as _};
 
 /// MonoCode `.terminal-live-bar`'s `#e39b4a`.
 const LIVE_BAR: u32 = 0xe39b4a;
@@ -93,9 +94,9 @@ impl BenCodeApp {
                     .rounded(px(4.0))
                     .cursor_pointer()
                     .when(self.running_terminals_menu_open(), |el| {
-                        el.bg(fg.opacity(0.10))
+                        el.bg(fg.fill(Fill::Strong))
                     })
-                    .hover(move |s| s.bg(fg.opacity(0.10)).text_color(fg))
+                    .hover(move |s| s.bg(fg.fill(Fill::Strong)).text_color(fg))
                     // The open list closes on this press, as on any press
                     // outside it; the click must then not reopen it.
                     .capture_any_mouse_down(cx.listener(|this, _, _, _| {
@@ -123,7 +124,7 @@ impl BenCodeApp {
                             .min_w_0()
                             .truncate()
                             .font_family(cx.theme().mono_family.clone())
-                            .text_size(px(10.0))
+                            .text_size(Text::Xs.px())
                             .child(chip_label(&terminals)),
                     ),
             )

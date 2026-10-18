@@ -17,6 +17,7 @@ use gpui::{
 use crate::app::BenCodeApp;
 use crate::ui::scale::px;
 use crate::ui::transcript::markdown::AgentMarkdown;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// How a previewable file is shown.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -159,8 +160,8 @@ impl BenCodeApp {
             .py_2()
             .rounded(px(8.0))
             .cursor_pointer()
-            .text_size(px(12.0))
-            .text_color(fg.opacity(0.6))
+            .text_size(Text::Base.px())
+            .text_color(fg.ink(Ink::Secondary))
             .hover(|s| s.text_color(fg))
             .child(
                 Icon::new(if open {
@@ -169,7 +170,7 @@ impl BenCodeApp {
                     IconName::ChevronRight
                 })
                 .size(IconSize::Xs)
-                .color(fg.opacity(0.5)),
+                .color(fg.ink(Ink::Secondary)),
             )
             .child("Properties")
             .on_click(cx.listener(move |this, _, _, cx| {
@@ -182,8 +183,8 @@ impl BenCodeApp {
             .mb(px(24.0))
             .rounded(px(8.0))
             .border_1()
-            .border_color(fg.opacity(0.1))
-            .bg(fg.opacity(0.03))
+            .border_color(fg.fill(Fill::Strong))
+            .bg(fg.fill(Fill::Faint))
             .child(summary)
             .when(open, |el| {
                 el.child(
@@ -193,9 +194,9 @@ impl BenCodeApp {
                         .px_3()
                         .py_2()
                         .font_family(theme.mono_family.clone())
-                        .text_size(px(12.0))
+                        .text_size(Text::Base.px())
                         .line_height(px(20.0))
-                        .text_color(fg.opacity(0.7))
+                        .text_color(fg.ink(Ink::Body))
                         .child(metadata.to_string()),
                 )
             })

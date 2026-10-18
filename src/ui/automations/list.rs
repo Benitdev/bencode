@@ -17,6 +17,7 @@ use crate::ui::provider_icon::HarnessIcon;
 use crate::ui::relative_time;
 use crate::ui::scale::px;
 use crate::ui::scrollbar::Scrolled;
+use crate::ui::tokens::Text;
 
 impl BenCodeApp {
     pub(super) fn render_automation_list(&self, cx: &Context<Self>) -> impl IntoElement {
@@ -44,7 +45,7 @@ impl BenCodeApp {
                 .px_3()
                 .py_8()
                 .text_center()
-                .text_size(px(12.0))
+                .text_size(Text::Base.px())
                 .text_color(colors.fg_muted)
                 .child(if query.is_empty() {
                     "No automations yet"
@@ -88,7 +89,7 @@ impl BenCodeApp {
                         div()
                             .flex_1()
                             .min_w_0()
-                            .text_size(px(12.0))
+                            .text_size(Text::Base.px())
                             .child(self.automations.filter_input.clone()),
                     )
                     .child(
@@ -124,7 +125,7 @@ impl BenCodeApp {
             .items_center()
             .gap(px(6.0))
             .min_w_0()
-            .text_size(px(11.0))
+            .text_size(Text::Sm.px())
             .text_color(muted)
             .child(pixel_sprite(
                 &self.project_mascot(&auto.cwd).rest,
@@ -181,7 +182,7 @@ impl BenCodeApp {
                             .gap(px(6.0))
                             // Room for the switch.
                             .pr(px(40.0))
-                            .text_size(px(10.0))
+                            .text_size(Text::Xs.px())
                             .text_color(muted)
                             .child(Icon::new(IconName::Clock).size(IconSize::Xs).color(muted))
                             .child(div().min_w_0().truncate().child(schedule_label(auto))),
@@ -189,7 +190,7 @@ impl BenCodeApp {
                     .child(
                         div()
                             .truncate()
-                            .text_size(px(13.0))
+                            .text_size(Text::Md.px())
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_color(colors.fg)
                             .child(auto.name.clone()),

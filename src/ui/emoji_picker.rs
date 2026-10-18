@@ -18,6 +18,7 @@ use gpui::{
 };
 
 use crate::ui::scale::px;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// A click this soon after a press closed the picker is that press's.
 const REOPEN_GUARD: Duration = Duration::from_millis(400);
@@ -272,7 +273,7 @@ impl EmojiPicker {
                 .justify_center()
                 .rounded(px(6.0))
                 .text_size(px(15.0))
-                .when(active, |el| el.bg(fg.opacity(0.1)))
+                .when(active, |el| el.bg(fg.fill(Fill::Strong)))
                 .when(!active, |el| el.opacity(0.6).hover(|s| s.opacity(1.0)))
                 .on_click(cx.listener(move |view, _, _, cx| {
                     state(view).open = Some(target);
@@ -304,7 +305,7 @@ impl EmojiPicker {
                 .justify_center()
                 .rounded(px(6.0))
                 .text_size(px(20.0))
-                .hover(move |s| s.bg(fg.opacity(0.1)))
+                .hover(move |s| s.bg(fg.fill(Fill::Strong)))
                 .on_click(cx.listener(move |view, _, window, cx| {
                     state(view).picked(&picked);
                     on_pick(view, &picked, window, cx);
@@ -321,9 +322,9 @@ impl EmojiPicker {
                     .px_1()
                     .pt_1()
                     .pb_1()
-                    .text_size(px(11.0))
+                    .text_size(Text::Sm.px())
                     .font_weight(FontWeight::MEDIUM)
-                    .text_color(fg.opacity(0.45))
+                    .text_color(fg.ink(Ink::Muted))
                     .child(label.to_string()),
             )
             .child(div().flex().flex_wrap().children(cells));
@@ -335,8 +336,8 @@ impl EmojiPicker {
                 .w(px(COLUMNS as f32 * 32.0 + 18.0))
                 .rounded(px(12.0))
                 .border_1()
-                .border_color(fg.opacity(0.1))
-                .bg(if dark { bg.blend(fg.opacity(0.06)) } else { bg })
+                .border_color(fg.fill(Fill::Strong))
+                .bg(if dark { bg.blend(fg.fill(Fill::Hover)) } else { bg })
                 .shadow_lg()
                 .p_2()
                 .on_mouse_down_out(cx.listener(move |view, _, _, cx| {

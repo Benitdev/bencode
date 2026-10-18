@@ -29,6 +29,7 @@ use crate::app::mono_overview::OverviewTab;
 use crate::monos::{Mono, MonoState};
 use crate::ui::icons::ExtraIcon;
 use crate::ui::scale::px;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// `border-stroke`.
 const STROKE: f32 = 0.07;
@@ -65,79 +66,17 @@ pub(super) fn empty_state(tab: OverviewTab, text: String, fg: Hsla) -> AnyElemen
         .gap_3()
         .px_6()
         .py_10()
-        .child(tab_icon(tab, fg.opacity(0.55)))
+        .child(tab_icon(tab, fg.ink(Ink::Secondary)))
         .child(
             div()
                 .max_w(px(288.0))
                 .text_center()
-                .text_size(px(12.0))
+                .text_size(Text::Base.px())
                 .line_height(px(18.0))
-                .text_color(fg.opacity(0.55))
+                .text_color(fg.ink(Ink::Secondary))
                 .child(text),
         )
         .into_any_element()
-}
-
-/// A row laid out like MonoCode's habit and document rows: `flex gap-2.5
-/// rounded-md px-2 py-2 hover:bg-content/5`, a `size-7` tile, a title in
-/// 12px and a line in 11px.
-pub(super) fn list_row(
-    id: SharedString,
-    tile: AnyElement,
-    title: String,
-    line: String,
-    fg: Hsla,
-) -> gpui::Stateful<gpui::Div> {
-    row_content(tile, title, line, fg)
-        .id(id)
-        .w_full()
-        .cursor_pointer()
-        .hover(move |s| s.bg(fg.opacity(0.05)))
-}
-
-/// A list row's tile and two lines, without its hover: for a row whose
-/// hover covers buttons beside it.
-pub(super) fn row_content(tile: AnyElement, title: String, line: String, fg: Hsla) -> gpui::Div {
-    div()
-        .flex()
-        .min_w_0()
-        .items_center()
-        .gap(px(10.0))
-        .rounded(px(6.0))
-        .px_2()
-        .py_2()
-        .child(
-            div()
-                .flex()
-                .flex_none()
-                .size(px(28.0))
-                .items_center()
-                .justify_center()
-                .rounded(px(6.0))
-                .bg(fg.opacity(0.06))
-                .child(tile),
-        )
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .child(
-                    div()
-                        .truncate()
-                        .text_size(px(12.0))
-                        .line_height(px(20.0))
-                        .text_color(fg.opacity(0.85))
-                        .child(title),
-                )
-                .child(
-                    div()
-                        .truncate()
-                        .text_size(px(11.0))
-                        .line_height(px(16.0))
-                        .text_color(fg.opacity(0.4))
-                        .child(line),
-                ),
-        )
 }
 
 impl BenCodeApp {
@@ -162,9 +101,9 @@ impl BenCodeApp {
             .cursor_col_resize()
             .map(|el| {
                 if resizing {
-                    el.bg(fg.opacity(0.15))
+                    el.bg(fg.fill(Fill::Bold))
                 } else {
-                    el.hover(move |s| s.bg(fg.opacity(0.1)))
+                    el.hover(move |s| s.bg(fg.fill(Fill::Strong)))
                 }
             })
             .tooltip(Tooltip::text("Resize Mono details"))
@@ -336,7 +275,7 @@ impl BenCodeApp {
         let colors = &cx.theme().colors;
         let fg = colors.fg;
         let accent = colors.accent;
-        let ink = if selected { fg } else { fg.opacity(0.45) };
+        let ink = if selected { fg } else { fg.ink(Ink::Muted) };
         let group = SharedString::from(format!("mono-overview-tab-{label}"));
         div()
             .id(group.clone())
@@ -347,14 +286,14 @@ impl BenCodeApp {
             .h(px(24.0))
             .px_2()
             .rounded(px(6.0))
-            .text_size(px(12.0))
+            .text_size(Text::Base.px())
             .cursor_pointer()
             .text_color(ink)
             .map(|el| {
                 if selected {
-                    el.bg(fg.opacity(0.08))
+                    el.bg(fg.fill(Fill::Selected))
                 } else {
-                    el.hover(move |s| s.bg(fg.opacity(0.05)).text_color(fg.opacity(0.8)))
+                    el.hover(move |s| s.bg(fg.fill(Fill::Hover)).text_color(fg.ink(Ink::Strong)))
                 }
             })
             // Activity's caller names it by what a click does.
@@ -366,7 +305,7 @@ impl BenCodeApp {
                     .relative()
                     .flex_none()
                     .child(
-                        tab_icon(tab, ink).group_hover_color(group.clone(), fg.opacity(0.8)),
+                        tab_icon(tab, ink).group_hover_color(group.clone(), fg.ink(Ink::Strong)),
                     )
                     .when(dot, |el| {
                         el.child(
@@ -395,7 +334,7 @@ impl BenCodeApp {
                                 .bg(accent)
                                 .px_1()
                                 .text_center()
-                                .text_size(px(10.0))
+                                .text_size(Text::Xs.px())
                                 .line_height(px(16.0))
                                 .font_weight(FontWeight::MEDIUM)
                                 .text_color(gpui::white())
@@ -446,17 +385,14 @@ impl BenCodeApp {
                     .summary
                     .clone()
                     .unwrap_or_else(|| card.kind.label().to_string());
-                list_row(
-                    SharedString::from(format!("mono-document-{id}")),
-                    crate::ui::artifacts::artifact_icon(card.kind)
-                        .size(IconSize::Sm)
-                        .color(fg.opacity(0.6))
-                        .into_any_element(),
-                    card.title.clone(),
-                    line,
-                    fg,
-                )
-                .on_click(cx.listener(move |this, _, _, cx| this.open_artifact(&id, cx)))
+                crate::ui::rows::ListRow::new(format!("mono-document-{id}"), card.title.clone())
+                    .tile(
+                        crate::ui::artifacts::artifact_icon(card.kind)
+                            .size(IconSize::Sm)
+                            .color(fg.ink(Ink::Secondary)),
+                    )
+                    .line(line)
+                    .on_click(cx.listener(move |this, _, _, cx| this.open_artifact(&id, cx)))
             }))
             .into_any_element()
     }

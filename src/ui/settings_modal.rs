@@ -18,6 +18,7 @@ use crate::ui::HarnessIcon;
 use crate::ui::scale::px;
 use crate::ui::settings_parts::{SettingsGroup, SettingsPage, SettingsRow, icon_tile};
 use crate::ui::sidebar_popovers::pretty_path;
+use crate::ui::tokens::{Ink, Text, Tone as _};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum SettingsTab {
@@ -265,7 +266,7 @@ impl BenCodeApp {
             .flex()
             .items_center()
             .gap_2()
-            .text_size(px(12.0))
+            .text_size(Text::Base.px())
             .text_color(cx.theme().colors.fg)
             .child(HarnessIcon::new(harness).size(px(14.0)))
             .child(crate::harness::catalog::label_for(model));
@@ -368,7 +369,7 @@ impl BenCodeApp {
     /// MonoCode General › Alerts: Sounds and Notifications.
     fn render_settings_alerts(&self, cx: &Context<Self>) -> SettingsGroup {
         use crate::notifications::Permission;
-        let muted = cx.theme().colors.fg.opacity(0.45);
+        let muted = cx.theme().colors.fg.ink(Ink::Muted);
         let notifications = self.alerts.notifications;
         // MonoCode shows the reason beside the switch while it is on.
         let status = match self.alerts.permission {
@@ -430,7 +431,7 @@ impl BenCodeApp {
                             .flex()
                             .items_center()
                             .gap_3()
-                            .text_size(px(12.0))
+                            .text_size(Text::Base.px())
                             .text_color(muted)
                             .children(status)
                             .child(Switch::new("notifications", notifications).on_change(
@@ -546,7 +547,7 @@ impl BenCodeApp {
                     .leading(icon_tile(
                         Icon::new(IconName::Folder)
                             .size(IconSize::Sm)
-                            .color(fg.opacity(0.6)),
+                            .color(fg.ink(Ink::Secondary)),
                         fg,
                     ))
                     .description(pretty_path(&project.path))

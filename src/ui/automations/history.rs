@@ -16,6 +16,7 @@ use crate::db::{AutomationRow, AutomationRunRow, RunStatus, RunTrigger};
 use crate::schedule::schedule_label;
 use crate::ui::page_parts::{panel, section_title, tint};
 use crate::ui::scale::px;
+use crate::ui::tokens::Text;
 
 /// MonoCode shows this many runs.
 const RUNS_SHOWN: usize = 100;
@@ -105,7 +106,7 @@ impl BenCodeApp {
                 .justify_center()
                 .px_4()
                 .py_16()
-                .text_size(px(12.0))
+                .text_size(Text::Base.px())
                 .text_color(fg.opacity(tint::HINT))
                 .child("This automation has not run yet.")
         } else {
@@ -120,7 +121,7 @@ impl BenCodeApp {
                 .child(
                     grid_row("Trigger", "Triggered", "Status", "Duration")
                         .h(px(40.0))
-                        .text_size(px(11.0))
+                        .text_size(Text::Sm.px())
                         .text_color(fg.opacity(tint::HINT)),
                 )
                 .children(rows)
@@ -171,7 +172,7 @@ impl BenCodeApp {
             .px_2()
             .rounded_full()
             .bg(tone.opacity(tint::PILL))
-            .text_size(px(11.0))
+            .text_size(Text::Sm.px())
             .font_weight(FontWeight::MEDIUM)
             .text_color(tone)
             .child(status_label(run.status));
@@ -205,7 +206,7 @@ impl BenCodeApp {
                         .child(run_duration(run, now)),
                 )
                 .h(px(44.0))
-                .text_size(px(13.0)),
+                .text_size(Text::Md.px()),
             )
     }
 
@@ -226,7 +227,7 @@ impl BenCodeApp {
                 .border_1()
                 .border_color(danger.opacity(tint::ALERT_STROKE))
                 .bg(danger.opacity(tint::FILL))
-                .text_size(px(12.0))
+                .text_size(Text::Base.px())
                 .text_color(danger)
                 .child(
                     Icon::new(IconName::CircleAlert)

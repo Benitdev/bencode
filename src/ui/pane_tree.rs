@@ -20,6 +20,7 @@ use crate::ui::layout::{
     LayoutNode, SplitDir, layout_leaves, leaf_count, pane_edge_from_point, split_shares,
 };
 use crate::ui::scale::px;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 const UNTITLED: &str = "Untitled thread";
 
@@ -464,7 +465,7 @@ impl BenCodeApp {
         let title = display_title(session).to_string();
         let ghost_title = SharedString::from(title.clone());
         let close_id = session.id.clone();
-        let hover = colors.fg.opacity(0.1);
+        let hover = colors.fg.fill(Fill::Strong);
         div()
             .id(SharedString::from(format!("pane-header-{}", session.id)))
             .flex()
@@ -487,7 +488,7 @@ impl BenCodeApp {
             .child(
                 Icon::new(IconName::GripVertical)
                     .size(IconSize::Xs)
-                    .color(colors.fg.opacity(0.35)),
+                    .color(colors.fg.ink(Ink::Faint)),
             )
             .child(
                 div()
@@ -505,7 +506,7 @@ impl BenCodeApp {
                     .flex_1()
                     .min_w_0()
                     .truncate()
-                    .text_size(px(12.0))
+                    .text_size(Text::Base.px())
                     .text_color(colors.fg)
                     .child(title),
             )

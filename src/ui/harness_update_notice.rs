@@ -14,6 +14,8 @@ use crate::app::BenCodeApp;
 use crate::app::harness_updates::RowState;
 use crate::ui::provider_icon::HarnessIcon;
 use crate::ui::scale::px;
+use crate::ui::tokens::EMERALD_400;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// MonoCode: `w-[min(340px,calc(100vw-24px))]`.
 const PANEL_WIDTH: f32 = 340.0;
@@ -22,8 +24,6 @@ const INSET: f32 = 12.0;
 const STACK_GAP: f32 = 8.0;
 /// Tailwind preflight's `line-height: 1.5` (GPUI defaults to ~1.618).
 const PREFLIGHT_LEADING: f32 = 1.5;
-/// MonoCode `text-emerald-400` on Updated, `text-red-300/90` on a failure.
-const EMERALD_400: u32 = 0x34d399;
 const RED_300: u32 = 0xfca5a5;
 
 impl BenCodeApp {
@@ -69,7 +69,7 @@ impl BenCodeApp {
         let colors = &cx.theme().colors;
         let fg = colors.fg;
         // `border-stroke` / `divide-stroke`: content at 7%.
-        let stroke = fg.opacity(0.07);
+        let stroke = fg.fill(Fill::Line);
         let busy = state.busy();
         let pending = state.pending();
         let title = if state.updates.len() == 1 {
@@ -88,7 +88,7 @@ impl BenCodeApp {
                     .flex()
                     .items_center()
                     .gap_1()
-                    .text_size(px(11.0))
+                    .text_size(Text::Sm.px())
                     .text_color(rgb(EMERALD_400))
                     .child(
                         Icon::new(IconName::Check)
@@ -110,7 +110,7 @@ impl BenCodeApp {
                         .px_2()
                         .py_1()
                         .rounded(px(6.0))
-                        .bg(fg.opacity(0.1))
+                        .bg(fg.fill(Fill::Strong))
                         .font_weight(FontWeight::MEDIUM)
                         .when(updating, |el| {
                             el.opacity(0.6)
@@ -124,7 +124,7 @@ impl BenCodeApp {
                         })
                         .when(!updating, |el| {
                             el.cursor_pointer()
-                                .hover(move |s| s.bg(fg.opacity(0.15)))
+                                .hover(move |s| s.bg(fg.fill(Fill::Bold)))
                                 .on_click(cx.listener(move |this, _, _, cx| {
                                     this.update_harnesses(vec![kind], cx)
                                 }))
@@ -139,12 +139,12 @@ impl BenCodeApp {
                         .flex()
                         .items_center()
                         .gap_2()
-                        .text_size(px(11.0))
+                        .text_size(Text::Sm.px())
                         // `font-mono text-content/50`
                         .child(
                             div()
                                 .font_family(cx.theme().mono_family.clone())
-                                .text_color(fg.opacity(0.5))
+                                .text_color(fg.ink(Ink::Secondary))
                                 .child(format!("{} → {}", update.installed, update.latest)),
                         )
                         .child(button)
@@ -169,7 +169,7 @@ impl BenCodeApp {
                                 .flex_1()
                                 .min_w_0()
                                 .truncate()
-                                .text_size(px(13.0))
+                                .text_size(Text::Md.px())
                                 .font_weight(FontWeight::MEDIUM)
                                 .child(kind.label()),
                         )
@@ -186,7 +186,7 @@ impl BenCodeApp {
                             div()
                                 .mt(px(6.0))
                                 .line_clamp(2)
-                                .text_size(px(11.0))
+                                .text_size(Text::Sm.px())
                                 .line_height(relative(1.625))
                                 .text_color(rgb(RED_300).opacity(0.9))
                                 .child(error),
@@ -207,7 +207,7 @@ impl BenCodeApp {
             .flex_col()
             .rounded(px(12.0))
             .border_1()
-            .border_color(fg.opacity(0.1))
+            .border_color(fg.fill(Fill::Strong))
             .bg(colors.bg.opacity(0.95))
             .text_color(fg)
             .line_height(relative(PREFLIGHT_LEADING))
@@ -228,7 +228,7 @@ impl BenCodeApp {
                             .flex_1()
                             .min_w_0()
                             .truncate()
-                            .text_size(px(12.0))
+                            .text_size(Text::Base.px())
                             .font_weight(FontWeight::SEMIBOLD)
                             .child(title),
                     )
@@ -240,10 +240,10 @@ impl BenCodeApp {
                                 .px_2()
                                 .py_1()
                                 .cursor_pointer()
-                                .text_size(px(11.0))
+                                .text_size(Text::Sm.px())
                                 .font_weight(FontWeight::MEDIUM)
-                                .text_color(fg.opacity(0.7))
-                                .hover(move |s| s.bg(fg.opacity(0.1)).text_color(fg))
+                                .text_color(fg.ink(Ink::Body))
+                                .hover(move |s| s.bg(fg.fill(Fill::Strong)).text_color(fg))
                                 .on_click(cx.listener(move |this, _, _, cx| {
                                     this.update_harnesses(pending.clone(), cx)
                                 }))
@@ -261,7 +261,7 @@ impl BenCodeApp {
                             .when(busy, |el| el.opacity(0.4))
                             .when(!busy, |el| {
                                 el.cursor_pointer()
-                                    .hover(move |s| s.bg(fg.opacity(0.1)))
+                                    .hover(move |s| s.bg(fg.fill(Fill::Strong)))
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         this.dismiss_harness_updates(cx)
                                     }))
@@ -269,7 +269,7 @@ impl BenCodeApp {
                             .child(
                                 Icon::new(IconName::X)
                                     .size(IconSize::Xs)
-                                    .color(fg.opacity(0.4)),
+                                    .color(fg.ink(Ink::Muted)),
                             ),
                     ),
             )
@@ -281,8 +281,8 @@ impl BenCodeApp {
                     .py_2()
                     .border_t_1()
                     .border_color(stroke)
-                    .text_size(px(11.0))
-                    .text_color(fg.opacity(0.5))
+                    .text_size(Text::Sm.px())
+                    .text_color(fg.ink(Ink::Secondary))
                     .child(if state.any_updated() {
                         "Model picker refreshed with the new version’s models."
                     } else {

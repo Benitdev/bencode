@@ -19,6 +19,7 @@ use crate::app::process_monitor::{ProcessMonitor, SAMPLE_EVERY};
 use crate::process_stats;
 use crate::ui::composer::runner::Rect;
 use crate::ui::scale::px;
+use crate::ui::tokens::{Ink, Text, Tone as _};
 
 /// The readout's row height, the footer's own.
 const HEIGHT: f32 = 20.0;
@@ -98,7 +99,7 @@ impl Render for ProcessLayer {
                         .flex_none()
                         .items_center()
                         .gap(px(4.0))
-                        .child(Icon::new(icon).size(IconSize::Xs).color(fg.opacity(0.4)))
+                        .child(Icon::new(icon).size(IconSize::Xs).color(fg.ink(Ink::Muted)))
                         .child(text)
                 };
                 let width = px(slot.right - slot.left);
@@ -108,8 +109,8 @@ impl Render for ProcessLayer {
                     .flex()
                     .items_center()
                     .justify_end()
-                    .text_size(px(11.0))
-                    .text_color(fg.opacity(0.55))
+                    .text_size(Text::Sm.px())
+                    .text_color(fg.ink(Ink::Secondary))
                     .child(
                         div()
                             .id("footer-process-stats")

@@ -64,6 +64,7 @@ mod transcript;
 
 use items::{Delivery, FloatItem, FloatRow, Live, PAGE_TURNS, float_rows, rows_key, window_start};
 use ticker::WorkTicker;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// MonoCode `mono_chat.rs`: a 384pt conversation plus the 56pt rail.
 const WIDTH: f32 = 440.0;
@@ -901,7 +902,7 @@ impl MonoFloat {
             let (dot, dot_alpha) = match state.status {
                 MonoStatus::Working => (color, pulse),
                 MonoStatus::NeedsYou => (accent, 1.0),
-                MonoStatus::Idle => (fg.opacity(0.3), 1.0),
+                MonoStatus::Idle => (fg.ink(Ink::Faint), 1.0),
             };
             let id = mono.id.clone();
             let group = SharedString::from(format!("mono-float-row-{}", mono.id));
@@ -992,14 +993,14 @@ impl MonoFloat {
                 .justify_center()
                 .rounded(px(8.0))
                 .border_1()
-                .border_color(fg.opacity(0.1))
-                .bg(fg.opacity(0.05))
+                .border_color(fg.fill(Fill::Strong))
+                .bg(fg.fill(Fill::Hover))
                 .tooltip(Tooltip::text("New mono"))
                 // MonoCode: only from a Mono's chat. BenCode adds a Mono at
                 // once, so there is no create in flight to wait on.
                 .when(!has_current, |el| el.opacity(0.4))
                 .when(has_current, |el| {
-                    el.hover(move |s| s.bg(fg.opacity(0.1)))
+                    el.hover(move |s| s.bg(fg.fill(Fill::Strong)))
                         .on_click(cx.listener(move |this, _, window, cx| {
                             let id = this.app.update(cx, |app, cx| app.add_mono(cx));
                             this.show(&id, window, cx);
@@ -1008,7 +1009,7 @@ impl MonoFloat {
                 .child(
                     Icon::new(IconName::Plus)
                         .size(IconSize::Sm)
-                        .color(fg.opacity(0.6))
+                        .color(fg.ink(Ink::Secondary))
                         .group_hover_color("mono-float-new", fg),
                 ),
         )
@@ -1039,7 +1040,7 @@ impl MonoFloat {
             .px_3()
             .py_3()
             .border_b_1()
-            .border_color(fg.opacity(0.08))
+            .border_color(fg.fill(Fill::Selected))
             .child(mascot_icon(app.mono_mascot(mono), color, working, 28.0, cx))
             .child(
                 div()
@@ -1052,7 +1053,7 @@ impl MonoFloat {
                     .child(
                         div()
                             .truncate()
-                            .text_size(px(13.0))
+                            .text_size(Text::Md.px())
                             .line_height(px(16.0))
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_color(fg)
@@ -1068,7 +1069,7 @@ impl MonoFloat {
                         div()
                             .size(px(9.0))
                             .rounded(px(1.5))
-                            .bg(fg.opacity(0.45))
+                            .bg(fg.ink(Ink::Muted))
                             .group_hover("mono-float-stop", move |s| s.bg(fg)),
                         "Stop reply (Escape)",
                         true,
@@ -1084,7 +1085,7 @@ impl MonoFloat {
                     "mono-float-reveal",
                     Icon::new(IconName::ExternalLink)
                         .size(IconSize::Sm)
-                        .color(fg.opacity(0.45))
+                        .color(fg.ink(Ink::Muted))
                         .group_hover_color("mono-float-reveal", fg),
                     "Open in BenCode",
                     !loading,
@@ -1129,8 +1130,8 @@ impl MonoFloat {
             .child(
                 div()
                     .text_center()
-                    .text_size(px(13.0))
-                    .text_color(fg.opacity(0.5))
+                    .text_size(Text::Md.px())
+                    .text_color(fg.ink(Ink::Secondary))
                     .child(line),
             )
             .into_any_element()
@@ -1188,7 +1189,7 @@ impl Render for MonoFloat {
                         .px_3()
                         .py_3()
                         .border_b_1()
-                        .border_color(fg.opacity(0.08))
+                        .border_color(fg.fill(Fill::Selected))
                         .child(hide_button(cx)),
                 )
                 .child(self.render_placeholder(
@@ -1265,16 +1266,16 @@ fn mono_status(state: &MonoState, color: gpui::Hsla, cx: &App) -> impl IntoEleme
     let (dot, alpha) = match state.status {
         MonoStatus::NeedsYou => (colors.accent, 1.0),
         MonoStatus::Working => (color, spinner::pulse(cx)),
-        MonoStatus::Idle => (fg.opacity(0.3), 1.0),
+        MonoStatus::Idle => (fg.ink(Ink::Faint), 1.0),
     };
     div()
         .flex()
         .min_w_0()
         .items_center()
         .gap_1p5()
-        .text_size(px(11.0))
+        .text_size(Text::Sm.px())
         .line_height(px(14.0))
-        .text_color(fg.opacity(0.45))
+        .text_color(fg.ink(Ink::Muted))
         .child(
             div()
                 .flex_none()
@@ -1317,7 +1318,7 @@ fn header_button(
         .tooltip(Tooltip::text(tip))
         .map(|el| {
             if enabled {
-                el.cursor_pointer().hover(move |s| s.bg(fg.opacity(0.08)))
+                el.cursor_pointer().hover(move |s| s.bg(fg.fill(Fill::Selected)))
             } else {
                 el.opacity(0.3)
             }
@@ -1332,7 +1333,7 @@ fn hide_button(cx: &mut Context<MonoFloat>) -> impl IntoElement {
         "mono-float-hide",
         Icon::new(IconName::X)
             .size(IconSize::Md)
-            .color(fg.opacity(0.45))
+            .color(fg.ink(Ink::Muted))
             .group_hover_color("mono-float-hide", fg),
         "Hide chat (⌘W)",
         true,

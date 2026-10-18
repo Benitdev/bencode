@@ -18,6 +18,7 @@ use super::state::RailReorder;
 use crate::app::BenCodeApp;
 use crate::ui::mascot::{Mascot, pixel_sprite};
 use crate::ui::motion::cubic_bezier;
+use crate::ui::tokens::{Fill, Text, Tone as _};
 
 /// MonoCode `--motion-reorder-duration`.
 pub(super) const REORDER_MOTION: Duration = Duration::from_millis(160);
@@ -52,7 +53,7 @@ impl Render for DraggedRailProject {
             .bg(theme.colors.bg.blend(strong))
             .shadow_md()
             .text_color(fg)
-            .text_size(px(14.0))
+            .text_size(Text::Lg.px())
             .font_weight(FontWeight::MEDIUM)
             .line_height(relative(1.25))
             .child(
@@ -160,8 +161,8 @@ impl BenCodeApp {
             .right(px(-1.0))
             .w(px(6.0))
             .cursor_col_resize()
-            .when(dragging, |el| el.bg(fg.opacity(0.15)))
-            .when(!dragging, |el| el.hover(move |s| s.bg(fg.opacity(0.10))))
+            .when(dragging, |el| el.bg(fg.fill(Fill::Bold)))
+            .when(!dragging, |el| el.hover(move |s| s.bg(fg.fill(Fill::Strong))))
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|this, event: &MouseDownEvent, _, cx| {

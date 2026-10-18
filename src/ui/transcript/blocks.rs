@@ -21,6 +21,7 @@ use super::turns::{self, TurnLayout};
 use crate::app::{BenCodeApp, now_ms};
 use crate::db::SessionRow;
 use crate::ui::attachment_chip::{ChipFile, attachment_chip};
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// MonoCode's transcript column (`max-w-4xl`).
 pub const MESSAGE_MAX_WIDTH: f32 = 896.0;
@@ -295,7 +296,7 @@ impl BenCodeApp {
             // MonoCode `html.has-user-accent .user-message-bubble`.
             .when_some(accent, |el, accent| el.bg(accent.color.opacity(0.24)))
             .rounded(if single_line { px(18.0) } else { px(12.0) })
-            .text_size(px(14.0))
+            .text_size(Text::Lg.px())
             .line_height(px(LINE_HEIGHT))
             .text_color(colors.fg)
             .children(note.map(|card| div().when(!text.is_empty(), |el| el.mb_2()).child(card)))
@@ -330,7 +331,7 @@ impl BenCodeApp {
             bubble
                 .border_1()
                 .border_dashed()
-                .border_color(colors.fg.opacity(0.3))
+                .border_color(colors.fg.ink(Ink::Faint))
                 .when_some(accent, |el, accent| {
                     el.bg(accent.color.opacity(0.08))
                         .border_color(accent.color.opacity(0.38))
@@ -381,7 +382,7 @@ impl BenCodeApp {
             let (bg, fg) = if primary {
                 (colors.fg, colors.bg)
             } else {
-                (colors.fg.opacity(0.1), colors.fg.opacity(0.7))
+                (colors.fg.fill(Fill::Strong), colors.fg.ink(Ink::Body))
             };
             div()
                 .id(SharedString::from(id))
@@ -392,7 +393,7 @@ impl BenCodeApp {
                 .rounded(px(6.0))
                 .bg(bg)
                 .text_color(fg)
-                .text_size(px(11.0))
+                .text_size(Text::Sm.px())
                 .cursor_pointer()
                 .child(label)
         };
@@ -405,12 +406,12 @@ impl BenCodeApp {
                     .flex()
                     .items_center()
                     .gap_1()
-                    .text_size(px(11.0))
-                    .text_color(colors.fg.opacity(0.55))
+                    .text_size(Text::Sm.px())
+                    .text_color(colors.fg.ink(Ink::Secondary))
                     .child(
                         Icon::new(IconName::CircleDashed)
                             .size(IconSize::Xs)
-                            .color(colors.fg.opacity(0.55)),
+                            .color(colors.fg.ink(Ink::Secondary)),
                     )
                     .child("Draft"),
             )
@@ -435,7 +436,7 @@ impl BenCodeApp {
             .mt_1()
             .px_1()
             .rounded(px(4.0))
-            .text_size(px(12.0))
+            .text_size(Text::Base.px())
             .text_color(muted(colors.fg, 0.6))
             .cursor_pointer()
             .hover(move |s| s.bg(hover))
@@ -507,7 +508,7 @@ impl BenCodeApp {
                 el.child(
                     div()
                         .pl_1()
-                        .text_size(px(12.0))
+                        .text_size(Text::Base.px())
                         .text_color(muted(colors.fg, 0.4))
                         .child(time),
                 )
@@ -528,7 +529,7 @@ impl BenCodeApp {
         let (headline, detail) =
             turns::turn_metrics_text(metrics, turn.duration_ms(&session.blocks))?;
         let colors = &cx.theme().colors;
-        let hover = colors.fg.opacity(0.08);
+        let hover = colors.fg.fill(Fill::Selected);
         Some(
             div()
                 .id(SharedString::from(format!(
@@ -547,14 +548,14 @@ impl BenCodeApp {
                         .flex_col()
                         .child(
                             div()
-                                .text_size(px(12.0))
+                                .text_size(Text::Base.px())
                                 .line_height(px(16.0))
                                 .child(headline.clone()),
                         )
                         .when(!detail.is_empty(), |el| {
                             el.child(
                                 div()
-                                    .text_size(px(11.0))
+                                    .text_size(Text::Sm.px())
                                     .line_height(px(16.0))
                                     .text_color(colors.tooltip_fg.opacity(0.5))
                                     .child(detail.clone()),
@@ -634,7 +635,7 @@ impl BenCodeApp {
             .px_4()
             .pt_1()
             .pb_3()
-            .text_size(px(14.0))
+            .text_size(Text::Lg.px())
             .text_color(muted(colors.fg, 0.4))
             .child(
                 div()
@@ -747,7 +748,7 @@ fn notice(text: &str, select: SegCtx, cx: &Context<BenCodeApp>) -> AnyElement {
     div()
         .px_4()
         .py_2()
-        .text_size(px(14.0))
+        .text_size(Text::Lg.px())
         .text_color(muted(cx.theme().colors.fg, 0.5))
         .child(PlainText::new(select, text))
         .into_any_element()

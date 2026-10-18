@@ -11,6 +11,7 @@ use gpui::{
 use crate::app::BenCodeApp;
 use crate::ui::scale::px;
 use crate::ui::settings_modal::{SETTINGS_GROUPS, SettingsTab};
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 impl BenCodeApp {
     pub(super) fn render_settings_nav(&self, cx: &Context<Self>) -> impl IntoElement {
@@ -27,9 +28,9 @@ impl BenCodeApp {
                     div()
                         .px_2()
                         .pb_1()
-                        .text_size(px(12.0))
+                        .text_size(Text::Base.px())
                         .font_weight(FontWeight::SEMIBOLD)
-                        .text_color(fg.opacity(0.35))
+                        .text_color(fg.ink(Ink::Faint))
                         .child(*label),
                 )
                 .children(tabs.iter().map(|tab| {
@@ -115,7 +116,7 @@ fn nav_row(
     let fg = theme.colors.fg;
     let selection = fg.opacity(if theme.is_dark() { 0.10 } else { 0.06 });
     let id: SharedString = id.into();
-    let ink = if active { fg } else { fg.opacity(0.5) };
+    let ink = if active { fg } else { fg.ink(Ink::Secondary) };
     div()
         .id(id.clone())
         .group(id.clone())
@@ -131,22 +132,22 @@ fn nav_row(
             if active {
                 el.bg(selection).text_color(fg)
             } else {
-                el.text_color(fg.opacity(0.5))
-                    .hover(move |s| s.bg(fg.opacity(0.05)).text_color(fg))
+                el.text_color(fg.ink(Ink::Secondary))
+                    .hover(move |s| s.bg(fg.fill(Fill::Hover)).text_color(fg))
             }
         })
         .child(
             Icon::new(icon)
                 .size(IconSize::Md)
                 .color(ink.opacity(0.7))
-                .group_hover_color(id, fg.opacity(0.7)),
+                .group_hover_color(id, fg.ink(Ink::Body)),
         )
         .child(
             div()
                 .min_w_0()
                 .flex_1()
                 .truncate()
-                .text_size(px(14.0))
+                .text_size(Text::Lg.px())
                 .font_weight(FontWeight::MEDIUM)
                 .line_height(relative(1.25))
                 .child(label),

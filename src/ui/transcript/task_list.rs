@@ -9,6 +9,7 @@ use crate::app::task_list::progress_label;
 use crate::harness::{TaskItem, TaskStatus};
 use crate::ui::scale::px;
 use crate::ui::spinner::terminal_spinner;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// The row's leading mark (MonoCode `TaskState`).
 fn state(status: TaskStatus, cx: &App) -> AnyElement {
@@ -35,17 +36,17 @@ fn state(status: TaskStatus, cx: &App) -> AnyElement {
             .into_any_element(),
         TaskStatus::Cancelled => slot
             .rounded_full()
-            .bg(colors.fg.opacity(0.08))
+            .bg(colors.fg.fill(Fill::Selected))
             .child(
                 Icon::new(IconName::Minus)
                     .size(IconSize::Xs)
-                    .color(colors.fg.opacity(0.35)),
+                    .color(colors.fg.ink(Ink::Faint)),
             )
             .into_any_element(),
         TaskStatus::Pending => slot
             .rounded_full()
             .border_1()
-            .border_color(colors.fg.opacity(0.25))
+            .border_color(colors.fg.ink(Ink::Faint))
             .bg(colors.fg.opacity(0.02))
             .into_any_element(),
     }
@@ -67,7 +68,7 @@ pub(super) fn card(items: &[TaskItem], explanation: Option<&str>, cx: &App) -> A
             div().mt(px(2.0)).flex_none().child(
                 Icon::new(IconName::ListTodo)
                     .size(IconSize::Sm)
-                    .color(colors.fg.opacity(0.45)),
+                    .color(colors.fg.ink(Ink::Muted)),
             ),
         )
         .child(
@@ -83,21 +84,21 @@ pub(super) fn card(items: &[TaskItem], explanation: Option<&str>, cx: &App) -> A
                         .child(
                             div()
                                 .font_family(theme.mono_family.clone())
-                                .text_size(px(12.0))
+                                .text_size(Text::Base.px())
                                 .font_weight(gpui::FontWeight::MEDIUM)
-                                .text_color(colors.fg.opacity(0.85))
+                                .text_color(colors.fg.ink(Ink::Strong))
                                 .child("Tasks"),
                         )
                         .child(
                             div()
                                 .flex_none()
                                 .rounded_full()
-                                .bg(colors.fg.opacity(0.07))
+                                .bg(colors.fg.fill(Fill::Line))
                                 .px_2()
                                 .py(px(2.0))
                                 .font_family(theme.mono_family.clone())
-                                .text_size(px(10.0))
-                                .text_color(colors.fg.opacity(0.5))
+                                .text_size(Text::Xs.px())
+                                .text_color(colors.fg.ink(Ink::Secondary))
                                 .child(progress_label(items)),
                         ),
                 )
@@ -106,7 +107,7 @@ pub(super) fn card(items: &[TaskItem], explanation: Option<&str>, cx: &App) -> A
                         .mt(px(2.0))
                         .text_size(px(11.5))
                         .line_height(px(16.0))
-                        .text_color(colors.fg.opacity(0.5))
+                        .text_color(colors.fg.ink(Ink::Secondary))
                         .line_clamp(2)
                         .child(SharedString::from(line.to_string()))
                 })),
@@ -119,10 +120,10 @@ pub(super) fn card(items: &[TaskItem], explanation: Option<&str>, cx: &App) -> A
             .line_height(px(18.0))
             .child(SharedString::from(item.text.clone()));
         let text = match item.status {
-            TaskStatus::Completed => text.text_color(colors.fg.opacity(0.4)).line_through(),
-            TaskStatus::Cancelled => text.text_color(colors.fg.opacity(0.35)).line_through(),
-            TaskStatus::InProgress => text.text_color(colors.fg.opacity(0.85)),
-            TaskStatus::Pending => text.text_color(colors.fg.opacity(0.6)),
+            TaskStatus::Completed => text.text_color(colors.fg.ink(Ink::Muted)).line_through(),
+            TaskStatus::Cancelled => text.text_color(colors.fg.ink(Ink::Faint)).line_through(),
+            TaskStatus::InProgress => text.text_color(colors.fg.ink(Ink::Strong)),
+            TaskStatus::Pending => text.text_color(colors.fg.ink(Ink::Secondary)),
         };
         div()
             .flex()
@@ -142,7 +143,7 @@ pub(super) fn card(items: &[TaskItem], explanation: Option<&str>, cx: &App) -> A
                 .mb_2()
                 .rounded(px(10.0))
                 .border_1()
-                .border_color(colors.fg.opacity(0.1))
+                .border_color(colors.fg.fill(Fill::Strong))
                 .bg(colors.fg.opacity(0.035))
                 .overflow_hidden()
                 .child(header)

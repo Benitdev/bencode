@@ -51,6 +51,7 @@ pub use mcp_picker::McpPicker;
 pub use menus::{MenuState, focus_later};
 use menus::{over_composer, popover_anchor, popover_surface};
 pub use prompt_marks::{MentionMark, prompt_highlights};
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// MonoCode `max-w-4xl`, the same column as the transcript.
 const COMPOSER_MAX_WIDTH: f32 = 896.0;
@@ -115,18 +116,18 @@ fn composer_chip(
         .bg(fill)
         .hover(move |s| s.bg(hover))
         .child(div().flex_none().child(icon))
-        .child(div().min_w_0().truncate().text_size(px(11.0)).child(label))
+        .child(div().min_w_0().truncate().text_size(Text::Sm.px()).child(label))
         .children(detail.map(|detail| {
             div()
                 .flex_none()
-                .text_size(px(11.0))
-                .text_color(colors.fg.opacity(0.5))
+                .text_size(Text::Sm.px())
+                .text_color(colors.fg.ink(Ink::Secondary))
                 .child(detail)
         }))
         .child(
             Icon::new(IconName::ChevronDown)
                 .size(IconSize::Xs)
-                .color(colors.fg.opacity(0.5))
+                .color(colors.fg.ink(Ink::Secondary))
                 .when(open, |icon| {
                     icon.rotate(gpui::radians(std::f32::consts::PI))
                 }),
@@ -213,7 +214,7 @@ fn git_label(
     let interactive = enabled.is_some();
     let enabled = enabled.unwrap_or(true);
     let colors = &cx.theme().colors;
-    let (fg, hover) = (colors.fg, colors.fg.opacity(0.08));
+    let (fg, hover) = (colors.fg, colors.fg.fill(Fill::Selected));
     div()
         .id(id)
         .ml(px(-6.0))
@@ -225,7 +226,7 @@ fn git_label(
         .h(px(24.0))
         .px_1p5()
         .rounded(px(6.0))
-        .text_size(px(12.0))
+        .text_size(Text::Base.px())
         .text_color(fg.opacity(if interactive { 0.55 } else { 0.45 }))
         .when(open, |el| el.bg(hover).text_color(fg))
         .when(enabled && interactive, |el| {
@@ -233,7 +234,7 @@ fn git_label(
                 .hover(move |s| s.bg(hover).text_color(fg))
         })
         .when(!enabled, |el| el.opacity(0.4))
-        .child(icon.into().render(fg.opacity(0.55)))
+        .child(icon.into().render(fg.ink(Ink::Secondary)))
         .child(div().min_w_0().truncate().child(label))
 }
 
@@ -433,7 +434,7 @@ impl BenCodeApp {
                 .text_color(if draft.is_some() {
                     colors.fg
                 } else {
-                    colors.fg.opacity(0.4)
+                    colors.fg.ink(Ink::Muted)
                 })
                 .child(
                     draft
@@ -527,7 +528,7 @@ impl BenCodeApp {
                             .fg
                             .opacity(if self.prompt_focused { 0.2 } else { 0.1 })
                     })
-                    .bg(colors.fg.opacity(0.03))
+                    .bg(colors.fg.fill(Fill::Faint))
                     // MonoCode light theme: the page colour, lifted by a shadow.
                     .when(!cx.theme().is_dark(), |el| el.bg(colors.bg).shadow_md())
                     .when(focused, |el| {
@@ -552,7 +553,7 @@ impl BenCodeApp {
                                 div()
                                     .px_3()
                                     .pt_2()
-                                    .text_size(px(12.0))
+                                    .text_size(Text::Base.px())
                                     .text_color(colors.danger)
                                     .child(error),
                             )
@@ -563,7 +564,7 @@ impl BenCodeApp {
                             .px_3()
                             .py(field_pad)
                             .max_h(px(160.0) + field_pad * 2.0)
-                            .text_size(px(14.0))
+                            .text_size(Text::Lg.px())
                             .line_height(px(22.0))
                             .child(field),
                     )
@@ -599,8 +600,8 @@ impl BenCodeApp {
                                 .flex()
                                 .items_center()
                                 .justify_center()
-                                .text_size(px(12.0))
-                                .text_color(colors.fg.opacity(0.7))
+                                .text_size(Text::Base.px())
+                                .text_color(colors.fg.ink(Ink::Body))
                                 .child("Drop files to attach"),
                         )
                     }),
@@ -947,7 +948,7 @@ impl BenCodeApp {
                 .child(Icon::new(IconName::Plus).size(IconSize::Xs).color(if open {
                     colors.fg
                 } else {
-                    colors.fg.opacity(0.5)
+                    colors.fg.ink(Ink::Secondary)
                 }));
         popover_anchor(button, cx)
     }
@@ -1086,7 +1087,7 @@ impl BenCodeApp {
         }
         let colors = &cx.theme().colors;
         let icon_button = |id: SharedString, icon: IconName, tip: &'static str| {
-            let hover = colors.fg.opacity(0.10);
+            let hover = colors.fg.fill(Fill::Strong);
             div()
                 .id(id)
                 .size(px(24.0))
@@ -1101,7 +1102,7 @@ impl BenCodeApp {
                 .child(
                     Icon::new(icon)
                         .size(IconSize::Xs)
-                        .color(colors.fg.opacity(0.55)),
+                        .color(colors.fg.ink(Ink::Secondary)),
                 )
         };
         let editing = self
@@ -1116,7 +1117,7 @@ impl BenCodeApp {
                     .items_center()
                     .gap_2()
                     .min_h(px(28.0))
-                    .text_size(px(12.0))
+                    .text_size(Text::Base.px())
                     .when(ix > 0, |el| el.border_t_1().border_color(colors.border));
                 if editing == Some(ix) {
                     return row
@@ -1128,8 +1129,8 @@ impl BenCodeApp {
                                 .py_0p5()
                                 .rounded(px(6.0))
                                 .border_1()
-                                .border_color(colors.fg.opacity(0.3))
-                                .bg(colors.fg.opacity(0.05))
+                                .border_color(colors.fg.ink(Ink::Faint))
+                                .bg(colors.fg.fill(Fill::Hover))
                                 .child(self.queue_edit_input.clone()),
                         )
                         .child(
@@ -1155,19 +1156,19 @@ impl BenCodeApp {
                     session_id.to_string(),
                     session_id.to_string(),
                 );
-                let steer_hover = colors.fg.opacity(0.10);
+                let steer_hover = colors.fg.fill(Fill::Strong);
                 let running_steer = self.is_agent_running_in(session_id);
                 row.child(
                     Icon::new(IconName::List)
                         .size(IconSize::Xs)
-                        .color(colors.fg.opacity(0.55)),
+                        .color(colors.fg.ink(Ink::Secondary)),
                 )
                 .child(
                     div()
                         .flex_1()
                         .min_w_0()
                         .truncate()
-                        .text_color(colors.fg.opacity(0.8))
+                        .text_color(colors.fg.ink(Ink::Strong))
                         .child(label),
                 )
                 // MonoCode's Steer: this message into the running turn now, or
@@ -1198,7 +1199,7 @@ impl BenCodeApp {
                                 .child(
                                     Icon::new(IconName::CornerDownRight)
                                         .size(IconSize::Xs)
-                                        .color(colors.fg.opacity(0.55)),
+                                        .color(colors.fg.ink(Ink::Secondary)),
                                 )
                                 .child("Steer"),
                         )
@@ -1228,7 +1229,7 @@ impl BenCodeApp {
             });
         let paused = self.queue_paused(session_id).then(|| {
             let sid = session_id.to_string();
-            let hover = colors.fg.opacity(0.10);
+            let hover = colors.fg.fill(Fill::Strong);
             div()
                 .flex()
                 .items_center()
@@ -1236,12 +1237,12 @@ impl BenCodeApp {
                 .h(px(28.0))
                 .border_b_1()
                 .border_color(colors.border)
-                .text_size(px(12.0))
-                .text_color(colors.fg.opacity(0.55))
+                .text_size(Text::Base.px())
+                .text_color(colors.fg.ink(Ink::Secondary))
                 .child(
                     Icon::new(IconName::Pause)
                         .size(IconSize::Xs)
-                        .color(colors.fg.opacity(0.55)),
+                        .color(colors.fg.ink(Ink::Secondary)),
                 )
                 .child(
                     div()
@@ -1265,7 +1266,7 @@ impl BenCodeApp {
                         .child(
                             Icon::new(IconName::Play)
                                 .size(IconSize::Xs)
-                                .color(colors.fg.opacity(0.55)),
+                                .color(colors.fg.ink(Ink::Secondary)),
                         )
                         .child("Resume"),
                 )
@@ -1281,7 +1282,7 @@ impl BenCodeApp {
                         .border_1()
                         .border_b_0()
                         .border_color(colors.border)
-                        .bg(colors.fg.opacity(0.03))
+                        .bg(colors.fg.fill(Fill::Faint))
                         .children(paused)
                         .children(rows),
                 )
@@ -1325,7 +1326,7 @@ impl BenCodeApp {
             (
                 "plus-draft",
                 IconName::CircleDashed,
-                colors.fg.opacity(0.6),
+                colors.fg.ink(Ink::Secondary),
                 "Draft",
                 "Save this message without starting the agent",
                 draft_on,
@@ -1351,9 +1352,9 @@ impl BenCodeApp {
                     .px_2()
                     .pt_0p5()
                     .pb_1()
-                    .text_size(px(10.0))
+                    .text_size(Text::Xs.px())
                     .font_weight(FontWeight::MEDIUM)
-                    .text_color(colors.fg.opacity(0.4))
+                    .text_color(colors.fg.ink(Ink::Muted))
                     .child("ADD TO MESSAGE"),
             )
             .children(
@@ -1362,7 +1363,7 @@ impl BenCodeApp {
                     // MonoCode offers Draft only where one can be saved.
                     .filter(|item| item.0 != "plus-draft" || can_draft)
                     .map(|(id, icon, tint, title, hint, active, action)| {
-                        let hover = colors.fg.opacity(0.10);
+                        let hover = colors.fg.fill(Fill::Strong);
                         div()
                             .id(id)
                             .flex()
@@ -1387,15 +1388,15 @@ impl BenCodeApp {
                                     .min_w_0()
                                     .child(
                                         div()
-                                            .text_size(px(13.0))
+                                            .text_size(Text::Md.px())
                                             .line_height(px(TITLE_LINE))
                                             .text_color(colors.fg)
                                             .child(title),
                                     )
                                     .child(
                                         div()
-                                            .text_size(px(11.0))
-                                            .text_color(colors.fg.opacity(0.45))
+                                            .text_size(Text::Sm.px())
+                                            .text_color(colors.fg.ink(Ink::Muted))
                                             .child(hint),
                                     ),
                             )
@@ -1437,7 +1438,7 @@ impl BenCodeApp {
                 let icon_color = if mode == PermissionMode::FullAccess {
                     colors.warning.opacity(0.9)
                 } else {
-                    colors.fg.opacity(0.7)
+                    colors.fg.ink(Ink::Body)
                 };
                 // MonoCode `flex items-start gap-2.5 rounded-lg px-2 py-2`.
                 div()
@@ -1469,7 +1470,7 @@ impl BenCodeApp {
                             .min_w_0()
                             .child(
                                 div()
-                                    .text_size(px(13.0))
+                                    .text_size(Text::Md.px())
                                     .line_height(px(TITLE_LINE))
                                     .font_weight(FontWeight::MEDIUM)
                                     .text_color(colors.fg)
@@ -1478,9 +1479,9 @@ impl BenCodeApp {
                             .child(
                                 div()
                                     .mt(px(2.0))
-                                    .text_size(px(11.0))
+                                    .text_size(Text::Sm.px())
                                     .line_height(px(16.0))
-                                    .text_color(colors.fg.opacity(0.5))
+                                    .text_color(colors.fg.ink(Ink::Secondary))
                                     .child(hint),
                             ),
                     )
@@ -1490,9 +1491,9 @@ impl BenCodeApp {
                     div()
                         .px_2()
                         .py_1p5()
-                        .text_size(px(11.0))
+                        .text_size(Text::Sm.px())
                         .line_height(px(16.0))
-                        .text_color(colors.fg.opacity(0.5))
+                        .text_color(colors.fg.ink(Ink::Secondary))
                         .child("Access changes apply to the next turn. Stop and resend to apply them now."),
                 )
             });

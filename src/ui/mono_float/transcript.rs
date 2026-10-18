@@ -37,6 +37,7 @@ use crate::ui::transcript::markdown::AgentMarkdown;
 use crate::ui::transcript::mono::{
     clock_time, day_separator, reaction_badge, signature_name, signature_pill,
 };
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// MonoCode `user-message-row`'s `pl-14 pr-4`.
 const MESSAGE_LEFT: f32 = 56.0;
@@ -125,13 +126,13 @@ fn quiet_button(
         .p_1()
         .rounded(px(6.0))
         .cursor_pointer()
-        .hover(move |s| s.bg(fg.opacity(0.08)))
+        .hover(move |s| s.bg(fg.fill(Fill::Selected)))
         .tooltip(Tooltip::text(tip))
         .child(
             Icon::new(icon)
                 .size(IconSize::Sm)
-                .color(fg.opacity(0.4))
-                .group_hover_color(id, fg.opacity(0.7)),
+                .color(fg.ink(Ink::Muted))
+                .group_hover_color(id, fg.ink(Ink::Body)),
         )
 }
 
@@ -141,7 +142,7 @@ fn footer_dot(fg: Hsla) -> impl IntoElement {
         .flex_none()
         .size(px(3.0))
         .rounded_full()
-        .bg(fg.opacity(0.25))
+        .bg(fg.ink(Ink::Faint))
 }
 
 impl MonoFloat {
@@ -279,8 +280,8 @@ impl MonoFloat {
                 .items_center()
                 .gap_1p5()
                 .py_1()
-                .text_size(px(14.0))
-                .text_color(fg.opacity(0.5))
+                .text_size(Text::Lg.px())
+                .text_color(fg.ink(Ink::Secondary))
                 .map(|el| match ticker {
                     // MonoCode `MonoTurnHeader` while active: the pill holds
                     // the Mono's signature, the ticker runs beside it.
@@ -293,7 +294,7 @@ impl MonoFloat {
                                 .max_w(relative(0.45))
                                 .child(self.render_sign(cx)),
                         )
-                        .child(div().flex_none().text_color(fg.opacity(0.25)).child("·"))
+                        .child(div().flex_none().text_color(fg.ink(Ink::Faint)).child("·"))
                         .child(
                             // MonoCode `onShowWork`: the trail is in BenCode.
                             div()
@@ -313,15 +314,15 @@ impl MonoFloat {
                 .pt_1()
                 .child(
                     div()
-                        .text_size(px(13.0))
+                        .text_size(Text::Md.px())
                         .child(AgentMarkdown::new(("mono-float-reply", ix), text)),
                 )
                 .into_any_element(),
             FloatItem::Notice(text) => row
                 .pt_2()
-                .text_size(px(12.0))
+                .text_size(Text::Base.px())
                 .line_height(px(18.0))
-                .text_color(fg.opacity(0.45))
+                .text_color(fg.ink(Ink::Muted))
                 .child(text)
                 .into_any_element(),
             FloatItem::Approval(_) => {
@@ -494,8 +495,8 @@ impl MonoFloat {
             .gap(px(10.0))
             .h(px(24.0))
             .px_4()
-            .text_size(px(14.0))
-            .text_color(fg.opacity(0.4))
+            .text_size(Text::Lg.px())
+            .text_color(fg.ink(Ink::Muted))
             .when(!shown, |el| el.invisible())
             .child(
                 div()
@@ -508,7 +509,7 @@ impl MonoFloat {
                             el.child(
                                 Icon::new(IconName::Check)
                                     .size(IconSize::Sm)
-                                    .color(fg.opacity(0.4)),
+                                    .color(fg.ink(Ink::Muted)),
                             )
                         } else {
                             let tip = if copied { "Copied" } else { "Copy response" };
@@ -541,7 +542,7 @@ impl MonoFloat {
                     .items_center()
                     .gap(px(10.0))
                     .child(footer_dot(fg))
-                    .child(div().text_color(fg.opacity(0.35)).child(time))
+                    .child(div().text_color(fg.ink(Ink::Faint)).child(time))
             }))
             .into_any_element()
     }
@@ -632,7 +633,7 @@ impl MonoFloat {
         // the accent the user picked at 24%.
         let (bubble_bg, bubble_fg) = match accent {
             Some(accent) => (accent.color.opacity(0.24), fg),
-            None if dark => (fg.opacity(0.1), fg),
+            None if dark => (fg.fill(Fill::Strong), fg),
             None => (gpui::rgb(0x0a0a0a).into(), gpui::white()),
         };
         let others: Vec<ChipFile> = others.into_iter().cloned().collect();
@@ -675,8 +676,8 @@ impl MonoFloat {
                         .children(at.and_then(clock_time).map(|time| {
                             div()
                                 .ml_1()
-                                .text_size(px(12.0))
-                                .text_color(fg.opacity(0.4))
+                                .text_size(Text::Base.px())
+                                .text_color(fg.ink(Ink::Muted))
                                 .child(time)
                         }))
                 },
@@ -719,7 +720,7 @@ impl MonoFloat {
                             .px_1()
                             .py_0p5()
                             .rounded(px(4.0))
-                            .text_size(px(12.0))
+                            .text_size(Text::Base.px())
                             .text_color(bubble_fg.opacity(0.6))
                             .cursor_pointer()
                             .hover(move |s| s.bg(bubble_fg.opacity(0.08)).text_color(bubble_fg))
@@ -785,8 +786,8 @@ impl MonoFloat {
                 .gap_2()
                 .px_3()
                 .pt_1()
-                .text_size(px(12.0))
-                .text_color(fg.opacity(0.5))
+                .text_size(Text::Base.px())
+                .text_color(fg.ink(Ink::Secondary))
                 .child(div().min_w_0().child(line))
                 .when(failed, |el| {
                     el.child(
@@ -796,9 +797,9 @@ impl MonoFloat {
                             .px_1()
                             .py_0p5()
                             .rounded(px(4.0))
-                            .text_color(fg.opacity(0.7))
+                            .text_color(fg.ink(Ink::Body))
                             .cursor_pointer()
-                            .hover(move |s| s.bg(fg.opacity(0.08)))
+                            .hover(move |s| s.bg(fg.fill(Fill::Selected)))
                             .child("Retry")
                             .on_click(cx.listener(|this, _, _, cx| this.retry(cx))),
                     )
@@ -825,7 +826,7 @@ impl MonoFloat {
             .h(px(height))
             .rounded(px(16.0))
             .overflow_hidden()
-            .bg(cx.theme().colors.fg.opacity(0.05))
+            .bg(cx.theme().colors.fg.fill(Fill::Hover))
             .cursor_pointer()
             .tooltip(Tooltip::text(file.name.clone()))
             .on_click(cx.listener(move |this, _, _, cx| {

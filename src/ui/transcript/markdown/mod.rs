@@ -34,6 +34,7 @@ use unicode_segmentation::UnicodeSegmentation;
 pub use parse::{Block, Drawing, Fence, Inline, Span, inline_file, parse};
 
 use super::selection::{Joint, SegCtx, restyle};
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// Opens a file a reply names: its path as written and the line, if any.
 pub type OnOpenFile = Rc<dyn Fn(&str, Option<u64>, &mut Window, &mut App)>;
@@ -308,7 +309,7 @@ impl Look {
             strong: fg.opacity(strong),
             link,
             link_hover,
-            chip: fg.opacity(0.08),
+            chip: fg.fill(Fill::Selected),
             shell_bg: fg.opacity(if fold { 0.04 } else { 0.06 }),
             shell_border: fg.opacity(if fold { 0.08 } else { 0.10 }),
             font,
@@ -830,7 +831,7 @@ impl Draw<'_> {
                                     })
                                     .size(IconSize::Sm)
                                     .color(if done {
-                                        look.fg.opacity(0.55)
+                                        look.fg.ink(Ink::Secondary)
                                     } else {
                                         look.body
                                     }),
@@ -876,7 +877,7 @@ impl Draw<'_> {
             Block::Table { aligns, head, rows } => {
                 self.table(aligns, head, rows, joint, window, cx)
             }
-            Block::Rule => div().h(px(1.0)).bg(look.fg.opacity(0.1)).into_any_element(),
+            Block::Rule => div().h(px(1.0)).bg(look.fg.fill(Fill::Strong)).into_any_element(),
             Block::Image { src, alt } => {
                 let file = crate::storage::data_dir()
                     .and_then(|dir| crate::app::note_images::note_image_file(&dir, src));
@@ -886,7 +887,7 @@ impl Draw<'_> {
                         .rounded(px(6.0))
                         .into_any_element(),
                     None => div()
-                        .text_color(look.fg.opacity(0.5))
+                        .text_color(look.fg.ink(Ink::Secondary))
                         .child(alt.clone())
                         .into_any_element(),
                 }
@@ -914,7 +915,7 @@ impl Draw<'_> {
                 .overflow_x_scroll()
                 .rounded(px(10.0))
                 .border_1()
-                .border_color(look.fg.opacity(0.1))
+                .border_color(look.fg.fill(Fill::Strong))
                 .bg(cx.theme().colors.surface)
                 .p_3()
                 .child(Diagram::new(self.key("diagram"), fence.code.clone()))
@@ -955,8 +956,8 @@ impl Draw<'_> {
         let copy = {
             let code = fence.code.clone();
             let state = copied_at.clone();
-            let hover = look.fg.opacity(0.1);
-            let ink = look.fg.opacity(0.45);
+            let hover = look.fg.fill(Fill::Strong);
+            let ink = look.fg.ink(Ink::Muted);
             div()
                 .id((key.clone(), "copy"))
                 .flex_none()
@@ -1004,7 +1005,7 @@ impl Draw<'_> {
             .min_h(px(36.0))
             .pl(px(10.0))
             .pr(px(6.0))
-            .text_size(px(12.0))
+            .text_size(Text::Base.px())
             .line_height(px(16.0))
             .font_weight(FontWeight::MEDIUM)
             .text_color(look.fg.opacity(0.65))
@@ -1088,8 +1089,8 @@ impl Draw<'_> {
                 .items_end()
                 .w(px(24.0))
                 .mr(px(8.0))
-                .text_size(px(10.0))
-                .text_color(look.fg.opacity(0.35))
+                .text_size(Text::Xs.px())
+                .text_color(look.fg.ink(Ink::Faint))
                 .children((0..lines).map(|n| {
                     div()
                         .h(px(CODE_LEADING))
@@ -1115,8 +1116,6 @@ impl Draw<'_> {
             .children(numbers)
             .child(div().flex_none().whitespace_nowrap().child(code_text));
         div()
-            .flex()
-            .flex_col()
             .min_w_0()
             .rounded(px(10.0))
             .border_1()
@@ -1195,20 +1194,18 @@ impl Draw<'_> {
                 div()
                     .flex()
                     .when(ix > 0, |el| {
-                        el.border_t_1().border_color(look.fg.opacity(0.05))
+                        el.border_t_1().border_color(look.fg.fill(Fill::Hover))
                     })
                     .children(cells),
             );
         }
         div()
-            .flex()
-            .flex_col()
             .rounded(px(10.0))
             .border_1()
             .border_color(look.shell_border)
             .bg(look.shell_bg)
             .overflow_hidden()
-            .text_size(px(12.0))
+            .text_size(Text::Base.px())
             .line_height(px(18.0))
             .children(lines)
             .into_any_element()
