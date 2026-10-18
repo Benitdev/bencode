@@ -1166,7 +1166,8 @@ impl BenCodeApp {
             self.announce_turn_finished(session_id, cx);
             self.session_turn_settled(session_id, run.outcome, cx);
         }
-        // The agent has most likely edited files.
+        // The agent has most likely edited files, and may have switched branch.
+        self.workspace.turn_ended.insert(session_id.to_string());
         self.refresh_workspace(cx);
         self.load_session_review(session_id, cx);
         self.send_next_queued(session_id, cx);
@@ -1234,6 +1235,7 @@ impl BenCodeApp {
             finish_turn(session, now);
         }
         self.persist_session(session_id);
+        self.workspace.turn_ended.insert(session_id.to_string());
         self.refresh_workspace(cx);
         cx.notify();
     }

@@ -118,9 +118,7 @@ impl BenCodeApp {
 
     /// The branch the focused checkout is on.
     fn current_branch(&self) -> String {
-        self.selected_session()
-            .and_then(|s| s.branch.clone())
-            .or_else(|| Some(self.git_status.branch.clone()).filter(|b| !b.is_empty()))
+        self.composer_branch(self.selected_session())
             .unwrap_or_default()
     }
 

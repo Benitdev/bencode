@@ -1515,9 +1515,8 @@ impl BenCodeApp {
         enabled: bool,
         cx: &Context<Self>,
     ) -> impl IntoElement {
-        let current = session
-            .and_then(|s| s.branch.clone())
-            .or_else(|| Some(self.git_status.branch.clone()).filter(|b| !b.is_empty()))
+        let current = self
+            .composer_branch(session)
             .unwrap_or_else(|| "main".to_string());
         // Only the focused composer's chip owns the open popover.
         let focused = session.map(|s| s.id.as_str()) == self.selected_session_id.as_deref();

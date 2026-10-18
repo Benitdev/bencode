@@ -4,7 +4,7 @@
 //! re-renders on every streamed token. Everything here is loaded on the
 //! background executor and swapped in atomically; views read the cache.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::thread::ScopedJoinHandle;
 use std::time::{Duration, Instant};
 
@@ -51,6 +51,10 @@ pub struct WorkspaceCache {
     /// The window is out of sight (minimized, fully covered, on another
     /// Space or a sleeping display): the git poll and the auto fetch wait.
     pub hidden: bool,
+    /// Threads whose turn ended since the last snapshot landed: the agent
+    /// may have checked out another branch, so the next snapshot of their
+    /// checkout sets the branch they show.
+    pub turn_ended: HashSet<String>,
 }
 
 impl WorkspaceCache {
@@ -264,6 +268,7 @@ impl BenCodeApp {
                     .snapshots
                     .insert(cwd.clone(), snapshot.clone());
                 app.apply_snapshot(cwd.clone(), snapshot, refs_reloaded, cx);
+                app.follow_agent_checkout(&cwd);
                 app.reload_working_tree_docs(&cwd, cx);
                 app.reload_session_reviews(&cwd, cx);
                 app.refresh_file_tree(cx);
@@ -451,6 +456,43 @@ impl BenCodeApp {
                 session.branch = branch.clone();
             }
             self.persist_session(&id);
+        }
+    }
+
+    /// A thread whose agent is running, or whose turn just ended, shows the
+    /// branch its checkout is on now: the agent may have switched it.
+    fn follow_agent_checkout(&mut self, cwd: &str) {
+        let ended = std::mem::take(&mut self.workspace.turn_ended);
+        let branch = Some(self.git_status.branch.clone()).filter(|b| !b.is_empty());
+        if branch.is_none() {
+            return;
+        }
+        let moved: Vec<String> = self
+            .sessions
+            .iter()
+            .filter(|s| s.branch != branch && !s.worktree_removed)
+            .filter(|s| crate::app::same_project_path(s.work_dir(), cwd))
+            .filter(|s| ended.contains(&s.id) || self.is_agent_running_in(&s.id))
+            .map(|s| s.id.clone())
+            .collect();
+        for id in moved {
+            if let Some(session) = self.sessions.iter_mut().find(|s| s.id == id) {
+                session.branch = branch.clone();
+            }
+            self.persist_session(&id);
+        }
+    }
+
+    /// The branch the composer shows for `session`: the one its checkout is
+    /// on when that checkout is the one loaded, as the chip acts on it.
+    pub fn composer_branch(&self, session: Option<&crate::db::SessionRow>) -> Option<String> {
+        let live = Some(self.git_status.branch.clone()).filter(|b| !b.is_empty());
+        match session {
+            Some(s) if !crate::app::same_project_path(s.work_dir(), &self.workspace.cwd) => {
+                s.branch.clone().or(live)
+            }
+            Some(s) => live.or_else(|| s.branch.clone()),
+            None => live,
         }
     }
 
