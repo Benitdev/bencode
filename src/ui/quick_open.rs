@@ -244,6 +244,7 @@ impl BenCodeApp {
 
     /// ⌘P: opens the picker with an empty query and a fresh file index.
     pub fn open_quick_open(&mut self, cx: &mut Context<Self>) {
+        self.close_search_modal(cx);
         self.quick_open.open = true;
         self.quick_open.active = 0;
         self.quick_open_input

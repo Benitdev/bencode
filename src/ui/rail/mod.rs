@@ -235,7 +235,7 @@ impl BenCodeApp {
             .px_2()
             .pb_2()
             .pt(px(2.0))
-            .child(rail_search(self.surface_open(Surface::Search), cx))
+            .child(rail_search(self.search.open, cx))
             // `mt-0.5`
             .child(div().mt(px(2.0)))
             .child(

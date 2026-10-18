@@ -86,7 +86,7 @@ MonoCode paths are relative to `reference/monocode/src`, BenCode paths to `src`.
 
 | Feature | MonoCode | BenCode | Status | Gaps |
 | :--- | :--- | :--- | :--- | :--- |
-| Search | `features/search/` | `ui/search_view.rs` | 🟡 | Ranking and coverage simpler than MonoCode |
+| Search | `features/search/` | `ui/search_view/` | 🟡 | Ranked, with transcript excerpts; no message-level jump yet |
 | Inbox (GitHub) | `features/inbox/` | `ui/inbox_view*`, `github.rs` | ✅ | |
 | Inbox (GitLab, Linear, Jira, Azure DevOps) | `features/inbox/`, `src-tauri/src/{gitlab,linear,jira,azure_devops}.rs` | none | ⚪ | |
 | Notes | `features/notes/` | `ui/notes_view.rs`, `db/mod.rs` | 🟡 | Preview / Source toggle, tags UI |

@@ -1211,8 +1211,14 @@ impl BenCodeApp {
             .unwrap_or(&file.path)
             .to_string();
         // Stage and Discard act on the open workspace's tree only.
-        let live =
-            self.file_pane.get(key).and_then(PaneTab::cwd) == Some(self.workspace(cx).cwd.as_str());
+        let tab_cwd = self.file_pane.get(key).and_then(PaneTab::cwd);
+        let live = tab_cwd == Some(self.workspace(cx).cwd.as_str());
+        // The editor opens a path relative to the open workspace; another
+        // tree's file (a worktree's, a commit's elsewhere) goes by its full path.
+        let open_path = match tab_cwd {
+            Some(cwd) if !live => format!("{}/{}", cwd.trim_end_matches('/'), file.path),
+            _ => file.path.clone(),
+        };
         let unstaged = live && file.side == Some(Side::Unstaged);
         let busy_here = matches!(&self.changes_ui.busy, Some(Busy::File(p)) if *p == file.path);
         let prefix = if pinned { "diff-pinned" } else { "diff" };
@@ -1274,6 +1280,30 @@ impl BenCodeApp {
                             )
                             .flex_none()
                             .text_size(Text::Sm.px()),
+                        ),
+                )
+                .child(
+                    div()
+                        .id(SharedString::from(format!(
+                            "{prefix}-open-{key}-{}",
+                            file.id
+                        )))
+                        .size(px(24.0))
+                        .flex()
+                        .flex_none()
+                        .items_center()
+                        .justify_center()
+                        .rounded_md()
+                        .cursor_pointer()
+                        .tooltip(Tooltip::text("Open file"))
+                        .hover(|s| s.bg(fg.fill(Fill::Strong)))
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            this.open_file_in_editor(&open_path, window, cx)
+                        }))
+                        .child(
+                            Icon::new(IconName::FileCode)
+                                .size(IconSize::Xs)
+                                .color(fg.ink(Ink::Muted)),
                         ),
                 )
                 .when(unstaged, |el| {

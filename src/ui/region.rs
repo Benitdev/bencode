@@ -38,7 +38,7 @@ pub enum Region {
     FilePane,
     Terminal,
     Footer,
-    /// Search, Inbox, Notes, Automations or Settings.
+    /// Inbox, Notes, Automations or Settings.
     Surface,
     /// A Mono in the main area, its Overview beside it.
     Mono,

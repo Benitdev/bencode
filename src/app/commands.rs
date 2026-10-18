@@ -453,7 +453,7 @@ impl BenCodeApp {
         .on_action(
             cx.listener(|this, _: &CheckForUpdates, window, cx| this.check_for_updates(window, cx)),
         )
-        .on_action(cx.listener(|this, _: &Search, _, cx| this.open_search_modal(cx)))
+        .on_action(cx.listener(|this, _: &Search, _, cx| this.toggle_search(cx)))
         // A browser page with the keyboard is what these zoom, as in a
         // browser; otherwise the interface.
         .on_action(
@@ -547,7 +547,9 @@ impl BenCodeApp {
         )
         .on_action(cx.listener(|this, _: &InboxPrevious, _, cx| this.step_inbox_selection(-1, cx)))
         .on_action(cx.listener(|this, _: &CloseView, window, cx| {
-            if this.surface.is_some() {
+            if this.search.open {
+                this.close_search_modal(cx);
+            } else if this.surface.is_some() {
                 this.close_surface(cx);
             } else if !this.close_lightbox(cx)
                 && !this.close_quick_open(cx)

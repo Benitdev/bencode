@@ -413,11 +413,7 @@ pub struct BenCodeApp {
     pub file_tree_focus: gpui::FocusHandle,
     // Universal Search
     pub search_modal_input: Entity<TextInput>,
-    pub search_scope: crate::ui::search_view::SearchScope,
-    pub search_hits: Vec<crate::ui::search_view::SearchHit>,
-    /// The hit list's scroll, for its scroll bar.
-    pub search_scroll: gpui::UniformListScrollHandle,
-    pub search_active_index: usize,
+    pub search: crate::ui::search_view::SearchState,
     /// Rename/delete dialog opened from the thread list.
     pub session_dialog: Option<crate::ui::sidebar::SessionDialog>,
     /// A left press on a window drag region's background, until the
@@ -454,10 +450,6 @@ pub struct BenCodeApp {
     pub settings: crate::settings::AppSettings,
     /// External editors and MCP servers, scanned once in the background.
     pub integrations: integrations::Integrations,
-    /// Set on open; the search dialog focuses its query field once drawn.
-    pub search_focus_pending: bool,
-    /// Enter in the search field opens the top hit; subscribed on first open.
-    pub search_submit: Option<Subscription>,
     pub editor: crate::ui::editor_pane::EditorState,
     pub is_sidebar_open: bool,
     /// The project rail (⌘B); the session sidebar is `is_sidebar_open` (⇧⌘B).
@@ -612,8 +604,8 @@ impl BenCodeApp {
         // No row cap: the Changes panel's box scrolls it (`max-h-40`).
         let git_commit_input =
             multiline_input(window, cx, "Message (⌘↩ to commit)", (1, usize::MAX));
-        let search_modal_input =
-            text_input(window, cx, "Search conversations, files, projects... (⌘K)");
+        let search_modal_input = text_input(window, cx, "Search threads, files and projects");
+        let search_keys_input = search_modal_input.clone();
 
         let composer_input = prompt_input.clone();
         let model_input = model_search_input.clone();
@@ -1066,6 +1058,29 @@ impl BenCodeApp {
                 }
                 return;
             }
+            // Search: ↑/↓, Enter (⌘Enter mentions a file), Tab / ⇧Tab and Esc.
+            if search_keys_input
+                .read(cx)
+                .focus_handle(cx)
+                .is_focused(window)
+            {
+                let key = event.keystroke.key.as_str();
+                let mods = &event.keystroke.modifiers;
+                let mention = key == "enter" && mods.platform;
+                let shift_tab = key == "tab" && mods.shift;
+                if (mods.modified() && !mention && !shift_tab)
+                    || !matches!(key, "up" | "down" | "enter" | "escape" | "tab")
+                {
+                    return;
+                }
+                let handled = weak_app.update(cx, |this, cx| {
+                    this.search_key(key, mods.shift, mention, window, cx)
+                });
+                if matches!(handled, Ok(true)) {
+                    cx.stop_propagation();
+                }
+                return;
+            }
             // MonoCode `McpServerPicker`: ↑/↓, Enter and Esc in its search.
             if mcp_keys_input.read(cx).focus_handle(cx).is_focused(window) {
                 let key = event.keystroke.key.as_str();
@@ -1389,10 +1404,7 @@ impl BenCodeApp {
             file_dialog_input,
             file_tree_focus: cx.focus_handle(),
             search_modal_input,
-            search_scope: crate::ui::search_view::SearchScope::All,
-            search_hits: Vec::new(),
-            search_scroll: Default::default(),
-            search_active_index: 0,
+            search: Default::default(),
             session_dialog: None,
             window_drag_pressed: false,
             worktrees_page: Default::default(),
@@ -1415,8 +1427,6 @@ impl BenCodeApp {
                 skill_names,
                 ..Default::default()
             },
-            search_focus_pending: false,
-            search_submit: None,
             quit_confirm_open: false,
             updater: Default::default(),
             editor: Default::default(),
@@ -1637,7 +1647,7 @@ impl Render for BenCodeApp {
         let glass = self.glass(cx);
         let colors = &cx.theme().colors;
         let (bg, fg) = (colors.bg, colors.fg);
-        // Search, Inbox, Notes, Automations and Settings replace the
+        // Inbox, Notes, Automations and Settings replace the
         // sidebar and the workspace column (MonoCode in-shell views).
         let surface_open = self.surface.is_some();
         // A Mono's conversation does too (MonoCode `monoCovers`).
@@ -1657,6 +1667,7 @@ impl Render for BenCodeApp {
             any_elements(self.render_machine_removal(cx)),
             any_elements(self.render_remote_folder_dialog(cx)),
             any_elements(self.render_worktree_creation(cx)),
+            any_elements(self.render_search_dialog(cx)),
             any_elements(self.render_quick_open(cx)),
             any_elements(self.render_lightbox(cx)),
             any_elements(self.render_git_confirm(cx)),

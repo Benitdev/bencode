@@ -396,7 +396,6 @@ fn openings(long: Option<String>, other: Option<String>) -> Vec<Opening> {
             other.clone(),
             long.clone(),
         ),
-        surface("open Search", Surface::Search),
         surface("open Inbox", Surface::Inbox),
         surface("open Notes", Surface::Notes),
         surface("open Automations", Surface::Automations),

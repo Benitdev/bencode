@@ -239,7 +239,7 @@ pub(super) fn rail_search(active: bool, cx: &Context<BenCodeApp>) -> impl IntoEl
         .border_1()
         .border_color(fg.fill(Fill::Selected))
         .shadow_sm()
-        .on_click(cx.listener(|this, _, _, cx| this.open_search_modal(cx)))
+        .on_click(cx.listener(|this, _, _, cx| this.toggle_search(cx)))
         .child(rail_icon(id, IconName::Search, active, fg))
         .child(rail_label("Search"))
         .child(shortcut_hint("⌘K", fg))

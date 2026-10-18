@@ -106,7 +106,6 @@ impl BenCodeApp {
             return;
         }
         match surface {
-            Surface::Search => self.open_search_modal(cx),
             Surface::Inbox => self.open_inbox_modal(cx),
             Surface::Notes => self.open_notes(cx),
             Surface::Automations => self.open_automations(cx),
@@ -202,13 +201,17 @@ impl BenCodeApp {
                     .children(self.render_compact_monos(cx))
                     .child(self.render_compact_project_button(cx))
                     .children(tabs)
-                    .child(surface_action(
-                        "compact-rail-search",
-                        IconName::Search,
-                        "Search (⌘K)",
-                        Surface::Search,
-                        false,
-                    ))
+                    .child(
+                        compact_action(
+                            "compact-rail-search",
+                            IconName::Search,
+                            "Search (⌘K)",
+                            self.search.open,
+                            false,
+                            cx,
+                        )
+                        .on_click(cx.listener(|this, _, _, cx| this.toggle_search(cx))),
+                    )
                     .child(
                         surface_action(
                             "compact-rail-inbox",

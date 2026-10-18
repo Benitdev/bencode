@@ -4,6 +4,17 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
+## [Unreleased]
+
+- Search (⌘K) is redone, and opens as a dialog over what you were
+  doing instead of replacing it. Before you type it lists your recent threads,
+  files and projects. Results are ranked: a title match comes first, then
+  the project or branch, then what was said, newest first within each.
+  The text that matched is marked, and a match inside a conversation
+  shows the line it is in. All shows a few of each kind under a heading,
+  with counts on the tabs. ↑↓ move, ↵ opens (a file now opens in the
+  editor), ⌘↵ mentions a file in the prompt, Tab / ⇧Tab switch the tab.
+
 ## [0.1.20] - 2026-10-18
 
 - Much less CPU while agents work. The window is now drawn in parts (the

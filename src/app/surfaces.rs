@@ -1,5 +1,5 @@
 //! The full-height views that replace the workspace to the right of the
-//! rail: Search, Inbox, Notes, Automations and Settings. Only one is open
+//! rail: Inbox, Notes, Automations and Settings. Only one is open
 //! at a time; Settings returns to the view it was opened from (MonoCode
 //! `App.tsx:9788-9950,10881-11160`).
 
@@ -14,7 +14,6 @@ use crate::ui::window_drag::claim_press;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Surface {
-    Search,
     Inbox,
     Notes,
     Automations,
@@ -24,7 +23,6 @@ pub enum Surface {
 impl Surface {
     fn title(self) -> &'static str {
         match self {
-            Self::Search => "Search",
             Self::Inbox => "Inbox",
             Self::Notes => "Notes",
             Self::Automations => "Automations",
@@ -34,7 +32,6 @@ impl Surface {
 
     fn icon(self) -> IconName {
         match self {
-            Self::Search => IconName::Search,
             Self::Inbox => IconName::Inbox,
             Self::Notes => IconName::NotebookPen,
             Self::Automations => IconName::Zap,
@@ -93,7 +90,6 @@ impl BenCodeApp {
     pub(crate) fn render_surface(&mut self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let surface = self.surface?;
         let body = match surface {
-            Surface::Search => self.render_search_body(cx),
             Surface::Inbox => self.render_inbox_body(cx),
             Surface::Notes => self.render_notes_body(cx),
             Surface::Automations => self.render_automations_body(cx),

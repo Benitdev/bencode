@@ -133,7 +133,7 @@ painted keeps it; the shell resets it while the region is not drawn
 └──────┴───────────┴──────────────────────────────────────────┘
 ```
 
-A `Surface` (Search, Inbox, Notes, Automations, Settings) or a Mono in view
+A `Surface` (Inbox, Notes, Automations, Settings) or a Mono in view
 replaces the sidebar and the workspace column. The chat is always shown;
 files, reviews, Changes and commits open as tabs beside it through
 `open_pane_tab(PaneTab, pin, cx)` or `open_file_in_editor` (a click opens a
