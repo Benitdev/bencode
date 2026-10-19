@@ -667,6 +667,11 @@ impl BenCodeApp {
                         return false;
                     }
                     if !page.devtools_open() {
+                        // Closed, maybe by its own button with the keys:
+                        // they come back to the window.
+                        if seen {
+                            page.release_keys();
+                        }
                         return !seen && polls < PATIENCE;
                     }
                     seen = true;

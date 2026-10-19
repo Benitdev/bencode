@@ -144,16 +144,20 @@ impl Container {
         }
     }
 
-    /// Gives the keyboard to the window's view (GPUI's), when something in
-    /// the box has it.
+    /// Gives the keyboard to the window's view (GPUI's) when the box has it,
+    /// or when no view in the window does: a docked inspector closed by its
+    /// own button leaves the window itself (or the gone view) first
+    /// responder, and no key would reach GPUI again. Another page's keys
+    /// stay with it.
     pub fn release_keys(&self) {
-        if !self.has_keys() {
-            return;
-        }
         unsafe {
             let window: Id = msg_send![self.view, window];
             let parent: Id = msg_send![self.view, superview];
             if window.is_null() || parent.is_null() {
+                return;
+            }
+            let responder: Id = msg_send![window, firstResponder];
+            if responder == parent || !(self.has_keys() || stray(window, responder)) {
                 return;
             }
             let taken: BOOL = msg_send![window, makeFirstResponder: parent];
@@ -161,6 +165,23 @@ impl Container {
                 log::debug!("browser: keys stay with the page");
             }
         }
+    }
+}
+
+/// Whether `responder` holds `window`'s keys for no view in it: nothing,
+/// the window itself, or a view taken out of it.
+unsafe fn stray(window: Id, responder: Id) -> bool {
+    if responder.is_null() {
+        return true;
+    }
+    unsafe {
+        let is_view: BOOL = msg_send![responder, isKindOfClass: class!(NSView)];
+        if is_view == NO {
+            // The window, or a text field's editor (no view of its own).
+            return responder == window;
+        }
+        let home: Id = msg_send![responder, window];
+        home != window
     }
 }
 
