@@ -219,6 +219,13 @@ impl BenCodeApp {
                 .disabled(!has_page)
                 .on_click(cx.listener(move |_, _, _, cx| cx.open_url(&url))),
             )
+            .child(
+                button("browser-new-tab", IconName::Plus, "New browser tab (⌘⇧O)").on_click(
+                    cx.listener(|this, _, window, cx| {
+                        this.open_browser(None, window, cx);
+                    }),
+                ),
+            )
     }
 
     fn render_picker_hint(&self, cx: &Context<Self>) -> impl IntoElement {
