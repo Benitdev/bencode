@@ -4,6 +4,7 @@ pub mod artifacts;
 pub mod attachment_chip;
 pub mod automations;
 pub mod background_effects;
+pub mod caret_follow;
 pub mod browser_pane;
 pub mod composer;
 pub mod diff_counts;

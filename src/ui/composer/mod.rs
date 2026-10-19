@@ -37,7 +37,7 @@ use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnimationExt, AnyElement, Context, FontWeight, InteractiveElement, IntoElement, ParentElement,
-    SharedString, Styled, div, prelude::*,
+    Pixels, SharedString, Styled, div, prelude::*,
 };
 
 use crate::app::{BenCodeApp, PermissionMode};
@@ -46,6 +46,7 @@ use crate::harness::{HarnessKind, catalog};
 use crate::ui::HarnessIcon;
 use crate::ui::app_callback::app_callback;
 use crate::ui::scale::px;
+use crate::ui::scrollbar;
 use crate::ui::sidebar_popovers::popover_glass;
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 pub use mcp_picker::McpPicker;
@@ -55,6 +56,8 @@ pub use prompt_marks::{MentionMark, prompt_highlights};
 
 /// MonoCode `max-w-4xl`, the same column as the transcript.
 pub(crate) const COMPOSER_MAX_WIDTH: f32 = 896.0;
+/// MonoCode `max-h-40`: the prompt grows to this before it scrolls.
+const PROMPT_MAX_HEIGHT: f32 = 160.0;
 /// MonoCode's default placeholder (trailing space included).
 pub const PROMPT_PLACEHOLDER: &str = "Ask, build, / for commands, @ for references... ";
 /// MonoCode `CwdPicker` `PREVIEW`.
@@ -397,6 +400,34 @@ impl BenCodeApp {
         });
     }
 
+    /// The prompt in its scroll box, `max_height` tall at most, with its
+    /// bar: Ely's field takes no wheel (`ui/caret_follow.rs`).
+    pub(crate) fn render_prompt_field(&self, id: &'static str, max_height: Pixels) -> AnyElement {
+        let scroll = &self.prompt_scroll.scroll;
+        div()
+            .relative()
+            .child(
+                div()
+                    .id(id)
+                    .max_h(max_height)
+                    .overflow_y_scroll()
+                    .track_scroll(scroll)
+                    .pr(scrollbar::gutter(scroll))
+                    .child(self.prompt_input.clone())
+                    .child(
+                        self.prompt_scroll
+                            .follow(&self.prompt_input, Pixels::ZERO)
+                            .absolute()
+                            .size_0(),
+                    ),
+            )
+            .child(scrollbar::ScrollBar::new(
+                SharedString::from(format!("{id}-scrollbar")),
+                scroll,
+            ))
+            .into_any_element()
+    }
+
     /// MonoCode `Composer`: an 8px-rounded box holding the project / branch
     /// bar with the context meter, the prompt, and the + / model / access /
     /// send row.
@@ -428,7 +459,7 @@ impl BenCodeApp {
         let editing = focused && self.is_editing_last_turn();
         let field_pad = if shell { px(16.0) } else { px(12.0) };
         let field = if focused {
-            self.prompt_input.clone().into_any_element()
+            self.render_prompt_field("composer-prompt", px(PROMPT_MAX_HEIGHT))
         } else {
             // Another pane's draft, as it was left.
             let draft = session
@@ -570,7 +601,7 @@ impl BenCodeApp {
                         div()
                             .px_3()
                             .py(field_pad)
-                            .max_h(px(160.0) + field_pad * 2.0)
+                            .max_h(px(PROMPT_MAX_HEIGHT) + field_pad * 2.0)
                             .text_size(Text::Lg.px())
                             .line_height(px(22.0))
                             .child(field),

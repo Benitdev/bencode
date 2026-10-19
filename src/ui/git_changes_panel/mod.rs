@@ -39,6 +39,7 @@ use crate::ui::app_callback::app_callback;
 use crate::ui::appearance::DiffColors;
 use crate::ui::git_menus::{GitMenuKind, TriggerLook};
 use crate::ui::icons::ExtraIcon;
+use crate::ui::caret_follow::CaretFollow;
 use crate::ui::scale::px;
 use crate::ui::scrollbar;
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
@@ -152,12 +153,8 @@ pub struct ChangesUi {
     scroll: ScrollHandle,
     /// The history graph's scroll pane, likewise.
     graph_scroll: ScrollHandle,
-    /// The commit message's scroll pane: the field grows to fit its text
-    /// and this box scrolls it, since Ely's field ignores the wheel.
-    message_scroll: ScrollHandle,
-    /// The message's caret and length as last seen, so the box follows
-    /// the caret only when it moves, not while the wheel scrolls.
-    message_caret: Rc<Cell<(usize, usize)>>,
+    /// The commit message's scroll box (the field grows to fit its text).
+    message_scroll: CaretFollow,
     /// `git_graph::layout` of the current history, kept until it changes.
     graph_rows: RefCell<Option<Rc<Vec<git_graph::Row>>>>,
 }
@@ -209,8 +206,7 @@ impl Default for ChangesUi {
             hovered_row: None,
             scroll: ScrollHandle::default(),
             graph_scroll: ScrollHandle::default(),
-            message_scroll: ScrollHandle::default(),
-            message_caret: Rc::default(),
+            message_scroll: CaretFollow::default(),
             graph_rows: RefCell::new(None),
         }
     }
@@ -456,45 +452,6 @@ impl BenCodeApp {
             }))
     }
 
-    /// Scrolls the message box to the caret after the field lays it out,
-    /// when the caret or the text changed since the last frame.
-    fn follow_message_caret(&self) -> gpui::Canvas<()> {
-        let input = self.git_commit_input.clone();
-        let scroll = self.changes_ui.message_scroll.clone();
-        let seen = self.changes_ui.message_caret.clone();
-        canvas(
-            move |_, window, cx| {
-                let input = input.read(cx);
-                let now = (input.cursor(), input.text().len());
-                if seen.replace(now) == now {
-                    return;
-                }
-                let Some(caret) = input.caret_bounds() else {
-                    return;
-                };
-                // The box's `py-1`.
-                let pad = px(4.0);
-                let view = scroll.bounds();
-                let offset = scroll.offset();
-                let shift = if caret.bottom() > view.bottom() - pad {
-                    view.bottom() - pad - caret.bottom()
-                } else if caret.top() < view.top() + pad {
-                    view.top() + pad - caret.top()
-                } else {
-                    return;
-                };
-                let y = (offset.y + shift)
-                    .min(Pixels::ZERO)
-                    .max(-scroll.max_offset().y);
-                if y != offset.y {
-                    scroll.set_offset(point(offset.x, y));
-                    window.refresh();
-                }
-            },
-            |_, _, _, _| {},
-        )
-    }
-
     /// The message with ✨, the Commit split button, and the sync row.
     fn render_commit_box(&self, cx: &Context<Self>) -> impl IntoElement {
         let colors = &cx.theme().colors;
@@ -540,10 +497,16 @@ impl BenCodeApp {
                             .text_color(fg)
                             .max_h(px(160.0))
                             .overflow_y_scroll()
-                            .track_scroll(&ui.message_scroll)
+                            .track_scroll(&ui.message_scroll.scroll)
                             .when(!can_edit, |el| el.opacity(0.4))
                             .child(self.git_commit_input.clone())
-                            .child(self.follow_message_caret().absolute().size_0()),
+                            // The box's `py-1`.
+                            .child(
+                                ui.message_scroll
+                                    .follow(&self.git_commit_input, px(4.0))
+                                    .absolute()
+                                    .size_0(),
+                            ),
                     )
                     // `absolute top-1 right-1 grid size-5 rounded-md
                     // bg-content/10 hover:bg-content/20 disabled:opacity-40`:

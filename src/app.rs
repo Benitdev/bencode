@@ -437,6 +437,8 @@ pub struct BenCodeApp {
     pub threads: HashMap<String, thread_state::ThreadState>,
     next_run_id: u64,
     pub prompt_input: Entity<TextInput>,
+    /// The prompt's scroll box (`render_prompt_field`).
+    pub prompt_scroll: crate::ui::caret_follow::CaretFollow,
     pub search_input: Entity<TextInput>,
     /// Multi-pane transcript list states keyed by session id.
     pub transcripts: std::collections::HashMap<String, crate::ui::transcript::TranscriptView>,
@@ -552,8 +554,9 @@ impl BenCodeApp {
             Default::default();
         let painted_tags = mcp_tags.clone();
         let prompt_input = cx.new(|cx| {
+            // It grows to fit; its box scrolls (`render_prompt_field`).
             TextInput::new(window, cx)
-                .multi_line(1, 6)
+                .multi_line(1, usize::MAX)
                 .placeholder(crate::ui::composer::PROMPT_PLACEHOLDER)
                 .highlighter(move |text, cx| {
                     let mentions = painted_mentions.borrow().clone();
@@ -1417,6 +1420,7 @@ impl BenCodeApp {
             threads: HashMap::new(),
             next_run_id: 0,
             prompt_input,
+            prompt_scroll: Default::default(),
             search_input,
             transcripts: std::collections::HashMap::new(),
             active_pane_drop: None,

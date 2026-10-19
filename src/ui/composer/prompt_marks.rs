@@ -106,6 +106,8 @@ impl BenCodeApp {
     /// one more frame is asked for to catch up.
     pub fn sync_mention_marks(&mut self, window: &mut Window, cx: &App) {
         let input = self.prompt_input.read(cx);
+        // An `@` scrolled out of the prompt's box takes no icon.
+        let shown = self.prompt_scroll.scroll.bounds();
         let mentions = self.project_files.mentions.borrow().clone();
         let marks: Vec<MentionMark> = mentions
             .scan(input.text())
@@ -114,7 +116,8 @@ impl BenCodeApp {
                 let glyph = input
                     .bounds_for_range(range.start..range.start + 1)
                     .into_iter()
-                    .next()?;
+                    .next()
+                    .filter(|glyph| shown.contains(&glyph.center()))?;
                 Some(MentionMark {
                     center: glyph.center(),
                     icon: mark_icon(target),

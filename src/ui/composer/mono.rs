@@ -180,7 +180,7 @@ impl BenCodeApp {
         let file_drag = self.active_file_drop_target.as_deref() == Some(session.id.as_str());
         let ready = focused && self.composer_has_value(cx);
         let field = if focused {
-            self.prompt_input.clone().into_any_element()
+            self.render_prompt_field("mono-composer-prompt", px(MAX_FIELD_HEIGHT))
         } else {
             // Its draft, as it was left.
             let draft = self
