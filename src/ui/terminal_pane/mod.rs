@@ -453,7 +453,11 @@ impl BenCodeApp {
     }
 
     fn select_terminal(&mut self, id: u64, cx: &mut Context<Self>) {
-        self.change_current_dock(cx, |dock| dock.active = id);
+        self.change_current_dock(cx, |dock| {
+            if dock.tabs.iter().any(|tab| tab.id == id) {
+                dock.active = id;
+            }
+        });
     }
 
     /// A press inside the pane of terminal `id` makes it the active one.
@@ -1036,6 +1040,8 @@ impl BenCodeApp {
         .variant(ButtonVariant::Ghost)
         .tooltip("Close Terminal")
         .on_click(cx.listener(move |this, _, _, cx| {
+            // The tab under it would select the terminal just closed.
+            cx.stop_propagation();
             this.request_close_terminals(&project, vec![id], None, cx)
         }));
         let ghost = title.clone();
