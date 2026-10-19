@@ -21,6 +21,7 @@ use crate::schedule::{self, ScheduleKind, TimeTrigger, Trigger, WEEKDAYS};
 use crate::ui::app_callback::{app_callback, on_value};
 use crate::ui::page_parts::{panel, rule, section_title, settings_row, tint};
 use crate::ui::scale::px;
+use crate::ui::sidebar_popovers::pretty_path;
 use crate::ui::tokens::Text;
 
 /// MonoCode `GRACE_OPTIONS`.
@@ -89,6 +90,7 @@ impl BenCodeApp {
         let (fg, muted) = (colors.fg, colors.fg_muted);
         let triggers = schedule::triggers_of(draft);
         let full = triggers.len() >= MAX_TRIGGERS;
+        let none = triggers.is_empty();
         let rows: Vec<AnyElement> = triggers
             .iter()
             .enumerate()
@@ -112,16 +114,35 @@ impl BenCodeApp {
             .child(section_title("Triggers", muted))
             .child(
                 panel(fg)
-                    .when(!rows.is_empty(), |el| {
+                    .when(!none, |el| {
                         el.child(div().flex().flex_col().px_3().py(px(6.0)).children(rows))
                             .child(rule(fg))
                     })
                     .child(
-                        div().flex().items_center().h(px(48.0)).px_1().child(
-                            DropdownMenu::new("automation-add-trigger", "Add Trigger", add)
-                                .icon(IconName::Plus)
-                                .variant(ButtonVariant::Ghost),
-                        ),
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(10.0))
+                            .h(px(48.0))
+                            .px_1()
+                            .when(none, |el| {
+                                el.pl_4()
+                                    .child(Icon::new(IconName::Clock).size(IconSize::Sm).color(muted))
+                                    .child(
+                                        div()
+                                            .flex_1()
+                                            .min_w_0()
+                                            .truncate()
+                                            .text_size(Text::Base.px())
+                                            .text_color(muted)
+                                            .child("No schedule yet: it runs only when started by hand."),
+                                    )
+                            })
+                            .child(
+                                DropdownMenu::new("automation-add-trigger", "Add Trigger", add)
+                                    .icon(IconName::Plus)
+                                    .variant(ButtonVariant::Ghost),
+                            ),
                     ),
             )
     }
@@ -338,6 +359,16 @@ impl BenCodeApp {
         if !folder.is_empty() && !folders.iter().any(|f| f.id == folder) {
             folder_choices.push(Choice::new(folder.clone(), "Removed folder"));
         }
+        // MonoCode `SearchableProjectPicker`: the project runs happen in.
+        let mut paths = self.worktree_project_choices();
+        if !draft.cwd.is_empty() && !paths.contains(&draft.cwd) {
+            paths.insert(0, draft.cwd.clone());
+        }
+        let projects = paths.into_iter().map(|path| {
+            Choice::new(path.clone(), self.rail_project_label(&path))
+                .icon(IconName::Folder)
+                .note(pretty_path(&path))
+        });
         div()
             .flex()
             .flex_col()
@@ -345,6 +376,25 @@ impl BenCodeApp {
             .child(section_title("Session", muted))
             .child(
                 panel(fg)
+                    .child(settings_row(
+                        "Project",
+                        "Where runs happen",
+                        Select::new("automation-project", projects)
+                            .label("Project")
+                            .size(ControlSize::Sm)
+                            .placeholder("Choose a project…")
+                            .selected(draft.cwd.clone())
+                            .on_change(on_value(cx, |this, path, cx| {
+                                let path = path.to_string();
+                                // Folders belong to a project.
+                                this.edit_automation(cx, |draft| {
+                                    draft.cwd = path;
+                                    draft.session_folder_id = Some(String::new());
+                                });
+                            })),
+                        fg,
+                    ))
+                    .child(rule(fg))
                     .child(settings_row(
                         "Working copy",
                         "This repo, or a fresh worktree",
