@@ -44,6 +44,7 @@ fn state_icon(state: Option<LaunchedState>, cx: &App) -> AnyElement {
 pub fn launched_card(
     id: impl Into<SharedString>,
     launch: &SpawnedSession,
+    title: String,
     state: Option<LaunchedState>,
     cx: &App,
 ) -> Stateful<gpui::Div> {
@@ -55,7 +56,6 @@ pub fn launched_card(
         .next()
         .unwrap_or(&launch.cwd)
         .to_string();
-    let title = crate::app::session_list::display_title(&launch.title, &launch.harness);
     let tip = state.map_or_else(|| "Open session".to_string(), |s| s.label().to_string());
     div()
         .id(gpui::ElementId::Name(id.into()))
@@ -105,6 +105,18 @@ pub fn launched_card(
 }
 
 impl BenCodeApp {
+    /// MonoCode `LaunchedSessionView.title`: the session's title as it is
+    /// now (renamed once its first turn names it), else the one it was
+    /// started with.
+    pub fn launched_title(&self, launch: &SpawnedSession) -> String {
+        let title = self
+            .sessions
+            .iter()
+            .find(|s| s.id == launch.session_id)
+            .map_or(&launch.title, |s| &s.title);
+        crate::app::session_list::display_title(title, &launch.harness)
+    }
+
     /// Its session in the project's tabs, leaving the Mono's view (the
     /// shown session's Open in workspace).
     pub fn open_launched_session(&mut self, id: &str, cx: &mut Context<Self>) {

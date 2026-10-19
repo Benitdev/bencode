@@ -298,6 +298,24 @@ impl BenCodeApp {
         });
     }
 
+    /// Before a file or review of the shown session opens beside the chat:
+    /// that session moves to the workspace first, or the tab would open
+    /// behind the Mono's view.
+    pub(crate) fn surface_shown_session(&mut self, session: Option<&str>, cx: &mut Context<Self>) {
+        let Some(shown) = self.mono_shown_session().map(str::to_string) else {
+            return;
+        };
+        let ours = match session {
+            Some(id) => id == shown,
+            None => self.monos.overview.shown_focused,
+        };
+        if ours && self.mono_covers() {
+            self.monos.overview.shown_session = None;
+            self.monos.overview.shown_focused = false;
+            self.open_launched_session(&shown, cx);
+        }
+    }
+
     /// The session the Overview shows over everything, while it is open
     /// and the session is in memory.
     pub fn mono_shown_session(&self) -> Option<&str> {

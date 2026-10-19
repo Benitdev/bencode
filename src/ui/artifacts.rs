@@ -214,6 +214,7 @@ impl BenCodeApp {
                 crate::ui::launched_session::launched_card(
                     format!("launched-{id}"),
                     &launch,
+                    self.launched_title(&launch),
                     state,
                     cx,
                 )

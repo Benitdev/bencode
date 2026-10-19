@@ -262,10 +262,7 @@ impl BenCodeApp {
         let now = crate::app::now_ms();
         let id = launch.session_id.clone();
         let loaded = self.sessions.iter().find(|s| s.id == id);
-        let title = crate::app::session_list::display_title(
-            loaded.map_or(&launch.title, |s| &s.title),
-            &launch.harness,
-        );
+        let title = self.launched_title(&launch);
         let project = self.rail_project_label(&launch.cwd);
         let status = match self.launched_state(&id) {
             Some(LaunchedState::Done) | None => loaded

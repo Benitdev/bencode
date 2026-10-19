@@ -357,13 +357,15 @@ impl MonoFloat {
             }
             FloatItem::Launch(launch) => {
                 let id = launch.session_id.clone();
-                let state = self.app.read(cx).launched_state(&id);
+                let app = self.app.read(cx);
+                let (state, title) = (app.launched_state(&id), app.launched_title(&launch));
                 row.pt_2()
                     .flex()
                     .child(
                         crate::ui::launched_session::launched_card(
                             format!("mono-float-launch-{ix}"),
                             &launch,
+                            title,
                             state,
                             cx,
                         )

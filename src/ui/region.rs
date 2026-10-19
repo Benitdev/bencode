@@ -250,7 +250,11 @@ impl BenCodeApp {
     /// Redraws what draws thread `session_id`'s transcript now: its pane,
     /// or the Mono in view. Its card, tab and mascot follow on the clock.
     pub(crate) fn redraw_thread(&self, session_id: &str, cx: &mut App) {
-        if self.mono_covers() && self.mono_view_session() == Some(session_id) {
+        // The session a Mono started is drawn inside the Mono's region
+        // while its Overview shows it.
+        let in_mono = self.mono_view_session() == Some(session_id)
+            || self.mono_shown_session() == Some(session_id);
+        if self.mono_covers() && in_mono {
             self.redraw_regions(&[Region::Mono], cx);
         } else {
             self.regions.redraw_pane(session_id, cx);
@@ -261,7 +265,11 @@ impl BenCodeApp {
     /// selected thread's pane, or the Mono in view.
     pub(crate) fn redraw_composer(&self, cx: &mut App) {
         match self.selected_session_id.as_deref() {
-            Some(id) if !self.is_mono_session(id) => self.regions.redraw_pane(id, cx),
+            // Over a Mono the prompt is its chat's or the shown session's,
+            // both in its region.
+            Some(id) if !self.is_mono_session(id) && !self.mono_covers() => {
+                self.regions.redraw_pane(id, cx)
+            }
             _ => self.redraw_regions(&[Region::Mono], cx),
         }
     }

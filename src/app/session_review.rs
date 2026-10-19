@@ -364,6 +364,7 @@ impl BenCodeApp {
         let Some(cwd) = self.session_work_dir(session_id) else {
             return;
         };
+        self.surface_shown_session(Some(session_id), cx);
         let tab = PaneTab::SessionChanges {
             cwd,
             session_id: session_id.to_string(),
