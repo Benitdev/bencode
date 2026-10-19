@@ -315,9 +315,14 @@ impl BenCodeApp {
         if catalog::find(key).is_some_and(|m| !self.harness_available(m.harness)) {
             return;
         }
-        // An automation's model is part of its draft, kept until Save.
+        // An automation's model is part of its draft, kept until Save. Its
+        // harness is the key's own: a machine's model may be in no local
+        // catalog, and the pair must not name two CLIs.
         if self.composer_menus.models_only == Some(ModelsAnchor::Automation) {
-            let harness = catalog::find(key).map(|m| m.harness.id().to_string());
+            let harness = key
+                .split_once(':')
+                .and_then(|(id, _)| HarnessKind::from_id(id))
+                .map(|kind| kind.id().to_string());
             self.edit_automation(cx, |draft| {
                 draft.model = key.to_string();
                 if let Some(harness) = harness {
