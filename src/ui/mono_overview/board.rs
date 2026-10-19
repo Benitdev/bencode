@@ -250,9 +250,7 @@ impl BenCodeApp {
                 ),
             );
         match task.session_id.clone() {
-            Some(session) => row
-                .tooltip("Open in workspace")
-                .on_click(cx.listener(move |this, _, _, cx| this.open_mono_launch(&session, cx))),
+            Some(session) => row.on_click(cx.listener(move |this, _, _, cx| this.show_mono_launch(&session, cx))),
             None => row.tooltip(truncate(task.brief(), 400)),
         }
         .into_any_element()
@@ -284,8 +282,7 @@ impl BenCodeApp {
         ListRow::new(format!("mono-session-{id}"), title)
             .tile(HarnessIcon::new(&launch.harness).size(px(14.0)))
             .line(line)
-            .tooltip("Open in workspace")
-            .on_click(cx.listener(move |this, _, _, cx| this.open_mono_launch(&id, cx)))
+            .on_click(cx.listener(move |this, _, _, cx| this.show_mono_launch(&id, cx)))
             .into_any_element()
     }
 }

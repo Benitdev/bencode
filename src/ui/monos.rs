@@ -37,7 +37,10 @@ impl BenCodeApp {
         let state = self.mono_state(&mono);
         // The plan's usage shows under its composer: read once, as the
         // footer's chip does.
-        let harness = self.selected_session().map(|s| s.harness.clone());
+        let harness = self
+            .mono_view_session()
+            .and_then(|id| self.sessions.iter().find(|s| s.id == id))
+            .map(|s| s.harness.clone());
         if let Some(target) = self.usage_target().filter(|target| {
             target.available
                 && harness
@@ -57,6 +60,12 @@ impl BenCodeApp {
             )
             .into_any_element(),
         };
+        // MonoCode `monoShownSessionView`: the session it started, as a
+        // pane of its own over the Overview.
+        let shown = self
+            .mono_shown_session()
+            .map(str::to_string)
+            .map(|id| (id.clone(), self.render_session_pane(&id, false, cx)));
         let resizing = self.monos.overview.resizing.is_some();
         Some(
             div()
@@ -105,7 +114,7 @@ impl BenCodeApp {
                         .min_h_0()
                         .child(div().flex_1().min_w_0().h_full().child(chat))
                         .when(self.monos.overview_open, |el| {
-                            el.child(self.render_mono_overview(&mono, &state, cx))
+                            el.child(self.render_mono_overview(&mono, &state, shown, cx))
                         }),
                 )
                 .into_any_element(),

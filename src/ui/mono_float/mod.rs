@@ -658,6 +658,7 @@ impl MonoFloat {
                         thread
                             .queue
                             .iter()
+                            .filter(|input| !is_internal(input))
                             .map(|input| (input.text.clone(), input.attachments.len()))
                             .collect(),
                         thread.queue_paused,
@@ -732,6 +733,7 @@ impl MonoFloat {
                 thread
                     .queue
                     .iter()
+                    .filter(|input| !is_internal(input))
                     .map(|input| queued(&input.text, &input.attachments, delivery.clone())),
             );
         }
@@ -819,11 +821,15 @@ impl MonoFloat {
         });
     }
 
-    /// A launch card: its session in BenCode's window.
+    /// A launch card: the Mono in BenCode's window, the session over its
+    /// Overview (MonoCode's floating card reveals the main window).
     fn reveal_launch(&mut self, session: &str, cx: &mut Context<Self>) {
         self.activate_main(cx);
-        self.app
-            .update(cx, |app, cx| app.open_mono_launch(session, cx));
+        let id = self.mono_id.clone();
+        self.app.update(cx, |app, cx| {
+            app.open_mono(&id, cx);
+            app.show_mono_launch(session, cx);
+        });
     }
 
     fn activate_main(&self, cx: &mut App) {
@@ -1410,4 +1416,10 @@ pub fn open(
         crate::ui::native_window::make_floating_panel(window);
         cx.new(|cx| MonoFloat::new(app, main, mono_id, window, cx))
     })
+}
+
+/// An app message waiting behind the turn (a completion report): the Mono
+/// reads it, the chat never shows it, as its block once delivered.
+fn is_internal(input: &crate::app::TurnInput) -> bool {
+    input.extra.get("internal").and_then(serde_json::Value::as_bool) == Some(true)
 }

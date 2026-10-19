@@ -105,8 +105,8 @@ pub fn launched_card(
 }
 
 impl BenCodeApp {
-    /// A launch card opens its session in the project's tabs, leaving the
-    /// Mono's view.
+    /// Its session in the project's tabs, leaving the Mono's view (the
+    /// shown session's Open in workspace).
     pub fn open_launched_session(&mut self, id: &str, cx: &mut Context<Self>) {
         if !self.sessions.iter().any(|s| s.id == id) {
             return;

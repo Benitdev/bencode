@@ -183,7 +183,7 @@ impl AntigravityParser {
             events.push(AgentEvent::ToolCallStart {
                 id: id.to_string(),
                 name: name.to_string(),
-                input: with_common_keys(input),
+                input: with_common_keys(name, input),
             });
         }
         let state = str_field(step, "state").unwrap_or("");
@@ -203,8 +203,10 @@ impl AntigravityParser {
 }
 
 /// `agy`'s parameters (`CommandLine`, `TargetFile`, `AbsolutePath`, …) with
-/// the keys the transcript titles tools by added alongside.
-fn with_common_keys(input: &Value) -> Value {
+/// the keys the transcript titles tools by added alongside. A call with
+/// none of them (`manage_task`'s `Action` and `TaskId`) is titled by its
+/// own summary when it gives one, else by its name, never its JSON.
+fn with_common_keys(name: &str, input: &Value) -> Value {
     let Some(params) = input.as_object() else {
         return input.clone();
     };
@@ -224,6 +226,7 @@ fn with_common_keys(input: &Value) -> Value {
         ("pattern", &["Pattern"][..]),
         ("query", &["Query"][..]),
         ("url", &["Url", "URL"][..]),
+        ("description", &["toolSummary", "toolAction"][..]),
     ];
     for (key, from) in aliases {
         if out.contains_key(key) {
@@ -233,7 +236,25 @@ fn with_common_keys(input: &Value) -> Value {
             out.insert(key.to_string(), value.clone());
         }
     }
+    let titled = ["command", "path", "pattern", "query", "url", "description"]
+        .iter()
+        .any(|key| out.get(*key).is_some_and(Value::is_string));
+    if !titled {
+        out.insert("description".into(), Value::String(tool_label(name, params)));
+    }
     Value::Object(out)
+}
+
+/// `manage_task` with `Action: kill` reads "Manage task: kill".
+fn tool_label(name: &str, params: &Map<String, Value>) -> String {
+    let mut label = name.replace('_', " ");
+    if let Some(first) = label.get(..1) {
+        label = first.to_uppercase() + &label[1..];
+    }
+    match params.get("Action").and_then(Value::as_str) {
+        Some(action) if !action.trim().is_empty() => format!("{label}: {}", action.trim()),
+        _ => label,
+    }
 }
 
 /// A turn `agy` calls an error only for a model call it retried: its
@@ -379,6 +400,21 @@ mod tests {
         r#"{"event":"step_update","step_update":{"conversation_id":"8b5f","step_index":3,"state":"DONE","step_type":"agent_response","text_delta":"Done.","usage":{"input_tokens":19081,"output_tokens":65,"total_tokens":19146}}}"#,
         r#"{"event":"result","result":{"conversation_id":"8b5f","status":"SUCCESS","response":"Done.","usage":{"input_tokens":37749,"output_tokens":379,"total_tokens":38128}}}"#,
     ];
+
+    #[test]
+    fn a_call_without_a_path_or_command_is_titled_by_name() {
+        let task = serde_json::json!({ "Action": "kill", "TaskId": "abc/task-1" });
+        let input = with_common_keys("manage_task", &task);
+        assert_eq!(crate::harness::summarize_tool_input("manage_task", &input), "Manage task: kill");
+        let summarized = serde_json::json!({ "Action": "status", "toolSummary": "Check test task status" });
+        let input = with_common_keys("manage_task", &summarized);
+        assert_eq!(
+            crate::harness::summarize_tool_input("manage_task", &input),
+            "Check test task status"
+        );
+        let command = with_common_keys("run_command", &serde_json::json!({ "CommandLine": "ls" }));
+        assert_eq!(command.get("description"), None);
+    }
 
     #[test]
     fn tool_steps_start_once_and_finish() {

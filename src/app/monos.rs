@@ -462,6 +462,8 @@ impl BenCodeApp {
         }
         self.close_mono_settings(cx);
         self.monos.view = None;
+        self.monos.overview.shown_session = None;
+        self.monos.overview.shown_focused = false;
         self.monos.pending_reset = false;
         self.monos.overview.activity = None;
         self.save_open_mono(cx);
@@ -501,11 +503,12 @@ impl BenCodeApp {
 
     /// MonoCode `onToggleMonoOverview`: the title bar's Overview pill.
     pub fn toggle_mono_overview(&mut self, cx: &mut Context<Self>) {
-        self.monos.overview_open = !self.monos.overview_open;
-        if !self.monos.overview_open {
+        if self.monos.overview_open {
             // Hiding it leaves what was open over its list.
+            self.hide_mono_launch(cx);
             self.monos.overview.document = None;
         }
+        self.monos.overview_open = !self.monos.overview_open;
         cx.notify();
     }
 

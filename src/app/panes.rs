@@ -26,8 +26,9 @@ impl BenCodeApp {
     /// Makes `selected_session_id` (and the model picker) follow the active
     /// tab's focused pane.
     pub(crate) fn sync_selection(&mut self, cx: &mut Context<Self>) {
-        // An open Mono's conversation is the one in view, over the tabs.
-        let mono = self.mono_view_session().map(str::to_string);
+        // An open Mono's conversation is the one in view, over the tabs; or
+        // the session it started, shown beside it, while that has focus.
+        let mono = self.mono_focus_session().map(str::to_string);
         let in_mono = mono.is_some();
         let focused = mono.or_else(|| self.tabs.focused_session().map(str::to_string));
         if focused != self.selected_session_id {
@@ -225,6 +226,9 @@ impl BenCodeApp {
 
     /// Focuses an open pane, switching to its tab if needed.
     pub fn focus_pane(&mut self, pane_id: String, cx: &mut Context<Self>) {
+        if self.focus_mono_pane(&pane_id, cx) {
+            return;
+        }
         if self.tabs.focus(&pane_id) {
             self.sync_selection(cx);
         }

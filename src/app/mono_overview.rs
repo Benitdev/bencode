@@ -92,6 +92,12 @@ pub struct OverviewState {
     pub done_open: bool,
     /// The runs opened on a habit's page, by (habit, when).
     pub open_runs: HashSet<(String, i64)>,
+    /// MonoCode `monoShownSession`: a session the Mono started, open over
+    /// everything in the Overview until Back.
+    pub shown_session: Option<String>,
+    /// MonoCode `monoShownSessionFocused`: its composer, rather than the
+    /// Mono's, holds the prompt.
+    pub shown_focused: bool,
     generation: u64,
 }
 
@@ -113,6 +119,8 @@ impl Default for OverviewState {
             board_error: None,
             done_open: false,
             open_runs: HashSet::new(),
+            shown_session: None,
+            shown_focused: false,
             generation: 0,
         }
     }
@@ -121,6 +129,8 @@ impl Default for OverviewState {
 impl OverviewState {
     /// Another Mono starts at its own front page.
     pub fn mono_changed(&mut self) {
+        self.shown_session = None;
+        self.shown_focused = false;
         self.activity = None;
         self.document = None;
         self.habit_route = None;
@@ -207,6 +217,7 @@ impl BenCodeApp {
 
     /// A tab of the Overview, which opens if it was hidden.
     pub fn select_mono_overview_tab(&mut self, tab: OverviewTab, cx: &mut Context<Self>) {
+        self.hide_mono_launch(cx);
         self.monos.overview_open = true;
         self.monos.overview.select(tab);
         if let Some(id) = self.monos.view.clone() {
@@ -236,11 +247,100 @@ impl BenCodeApp {
         }
     }
 
-    /// A session the Mono started, opened in the workspace; one this launch
-    /// has not read yet comes from the database first.
+    /// MonoCode `showMonoLaunchedSession`: a session the Mono started, open
+    /// over the Overview beside its chat, where it can be followed, answered
+    /// or stopped; the one already shown hides again. One this launch has
+    /// not read yet comes from the database first.
+    pub fn show_mono_launch(&mut self, id: &str, cx: &mut Context<Self>) {
+        if self.monos.overview_open && self.monos.overview.shown_session.as_deref() == Some(id) {
+            self.hide_mono_launch(cx);
+            return;
+        }
+        let Some(mono) = self.monos.view.clone() else {
+            return;
+        };
+        self.with_mono_launch(id, cx, move |this, id, cx| {
+            // A Mono left or switched meanwhile keeps what it shows.
+            if this.monos.view.as_deref() != Some(mono.as_str()) {
+                return;
+            }
+            this.monos.overview_open = true;
+            this.monos.overview.select(OverviewTab::Board);
+            this.monos.overview.document = None;
+            this.monos.overview.shown_session = Some(id.to_string());
+            this.monos.overview.shown_focused = true;
+            this.sync_selection(cx);
+            cx.notify();
+        });
+    }
+
+    /// Back from the shown session to the sessions the Mono started; the
+    /// Mono's chat takes the prompt again.
+    pub fn hide_mono_launch(&mut self, cx: &mut Context<Self>) {
+        let overview = &mut self.monos.overview;
+        if overview.shown_session.take().is_none() {
+            return;
+        }
+        let focused = std::mem::take(&mut overview.shown_focused);
+        if focused {
+            self.sync_selection(cx);
+        }
+        cx.notify();
+    }
+
+    /// The shown session's "Open in workspace": out of the Mono, into its
+    /// tab.
     pub fn open_mono_launch(&mut self, id: &str, cx: &mut Context<Self>) {
+        self.with_mono_launch(id, cx, |this, id, cx| {
+            this.monos.overview.shown_session = None;
+            this.monos.overview.shown_focused = false;
+            this.open_launched_session(id, cx);
+        });
+    }
+
+    /// The session the Overview shows over everything, while it is open
+    /// and the session is in memory.
+    pub fn mono_shown_session(&self) -> Option<&str> {
+        self.monos.view.as_ref()?;
+        if !self.monos.overview_open {
+            return None;
+        }
+        let id = self.monos.overview.shown_session.as_deref()?;
+        self.sessions.iter().any(|s| s.id == id).then_some(id)
+    }
+
+    /// The thread the Mono's view gives the prompt to: the shown session
+    /// while it holds focus, else the Mono's chat.
+    pub fn mono_focus_session(&self) -> Option<&str> {
+        self.mono_shown_session()
+            .filter(|_| self.monos.overview.shown_focused)
+            .or_else(|| self.mono_view_session())
+    }
+
+    /// MonoCode `onFocusPane` in a Mono's view: a click on its chat or on
+    /// the shown session moves the prompt there. False for any other pane.
+    pub(crate) fn focus_mono_pane(&mut self, pane_id: &str, cx: &mut Context<Self>) -> bool {
+        let shown = self.mono_shown_session() == Some(pane_id);
+        if !shown && self.mono_view_session() != Some(pane_id) {
+            return false;
+        }
+        if self.monos.overview.shown_focused != shown {
+            self.monos.overview.shown_focused = shown;
+            self.sync_selection(cx);
+        }
+        true
+    }
+
+    /// `f` with session `id` in memory, read from the database first when
+    /// it is not.
+    fn with_mono_launch(
+        &mut self,
+        id: &str,
+        cx: &mut Context<Self>,
+        f: impl FnOnce(&mut Self, &str, &mut Context<Self>) + 'static,
+    ) {
         if self.sessions.iter().any(|s| s.id == id) {
-            self.open_launched_session(id, cx);
+            f(self, id, cx);
             return;
         }
         let row = id.to_string();
@@ -253,7 +353,7 @@ impl BenCodeApp {
                     if !this.sessions.iter().any(|s| s.id == id) {
                         this.sessions.push(session);
                     }
-                    this.open_launched_session(&id, cx);
+                    f(this, &id, cx);
                 }
                 Ok(None) => log::info!("a Mono's session was deleted since"),
                 Err(err) => log::error!("could not read a Mono's session: {err:#}"),
@@ -262,6 +362,7 @@ impl BenCodeApp {
     }
 
     pub fn toggle_mono_activity(&mut self, cx: &mut Context<Self>) {
+        self.hide_mono_launch(cx);
         self.monos.overview.toggle_activity();
         self.monos.overview.document = None;
         cx.notify();
@@ -270,6 +371,7 @@ impl BenCodeApp {
     /// MonoCode `onShowMonoActivity`: a turn's work on the Activity tab;
     /// picking the shown one again clears it.
     pub fn show_mono_activity(&mut self, session_id: &str, turn_id: &str, cx: &mut Context<Self>) {
+        self.hide_mono_launch(cx);
         let overview = &mut self.monos.overview;
         let shown = self.monos.overview_open && overview.tab == OverviewTab::Activity;
         let picked = ActivitySelection {

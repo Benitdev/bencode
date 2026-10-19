@@ -418,7 +418,8 @@ impl BenCodeApp {
             return false;
         }
         if let Some(id) = self.mono_view_session() {
-            return self.is_agent_running_in(id);
+            return self.is_agent_running_in(id)
+                || self.mono_shown_session().is_some_and(|shown| self.is_agent_running_in(shown));
         }
         self.tabs
             .active()

@@ -217,7 +217,7 @@ impl BenCodeApp {
                     state,
                     cx,
                 )
-                .on_click(cx.listener(move |this, _, _, cx| this.open_launched_session(&id, cx)))
+                .on_click(cx.listener(move |this, _, _, cx| this.show_mono_launch(&id, cx)))
             }))
             .into_any_element()
     }

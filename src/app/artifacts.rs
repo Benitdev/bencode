@@ -191,6 +191,7 @@ impl BenCodeApp {
     /// MonoCode `onOpenMonoArtifact`: the artifact over the Overview's
     /// Documents list, the Overview opening if it was hidden.
     pub fn open_artifact(&mut self, id: &str, cx: &mut Context<Self>) {
+        self.hide_mono_launch(cx);
         self.monos.overview_open = true;
         self.monos.overview.select(OverviewTab::Documents);
         self.monos.overview.document = Some(id.to_string());

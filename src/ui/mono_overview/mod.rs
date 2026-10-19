@@ -86,6 +86,7 @@ impl BenCodeApp {
         &self,
         mono: &Mono,
         state: &MonoState,
+        shown: Option<(String, AnyElement)>,
         cx: &Context<Self>,
     ) -> AnyElement {
         let fg = cx.theme().colors.fg;
@@ -125,8 +126,10 @@ impl BenCodeApp {
         let habit_page = (overview.tab == OverviewTab::Habits)
             .then(|| self.render_habit_route(mono, cx))
             .flatten();
-        let paged = overview.document.is_some() || habit_page.is_some();
-        let body = if overview.document.is_some() {
+        let paged = shown.is_some() || overview.document.is_some() || habit_page.is_some();
+        let body = if let Some((id, pane)) = shown {
+            self.render_mono_launch_page(&id, pane, cx)
+        } else if overview.document.is_some() {
             self.render_artifact_reader(cx)
         } else if let Some(page) = habit_page {
             page
@@ -348,6 +351,68 @@ impl BenCodeApp {
                         })),
                 )
             })
+    }
+
+    /// MonoCode `LaunchedSessionPage`: `PageHeader` with Back, the session's
+    /// title, Open in workspace and Hide overview, over its pane.
+    fn render_mono_launch_page(&self, id: &str, pane: AnyElement, cx: &Context<Self>) -> AnyElement {
+        let fg = cx.theme().colors.fg;
+        let title = self
+            .sessions
+            .iter()
+            .find(|s| s.id == id)
+            .map(|s| crate::app::session_list::display_title(&s.title, &s.harness))
+            .unwrap_or_default();
+        let open_id = id.to_string();
+        let header = div()
+            .flex()
+            .flex_none()
+            .items_center()
+            .gap_1()
+            .h(px(40.0))
+            .pl_2()
+            .pr_3()
+            .border_b_1()
+            .border_color(fg.opacity(STROKE))
+            .child(
+                IconButton::new("mono-launch-back", IconName::ChevronLeft)
+                    .size(ControlSize::Sm)
+                    .variant(ButtonVariant::Ghost)
+                    .tooltip("Back")
+                    .on_click(cx.listener(|this, _, _, cx| this.hide_mono_launch(cx))),
+            )
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .truncate()
+                    .text_size(px(13.0))
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(fg)
+                    .child(title),
+            )
+            .child(
+                IconButton::new("mono-launch-workspace", IconName::ExternalLink)
+                    .size(ControlSize::Sm)
+                    .variant(ButtonVariant::Ghost)
+                    .tooltip("Open in workspace")
+                    .on_click(cx.listener(move |this, _, _, cx| this.open_mono_launch(&open_id, cx))),
+            )
+            .child(
+                IconButton::new("mono-launch-hide", IconName::PanelRight)
+                    .size(ControlSize::Sm)
+                    .variant(ButtonVariant::Ghost)
+                    .tooltip("Hide overview")
+                    .on_click(cx.listener(|this, _, _, cx| this.toggle_mono_overview(cx))),
+            );
+        div()
+            .flex()
+            .flex_col()
+            .flex_1()
+            .min_h_0()
+            .child(header)
+            .child(div().flex_1().min_h_0().child(pane))
+            .into_any_element()
     }
 
     /// MonoCode `monoSpawnedSessions` over the Mono's chat.

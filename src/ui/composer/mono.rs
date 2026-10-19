@@ -128,8 +128,14 @@ impl BenCodeApp {
         session: &SessionRow,
         cx: &Context<Self>,
     ) -> AnyElement {
+        // The session shown beside it may hold the prompt (MonoCode
+        // `monoShownSessionFocused`): then this one shows its draft, and a
+        // click anywhere on it brings the prompt back.
+        let focused = self.selected_session_id.as_deref() == Some(session.id.as_str());
+        let wake_id = session.id.clone();
         div()
             .id(SharedString::from(format!("mono-composer-{}", session.id)))
+            .relative()
             .flex_none()
             .w_full()
             .max_w(px(COMPOSER_MAX_WIDTH))
@@ -142,20 +148,58 @@ impl BenCodeApp {
                 div()
                     .px(px(6.0))
                     .pb(px(6.0))
-                    .child(self.render_mono_composer_box(session, cx))
+                    .child(self.render_mono_composer_box(session, focused, cx))
                     .child(self.render_mono_composer_tools(session, cx)),
             )
+            .when(!focused, |el| {
+                el.child(
+                    div()
+                        .id("mono-composer-wake")
+                        .absolute()
+                        .inset_0()
+                        .cursor_text()
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.focus_pane(wake_id.clone(), cx);
+                        })),
+                )
+            })
             .into_any_element()
     }
 
     /// `agent-chat-composer relative rounded-lg border bg-content/3`: the
     /// files, then the field and Send on one line (`flex items-end gap-1.5
     /// p-1.25`), Send kept at the bottom as the text grows.
-    fn render_mono_composer_box(&self, session: &SessionRow, cx: &Context<Self>) -> AnyElement {
+    fn render_mono_composer_box(
+        &self,
+        session: &SessionRow,
+        focused: bool,
+        cx: &Context<Self>,
+    ) -> AnyElement {
         let colors = &cx.theme().colors;
         let fg = colors.fg;
         let file_drag = self.active_file_drop_target.as_deref() == Some(session.id.as_str());
-        let ready = self.composer_has_value(cx);
+        let ready = focused && self.composer_has_value(cx);
+        let field = if focused {
+            self.prompt_input.clone().into_any_element()
+        } else {
+            // Its draft, as it was left.
+            let draft = self
+                .thread(&session.id)
+                .and_then(|thread| thread.draft.clone())
+                .filter(|draft| !draft.is_empty());
+            div()
+                .min_h(px(18.0))
+                .overflow_hidden()
+                .text_color(if draft.is_some() { fg } else { fg.opacity(0.4) })
+                .child(draft.unwrap_or_else(|| {
+                    let name = self
+                        .mono_for_session(&session.id)
+                        .map(|mono| mono.display_name())
+                        .unwrap_or_default();
+                    format!("Message {name}")
+                }))
+                .into_any_element()
+        };
         let (fill, ink, hover) = crate::ui::appearance::primary_action(ready, cx);
         let send = div()
             .id("mono-composer-send")
@@ -180,7 +224,7 @@ impl BenCodeApp {
             .border_color(if file_drag {
                 colors.accent.opacity(0.6)
             } else {
-                fg.opacity(if self.prompt_focused { 0.2 } else { 0.1 })
+                fg.opacity(if focused && self.prompt_focused { 0.2 } else { 0.1 })
             })
             .bg(fg.fill(Fill::Faint))
             // MonoCode light theme: the page colour, lifted by a shadow.
@@ -205,7 +249,7 @@ impl BenCodeApp {
                     .text_color(colors.danger)
                     .child(error)
             }))
-            .children(self.render_attachment_chips(cx))
+            .when(focused, |el| el.children(self.render_attachment_chips(cx)))
             .child(
                 div()
                     .flex()
@@ -223,7 +267,7 @@ impl BenCodeApp {
                             .max_h(px(MAX_FIELD_HEIGHT + 8.0))
                             .text_size(Text::Md.px())
                             .line_height(px(18.0))
-                            .child(self.prompt_input.clone()),
+                            .child(field),
                     )
                     .child(send),
             )
