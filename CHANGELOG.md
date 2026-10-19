@@ -4,7 +4,7 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
-## [Unreleased]
+## [0.1.21] - 2026-10-19
 
 - Search (⌘K) is redone, and opens as a dialog over what you were
   doing instead of replacing it. Before you type it lists your recent threads,
@@ -14,6 +14,21 @@ tagging (`docs/releasing.md`).
   shows the line it is in. All shows a few of each kind under a heading,
   with counts on the tabs. ↑↓ move, ↵ opens (a file now opens in the
   editor), ⌘↵ mentions a file in the prompt, Tab / ⇧Tab switch the tab.
+- A session a Mono started opens as a pane over its Overview, where you
+  can read it and type into it; Open in workspace moves it to a pane of
+  its own. It now streams and takes keys while shown there, and launch
+  cards show the session's current title.
+- A split pane with no message yet shows the greeting and its composer
+  without being clicked first.
+- The browser's toolbar has a + button that opens another tab (⌘⇧O
+  still does too).
+- A long prompt scrolls with the mouse wheel or trackpad, with a scroll
+  bar, and still follows the caret as you type.
+- After closing Web Inspector with its own Close button, the composer and
+  the terminal take keys again.
+- A right-click menu (on a tab, in the sidebar, the Explorer, Changes or
+  the terminal) no longer opens under a browser page: the page hides
+  while the menu is open.
 
 ## [0.1.20] - 2026-10-18
 
