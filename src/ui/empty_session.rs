@@ -89,16 +89,23 @@ fn part_progress(delta: f32, step: usize) -> f32 {
 }
 
 impl BenCodeApp {
-    /// The centred composer of a thread with no message yet.
+    /// The centred composer of a thread with no message yet. A pane without
+    /// focus shows it too, with its thread's draft in place of the prompt.
     pub(crate) fn render_empty_session(
         &self,
         session: &SessionRow,
+        focused: bool,
         cx: &Context<Self>,
     ) -> AnyElement {
         let colors = &cx.theme().colors;
         let dark = cx.theme().is_dark();
         let still = crate::ui::spinner::still(cx);
-        let tint = harness_color(&self.selected_model, colors);
+        let model = if focused || session.model.is_empty() {
+            &self.selected_model
+        } else {
+            &session.model
+        };
+        let tint = harness_color(model, colors);
         let project = std::path::Path::new(&session.cwd)
             .file_name()
             .and_then(|n| n.to_str())
@@ -139,7 +146,7 @@ impl BenCodeApp {
                     glow(tint.opacity(if dark { 0.38 } else { 0.22 }), 36.0, 4.0),
                     glow(tint.opacity(if dark { 0.16 } else { 0.10 }), 96.0, 16.0),
                 ])
-                .child(HarnessIcon::new(self.selected_model.clone()).size(px(22.0))),
+                .child(HarnessIcon::new(model.clone()).size(px(22.0))),
         );
 
         let hello = div()
@@ -181,11 +188,13 @@ impl BenCodeApp {
                 .max_w(px(COMPOSER_MAX_WIDTH))
                 .mx_auto()
                 .child(self.render_composer_halo(tint, colors.bg, dark))
-                .child(self.render_composer_view(Some(session), true, true, cx))
-                .child(self.dock_probe_canvas(DockProbe::Composer)),
+                .child(self.render_composer_view(Some(session), focused, true, cx))
+                .when(focused, |el| {
+                    el.child(self.dock_probe_canvas(DockProbe::Composer))
+                }),
         );
 
-        let starters = self.render_starters(session, cx);
+        let starters = self.render_starters(session, focused, cx);
 
         div()
             .relative()
@@ -204,7 +213,9 @@ impl BenCodeApp {
             ))
             .child(enter(composer, 2, "composer"))
             .child(enter(starters, 3, "starters"))
-            .child(self.dock_probe_canvas(DockProbe::Pane))
+            .when(focused, |el| {
+                el.child(self.dock_probe_canvas(DockProbe::Pane))
+            })
             .into_any_element()
     }
 
@@ -260,9 +271,20 @@ impl BenCodeApp {
 
     /// Starter prompts: a click puts one in the prompt. Hidden (keeping
     /// their room, so nothing moves) once something is typed.
-    fn render_starters(&self, session: &SessionRow, cx: &Context<Self>) -> gpui::Div {
+    fn render_starters(
+        &self,
+        session: &SessionRow,
+        focused: bool,
+        cx: &Context<Self>,
+    ) -> gpui::Div {
         let colors = &cx.theme().colors;
-        let typed = !self.prompt_input.read(cx).text().is_empty();
+        let typed = if focused {
+            !self.prompt_input.read(cx).text().is_empty()
+        } else {
+            self.thread(&session.id)
+                .and_then(|t| t.draft.as_ref())
+                .is_some_and(|d| !d.is_empty())
+        };
         let changed =
             self.workspace(cx).cwd == session.cwd && !self.workspace(cx).changes.is_empty();
         let border = colors.fg.fill(Fill::Line);
@@ -274,6 +296,7 @@ impl BenCodeApp {
             .chain(STARTERS.iter())
             .map(|starter| {
                 let prompt = starter.prompt;
+                let sid = session.id.clone();
                 div()
                     .id(SharedString::from(format!("starter-{}", starter.id)))
                     .flex()
@@ -290,6 +313,9 @@ impl BenCodeApp {
                     .cursor_pointer()
                     .hover(move |s| s.bg(hover_bg).border_color(hover_border))
                     .on_click(cx.listener(move |this, _, window, cx| {
+                        // The prompt belongs to the focused pane: this one
+                        // takes it first.
+                        this.focus_pane(sid.clone(), cx);
                         this.set_prompt(prompt.to_string(), prompt.len(), cx);
                         let handle = gpui::Focusable::focus_handle(this.prompt_input.read(cx), cx);
                         window.focus(&handle, cx);

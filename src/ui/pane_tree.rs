@@ -206,8 +206,8 @@ impl BenCodeApp {
                         .child(self.render_mono_greeting(mono, cx)),
                 )
                 .child(composer)
-        } else if empty && is_focused {
-            frame.child(self.render_empty_session(session, cx))
+        } else if empty {
+            frame.child(self.render_empty_session(session, is_focused, cx))
         } else {
             frame
                 .child(self.render_pane_body(session, list_state, outline, cx))
