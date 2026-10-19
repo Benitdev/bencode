@@ -498,7 +498,13 @@ impl BenCodeApp {
                             .max_h(px(160.0))
                             .overflow_y_scroll()
                             .track_scroll(&ui.message_scroll.scroll)
-                            .when(!can_edit, |el| el.opacity(0.4))
+                            .when(!can_edit, |el| {
+                                // GPUI focuses a field on any press, disabled
+                                // or not: the press is taken before it lands.
+                                el.opacity(0.4).capture_any_mouse_down(|_, window, _| {
+                                    window.prevent_default()
+                                })
+                            })
                             .child(self.git_commit_input.clone())
                             // The box's `py-1`.
                             .child(
