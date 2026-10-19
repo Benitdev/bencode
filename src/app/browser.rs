@@ -125,7 +125,8 @@ pub struct BrowserState {
     /// Where the agents' MCP server reaches this app; None when the
     /// socket could not be opened.
     socket: Option<PathBuf>,
-    /// Set while a dialog covers the window: the page hides under it.
+    /// Set while a dialog or a menu covers the window: the page hides
+    /// under it.
     pub obscured: Rc<Cell<bool>>,
     /// The tab the file pane draws this frame; the others hide.
     pub drawn: Cell<Option<u64>>,

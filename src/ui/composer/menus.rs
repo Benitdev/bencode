@@ -128,6 +128,17 @@ impl BenCodeApp {
         focus_later(self.prompt_input.read(cx).focus_handle(cx), cx);
     }
 
+    /// A right-click or dropdown menu the shell or a region draws over the
+    /// window: a browser page hides under it as under a dialog.
+    pub fn context_menu_open(&self, cx: &App) -> bool {
+        self.git_menu_open()
+            || self.tree_menu_open()
+            || self.sidebar_menu_open()
+            || self.rail_menu_open()
+            || self.tab_menu_open()
+            || self.terminal_menu_open(cx)
+    }
+
     /// Keys while a composer menu holds focus (MonoCode `onMenuKey`).
     pub fn handle_menu_key(&mut self, key: &str, cx: &mut Context<Self>) -> bool {
         if self.git_menu_open() {

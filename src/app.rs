@@ -1656,7 +1656,8 @@ impl Render for BenCodeApp {
         let compact_rail = self.compact_rail_active();
         let title_bar_above = self.compact_title_bar();
         // A browser page is a native view above everything GPUI draws: it
-        // hides while one of these dialogs is open (`app/browser.rs`).
+        // hides while one of these dialogs or a menu is open
+        // (`app/browser.rs`).
         let dialogs: Vec<AnyElement> = [
             any_elements(self.render_link_dialog(cx)),
             any_elements(self.render_session_dialog(cx)),
@@ -1689,7 +1690,9 @@ impl Render for BenCodeApp {
         .into_iter()
         .flatten()
         .collect();
-        self.browser.obscured.set(!dialogs.is_empty());
+        self.browser
+            .obscured
+            .set(!dialogs.is_empty() || self.context_menu_open(cx));
 
         // The regions this frame lays out (`ui/region.rs`): each is a
         // cached view, at a size given here.
