@@ -656,6 +656,47 @@ pub fn inline_file(text: &str) -> Option<(String, Option<u64>)> {
     ext_ok.then(|| (path.to_string(), line))
 }
 
+/// The file a link's target names: a `file://` address (as agents write
+/// absolute paths, Antigravity's included), or an address with no scheme
+/// that reads as a file.
+pub fn link_file(url: &str) -> Option<(String, Option<u64>)> {
+    let Some(rest) = url.strip_prefix("file://") else {
+        return (!url.contains("://")).then(|| inline_file(url)).flatten();
+    };
+    let rest = rest.strip_prefix("localhost").unwrap_or(rest);
+    if !rest.starts_with('/') {
+        return None;
+    }
+    let decoded = percent_decode(rest)?;
+    let (path, line) = split_location(&decoded);
+    Some((path.to_string(), line))
+}
+
+/// `%20` and the like as the bytes they stand for; `None` when they do not
+/// make UTF-8.
+fn percent_decode(text: &str) -> Option<String> {
+    let bytes = text.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut ix = 0;
+    while ix < bytes.len() {
+        let hex = (bytes[ix] == b'%')
+            .then(|| text.get(ix + 1..ix + 3))
+            .flatten()
+            .and_then(|hex| u8::from_str_radix(hex, 16).ok());
+        match hex {
+            Some(byte) => {
+                out.push(byte);
+                ix += 3;
+            }
+            None => {
+                out.push(bytes[ix]);
+                ix += 1;
+            }
+        }
+    }
+    String::from_utf8(out).ok()
+}
+
 /// Extensions that make a bare `name.ext` a file.
 const KNOWN_EXTENSIONS: &[&str] = &[
     "rs", "toml", "lock", "ts", "tsx", "mts", "js", "jsx", "mjs", "cjs", "json", "jsonc", "md",
@@ -951,6 +992,17 @@ mod tests {
     #[test]
     fn code_spans_that_name_files() {
         assert_eq!(inline_file("src/app.rs"), Some(("src/app.rs".into(), None)));
+        assert_eq!(
+            link_file("file:///Users/me/a%20b/src/resources.rs"),
+            Some(("/Users/me/a b/src/resources.rs".into(), None))
+        );
+        assert_eq!(
+            link_file("file://localhost/r/a.rs#L12"),
+            Some(("/r/a.rs".into(), Some(12)))
+        );
+        assert_eq!(link_file("src/a.rs:3"), Some(("src/a.rs".into(), Some(3))));
+        assert_eq!(link_file("https://example.com/a.rs"), None);
+        assert_eq!(link_file("file://host/a.rs"), None);
         assert_eq!(
             inline_file("Cargo.toml:12"),
             Some(("Cargo.toml".into(), Some(12)))

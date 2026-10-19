@@ -832,6 +832,18 @@ impl MonoFloat {
         });
     }
 
+    /// A file the reply names, in BenCode's window.
+    fn reveal_file(&mut self, path: &str, cx: &mut Context<Self>) {
+        self.activate_main(cx);
+        let app = self.app.clone();
+        let opened = self.main.update(cx, |_, window, cx| {
+            app.update(cx, |app, cx| app.open_file_in_editor(path, window, cx))
+        });
+        if let Err(err) = opened {
+            log::debug!("BenCode's window is gone: {err:#}");
+        }
+    }
+
     fn activate_main(&self, cx: &mut App) {
         cx.activate(true);
         if let Err(err) = self

@@ -315,7 +315,18 @@ impl MonoFloat {
                 .child(
                     div()
                         .text_size(Text::Md.px())
-                        .child(AgentMarkdown::new(("mono-float-reply", ix), text)),
+                        .child(AgentMarkdown::new(("mono-float-reply", ix), text).on_open_file(
+                            std::rc::Rc::new({
+                                let this = cx.entity().downgrade();
+                                move |path, _line, _, cx| {
+                                    let opened =
+                                        this.update(cx, |this, cx| this.reveal_file(path, cx));
+                                    if let Err(err) = opened {
+                                        log::debug!("float file link after close: {err:#}");
+                                    }
+                                }
+                            }),
+                        )),
                 )
                 .into_any_element(),
             FloatItem::Notice(text) => row

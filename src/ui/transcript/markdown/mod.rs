@@ -31,7 +31,7 @@ use crate::ui::scale::px;
 use pulldown_cmark::Alignment;
 use unicode_segmentation::UnicodeSegmentation;
 
-pub use parse::{Block, Drawing, Fence, Inline, Span, inline_file, parse};
+pub use parse::{Block, Drawing, Fence, Inline, Span, inline_file, link_file, parse};
 
 use super::selection::{Joint, SegCtx, restyle};
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
@@ -435,9 +435,9 @@ fn lay_out(inline: &Inline, base: Hsla, italic: bool, fade: f32, look: &Look) ->
         }
         let to = laid.text.len();
         let target = match (&mix.link, &code_span) {
-            (Some(url), _) => Some(match inline_file(url) {
-                Some((path, line)) if !url.contains("://") => Target::File(path, line),
-                _ => Target::Url(url.clone()),
+            (Some(url), _) => Some(match link_file(url) {
+                Some((path, line)) => Target::File(path, line),
+                None => Target::Url(url.clone()),
             }),
             (None, Some(range)) => {
                 inline_file(&source[range.clone()]).map(|(path, line)| Target::File(path, line))
