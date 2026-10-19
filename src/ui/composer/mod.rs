@@ -134,12 +134,14 @@ fn composer_chip(
                 .child(detail)
         }))
         .child(
-            Icon::new(IconName::ChevronDown)
-                .size(IconSize::Xs)
-                .color(colors.fg.ink(Ink::Secondary))
-                .when(open, |icon| {
-                    icon.rotate(gpui::radians(std::f32::consts::PI))
-                }),
+            div().flex_none().child(
+                Icon::new(IconName::ChevronDown)
+                    .size(IconSize::Xs)
+                    .color(colors.fg.ink(Ink::Secondary))
+                    .when(open, |icon| {
+                        icon.rotate(gpui::radians(std::f32::consts::PI))
+                    }),
+            ),
         )
 }
 
@@ -884,7 +886,7 @@ impl BenCodeApp {
         // before it never push them out of line.
         let model = div()
             .relative()
-            .flex_none()
+            .min_w_0()
             .child(popover_anchor(model, cx))
             .when(focused && self.popover_open(ComposerPopover::Model), |el| {
                 el.child(over_composer(popover_surface(
@@ -928,7 +930,7 @@ impl BenCodeApp {
         );
         let access = div()
             .relative()
-            .flex_none()
+            .min_w_0()
             .child(popover_anchor(access, cx))
             .when(
                 focused && self.popover_open(ComposerPopover::Access),
@@ -941,8 +943,10 @@ impl BenCodeApp {
             .px_2()
             .pb_2()
             .child(
+                // Shrinks before Send: the chips' labels truncate.
                 div()
                     .flex()
+                    .min_w_0()
                     .items_center()
                     .gap_1()
                     .child(self.plus_button(cx))
