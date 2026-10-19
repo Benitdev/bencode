@@ -218,7 +218,7 @@ impl BenCodeApp {
                 .fold(Menu::new(), |menu, (action, label)| {
                     let action = *action;
                     menu.item(
-                        MenuItem::radio(*label, action == method).on_click(app_callback(
+                        MenuItem::check(*label, action == method).on_click(app_callback(
                             cx,
                             move |this, cx| {
                                 this.inbox_state.as_mut(cx).pr.merge_method = action;

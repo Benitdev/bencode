@@ -7,8 +7,7 @@
 
 use ely_gpui_component::buttons::{Button, ButtonVariant};
 use ely_gpui_component::data_display::{Badge, Tone};
-use ely_gpui_component::forms::{Input, PasswordInput, Switch};
-use ely_gpui_component::menus::{DropdownMenu, Menu, MenuItem};
+use ely_gpui_component::forms::{Choice, Input, PasswordInput, Select, Switch};
 use ely_gpui_component::overlays::Dialog;
 use ely_gpui_component::primitives::{Icon, IconName};
 use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
@@ -16,7 +15,7 @@ use gpui::{AnyElement, Context, IntoElement, ParentElement, SharedString, Styled
 
 use crate::app::BenCodeApp;
 use crate::backlog::Account;
-use crate::ui::app_callback::{app_callback, app_callback_with};
+use crate::ui::app_callback::{app_callback, app_callback_with, on_value};
 use crate::ui::scale::px;
 use crate::ui::settings_modal::SettingsTab;
 use crate::ui::settings_parts::{SettingsGroup, SettingsPage, SettingsRow, icon_tile};
@@ -25,6 +24,9 @@ use crate::ui::tokens::{Ink, Text, Tone as _};
 
 /// The connection form's fields.
 const FIELD_WIDTH: f32 = 280.0;
+/// The account select's value for Automatic: a colon is never in a GitHub
+/// login, and a `Select` value cannot be empty.
+const AUTOMATIC: &str = ":automatic";
 
 impl BenCodeApp {
     pub(crate) fn render_settings_integrations(&self, cx: &Context<Self>) -> SettingsPage {
@@ -95,30 +97,25 @@ impl BenCodeApp {
                     .enumerate()
                     .map(|(ix, project)| {
                         let chosen = self.github.choices.get(&project).cloned();
-                        let pick = |login: Option<String>| {
-                            let project = project.clone();
-                            app_callback(cx, move |this, cx| {
-                                this.set_project_github_account(&project, login.clone(), cx)
-                            })
-                        };
-                        let menu = accounts.iter().fold(
-                            Menu::new().item(
-                                MenuItem::radio("Automatic", chosen.is_none()).on_click(pick(None)),
-                            ),
-                            |menu, account| {
-                                let on = chosen.as_deref() == Some(account.login.as_str());
-                                menu.item(
-                                    MenuItem::radio(account.login.clone(), on)
-                                        .on_click(pick(Some(account.login.clone()))),
-                                )
-                            },
+                        let choices = std::iter::once(Choice::new(AUTOMATIC, "Automatic")).chain(
+                            accounts
+                                .iter()
+                                .map(|a| Choice::new(a.login.clone(), a.login.clone())),
                         );
-                        let label = chosen.unwrap_or_else(|| "Automatic".to_string());
+                        let picked = project.clone();
                         SettingsRow::new(self.rail_project_label(&project))
                             .description(pretty_path(&project))
                             .control(
-                                DropdownMenu::new(("github-project-account", ix), label, menu)
-                                    .variant(ButtonVariant::Outline),
+                                Select::new(("github-project-account", ix), choices)
+                                    .label("GitHub account")
+                                    .size(ControlSize::Sm)
+                                    .selected(chosen.unwrap_or_else(|| AUTOMATIC.to_string()))
+                                    .on_change(on_value(cx, move |this, login, cx| {
+                                        let login = Some(login)
+                                            .filter(|l| *l != AUTOMATIC)
+                                            .map(str::to_string);
+                                        this.set_project_github_account(&picked, login, cx)
+                                    })),
                             )
                     }),
             ),

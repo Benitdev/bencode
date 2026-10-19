@@ -247,7 +247,7 @@ impl BenCodeApp {
                     move |this, cx| this.move_note_to_project(&path, cx)
                 });
                 menu.item(
-                    MenuItem::radio(self.rail_project_label(&path), path == current).on_click(pick),
+                    MenuItem::check(self.rail_project_label(&path), path == current).on_click(pick),
                 )
             });
         let label = note_project(note).map_or_else(|| "No project".to_string(), str::to_string);

@@ -365,7 +365,7 @@ impl BenCodeApp {
                 let (key, target) = (key.clone(), path.clone());
                 let backlog_project = backlog_project.clone();
                 menu.item(
-                    MenuItem::radio(
+                    MenuItem::check(
                         project_name(&path),
                         crate::app::same_project_path(&path, &chosen),
                     )
@@ -398,7 +398,7 @@ impl BenCodeApp {
         let menu = statuses.iter().fold(Menu::new(), |menu, status| {
             let (key, id) = (key.clone(), status.id);
             menu.item(
-                MenuItem::radio(status.name.clone(), status.name == item.state)
+                MenuItem::check(status.name.clone(), status.name == item.state)
                     .disabled(busy)
                     .on_click(app_callback(cx, move |this, cx| {
                         this.set_backlog_status(&key, id, cx)

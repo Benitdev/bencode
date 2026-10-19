@@ -4,8 +4,7 @@
 //! `app/remote.rs`.
 
 use ely_gpui_component::buttons::{Button, ButtonVariant};
-use ely_gpui_component::forms::Input;
-use ely_gpui_component::menus::{DropdownMenu, Menu, MenuItem};
+use ely_gpui_component::forms::{Choice, Input, Select};
 use ely_gpui_component::overlays::Dialog;
 use ely_gpui_component::primitives::{Icon, IconName};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
@@ -15,7 +14,7 @@ use gpui::{
 };
 
 use crate::app::BenCodeApp;
-use crate::ui::app_callback::app_callback;
+use crate::ui::app_callback::{app_callback, on_value};
 use crate::ui::scale::px;
 use crate::ui::settings_modal::SettingsTab;
 use crate::ui::tokens::RED_400;
@@ -68,17 +67,16 @@ impl BenCodeApp {
         };
 
         let picker: AnyElement = if self.machines().len() > 1 {
-            let menu = self.machines().iter().fold(Menu::new(), |menu, m| {
-                let id = m.id.clone();
-                menu.item(
-                    MenuItem::radio(m.name.clone(), m.id == machine.id)
-                        .on_click(app_callback(cx, move |this, cx| {
-                            this.pick_remote_folder_machine(&id, cx)
-                        })),
-                )
-            });
-            DropdownMenu::new("remote-folder-machine", machine.name.clone(), menu)
-                .variant(ButtonVariant::Outline)
+            let machines = self
+                .machines()
+                .iter()
+                .map(|m| Choice::new(m.id.clone(), m.name.clone()));
+            Select::new("remote-folder-machine", machines)
+                .label("Machine")
+                .selected(machine.id.clone())
+                .on_change(on_value(cx, |this, id, cx| {
+                    this.pick_remote_folder_machine(id, cx)
+                }))
                 .into_any_element()
         } else {
             div()
