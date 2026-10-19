@@ -15,14 +15,11 @@ use serde_json::Value;
 
 use super::format::{gmt_offset_at, next_run_preview};
 use crate::app::automations::{MAX_TRIGGERS, WorkingCopy, access_mode, grace_minutes};
-use crate::app::{BenCodeApp, PermissionMode, now_ms};
+use crate::app::{BenCodeApp, now_ms};
 use crate::db::{AutomationRow, DEFAULT_GRACE_MINUTES};
-use crate::harness::{ALL_HARNESSES, catalog};
 use crate::schedule::{self, ScheduleKind, TimeTrigger, Trigger, WEEKDAYS};
 use crate::ui::app_callback::{app_callback, on_value};
-use crate::ui::composer::permission_entry;
 use crate::ui::page_parts::{panel, rule, section_title, settings_row, tint};
-use crate::ui::provider_icon::HarnessIcon;
 use crate::ui::scale::px;
 use crate::ui::tokens::Text;
 
@@ -281,44 +278,6 @@ impl BenCodeApp {
     ) -> impl IntoElement {
         let colors = &cx.theme().colors;
         let (fg, muted) = (colors.fg, colors.fg_muted);
-        let models = ALL_HARNESSES
-            .into_iter()
-            .filter(|kind| self.harness_available(*kind))
-            .fold(Menu::new(), |menu, kind| {
-                let options = catalog::models_for(kind);
-                let list = options.iter().fold(Menu::new(), |list, model| {
-                    let key = model.key.clone();
-                    let pick = app_callback(cx, move |this, cx| {
-                        let key = key.clone();
-                        this.edit_automation(cx, |draft| {
-                            draft.model = key;
-                            draft.harness = kind.id().to_string();
-                        });
-                    });
-                    list.item(
-                        MenuItem::radio(model.label.clone(), model.key == draft.model)
-                            .on_click(pick),
-                    )
-                });
-                menu.item(MenuItem::submenu(kind.label(), list))
-            });
-        let current = access_mode(draft);
-        let access = PermissionMode::ALL
-            .into_iter()
-            .fold(Menu::new(), |menu, mode| {
-                let pick = app_callback(cx, move |this, cx| {
-                    this.edit_automation(cx, |draft| {
-                        draft.runtime_mode = Some(mode.id().to_string())
-                    });
-                });
-                let (label, icon) = permission_entry(mode);
-                menu.item(
-                    MenuItem::radio(label, mode == current)
-                        .icon(icon)
-                        .on_click(pick),
-                )
-            });
-        let (access_label, access_icon) = permission_entry(current);
         div()
             .flex()
             .flex_col()
@@ -343,20 +302,8 @@ impl BenCodeApp {
                             .gap_1()
                             .px_2()
                             .pb_2()
-                            .child(HarnessIcon::new(draft.harness.clone()).size(px(14.0)))
-                            .child(
-                                DropdownMenu::new(
-                                    "automation-model",
-                                    catalog::display_label(&draft.harness, &draft.model),
-                                    models,
-                                )
-                                .variant(ButtonVariant::Ghost),
-                            )
-                            .child(
-                                DropdownMenu::new("automation-access", access_label, access)
-                                    .icon(access_icon)
-                                    .variant(ButtonVariant::Ghost),
-                            ),
+                            .child(self.render_automation_model(&draft.harness, &draft.model, cx))
+                            .child(self.render_automation_access(access_mode(draft), cx)),
                     ),
             )
             .child(

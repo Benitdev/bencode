@@ -44,6 +44,15 @@ pub enum ModelsAnchor {
     UsageLimit,
     /// The Model row of a Mono's settings dialog; it opens below.
     MonoSettings,
+    /// The model of the automation being edited; it opens below.
+    Automation,
+}
+
+impl ModelsAnchor {
+    /// Hung below its trigger rather than above.
+    fn opens_below(self) -> bool {
+        matches!(self, Self::MonoSettings | Self::Automation)
+    }
 }
 
 /// The flyout open beside the menu.
@@ -130,7 +139,17 @@ impl BenCodeApp {
         self.model_search_input.read(cx).text().to_string()
     }
 
+    /// The models are open for the automation being edited.
+    pub(crate) fn models_for_automation(&self) -> bool {
+        self.composer_menus.models_only == Some(ModelsAnchor::Automation)
+    }
+
     pub(super) fn current_model_key(&self) -> String {
+        if self.models_for_automation()
+            && let Some(draft) = self.automations.draft.as_ref()
+        {
+            return draft.model.clone();
+        }
         self.selected_session()
             .map_or(self.selected_model.clone(), |s| s.model.clone())
     }
@@ -217,13 +236,20 @@ impl BenCodeApp {
             self.close_model_picker(cx);
             return;
         }
-        self.toggle_model_picker_open(cx);
+        self.toggle_model_picker_open(None, cx);
     }
 
-    /// Opens the model menu, whichever trigger asked.
-    fn toggle_model_picker_open(&mut self, cx: &mut Context<Self>) {
+    /// Opens the model menu, whichever trigger asked; `models_only` names
+    /// the trigger of the models on their own, set first so the model and
+    /// machine read below are that trigger's.
+    fn toggle_model_picker_open(
+        &mut self,
+        models_only: Option<ModelsAnchor>,
+        cx: &mut Context<Self>,
+    ) {
         self.close_composer_popovers(cx);
         self.composer_popover = Some(ComposerPopover::Model);
+        self.composer_menus.models_only = models_only;
         let current = self.current_model_key();
         match self.composer_machine_id() {
             // A machine's CLIs and models, asked of its host once.
@@ -274,15 +300,31 @@ impl BenCodeApp {
 
     pub fn close_model_picker(&mut self, cx: &mut Context<Self>) {
         self.close_popover(ComposerPopover::Model);
+        // The composer is not on screen beside an automation.
+        let automation = self.composer_menus.models_only == Some(ModelsAnchor::Automation);
         self.composer_menus.models_only = None;
         self.composer_menus.recent_open = false;
         self.composer_menus.model_submenu = None;
-        self.refocus_prompt(cx);
+        if !automation {
+            self.refocus_prompt(cx);
+        }
         cx.notify();
     }
 
     fn pick_model(&mut self, key: &str, cx: &mut Context<Self>) {
         if catalog::find(key).is_some_and(|m| !self.harness_available(m.harness)) {
+            return;
+        }
+        // An automation's model is part of its draft, kept until Save.
+        if self.composer_menus.models_only == Some(ModelsAnchor::Automation) {
+            let harness = catalog::find(key).map(|m| m.harness.id().to_string());
+            self.edit_automation(cx, |draft| {
+                draft.model = key.to_string();
+                if let Some(harness) = harness {
+                    draft.harness = harness;
+                }
+            });
+            self.close_model_picker(cx);
             return;
         }
         // MonoCode `recoverLimit`: another model, picked from a Mono's
@@ -669,10 +711,41 @@ impl BenCodeApp {
             self.close_model_picker(cx);
             return;
         }
-        self.toggle_model_picker_open(cx);
-        self.composer_menus.models_only = Some(anchor);
+        self.toggle_model_picker_open(Some(anchor), cx);
         self.composer_menus.model_submenu = Some(Submenu::Models);
         cx.notify();
+    }
+
+    /// The model of the automation being edited: the composer's chip,
+    /// opening the composer's models below it.
+    pub(crate) fn render_automation_model(
+        &self,
+        harness: &str,
+        model: &str,
+        cx: &Context<Self>,
+    ) -> AnyElement {
+        let open = self.composer_menus.models_only == Some(ModelsAnchor::Automation);
+        let chip = super::composer_chip(
+            "automation-model",
+            HarnessIcon::new(harness).size(px(16.0)).into_any_element(),
+            catalog::display_label(harness, model),
+            None,
+            open,
+            220.0,
+            cx,
+        )
+        .on_click(
+            cx.listener(|this, _, _, cx| this.toggle_models_only(ModelsAnchor::Automation, cx)),
+        );
+        div()
+            .relative()
+            .min_w_0()
+            .child(super::menus::popover_anchor(chip, cx))
+            .children(
+                self.render_models_only(ModelsAnchor::Automation, false, cx)
+                    .map(super::menus::over_composer),
+            )
+            .into_any_element()
     }
 
     /// The models alone, over `anchor`'s trigger: its bottom edge 32px up
@@ -694,7 +767,7 @@ impl BenCodeApp {
             .track_focus(&self.composer_menus.focus)
             .absolute()
             .map(|el| {
-                if anchor == ModelsAnchor::MonoSettings {
+                if anchor.opens_below() {
                     el.top(px(32.0))
                 } else {
                     el.bottom(px(32.0))

@@ -197,9 +197,17 @@ impl BenCodeApp {
     /// The machine the composer's thread runs on: the selected thread's
     /// folder, else the current project's.
     pub(crate) fn composer_machine_id(&self) -> Option<String> {
-        let path = self
-            .selected_session()
-            .map_or(self.current_cwd.as_str(), |s| s.work_dir());
+        // The models an automation picks are those of its own project.
+        let automation = self
+            .models_for_automation()
+            .then(|| self.automations.draft.as_ref())
+            .flatten();
+        let path = match automation {
+            Some(draft) => draft.cwd.as_str(),
+            None => self
+                .selected_session()
+                .map_or(self.current_cwd.as_str(), |s| s.work_dir()),
+        };
         bencode_core::remote::path::parse(path).map(|parsed| parsed.machine.to_string())
     }
 

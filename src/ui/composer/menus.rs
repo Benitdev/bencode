@@ -19,6 +19,8 @@ pub struct MenuState {
     pub focus: FocusHandle,
     /// Highlighted row of the access picker.
     pub access_index: usize,
+    /// The access picker was opened by the automation being edited.
+    pub access_automation: bool,
     /// Model menu: highlighted row, open flyout, highlighted choice in a
     /// setting flyout, and the provider tab of the models flyout.
     pub model_entry: usize,
@@ -50,6 +52,7 @@ impl MenuState {
         Self {
             focus,
             access_index: 0,
+            access_automation: false,
             model_entry: 0,
             model_submenu: None,
             setting_index: 0,
@@ -178,14 +181,9 @@ impl BenCodeApp {
             "up" => *index = index.saturating_sub(1),
             "enter" => {
                 let mode = PERMISSION_MODES[(*index).min(last)].0;
-                self.close_popover(ComposerPopover::Access);
-                self.set_permission_mode(mode, cx);
-                self.refocus_prompt(cx);
+                self.pick_access(mode, cx);
             }
-            "escape" => {
-                self.close_popover(ComposerPopover::Access);
-                self.refocus_prompt(cx);
-            }
+            "escape" => self.close_access_picker(cx),
             _ => return false,
         }
         cx.notify();

@@ -888,12 +888,17 @@ impl BenCodeApp {
             .relative()
             .min_w_0()
             .child(popover_anchor(model, cx))
-            .when(focused && self.popover_open(ComposerPopover::Model), |el| {
-                el.child(over_composer(popover_surface(
-                    self.render_model_picker_popover(key, cx),
-                    cx,
-                )))
-            })
+            .when(
+                focused
+                    && self.popover_open(ComposerPopover::Model)
+                    && self.composer_menus.models_only.is_none(),
+                |el| {
+                    el.child(over_composer(popover_surface(
+                        self.render_model_picker_popover(key, cx),
+                        cx,
+                    )))
+                },
+            )
             .when(focused && self.composer_menus.recent_open, |el| {
                 el.child(over_composer(popover_surface(
                     self.render_recent_models_popover(cx),
@@ -933,7 +938,9 @@ impl BenCodeApp {
             .min_w_0()
             .child(popover_anchor(access, cx))
             .when(
-                focused && self.popover_open(ComposerPopover::Access),
+                focused
+                    && self.popover_open(ComposerPopover::Access)
+                    && !self.composer_menus.access_automation,
                 |el| el.child(over_composer(self.render_permission_picker_popover(cx))),
             );
         div()
@@ -1027,6 +1034,7 @@ impl BenCodeApp {
             self.composer_menus.context_pinned = false;
             self.composer_menus.pill_menu = None;
             self.composer_menus.models_only = None;
+            self.composer_menus.access_automation = false;
             self.monos.emoji.close();
             self.composer_menus.workspace_menu = None;
             self.composer_menus.recent_open = false;
@@ -1045,6 +1053,7 @@ impl BenCodeApp {
         }
         let open = !self.popover_open(which);
         self.composer_menus.recent_open = false;
+        self.composer_menus.access_automation = false;
         self.composer_popover = open.then_some(which);
         if self.popover_open(ComposerPopover::Access) {
             let mode = self.session_permission_mode(self.selected_session());
@@ -1453,10 +1462,97 @@ impl BenCodeApp {
             )
     }
 
+    /// The mode the open access picker shows as chosen.
+    fn access_current_mode(&self) -> PermissionMode {
+        if self.composer_menus.access_automation
+            && let Some(draft) = self.automations.draft.as_ref()
+        {
+            return crate::app::automations::access_mode(draft);
+        }
+        self.session_permission_mode(self.selected_session())
+    }
+
+    /// A row picked in the access picker: the thread's mode, or the
+    /// automation draft's (kept until Save).
+    pub(super) fn pick_access(&mut self, mode: PermissionMode, cx: &mut Context<Self>) {
+        if self.composer_menus.access_automation {
+            self.edit_automation(cx, |draft| draft.runtime_mode = Some(mode.id().to_string()));
+            self.close_access_picker(cx);
+            return;
+        }
+        self.close_popover(ComposerPopover::Access);
+        self.set_permission_mode(mode, cx);
+        self.refocus_prompt(cx);
+    }
+
+    /// Closes the access picker; the prompt takes the keys back unless an
+    /// automation opened it (the composer is not on screen then).
+    pub(super) fn close_access_picker(&mut self, cx: &mut Context<Self>) {
+        self.close_popover(ComposerPopover::Access);
+        if !std::mem::take(&mut self.composer_menus.access_automation) {
+            self.refocus_prompt(cx);
+        }
+        cx.notify();
+    }
+
+    /// The automation's access: the composer's chip and picker, opening
+    /// below it.
+    pub(crate) fn render_automation_access(
+        &self,
+        mode: PermissionMode,
+        cx: &Context<Self>,
+    ) -> AnyElement {
+        let open =
+            self.composer_menus.access_automation && self.popover_open(ComposerPopover::Access);
+        let (label, icon) = permission_entry(mode);
+        let color = if mode == PermissionMode::FullAccess {
+            cx.theme().colors.warning.opacity(0.9)
+        } else {
+            cx.theme().colors.fg
+        };
+        let chip = composer_chip(
+            "automation-access",
+            Icon::new(icon)
+                .size(IconSize::Xs)
+                .color(color)
+                .into_any_element(),
+            label.to_string(),
+            None,
+            open,
+            208.0,
+            cx,
+        )
+        .on_click(cx.listener(|this, _, _, cx| {
+            if this.composer_menus.access_automation && this.popover_open(ComposerPopover::Access) {
+                this.close_access_picker(cx);
+                return;
+            }
+            this.close_composer_popovers(cx);
+            this.composer_popover = Some(ComposerPopover::Access);
+            this.composer_menus.access_automation = true;
+            let mode = this.access_current_mode();
+            this.composer_menus.access_index = PERMISSION_MODES
+                .iter()
+                .position(|(m, ..)| *m == mode)
+                .unwrap_or(0);
+            this.focus_composer_menu(cx);
+            cx.notify();
+        }));
+        div()
+            .relative()
+            .min_w_0()
+            .child(popover_anchor(chip, cx))
+            .when(open, |el| {
+                el.child(over_composer(self.render_permission_picker_popover(cx)))
+            })
+            .into_any_element()
+    }
+
     fn render_permission_picker_popover(&self, cx: &Context<Self>) -> impl IntoElement {
         let colors = &cx.theme().colors;
-        let session = self.selected_session();
-        let current_mode = self.session_permission_mode(session);
+        let automation = self.composer_menus.access_automation;
+        let session = self.selected_session().filter(|_| !automation);
+        let current_mode = self.access_current_mode();
         let busy = session.is_some_and(|s| self.is_agent_running_in(&s.id));
         let active = self.composer_menus.access_index;
         let menu = div()
@@ -1464,7 +1560,7 @@ impl BenCodeApp {
             .track_focus(&self.composer_menus.focus)
             .occlude()
             .absolute()
-            .bottom(px(32.0))
+            .map(|el| if automation { el.top(px(32.0)) } else { el.bottom(px(32.0)) })
             .left_0()
             .w(px(288.0))
             .p_1()
@@ -1500,11 +1596,7 @@ impl BenCodeApp {
                             cx.notify();
                         }
                     }))
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.close_popover(ComposerPopover::Access);
-                        this.set_permission_mode(mode, cx);
-                        this.refocus_prompt(cx);
-                    }))
+                    .on_click(cx.listener(move |this, _, _, cx| this.pick_access(mode, cx)))
                     .child(title_line_icon(Icon::new(icon).size(IconSize::Sm).color(icon_color)))
                     .child(
                         div()
