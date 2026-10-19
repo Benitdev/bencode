@@ -19,6 +19,12 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde::{Deserialize, Serialize};
 
+/// The smallest a chat pane is dragged to: room for the composer's chips
+/// and a few lines of transcript. Splits, the file pane and the terminal
+/// dock all stop there.
+pub const CHAT_MIN_WIDTH: f32 = 300.0;
+pub const CHAT_MIN_HEIGHT: f32 = 240.0;
+
 pub use dock::{place_layout, place_pane};
 pub use edit::{close_leaf, replace_leaf, set_split_sizes, split_pane};
 pub use geometry::{

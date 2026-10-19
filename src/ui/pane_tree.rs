@@ -107,10 +107,10 @@ impl BenCodeApp {
             SplitDir::Right => Axis::Horizontal,
             SplitDir::Down => Axis::Vertical,
         };
-        let theme = cx.theme();
-        let min = theme
-            .pane_min()
-            .to_pixels(theme.base_rem() * crate::ui::scale::ui_scale());
+        let min = px(match axis {
+            Axis::Horizontal => crate::ui::layout::CHAT_MIN_WIDTH,
+            Axis::Vertical => crate::ui::layout::CHAT_MIN_HEIGHT,
+        });
         let weak = cx.entity().downgrade();
         let owned_id = split_id.to_string();
         let mut split = SplitPane::new(SharedString::from(owned_id.clone()), axis, min)

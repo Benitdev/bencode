@@ -111,16 +111,22 @@ impl DockLayout {
     }
 }
 
+/// What the window keeps beside a vertical dock besides the chat: the title
+/// bar, the footer and a pane's header.
+const VERTICAL_CHROME: f32 = 80.0;
+
 /// MonoCode `clampDockSize`: at least the side's minimum, at most 70% of
-/// the window along the dock's axis. `viewport` is `(width, height)`.
+/// the window along the dock's axis, and never so big that the chat is
+/// squeezed under its minimum. `viewport` is `(width, height)`.
 pub fn clamp_size(side: DockSide, value: f32, viewport: (f32, f32)) -> f32 {
+    use crate::ui::layout::{CHAT_MIN_HEIGHT, CHAT_MIN_WIDTH};
     let min = side.min_size();
-    let span = if side.is_vertical() {
-        viewport.1
+    let (span, kept) = if side.is_vertical() {
+        (viewport.1, VERTICAL_CHROME + CHAT_MIN_HEIGHT)
     } else {
-        viewport.0
+        (viewport.0, crate::ui::sidebar::SIDEBAR_MIN_WIDTH + CHAT_MIN_WIDTH)
     };
-    let max = (span * 0.7).floor().max(min);
+    let max = (span * 0.7).min(span - kept).floor().max(min);
     if !value.is_finite() {
         return side.default_size();
     }
@@ -173,9 +179,11 @@ mod tests {
     #[test]
     fn sizes_stay_within_the_side_bounds() {
         assert_eq!(clamp_size(DockSide::Bottom, 10.0, VIEWPORT), 88.0);
-        assert_eq!(clamp_size(DockSide::Bottom, 5000.0, VIEWPORT), 700.0);
+        assert_eq!(clamp_size(DockSide::Bottom, 5000.0, VIEWPORT), 680.0);
         assert_eq!(clamp_size(DockSide::Left, 10.0, VIEWPORT), 180.0);
-        assert_eq!(clamp_size(DockSide::Right, 5000.0, VIEWPORT), 980.0);
+        assert_eq!(clamp_size(DockSide::Right, 5000.0, VIEWPORT), 840.0);
+        // The chat keeps its minimum in a small window.
+        assert_eq!(clamp_size(DockSide::Bottom, 5000.0, (880.0, 560.0)), 240.0);
         // A window too small for 70% still allows the minimum.
         assert_eq!(clamp_size(DockSide::Bottom, 300.0, (100.0, 100.0)), 88.0);
         assert_eq!(clamp_size(DockSide::Top, f32::NAN, VIEWPORT), 220.0);
@@ -190,7 +198,7 @@ mod tests {
         };
         assert_eq!(bottom.with_side(DockSide::Left, VIEWPORT).size, 600.0);
         assert!(bottom.with_side(DockSide::Left, VIEWPORT).open);
-        assert_eq!(bottom.with_side(DockSide::Top, (1400.0, 500.0)).size, 350.0);
+        assert_eq!(bottom.with_side(DockSide::Top, (1400.0, 500.0)).size, 180.0);
     }
 
     #[test]

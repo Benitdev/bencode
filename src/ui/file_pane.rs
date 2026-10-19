@@ -120,10 +120,9 @@ impl BenCodeApp {
         if self.file_pane.is_empty() && self.editor.notice.is_none() {
             return chat.into_any_element();
         }
-        let theme = cx.theme();
-        let min = theme
-            .pane_min()
-            .to_pixels(theme.base_rem() * crate::ui::scale::ui_scale());
+        // The chat keeps its room beside the file pane (and the file pane
+        // as much; `SplitPane` halves a window too narrow for both).
+        let min = crate::ui::scale::px(crate::ui::layout::CHAT_MIN_WIDTH);
         let weak = cx.entity().downgrade();
         let pane = div()
             .size_full()
