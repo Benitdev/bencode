@@ -196,23 +196,39 @@ impl BenCodeApp {
 
         let starters = self.render_starters(session, focused, cx);
 
+        // Centred by auto margins, not `justify_center`: a pane shorter than
+        // the content scrolls it from the top instead of pushing it up over
+        // the pane's header. The aurora and the pane's probe stay put.
         div()
             .relative()
             .flex()
             .flex_col()
             .flex_1()
             .min_h_0()
-            .justify_center()
-            .py_12()
             .child(self.render_empty_aurora(tint, dark))
-            .child(enter(mark, 0, "mark"))
-            .child(enter(
-                div().relative().child(hello).child(headline),
-                1,
-                "title",
-            ))
-            .child(enter(composer, 2, "composer"))
-            .child(enter(starters, 3, "starters"))
+            .child(
+                div()
+                    .id(SharedString::from(format!("empty-session-{}", session.id)))
+                    .flex()
+                    .flex_col()
+                    .flex_1()
+                    .min_h_0()
+                    .overflow_y_scroll()
+                    .child(
+                        div()
+                            .flex_shrink_0()
+                            .my_auto()
+                            .py_12()
+                            .child(enter(mark, 0, "mark"))
+                            .child(enter(
+                                div().relative().child(hello).child(headline),
+                                1,
+                                "title",
+                            ))
+                            .child(enter(composer, 2, "composer"))
+                            .child(enter(starters, 3, "starters")),
+                    ),
+            )
             .when(focused, |el| {
                 el.child(self.dock_probe_canvas(DockProbe::Pane))
             })
