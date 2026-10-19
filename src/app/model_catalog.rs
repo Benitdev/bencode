@@ -20,6 +20,49 @@ impl BenCodeApp {
         }
     }
 
+    /// The Providers page's refresh: looks for the agent CLIs again (one
+    /// installed or removed since launch), then asks each installed one
+    /// for its models, past the cooldown.
+    pub fn rescan_harnesses(&mut self, cx: &mut Context<Self>) {
+        if std::mem::replace(&mut self.harness_rescan, true) {
+            return;
+        }
+        cx.notify();
+        // A probe keeps the newest Codex it picked over the first one on
+        // PATH, while that copy is still there.
+        let codex = self
+            .harnesses
+            .iter()
+            .find(|h| h.id == HarnessKind::Codex.id())
+            .and_then(|h| h.binary_path.clone());
+        let task = cx.background_executor().spawn(async move {
+            let mut found = HarnessResolver::discover();
+            if let Some(path) = codex.filter(|path| path.is_file())
+                && let Some(info) = found
+                    .iter_mut()
+                    .find(|h| h.available && h.id == HarnessKind::Codex.id())
+            {
+                info.binary_path = Some(path);
+            }
+            found
+        });
+        cx.spawn(async move |this, cx| {
+            let found = task.await;
+            let updated = this.update(cx, |app, cx| {
+                app.harness_rescan = false;
+                app.harnesses = found;
+                for kind in ALL_HARNESSES {
+                    app.force_refresh_model_catalog(kind, cx);
+                }
+                cx.notify();
+            });
+            if let Err(err) = updated {
+                log::debug!("harness rescan after app drop: {err:#}");
+            }
+        })
+        .detach();
+    }
+
     /// After the CLI changed (an update): skips the cooldown, so the picker
     /// gets the new version's models.
     pub fn force_refresh_model_catalog(&mut self, kind: HarnessKind, cx: &mut Context<Self>) {

@@ -264,6 +264,8 @@ pub struct BenCodeApp {
     /// Model catalog probes per harness: `None` while one runs, else when
     /// the last one ended.
     pub catalog_probes: HashMap<crate::harness::HarnessKind, Option<std::time::Instant>>,
+    /// The Providers page's rescan of PATH for agent CLIs is running.
+    pub harness_rescan: bool,
     /// The launch check's harness updates and each row's progress.
     pub harness_updates: crate::app::harness_updates::HarnessUpdates,
     /// Sounds, notifications and what decides them.
@@ -1330,6 +1332,7 @@ impl BenCodeApp {
             recent_models: Vec::new(),
             last_model_settings: Default::default(),
             catalog_probes: Default::default(),
+            harness_rescan: false,
             harness_updates: Default::default(),
             alerts: crate::app::alerts::Alerts {
                 window_active: true,

@@ -453,9 +453,17 @@ impl BenCodeApp {
 
     fn render_settings_providers(&self, cx: &Context<Self>) -> SettingsPage {
         let clis = SettingsGroup::new("Agent CLIs")
-            .description("Found on PATH when BenCode started. Sign in through each CLI.");
+            .description("Found on PATH. Sign in through each CLI.")
+            .action(
+                IconButton::new("harnesses-rescan", IconName::RefreshCw)
+                    .variant(ButtonVariant::Ghost)
+                    .size(ControlSize::Sm)
+                    .disabled(self.harness_rescan)
+                    .tooltip("Look for agent CLIs again")
+                    .on_click(cx.listener(|this, _, _, cx| this.rescan_harnesses(cx))),
+            );
         let clis = if self.harnesses.is_empty() {
-            clis.note("No agent CLIs found. Install Claude Code, Codex, OpenCode or Antigravity, then restart BenCode.")
+            clis.note("No agent CLIs found. Install Claude Code, Codex, OpenCode or Antigravity, then refresh.")
         } else {
             clis.rows(self.harnesses.iter().map(|info| provider_row(info, cx)))
         };
