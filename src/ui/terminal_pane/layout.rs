@@ -124,7 +124,10 @@ pub fn clamp_size(side: DockSide, value: f32, viewport: (f32, f32)) -> f32 {
     let (span, kept) = if side.is_vertical() {
         (viewport.1, VERTICAL_CHROME + CHAT_MIN_HEIGHT)
     } else {
-        (viewport.0, crate::ui::sidebar::SIDEBAR_MIN_WIDTH + CHAT_MIN_WIDTH)
+        (
+            viewport.0,
+            crate::ui::sidebar::SIDEBAR_MIN_WIDTH + CHAT_MIN_WIDTH,
+        )
     };
     let max = (span * 0.7).min(span - kept).floor().max(min);
     if !value.is_finite() {

@@ -312,22 +312,19 @@ impl MonoFloat {
                 .into_any_element(),
             FloatItem::Reply(text) => row
                 .pt_1()
-                .child(
-                    div()
-                        .text_size(Text::Md.px())
-                        .child(AgentMarkdown::new(("mono-float-reply", ix), text).on_open_file(
-                            std::rc::Rc::new({
-                                let this = cx.entity().downgrade();
-                                move |path, _line, _, cx| {
-                                    let opened =
-                                        this.update(cx, |this, cx| this.reveal_file(path, cx));
-                                    if let Err(err) = opened {
-                                        log::debug!("float file link after close: {err:#}");
-                                    }
+                .child(div().text_size(Text::Md.px()).child(
+                    AgentMarkdown::new(("mono-float-reply", ix), text).on_open_file(
+                        std::rc::Rc::new({
+                            let this = cx.entity().downgrade();
+                            move |path, _line, _, cx| {
+                                let opened = this.update(cx, |this, cx| this.reveal_file(path, cx));
+                                if let Err(err) = opened {
+                                    log::debug!("float file link after close: {err:#}");
                                 }
-                            }),
-                        )),
-                )
+                            }
+                        }),
+                    ),
+                ))
                 .into_any_element(),
             FloatItem::Notice(text) => row
                 .pt_2()

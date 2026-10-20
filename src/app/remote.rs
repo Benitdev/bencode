@@ -200,7 +200,7 @@ impl BenCodeApp {
         // The models an automation picks are those of its own project.
         let automation = self
             .models_for_automation()
-            .then(|| self.automations.draft.as_ref())
+            .then_some(self.automations.draft.as_ref())
             .flatten();
         let path = match automation {
             Some(draft) => draft.cwd.as_str(),

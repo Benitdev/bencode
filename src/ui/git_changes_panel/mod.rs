@@ -37,9 +37,9 @@ use crate::git::sync::{BranchPr, HistoryCommit};
 use crate::git::{GitFileChange, GitFileStatus, discard_all, discard_file};
 use crate::ui::app_callback::app_callback;
 use crate::ui::appearance::DiffColors;
+use crate::ui::caret_follow::CaretFollow;
 use crate::ui::git_menus::{GitMenuKind, TriggerLook};
 use crate::ui::icons::ExtraIcon;
-use crate::ui::caret_follow::CaretFollow;
 use crate::ui::scale::px;
 use crate::ui::scrollbar;
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
@@ -501,9 +501,8 @@ impl BenCodeApp {
                             .when(!can_edit, |el| {
                                 // GPUI focuses a field on any press, disabled
                                 // or not: the press is taken before it lands.
-                                el.opacity(0.4).capture_any_mouse_down(|_, window, _| {
-                                    window.prevent_default()
-                                })
+                                el.opacity(0.4)
+                                    .capture_any_mouse_down(|_, window, _| window.prevent_default())
                             })
                             .child(self.git_commit_input.clone())
                             // The box's `py-1`.
