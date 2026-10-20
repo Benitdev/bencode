@@ -4,6 +4,31 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
+## [0.1.22] - 2026-10-20
+
+- Settings › External editors lets you pick the default editor: Make
+  default beside an editor sends files and workspaces there. Antigravity
+  IDE is found too, and VS Code, Cursor and Antigravity IDE open a file
+  at its line even when their shell command is not installed.
+- An automation picks its model and access with the composer's own
+  pickers, a machine's models included. Its header sums it up: the
+  project, the model and when it runs next. The project moved to the
+  Session settings, and an automation with no trigger says it runs only
+  when started by hand.
+- Settings › Providers has a refresh button that looks for agent CLIs
+  again, for one installed or removed since launch.
+- A file link in a Mono's chat, in the floating window too, opens the
+  file in the main window. `file://` links open as files.
+- Dragging a split, the file pane or the terminal dock stops at a chat
+  pane's minimum size, and the model and access chips shrink in a narrow
+  pane instead of pushing Send out.
+- A short empty thread scrolls instead of rising over its header.
+- Closing a terminal tab shows its neighbour, not "No terminal".
+- A file dropped on the floating Mono no longer leaves "Drop files to
+  attach" up in the main window.
+- Pickers mark the chosen row with a check, and a disabled commit
+  message field no longer takes focus when clicked.
+
 ## [0.1.21] - 2026-10-19
 
 - Search (⌘K) is redone, and opens as a dialog over what you were
