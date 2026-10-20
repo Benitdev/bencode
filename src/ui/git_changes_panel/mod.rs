@@ -137,6 +137,9 @@ pub struct ChangesUi {
     pub(crate) pr_key: Option<String>,
     /// When that read started, to space out the reads on focus.
     pub(crate) pr_read_at: Option<std::time::Instant>,
+    /// The pull request last read for each `cwd` + branch, shown at once
+    /// when the project or branch changes while `gh` reads it again.
+    pub(crate) pr_known: std::collections::HashMap<String, Option<BranchPr>>,
     /// The commit field's disabled state as last set.
     input_disabled: Option<bool>,
     /// The Commit options / Branch actions triggers as last laid out, so
@@ -199,6 +202,7 @@ impl Default for ChangesUi {
             pr: None,
             pr_key: None,
             pr_read_at: None,
+            pr_known: Default::default(),
             input_disabled: None,
             commit_anchor: Rc::default(),
             branch_anchor: Rc::default(),

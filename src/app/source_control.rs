@@ -105,25 +105,32 @@ impl BenCodeApp {
         if self.changes_ui.pr_key.as_deref() == Some(key.as_str()) {
             return;
         }
+        // Another project or branch: never the last one's pull request
+        // while `gh` reads this one's.
+        let known = self.changes_ui.pr_known.get(&key).cloned().flatten();
+        if self.changes_ui.pr != known {
+            self.changes_ui.pr = known;
+            cx.notify();
+        }
         self.load_branch_pr(key, cwd, cx);
     }
 
     pub(crate) fn load_branch_pr(&mut self, key: String, cwd: String, cx: &mut Context<Self>) {
-        // A pull request does not disappear once opened: a miss on a read
-        // again for the same branch is `gh` failing (offline, signed out),
-        // and keeps what was found.
-        let again = self.changes_ui.pr_key.as_deref() == Some(key.as_str());
+        // A pull request does not disappear once opened: a miss for a
+        // branch that had one is `gh` failing (offline, signed out), and
+        // keeps what was found.
         self.changes_ui.pr_key = Some(key.clone());
         self.changes_ui.pr_read_at = Some(std::time::Instant::now());
         let task = cx
             .background_executor()
             .spawn(async move { git_sync::pr_status(&cwd) });
         cx.spawn(async move |this, cx| {
-            let pr = task.await;
+            let found = task.await;
             let updated = this.update(cx, |app, cx| {
-                if app.changes_ui.pr_key.as_deref() == Some(key.as_str())
-                    && (pr.is_some() || !again)
-                    && app.changes_ui.pr != pr
+                let known = app.changes_ui.pr_known.get(&key).cloned().flatten();
+                let pr = found.or(known);
+                app.changes_ui.pr_known.insert(key.clone(), pr.clone());
+                if app.changes_ui.pr_key.as_deref() == Some(key.as_str()) && app.changes_ui.pr != pr
                 {
                     app.changes_ui.pr = pr;
                     cx.notify();
