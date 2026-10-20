@@ -345,17 +345,26 @@ impl BenCodeApp {
             });
 
         let editors = SettingsGroup::new("External editors")
-            .description("IDEs found on this Mac. Files and workspaces open in the first one.");
+            .description("IDEs found on this Mac. Files and workspaces open in the default one.");
+        let preferred = self.preferred_editor().map(|editor| editor.id);
         let editors = match &self.integrations.editors {
             None => editors.note("Looking for editors…"),
             Some(found) if found.is_empty() => editors.note(
                 "No supported editor found. Install VS Code, Cursor or Zed to open files outside BenCode.",
             ),
             Some(found) => editors.rows(found.iter().enumerate().map(|(ix, editor)| {
-                SettingsRow::new(editor.name).control(if ix == 0 {
-                    Badge::new("Default").tone(Tone::Accent)
+                let id = editor.id;
+                SettingsRow::new(editor.name).control(if preferred == Some(id) {
+                    Badge::new("Default").tone(Tone::Accent).into_any_element()
                 } else {
-                    Badge::new("Installed").tone(Tone::Neutral)
+                    Button::new(("editor-make-default", ix), "Make default")
+                        .variant(ButtonVariant::Outline)
+                        .size(ControlSize::Sm)
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.set_default_editor(id, cx);
+                            this.play_cue(crate::sounds::Cue::Switch);
+                        }))
+                        .into_any_element()
                 })
             })),
         };

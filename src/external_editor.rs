@@ -1,7 +1,8 @@
 //! External editors discovery and launch integration.
 //!
 //! Ported from MonoCode (`src-tauri/src/external_editor.rs`).
-//! Discovers installed IDEs and code editors (VS Code, Cursor, Zed, Windsurf, Sublime Text)
+//! Discovers installed IDEs and code editors (VS Code, Cursor, Antigravity IDE, Zed,
+//! Windsurf, Sublime Text)
 //! and provides functionality to open workspaces or specific files at a line number.
 
 use std::path::{Path, PathBuf};
@@ -43,6 +44,13 @@ pub const EDITORS: &[EditorDefinition] = &[
         commands: &["code"],
         #[cfg(target_os = "macos")]
         mac_apps: &["Visual Studio Code.app"],
+    },
+    EditorDefinition {
+        id: "antigravity-ide",
+        name: "Antigravity IDE",
+        commands: &["antigravity-ide"],
+        #[cfg(target_os = "macos")]
+        mac_apps: &["Antigravity IDE.app"],
     },
     EditorDefinition {
         id: "zed",
@@ -163,8 +171,18 @@ pub fn resolve_editor(editor: &EditorDefinition) -> Option<EditorLauncher> {
     }
 
     #[cfg(target_os = "macos")]
-    if let Some(path) = installed_mac_app(editor) {
-        return Some(EditorLauncher::MacApp(path));
+    if let Some(app) = installed_mac_app(editor) {
+        // VS Code forks ship their CLI inside the bundle; it takes a line
+        // number where `open -a` cannot, even without the shell command.
+        let bundled = app.join("Contents/Resources/app/bin");
+        if let Some(path) = editor
+            .commands
+            .iter()
+            .find_map(|command| find_executable_in([bundled.clone()], command))
+        {
+            return Some(EditorLauncher::Command(path));
+        }
+        return Some(EditorLauncher::MacApp(app));
     }
 
     None
@@ -266,9 +284,10 @@ fn build_command(
         EditorLauncher::Command(binary) => {
             let mut command = Command::new(binary);
             match (editor_id, file_relative, line) {
-                // VS Code / Cursor / Windsurf support -g file:line
+                // VS Code and its forks support -g file:line
                 (
-                    "vscode" | "cursor" | "windsurf" | "vscode-insiders" | "vscodium",
+                    "vscode" | "cursor" | "antigravity-ide" | "windsurf" | "vscode-insiders"
+                    | "vscodium",
                     Some(_),
                     Some(line_num),
                 ) => {

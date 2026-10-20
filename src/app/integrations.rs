@@ -124,8 +124,14 @@ impl BenCodeApp {
         skills::inject_skill_prompt(prompt, &picked)
     }
 
-    /// The preferred external editor, once discovery has run.
+    /// The preferred external editor, once discovery has run: the one chosen
+    /// in Settings while it is installed, else the first one found.
     pub fn preferred_editor(&self) -> Option<&ExternalEditor> {
-        self.integrations.editors.as_ref()?.first()
+        let editors = self.integrations.editors.as_ref()?;
+        self.settings
+            .default_editor
+            .as_deref()
+            .and_then(|id| editors.iter().find(|editor| editor.id == id))
+            .or_else(|| editors.first())
     }
 }

@@ -37,7 +37,7 @@ impl BenCodeApp {
             let body = if self.integrations.editors.is_none() {
                 "Still looking for installed editors. Try again in a moment."
             } else {
-                "Install VS Code, Cursor, Zed, Windsurf or Sublime Text."
+                "Install VS Code, Cursor, Antigravity IDE, Zed, Windsurf or Sublime Text."
             };
             self.show_editor_notice("No external editor found".into(), body.into(), cx);
             return;

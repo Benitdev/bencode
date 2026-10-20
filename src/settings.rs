@@ -141,6 +141,10 @@ pub struct AppSettings {
     /// MonoCode `monocode.pinnedProjects`: projects on the rail's Pinned
     /// list, in rail order.
     pub pinned_projects: Vec<String>,
+    /// The external editor files and workspaces open in, by
+    /// `external_editor` id; `None` (or one no longer installed) is the
+    /// first one found.
+    pub default_editor: Option<String>,
     /// Account profiles added here, in MonoCode's
     /// `monocode.providerAccounts.v1` shape (MonoCode's own are read from
     /// its storage and are not copied in).
@@ -324,6 +328,7 @@ mod tests {
                 }],
             )]),
             pinned_projects: vec!["/repo".into()],
+            default_editor: Some("zed".into()),
             provider_accounts: [(
                 "claude".to_string(),
                 vec![crate::harness::accounts::ProviderAccount {

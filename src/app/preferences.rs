@@ -238,6 +238,7 @@ impl BenCodeApp {
                 .map(|t| crate::ui::sidebar::tab_id(*t).to_string())
                 .collect(),
             pinned_projects: self.settings.pinned_projects.clone(),
+            default_editor: self.settings.default_editor.clone(),
             provider_accounts: self.settings.provider_accounts.clone(),
             provider_account_selections: self.settings.provider_account_selections.clone(),
             monos: self.settings.monos.clone(),
@@ -267,6 +268,17 @@ impl BenCodeApp {
     pub fn set_pinned_projects(&mut self, paths: Vec<String>, cx: &mut Context<Self>) {
         let mut next = self.current_settings(cx);
         next.pinned_projects = paths;
+        if next == self.settings {
+            return;
+        }
+        self.write_settings(next, cx);
+        cx.notify();
+    }
+
+    /// Settings › General › External editors: where files and workspaces open.
+    pub fn set_default_editor(&mut self, editor_id: &str, cx: &mut Context<Self>) {
+        let mut next = self.current_settings(cx);
+        next.default_editor = Some(editor_id.to_string());
         if next == self.settings {
             return;
         }
