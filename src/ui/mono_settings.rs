@@ -353,7 +353,7 @@ impl BenCodeApp {
             .px_2()
             .rounded(px(6.0))
             .hover(move |s| s.bg(fg.fill(Fill::Hover)))
-            .text_size(px(15.0))
+            .text_size(Text::Xl.px())
             .font_weight(FontWeight::MEDIUM)
             .child(
                 div()

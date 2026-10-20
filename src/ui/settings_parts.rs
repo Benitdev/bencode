@@ -59,7 +59,7 @@ impl RenderOnce for SettingsPage {
                     .pb_4()
                     .child(
                         div()
-                            .text_size(px(20.0))
+                            .text_size(Text::Title.px())
                             .line_height(relative(1.25))
                             .font_weight(FontWeight::SEMIBOLD)
                             .child(self.title),

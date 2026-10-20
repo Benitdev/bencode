@@ -105,7 +105,7 @@ pub(super) fn card(items: &[TaskItem], explanation: Option<&str>, cx: &App) -> A
                 .children(explanation.map(|line| {
                     div()
                         .mt(px(2.0))
-                        .text_size(px(11.5))
+                        .text_size(Text::Sm.px())
                         .line_height(px(16.0))
                         .text_color(colors.fg.ink(Ink::Secondary))
                         .line_clamp(2)
@@ -116,7 +116,7 @@ pub(super) fn card(items: &[TaskItem], explanation: Option<&str>, cx: &App) -> A
         let text = div()
             .min_w_0()
             .flex_1()
-            .text_size(px(12.5))
+            .text_size(Text::Base.px())
             .line_height(px(18.0))
             .child(SharedString::from(item.text.clone()));
         let text = match item.status {

@@ -392,7 +392,7 @@ impl BenCodeApp {
             .pt(px(10.0))
             .border_t_1()
             .border_color(fg.fill(Fill::Selected))
-            .text_size(px(12.5))
+            .text_size(Text::Base.px())
             .text_color(fg.opacity(0.75));
         if count > 0 {
             let (verb, fate) = match (count == 1, deletion.delete_sessions) {
@@ -515,12 +515,12 @@ impl BenCodeApp {
                                 ),
                         )
                     })
-                    .children(
-                        deletion
-                            .error
-                            .clone()
-                            .map(|error| div().text_size(px(12.5)).text_color(red).child(error)),
-                    ),
+                    .children(deletion.error.clone().map(|error| {
+                        div()
+                            .text_size(Text::Base.px())
+                            .text_color(red)
+                            .child(error)
+                    })),
             )
             .action(move |close| {
                 Button::new("delete-worktree-cancel", "Cancel")

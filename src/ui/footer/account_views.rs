@@ -269,7 +269,7 @@ impl BenCodeApp {
                                                 .px_1()
                                                 .rounded(px(4.0))
                                                 .bg(fg.fill(Fill::Line))
-                                                .text_size(px(9.0))
+                                                .text_size(Text::Xs.px())
                                                 .line_height(px(16.0))
                                                 .text_color(fg.ink(Ink::Secondary))
                                                 .child(tag.to_string()),
@@ -541,7 +541,7 @@ impl BenCodeApp {
             .child(
                 div()
                     .mt(px(14.0))
-                    .text_size(px(15.0))
+                    .text_size(Text::Xl.px())
                     .font_weight(FontWeight::MEDIUM)
                     .line_height(px(20.0))
                     .child(if complete {

@@ -225,7 +225,7 @@ impl BenCodeApp {
                                     .min_w_0()
                                     .child(
                                         div()
-                                            .text_size(px(20.0))
+                                            .text_size(Text::Title.px())
                                             .font_weight(FontWeight::SEMIBOLD)
                                             .text_color(fg)
                                             .child(self.automations.name_input.clone()),

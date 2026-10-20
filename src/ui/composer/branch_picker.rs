@@ -302,11 +302,14 @@ impl BenCodeApp {
                 div()
                     .flex_1()
                     .min_w_0()
-                    .text_size(px(if kind == BranchPickerKind::Base {
-                        12.0
-                    } else {
-                        13.0
-                    }))
+                    .text_size(
+                        if kind == BranchPickerKind::Base {
+                            Text::Base
+                        } else {
+                            Text::Md
+                        }
+                        .px(),
+                    )
                     .when(ui.busy, |el| el.opacity(0.6))
                     .child(self.branch_search_input.clone()),
             );

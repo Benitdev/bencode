@@ -210,7 +210,7 @@ impl BenCodeApp {
                     .child(identity)
                     .child(
                         div()
-                            .text_size(px(22.0))
+                            .text_size(Text::Title.px())
                             .line_height(px(28.0))
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_color(fg)
@@ -452,7 +452,7 @@ fn branch_chip(name: &str, cx: &gpui::App) -> impl IntoElement {
         .rounded(px(4.0))
         .bg(fg.fill(Fill::Line))
         .font_family(cx.theme().mono_family.clone())
-        .text_size(px(11.5))
+        .text_size(Text::Sm.px())
         .text_color(fg.ink(Ink::Body))
         .child(SharedString::from(name.to_string()))
 }

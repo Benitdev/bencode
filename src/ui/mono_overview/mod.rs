@@ -386,7 +386,7 @@ impl BenCodeApp {
                     .flex_1()
                     .min_w_0()
                     .truncate()
-                    .text_size(px(13.0))
+                    .text_size(Text::Md.px())
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(fg)
                     .child(title),

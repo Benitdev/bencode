@@ -176,7 +176,7 @@ impl BenCodeApp {
             )
             .child(
                 div()
-                    .text_size(px(20.0))
+                    .text_size(Text::Title.px())
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(fg)
                     .child(self.notes.title_input.clone()),

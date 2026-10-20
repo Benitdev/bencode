@@ -93,6 +93,10 @@ pub enum Text {
     Md,
     /// Prose.
     Lg,
+    /// A name being edited, a dialog's headline.
+    Xl,
+    /// A page's or an item's title.
+    Title,
 }
 
 impl Text {
@@ -103,6 +107,8 @@ impl Text {
             Self::Base => 12.0,
             Self::Md => 13.0,
             Self::Lg => 14.0,
+            Self::Xl => 15.0,
+            Self::Title => 20.0,
         }
     }
 
