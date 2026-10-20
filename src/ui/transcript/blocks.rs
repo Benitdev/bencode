@@ -544,8 +544,6 @@ impl BenCodeApp {
                 .tooltip(Tooltip::rich(move |_, cx| {
                     let colors = &cx.theme().colors;
                     div()
-                        .flex()
-                        .flex_col()
                         .child(
                             div()
                                 .text_size(Text::Base.px())

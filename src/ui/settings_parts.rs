@@ -51,8 +51,6 @@ impl RenderOnce for SettingsPage {
         // `pb-4`, `text-[20px] font-semibold leading-tight`; `mt-1.5 max-w-xl
         // text-[13px] leading-relaxed text-content/45`. Groups: `pt-8 first:pt-0`.
         div()
-            .flex()
-            .flex_col()
             .text_color(fg)
             .child(
                 div()

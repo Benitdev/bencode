@@ -64,16 +64,12 @@ impl BenCodeApp {
             let snooze_anchor: Rc<Cell<Option<Bounds<Pixels>>>> = Rc::default();
             // `article px-3 py-2.5`, `divide-y divide-stroke` between them.
             div()
-                .flex()
-                .flex_col()
                 .px_3()
                 .py(px(10.0))
                 .when(ix > 0, |el| el.border_t_1().border_color(stroke))
                 .child(
                     div()
                         .id(SharedString::from(format!("due-title-{sid}")))
-                        .flex()
-                        .flex_col()
                         .cursor_pointer()
                         .on_click(cx.listener(move |this, _, _, cx| {
                             this.open_reminder(&title_id, due_at, cx)

@@ -83,8 +83,6 @@ pub(super) fn comment_card(fg: Hsla) -> Div {
         .border_1()
         .border_color(fg.fill(Fill::Strong))
         .bg(fg.opacity(0.02))
-        .flex()
-        .flex_col()
 }
 
 impl BenCodeApp {
@@ -499,8 +497,6 @@ impl BenCodeApp {
                     .border_1()
                     .border_color(fg.fill(Fill::Strong))
                     .bg(fg.fill(Fill::Hover))
-                    .flex()
-                    .flex_col()
                     .child(
                         div()
                             .px_3()

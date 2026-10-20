@@ -210,8 +210,6 @@ impl BenCodeApp {
             }))
             .children(leading.map(|item| {
                 div()
-                    .flex()
-                    .flex_col()
                     .child(self.render_extra_row(item, cx))
                     .child(separator())
             }))
@@ -246,8 +244,6 @@ impl BenCodeApp {
             .children(extra.into_iter().map(|item| {
                 let sep = item.sep_before;
                 div()
-                    .flex()
-                    .flex_col()
                     .when(sep, |el| el.child(separator()))
                     .child(self.render_extra_row(item, cx))
             }))

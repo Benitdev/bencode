@@ -170,8 +170,6 @@ impl BenCodeApp {
         });
         div()
             .id(("note-card", ix))
-            .flex()
-            .flex_col()
             .flex_none()
             .px(px(10.0))
             .py_2()

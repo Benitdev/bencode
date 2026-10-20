@@ -615,8 +615,6 @@ impl BenCodeApp {
             .border_1()
             .border_color(colors.border)
             .shadow_xl()
-            .flex()
-            .flex_col()
             .children(setting_rows)
             .child(model_row)
             .children(flyout)
@@ -692,8 +690,6 @@ impl BenCodeApp {
             .border_1()
             .border_color(colors.border)
             .shadow_xl()
-            .flex()
-            .flex_col()
             .children(options);
         popover_surface(flyout, cx).into_any_element()
     }
@@ -1112,8 +1108,6 @@ impl BenCodeApp {
             .border_1()
             .border_color(colors.border)
             .shadow_xl()
-            .flex()
-            .flex_col()
             .children(rows)
     }
 }

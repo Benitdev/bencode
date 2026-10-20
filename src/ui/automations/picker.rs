@@ -102,8 +102,6 @@ impl BenCodeApp {
             });
         let blank = div()
             .id("automation-blank")
-            .flex()
-            .flex_col()
             .min_h(px(CARD_MIN_HEIGHT))
             .p_4()
             .rounded(px(12.0))
@@ -133,8 +131,6 @@ impl BenCodeApp {
             .overflow_y_scroll()
             .child(
                 div()
-                    .flex()
-                    .flex_col()
                     .mx_auto()
                     .w_full()
                     .max_w(px(PAGE_WIDTH))

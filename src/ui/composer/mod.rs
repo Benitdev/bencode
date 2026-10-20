@@ -1396,8 +1396,6 @@ impl BenCodeApp {
             .border_1()
             .border_color(colors.border)
             .shadow_xl()
-            .flex()
-            .flex_col()
             .child(
                 div()
                     .px_2()

@@ -166,8 +166,6 @@ pub fn inbox_mini_card(
         .child(
             div()
                 .id("inbox-mini-card")
-                .flex()
-                .flex_col()
                 .when(!url.is_empty(), |el| {
                     el.cursor_pointer()
                         .tooltip(Tooltip::text(open_tip))

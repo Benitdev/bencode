@@ -783,7 +783,7 @@ fn sessions_empty(cx: &Context<BenCodeApp>) -> impl IntoElement {
                 .text_center()
                 .child("Sessions you start will show up here"),
         )
-        .child(div().flex().flex_col().flex_none().children(rows))
+        .child(div().flex_none().children(rows))
 }
 
 #[cfg(test)]

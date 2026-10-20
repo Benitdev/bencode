@@ -1171,7 +1171,7 @@ impl BenCodeApp {
                 })
         };
         let source = self.inbox(cx).source_filter();
-        let mut body = div().flex().flex_col();
+        let mut body = div();
         if self.inbox(cx).backlog_connected {
             body = body.child(section("Source"));
             let choices = [

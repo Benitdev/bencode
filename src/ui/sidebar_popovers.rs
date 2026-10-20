@@ -130,7 +130,7 @@ impl BenCodeApp {
                 })
         };
         let muted = fg.ink(Ink::Secondary);
-        let mut list = div().flex().flex_col().child(row(
+        let mut list = div().child(row(
             "worktree-default".into(),
             Icon::new(IconName::GitBranch)
                 .size(IconSize::Sm)
@@ -367,7 +367,7 @@ impl BenCodeApp {
             f(&mut next);
             next
         };
-        let mut body = div().flex().flex_col();
+        let mut body = div();
         body = body.child(row(
             "filter-archived".into(),
             "Archived".into(),
