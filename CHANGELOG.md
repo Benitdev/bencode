@@ -4,12 +4,25 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
-## [Unreleased]
+## [0.1.23] - 2026-10-20
 
 - Deleting a thread can delete the CLI's own session too: tick "Also
   delete the … session" in the delete dialog, and the choice is kept for
   next time. Works for Claude Code, Codex, Grok Build and Antigravity on
   this machine; the session can no longer be resumed from the CLI.
+- View PR in Changes follows the project or branch you switch to at
+  once, instead of showing the last one's pull request until GitHub
+  answers.
+- Display math written as `\[ … \]`, as agents often write it, is
+  typeset like `$$ … $$`.
+- The page tabs of an automation, a note and a pull request in the Inbox
+  slide their line to the chosen tab and move with the arrow keys; the
+  number of changed files sits on the Files changed tab.
+- The permission prompt, a saved draft, the review card, the find bar,
+  reminders, the usage-limit notice and the account popover use the
+  same buttons as the rest of the app, with focus and disabled states.
+- Split dividers draw a whole pixel, and formulas are as wide as they
+  typeset.
 
 ## [0.1.22] - 2026-10-20
 
