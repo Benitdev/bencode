@@ -548,7 +548,7 @@ fn language_for(path: &str) -> String {
 }
 
 /// `markdown` as blocks, GitHub flavoured (tables, tasks, strikethrough),
-/// and a paragraph that is all `$$…$$` as a formula. Inline math stays
+/// and a paragraph that is all `$$…$$` or `\[…\]` as a formula. Inline math stays
 /// off: `$` is too common in replies (prices, `$HOME`) and the parser
 /// would take code spans into a formula.
 pub fn parse(markdown: &str) -> Vec<Block> {
@@ -586,15 +586,21 @@ pub fn parse(markdown: &str) -> Vec<Block> {
     builder.finish()
 }
 
-/// The formula of a paragraph written as `$$…$$`, as written (escapes and
-/// all); none inside a quote, whose lines carry their `>`.
+/// The formula of a paragraph written as `$$…$$` or `\[…\]` (LaTeX's
+/// own, as agents often write it), as written (escapes and all); none
+/// inside a quote, whose lines carry their `>`.
 fn display_math(paragraph: &str) -> Option<&str> {
-    let math = paragraph
-        .trim()
-        .strip_prefix("$$")?
-        .strip_suffix("$$")?
+    let paragraph = paragraph.trim();
+    let delimited = |open: &str, close: &str| {
+        paragraph
+            .strip_prefix(open)?
+            .strip_suffix(close)
+            .filter(|math| !math.contains(close))
+    };
+    let math = delimited("$$", "$$")
+        .or_else(|| delimited("\\[", "\\]"))?
         .trim();
-    (!math.is_empty() && !math.contains("$$") && !math.contains("\n>")).then_some(math)
+    (!math.is_empty() && !math.contains("\n>")).then_some(math)
 }
 
 /// Whether a fenced block's source ends with its closing fence (the
@@ -968,6 +974,23 @@ mod tests {
         // A formula inside a quote, or one sharing its paragraph, stays text.
         assert!(matches!(&parse("> $$\n> x\n> $$")[0], Block::Quote(_)));
         assert!(matches!(&parse("see $$x$$ here")[0], Block::Paragraph(_)));
+    }
+
+    #[test]
+    fn bracketed_display_math_is_a_formula() {
+        let blocks = parse("Area:\n\n\\[\n\\pi r^2\n\\]\n\nDone.");
+        let Block::Code(formula) = &blocks[1] else {
+            panic!("a formula: {blocks:?}");
+        };
+        assert_eq!(formula.code, "\\pi r^2");
+        assert_eq!(formula.drawing(), Some(Drawing::Formula));
+        assert!(matches!(&blocks[2], Block::Paragraph(p) if p.text == "Done."));
+        // Two formulas in one paragraph, or one inside prose, stay text.
+        assert!(matches!(
+            &parse("\\[a\\] and \\[b\\]")[0],
+            Block::Paragraph(_)
+        ));
+        assert!(matches!(&parse("see \\[x\\] here")[0], Block::Paragraph(_)));
     }
 
     #[test]
