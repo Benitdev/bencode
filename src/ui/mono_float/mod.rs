@@ -1175,6 +1175,19 @@ impl Focusable for MonoFloat {
     }
 }
 
+impl MonoFloat {
+    /// The drag is app-wide: one that crossed BenCode's window on its way
+    /// here can leave that window's "Drop files" hint up, since it may not
+    /// draw again before the drop.
+    fn clear_main_drop_hints(&self, cx: &mut Context<Self>) {
+        self.app.update(cx, |app, cx| {
+            if app.clear_drop_hints() {
+                cx.notify();
+            }
+        });
+    }
+}
+
 impl Render for MonoFloat {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.app.read(cx).apply_ui_scale(window);
@@ -1252,6 +1265,9 @@ impl Render for MonoFloat {
             .on_drag_move::<ExternalPaths>(cx.listener(
                 |this, event: &gpui::DragMoveEvent<ExternalPaths>, _, cx| {
                     let over = event.bounds.contains(&event.event.position);
+                    if over {
+                        this.clear_main_drop_hints(cx);
+                    }
                     if this.file_drag != over {
                         this.file_drag = over;
                         cx.notify();
@@ -1260,6 +1276,7 @@ impl Render for MonoFloat {
             ))
             .on_drop(cx.listener(|this, paths: &ExternalPaths, _, cx| {
                 this.file_drag = false;
+                this.clear_main_drop_hints(cx);
                 this.attach_paths(paths.paths().to_vec(), cx);
                 cx.notify();
             }))
