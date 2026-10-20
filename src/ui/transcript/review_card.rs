@@ -22,6 +22,9 @@ use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 /// MonoCode `text-amber-300/80`, "Mixed changes".
 const MIXED: u32 = 0xfcd34d;
 
+/// What a review card button does when pressed.
+type OnClick = Box<dyn Fn(&mut BenCodeApp, &mut Context<BenCodeApp>)>;
+
 impl BenCodeApp {
     pub(super) fn render_session_review(&self, session_id: &str, cx: &Context<Self>) -> AnyElement {
         let Some(review) = self.checkpoints.reviews.get(session_id) else {
@@ -47,30 +50,29 @@ impl BenCodeApp {
         let hidden = count - shown;
 
         // Undo and Keep are quiet; Review is the outlined one (MonoCode).
-        let button =
-            |key: &str,
-             label: &'static str,
-             tip: &'static str,
-             enabled: bool,
-             on_click: Box<dyn Fn(&mut BenCodeApp, &mut Context<BenCodeApp>)>| {
-                let variant = if key == "open" {
-                    ButtonVariant::Outline
-                } else {
-                    ButtonVariant::Ghost
-                };
-                with_tooltip(
-                    SharedString::from(format!("review-{key}-tip-{session_id}")),
-                    tip,
-                    Button::new(
-                        SharedString::from(format!("review-{key}-{session_id}")),
-                        label,
-                    )
-                    .size(ControlSize::Sm)
-                    .variant(variant)
-                    .disabled(!enabled)
-                    .on_click(cx.listener(move |this, _, _, cx| on_click(this, cx))),
-                )
+        let button = |key: &str,
+                      label: &'static str,
+                      tip: &'static str,
+                      enabled: bool,
+                      on_click: OnClick| {
+            let variant = if key == "open" {
+                ButtonVariant::Outline
+            } else {
+                ButtonVariant::Ghost
             };
+            with_tooltip(
+                SharedString::from(format!("review-{key}-tip-{session_id}")),
+                tip,
+                Button::new(
+                    SharedString::from(format!("review-{key}-{session_id}")),
+                    label,
+                )
+                .size(ControlSize::Sm)
+                .variant(variant)
+                .disabled(!enabled)
+                .on_click(cx.listener(move |this, _, _, cx| on_click(this, cx))),
+            )
+        };
         let undo_tip = if can_undo {
             "Undo all session changes"
         } else if locked {

@@ -157,7 +157,7 @@ impl BenCodeApp {
                                 .on_click(cx.listener(
                                     move |this, _, _, cx| {
                                         this.cancel_reminders(
-                                            &[dismiss_id.clone()],
+                                            std::slice::from_ref(&dismiss_id),
                                             Some(due_at),
                                             cx,
                                         )
