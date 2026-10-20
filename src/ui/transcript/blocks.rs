@@ -2,8 +2,9 @@
 //! notices, and the footer a finished turn leaves (MonoCode
 //! `TranscriptBlock`, `UserMessage`, `TurnDuration`).
 
+use ely_gpui_component::buttons::{Button, ButtonVariant};
 use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
-use ely_gpui_component::theme::{ActiveTheme, IconSize};
+use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::prelude::*;
 use gpui::{
     AnyElement, App, Context, Hsla, InteractiveElement, IntoElement, ParentElement, SharedString,
@@ -379,23 +380,13 @@ impl BenCodeApp {
         let (send_sid, send_bid) = (session.id.clone(), block_id.clone());
         let (drop_sid, drop_bid) = (session.id.clone(), block_id.clone());
         let button = |id: String, label: &'static str, primary: bool| {
-            let (bg, fg) = if primary {
-                (colors.fg, colors.bg)
-            } else {
-                (colors.fg.fill(Fill::Strong), colors.fg.ink(Ink::Body))
-            };
-            div()
-                .id(SharedString::from(id))
-                .px_2()
-                .h(px(22.0))
-                .flex()
-                .items_center()
-                .rounded(px(6.0))
-                .bg(bg)
-                .text_color(fg)
-                .text_size(Text::Sm.px())
-                .cursor_pointer()
-                .child(label)
+            Button::new(SharedString::from(id), label)
+                .size(ControlSize::Sm)
+                .variant(if primary {
+                    ButtonVariant::Primary
+                } else {
+                    ButtonVariant::Subtle
+                })
         };
         div()
             .flex()

@@ -7,11 +7,12 @@
 use std::ops::Range;
 use std::rc::Rc;
 
-use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
-use ely_gpui_component::theme::{ActiveTheme, IconSize};
+use ely_gpui_component::buttons::IconButton;
+use ely_gpui_component::primitives::{Icon, IconName};
+use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
     AnyElement, Context, Focusable, InteractiveElement, IntoElement, ListOffset, ParentElement,
-    Styled, div, prelude::*,
+    Styled, div,
 };
 
 use crate::ui::scale::px;
@@ -395,25 +396,10 @@ impl BenCodeApp {
             format!("{} of {matches}", active.min(matches - 1) + 1)
         };
         let button = |id: &'static str, tip: &'static str, icon: IconName, enabled: bool| {
-            let hover = colors.fg.fill(Fill::Strong);
-            div()
-                .id(id)
-                .size(px(24.0))
-                .flex_none()
-                .flex()
-                .items_center()
-                .justify_center()
-                .rounded(px(4.0))
-                .tooltip(Tooltip::text(tip))
-                .when(enabled, |el| {
-                    el.cursor_pointer().hover(move |s| s.bg(hover))
-                })
-                .when(!enabled, |el| el.opacity(0.3))
-                .child(
-                    Icon::new(icon)
-                        .size(IconSize::Xs)
-                        .color(colors.fg.ink(Ink::Secondary)),
-                )
+            IconButton::new(id, icon)
+                .size(ControlSize::Sm)
+                .tooltip(tip)
+                .disabled(!enabled)
         };
         Some(
             div()

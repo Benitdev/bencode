@@ -2,11 +2,11 @@
 //! `ProviderAccountPicker`, `AddProviderAccount`, `AccountSwitchRow`,
 //! `SwitchSuggestion`; `ProviderSignInPanel.tsx`; `ProviderAccountUsage.tsx`).
 
+use ely_gpui_component::buttons::Button;
 use ely_gpui_component::primitives::{Icon, IconName};
-use ely_gpui_component::theme::{ActiveTheme, IconSize, Palette};
+use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize, Palette};
 use gpui::{
-    AnyElement, Context, FontWeight, Hsla, IntoElement, ParentElement, SharedString, Styled, div,
-    prelude::*,
+    AnyElement, Context, FontWeight, Hsla, IntoElement, ParentElement, Styled, div, prelude::*,
 };
 
 use crate::ui::scale::px;
@@ -22,7 +22,6 @@ use crate::rate_limits::{
     format_window_label,
 };
 use crate::ui::HarnessIcon;
-use crate::ui::git_changes_panel::spinning_icon;
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// MonoCode `AccountStatusLabel`: dot + word, e.g. "● Ready" or
@@ -147,23 +146,6 @@ fn page_hint(text: &'static str, fg: Hsla) -> gpui::Div {
         .line_height(px(16.0))
         .text_color(fg.ink(Ink::Muted))
         .child(text)
-}
-
-/// MonoCode's solid button: content on the base background.
-fn solid_button(id: impl Into<SharedString>, colors: &Palette) -> gpui::Stateful<gpui::Div> {
-    let fg = colors.fg;
-    div()
-        .id(id.into())
-        .flex()
-        .flex_none()
-        .items_center()
-        .justify_center()
-        .gap(px(6.0))
-        .rounded(px(8.0))
-        .bg(fg)
-        .text_color(colors.bg)
-        .font_weight(FontWeight::MEDIUM)
-        .hover(move |s| s.bg(fg.ink(Ink::Strong)))
 }
 
 impl BenCodeApp {
@@ -424,34 +406,22 @@ impl BenCodeApp {
                     ),
             )
             .child(
-                solid_button("usage-add-submit", colors)
-                    .h(px(32.0))
-                    .w_full()
-                    .mt_3()
-                    .px_3()
-                    .text_size(Text::Sm.px())
-                    .map(|el| {
+                div().mt_3().child(
+                    Button::new(
+                        "usage-add-submit",
                         if running {
-                            el.opacity(0.45).child(spinning_icon(
-                                "usage-add-spin".into(),
-                                IconName::RefreshCw,
-                                IconSize::Sm,
-                                colors.bg,
-                            ))
-                        } else if named {
-                            el.cursor_pointer()
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    this.add_provider_account(provider, cx)
-                                }))
+                            "Waiting for browser…"
                         } else {
-                            el.opacity(0.45)
-                        }
-                    })
-                    .child(if running {
-                        "Waiting for browser…"
-                    } else {
-                        "Sign in and add account"
-                    }),
+                            "Sign in and add account"
+                        },
+                    )
+                    .primary()
+                    .full_width()
+                    .disabled(running || !named)
+                    .on_click(
+                        cx.listener(move |this, _, _, cx| this.add_provider_account(provider, cx)),
+                    ),
+                ),
             )
             .when_some(self.usage.add_error.clone(), |el, error| {
                 el.child(
@@ -565,34 +535,20 @@ impl BenCodeApp {
                     }),
             )
             .child(
-                solid_button("usage-sign-in", colors)
-                    .h(px(32.0))
-                    .mt_4()
-                    .px(px(14.0))
-                    .text_size(Text::Base.px())
-                    .map(|el| match state {
-                        SignIn::Running => el
-                            .opacity(0.55)
-                            .child(spinning_icon(
-                                "usage-sign-in-spin".into(),
-                                IconName::RefreshCw,
-                                IconSize::Sm,
-                                colors.bg,
-                            ))
-                            .child("Waiting for browser…"),
-                        SignIn::Complete => el
-                            .opacity(0.55)
-                            .child(
-                                Icon::new(IconName::Check)
-                                    .size(IconSize::Sm)
-                                    .color(colors.bg),
-                            )
-                            .child("Signed in"),
-                        SignIn::Idle | SignIn::Failed(_) => el
-                            .cursor_pointer()
+                div().mt_4().child(match state {
+                    SignIn::Running => Button::new("usage-sign-in", "Waiting for browser…")
+                        .primary()
+                        .disabled(true),
+                    SignIn::Complete => Button::new("usage-sign-in", "Signed in")
+                        .primary()
+                        .icon(IconName::Check)
+                        .disabled(true),
+                    SignIn::Idle | SignIn::Failed(_) => {
+                        Button::new("usage-sign-in", format!("Sign in to {title}"))
+                            .primary()
                             .on_click(cx.listener(|this, _, _, cx| this.reconnect_provider(cx)))
-                            .child(format!("Sign in to {title}")),
-                    }),
+                    }
+                }),
             )
             .when_some(
                 match state {
@@ -675,17 +631,13 @@ impl BenCodeApp {
                     ),
             )
             .child(
-                solid_button("usage-switch-suggested", colors)
-                    .h(px(28.0))
-                    .px(px(10.0))
-                    .rounded(px(6.0))
-                    .text_size(Text::Sm.px())
-                    .cursor_pointer()
+                Button::new("usage-switch-suggested", "Switch")
+                    .primary()
+                    .size(ControlSize::Sm)
                     .on_click(cx.listener(move |this, _, _, cx| {
                         this.close_usage_popover(cx);
                         this.select_provider_account(&provider, &account_id, cx);
-                    }))
-                    .child("Switch"),
+                    })),
             )
             .into_any_element()
     }

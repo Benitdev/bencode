@@ -24,11 +24,11 @@ use std::ops::Range;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use ely_gpui_component::theme::ActiveTheme;
+use ely_gpui_component::buttons::{Button, ButtonVariant};
+use ely_gpui_component::theme::{ActiveTheme, ControlSize};
 use gpui::{
-    AnyElement, Context, FollowMode, FontWeight, InteractiveElement, IntoElement, ListAlignment,
-    ListOffset, ListState, ParentElement, Pixels, SharedString, Styled, Window, canvas, div,
-    prelude::*,
+    AnyElement, Context, FollowMode, IntoElement, ListAlignment, ListOffset, ListState,
+    ParentElement, Pixels, SharedString, Styled, Window, canvas, div, prelude::*,
 };
 
 use crate::app::BenCodeApp;
@@ -36,7 +36,7 @@ use crate::db::SessionRow;
 use crate::ui::motion::cubic_bezier;
 use crate::ui::region::Region;
 use crate::ui::scale::px;
-use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
+use crate::ui::tokens::{Ink, Text, Tone as _};
 use blocks::MESSAGE_MAX_WIDTH;
 use turns::{Row, TurnLayout};
 
@@ -419,7 +419,9 @@ impl BenCodeApp {
         }
         if let Some(id) = self.mono_view_session() {
             return self.is_agent_running_in(id)
-                || self.mono_shown_session().is_some_and(|shown| self.is_agent_running_in(shown));
+                || self
+                    .mono_shown_session()
+                    .is_some_and(|shown| self.is_agent_running_in(shown));
         }
         self.tabs
             .active()
@@ -700,27 +702,13 @@ impl BenCodeApp {
         let colors = &cx.theme().colors;
         let (allow_id, deny_id) = (session_id.to_string(), session_id.to_string());
         let button = |id: &str, label: &'static str, primary: bool| {
-            let (bg, fg, hover) = if primary {
-                (colors.fg, colors.bg, colors.fg.ink(Ink::Strong))
-            } else {
-                (
-                    colors.fg.fill(Fill::Strong),
-                    colors.fg.ink(Ink::Body),
-                    colors.fg.opacity(0.2),
-                )
-            };
-            div()
-                .id(SharedString::from(format!("{id}-{session_id}")))
-                .px_2p5()
-                .py_0p5()
-                .rounded(px(6.0))
-                .text_size(Text::Sm.px())
-                .font_weight(FontWeight::MEDIUM)
-                .bg(bg)
-                .text_color(fg)
-                .cursor_pointer()
-                .hover(move |s| s.bg(hover))
-                .child(label)
+            Button::new(SharedString::from(format!("{id}-{session_id}")), label)
+                .size(ControlSize::Sm)
+                .variant(if primary {
+                    ButtonVariant::Primary
+                } else {
+                    ButtonVariant::Subtle
+                })
         };
         Some(
             div()

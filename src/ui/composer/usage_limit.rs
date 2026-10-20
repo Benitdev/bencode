@@ -13,7 +13,7 @@
 //! and an armed resume outlive a restart. MonoCode keeps it in memory.
 
 use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
-use ely_gpui_component::theme::{ActiveTheme, IconSize};
+use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
     AnyElement, Context, InteractiveElement, IntoElement, ParentElement, SharedString, Styled, div,
     prelude::*,
@@ -32,8 +32,9 @@ use crate::harness::HarnessKind;
 use crate::harness::accounts::supports_accounts;
 use crate::ui::HarnessIcon;
 use crate::ui::app_callback::app_callback;
+use crate::ui::buttons::with_tooltip;
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
-use ely_gpui_component::buttons::ButtonVariant;
+use ely_gpui_component::buttons::{Button, ButtonVariant};
 use ely_gpui_component::menus::{DropdownMenu, Menu, MenuItem};
 use serde_json::{Value, json};
 
@@ -177,38 +178,39 @@ impl BenCodeApp {
         limit: UsageLimit,
         waiting: bool,
         cx: &Context<Self>,
-    ) -> gpui::Stateful<gpui::Div> {
-        let colors = &cx.theme().colors;
-        let fg = colors.fg;
-        let hover = fg.fill(Fill::Strong);
+    ) -> AnyElement {
         let button = |id: &'static str, icon: IconName, label: &'static str| {
-            div()
-                .id(id)
-                .flex()
-                .flex_none()
-                .items_center()
-                .gap_1p5()
-                .h(px(24.0))
-                .px_1p5()
-                .rounded(px(6.0))
-                .cursor_pointer()
-                .hover(move |s| s.bg(hover).text_color(fg))
-                .child(Icon::new(icon).size(IconSize::Xs).color(fg.ink(Ink::Body)))
-                .child(label)
+            Button::new(id, label)
+                .icon(icon)
+                .size(ControlSize::Sm)
+                .variant(ButtonVariant::Ghost)
         };
         let sid = session_id.to_string();
         if !waiting {
             button("usage-resume", IconName::Play, "Resume")
                 .on_click(cx.listener(move |this, _, _, cx| this.resume_after_limit(&sid, cx)))
+                .into_any_element()
         } else if limit.resume_at_reset {
-            button("usage-armed", IconName::Clock, "Resuming at reset")
-                .text_color(colors.warning)
-                .tooltip(Tooltip::text("Cancel the automatic resume"))
-                .on_click(cx.listener(move |this, _, _, cx| this.arm_usage_resume(&sid, false, cx)))
+            // Armed: filled, so it reads as on.
+            with_tooltip(
+                "usage-armed-tip",
+                "Cancel the automatic resume",
+                button("usage-armed", IconName::Clock, "Resuming at reset")
+                    .variant(ButtonVariant::Subtle)
+                    .on_click(
+                        cx.listener(move |this, _, _, cx| this.arm_usage_resume(&sid, false, cx)),
+                    ),
+            )
+            .into_any_element()
         } else {
-            button("usage-arm", IconName::Clock, "Resume at reset")
-                .tooltip(Tooltip::text("Continue this session once the limit resets"))
-                .on_click(cx.listener(move |this, _, _, cx| this.arm_usage_resume(&sid, true, cx)))
+            with_tooltip(
+                "usage-arm-tip",
+                "Continue this session once the limit resets",
+                button("usage-arm", IconName::Clock, "Resume at reset").on_click(
+                    cx.listener(move |this, _, _, cx| this.arm_usage_resume(&sid, true, cx)),
+                ),
+            )
+            .into_any_element()
         }
     }
 

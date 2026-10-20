@@ -1,9 +1,10 @@
 //! MonoCode `SessionReview`: under a finished turn, the files the thread's
 //! agent changed, with Undo, Keep and Review.
 
+use ely_gpui_component::buttons::{Button, ButtonVariant};
 use ely_gpui_component::overlays::ConfirmDialog;
 use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
-use ely_gpui_component::theme::{ActiveTheme, IconSize};
+use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
     AnyElement, Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString,
     StatefulInteractiveElement, Styled, div, prelude::*,
@@ -13,6 +14,7 @@ use crate::app::BenCodeApp;
 use crate::app::session_review::{COLLAPSED_FILES, ReviewAction};
 use crate::git::checkpoint::CheckpointFile;
 use crate::ui::app_callback::app_callback;
+use crate::ui::buttons::with_tooltip;
 use crate::ui::icons::ExtraIcon;
 use crate::ui::scale::px;
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
@@ -44,37 +46,31 @@ impl BenCodeApp {
         };
         let hidden = count - shown;
 
-        // `h-7 rounded-md px-2.5 text-[11px] text-content/50
-        // hover:bg-content/8 hover:text-content disabled:opacity-35`
-        // Review is the filled one: `border border-content/12 bg-content/8
-        // font-medium text-content/75 hover:bg-content/12`.
-        let button = |key: &str, label: &'static str, tip: &'static str, enabled: bool| {
-            let filled = key == "open";
-            let (text, hover_bg) = if filled { (0.75, 0.12) } else { (0.5, 0.08) };
-            div()
-                .id(SharedString::from(format!("review-{key}-{session_id}")))
-                .h(px(28.0))
-                .px_2p5()
-                .flex()
-                .flex_none()
-                .items_center()
-                .rounded(px(6.0))
-                .text_size(Text::Sm.px())
-                .text_color(fg.opacity(text))
-                .when(filled, |el| {
-                    el.border_1()
-                        .border_color(fg.fill(Fill::Strong))
-                        .bg(fg.fill(Fill::Selected))
-                        .font_weight(FontWeight::MEDIUM)
-                })
-                .tooltip(Tooltip::text(tip))
-                .when(!enabled, |el| el.opacity(0.35))
-                .when(enabled, |el| {
-                    el.cursor_pointer()
-                        .hover(move |s| s.bg(fg.opacity(hover_bg)).text_color(fg))
-                })
-                .child(label)
-        };
+        // Undo and Keep are quiet; Review is the outlined one (MonoCode).
+        let button =
+            |key: &str,
+             label: &'static str,
+             tip: &'static str,
+             enabled: bool,
+             on_click: Box<dyn Fn(&mut BenCodeApp, &mut Context<BenCodeApp>)>| {
+                let variant = if key == "open" {
+                    ButtonVariant::Outline
+                } else {
+                    ButtonVariant::Ghost
+                };
+                with_tooltip(
+                    SharedString::from(format!("review-{key}-tip-{session_id}")),
+                    tip,
+                    Button::new(
+                        SharedString::from(format!("review-{key}-{session_id}")),
+                        label,
+                    )
+                    .size(ControlSize::Sm)
+                    .variant(variant)
+                    .disabled(!enabled)
+                    .on_click(cx.listener(move |this, _, _, cx| on_click(this, cx))),
+                )
+            };
         let undo_tip = if can_undo {
             "Undo all session changes"
         } else if locked {
@@ -144,33 +140,32 @@ impl BenCodeApp {
                     .flex_none()
                     .items_center()
                     .gap_0p5()
-                    .child(button("undo", "Undo", undo_tip, can_undo && !acting).when(
+                    .child(button(
+                        "undo",
+                        "Undo",
+                        undo_tip,
                         can_undo && !acting,
-                        |el| {
-                            el.on_click(cx.listener(move |this, _, _, cx| {
-                                this.checkpoints.confirm_undo = Some(undo_id.clone());
-                                cx.notify();
-                            }))
-                        },
-                    ))
-                    .child(
-                        button(
-                            "keep",
-                            "Keep",
-                            "Keep all session changes and dismiss this card",
-                            !acting,
-                        )
-                        .when(!acting, |el| {
-                            el.on_click(cx.listener(move |this, _, _, cx| {
-                                this.resolve_session_review(&keep_id, ReviewAction::Keep, cx)
-                            }))
+                        Box::new(move |this, cx| {
+                            this.checkpoints.confirm_undo = Some(undo_id.clone());
+                            cx.notify();
                         }),
-                    )
-                    .child(
-                        button("open", "Review", "Review changes", true).on_click(cx.listener(
-                            move |this, _, _, cx| this.open_session_changes(&review_id, None, cx),
-                        )),
-                    ),
+                    ))
+                    .child(button(
+                        "keep",
+                        "Keep",
+                        "Keep all session changes and dismiss this card",
+                        !acting,
+                        Box::new(move |this, cx| {
+                            this.resolve_session_review(&keep_id, ReviewAction::Keep, cx)
+                        }),
+                    ))
+                    .child(button(
+                        "open",
+                        "Review",
+                        "Review changes",
+                        true,
+                        Box::new(move |this, cx| this.open_session_changes(&review_id, None, cx)),
+                    )),
             );
 
         let rows = files[..shown]
