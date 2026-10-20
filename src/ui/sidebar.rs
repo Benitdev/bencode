@@ -1,16 +1,14 @@
 //! Left column in MonoCode's workspace layout: header, Sessions / Explorer /
 //! Changes switcher, thread search with filters, and the thread cards.
 
-use ely_gpui_component::overlays::ConfirmDialog;
 use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
-    AnyElement, ClickEvent, Context, FontWeight, InteractiveElement, IntoElement, ParentElement,
-    SharedString, Styled, Window, div, prelude::*, relative,
+    ClickEvent, Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString,
+    Styled, Window, div, prelude::*, relative,
 };
 
 use crate::app::{BenCodeApp, SidebarMode};
-use crate::ui::app_callback::app_callback;
 use crate::ui::diff_counts::diff_counts;
 use crate::ui::scale::px;
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
@@ -505,74 +503,6 @@ impl BenCodeApp {
                     .size(IconSize::Sm)
                     .color(fg.ink(Ink::Muted)),
             )
-    }
-
-    /// The rename or delete dialog, when one is open.
-    pub fn render_session_dialog(&self, cx: &Context<Self>) -> Option<AnyElement> {
-        let dialog = self.session_dialog.clone()?;
-        let close = app_callback(cx, |this, cx| {
-            this.session_dialog = None;
-            cx.notify();
-        });
-        Some(match dialog {
-            SessionDialog::Delete(id) => {
-                let title = self
-                    .sessions
-                    .iter()
-                    .find(|s| s.id == id)
-                    .map_or("this session".into(), |s| {
-                        crate::app::session_list::display_title(&s.title, &s.harness)
-                    });
-                let delete = app_callback(cx, move |this, cx| this.delete_session(&id, cx));
-                // MonoCode `DeleteSessionDialog`.
-                ConfirmDialog::new(
-                    "delete-thread",
-                    "Delete session?",
-                    format!("“{title}” will be permanently deleted."),
-                    close,
-                )
-                .confirm("Delete")
-                .destructive()
-                .on_confirm(delete)
-                .into_any_element()
-            }
-            SessionDialog::DeleteSelected(ids) => {
-                let count = ids.len();
-                let delete = app_callback(cx, move |this, cx| {
-                    for id in &ids {
-                        this.delete_session(id, cx);
-                    }
-                });
-                ConfirmDialog::new(
-                    "delete-selected-threads",
-                    "Delete sessions?",
-                    format!("Delete {count} selected conversations? This can’t be undone."),
-                    close,
-                )
-                .confirm("Delete")
-                .destructive()
-                .on_confirm(delete)
-                .into_any_element()
-            }
-            SessionDialog::DeleteMany(ids) => {
-                let count = ids.len();
-                let delete = app_callback(cx, move |this, cx| {
-                    for id in &ids {
-                        this.delete_session(id, cx);
-                    }
-                });
-                ConfirmDialog::new(
-                    "delete-threads",
-                    format!("Delete {count} threads?"),
-                    format!("All {count} conversations in this tab and their transcripts will be removed."),
-                    close,
-                )
-                .confirm("Delete")
-                .destructive()
-                .on_confirm(delete)
-                .into_any_element()
-            }
-        })
     }
 }
 

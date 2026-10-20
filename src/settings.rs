@@ -52,6 +52,9 @@ pub struct AppSettings {
     /// Resume the turns a quit, restart or crash cut off at launch, without
     /// asking. Off by default: BenCode asks.
     pub resume_interrupted_auto: bool,
+    /// Deleting a thread also deletes the CLI's own session, so it cannot
+    /// be resumed outside BenCode. The delete dialog's last choice.
+    pub delete_cli_sessions: bool,
     /// MonoCode `monocode.sounds` switched off. On by default.
     pub sounds_off: bool,
     /// MonoCode `monocode.soundsEnabledAt`: when sounds were last turned on.
@@ -241,6 +244,7 @@ mod tests {
             composer_mascot_off: true,
             live_agents_off: true,
             resume_interrupted_auto: true,
+            delete_cli_sessions: true,
             sounds_off: true,
             sounds_enabled_at: Some(42),
             notifications: true,

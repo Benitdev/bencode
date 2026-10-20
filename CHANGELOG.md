@@ -4,6 +4,13 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
+## [Unreleased]
+
+- Deleting a thread can delete the CLI's own session too: tick "Also
+  delete the … session" in the delete dialog, and the choice is kept for
+  next time. Works for Claude Code, Codex, Grok Build and Antigravity on
+  this machine; the session can no longer be resumed from the CLI.
+
 ## [0.1.22] - 2026-10-20
 
 - Settings › External editors lets you pick the default editor: Make

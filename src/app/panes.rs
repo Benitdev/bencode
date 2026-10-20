@@ -13,7 +13,7 @@ use gpui::Context;
 use super::tab_scope::{TabClosePlan, deck_tabs, is_blank_session, plan_tab_close};
 use super::{BenCodeApp, NEW_SESSION_TITLE, now_ms};
 use crate::db::SessionRow;
-use crate::harness::{HarnessKind, catalog};
+use crate::harness::{HarnessKind, catalog, session_purge};
 use crate::ui::drag_drop::PaneDropTarget;
 use crate::ui::layout::{
     FocusDir, LayoutNode, PaneEdge, SplitDir, WorkspaceTab, leaf, neighbor_leaf_id,
@@ -21,6 +21,21 @@ use crate::ui::layout::{
 
 /// Suffix for session ids, so two sessions made in one millisecond differ.
 static NEXT_SESSION: AtomicU64 = AtomicU64::new(1);
+
+/// Removes `harness`'s own files for `session` off the UI thread.
+fn purge_cli_session(harness: String, session: String, cx: &mut Context<BenCodeApp>) {
+    cx.background_executor()
+        .spawn(async move {
+            let homes = session_purge::homes(&harness);
+            match session_purge::purge(&harness, &session, &homes) {
+                Ok(removed) => {
+                    log::info!("deleted {harness} session {session} ({removed} paths)")
+                }
+                Err(err) => log::error!("failed to delete {harness} session {session}: {err}"),
+            }
+        })
+        .detach();
+}
 
 impl BenCodeApp {
     /// Makes `selected_session_id` (and the model picker) follow the active
@@ -397,10 +412,25 @@ impl BenCodeApp {
     /// Deletes a session row and every trace of it: panes in all tabs and
     /// its transcript state.
     pub fn delete_session(&mut self, id: &str, cx: &mut Context<Self>) {
+        self.delete_thread(id, false, cx);
+    }
+
+    /// The delete dialogs' threads; with `cli`, also what each one's CLI
+    /// keeps of its session.
+    pub fn delete_threads(&mut self, ids: &[String], cli: bool, cx: &mut Context<Self>) {
+        for id in ids {
+            self.delete_thread(id, cli, cx);
+        }
+    }
+
+    /// `delete_session`; with `cli`, the CLI's own copy of the session goes
+    /// too once the row is gone (`session_purge`), so it cannot be resumed.
+    fn delete_thread(&mut self, id: &str, cli: bool, cx: &mut Context<Self>) {
         if self.is_agent_running_in(id) {
             log::warn!("refusing to delete session {id} while its agent is running");
             return;
         }
+        let purge = cli.then(|| self.cli_session(id)).flatten();
         self.vacate_pane(id, cx);
         // Out of the list first, so nothing saves the thread again; the
         // delete then runs behind its queued saves, which would otherwise
@@ -422,6 +452,9 @@ impl BenCodeApp {
                 Ok(()) => {
                     this.checkpoints.forget(&id);
                     this.forget_folder_session(&id, cx);
+                    if let Some((harness, session)) = purge {
+                        purge_cli_session(harness, session, cx);
+                    }
                 }
                 Err(err) => {
                     log::error!("failed to delete session {id}: {err:#}");
@@ -431,6 +464,25 @@ impl BenCodeApp {
                 }
             },
         );
+    }
+
+    /// The harness and CLI session id of thread `id`, when BenCode can
+    /// delete that session: a local thread of a supported CLI whose session
+    /// no other thread resumes.
+    pub(crate) fn cli_session(&self, id: &str) -> Option<(String, String)> {
+        let thread = self.sessions.iter().find(|s| s.id == id)?;
+        let session = thread
+            .provider_session_id
+            .clone()
+            .filter(|s| !s.is_empty())?;
+        let shared = self
+            .sessions
+            .iter()
+            .any(|s| s.id != id && s.provider_session_id.as_deref() == Some(session.as_str()));
+        (session_purge::supported(&thread.harness)
+            && crate::remote::route(&thread.cwd).is_none()
+            && !shared)
+            .then(|| (thread.harness.clone(), session))
     }
 
     /// Drops what the composer and the queue kept for a thread that no

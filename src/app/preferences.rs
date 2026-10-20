@@ -239,6 +239,7 @@ impl BenCodeApp {
                 .collect(),
             pinned_projects: self.settings.pinned_projects.clone(),
             default_editor: self.settings.default_editor.clone(),
+            delete_cli_sessions: self.settings.delete_cli_sessions,
             provider_accounts: self.settings.provider_accounts.clone(),
             provider_account_selections: self.settings.provider_account_selections.clone(),
             monos: self.settings.monos.clone(),
@@ -543,6 +544,17 @@ impl BenCodeApp {
     pub fn set_live_agents(&mut self, enabled: bool, cx: &mut Context<Self>) {
         self.live_agents_off = !enabled;
         self.save_settings(cx);
+        cx.notify();
+    }
+
+    /// The delete dialog's "Also delete the CLI's session".
+    pub fn set_delete_cli_sessions(&mut self, on: bool, cx: &mut Context<Self>) {
+        let mut next = self.current_settings(cx);
+        next.delete_cli_sessions = on;
+        if next == self.settings {
+            return;
+        }
+        self.write_settings(next, cx);
         cx.notify();
     }
 
