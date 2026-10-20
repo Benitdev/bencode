@@ -4,7 +4,9 @@
 //! MonoCode's does; it has no line numbers.
 
 use ely_gpui_component::buttons::{Button, ButtonVariant, IconButton};
+use ely_gpui_component::forms::Choice;
 use ely_gpui_component::menus::{DropdownMenu, Menu, MenuItem};
+use ely_gpui_component::navigation::Tabs;
 use ely_gpui_component::primitives::{Icon, IconName};
 use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{AnyElement, Context, FontWeight, IntoElement, ParentElement, Styled, div, prelude::*};
@@ -12,8 +14,8 @@ use gpui::{AnyElement, Context, FontWeight, IntoElement, ParentElement, Styled, 
 use crate::app::BenCodeApp;
 use crate::app::notes::{MAX_NOTE_TAGS, NoteMode, note_project};
 use crate::db::Note;
-use crate::ui::app_callback::app_callback;
-use crate::ui::page_parts::{page_tab, tint};
+use crate::ui::app_callback::{app_callback, on_value};
+use crate::ui::page_parts::tint;
 use crate::ui::scale::px;
 use crate::ui::scrollbar::Scrolled;
 use crate::ui::tokens::{Ink, Text, Tone as _};
@@ -50,33 +52,26 @@ impl BenCodeApp {
                 .into_any_element();
         };
         let mode = self.notes.mode();
-        let tabs = div()
-            .flex()
-            .flex_none()
-            .gap_4()
-            .h(px(36.0))
-            .border_b_1()
-            .border_color(colors.border)
-            .child(
-                page_tab(
-                    "note-tab-preview",
-                    "Preview",
-                    mode == NoteMode::Preview,
-                    fg,
-                    colors.fg_muted,
-                )
-                .on_click(cx.listener(|this, _, _, cx| this.set_note_mode(NoteMode::Preview, cx))),
-            )
-            .child(
-                page_tab(
-                    "note-tab-source",
-                    "Source",
-                    mode == NoteMode::Source,
-                    fg,
-                    colors.fg_muted,
-                )
-                .on_click(cx.listener(|this, _, _, cx| this.set_note_mode(NoteMode::Source, cx))),
-            );
+        let tabs = Tabs::new(
+            "note-tabs",
+            [
+                Choice::new("preview", "Preview"),
+                Choice::new("source", "Source"),
+            ],
+            if mode == NoteMode::Source {
+                "source"
+            } else {
+                "preview"
+            },
+        )
+        .on_change(on_value(cx, |this, tab, cx| {
+            let mode = if tab == "source" {
+                NoteMode::Source
+            } else {
+                NoteMode::Preview
+            };
+            this.set_note_mode(mode, cx)
+        }));
         let body: AnyElement = match mode {
             NoteMode::Source => div()
                 .font_family(cx.theme().mono_family.clone())

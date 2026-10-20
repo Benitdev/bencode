@@ -4,8 +4,9 @@
 //! The Settings page itself is in `settings.rs`.
 
 use ely_gpui_component::buttons::{Button, ButtonVariant};
-use ely_gpui_component::forms::Switch;
+use ely_gpui_component::forms::{Choice, Switch};
 use ely_gpui_component::menus::{Menu, MenuItem, OverflowMenu};
+use ely_gpui_component::navigation::Tabs;
 use ely_gpui_component::primitives::{Icon, IconName};
 use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
@@ -20,9 +21,9 @@ use crate::app::{BenCodeApp, now_ms};
 use crate::db::AutomationRow;
 use crate::harness::catalog;
 use crate::schedule;
-use crate::ui::app_callback::app_callback;
+use crate::ui::app_callback::{app_callback, on_value};
 use crate::ui::mascot::pixel_sprite;
-use crate::ui::page_parts::{page_tab, tint};
+use crate::ui::page_parts::tint;
 use crate::ui::provider_icon::HarnessIcon;
 use crate::ui::scale::px;
 use crate::ui::scrollbar::Scrolled;
@@ -163,24 +164,24 @@ impl BenCodeApp {
             );
             el.child(OverflowMenu::new("automation-actions", menu).tooltip("Automation actions"))
         });
-        let tabs =
-            stored.then(|| {
-                div()
-                    .flex()
-                    .gap_4()
-                    .child(
-                        page_tab("automation-tab-settings", "Settings", !history, fg, muted)
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.show_automation_tab(EditorTab::Settings, cx)
-                            })),
-                    )
-                    .child(
-                        page_tab("automation-tab-history", "Run history", history, fg, muted)
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.show_automation_tab(EditorTab::History, cx)
-                            })),
-                    )
-            });
+        let tabs = stored.then(|| {
+            Tabs::new(
+                "automation-tabs",
+                [
+                    Choice::new("settings", "Settings"),
+                    Choice::new("history", "Run history"),
+                ],
+                if history { "history" } else { "settings" },
+            )
+            .on_change(on_value(cx, |this, tab, cx| {
+                let tab = if tab == "history" {
+                    EditorTab::History
+                } else {
+                    EditorTab::Settings
+                };
+                this.show_automation_tab(tab, cx)
+            }))
+        });
         div()
             .flex_none()
             .border_b_1()

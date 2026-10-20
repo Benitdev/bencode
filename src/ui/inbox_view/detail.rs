@@ -7,7 +7,9 @@
 use ely_gpui_component::buttons::{Button, ButtonVariant, IconButton};
 use ely_gpui_component::documents::MarkdownRenderer;
 use ely_gpui_component::feedback::EmptyState;
+use ely_gpui_component::forms::Choice;
 use ely_gpui_component::menus::{DropdownMenu, Menu, MenuItem};
+use ely_gpui_component::navigation::Tabs;
 use ely_gpui_component::primitives::{Icon, IconName};
 use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
@@ -21,10 +23,9 @@ use super::comments::{author_name, byline, byline_dot, comment_card, review_tint
 use super::{PrTab, kind_label, project_name, relative_time, source_label, status_mark};
 use crate::app::BenCodeApp;
 use crate::github::Kind;
-use crate::ui::app_callback::app_callback;
+use crate::ui::app_callback::{app_callback, on_value};
 use crate::ui::composer::inbox_card::label_chip;
 use crate::ui::diff_viewer::pr_doc_key;
-use crate::ui::page_parts::page_tab;
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 use crate::work_items::Provider;
 
@@ -302,50 +303,33 @@ impl BenCodeApp {
         item: &crate::github::WorkItem,
         cx: &Context<Self>,
     ) -> impl IntoElement {
-        let colors = &cx.theme().colors;
-        let fg = colors.fg;
         let tab = self.inbox(cx).pr_tab;
         let files = self
             .diff_docs
             .get(&pr_doc_key(item))
             .filter(|doc| doc.status == crate::ui::diff_viewer::DocStatus::Ready)
             .map(|doc| doc.files.len());
-        div()
-            .flex()
-            .gap_4()
-            .h(px(36.0))
-            .border_b_1()
-            .border_color(colors.border)
-            .child(
-                page_tab(
-                    "inbox-pr-tab-summary",
-                    "Summary",
-                    tab == PrTab::Summary,
-                    fg,
-                    colors.fg_muted,
-                )
-                .on_click(cx.listener(|this, _, _, cx| this.set_inbox_pr_tab(PrTab::Summary, cx))),
-            )
-            .child(
-                page_tab(
-                    "inbox-pr-tab-files",
-                    "Files changed",
-                    tab == PrTab::Files,
-                    fg,
-                    colors.fg_muted,
-                )
-                .gap_1p5()
-                .children(files.map(|n| {
-                    div()
-                        .px_1p5()
-                        .rounded_full()
-                        .bg(fg.fill(Fill::Line))
-                        .text_size(Text::Xs.px())
-                        .text_color(fg.ink(Ink::Secondary))
-                        .child(n.to_string())
-                }))
-                .on_click(cx.listener(|this, _, _, cx| this.set_inbox_pr_tab(PrTab::Files, cx))),
-            )
+        let mut files_tab = Choice::new("files", "Files changed");
+        if let Some(n) = files {
+            files_tab = files_tab.note(n.to_string());
+        }
+        Tabs::new(
+            "inbox-pr-tabs",
+            [Choice::new("summary", "Summary"), files_tab],
+            if tab == PrTab::Files {
+                "files"
+            } else {
+                "summary"
+            },
+        )
+        .on_change(on_value(cx, |this, tab, cx| {
+            let tab = if tab == "files" {
+                PrTab::Files
+            } else {
+                PrTab::Summary
+            };
+            this.set_inbox_pr_tab(tab, cx)
+        }))
     }
 
     /// MonoCode `InboxProjectPicker`: which rail project the agent works in.

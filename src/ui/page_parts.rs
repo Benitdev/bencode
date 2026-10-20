@@ -1,11 +1,8 @@
 //! The pieces the Automations and Notes pages share: MonoCode's `content/N`
-//! tints, `SectionTitle`, `SettingsRow`, `PageTab` and the bordered box
-//! sections sit in.
+//! tints, `SectionTitle`, `SettingsRow` and the bordered box sections sit
+//! in. Their tabs are Ely's `Tabs`.
 
-use gpui::{
-    Div, FontWeight, Hsla, IntoElement, ParentElement, SharedString, Stateful, Styled, div,
-    prelude::*,
-};
+use gpui::{Div, FontWeight, Hsla, IntoElement, ParentElement, Styled, div};
 
 use crate::ui::scale::px;
 use crate::ui::tokens::Text;
@@ -106,36 +103,4 @@ pub fn settings_row(
                 ),
         )
         .child(div().flex_none().w(px(SELECT_WIDTH)).child(control))
-}
-
-/// MonoCode `PageTab`: a label with a 2px line under the open page.
-pub fn page_tab(
-    id: &'static str,
-    label: impl Into<SharedString>,
-    selected: bool,
-    fg: Hsla,
-    muted: Hsla,
-) -> Stateful<Div> {
-    div()
-        .id(id)
-        .relative()
-        .flex()
-        .items_center()
-        .h(px(36.0))
-        .text_size(Text::Base.px())
-        .cursor_pointer()
-        .text_color(if selected { fg } else { muted })
-        .hover(|style| style.text_color(fg))
-        .child(label.into())
-        .when(selected, |el| {
-            el.child(
-                div()
-                    .absolute()
-                    .left_0()
-                    .right_0()
-                    .bottom_0()
-                    .h(px(2.0))
-                    .bg(fg),
-            )
-        })
 }
