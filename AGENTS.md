@@ -12,8 +12,8 @@ A native, GPU-drawn control plane for coding-agent CLIs (Claude Code,
 Antigravity, Codex, Grok Build, OpenCode): it starts them, streams them
 into transcripts, and keeps files, git, terminal, browser, notes,
 automations and inbox in one window. Rust, [GPUI](https://www.gpui.rs/)
-(pinned to the Zed commit Ely uses) and
-[Ely GPUI Components](https://github.com/Benitdev/Ely-GPUI-Components).
+(crates.io's `gpui-pre`, at the snapshot Ely pins) and
+[Ely GPUI Components](https://git.zacharyzhang.com/ZacharyZhang-NY/Ely-GPUI-Components).
 It began as a port of MonoCode (Tauri + React); MonoCode is now a
 reference, not the spec.
 
@@ -152,7 +152,8 @@ thread into the `workspace_state` model, which views only read.
 ## 5. UI rules
 
 Ely is the source of truth for components
-(`~/.cargo/git/checkouts/ely-gpui-components-*/*/src/`, gallery in
+(`~/.cargo/git/checkouts/Ely-GPUI-Components-*/<rev>/src/`, the rev
+`Cargo.lock` pins; other `ely-gpui-components-*` checkouts are stale; gallery in
 `examples/gallery/pages/`); read its own `AGENTS.md` rules before adding UI.
 
 - **Ely components first**; hand-roll only layout and BenCode's own look.
