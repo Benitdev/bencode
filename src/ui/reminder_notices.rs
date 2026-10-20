@@ -98,7 +98,6 @@ impl BenCodeApp {
                         .flex()
                         .items_center()
                         .gap(px(6.0))
-                        .text_size(Text::Sm.px())
                         .child(
                             button(
                                 SharedString::from(format!("due-open-{sid}")),
@@ -228,14 +227,14 @@ impl BenCodeApp {
                         .text_size(Text::Base.px())
                         .text_color(colors.danger)
                         .child(div().flex_1().child(failure))
-                        .child(div().text_size(Text::Sm.px()).child(
+                        .child(
                             button("due-failure-ok".into(), "OK", true).on_click(cx.listener(
                                 |this, _, _, cx| {
                                     this.reminder_failure = None;
                                     cx.notify();
                                 },
                             )),
-                        )),
+                        ),
                 )
             })
             // `px-3 py-2 text-[12px] text-content/70`, "Retry" an underlined

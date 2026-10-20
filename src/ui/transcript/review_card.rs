@@ -22,9 +22,6 @@ use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 /// MonoCode `text-amber-300/80`, "Mixed changes".
 const MIXED: u32 = 0xfcd34d;
 
-/// What a review card button does when pressed.
-type OnClick = Box<dyn Fn(&mut BenCodeApp, &mut Context<BenCodeApp>)>;
-
 impl BenCodeApp {
     pub(super) fn render_session_review(&self, session_id: &str, cx: &Context<Self>) -> AnyElement {
         let Some(review) = self.checkpoints.reviews.get(session_id) else {
@@ -50,27 +47,24 @@ impl BenCodeApp {
         let hidden = count - shown;
 
         // Undo and Keep are quiet; Review is the outlined one (MonoCode).
-        let button = |key: &str,
-                      label: &'static str,
-                      tip: &'static str,
-                      enabled: bool,
-                      on_click: OnClick| {
-            let variant = if key == "open" {
+        let button = |key: &str, label: &'static str, enabled: bool| {
+            Button::new(
+                SharedString::from(format!("review-{key}-{session_id}")),
+                label,
+            )
+            .size(ControlSize::Sm)
+            .variant(if key == "open" {
                 ButtonVariant::Outline
             } else {
                 ButtonVariant::Ghost
-            };
+            })
+            .disabled(!enabled)
+        };
+        let tipped = |key: &str, tip: &'static str, button: Button| {
             with_tooltip(
                 SharedString::from(format!("review-{key}-tip-{session_id}")),
                 tip,
-                Button::new(
-                    SharedString::from(format!("review-{key}-{session_id}")),
-                    label,
-                )
-                .size(ControlSize::Sm)
-                .variant(variant)
-                .disabled(!enabled)
-                .on_click(cx.listener(move |this, _, _, cx| on_click(this, cx))),
+                button,
             )
         };
         let undo_tip = if can_undo {
@@ -142,31 +136,31 @@ impl BenCodeApp {
                     .flex_none()
                     .items_center()
                     .gap_0p5()
-                    .child(button(
+                    .child(tipped(
                         "undo",
-                        "Undo",
                         undo_tip,
-                        can_undo && !acting,
-                        Box::new(move |this, cx| {
-                            this.checkpoints.confirm_undo = Some(undo_id.clone());
-                            cx.notify();
-                        }),
+                        button("undo", "Undo", can_undo && !acting).on_click(cx.listener(
+                            move |this, _, _, cx| {
+                                this.checkpoints.confirm_undo = Some(undo_id.clone());
+                                cx.notify();
+                            },
+                        )),
                     ))
-                    .child(button(
+                    .child(tipped(
                         "keep",
-                        "Keep",
                         "Keep all session changes and dismiss this card",
-                        !acting,
-                        Box::new(move |this, cx| {
-                            this.resolve_session_review(&keep_id, ReviewAction::Keep, cx)
-                        }),
+                        button("keep", "Keep", !acting).on_click(cx.listener(
+                            move |this, _, _, cx| {
+                                this.resolve_session_review(&keep_id, ReviewAction::Keep, cx)
+                            },
+                        )),
                     ))
-                    .child(button(
+                    .child(tipped(
                         "open",
-                        "Review",
                         "Review changes",
-                        true,
-                        Box::new(move |this, cx| this.open_session_changes(&review_id, None, cx)),
+                        button("open", "Review", true).on_click(cx.listener(
+                            move |this, _, _, cx| this.open_session_changes(&review_id, None, cx),
+                        )),
                     )),
             );
 
