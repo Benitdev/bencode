@@ -42,7 +42,7 @@ use crate::ui::git_menus::{GitMenuKind, TriggerLook};
 use crate::ui::icons::ExtraIcon;
 use crate::ui::scale::px;
 use crate::ui::scrollbar;
-use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
+use crate::ui::tokens::{AMBER_400, Fill, Ink, SKY_400, Text, Tone as _};
 use crate::ui::virtual_rows;
 
 /// MonoCode `GRAPH_PANEL_MIN`, `GRAPH_PANEL_DEFAULT`.
@@ -233,10 +233,10 @@ pub(crate) fn status_letter(status: &GitFileStatus) -> &'static str {
 /// `text-diff-del-fg` (the chosen diff palette), `text-amber-400`.
 pub(crate) fn status_color(status: &GitFileStatus, diff: DiffColors) -> Hsla {
     match status {
-        GitFileStatus::Untracked => rgb(0x38bdf8).into(),
+        GitFileStatus::Untracked => rgb(SKY_400).into(),
         GitFileStatus::Added => diff.add_fg,
         GitFileStatus::Deleted => diff.del_fg,
-        _ => rgb(0xfbbf24).into(),
+        _ => rgb(AMBER_400).into(),
     }
 }
 

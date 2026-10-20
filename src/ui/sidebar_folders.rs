@@ -18,7 +18,7 @@ use crate::ui::drag_drop::DraggedSession;
 use crate::ui::scale::px;
 use crate::ui::sidebar_sessions::ListDrop;
 use crate::ui::spinner::terminal_spinner;
-use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
+use crate::ui::tokens::{Fill, Ink, Status, Text, Tone as _};
 
 /// MonoCode's `text-[13px] font-semibold leading-snug` row label.
 const NAME_LINE_HEIGHT: f32 = 13.0 * 1.375;
@@ -121,7 +121,7 @@ impl BenCodeApp {
                     el.child(
                         Icon::new(IconName::CircleAlert)
                             .size(IconSize::Xs)
-                            .color(rgb(0xfbbf24)),
+                            .color(Status::Attention.color(colors.fg)),
                     )
                 } else if state.busy {
                     el.child(terminal_spinner(colors.accent, cx))
@@ -129,7 +129,7 @@ impl BenCodeApp {
                     el.child(
                         Icon::new(IconName::Check)
                             .size(IconSize::Xs)
-                            .color(rgb(0x34d399)),
+                            .color(Status::Done.color(colors.fg)),
                     )
                 } else {
                     el

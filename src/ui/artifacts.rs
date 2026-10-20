@@ -106,11 +106,7 @@ pub fn theme_css(cx: &App) -> String {
     let theme = cx.theme();
     let colors = &theme.colors;
     let diff = crate::ui::appearance::diff_colors(cx);
-    let link = if theme.is_dark() {
-        gpui::rgba(0x38bdf8e6).into()
-    } else {
-        colors.link
-    };
+    let link = crate::ui::tokens::link_color(theme);
     let mut vars = vec![
         ("--background", css(colors.bg)),
         ("--foreground", css(colors.fg)),

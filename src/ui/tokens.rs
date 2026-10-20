@@ -118,6 +118,29 @@ pub const AMBER_400: u32 = 0xfbbf24;
 pub const EMERALD_400: u32 = 0x34d399;
 /// Tailwind's `red-400`: failed, or an error to fix.
 pub const RED_400: u32 = 0xf87171;
+/// Tailwind's `sky-400`: new and untracked files.
+pub const SKY_400: u32 = 0x38bdf8;
+/// Tailwind's `sky-300`: a link under the pointer, on dark.
+pub const SKY_300: u32 = 0x7dd3fc;
+
+/// A link in agent text and artifacts: MonoCode's `text-sky-400/90` on
+/// dark; the theme's link blue keeps contrast on light.
+pub fn link_color(theme: &ely_gpui_component::theme::Theme) -> Hsla {
+    if theme.is_dark() {
+        Hsla::from(rgb(SKY_400)).opacity(0.9)
+    } else {
+        theme.colors.link
+    }
+}
+
+/// [`link_color`] under the pointer.
+pub fn link_hover_color(theme: &ely_gpui_component::theme::Theme) -> Hsla {
+    if theme.is_dark() {
+        rgb(SKY_300).into()
+    } else {
+        theme.colors.link
+    }
+}
 
 /// Where a session, task or run is, as every view colours it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

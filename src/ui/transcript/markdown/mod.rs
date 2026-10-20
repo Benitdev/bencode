@@ -24,7 +24,7 @@ use gpui::prelude::*;
 use gpui::{
     AnyElement, App, ClickEvent, CursorStyle, ElementId, Font, FontStyle, FontWeight, Hsla,
     MouseMoveEvent, SharedString, StrikethroughStyle, StyledText, TextRun, UnderlineStyle, Window,
-    div, rgba,
+    div,
 };
 
 use crate::ui::scale::px;
@@ -289,18 +289,8 @@ impl Look {
             family: theme.mono_family.clone(),
             ..font.clone()
         };
-        // `text-sky-400/90` on dark; the theme's link blue keeps contrast
-        // on light.
-        let link = if theme.is_dark() {
-            rgba(0x38bdf8e6).into()
-        } else {
-            theme.colors.link
-        };
-        let link_hover = if theme.is_dark() {
-            rgba(0x7dd3fcff).into()
-        } else {
-            theme.colors.link
-        };
+        let link = crate::ui::tokens::link_color(theme);
+        let link_hover = crate::ui::tokens::link_hover_color(theme);
         let fold = tone != Tone::Answer;
         Self {
             tone,

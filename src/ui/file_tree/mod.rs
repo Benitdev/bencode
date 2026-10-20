@@ -57,7 +57,7 @@ pub fn entry_icon(name: &str) -> icons::EntryIcon {
     icons::resolve_entry_icon(name, false, false)
 }
 
-use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
+use crate::ui::tokens::{AMBER_400, Fill, Ink, RED_400, Text, Tone as _};
 pub use bencode_core::tree::FsEntry;
 
 /// The inline name field (MonoCode `NameRow`): a new entry under `parent`,
@@ -435,7 +435,7 @@ impl BenCodeApp {
                                 .py_1()
                                 .text_size(Text::Base.px())
                                 .line_height(px(16.0))
-                                .text_color(rgb(0xf87171))
+                                .text_color(rgb(RED_400))
                                 .child(error),
                         )
                     })
@@ -874,7 +874,7 @@ impl BenCodeApp {
                         .pb_1()
                         .text_size(Text::Base.px())
                         .line_height(px(16.0))
-                        .text_color(rgb(if error { 0xf87171 } else { 0xfbbf24 }))
+                        .text_color(rgb(if error { RED_400 } else { AMBER_400 }))
                         .child(match emphasis {
                             Some(range) => StyledText::new(message).with_highlights([(
                                 range,

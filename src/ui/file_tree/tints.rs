@@ -59,7 +59,7 @@ impl GitTints {
             self.files.get(rel)
         }?;
         Some(match status {
-            GitFileStatus::Modified => rgb(0xfbbf24).into(),
+            GitFileStatus::Modified => rgb(crate::ui::tokens::AMBER_400).into(),
             GitFileStatus::Added | GitFileStatus::Untracked => diff.add_fg,
             GitFileStatus::Deleted => diff.del_fg,
             GitFileStatus::Renamed => return None,

@@ -27,7 +27,7 @@ impl BenCodeApp {
         let has_image = mono.background.is_some();
         let busy = self.mono_backgrounds.busy;
         let fg = cx.theme().colors.fg;
-        let red_400: gpui::Hsla = rgb(0xf87171).into();
+        let red_400: gpui::Hsla = rgb(crate::ui::tokens::RED_400).into();
 
         // `overflow-hidden rounded-xl border border-content/10
         // bg-background-base`, `h-40`.
