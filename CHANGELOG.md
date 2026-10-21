@@ -4,7 +4,7 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
-## [0.1.24] - Unreleased
+## [0.1.24] - 2026-10-21
 
 - A Claude Code edit shows what it changed under its row, as the CLI
   does: "Added 2 lines, removed 1 line", then the lines with their
@@ -22,6 +22,9 @@ tagging (`docs/releasing.md`).
   it ran on (Claude, Codex, OpenCode, as Antigravity already did) is read
   again, so the meter no longer waits for Refresh. Agents ending together
   on one account read it once.
+- A file a reply names opens even when the agent shortens its path
+  (`antigravity.rs`, `app/usage.rs`): the project's file it means is
+  found, an open one first. `usage.rs:42` opens at line 42.
 
 ## [0.1.23] - 2026-10-20
 
