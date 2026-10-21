@@ -18,6 +18,10 @@ tagging (`docs/releasing.md`).
 - File History (⌥⌘H, the clock in the editor's toolbar, or the blame
   card) lists the commits that changed a file, across renames; a click
   opens the commit beside it.
+- The footer's usage follows the agents: when a turn ends, the account
+  it ran on (Claude, Codex, OpenCode, as Antigravity already did) is read
+  again, so the meter no longer waits for Refresh. Agents ending together
+  on one account read it once.
 
 ## [0.1.23] - 2026-10-20
 

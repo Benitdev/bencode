@@ -1163,17 +1163,14 @@ impl BenCodeApp {
             self.forget_remote_run(session_id);
         }
         self.sync_in_flight();
+        if run.remote.is_none() {
+            // The turn spent the account's usage (a remote one, its machine's).
+            self.reload_turn_usage(session_id, cx);
+        }
         if self.is_habit_run(session_id) {
             let completed = run.outcome == Some(DoneStatus::Completed);
             self.habit_run_settled(session_id, completed, cx);
             return;
-        }
-        if self
-            .sessions
-            .iter()
-            .any(|s| s.id == session_id && s.harness == crate::harness::agy_accounts::PROVIDER)
-        {
-            self.reload_antigravity_usage(cx);
         }
         let mut compacted = false;
         if run.purpose == RunPurpose::Compact

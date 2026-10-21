@@ -1,6 +1,6 @@
 //! Provider usage for the footer (MonoCode `rateLimitsCache.ts` and
-//! `UsageFooter`'s loading): each account is read once per run and again on
-//! Refresh, off the UI thread.
+//! `UsageFooter`'s loading): each account is read once per run, again on
+//! Refresh and after a turn that spent it, off the UI thread.
 
 use std::collections::HashMap;
 use std::time::Duration;
@@ -14,6 +14,10 @@ use crate::rate_limits::{self, ProviderRateLimits, RateLimitProvider, RateLimitS
 
 /// MonoCode `CLOCK_MS`: how often the reset countdowns are redrawn.
 const CLOCK_TICK: Duration = Duration::from_secs(30);
+
+/// A turn's end reads its account again only when the last read is older
+/// than this, so a burst of agents finishing does not hammer the provider.
+const TURN_RELOAD_GAP_MS: i64 = 10_000;
 
 static IDLE: ProviderRateLimits = ProviderRateLimits {
     session: None,
@@ -223,6 +227,35 @@ impl BenCodeApp {
             cx.notify();
         }
         open
+    }
+
+    /// The usage of the account a thread's turn just spent, read again when
+    /// it has been shown (an account nobody looked at waits to be asked).
+    /// Many agents ending together on one account read it once.
+    pub(crate) fn reload_turn_usage(&mut self, session_id: &str, cx: &mut Context<Self>) {
+        let Some(session) = self.sessions.iter().find(|s| s.id == session_id) else {
+            return;
+        };
+        let Some(provider) = RateLimitProvider::from_harness(&session.harness) else {
+            return;
+        };
+        if provider == RateLimitProvider::Antigravity {
+            self.reload_antigravity_usage(cx);
+            return;
+        }
+        let account_id = if supports_accounts(&session.harness) {
+            self.session_account_id(session)
+        } else {
+            DEFAULT_ACCOUNT_ID.into()
+        };
+        let recent = self
+            .usage_data
+            .read(cx)
+            .cached(provider, &account_id)
+            .map(|limits| now_ms() - limits.updated_at < TURN_RELOAD_GAP_MS);
+        if recent == Some(false) {
+            self.load_rate_limits(provider, &account_id, true, cx);
+        }
     }
 
     /// Antigravity's usage again: after a turn (which spent some and
