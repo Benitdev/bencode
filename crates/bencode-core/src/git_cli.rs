@@ -50,7 +50,9 @@ pub fn base_command() -> Command {
     let mut cmd = Command::new(program());
     cmd.args(["-c", "core.quotepath=false", "-c", "color.ui=never"])
         // Status polling from the UI must not fight other git processes for index.lock.
-        .env("GIT_OPTIONAL_LOCKS", "0");
+        .env("GIT_OPTIONAL_LOCKS", "0")
+        // Hooks run the user's tools (`php`, `npx`), which a Finder app's PATH lacks.
+        .env("PATH", crate::login_path::path());
     cmd
 }
 

@@ -9,6 +9,7 @@ pub mod git_cli;
 pub mod harness;
 pub mod http;
 pub mod keychain;
+pub mod login_path;
 pub mod mcp;
 pub mod paths;
 pub mod remote;

@@ -80,7 +80,12 @@ impl Cmd {
 
     fn local_output(self) -> io::Result<Output> {
         let mut command = match self.program {
-            Program::Git => Command::new(bencode_core::git_cli::program()),
+            Program::Git => {
+                let mut git = Command::new(bencode_core::git_cli::program());
+                // Hooks run the user's tools (`php`, `npx`), which a Finder app's PATH lacks.
+                git.env("PATH", bencode_core::login_path::path());
+                git
+            }
             Program::Gh => Command::new(self.program.binary()),
         };
         command.args(&self.leading);

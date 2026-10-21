@@ -57,6 +57,8 @@ fn main() {
     }
     logging::init();
     startup_trace::mark("main");
+    // Read while the app starts; git launches use it once it is known.
+    bencode_core::login_path::resolve_in_background();
     // The data folder is read while GPUI sets the platform up.
     let launch = launch::start();
 

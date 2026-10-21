@@ -149,35 +149,7 @@ fn adopt_login_path() {
     if std::env::var_os("BENCODE_HOST_KEEP_PATH").is_some() {
         return;
     }
-    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
-    let output = std::process::Command::new(&shell)
-        .args(["-lc", "printf '%s' \"$PATH\""])
-        .stdin(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .output();
-    let login = match output {
-        Ok(out) if out.status.success() => String::from_utf8_lossy(&out.stdout).trim().to_string(),
-        Ok(out) => {
-            log::warn!("{shell} -l exited with {}; keeping PATH", out.status);
-            return;
-        }
-        Err(err) => {
-            log::warn!("cannot run {shell}: {err}; keeping PATH");
-            return;
-        }
-    };
-    if login.is_empty() || login.contains('\n') {
-        return;
-    }
-    let mut dirs: Vec<std::path::PathBuf> = std::env::split_paths(&login).collect();
-    if let Some(current) = std::env::var_os("PATH") {
-        for dir in std::env::split_paths(&current) {
-            if !dirs.contains(&dir) {
-                dirs.push(dir);
-            }
-        }
-    }
-    if let Ok(path) = std::env::join_paths(dirs) {
+    if let Some(path) = bencode_core::login_path::read() {
         // SAFETY: called before any thread of this process starts.
         unsafe { std::env::set_var("PATH", path) };
     }
