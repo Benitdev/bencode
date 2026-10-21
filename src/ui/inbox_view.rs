@@ -8,6 +8,7 @@
 //! with the issue as a composer card (`features/inbox/ui/InboxView.tsx`,
 //! `App.tsx` `onStartInboxItem`).
 
+mod blocks;
 mod checks;
 pub mod ci_repair;
 mod comments;
@@ -27,7 +28,7 @@ use gpui::{
 
 use crate::app::{BenCodeApp, Surface};
 use crate::backlog;
-use crate::github::{self, Details, Kind, Status, WorkItem};
+use crate::github::{self, Kind, Status, WorkItem};
 use crate::ui::composer::cards::ComposerCard;
 use crate::ui::composer::inbox_card::{InboxCard, label_chip};
 use crate::ui::icons::ExtraIcon;
@@ -36,6 +37,7 @@ use crate::ui::sidebar_popovers::popover_frame;
 use crate::work_items::Provider;
 
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
+use blocks::Described;
 pub use checks::{Repair, RepairForm};
 pub use comments::ReplyTarget;
 pub use pr_actions::PrActionUi;
@@ -156,7 +158,7 @@ pub struct InboxState {
     /// The filter button took this press: the menu's press-outside must
     /// not close what the button just toggled.
     filter_button_hit: bool,
-    pub details: Loaded<Details>,
+    pub details: Loaded<Described>,
     pub threads: Loaded<github::Thread>,
     pub checks: Loaded<github::Checks>,
     /// Actions job steps and annotations, by job id.
@@ -189,6 +191,11 @@ pub struct InboxState {
     list_generation: u64,
     /// The list's scroll, kept on the item ↑/↓ selects.
     pub scroll: gpui::UniformListScrollHandle,
+    /// The selected item's rows (`detail`), virtual: a long description
+    /// scrolls by drawing only what shows.
+    detail_list: gpui::ListState,
+    /// The item and rows `detail_list` was last told of.
+    detail_rows: std::cell::RefCell<(String, Vec<detail::DetailRow>)>,
 }
 
 impl Default for InboxState {
@@ -229,6 +236,8 @@ impl Default for InboxState {
             generation: 0,
             list_generation: 0,
             scroll: gpui::UniformListScrollHandle::new(),
+            detail_list: gpui::ListState::new(0, gpui::ListAlignment::Top, px(600.0)),
+            detail_rows: Default::default(),
         }
     }
 }
@@ -727,14 +736,17 @@ impl BenCodeApp {
             key,
             {
                 let item = item.clone();
-                move || match item.provider {
-                    Provider::GitHub => github::details(
-                        std::path::Path::new(&item.project),
-                        &item.repo,
-                        item.kind,
-                        item.number,
-                    ),
-                    Provider::Backlog => backlog::details(&item.identifier),
+                move || {
+                    match item.provider {
+                        Provider::GitHub => github::details(
+                            std::path::Path::new(&item.project),
+                            &item.repo,
+                            item.kind,
+                            item.number,
+                        ),
+                        Provider::Backlog => backlog::details(&item.identifier),
+                    }
+                    .map(Described::from)
                 }
             },
             cx,
@@ -802,7 +814,7 @@ impl BenCodeApp {
                     .get(key)?
                     .as_ref()
                     .ok()
-                    .map(|d| d.body.clone())
+                    .map(|d| d.details.body.clone())
             })
             .flatten();
         let cwd = self.inbox_start_project(&item, cx);

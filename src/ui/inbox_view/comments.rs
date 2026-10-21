@@ -76,11 +76,15 @@ pub(super) fn author_name(name: impl Into<SharedString>, fg: Hsla) -> Div {
         .child(name.into())
 }
 
-/// The bordered card a comment (and the description) sits in.
+/// The bordered card a comment sits in.
 pub(super) fn comment_card(fg: Hsla) -> Div {
+    card_fill(fg).rounded(px(6.0)).border_1()
+}
+
+/// A card's border colour and fill, for one drawn in parts (the
+/// description, a row per block).
+pub(super) fn card_fill(fg: Hsla) -> Div {
     div()
-        .rounded(px(6.0))
-        .border_1()
         .border_color(fg.fill(Fill::Strong))
         .bg(fg.opacity(0.02))
 }
@@ -150,42 +154,30 @@ impl BenCodeApp {
         cx.notify();
     }
 
-    /// The conversation section and the comment box.
-    pub(super) fn render_inbox_conversation(
+    /// The conversation's rule and its count, or its loading or error;
+    /// the comments, commits and comment box follow as rows of their own.
+    pub(super) fn render_conversation_head(
         &self,
         item: &WorkItem,
         cx: &Context<Self>,
-    ) -> AnyElement {
+    ) -> impl IntoElement {
         let colors = &cx.theme().colors;
         let fg = colors.fg;
         let key = item.key();
         let loading = self.inbox(cx).threads.is_loading(&key);
-        let section = div()
-            .mt_4()
-            .pt_5()
-            .border_t_1()
-            .border_color(colors.border)
-            .flex()
-            .flex_col()
-            .gap_3();
+        let section = div().border_t_1().border_color(colors.border);
         let thread = match self.inbox(cx).threads.get(&key) {
-            Some(Ok(thread)) => Some(thread),
+            Some(Ok(thread)) => thread,
             Some(Err(err)) => {
-                return section
-                    .child(
-                        div()
-                            .text_size(Text::Base.px())
-                            .text_color(fg.ink(Ink::Muted))
-                            .child(SharedString::from(err.clone())),
-                    )
-                    .child(self.render_comment_form(cx))
-                    .into_any_element();
+                return section.pt_5().child(
+                    div()
+                        .text_size(Text::Base.px())
+                        .text_color(fg.ink(Ink::Muted))
+                        .child(SharedString::from(err.clone())),
+                );
             }
-            None => None,
-        };
-        let Some(thread) = thread else {
-            return section
-                .child(
+            None => {
+                return section.pt_5().child(
                     div()
                         .flex()
                         .items_center()
@@ -197,53 +189,68 @@ impl BenCodeApp {
                             fg.ink(Ink::Muted),
                         ))
                         .child("Loading comments"),
-                )
-                .into_any_element();
+                );
+            }
         };
+        // Nothing to count: the comment box sits as close as a count would.
+        if thread.comments.is_empty() && !thread.truncated {
+            return section.pt_2();
+        }
         let count: usize = thread.comments.iter().map(|c| 1 + c.replies.len()).sum();
         let label = if count == 1 {
             "1 comment".to_string()
         } else {
             format!("{count} comments")
         };
+        section.pt_5().child(
+            div()
+                .flex()
+                .items_center()
+                .gap_2()
+                .text_size(Text::Base.px())
+                .text_color(fg.ink(Ink::Secondary))
+                .child(div().text_color(fg.ink(Ink::Body)).child(label))
+                .when(thread.truncated, |el| {
+                    el.child(format!(
+                        "Latest comments · more on {}",
+                        item.provider.label()
+                    ))
+                })
+                .when(loading, |el| {
+                    el.child(super::loading_icon(
+                        "inbox-comments-reloading",
+                        fg.ink(Ink::Faint),
+                    ))
+                }),
+        )
+    }
+
+    /// The thread's comment `ix`, once loaded.
+    pub(super) fn render_thread_comment(
+        &self,
+        item: &WorkItem,
+        ix: usize,
+        cx: &Context<Self>,
+    ) -> Option<AnyElement> {
+        let Some(Ok(thread)) = self.inbox(cx).threads.get(&item.key()) else {
+            return None;
+        };
+        let comment = thread.comments.get(ix)?;
         let now = crate::app::now_ms();
-        let pr = item.kind == Kind::Pr;
-        section
-            .when(!thread.comments.is_empty() || thread.truncated, |el| {
-                el.child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap_2()
-                        .text_size(Text::Base.px())
-                        .text_color(fg.ink(Ink::Secondary))
-                        .child(div().text_color(fg.ink(Ink::Body)).child(label))
-                        .when(thread.truncated, |el| {
-                            el.child(format!(
-                                "Latest comments · more on {}",
-                                item.provider.label()
-                            ))
-                        })
-                        .when(loading, |el| {
-                            el.child(super::loading_icon(
-                                "inbox-comments-reloading",
-                                fg.ink(Ink::Faint),
-                            ))
-                        }),
-                )
-                .children(
-                    thread
-                        .comments
-                        .iter()
-                        .enumerate()
-                        .map(|(ix, c)| self.render_comment(ix, c, false, pr, now, cx)),
-                )
-            })
-            .when(pr && !thread.commits.is_empty(), |el| {
-                el.child(self.render_commits(&thread.commits, now, cx))
-            })
-            .child(self.render_comment_form(cx))
-            .into_any_element()
+        Some(self.render_comment(ix, comment, false, item.kind == Kind::Pr, now, cx))
+    }
+
+    /// A pull request's commits, once loaded.
+    pub(super) fn render_thread_commits(
+        &self,
+        item: &WorkItem,
+        cx: &Context<Self>,
+    ) -> Option<impl IntoElement> {
+        let Some(Ok(thread)) = self.inbox(cx).threads.get(&item.key()) else {
+            return None;
+        };
+        let now = crate::app::now_ms();
+        Some(self.render_commits(&thread.commits, now, cx))
     }
 
     fn render_comment(
@@ -448,7 +455,7 @@ impl BenCodeApp {
     }
 
     /// MonoCode `InboxCommentForm`.
-    fn render_comment_form(&self, cx: &Context<Self>) -> impl IntoElement {
+    pub(super) fn render_comment_form(&self, cx: &Context<Self>) -> impl IntoElement {
         let colors = &cx.theme().colors;
         let fg = colors.fg;
         let posting = self.inbox(cx).comment_posting;

@@ -3,6 +3,11 @@
 //! issue's status, Open in its tracker), labels, the body, then a pull
 //! request's checks and the conversation. A pull request's Files changed
 //! section shows its patch in the review list (`ui/diff_viewer.rs`).
+//!
+//! The rest is a virtual list of rows (`DetailRow`): a scroll frame draws
+//! the rows in view, the description a row per block (`blocks.rs`).
+
+use std::ops::Range;
 
 use ely_gpui_component::buttons::{Button, ButtonVariant, IconButton};
 use ely_gpui_component::documents::MarkdownRenderer;
@@ -13,21 +18,49 @@ use ely_gpui_component::navigation::Tabs;
 use ely_gpui_component::primitives::{Icon, IconName};
 use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
-    AnyElement, Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString,
-    Styled, div, prelude::*,
+    AnyElement, Context, FontWeight, IntoElement, ParentElement, SharedString, Styled, div, list,
+    prelude::*,
 };
 
 use crate::ui::scale::px;
 
-use super::comments::{author_name, byline, byline_dot, comment_card, review_tint};
+use super::comments::{author_name, byline, byline_dot, card_fill, review_tint};
 use super::{PrTab, kind_label, project_name, relative_time, source_label, status_mark};
 use crate::app::BenCodeApp;
-use crate::github::Kind;
+use crate::github::{Kind, WorkItem};
 use crate::ui::app_callback::{app_callback, on_value};
 use crate::ui::composer::inbox_card::label_chip;
 use crate::ui::diff_viewer::pr_doc_key;
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 use crate::work_items::Provider;
+
+/// A row of the detail's list.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum DetailRow {
+    /// Identity, title, people, actions and labels.
+    Head,
+    /// The description card's byline.
+    DescriptionTop,
+    /// A block of the description, or its one loading, error or empty note.
+    Description(usize),
+    Checks,
+    /// The conversation's rule and count, or its loading or error.
+    ConversationHead,
+    Comment(usize),
+    Commits,
+    CommentForm,
+}
+
+/// What became of `old` in `new`: the range replaced and how many rows
+/// took its place. Rows kept at either end keep their measured heights.
+fn changed(old: &[DetailRow], new: &[DetailRow]) -> (Range<usize>, usize) {
+    let head = old.iter().zip(new).take_while(|(a, b)| a == b).count();
+    let tail = (old[head..].iter().rev())
+        .zip(new[head..].iter().rev())
+        .take_while(|(a, b)| a == b)
+        .count();
+    (head..old.len() - tail, new.len() - head - tail)
+}
 
 impl BenCodeApp {
     pub(super) fn render_inbox_detail(&self, cx: &Context<Self>) -> AnyElement {
@@ -49,12 +82,169 @@ impl BenCodeApp {
                 ))
                 .into_any_element();
         };
+        // The review scrolls on its own (a virtual list), under a header
+        // that stays.
+        let colors = &cx.theme().colors;
+        if item.kind == Kind::Pr && self.inbox(cx).pr_tab == PrTab::Files {
+            let column = || div().w_full().max_w(px(1024.0)).mx_auto().px_8();
+            return div()
+                .size_full()
+                .flex()
+                .flex_col()
+                .child(
+                    column()
+                        .flex_none()
+                        .pt_4()
+                        .child(self.render_inbox_head(item, cx)),
+                )
+                .child(
+                    column().flex_1().min_h_0().pt_3().pb_4().child(
+                        div()
+                            .size_full()
+                            .flex()
+                            .flex_col()
+                            .rounded_lg()
+                            .border_1()
+                            .border_color(colors.border)
+                            .overflow_hidden()
+                            .child(self.render_diff_doc(&pr_doc_key(item), cx)),
+                    ),
+                )
+                .into_any_element();
+        }
+
+        let rows = self.inbox_detail_rows(item, cx);
+        let inbox = self.inbox(cx);
+        let key = item.key();
+        // The comment box stays drawn while it has the keyboard, scrolled
+        // out of view or not.
+        let input = gpui::Focusable::focus_handle(self.inbox_comment_input.read(cx), cx);
+        let handles = |rows: &[DetailRow]| {
+            (rows.iter())
+                .map(|row| (*row == DetailRow::CommentForm).then(|| input.clone()))
+                .collect::<Vec<_>>()
+        };
+        {
+            let mut shown = inbox.detail_rows.borrow_mut();
+            if shown.0 != key {
+                inbox.detail_list.reset(0);
+                inbox.detail_list.splice_focusable(0..0, handles(&rows));
+                *shown = (key, rows);
+            } else if shown.1 != rows {
+                let (range, count) = changed(&shown.1, &rows);
+                let added = range.start..range.start + count;
+                inbox
+                    .detail_list
+                    .splice_focusable(range, handles(&rows[added]));
+                shown.1 = rows;
+            }
+        }
+        let state = &inbox.detail_list;
+        let rows = list(
+            state.clone(),
+            cx.processor(|this, ix: usize, _, cx| this.render_inbox_detail_row(ix, cx)),
+        )
+        .size_full()
+        .pr(crate::ui::scrollbar::gutter(state));
+        crate::ui::scrollbar::framed("inbox-detail-scrollbar", state, rows).into_any_element()
+    }
+
+    /// The rows the selected item shows, as far as it has loaded.
+    fn inbox_detail_rows(&self, item: &WorkItem, cx: &Context<Self>) -> Vec<DetailRow> {
+        let inbox = self.inbox(cx);
+        let key = item.key();
+        let pr = item.kind == Kind::Pr;
+        let blocks = match inbox.details.get(&key) {
+            Some(Ok(d)) => d.blocks.len().max(1),
+            _ => 1,
+        };
+        let mut rows = vec![DetailRow::Head, DetailRow::DescriptionTop];
+        rows.extend((0..blocks).map(DetailRow::Description));
+        if pr {
+            rows.push(DetailRow::Checks);
+        }
+        rows.push(DetailRow::ConversationHead);
+        match inbox.threads.get(&key) {
+            None => {}
+            Some(Err(_)) => rows.push(DetailRow::CommentForm),
+            Some(Ok(thread)) => {
+                rows.extend((0..thread.comments.len()).map(DetailRow::Comment));
+                if pr && !thread.commits.is_empty() {
+                    rows.push(DetailRow::Commits);
+                }
+                rows.push(DetailRow::CommentForm);
+            }
+        }
+        rows
+    }
+
+    fn render_inbox_detail_row(&self, ix: usize, cx: &Context<Self>) -> AnyElement {
+        let (row, last) = {
+            let shown = self.inbox(cx).detail_rows.borrow();
+            match shown.1.get(ix) {
+                Some(row) => (*row, ix + 1 == shown.1.len()),
+                None => return div().into_any_element(),
+            }
+        };
+        let Some(item) = self
+            .inbox(cx)
+            .selected
+            .as_deref()
+            .and_then(|key| self.inbox(cx).item(key))
+        else {
+            return div().into_any_element();
+        };
+        let column = div()
+            .w_full()
+            .max_w(px(1024.0))
+            .mx_auto()
+            .px_8()
+            .when(last, |el| el.pb_8());
+        match row {
+            DetailRow::Head => column
+                .pt_4()
+                .child(self.render_inbox_head(item, cx))
+                .into_any_element(),
+            DetailRow::DescriptionTop => column
+                .pt_5()
+                .child(self.render_description_top(item, cx))
+                .into_any_element(),
+            DetailRow::Description(block) => column
+                .child(self.render_description_block(item, block, cx))
+                .into_any_element(),
+            DetailRow::Checks => column
+                .pt_3()
+                .child(self.render_pr_checks(item, cx))
+                .into_any_element(),
+            DetailRow::ConversationHead => column
+                .pt_7()
+                .child(self.render_conversation_head(item, cx))
+                .into_any_element(),
+            DetailRow::Comment(comment) => column
+                .pt_3()
+                .children(self.render_thread_comment(item, comment, cx))
+                .into_any_element(),
+            DetailRow::Commits => column
+                .pt_3()
+                .children(self.render_thread_commits(item, cx))
+                .into_any_element(),
+            DetailRow::CommentForm => column
+                .pt_3()
+                .child(self.render_comment_form(cx))
+                .into_any_element(),
+        }
+    }
+
+    /// Identity, title, people and times, actions, labels and, for a pull
+    /// request, its tabs.
+    fn render_inbox_head(&self, item: &WorkItem, cx: &Context<Self>) -> gpui::Div {
         let colors = &cx.theme().colors;
         let fg = colors.fg;
         let key = item.key();
         let now = crate::app::now_ms();
-        let details = self.inbox(cx).details.get(&key);
-        let loaded = details.and_then(|d| d.as_ref().ok());
+        let loaded = (self.inbox(cx).details.get(&key))
+            .and_then(|d| d.as_ref().ok())
+            .map(|d| &d.details);
         let author = loaded.map(|d| d.author.clone()).filter(|a| !a.is_empty());
         let (base, head) = loaded
             .map(|d| (d.base_ref.clone(), d.head_ref.clone()))
@@ -162,44 +352,7 @@ impl BenCodeApp {
                     el.children(self.render_pr_actions(item, &base, &head, cx))
                 });
 
-        let body = match details {
-            None => div()
-                .text_size(Text::Md.px())
-                .text_color(fg.ink(Ink::Muted))
-                .child("Loading…")
-                .into_any_element(),
-            Some(Err(err)) => div()
-                .text_size(Text::Base.px())
-                .text_color(colors.danger.opacity(0.9))
-                .child(SharedString::from(err.clone()))
-                .into_any_element(),
-            Some(Ok(d)) if d.body.trim().is_empty() => div()
-                .text_size(Text::Md.px())
-                .italic()
-                .text_color(fg.ink(Ink::Muted))
-                .child("No description provided.")
-                .into_any_element(),
-            Some(Ok(d)) => MarkdownRenderer::new(
-                SharedString::from(format!("inbox-body-{key}")),
-                d.body.clone(),
-            )
-            .into_any_element(),
-        };
-        // The description reads as the opening comment, in the same card.
-        let description = comment_card(fg)
-            .mt_2()
-            .child(
-                byline(fg)
-                    .px_3()
-                    .py_2()
-                    .border_b_1()
-                    .border_color(colors.border)
-                    .when_some(author, |el, author| el.child(author_name(author, fg)))
-                    .child("Description"),
-            )
-            .child(div().px_4().py_3().text_size(Text::Lg.px()).child(body));
-
-        let head = div()
+        div()
             .flex()
             .flex_col()
             .gap_3()
@@ -246,55 +399,83 @@ impl BenCodeApp {
             )
             .when(item.kind == Kind::Pr, |el| {
                 el.child(self.render_pr_tabs(item, cx))
-            });
+            })
+    }
 
-        // The review scrolls on its own (a virtual list), under a header
-        // that stays.
-        if item.kind == Kind::Pr && self.inbox(cx).pr_tab == PrTab::Files {
-            let column = || div().w_full().max_w(px(1024.0)).mx_auto().px_8();
-            return div()
-                .size_full()
-                .flex()
-                .flex_col()
-                .child(column().flex_none().pt_4().child(head))
-                .child(
-                    column().flex_1().min_h_0().pt_3().pb_4().child(
-                        div()
-                            .size_full()
-                            .flex()
-                            .flex_col()
-                            .rounded_lg()
-                            .border_1()
-                            .border_color(colors.border)
-                            .overflow_hidden()
-                            .child(self.render_diff_doc(&pr_doc_key(item), cx)),
-                    ),
-                )
-                .into_any_element();
-        }
-
-        let detail = div()
-            .id("inbox-detail")
-            .size_full()
-            .overflow_y_scroll()
+    /// The description card's top: who wrote it. The description reads as
+    /// the opening comment.
+    fn render_description_top(&self, item: &WorkItem, cx: &Context<Self>) -> impl IntoElement {
+        let colors = &cx.theme().colors;
+        let fg = colors.fg;
+        let author = (self.inbox(cx).details.get(&item.key()))
+            .and_then(|d| d.as_ref().ok())
+            .map(|d| d.details.author.clone())
+            .filter(|a| !a.is_empty());
+        card_fill(fg)
+            .rounded_t(px(6.0))
+            .border_t_1()
+            .border_x_1()
             .child(
-                div()
-                    .max_w(px(1024.0))
-                    .mx_auto()
-                    .flex()
-                    .flex_col()
-                    .gap_3()
-                    .px_8()
-                    .pt_4()
-                    .pb_8()
-                    .child(head)
-                    .child(description)
-                    .when(item.kind == Kind::Pr, |el| {
-                        el.child(self.render_pr_checks(item, cx))
-                    })
-                    .child(self.render_inbox_conversation(item, cx)),
-            );
-        crate::ui::scrollbar::Scrolled::new("inbox-detail-scrollbar", detail).into_any_element()
+                byline(fg)
+                    .px_3()
+                    .py_2()
+                    .border_b_1()
+                    .border_color(colors.border)
+                    .when_some(author, |el, author| el.child(author_name(author, fg)))
+                    .child("Description"),
+            )
+    }
+
+    /// One block of the description in its card; the last closes the card.
+    fn render_description_block(
+        &self,
+        item: &WorkItem,
+        block: usize,
+        cx: &Context<Self>,
+    ) -> impl IntoElement {
+        let colors = &cx.theme().colors;
+        let fg = colors.fg;
+        let key = item.key();
+        let details = self.inbox(cx).details.get(&key);
+        let blocks = match details {
+            Some(Ok(d)) => d.blocks.len().max(1),
+            _ => 1,
+        };
+        let body = match details {
+            None => div()
+                .text_size(Text::Md.px())
+                .text_color(fg.ink(Ink::Muted))
+                .child("Loading…")
+                .into_any_element(),
+            Some(Err(err)) => div()
+                .text_size(Text::Base.px())
+                .text_color(colors.danger.opacity(0.9))
+                .child(SharedString::from(err.clone()))
+                .into_any_element(),
+            Some(Ok(d)) if d.blocks.is_empty() => div()
+                .text_size(Text::Md.px())
+                .italic()
+                .text_color(fg.ink(Ink::Muted))
+                .child("No description provided.")
+                .into_any_element(),
+            Some(Ok(d)) => match d.blocks.get(block) {
+                Some(source) => MarkdownRenderer::new(
+                    SharedString::from(format!("inbox-body-{key}-{block}")),
+                    source.clone(),
+                )
+                .into_any_element(),
+                None => div().into_any_element(),
+            },
+        };
+        card_fill(fg)
+            .border_x_1()
+            .px_4()
+            .pt_3()
+            .text_size(Text::Lg.px())
+            .when(block + 1 == blocks, |el| {
+                el.pb_3().border_b_1().rounded_b(px(6.0))
+            })
+            .child(body)
     }
 
     /// MonoCode's `Summary` / `Code` tabs, with the file count once read.
@@ -404,7 +585,7 @@ impl BenCodeApp {
 
 /// The item's state as its tracker shows it: icon and word on a tinted
 /// pill. Backlog's status names stand alone.
-fn state_pill(item: &crate::github::WorkItem, cx: &gpui::App) -> impl IntoElement {
+fn state_pill(item: &WorkItem, cx: &gpui::App) -> impl IntoElement {
     let (icon, tint, status) = status_mark(item, cx);
     div()
         .flex()
@@ -439,4 +620,28 @@ fn branch_chip(name: &str, cx: &gpui::App) -> impl IntoElement {
         .text_size(Text::Sm.px())
         .text_color(fg.ink(Ink::Body))
         .child(SharedString::from(name.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::DetailRow::*;
+    use super::*;
+
+    #[test]
+    fn rows_kept_at_both_ends_are_not_replaced() {
+        let loading = [Head, DescriptionTop, Description(0), ConversationHead];
+        let loaded = [
+            Head,
+            DescriptionTop,
+            Description(0),
+            Description(1),
+            Description(2),
+            ConversationHead,
+            Comment(0),
+            CommentForm,
+        ];
+        assert_eq!(changed(&loading, &loaded), (3..4, 5));
+        assert_eq!(changed(&loaded, &loaded), (8..8, 0));
+        assert_eq!(changed(&loaded[..3], &loaded[..5]), (3..3, 2));
+    }
 }

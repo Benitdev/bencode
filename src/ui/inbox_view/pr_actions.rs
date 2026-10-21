@@ -303,7 +303,7 @@ impl BenCodeApp {
             .get(&key)
             .and_then(|d| d.as_ref().ok());
         let (base, head) = details
-            .map(|d| (d.base_ref.as_str(), d.head_ref.as_str()))
+            .map(|d| (d.details.base_ref.as_str(), d.details.head_ref.as_str()))
             .unwrap_or_default();
         let (title, detail, confirm, _) = action_copy(action, base, head);
         let cancel = app_callback(cx, |this, cx| {
