@@ -15,6 +15,10 @@ tagging (`docs/releasing.md`).
   When the name is declared in several places a picker lists them, best
   first; a body is preferred over its prototype and this file over
   others.
+- The editor scrolls sideways: a line longer than the pane no longer
+  ends at its edge. Swipe sideways (or Shift and the wheel) to read the
+  rest while the line numbers stay put, and the caret, moved or typed
+  past the edge, brings the view along.
 
 ## [0.1.24] - 2026-10-21
 
