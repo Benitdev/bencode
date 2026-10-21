@@ -80,6 +80,19 @@ pub fn resolve_path(cwd: &str, path: &str) -> PathBuf {
     }
 }
 
+/// A path inside `cwd` as the workspace names it (relative), so a link
+/// written absolute opens the tab the Explorer would; any other path as is.
+pub fn relative_to(cwd: &str, path: &str) -> String {
+    let base = cwd.trim_end_matches('/');
+    match path
+        .strip_prefix(base)
+        .and_then(|rest| rest.strip_prefix('/'))
+    {
+        Some(rest) if !base.is_empty() && !rest.is_empty() => rest.to_string(),
+        _ => path.to_string(),
+    }
+}
+
 /// The last path component, for tab titles and messages.
 pub fn file_name(path: &str) -> String {
     Path::new(path)
@@ -175,6 +188,15 @@ fn write_temp(temp: &Path, contents: &str, permissions: Option<fs::Permissions>)
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_path_inside_the_workspace_becomes_relative() {
+        assert_eq!(relative_to("/repo", "/repo/src/a.rs"), "src/a.rs");
+        assert_eq!(relative_to("/repo/", "/repo/src/a.rs"), "src/a.rs");
+        assert_eq!(relative_to("/repo", "/repository/a.rs"), "/repository/a.rs");
+        assert_eq!(relative_to("/repo", "src/a.rs"), "src/a.rs");
+        assert_eq!(relative_to("", "/a.rs"), "/a.rs");
+    }
 
     fn temp_dir(tag: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!(

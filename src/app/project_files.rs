@@ -84,6 +84,45 @@ pub fn directories_of(files: &[String]) -> Vec<String> {
     dirs.into_iter().collect()
 }
 
+/// The project file a reply's reference most likely names (MonoCode
+/// `resolveOpenablePath`): the path itself, else a file whose path ends with
+/// it, else a file of that name. Among several, one already open wins, then
+/// the shortest path. None when the index has nothing like it.
+pub fn resolve_reference<'a>(
+    reference: &str,
+    files: &'a [SharedString],
+    is_open: impl Fn(&str) -> bool,
+) -> Option<&'a str> {
+    let hint = reference.replace('\\', "/");
+    let hint = hint.trim_start_matches("./").trim_start_matches('/');
+    if hint.is_empty() {
+        return None;
+    }
+    if let Some(file) = files.iter().find(|f| f.as_ref() == hint) {
+        return Some(file.as_ref());
+    }
+    let pick = |matches: Vec<&'a str>| {
+        let open = matches.iter().copied().find(|f| is_open(f));
+        open.or_else(|| matches.into_iter().min_by_key(|f| f.len()))
+    };
+    let suffix = format!("/{hint}");
+    let by_suffix: Vec<&str> = files
+        .iter()
+        .map(|f| f.as_ref())
+        .filter(|f| f.ends_with(&suffix))
+        .collect();
+    if !by_suffix.is_empty() {
+        return pick(by_suffix);
+    }
+    let name = hint.rsplit('/').next().unwrap_or(hint);
+    let by_name: Vec<&str> = files
+        .iter()
+        .map(|f| f.as_ref())
+        .filter(|f| f.rsplit('/').next() == Some(name))
+        .collect();
+    pick(by_name)
+}
+
 impl BenCodeApp {
     /// MonoCode `loadProjectFiles(cwd, true)`.
     pub fn index_project_files(&mut self, cx: &mut Context<Self>) {
@@ -158,5 +197,53 @@ mod tests {
         assert!(index.files.is_empty());
         index.switch_root("/a");
         assert_eq!(index.files, [SharedString::from("a.rs")]);
+    }
+
+    fn files(paths: &[&str]) -> Vec<SharedString> {
+        paths
+            .iter()
+            .map(|p| SharedString::from(p.to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn a_reference_finds_the_file_it_means() {
+        let files = files(&[
+            "README.md",
+            "crates/core/src/harness/antigravity.rs",
+            "src/app/usage.rs",
+            "src/rate_limits/antigravity.rs",
+            "src/ui/usage.rs",
+        ]);
+        let none = |_: &str| false;
+        assert_eq!(
+            resolve_reference("README.md", &files, none),
+            Some("README.md")
+        );
+        assert_eq!(
+            resolve_reference("./src/app/usage.rs", &files, none),
+            Some("src/app/usage.rs")
+        );
+        // A path cut short at the front.
+        assert_eq!(
+            resolve_reference("app/usage.rs", &files, none),
+            Some("src/app/usage.rs")
+        );
+        // A bare name: the shortest path, unless one is open.
+        assert_eq!(
+            resolve_reference("antigravity.rs", &files, none),
+            Some("src/rate_limits/antigravity.rs")
+        );
+        assert_eq!(
+            resolve_reference("antigravity.rs", &files, |f| f.starts_with("crates/")),
+            Some("crates/core/src/harness/antigravity.rs")
+        );
+        // A directory that does not match still finds the name.
+        assert_eq!(
+            resolve_reference("lib/usage.rs", &files, none),
+            Some("src/ui/usage.rs")
+        );
+        assert_eq!(resolve_reference("missing.rs", &files, none), None);
+        assert_eq!(resolve_reference("./", &files, none), None);
     }
 }

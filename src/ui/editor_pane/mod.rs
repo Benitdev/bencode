@@ -9,16 +9,18 @@ mod preview;
 mod view;
 
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
 
 use ely_gpui_component::editor::{CodeEditor, EditorEvent, LineNumbers};
 use gpui::{Context, Entity, SharedString, Subscription, Window, prelude::*};
 
 use crate::app::BenCodeApp;
 use crate::app::file_pane::PaneTab;
+use crate::app::project_files::resolve_reference;
 pub use files::detect_language;
 use files::{
     MAX_EDITOR_FILE_BYTES, ReadError, atomic_write, count_lines, file_name, read_text_file,
-    resolve_path,
+    relative_to, resolve_path,
 };
 use open_files::OpenFiles;
 pub use preview::FileViewMode;
@@ -188,6 +190,73 @@ impl BenCodeApp {
         self.open_file_in_editor(path, window, cx);
         // Already open: the editor is there to move now.
         self.apply_reveal(path, cx);
+    }
+
+    /// Opens a file a reply names (`` `usage.rs:42` ``, a link), at `line`
+    /// when given. Agents shorten paths (a bare name, a path from a
+    /// subfolder): when the path as written is not in the project, its
+    /// index (or a listing, before there is one) picks the file meant, off
+    /// the UI thread.
+    pub fn open_file_reference(
+        &mut self,
+        path: &str,
+        line: Option<u64>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let cwd = self.workspace(cx).cwd.clone();
+        let reference = relative_to(&cwd, path);
+        let absolute = Path::new(&reference).is_absolute() || crate::remote::is_remote(&reference);
+        let index = &self.project_files;
+        let indexed = (index.root == cwd && !index.files.is_empty()).then(|| index.files.clone());
+        let listed = indexed
+            .as_ref()
+            .is_some_and(|files| files.iter().any(|f| f.as_ref() == reference));
+        if absolute || listed || cwd.trim().is_empty() {
+            self.open_reference_at(&reference, line, window, cx);
+            return;
+        }
+        let open: HashSet<String> = self.editor.files.iter().map(|f| f.path.clone()).collect();
+        let task = cx.background_executor().spawn(async move {
+            // A file the index has not caught up with yet.
+            if resolve_path(&cwd, &reference).exists() {
+                return reference;
+            }
+            let files = indexed.unwrap_or_else(|| {
+                crate::workspace::list_project_files(Path::new(&cwd))
+                    .into_iter()
+                    .map(SharedString::from)
+                    .collect()
+            });
+            resolve_reference(&reference, &files, |f| open.contains(f))
+                .map_or(reference.clone(), str::to_string)
+        });
+        cx.spawn_in(window, async move |this, cx| {
+            let path = task.await;
+            let opened = this.update_in(cx, |this, window, cx| {
+                this.open_reference_at(&path, line, window, cx);
+            });
+            if let Err(err) = opened {
+                log::debug!("file reference resolved after app drop: {err:#}");
+            }
+        })
+        .detach();
+    }
+
+    fn open_reference_at(
+        &mut self,
+        path: &str,
+        line: Option<u64>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match line
+            .and_then(|line| u32::try_from(line).ok())
+            .filter(|&line| line > 0)
+        {
+            Some(line) => self.open_file_at(path, line, 1, 0, window, cx),
+            None => self.open_file_in_editor(path, window, cx),
+        }
     }
 
     /// Moves `path`'s editor to the pending reveal, if it is for this file.

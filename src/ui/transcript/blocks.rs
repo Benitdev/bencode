@@ -61,8 +61,10 @@ pub fn markdown(
         .live(live)
         .tone(tone)
         .selectable(select)
-        .on_open_file(Rc::new(move |path, _line, window, cx| {
-            let opened = app.update(cx, |this, cx| this.open_file_in_editor(path, window, cx));
+        .on_open_file(Rc::new(move |path, line, window, cx| {
+            let opened = app.update(cx, |this, cx| {
+                this.open_file_reference(path, line, window, cx)
+            });
             if let Err(err) = opened {
                 log::debug!("markdown file link after app drop: {err:#}");
             }
