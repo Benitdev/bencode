@@ -7,7 +7,8 @@ use ely_gpui_component::overlays::ConfirmDialog;
 use ely_gpui_component::primitives::{Icon, IconName, Severity};
 use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize, TextSize};
 use gpui::{
-    AnyElement, Context, IntoElement, ParentElement, SharedString, Styled, div, prelude::*,
+    AnyElement, Context, IntoElement, MouseButton, MouseDownEvent, MouseUpEvent, ParentElement,
+    SharedString, Styled, div, prelude::*,
 };
 
 use super::EditorHandle;
@@ -17,6 +18,8 @@ use super::preview::{FileViewMode, is_markdown_path};
 use crate::app::BenCodeApp;
 use crate::app::file_pane::PaneTab;
 use crate::ui::app_callback::app_callback;
+use crate::ui::scale::px;
+use crate::ui::tokens::Text;
 
 impl BenCodeApp {
     /// The pane's active file: toolbar, disk conflict and editor.
@@ -55,7 +58,22 @@ impl BenCodeApp {
                 let text = file.handle.entity.read(cx).text();
                 return self.render_markdown_preview(&file.path, text, cx);
             }
-            return file.handle.entity.clone().into_any_element();
+            // ⌘-click: the editor places the caret, then the caret's
+            // observer goes to the definition (`app/go_to_definition.rs`).
+            let (down, up) = (file.path.clone(), file.path.clone());
+            return div()
+                .size_full()
+                .capture_any_mouse_down(cx.listener(move |this, event: &MouseDownEvent, _, _| {
+                    let jump = event.button == MouseButton::Left && event.modifiers.platform;
+                    this.definition.jump_on_click = jump.then(|| down.clone());
+                }))
+                .capture_any_mouse_up(cx.listener(move |this, _: &MouseUpEvent, _, _| {
+                    if this.definition.jump_on_click.as_deref() == Some(up.as_str()) {
+                        this.definition.jump_on_click = None;
+                    }
+                }))
+                .child(file.handle.entity.clone())
+                .into_any_element();
         }
         let (title, body) = if self.editor.is_loading() {
             ("Opening file…", "Reading the file from disk.")
@@ -162,6 +180,14 @@ impl BenCodeApp {
                         .children(self.view_mode_toggle(&path, cx))
                         .children(self.add_selection_button(&path, cx))
                         .children(self.blame_chip(&path, cx))
+                        .children(self.definition_message(&path).map(|message| {
+                            div()
+                                .max_w(px(260.0))
+                                .truncate()
+                                .text_size(Text::Sm.px())
+                                .text_color(cx.theme().colors.warning)
+                                .child(message.to_string())
+                        }))
                         .child(Badge::new(detect_language(&path)))
                         .child(
                             div()

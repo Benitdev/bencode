@@ -88,6 +88,8 @@ fn groups() -> Vec<Group<Entry>> {
                 entry("Find in Files", I::FileCode, cmd::FindInProject),
                 entry("File History", I::History, cmd::ShowFileHistory)
                     .note("The commits that changed the open file."),
+                entry("Go to Definition", I::SquareFunction, cmd::GoToDefinition)
+                    .note("Or ⌘-click a name. Found by searching the project."),
                 entry("Back", I::ArrowLeft, cmd::GoBack),
                 entry("Forward", I::ArrowRight, cmd::GoForward),
                 entry("Previous Session", I::ArrowUp, cmd::PreviousSession)

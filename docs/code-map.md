@@ -13,7 +13,7 @@ bencode/
 ├── CHANGELOG.md              per-release notes; the release workflow publishes a version's section
 ├── LICENSE                   MIT
 ├── Cargo.toml                the workspace (one version for all three crates), dependencies, build profiles
-├── crates/bencode-core/      what the app and its host share: `harness/`, the file index, search, the Explorer's disk ops (`tree/`), `remote/` (paths, protocol)
+├── crates/bencode-core/      what the app and its host share: `harness/`, the file index, search, Go to Definition's search and ranking (`definitions.rs`), the Explorer's disk ops (`tree/`), `remote/` (paths, protocol)
 ├── crates/bencode-host/      BenCode Host, the daemon on a remote machine (`bencode-host connect | daemon | status | stop`)
 ├── assets/
 │   ├── icons/                Lucide SVGs Ely does not ship (ui/icons.rs)
@@ -76,6 +76,7 @@ bencode/
 | `agent.rs` | Running a turn: spawning the harness, folding `AgentEvent`s into blocks, permissions, cancel |
 | `commands.rs` | Every action, shortcut and menu (`actions!`, `keymap`, `menus`, `bind_commands`) |
 | `file_pane.rs` | `FilePane` / `PaneTab`: the tabs open beside the chat (files, reviews, Changes, commits, File History) |
+| `go_to_definition.rs` | Go to Definition (⌘-click, F12): the name at the caret searched in the project as a declaration (`bencode_core::definitions`), one clear candidate opened, several handed to the picker (`ui/definition_picker.rs`) |
 | `blame.rs` | Line blame and File History: each open file's `git blame` per saved copy, the caret line's note, commits' messages and changes for the blame card, the File History tabs' commits |
 | `panes.rs` | Workspace tabs and split panes: focus, split, close, docking |
 | `surfaces.rs` | `Surface`: Search, Inbox, Notes, Automations, Settings (full-height views) |

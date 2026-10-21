@@ -82,6 +82,7 @@ impl ProjectSearchState {
             regex: self.regex,
             include: text(&self.include_input),
             exclude: text(&self.exclude_input),
+            untracked: false,
         }
     }
 

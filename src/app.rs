@@ -15,6 +15,7 @@ mod composer_input;
 pub mod file_pane;
 pub mod frame_bench;
 pub mod github_accounts;
+pub mod go_to_definition;
 pub mod habits;
 pub mod harness_updates;
 pub mod ids;
@@ -458,6 +459,8 @@ pub struct BenCodeApp {
     pub editor: crate::ui::editor_pane::EditorState,
     /// Line blame and File History tabs.
     pub blame: blame::BlameState,
+    /// Go to Definition: the jump under way, its picker, its message.
+    pub definition: go_to_definition::DefinitionState,
     pub is_sidebar_open: bool,
     /// The project rail (⌘B); the session sidebar is `is_sidebar_open` (⇧⌘B).
     pub is_rail_open: bool,
@@ -1441,6 +1444,7 @@ impl BenCodeApp {
             updater: Default::default(),
             editor: Default::default(),
             blame: Default::default(),
+            definition: Default::default(),
             is_sidebar_open: true,
             is_rail_open: true,
             rail_ui,
@@ -1681,6 +1685,7 @@ impl Render for BenCodeApp {
             any_elements(self.render_worktree_creation(cx)),
             any_elements(self.render_search_dialog(cx)),
             any_elements(self.render_quick_open(cx)),
+            any_elements(self.render_definition_picker(cx)),
             any_elements(self.render_lightbox(cx)),
             any_elements(self.render_git_confirm(cx)),
             any_elements(self.render_git_error(cx)),

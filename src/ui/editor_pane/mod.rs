@@ -374,9 +374,10 @@ impl BenCodeApp {
         });
         // Only a change in the selected lines redraws the app.
         let selection_key = path.to_string();
-        let selection = cx.observe(&entity, move |this, editor, cx| {
+        let selection = cx.observe_in(&entity, window, move |this, editor, window, cx| {
             let editor = editor.read(cx);
             let primary = editor.primary();
+            let head = primary.head;
             let next = selected_lines(editor.text(), primary.anchor, primary.head).map(
                 |(start_line, end_line)| EditorSelection {
                     path: selection_key.clone(),
@@ -394,6 +395,11 @@ impl BenCodeApp {
                 cx.notify();
             }
             this.track_line_blame(&selection_key, cx);
+            // A ⌘-click placed the caret on the name to go to.
+            if this.definition.jump_on_click.as_deref() == Some(selection_key.as_str()) {
+                this.definition.jump_on_click = None;
+                this.go_to_definition(&selection_key, head, window, cx);
+            }
         });
         EditorHandle {
             entity,

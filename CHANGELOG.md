@@ -4,6 +4,18 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
+## [0.1.25] - Unreleased
+
+- Go to Definition in the editor: ⌘-click a name, or press F12, and the
+  line that declares it opens with the name selected, in this file or
+  another. BenCode searches the project for it (`fn`, `def`, `class`,
+  `func`, `const … =`, C-style functions, `#define`, …) in files of the
+  same language, new files included, so there is no language server to
+  install or keep running, and it works in projects on another machine.
+  When the name is declared in several places a picker lists them, best
+  first; a body is preferred over its prototype and this file over
+  others.
+
 ## [0.1.24] - 2026-10-21
 
 - A Claude Code edit shows what it changed under its row, as the CLI

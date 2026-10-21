@@ -4,6 +4,7 @@
 //! for Linux as well as macOS.
 
 pub mod files;
+pub mod definitions;
 pub mod git_cli;
 pub mod harness;
 pub mod http;

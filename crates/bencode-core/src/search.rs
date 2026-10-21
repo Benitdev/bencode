@@ -23,6 +23,10 @@ pub struct SearchOptions {
     /// Comma-separated globs.
     pub include: String,
     pub exclude: String,
+    /// Untracked files too (not ignored ones); a host that predates this
+    /// searches tracked files only.
+    #[serde(default)]
+    pub untracked: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -76,6 +80,9 @@ fn git_grep(
     }
     if options.whole_word {
         args.push("-w");
+    }
+    if options.untracked {
+        args.push("--untracked");
     }
     args.push(if options.regex { "-E" } else { "-F" });
     args.extend(["-e", query]);
