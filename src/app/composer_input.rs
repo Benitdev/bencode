@@ -91,6 +91,10 @@ impl BenCodeApp {
         if self.mention_picker_open() && was != Some(TokenPicker::Mention) {
             self.index_project_files(cx);
         }
+        // A closed picker holds no ranking (nor the index it was made of).
+        if !self.mention_picker_open() {
+            self.mention_ranked.clear();
+        }
         self.prompt_token = slash.or(mention);
         // The prompt and its pickers are the focused composer's: a
         // keystroke redraws its pane, not the app.

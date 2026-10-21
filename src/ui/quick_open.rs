@@ -4,7 +4,7 @@
 //! recently opened files first. Starting the query with `>` lists commands.
 
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -135,8 +135,8 @@ pub fn fuzzy_match(query: &str, text: &str) -> Option<Hit> {
     FuzzyQuery::new(query).matches(text)
 }
 
-/// MonoCode `rankProjectFiles` over `lists` (files, and folders for `@`):
-/// with no query, the recent files; otherwise the matches, recent ones
+/// MonoCode `rankProjectFiles` over `lists` (files, and folders for `@`;
+/// each sorted, as the index keeps them): with no query, the recent files; otherwise the matches, recent ones
 /// lifted, best first. Runs over the whole index on each keystroke: one
 /// pass, and only the shown results become `String`s.
 pub fn rank_files(
@@ -146,10 +146,14 @@ pub fn rank_files(
 ) -> Vec<(String, Hit)> {
     let files = || lists.iter().flat_map(|list| list.iter());
     if query.trim().is_empty() {
-        let listed: HashSet<&str> = files().map(|f| f.as_ref()).collect();
+        let listed = |path: &str| {
+            lists
+                .iter()
+                .any(|list| list.binary_search_by(|f| f.as_ref().cmp(path)).is_ok())
+        };
         return recents
             .iter()
-            .filter(|path| listed.contains(path.as_str()))
+            .filter(|path| listed(path))
             .take(MAX_RESULTS)
             .map(|path| {
                 (

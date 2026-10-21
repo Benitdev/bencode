@@ -7,13 +7,16 @@
 //!
 //! A query looks through every transcript, so it is matched on the
 //! background executor, over threads and projects taken when the dialog
-//! opened; an answer a newer keystroke overtook is dropped.
+//! opened. A keystroke drops the search before it (one already matching
+//! runs out, its answer unused), and a query waits `SEARCH_PAUSE` first,
+//! so typing does not start a search per letter.
 
 mod hits;
 
 use std::collections::HashSet;
 use std::ops::Range;
 use std::sync::Arc;
+use std::time::Duration;
 
 use ely_gpui_component::buttons::SegmentedControl;
 use ely_gpui_component::data_display::Tag;
@@ -24,7 +27,7 @@ use ely_gpui_component::typography::Kbd;
 use gpui::{
     AnyElement, Context, Focusable, FontWeight, HighlightStyle, InteractiveElement, IntoElement,
     ListAlignment, ListState, MouseButton, ParentElement, SharedString, StatefulInteractiveElement,
-    Styled, StyledText, Window, div, list, prelude::*,
+    Styled, StyledText, Task, Window, div, list, prelude::*,
 };
 
 pub use hits::SearchScope;
@@ -71,6 +74,9 @@ enum Row {
     Hit(usize),
 }
 
+/// How long a query waits for the next keystroke before it is matched.
+const SEARCH_PAUSE: Duration = Duration::from_millis(40);
+
 /// The threads and projects a search looks through, taken when the dialog
 /// opens so the matching can run off the UI thread.
 struct Corpus {
@@ -83,8 +89,8 @@ pub struct SearchState {
     pub open: bool,
     pub scope: SearchScope,
     corpus: Option<Arc<Corpus>>,
-    /// The latest search asked for; an older answer is dropped.
-    generation: u64,
+    /// The search under way; replacing it cancels the one before.
+    searching: Option<Task<()>>,
     found: Found,
     rows: Vec<Row>,
     list: ListState,
@@ -98,7 +104,7 @@ impl Default for SearchState {
             open: false,
             scope: SearchScope::All,
             corpus: None,
-            generation: 0,
+            searching: None,
             found: Found::default(),
             rows: Vec::new(),
             list: ListState::new(0, ListAlignment::Top, px(400.0)),
@@ -188,6 +194,7 @@ impl BenCodeApp {
             return false;
         }
         self.search.corpus = None;
+        self.search.searching = None;
         self.refocus_prompt(cx);
         cx.notify();
         true
@@ -205,8 +212,6 @@ impl BenCodeApp {
         let Some(corpus) = self.search.corpus.clone() else {
             return;
         };
-        self.search.generation += 1;
-        let generation = self.search.generation;
         let query = self.search_modal_input.read(cx).text().to_string();
         let scope = self.search.scope;
         let files = self.project_files.files.clone();
@@ -232,24 +237,24 @@ impl BenCodeApp {
             )
         };
         if self.search_query_empty(cx) {
+            self.search.searching = None;
             self.search.set(find());
             self.redraw_search(cx);
             return;
         }
-        let task = cx.background_executor().spawn(async move { find() });
-        cx.spawn(async move |this, cx| {
-            let found = task.await;
+        let executor = cx.background_executor().clone();
+        self.search.searching = Some(cx.spawn(async move |this, cx| {
+            executor.timer(SEARCH_PAUSE).await;
+            let found = executor.spawn(async move { find() }).await;
             let landed = this.update(cx, |app, cx| {
-                if app.search.open && app.search.generation == generation {
-                    app.search.set(found);
-                    app.redraw_search(cx);
-                }
+                app.search.searching = None;
+                app.search.set(found);
+                app.redraw_search(cx);
             });
             if let Err(err) = landed {
                 log::debug!("search results after app drop: {err:#}");
             }
-        })
-        .detach();
+        }));
     }
 
     fn set_search_scope(&mut self, scope: SearchScope, cx: &mut Context<Self>) {

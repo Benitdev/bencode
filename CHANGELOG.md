@@ -7,8 +7,9 @@ tagging (`docs/releasing.md`).
 ## [0.1.26] - Unreleased
 
 - Search (⌘K) no longer holds up typing in a long history: a query is
-  matched in the background, and a word typed without its accents is
-  found quickly in accented text (Vietnamese, French, …).
+  matched in the background once typing pauses, and a word typed
+  without its accents is found quickly in accented text (Vietnamese,
+  French, …).
 - Go to File and the `@` picker rank the project's files once per
   keystroke, not again on every redraw or hover.
 - A running agent's thread is saved without copying its whole

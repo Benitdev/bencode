@@ -1,8 +1,6 @@
 //! `/skill` and `@mention` suggestions shown above the composer while a
 //! trigger token is being typed.
 
-use std::collections::HashSet;
-
 use ely_gpui_component::primitives::{Icon, IconName};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
@@ -149,10 +147,10 @@ pub fn mention_paths(
     let needle = query.trim_end_matches('/').trim();
     let is_dir = |path: &str| dirs.binary_search_by(|d| d.as_ref().cmp(path)).is_ok();
     if needle.is_empty() {
-        let listed: HashSet<&str> = files.iter().map(|f| f.as_ref()).collect();
+        let listed = |path: &str| files.binary_search_by(|f| f.as_ref().cmp(path)).is_ok();
         let mut out: Vec<String> = recents
             .iter()
-            .filter(|r| listed.contains(r.as_str()))
+            .filter(|r| listed(r))
             .take(MAX_PICKER)
             .cloned()
             .collect();
