@@ -197,6 +197,7 @@ impl AntigravityParser {
                 id: id.to_string(),
                 output: output.to_string(),
                 success: !failed,
+                patch: None,
             });
         }
     }
@@ -438,6 +439,7 @@ mod tests {
             id: "agy-8b5f-2".into(),
             output: "after.txt\r\n".into(),
             success: true,
+            patch: None,
         }));
     }
 

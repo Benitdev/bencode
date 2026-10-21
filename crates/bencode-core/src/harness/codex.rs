@@ -250,6 +250,7 @@ impl CodexParser {
                     id: id.to_string(),
                     output: tool_output(item),
                     success: !failed,
+                    patch: None,
                 });
             }
         }
@@ -529,7 +530,8 @@ mod tests {
                 AgentEvent::ToolCallFinish {
                     id: "i1".into(),
                     output: "a\nb".into(),
-                    success: true
+                    success: true,
+                    patch: None,
                 },
                 AgentEvent::TextDelta("First.".into()),
                 AgentEvent::TextDelta("\n\nSecond.".into()),

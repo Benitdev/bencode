@@ -576,6 +576,7 @@ impl GrokParser {
                 id,
                 output: tool_detail(update, tool),
                 success: status == "completed",
+                patch: None,
             });
         }
     }
@@ -1659,6 +1660,7 @@ mod tests {
                     id: "call-1".into(),
                     output: "# BenCode".into(),
                     success: true,
+                    patch: None,
                 },
                 AgentEvent::TextDelta("Hi".into()),
                 AgentEvent::Usage {
@@ -1717,6 +1719,7 @@ mod tests {
                     id: "call-1".into(),
                     output: "found 2 matches".into(),
                     success: true,
+                    patch: None,
                 },
                 AgentEvent::ToolCallStart {
                     id: "call-2".into(),
@@ -1731,6 +1734,7 @@ mod tests {
                     id: "call-2".into(),
                     output: "/repo/missing.sql does not exist".into(),
                     success: false,
+                    patch: None,
                 },
                 // `todo_write` shows as the list, not as a tool row.
                 AgentEvent::Tasks(vec![
@@ -1749,6 +1753,7 @@ mod tests {
                     id: "call-4".into(),
                     output: String::new(),
                     success: true,
+                    patch: None,
                 },
                 AgentEvent::TextDelta("Done.".into()),
                 context(60212),

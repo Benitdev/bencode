@@ -1,7 +1,8 @@
 //! The agent's work inside a turn (MonoCode `WorkFoldLine`, `ActivityPhases`,
 //! `ActivityToolRow`, `ActivityThinkingRow`): one status line per turn, work
 //! grouped into phases titled by the agent's own words or a summary of the
-//! calls, and one-line tool rows (verb, then the file or command).
+//! calls, and one-line tool rows (verb, then the file or command), an
+//! edit's with what it changed under it (`edit_patch.rs`).
 
 use std::time::Duration;
 
@@ -599,6 +600,9 @@ impl BenCodeApp {
             .filter(|_| failed)
             .map(str::to_string);
         let error_open = self.transcript_ui.open_tool_errors.contains(&key);
+        let patch = (!failed)
+            .then(|| self.render_edit_patch(block, file.as_deref(), cx))
+            .flatten();
         let target_color = if failed {
             colors.danger
         } else {
@@ -662,6 +666,7 @@ impl BenCodeApp {
                         .child(detail),
                 )
             })
+            .children(patch)
             .into_any_element()
     }
 

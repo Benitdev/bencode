@@ -16,6 +16,7 @@ pub mod grok;
 pub mod handle;
 pub mod login;
 pub mod opencode;
+pub mod patch;
 pub mod probe;
 pub mod process;
 pub mod resolver;

@@ -185,6 +185,7 @@ impl ClaudeParser {
                     id: call_id.clone(),
                     output: summary.to_string(),
                     success: succeeded,
+                    patch: None,
                 });
             }
         }
@@ -332,6 +333,7 @@ impl ClaudeParser {
                 id: task.call_id,
                 output,
                 success: succeeded,
+                patch: None,
             });
         }
         self.maybe_finish(events);
@@ -443,6 +445,7 @@ impl ClaudeParser {
                 id: call_id.clone(),
                 output: detail.unwrap_or_default().to_string(),
                 success: succeeded,
+                patch: None,
             });
         }
     }

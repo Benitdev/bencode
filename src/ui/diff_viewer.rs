@@ -1503,7 +1503,7 @@ fn line_highlights(
 /// chosen diff palette (`bg-diff-*-bg`, `bg-diff-*-gutter`, `text-diff-*-fg`).
 /// The text starts `scrolled` to the left of its lane; the gutter stays.
 /// The caller gives the row its width.
-fn render_line(
+pub(crate) fn render_line(
     line: &Line,
     number: Option<u32>,
     syntax: Syntax,

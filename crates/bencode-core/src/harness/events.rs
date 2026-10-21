@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::harness::patch::EditPatch;
+
 /// A tool-permission prompt raised by a running harness. Carries everything the
 /// harness needs to build its reply, so the UI never has to know the protocol.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -133,6 +135,10 @@ pub enum AgentEvent {
         id: String,
         output: String,
         success: bool,
+        /// What a file edit changed, when the harness reports it. Optional
+        /// on the wire, so a host and an app of other versions still agree.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        patch: Option<EditPatch>,
     },
     PermissionRequest(PermissionRequest),
     /// A subagent's step, on the Agent call `call_id` that spawned it

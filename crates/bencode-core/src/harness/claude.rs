@@ -13,6 +13,7 @@ use serde_json::{Value, json};
 use crate::harness::attachments::{self, Attachment};
 use crate::harness::events::{AgentEvent, DoneStatus, PermissionRequest, TurnMetrics};
 use crate::harness::handle::HarnessProcessHandle;
+use crate::harness::patch::EditPatch;
 use crate::harness::process::{self, LineParser, ProcessSpec, StdinMode};
 use crate::harness::resolver::HarnessResolver;
 use crate::harness::{EventRx, PermissionPolicy, SpawnRequest, str_field, summarize_tool_input};
@@ -343,7 +344,14 @@ impl LineParser for ClaudeParser {
 
 impl ClaudeParser {
     fn on_user(&mut self, rec: &Value, events: &mut Vec<AgentEvent>) {
-        for (id, output, success) in tool_results(rec) {
+        let results = tool_results(rec);
+        // `tool_use_result` describes the record's one result; a record
+        // holding several cannot say whose it is.
+        let mut patch = rec
+            .get("tool_use_result")
+            .filter(|_| results.len() == 1)
+            .and_then(EditPatch::from_claude);
+        for (id, output, success) in results {
             let agent = self
                 .tools
                 .get(&id)
@@ -357,6 +365,7 @@ impl ClaudeParser {
                 id: id.clone(),
                 output,
                 success,
+                patch: patch.take().filter(|_| success),
             });
             if agent {
                 self.settle_inline_agent(&id, events);
@@ -800,7 +809,8 @@ mod tests {
                 AgentEvent::ToolCallFinish {
                     id: "t1".into(),
                     output: "hi".into(),
-                    success: true
+                    success: true,
+                    patch: None,
                 },
             ]
         );
@@ -812,6 +822,43 @@ mod tests {
             r#"{"type":"assistant","message":{"id":"m2","content":[{"type":"text","text":"inner"}]},"parent_tool_use_id":"task-1"}"#,
         ]);
         assert!(events.is_empty());
+    }
+
+    /// A Read, an Edit and a Write, recorded from Claude Code 2.1.
+    const EDIT_TURN: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tests/fixtures/claude_edit.jsonl"
+    ));
+
+    #[test]
+    fn edits_finish_with_what_they_changed() {
+        let lines: Vec<&str> = EDIT_TURN.lines().collect();
+        let patches: Vec<(String, Option<EditPatch>)> = parse_all(&lines)
+            .into_iter()
+            .filter_map(|e| match e {
+                AgentEvent::ToolCallFinish { id, patch, .. } => Some((id, patch)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(patches.len(), 3);
+        // The Read changed nothing.
+        assert_eq!(patches[0], ("toolu_01KGamrKViHcf4uRjEEuyqAa".into(), None));
+        let edit = patches[1].1.as_ref().expect("the Edit's patch");
+        assert_eq!((edit.added, edit.removed, edit.created), (2, 1, false));
+        assert_eq!(
+            edit.hunks[0].lines,
+            [
+                " line one",
+                "-line two",
+                "+LINE 2",
+                "+line 2b",
+                " line three",
+                " line four"
+            ]
+        );
+        let write = patches[2].1.as_ref().expect("the Write's patch");
+        assert!(write.created);
+        assert_eq!(write.hunks[0].lines, ["+hi"]);
     }
 
     /// A run in the background, recorded from Claude Code 2.1: Claude
@@ -982,6 +1029,7 @@ mod tests {
             id: "background:b1".into(),
             output: "done (exit 0)".into(),
             success: true,
+            patch: None,
         }));
         assert!(events.contains(&AgentEvent::Background(Vec::new())));
         // Claude is about to be woken; the turn waits for it, not for good.

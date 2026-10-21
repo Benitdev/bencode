@@ -17,6 +17,7 @@ use crate::db::{Block, RunStatus, SessionRow, TurnModel};
 use crate::harness::Attachment;
 use crate::harness::accounts::AccountProfile;
 use crate::harness::events::TurnMetrics;
+use crate::harness::patch::EditPatch;
 use crate::harness::{
     self, AgentEvent, DoneStatus, HarnessKind, HarnessProcessHandle, PermissionPolicy,
     PermissionRequest, SpawnRequest, catalog, summarize_tool_input,
@@ -1598,7 +1599,8 @@ pub fn apply_event(session: &mut SessionRow, event: AgentEvent, now: i64) {
             id,
             output,
             success,
-        } => finish_tool(session, &id, &output, success),
+            patch,
+        } => finish_tool(session, &id, &output, success, patch.as_ref()),
         AgentEvent::Usage {
             total_tokens,
             context_window,
@@ -1694,7 +1696,13 @@ fn start_tool(session: &mut SessionRow, call_id: &str, name: &str, input: &Value
     session.blocks.push(block);
 }
 
-fn finish_tool(session: &mut SessionRow, call_id: &str, output: &str, success: bool) {
+fn finish_tool(
+    session: &mut SessionRow,
+    call_id: &str,
+    output: &str,
+    success: bool,
+    patch: Option<&EditPatch>,
+) {
     let Some(block) = tool_block_mut(session, call_id) else {
         log::debug!("result for unknown tool call {call_id}");
         return;
@@ -1711,6 +1719,15 @@ fn finish_tool(session: &mut SessionRow, call_id: &str, output: &str, success: b
             "detail".into(),
             json!(truncate(output, MAX_TOOL_OUTPUT_CHARS)),
         );
+    }
+    // BenCode's own field; MonoCode ignores it.
+    if let Some(patch) = patch {
+        match serde_json::to_value(patch) {
+            Ok(value) => {
+                tool.insert("patch".into(), value);
+            }
+            Err(err) => log::warn!("could not keep the patch of {call_id}: {err}"),
+        }
     }
 }
 
@@ -1804,6 +1821,7 @@ mod tests {
                 id: "t1".into(),
                 output: "a.rs".into(),
                 success: true,
+                patch: None,
             },
             3,
         );
@@ -1894,6 +1912,42 @@ mod tests {
         })
     }
 
+    #[test]
+    fn an_edit_keeps_what_it_changed() {
+        let mut s = session();
+        apply_event(
+            &mut s,
+            edit_start("e1", "Edit", json!({"file_path": "/r/a.rs"})),
+            1,
+        );
+        let patch = EditPatch {
+            hunks: vec![crate::harness::patch::PatchHunk {
+                old_start: 3,
+                new_start: 3,
+                lines: vec!["-a".into(), "+b".into()],
+            }],
+            added: 1,
+            removed: 1,
+            created: false,
+            omitted: 0,
+        };
+        apply_event(
+            &mut s,
+            AgentEvent::ToolCallFinish {
+                id: "e1".into(),
+                output: String::new(),
+                success: true,
+                patch: Some(patch.clone()),
+            },
+            2,
+        );
+        let kept = &s.blocks[0].tool.as_ref().unwrap()["patch"];
+        assert_eq!(
+            serde_json::from_value::<EditPatch>(kept.clone()).unwrap(),
+            patch
+        );
+    }
+
     fn edit_start(id: &str, name: &str, input: Value) -> AgentEvent {
         AgentEvent::ToolCallStart {
             id: id.into(),
@@ -1907,6 +1961,7 @@ mod tests {
             id: id.into(),
             output: String::new(),
             success,
+            patch: None,
         }
     }
 

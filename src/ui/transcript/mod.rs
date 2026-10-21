@@ -5,6 +5,7 @@
 
 pub(crate) mod activity;
 pub mod blocks;
+mod edit_patch;
 pub mod find;
 pub mod markdown;
 pub mod mono;
@@ -312,12 +313,15 @@ pub(super) fn row_turn(row: &Row) -> Option<usize> {
 }
 
 /// What the transcript remembers the user opened (MonoCode keeps these in
-/// component state): folds, phases, failed tool output, long messages.
+/// component state): folds, phases, failed tool output, long patches and
+/// messages.
 #[derive(Default)]
 pub struct TranscriptUiState {
     pub open_folds: HashSet<String>,
     pub phase_open: HashMap<String, bool>,
     pub open_tool_errors: HashSet<String>,
+    /// Edits whose whole patch the reader opened, by block id.
+    pub open_patches: HashSet<String>,
     /// Subagent rows the reader opened or closed, by block id; a failed
     /// run opens itself until then.
     pub subagent_open: HashMap<String, bool>,

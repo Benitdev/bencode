@@ -227,6 +227,7 @@ fn on_tool_use(part: &Value, events: &mut Vec<AgentEvent>) {
             id: id.to_string(),
             output: output.to_string(),
             success: status == Some("completed"),
+            patch: None,
         });
     }
 }
@@ -324,7 +325,8 @@ mod tests {
                 AgentEvent::ToolCallFinish {
                     id: "call_1".into(),
                     output: "(no output)".into(),
-                    success: true
+                    success: true,
+                    patch: None,
                 },
             ]
         );
@@ -358,7 +360,8 @@ mod tests {
                 AgentEvent::ToolCallFinish {
                     id: "c1".into(),
                     output: "x".into(),
-                    success: true
+                    success: true,
+                    patch: None,
                 },
                 AgentEvent::Usage {
                     input_tokens: 4,

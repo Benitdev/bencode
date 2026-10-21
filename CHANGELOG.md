@@ -4,6 +4,13 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
+## [0.1.24] - Unreleased
+
+- A Claude Code edit shows what it changed under its row, as the CLI
+  does: "Added 2 lines, removed 1 line", then the lines with their
+  numbers, coloured as in a review. A long one shows its first lines
+  until Show more. Codex and Grok Build edits show the row alone for now.
+
 ## [0.1.23] - 2026-10-20
 
 - Deleting a thread can delete the CLI's own session too: tick "Also
