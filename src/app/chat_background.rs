@@ -144,7 +144,7 @@ pub(crate) fn render_image(
     light: bool,
 ) -> Result<RenderImage> {
     let mut pixels = background_effects::render(source, effect, light);
-    for pixel in pixels.chunks_exact_mut(4) {
+    for pixel in pixels.as_chunks_mut::<4>().0 {
         pixel.swap(0, 2);
     }
     let buffer = image::RgbaImage::from_raw(source.width, source.height, pixels)

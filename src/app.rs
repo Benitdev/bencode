@@ -237,6 +237,8 @@ pub struct BenCodeApp {
     pub prompt_token: Option<crate::ui::composer::tokens::Token>,
     pub prompt_caret: usize,
     pub mention_query: String,
+    /// The `@` picker's last ranking of the project's files.
+    pub(crate) mention_ranked: crate::ui::quick_open::RankCache<Vec<(String, Vec<usize>)>>,
     /// Highlighted row of the open `/` or `@` picker.
     pub picker_index: usize,
     /// The open picker's list, scrolled to keep the highlight in view.
@@ -1321,6 +1323,7 @@ impl BenCodeApp {
             prompt_token: None,
             prompt_caret: 0,
             mention_query: String::new(),
+            mention_ranked: Default::default(),
             picker_index: 0,
             picker_scroll: gpui::ScrollHandle::new(),
             prompt_focused: false,

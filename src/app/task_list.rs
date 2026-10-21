@@ -2,6 +2,8 @@
 //! list, kept in the transcript as one `tasks` block per turn that each new
 //! snapshot replaces.
 
+use std::sync::Arc;
+
 use serde_json::{Value, json};
 
 use crate::db::{Block, SessionRow};
@@ -90,12 +92,12 @@ pub fn upsert(session: &mut SessionRow, items: &[TaskItem], now: i64) {
         return;
     }
     let block = match existing {
-        Some(ix) => &mut session.blocks[ix],
+        Some(ix) => Arc::make_mut(&mut session.blocks[ix]),
         None => {
             let mut block = Block::new(format!("tasks-{now}"), ROLE, "");
             block.started_at = Some(now);
-            session.blocks.push(block);
-            session.blocks.last_mut().expect("just pushed")
+            session.blocks.push(block.into());
+            Arc::make_mut(session.blocks.last_mut().expect("just pushed"))
         }
     };
     block.text = Some(text(items));
@@ -125,7 +127,7 @@ mod tests {
 
     fn session() -> SessionRow {
         SessionRow {
-            blocks: vec![Block::new("u1", "user", "do it")],
+            blocks: vec![Block::new("u1", "user", "do it").into()],
             ..Default::default()
         }
     }
@@ -159,7 +161,7 @@ mod tests {
     fn an_earlier_turns_list_stays_and_an_empty_snapshot_removes() {
         let mut s = session();
         upsert(&mut s, &[item("Old", TaskStatus::Completed)], 1);
-        s.blocks.push(Block::new("u2", "user", "next"));
+        s.blocks.push(Block::new("u2", "user", "next").into());
         upsert(&mut s, &[], 2);
         assert_eq!(s.blocks.len(), 3, "the first turn's list is history");
         upsert(&mut s, &[item("New", TaskStatus::Pending)], 3);

@@ -7,6 +7,7 @@
 use anyhow::{Result, anyhow, bail};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use std::sync::Arc;
 
 use super::input::{body, check_fields, id_chars, is_id, optional, page, required};
 use crate::db::{AppDb, Artifact, ArtifactKind, ArtifactUpsert, Block};
@@ -184,7 +185,7 @@ pub fn has_cards(block: &Block) -> bool {
 
 /// MonoCode `artifactCards`: every card in a chat, once each, in the order
 /// they were first written.
-pub fn chat_cards(blocks: &[Block]) -> Vec<ArtifactCard> {
+pub fn chat_cards(blocks: &[Arc<Block>]) -> Vec<ArtifactCard> {
     let mut cards: Vec<ArtifactCard> = Vec::new();
     for block in blocks.iter().filter(|block| has_cards(block)) {
         for card in block_cards(block) {
@@ -200,7 +201,7 @@ pub fn chat_cards(blocks: &[Block]) -> Vec<ArtifactCard> {
 /// MonoCode `recordArtifactCard`: the card goes on the turn's message (the
 /// last one the user sent); a revision or a retry replaces its card there.
 /// False when the chat has no message to put it on.
-pub fn record_card(blocks: &mut [Block], card: &ArtifactCard) -> bool {
+pub fn record_card(blocks: &mut [Arc<Block>], card: &ArtifactCard) -> bool {
     let Some(anchor) = blocks.iter_mut().rev().find(|block| block.role == "user") else {
         return false;
     };
@@ -209,7 +210,7 @@ pub fn record_card(blocks: &mut [Block], card: &ArtifactCard) -> bool {
     cards.push(card.clone());
     match serde_json::to_value(&cards) {
         Ok(value) => {
-            anchor.extra.insert(CARDS.into(), value);
+            Arc::make_mut(anchor).extra.insert(CARDS.into(), value);
             true
         }
         Err(err) => {
@@ -221,7 +222,7 @@ pub fn record_card(blocks: &mut [Block], card: &ArtifactCard) -> bool {
 
 /// MonoCode `removeArtifactCard`: takes the card for `id` out of every
 /// block, keeping the rest. True when one was there.
-pub fn remove_card(blocks: &mut [Block], id: &str) -> bool {
+pub fn remove_card(blocks: &mut [Arc<Block>], id: &str) -> bool {
     let mut changed = false;
     for block in blocks.iter_mut().filter(|block| has_cards(block)) {
         let cards = block_cards(block);
@@ -230,6 +231,7 @@ pub fn remove_card(blocks: &mut [Block], id: &str) -> bool {
         }
         changed = true;
         let rest: Vec<ArtifactCard> = cards.into_iter().filter(|card| card.id != id).collect();
+        let block = Arc::make_mut(block);
         if rest.is_empty() {
             block.extra.remove(CARDS);
         } else if let Ok(value) = serde_json::to_value(&rest) {
@@ -361,11 +363,11 @@ mod tests {
 
     #[test]
     fn cards_land_on_the_turns_message_once() {
-        let mut blocks = vec![
-            Block::new("u1", "user", "first"),
-            Block::new("a1", "assistant", "done"),
-            Block::new("u2", "user", "second"),
-            Block::new("a2", "assistant", "working"),
+        let mut blocks: Vec<Arc<Block>> = vec![
+            Block::new("u1", "user", "first").into(),
+            Block::new("a1", "assistant", "done").into(),
+            Block::new("u2", "user", "second").into(),
+            Block::new("a2", "assistant", "working").into(),
         ];
         assert!(record_card(&mut blocks, &card("d", "Draft")));
         assert!(record_card(&mut blocks, &card("e", "Other")));
@@ -387,7 +389,7 @@ mod tests {
         assert!(remove_card(&mut blocks, "e"));
         assert!(!blocks[2].extra.contains_key("artifactCards"));
         assert!(!record_card(
-            &mut [Block::new("a", "assistant", "x")],
+            &mut [Block::new("a", "assistant", "x").into()],
             &card("d", "D")
         ));
     }

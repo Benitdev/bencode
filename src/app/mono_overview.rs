@@ -434,35 +434,6 @@ impl BenCodeApp {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_overview_grows_leftwards_within_its_bounds() {
-        // Dragged 100px left in a wide window.
-        assert_eq!(resized_width(1000.0, 400.0, 900.0, 2000.0), 500.0);
-        assert_eq!(resized_width(1000.0, 400.0, 1200.0, 2000.0), MIN_WIDTH);
-        assert_eq!(resized_width(1000.0, 400.0, 0.0, 3000.0), MAX_WIDTH);
-        // The chat keeps its share of a narrow window.
-        assert_eq!(resized_width(1000.0, 400.0, 0.0, 1000.0), 620.0);
-        assert_eq!(resized_width(1000.0, 400.0, 0.0, 400.0), MIN_WIDTH);
-    }
-
-    #[test]
-    fn activity_goes_back_to_the_tab_it_came_from() {
-        let mut overview = OverviewState::default();
-        overview.select(OverviewTab::Habits);
-        overview.toggle_activity();
-        assert_eq!(overview.tab, OverviewTab::Activity);
-        overview.toggle_activity();
-        assert_eq!(overview.tab, OverviewTab::Habits);
-        overview.toggle_activity();
-        overview.mono_changed();
-        assert_eq!(overview.tab, OverviewTab::Habits);
-    }
-}
-
 impl BenCodeApp {
     /// MonoCode `push({ kind: "habit", id })`.
     pub fn open_mono_habit(&mut self, id: &str, cx: &mut Context<Self>) {
@@ -682,5 +653,34 @@ impl BenCodeApp {
             open.insert(key);
         }
         cx.notify();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_overview_grows_leftwards_within_its_bounds() {
+        // Dragged 100px left in a wide window.
+        assert_eq!(resized_width(1000.0, 400.0, 900.0, 2000.0), 500.0);
+        assert_eq!(resized_width(1000.0, 400.0, 1200.0, 2000.0), MIN_WIDTH);
+        assert_eq!(resized_width(1000.0, 400.0, 0.0, 3000.0), MAX_WIDTH);
+        // The chat keeps its share of a narrow window.
+        assert_eq!(resized_width(1000.0, 400.0, 0.0, 1000.0), 620.0);
+        assert_eq!(resized_width(1000.0, 400.0, 0.0, 400.0), MIN_WIDTH);
+    }
+
+    #[test]
+    fn activity_goes_back_to_the_tab_it_came_from() {
+        let mut overview = OverviewState::default();
+        overview.select(OverviewTab::Habits);
+        overview.toggle_activity();
+        assert_eq!(overview.tab, OverviewTab::Activity);
+        overview.toggle_activity();
+        assert_eq!(overview.tab, OverviewTab::Habits);
+        overview.toggle_activity();
+        overview.mono_changed();
+        assert_eq!(overview.tab, OverviewTab::Habits);
     }
 }

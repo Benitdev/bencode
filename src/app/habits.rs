@@ -10,6 +10,7 @@
 //! goes once the run ends, and a crash leaves nothing behind.
 
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::sync::Arc;
 use std::time::Duration;
 
 use gpui::Context;
@@ -510,7 +511,7 @@ impl BenCodeApp {
                 Value::Array(launches.to_vec()),
             );
         }
-        session.blocks.push(block);
+        session.blocks.push(block.into());
         session.updated_at = now;
         let id = run.mono_session.clone();
         self.persist_session(&id);
@@ -610,7 +611,7 @@ impl BenCodeApp {
 }
 
 /// MonoCode `finalReply`: the last thing the run said.
-fn final_reply(blocks: &[Block]) -> String {
+fn final_reply(blocks: &[Arc<Block>]) -> String {
     for block in blocks.iter().rev() {
         if block.role == "user" {
             break;
@@ -833,11 +834,11 @@ mod tests {
     fn the_report_is_the_last_reply() {
         let mut tool = Block::new("t", "assistant", "");
         tool.tool = Some(json!({ "kind": "read" }));
-        let blocks = vec![
-            Block::new("u", "user", "go"),
-            Block::new("a1", "assistant", "Looking"),
-            tool,
-            Block::new("a2", "assistant", "CI is red."),
+        let blocks: Vec<Arc<Block>> = vec![
+            Block::new("u", "user", "go").into(),
+            Block::new("a1", "assistant", "Looking").into(),
+            tool.into(),
+            Block::new("a2", "assistant", "CI is red.").into(),
         ];
         assert_eq!(final_reply(&blocks), "CI is red.");
         assert_eq!(final_reply(&blocks[..1]), "");

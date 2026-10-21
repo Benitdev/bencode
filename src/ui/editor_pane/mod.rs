@@ -10,6 +10,7 @@ mod view;
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
+use std::sync::Arc;
 
 use ely_gpui_component::editor::{CodeEditor, EditorEvent, LineNumbers};
 use gpui::{Context, Entity, SharedString, Subscription, Window, prelude::*};
@@ -209,9 +210,7 @@ impl BenCodeApp {
         let absolute = Path::new(&reference).is_absolute() || crate::remote::is_remote(&reference);
         let index = &self.project_files;
         let indexed = (index.root == cwd && !index.files.is_empty()).then(|| index.files.clone());
-        let listed = indexed
-            .as_ref()
-            .is_some_and(|files| files.iter().any(|f| f.as_ref() == reference));
+        let listed = indexed.is_some() && index.contains(&reference);
         if absolute || listed || cwd.trim().is_empty() {
             self.open_reference_at(&reference, line, window, cx);
             return;
@@ -222,7 +221,7 @@ impl BenCodeApp {
             if resolve_path(&cwd, &reference).exists() {
                 return reference;
             }
-            let files = indexed.unwrap_or_else(|| {
+            let files: Arc<[SharedString]> = indexed.unwrap_or_else(|| {
                 crate::workspace::list_project_files(Path::new(&cwd))
                     .into_iter()
                     .map(SharedString::from)

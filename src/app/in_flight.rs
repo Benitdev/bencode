@@ -263,17 +263,20 @@ impl BenCodeApp {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use super::*;
     use crate::db::Block;
 
     fn session(blocks: Vec<Block>) -> SessionRow {
-        let mut s = SessionRow::default();
-        s.id = "t".into();
-        s.cwd = "/p".into();
-        s.harness = "claude".into();
-        s.provider_session_id = Some("abc".into());
-        s.blocks = blocks;
-        s
+        SessionRow {
+            id: "t".into(),
+            cwd: "/p".into(),
+            harness: "claude".into(),
+            provider_session_id: Some("abc".into()),
+            blocks: blocks.into_iter().map(Arc::new).collect(),
+            ..Default::default()
+        }
     }
 
     fn interrupted(s: &mut SessionRow) {
@@ -295,7 +298,7 @@ mod tests {
         s.provider_session_id = None;
         assert!(!can_continue(&s));
         s.provider_session_id = Some("abc".into());
-        s.blocks.push(Block::new("u2", "user", "next"));
+        s.blocks.push(Block::new("u2", "user", "next").into());
         assert!(!can_continue(&s));
     }
 

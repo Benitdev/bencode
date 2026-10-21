@@ -25,6 +25,7 @@ pub mod memory;
 pub mod rotation;
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -257,7 +258,7 @@ pub fn question_activity(input: &Value) -> Option<String> {
 /// MonoCode `monoState` while it works: "Writing a reply" while the last
 /// block is its streaming reply, else the title of the latest call in this
 /// turn, else "Thinking".
-pub fn working_activity(blocks: &[crate::db::Block]) -> String {
+pub fn working_activity(blocks: &[Arc<crate::db::Block>]) -> String {
     if blocks
         .last()
         .is_some_and(|last| last.role == "assistant" && last.tool.is_none())
@@ -698,7 +699,7 @@ const AWAY_CHARS: usize = 4_000;
 /// habits posted to its chat since the user's last message, which its own
 /// session has not seen; empty when nothing was. The newest posts that fit
 /// `AWAY_CHARS`, with a count of the ones left out.
-pub fn habit_posts_context(blocks: &[crate::db::Block]) -> String {
+pub fn habit_posts_context(blocks: &[Arc<crate::db::Block>]) -> String {
     let mut posts = Vec::new();
     let (mut used, mut left_out) = (0, 0);
     for block in blocks.iter().rev() {
@@ -1049,12 +1050,13 @@ mod tests {
         let input = serde_json::json!({"questions": [{"question": " Which one? "}]});
         assert_eq!(question_activity(&input).as_deref(), Some("Which one?"));
         assert_eq!(question_activity(&serde_json::json!({})), None);
-        let user = Block::new("u", "user", "hi");
+        let user = Arc::new(Block::new("u", "user", "hi"));
         let mut tool = Block::new("t", "tool", "");
         tool.tool = Some(serde_json::json!({"title": "Read src/main.rs"}));
-        let reply = Block::new("a", "assistant", "Sure");
-        let thought = Block::new("r", "reasoning", "hmm");
-        assert_eq!(working_activity(&[user.clone()]), "Thinking");
+        let tool = Arc::new(tool);
+        let reply = Arc::new(Block::new("a", "assistant", "Sure"));
+        let thought = Arc::new(Block::new("r", "reasoning", "hmm"));
+        assert_eq!(working_activity(std::slice::from_ref(&user)), "Thinking");
         assert_eq!(
             working_activity(&[user.clone(), tool.clone(), thought]),
             "Read src/main.rs"
@@ -1084,29 +1086,30 @@ mod tests {
             "monoHabit".into(),
             serde_json::json!({"id": "hb", "name": "Morning check", "at": 1_760_443_200_000_i64}),
         );
+        let post = Arc::new(post);
         let blocks = [
-            Block::new("u0", "user", "hi"),
-            Block::new("a0", "assistant", "Hello."),
+            Arc::new(Block::new("u0", "user", "hi")),
+            Arc::new(Block::new("a0", "assistant", "Hello.")),
             post.clone(),
         ];
         let away = habit_posts_context(&blocks);
         assert!(away.contains("Morning check: Three PRs wait for review."));
         // Once the user has written since, it is no longer news.
-        let answered = [post, Block::new("u1", "user", "thanks")];
+        let answered = [post, Arc::new(Block::new("u1", "user", "thanks"))];
         assert_eq!(habit_posts_context(&answered), "");
     }
 
     #[test]
     fn many_habit_posts_hand_over_the_newest() {
         use crate::db::Block;
-        let posts: Vec<Block> = (0..20)
+        let posts: Vec<Arc<Block>> = (0..20)
             .map(|n| {
-                let mut post = Block::new(format!("h{n}"), "assistant", &format!("{n} {}", "x".repeat(500)));
+                let mut post = Block::new(format!("h{n}"), "assistant", format!("{n} {}", "x".repeat(500)));
                 post.extra.insert(
                     "monoHabit".into(),
                     serde_json::json!({"id": "hb", "name": "Poll", "at": 1_760_443_200_000_i64 + n}),
                 );
-                post
+                Arc::new(post)
             })
             .collect();
         let away = habit_posts_context(&posts);

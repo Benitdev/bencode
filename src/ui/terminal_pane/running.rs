@@ -97,6 +97,10 @@ pub(super) fn exited_line(code: Option<i32>) -> String {
     }
 }
 
+/// A tab to probe: its id, its process, its shell's pid and what ran in
+/// the foreground at the last probe.
+type ProbeJob = (u64, u32, Option<u32>, Option<Foreground>);
+
 impl BenCodeApp {
     /// MonoCode `listRunningTerminals` for the current project's dock.
     pub fn running_terminals(&self, cx: &gpui::App) -> Vec<RunningTerminal> {
@@ -155,10 +159,7 @@ impl BenCodeApp {
     }
 
     /// What the next poll reads; `None` stops it, no shell being left.
-    fn terminal_probe_jobs(
-        &mut self,
-        cx: &mut gpui::App,
-    ) -> Option<Vec<(u64, u32, Option<u32>, Option<Foreground>)>> {
+    fn terminal_probe_jobs(&mut self, cx: &mut gpui::App) -> Option<Vec<ProbeJob>> {
         let jobs: Vec<_> = self
             .terminals(cx)
             .docks

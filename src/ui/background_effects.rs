@@ -41,7 +41,9 @@ impl Source {
 
     fn from_pixels(width: u32, height: u32, pixels: Vec<u8>) -> Self {
         let luma = pixels
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .map(|p| {
                 (f32::from(p[0]) * 0.2126 + f32::from(p[1]) * 0.7152 + f32::from(p[2]) * 0.0722)
                     .round() as u8
@@ -201,7 +203,7 @@ fn scanlines(source: &Source, light: bool) -> Vec<u8> {
         if y % 3 != 0 {
             continue;
         }
-        for pixel in row.chunks_exact_mut(4) {
+        for pixel in row.as_chunks_mut::<4>().0 {
             for value in &mut pixel[..3] {
                 let v = f32::from(*value);
                 *value = byte(if light {
@@ -270,7 +272,7 @@ fn haze(source: &Source) -> Vec<u8> {
         let (soft_mix, strong_mix) = (gradient(&SOFT, t), gradient(&STRONG, t));
         let alpha = gradient(&MASK, t) * (1.0 - gradient(&OVERLAY, t));
         let start = y * width as usize * 4;
-        for (x, pixel) in row.chunks_exact_mut(4).enumerate() {
+        for (x, pixel) in row.as_chunks_mut::<4>().0.iter_mut().enumerate() {
             let at = start + x * 4;
             for color in 0..3 {
                 let sharp = f32::from(pixel[color]);

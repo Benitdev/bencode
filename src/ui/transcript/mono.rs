@@ -13,6 +13,7 @@ use gpui::{
     AnyElement, App, BoxShadow, ElementId, FontWeight, Hsla, InteractiveElement, IntoElement,
     ParentElement, Stateful, Styled, div, point,
 };
+use std::sync::Arc;
 
 use crate::db::Block;
 use crate::monos::{mono_reaction, partial_reaction};
@@ -133,7 +134,7 @@ fn find(list: &[(usize, String)], ix: usize) -> Option<&str> {
 /// message already, and stays.
 /// `streaming`: the last block is still coming in, and is held back while
 /// it may yet turn out to be a reaction.
-pub fn mono_reactions(blocks: &[Block], streaming: bool) -> Reactions {
+pub fn mono_reactions(blocks: &[Arc<Block>], streaming: bool) -> Reactions {
     let mut out = Reactions::default();
     // Where in `kept` the message a reaction lands on is, and the prompt
     // it answers (that message, or an internal one after it).
@@ -365,6 +366,7 @@ pub fn reaction_badge(emoji: &str, cx: &App) -> gpui::Div {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::shared;
 
     fn tool(kind: &str) -> Block {
         let mut block = Block::new(format!("t-{kind}"), "tool", "");
@@ -430,7 +432,7 @@ mod tests {
             internal,
             Block::new("a1", "assistant", "<reaction>🙌</reaction>"),
         ];
-        let reactions = mono_reactions(&blocks, false);
+        let reactions = mono_reactions(&shared(&blocks), false);
         // The internal prompt is no message: the reaction lands on "thanks",
         // and only the work since that prompt goes.
         assert_eq!(reactions.kept, [0, 1, 2, 3, 4]);
@@ -440,7 +442,7 @@ mod tests {
         let mut again = blocks.to_vec();
         again.push(Block::new("a2", "assistant", "<reaction>👍</reaction>"));
         assert_eq!(
-            mono_reactions(&again, false).on_message,
+            mono_reactions(&shared(&again), false).on_message,
             [(0, "👍".to_string())]
         );
     }
@@ -453,7 +455,7 @@ mod tests {
             notice("Retrying."),
             Block::new("a", "assistant", "<reaction>🙌</reaction>"),
         ];
-        let reactions = mono_reactions(&blocks, false);
+        let reactions = mono_reactions(&shared(&blocks), false);
         assert_eq!(reactions.kept, [0, 2]);
         assert_eq!(reactions.on(0), Some("🙌"));
     }
@@ -471,7 +473,7 @@ mod tests {
             tool("read"),
             Block::new("a1", "assistant", "<reaction>👍</reaction>"),
         ];
-        let reactions = mono_reactions(&blocks, false);
+        let reactions = mono_reactions(&shared(&blocks), false);
         assert_eq!(reactions.kept, [0, 1, 2]);
         assert_eq!(reactions.on(0), Some("👍"));
     }
@@ -482,14 +484,14 @@ mod tests {
             Block::new("u", "user", "thanks"),
             Block::new("a", "assistant", "<reac"),
         ];
-        assert_eq!(mono_reactions(&blocks, true).kept, [0]);
-        assert_eq!(mono_reactions(&blocks, false).kept, [0, 1]);
+        assert_eq!(mono_reactions(&shared(&blocks), true).kept, [0]);
+        assert_eq!(mono_reactions(&shared(&blocks), false).kept, [0, 1]);
     }
 
     #[test]
     fn a_reaction_alone_stays_where_it_was() {
         let blocks = [Block::new("a", "assistant", "<reaction>🎉</reaction>")];
-        let reactions = mono_reactions(&blocks, false);
+        let reactions = mono_reactions(&shared(&blocks), false);
         assert_eq!(reactions.kept, [0]);
         assert_eq!(reactions.alone(0), Some("🎉"));
         assert_eq!(reactions.on(0), None);

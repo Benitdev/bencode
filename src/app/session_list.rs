@@ -511,8 +511,10 @@ mod tests {
             now
         ));
 
-        let mut filters = SessionFilters::default();
-        filters.hidden_harnesses = vec!["claude".into()];
+        let filters = SessionFilters {
+            hidden_harnesses: vec!["claude".into()],
+            ..Default::default()
+        };
         assert!(!passes_filters(
             &row("c", now, false),
             &filters,
@@ -520,8 +522,10 @@ mod tests {
             now
         ));
 
-        let mut filters = SessionFilters::default();
-        filters.time = TimeFilter::Week;
+        let filters = SessionFilters {
+            time: TimeFilter::Week,
+            ..Default::default()
+        };
         assert!(!passes_filters(
             &row("d", now - 8 * DAY_MS, false),
             &filters,

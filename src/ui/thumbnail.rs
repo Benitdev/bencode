@@ -26,6 +26,8 @@ impl Asset for Thumbnail {
     type Source = (PathBuf, u32);
     type Output = Result<Arc<RenderImage>, ImageCacheError>;
 
+    // The future may not borrow `App`, so not `async fn`.
+    #[allow(clippy::manual_async_fn)]
     fn load(
         (path, edge): Self::Source,
         _: &mut App,
@@ -51,7 +53,7 @@ fn decode(path: &std::path::Path, edge: u32) -> anyhow::Result<RenderImage> {
     } else {
         image.into_rgba8()
     };
-    for pixel in pixels.chunks_exact_mut(4) {
+    for pixel in pixels.as_chunks_mut::<4>().0 {
         pixel.swap(0, 2);
     }
     Ok(RenderImage::new(vec![image::Frame::new(pixels)]))

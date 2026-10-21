@@ -22,7 +22,7 @@ use crate::schedule::{ScheduleKind, WEEKDAYS};
 use crate::ui::app_callback::on_value;
 use crate::ui::rows::{ListRow, row_button};
 use crate::ui::scale::px;
-use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
+use crate::ui::tokens::{Fill, Ink, Status, Text, Tone as _};
 
 /// MonoCode `when`: "Today 09:00", "Mon 09:00" within the week, else
 /// "Oct 8, 09:00".
@@ -72,7 +72,7 @@ fn outcome_dot(outcome: HabitOutcome, mono: Hsla, fg: Hsla) -> Hsla {
     match outcome {
         HabitOutcome::Posted => mono,
         HabitOutcome::Quiet => fg.ink(Ink::Faint),
-        HabitOutcome::Failed => gpui::rgba(0xef4444b3).into(),
+        HabitOutcome::Failed => Status::Failed.color(fg),
     }
 }
 
@@ -530,7 +530,7 @@ impl BenCodeApp {
                     )
                     .into_any_element(),
                     (None, Some(error)) => div()
-                        .text_color(gpui::rgba(0xef4444cc))
+                        .text_color(Status::Failed.color(fg))
                         .child(error.clone())
                         .into_any_element(),
                     _ => div().into_any_element(),
@@ -682,7 +682,7 @@ impl BenCodeApp {
                             .px_2()
                             .pt_2()
                             .text_size(Text::Base.px())
-                            .text_color(gpui::rgba(0xef4444cc))
+                            .text_color(Status::Failed.color(fg))
                             .child(error)
                     })),
             );

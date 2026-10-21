@@ -18,6 +18,7 @@ use gpui::{
     AnyElement, Context, InteractiveElement, IntoElement, ParentElement, SharedString, Styled, div,
     prelude::*,
 };
+use std::sync::Arc;
 
 use crate::ui::scale::px;
 use jiff::{Timestamp, tz::TimeZone};
@@ -87,7 +88,7 @@ impl UsageLimit {
 
 /// The block holding the thread's limit: one of the last turn's, its
 /// prompt included. A newer prompt means the thread went on.
-fn stamped(blocks: &[Block]) -> Option<usize> {
+fn stamped(blocks: &[Arc<Block>]) -> Option<usize> {
     for (ix, block) in blocks.iter().enumerate().rev() {
         if block.extra.contains_key(STAMP) {
             return Some(ix);
@@ -100,20 +101,22 @@ fn stamped(blocks: &[Block]) -> Option<usize> {
 }
 
 /// The limit kept on a thread's blocks, if it still stands.
-fn stored_limit(blocks: &[Block]) -> Option<UsageLimit> {
+fn stored_limit(blocks: &[Arc<Block>]) -> Option<UsageLimit> {
     UsageLimit::from_json(&blocks[stamped(blocks)?].extra[STAMP])
 }
 
 /// Keeps `limit` on the blocks (on the last one, if none holds it yet), or
 /// drops it. Whether anything changed.
-fn store_limit(blocks: &mut [Block], limit: Option<UsageLimit>) -> bool {
+fn store_limit(blocks: &mut [Arc<Block>], limit: Option<UsageLimit>) -> bool {
     match (stamped(blocks), limit) {
         (Some(ix), Some(limit)) => {
-            blocks[ix].extra.insert(STAMP.into(), limit.to_json());
+            let block = Arc::make_mut(&mut blocks[ix]);
+            block.extra.insert(STAMP.into(), limit.to_json());
             true
         }
-        (Some(ix), None) => blocks[ix].extra.remove(STAMP).is_some(),
+        (Some(ix), None) => Arc::make_mut(&mut blocks[ix]).extra.remove(STAMP).is_some(),
         (None, Some(limit)) => blocks.last_mut().is_some_and(|block| {
+            let block = Arc::make_mut(block);
             block.extra.insert(STAMP.into(), limit.to_json());
             true
         }),
@@ -666,9 +669,9 @@ mod tests {
             resets_at: Some(1_000),
             resume_at_reset: false,
         };
-        let mut blocks = vec![
-            Block::new("u1", "user", "go"),
-            Block::new("a1", "assistant", "You've hit your session limit"),
+        let mut blocks: Vec<Arc<Block>> = vec![
+            Block::new("u1", "user", "go").into(),
+            Block::new("a1", "assistant", "You've hit your session limit").into(),
         ];
         assert!(store_limit(&mut blocks, Some(limit)));
         assert_eq!(stored_limit(&blocks), Some(limit));
@@ -677,18 +680,18 @@ mod tests {
             resume_at_reset: true,
             ..limit
         };
-        blocks.push(Block::new("s1", "system", "notice"));
+        blocks.push(Block::new("s1", "system", "notice").into());
         assert!(store_limit(&mut blocks, Some(armed)));
         assert!(!blocks[2].extra.contains_key(STAMP));
         assert_eq!(stored_limit(&blocks), Some(armed));
 
         // Round-trips through the database's JSON.
-        let saved: Vec<Block> =
+        let saved: Vec<Arc<Block>> =
             serde_json::from_str(&serde_json::to_string(&blocks).unwrap()).unwrap();
         assert_eq!(stored_limit(&saved), Some(armed));
 
         // A later prompt leaves it behind.
-        blocks.push(Block::new("u2", "user", CONTINUE_PROMPT));
+        blocks.push(Block::new("u2", "user", CONTINUE_PROMPT).into());
         assert_eq!(stored_limit(&blocks), None);
         blocks.pop();
 

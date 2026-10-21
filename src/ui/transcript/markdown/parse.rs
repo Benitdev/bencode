@@ -99,6 +99,9 @@ enum Frame {
     Item(Option<bool>),
 }
 
+/// A table being read: its columns' alignment, its head, its rows.
+type TableParts = (Vec<Alignment>, Vec<Inline>, Vec<Vec<Inline>>);
+
 /// Builds blocks from parser events: open containers on a stack, the
 /// inline text being gathered, and the spans still open in it.
 #[derive(Default)]
@@ -109,7 +112,7 @@ struct Builder {
     open: Vec<(usize, Span)>,
     heading: Option<u8>,
     code: Option<Fence>,
-    table: Option<(Vec<Alignment>, Vec<Inline>, Vec<Vec<Inline>>)>,
+    table: Option<TableParts>,
     row: Vec<Inline>,
     in_head: bool,
     /// A note image being read: its path and where its alt text starts.

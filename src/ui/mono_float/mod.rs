@@ -31,6 +31,7 @@
 //! BenCode instead), artifacts and the question form's keys.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 use std::time::Instant;
 
 use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
@@ -676,7 +677,7 @@ impl MonoFloat {
 
     /// Where the turns shown start: the newest page at first, further back
     /// once earlier ones were brought in.
-    fn window_for(&self, session_id: &str, blocks: &[crate::db::Block]) -> usize {
+    fn window_for(&self, session_id: &str, blocks: &[Arc<crate::db::Block>]) -> usize {
         match &self.start {
             Some((listed, start)) if listed == session_id && *start <= blocks.len() => *start,
             _ => window_start(blocks, PAGE_TURNS),
@@ -1450,5 +1451,9 @@ pub fn open(
 /// An app message waiting behind the turn (a completion report): the Mono
 /// reads it, the chat never shows it, as its block once delivered.
 fn is_internal(input: &crate::app::TurnInput) -> bool {
-    input.extra.get("internal").and_then(serde_json::Value::as_bool) == Some(true)
+    input
+        .extra
+        .get("internal")
+        .and_then(serde_json::Value::as_bool)
+        == Some(true)
 }

@@ -258,7 +258,7 @@ fn place(s: &SessionRow) -> Marked {
 }
 
 fn file_hits(query: &str, src: &Sources) -> Vec<SearchHit> {
-    let mut ranked = rank_files(src.files, query, src.recent_files);
+    let mut ranked = rank_files(&[src.files], query, src.recent_files);
     if query.is_empty() {
         ranked.truncate(RECENT_FILES);
     }
@@ -391,7 +391,11 @@ fn find_folded(haystack: &str, needle: &str) -> Option<Range<usize>> {
     if needle.is_empty() {
         return Some(0..0);
     }
-    if haystack.is_ascii() && needle.is_ascii() {
+    // An ASCII needle (a word typed without its accents) can only match
+    // ASCII bytes: in UTF-8 every byte of a wider character is above 0x7F,
+    // so bytes compare even in a transcript full of accented text. (The
+    // Kelvin sign and dotted İ, which lowercase to ASCII, are let go.)
+    if needle.is_ascii() {
         return haystack
             .as_bytes()
             .windows(needle.len())
@@ -471,7 +475,11 @@ fn tildify(path: &str, home: &str) -> String {
 }
 
 #[cfg(test)]
+// Marks are lists of ranges: a one-mark list is meant.
+#[allow(clippy::single_range_in_vec_init)]
 mod tests {
+    use std::sync::Arc;
+
     use super::*;
     use crate::db::Block;
 
@@ -485,12 +493,12 @@ mod tests {
         }
     }
 
-    fn said(role: &str, text: &str) -> Block {
-        Block {
+    fn said(role: &str, text: &str) -> Arc<Block> {
+        Arc::new(Block {
             role: role.into(),
             text: Some(text.into()),
             ..Default::default()
-        }
+        })
     }
 
     fn sources<'a>(sessions: &'a [SessionRow], files: &'a [SharedString]) -> Sources<'a> {
@@ -528,6 +536,9 @@ mod tests {
             );
         }
         assert_eq!(find_folded("Tiếng VIỆT", "việt"), Some(8..14));
+        // A word typed without accents, in accented text.
+        assert_eq!(find_folded("Sửa lỗi PARSER", "parser"), Some(12..18));
+        assert_eq!(find_folded("Sửa lỗi", "sua"), None);
     }
 
     #[test]

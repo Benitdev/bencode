@@ -97,6 +97,8 @@ pub enum Text {
     Xl,
     /// A page's or an item's title.
     Title,
+    /// The one headline of an empty view (a new thread's greeting).
+    Display,
 }
 
 impl Text {
@@ -109,6 +111,7 @@ impl Text {
             Self::Lg => 14.0,
             Self::Xl => 15.0,
             Self::Title => 20.0,
+            Self::Display => 26.0,
         }
     }
 

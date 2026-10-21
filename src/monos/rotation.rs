@@ -11,6 +11,7 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::sync::Arc;
 
 use crate::db::Block;
 
@@ -66,7 +67,7 @@ fn text(block: &Block) -> &str {
 }
 
 /// MonoCode `exchanges`: the user's turns and what the Mono finally said.
-fn exchanges(blocks: &[Block], after: Option<&str>) -> Vec<Exchange> {
+fn exchanges(blocks: &[Arc<Block>], after: Option<&str>) -> Vec<Exchange> {
     let start = after
         .and_then(|id| blocks.iter().position(|b| b.id == id))
         .map_or(0, |ix| ix + 1);
@@ -213,7 +214,7 @@ fn newest_within(lines: &[String], budget: usize) -> Vec<String> {
 /// MonoCode `planRotation`: from the chat as it stands before the turn that
 /// rotates, what the fresh session is told, and the record to keep.
 pub fn plan_rotation(
-    blocks: &[Block],
+    blocks: &[Arc<Block>],
     previous: Option<&Rotation>,
     reason: &str,
     now: i64,
@@ -300,8 +301,8 @@ pub fn plan_rotation(
 mod tests {
     use super::*;
 
-    fn block(id: &str, role: &str, text: &str) -> Block {
-        Block::new(id, role, text)
+    fn block(id: &str, role: &str, text: &str) -> Arc<Block> {
+        Arc::new(Block::new(id, role, text))
     }
 
     #[test]

@@ -22,12 +22,16 @@ pub struct SavedTerminal {
 /// How long a new session has to show up in the host's list.
 const PID_WAIT: Duration = Duration::from_secs(5);
 
+/// A saved tab to restore: its project, the tab, its shell's pid and
+/// whether that shell still runs.
+pub type Restored = (String, SavedTerminal, u32, bool);
+
 /// The saved tabs whose sessions the host still has, by project, and the
 /// host's sessions no tab names (left by a ⌘Q that could not reach it).
 pub fn plan_restore(
     saved: &BTreeMap<String, Vec<SavedTerminal>>,
     live: &[SessionInfo],
-) -> (Vec<(String, SavedTerminal, u32, bool)>, Vec<String>) {
+) -> (Vec<Restored>, Vec<String>) {
     let mut keep = Vec::new();
     for (project, tabs) in saved {
         for tab in tabs {
@@ -256,6 +260,6 @@ mod tests {
     fn an_ended_session_still_comes_back_to_show_its_output() {
         let saved = BTreeMap::from([("/p".to_string(), vec![tab("a")])]);
         let (keep, _) = plan_restore(&saved, &[live("a", false)]);
-        assert_eq!(keep[0].3, false);
+        assert!(!keep[0].3);
     }
 }

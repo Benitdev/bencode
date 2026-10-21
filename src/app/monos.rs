@@ -408,7 +408,7 @@ impl BenCodeApp {
         };
         if self.is_agent_running_in(session_id) {
             if let Err(input) = self.steer(session_id, input, cx) {
-                self.thread_mut(session_id).queue.push(input);
+                self.thread_mut(session_id).queue.push(*input);
             }
             cx.notify();
             return Ok(());

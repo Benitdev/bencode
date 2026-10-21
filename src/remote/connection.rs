@@ -401,13 +401,15 @@ impl Connection {
             } else {
                 offline_message(&machine, "the connection dropped", stderr)
             };
+            // A link that never came up is `connect`'s to report: its
+            // error (what ssh said to the hello) says more than this one.
             if matches!(inner.link, Link::Up { .. }) {
                 log::info!("remote: {reason}");
+                inner.link = Link::Down {
+                    error: (!inner.closed).then_some(reason),
+                    at: Some(Instant::now()),
+                };
             }
-            inner.link = Link::Down {
-                error: (!inner.closed).then_some(reason),
-                at: Some(Instant::now()),
-            };
             for (_, tx) in inner.pending.drain() {
                 let _ = tx.send(Err("The connection to the machine dropped.".into()));
             }

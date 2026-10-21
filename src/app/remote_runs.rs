@@ -8,7 +8,7 @@
 
 use std::path::PathBuf;
 
-use gpui::Context;
+use gpui::{App, Context};
 use serde::{Deserialize, Serialize};
 
 use crate::app::BenCodeApp;
@@ -106,6 +106,7 @@ impl BenCodeApp {
         blocks_before: usize,
         purpose: RunPurpose,
         auto_approve: bool,
+        cx: &App,
     ) {
         let harness = self
             .sessions
@@ -122,24 +123,26 @@ impl BenCodeApp {
             compact: purpose == RunPurpose::Compact,
             auto_approve,
         });
-        self.save_remote_runs();
+        self.save_remote_runs(cx);
     }
 
-    pub(super) fn forget_remote_run(&mut self, session_id: &str) {
+    pub(super) fn forget_remote_run(&mut self, session_id: &str, cx: &App) {
         let before = self.remote_runs.len();
         self.remote_runs.retain(|r| r.session_id != session_id);
         if self.remote_runs.len() != before {
-            self.save_remote_runs();
+            self.save_remote_runs(cx);
         }
     }
 
-    fn save_remote_runs(&self) {
+    fn save_remote_runs(&self, cx: &App) {
         if !self.owns_data_folder() {
             return;
         }
         let records = self.remote_runs.clone();
         let seq = NEXT_SAVE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        std::thread::spawn(move || write_records(seq, &records));
+        cx.background_executor()
+            .spawn(async move { write_records(seq, &records) })
+            .detach();
     }
 
     /// At launch: every turn a machine was running when BenCode quit is
@@ -193,7 +196,7 @@ impl BenCodeApp {
         for record in records {
             let id = record.session_id.clone();
             if self.is_agent_running_in(&id) || !self.sessions.iter().any(|s| s.id == id) {
-                self.forget_remote_run(&id);
+                self.forget_remote_run(&id, cx);
                 continue;
             }
             let harness = HarnessKind::from_id(&record.harness).unwrap_or(HarnessKind::Claude);
@@ -232,7 +235,7 @@ impl BenCodeApp {
                     log::warn!("could not follow turn {}: {err:#}", record.run.run);
                     crate::app::agent::mark_turn_interrupted(session, crate::app::agent::now_ms());
                     self.persist_session(&id);
-                    self.forget_remote_run(&id);
+                    self.forget_remote_run(&id, cx);
                 }
             }
         }
@@ -271,8 +274,8 @@ mod tests {
     fn a_rewind_keeps_the_turn_s_start() {
         let mut session = SessionRow {
             blocks: vec![
-                Block::new("u", "user", "go"),
-                Block::new("a", "assistant", "half"),
+                Block::new("u", "user", "go").into(),
+                Block::new("a", "assistant", "half").into(),
             ],
             ..Default::default()
         };

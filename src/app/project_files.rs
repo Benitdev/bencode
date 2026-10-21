@@ -17,10 +17,11 @@ use crate::app::BenCodeApp;
 pub struct ProjectFiles {
     /// Folder the list belongs to.
     pub root: String,
-    /// Paths relative to `root`, sorted.
-    pub files: Vec<SharedString>,
+    /// Paths relative to `root`, sorted. Shared, so a search can take the
+    /// list off the UI thread without copying it.
+    pub files: Arc<[SharedString]>,
     /// The folders holding them (MonoCode `withMentionDirectories`), for `@`.
-    pub dirs: Vec<SharedString>,
+    pub dirs: Arc<[SharedString]>,
     /// A listing of `root` is under way.
     pub loading: bool,
     /// `@` labels for `files`, `dirs` and notes. Shared with the prompt's
@@ -33,12 +34,19 @@ pub struct ProjectFiles {
 
 #[derive(Clone)]
 struct Listing {
-    files: Vec<SharedString>,
-    dirs: Vec<SharedString>,
+    files: Arc<[SharedString]>,
+    dirs: Arc<[SharedString]>,
     mentions: Arc<MentionIndex>,
 }
 
 impl ProjectFiles {
+    /// Whether `path` (relative to `root`) is in the list.
+    pub fn contains(&self, path: &str) -> bool {
+        self.files
+            .binary_search_by(|f| f.as_ref().cmp(path))
+            .is_ok()
+    }
+
     pub fn new(mentions: Rc<RefCell<Arc<MentionIndex>>>) -> Self {
         Self {
             mentions,
@@ -192,11 +200,12 @@ mod tests {
     fn returning_to_a_folder_restores_its_list() {
         let mut index = ProjectFiles::new(Rc::default());
         index.switch_root("/a");
-        index.files = vec!["a.rs".into()];
+        index.files = Arc::new(["a.rs".into()]);
         index.switch_root("/b");
         assert!(index.files.is_empty());
         index.switch_root("/a");
-        assert_eq!(index.files, [SharedString::from("a.rs")]);
+        assert_eq!(*index.files, [SharedString::from("a.rs")]);
+        assert!(index.contains("a.rs") && !index.contains("b.rs"));
     }
 
     fn files(paths: &[&str]) -> Vec<SharedString> {

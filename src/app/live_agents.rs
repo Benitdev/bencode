@@ -4,6 +4,7 @@
 //! finishes until it is looked at.
 
 use gpui::Context;
+use std::sync::Arc;
 
 use crate::app::session_list::display_title;
 use crate::app::{BenCodeApp, Surface};
@@ -100,7 +101,7 @@ pub fn format_live_elapsed(elapsed_ms: i64) -> String {
 
 /// MonoCode `activityLabel` over `lastActivityBlock`: the latest tool call
 /// (or a handoff being prepared) as the transcript titles it.
-fn activity_label(blocks: &[Block], cwd: &str) -> String {
+fn activity_label(blocks: &[Arc<Block>], cwd: &str) -> String {
     let preparing = |block: &Block| {
         block.role == "handoff"
             && block
@@ -177,7 +178,7 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    fn session(id: &str, blocks: Vec<Block>) -> SessionRow {
+    fn session(id: &str, blocks: Vec<Arc<Block>>) -> SessionRow {
         SessionRow {
             id: id.into(),
             title: "claude · Fix the rail".into(),
@@ -188,19 +189,19 @@ mod tests {
         }
     }
 
-    fn user(started_at: i64, duration_ms: Option<i64>) -> Block {
-        Block {
+    fn user(started_at: i64, duration_ms: Option<i64>) -> Arc<Block> {
+        Arc::new(Block {
             started_at: Some(started_at),
             duration_ms,
             ..Block::new("u", "user", "go")
-        }
+        })
     }
 
-    fn tool(kind: &str, title: &str) -> Block {
-        Block {
+    fn tool(kind: &str, title: &str) -> Arc<Block> {
+        Arc::new(Block {
             tool: Some(json!({ "kind": kind, "title": title })),
             ..Block::new("t", "tool", "")
-        }
+        })
     }
 
     const BUSY: RunFlags = RunFlags {

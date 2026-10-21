@@ -14,6 +14,7 @@ use gpui::{
     AnyElement, Context, FontWeight, InteractiveElement, IntoElement, ParentElement, Styled, div,
     prelude::*,
 };
+use std::sync::Arc;
 
 use crate::app::{BenCodeApp, TurnInput};
 use crate::db::{Block, SessionRow};
@@ -29,8 +30,8 @@ fn is_sent_user_turn(block: &Block) -> bool {
 }
 
 /// MonoCode `lastUserTurnBlock`: where the last sent user turn starts.
-pub fn last_user_turn(blocks: &[Block]) -> Option<usize> {
-    blocks.iter().rposition(is_sent_user_turn)
+pub fn last_user_turn(blocks: &[Arc<Block>]) -> Option<usize> {
+    blocks.iter().rposition(|b| is_sent_user_turn(b))
 }
 
 /// MonoCode `canEditLastTurn` for an idle thread (no run, queue or open
@@ -54,7 +55,7 @@ pub fn can_edit_last_turn(session: &SessionRow, idle: bool) -> bool {
 }
 
 /// MonoCode `lastTurnRecall`: the text and files the composer gets back.
-pub fn last_turn_recall(blocks: &[Block]) -> Option<(String, Vec<Attachment>)> {
+pub fn last_turn_recall(blocks: &[Arc<Block>]) -> Option<(String, Vec<Attachment>)> {
     let block = &blocks[last_user_turn(blocks)?];
     let files = block
         .extra
@@ -260,16 +261,16 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    fn block(role: &str, extra: serde_json::Value) -> Block {
+    fn block(role: &str, extra: serde_json::Value) -> Arc<Block> {
         let mut block: Block =
             serde_json::from_value(json!({ "id": "b", "role": role, "text": "hi" })).unwrap();
         if let serde_json::Value::Object(map) = extra {
             block.extra.extend(map);
         }
-        block
+        Arc::new(block)
     }
 
-    fn session(harness: &str, blocks: Vec<Block>) -> SessionRow {
+    fn session(harness: &str, blocks: Vec<Arc<Block>>) -> SessionRow {
         SessionRow {
             harness: harness.into(),
             provider_session_id: Some("th_1".into()),

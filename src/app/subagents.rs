@@ -3,6 +3,8 @@
 //! parent's Agent tool block as `agentRun` (MonoCode `AgentRunMeta`), so the
 //! transcript opens the run's trail without a second session.
 
+use std::sync::Arc;
+
 use serde_json::{Map, Value, json};
 
 use crate::db::{Block, SessionRow};
@@ -18,13 +20,18 @@ const MAX_STEPS: usize = 100;
 const MAX_NAME_CHARS: usize = 56;
 
 fn agent_block_mut<'a>(session: &'a mut SessionRow, call_id: &str) -> Option<&'a mut Block> {
-    session.blocks.iter_mut().rev().find(|b| {
-        b.tool
-            .as_ref()
-            .and_then(|t| t.get("callId"))
-            .and_then(Value::as_str)
-            == Some(call_id)
-    })
+    session
+        .blocks
+        .iter_mut()
+        .rev()
+        .find(|b| {
+            b.tool
+                .as_ref()
+                .and_then(|t| t.get("callId"))
+                .and_then(Value::as_str)
+                == Some(call_id)
+        })
+        .map(Arc::make_mut)
 }
 
 /// The block's `agentRun`, made when missing, named after the call.
@@ -291,7 +298,7 @@ mod tests {
             "status": "in_progress",
         }));
         SessionRow {
-            blocks: vec![block],
+            blocks: vec![block.into()],
             ..Default::default()
         }
     }

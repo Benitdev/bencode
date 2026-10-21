@@ -6,6 +6,7 @@
 
 use std::ops::Range;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use ely_gpui_component::buttons::IconButton;
 use ely_gpui_component::primitives::{Icon, IconName};
@@ -51,7 +52,7 @@ struct FindCache {
 
 /// Changes when a block's searchable text plausibly changed: the length of
 /// each part `block_text` joins, and the tool's status.
-fn find_stamp(blocks: &[Block]) -> u64 {
+fn find_stamp(blocks: &[Arc<Block>]) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut hasher = std::hash::DefaultHasher::new();
     for block in blocks {
@@ -102,7 +103,7 @@ pub fn block_text(block: &Block) -> String {
 }
 
 /// MonoCode `findTranscriptBlocks`: the blocks a case-blind `query` hits.
-pub fn find_blocks(blocks: &[Block], query: &str) -> Vec<usize> {
+pub fn find_blocks(blocks: &[Arc<Block>], query: &str) -> Vec<usize> {
     let needle = query.trim().to_lowercase();
     if needle.is_empty() {
         return Vec::new();
@@ -503,28 +504,29 @@ mod tests {
 
     use super::*;
 
-    fn block(id: &str, role: &str, text: &str) -> Block {
-        Block::new(id, role, text)
+    fn block(id: &str, role: &str, text: &str) -> Arc<Block> {
+        Arc::new(Block::new(id, role, text))
     }
 
     #[test]
     fn the_find_stamp_follows_searchable_text() {
         let mut tool = block("t", "tool", "");
-        tool.tool = Some(json!({ "title": "ls", "status": "in_progress" }));
+        Arc::make_mut(&mut tool).tool = Some(json!({ "title": "ls", "status": "in_progress" }));
         let blocks = [block("a", "assistant", "hello"), tool];
         let was = find_stamp(&blocks);
         assert_eq!(find_stamp(&blocks.clone()), was);
 
         let mut grown = blocks.clone();
-        grown[0].text = Some("hello there".into());
+        Arc::make_mut(&mut grown[0]).text = Some("hello there".into());
         assert_ne!(find_stamp(&grown), was);
 
         let mut finished = blocks.clone();
-        finished[1].tool = Some(json!({ "title": "ls", "status": "completed" }));
+        Arc::make_mut(&mut finished[1]).tool =
+            Some(json!({ "title": "ls", "status": "completed" }));
         assert_ne!(find_stamp(&finished), was);
 
         let mut answered = blocks.clone();
-        answered[1].tool = Some(
+        Arc::make_mut(&mut answered[1]).tool = Some(
             json!({ "title": "ls", "status": "in_progress", "preview": { "output": "a.rs" } }),
         );
         assert_ne!(find_stamp(&answered), was);
@@ -533,7 +535,8 @@ mod tests {
     #[test]
     fn finds_messages_and_tool_output_but_not_thinking() {
         let mut tool = block("t", "tool", "");
-        tool.tool = Some(json!({ "title": "rg search", "preview": { "output": "Search module" } }));
+        Arc::make_mut(&mut tool).tool =
+            Some(json!({ "title": "rg search", "preview": { "output": "Search module" } }));
         let blocks = [
             block("u", "user", "Check the SEARCH code"),
             block("r", "reasoning", "search thoughts"),

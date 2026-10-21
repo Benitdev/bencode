@@ -1,6 +1,8 @@
 //! `/skill` and `@mention` suggestions shown above the composer while a
 //! trigger token is being typed.
 
+use std::collections::HashSet;
+
 use ely_gpui_component::primitives::{Icon, IconName};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
@@ -136,34 +138,21 @@ pub fn skill_suggestions(
 
 /// MonoCode `rankMentionFiles`: with a query, the fuzzy ranking Go to File
 /// uses over files and folders; without one, recent files, then the
-/// shallowest entries, folders first. Notes come first, as in MonoCode.
-pub fn mention_suggestions(
+/// shallowest entries, folders first. The part that walks the whole
+/// index, so the app keeps its last answer (`RankCache`).
+pub fn mention_paths(
     query: &str,
     files: &[SharedString],
     dirs: &[SharedString],
-    notes: &[Note],
     recents: &[String],
-) -> Vec<Suggestion> {
-    let notes = notes
-        .iter()
-        .filter(|n| {
-            query.is_empty() || n.title.to_lowercase().contains(query) || n.slug.contains(query)
-        })
-        .take(MAX_NOTES)
-        .map(|n| Suggestion {
-            kind: SuggestionKind::Note,
-            label: n.title.clone().into(),
-            detail: Some("Note".into()),
-            insert: format!("note/{}", n.slug),
-            tag: None,
-            matched: Vec::new(),
-        });
+) -> Vec<(String, Vec<usize>)> {
     let needle = query.trim_end_matches('/').trim();
     let is_dir = |path: &str| dirs.binary_search_by(|d| d.as_ref().cmp(path)).is_ok();
-    let picked: Vec<(String, Vec<usize>)> = if needle.is_empty() {
+    if needle.is_empty() {
+        let listed: HashSet<&str> = files.iter().map(|f| f.as_ref()).collect();
         let mut out: Vec<String> = recents
             .iter()
-            .filter(|r| files.iter().any(|f| f.as_ref() == r.as_str()))
+            .filter(|r| listed.contains(r.as_str()))
             .take(MAX_PICKER)
             .cloned()
             .collect();
@@ -185,14 +174,38 @@ pub fn mention_suggestions(
         }
         out.into_iter().map(|p| (p, Vec::new())).collect()
     } else {
-        let all: Vec<SharedString> = files.iter().chain(dirs.iter()).cloned().collect();
-        crate::ui::quick_open::rank_files(&all, needle, recents)
+        crate::ui::quick_open::rank_files(&[files, dirs], needle, recents)
             .into_iter()
             .take(MAX_PICKER)
             .map(|(path, hit)| (path, hit.positions))
             .collect()
-    };
-    let files = picked.into_iter().map(|(path, positions)| {
+    }
+}
+
+/// The picker's rows: matching notes first, as in MonoCode, then `picked`
+/// (`mention_paths`).
+fn mention_items(
+    query: &str,
+    picked: &[(String, Vec<usize>)],
+    dirs: &[SharedString],
+    notes: &[Note],
+) -> Vec<Suggestion> {
+    let notes = notes
+        .iter()
+        .filter(|n| {
+            query.is_empty() || n.title.to_lowercase().contains(query) || n.slug.contains(query)
+        })
+        .take(MAX_NOTES)
+        .map(|n| Suggestion {
+            kind: SuggestionKind::Note,
+            label: n.title.clone().into(),
+            detail: Some("Note".into()),
+            insert: format!("note/{}", n.slug),
+            tag: None,
+            matched: Vec::new(),
+        });
+    let is_dir = |path: &str| dirs.binary_search_by(|d| d.as_ref().cmp(path)).is_ok();
+    let files = picked.iter().map(|(path, positions)| {
         let (dir, name) = path.rsplit_once('/').unwrap_or(("", path.as_str()));
         // Hits index the whole path; keep the ones in the name.
         let offset = if dir.is_empty() {
@@ -201,12 +214,12 @@ pub fn mention_suggestions(
             dir.chars().count() + 1
         };
         let matched = positions
-            .into_iter()
-            .filter(|p| *p >= offset)
+            .iter()
+            .filter(|p| **p >= offset)
             .map(|p| p - offset)
             .collect();
         Suggestion {
-            kind: if is_dir(&path) {
+            kind: if is_dir(path) {
                 SuggestionKind::Folder
             } else {
                 SuggestionKind::File
@@ -279,13 +292,14 @@ impl BenCodeApp {
             // Files and folders insert their shortest label (MonoCode
             // `mentionLabel`).
             let index = self.project_files.mentions.borrow().clone();
-            let mut items = mention_suggestions(
-                &self.mention_query,
-                &self.project_files.files,
-                &self.project_files.dirs,
-                &self.notes.items,
-                &self.quick_open_recents(),
-            );
+            let (files, dirs) = (&self.project_files.files, &self.project_files.dirs);
+            let recents = self.quick_open_recents();
+            let picked =
+                self.mention_ranked
+                    .get(&self.mention_query, &[files, dirs], &recents, || {
+                        mention_paths(&self.mention_query, files, dirs, &recents)
+                    });
+            let mut items = mention_items(&self.mention_query, &picked, dirs, &self.notes.items);
             for item in &mut items {
                 if matches!(item.kind, SuggestionKind::File | SuggestionKind::Folder) {
                     item.insert = index.label_for(&item.insert).to_string();
@@ -525,6 +539,21 @@ fn paint_matches(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn mention_suggestions(
+        query: &str,
+        files: &[SharedString],
+        dirs: &[SharedString],
+        notes: &[Note],
+        recents: &[String],
+    ) -> Vec<Suggestion> {
+        mention_items(
+            query,
+            &mention_paths(query, files, dirs, recents),
+            dirs,
+            notes,
+        )
+    }
 
     const IDLE: CommandContext = CommandContext {
         idle: true,

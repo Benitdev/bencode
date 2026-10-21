@@ -3,6 +3,8 @@
 //! its name and how far it got; opened, the trail it left, drawn with the
 //! same rows as the main agent's work, then what it reported.
 
+use std::sync::Arc;
+
 use ely_gpui_component::primitives::{Icon, IconName};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
@@ -203,7 +205,10 @@ impl BenCodeApp {
 
         // The run's trail as transcript blocks, grouped the way the main
         // agent's own work is.
-        let step_blocks: Vec<Block> = steps.iter().map(subagents::step_block).collect();
+        let step_blocks: Vec<Arc<Block>> = steps
+            .iter()
+            .map(|step| Arc::new(subagents::step_block(step)))
+            .collect();
         let step_trail = Trail {
             blocks: &step_blocks,
             select_as: Some(trail.select_as.unwrap_or(ix)),

@@ -31,6 +31,7 @@ use rusqlite::{Connection, OptionalExtension, Row, params};
 use serde::{Deserialize, Serialize, Serializer};
 use serde_json::{Map, Value};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// MonoCode's `DEFAULT_RUNTIME_MODE` (src/features/sessions/model/session.ts).
@@ -194,8 +195,10 @@ pub struct SessionRow {
     pub context_window: Option<i64>,
     pub pinned: bool,
     pub archived: bool,
+    /// Shared, so a snapshot for the writer copies pointers, not the
+    /// transcript; a block is edited through `Arc::make_mut`.
     #[serde(default)]
-    pub blocks: Vec<Block>,
+    pub blocks: Vec<Arc<Block>>,
     /// Provider-side session id (e.g. for `claude --resume`).
     #[serde(default)]
     pub provider_session_id: Option<String>,
@@ -307,6 +310,12 @@ pub struct Block {
     /// Every MonoCode block field BenCode does not model.
     #[serde(flatten, default)]
     pub extra: Map<String, Value>,
+}
+
+/// Test fixtures written as plain blocks, as a transcript holds them.
+#[cfg(test)]
+pub fn shared(blocks: &[Block]) -> Vec<Arc<Block>> {
+    blocks.iter().cloned().map(Arc::new).collect()
 }
 
 impl Block {
@@ -1024,7 +1033,7 @@ fn session_from_row(row: &Row<'_>) -> rusqlite::Result<SessionRow> {
 /// The session's transcript, or a read-only row when it does not parse.
 fn with_blocks(mut session: SessionRow, parsed: serde_json::Result<Vec<Block>>) -> SessionRow {
     match parsed {
-        Ok(blocks) => session.blocks = blocks,
+        Ok(blocks) => session.blocks = blocks.into_iter().map(Arc::new).collect(),
         Err(err) => {
             log::warn!(
                 "Session {}: could not parse blocks_json ({err}); row is read-only",
@@ -1295,7 +1304,7 @@ mod tests {
             model: "opus".into(),
             created_at: 10,
             updated_at: 20,
-            blocks: vec![Block::new("b1", "user", "hi")],
+            blocks: vec![Block::new("b1", "user", "hi").into()],
             ..Default::default()
         }
     }

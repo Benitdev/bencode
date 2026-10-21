@@ -231,9 +231,12 @@ pub fn pose(motion: MascotMotion, beat: f32, talk: f32) -> (bool, bool) {
     }
 }
 
+/// Cells of a figure's grid, (x, y).
+type Cells = &'static [(usize, usize)];
+
 /// MonoCode `FIGURES`' eye cells (x, y) for the rest and talk frames, in
 /// `MASCOTS` order: the holes the blink closes.
-const EYES: [(&[(usize, usize)], &[(usize, usize)]); 10] = [
+const EYES: [(Cells, Cells); 10] = [
     (&[(2, 2), (5, 2)], &[(2, 2), (5, 2)]),
     (&[(2, 2), (5, 2)], &[(1, 2), (4, 2)]),
     (&[(2, 2), (5, 2)], &[(2, 2), (5, 2)]),

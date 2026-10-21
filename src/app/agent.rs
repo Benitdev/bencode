@@ -5,6 +5,7 @@
 //! is unit-tested without GPUI; `BenCodeApp` methods are thin glue around it.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use gpui::{Context, Focusable};
@@ -654,7 +655,7 @@ impl BenCodeApp {
             // MonoCode's default follow-up: steer into the running turn
             // (Plan waits for its own turn); harnesses that cannot, queue.
             if let Err(input) = self.steer(&session_id, input, cx) {
-                self.thread_mut(&session_id).queue.push(input);
+                self.thread_mut(&session_id).queue.push(*input);
             }
             cx.notify();
             return;
@@ -669,17 +670,17 @@ impl BenCodeApp {
         session_id: &str,
         input: TurnInput,
         cx: &mut Context<Self>,
-    ) -> Result<(), TurnInput> {
+    ) -> Result<(), Box<TurnInput>> {
         let Some(run) = self.runs.get(session_id).filter(|run| run.can_steer) else {
-            return Err(input);
+            return Err(Box::new(input));
         };
         // Plan and card turns wait for their own turn.
         if input.plan || input.card.is_some() {
-            return Err(input);
+            return Err(Box::new(input));
         }
         let prompt = self.apply_skills(&input.text);
         if !run.handle.steer(&prompt, &input.attachments) {
-            return Err(input);
+            return Err(Box::new(input));
         }
         if let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id) {
             start_turn(session, &input.text, now_ms(), &input.attachments);
@@ -705,7 +706,7 @@ impl BenCodeApp {
             return;
         }
         if let Err(input) = self.steer(session_id, input, cx) {
-            self.thread_mut(session_id).queue.insert(ix, input);
+            self.thread_mut(session_id).queue.insert(ix, *input);
         }
         cx.notify();
     }
@@ -723,7 +724,7 @@ impl BenCodeApp {
         };
         let now = now_ms();
         start_turn(session, &input.text, now, &input.attachments);
-        if let Some(block) = session.blocks.last_mut() {
+        if let Some(block) = session.blocks.last_mut().map(Arc::make_mut) {
             block.extra.insert("draft".into(), json!(true));
             if input.plan {
                 block.extra.insert("plan".into(), json!(true));
@@ -756,7 +757,7 @@ impl BenCodeApp {
     fn take_draft(&mut self, session_id: &str, block_id: &str) -> Option<TurnInput> {
         let session = self.sessions.iter_mut().find(|s| s.id == session_id)?;
         let ix = session.blocks.iter().position(|b| b.id == block_id)?;
-        let block = session.blocks.remove(ix);
+        let block = Arc::unwrap_or_clone(session.blocks.remove(ix));
         let attachments = block
             .extra
             .get("attachments")
@@ -812,9 +813,14 @@ impl BenCodeApp {
         };
         start_turn(session, &input.text, now_ms(), &input.attachments);
         if let (Some(card), Some(block)) = (&input.card, session.blocks.last_mut()) {
-            card.stamp(block);
+            card.stamp(Arc::make_mut(block));
         }
-        if let Some(block) = session.blocks.last_mut().filter(|b| b.role == "user") {
+        if let Some(block) = session
+            .blocks
+            .last_mut()
+            .filter(|b| b.role == "user")
+            .map(Arc::make_mut)
+        {
             block
                 .extra
                 .extend(input.extra.iter().map(|(k, v)| (k.clone(), v.clone())));
@@ -970,6 +976,7 @@ impl BenCodeApp {
                         blocks_before,
                         request.purpose,
                         auto_approve,
+                        cx,
                     );
                 }
                 self.sync_in_flight();
@@ -1160,7 +1167,7 @@ impl BenCodeApp {
             return;
         };
         if run.remote.is_some() {
-            self.forget_remote_run(session_id);
+            self.forget_remote_run(session_id, cx);
         }
         self.sync_in_flight();
         if run.remote.is_none() {
@@ -1464,7 +1471,7 @@ pub fn start_turn(session: &mut SessionRow, prompt: &str, now: i64, files: &[Att
         let kept: Vec<Value> = files.iter().map(Attachment::to_block_json).collect();
         block.extra.insert("attachments".into(), Value::Array(kept));
     }
-    session.blocks.push(block);
+    session.blocks.push(block.into());
     session.updated_at = now;
 
     if session.title.is_empty() || session.title == NEW_SESSION_TITLE {
@@ -1483,7 +1490,13 @@ fn title_from_prompt(prompt: &str) -> String {
 /// MonoCode `applyTurnMetrics`: the latest user block's `turnMetrics`
 /// takes every count the provider reported, keeping the others.
 fn record_turn_metrics(session: &mut SessionRow, metrics: &TurnMetrics) {
-    let Some(user) = session.blocks.iter_mut().rev().find(|b| b.role == "user") else {
+    let Some(user) = session
+        .blocks
+        .iter_mut()
+        .rev()
+        .find(|b| b.role == "user")
+        .map(Arc::make_mut)
+    else {
         return;
     };
     let entry = user
@@ -1517,7 +1530,7 @@ fn finish_turn(session: &mut SessionRow, now: i64) {
     if let Some(user) = session.blocks.iter_mut().rev().find(|b| b.role == "user")
         && let Some(started) = user.started_at
     {
-        user.duration_ms = Some(now.saturating_sub(started));
+        Arc::make_mut(user).duration_ms = Some(now.saturating_sub(started));
     }
 }
 
@@ -1525,11 +1538,10 @@ fn finish_turn(session: &mut SessionRow, now: i64) {
 /// cancelled and the turn ends with an interrupt notice (once).
 pub(super) fn mark_turn_interrupted(session: &mut SessionRow, now: i64) {
     for block in &mut session.blocks {
-        let Some(tool) = block.tool.as_mut().and_then(Value::as_object_mut) else {
-            continue;
-        };
-        let open = tool
-            .get("status")
+        let open = block
+            .tool
+            .as_ref()
+            .and_then(|tool| tool.get("status"))
             .and_then(Value::as_str)
             .is_some_and(|status| {
                 matches!(
@@ -1537,7 +1549,11 @@ pub(super) fn mark_turn_interrupted(session: &mut SessionRow, now: i64) {
                     "in_progress" | "pending" | "running"
                 )
             });
-        if open {
+        if let Some(tool) = open
+            .then(|| Arc::make_mut(block).tool.as_mut())
+            .flatten()
+            .and_then(Value::as_object_mut)
+        {
             tool.insert("status".into(), json!("cancelled"));
         }
     }
@@ -1552,7 +1568,7 @@ pub(super) fn mark_turn_interrupted(session: &mut SessionRow, now: i64) {
             INTERRUPT_NOTICE,
         );
         block.extra.insert("notice".into(), json!("interrupt"));
-        session.blocks.push(block);
+        session.blocks.push(block.into());
     }
     finish_turn(session, now);
 }
@@ -1565,7 +1581,7 @@ fn push_status(session: &mut SessionRow, text: &str, now: i64) {
         text,
     );
     block.started_at = Some(now);
-    session.blocks.push(block);
+    session.blocks.push(block.into());
 }
 
 fn push_notice(session: &mut SessionRow, message: &str, now: i64) {
@@ -1575,7 +1591,7 @@ fn push_notice(session: &mut SessionRow, message: &str, now: i64) {
         message,
     );
     block.extra.insert("notice".into(), json!("error"));
-    session.blocks.push(block);
+    session.blocks.push(block.into());
 }
 
 /// Folds one harness event into the transcript.
@@ -1648,6 +1664,7 @@ fn append_text(session: &mut SessionRow, role: &str, delta: &str, now: i64) {
         .last_mut()
         .filter(|b| b.role == role && b.tool.is_none())
     {
+        let last = Arc::make_mut(last);
         last.text.get_or_insert_with(String::new).push_str(delta);
         return;
     }
@@ -1661,17 +1678,22 @@ fn append_text(session: &mut SessionRow, role: &str, delta: &str, now: i64) {
     if role == "assistant" {
         block.turn_model = Some(turn_model(session));
     }
-    session.blocks.push(block);
+    session.blocks.push(block.into());
 }
 
 fn tool_block_mut<'a>(session: &'a mut SessionRow, call_id: &str) -> Option<&'a mut Block> {
-    session.blocks.iter_mut().rev().find(|b| {
-        b.tool
-            .as_ref()
-            .and_then(|t| t.get("callId"))
-            .and_then(Value::as_str)
-            == Some(call_id)
-    })
+    session
+        .blocks
+        .iter_mut()
+        .rev()
+        .find(|b| {
+            b.tool
+                .as_ref()
+                .and_then(|t| t.get("callId"))
+                .and_then(Value::as_str)
+                == Some(call_id)
+        })
+        .map(Arc::make_mut)
 }
 
 fn start_tool(session: &mut SessionRow, call_id: &str, name: &str, input: &Value, now: i64) {
@@ -1690,7 +1712,7 @@ fn start_tool(session: &mut SessionRow, call_id: &str, name: &str, input: &Value
         "title": title,
         "status": "in_progress",
     }));
-    session.blocks.push(block);
+    session.blocks.push(block.into());
 }
 
 fn finish_tool(
@@ -2247,7 +2269,7 @@ mod tests {
         mark_turn_interrupted(&mut s, 20);
         mark_turn_interrupted(&mut s, 21);
         assert_eq!(tool_status(&s, "t1"), "cancelled");
-        let notices: Vec<&Block> = s
+        let notices: Vec<&Arc<Block>> = s
             .blocks
             .iter()
             .filter(|b| b.text.as_deref() == Some(INTERRUPT_NOTICE))

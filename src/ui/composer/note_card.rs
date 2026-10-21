@@ -150,7 +150,8 @@ impl BenCodeApp {
             .meta
             .source_cwd
             .clone()
-            .filter(|cwd| std::path::Path::new(cwd).is_dir())
+            // A project on a machine is checked there when the thread runs.
+            .filter(|cwd| !cwd.is_empty() && !crate::remote::missing_here(cwd))
             .unwrap_or_else(|| self.current_cwd.clone());
         let title = card.meta.title.trim().to_string();
         self.close_notes(cx);

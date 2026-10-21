@@ -4,10 +4,16 @@
 //! the line it is in. All lists a few of each kind under a heading; Tab
 //! moves to one kind to see every match. The keyboard drives it: ↑↓, ↵,
 //! ⌘↵ to mention a file in the prompt, Tab / ⇧Tab, Esc.
+//!
+//! A query looks through every transcript, so it is matched on the
+//! background executor, over threads and projects taken when the dialog
+//! opened; an answer a newer keystroke overtook is dropped.
 
 mod hits;
 
+use std::collections::HashSet;
 use std::ops::Range;
+use std::sync::Arc;
 
 use ely_gpui_component::buttons::SegmentedControl;
 use ely_gpui_component::data_display::Tag;
@@ -26,6 +32,7 @@ use hits::{Found, HitKind, Marked, SearchHit, Sources};
 
 use crate::app::BenCodeApp;
 use crate::app::file_pane::PaneTab;
+use crate::db::SessionRow;
 use crate::ui::app_callback::app_callback;
 use crate::ui::composer::focus_later;
 use crate::ui::file_tree::resolve_entry_icon;
@@ -64,9 +71,20 @@ enum Row {
     Hit(usize),
 }
 
+/// The threads and projects a search looks through, taken when the dialog
+/// opens so the matching can run off the UI thread.
+struct Corpus {
+    sessions: Vec<SessionRow>,
+    projects: Vec<String>,
+    home: String,
+}
+
 pub struct SearchState {
     pub open: bool,
     pub scope: SearchScope,
+    corpus: Option<Arc<Corpus>>,
+    /// The latest search asked for; an older answer is dropped.
+    generation: u64,
     found: Found,
     rows: Vec<Row>,
     list: ListState,
@@ -79,6 +97,8 @@ impl Default for SearchState {
         Self {
             open: false,
             scope: SearchScope::All,
+            corpus: None,
+            generation: 0,
             found: Found::default(),
             rows: Vec::new(),
             list: ListState::new(0, ListAlignment::Top, px(400.0)),
@@ -150,6 +170,11 @@ impl BenCodeApp {
         self.index_project_files(cx);
         self.search.open = true;
         self.search.scope = SearchScope::All;
+        self.search.corpus = Some(Arc::new(Corpus {
+            sessions: self.sessions.clone(),
+            projects: self.recent_projects.clone(),
+            home: std::env::var("HOME").unwrap_or_default(),
+        }));
         self.search_modal_input
             .update(cx, |input, cx| input.set_text("", cx));
         focus_later(self.search_modal_input.read(cx).focus_handle(cx), cx);
@@ -162,6 +187,7 @@ impl BenCodeApp {
         if !std::mem::take(&mut self.search.open) {
             return false;
         }
+        self.search.corpus = None;
         self.refocus_prompt(cx);
         cx.notify();
         true
@@ -173,26 +199,57 @@ impl BenCodeApp {
         self.search_modal_input.update(cx, |_, cx| cx.notify());
     }
 
+    /// Searches for the query field's text. With no query the recent
+    /// items show at once; a query is matched off the UI thread.
     pub fn update_search_hits(&mut self, cx: &mut Context<Self>) {
+        let Some(corpus) = self.search.corpus.clone() else {
+            return;
+        };
+        self.search.generation += 1;
+        let generation = self.search.generation;
         let query = self.search_modal_input.read(cx).text().to_string();
-        let home = std::env::var("HOME").unwrap_or_default();
+        let scope = self.search.scope;
+        let files = self.project_files.files.clone();
         let recent_files = self.quick_open_recents();
-        let changes = &self.workspace(cx).changes;
-        let changed = |path: &str| changes.iter().any(|c| c.path == path);
-        let found = hits::find(
-            &query,
-            self.search.scope,
-            &Sources {
-                sessions: &self.sessions,
-                files: &self.project_files.files,
-                recent_files: &recent_files,
-                projects: &self.recent_projects,
-                changed: &changed,
-                home: &home,
-            },
-        );
-        self.search.set(found);
-        self.redraw_search(cx);
+        let changed: HashSet<String> = self
+            .workspace(cx)
+            .changes
+            .iter()
+            .map(|c| c.path.clone())
+            .collect();
+        let find = move || {
+            hits::find(
+                &query,
+                scope,
+                &Sources {
+                    sessions: &corpus.sessions,
+                    files: &files,
+                    recent_files: &recent_files,
+                    projects: &corpus.projects,
+                    changed: &|path| changed.contains(path),
+                    home: &corpus.home,
+                },
+            )
+        };
+        if self.search_query_empty(cx) {
+            self.search.set(find());
+            self.redraw_search(cx);
+            return;
+        }
+        let task = cx.background_executor().spawn(async move { find() });
+        cx.spawn(async move |this, cx| {
+            let found = task.await;
+            let landed = this.update(cx, |app, cx| {
+                if app.search.open && app.search.generation == generation {
+                    app.search.set(found);
+                    app.redraw_search(cx);
+                }
+            });
+            if let Err(err) = landed {
+                log::debug!("search results after app drop: {err:#}");
+            }
+        })
+        .detach();
     }
 
     fn set_search_scope(&mut self, scope: SearchScope, cx: &mut Context<Self>) {

@@ -514,6 +514,8 @@ impl BenCodeApp {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use super::*;
     use serde_json::json;
 
@@ -580,7 +582,7 @@ mod tests {
             id: "s".into(),
             title: "claude · Fix the rail".into(),
             harness: "claude".into(),
-            blocks,
+            blocks: blocks.into_iter().map(Arc::new).collect(),
             ..Default::default()
         }
     }

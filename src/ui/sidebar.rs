@@ -148,7 +148,7 @@ impl BenCodeApp {
                     }
                 }))
                 .on_drag(DraggedSidebarTab(tab), |dragged, _, _, cx| {
-                    let dragged = dragged.clone();
+                    let dragged = *dragged;
                     cx.new(|_| dragged)
                 })
                 .drag_over::<DraggedSidebarTab>(move |style, _, _, _| {

@@ -15,6 +15,7 @@
 //! the work between them goes, notices aside (`monoReactionBlocks`).
 
 use std::hash::{DefaultHasher, Hash, Hasher};
+use std::sync::Arc;
 
 use crate::db::Block;
 use crate::ui::attachment_chip::ChipFile;
@@ -96,14 +97,14 @@ pub struct FloatRow {
 }
 
 /// Where the newest `turns` turns start; 0 when there are no more.
-pub fn window_start(blocks: &[Block], turns: usize) -> usize {
+pub fn window_start(blocks: &[Arc<Block>], turns: usize) -> usize {
     let mut seen = 0;
     for (ix, block) in blocks.iter().enumerate().rev() {
         if starts_turn(block) {
             seen += 1;
             if seen == turns {
                 // Nothing before it but what no message heads: all of it.
-                return if blocks[..ix].iter().any(starts_turn) {
+                return if blocks[..ix].iter().any(|b| starts_turn(b)) {
                     ix
                 } else {
                     0
@@ -119,7 +120,7 @@ pub fn window_start(blocks: &[Block], turns: usize) -> usize {
 /// growing or a tool call's kind being filled in; anything else adds,
 /// removes or replaces blocks, which moves the count or the ids at the
 /// ends. No allocation: it runs on each of the app's redraws.
-pub fn rows_key(blocks: &[Block], start: usize) -> u64 {
+pub fn rows_key(blocks: &[Arc<Block>], start: usize) -> u64 {
     let mut hasher = DefaultHasher::new();
     let shown = &blocks[start..];
     (start, shown.len()).hash(&mut hasher);
@@ -142,7 +143,7 @@ pub fn rows_key(blocks: &[Block], start: usize) -> u64 {
 }
 
 /// The rows for `blocks[start..]`; `live` while its last turn runs.
-pub fn float_rows(blocks: &[Block], start: usize, live: Option<Live>) -> Vec<FloatRow> {
+pub fn float_rows(blocks: &[Arc<Block>], start: usize, live: Option<Live>) -> Vec<FloatRow> {
     let mut rows = Vec::new();
     if start > 0 {
         rows.push(FloatRow {
@@ -214,7 +215,7 @@ pub fn float_rows(blocks: &[Block], start: usize, live: Option<Live>) -> Vec<Flo
 
 /// A message and what the Mono did for it, by block index.
 struct Turn<'a> {
-    blocks: &'a [Block],
+    blocks: &'a [Arc<Block>],
     user: Option<usize>,
     /// A habit's post, standing as its own turn.
     habit: Option<usize>,
@@ -228,7 +229,7 @@ impl Turn<'_> {
         let push = |rows: &mut Vec<FloatRow>, item| rows.push(FloatRow { turn, item });
         let blocks = self.blocks;
         let live = self.live;
-        let rest: Vec<(usize, &Block)> = self.rest.iter().map(|&ix| (ix, &blocks[ix])).collect();
+        let rest: Vec<(usize, &Block)> = self.rest.iter().map(|&ix| (ix, &*blocks[ix])).collect();
         // MonoCode `groupMonoTurnItems`: the work runs to the last step (any
         // prose, while the turn is live); the prose after it is the reply.
         let work_end = rest.iter().rposition(|(_, block)| {
@@ -334,7 +335,7 @@ impl Turn<'_> {
             }
         }
         if live.is_none() {
-            let mut turn_blocks: Vec<Block> = self
+            let mut turn_blocks: Vec<Arc<Block>> = self
                 .user
                 .or(self.habit)
                 .map(|ix| blocks[ix].clone())
@@ -366,6 +367,7 @@ impl Turn<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::shared;
     use crate::ui::transcript::mono::STRETCH_GAP_MS;
 
     fn tool(kind: &str) -> Block {
@@ -383,7 +385,7 @@ mod tests {
     }
 
     fn items(blocks: &[Block], live: Option<Live>) -> Vec<FloatItem> {
-        float_rows(blocks, 0, live)
+        float_rows(&shared(blocks), 0, live)
             .into_iter()
             .map(|row| row.item)
             .collect()
@@ -539,10 +541,10 @@ mod tests {
             .count();
         assert_eq!(days, 2);
         // A page that starts mid-conversation knows the message before it.
-        let later = float_rows(&blocks, 1, None);
+        let later = float_rows(&shared(&blocks), 1, None);
         assert_eq!(later[0].item, FloatItem::Earlier);
         // Its rows are the same ones the whole conversation has.
-        let all = float_rows(&blocks, 0, None);
+        let all = float_rows(&shared(&blocks), 0, None);
         assert_eq!(later[1..], all[all.len() - (later.len() - 1)..]);
         assert!(
             !later
@@ -561,10 +563,10 @@ mod tests {
                 ]
             })
             .collect();
-        assert_eq!(window_start(&blocks, 2), 6);
-        assert_eq!(window_start(&blocks, 5), 0);
-        assert_eq!(window_start(&blocks, 10), 0);
-        let turns = float_rows(&blocks, 6, None)
+        assert_eq!(window_start(&shared(&blocks), 2), 6);
+        assert_eq!(window_start(&shared(&blocks), 5), 0);
+        assert_eq!(window_start(&shared(&blocks), 10), 0);
+        let turns = float_rows(&shared(&blocks), 6, None)
             .iter()
             .filter(|row| matches!(row.item, FloatItem::User { .. }))
             .count();
@@ -594,19 +596,19 @@ mod tests {
             tool("read"),
             Block::new("a", "assistant", "Hi"),
         ];
-        let key = rows_key(&blocks, 0);
-        assert_eq!(rows_key(&blocks.clone(), 0), key);
+        let key = rows_key(&shared(&blocks), 0);
+        assert_eq!(rows_key(&shared(&blocks.clone()), 0), key);
         let mut streamed = blocks.clone();
         streamed[2].text = Some("Hi there".into());
-        assert_ne!(rows_key(&streamed, 0), key);
+        assert_ne!(rows_key(&shared(&streamed), 0), key);
         let mut rekinded = blocks.clone();
         if let Some(tool) = rekinded[1].tool.as_mut().and_then(|t| t.as_object_mut()) {
             tool.insert("kind".into(), serde_json::json!("edit"));
         }
-        assert_ne!(rows_key(&rekinded, 0), key);
+        assert_ne!(rows_key(&shared(&rekinded), 0), key);
         let mut finished = blocks.clone();
         finished[0].duration_ms = Some(10);
-        assert_ne!(rows_key(&finished, 0), key);
-        assert_ne!(rows_key(&blocks, 1), key);
+        assert_ne!(rows_key(&shared(&finished), 0), key);
+        assert_ne!(rows_key(&shared(&blocks), 1), key);
     }
 }

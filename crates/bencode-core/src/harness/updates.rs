@@ -213,8 +213,11 @@ fn grok_channel(config: &str) -> &'static str {
     "stable"
 }
 
-/// Runs `program args` to completion within `timeout`: (success, stdout, stderr).
-fn run(program: &Path, args: &[&str], timeout: Duration) -> Result<(bool, Vec<u8>, Vec<u8>)> {
+/// How a CLI ended: (success, stdout, stderr).
+type Ended = (bool, Vec<u8>, Vec<u8>);
+
+/// Runs `program args` to completion within `timeout`.
+fn run(program: &Path, args: &[&str], timeout: Duration) -> Result<Ended> {
     run_while(program, args, timeout, || true)?.context("CLI stopped early")
 }
 
@@ -225,7 +228,7 @@ fn run_while(
     args: &[&str],
     timeout: Duration,
     mut keep_going: impl FnMut() -> bool,
-) -> Result<Option<(bool, Vec<u8>, Vec<u8>)>> {
+) -> Result<Option<Ended>> {
     let mut child = Command::new(program)
         .args(args)
         .env("PATH", child_path(program))

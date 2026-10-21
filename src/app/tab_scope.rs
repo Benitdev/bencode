@@ -203,7 +203,7 @@ mod tests {
             id: id.into(),
             cwd: cwd.into(),
             worktree_cwd: worktree.map(Into::into),
-            blocks: vec![Block::new("b1", "user", "hi")],
+            blocks: vec![Block::new("b1", "user", "hi").into()],
             ..Default::default()
         }
     }

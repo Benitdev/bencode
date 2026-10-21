@@ -143,7 +143,7 @@ mod tests {
                 title: format!("T {id}"),
                 cwd: "/p".into(),
                 harness: "claude".into(),
-                blocks: vec![Block::new("b", "user", "hi")],
+                blocks: vec![Block::new("b", "user", "hi").into()],
                 ..Default::default()
             };
             db.upsert_session(&session).unwrap();

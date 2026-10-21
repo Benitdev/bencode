@@ -68,8 +68,10 @@ fn read_accounts(file: &Path) -> Result<Vec<ProviderAccount>> {
 /// WebKit stores local storage values as UTF-16LE.
 fn decode_utf16le(bytes: &[u8]) -> String {
     let units: Vec<u16> = bytes
-        .chunks_exact(2)
-        .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|pair| u16::from_le_bytes(*pair))
         .collect();
     String::from_utf16_lossy(&units)
 }
@@ -119,7 +121,7 @@ mod tests {
         .unwrap();
         drop(conn);
 
-        assert_eq!(storage_files(&dir), [file.clone()]);
+        assert_eq!(storage_files(&dir), std::slice::from_ref(&file));
         let accounts = read_accounts(&file).unwrap();
         assert_eq!(
             accounts,

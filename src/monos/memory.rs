@@ -75,17 +75,19 @@ fn secret_at(text: &str) -> Option<usize> {
     let bytes = text.as_bytes();
     let at_least = |n: usize, min: usize| (n >= min).then_some(n);
     // `\b(?:sk|pk|rk)-[A-Za-z0-9_-]{16,}`
-    if ["sk-", "pk-", "rk-"].iter().any(|p| text.starts_with(p)) {
-        if let Some(n) = at_least(run(&text[3..], base64url), 16) {
-            return Some(3 + n);
-        }
+    if ["sk-", "pk-", "rk-"].iter().any(|p| text.starts_with(p))
+        && let Some(n) = at_least(run(&text[3..], base64url), 16)
+    {
+        return Some(3 + n);
     }
     // `\bgh[pousr]_[A-Za-z0-9]{20,}`
-    if text.starts_with("gh") && bytes.len() > 4 && b"pousr".contains(&bytes[2]) && bytes[3] == b'_'
+    if text.starts_with("gh")
+        && bytes.len() > 4
+        && b"pousr".contains(&bytes[2])
+        && bytes[3] == b'_'
+        && let Some(n) = at_least(run(&text[4..], |b| b.is_ascii_alphanumeric()), 20)
     {
-        if let Some(n) = at_least(run(&text[4..], |b| b.is_ascii_alphanumeric()), 20) {
-            return Some(4 + n);
-        }
+        return Some(4 + n);
     }
     // `\bgithub_pat_[A-Za-z0-9_]{20,}`
     if let Some(rest) = text.strip_prefix("github_pat_")

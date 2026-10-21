@@ -12,6 +12,8 @@
 //! (`BenCodeApp::new`); the terminal case starts a shell, which ends with
 //! the app.
 
+use std::sync::Arc;
+
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
@@ -133,7 +135,7 @@ fn open_longest_run(app: &mut BenCodeApp, _: &mut Context<BenCodeApp>) {
     let mut phases = turns::build_phases(&session.blocks, group);
     let steps: Vec<_> = subagents::steps(&session.blocks[ix])
         .iter()
-        .map(subagents::step_block)
+        .map(|step| Arc::new(subagents::step_block(step)))
         .collect();
     let all: Vec<usize> = (0..steps.len()).collect();
     phases.extend(turns::build_phases(&steps, &all));

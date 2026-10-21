@@ -4,6 +4,7 @@
 //! calls, and one-line tool rows (verb, then the file or command), an
 //! edit's with what it changed under it (`edit_patch.rs`).
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use ely_gpui_component::primitives::{Icon, IconName};
@@ -129,7 +130,7 @@ pub(super) struct Trail<'a> {
     pub session_id: &'a str,
     pub cwd: &'a str,
     pub harness: &'a str,
-    pub blocks: &'a [Block],
+    pub blocks: &'a [Arc<Block>],
     /// The thread block a run's text selects as: its Agent call.
     pub select_as: Option<usize>,
 }
@@ -241,7 +242,7 @@ impl BenCodeApp {
                 question: request.is_some_and(|r| r.tool == crate::app::QUESTION_TOOL),
                 background: self.background_tasks_for(&session.id).len(),
             };
-            let steps: Vec<&Block> = turn.range.clone().map(|ix| &blocks[ix]).collect();
+            let steps: Vec<&Block> = turn.range.clone().map(|ix| &*blocks[ix]).collect();
             mono::work_status(&steps, live)
         });
         let row = div()
@@ -728,7 +729,7 @@ fn step_entrance(block: &Block, now: i64) -> Option<f32> {
 }
 
 /// "Opus worked for 1m 4s", or what the folded work adds up to.
-fn settled_title(blocks: &[Block], turn: &TurnLayout) -> String {
+fn settled_title(blocks: &[Arc<Block>], turn: &TurnLayout) -> String {
     let model = turn.model_name(blocks);
     match turn.duration_ms(blocks) {
         Some(ms) => turns::working_duration(Some(ms), model, true),

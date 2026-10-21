@@ -10,6 +10,7 @@ use gpui::{
     AnyElement, Context, FontWeight, IntoElement, ParentElement, Pixels, Point, Styled, div,
     prelude::*,
 };
+use std::sync::Arc;
 
 use crate::ui::scale::px;
 use serde_json::{Value, json};
@@ -52,7 +53,7 @@ pub struct HandoffCard {
 impl HandoffCard {
     /// MonoCode `buildHandoffComposerCard`, for the conversation through
     /// the handed-off turn (`blocks`) and that turn's request.
-    pub fn new(from: HarnessKind, to: HarnessKind, blocks: &[Block], request: &str) -> Self {
+    pub fn new(from: HarnessKind, to: HarnessKind, blocks: &[Arc<Block>], request: &str) -> Self {
         let request = one_line(request);
         Self {
             from,
@@ -519,12 +520,12 @@ fn tool_line(block: &Block) -> Option<String> {
 }
 
 /// MonoCode `turnEditedFiles`: each edit once, in order.
-pub fn edited_files(blocks: &[Block]) -> Vec<String> {
+pub fn edited_files(blocks: &[Arc<Block>]) -> Vec<String> {
     let mut seen = std::collections::HashSet::new();
     blocks
         .iter()
         .filter(|b| matches!(b.role.as_str(), "tool" | "approval") && is_edit_tool(b))
-        .filter_map(tool_line)
+        .filter_map(|b| tool_line(b))
         .filter(|line| seen.insert(line.to_lowercase()))
         .collect()
 }
@@ -536,21 +537,21 @@ fn block_text(block: &Block) -> &str {
 /// MonoCode `buildDeterministicHandoff` (without CI context, which BenCode
 /// does not record): the last two messages, the last answer, the files
 /// edited, and the latest plan and tasks.
-pub fn deterministic_brief(blocks: &[Block], request: Option<&str>) -> String {
+pub fn deterministic_brief(blocks: &[Arc<Block>], request: Option<&str>) -> String {
     let current = request.unwrap_or("").trim();
     let last_of = |role: &str| {
         blocks
             .iter()
             .rev()
             .filter(|b| b.role == role)
-            .map(block_text)
+            .map(|b| block_text(b))
             .find(|t| !t.is_empty())
             .unwrap_or("")
     };
     let mut users: Vec<&str> = blocks
         .iter()
         .filter(|b| b.role == "user")
-        .map(block_text)
+        .map(|b| block_text(b))
         .collect();
     if !current.is_empty() && users.last().is_some_and(|last| *last == current) {
         users.pop();
@@ -645,14 +646,14 @@ pub fn strip_goal_sections(markdown: &str) -> String {
 mod tests {
     use super::*;
 
-    fn block(role: &str, text: &str) -> Block {
-        Block::new(format!("{role}-{text}"), role, text)
+    fn block(role: &str, text: &str) -> Arc<Block> {
+        Arc::new(Block::new(format!("{role}-{text}"), role, text))
     }
 
-    fn edit(path: &str) -> Block {
-        let mut b = block("tool", "");
+    fn edit(path: &str) -> Arc<Block> {
+        let mut b = Arc::unwrap_or_clone(block("tool", ""));
         b.tool = Some(json!({ "kind": "edit", "title": path }));
-        b
+        Arc::new(b)
     }
 
     #[test]
@@ -713,7 +714,7 @@ mod tests {
         assert_eq!(card.request.as_deref(), Some("fix the bug"));
         assert_eq!(card.files, 1);
         let mut sent = block("user", "");
-        sent.second_opinion = Some(card.turn_meta());
+        Arc::make_mut(&mut sent).second_opinion = Some(card.turn_meta());
         assert_eq!(
             HandoffMeta::from_block(&sent),
             Some(HandoffMeta::from(&card))
@@ -723,13 +724,14 @@ mod tests {
     #[test]
     fn edit_tools_are_recognised_by_kind_or_title() {
         let mut by_title = block("tool", "Update src/lib.rs");
-        by_title.tool = Some(json!({ "kind": "other" }));
+        Arc::make_mut(&mut by_title).tool = Some(json!({ "kind": "other" }));
         assert!(is_edit_tool(&by_title));
         let mut read = block("tool", "Edit later");
-        read.tool = Some(json!({ "kind": "read" }));
+        Arc::make_mut(&mut read).tool = Some(json!({ "kind": "read" }));
         assert!(!is_edit_tool(&read));
         let mut with_path = block("tool", "Edit");
-        with_path.tool = Some(json!({ "kind": "edit", "preview": { "path": "a.rs" } }));
+        Arc::make_mut(&mut with_path).tool =
+            Some(json!({ "kind": "edit", "preview": { "path": "a.rs" } }));
         assert_eq!(tool_line(&with_path).as_deref(), Some("Edit (a.rs)"));
     }
 }

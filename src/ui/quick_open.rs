@@ -3,6 +3,11 @@
 //! project's files by a fuzzy match on their name, then their path, with
 //! recently opened files first. Starting the query with `>` lists commands.
 
+use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
+use std::sync::Arc;
+
 use ely_gpui_component::primitives::{Icon, IconName};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
@@ -34,22 +39,22 @@ fn is_break(c: char) -> bool {
 }
 
 /// MonoCode `matchToken`: every query character in order, rewarding runs,
-/// word starts and camelCase humps.
-fn match_token(query: &str, text: &str) -> Option<Hit> {
-    let needle: Vec<char> = query.to_lowercase().chars().collect();
+/// word starts and camelCase humps. `needle` is the token lowercased.
+fn match_token(needle: &[char], text: &str) -> Option<Hit> {
     if needle.is_empty() {
         return Some(Hit {
             score: 0,
             positions: Vec::new(),
         });
     }
-    let chars: Vec<char> = text.chars().collect();
     let mut positions = Vec::new();
     let (mut score, mut run, mut qi) = (0_i64, 0_i64, 0);
-    for (i, &c) in chars.iter().enumerate() {
+    let mut prev: Option<char> = None;
+    for (i, c) in text.chars().enumerate() {
         if qi == needle.len() {
             break;
         }
+        let before = prev.replace(c);
         if c.to_lowercase().next() != Some(needle[qi]) {
             run = 0;
             continue;
@@ -57,65 +62,94 @@ fn match_token(query: &str, text: &str) -> Option<Hit> {
         positions.push(i);
         run += 1;
         score += 1 + run * 4;
-        if i == 0 || is_break(chars[i - 1]) {
-            score += 14;
-        } else if c.is_ascii_uppercase() && !chars[i - 1].is_ascii_uppercase() {
-            score += 10;
+        match before {
+            None => score += 14,
+            Some(b) if is_break(b) => score += 14,
+            Some(b) if c.is_ascii_uppercase() && !b.is_ascii_uppercase() => score += 10,
+            Some(_) => {}
         }
         qi += 1;
     }
     if qi != needle.len() {
         return None;
     }
-    score -= chars.len() as i64 - needle.len() as i64;
+    score -= text.chars().count() as i64 - needle.len() as i64;
     Some(Hit { score, positions })
 }
 
-/// MonoCode `fuzzyMatch`: space-separated tokens must all match.
-pub fn fuzzy_match(query: &str, text: &str) -> Option<Hit> {
-    let tokens: Vec<&str> = query.split_whitespace().collect();
-    match tokens.as_slice() {
-        [] => Some(Hit {
-            score: 0,
-            positions: Vec::new(),
-        }),
-        [one] => match_token(one, text),
-        many => {
-            let mut hit = Hit {
-                score: 0,
-                positions: Vec::new(),
-            };
-            for token in many {
-                let part = match_token(token, text)?;
-                hit.score += part.score;
-                hit.positions.extend(part.positions);
-            }
-            hit.positions.sort_unstable();
-            Some(hit)
+/// A query split and lowercased once, to match against many texts.
+pub struct FuzzyQuery {
+    tokens: Vec<Vec<char>>,
+}
+
+impl FuzzyQuery {
+    pub fn new(query: &str) -> Self {
+        Self {
+            tokens: query
+                .split_whitespace()
+                .map(|token| token.to_lowercase().chars().collect())
+                .collect(),
         }
     }
-}
 
-/// MonoCode `scorePath`: a hit in the file name beats one in the folders.
-pub fn score_path(query: &str, relative: &str) -> Option<Hit> {
-    let name = relative.rsplit('/').next().unwrap_or(relative);
-    let offset = relative.chars().count() - name.chars().count();
-    if let Some(hit) = fuzzy_match(query, name) {
-        return Some(Hit {
-            score: hit.score + 400,
-            positions: hit.positions.into_iter().map(|p| p + offset).collect(),
-        });
+    /// MonoCode `fuzzyMatch`: space-separated tokens must all match.
+    pub fn matches(&self, text: &str) -> Option<Hit> {
+        match self.tokens.as_slice() {
+            [] => Some(Hit {
+                score: 0,
+                positions: Vec::new(),
+            }),
+            [one] => match_token(one, text),
+            many => {
+                let mut hit = Hit {
+                    score: 0,
+                    positions: Vec::new(),
+                };
+                for token in many {
+                    let part = match_token(token, text)?;
+                    hit.score += part.score;
+                    hit.positions.extend(part.positions);
+                }
+                hit.positions.sort_unstable();
+                Some(hit)
+            }
+        }
     }
-    fuzzy_match(query, relative)
+
+    /// MonoCode `scorePath`: a hit in the file name beats one in the folders.
+    pub fn score_path(&self, relative: &str) -> Option<Hit> {
+        let name = relative.rsplit('/').next().unwrap_or(relative);
+        if let Some(hit) = self.matches(name) {
+            let offset = relative.chars().count() - name.chars().count();
+            return Some(Hit {
+                score: hit.score + 400,
+                positions: hit.positions.into_iter().map(|p| p + offset).collect(),
+            });
+        }
+        self.matches(relative)
+    }
 }
 
-/// MonoCode `rankProjectFiles`: with no query, the recent files; otherwise
-/// the matches, recent ones lifted, best first.
-pub fn rank_files(files: &[SharedString], query: &str, recents: &[String]) -> Vec<(String, Hit)> {
+/// MonoCode `fuzzyMatch`, for one text; many texts share a `FuzzyQuery`.
+pub fn fuzzy_match(query: &str, text: &str) -> Option<Hit> {
+    FuzzyQuery::new(query).matches(text)
+}
+
+/// MonoCode `rankProjectFiles` over `lists` (files, and folders for `@`):
+/// with no query, the recent files; otherwise the matches, recent ones
+/// lifted, best first. Runs over the whole index on each keystroke: one
+/// pass, and only the shown results become `String`s.
+pub fn rank_files(
+    lists: &[&[SharedString]],
+    query: &str,
+    recents: &[String],
+) -> Vec<(String, Hit)> {
+    let files = || lists.iter().flat_map(|list| list.iter());
     if query.trim().is_empty() {
+        let listed: HashSet<&str> = files().map(|f| f.as_ref()).collect();
         return recents
             .iter()
-            .filter(|path| files.iter().any(|f| f.as_ref() == path.as_str()))
+            .filter(|path| listed.contains(path.as_str()))
             .take(MAX_RESULTS)
             .map(|path| {
                 (
@@ -128,14 +162,19 @@ pub fn rank_files(files: &[SharedString], query: &str, recents: &[String]) -> Ve
             })
             .collect();
     }
-    let mut scored: Vec<(String, Hit)> = files
+    let recency: HashMap<&str, usize> = recents
         .iter()
+        .enumerate()
+        .map(|(rank, path)| (path.as_str(), rank))
+        .collect();
+    let query = FuzzyQuery::new(query.trim());
+    let mut scored: Vec<(&str, Hit)> = files()
         .filter_map(|file| {
-            let mut hit = score_path(query.trim(), file)?;
-            if let Some(rank) = recents.iter().position(|r| r.as_str() == file.as_ref()) {
-                hit.score += (MAX_RECENTS.saturating_sub(rank) * 8) as i64;
+            let mut hit = query.score_path(file)?;
+            if let Some(rank) = recency.get(file.as_ref()) {
+                hit.score += (MAX_RECENTS.saturating_sub(*rank) * 8) as i64;
             }
-            Some((file.to_string(), hit))
+            Some((file.as_ref(), hit))
         })
         .collect();
     scored.sort_by(|(a, ha), (b, hb)| {
@@ -146,6 +185,72 @@ pub fn rank_files(files: &[SharedString], query: &str, recents: &[String]) -> Ve
     });
     scored.truncate(MAX_RESULTS);
     scored
+        .into_iter()
+        .map(|(path, hit)| (path.to_string(), hit))
+        .collect()
+}
+
+/// The last ranking and what it was made from. Render and the keys ask for
+/// it again and again with nothing changed (a hover redraws the picker),
+/// and ranking walks the whole index.
+pub(crate) struct RankCache<T> {
+    last: RefCell<Option<(RankKey, Rc<T>)>>,
+}
+
+impl<T> Default for RankCache<T> {
+    fn default() -> Self {
+        Self {
+            last: RefCell::new(None),
+        }
+    }
+}
+
+/// What a ranking was made from. Holding the lists keeps their addresses
+/// from being reused, so pointer equality means the same list.
+struct RankKey {
+    query: String,
+    lists: Vec<Arc<[SharedString]>>,
+    recents: Vec<String>,
+}
+
+impl RankKey {
+    fn made_from(&self, query: &str, lists: &[&Arc<[SharedString]>], recents: &[String]) -> bool {
+        self.query == query
+            && self.recents == recents
+            && self.lists.len() == lists.len()
+            && self.lists.iter().zip(lists).all(|(a, b)| Arc::ptr_eq(a, b))
+    }
+}
+
+impl<T> RankCache<T> {
+    /// The ranking of `lists` for `query`, made by `rank` unless the last
+    /// one was made from the same.
+    pub fn get(
+        &self,
+        query: &str,
+        lists: &[&Arc<[SharedString]>],
+        recents: &[String],
+        rank: impl FnOnce() -> T,
+    ) -> Rc<T> {
+        if let Some((key, ranked)) = &*self.last.borrow()
+            && key.made_from(query, lists, recents)
+        {
+            return ranked.clone();
+        }
+        let ranked = Rc::new(rank());
+        let key = RankKey {
+            query: query.to_string(),
+            lists: lists.iter().map(|list| Arc::clone(list)).collect(),
+            recents: recents.to_vec(),
+        };
+        *self.last.borrow_mut() = Some((key, ranked.clone()));
+        ranked
+    }
+
+    /// Lets go of the last ranking (and the lists it holds).
+    pub fn clear(&self) {
+        self.last.take();
+    }
 }
 
 /// A command offered after `>`.
@@ -188,6 +293,24 @@ pub struct QuickOpen {
     /// A file picked from the keyboard, opened on the next frame (opening
     /// needs the window).
     pending: Option<String>,
+    ranked: RankCache<Results>,
+}
+
+/// Go to File's list for `query`: commands after `>`, else files.
+fn rank_query(query: &str, files: &[SharedString], recents: &[String]) -> Results {
+    match query.trim().strip_prefix('>') {
+        Some(command) => {
+            let command = command.trim();
+            let mut hits: Vec<(usize, Hit)> = ACTIONS
+                .iter()
+                .enumerate()
+                .filter_map(|(ix, a)| Some((ix, fuzzy_match(command, a.label)?)))
+                .collect();
+            hits.sort_by_key(|hit| std::cmp::Reverse(hit.1.score));
+            Results::Actions(hits)
+        }
+        None => Results::Files(rank_files(&[files], query, recents)),
+    }
 }
 
 enum Results {
@@ -221,25 +344,13 @@ impl BenCodeApp {
         out
     }
 
-    fn quick_open_results(&self, cx: &gpui::App) -> Results {
+    fn quick_open_results(&self, cx: &gpui::App) -> Rc<Results> {
         let query = self.quick_open_query(cx);
-        match query.trim().strip_prefix('>') {
-            Some(command) => {
-                let command = command.trim();
-                let mut hits: Vec<(usize, Hit)> = ACTIONS
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(ix, a)| Some((ix, fuzzy_match(command, a.label)?)))
-                    .collect();
-                hits.sort_by_key(|hit| std::cmp::Reverse(hit.1.score));
-                Results::Actions(hits)
-            }
-            None => Results::Files(rank_files(
-                &self.project_files.files,
-                &query,
-                &self.quick_open_recents(),
-            )),
-        }
+        let recents = self.quick_open_recents();
+        let files = &self.project_files.files;
+        self.quick_open.ranked.get(&query, &[files], &recents, || {
+            rank_query(&query, files, &recents)
+        })
     }
 
     /// ⌘P: opens the picker with an empty query and a fresh file index.
@@ -258,6 +369,7 @@ impl BenCodeApp {
         if !std::mem::take(&mut self.quick_open.open) {
             return false;
         }
+        self.quick_open.ranked.clear();
         self.refocus_prompt(cx);
         cx.notify();
         true
@@ -288,9 +400,9 @@ impl BenCodeApp {
     }
 
     fn quick_open_pick(&mut self, index: usize, cx: &mut Context<Self>) {
-        match self.quick_open_results(cx) {
+        match &*self.quick_open_results(cx) {
             Results::Files(files) => {
-                let Some((path, _)) = files.into_iter().nth(index) else {
+                let Some((path, _)) = files.get(index).cloned() else {
                     return;
                 };
                 self.quick_open.recents.retain(|p| *p != path);
@@ -375,9 +487,10 @@ impl BenCodeApp {
         }
         let colors = &cx.theme().colors;
         let results = self.quick_open_results(cx);
-        let empty = self.quick_open_empty(&results, cx);
+        let results = &*results;
+        let empty = self.quick_open_empty(results, cx);
         let palette = matches!(results, Results::Actions(_));
-        let rows: Vec<AnyElement> = match &results {
+        let rows: Vec<AnyElement> = match results {
             Results::Files(files) => files
                 .iter()
                 .enumerate()
@@ -571,7 +684,7 @@ mod tests {
         let files: Vec<SharedString> = ["src/app/agent.rs", "agent/notes.md", "README.md"]
             .map(SharedString::from)
             .to_vec();
-        let ranked = rank_files(&files, "agent", &[]);
+        let ranked = rank_files(&[&files], "agent", &[]);
         assert_eq!(ranked[0].0, "src/app/agent.rs");
         assert_eq!(ranked[0].1.positions, (8..13).collect::<Vec<_>>());
         assert_eq!(ranked.len(), 2);
@@ -581,10 +694,10 @@ mod tests {
     fn empty_query_lists_recent_files_that_exist() {
         let files: Vec<SharedString> = ["a.rs", "b.rs"].map(SharedString::from).to_vec();
         let recents = vec!["b.rs".to_string(), "gone.rs".to_string()];
-        let ranked = rank_files(&files, "", &recents);
+        let ranked = rank_files(&[&files], "", &recents);
         assert_eq!(ranked.len(), 1);
         assert_eq!(ranked[0].0, "b.rs");
-        let lifted = rank_files(&files, "rs", &recents);
+        let lifted = rank_files(&[&files], "rs", &recents);
         assert_eq!(lifted[0].0, "b.rs");
     }
 }

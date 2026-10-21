@@ -163,7 +163,7 @@ impl BenCodeApp {
             .px(px(16.0))
             .flex()
             .justify_center()
-            .text_size(px(26.0))
+            .text_size(Text::Display.px())
             .line_height(px(34.0))
             .font_weight(FontWeight::MEDIUM)
             .text_color(colors.fg)
@@ -338,7 +338,7 @@ impl BenCodeApp {
                         cx.notify();
                     }))
                     .child(
-                        Icon::new(starter.icon.clone())
+                        Icon::new(starter.icon)
                             .size(IconSize::Xs)
                             .color(colors.fg.ink(Ink::Muted)),
                     )

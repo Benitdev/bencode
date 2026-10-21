@@ -4,6 +4,7 @@
 //! the view is `outline.rs`.
 
 use crate::db::Block;
+use std::sync::Arc;
 
 /// Fewer prompts than this show no outline.
 pub const MIN_PROMPTS: usize = 2;
@@ -21,7 +22,7 @@ fn flag(block: &Block, key: &str) -> bool {
 }
 
 /// MonoCode `promptBlocks`: the user's messages, as block indexes.
-pub fn prompt_blocks(blocks: &[Block]) -> Vec<usize> {
+pub fn prompt_blocks(blocks: &[Arc<Block>]) -> Vec<usize> {
     blocks
         .iter()
         .enumerate()
@@ -171,7 +172,7 @@ pub struct PromptPreview {
 }
 
 /// MonoCode `promptPreview`.
-pub fn prompt_preview(blocks: &[Block], prompt: usize) -> Option<PromptPreview> {
+pub fn prompt_preview(blocks: &[Arc<Block>], prompt: usize) -> Option<PromptPreview> {
     let block = blocks.get(prompt)?;
     let mut reply = Vec::new();
     for block in &blocks[prompt + 1..] {
@@ -259,6 +260,7 @@ pub fn preview_lines(text: &str, max: usize) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::shared;
     use serde_json::json;
 
     fn block(role: &str, text: &str) -> Block {
@@ -278,7 +280,7 @@ mod tests {
             with(block("user", "hidden"), "internal", json!(true)),
             block("user", "b"),
         ];
-        assert_eq!(prompt_blocks(&blocks), [0, 3]);
+        assert_eq!(prompt_blocks(&shared(&blocks)), [0, 3]);
     }
 
     #[test]
@@ -377,13 +379,13 @@ mod tests {
             block("user", "second"),
         ];
         assert_eq!(
-            prompt_preview(&blocks, 0),
+            prompt_preview(&shared(&blocks), 0),
             Some(PromptPreview {
                 title: "first".into(),
                 reply: Some("Done.".into()),
                 detail: Some("All green.".into()),
             })
         );
-        assert_eq!(prompt_preview(&blocks, 4).unwrap().reply, None);
+        assert_eq!(prompt_preview(&shared(&blocks), 4).unwrap().reply, None);
     }
 }
