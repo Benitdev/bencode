@@ -4,7 +4,7 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
-## [0.1.25] - Unreleased
+## [0.1.25] - 2026-10-21
 
 - Go to Definition in the editor: ⌘-click a name, or press F12, and the
   line that declares it opens with the name selected, in this file or
