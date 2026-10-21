@@ -63,8 +63,9 @@ fn indexable_root(root: &Path) -> bool {
 
 /// Every file of the project for Go to File (MonoCode `list_project_files`):
 /// `git ls-files` when the folder is a repository (tracked and untracked,
-/// `.gitignore` honoured), else a bounded walk that skips vendored folders.
-/// Paths are relative, at most 20,000. Blocking: run off the UI thread.
+/// `.gitignore` honoured, repositories cloned inside it included), else a
+/// bounded walk that skips vendored folders. Paths are relative, at most
+/// 20,000. Blocking: run off the UI thread.
 pub fn list_project_files(root: &Path) -> Vec<String> {
     if !root.is_dir() || !indexable_root(root) {
         return Vec::new();
@@ -72,11 +73,68 @@ pub fn list_project_files(root: &Path) -> Vec<String> {
     git_ls_files(root).unwrap_or_else(|| walk_project_files(root))
 }
 
+/// How deep repositories cloned inside repositories are followed.
+const MAX_NESTED_DEPTH: usize = 2;
+
 /// `None` when this is not a repository or the listing ran past its cap; a
 /// partial listing would quietly hide files, so the walk takes over.
 fn git_ls_files(root: &Path) -> Option<Vec<String>> {
-    let mut child = crate::git_cli::command(root)
-        .args(["ls-files", "-co", "--exclude-standard", "-z"])
+    let mut files = Vec::new();
+    list_repo(root, "", 0, &mut files)?;
+    files.sort();
+    files.truncate(MAX_PROJECT_FILES);
+    Some(files)
+}
+
+/// Adds `dir`'s files to `files` under `prefix`, then those of repositories
+/// cloned inside it: a workspace that keeps its repositories side by side
+/// usually ignores them, so git alone never lists their files.
+fn list_repo(dir: &Path, prefix: &str, depth: usize, files: &mut Vec<String>) -> Option<()> {
+    let listed = ls_files(dir, &["-co", "--exclude-standard"])?;
+    let mut folders = Vec::new();
+    for rel in listed {
+        if rel.ends_with('/') {
+            // An untracked folder git does not enter: a repository.
+            folders.push(rel);
+        } else if !rel.split('/').any(skip_dir_name) && !rel.ends_with(".DS_Store") {
+            files.push(format!("{prefix}{rel}"));
+        }
+    }
+    if depth >= MAX_NESTED_DEPTH {
+        return Some(());
+    }
+    // Ignored folders come back whole with `--directory`.
+    if let Some(ignored) = ls_files(dir, &["-oi", "--exclude-standard", "--directory"]) {
+        folders.extend(ignored.into_iter().filter(|rel| rel.ends_with('/')));
+    }
+    for folder in folders {
+        if files.len() >= MAX_PROJECT_FILES {
+            break;
+        }
+        if folder.split('/').any(skip_dir_name) {
+            continue;
+        }
+        // A clone has a `.git` folder; a worktree or submodule's is a file,
+        // and a worktree only repeats its repository's files.
+        let nested = dir.join(&folder);
+        if !nested.join(".git").is_dir() {
+            continue;
+        }
+        let prefix = format!("{prefix}{folder}");
+        if list_repo(&nested, &prefix, depth + 1, files).is_none() {
+            log::debug!("listing nested repository {}", nested.display());
+        }
+    }
+    Some(())
+}
+
+/// `git ls-files -z` with `args` in `dir`; `None` when git fails or the
+/// output runs past its cap.
+fn ls_files(dir: &Path, args: &[&str]) -> Option<Vec<String>> {
+    let mut child = crate::git_cli::command(dir)
+        .arg("ls-files")
+        .args(args)
+        .arg("-z")
         .env("GIT_TERMINAL_PROMPT", "0")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -101,17 +159,12 @@ fn git_ls_files(root: &Path) -> Option<Vec<String>> {
     if !child.wait().ok()?.success() {
         return None;
     }
-    let mut files: Vec<String> = raw
-        .split(|b| *b == 0)
-        .filter(|rel| !rel.is_empty())
-        .map(|rel| String::from_utf8_lossy(rel).into_owned())
-        .filter(|rel| {
-            !rel.ends_with('/') && !rel.split('/').any(skip_dir_name) && !rel.ends_with(".DS_Store")
-        })
-        .take(MAX_PROJECT_FILES)
-        .collect();
-    files.sort();
-    Some(files)
+    Some(
+        raw.split(|b| *b == 0)
+            .filter(|rel| !rel.is_empty())
+            .map(|rel| String::from_utf8_lossy(rel).into_owned())
+            .collect(),
+    )
 }
 
 /// Lines in a text file, for a change list's `+N` of an untracked file:
@@ -194,6 +247,54 @@ mod tests {
         assert_eq!(walk_project_files(&root), [".env", "src/deep/er/a.rs"]);
         assert!(!indexable_root(Path::new("/")));
         assert!(!indexable_root(Path::new("/Users")));
+
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn project_files_include_repositories_cloned_inside() {
+        let root = std::env::temp_dir().join(format!("bencode-pf-nested-{}", std::process::id()));
+        let git = |dir: &Path, args: &[&str]| {
+            let ok = crate::git_cli::command(dir)
+                .args(args)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .is_ok_and(|s| s.success());
+            assert!(ok, "git {args:?}");
+        };
+        std::fs::create_dir_all(root.join("app/src")).unwrap();
+        std::fs::create_dir_all(root.join("app/node_modules/x")).unwrap();
+        std::fs::create_dir_all(root.join("app/.claude/worktrees")).unwrap();
+        std::fs::create_dir_all(root.join("loose/src")).unwrap();
+        git(&root, &["init", "-q"]);
+        git(&root.join("app"), &["init", "-q"]);
+        git(&root.join("loose"), &["init", "-q"]);
+        std::fs::write(root.join(".gitignore"), "app/\n").unwrap();
+        std::fs::write(root.join("README.md"), "").unwrap();
+        std::fs::write(root.join("app/.gitignore"), "node_modules/\n").unwrap();
+        std::fs::write(root.join("app/src/Form.tsx"), "").unwrap();
+        std::fs::write(root.join("app/node_modules/x/y.js"), "").unwrap();
+        // A worktree's `.git` is a file: its files repeat the repository's.
+        let app = root.join("app");
+        git(&app, &["add", "src"]);
+        git(
+            &app,
+            &["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "a"],
+        );
+        git(&app, &["worktree", "add", "-q", ".claude/worktrees/w"]);
+        std::fs::write(root.join("loose/src/lib.rs"), "").unwrap();
+
+        assert_eq!(
+            git_ls_files(&root).unwrap(),
+            [
+                ".gitignore",
+                "README.md",
+                "app/.gitignore",
+                "app/src/Form.tsx",
+                "loose/src/lib.rs",
+            ]
+        );
 
         std::fs::remove_dir_all(&root).unwrap();
     }
