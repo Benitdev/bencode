@@ -7,6 +7,7 @@ pub mod artifacts;
 mod automation_runs;
 pub mod automations;
 pub mod backlog;
+pub mod blame;
 pub mod browser;
 pub mod chat_background;
 pub mod commands;
@@ -455,6 +456,8 @@ pub struct BenCodeApp {
     /// External editors and MCP servers, scanned once in the background.
     pub integrations: integrations::Integrations,
     pub editor: crate::ui::editor_pane::EditorState,
+    /// Line blame and File History tabs.
+    pub blame: blame::BlameState,
     pub is_sidebar_open: bool,
     /// The project rail (⌘B); the session sidebar is `is_sidebar_open` (⇧⌘B).
     pub is_rail_open: bool,
@@ -1437,6 +1440,7 @@ impl BenCodeApp {
             quit_confirm_open: false,
             updater: Default::default(),
             editor: Default::default(),
+            blame: Default::default(),
             is_sidebar_open: true,
             is_rail_open: true,
             rail_ui,

@@ -4,6 +4,7 @@ use std::process::{Command, Output};
 
 use anyhow::{Context as _, Result, bail};
 
+pub mod blame;
 mod branches;
 mod diffs;
 pub mod graph;

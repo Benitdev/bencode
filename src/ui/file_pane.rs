@@ -156,6 +156,7 @@ impl BenCodeApp {
         let body = match self.file_pane.active() {
             Some(PaneTab::Browser { id }) => self.render_browser_tab(*id, cx),
             Some(tab) if tab.is_diff() => self.render_diff_doc(&tab.key(), cx),
+            Some(tab @ PaneTab::FileHistory { .. }) => self.render_file_history(tab, cx),
             _ => self.render_editor_file(cx).into_any_element(),
         };
         div()
@@ -194,6 +195,7 @@ impl BenCodeApp {
             let (icon, dirty) = match &entry.tab {
                 PaneTab::File { path } => (IconName::FileCode, self.editor.files.is_dirty(path)),
                 PaneTab::Commit { .. } => (IconName::GitCommitHorizontal, false),
+                PaneTab::FileHistory { .. } => (IconName::History, false),
                 PaneTab::Browser { .. } => (IconName::Globe, false),
                 PaneTab::Review { .. }
                 | PaneTab::Changes { .. }

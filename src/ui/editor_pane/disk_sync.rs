@@ -86,6 +86,9 @@ impl BenCodeApp {
             file.disk_hash = hash;
         }
         self.editor.disk_conflicts.remove(path);
+        // `set_text` dropped the blame note with the old text.
+        self.forget_line_blame(path);
+        self.track_line_blame(path, cx);
         cx.notify();
     }
 

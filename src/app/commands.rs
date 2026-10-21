@@ -42,6 +42,7 @@ actions!(
         FindInConversation,
         FindInProject,
         GoToFile,
+        ShowFileHistory,
         RenameSelectedSession,
         DeleteSelectedSessions,
         ClearSessionSelection,
@@ -111,6 +112,7 @@ pub(crate) fn keymap() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-f", FindInConversation, None),
         KeyBinding::new("cmd-shift-f", FindInProject, None),
         KeyBinding::new("cmd-p", GoToFile, None),
+        KeyBinding::new("cmd-alt-h", ShowFileHistory, None),
         KeyBinding::new("cmd-g", FindNext, None),
         KeyBinding::new("cmd-shift-g", FindPrevious, None),
         // MonoCode "Composer: Toggle Workspace", only in a new thread's
@@ -257,6 +259,7 @@ fn menus() -> Vec<Menu> {
             MenuItem::action("Open Project…", OpenProject),
             MenuItem::action("Search…", Search),
             MenuItem::action("Go to File…", GoToFile),
+            MenuItem::action("File History", ShowFileHistory),
             MenuItem::separator(),
             MenuItem::action("Save", Save),
             MenuItem::action("Close", CloseActive),
@@ -501,6 +504,9 @@ impl BenCodeApp {
         .on_action(cx.listener(|this, _: &FindInConversation, _, cx| this.open_find(cx)))
         .on_action(cx.listener(|this, _: &FindInProject, _, cx| this.open_project_search(cx)))
         .on_action(cx.listener(|this, _: &GoToFile, _, cx| this.open_quick_open(cx)))
+        .on_action(
+            cx.listener(|this, _: &ShowFileHistory, _, cx| this.show_active_file_history(cx)),
+        )
         .on_action(
             cx.listener(|this, _: &RenameSelectedSession, _, cx| this.rename_selected_session(cx)),
         )

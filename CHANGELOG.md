@@ -10,6 +10,14 @@ tagging (`docs/releasing.md`).
   does: "Added 2 lines, removed 1 line", then the lines with their
   numbers, coloured as in a review. A long one shows its first lines
   until Show more. Codex and Grok Build edits show the row alone for now.
+- Line blame in the editor, as in GitLens: the caret's line ends with
+  who last changed it and when ("You, 3 weeks ago • subject"), and the
+  toolbar names them too. Resting on that opens a card with the
+  commit's message and date, its change to the line, its id to copy, and
+  buttons to open the commit or the file's history.
+- File History (⌥⌘H, the clock in the editor's toolbar, or the blame
+  card) lists the commits that changed a file, across renames; a click
+  opens the commit beside it.
 
 ## [0.1.23] - 2026-10-20
 

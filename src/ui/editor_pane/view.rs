@@ -161,6 +161,7 @@ impl BenCodeApp {
                         .gap_2()
                         .children(self.view_mode_toggle(&path, cx))
                         .children(self.add_selection_button(&path, cx))
+                        .children(self.blame_chip(&path, cx))
                         .child(Badge::new(detect_language(&path)))
                         .child(
                             div()
@@ -168,6 +169,16 @@ impl BenCodeApp {
                                 .text_color(colors.fg_subtle)
                                 .child(format!("Ln {line}, Col {col} ({lines} lines)")),
                         )
+                        .child({
+                            let history = path.clone();
+                            IconButton::new("editor-file-history", IconName::History)
+                                .size(ControlSize::Sm)
+                                .variant(ButtonVariant::Ghost)
+                                .tooltip("File History")
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    this.open_file_history(&history, cx);
+                                }))
+                        })
                         .child(
                             IconButton::new("editor-open-external", IconName::ExternalLink)
                                 .size(ControlSize::Sm)

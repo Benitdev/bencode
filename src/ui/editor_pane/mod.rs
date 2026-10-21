@@ -1,5 +1,6 @@
 //! Native code editor: one `CodeEditor` per open file, background reads, atomic saves.
 
+mod blame;
 mod disk_sync;
 mod external;
 pub mod files;
@@ -323,6 +324,7 @@ impl BenCodeApp {
                 this.editor.selection = next;
                 cx.notify();
             }
+            this.track_line_blame(&selection_key, cx);
         });
         EditorHandle {
             entity,
@@ -352,6 +354,7 @@ impl BenCodeApp {
         }
         self.editor.view_modes.remove(path);
         self.editor.properties_open.remove(path);
+        self.forget_file_blame(path);
         self.drop_pane_tab(
             &PaneTab::File {
                 path: path.to_string(),
@@ -414,6 +417,8 @@ impl BenCodeApp {
                 if let Some(handle) = self.editor.files.get_handle_mut(&path) {
                     handle.disk_hash = hash;
                 }
+                // The saved copy is blamed afresh.
+                self.track_line_blame(&path, cx);
                 self.refresh_workspace(cx);
             }
             Err(SaveError::ChangedOnDisk(disk_text)) => {

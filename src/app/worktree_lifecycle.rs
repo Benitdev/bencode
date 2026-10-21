@@ -444,7 +444,8 @@ impl BenCodeApp {
                 PaneTab::Review { cwd, .. }
                 | PaneTab::Changes { cwd, .. }
                 | PaneTab::SessionChanges { cwd, .. }
-                | PaneTab::Commit { cwd, .. } => is_path_in_project(cwd, path),
+                | PaneTab::Commit { cwd, .. }
+                | PaneTab::FileHistory { cwd, .. } => is_path_in_project(cwd, path),
                 PaneTab::Browser { .. } => false,
             });
         files || self.terminals(cx).any_in(path)

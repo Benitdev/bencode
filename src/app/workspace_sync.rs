@@ -333,9 +333,17 @@ impl BenCodeApp {
         self.file_tree.invalidate_tints();
         let refs = refs_changed.then_some(snapshot.refs);
         if let Some(refs) = &refs {
+            let head = |history: &[crate::git::sync::HistoryCommit]| {
+                history.iter().find(|c| c.head).map(|c| c.sha.clone())
+            };
+            let moved = head(&self.git_history) != head(&refs.history);
             self.git_sync = refs.sync.clone();
             self.git_history = refs.history.clone();
             self.changes_ui.invalidate_graph();
+            // A commit or checkout: the lines blamed before may have moved.
+            if moved {
+                self.invalidate_blames(cx);
+            }
         }
         // The regions showing git state follow the snapshot.
         self.workspace_state.update(cx, |cache, cx| {

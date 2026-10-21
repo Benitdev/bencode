@@ -75,7 +75,8 @@ bencode/
 | :--- | :--- |
 | `agent.rs` | Running a turn: spawning the harness, folding `AgentEvent`s into blocks, permissions, cancel |
 | `commands.rs` | Every action, shortcut and menu (`actions!`, `keymap`, `menus`, `bind_commands`) |
-| `file_pane.rs` | `FilePane` / `PaneTab`: the tabs open beside the chat (files, reviews, Changes, commits) |
+| `file_pane.rs` | `FilePane` / `PaneTab`: the tabs open beside the chat (files, reviews, Changes, commits, File History) |
+| `blame.rs` | Line blame and File History: each open file's `git blame` per saved copy, the caret line's note, commits' messages and changes for the blame card, the File History tabs' commits |
 | `panes.rs` | Workspace tabs and split panes: focus, split, close, docking |
 | `surfaces.rs` | `Surface`: Search, Inbox, Notes, Automations, Settings (full-height views) |
 | `workspace_sync.rs` | `WorkspaceCache`: the git and filesystem snapshot views read; the 2s git poll |
@@ -133,7 +134,8 @@ bencode/
 | `file_pane.rs` | The pane beside the chat and its tab strip |
 | `browser_pane.rs` | A browser tab: toolbar, address bar, the page's box |
 | `monos.rs`, `mono_settings.rs`, `mono_overview/`, `rail/monos.rs`, `mono_float/`, `mono_background.rs`, `launched_session.rs` | A Mono in the main area (chat, greeting, its confirmations); its settings dialog (General, Soul, Memory); its Overview beside the chat (Board, Documents, Habits, Changes, Activity); the rail's Monos section; the floating chat, a window and view of its own (`MonoFloat`); its Background image dialog; the card of a session it started |
-| `editor_pane/` | Code editor: open files, saves, disk sync; a markdown file's Preview / Source (`preview.rs`) |
+| `editor_pane/` | Code editor: open files, saves, disk sync; a markdown file's Preview / Source (`preview.rs`); the toolbar's line blame and its card (`blame.rs`) |
+| `file_history.rs` | A File History tab: the commits that changed a file |
 | `diff_viewer.rs`, `diff_model.rs` | Review of working-tree changes and commits |
 | `terminal_pane/` | Terminal dock: tabs, splits (`split.rs`), menus, running jobs, host sessions (`sessions.rs`) |
 | `footer/` | Status bar: provider usage chip, its details popover and account pages, terminal toggle |

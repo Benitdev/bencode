@@ -36,6 +36,9 @@ pub enum PaneTab {
         short_sha: String,
         subject: String,
     },
+    /// The commits that changed a file (`app/blame.rs` keeps them): the
+    /// folder git runs in and the file's name there.
+    FileHistory { cwd: String, path: String },
     /// A page in the in-app browser (`app/browser.rs` keeps its view).
     Browser { id: u64 },
 }
@@ -57,6 +60,7 @@ impl PaneTab {
                 format!("session-changes:{cwd}:{session_id}")
             }
             Self::Commit { cwd, sha, .. } => format!("commit:{cwd}:{sha}"),
+            Self::FileHistory { cwd, path } => format!("file-history:{cwd}/{path}"),
             Self::Browser { id } => format!("browser:{id}"),
         }
     }
@@ -68,7 +72,10 @@ impl PaneTab {
     }
 
     pub fn is_diff(&self) -> bool {
-        !matches!(self, Self::File { .. } | Self::Browser { .. })
+        !matches!(
+            self,
+            Self::File { .. } | Self::Browser { .. } | Self::FileHistory { .. }
+        )
     }
 
     /// The working tree or repository a diff tab reads.
@@ -78,7 +85,8 @@ impl PaneTab {
             Self::Review { cwd, .. }
             | Self::Changes { cwd, .. }
             | Self::SessionChanges { cwd, .. }
-            | Self::Commit { cwd, .. } => Some(cwd),
+            | Self::Commit { cwd, .. }
+            | Self::FileHistory { cwd, .. } => Some(cwd),
         }
     }
 
@@ -114,6 +122,10 @@ impl PaneTab {
                 let name = if name.is_empty() { short_sha } else { name };
                 (name.to_string(), format!("{short_sha} — {subject}"))
             }
+            Self::FileHistory { path, .. } => (
+                format!("{} (History)", basename(path)),
+                format!("History of {path}"),
+            ),
             // The page's title replaces it once loaded (`render_pane_tabs`).
             Self::Browser { .. } => ("Browser".into(), "Browser".into()),
         }
