@@ -421,6 +421,7 @@ impl BenCodeApp {
             Some(status) => format!("{title}\n{status}"),
             None => title,
         };
+        let stats_last = has_changes && remote.is_none() && card.mute.is_none();
         let held = self
             .rail_ui
             .reorder
@@ -498,7 +499,12 @@ impl BenCodeApp {
                     .flex_1()
                     .items_center()
                     .gap_2()
-                    .group_hover(group.clone(), |s| s.pr(px(24.0)))
+                    // Hidden stats keep their width (`invisible`, never
+                    // `display`): when they end the row, the options button
+                    // covers them and the name keeps its room.
+                    .when(!stats_last, |el| {
+                        el.group_hover(group.clone(), |s| s.pr(px(24.0)))
+                    })
                     .tooltip(Tooltip::text(title))
                     .child(
                         // `project-card-logo grid size-4 group-hover:opacity-0`
@@ -547,7 +553,8 @@ impl BenCodeApp {
                         el.child(
                             div()
                                 .flex_none()
-                                .group_hover(group.clone(), |s| s.invisible())
+                                // Wide enough, with the gap, for the button over it.
+                                .group_hover(group.clone(), |s| s.invisible().min_w(px(16.0)))
                                 .child(project_diff_stat(
                                     additions,
                                     deletions,
