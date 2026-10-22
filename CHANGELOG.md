@@ -4,6 +4,26 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
+## [0.1.27] - 2026-10-22
+
+- A file open in the editor keeps the project it was opened from: after
+  switching projects, saving, blame and Go to Definition still act on
+  that file, and the same relative path in another project opens in a
+  tab of its own instead of showing the first project's file.
+- Changing a Backlog issue's milestones no longer removes its archived
+  ones, or ones made after the Inbox listed them.
+- A Backlog picture that cannot be downloaded keeps its original text
+  instead of showing as broken.
+- Deleting a thread together with its CLI session keeps that session
+  when another thread, loaded or not, still resumes it.
+- A thread's branch follows its agent's checkout even when the thread
+  was in the background as its turn ended.
+- The composer's runner no longer flickers in a Mono's view, and no
+  longer keeps the window redrawing while it runs there.
+- Search (⌘K) shows the project's files as soon as they are listed,
+  without another keystroke.
+- The Inbox's detail column is centred again.
+
 ## [0.1.26] - 2026-10-22
 
 - View › Swap Chat and File Pane (⌥⌘S) puts the file pane left of the
