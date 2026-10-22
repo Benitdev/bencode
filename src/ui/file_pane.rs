@@ -66,6 +66,22 @@ impl BenCodeApp {
             key.starts_with(crate::ui::diff_viewer::PR_DOC_PREFIX)
                 || self.file_pane.get(key).is_some()
         });
+        // A file whose tab went (a preview opened over it) goes with it,
+        // unless it holds unsaved edits.
+        let orphans: Vec<String> = (self.editor.files.iter())
+            .filter(|f| !f.is_dirty())
+            .filter(|f| {
+                let key = PaneTab::File {
+                    path: f.path.clone(),
+                }
+                .key();
+                self.file_pane.get(&key).is_none()
+            })
+            .map(|f| f.path.clone())
+            .collect();
+        for path in orphans {
+            self.forget_editor_file(&path);
+        }
         if let Some(PaneTab::File { path }) = self.file_pane.active() {
             self.editor.requested = Some(path.clone());
             self.editor.files.activate(path);

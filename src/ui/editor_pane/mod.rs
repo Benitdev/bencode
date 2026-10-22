@@ -439,12 +439,7 @@ impl BenCodeApp {
         if self.editor.pending_close.as_deref() == Some(path) {
             self.editor.pending_close = None;
         }
-        if self.editor.files.remove(path).is_some() {
-            log::info!("editor: closed {path}");
-        }
-        self.editor.view_modes.remove(path);
-        self.editor.properties_open.remove(path);
-        self.forget_file_blame(path);
+        self.forget_editor_file(path);
         self.drop_pane_tab(
             &PaneTab::File {
                 path: path.to_string(),
@@ -453,6 +448,16 @@ impl BenCodeApp {
             cx,
         );
         cx.notify();
+    }
+
+    /// Drops an open file's buffer, editor and blame.
+    pub(crate) fn forget_editor_file(&mut self, path: &str) {
+        if self.editor.files.remove(path).is_some() {
+            log::info!("editor: closed {path}");
+        }
+        self.editor.view_modes.remove(path);
+        self.editor.properties_open.remove(path);
+        self.forget_file_blame(path);
     }
 
     /// Saves the active file (Cmd-S).
