@@ -130,6 +130,12 @@ impl BenCodeApp {
         );
 
         let milestone_key = item.key();
+        // Milestones the picker cannot show (archived, or newer than its
+        // options) stay on the issue: the PATCH replaces the whole list.
+        let unlisted: Vec<_> = (milestones.iter())
+            .filter(|m| !options.milestones.iter().any(|o| o.id == m.id))
+            .map(|m| m.id)
+            .collect();
         let entity = cx.entity().downgrade();
         let milestone_field = field(
             "Milestone",
@@ -143,7 +149,9 @@ impl BenCodeApp {
                         if busy {
                             return;
                         }
-                        let ids = values.iter().filter_map(|v| v.parse().ok()).collect();
+                        let ids = (unlisted.iter().copied())
+                            .chain(values.iter().filter_map(|v| v.parse().ok()))
+                            .collect();
                         let key = milestone_key.clone();
                         if let Err(err) = entity.update(cx, |this, cx| {
                             this.update_backlog_issue(&key, Change::Milestones(ids), cx)
