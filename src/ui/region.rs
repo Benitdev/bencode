@@ -319,6 +319,11 @@ impl BenCodeApp {
                 .render_surface(cx)
                 .unwrap_or_else(|| div().into_any_element()),
             Region::Mono => {
+                // Its chat, or the session it shows, may be the focused
+                // composer the runner runs on.
+                if self.mono_holds_selected() {
+                    self.runner_geometry.clear();
+                }
                 self.artifacts.page_drawn.set(false);
                 let mono = self
                     .render_mono_view(cx)
@@ -329,6 +334,14 @@ impl BenCodeApp {
         }
     }
 
+    /// Whether the selected thread is drawn in the Mono's region: its
+    /// chat, or the session it shows over the Overview.
+    fn mono_holds_selected(&self) -> bool {
+        let selected = self.selected_session_id.as_deref();
+        selected.is_some()
+            && (selected == self.mono_view_session() || selected == self.mono_shown_session())
+    }
+
     /// Resets what the regions not drawn this frame measured or placed:
     /// the shell calls this with the regions it laid out.
     pub(crate) fn settle_undrawn_regions(&mut self, drawn: &[Region]) {
@@ -336,7 +349,8 @@ impl BenCodeApp {
         let focused_drawn = self
             .selected_session_id
             .as_ref()
-            .is_some_and(|id| self.regions.panes_drawn.contains(id));
+            .is_some_and(|id| self.regions.panes_drawn.contains(id))
+            || (drawn.contains(&Region::Mono) && self.mono_holds_selected());
         if !focused_drawn {
             self.runner_geometry.clear();
         }
