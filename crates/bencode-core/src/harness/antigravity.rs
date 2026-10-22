@@ -241,7 +241,10 @@ fn with_common_keys(name: &str, input: &Value) -> Value {
         .iter()
         .any(|key| out.get(*key).is_some_and(Value::is_string));
     if !titled {
-        out.insert("description".into(), Value::String(tool_label(name, params)));
+        out.insert(
+            "description".into(),
+            Value::String(tool_label(name, params)),
+        );
     }
     Value::Object(out)
 }
@@ -406,8 +409,12 @@ mod tests {
     fn a_call_without_a_path_or_command_is_titled_by_name() {
         let task = serde_json::json!({ "Action": "kill", "TaskId": "abc/task-1" });
         let input = with_common_keys("manage_task", &task);
-        assert_eq!(crate::harness::summarize_tool_input("manage_task", &input), "Manage task: kill");
-        let summarized = serde_json::json!({ "Action": "status", "toolSummary": "Check test task status" });
+        assert_eq!(
+            crate::harness::summarize_tool_input("manage_task", &input),
+            "Manage task: kill"
+        );
+        let summarized =
+            serde_json::json!({ "Action": "status", "toolSummary": "Check test task status" });
         let input = with_common_keys("manage_task", &summarized);
         assert_eq!(
             crate::harness::summarize_tool_input("manage_task", &input),

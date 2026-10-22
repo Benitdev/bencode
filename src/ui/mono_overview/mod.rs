@@ -355,7 +355,12 @@ impl BenCodeApp {
 
     /// MonoCode `LaunchedSessionPage`: `PageHeader` with Back, the session's
     /// title, Open in workspace and Hide overview, over its pane.
-    fn render_mono_launch_page(&self, id: &str, pane: AnyElement, cx: &Context<Self>) -> AnyElement {
+    fn render_mono_launch_page(
+        &self,
+        id: &str,
+        pane: AnyElement,
+        cx: &Context<Self>,
+    ) -> AnyElement {
         let fg = cx.theme().colors.fg;
         let title = self
             .sessions
@@ -396,7 +401,9 @@ impl BenCodeApp {
                     .size(ControlSize::Sm)
                     .variant(ButtonVariant::Ghost)
                     .tooltip("Open in workspace")
-                    .on_click(cx.listener(move |this, _, _, cx| this.open_mono_launch(&open_id, cx))),
+                    .on_click(
+                        cx.listener(move |this, _, _, cx| this.open_mono_launch(&open_id, cx)),
+                    ),
             )
             .child(
                 IconButton::new("mono-launch-hide", IconName::PanelRight)

@@ -280,7 +280,15 @@ mod tests {
         git(&app, &["add", "src"]);
         git(
             &app,
-            &["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "a"],
+            &[
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@t",
+                "commit",
+                "-qm",
+                "a",
+            ],
         );
         git(&app, &["worktree", "add", "-q", ".claude/worktrees/w"]);
         std::fs::write(root.join("loose/src/lib.rs"), "").unwrap();

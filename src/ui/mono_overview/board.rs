@@ -250,7 +250,9 @@ impl BenCodeApp {
                 ),
             );
         match task.session_id.clone() {
-            Some(session) => row.on_click(cx.listener(move |this, _, _, cx| this.show_mono_launch(&session, cx))),
+            Some(session) => {
+                row.on_click(cx.listener(move |this, _, _, cx| this.show_mono_launch(&session, cx)))
+            }
             None => row.tooltip(truncate(task.brief(), 400)),
         }
         .into_any_element()

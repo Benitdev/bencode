@@ -3,8 +3,8 @@
 //! the two (`remote`). Nothing here draws or links GPUI, so the host builds
 //! for Linux as well as macOS.
 
-pub mod files;
 pub mod definitions;
+pub mod files;
 pub mod git_cli;
 pub mod harness;
 pub mod http;

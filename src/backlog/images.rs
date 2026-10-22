@@ -233,4 +233,3 @@ mod tests {
         assert_eq!(attachments(&data), [(8, "a.png".to_string())]);
     }
 }
-

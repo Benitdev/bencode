@@ -224,7 +224,11 @@ impl BenCodeApp {
             .border_color(if file_drag {
                 colors.accent.opacity(0.6)
             } else {
-                fg.opacity(if focused && self.prompt_focused { 0.2 } else { 0.1 })
+                fg.opacity(if focused && self.prompt_focused {
+                    0.2
+                } else {
+                    0.1
+                })
             })
             .bg(fg.fill(Fill::Faint))
             // MonoCode light theme: the page colour, lifted by a shadow.
