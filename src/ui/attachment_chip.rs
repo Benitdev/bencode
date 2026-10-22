@@ -20,6 +20,7 @@ use crate::harness::Attachment;
 use crate::ui::file_tree::resolve_entry_icon;
 use crate::ui::thumbnail::thumbnail;
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
+use crate::ui::transcript::selection::OwnsPress;
 
 /// An image chip's side.
 const CHIP: f32 = 36.0;
@@ -81,6 +82,7 @@ pub fn attachment_chip(
                 .items_center()
                 .justify_center()
                 .cursor_pointer()
+                .owns_press()
                 .when(badge, |el| {
                     el.absolute()
                         .top(px(-4.0))
@@ -110,6 +112,7 @@ pub fn attachment_chip(
             .size(px(CHIP))
             .flex_none()
             .cursor_pointer()
+            .owns_press()
             .tooltip(Tooltip::text(file.path.clone()))
             .on_click(cx.listener(move |this, _, _, cx| this.open_lightbox(preview.clone(), cx)))
             .child(

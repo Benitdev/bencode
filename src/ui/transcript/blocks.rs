@@ -23,6 +23,7 @@ use crate::app::{BenCodeApp, now_ms};
 use crate::db::SessionRow;
 use crate::ui::attachment_chip::{ChipFile, attachment_chip};
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
+use crate::ui::transcript::selection::OwnsPress;
 
 /// MonoCode's transcript column (`max-w-4xl`).
 pub const MESSAGE_MAX_WIDTH: f32 = 896.0;
@@ -126,6 +127,7 @@ fn toggle_action_button(
         .items_center()
         .justify_center()
         .cursor_pointer()
+        .owns_press()
         .when(pressed, |el| el.bg(colors.accent.opacity(0.1)))
         .hover(move |s| s.bg(hover_bg))
         .tooltip(Tooltip::text(tooltip))
@@ -151,6 +153,7 @@ fn copy_button(
         .items_center()
         .justify_center()
         .cursor_pointer()
+        .owns_press()
         .hover(move |s| s.bg(hover_bg))
         .tooltip(Tooltip::text(if copied { "Copied" } else { "Copy" }))
         .on_click(cx.listener(move |this, _, _, cx| {
@@ -432,6 +435,7 @@ impl BenCodeApp {
             .text_size(Text::Base.px())
             .text_color(muted(colors.fg, 0.6))
             .cursor_pointer()
+            .owns_press()
             .hover(move |s| s.bg(hover))
             .on_click(cx.listener(move |this, _, _, cx| {
                 let set = &mut this.transcript_ui.expanded_messages;
@@ -590,6 +594,7 @@ impl BenCodeApp {
                 .items_center()
                 .justify_center()
                 .cursor_pointer()
+                .owns_press()
                 .hover(move |s| s.bg(hover_bg))
                 .tooltip(Tooltip::text("Handoff"))
                 .on_click(cx.listener(move |this, event: &gpui::ClickEvent, _, cx| {

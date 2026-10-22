@@ -26,6 +26,7 @@ use crate::db::{Block, SessionRow};
 use crate::ui::HarnessIcon;
 use crate::ui::mascot::pixel_sprite;
 use crate::ui::tokens::Text;
+use crate::ui::transcript::selection::OwnsPress;
 
 /// MonoCode fades a step in as it lands (`zen-step-in`).
 const STEP_ENTRANCE: Duration = Duration::from_millis(180);
@@ -195,6 +196,7 @@ impl BenCodeApp {
             return row.into_any_element();
         }
         row.cursor_pointer()
+            .owns_press()
             .on_click(cx.listener(move |this, _, _, cx| {
                 let folds = &mut this.transcript_ui.open_folds;
                 if !folds.remove(&turn_id) {
@@ -269,6 +271,7 @@ impl BenCodeApp {
         }
         let session_id = session.id.clone();
         row.cursor_pointer()
+            .owns_press()
             .tooltip(gpui_tooltip(if shown {
                 "Hide activity"
             } else {
@@ -467,6 +470,7 @@ impl BenCodeApp {
             .gap_1p5()
             .py_1()
             .cursor_pointer()
+            .owns_press()
             .on_click(cx.listener(move |this, _, _, cx| {
                 this.transcript_ui
                     .phase_open
@@ -558,6 +562,7 @@ impl BenCodeApp {
             .items_center()
             .py_1()
             .cursor_pointer()
+            .owns_press()
             .on_click(cx.listener(move |this, _, _, cx| {
                 if !this.expanded_reasoning.remove(&key) {
                     this.expanded_reasoning.insert(key.clone());
@@ -620,6 +625,7 @@ impl BenCodeApp {
             .when(detail.is_some(), |el| {
                 let key = key.clone();
                 el.cursor_pointer()
+                    .owns_press()
                     .on_click(cx.listener(move |this, _, _, cx| {
                         let errors = &mut this.transcript_ui.open_tool_errors;
                         if !errors.remove(&key) {
@@ -695,6 +701,7 @@ impl BenCodeApp {
             .rounded(px(4.0))
             .bg(muted(colors.fg, 0.06))
             .cursor_pointer()
+            .owns_press()
             .hover(move |s| s.bg(hover_bg).text_color(accent))
             .on_click(
                 cx.listener(move |this, _, window, cx| this.open_file_in_editor(&path, window, cx)),

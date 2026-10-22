@@ -20,6 +20,7 @@ use crate::ui::diff_model::{self, Line, LineKind};
 use crate::ui::diff_viewer::render_line;
 use crate::ui::scale::px;
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
+use crate::ui::transcript::selection::OwnsPress;
 
 /// Lines shown before "Show N more lines".
 const SHOWN_LINES: usize = 24;
@@ -137,6 +138,7 @@ impl BenCodeApp {
                 .text_size(Text::Sm.px())
                 .text_color(fg.ink(Ink::Muted))
                 .cursor_pointer()
+                .owns_press()
                 .hover(move |s| s.text_color(fg.ink(Ink::Body)))
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.transcript_ui.open_patches.insert(key.clone());

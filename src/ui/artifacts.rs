@@ -20,6 +20,7 @@ use crate::db::ArtifactKind;
 use crate::ui::app_callback::app_callback;
 use crate::ui::scale::px;
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
+use crate::ui::transcript::selection::OwnsPress;
 
 /// `border-stroke`, as the Overview draws its edges.
 const STROKE: f32 = 0.07;
@@ -57,6 +58,7 @@ pub fn artifact_card(
         .pl_3()
         .pr(px(14.0))
         .cursor_pointer()
+        .owns_press()
         .hover(move |s| s.border_color(fg.opacity(0.2)).bg(fg.fill(Fill::Hover)))
         .child(
             artifact_icon(card.kind)

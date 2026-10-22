@@ -5,8 +5,8 @@
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::prelude::*;
 use gpui::{
-    AnyElement, ClipboardItem, Context, Div, MouseMoveEvent, SharedString, Stateful, canvas,
-    deferred, div, point,
+    AnyElement, ClipboardItem, Context, Div, MouseButton, MouseMoveEvent, SharedString, Stateful,
+    canvas, deferred, div, point,
 };
 
 use crate::ui::scale::px;
@@ -276,6 +276,32 @@ impl BenCodeApp {
             .size_full()
         });
         let session = session_id.to_string();
+        // A press beside the text (margins, gaps between messages) starts
+        // at the nearest character, as in MonoCode's WebKit transcript.
+        // Text, buttons (`OwnsPress`) and the scroll bar take theirs first.
+        let (beside, focus, sid) = (
+            self.transcript_selection.clone(),
+            self.transcript_focus.clone(),
+            SharedString::from(session_id.to_string()),
+        );
+        let body = body.on_mouse_down(MouseButton::Left, move |event, window, cx| {
+            // A button, a card header or a focusable element took it.
+            if window.default_prevented() {
+                return;
+            }
+            let started = beside.update(cx, |selection, cx| {
+                let started =
+                    selection.press_beside(&sid, event.click_count, event.modifiers.shift);
+                // A plain click selects nothing yet: no redraw until a drag.
+                if started && selection.has_selection() {
+                    cx.notify();
+                }
+                started
+            });
+            if started {
+                window.focus(&focus, cx);
+            }
+        });
         body.when(owns, |el| {
             el.track_focus(&self.transcript_focus)
                 .key_context("Transcript")

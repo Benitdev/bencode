@@ -26,6 +26,7 @@ use crate::app::BenCodeApp;
 use crate::ui::motion::cubic_bezier;
 use crate::ui::sidebar_popovers::popover_frame;
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
+use crate::ui::transcript::selection::OwnsPress;
 
 const OPEN_DELAY: Duration = Duration::from_millis(25);
 const SCROLL_INSET: f32 = 8.0;
@@ -319,6 +320,7 @@ impl BenCodeApp {
                     .items_center()
                     .justify_end()
                     .cursor_pointer()
+                    .owns_press()
                     .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                         if *hovered {
                             this.hover_outline_bar(&hover_sid, &hover_id, cx);

@@ -121,7 +121,14 @@ pub struct TranscriptSelection {
     menu_bounds: PaintedAt,
     /// Why Add to notes failed, shown in the menu (MonoCode).
     note_error: Option<String>,
+    /// For the press being dispatched, the caret nearest to it in each
+    /// thread's painted text: a press beside the text (a margin, the gap
+    /// between messages) starts there, as WebKit does.
+    nearest: HashMap<SharedString, (Nearness, Caret)>,
 }
+
+/// How far a press is from a segment: rows away first, then columns.
+type Nearness = (Pixels, Pixels);
 
 impl TranscriptSelection {
     fn register(&mut self, session: &SharedString, key: SegKey, segment: Segment) {
@@ -284,6 +291,32 @@ impl TranscriptSelection {
 
     pub fn note_error(&self) -> Option<&str> {
         self.note_error.as_deref()
+    }
+
+    /// Keeps `caret` as `session`'s nearest to the press if it is nearer.
+    fn offer(&mut self, session: &SharedString, nearness: Nearness, caret: Caret) {
+        let nearer = self
+            .nearest
+            .get(session)
+            .is_none_or(|(best, _)| nearness < *best);
+        if nearer {
+            self.nearest.insert(session.clone(), (nearness, caret));
+        }
+    }
+
+    /// A press in `session`'s transcript that no text took: it starts at
+    /// the nearest caret, if any text is painted. `true` when it did.
+    pub fn press_beside(&mut self, session: &SharedString, clicks: usize, extend: bool) -> bool {
+        let nearest = self.nearest.remove(session);
+        self.nearest.clear();
+        let Some((_, caret)) = nearest else {
+            return false;
+        };
+        if self.dragging {
+            return false; // a segment took the press
+        }
+        self.press(session, caret, clicks, extend);
+        true
     }
 
     pub fn is_dragging_in(&self, session: &str) -> bool {
@@ -617,6 +650,38 @@ impl Painted {
             });
         });
 
+        // Where a press beside the text would start, if it was nearest:
+        // the transcript's body takes the nearest after every segment
+        // offered (`press_beside`).
+        let (ctx, near_layout) = (self.ctx.clone(), self.layout.clone());
+        window.on_mouse_event(move |event: &MouseDownEvent, phase, _, cx| {
+            if phase != DispatchPhase::Bubble || event.button != MouseButton::Left {
+                return;
+            }
+            let at = event.position;
+            let gap = |from: Pixels, to: Pixels, v: Pixels| {
+                if v < from {
+                    from - v
+                } else if v >= to {
+                    v - to
+                } else {
+                    px(0.0)
+                }
+            };
+            let nearness = (
+                gap(bounds.top(), bounds.bottom(), at.y),
+                gap(bounds.left(), bounds.right(), at.x),
+            );
+            let inside = gpui::point(
+                at.x.clamp(bounds.left(), bounds.right()),
+                at.y.clamp(bounds.top(), (bounds.bottom() - px(1.0)).max(bounds.top())),
+            );
+            let caret = caret_at(&near_layout, key, inside);
+            ctx.selection.update(cx, |selection, _| {
+                selection.offer(&ctx.session, nearness, caret)
+            });
+        });
+
         let selection = self.ctx.selection.clone();
         window.on_mouse_event(move |event: &MouseUpEvent, phase, _, cx| {
             if phase == DispatchPhase::Bubble && event.button == MouseButton::Left {
@@ -632,10 +697,11 @@ impl Painted {
         // one on text starts a new one; the menu's own buttons keep it.
         let selection = self.ctx.selection.clone();
         window.on_mouse_event(move |event: &MouseDownEvent, phase, _, cx| {
-            if phase != DispatchPhase::Capture
-                || event.button != MouseButton::Left
-                || event.modifiers.shift
-            {
+            if phase != DispatchPhase::Capture || event.button != MouseButton::Left {
+                return;
+            }
+            selection.update(cx, |selection, _| selection.nearest.clear());
+            if event.modifiers.shift {
                 return;
             }
             let on_menu = selection
@@ -653,6 +719,17 @@ impl Painted {
         });
     }
 }
+
+/// An element that answers its own press (a card header, a copy button,
+/// a chip): a drag that starts on it selects no text. Ely's buttons and
+/// focusable elements already mark their presses so.
+pub trait OwnsPress: InteractiveElement + Sized {
+    fn owns_press(self) -> Self {
+        self.on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
+    }
+}
+
+impl<T: InteractiveElement> OwnsPress for T {}
 
 /// Plain transcript text (a prompt, a notice) in the inherited font and
 /// ink; `marks` paints find matches behind it.
@@ -733,6 +810,34 @@ mod tests {
             );
         }
         (selection, session)
+    }
+
+    #[test]
+    fn a_press_beside_the_text_starts_at_the_nearest_caret() {
+        let (mut sel, s) = with(&[
+            (0, 0, "Fix the bug", Joint::Block, true),
+            (1, 0, "First paragraph", Joint::Block, true),
+        ]);
+        // Below the first block, nearer the second: it starts there.
+        sel.offer(&s, (px(12.0), px(0.0)), caret(0, 0, 11));
+        sel.offer(&s, (px(4.0), px(30.0)), caret(1, 0, 0));
+        sel.offer(&s, (px(4.0), px(50.0)), caret(1, 0, 5));
+        assert!(sel.press_beside(&s, 1, false));
+        assert!(sel.drag_to(caret(1, 0, 5)));
+        assert!(sel.release());
+        assert_eq!(sel.selected_text(&[]).as_deref(), Some("First"));
+        // The offers were for that press only.
+        assert!(!sel.press_beside(&s, 1, false));
+    }
+
+    #[test]
+    fn a_press_on_text_is_not_taken_again_beside_it() {
+        let (mut sel, s) = with(&[(0, 0, "Fix the bug", Joint::Block, true)]);
+        sel.offer(&s, (px(0.0), px(0.0)), caret(0, 0, 8));
+        sel.press(&s, caret(0, 0, 4), 1, false);
+        assert!(!sel.press_beside(&s, 1, false));
+        assert!(sel.drag_to(caret(0, 0, 7)));
+        assert_eq!(sel.selected_text(&[]).as_deref(), Some("the"));
     }
 
     #[test]

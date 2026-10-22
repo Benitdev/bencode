@@ -25,6 +25,7 @@ use crate::ui::rail::widgets::mascot_icon;
 use crate::ui::scale::px;
 use crate::ui::spinner;
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
+use crate::ui::transcript::selection::OwnsPress;
 
 impl BenCodeApp {
     /// The runs a live turn keeps in place, one row each.
@@ -192,6 +193,7 @@ impl BenCodeApp {
             .when(expandable, |el| {
                 let key = key.clone();
                 el.cursor_pointer()
+                    .owns_press()
                     .hover(move |s| s.bg(hover_bg))
                     .on_click(cx.listener(move |this, _, _, cx| {
                         this.transcript_ui.subagent_open.insert(key.clone(), !open);

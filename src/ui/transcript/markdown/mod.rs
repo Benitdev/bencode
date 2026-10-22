@@ -35,6 +35,7 @@ pub use parse::{Block, Drawing, Fence, Inline, Span, inline_file, link_file, par
 
 use super::selection::{Joint, SegCtx, restyle};
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
+use crate::ui::transcript::selection::OwnsPress;
 
 /// Opens a file a reply names: its path as written and the line, if any.
 pub type OnOpenFile = Rc<dyn Fn(&str, Option<u64>, &mut Window, &mut App)>;
@@ -960,6 +961,7 @@ impl Draw<'_> {
                 .items_center()
                 .justify_center()
                 .cursor_pointer()
+                .owns_press()
                 .hover(move |s| s.bg(hover))
                 .tooltip(Tooltip::text(if copied { "Copied" } else { "Copy code" }))
                 .on_click(move |_: &ClickEvent, _, cx| {
@@ -1018,6 +1020,7 @@ impl Draw<'_> {
                         let line = fence.start_line;
                         let hover = look.link;
                         el.cursor_pointer()
+                            .owns_press()
                             .hover(move |s| s.text_color(hover))
                             .on_click(move |_: &ClickEvent, window, cx| {
                                 open(&path, line, window, cx)

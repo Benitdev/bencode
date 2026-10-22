@@ -18,6 +18,7 @@ use crate::ui::buttons::with_tooltip;
 use crate::ui::icons::ExtraIcon;
 use crate::ui::scale::px;
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
+use crate::ui::transcript::selection::OwnsPress;
 
 /// MonoCode `text-amber-300/80`, "Mixed changes".
 const MIXED: u32 = 0xfcd34d;
@@ -213,6 +214,7 @@ impl BenCodeApp {
                                 .text_size(Text::Sm.px())
                                 .text_color(fg.ink(Ink::Muted))
                                 .cursor_pointer()
+                                .owns_press()
                                 .hover(|s| s.bg(fg.fill(Fill::Hover)).text_color(fg.ink(Ink::Body)))
                                 .on_click(cx.listener(move |this, _, _, cx| {
                                     this.toggle_session_review(&toggle_id, cx)
@@ -268,6 +270,7 @@ impl BenCodeApp {
             .px_3()
             .text_color(fg.opacity(0.65))
             .cursor_pointer()
+            .owns_press()
             .hover(|s| s.bg(fg.fill(Fill::Hover)).text_color(fg))
             .tooltip(Tooltip::text(file.relative.clone()))
             .on_click(cx.listener(move |this, _, _, cx| {
