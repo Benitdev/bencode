@@ -335,7 +335,9 @@ impl MonoFloat {
             // One that could not be sent waits for its Retry: this one
             // stays in the composer, its files with it, rather than take
             // its place.
-            Err(_) if self.failed.is_some() => {}
+            Err(error) if self.failed.is_some() => {
+                log::warn!("mono message not sent while another waits for Retry: {error}");
+            }
             Err(error) => {
                 self.input.update(cx, |input, cx| input.set_text("", cx));
                 self.own_attach = false;
