@@ -168,7 +168,15 @@ impl<'a> Pictures<'a> {
             &[],
         );
         match http::download(&url, &[], &path, DOWNLOAD_TIMEOUT) {
-            Ok(_) => Some(path),
+            Ok(status) if (200..300).contains(&status) => Some(path),
+            // Nothing was saved: the description keeps its own text.
+            Ok(status) => {
+                log::warn!(
+                    "backlog: an attachment of {} answered HTTP {status}",
+                    self.key
+                );
+                None
+            }
             // curl names the host at most, never the key in the query.
             Err(err) => {
                 log::warn!(
