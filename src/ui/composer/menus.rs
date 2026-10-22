@@ -144,7 +144,9 @@ impl BenCodeApp {
 
     /// Keys while a composer menu holds focus (MonoCode `onMenuKey`).
     pub fn handle_menu_key(&mut self, key: &str, cx: &mut Context<Self>) -> bool {
-        if self.git_menu_open() {
+        if self.lightbox_menu_open() {
+            self.lightbox_menu_key(key, cx)
+        } else if self.git_menu_open() {
             self.git_menu_key(key, cx)
         } else if self.tree_menu_open() {
             self.tree_menu_key(key, cx)

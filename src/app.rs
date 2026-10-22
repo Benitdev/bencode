@@ -291,6 +291,8 @@ pub struct BenCodeApp {
     pub mention_marks: Vec<crate::ui::composer::MentionMark>,
     /// The image shown full-window (MonoCode `ImageLightbox`).
     pub lightbox: Option<std::path::PathBuf>,
+    /// The preview's right-click menu, while open.
+    pub lightbox_menu: Option<crate::ui::lightbox::LightboxMenu>,
     /// The composer's inline error (a failed paste or attach, an edit the
     /// provider refused), shown under the chips until the next edit.
     pub composer_error: Option<String>,
@@ -1412,6 +1414,7 @@ impl BenCodeApp {
             native_glass: None,
             native_glass_failed: false,
             lightbox: None,
+            lightbox_menu: None,
             mention_marks: Vec::new(),
             dock_measure: Default::default(),
             dock_launch: None,

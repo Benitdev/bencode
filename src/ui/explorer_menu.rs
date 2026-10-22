@@ -245,6 +245,23 @@ pub fn render_menu_styled(
     on_dismiss: impl Fn(&mut gpui::Window, &mut App) + 'static,
     cx: &App,
 ) -> AnyElement {
+    render_menu_layered(view, style, MENU_LAYER, on_hover, on_pick, on_dismiss, cx)
+}
+
+/// The layer menus draw on, over the window's content.
+const MENU_LAYER: usize = 3;
+
+/// [`render_menu_styled`] on its own layer: a menu over something that is
+/// itself drawn above menus (the image preview) takes a higher one.
+pub fn render_menu_layered(
+    view: MenuView<'_>,
+    style: MenuStyle,
+    layer: usize,
+    on_hover: impl Fn(usize, &mut gpui::Window, &mut App) + 'static,
+    on_pick: impl Fn(usize, &mut gpui::Window, &mut App) + 'static,
+    on_dismiss: impl Fn(&mut gpui::Window, &mut App) + 'static,
+    cx: &App,
+) -> AnyElement {
     let MenuView {
         id,
         entries,
@@ -455,7 +472,7 @@ pub fn render_menu_styled(
             .offset(gpui::point(px(0.0), px(-4.0))),
     };
     deferred(anchored.snap_to_window().child(menu))
-        .with_priority(3)
+        .with_priority(layer)
         .into_any_element()
 }
 
