@@ -189,11 +189,6 @@ pub(crate) fn keymap() -> Vec<KeyBinding> {
         KeyBinding::new("escape", TreeClearCut, Some("FileTree")),
         // Transcript text the pointer selected (MonoCode's native ⌘C / ⌘A).
         KeyBinding::new("cmd-c", TranscriptCopy, Some("Transcript")),
-        // Also where the keyboard is in nothing that copies its own text
-        // (focus left the transcript, or never reached it): the selection
-        // on screen is the transcript's. Inputs, editors, the terminal and
-        // the Explorer bind ⌘C deeper and keep it.
-        KeyBinding::new("cmd-c", TranscriptCopy, None),
         KeyBinding::new("cmd-a", TranscriptSelectAll, Some("Transcript")),
         KeyBinding::new("escape", TranscriptClearSelection, Some("Transcript")),
     ];
