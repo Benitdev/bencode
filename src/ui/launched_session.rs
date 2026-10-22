@@ -16,6 +16,7 @@ use crate::ui::provider_icon::HarnessIcon;
 use crate::ui::scale::px;
 use crate::ui::tokens::Status;
 use crate::ui::tokens::{Fill, Text, Tone as _};
+use crate::ui::transcript::selection::OwnsPress;
 
 fn state_icon(state: Option<LaunchedState>, cx: &App) -> AnyElement {
     let fg = cx.theme().colors.fg;
@@ -72,6 +73,7 @@ pub fn launched_card(
         .pl_3()
         .pr(px(6.0))
         .cursor_pointer()
+        .owns_press()
         .hover(move |s| s.border_color(fg.opacity(0.2)).bg(fg.fill(Fill::Hover)))
         .tooltip(Tooltip::text(tip))
         .child(state_icon(state, cx))
