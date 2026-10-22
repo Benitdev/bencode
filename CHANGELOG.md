@@ -4,6 +4,21 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
+## [0.1.29] - 2026-10-22
+
+- Sync Changes, Pull, Commit and the other Changes actions keep running
+  in their project when you switch to another: the other project's
+  panel no longer shows them loading or locks its buttons, and what an
+  action ends with (its next step, its message, a failure or a status)
+  lands in the project it started in. Two folders of one repository
+  share one action at a time; the commit message is kept per checkout.
+- In a chat, a drag that starts beside the text (a margin, the gap
+  between messages, past a short line) selects from the nearest
+  character, as a drag on the text does. A drag from a button or a
+  card selects nothing.
+- The shimmer on busy labels no longer spreads the letters apart as it
+  passes ("5.5").
+
 ## [0.1.28] - 2026-10-22
 
 - A thread on another Claude account has the MCP servers of your own
