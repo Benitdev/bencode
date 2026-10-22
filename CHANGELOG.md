@@ -4,10 +4,12 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
-## [0.1.26] - Unreleased
+## [0.1.26] - 2026-10-22
 
 - View › Swap Chat and File Pane (⌥⌘S) puts the file pane left of the
   chat, or back to its right; the choice is kept.
+- Right-click an image in the full-window preview to copy the image,
+  copy its path, or reveal it in Finder.
 - A Backlog issue in the Inbox shows its fields under its actions and
   edits them in place: assignee (with Assign to me), priority,
   milestones, resolution, start and due dates, estimated and actual
