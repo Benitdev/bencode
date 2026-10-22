@@ -4,6 +4,26 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
+## [0.1.28] - 2026-10-22
+
+- A thread on another Claude account has the MCP servers of your own
+  `~/.claude.json` (user, and this project's local ones), as a thread
+  on the default account does; before, it started with none.
+- A review's file header keeps its width as it sticks to the top while
+  scrolling, with scroll bars always shown.
+- Memory: a file whose preview tab another file took over is closed
+  with it (unless it has unsaved edits), a Mono's background image is
+  let go once you leave the Mono, and only the last three folders left
+  keep their file lists.
+- A Mono background that cannot be drawn is no longer retried on every
+  frame, which kept the window redrawing.
+- While agents run, the once-a-second redraw for "Working for 12s"
+  reaches only the panes of the threads that run, not every pane.
+- Go to Definition stops the previous search when another starts.
+- Line blame reads a commit's details once the caret rests on its line,
+  not on every line an arrow key passes; it keeps only what the card
+  shows, for the last 64 commits.
+
 ## [0.1.27] - 2026-10-22
 
 - A file open in the editor keeps the project it was opened from: after
