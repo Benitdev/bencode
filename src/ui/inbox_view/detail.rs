@@ -200,39 +200,25 @@ impl BenCodeApp {
             .mx_auto()
             .px_8()
             .when(last, |el| el.pb_8());
-        match row {
-            DetailRow::Head => column
-                .pt_4()
-                .child(self.render_inbox_head(item, cx))
-                .into_any_element(),
-            DetailRow::DescriptionTop => column
-                .pt_5()
-                .child(self.render_description_top(item, cx))
-                .into_any_element(),
-            DetailRow::Description(block) => column
-                .child(self.render_description_block(item, block, cx))
-                .into_any_element(),
-            DetailRow::Checks => column
-                .pt_3()
-                .child(self.render_pr_checks(item, cx))
-                .into_any_element(),
-            DetailRow::ConversationHead => column
-                .pt_7()
-                .child(self.render_conversation_head(item, cx))
-                .into_any_element(),
+        let row = match row {
+            DetailRow::Head => column.pt_4().child(self.render_inbox_head(item, cx)),
+            DetailRow::DescriptionTop => column.pt_5().child(self.render_description_top(item, cx)),
+            DetailRow::Description(block) => {
+                column.child(self.render_description_block(item, block, cx))
+            }
+            DetailRow::Checks => column.pt_3().child(self.render_pr_checks(item, cx)),
+            DetailRow::ConversationHead => {
+                column.pt_7().child(self.render_conversation_head(item, cx))
+            }
             DetailRow::Comment(comment) => column
                 .pt_3()
-                .children(self.render_thread_comment(item, comment, cx))
-                .into_any_element(),
-            DetailRow::Commits => column
-                .pt_3()
-                .children(self.render_thread_commits(item, cx))
-                .into_any_element(),
-            DetailRow::CommentForm => column
-                .pt_3()
-                .child(self.render_comment_form(cx))
-                .into_any_element(),
-        }
+                .children(self.render_thread_comment(item, comment, cx)),
+            DetailRow::Commits => column.pt_3().children(self.render_thread_commits(item, cx)),
+            DetailRow::CommentForm => column.pt_3().child(self.render_comment_form(cx)),
+        };
+        // A list row is laid out as a root, where auto margins do nothing:
+        // the column centres inside a full-width box.
+        div().w_full().child(row).into_any_element()
     }
 
     /// Identity, title, people and times, actions, labels and, for a pull
