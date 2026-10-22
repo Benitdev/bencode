@@ -28,6 +28,8 @@ fn stem(mono: &str) -> String {
 pub struct MonoBackgrounds {
     images: HashMap<String, ((String, bool), Arc<RenderImage>)>,
     loading: HashMap<String, (String, bool)>,
+    /// What could not be drawn, so it is not tried again every frame.
+    failed: HashMap<String, (String, bool)>,
     /// The Mono whose background dialog is open.
     pub dialog: Option<String>,
     pub busy: bool,
@@ -64,6 +66,16 @@ impl BenCodeApp {
                 wanted.push((id, path));
             }
         }
+        // A Mono out of view gives its image back: each is up to 16 MB.
+        let unwanted: Vec<String> = (self.mono_backgrounds.images.keys())
+            .filter(|id| !wanted.iter().any(|(want, _)| want == *id))
+            .cloned()
+            .collect();
+        for id in unwanted {
+            if let Some((_, image)) = self.mono_backgrounds.images.remove(&id) {
+                cx.drop_image(image, None);
+            }
+        }
         for (id, path) in wanted {
             self.draw_mono_background(id, path, light, cx);
         }
@@ -80,6 +92,7 @@ impl BenCodeApp {
         let state = &mut self.mono_backgrounds;
         if state.images.get(&id).is_some_and(|(made, _)| *made == key)
             || state.loading.get(&id) == Some(&key)
+            || state.failed.get(&id) == Some(&key)
         {
             return;
         }
@@ -98,6 +111,7 @@ impl BenCodeApp {
                 this.mono_backgrounds.loading.remove(&id);
                 match result {
                     Ok(image) => {
+                        this.mono_backgrounds.failed.remove(&id);
                         if let Some((_, old)) =
                             this.mono_backgrounds.images.insert(id, (key, image))
                         {
@@ -107,6 +121,7 @@ impl BenCodeApp {
                     Err(err) => {
                         log::warn!("a Mono's background: {err:#}");
                         this.mono_backgrounds.error = Some(format!("{err:#}"));
+                        this.mono_backgrounds.failed.insert(id, key);
                     }
                 }
                 cx.notify();
@@ -173,6 +188,7 @@ impl BenCodeApp {
                 match saved {
                     Ok(path) => {
                         // The same name may hold a new picture: draw again.
+                        this.mono_backgrounds.failed.remove(&mono);
                         if let Some((_, old)) = this.mono_backgrounds.images.remove(&mono) {
                             cx.drop_image(old, None);
                         }
