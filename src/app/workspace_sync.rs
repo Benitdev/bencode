@@ -501,6 +501,15 @@ impl BenCodeApp {
     /// branch its checkout is on now: the agent may have switched it.
     fn follow_agent_checkout(&mut self, cwd: &str, cx: &mut gpui::App) {
         let ended = self.workspace_mut(cx, |cache| std::mem::take(&mut cache.turn_ended));
+        // A thread in another checkout waits for that checkout's snapshot.
+        let elsewhere: HashSet<String> = (self.sessions.iter())
+            .filter(|s| ended.contains(&s.id))
+            .filter(|s| !crate::app::same_project_path(s.work_dir(), cwd))
+            .map(|s| s.id.clone())
+            .collect();
+        if !elsewhere.is_empty() {
+            self.workspace_mut(cx, |cache| cache.turn_ended.extend(elsewhere));
+        }
         let branch = Some(self.git_status.branch.clone()).filter(|b| !b.is_empty());
         if branch.is_none() {
             return;
