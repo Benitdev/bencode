@@ -3,7 +3,6 @@
 //! one of them opens; the last list of the same folder stays usable meanwhile.
 
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -28,9 +27,13 @@ pub struct ProjectFiles {
     /// highlighter, which cannot reach the app.
     pub mentions: Rc<RefCell<Arc<MentionIndex>>>,
     /// Other folders' last lists, put back at once on return while a fresh
-    /// one loads (MonoCode keeps `fileIndex` per folder).
-    others: HashMap<String, Listing>,
+    /// one loads (MonoCode keeps `fileIndex` per folder): the latest
+    /// `PARKED` folders only, oldest first, as each holds up to 20k paths.
+    others: Vec<(String, Listing)>,
 }
+
+/// How many folders left keep their list.
+const PARKED: usize = 3;
 
 #[derive(Clone)]
 struct Listing {
@@ -54,6 +57,15 @@ impl ProjectFiles {
         }
     }
 
+    /// Keeps `root`'s list for a return, dropping the oldest past `PARKED`.
+    fn park(&mut self, root: String, listing: Listing) {
+        self.others.retain(|(r, _)| *r != root);
+        self.others.push((root, listing));
+        if self.others.len() > PARKED {
+            self.others.remove(0);
+        }
+    }
+
     /// Moves to `root`, parking the current list and restoring `root`'s.
     fn switch_root(&mut self, root: &str) {
         let current = Listing {
@@ -61,11 +73,13 @@ impl ProjectFiles {
             dirs: std::mem::take(&mut self.dirs),
             mentions: self.mentions.borrow().clone(),
         };
+        // Taken out before parking, which may drop the oldest.
+        let restored =
+            (self.others.iter().position(|(r, _)| r == root)).map(|ix| self.others.remove(ix).1);
         let old = std::mem::replace(&mut self.root, root.to_string());
         if !old.is_empty() {
-            self.others.insert(old, current);
+            self.park(old, current);
         }
-        let restored = self.others.remove(root);
         let mentions = restored
             .as_ref()
             .map(|l| l.mentions.clone())
@@ -178,7 +192,7 @@ impl BenCodeApp {
                 } else {
                     // The folder was left meanwhile: keep this list for a
                     // return, and list the folder now shown.
-                    index.others.insert(root, listing);
+                    index.park(root, listing);
                     app.index_project_files(cx);
                 }
                 cx.notify();
@@ -194,6 +208,21 @@ impl BenCodeApp {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_the_latest_folders_keep_their_list() {
+        let mut index = ProjectFiles::default();
+        for root in ["/a", "/b", "/c", "/d", "/e"] {
+            index.switch_root(root);
+            index.files = Arc::from(vec![SharedString::from(root)]);
+        }
+        assert_eq!(index.others.len(), PARKED);
+        // The oldest went; a recent one comes back with its list.
+        index.switch_root("/a");
+        assert!(index.files.is_empty());
+        index.switch_root("/c");
+        assert_eq!(index.files.first().map(|f| f.as_ref()), Some("/c"));
+    }
 
     #[test]
     fn directories_cover_every_level_once() {
