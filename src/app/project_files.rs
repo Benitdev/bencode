@@ -170,6 +170,11 @@ impl BenCodeApp {
                     index.files = listing.files;
                     index.dirs = listing.dirs;
                     *index.mentions.borrow_mut() = listing.mentions;
+                    // Search took its file list as it opened: rank again
+                    // with the one that just arrived.
+                    if app.search.open {
+                        app.update_search_hits(cx);
+                    }
                 } else {
                     // The folder was left meanwhile: keep this list for a
                     // return, and list the folder now shown.
