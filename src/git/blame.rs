@@ -181,7 +181,9 @@ fn parse_detail(text: &str) -> CommitDetail {
             ));
             continue;
         }
-        let Some((_, _, lines)) = hunks.last_mut() else {
+        // The card shows `HUNK_LINES` and whether more were cut: a commit
+        // that wrote the whole file keeps no more than that.
+        let Some((_, _, lines)) = hunks.last_mut().filter(|(_, _, l)| l.len() <= HUNK_LINES) else {
             continue;
         };
         if let Some(added) = row.strip_prefix('+') {
@@ -325,6 +327,17 @@ mod tests {
             [HunkLine::Added("tail".into())]
         );
         assert!(detail.hunk_at(7).is_none());
+    }
+
+    #[test]
+    fn detail_keeps_only_what_the_card_shows() {
+        let added: String = (0..500).map(|n| format!("+line {n}\n")).collect();
+        let text = format!("feat: a file\n\0\n@@ -0,0 +1,500 @@\n{added}");
+        let detail = parse_detail(&text);
+        let (lines, cut) = detail.hunk_at(250).unwrap();
+        assert_eq!(lines.len(), HUNK_LINES);
+        assert!(cut);
+        assert_eq!(detail.hunks[0].2.len(), HUNK_LINES + 1);
     }
 
     #[test]

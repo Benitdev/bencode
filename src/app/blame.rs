@@ -5,18 +5,25 @@
 //! thread once per saved copy of a file; a buffer with unsaved edits shows
 //! none, as its lines no longer match.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Duration;
 
 use ely_gpui_component::editor::InlayHint;
-use gpui::Context;
+use gpui::{Context, Task};
 
 use crate::app::BenCodeApp;
 use crate::app::file_pane::PaneTab;
 use crate::git::blame::{self, BlameCommit, CommitDetail, FileBlame, FileCommit};
 use crate::ui::editor_pane::files::resolve_path;
 use crate::ui::region::Region;
+
+/// How long the caret rests on a line before its commit is read: holding
+/// an arrow key through a file reads none of the lines it passes.
+const DETAIL_AFTER: Duration = Duration::from_millis(300);
+/// How many commits' details are kept, the latest read.
+const DETAILS_KEPT: usize = 64;
 
 /// A load and what it gave.
 #[derive(Clone, Debug)]
@@ -33,6 +40,10 @@ pub struct BlameState {
     files: HashMap<String, (u64, Load<Arc<FileBlame>>)>,
     /// Commits' messages and changes, by sha and the file's path there.
     details: HashMap<(String, String), Load<Arc<CommitDetail>>>,
+    /// `details`' keys, oldest first, to drop past `DETAILS_KEPT`.
+    detail_order: VecDeque<(String, String)>,
+    /// The wait before the caret line's commit is read; a move replaces it.
+    detail_wait: Option<Task<()>>,
     /// The repository each folder is in.
     repos: HashMap<String, blame::Repo>,
     /// Each editor's caret line (from zero) and the note it shows there.
@@ -189,9 +200,7 @@ impl BenCodeApp {
         if self.blame.shown.get(path) == Some(&next) {
             return;
         }
-        if let Some(blame) = &blame {
-            self.load_commit_detail(&blame.cwd, &blame.commit, cx);
-        }
+        self.blame.detail_wait = blame.map(|blame| self.read_detail_later(path, blame, cx));
         let hints = next.1.clone().map(|text| InlayHint {
             offset: line_end(entity.read(cx).text(), head),
             text: text.into(),
@@ -266,6 +275,26 @@ impl BenCodeApp {
         .detach();
     }
 
+    /// Reads the commit of `path`'s caret line once the caret rests there.
+    fn read_detail_later(&self, path: &str, blame: LineBlame, cx: &mut Context<Self>) -> Task<()> {
+        let path = path.to_string();
+        cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(DETAIL_AFTER).await;
+            let landed = this.update(cx, |this, cx| {
+                // Still that commit's line: the wait was not replaced.
+                let still = this
+                    .caret_blame(&path, cx)
+                    .is_some_and(|now| now.commit.sha == blame.commit.sha);
+                if still {
+                    this.load_commit_detail(&blame.cwd, &blame.commit, cx);
+                }
+            });
+            if let Err(err) = landed {
+                log::debug!("blame wait after app drop: {err:#}");
+            }
+        })
+    }
+
     fn load_commit_detail(&mut self, cwd: &str, commit: &BlameCommit, cx: &mut Context<Self>) {
         if commit.is_uncommitted() {
             return;
@@ -275,6 +304,12 @@ impl BenCodeApp {
             return;
         }
         self.blame.details.insert(key.clone(), Load::Loading);
+        self.blame.detail_order.push_back(key.clone());
+        while self.blame.detail_order.len() > DETAILS_KEPT {
+            if let Some(old) = self.blame.detail_order.pop_front() {
+                self.blame.details.remove(&old);
+            }
+        }
         let (cwd, sha, path) = (cwd.to_string(), key.0.clone(), key.1.clone());
         let task = cx
             .background_executor()
@@ -289,7 +324,11 @@ impl BenCodeApp {
                         Load::Failed(err.to_string())
                     }
                 };
-                this.blame.details.insert(key, load);
+                // Dropped meanwhile (past `DETAILS_KEPT`): not kept again.
+                let Some(slot) = this.blame.details.get_mut(&key) else {
+                    return;
+                };
+                *slot = load;
                 // The toolbar's card is the file pane's.
                 this.redraw_regions(&[Region::FilePane], cx);
             });
