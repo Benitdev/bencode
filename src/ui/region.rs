@@ -249,6 +249,19 @@ impl BenCodeApp {
 
     /// Redraws what draws thread `session_id`'s transcript now: its pane,
     /// or the Mono in view. Its card, tab and mascot follow on the clock.
+    /// What shows a run's time ("Working for 12s") once a second: the
+    /// regions outside the chat, and the panes of the threads that run.
+    /// Every chat pane would re-render its rows for nothing.
+    pub(crate) fn redraw_run_clocks(&self, cx: &mut App) {
+        let outside: Vec<Region> = (Region::BUSY_MARKS.into_iter())
+            .filter(|region| *region != Region::Chat)
+            .collect();
+        self.redraw_regions(&outside, cx);
+        for id in self.runs.keys() {
+            self.redraw_thread(id, cx);
+        }
+    }
+
     pub(crate) fn redraw_thread(&self, session_id: &str, cx: &mut App) {
         // The session a Mono started is drawn inside the Mono's region
         // while its Overview shows it.

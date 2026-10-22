@@ -252,7 +252,7 @@ fn cases(thread: Option<String>) -> Vec<Case> {
         case(
             "long thread and a file: busy-mark regions (once a second)",
             Box::new(nothing),
-            |app, cx| app.redraw_regions(&Region::BUSY_MARKS, cx),
+            |app, cx| app.redraw_run_clocks(cx),
         ),
         case(
             "long thread and a file: every chat pane redrawn",

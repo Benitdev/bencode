@@ -35,7 +35,6 @@ use gpui::{
 use crate::app::BenCodeApp;
 use crate::db::SessionRow;
 use crate::ui::motion::cubic_bezier;
-use crate::ui::region::Region;
 use crate::ui::scale::px;
 use crate::ui::tokens::{Ink, Text, Tone as _};
 use blocks::MESSAGE_MAX_WIDTH;
@@ -374,7 +373,7 @@ impl BenCodeApp {
                         // What the regions show of a run's time ("Working
                         // for 12s", a habit's run) moves once a second.
                         if running && second {
-                            app.redraw_regions(&Region::BUSY_MARKS, cx);
+                            app.redraw_run_clocks(cx);
                         }
                     }
                     let next = if let Some(next) = idle {
