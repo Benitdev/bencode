@@ -287,7 +287,16 @@ impl BenCodeApp {
         if self.leave_mono_view(cx) {
             self.sync_selection(cx);
         }
-        let path = path.to_string();
+        let abs_path = resolve_path(&self.workspace(cx).cwd, path);
+        // A tab of another project's file with the same relative path is
+        // not this one: open it by its own absolute path, never reuse it.
+        let elsewhere =
+            (self.editor.files.get(path)).is_some_and(|f| f.handle.abs_path != abs_path);
+        let path = if elsewhere {
+            abs_path.to_string_lossy().into_owned()
+        } else {
+            path.to_string()
+        };
         self.file_pane
             .open(PaneTab::File { path: path.clone() }, true);
         self.file_pane_focused = true;
@@ -296,7 +305,6 @@ impl BenCodeApp {
             cx.notify();
             return;
         }
-        let abs_path = resolve_path(&self.workspace(cx).cwd, &path);
         let read_path = abs_path.clone();
         let task = cx
             .background_executor()

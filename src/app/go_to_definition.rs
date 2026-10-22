@@ -123,8 +123,9 @@ impl BenCodeApp {
         };
         let name = text[range.clone()].to_string();
         let from_line = text[..range.start].matches('\n').count() as u32 + 1;
+        // The file's own path: its tab may belong to another project.
         let cwd = self.workspace(cx).cwd.clone();
-        let (root, from) = search_root(&cwd, path);
+        let (root, from) = search_root(&cwd, &file.handle.abs_path.to_string_lossy());
         let options = definitions::search_options(&name, &from);
         let search_in = PathBuf::from(&root);
         let task = cx.background_executor().spawn(async move {
