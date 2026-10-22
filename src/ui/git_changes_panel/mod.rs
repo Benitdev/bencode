@@ -15,7 +15,7 @@ pub use tree::{ChangeDir, build_tree};
 use tree::{basename, dirname};
 
 use std::cell::{Cell, RefCell};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -109,7 +109,17 @@ pub enum Side {
 
 /// The panel's state (MonoCode keeps most of it per mount, some per run).
 pub struct ChangesUi {
+    /// The shown project's action in flight.
     pub busy: Option<Busy>,
+    /// Every project's action in flight, by `cwd`: one keeps running when
+    /// another project is shown, and `busy` follows the shown one.
+    pub(crate) running: HashMap<String, Busy>,
+    /// A failure that landed while its project was not shown, shown when
+    /// that project is again.
+    pub(crate) missed_errors: HashMap<String, GitError>,
+    /// The commit field's text of each project not shown, by `cwd`; an
+    /// action that ends there writes its message here.
+    pub(crate) drafts: HashMap<String, String>,
     pub status: Option<String>,
     pub(crate) status_generation: u64,
     /// Amending: the branch and HEAD it was turned on for.
@@ -131,7 +141,8 @@ pub struct ChangesUi {
     graph_drag: Option<(f32, f32)>,
     /// The panel's height as last laid out, to cap the graph.
     panel_height: Rc<Cell<f32>>,
-    pub(crate) generate_cancel: Option<Arc<AtomicBool>>,
+    /// ✨ writing a message, by `cwd`; a second press there cancels it.
+    pub(crate) generate_cancel: HashMap<String, Arc<AtomicBool>>,
     pub pr: Option<BranchPr>,
     /// `cwd` + branch the pull request was read for.
     pub(crate) pr_key: Option<String>,
@@ -184,6 +195,9 @@ impl Default for ChangesUi {
     fn default() -> Self {
         Self {
             busy: None,
+            running: HashMap::new(),
+            missed_errors: HashMap::new(),
+            drafts: HashMap::new(),
             status: None,
             status_generation: 0,
             amend: None,
@@ -198,7 +212,7 @@ impl Default for ChangesUi {
             menu_trigger_hit: false,
             graph_drag: None,
             panel_height: Rc::new(Cell::new(0.0)),
-            generate_cancel: None,
+            generate_cancel: HashMap::new(),
             pr: None,
             pr_key: None,
             pr_read_at: None,

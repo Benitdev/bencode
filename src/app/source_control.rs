@@ -162,6 +162,52 @@ impl BenCodeApp {
         }
     }
 
+    /// Whether `cwd` is the project the panel shows.
+    fn shows(&self, cwd: &str, cx: &gpui::App) -> bool {
+        self.workspace(cx).cwd == cwd
+    }
+
+    /// Marks `cwd`'s action in flight (or none); the panel's `busy`
+    /// follows it while `cwd` is shown.
+    fn set_running(&mut self, cwd: &str, busy: Option<Busy>, cx: &gpui::App) {
+        if self.shows(cwd, cx) {
+            self.changes_ui.busy = busy.clone();
+        }
+        match busy {
+            Some(busy) => self.changes_ui.running.insert(cwd.to_string(), busy),
+            None => self.changes_ui.running.remove(cwd),
+        };
+    }
+
+    /// `cwd`'s commit message: the field while it is shown, else its draft.
+    fn commit_message_in(&self, cwd: &str, cx: &gpui::App) -> String {
+        if self.shows(cwd, cx) {
+            self.git_commit_input.read(cx).text().to_string()
+        } else {
+            self.changes_ui.drafts.get(cwd).cloned().unwrap_or_default()
+        }
+    }
+
+    fn set_commit_message_in(&mut self, cwd: &str, message: String, cx: &mut Context<Self>) {
+        if self.shows(cwd, cx) {
+            self.git_commit_input
+                .update(cx, |input, cx| input.set_text(message, cx));
+        } else if message.is_empty() {
+            self.changes_ui.drafts.remove(cwd);
+        } else {
+            self.changes_ui.drafts.insert(cwd.to_string(), message);
+        }
+    }
+
+    /// A failure in `cwd`: shown in the panel, or kept until `cwd` is.
+    fn show_git_error_in(&mut self, cwd: String, error: GitError, cx: &mut Context<Self>) {
+        if self.shows(&cwd, cx) {
+            self.workspace_state.as_mut(cx).git_error = Some(error);
+        } else {
+            self.changes_ui.missed_errors.insert(cwd, error);
+        }
+    }
+
     /// Runs `work` off the UI thread as `busy`; a failure shows in the
     /// panel, success may set a status. The snapshot reloads either way.
     pub(crate) fn run_changes_action(
@@ -169,10 +215,26 @@ impl BenCodeApp {
         busy: Busy,
         done: Option<&'static str>,
         work: impl FnOnce(&str) -> Result<(), String> + Send + 'static,
-        after: impl FnOnce(&mut Self, &mut Context<Self>) + 'static,
+        after: impl FnOnce(&mut Self, &str, &mut Context<Self>) + 'static,
+        cx: &mut Context<Self>,
+    ) {
+        let cwd = self.workspace_cwd();
+        self.run_changes_in(cwd, busy, done, work, after, cx);
+    }
+
+    /// `run_changes_action` in `cwd`, shown or not (the next step of an
+    /// action that started there).
+    fn run_changes_in(
+        &mut self,
+        cwd: String,
+        busy: Busy,
+        done: Option<&'static str>,
+        work: impl FnOnce(&str) -> Result<(), String> + Send + 'static,
+        after: impl FnOnce(&mut Self, &str, &mut Context<Self>) + 'static,
         cx: &mut Context<Self>,
     ) {
         self.run_changes_steps(
+            cwd,
             busy,
             done,
             move |cwd| work(cwd).map_err(GitFailure::from),
@@ -182,39 +244,49 @@ impl BenCodeApp {
     }
 
     /// `run_changes_action` for work of more than one step, whose failure
-    /// names the step that failed rather than the whole action.
+    /// names the step that failed rather than the whole action. It keeps
+    /// running when another project is shown, and `after` gets the
+    /// project it ran in.
     fn run_changes_steps(
         &mut self,
+        cwd: String,
         busy: Busy,
         done: Option<&'static str>,
         work: impl FnOnce(&str) -> Result<(), GitFailure> + Send + 'static,
-        after: impl FnOnce(&mut Self, &mut Context<Self>) + 'static,
+        after: impl FnOnce(&mut Self, &str, &mut Context<Self>) + 'static,
         cx: &mut Context<Self>,
     ) {
-        if self.changes_ui.busy.is_some() {
+        if self.changes_ui.running.contains_key(&cwd) {
             return;
         }
-        self.changes_ui.busy = Some(busy.clone());
-        self.workspace_state.as_mut(cx).git_error = None;
-        let cwd = self.workspace_cwd();
-        let task = cx.background_executor().spawn(async move { work(&cwd) });
+        self.set_running(&cwd, Some(busy.clone()), cx);
+        if self.shows(&cwd, cx) {
+            self.workspace_state.as_mut(cx).git_error = None;
+        }
+        self.changes_ui.missed_errors.remove(&cwd);
+        let work_cwd = cwd.clone();
+        let task = cx.background_executor().spawn(async move { work(&work_cwd) });
         cx.spawn(async move |this, cx| {
             let result = task.await;
             let updated = this.update(cx, |app, cx| {
-                app.changes_ui.busy = None;
+                app.set_running(&cwd, None, cx);
                 match result {
                     Ok(()) => {
-                        if let Some(done) = done {
+                        if let Some(done) = done
+                            && app.shows(&cwd, cx)
+                        {
                             app.set_changes_status(done, cx);
                         }
-                        after(app, cx);
+                        after(app, &cwd, cx);
                     }
                     Err(failure) => {
-                        log::warn!("git action failed: {}", failure.output());
-                        app.workspace_state.as_mut(cx).git_error = Some(failure.into_error(&busy));
+                        log::warn!("git action failed in {cwd}: {}", failure.output());
+                        app.show_git_error_in(cwd.clone(), failure.into_error(&busy), cx);
                     }
                 }
-                app.refresh_workspace(cx);
+                if app.shows(&cwd, cx) {
+                    app.refresh_workspace(cx);
+                }
                 cx.notify();
             });
             if let Err(err) = updated {
@@ -253,7 +325,7 @@ impl BenCodeApp {
                 }
                 .map_err(|err| format!("{err:#}"))
             },
-            |_, _| {},
+            |_, _, _| {},
             cx,
         );
     }
@@ -271,7 +343,7 @@ impl BenCodeApp {
                 }
                 .map_err(|err| format!("{err:#}"))
             },
-            |_, _| {},
+            |_, _, _| {},
             cx,
         );
     }
@@ -288,7 +360,7 @@ impl BenCodeApp {
                 }
                 .map_err(|e| format!("{e:#}"))
             },
-            |_, _| {},
+            |_, _, _| {},
             cx,
         );
     }
@@ -362,7 +434,9 @@ impl BenCodeApp {
         }
         let message = self.git_commit_input.read(cx).text().to_string();
         let amend = self.changes_ui.amend.is_some();
+        let cwd = self.workspace_cwd();
         self.run_changes_steps(
+            cwd,
             if pending.pr { Busy::Pr } else { Busy::Commit },
             None,
             move |cwd| {
@@ -375,12 +449,13 @@ impl BenCodeApp {
                 }
                 Ok(())
             },
-            move |app, cx| {
-                app.git_commit_input
-                    .update(cx, |input, cx| input.set_text("", cx));
-                app.changes_ui.amend = None;
+            move |app, cwd, cx| {
+                app.set_commit_message_in(cwd, String::new(), cx);
+                if app.shows(cwd, cx) {
+                    app.changes_ui.amend = None;
+                }
                 if pending.pr {
-                    app.open_created_pr(cx);
+                    app.open_created_pr(cwd.to_string(), cx);
                 }
             },
             cx,
@@ -388,11 +463,12 @@ impl BenCodeApp {
     }
 
     /// MonoCode `openCreatedPr`: Claude writes the PR, `gh` opens it.
-    pub(crate) fn open_created_pr(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn open_created_pr(&mut self, cwd: String, cx: &mut Context<Self>) {
         // Opened from the UI thread with GPUI's `open_url` once the PR exists.
         let created: Arc<std::sync::Mutex<Option<String>>> = Default::default();
         let slot = created.clone();
-        self.run_changes_action(
+        self.run_changes_in(
+            cwd,
             Busy::Pr,
             None,
             move |cwd| {
@@ -410,12 +486,15 @@ impl BenCodeApp {
                 }
                 Ok(())
             },
-            move |app, cx| {
+            move |app, cwd, cx| {
                 let url = created.lock().ok().and_then(|mut url| url.take());
                 if let Some(url) = url {
                     cx.open_url(&url);
                 }
-                app.reload_branch_pr(cx);
+                // Another project's pull request is read when it is shown.
+                if app.shows(cwd, cx) {
+                    app.reload_branch_pr(cx);
+                }
             },
             cx,
         );
@@ -436,7 +515,7 @@ impl BenCodeApp {
             Busy::Pr,
             None,
             move |cwd| if ahead { git_sync::push(cwd) } else { Ok(()) },
-            |app, cx| app.open_created_pr(cx),
+            |app, cwd, cx| app.open_created_pr(cwd.to_string(), cx),
             cx,
         );
     }
@@ -446,7 +525,11 @@ impl BenCodeApp {
             Busy::Sync,
             None,
             git_sync::sync,
-            |app, cx| app.reload_branch_pr(cx),
+            |app, cwd, cx| {
+                if app.shows(cwd, cx) {
+                    app.reload_branch_pr(cx);
+                }
+            },
             cx,
         );
     }
@@ -473,13 +556,12 @@ impl BenCodeApp {
                 }
                 Ok(())
             },
-            move |app, cx| {
+            move |app, cwd, cx| {
                 let message = undone.lock().ok().and_then(|mut slot| slot.take());
                 if let Some(message) = message
-                    && app.git_commit_input.read(cx).text().trim().is_empty()
+                    && app.commit_message_in(cwd, cx).trim().is_empty()
                 {
-                    app.git_commit_input
-                        .update(cx, |input, cx| input.set_text(message, cx));
+                    app.set_commit_message_in(cwd, message, cx);
                 }
             },
             cx,
@@ -492,7 +574,7 @@ impl BenCodeApp {
             Busy::Revert,
             Some("Reverted the commit"),
             move |cwd| git_sync::revert_commit(cwd, &sha),
-            |_, _| {},
+            |_, _, _| {},
             cx,
         );
     }
@@ -525,7 +607,7 @@ impl BenCodeApp {
             Busy::Pull,
             Some("Pull complete"),
             git_sync::pull,
-            |_, _| {},
+            |_, _, _| {},
             cx,
         );
     }
@@ -537,12 +619,17 @@ impl BenCodeApp {
             return;
         }
         let cwd = self.workspace_cwd();
+        let read_cwd = cwd.clone();
         let task = cx
             .background_executor()
-            .spawn(async move { git_sync::head_message(&cwd) });
+            .spawn(async move { git_sync::head_message(&read_cwd) });
         cx.spawn(async move |this, cx| {
             let message = task.await;
             let updated = this.update(cx, |app, cx| {
+                // Amending is the shown project's; another is shown now.
+                if !app.shows(&cwd, cx) {
+                    return;
+                }
                 match message {
                     Ok(message) => {
                         if app.git_commit_input.read(cx).text().trim().is_empty() {
@@ -566,40 +653,41 @@ impl BenCodeApp {
         .detach();
     }
 
-    /// ✨: Claude writes the message; a second press cancels.
+    /// ✨: Claude writes the message; a second press cancels. The message
+    /// lands in its project's commit field, shown or not.
     pub(crate) fn toggle_generate(&mut self, cx: &mut Context<Self>) {
-        if let Some(cancel) = self.changes_ui.generate_cancel.take() {
+        let cwd = self.workspace_cwd();
+        if let Some(cancel) = self.changes_ui.generate_cancel.remove(&cwd) {
             cancel.store(true, Ordering::Relaxed);
-            self.changes_ui.busy = None;
+            self.set_running(&cwd, None, cx);
             cx.notify();
             return;
         }
-        if self.changes_ui.busy.is_some() || !self.has_changes() {
+        if self.changes_ui.running.contains_key(&cwd) || !self.has_changes() {
             return;
         }
         let cancel = Arc::new(AtomicBool::new(false));
-        self.changes_ui.generate_cancel = Some(cancel.clone());
-        self.changes_ui.busy = Some(Busy::Generate);
-        let cwd = self.workspace_cwd();
+        self.changes_ui
+            .generate_cancel
+            .insert(cwd.clone(), cancel.clone());
+        self.set_running(&cwd, Some(Busy::Generate), cx);
+        let work_cwd = cwd.clone();
         let flag = cancel.clone();
         let task = cx
             .background_executor()
-            .spawn(async move { crate::git::text::generate_commit_message(&cwd, flag) });
+            .spawn(async move { crate::git::text::generate_commit_message(&work_cwd, flag) });
         cx.spawn(async move |this, cx| {
             let result = task.await;
             let updated = this.update(cx, |app, cx| {
                 if cancel.load(Ordering::Relaxed) {
                     return;
                 }
-                app.changes_ui.generate_cancel = None;
-                app.changes_ui.busy = None;
+                app.changes_ui.generate_cancel.remove(&cwd);
+                app.set_running(&cwd, None, cx);
                 match result {
-                    Ok(message) => app
-                        .git_commit_input
-                        .update(cx, |input, cx| input.set_text(message, cx)),
+                    Ok(message) => app.set_commit_message_in(&cwd, message, cx),
                     Err(err) => {
-                        app.workspace_state.as_mut(cx).git_error =
-                            Some(GitError::for_busy(&Busy::Generate, err))
+                        app.show_git_error_in(cwd, GitError::for_busy(&Busy::Generate, err), cx)
                     }
                 }
                 cx.notify();

@@ -311,8 +311,24 @@ impl BenCodeApp {
     /// Moving to another directory: its last snapshot if there is one,
     /// otherwise an empty workspace, never the previous directory's data.
     fn show_cached_snapshot(&mut self, cwd: &str, cx: &mut Context<Self>) {
+        // The commit field keeps a draft per project.
+        let left = self.workspace(cx).cwd.clone();
+        let draft = self.changes_ui.drafts.remove(cwd).unwrap_or_default();
+        let typed = self.git_commit_input.update(cx, |input, cx| {
+            let typed = input.text().to_string();
+            input.set_text(draft, cx);
+            typed
+        });
+        if !left.is_empty() && !typed.is_empty() {
+            self.changes_ui.drafts.insert(left, typed);
+        }
+        // Amending was the other project's HEAD.
+        self.changes_ui.amend = None;
+        // The panel shows this project's action in flight, if any.
+        self.changes_ui.busy = self.changes_ui.running.get(cwd).cloned();
+        let missed = self.changes_ui.missed_errors.remove(cwd);
         let snapshot = self.workspace_mut(cx, |cache| {
-            cache.git_error = None;
+            cache.git_error = missed;
             cache.snapshots.get(cwd).cloned().unwrap_or_default()
         });
         self.apply_snapshot(cwd.to_string(), snapshot, true, cx);

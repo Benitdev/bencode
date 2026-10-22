@@ -115,7 +115,7 @@ impl BenCodeApp {
                         Busy::File(path.clone()),
                         None,
                         move |cwd| discard_file(cwd, &path).map_err(|e| format!("{e:#}")),
-                        |_, _| {},
+                        |_, _, _| {},
                         cx,
                     );
                 }
@@ -123,7 +123,7 @@ impl BenCodeApp {
                     Busy::All,
                     None,
                     |cwd| discard_all(cwd).map_err(|e| format!("{e:#}")),
-                    |_, _| {},
+                    |_, _, _| {},
                     cx,
                 ),
                 GitConfirm::PushDefault(p) => this.commit_from_panel(*p, true, false, cx),
