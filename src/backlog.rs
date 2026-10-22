@@ -19,6 +19,8 @@ use serde_json::Value;
 use crate::rate_limits::http;
 use crate::work_items::{Comment, Details, Kind, Label, Provider, Thread, WorkItem};
 
+mod images;
+
 const CONFIG_FILE: &str = "backlog-config.json";
 const TIMEOUT: Duration = Duration::from_secs(20);
 /// Backlog's largest page.
@@ -599,15 +601,17 @@ pub fn inbox(hidden: &[String], assigned_to_me: bool) -> Option<Listing> {
     Some(listing)
 }
 
-/// The issue's description and who opened it.
+/// The issue's description and who opened it; the pictures it shows are
+/// saved and pointed at (`images`).
 pub fn details(key: &str) -> Result<Details, String> {
     let config = require_config()?;
     let key = require_issue_key(key)?;
     let data = call(&config, None, &format!("/issues/{key}"), &[], &[])?;
     let row: IssueRow =
         serde_json::from_value(data).map_err(|_| "Backlog sent an unreadable issue".to_string())?;
+    let body = row.description.unwrap_or_default();
     Ok(Details {
-        body: row.description.unwrap_or_default(),
+        body: images::Pictures::new(&config, key).inline(&body),
         author: row.created_user.map(|user| user.name).unwrap_or_default(),
         ..Default::default()
     })
@@ -731,7 +735,7 @@ fn parse_thread(data: &Value, space: &str, key: &str) -> Thread {
     }
 }
 
-/// The issue's latest comments and changes.
+/// The issue's latest comments and changes, their pictures saved.
 pub fn thread(key: &str) -> Result<Thread, String> {
     let config = require_config()?;
     let key = require_issue_key(key)?;
@@ -742,7 +746,12 @@ pub fn thread(key: &str) -> Result<Thread, String> {
         &[("count", PAGE.to_string()), ("order", "desc".to_string())],
         &[],
     )?;
-    Ok(parse_thread(&data, &config.space, key))
+    let mut thread = parse_thread(&data, &config.space, key);
+    let mut pictures = images::Pictures::new(&config, key);
+    for comment in &mut thread.comments {
+        comment.body = pictures.inline(&comment.body);
+    }
+    Ok(thread)
 }
 
 /// Adds a comment; returns its URL.

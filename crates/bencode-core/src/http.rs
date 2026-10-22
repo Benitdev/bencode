@@ -4,7 +4,9 @@
 //! on curl's stdin, never on argv.
 
 use std::io::Write;
+use std::path::Path;
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use anyhow::{Context as _, Result, bail};
@@ -39,6 +41,54 @@ pub fn send(
     send: Send,
     timeout: Duration,
 ) -> Result<Response> {
+    let stdout = curl(&request_config(url, headers, send, timeout))?;
+    split_status(&stdout).context("curl reported no HTTP status")
+}
+
+/// A GET whose body is saved to `path` as bytes (a picture, a file), only
+/// when it succeeds; returns the status. Blocking; `timeout` bounds the
+/// whole transfer.
+pub fn download(
+    url: &str,
+    headers: &[(&str, &str)],
+    path: &Path,
+    timeout: Duration,
+) -> Result<u16> {
+    // Its own part file: two loads of one file never write into each other.
+    static PARTS: AtomicU64 = AtomicU64::new(0);
+    let mut part = path.as_os_str().to_owned();
+    part.push(format!(
+        ".{}-{}.part",
+        std::process::id(),
+        PARTS.fetch_add(1, Ordering::Relaxed)
+    ));
+    let part = std::path::PathBuf::from(part);
+    let mut config = request_config(url, headers, Send::default(), timeout);
+    config.push_str(&format!("output = {}\n", quoted(&part.to_string_lossy())));
+    let result = curl(&config).and_then(|stdout| {
+        split_status(&stdout)
+            .map(|response| response.status)
+            .context("curl reported no HTTP status")
+    });
+    match result {
+        Ok(status) if (200..300).contains(&status) => {
+            std::fs::rename(&part, path).context("could not keep the download")?;
+            Ok(status)
+        }
+        other => {
+            // An error's body is not the file; a failed transfer leaves a part.
+            if let Err(err) = std::fs::remove_file(&part)
+                && err.kind() != std::io::ErrorKind::NotFound
+            {
+                log::warn!("http: could not remove a partial download: {err}");
+            }
+            other
+        }
+    }
+}
+
+/// Runs curl on `config` (given on stdin) and returns what it printed.
+fn curl(config: &str) -> Result<String> {
     let mut child = Command::new("curl")
         // -q: no ~/.curlrc, so nothing there can reshape the output.
         .args(["-q", "--silent", "--show-error", "--config", "-"])
@@ -47,7 +97,6 @@ pub fn send(
         .stderr(Stdio::piped())
         .spawn()
         .context("could not start curl")?;
-    let config = request_config(url, headers, send, timeout);
     child
         .stdin
         .take()
@@ -58,7 +107,7 @@ pub fn send(
         let detail = String::from_utf8_lossy(&output.stderr);
         bail!("{}", detail.trim().trim_start_matches("curl: "));
     }
-    split_status(&String::from_utf8_lossy(&output.stdout)).context("curl reported no HTTP status")
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
 fn request_config(url: &str, headers: &[(&str, &str)], send: Send, timeout: Duration) -> String {

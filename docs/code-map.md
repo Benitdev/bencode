@@ -41,6 +41,7 @@ bencode/
     ├── github.rs             GitHub through `gh` (Inbox, PR actions)
     ├── github_accounts.rs    the accounts `gh` is signed in with; the one a project's `gh` runs as
     ├── backlog.rs            Nulab Backlog through its REST API (Inbox issues, comments, status)
+    ├── backlog/images.rs     the pictures an issue attaches, saved and drawn inline
     ├── browser/              the in-app browser: the WKWebView (wry), its scripts, the agents' MCP server (`--browser-mcp`) and its socket
     ├── work_items.rs         the Inbox's items, whichever tracker they come from
     ├── mcp/                  MCP server discovery
