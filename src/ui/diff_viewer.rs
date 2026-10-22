@@ -850,7 +850,8 @@ impl BenCodeApp {
         // A lane (half the row, side by side) less its `w-12` gutter and
         // the text's `px-3` on each side.
         let rem = window.rem_size();
-        let row = doc.list.viewport_bounds().size.width - scrollbar::gutter(&doc.list);
+        // The list's box already stops at the scrollbar's track.
+        let row = doc.list.viewport_bounds().size.width;
         let lane = if doc.side_by_side() { row / 2.0 } else { row };
         let room = lane - rem * 4.5;
         let reach = (advance * doc.widest_line(ix) as f32 - room).max(Pixels::ZERO);
@@ -979,15 +980,19 @@ impl BenCodeApp {
                     .flex_1()
                     .min_h_0()
                     .child(probe)
+                    // A `list` lays its rows out across its whole width,
+                    // padding or not: the box keeps them, like the pinned
+                    // header, off the scrollbar's track.
                     .child(
-                        list(
-                            doc.list.clone(),
-                            cx.processor(move |this, ix: usize, _, cx| {
-                                this.render_doc_row(&rows_key, ix, cx)
-                            }),
-                        )
-                        .size_full()
-                        .pr(gutter),
+                        div().size_full().pr(gutter).child(
+                            list(
+                                doc.list.clone(),
+                                cx.processor(move |this, ix: usize, _, cx| {
+                                    this.render_doc_row(&rows_key, ix, cx)
+                                }),
+                            )
+                            .size_full(),
+                        ),
                     )
                     .children(pinned.map(|f| {
                         div()
