@@ -447,9 +447,26 @@ impl BenCodeApp {
         let id = id.to_string();
         self.db_then(
             cx,
-            move |db| db.delete_session(&row),
+            move |db| {
+                db.delete_session(&row)?;
+                // Only some threads are loaded: a thread left in the
+                // database may resume the same CLI session.
+                match purge {
+                    Some((harness, session)) => {
+                        match db.provider_session_shared(&row, &session) {
+                            Ok(shared) => Ok((!shared).then_some((harness, session))),
+                            Err(err) => {
+                                // The row is gone either way; keep the files.
+                                log::error!("failed to check CLI session {session}: {err:#}");
+                                Ok(None)
+                            }
+                        }
+                    }
+                    None => Ok(None),
+                }
+            },
             move |this, deleted, cx| match deleted {
-                Ok(()) => {
+                Ok(purge) => {
                     this.checkpoints.forget(&id);
                     this.forget_folder_session(&id, cx);
                     if let Some((harness, session)) = purge {

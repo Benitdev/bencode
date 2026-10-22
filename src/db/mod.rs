@@ -661,6 +661,19 @@ impl AppDb {
         Ok(())
     }
 
+    /// Whether a thread other than `session_id` resumes CLI session
+    /// `provider_session_id`, loaded in the app or not.
+    pub fn provider_session_shared(
+        &self,
+        session_id: &str,
+        provider_session_id: &str,
+    ) -> Result<bool> {
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT 1 FROM sessions WHERE provider_session_id = ?1 AND id != ?2 LIMIT 1",
+        )?;
+        Ok(stmt.exists(params![provider_session_id, session_id])?)
+    }
+
     pub fn list_notes(&self) -> Result<Vec<Note>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, slug, title, body, tags_json, source_session_id, source_cwd, created_at, updated_at
@@ -1280,6 +1293,16 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         conn.execute_batch(MONOCODE_SCHEMA).unwrap();
         AppDb::from_connection(conn).unwrap()
+    }
+
+    #[test]
+    fn provider_session_shared_sees_unloaded_threads() {
+        let db = monocode_db();
+        insert_monocode_session(&db, "s1", "[]");
+        assert!(!db.provider_session_shared("s1", "prov-1").unwrap());
+        insert_monocode_session(&db, "s2", "[]");
+        assert!(db.provider_session_shared("s1", "prov-1").unwrap());
+        assert!(!db.provider_session_shared("s1", "prov-2").unwrap());
     }
 
     fn insert_monocode_session(db: &AppDb, id: &str, blocks_json: &str) {
