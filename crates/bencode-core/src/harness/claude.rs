@@ -19,6 +19,7 @@ use crate::harness::resolver::HarnessResolver;
 use crate::harness::{EventRx, PermissionPolicy, SpawnRequest, str_field, summarize_tool_input};
 
 pub mod session_files;
+mod shared_mcp;
 mod tasks;
 
 use tasks::{is_agent_tool, is_subagent_message};
@@ -31,9 +32,11 @@ const RESUME_GRACE: Duration = Duration::from_secs(15);
 
 pub fn spawn(req: &SpawnRequest) -> Result<(HarnessProcessHandle, EventRx)> {
     let program = HarnessResolver::resolve_claude().unwrap_or_else(|| "claude".into());
+    let shared =
+        (req.account.as_ref()).and_then(|profile| shared_mcp::config_file(profile, &req.cwd));
     let spec = ProcessSpec {
         program,
-        args: build_args(req),
+        args: build_args(req, shared.as_deref()),
         cwd: req.cwd.clone(),
         stdin: StdinMode::Protocol {
             initial: format!(
@@ -49,7 +52,9 @@ pub fn spawn(req: &SpawnRequest) -> Result<(HarnessProcessHandle, EventRx)> {
     process::spawn(spec, ClaudeParser::default())
 }
 
-fn build_args(req: &SpawnRequest) -> Vec<String> {
+/// `shared_mcp`: the file of the default account's MCP servers, for a
+/// thread on another account (`shared_mcp.rs`).
+fn build_args(req: &SpawnRequest, shared_mcp: Option<&std::path::Path>) -> Vec<String> {
     let mut args: Vec<String> = [
         "-p",
         "--input-format",
@@ -63,8 +68,8 @@ fn build_args(req: &SpawnRequest) -> Vec<String> {
     .to_vec();
     // Added to the user's own servers. The flag takes several values, so
     // it goes before the others.
-    if let Some(launch) = &req.browser_mcp {
-        let config = serde_json::json!({
+    let browser = req.browser_mcp.as_ref().map(|launch| {
+        serde_json::json!({
             "mcpServers": {
                 crate::mcp::MCP_SERVER_NAME: {
                     "type": "stdio",
@@ -72,8 +77,14 @@ fn build_args(req: &SpawnRequest) -> Vec<String> {
                     "args": launch.args,
                 },
             },
-        });
-        args.extend(["--mcp-config".into(), config.to_string()]);
+        })
+        .to_string()
+    });
+    let shared = shared_mcp.map(|path| path.to_string_lossy().into_owned());
+    let configs: Vec<String> = shared.into_iter().chain(browser).collect();
+    if !configs.is_empty() {
+        args.push("--mcp-config".into());
+        args.extend(configs);
     }
 
     // MonoCode `runtimeModeToPermission`: always pass a mode, so the user's
@@ -681,7 +692,9 @@ mod tests {
 
     #[test]
     fn an_open_browser_tab_adds_its_mcp_server() {
-        assert!(!build_args(&request(PermissionPolicy::Ask)).contains(&"--mcp-config".into()));
+        assert!(
+            !build_args(&request(PermissionPolicy::Ask), None).contains(&"--mcp-config".into())
+        );
         let req = SpawnRequest {
             browser_mcp: Some(crate::mcp::McpLaunch {
                 command: "/bin/bencode".into(),
@@ -689,7 +702,7 @@ mod tests {
             }),
             ..request(PermissionPolicy::Ask)
         };
-        let args = build_args(&req);
+        let args = build_args(&req, None);
         let at = args.iter().position(|a| a == "--mcp-config").unwrap();
         let config: serde_json::Value = serde_json::from_str(&args[at + 1]).unwrap();
         assert_eq!(
@@ -705,8 +718,26 @@ mod tests {
     }
 
     #[test]
+    fn another_account_gets_the_shared_servers_beside_the_browser() {
+        let req = SpawnRequest {
+            browser_mcp: Some(crate::mcp::McpLaunch {
+                command: "/bin/bencode".into(),
+                args: vec![],
+            }),
+            ..request(PermissionPolicy::Ask)
+        };
+        let shared = std::path::Path::new("/profile/bencode-mcp.json");
+        let args = build_args(&req, Some(shared));
+        let at = args.iter().position(|a| a == "--mcp-config").unwrap();
+        assert_eq!(args[at + 1], "/profile/bencode-mcp.json");
+        assert!(args[at + 2].contains("bencode-browser"));
+        assert!(args[at + 3].starts_with("--"));
+        assert_eq!(args.iter().filter(|a| *a == "--mcp-config").count(), 1);
+    }
+
+    #[test]
     fn args_use_stream_json_protocol_and_map_policy() {
-        let ask = build_args(&request(PermissionPolicy::Ask));
+        let ask = build_args(&request(PermissionPolicy::Ask), None);
         assert!(
             ask.windows(2)
                 .any(|w| w == ["--input-format", "stream-json"])
@@ -724,7 +755,7 @@ mod tests {
 
         let mut no_hooks = request(PermissionPolicy::Ask);
         no_hooks.disable_hooks = true;
-        let no_hooks = build_args(&no_hooks);
+        let no_hooks = build_args(&no_hooks, None);
         assert!(
             no_hooks
                 .windows(2)
@@ -736,7 +767,7 @@ mod tests {
         tuned.settings = [("effort", "ultracode"), ("fast", "true"), ("context", "1m")]
             .map(|(k, v)| (k.to_string(), v.to_string()))
             .into();
-        let tuned_args = build_args(&tuned);
+        let tuned_args = build_args(&tuned, None);
         assert!(tuned_args.windows(2).any(|w| w == ["--effort", "xhigh"]));
         assert!(tuned_args.windows(2).any(|w| w == ["--model", "opus[1m]"]));
         assert!(
@@ -745,10 +776,10 @@ mod tests {
                 .any(|w| w == ["--settings", r#"{"fastMode":true,"ultracode":true}"#])
         );
         tuned.settings.insert("effort".into(), "ultrathink".into());
-        assert!(!build_args(&tuned).contains(&"--effort".to_string()));
+        assert!(!build_args(&tuned, None).contains(&"--effort".to_string()));
         assert_eq!(prompt_with_effort(&tuned), "Ultrathink:\nhi");
 
-        let auto = build_args(&request(PermissionPolicy::AutoApprove));
+        let auto = build_args(&request(PermissionPolicy::AutoApprove), None);
         assert!(
             auto.windows(2)
                 .any(|w| w == ["--permission-mode", "bypassPermissions"])
@@ -762,7 +793,7 @@ mod tests {
             ask.windows(2)
                 .any(|w| w == ["--permission-mode", "default"])
         );
-        let edits = build_args(&request(PermissionPolicy::AcceptEdits));
+        let edits = build_args(&request(PermissionPolicy::AcceptEdits), None);
         assert!(
             edits
                 .windows(2)
