@@ -17,8 +17,8 @@ use std::time::{Duration, Instant};
 
 use ely_gpui_component::theme::{ActiveTheme, IconSize, Mix};
 use gpui::{
-    AnyElement, App, Bounds, HighlightStyle, Hsla, IntoElement, ParentElement, PathBuilder, Pixels,
-    Point, Styled, StyledText, Window, canvas, div, point,
+    AnyElement, App, Bounds, DecorationRun, Hsla, IntoElement, ParentElement, PathBuilder, Pixels,
+    Point, Styled, StyledText, TextAlign, Window, canvas, div, point,
 };
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -175,6 +175,11 @@ pub fn shimmer(text: impl Into<gpui::SharedString>, cx: &App) -> AnyElement {
     crate::ui::marks::mark(move |cx| shimmer_now(text.clone(), cx), cx)
 }
 
+/// The text is laid out once in one (clear) colour and painted over with
+/// a colour per grapheme. Colouring it through text runs instead would
+/// shape each lit grapheme on its own (GPUI splits shaping where the
+/// colour changes), dropping the kerning between them: "5.5" spread
+/// apart as the band passed.
 fn shimmer_now(text: gpui::SharedString, cx: &App) -> AnyElement {
     let colors = &cx.theme().colors;
     let (dim, lit) = (colors.fg_subtle, colors.fg);
@@ -182,19 +187,55 @@ fn shimmer_now(text: gpui::SharedString, cx: &App) -> AnyElement {
         return div().text_color(dim).child(text).into_any_element();
     }
     let band = -0.3 + 1.6 * cycle(SHIMMER);
-    let runs = shimmer_runs(&text, band, |at| dim.mix(&lit, at));
+    let styled = StyledText::new(text);
+    let layout = styled.layout().clone();
+    let paint = move |bounds: Bounds<Pixels>, (), window: &mut Window, cx: &mut App| {
+        // One line: callers truncate, and the text never wraps.
+        let Some(line) = layout.line_layouts().into_iter().next() else {
+            return;
+        };
+        let shown = layout.text();
+        let runs: Vec<DecorationRun> = shimmer_runs(&shown, band, |at| dim.mix(&lit, at))
+            .into_iter()
+            .map(|(range, color)| DecorationRun {
+                len: range.len() as u32,
+                color,
+                background_color: None,
+                underline: None,
+                strikethrough: None,
+            })
+            .collect();
+        let painted = line.unwrapped_layout.paint(
+            bounds.origin,
+            layout.line_height(),
+            TextAlign::Left,
+            None,
+            &runs,
+            window,
+            cx,
+        );
+        if let Err(err) = painted {
+            log::debug!("shimmer paint failed: {err:#}");
+        }
+    };
     div()
-        .child(StyledText::new(text).with_highlights(runs))
+        .relative()
+        .whitespace_nowrap()
+        .text_color(gpui::transparent_black())
+        .child(styled)
+        .child(
+            canvas(|_, _, _| (), paint)
+                .absolute()
+                .top_0()
+                .left_0()
+                .size_full(),
+        )
         .into_any_element()
 }
 
 /// Each grapheme of `text` lit by how near it sits to `band` (0 at the
 /// first, 1 at the last).
-fn shimmer_runs(
-    text: &str,
-    band: f32,
-    ink: impl Fn(f32) -> Hsla,
-) -> Vec<(Range<usize>, HighlightStyle)> {
+fn shimmer_runs(text: &str, band: f32, ink: impl Fn(f32) -> Hsla) -> Vec<(Range<usize>, Hsla)> {
     let spans: Vec<Range<usize>> = text
         .grapheme_indices(true)
         .map(|(start, grapheme)| start..start + grapheme.len())
@@ -206,11 +247,7 @@ fn shimmer_runs(
         .map(|(ix, span)| {
             let x = ix as f32 / last;
             let lit = (1.0 - (x - band).abs() / 0.25).max(0.0);
-            let style = HighlightStyle {
-                color: Some(ink(lit)),
-                ..HighlightStyle::default()
-            };
-            (span, style)
+            (span, ink(lit))
         })
         .collect()
 }
@@ -337,7 +374,7 @@ mod tests {
     fn the_band_lights_the_graphemes_near_it() {
         // "ab👍" is three graphemes: the band on the middle one.
         let runs = shimmer_runs("ab👍", 0.5, |lit| gpui::hsla(0.0, 0.0, lit, 1.0));
-        let lit: Vec<f32> = runs.iter().map(|(_, s)| s.color.unwrap().l).collect();
+        let lit: Vec<f32> = runs.iter().map(|(_, color)| color.l).collect();
         assert_eq!(
             runs.iter().map(|(r, _)| r.clone()).collect::<Vec<_>>(),
             [0..1, 1..2, 2..6]
