@@ -6,6 +6,8 @@ tagging (`docs/releasing.md`).
 
 ## [0.1.26] - Unreleased
 
+- View › Swap Chat and File Pane (⌥⌘S) puts the file pane left of the
+  chat, or back to its right; the choice is kept.
 - A Backlog issue in the Inbox shows its fields under its actions and
   edits them in place: assignee (with Assign to me), priority,
   milestones, resolution, start and due dates, estimated and actual

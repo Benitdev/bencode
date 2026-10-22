@@ -114,6 +114,8 @@ pub struct AppSettings {
     pub diff_split: bool,
     /// MonoCode `monocode.fileViewMode`: markdown files open as source.
     pub file_source_view: bool,
+    /// The file pane sits left of the chat instead of right.
+    pub file_pane_left: bool,
     /// MonoCode `monocode.favoriteModels`: starred model keys.
     pub favorite_models: Vec<String>,
     /// MonoCode recent model choices, newest first (⌘. menu).
@@ -265,6 +267,7 @@ mod tests {
             changes_tree: true,
             diff_split: true,
             file_source_view: true,
+            file_pane_left: true,
             theme_hue: Some(210.0),
             theme_saturation: Some(12.0),
             theme_dark_lightness: Some(4.0),

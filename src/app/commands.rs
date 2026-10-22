@@ -24,6 +24,7 @@ actions!(
         ToggleSidebar,
         ToggleTerminal,
         ToggleMono,
+        SwapFilePaneSide,
         NewTerminal,
         OpenBrowser,
         SplitRight,
@@ -153,6 +154,7 @@ pub(crate) fn keymap() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-alt-right", FocusRight, None),
         KeyBinding::new("cmd-alt-up", FocusUp, None),
         KeyBinding::new("cmd-alt-down", FocusDown, None),
+        KeyBinding::new("cmd-alt-s", SwapFilePaneSide, None),
         KeyBinding::new("cmd-shift-]", NextTab, None),
         KeyBinding::new("cmd-shift-[", PreviousTab, None),
         // The same chords as the layout reports them with Shift held.
@@ -285,6 +287,7 @@ fn menus() -> Vec<Menu> {
             MenuItem::separator(),
             MenuItem::action("Split Pane Right", SplitRight),
             MenuItem::action("Split Pane Down", SplitDown),
+            MenuItem::action("Swap Chat and File Pane", SwapFilePaneSide),
             MenuItem::separator(),
             MenuItem::action("Zoom In", ZoomIn),
             MenuItem::action("Zoom Out", ZoomOut),
@@ -595,6 +598,7 @@ impl BenCodeApp {
             this.open_url_in_browser(&action.0, window, cx);
         }))
         .on_action(cx.listener(|this, _: &ToggleMono, _, cx| this.toggle_mono(cx)))
+        .on_action(cx.listener(|this, _: &SwapFilePaneSide, _, cx| this.swap_file_pane_side(cx)))
         .on_action(cx.listener(|this, _: &ToggleTerminal, _, cx| {
             this.set_terminal_open(!this.is_terminal_open(cx), cx)
         }))

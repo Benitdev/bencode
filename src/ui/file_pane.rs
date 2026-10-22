@@ -1,5 +1,6 @@
-//! The pane to the right of the chat (MonoCode's editor pane and its
-//! `SurfaceTabs`): open files, reviews and commits behind one tab strip.
+//! The pane beside the chat, right of it unless swapped (MonoCode's editor
+//! pane and its `SurfaceTabs`): open files, reviews and commits behind one
+//! tab strip.
 //! The chat stays beside it and takes the full width once it is empty.
 
 use ely_gpui_component::layout::SplitPane;
@@ -109,7 +110,8 @@ impl BenCodeApp {
         }
     }
 
-    /// The chat, with the file pane to its right while it has tabs.
+    /// The chat, with the file pane beside it (right, or left once swapped)
+    /// while it has tabs.
     pub(crate) fn render_workspace_split(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let chat = div()
             .size_full()
@@ -133,21 +135,36 @@ impl BenCodeApp {
                 StyleRefinement::default().size_full(),
                 cx,
             ));
-        SplitPane::new("workspace-file-split", Axis::Horizontal, min)
-            .sizes(&self.file_pane_shares)
+        // The shares stay [chat, pane] whichever side the pane is on.
+        let left = self.file_pane_left;
+        let [chat_share, pane_share] = self.file_pane_shares;
+        let sizes = if left {
+            [pane_share, chat_share]
+        } else {
+            [chat_share, pane_share]
+        };
+        let split = SplitPane::new("workspace-file-split", Axis::Horizontal, min)
+            .sizes(&sizes)
             .on_resize(move |shares, _window, cx| {
                 let landed = weak.update(cx, |this, _| {
-                    if let [chat, pane] = shares {
-                        this.file_pane_shares = [*chat, *pane];
+                    if let [first, second] = shares {
+                        this.file_pane_shares = if left {
+                            [*second, *first]
+                        } else {
+                            [*first, *second]
+                        };
                     }
                 });
                 if let Err(err) = landed {
                     log::debug!("file pane resize after app drop: {err:#}");
                 }
-            })
-            .pane(chat)
-            .pane(pane)
-            .into_any_element()
+            });
+        if left {
+            split.pane(pane).pane(chat)
+        } else {
+            split.pane(chat).pane(pane)
+        }
+        .into_any_element()
     }
 
     pub(crate) fn render_file_pane(&self, cx: &Context<Self>) -> impl IntoElement {
@@ -166,7 +183,13 @@ impl BenCodeApp {
             .min_w_0()
             .h_full()
             .bg(glass.fill(colors.bg))
-            .border_l_1()
+            .map(|el| {
+                if self.file_pane_left {
+                    el.border_r_1()
+                } else {
+                    el.border_l_1()
+                }
+            })
             .border_color(colors.border)
             .when(!self.file_pane.is_empty(), |el| {
                 el.child(self.render_pane_tabs(cx))

@@ -144,6 +144,7 @@ impl BenCodeApp {
         crate::github_accounts::set_choices(self.github.choices.clone());
         self.changes_ui.tree = saved.changes_tree;
         self.diff_split = saved.diff_split;
+        self.file_pane_left = saved.file_pane_left;
         self.editor.default_view_mode = if saved.file_source_view {
             crate::ui::editor_pane::FileViewMode::Source
         } else {
@@ -201,6 +202,7 @@ impl BenCodeApp {
             github_accounts: self.github.choices.clone(),
             changes_tree: self.changes_ui.tree,
             diff_split: self.diff_split,
+            file_pane_left: self.file_pane_left,
             file_source_view: self.editor.default_view_mode
                 == crate::ui::editor_pane::FileViewMode::Source,
             theme_hue: Some(self.appearance.tint.hue).filter(|v| *v != appearance::HUE_DEFAULT),
@@ -689,6 +691,13 @@ impl BenCodeApp {
         self.set_ui_scale(defaults.ui_scale, cx);
         self.appearance = defaults;
         self.apply_appearance_tokens(cx);
+    }
+
+    /// Moves the file pane to the other side of the chat; each keeps its width.
+    pub fn swap_file_pane_side(&mut self, cx: &mut Context<Self>) {
+        self.file_pane_left = !self.file_pane_left;
+        self.save_settings(cx);
+        cx.notify();
     }
 
     /// MonoCode Appearance › Translucency › "Main pane glass".

@@ -158,6 +158,8 @@ pub struct BenCodeApp {
     pub file_pane_focused: bool,
     /// The chat's and the file pane's shares of the width.
     pub file_pane_shares: [f32; 2],
+    /// The file pane sits left of the chat, saved in settings.
+    pub file_pane_left: bool,
     /// The in-app browser's tabs and the agents' way to them.
     pub browser: browser::BrowserState,
     /// `bencode app`: its socket and the credentials turns carry.
@@ -1306,6 +1308,7 @@ impl BenCodeApp {
             diff_split: false,
             file_pane_focused: false,
             file_pane_shares: [1.0, 1.0],
+            file_pane_left: false,
             browser,
             app_access,
             habits: Default::default(),
