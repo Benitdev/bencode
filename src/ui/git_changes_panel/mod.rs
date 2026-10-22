@@ -109,16 +109,20 @@ pub enum Side {
 
 /// The panel's state (MonoCode keeps most of it per mount, some per run).
 pub struct ChangesUi {
-    /// The shown project's action in flight.
+    /// The shown checkout's action in flight.
     pub busy: Option<Busy>,
-    /// Every project's action in flight, by `cwd`: one keeps running when
-    /// another project is shown, and `busy` follows the shown one.
+    /// The checkout the panel shows (`WorkspaceCache::checkout_key`),
+    /// which the maps below are keyed by.
+    pub(crate) shown_key: String,
+    /// Every checkout's action in flight: one keeps running when another
+    /// is shown, and `busy` follows the shown one.
     pub(crate) running: HashMap<String, Busy>,
-    /// A failure that landed while its project was not shown, shown when
-    /// that project is again.
+    /// A failure, or a success's status, that landed while its checkout
+    /// was not shown; shown when it is again.
     pub(crate) missed_errors: HashMap<String, GitError>,
-    /// The commit field's text of each project not shown, by `cwd`; an
-    /// action that ends there writes its message here.
+    pub(crate) missed_status: HashMap<String, &'static str>,
+    /// The commit field's text of each checkout not shown; an action that
+    /// ends there writes its message here.
     pub(crate) drafts: HashMap<String, String>,
     pub status: Option<String>,
     pub(crate) status_generation: u64,
@@ -141,7 +145,7 @@ pub struct ChangesUi {
     graph_drag: Option<(f32, f32)>,
     /// The panel's height as last laid out, to cap the graph.
     panel_height: Rc<Cell<f32>>,
-    /// ✨ writing a message, by `cwd`; a second press there cancels it.
+    /// ✨ writing a message, by checkout; a second press there cancels it.
     pub(crate) generate_cancel: HashMap<String, Arc<AtomicBool>>,
     pub pr: Option<BranchPr>,
     /// `cwd` + branch the pull request was read for.
@@ -195,8 +199,10 @@ impl Default for ChangesUi {
     fn default() -> Self {
         Self {
             busy: None,
+            shown_key: String::new(),
             running: HashMap::new(),
             missed_errors: HashMap::new(),
+            missed_status: HashMap::new(),
             drafts: HashMap::new(),
             status: None,
             status_generation: 0,

@@ -96,6 +96,28 @@ pub fn repo_name(cwd: &str) -> Option<String> {
         .or_else(|| folder(&top))
 }
 
+/// The top-level folder of `cwd`'s checkout, written the way `cwd` is
+/// (`remote://` paths included): `cwd` less git's `--show-prefix`. `None`
+/// outside a repository.
+pub fn checkout_root(cwd: &str) -> Option<String> {
+    let prefix = run_git_string(cwd, &["rev-parse", "--show-prefix"]).ok()?;
+    Some(strip_prefix_dirs(cwd, prefix.trim()))
+}
+
+/// `cwd` without its trailing `prefix` folders (`sub/dir/`).
+fn strip_prefix_dirs(cwd: &str, prefix: &str) -> String {
+    let cwd = cwd.trim_end_matches('/');
+    let prefix = prefix.trim_matches('/');
+    if prefix.is_empty() {
+        return cwd.to_string();
+    }
+    cwd.strip_suffix(prefix)
+        .and_then(|top| top.strip_suffix('/'))
+        .filter(|top| !top.is_empty())
+        .unwrap_or(cwd)
+        .to_string()
+}
+
 /// MonoCode `git_remote_name`: `origin` when there is one, else the first.
 pub fn remote_name(cwd: &str) -> Option<String> {
     pick_remote(&remote_names(cwd))
@@ -829,5 +851,20 @@ mod tests {
         assert_eq!(info.remote.as_deref(), Some("origin"));
         assert_eq!((info.ahead, info.behind, info.ahead_of_default), (0, 0, 0));
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn checkout_root_strips_the_prefix_folders() {
+        assert_eq!(strip_prefix_dirs("/repo", ""), "/repo");
+        assert_eq!(strip_prefix_dirs("/repo/", ""), "/repo");
+        assert_eq!(strip_prefix_dirs("/repo/sub", "sub/"), "/repo");
+        assert_eq!(strip_prefix_dirs("/repo/a/b/", "a/b/"), "/repo");
+        assert_eq!(
+            strip_prefix_dirs("remote://box/home/me/repo/sub", "sub/"),
+            "remote://box/home/me/repo"
+        );
+        // A prefix that is not `cwd`'s tail (a symlinked folder) keeps `cwd`.
+        assert_eq!(strip_prefix_dirs("/link", "real/"), "/link");
+        assert_eq!(strip_prefix_dirs("/xsub", "sub/"), "/xsub");
     }
 }

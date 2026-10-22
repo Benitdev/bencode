@@ -58,6 +58,29 @@ pub struct WorkspaceCache {
 }
 
 impl WorkspaceCache {
+    /// The checkout `cwd` is in, which git actions, their busy state and
+    /// the commit draft are kept by: two folders of one repository share
+    /// it, a worktree has its own. Before `cwd`'s snapshot knows it, the
+    /// nearest known checkout around `cwd`, else `cwd`.
+    pub fn checkout_key(&self, cwd: &str) -> String {
+        if let Some(root) = self.known_checkout(cwd) {
+            return root.to_string();
+        }
+        self.snapshots
+            .values()
+            .filter_map(|s| s.refs.root.as_deref())
+            .filter(|root| crate::app::is_path_in_project(cwd, root))
+            .max_by_key(|root| root.len())
+            .unwrap_or(cwd)
+            .to_string()
+    }
+
+    /// The checkout `cwd`'s own snapshot found it in; `None` until that
+    /// snapshot lands, or outside a repository.
+    pub fn known_checkout(&self, cwd: &str) -> Option<&str> {
+        self.snapshots.get(cwd)?.refs.root.as_deref()
+    }
+
     /// Uncommitted lines in `project` as of its last snapshot, so the rail
     /// can show stats for projects other than the open one.
     pub fn cached_diff_stats(&self, project: &str) -> Option<(usize, usize)> {
@@ -94,6 +117,8 @@ struct RefsState {
     branches: Vec<git::Branch>,
     worktrees: Vec<crate::git::Worktree>,
     repo: Option<String>,
+    /// `git::sync::checkout_root`: the checkout `cwd` is in.
+    root: Option<String>,
 }
 
 /// How much of the workspace a refresh reloads.
@@ -172,6 +197,7 @@ fn load_snapshot(cwd: &str, reuse: Option<(RefsState, u64)>) -> Snapshot {
             })
         });
         let repo = scope.spawn(|| git::sync::repo_name(cwd));
+        let root = scope.spawn(|| git::sync::checkout_root(cwd));
         let base = std::sync::Arc::new(joined(base, "remotes"));
         let sync = scope.spawn({
             let base = base.clone();
@@ -195,6 +221,7 @@ fn load_snapshot(cwd: &str, reuse: Option<(RefsState, u64)>) -> Snapshot {
                 branches: joined(branches, "branches"),
                 worktrees: joined(worktrees, "worktrees"),
                 repo: joined(repo, "repo name"),
+                root: joined(root, "checkout root"),
             },
         }
     })
@@ -311,24 +338,8 @@ impl BenCodeApp {
     /// Moving to another directory: its last snapshot if there is one,
     /// otherwise an empty workspace, never the previous directory's data.
     fn show_cached_snapshot(&mut self, cwd: &str, cx: &mut Context<Self>) {
-        // The commit field keeps a draft per project.
-        let left = self.workspace(cx).cwd.clone();
-        let draft = self.changes_ui.drafts.remove(cwd).unwrap_or_default();
-        let typed = self.git_commit_input.update(cx, |input, cx| {
-            let typed = input.text().to_string();
-            input.set_text(draft, cx);
-            typed
-        });
-        if !left.is_empty() && !typed.is_empty() {
-            self.changes_ui.drafts.insert(left, typed);
-        }
-        // Amending was the other project's HEAD.
-        self.changes_ui.amend = None;
-        // The panel shows this project's action in flight, if any.
-        self.changes_ui.busy = self.changes_ui.running.get(cwd).cloned();
-        let missed = self.changes_ui.missed_errors.remove(cwd);
         let snapshot = self.workspace_mut(cx, |cache| {
-            cache.git_error = missed;
+            cache.git_error = None;
             cache.snapshots.get(cwd).cloned().unwrap_or_default()
         });
         self.apply_snapshot(cwd.to_string(), snapshot, true, cx);
@@ -344,6 +355,8 @@ impl BenCodeApp {
         refs_changed: bool,
         cx: &mut Context<Self>,
     ) {
+        let key = self.workspace(cx).checkout_key(&cwd);
+        self.show_checkout(key, cx);
         self.git_status = snapshot.status;
         self.follow_checkout_branch(&cwd);
         self.file_tree.invalidate_tints();
@@ -374,6 +387,33 @@ impl BenCodeApp {
             cx.notify();
         });
         self.refresh_branch_pr(cx);
+    }
+
+    /// The Changes panel follows the checkout `key`: its commit draft, the
+    /// action in flight there, and what an action ended with while
+    /// another checkout was shown.
+    fn show_checkout(&mut self, key: String, cx: &mut Context<Self>) {
+        if key != self.changes_ui.shown_key {
+            let left = std::mem::replace(&mut self.changes_ui.shown_key, key.clone());
+            let draft = self.changes_ui.drafts.remove(&key).unwrap_or_default();
+            let typed = self.git_commit_input.read(cx).text().to_string();
+            if typed != draft {
+                self.git_commit_input
+                    .update(cx, |input, cx| input.set_text(draft, cx));
+            }
+            if !left.is_empty() && !typed.is_empty() {
+                self.changes_ui.drafts.insert(left, typed);
+            }
+            // Amending was the other checkout's HEAD.
+            self.changes_ui.amend = None;
+            if let Some(error) = self.changes_ui.missed_errors.remove(&key) {
+                self.workspace_state.as_mut(cx).git_error = Some(error);
+            }
+            if let Some(status) = self.changes_ui.missed_status.remove(&key) {
+                self.set_changes_status(status, cx);
+            }
+        }
+        self.changes_ui.busy = self.changes_ui.running.get(&key).cloned();
     }
 
     /// Polls git every `GIT_POLL_INTERVAL` and refreshes when the repository
