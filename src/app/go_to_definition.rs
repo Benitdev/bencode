@@ -5,7 +5,8 @@
 //! editor's toolbar. Nothing runs in the background between jumps.
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use bencode_core::definitions::{self, Definition};
@@ -30,6 +31,8 @@ pub struct DefinitionPicker {
 pub struct DefinitionState {
     /// The latest jump; an older answer is dropped.
     generation: u64,
+    /// Stops the latest jump's search once another starts.
+    cancel: Arc<AtomicBool>,
     /// The editor a ⌘-click is landing in: its caret's next move jumps.
     pub(crate) jump_on_click: Option<String>,
     pub(crate) picker: Option<DefinitionPicker>,
@@ -112,6 +115,10 @@ impl BenCodeApp {
         self.definition.generation += 1;
         self.definition.message = None;
         let generation = self.definition.generation;
+        // A search a newer jump replaced stops scanning the tree.
+        self.definition.cancel.store(true, Ordering::Relaxed);
+        let cancel = Arc::new(AtomicBool::new(false));
+        self.definition.cancel = cancel.clone();
         let Some(file) = self.editor.files.get(path) else {
             return;
         };
@@ -128,9 +135,9 @@ impl BenCodeApp {
         let (root, from) = search_root(&cwd, &file.handle.abs_path.to_string_lossy());
         let options = definitions::search_options(&name, &from);
         let search_in = PathBuf::from(&root);
-        let task = cx.background_executor().spawn(async move {
-            crate::project_search::search(&search_in, &options, &AtomicBool::new(false))
-        });
+        let task = cx
+            .background_executor()
+            .spawn(async move { crate::project_search::search(&search_in, &options, &cancel) });
         let at = path.to_string();
         cx.spawn_in(window, async move |this, cx| {
             let result = task.await;
