@@ -6,6 +6,7 @@
 //! none, as its lines no longer match.
 
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::Arc;
 
 use ely_gpui_component::editor::InlayHint;
@@ -69,11 +70,15 @@ impl LineBlame {
 /// The folder to run git in for an editor path, and the file's name
 /// there: a path on a machine stays one (`remote://…`).
 pub fn git_target(cwd: &str, path: &str) -> (String, String) {
-    let abs = resolve_path(cwd, path);
+    split_target(&resolve_path(cwd, path), cwd)
+}
+
+/// A file's folder and name; `fallback` when it has no folder.
+fn split_target(abs: &Path, fallback: &str) -> (String, String) {
     let dir = abs
         .parent()
         .map(|dir| dir.to_string_lossy().into_owned())
-        .unwrap_or_else(|| cwd.to_string());
+        .unwrap_or_else(|| fallback.to_string());
     let name = abs
         .file_name()
         .map(|name| name.to_string_lossy().into_owned())
@@ -102,6 +107,17 @@ fn line_end(text: &str, at: usize) -> usize {
 }
 
 impl BenCodeApp {
+    /// `git_target` of an editor path: an open file's own folder, which
+    /// stays the one it opened from when the workspace moves to another
+    /// project.
+    fn file_git_target(&self, path: &str, cx: &gpui::App) -> (String, String) {
+        let cwd = &self.workspace(cx).cwd;
+        match self.editor.files.get(path) {
+            Some(file) => split_target(&file.handle.abs_path, cwd),
+            None => git_target(cwd, path),
+        }
+    }
+
     /// The blame of `path`'s caret line, once read; none while it has
     /// unsaved edits.
     pub(crate) fn caret_blame(&self, path: &str, cx: &gpui::App) -> Option<LineBlame> {
@@ -121,7 +137,7 @@ impl BenCodeApp {
             return None;
         }
         let (commit, orig_line) = blame.line(line)?;
-        let (dir, _) = git_target(&self.workspace(cx).cwd, path);
+        let (dir, _) = self.file_git_target(path, cx);
         let repo = self.blame.repos.get(&dir);
         let cwd = repo.map_or(dir.clone(), |repo| repo.root.clone());
         let you = repo
@@ -215,7 +231,7 @@ impl BenCodeApp {
         self.blame
             .files
             .insert(path.to_string(), (hash, Load::Loading));
-        let (cwd, name) = git_target(&self.workspace(cx).cwd, path);
+        let (cwd, name) = self.file_git_target(path, cx);
         let need_repo = !self.blame.repos.contains_key(&cwd);
         let key = path.to_string();
         let task = cx.background_executor().spawn(async move {
@@ -308,7 +324,7 @@ impl BenCodeApp {
     /// Opens `path`'s File History tab (an editor path) and reads its
     /// commits.
     pub(crate) fn open_file_history(&mut self, path: &str, cx: &mut Context<Self>) {
-        let (cwd, name) = git_target(&self.workspace(cx).cwd, path);
+        let (cwd, name) = self.file_git_target(path, cx);
         self.open_pane_tab(
             PaneTab::FileHistory {
                 cwd: cwd.clone(),

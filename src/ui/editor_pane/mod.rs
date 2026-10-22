@@ -9,7 +9,7 @@ mod preview;
 mod view;
 
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use ely_gpui_component::editor::{CodeEditor, EditorEvent, LineNumbers};
@@ -29,6 +29,10 @@ pub use preview::FileViewMode;
 /// A live editor and the subscription that tracks its edits.
 pub struct EditorHandle {
     pub entity: Entity<CodeEditor>,
+    /// Where the file is, fixed when it opened: its tab keeps the path
+    /// relative to the project it opened in, which may no longer be the
+    /// workspace's.
+    pub abs_path: PathBuf,
     /// `content_hash` of the file as last read from or written to disk.
     pub disk_hash: u64,
     _changes: Subscription,
@@ -293,13 +297,14 @@ impl BenCodeApp {
             return;
         }
         let abs_path = resolve_path(&self.workspace(cx).cwd, &path);
+        let read_path = abs_path.clone();
         let task = cx
             .background_executor()
-            .spawn(async move { read_text_file(&abs_path, MAX_EDITOR_FILE_BYTES) });
+            .spawn(async move { read_text_file(&read_path, MAX_EDITOR_FILE_BYTES) });
         cx.spawn_in(window, async move |this, cx| {
             let result = task.await;
             let opened = this.update_in(cx, |this, window, cx| {
-                this.finish_open(path, result, window, cx);
+                this.finish_open(path, abs_path, result, window, cx);
             });
             if let Err(err) = opened {
                 log::warn!("editor closed before file finished loading: {err:#}");
@@ -312,6 +317,7 @@ impl BenCodeApp {
     fn finish_open(
         &mut self,
         path: String,
+        abs_path: PathBuf,
         result: Result<String, ReadError>,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -330,7 +336,7 @@ impl BenCodeApp {
             }
             Ok(text) => {
                 let lines = count_lines(&text);
-                let handle = self.build_editor(&path, &text, window, cx);
+                let handle = self.build_editor(&path, abs_path, &text, window, cx);
                 self.editor.files.insert(path.clone(), handle, lines);
                 if requested {
                     self.editor.files.activate(&path);
@@ -344,6 +350,7 @@ impl BenCodeApp {
     fn build_editor(
         &mut self,
         path: &str,
+        abs_path: PathBuf,
         text: &str,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -402,6 +409,7 @@ impl BenCodeApp {
         });
         EditorHandle {
             entity,
+            abs_path,
             disk_hash: disk_sync::content_hash(text),
             _changes: changes,
             _selection: selection,
@@ -459,10 +467,10 @@ impl BenCodeApp {
         }
         let text = file.handle.entity.read(cx).text().to_string();
         let known = file.handle.disk_hash;
+        let abs_path = file.handle.abs_path.clone();
         let Some(version) = self.editor.files.begin_save(&path) else {
             return;
         };
-        let abs_path = resolve_path(&self.workspace(cx).cwd, &path);
         let task = cx
             .background_executor()
             .spawn(async move { save_unless_changed(&abs_path, &text, known) });

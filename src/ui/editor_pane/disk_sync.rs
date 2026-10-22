@@ -11,7 +11,7 @@ use ely_gpui_component::feedback::Alert;
 use ely_gpui_component::primitives::Severity;
 use gpui::{Context, IntoElement, ParentElement, Styled, div};
 
-use super::files::{MAX_EDITOR_FILE_BYTES, count_lines, file_name, read_text_file, resolve_path};
+use super::files::{MAX_EDITOR_FILE_BYTES, count_lines, file_name, read_text_file};
 use crate::app::BenCodeApp;
 
 /// Fingerprint of file contents, to tell "changed on disk" apart.
@@ -29,8 +29,11 @@ impl BenCodeApp {
             .files
             .iter()
             .map(|f| {
-                let abs = resolve_path(&self.workspace(cx).cwd, &f.path);
-                (f.path.clone(), abs, f.handle.disk_hash)
+                (
+                    f.path.clone(),
+                    f.handle.abs_path.clone(),
+                    f.handle.disk_hash,
+                )
             })
             .collect();
         if files.is_empty() {
