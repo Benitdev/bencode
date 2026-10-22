@@ -34,6 +34,8 @@ pub struct BacklogState {
     /// What each project's issues can be set to, by project id.
     pub field_options: HashMap<String, Result<FieldOptions, String>>,
     field_options_loading: HashSet<String>,
+    /// The issue and hours the hours inputs were last given.
+    pub hours_shown: Option<(String, Option<f64>, Option<f64>)>,
     /// A fresh connection: its first list counts as read.
     pub seed_seen: bool,
     /// Bumped by connect and disconnect: older answers are dropped.

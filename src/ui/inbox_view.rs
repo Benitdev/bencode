@@ -869,6 +869,7 @@ impl BenCodeApp {
     }
 
     pub(crate) fn render_inbox_body(&mut self, cx: &mut Context<Self>) -> AnyElement {
+        self.sync_backlog_hours(cx);
         let colors = &cx.theme().colors;
         let width = self.inbox(cx).list_width;
         let resizing = self.inbox(cx).resizing.is_some();

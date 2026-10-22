@@ -219,6 +219,9 @@ pub struct BenCodeApp {
     pub inbox_state: Entity<crate::ui::inbox_view::InboxState>,
     pub inbox_search_input: Entity<TextInput>,
     pub inbox_comment_input: Entity<TextInput>,
+    /// A Backlog issue's estimated and actual hours, as typed.
+    pub backlog_estimate_input: Entity<TextInput>,
+    pub backlog_actual_input: Entity<TextInput>,
     /// Settings › Integrations: the Backlog connection and its form.
     pub backlog: backlog::BacklogState,
     /// Settings › Integrations: the `gh` accounts and each project's.
@@ -595,6 +598,15 @@ impl BenCodeApp {
         let branch_create_input = text_input(window, cx, "feature/my-branch");
         let inbox_search_input = text_input(window, cx, "Filter inbox");
         let inbox_comment_input = multiline_input(window, cx, "Leave a comment (⌘↩)", (2, 8));
+        let hours_input = |window: &mut Window, cx: &mut Context<Self>| {
+            cx.new(|cx| {
+                TextInput::new(window, cx)
+                    .placeholder("—")
+                    .filter(|ch| ch.is_ascii_digit() || matches!(ch, '.' | ','))
+            })
+        };
+        let backlog_estimate_input = hours_input(window, cx);
+        let backlog_actual_input = hours_input(window, cx);
         let backlog_space_input = text_input(window, cx, "yourspace.backlog.com");
         let backlog_key_input =
             cx.new(|cx| TextInput::new(window, cx).placeholder("API key").masked());
@@ -751,6 +763,22 @@ impl BenCodeApp {
                 |_: &mut Self, _, event: &InputEvent, cx| {
                     if *event == InputEvent::Changed {
                         cx.notify();
+                    }
+                },
+            ),
+            cx.subscribe(
+                &backlog_estimate_input,
+                |this: &mut Self, _, event: &InputEvent, cx| {
+                    if matches!(event, InputEvent::Submit | InputEvent::Blur) {
+                        this.commit_backlog_hours(cx);
+                    }
+                },
+            ),
+            cx.subscribe(
+                &backlog_actual_input,
+                |this: &mut Self, _, event: &InputEvent, cx| {
+                    if matches!(event, InputEvent::Submit | InputEvent::Blur) {
+                        this.commit_backlog_hours(cx);
                     }
                 },
             ),
@@ -1311,6 +1339,8 @@ impl BenCodeApp {
             inbox_state,
             inbox_search_input,
             inbox_comment_input,
+            backlog_estimate_input,
+            backlog_actual_input,
             backlog: Default::default(),
             github: Default::default(),
             backlog_space_input,

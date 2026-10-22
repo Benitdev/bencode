@@ -5,11 +5,11 @@
 //! on its way.
 
 use ely_gpui_component::buttons::{ButtonVariant, IconButton};
-use ely_gpui_component::forms::{Choice, DatePicker, MultiSelect, NumberInput, Select};
+use ely_gpui_component::forms::{Choice, DatePicker, Input, MultiSelect, Select, TextInput};
 use ely_gpui_component::primitives::IconName;
 use ely_gpui_component::theme::{ActiveTheme, ControlSize};
 use gpui::{
-    AnyElement, Context, IntoElement, ParentElement, SharedString, Styled, div, prelude::*,
+    AnyElement, Context, Entity, IntoElement, ParentElement, SharedString, Styled, div, prelude::*,
 };
 use jiff::civil::Date;
 
@@ -82,8 +82,7 @@ impl BenCodeApp {
             resolution,
             start_date,
             due_date,
-            estimated_hours,
-            actual_hours,
+            ..
         } = fields;
         let me = options.me;
         let mine = assignee.as_ref().is_some_and(|a| a.id == me);
@@ -184,28 +183,14 @@ impl BenCodeApp {
                 .flex()
                 .items_center()
                 .gap_1()
-                .child(self.hours(
-                    item,
-                    "backlog-estimate",
-                    estimated_hours,
-                    busy,
-                    Change::EstimatedHours,
-                    cx,
-                ))
+                .child(self.hours(&self.backlog_estimate_input))
                 .child(
                     div()
                         .text_size(Text::Sm.px())
                         .text_color(cx.theme().colors.fg.ink(Ink::Faint))
                         .child("/"),
                 )
-                .child(self.hours(
-                    item,
-                    "backlog-actual",
-                    actual_hours,
-                    busy,
-                    Change::ActualHours,
-                    cx,
-                )),
+                .child(self.hours(&self.backlog_actual_input)),
             cx,
         );
 
@@ -277,37 +262,90 @@ impl BenCodeApp {
         )
     }
 
-    /// Hours in a number field; blank while unset, committed on Enter or
-    /// blur. Zero clears, as Backlog shows no hours for it.
-    fn hours(
-        &self,
-        item: &WorkItem,
-        id: &'static str,
-        value: Option<f64>,
-        busy: bool,
-        make: fn(Option<f64>) -> Change,
-        cx: &Context<Self>,
-    ) -> impl IntoElement {
-        let key = item.key();
-        let input = NumberInput::new(id, value.unwrap_or_default())
-            .size(ControlSize::Sm)
-            .label(id)
-            .range(0.0, 9999.0)
-            .step(0.5)
-            .precision(2)
-            .on_commit(app_callback_with(cx, move |this, hours: f64, cx| {
-                if busy || Some(hours) == value || (hours == 0.0 && value.is_none()) {
-                    return;
-                }
-                let hours = (hours > 0.0).then_some(hours);
-                this.update_backlog_issue(&key, make(hours), cx)
-            }));
-        div().flex_1().min_w_0().child(if value.is_none() {
-            input.blank("—")
-        } else {
-            input
-        })
+    /// Hours as typed: plain text, sent on Enter or blur and only when it
+    /// changed (`commit_backlog_hours`), never per keystroke or step.
+    fn hours(&self, input: &Entity<TextInput>) -> impl IntoElement {
+        div()
+            .flex_1()
+            .min_w_0()
+            .child(Input::new(input).size(ControlSize::Sm))
     }
+
+    /// The selected issue's hours, and the inputs' text for them.
+    fn shown_hours(&self, cx: &gpui::App) -> Option<(String, Option<f64>, Option<f64>)> {
+        let key = self.inbox(cx).selected.clone()?;
+        let fields = (self.inbox(cx).details.get(&key))?
+            .as_ref()
+            .ok()?
+            .details
+            .backlog
+            .as_ref()?;
+        Some((key, fields.estimated_hours, fields.actual_hours))
+    }
+
+    /// Puts the selected issue's hours in the inputs when the issue or its
+    /// hours change; what is typed stays until then.
+    pub(crate) fn sync_backlog_hours(&mut self, cx: &mut Context<Self>) {
+        let shown = self.shown_hours(cx);
+        if shown == self.backlog.hours_shown {
+            return;
+        }
+        let (estimate, actual) = shown
+            .as_ref()
+            .map_or((None, None), |(_, estimate, actual)| (*estimate, *actual));
+        for (input, hours) in [
+            (&self.backlog_estimate_input, estimate),
+            (&self.backlog_actual_input, actual),
+        ] {
+            let text = hours.map(format_hours).unwrap_or_default();
+            if input.read(cx).text() != text {
+                input.update(cx, |input, cx| input.set_text(text, cx));
+            }
+        }
+        self.backlog.hours_shown = shown;
+    }
+
+    /// Enter or blur in an hours input: the one that changed is sent; an
+    /// unreadable number goes back to the issue's.
+    pub(crate) fn commit_backlog_hours(&mut self, cx: &mut Context<Self>) {
+        let Some((key, estimate, actual)) = self.shown_hours(cx) else {
+            return;
+        };
+        let typed = |input: &Entity<TextInput>| parse_hours(input.read(cx).text());
+        let change = match (
+            typed(&self.backlog_estimate_input),
+            typed(&self.backlog_actual_input),
+        ) {
+            (Some(typed), _) if typed != estimate => Some(Change::EstimatedHours(typed)),
+            (_, Some(typed)) if typed != actual => Some(Change::ActualHours(typed)),
+            (Some(_), Some(_)) => None,
+            _ => {
+                // Shows the issue's hours again.
+                self.backlog.hours_shown = None;
+                cx.notify();
+                None
+            }
+        };
+        if let Some(change) = change {
+            self.update_backlog_issue(&key, change, cx);
+        }
+    }
+}
+
+/// Hours as typed: empty is none, a comma reads as a point; `None` when
+/// it is no number of hours.
+fn parse_hours(text: &str) -> Option<Option<f64>> {
+    let text = text.trim().replace(',', ".");
+    if text.is_empty() {
+        return Some(None);
+    }
+    let hours: f64 = text.parse().ok()?;
+    (hours.is_finite() && hours >= 0.0).then(|| Some((hours * 100.0).round() / 100.0))
+}
+
+/// `1`, `1.5`, `0.25`: no trailing zeros.
+fn format_hours(hours: f64) -> String {
+    format!("{hours}")
 }
 
 /// A field: its name (and a shortcut) over its control.
@@ -356,4 +394,20 @@ fn action(
         .on_click(move |_, window, cx| on_click(window, cx))
         .child(label)
         .into_any_element()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hours_read_as_typed() {
+        assert_eq!(parse_hours(""), Some(None));
+        assert_eq!(parse_hours(" 1,5 "), Some(Some(1.5)));
+        assert_eq!(parse_hours("0.333"), Some(Some(0.33)));
+        assert_eq!(parse_hours("-1"), None);
+        assert_eq!(parse_hours("1.2.3"), None);
+        assert_eq!(format_hours(2.0), "2");
+        assert_eq!(format_hours(0.25), "0.25");
+    }
 }
