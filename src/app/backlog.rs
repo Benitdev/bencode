@@ -1,14 +1,14 @@
 //! The Backlog connection as the app holds it (Settings › Integrations and
 //! the Inbox): connect and disconnect, which projects the Inbox lists, the
-//! folder each Backlog project's threads start in, and an issue's status
-//! change. The API itself is `backlog.rs`.
+//! folder each Backlog project's threads start in, and changes to an
+//! issue's status and fields. The API itself is `backlog.rs`.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use gpui::Context;
 
 use crate::app::BenCodeApp;
-use crate::backlog::{self, Account, Project, Statuses};
+use crate::backlog::{self, Account, Change, FieldOptions, Project, Statuses};
 use crate::work_items::Provider;
 
 #[derive(Default)]
@@ -28,9 +28,12 @@ pub struct BacklogState {
     pub project_folders: BTreeMap<String, String>,
     /// Each project's workflow, as the last Inbox fetch found it.
     pub statuses: Statuses,
-    /// The issue (by Inbox key) whose status is being changed.
-    pub status_busy: Option<String>,
-    pub status_error: Option<String>,
+    /// The issue (by Inbox key) whose status or a field is being changed.
+    pub issue_busy: Option<String>,
+    pub issue_error: Option<String>,
+    /// What each project's issues can be set to, by project id.
+    pub field_options: HashMap<String, Result<FieldOptions, String>>,
+    field_options_loading: HashSet<String>,
     /// A fresh connection: its first list counts as read.
     pub seed_seen: bool,
     /// Bumped by connect and disconnect: older answers are dropped.
@@ -155,6 +158,7 @@ impl BenCodeApp {
                         app.backlog.account = None;
                         app.backlog.projects = None;
                         app.backlog.statuses.clear();
+                        app.backlog.field_options.clear();
                         app.refresh_inbox(cx);
                     }
                     Err(err) => {
@@ -231,10 +235,47 @@ impl BenCodeApp {
         }
     }
 
-    /// Moves the Inbox's Backlog issue `key` to `status_id`; the list and
-    /// the conversation (which records the change) follow.
-    pub fn set_backlog_status(&mut self, key: &str, status_id: i64, cx: &mut Context<Self>) {
-        if self.backlog.status_busy.is_some() {
+    /// Lists what `project_id`'s issues can be set to, once a session
+    /// (the members, milestones, priorities and resolutions).
+    pub fn load_backlog_field_options(&mut self, project_id: &str, cx: &mut Context<Self>) {
+        let ready = matches!(self.backlog.field_options.get(project_id), Some(Ok(_)));
+        if ready
+            || !self
+                .backlog
+                .field_options_loading
+                .insert(project_id.to_string())
+        {
+            return;
+        }
+        let generation = self.backlog.generation;
+        let project = project_id.to_string();
+        let task = cx.background_executor().spawn({
+            let project = project.clone();
+            async move { backlog::options(&project) }
+        });
+        cx.spawn(async move |this, cx| {
+            let result = task.await;
+            if let Err(err) = &result {
+                log::warn!("backlog: no field options for project {project}: {err}");
+            }
+            let landed = this.update(cx, |app, cx| {
+                app.backlog.field_options_loading.remove(&project);
+                if app.backlog.generation == generation {
+                    app.backlog.field_options.insert(project, result);
+                    cx.notify();
+                }
+            });
+            if let Err(err) = landed {
+                log::debug!("backlog field options after app drop: {err:#}");
+            }
+        })
+        .detach();
+    }
+
+    /// Applies `change` to the Inbox's Backlog issue `key`; the list, its
+    /// fields and the conversation (which records the change) follow.
+    pub fn update_backlog_issue(&mut self, key: &str, change: Change, cx: &mut Context<Self>) {
+        if self.backlog.issue_busy.is_some() {
             return;
         }
         let Some(item) = self
@@ -245,41 +286,40 @@ impl BenCodeApp {
         else {
             return;
         };
-        self.backlog.status_busy = Some(key.to_string());
-        self.backlog.status_error = None;
+        self.backlog.issue_busy = Some(key.to_string());
+        self.backlog.issue_error = None;
         let issue = item.identifier.clone();
         let task = cx
             .background_executor()
-            .spawn(async move { backlog::set_status(&issue, status_id) });
+            .spawn(async move { backlog::update(&issue, &change) });
         let key = key.to_string();
         cx.spawn(async move |this, cx| {
             let result = task.await;
             let landed = this.update(cx, |app, cx| {
-                app.backlog.status_busy = None;
+                app.backlog.issue_busy = None;
                 match result {
-                    Ok(next) => {
-                        if let Some(slot) = app
-                            .inbox_state
-                            .as_mut(cx)
-                            .items
-                            .iter_mut()
-                            .find(|i| i.key() == key)
-                        {
-                            *slot = next;
-                        }
+                    Ok((next, fields)) => {
+                        app.inbox_state.update(cx, |inbox, _| {
+                            if let Some(slot) = inbox.items.iter_mut().find(|i| i.key() == key) {
+                                *slot = next;
+                            }
+                            if let Some(Ok(shown)) = inbox.details.value.get_mut(&key) {
+                                shown.details.backlog = Some(fields);
+                            }
+                        });
                         // The user's own change is not news to them.
                         app.mark_inbox_key_seen(&key, cx);
                         app.load_inbox_thread(&key, true, cx);
                     }
                     Err(err) => {
-                        log::warn!("could not change the Backlog status: {err}");
-                        app.backlog.status_error = Some(err);
+                        log::warn!("could not change the Backlog issue: {err}");
+                        app.backlog.issue_error = Some(err);
                     }
                 }
                 cx.notify();
             });
             if let Err(err) = landed {
-                log::debug!("backlog status after app drop: {err:#}");
+                log::debug!("backlog change after app drop: {err:#}");
             }
         })
         .detach();

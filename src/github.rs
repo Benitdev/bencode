@@ -282,6 +282,7 @@ fn parse_details(json: &str) -> Result<Details, String> {
         base_ref: row.base_ref_name,
         head_ref: row.head_ref_name,
         review_decision: row.review_decision.unwrap_or_default(),
+        backlog: None,
     })
 }
 

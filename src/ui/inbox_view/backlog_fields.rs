@@ -1,0 +1,359 @@
+//! A Backlog issue's fields under its actions, each editable where it is
+//! shown (Backlog's issue page: assignee, priority, milestones,
+//! resolution, start and due dates, estimated and actual hours). Each
+//! change is one `PATCH` (`app/backlog.rs`); the fields wait while one is
+//! on its way.
+
+use ely_gpui_component::buttons::{ButtonVariant, IconButton};
+use ely_gpui_component::forms::{Choice, DatePicker, MultiSelect, NumberInput, Select};
+use ely_gpui_component::primitives::IconName;
+use ely_gpui_component::theme::{ActiveTheme, ControlSize};
+use gpui::{
+    AnyElement, Context, IntoElement, ParentElement, SharedString, Styled, div, prelude::*,
+};
+use jiff::civil::Date;
+
+use crate::app::BenCodeApp;
+use crate::backlog::{Change, FieldChoice, IssueFields};
+use crate::github::WorkItem;
+use crate::ui::app_callback::{app_callback, app_callback_with, on_value};
+use crate::ui::scale::px;
+use crate::ui::tokens::{Ink, Text, Tone as _};
+
+/// A field's width: two or three to a row in the detail's column.
+const FIELD_WIDTH: f32 = 208.0;
+/// The `Select` value that clears a field.
+const NONE: &str = "none";
+
+fn choices<'a>(named: impl IntoIterator<Item = &'a FieldChoice>) -> Vec<Choice> {
+    named
+        .into_iter()
+        .map(|n| Choice::new(n.id.to_string(), n.name.clone()))
+        .collect()
+}
+
+/// A `Select`'s change to the issue `key`, as `make` reads the value.
+fn change(
+    key: &str,
+    cx: &Context<BenCodeApp>,
+    make: fn(&str) -> Option<Change>,
+) -> impl Fn(&SharedString, &mut gpui::Window, &mut gpui::App) + 'static {
+    let key = key.to_string();
+    on_value(cx, move |this, value, cx| {
+        if let Some(change) = make(value) {
+            this.update_backlog_issue(&key, change, cx);
+        }
+    })
+}
+
+/// A picked choice's id; `NONE` is none.
+fn id_of(value: &str) -> Option<i64> {
+    value.parse().ok()
+}
+
+fn day(date: &Option<String>) -> Option<Date> {
+    Date::strptime("%Y-%m-%d", date.as_deref()?).ok()
+}
+
+impl BenCodeApp {
+    /// The fields, once the issue and its project's choices are loaded.
+    pub(super) fn render_backlog_fields(
+        &self,
+        item: &WorkItem,
+        cx: &Context<Self>,
+    ) -> Option<AnyElement> {
+        let key = item.key();
+        let fields = (self.inbox(cx).details.get(&key))?
+            .as_ref()
+            .ok()?
+            .details
+            .backlog
+            .clone()?;
+        let options = match self.backlog.field_options.get(&item.container_id) {
+            Some(Ok(options)) => Some(options.clone()),
+            _ => None,
+        };
+        let busy = self.backlog.issue_busy.is_some() || options.is_none();
+        let options = options.unwrap_or_default();
+        let IssueFields {
+            assignee,
+            priority,
+            milestones,
+            resolution,
+            start_date,
+            due_date,
+            estimated_hours,
+            actual_hours,
+        } = fields;
+        let me = options.me;
+        let mine = assignee.as_ref().is_some_and(|a| a.id == me);
+        let assign_key = item.key();
+        let assignee_field = field(
+            "Assignee",
+            (!mine && !busy && me != 0).then(|| {
+                action(
+                    "backlog-assign-me",
+                    "Assign to me",
+                    app_callback(cx, move |this, cx| {
+                        this.update_backlog_issue(&assign_key, Change::Assignee(Some(me)), cx)
+                    }),
+                    cx,
+                )
+            }),
+            Select::new(
+                "backlog-assignee",
+                std::iter::once(Choice::new(NONE, "Unassigned")).chain(options.users.iter().map(
+                    |user| {
+                        Choice::new(user.id.to_string(), user.name.clone())
+                            .avatar(user.name.clone())
+                    },
+                )),
+            )
+            .size(ControlSize::Sm)
+            .disabled(busy)
+            .selected(assignee.map_or(NONE.to_string(), |a| a.id.to_string()))
+            .on_change(change(&key, cx, |value| {
+                Some(Change::Assignee(id_of(value)))
+            })),
+            cx,
+        );
+
+        let priority_field = field(
+            "Priority",
+            None,
+            Select::new("backlog-priority", choices(&options.priorities))
+                .size(ControlSize::Sm)
+                .disabled(busy)
+                .placeholder(priority.as_ref().map_or("—".into(), |p| p.name.clone()))
+                .when_some(priority, |el, p| el.selected(p.id.to_string()))
+                .on_change(change(&key, cx, |value| id_of(value).map(Change::Priority))),
+            cx,
+        );
+
+        let milestone_key = item.key();
+        let entity = cx.entity().downgrade();
+        let milestone_field = field(
+            "Milestone",
+            None,
+            div().w_full().child(
+                MultiSelect::new("backlog-milestones", choices(&options.milestones))
+                    .size(ControlSize::Sm)
+                    .placeholder("No milestone")
+                    .selected(milestones.iter().map(|m| m.id.to_string()))
+                    .on_change(move |values, _, cx| {
+                        if busy {
+                            return;
+                        }
+                        let ids = values.iter().filter_map(|v| v.parse().ok()).collect();
+                        let key = milestone_key.clone();
+                        if let Err(err) = entity.update(cx, |this, cx| {
+                            this.update_backlog_issue(&key, Change::Milestones(ids), cx)
+                        }) {
+                            log::debug!("milestones after app drop: {err:#}");
+                        }
+                    }),
+            ),
+            cx,
+        );
+
+        let resolution_field = field(
+            "Resolution",
+            None,
+            Select::new(
+                "backlog-resolution",
+                std::iter::once(Choice::new(NONE, "No resolution"))
+                    .chain(choices(&options.resolutions)),
+            )
+            .size(ControlSize::Sm)
+            .disabled(busy)
+            .selected(resolution.map_or(NONE.to_string(), |r| r.id.to_string()))
+            .on_change(change(&key, cx, |value| {
+                Some(Change::Resolution(id_of(value)))
+            })),
+            cx,
+        );
+
+        let start_field =
+            self.date_field(item, "Start date", start_date, busy, Change::StartDate, cx);
+        let due_field = self.date_field(item, "Due date", due_date, busy, Change::DueDate, cx);
+
+        let hours_field = field(
+            "Estimate / Actual (h)",
+            None,
+            div()
+                .flex()
+                .items_center()
+                .gap_1()
+                .child(self.hours(
+                    item,
+                    "backlog-estimate",
+                    estimated_hours,
+                    busy,
+                    Change::EstimatedHours,
+                    cx,
+                ))
+                .child(
+                    div()
+                        .text_size(Text::Sm.px())
+                        .text_color(cx.theme().colors.fg.ink(Ink::Faint))
+                        .child("/"),
+                )
+                .child(self.hours(
+                    item,
+                    "backlog-actual",
+                    actual_hours,
+                    busy,
+                    Change::ActualHours,
+                    cx,
+                )),
+            cx,
+        );
+
+        Some(
+            div()
+                .flex()
+                .flex_wrap()
+                .gap_x_4()
+                .gap_y_3()
+                .pt_1()
+                .child(assignee_field)
+                .child(priority_field)
+                .child(milestone_field)
+                .child(resolution_field)
+                .child(start_field)
+                .child(due_field)
+                .child(hours_field)
+                .into_any_element(),
+        )
+    }
+
+    /// A day picker, with a clear button once a day is set.
+    fn date_field(
+        &self,
+        item: &WorkItem,
+        label: &'static str,
+        value: Option<String>,
+        busy: bool,
+        make: fn(Option<String>) -> Change,
+        cx: &Context<Self>,
+    ) -> impl IntoElement {
+        let id = SharedString::from(format!(
+            "backlog-{}",
+            label.to_lowercase().replace(' ', "-")
+        ));
+        let set = day(&value);
+        let (pick_key, clear_key) = (item.key(), item.key());
+        let clear = set.filter(|_| !busy).map(|_| {
+            IconButton::new(SharedString::from(format!("{id}-clear")), IconName::X)
+                .size(ControlSize::Sm)
+                .variant(ButtonVariant::Ghost)
+                .tooltip(format!("Clear the {}", label.to_lowercase()))
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.update_backlog_issue(&clear_key, make(None), cx)
+                }))
+        });
+        field(
+            label,
+            None,
+            div()
+                .flex()
+                .items_center()
+                .gap_1()
+                .child(
+                    div().flex_1().min_w_0().child(
+                        DatePicker::new(id.clone(), set)
+                            .size(ControlSize::Sm)
+                            .placeholder("Not set")
+                            .today(jiff::Zoned::now().date())
+                            .disabled(busy)
+                            .on_change(app_callback_with(cx, move |this, date: Date, cx| {
+                                let day = date.strftime("%Y-%m-%d").to_string();
+                                this.update_backlog_issue(&pick_key, make(Some(day)), cx)
+                            })),
+                    ),
+                )
+                .children(clear),
+            cx,
+        )
+    }
+
+    /// Hours in a number field; blank while unset, committed on Enter or
+    /// blur. Zero clears, as Backlog shows no hours for it.
+    fn hours(
+        &self,
+        item: &WorkItem,
+        id: &'static str,
+        value: Option<f64>,
+        busy: bool,
+        make: fn(Option<f64>) -> Change,
+        cx: &Context<Self>,
+    ) -> impl IntoElement {
+        let key = item.key();
+        let input = NumberInput::new(id, value.unwrap_or_default())
+            .size(ControlSize::Sm)
+            .label(id)
+            .range(0.0, 9999.0)
+            .step(0.5)
+            .precision(2)
+            .on_commit(app_callback_with(cx, move |this, hours: f64, cx| {
+                if busy || Some(hours) == value || (hours == 0.0 && value.is_none()) {
+                    return;
+                }
+                let hours = (hours > 0.0).then_some(hours);
+                this.update_backlog_issue(&key, make(hours), cx)
+            }));
+        div().flex_1().min_w_0().child(if value.is_none() {
+            input.blank("—")
+        } else {
+            input
+        })
+    }
+}
+
+/// A field: its name (and a shortcut) over its control.
+fn field(
+    label: &'static str,
+    shortcut: Option<AnyElement>,
+    control: impl IntoElement,
+    cx: &Context<BenCodeApp>,
+) -> impl IntoElement {
+    let fg = cx.theme().colors.fg;
+    div()
+        .w(px(FIELD_WIDTH))
+        .flex()
+        .flex_col()
+        .gap_1()
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .justify_between()
+                .gap_2()
+                .h(px(18.0))
+                .text_size(Text::Sm.px())
+                .text_color(fg.ink(Ink::Muted))
+                .child(label)
+                .children(shortcut),
+        )
+        .child(control)
+}
+
+/// A link-like shortcut beside a field's name, as Backlog's "Assign to
+/// myself".
+fn action(
+    id: &'static str,
+    label: &'static str,
+    on_click: impl Fn(&mut gpui::Window, &mut gpui::App) + 'static,
+    cx: &Context<BenCodeApp>,
+) -> AnyElement {
+    let colors = &cx.theme().colors;
+    let (link, fg) = (colors.link, colors.fg);
+    div()
+        .id(id)
+        .cursor_pointer()
+        .text_color(link)
+        .hover(move |s| s.text_color(fg))
+        .on_click(move |_, window, cx| on_click(window, cx))
+        .child(label)
+        .into_any_element()
+}

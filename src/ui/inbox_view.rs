@@ -8,6 +8,7 @@
 //! with the issue as a composer card (`features/inbox/ui/InboxView.tsx`,
 //! `App.tsx` `onStartInboxItem`).
 
+mod backlog_fields;
 mod blocks;
 mod checks;
 pub mod ci_repair;
@@ -663,7 +664,7 @@ impl BenCodeApp {
             self.inbox_state.as_mut(cx).comment_error = None;
             self.inbox_state.as_mut(cx).pr = PrActionUi::default();
             self.inbox_state.as_mut(cx).repair = None;
-            self.backlog.status_error = None;
+            self.backlog.issue_error = None;
         }
         self.inbox_state.as_mut(cx).selected = Some(key.clone());
         if let Some(item) = self.inbox(cx).item(&key).cloned()
@@ -752,6 +753,9 @@ impl BenCodeApp {
             cx,
         );
         self.load_inbox_thread(key, false, cx);
+        if item.provider == Provider::Backlog {
+            self.load_backlog_field_options(&item.container_id, cx);
+        }
         if item.kind == Kind::Pr {
             self.load_pr_checks(key, false, cx);
             if self.inbox(cx).pr_tab == PrTab::Files {

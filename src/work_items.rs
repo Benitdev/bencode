@@ -96,13 +96,15 @@ impl WorkItem {
 }
 
 /// MonoCode `GithubWorkItemDetails`.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Details {
     pub body: String,
     pub author: String,
     pub base_ref: String,
     pub head_ref: String,
     pub review_decision: String,
+    /// A Backlog issue's editable fields.
+    pub backlog: Option<crate::backlog::IssueFields>,
 }
 
 /// MonoCode `GitHubWorkItemComment`: a comment, a review, or a review

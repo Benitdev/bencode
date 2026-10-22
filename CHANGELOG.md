@@ -6,6 +6,10 @@ tagging (`docs/releasing.md`).
 
 ## [0.1.26] - Unreleased
 
+- A Backlog issue in the Inbox shows its fields under its actions and
+  edits them in place: assignee (with Assign to me), priority,
+  milestones, resolution, start and due dates, estimated and actual
+  hours.
 - A Backlog issue's pictures show in the Inbox, in its description and
   comments: the attached files they name are fetched once and kept.
 - Search (⌘K) no longer holds up typing in a long history: a query is

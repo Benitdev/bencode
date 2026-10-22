@@ -284,17 +284,19 @@ impl BenCodeApp {
             meta = meta.child(format!("opened {created}")).child(dot());
         }
         meta = meta.child(format!("updated {}", relative_time(&item.updated_at, now)));
-        if !item.assignees.is_empty() {
+        // A Backlog issue's fields show below, where they are edited.
+        let fields = loaded.and_then(|d| d.backlog.as_ref());
+        if fields.is_none() && !item.assignees.is_empty() {
             meta = meta
                 .child(dot())
                 .child(format!("assigned to {}", item.assignees.join(", ")));
         }
-        if !item.priority.is_empty() {
+        if fields.is_none() && !item.priority.is_empty() {
             meta = meta
                 .child(dot())
                 .child(format!("priority {}", item.priority.to_lowercase()));
         }
-        if !item.due_date.is_empty() {
+        if fields.is_none() && !item.due_date.is_empty() {
             meta = meta.child(dot()).child(format!("due {}", item.due_date));
         }
         let decision = loaded.map_or("", |d| d.review_decision.as_str());
@@ -326,6 +328,10 @@ impl BenCodeApp {
                 .child(branch_chip(&base, cx))
         });
 
+        // Milestones are among the fields.
+        let labels: Vec<_> = (item.labels.iter())
+            .filter(|l| fields.is_none_or(|f| !f.milestones.iter().any(|m| m.name == l.name)))
+            .collect();
         let start_key = key.clone();
         let actions =
             div()
@@ -373,21 +379,24 @@ impl BenCodeApp {
                     )
                     .child(meta)
                     .children(branches)
-                    .when(!item.labels.is_empty(), |el| {
+                    .when(!labels.is_empty(), |el| {
                         el.child(
                             div()
                                 .flex()
                                 .flex_wrap()
                                 .gap_1()
-                                .children(item.labels.iter().map(|l| label_chip(l, cx))),
+                                .children(labels.into_iter().map(|l| label_chip(l, cx))),
                         )
                     }),
             )
             .child(actions)
+            .when(item.provider == Provider::Backlog, |el| {
+                el.children(self.render_backlog_fields(item, cx))
+            })
             .children(self.render_pr_action_status(cx))
             .children(
                 self.backlog
-                    .status_error
+                    .issue_error
                     .clone()
                     .filter(|_| item.provider == Provider::Backlog)
                     .map(|err| {
@@ -559,18 +568,18 @@ impl BenCodeApp {
     ) -> Option<impl IntoElement + use<>> {
         let statuses = self.backlog.statuses.get(&item.container_id)?;
         let key = item.key();
-        let busy = self.backlog.status_busy.is_some();
+        let busy = self.backlog.issue_busy.is_some();
         let menu = statuses.iter().fold(Menu::new(), |menu, status| {
             let (key, id) = (key.clone(), status.id);
             menu.item(
                 MenuItem::check(status.name.clone(), status.name == item.state)
                     .disabled(busy)
                     .on_click(app_callback(cx, move |this, cx| {
-                        this.set_backlog_status(&key, id, cx)
+                        this.update_backlog_issue(&key, crate::backlog::Change::Status(id), cx)
                     })),
             )
         });
-        let label = if self.backlog.status_busy.as_deref() == Some(key.as_str()) {
+        let label = if self.backlog.issue_busy.as_deref() == Some(key.as_str()) {
             "Updating…".to_string()
         } else {
             item.state.clone()

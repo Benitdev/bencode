@@ -1,7 +1,8 @@
 //! Nulab Backlog as an Inbox source, over its REST API v2 with a personal
 //! API key (shaped after MonoCode's Jira source, `src-tauri/src/jira.rs`):
 //! the connection, the space's projects and statuses, open issues, one
-//! issue's description and comments, a new comment and a status change.
+//! issue's description and comments, a new comment, and changes to its
+//! status and fields (`fields`).
 //!
 //! The space and key live in `backlog-config.json` (owner-only) in
 //! BenCode's data folder. Every call here blocks on `curl`; use the
@@ -19,7 +20,10 @@ use serde_json::Value;
 use crate::rate_limits::http;
 use crate::work_items::{Comment, Details, Kind, Label, Provider, Thread, WorkItem};
 
+mod fields;
 mod images;
+
+pub use fields::{Change, FieldOptions, IssueFields, Named as FieldChoice, options, update};
 
 const CONFIG_FILE: &str = "backlog-config.json";
 const TIMEOUT: Duration = Duration::from_secs(20);
@@ -455,7 +459,15 @@ struct IssueRow {
     #[serde(default)]
     milestone: Vec<Named>,
     #[serde(default)]
+    resolution: Option<Named>,
+    #[serde(default)]
+    start_date: Option<String>,
+    #[serde(default)]
     due_date: Option<String>,
+    #[serde(default)]
+    estimated_hours: Option<f64>,
+    #[serde(default)]
+    actual_hours: Option<f64>,
     #[serde(default)]
     created_user: Option<Named>,
     #[serde(default)]
@@ -601,37 +613,23 @@ pub fn inbox(hidden: &[String], assigned_to_me: bool) -> Option<Listing> {
     Some(listing)
 }
 
-/// The issue's description and who opened it; the pictures it shows are
-/// saved and pointed at (`images`).
+/// The issue's description, who opened it and its fields; the pictures
+/// it shows are saved and pointed at (`images`).
 pub fn details(key: &str) -> Result<Details, String> {
     let config = require_config()?;
     let key = require_issue_key(key)?;
     let data = call(&config, None, &format!("/issues/{key}"), &[], &[])?;
     let row: IssueRow =
         serde_json::from_value(data).map_err(|_| "Backlog sent an unreadable issue".to_string())?;
-    let body = row.description.unwrap_or_default();
+    let body = row.description.clone().unwrap_or_default();
     Ok(Details {
         body: images::Pictures::new(&config, key).inline(&body),
-        author: row.created_user.map(|user| user.name).unwrap_or_default(),
+        author: (row.created_user.as_ref())
+            .map(|user| user.name.clone())
+            .unwrap_or_default(),
+        backlog: Some(fields::fields(&row)),
         ..Default::default()
     })
-}
-
-/// Moves the issue to `status_id` and returns it as it is now.
-pub fn set_status(key: &str, status_id: i64) -> Result<WorkItem, String> {
-    let config = require_config()?;
-    let key = require_issue_key(key)?;
-    let status = status_id.to_string();
-    let data = call(
-        &config,
-        Some("PATCH"),
-        &format!("/issues/{key}"),
-        &[],
-        &[("statusId", &status)],
-    )?;
-    let row: IssueRow =
-        serde_json::from_value(data).map_err(|_| "Backlog sent an unreadable issue".to_string())?;
-    Ok(work_item(&row, &config.space))
 }
 
 // ---------------------------------------------------------------------------
