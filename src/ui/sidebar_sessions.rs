@@ -385,7 +385,16 @@ impl BenCodeApp {
             self.sessions_ui.order = order;
         }
         if selection_changed {
-            self.redraw_regions(&[Region::Sidebar], cx);
+            // The Sidebar is drawing this: a redraw now would update it
+            // while it is being updated.
+            let app = cx.entity().downgrade();
+            cx.defer(move |cx| {
+                if let Err(err) = app.update(cx, |this, cx| {
+                    this.redraw_regions(&[Region::Sidebar], cx);
+                }) {
+                    log::debug!("selection pruned after app drop: {err:#}");
+                }
+            });
         }
         div()
             .flex()
