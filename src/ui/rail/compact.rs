@@ -14,7 +14,7 @@ use gpui::{
 };
 
 use super::widgets::project_mascot_icon;
-use super::{STROKE_OPACITY, TITLEBAR_HEIGHT, path_key};
+use super::{TITLEBAR_HEIGHT, path_key};
 use crate::app::{BenCodeApp, SidebarMode, Surface, same_project_path};
 use crate::ui::appearance::CollapsedRailMode;
 use crate::ui::scale::px;
@@ -160,7 +160,7 @@ impl BenCodeApp {
             .h_full()
             .bg(glass)
             .border_r_1()
-            .border_color(fg.opacity(STROKE_OPACITY))
+            .border_color(fg.fill(Fill::Line))
             // Without the title bar above, its height is held (and drags
             // the window): `h-10 w-full shrink-0 border-b border-stroke`.
             .when(!title_bar_above, |el| {
@@ -170,7 +170,7 @@ impl BenCodeApp {
                         .w_full()
                         .h(px(TITLEBAR_HEIGHT))
                         .border_b_1()
-                        .border_color(fg.opacity(STROKE_OPACITY)),
+                        .border_color(fg.fill(Fill::Line)),
                 )
             })
             .child(

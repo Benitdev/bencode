@@ -10,10 +10,10 @@ use gpui::{
 use super::PAGE_WIDTH;
 use super::templates::{AutomationTemplate, TemplateCategory, templates_for};
 use crate::app::BenCodeApp;
-use crate::ui::page_parts::tint;
+use crate::ui::region::Region;
 use crate::ui::scale::px;
 use crate::ui::scrollbar::Scrolled;
-use crate::ui::tokens::Text;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// MonoCode `min-h-37`.
 const CARD_MIN_HEIGHT: f32 = 148.0;
@@ -37,12 +37,8 @@ fn card_head(
                 .justify_center()
                 .size(px(36.0))
                 .rounded_full()
-                .bg(fg.opacity(tint::FILL))
-                .child(
-                    Icon::new(icon)
-                        .size(IconSize::Sm)
-                        .color(fg.opacity(tint::BODY)),
-                ),
+                .bg(fg.fill(Fill::Selected))
+                .child(Icon::new(icon).size(IconSize::Sm).color(fg.ink(Ink::Body))),
         )
         .child(
             div()
@@ -91,12 +87,12 @@ impl BenCodeApp {
                             el.bg(fg).text_color(colors.bg)
                         } else {
                             el.text_color(muted)
-                                .hover(|style| style.bg(fg.opacity(tint::FILL)).text_color(fg))
+                                .hover(|style| style.bg(fg.fill(Fill::Selected)).text_color(fg))
                         }
                     })
                     .on_click(cx.listener(move |this, _, _, cx| {
                         this.automations.category = option;
-                        cx.notify();
+                        this.redraw_regions(&[Region::Surface], cx);
                     }))
                     .child(option.label())
             });
@@ -107,12 +103,12 @@ impl BenCodeApp {
             .rounded(px(12.0))
             .border_1()
             .border_dashed()
-            .border_color(fg.opacity(tint::DASH))
+            .border_color(fg.fill(Fill::Bold))
             .cursor_pointer()
             .hover(|style| {
                 style
-                    .bg(fg.opacity(tint::HOVER))
-                    .border_color(fg.opacity(tint::DASH_HOVER))
+                    .bg(fg.fill(Fill::Hover))
+                    .border_color(fg.ink(Ink::Faint))
             })
             .on_click(cx.listener(|this, _, _, cx| this.begin_blank_automation(cx)))
             .child(card_head(
@@ -181,12 +177,12 @@ impl BenCodeApp {
             .p_4()
             .rounded(px(12.0))
             .border_1()
-            .border_color(fg.opacity(tint::STROKE))
+            .border_color(fg.fill(Fill::Strong))
             .cursor_pointer()
             .hover(|style| {
                 style
-                    .bg(fg.opacity(tint::HOVER))
-                    .border_color(fg.opacity(tint::STROKE_HOVER))
+                    .bg(fg.fill(Fill::Hover))
+                    .border_color(fg.fill(Fill::Bold))
             })
             .on_click(cx.listener(move |this, _, _, cx| this.begin_automation_from(template, cx)))
             .child(card_head(

@@ -68,7 +68,7 @@ impl BenCodeApp {
     fn on_disk_changed(&mut self, path: String, text: String, cx: &mut Context<Self>) {
         if self.editor.files.is_dirty(&path) {
             self.editor.disk_conflicts.insert(path, text);
-            cx.notify();
+            self.redraw_regions(&[crate::ui::region::Region::FilePane], cx);
         } else {
             self.reload_from_disk(&path, text, cx);
         }
@@ -92,7 +92,7 @@ impl BenCodeApp {
         // `set_text` dropped the blame note with the old text.
         self.forget_line_blame(path);
         self.track_line_blame(path, cx);
-        cx.notify();
+        self.redraw_regions(&[crate::ui::region::Region::FilePane], cx);
     }
 
     /// Keeps the unsaved edits; the next save may overwrite the disk.
@@ -102,7 +102,7 @@ impl BenCodeApp {
         {
             file.disk_hash = content_hash(&text);
         }
-        cx.notify();
+        self.redraw_regions(&[crate::ui::region::Region::FilePane], cx);
     }
 
     /// "File changed on disk" for the active file, with Reload / Keep mine.

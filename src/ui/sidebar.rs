@@ -10,12 +10,10 @@ use gpui::{
 
 use crate::app::{BenCodeApp, SidebarMode};
 use crate::ui::diff_counts::diff_counts;
+use crate::ui::region::Region;
 use crate::ui::scale::px;
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 use crate::ui::window_drag::claim_press;
-
-/// MonoCode `border-stroke`: content at 7%.
-pub const STROKE_OPACITY: f32 = 0.07;
 
 /// MonoCode's title bar and sidebar header are `h-10`.
 pub const TITLEBAR_HEIGHT: f32 = 40.0;
@@ -169,7 +167,7 @@ impl BenCodeApp {
             .h(px(36.0))
             .px_2()
             .border_b_1()
-            .border_color(colors.fg.opacity(STROKE_OPACITY))
+            .border_color(colors.fg.fill(Fill::Line))
             .children(tabs)
     }
 
@@ -188,7 +186,7 @@ impl BenCodeApp {
         let tab = order.remove(a);
         order.insert(b, tab);
         self.save_settings(cx);
-        cx.notify();
+        self.redraw_regions(&[Region::Sidebar, Region::CompactRail], cx);
     }
 
     fn mode_tab(
@@ -232,7 +230,7 @@ impl BenCodeApp {
             self.cancel_inline_rename(cx);
         }
         self.sidebar_mode = mode;
-        cx.notify();
+        self.redraw_regions(&[Region::Sidebar, Region::CompactRail], cx);
     }
 
     pub fn start_session_rename(&mut self, id: &str, cx: &mut Context<Self>) {
@@ -268,7 +266,7 @@ impl BenCodeApp {
         });
         let handle = gpui::Focusable::focus_handle(self.rename_input.read(cx), cx);
         crate::ui::composer::focus_later(handle, cx);
-        cx.notify();
+        self.redraw_regions(&[Region::Sidebar], cx);
     }
 
     pub fn inline_rename_active(&self) -> bool {
@@ -279,7 +277,7 @@ impl BenCodeApp {
         if self.sessions_ui.renaming_session.take().is_some()
             | self.sessions_ui.renaming_folder.take().is_some()
         {
-            cx.notify();
+            self.redraw_regions(&[Region::Sidebar], cx);
         }
     }
 
@@ -296,7 +294,7 @@ impl BenCodeApp {
                 self.rename_folder(&id, &text, cx);
             }
         }
-        cx.notify();
+        self.redraw_regions(&[Region::Sidebar], cx);
     }
 
     pub fn rename_session(&mut self, id: &str, title: &str, cx: &mut Context<Self>) {
@@ -322,7 +320,7 @@ impl BenCodeApp {
             .h_full()
             .bg(glass.body(colors.bg))
             .border_r_1()
-            .border_color(colors.fg.opacity(STROKE_OPACITY))
+            .border_color(colors.fg.fill(Fill::Line))
             .line_height(relative(1.5))
             .child(self.render_sidebar_header(cx))
             .child(self.render_sidebar_mode_tabs(cx))
@@ -404,7 +402,7 @@ impl BenCodeApp {
             .pl_3()
             .pr_1p5()
             .border_b_1()
-            .border_color(colors.fg.opacity(STROKE_OPACITY))
+            .border_color(colors.fg.fill(Fill::Line))
             // The icon rail (or the title bar above it) holds that space.
             .when(
                 !self.is_rail_open && !self.compact_rail_active() && cfg!(target_os = "macos"),

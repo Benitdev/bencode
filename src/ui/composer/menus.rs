@@ -188,7 +188,11 @@ impl BenCodeApp {
             "escape" => self.close_access_picker(cx),
             _ => return false,
         }
-        cx.notify();
+        if self.composer_menus.access_automation {
+            self.redraw_regions(&[crate::ui::region::Region::Surface], cx);
+        } else {
+            self.redraw_composer(cx);
+        }
         true
     }
 }
@@ -243,7 +247,7 @@ impl BenCodeApp {
                 Some(explorer_menu::first_item(&self.workspace_menu_entries(cx)));
             self.focus_composer_menu(cx);
         }
-        cx.notify();
+        self.redraw_composer(cx);
     }
 
     /// Row `index` picked: the project checkout, a new worktree, or that
@@ -293,7 +297,7 @@ impl BenCodeApp {
             }
             _ => return false,
         }
-        cx.notify();
+        self.redraw_composer(cx);
         true
     }
 
@@ -315,7 +319,7 @@ impl BenCodeApp {
                 let hovered = hover_app.update(cx, |this, cx| {
                     if this.composer_menus.workspace_menu != Some(ix) {
                         this.composer_menus.workspace_menu = Some(ix);
-                        cx.notify();
+                        this.redraw_composer(cx);
                     }
                 });
                 if let Err(err) = hovered {
@@ -330,7 +334,7 @@ impl BenCodeApp {
             move |_, cx| {
                 let closed = close_app.update(cx, |this, cx| {
                     this.composer_menus.workspace_menu = None;
-                    cx.notify();
+                    this.redraw_composer(cx);
                 });
                 if let Err(err) = closed {
                     log::debug!("workspace menu dismiss after app drop: {err:#}");

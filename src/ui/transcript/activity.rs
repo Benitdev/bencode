@@ -202,7 +202,13 @@ impl BenCodeApp {
                 if !folds.remove(&turn_id) {
                     folds.insert(turn_id.clone());
                 }
-                cx.notify();
+                this.redraw_regions(
+                    &[
+                        crate::ui::region::Region::Chat,
+                        crate::ui::region::Region::Mono,
+                    ],
+                    cx,
+                );
             }))
             .into_any_element()
     }
@@ -476,7 +482,13 @@ impl BenCodeApp {
                     .phase_open
                     .insert(phase_id.clone(), !open);
                 this.transcript_ui.reflow += 1;
-                cx.notify();
+                this.redraw_regions(
+                    &[
+                        crate::ui::region::Region::Chat,
+                        crate::ui::region::Region::Mono,
+                    ],
+                    cx,
+                );
             }))
             .child(icon_slot(icon, false, true, &group, cx))
             .child(label);
@@ -568,7 +580,13 @@ impl BenCodeApp {
                     this.expanded_reasoning.insert(key.clone());
                 }
                 this.transcript_ui.reflow += 1;
-                cx.notify();
+                this.redraw_regions(
+                    &[
+                        crate::ui::region::Region::Chat,
+                        crate::ui::region::Region::Mono,
+                    ],
+                    cx,
+                );
             }))
             .child(dim_label(summary, &group, cx));
         div()
@@ -632,7 +650,13 @@ impl BenCodeApp {
                             errors.insert(key.clone());
                         }
                         this.transcript_ui.reflow += 1;
-                        cx.notify();
+                        this.redraw_regions(
+                            &[
+                                crate::ui::region::Region::Chat,
+                                crate::ui::region::Region::Mono,
+                            ],
+                            cx,
+                        );
                     }))
             })
             .when_some(verb, |el, verb| {

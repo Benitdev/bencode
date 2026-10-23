@@ -23,11 +23,10 @@ use crate::harness::catalog;
 use crate::schedule;
 use crate::ui::app_callback::{app_callback, on_value};
 use crate::ui::mascot::pixel_sprite;
-use crate::ui::page_parts::tint;
 use crate::ui::provider_icon::HarnessIcon;
 use crate::ui::scale::px;
 use crate::ui::scrollbar::Scrolled;
-use crate::ui::tokens::Text;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// The automation's mark beside its name, as the New automation cards'.
 const ICON_TILE: f32 = 40.0;
@@ -37,7 +36,7 @@ fn divider(fg: Hsla) -> Div {
         .flex_none()
         .w(px(1.0))
         .h(px(12.0))
-        .bg(fg.opacity(tint::DIVIDER))
+        .bg(fg.fill(Fill::Bold))
 }
 
 impl BenCodeApp {
@@ -210,11 +209,11 @@ impl BenCodeApp {
                                     .justify_center()
                                     .size(px(ICON_TILE))
                                     .rounded(px(10.0))
-                                    .bg(fg.opacity(tint::FILL))
+                                    .bg(fg.fill(Fill::Selected))
                                     .child(
                                         Icon::new(IconName::Zap)
                                             .size(IconSize::Md)
-                                            .color(fg.opacity(tint::BODY)),
+                                            .color(fg.ink(Ink::Body)),
                                     ),
                             )
                             .child(
@@ -255,7 +254,7 @@ impl BenCodeApp {
         let icon = |name: IconName| {
             Icon::new(name)
                 .size(IconSize::Xs)
-                .color(fg.opacity(tint::QUIET))
+                .color(fg.ink(Ink::Muted))
                 .into_any_element()
         };
         let project = if draft.cwd.is_empty() {

@@ -647,6 +647,8 @@ impl BenCodeApp {
         let inbox_state = cx.new(|_| crate::ui::inbox_view::InboxState::default());
         let terminals_state = cx.new(|_| crate::ui::terminal_pane::TerminalDocks::default());
         let workspace_state = cx.new(|_| WorkspaceCache::default());
+        let transcript_selection =
+            cx.new(|_| crate::ui::transcript::selection::TranscriptSelection::default());
         let mut regions = crate::ui::region::Regions::default();
         regions.follow(
             &usage_data,
@@ -676,6 +678,7 @@ impl BenCodeApp {
                 Region::Mono,
             ],
         );
+        regions.follow(&transcript_selection, &[Region::Chat, Region::Mono]);
         let mut subscriptions = vec![
             cx.subscribe(
                 &prompt_input,
@@ -684,7 +687,7 @@ impl BenCodeApp {
                     InputEvent::Changed => this.on_prompt_changed(cx),
                     InputEvent::Focus | InputEvent::Blur => {
                         this.prompt_focused = *event == InputEvent::Focus;
-                        cx.notify();
+                        this.redraw_composer(cx);
                     }
                 },
             ),
@@ -709,7 +712,7 @@ impl BenCodeApp {
                 |this: &mut Self, input, event: &InputEvent, cx| {
                     if *event == InputEvent::Changed {
                         this.search_query = input.read(cx).text().to_string();
-                        cx.notify();
+                        this.redraw_regions(&[Region::Sidebar], cx);
                     }
                 },
             ),
@@ -764,9 +767,9 @@ impl BenCodeApp {
             cx.subscribe(&backlog_key_input, Self::on_backlog_form_input),
             cx.subscribe(
                 &inbox_search_input,
-                |_: &mut Self, _, event: &InputEvent, cx| {
+                |this: &mut Self, _, event: &InputEvent, cx| {
                     if *event == InputEvent::Changed {
-                        cx.notify();
+                        this.redraw_regions(&[Region::Surface], cx);
                     }
                 },
             ),
@@ -790,7 +793,7 @@ impl BenCodeApp {
                 &inbox_comment_input,
                 |this: &mut Self, _, event: &InputEvent, cx| match event {
                     InputEvent::Submit => this.post_inbox_comment(cx),
-                    InputEvent::Changed => cx.notify(),
+                    InputEvent::Changed => this.redraw_regions(&[Region::Surface], cx),
                     _ => {}
                 },
             ),
@@ -811,7 +814,7 @@ impl BenCodeApp {
                         if let Some(draft) = &mut this.skill_draft {
                             draft.error = None;
                         }
-                        cx.notify();
+                        this.redraw_composer(cx);
                     }
                     _ => {}
                 },
@@ -875,9 +878,9 @@ impl BenCodeApp {
             cx.subscribe(&notes.tag_input, Self::on_note_tag_input_event),
             cx.subscribe(
                 &notes.filter_input,
-                |_: &mut Self, _, event: &InputEvent, cx| {
+                |this: &mut Self, _, event: &InputEvent, cx| {
                     if *event == InputEvent::Changed {
-                        cx.notify();
+                        this.redraw_regions(&[Region::Surface], cx);
                     }
                 },
             ),
@@ -886,7 +889,7 @@ impl BenCodeApp {
                 |this: &mut Self, _, event: &InputEvent, cx| match event {
                     InputEvent::Submit => this.commit_staged_changes(cx),
                     // The Commit button follows the message.
-                    InputEvent::Changed => cx.notify(),
+                    InputEvent::Changed => this.redraw_regions(&[Region::Sidebar], cx),
                     _ => {}
                 },
             ),
@@ -908,7 +911,7 @@ impl BenCodeApp {
                 &account_editor_input,
                 |this: &mut Self, _, event: &InputEvent, cx| match event {
                     InputEvent::Submit => this.submit_account_editor(cx),
-                    InputEvent::Changed => cx.notify(),
+                    InputEvent::Changed => this.redraw_regions(&[Region::Surface], cx),
                     _ => {}
                 },
             ),
@@ -920,7 +923,7 @@ impl BenCodeApp {
                     InputEvent::Blur if this.tree_edit_active() => this.commit_tree_edit(true, cx),
                     InputEvent::Changed => {
                         this.file_tree.edit_state.submit_error = None;
-                        cx.notify();
+                        this.redraw_regions(&[Region::Sidebar], cx);
                     }
                     _ => {}
                 },
@@ -971,13 +974,6 @@ impl BenCodeApp {
         }));
         // Closing the window drops the app without quitting (macOS).
         subscriptions.push(cx.on_release(|this, _cx| this.interrupt_runs_for_quit()));
-
-        // The selection is not a view, so its notify alone leaves the cached
-        // app view as it was drawn: a drag would only show once something
-        // else redrew the app (a hover, the click that ends it).
-        let transcript_selection =
-            cx.new(|_| crate::ui::transcript::selection::TranscriptSelection::default());
-        subscriptions.push(cx.observe(&transcript_selection, |_, _, cx| cx.notify()));
 
         subscriptions.push(cx.intercept_keystrokes(move |event, window, cx| {
             // The text input binds these keys itself, deeper than any action

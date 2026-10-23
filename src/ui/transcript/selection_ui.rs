@@ -266,7 +266,7 @@ impl BenCodeApp {
                             return;
                         };
                         list.scroll_by(past / 2.0);
-                        if let Err(err) = app.update(cx, |_, cx| cx.notify()) {
+                        if let Err(err) = app.update(cx, |this, cx| this.redraw_thread(&sid, cx)) {
                             log::debug!("selection scroll after app drop: {err:#}");
                         }
                     });

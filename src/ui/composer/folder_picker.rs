@@ -43,7 +43,7 @@ impl BenCodeApp {
         self.folder_search_input
             .update(cx, |input, cx| input.set_text("", cx));
         focus_later(self.folder_search_input.read(cx).focus_handle(cx), cx);
-        cx.notify();
+        self.redraw_composer(cx);
     }
 
     pub fn close_folder_picker(&mut self, refocus: bool, cx: &mut Context<Self>) -> bool {
@@ -53,7 +53,7 @@ impl BenCodeApp {
         if refocus {
             self.refocus_prompt(cx);
         }
-        cx.notify();
+        self.redraw_composer(cx);
         true
     }
 
@@ -61,7 +61,7 @@ impl BenCodeApp {
         if let Some(active) = &mut self.folder_picker {
             *active = 0;
         }
-        cx.notify();
+        self.redraw_composer(cx);
     }
 
     /// ↑/↓ (wrapping, as MonoCode), Enter and Esc in the picker's search.
@@ -82,7 +82,7 @@ impl BenCodeApp {
         if let Some(active) = self.folder_picker {
             self.picker_scroll.scroll_to_item(active);
         }
-        cx.notify();
+        self.redraw_composer(cx);
         true
     }
 
@@ -153,7 +153,7 @@ impl BenCodeApp {
             .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                 if *hovered && this.folder_picker != Some(ix) {
                     this.folder_picker = Some(ix);
-                    cx.notify();
+                    this.redraw_composer(cx);
                 }
             }))
             .on_click(cx.listener(move |this, _, _, cx| this.pick_folder(ix, cx)));
@@ -166,7 +166,7 @@ impl BenCodeApp {
                     .child(
                         Icon::new(IconName::Folder)
                             .size(IconSize::Xs)
-                            .color(fg.opacity(if active { 0.7 } else { 0.45 })),
+                            .color(fg.ink(if active { Ink::Body } else { Ink::Muted })),
                     )
                     .child(
                         div()

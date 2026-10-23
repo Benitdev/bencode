@@ -15,10 +15,9 @@ use crate::app::BenCodeApp;
 use crate::app::notes::{MAX_NOTE_TAGS, NoteMode, note_project};
 use crate::db::Note;
 use crate::ui::app_callback::{app_callback, on_value};
-use crate::ui::page_parts::tint;
 use crate::ui::scale::px;
 use crate::ui::scrollbar::Scrolled;
-use crate::ui::tokens::{Ink, Text, Tone as _};
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 use crate::ui::transcript::markdown::AgentMarkdown;
 
 /// MonoCode `max-w-5xl`.
@@ -46,7 +45,7 @@ impl BenCodeApp {
                 .child(
                     div()
                         .text_size(Text::Md.px())
-                        .text_color(fg.opacity(tint::QUIET))
+                        .text_color(fg.ink(Ink::Muted))
                         .child("Select a note"),
                 )
                 .into_any_element();
@@ -81,7 +80,7 @@ impl BenCodeApp {
                 .into_any_element(),
             NoteMode::Preview if note.body.trim().is_empty() => div()
                 .text_size(Text::Md.px())
-                .text_color(fg.opacity(tint::QUIET))
+                .text_color(fg.ink(Ink::Muted))
                 .child("No description")
                 .into_any_element(),
             NoteMode::Preview => {
@@ -123,7 +122,7 @@ impl BenCodeApp {
             .drag_over::<gpui::ExternalPaths>(move |style, _, _, _| {
                 style
                     .border_color(accent.opacity(0.6))
-                    .bg(accent.opacity(tint::HOVER))
+                    .bg(accent.fill(Fill::Hover))
             })
             .on_drop(cx.listener(|this, paths: &gpui::ExternalPaths, _, cx| {
                 this.drop_note_images(paths.paths().to_vec(), cx);
@@ -140,7 +139,7 @@ impl BenCodeApp {
                         .rounded(px(8.0))
                         .bg(bg.opacity(0.8))
                         .text_size(Text::Base.px())
-                        .text_color(colors.fg.opacity(tint::BODY))
+                        .text_color(colors.fg.ink(Ink::Body))
                         .child("Adding images…"),
                 )
             })
@@ -267,9 +266,9 @@ impl BenCodeApp {
                 .pl_2()
                 .pr_1()
                 .rounded(px(6.0))
-                .bg(fg.opacity(tint::FILL))
+                .bg(fg.fill(Fill::Selected))
                 .text_size(Text::Sm.px())
-                .text_color(fg.opacity(tint::BODY))
+                .text_color(fg.ink(Ink::Body))
                 .child(div().min_w_0().truncate().child(format!("#{tag}")))
                 .child(
                     IconButton::new(("note-tag-remove", ix), IconName::X)
@@ -291,7 +290,7 @@ impl BenCodeApp {
                 div()
                     .mr(px(2.0))
                     .text_size(Text::Sm.px())
-                    .text_color(fg.opacity(tint::QUIET))
+                    .text_color(fg.ink(Ink::Muted))
                     .child("Tags"),
             )
             .children(chips)

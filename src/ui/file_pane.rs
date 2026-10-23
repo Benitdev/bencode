@@ -96,7 +96,7 @@ impl BenCodeApp {
         if self.file_pane.activate(key) {
             self.file_pane_focused = true;
             self.settle_file_pane(cx);
-            cx.notify();
+            self.redraw_regions(&[Region::FilePane, Region::Sidebar], cx);
         }
     }
 
@@ -252,14 +252,14 @@ impl BenCodeApp {
             )
             .on_keep(cx.listener(|this, key: &SharedString, _, cx| {
                 this.file_pane.keep(key);
-                cx.notify();
+                this.redraw_regions(&[Region::FilePane], cx);
             }))
             .on_reorder({
                 let weak = cx.entity().downgrade();
                 move |from, to, _window, cx| {
                     let moved = weak.update(cx, |this, cx| {
                         this.file_pane.reorder(from, to);
-                        cx.notify();
+                        this.redraw_regions(&[Region::FilePane], cx);
                     });
                     if let Err(err) = moved {
                         log::debug!("tab reorder after app drop: {err:#}");

@@ -584,14 +584,14 @@ impl BenCodeApp {
         {
             self.load_automation_runs(&id, cx);
         }
-        cx.notify();
+        self.redraw_regions(&[crate::ui::region::Region::Surface], cx);
     }
 
     /// A run history row: shows the thread the run happened in.
     pub(crate) fn open_automation_run(&mut self, session_id: &str, cx: &mut Context<Self>) {
         if !self.sessions.iter().any(|s| s.id == session_id) {
             self.automations.error = Some("The session of this run no longer exists.".to_string());
-            cx.notify();
+            self.redraw_regions(&[crate::ui::region::Region::Surface], cx);
             return;
         }
         self.close_surface(cx);
@@ -606,7 +606,7 @@ impl BenCodeApp {
         cx: &mut Context<Self>,
     ) {
         if matches!(event, InputEvent::Changed) {
-            cx.notify();
+            self.redraw_regions(&[crate::ui::region::Region::Surface], cx);
         }
     }
 }

@@ -241,7 +241,7 @@ impl BenCodeApp {
                     .child(
                         div()
                             .border_t_1()
-                            .border_color(fg.opacity(crate::ui::sidebar::STROKE_OPACITY))
+                            .border_color(fg.fill(Fill::Line))
                             .p_1()
                             // MonoCode: `border border-transparent px-2.5
                             // py-1.5 rounded-md`, `content/45` until hovered.

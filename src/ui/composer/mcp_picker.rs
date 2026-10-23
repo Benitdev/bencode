@@ -120,7 +120,7 @@ impl BenCodeApp {
         if refocus {
             self.refocus_prompt(cx);
         }
-        cx.notify();
+        self.redraw_composer(cx);
         true
     }
 
@@ -130,7 +130,7 @@ impl BenCodeApp {
         if let Some(picker) = &mut self.mcp_picker {
             picker.active = active;
         }
-        cx.notify();
+        self.redraw_composer(cx);
     }
 
     /// `/mcp` from the `/` list: the token leaves the prompt and the picker
@@ -154,7 +154,7 @@ impl BenCodeApp {
                     picker.active = active;
                 }
                 self.picker_scroll.scroll_to_item(active);
-                cx.notify();
+                self.redraw_composer(cx);
                 true
             }
             "enter" => {
@@ -202,7 +202,7 @@ impl BenCodeApp {
             });
         }
         self.refocus_prompt(cx);
-        cx.notify();
+        self.redraw_composer(cx);
     }
 
     /// The turn as sent: the "MCP context" line for the tags still in
@@ -317,7 +317,7 @@ impl BenCodeApp {
                         && picker.active != ix
                     {
                         picker.active = ix;
-                        cx.notify();
+                        this.redraw_composer(cx);
                     }
                 }))
                 .on_click(cx.listener(move |this, _, _, cx| this.pick_mcp_server(ix, cx)))

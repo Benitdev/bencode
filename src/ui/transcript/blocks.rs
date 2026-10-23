@@ -165,14 +165,26 @@ fn copy_button(
                 cx.background_executor().timer(COPIED_FOR).await;
                 let reset = this.update(cx, |this, cx| {
                     this.transcript_ui.copied.remove(&key);
-                    cx.notify();
+                    this.redraw_regions(
+                        &[
+                            crate::ui::region::Region::Chat,
+                            crate::ui::region::Region::Mono,
+                        ],
+                        cx,
+                    );
                 });
                 if let Err(err) = reset {
                     log::debug!("copy reset after app drop: {err:#}");
                 }
             })
             .detach();
-            cx.notify();
+            this.redraw_regions(
+                &[
+                    crate::ui::region::Region::Chat,
+                    crate::ui::region::Region::Mono,
+                ],
+                cx,
+            );
         }))
         .child(if copied {
             Icon::new(IconName::Check)
@@ -443,7 +455,13 @@ impl BenCodeApp {
                     set.insert(key.clone());
                 }
                 this.transcript_ui.reflow += 1;
-                cx.notify();
+                this.redraw_regions(
+                    &[
+                        crate::ui::region::Region::Chat,
+                        crate::ui::region::Region::Mono,
+                    ],
+                    cx,
+                );
             }))
             .child(if expanded { "Show less" } else { "Show more" })
     }

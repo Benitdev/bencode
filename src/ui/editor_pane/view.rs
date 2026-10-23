@@ -112,7 +112,7 @@ impl BenCodeApp {
         let message = format!("Unsaved changes to {} will be lost.", file_name(&path));
         let cancel = app_callback(cx, |this, cx| {
             this.editor.pending_close = None;
-            cx.notify();
+            this.redraw_regions(&[crate::ui::region::Region::FilePane], cx);
         });
         let discard = app_callback(cx, move |this, cx| this.close_editor_file(&path, cx));
         Some(

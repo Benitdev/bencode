@@ -14,9 +14,10 @@ use super::format::{run_at, run_duration};
 use crate::app::{BenCodeApp, now_ms};
 use crate::db::{AutomationRow, AutomationRunRow, RunStatus, RunTrigger};
 use crate::schedule::schedule_label;
-use crate::ui::page_parts::{panel, section_title, tint};
+use crate::ui::region::Region;
 use crate::ui::scale::px;
-use crate::ui::tokens::Text;
+use crate::ui::settings_parts::{panel, section_title};
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// MonoCode shows this many runs.
 const RUNS_SHOWN: usize = 100;
@@ -107,7 +108,7 @@ impl BenCodeApp {
                 .px_4()
                 .py_16()
                 .text_size(Text::Base.px())
-                .text_color(fg.opacity(tint::HINT))
+                .text_color(fg.ink(Ink::Muted))
                 .child("This automation has not run yet.")
         } else {
             let (tz, now) = (TimeZone::system(), now_ms());
@@ -122,7 +123,7 @@ impl BenCodeApp {
                     grid_row("Trigger", "Triggered", "Status", "Duration")
                         .h(px(40.0))
                         .text_size(Text::Sm.px())
-                        .text_color(fg.opacity(tint::HINT)),
+                        .text_color(fg.ink(Ink::Muted)),
                 )
                 .children(rows)
         };
@@ -162,7 +163,7 @@ impl BenCodeApp {
             .child(
                 Icon::new(IconName::Clock)
                     .size(IconSize::Sm)
-                    .color(fg.opacity(tint::HINT)),
+                    .color(fg.ink(Ink::Muted)),
             )
             .child(div().min_w_0().truncate().child(trigger_label(run, draft)));
         let pill = div()
@@ -171,7 +172,7 @@ impl BenCodeApp {
             .h(px(20.0))
             .px_2()
             .rounded_full()
-            .bg(tone.opacity(tint::PILL))
+            .bg(tone.fill(Fill::Strong))
             .text_size(Text::Sm.px())
             .font_weight(FontWeight::MEDIUM)
             .text_color(tone)
@@ -187,11 +188,11 @@ impl BenCodeApp {
         div()
             .id(("automation-run", ix))
             .border_t_1()
-            .border_color(fg.opacity(tint::RULE))
+            .border_color(fg.fill(Fill::Selected))
             .tooltip(Tooltip::text(tip))
             .when_some(session, |el, session| {
                 el.cursor_pointer()
-                    .hover(|style| style.bg(fg.opacity(tint::HOVER)))
+                    .hover(|style| style.bg(fg.fill(Fill::Hover)))
                     .on_click(
                         cx.listener(move |this, _, _, cx| this.open_automation_run(&session, cx)),
                     )
@@ -199,10 +200,10 @@ impl BenCodeApp {
             .child(
                 grid_row(
                     trigger,
-                    div().text_color(fg.opacity(tint::BODY)).child(triggered),
+                    div().text_color(fg.ink(Ink::Body)).child(triggered),
                     pill,
                     div()
-                        .text_color(fg.opacity(tint::SOFT))
+                        .text_color(fg.ink(Ink::Secondary))
                         .child(run_duration(run, now)),
                 )
                 .h(px(44.0))
@@ -225,8 +226,8 @@ impl BenCodeApp {
                 .py_2()
                 .rounded(px(8.0))
                 .border_1()
-                .border_color(danger.opacity(tint::ALERT_STROKE))
-                .bg(danger.opacity(tint::FILL))
+                .border_color(danger.fill(Fill::Bold))
+                .bg(danger.fill(Fill::Selected))
                 .text_size(Text::Base.px())
                 .text_color(danger)
                 .child(
@@ -242,7 +243,7 @@ impl BenCodeApp {
                         .tooltip("Dismiss")
                         .on_click(cx.listener(|this, _, _, cx| {
                             this.automations.error = None;
-                            cx.notify();
+                            this.redraw_regions(&[Region::Surface], cx);
                         })),
                 ),
         )

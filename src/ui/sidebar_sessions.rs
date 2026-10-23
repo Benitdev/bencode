@@ -169,7 +169,7 @@ impl BenCodeApp {
             map.insert(project, true);
         }
         self.save_settings(cx);
-        cx.notify();
+        self.redraw_regions(&[Region::Sidebar], cx);
     }
 
     pub(crate) fn toggle_pinned_group(&mut self, cx: &mut Context<Self>) {
@@ -181,7 +181,7 @@ impl BenCodeApp {
             self.sessions_ui.pinned_collapsed.remove(&project);
         }
         self.save_settings(cx);
-        cx.notify();
+        self.redraw_regions(&[Region::Sidebar], cx);
     }
 
     /// The project's threads that are listed at all: sent at least once
@@ -330,7 +330,9 @@ impl BenCodeApp {
                                     if moved {
                                         let app = app.clone();
                                         cx.defer(move |cx| {
-                                            if let Err(err) = app.update(cx, |_, cx| cx.notify()) {
+                                            if let Err(err) = app.update(cx, |this, cx| {
+                                                this.redraw_regions(&[Region::Sidebar], cx);
+                                            }) {
                                                 log::debug!("row measured after app drop: {err:#}");
                                             }
                                         });
@@ -383,7 +385,7 @@ impl BenCodeApp {
             self.sessions_ui.order = order;
         }
         if selection_changed {
-            cx.notify();
+            self.redraw_regions(&[Region::Sidebar], cx);
         }
         div()
             .flex()
@@ -494,7 +496,7 @@ impl BenCodeApp {
             .h(px(36.0))
             .px_2()
             .border_b_1()
-            .border_color(fg.opacity(crate::ui::sidebar::STROKE_OPACITY))
+            .border_color(fg.fill(Fill::Line))
             .child(
                 div()
                     .relative()
@@ -660,10 +662,10 @@ impl BenCodeApp {
         let current = self.sessions_ui.drop.as_ref();
         if over && current != Some(&target) {
             self.sessions_ui.drop = Some(target);
-            cx.notify();
+            self.redraw_regions(&[Region::Sidebar], cx);
         } else if !over && current == Some(&target) {
             self.sessions_ui.drop = None;
-            cx.notify();
+            self.redraw_regions(&[Region::Sidebar], cx);
         }
     }
 
@@ -676,7 +678,7 @@ impl BenCodeApp {
         // MonoCode keeps reminder threads out of folder drops.
         let reminded = |id: &str| self.reminders.iter().any(|r| r.session_id == id);
         if reminded(dragged) || matches!(&target, ListDrop::Session(other) if reminded(other)) {
-            cx.notify();
+            self.redraw_regions(&[Region::Sidebar], cx);
             return;
         }
         let folders = self.project_folders().to_vec();
@@ -698,7 +700,7 @@ impl BenCodeApp {
             }
             ListDrop::Session(_) => {}
         }
-        cx.notify();
+        self.redraw_regions(&[Region::Sidebar], cx);
     }
 }
 

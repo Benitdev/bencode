@@ -75,7 +75,7 @@ impl BenCodeApp {
         use ely_gpui_component::forms::InputEvent;
         match event {
             InputEvent::Submit => self.connect_backlog(cx),
-            InputEvent::Changed => cx.notify(),
+            InputEvent::Changed => self.redraw_regions(&[crate::ui::region::Region::Surface], cx),
             _ => {}
         }
     }

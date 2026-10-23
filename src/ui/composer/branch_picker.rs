@@ -163,14 +163,14 @@ impl BenCodeApp {
             gpui::Focusable::focus_handle(self.branch_search_input.read(cx), cx),
             cx,
         );
-        cx.notify();
+        self.redraw_composer(cx);
     }
 
     /// The search changed: back to the top, the error cleared.
     pub fn on_branch_query_changed(&mut self, cx: &mut Context<Self>) {
         self.branch_picker.active = 0;
         self.branch_picker.error = None;
-        cx.notify();
+        self.redraw_composer(cx);
     }
 
     /// Closes the popover; with `refocus` the prompt takes the keyboard.
@@ -181,7 +181,7 @@ impl BenCodeApp {
         if refocus {
             self.refocus_prompt(cx);
         }
-        cx.notify();
+        self.redraw_composer(cx);
     }
 
     /// ↑/↓, Enter and Esc in the popover's search.
@@ -210,7 +210,7 @@ impl BenCodeApp {
             _ => return false,
         }
         self.picker_scroll.scroll_to_item(self.branch_picker.active);
-        cx.notify();
+        self.redraw_composer(cx);
         true
     }
 
@@ -265,7 +265,7 @@ impl BenCodeApp {
                     gpui::Focusable::focus_handle(self.branch_search_input.read(cx), cx),
                     cx,
                 );
-                cx.notify();
+                self.redraw_composer(cx);
             }
         }
         true
@@ -352,7 +352,7 @@ impl BenCodeApp {
                         .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                             if *hovered && this.branch_picker.active != ix {
                                 this.branch_picker.active = ix;
-                                cx.notify();
+                                this.redraw_composer(cx);
                             }
                         }))
                         .on_click(cx.listener(move |this, _, _, cx| {

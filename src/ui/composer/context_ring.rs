@@ -129,7 +129,7 @@ impl BenCodeApp {
                     let pin = !this.composer_menus.context_pinned;
                     this.close_composer_popovers(cx);
                     this.composer_menus.context_pinned = pin;
-                    cx.notify();
+                    this.redraw_composer(cx);
                 }))
             })
             .child(context_ring(share, cx));

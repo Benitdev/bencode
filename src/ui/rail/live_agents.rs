@@ -8,7 +8,7 @@ use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, App, Context, FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement,
-    SharedString, StatefulInteractiveElement, Styled, div, prelude::*, rgb,
+    SharedString, StatefulInteractiveElement, Styled, div, prelude::*,
 };
 
 use super::project_name;
@@ -16,10 +16,10 @@ use super::widgets::mascot_icon;
 use crate::app::BenCodeApp;
 use crate::app::live_agents::{LiveAgent, format_live_elapsed};
 use crate::ui::provider_icon::HarnessIcon;
+use crate::ui::region::Region;
 use crate::ui::scale::px;
 use crate::ui::spinner::{self, terminal_spinner};
-use crate::ui::tokens::{AMBER_400, EMERALD_400};
-use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
+use crate::ui::tokens::{Fill, Ink, Status, Text, Tone as _};
 
 /// MonoCode `LIVE_AGENT_MIN` / `LIVE_AGENT_CAP`.
 const LIVE_AGENT_MIN: usize = 2;
@@ -117,7 +117,7 @@ impl BenCodeApp {
                 .hover(move |s| s.bg(fg.fill(Fill::Selected)).text_color(fg))
                 .on_click(cx.listener(|this, _, _, cx| {
                     this.live_agents_ui.expanded = !this.live_agents_ui.expanded;
-                    cx.notify();
+                    this.redraw_regions(&[Region::Rail, Region::Sidebar], cx);
                 }))
                 .child(
                     Icon::new(if expanded {
@@ -191,9 +191,9 @@ impl BenCodeApp {
         .join("\n");
         let id = SharedString::from(format!("live-agent-{}", agent.id));
         let status: Hsla = if agent.needs_approval {
-            rgb(AMBER_400).into()
+            Status::Attention.color(fg)
         } else if agent.done {
-            rgb(EMERALD_400).into()
+            Status::Done.color(fg)
         } else {
             fg.ink(Ink::Secondary)
         };

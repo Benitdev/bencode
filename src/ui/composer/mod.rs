@@ -1591,7 +1591,11 @@ impl BenCodeApp {
                     .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                         if *hovered && this.composer_menus.access_index != ix {
                             this.composer_menus.access_index = ix;
-                            cx.notify();
+                            if this.composer_menus.access_automation {
+                                this.redraw_regions(&[crate::ui::region::Region::Surface], cx);
+                            } else {
+                                this.redraw_composer(cx);
+                            }
                         }
                     }))
                     .on_click(cx.listener(move |this, _, _, cx| this.pick_access(mode, cx)))

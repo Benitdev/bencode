@@ -712,13 +712,23 @@ impl BenCodeApp {
                         doc.status = DocStatus::Failed(err);
                     }
                 }
-                cx.notify();
+                app.redraw_diff_doc(&key, cx);
             });
             if let Err(err) = landed {
                 log::debug!("diff loaded after app drop: {err:#}");
             }
         })
         .detach();
+    }
+
+    fn redraw_diff_doc(&self, key: &str, cx: &mut gpui::App) {
+        use crate::ui::region::Region;
+        let region = if key.starts_with(PR_DOC_PREFIX) {
+            Region::Surface
+        } else {
+            Region::FilePane
+        };
+        self.redraw_regions(&[region], cx);
     }
 
     /// Opens pull request `item`'s review for the Inbox, reading it the
@@ -767,7 +777,7 @@ impl BenCodeApp {
     fn with_doc(&mut self, key: &str, cx: &mut Context<Self>, f: impl FnOnce(&mut DiffDoc)) {
         if let Some(doc) = self.diff_docs.get_mut(key) {
             f(doc);
-            cx.notify();
+            self.redraw_diff_doc(key, cx);
         }
     }
 
@@ -859,7 +869,7 @@ impl BenCodeApp {
         let after = (before + by).clamp(Pixels::ZERO, reach);
         if after != before {
             doc.side_scroll.insert(id, after);
-            cx.notify();
+            self.redraw_diff_doc(key, cx);
         }
     }
 

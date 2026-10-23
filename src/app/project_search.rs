@@ -166,7 +166,7 @@ impl BenCodeApp {
             state.error = None;
             state.result = SearchResult::default();
             state.searched = options;
-            cx.notify();
+            self.redraw_regions(&[crate::ui::region::Region::Sidebar], cx);
             return;
         }
         let generation = state.generation;
@@ -180,7 +180,7 @@ impl BenCodeApp {
                 if current {
                     this.project_search.loading = true;
                     this.project_search.error = None;
-                    cx.notify();
+                    this.redraw_regions(&[crate::ui::region::Region::Sidebar], cx);
                 }
                 current
             });
@@ -212,14 +212,14 @@ impl BenCodeApp {
                         state.result = SearchResult::default();
                     }
                 }
-                cx.notify();
+                this.redraw_regions(&[crate::ui::region::Region::Sidebar], cx);
             });
             if let Err(err) = landed {
                 log::debug!("search in files after app drop: {err:#}");
             }
         })
         .detach();
-        cx.notify();
+        self.redraw_regions(&[crate::ui::region::Region::Sidebar], cx);
     }
 
     /// Opens a result in the editor with its match selected.

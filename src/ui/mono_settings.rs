@@ -32,6 +32,7 @@ use crate::monos::{MONO_COLOR_COUNT, MONO_COLOR_LABELS, Mono, mono_palette_color
 use crate::ui::app_callback::app_callback;
 use crate::ui::mascot::{MASCOT_NAMES, MascotLook, mascot_for, pixel_mascot};
 use crate::ui::scale::px;
+use crate::ui::settings_parts::{SettingsGroup, SettingsRow};
 use crate::ui::sidebar_popovers::pretty_path;
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
@@ -40,8 +41,8 @@ const DIALOG_WIDTH: f32 = 880.0;
 const DIALOG_HEIGHT: f32 = 680.0;
 /// `w-48`.
 const NAV_WIDTH: f32 = 192.0;
-/// `border-stroke`.
-const STROKE: f32 = 0.07;
+/// `w-56`: the control column in a Mono's settings row.
+const CONTROL_WIDTH: f32 = 224.0;
 
 const SECTIONS: [(SettingsSection, &str, IconName); 3] = [
     (SettingsSection::General, "General", IconName::Settings),
@@ -56,95 +57,6 @@ pub(crate) fn short_date(date: &str) -> String {
         .unwrap_or_else(|_| date.to_string())
 }
 
-/// MonoCode `GroupHeading`: `px-1 pb-2 pt-7`, the title `text-[12px]
-/// font-medium text-content/70`, a line under it at 40%.
-fn group_heading(title: &'static str, description: Option<&'static str>, fg: Hsla) -> gpui::Div {
-    div()
-        .px_1()
-        .pb_2()
-        .pt_7()
-        .child(
-            div()
-                .text_size(Text::Base.px())
-                .font_weight(FontWeight::MEDIUM)
-                .text_color(fg.ink(Ink::Body))
-                .child(title),
-        )
-        .children(description.map(|text| {
-            div()
-                .text_size(Text::Base.px())
-                .line_height(px(20.0))
-                .text_color(fg.ink(Ink::Muted))
-                .child(text)
-        }))
-}
-
-/// MonoCode `SettingGroup`: `rounded-xl border border-stroke
-/// bg-content/[0.02]`, a line between rows.
-fn setting_group(rows: Vec<AnyElement>, fg: Hsla) -> gpui::Div {
-    div()
-        .rounded(px(12.0))
-        .border_1()
-        .border_color(fg.opacity(STROKE))
-        .bg(fg.opacity(0.02))
-        .children(rows.into_iter().enumerate().map(move |(ix, row)| {
-            div()
-                .when(ix > 0, |el| {
-                    el.border_t_1().border_color(fg.opacity(STROKE))
-                })
-                .child(row)
-        }))
-}
-
-/// MonoCode `SettingRow`: `flex min-h-12 items-center gap-4 px-3 py-2`, the
-/// control in a `w-56` column of its own.
-fn setting_row(
-    label: impl Into<SharedString>,
-    description: Option<&'static str>,
-    control: AnyElement,
-    fg: Hsla,
-) -> AnyElement {
-    div()
-        .flex()
-        .min_h(px(48.0))
-        .items_center()
-        .gap_4()
-        .px_3()
-        .py_2()
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .child(
-                    div()
-                        .text_size(Text::Md.px())
-                        .line_height(px(20.0))
-                        .text_color(fg.opacity(0.9))
-                        .child(label.into()),
-                )
-                .children(description.map(|text| {
-                    div()
-                        .text_size(Text::Base.px())
-                        .line_height(px(20.0))
-                        .text_color(fg.ink(Ink::Muted))
-                        .child(text)
-                })),
-        )
-        .child(
-            div()
-                .flex()
-                .flex_none()
-                .w(px(224.0))
-                .items_center()
-                .justify_end()
-                .pr_1p5()
-                .text_size(Text::Base.px())
-                .text_color(fg.ink(Ink::Strong))
-                .child(control),
-        )
-        .into_any_element()
-}
-
 /// MonoCode `PageHeader` heading a section: `flex h-10 items-center
 /// border-b border-stroke pl-4`, room on the right for the close button.
 fn page_header(title: &'static str, action: Option<AnyElement>, fg: Hsla) -> gpui::Div {
@@ -157,7 +69,7 @@ fn page_header(title: &'static str, action: Option<AnyElement>, fg: Hsla) -> gpu
         .pl_4()
         .pr(px(12.0 + 32.0))
         .border_b_1()
-        .border_color(fg.opacity(STROKE))
+        .border_color(fg.fill(Fill::Line))
         .child(
             div()
                 .flex_1()
@@ -199,7 +111,7 @@ fn outline_button(
         fg.ink(Ink::Strong)
     };
     let hover = if danger {
-        colors.danger.opacity(0.1)
+        colors.danger.fill(Fill::Strong)
     } else {
         fg.fill(Fill::Hover)
     };
@@ -208,7 +120,7 @@ fn outline_button(
         .flex_none()
         .rounded(px(6.0))
         .border_1()
-        .border_color(fg.opacity(STROKE))
+        .border_color(fg.fill(Fill::Line))
         .px_3()
         .py_1p5()
         .text_size(Text::Base.px())
@@ -239,7 +151,7 @@ impl BenCodeApp {
                 .h_full()
                 .p_2()
                 .border_r_1()
-                .border_color(fg.opacity(STROKE))
+                .border_color(fg.fill(Fill::Line))
                 .child(
                     div()
                         .px(px(10.0))
@@ -251,7 +163,7 @@ impl BenCodeApp {
                 )
                 .children(SECTIONS.iter().map(|&(id, label, icon)| {
                     let selected = id == section;
-                    let ink = if selected { fg } else { fg.opacity(0.65) };
+                    let ink = if selected { fg } else { fg.ink(Ink::Body) };
                     div()
                         .id(SharedString::from(format!("mono-settings-nav-{label}")))
                         .group(SharedString::from(format!("mono-settings-nav-{label}")))
@@ -308,7 +220,7 @@ impl BenCodeApp {
             .overflow_hidden()
             .rounded(px(16.0))
             .border_1()
-            .border_color(fg.opacity(STROKE))
+            .border_color(fg.fill(Fill::Line))
             .bg(colors.bg)
             .shadow_2xl()
             .text_color(fg)
@@ -366,14 +278,20 @@ impl BenCodeApp {
             .and_then(|id| self.sessions.iter().find(|s| s.id == id));
         let mut model_rows = Vec::new();
         if let Some(session) = session {
-            model_rows.push(setting_row(
-                "Model",
-                Some("What it thinks and replies with."),
-                self.render_mono_settings_model(session, cx),
-                fg,
-            ));
+            model_rows.push(
+                SettingsRow::new("Model")
+                    .description("What it thinks and replies with.")
+                    .control_width(CONTROL_WIDTH)
+                    .control(self.render_mono_settings_model(session, cx))
+                    .into_any_element(),
+            );
             for (label, control) in self.mono_settings_controls(session, cx) {
-                model_rows.push(setting_row(label, None, control, fg));
+                model_rows.push(
+                    SettingsRow::new(label)
+                        .control_width(CONTROL_WIDTH)
+                        .control(control)
+                        .into_any_element(),
+                );
             }
             let mode = self.session_permission_mode(Some(session));
             let weak = cx.entity().downgrade();
@@ -396,36 +314,57 @@ impl BenCodeApp {
                     log::debug!("mono permissions after app drop: {err:#}");
                 }
             });
-            model_rows.push(setting_row(
-                "Permissions",
-                Some("What it may do without asking."),
-                picker.into_any_element(),
-                fg,
-            ));
+            model_rows.push(
+                SettingsRow::new("Permissions")
+                    .description("What it may do without asking.")
+                    .control_width(CONTROL_WIDTH)
+                    .control(picker)
+                    .into_any_element(),
+            );
         }
-        let reset = setting_row(
-            "Reset conversation",
-            Some("Clear all messages and start fresh. Its soul, memory and habits stay."),
-            outline_button("mono-settings-reset", "Reset", true, cx)
-                .on_click(cx.listener(|this, _, _, cx| {
-                    this.monos.pending_reset = true;
-                    cx.notify();
-                }))
-                .into_any_element(),
-            fg,
-        );
+        let reset = SettingsRow::new("Reset conversation")
+            .description("Clear all messages and start fresh. Its soul, memory and habits stay.")
+            .control_width(CONTROL_WIDTH)
+            .control(
+                outline_button("mono-settings-reset", "Reset", true, cx).on_click(cx.listener(
+                    |this, _, _, cx| {
+                        this.monos.pending_reset = true;
+                        cx.notify();
+                    },
+                )),
+            )
+            .into_any_element();
         let delete_id = mono.id.clone();
-        let delete = setting_row(
-            "Delete mono",
-            Some("Its conversation goes with it. Its soul and memory stay on disk."),
-            outline_button("mono-settings-delete", "Delete", true, cx)
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    this.monos.pending_delete = Some(delete_id.clone());
-                    cx.notify();
-                }))
-                .into_any_element(),
-            fg,
-        );
+        let delete = SettingsRow::new("Delete mono")
+            .description("Its conversation goes with it. Its soul and memory stay on disk.")
+            .control_width(CONTROL_WIDTH)
+            .control(
+                outline_button("mono-settings-delete", "Delete", true, cx).on_click(cx.listener(
+                    move |this, _, _, cx| {
+                        this.monos.pending_delete = Some(delete_id.clone());
+                        cx.notify();
+                    },
+                )),
+            )
+            .into_any_element();
+        let groups = div()
+            .flex()
+            .flex_col()
+            .gap_7()
+            .pt_7()
+            .when(!model_rows.is_empty(), |el| {
+                el.child(SettingsGroup::new("Model").rows(model_rows))
+            })
+            .child(
+                SettingsGroup::new("Projects")
+                    .description("It can see every session, note and folder in these.")
+                    .rows(self.render_mono_settings_projects(mono, cx)),
+            )
+            .child(
+                SettingsGroup::new("Sessions it starts")
+                    .rows(self.render_mono_started_sessions(mono, cx)),
+            )
+            .child(SettingsGroup::new("Conversation").rows(vec![reset, delete]));
         let page = div()
             .id("mono-settings-general")
             .size_full()
@@ -450,26 +389,7 @@ impl BenCodeApp {
                     .child(face)
                     .child(name),
             )
-            .when(!model_rows.is_empty(), |el| {
-                el.child(group_heading("Model", None, fg))
-                    .child(setting_group(model_rows, fg))
-            })
-            .child(group_heading(
-                "Projects",
-                Some("It can see every session, note and folder in these."),
-                fg,
-            ))
-            .child(setting_group(
-                self.render_mono_settings_projects(mono, cx),
-                fg,
-            ))
-            .child(group_heading("Sessions it starts", None, fg))
-            .child(setting_group(
-                self.render_mono_started_sessions(mono, cx),
-                fg,
-            ))
-            .child(group_heading("Conversation", None, fg))
-            .child(setting_group(vec![reset, delete], fg))
+            .child(groups)
             .children(self.monos.reset_error.clone().map(|err| {
                 div()
                     .pt_2()
@@ -485,7 +405,6 @@ impl BenCodeApp {
     /// MonoCode's "Sessions it starts": shown in the project sidebar, and
     /// filed in a folder named after it (only while shown).
     fn render_mono_started_sessions(&self, mono: &Mono, cx: &Context<Self>) -> Vec<AnyElement> {
-        let fg = cx.theme().colors.fg;
         let shown = mono.show_started_sessions_in_sidebar;
         let switch = |id: String, on: bool, set: fn(&mut Mono, bool)| {
             let (entity, mono_id) = (cx.entity().downgrade(), mono.id.clone());
@@ -510,29 +429,26 @@ impl BenCodeApp {
             )
         };
         vec![
-            setting_row(
-                "Show sessions in sidebar",
-                Some(
+            SettingsRow::new("Show sessions in sidebar")
+                .description(
                     "Sessions it starts appear in your project sidebar. Hidden ones stay saved and open from its overview.",
-                ),
-                switch(format!("mono-started-shown-{}", mono.id), shown, |m, on| {
-                    m.show_started_sessions_in_sidebar = on
-                })
-                .into_any_element(),
-                fg,
-            ),
-            setting_row(
-                "Group in a folder",
-                None,
-                switch(
-                    format!("mono-started-folder-{}", mono.id),
-                    shown && mono.use_sidebar_folders,
-                    |m, on| m.use_sidebar_folders = on,
                 )
-                .disabled(!shown)
+                .control_width(CONTROL_WIDTH)
+                .control(switch(format!("mono-started-shown-{}", mono.id), shown, |m, on| {
+                    m.show_started_sessions_in_sidebar = on
+                }))
                 .into_any_element(),
-                fg,
-            ),
+            SettingsRow::new("Group in a folder")
+                .control_width(CONTROL_WIDTH)
+                .control(
+                    switch(
+                        format!("mono-started-folder-{}", mono.id),
+                        shown && mono.use_sidebar_folders,
+                        |m, on| m.use_sidebar_folders = on,
+                    )
+                    .disabled(!shown),
+                )
+                .into_any_element(),
         ]
     }
 
@@ -551,8 +467,8 @@ impl BenCodeApp {
             .justify_center()
             .rounded(px(16.0))
             .border_1()
-            .border_color(fg.opacity(STROKE))
-            .bg(fg.opacity(if open { 0.08 } else { 0.04 }))
+            .border_color(fg.fill(Fill::Line))
+            .bg(fg.fill(if open { Fill::Selected } else { Fill::Hover }))
             .hover(move |s| s.bg(fg.fill(Fill::Selected)))
             .cursor_pointer()
             .tooltip(Tooltip::text("Change mascot and color"))
@@ -737,7 +653,7 @@ impl BenCodeApp {
                                     .truncate()
                                     .text_size(Text::Md.px())
                                     .line_height(px(20.0))
-                                    .text_color(fg.opacity(0.9))
+                                    .text_color(fg.ink(Ink::Strong))
                                     .child(name.clone()),
                             )
                             .child(
@@ -978,7 +894,7 @@ impl BenCodeApp {
                 div()
                     .flex_none()
                     .border_t_1()
-                    .border_color(fg.opacity(STROKE))
+                    .border_color(fg.fill(Fill::Line))
                     .px_2()
                     .pb_3()
                     .child(gauge)
@@ -1133,7 +1049,7 @@ fn fact_icon(dim: bool, fg: Hsla) -> impl IntoElement {
         .child(
             Icon::new(IconName::StickyNote)
                 .size(IconSize::Sm)
-                .color(fg.opacity(if dim { 0.3 } else { 0.6 })),
+                .color(fg.ink(if dim { Ink::Faint } else { Ink::Secondary })),
         )
 }
 
@@ -1145,9 +1061,9 @@ fn memory_gauge(memory: &str, cx: &Context<BenCodeApp>) -> impl IntoElement {
     let budget = memory_within_budget(memory);
     let share = budget.share();
     let tone = if budget.dropped_lines > 0 {
-        colors.danger.opacity(0.7)
+        colors.danger.ink(Ink::Body)
     } else if share >= 0.8 {
-        colors.warning.opacity(0.7)
+        colors.warning.ink(Ink::Body)
     } else {
         fg.ink(Ink::Faint)
     };

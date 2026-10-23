@@ -19,10 +19,14 @@ use crate::app::{BenCodeApp, now_ms};
 use crate::db::{AutomationRow, DEFAULT_GRACE_MINUTES};
 use crate::schedule::{self, ScheduleKind, TimeTrigger, Trigger, WEEKDAYS};
 use crate::ui::app_callback::{app_callback, on_value};
-use crate::ui::page_parts::{panel, rule, section_title, settings_row, tint};
+use crate::ui::region::Region;
 use crate::ui::scale::px;
+use crate::ui::settings_parts::{SettingsRow, panel, rule, section_title};
 use crate::ui::sidebar_popovers::pretty_path;
-use crate::ui::tokens::Text;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
+
+/// The width a row's control gets in an automation's settings panel.
+const SELECT_WIDTH: f32 = 168.0;
 
 /// MonoCode `GRACE_OPTIONS`.
 const GRACE_OPTIONS: [(i64, &str); 5] = [
@@ -165,7 +169,7 @@ impl BenCodeApp {
             .gap_y(px(4.0))
             .min_w_0()
             .text_size(Text::Md.px())
-            .text_color(fg.opacity(tint::BODY));
+            .text_color(fg.ink(Ink::Body));
         let (icon, sentence) = match schedule::time_trigger(trigger) {
             Some(time) => (
                 IconName::Clock,
@@ -175,7 +179,7 @@ impl BenCodeApp {
                 IconName::Zap,
                 sentence.child(event_trigger_label(trigger)).child(
                     div()
-                        .text_color(fg.opacity(tint::FAINT))
+                        .text_color(fg.ink(Ink::Faint))
                         .child("Event triggers do not run in BenCode"),
                 ),
             ),
@@ -279,14 +283,14 @@ impl BenCodeApp {
             })
             .child(
                 div()
-                    .text_color(fg.opacity(tint::QUIET))
+                    .text_color(fg.ink(Ink::Muted))
                     .child(gmt_offset_at(next.unwrap_or(now), &tz)),
             )
             .when_some(next, |el, at| {
                 el.child(
                     div()
                         .ml_1()
-                        .text_color(fg.opacity(tint::FAINT))
+                        .text_color(fg.ink(Ink::Faint))
                         .child(next_run_preview(at, &tz)),
                 )
             })
@@ -306,7 +310,7 @@ impl BenCodeApp {
             .child(section_title("Instructions", muted))
             .child(
                 panel(fg)
-                    .bg(fg.opacity(tint::WELL))
+                    .bg(fg.fill(Fill::Faint))
                     .child(
                         div()
                             .px_3()
@@ -331,7 +335,7 @@ impl BenCodeApp {
                 div()
                     .px_1()
                     .text_size(Text::Sm.px())
-                    .text_color(fg.opacity(tint::FAINT))
+                    .text_color(fg.ink(Ink::Faint))
                     .child("Skills work here: start a line with /skill-name."),
             )
     }
@@ -376,91 +380,108 @@ impl BenCodeApp {
             .child(section_title("Session", muted))
             .child(
                 panel(fg)
-                    .child(settings_row(
-                        "Project",
-                        "Where runs happen",
-                        Select::new("automation-project", projects)
-                            .label("Project")
-                            .size(ControlSize::Sm)
-                            .placeholder("Choose a project…")
-                            .selected(draft.cwd.clone())
-                            .on_change(on_value(cx, |this, path, cx| {
-                                let path = path.to_string();
-                                // Folders belong to a project.
-                                this.edit_automation(cx, |draft| {
-                                    draft.cwd = path;
-                                    draft.session_folder_id = Some(String::new());
-                                });
-                            })),
-                        fg,
-                    ))
+                    .child(
+                        SettingsRow::new("Project")
+                            .description("Where runs happen")
+                            .control_width(SELECT_WIDTH)
+                            .control(
+                                Select::new("automation-project", projects)
+                                    .label("Project")
+                                    .size(ControlSize::Sm)
+                                    .placeholder("Choose a project…")
+                                    .selected(draft.cwd.clone())
+                                    .on_change(on_value(cx, |this, path, cx| {
+                                        let path = path.to_string();
+                                        // Folders belong to a project.
+                                        this.edit_automation(cx, |draft| {
+                                            draft.cwd = path;
+                                            draft.session_folder_id = Some(String::new());
+                                        });
+                                    })),
+                            ),
+                    )
                     .child(rule(fg))
-                    .child(settings_row(
-                        "Working copy",
-                        "This repo, or a fresh worktree",
-                        Select::new(
-                            "automation-working-copy",
-                            WorkingCopy::ALL.map(|copy| Choice::new(copy.id(), copy.label())),
-                        )
-                        .label("Working copy")
-                        .size(ControlSize::Sm)
-                        .selected(copy.id())
-                        .on_change(on_value(cx, |this, mode, cx| {
-                            let mode = mode.to_string();
-                            this.edit_automation(cx, |draft| {
-                                // A fresh worktree has no earlier chat to continue.
-                                if mode == WorkingCopy::Worktree.id() {
-                                    draft.reuse_session = Some(false);
-                                }
-                                draft.workspace_mode = Some(mode);
-                            });
-                        })),
-                        fg,
-                    ))
+                    .child(
+                        SettingsRow::new("Working copy")
+                            .description("This repo, or a fresh worktree")
+                            .control_width(SELECT_WIDTH)
+                            .control(
+                                Select::new(
+                                    "automation-working-copy",
+                                    WorkingCopy::ALL
+                                        .map(|copy| Choice::new(copy.id(), copy.label())),
+                                )
+                                .label("Working copy")
+                                .size(ControlSize::Sm)
+                                .selected(copy.id())
+                                .on_change(on_value(
+                                    cx,
+                                    |this, mode, cx| {
+                                        let mode = mode.to_string();
+                                        this.edit_automation(cx, |draft| {
+                                            // A fresh worktree has no earlier chat to continue.
+                                            if mode == WorkingCopy::Worktree.id() {
+                                                draft.reuse_session = Some(false);
+                                            }
+                                            draft.workspace_mode = Some(mode);
+                                        });
+                                    },
+                                )),
+                            ),
+                    )
                     .child(rule(fg))
-                    .child(settings_row(
-                        "Conversation",
-                        "New chat, or continue the last run",
-                        Select::new(
-                            "automation-conversation",
-                            [
-                                Choice::new("fresh", "Start fresh"),
-                                Choice::new("reuse", "Continue last"),
-                            ],
-                        )
-                        .label("Conversation")
-                        .size(ControlSize::Sm)
-                        .disabled(copy == WorkingCopy::Worktree)
-                        .selected(if reuse { "reuse" } else { "fresh" })
-                        .on_change(on_value(cx, |this, value, cx| {
-                            let reuse = value == "reuse";
-                            this.edit_automation(cx, |draft| draft.reuse_session = Some(reuse));
-                        })),
-                        fg,
-                    ))
+                    .child(
+                        SettingsRow::new("Conversation")
+                            .description("New chat, or continue the last run")
+                            .control_width(SELECT_WIDTH)
+                            .control(
+                                Select::new(
+                                    "automation-conversation",
+                                    [
+                                        Choice::new("fresh", "Start fresh"),
+                                        Choice::new("reuse", "Continue last"),
+                                    ],
+                                )
+                                .label("Conversation")
+                                .size(ControlSize::Sm)
+                                .disabled(copy == WorkingCopy::Worktree)
+                                .selected(if reuse { "reuse" } else { "fresh" })
+                                .on_change(on_value(
+                                    cx,
+                                    |this, value, cx| {
+                                        let reuse = value == "reuse";
+                                        this.edit_automation(cx, |draft| {
+                                            draft.reuse_session = Some(reuse)
+                                        });
+                                    },
+                                )),
+                            ),
+                    )
                     .child(rule(fg))
-                    .child(settings_row(
-                        "Session folder",
-                        "Where runs appear in the sidebar",
-                        Select::new("automation-folder", folder_choices)
-                            .label("Session folder")
-                            .size(ControlSize::Sm)
-                            .selected(if folder.is_empty() {
-                                NO_FOLDER.to_string()
-                            } else {
-                                folder
-                            })
-                            .on_change(on_value(cx, |this, value, cx| {
-                                let id = Some(value)
-                                    .filter(|id| *id != NO_FOLDER)
-                                    .unwrap_or("")
-                                    .to_string();
-                                this.edit_automation(cx, |draft| {
-                                    draft.session_folder_id = Some(id)
-                                });
-                            })),
-                        fg,
-                    )),
+                    .child(
+                        SettingsRow::new("Session folder")
+                            .description("Where runs appear in the sidebar")
+                            .control_width(SELECT_WIDTH)
+                            .control(
+                                Select::new("automation-folder", folder_choices)
+                                    .label("Session folder")
+                                    .size(ControlSize::Sm)
+                                    .selected(if folder.is_empty() {
+                                        NO_FOLDER.to_string()
+                                    } else {
+                                        folder
+                                    })
+                                    .on_change(on_value(cx, |this, value, cx| {
+                                        let id = Some(value)
+                                            .filter(|id| *id != NO_FOLDER)
+                                            .unwrap_or("")
+                                            .to_string();
+                                        this.edit_automation(cx, |draft| {
+                                            draft.session_folder_id = Some(id)
+                                        });
+                                    })),
+                            ),
+                    ),
             )
     }
 
@@ -493,7 +514,7 @@ impl BenCodeApp {
                     .cursor_pointer()
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.automations.advanced_open = !this.automations.advanced_open;
-                        cx.notify();
+                        this.redraw_regions(&[Region::Surface], cx);
                     }))
                     .child(
                         div()
@@ -504,13 +525,13 @@ impl BenCodeApp {
                                 div()
                                     .text_size(Text::Md.px())
                                     .font_weight(FontWeight::MEDIUM)
-                                    .text_color(fg.opacity(tint::STRONG))
+                                    .text_color(fg.ink(Ink::Strong))
                                     .child("Advanced"),
                             )
                             .child(
                                 div()
                                     .text_size(Text::Sm.px())
-                                    .text_color(fg.opacity(tint::HINT))
+                                    .text_color(fg.ink(Ink::Muted))
                                     .child("Catch-up window for missed runs"),
                             ),
                     )
@@ -521,25 +542,28 @@ impl BenCodeApp {
                             IconName::ChevronDown
                         })
                         .size(IconSize::Sm)
-                        .color(fg.opacity(tint::HINT)),
+                        .color(fg.ink(Ink::Muted)),
                     ),
             )
             .when(open, |el| {
-                el.child(rule(fg)).child(settings_row(
-                    "Missed-run grace",
-                    "Catch up if a scheduled run was missed",
-                    Select::new("automation-grace", options)
-                        .label("Missed-run grace")
-                        .size(ControlSize::Sm)
-                        .selected(grace.to_string())
-                        .on_change(on_value(cx, |this, value, cx| {
-                            let minutes = value.parse::<i64>().unwrap_or(DEFAULT_GRACE_MINUTES);
-                            this.edit_automation(cx, |draft| {
-                                draft.missed_run_grace_minutes = Some(minutes)
-                            });
-                        })),
-                    fg,
-                ))
+                el.child(rule(fg)).child(
+                    SettingsRow::new("Missed-run grace")
+                        .description("Catch up if a scheduled run was missed")
+                        .control_width(SELECT_WIDTH)
+                        .control(
+                            Select::new("automation-grace", options)
+                                .label("Missed-run grace")
+                                .size(ControlSize::Sm)
+                                .selected(grace.to_string())
+                                .on_change(on_value(cx, |this, value, cx| {
+                                    let minutes =
+                                        value.parse::<i64>().unwrap_or(DEFAULT_GRACE_MINUTES);
+                                    this.edit_automation(cx, |draft| {
+                                        draft.missed_run_grace_minutes = Some(minutes)
+                                    });
+                                })),
+                        ),
+                )
             })
     }
 }

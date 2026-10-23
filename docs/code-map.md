@@ -143,9 +143,9 @@ bencode/
 | `terminal_pane/` | Terminal dock: tabs, splits (`split.rs`), menus, running jobs, host sessions (`sessions.rs`) |
 | `footer/` | Status bar: provider usage chip, its details popover and account pages, terminal toggle |
 | `inbox_view*`, `notes/`, `automations/`, `settings_modal.rs` | The four surfaces; `search_view/` is the ⌘K dialog |
-| `page_parts.rs`, `relative_time.rs` | What the Notes and Automations pages share: `content/N` tints, section titles, page tabs, boxed rows; "5 minutes ago" |
+| `relative_time.rs` | Relative timestamps ("5 minutes ago") |
 | `settings_connections.rs`, `remote_folder.rs` | Settings › Connections (machines, the SSH form, a setup's progress and SSH's questions); the Open folder on a machine dialog |
-| `settings_parts.rs` | What every Settings page is built from: `SettingsPage` (title and line), `SettingsGroup` (a titled card), `SettingsRow` |
+| `settings_parts.rs` | What Settings pages, Mono settings and the Automations / Notes surfaces share: `SettingsPage` (title and line), `SettingsGroup` (a titled card), `SettingsRow`, `panel`, `rule`, `section_title` |
 | `settings_accounts.rs`, `settings_agy_accounts.rs`, `settings_appearance.rs`, `settings_shortcuts.rs`, `settings_worktrees.rs`, `settings_integrations.rs`, `settings_monos.rs` | Settings pages: provider accounts, appearance, shortcuts (read only, keys looked up in `commands.rs`'s keymap), worktrees, integrations (GitHub accounts, Backlog), Monos (on / off, pinned to the icon rail, menu bar icon, Reset Mono) |
 | `quick_open.rs`, `lightbox.rs`, `link_dialog.rs`, `reminder_notices.rs`, `harness_update_notice.rs`, `whats_new.rs`, `resume_interrupted.rs` | Overlays |
 | `tokens.rs`, `rows.rs`, `buttons.rs` | The design tokens (ink, fills, type sizes, the status palette, the link colour), `ListRow`, the list row with a tile, two lines and buttons on hover, and `with_tooltip` for a labelled Ely `Button` |

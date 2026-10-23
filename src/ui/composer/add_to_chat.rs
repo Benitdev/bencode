@@ -104,7 +104,7 @@ impl BenCodeApp {
         self.prompt_input
             .update(cx, |input, cx| input.set_text(next, cx));
         self.refocus_prompt(cx);
-        cx.notify();
+        self.redraw_composer(cx);
     }
 }
 

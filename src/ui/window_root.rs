@@ -2,9 +2,8 @@
 //! and the process readout's.
 //! The runner redraws every frame of a turn; the app's regions are cached
 //! (`ui/region.rs`), so those frames re-render only the shell. A region
-//! redraws when the app notifies, when asked alone, or when a view it
-//! draws notifies. An entity it only reads is not enough: the app
-//! observes it and notifies (`transcript_selection`).
+//! redraws when the app notifies, when asked alone, or when a view or
+//! followed model (`Regions::follow`) it draws notifies.
 
 use gpui::{AppContext, Context, Entity, IntoElement, ParentElement, Render, Styled, Window, div};
 

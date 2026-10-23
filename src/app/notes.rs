@@ -16,7 +16,7 @@ use super::note_images::{
 use super::{BenCodeApp, NEW_SESSION_TITLE, Surface, now_ms, text_input, unique_id};
 use crate::db::{Note, NoteUpsert};
 use crate::ui::composer::attachments::{pasted_files, write_pasted_images};
-use crate::ui::page_parts::tint;
+use crate::ui::tokens::{Ink, Tone as _};
 
 pub const UNTITLED_NOTE: &str = "Untitled";
 /// MonoCode `MAX_TITLE`, in characters.
@@ -144,7 +144,7 @@ fn source_highlights(
             let ink = if atx_heading(&text[start..end]).is_some() {
                 fg
             } else {
-                fg.opacity(tint::SOURCE)
+                fg.ink(Ink::Strong)
             };
             spans.push((start..end, Highlight::new(ink)));
         }
@@ -569,7 +569,7 @@ impl BenCodeApp {
         match event {
             InputEvent::Changed => {
                 self.schedule_note_autosave(cx);
-                cx.notify();
+                self.redraw_regions(&[crate::ui::region::Region::Surface], cx);
             }
             InputEvent::Blur | InputEvent::Submit => {
                 if input == self.notes.title_input && input.read(cx).text().trim().is_empty() {

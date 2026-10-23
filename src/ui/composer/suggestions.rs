@@ -251,7 +251,7 @@ impl BenCodeApp {
         let len = self.current_suggestions().len();
         self.picker_index = wrap_index(self.picker_index, delta, len);
         self.picker_scroll.scroll_to_item(self.picker_index);
-        cx.notify();
+        self.redraw_composer(cx);
         true
     }
 
@@ -402,7 +402,7 @@ impl BenCodeApp {
             .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                 if *hovered && this.picker_index != ix {
                     this.picker_index = ix;
-                    cx.notify();
+                    this.redraw_composer(cx);
                 }
             }))
             .on_click(cx.listener(move |this, _, _, cx| this.apply_suggestion(kind, &insert, cx)))

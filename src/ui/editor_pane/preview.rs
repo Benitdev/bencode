@@ -107,7 +107,7 @@ impl BenCodeApp {
             self.editor.default_view_mode = mode;
             self.save_settings(cx);
         }
-        cx.notify();
+        self.redraw_regions(&[crate::ui::region::Region::FilePane], cx);
     }
 
     /// The rendered document, scrolled on its own.
@@ -179,7 +179,7 @@ impl BenCodeApp {
                 if !this.editor.properties_open.remove(&key) {
                     this.editor.properties_open.insert(key.clone());
                 }
-                cx.notify();
+                this.redraw_regions(&[crate::ui::region::Region::FilePane], cx);
             }));
         div()
             .mb(px(24.0))

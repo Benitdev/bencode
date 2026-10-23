@@ -10,10 +10,8 @@ use gpui::{
 };
 
 use crate::ui::scale::px;
-use crate::ui::tokens::{Fill, Text, Tone as _};
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
-/// `text-content/45`: descriptions and asides.
-const QUIET: f32 = 0.45;
 /// `leading-relaxed`.
 const RELAXED: f32 = 1.625;
 
@@ -68,7 +66,7 @@ impl RenderOnce for SettingsPage {
                             .max_w(px(576.0))
                             .text_size(Text::Md.px())
                             .line_height(relative(RELAXED))
-                            .text_color(fg.opacity(QUIET))
+                            .text_color(fg.ink(Ink::Muted))
                             .child(text)
                     })),
             )
@@ -149,7 +147,7 @@ impl RenderOnce for SettingsGroup {
                             .mt_1()
                             .text_size(Text::Base.px())
                             .line_height(relative(RELAXED))
-                            .text_color(fg.opacity(QUIET))
+                            .text_color(fg.ink(Ink::Muted))
                             .child(text)
                     })),
             )
@@ -194,6 +192,7 @@ pub struct SettingsRow {
     description: Option<SharedString>,
     error: bool,
     control: Option<AnyElement>,
+    control_width: Option<f32>,
 }
 
 impl SettingsRow {
@@ -205,6 +204,7 @@ impl SettingsRow {
             description: None,
             error: false,
             control: None,
+            control_width: None,
         }
     }
 
@@ -236,6 +236,12 @@ impl SettingsRow {
         self.control = Some(control.into_any_element());
         self
     }
+
+    /// Gives the control slot a fixed width (e.g. a `Select` or `Input` column).
+    pub fn control_width(mut self, width: f32) -> Self {
+        self.control_width = Some(width);
+        self
+    }
 }
 
 impl RenderOnce for SettingsRow {
@@ -245,7 +251,7 @@ impl RenderOnce for SettingsRow {
         let description_color = if self.error {
             colors.danger
         } else {
-            fg.opacity(QUIET)
+            fg.ink(Ink::Muted)
         };
         let mono = cx.theme().mono_family.clone();
         // `flex gap-6 px-4 py-3.5`; label `text-[13px] font-medium`; control
@@ -288,7 +294,7 @@ impl RenderOnce for SettingsRow {
                                             .flex_none()
                                             .font_family(mono)
                                             .text_size(Text::Base.px())
-                                            .text_color(fg.opacity(QUIET))
+                                            .text_color(fg.ink(Ink::Muted))
                                             .child(aside)
                                     })),
                             )
@@ -303,16 +309,28 @@ impl RenderOnce for SettingsRow {
                     ),
             )
             .children(self.control.map(|control| {
-                div()
-                    .flex()
-                    .flex_none()
-                    .min_w_0()
-                    .max_w(relative(0.6))
-                    .flex_wrap()
-                    .items_center()
-                    .justify_end()
-                    .gap_2()
-                    .child(control)
+                if let Some(width) = self.control_width {
+                    div()
+                        .flex()
+                        .flex_none()
+                        .w(px(width))
+                        .items_center()
+                        .justify_end()
+                        .text_size(Text::Base.px())
+                        .text_color(fg.ink(Ink::Strong))
+                        .child(control)
+                } else {
+                    div()
+                        .flex()
+                        .flex_none()
+                        .min_w_0()
+                        .max_w(relative(0.6))
+                        .flex_wrap()
+                        .items_center()
+                        .justify_end()
+                        .gap_2()
+                        .child(control)
+                }
             }))
     }
 }
@@ -328,7 +346,7 @@ impl RenderOnce for SettingsNote {
             .py(px(14.0))
             .text_size(Text::Base.px())
             .line_height(relative(RELAXED))
-            .text_color(cx.theme().colors.fg.opacity(QUIET))
+            .text_color(cx.theme().colors.fg.ink(Ink::Muted))
             .child(self.0)
     }
 }
@@ -347,4 +365,28 @@ pub fn icon_tile(icon: impl IntoElement, fg: Hsla) -> Div {
         .border_1()
         .border_color(fg.fill(Fill::Hover))
         .child(icon)
+}
+
+/// MonoCode `rounded-md border border-content/10`: a lightweight section panel
+/// used in Automations and Notes surfaces.
+pub fn panel(fg: Hsla) -> Div {
+    div()
+        .rounded(px(6.0))
+        .border_1()
+        .border_color(fg.fill(Fill::Strong))
+}
+
+/// The hairline between a [`panel`]'s rows.
+pub fn rule(fg: Hsla) -> Div {
+    div().h(px(1.0)).bg(fg.fill(Fill::Selected))
+}
+
+/// MonoCode `SectionTitle`.
+pub fn section_title(title: &'static str, muted: Hsla) -> Div {
+    div()
+        .px_1()
+        .text_size(Text::Base.px())
+        .font_weight(FontWeight::MEDIUM)
+        .text_color(muted)
+        .child(title)
 }

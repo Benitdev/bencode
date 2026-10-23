@@ -10,11 +10,10 @@ use crate::app::notes::{note_matches, note_preview, note_project};
 use crate::app::{BenCodeApp, now_ms};
 use crate::db::Note;
 use crate::ui::mascot::pixel_sprite;
-use crate::ui::page_parts::tint;
 use crate::ui::relative_time;
 use crate::ui::scale::px;
 use crate::ui::scrollbar::Scrolled;
-use crate::ui::tokens::Text;
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// MonoCode shows this many tags on a card, then "+N".
 const CARD_TAGS: usize = 3;
@@ -44,7 +43,7 @@ impl BenCodeApp {
                 .px_3()
                 .py_2()
                 .text_size(Text::Base.px())
-                .text_color(fg.opacity(tint::SOFT))
+                .text_color(fg.ink(Ink::Secondary))
                 .child(text)
                 .into_any_element()
         };
@@ -153,9 +152,9 @@ impl BenCodeApp {
                         .px(px(6.0))
                         .py(px(2.0))
                         .rounded(px(4.0))
-                        .bg(fg.opacity(tint::FILL))
+                        .bg(fg.fill(Fill::Selected))
                         .text_size(Text::Xs.px())
-                        .text_color(fg.opacity(tint::SOFT))
+                        .text_color(fg.ink(Ink::Secondary))
                         .child(format!("#{tag}"))
                 }))
                 .when(extra > 0, |el| {
@@ -163,7 +162,7 @@ impl BenCodeApp {
                         div()
                             .flex_none()
                             .text_size(Text::Xs.px())
-                            .text_color(fg.opacity(tint::HINT))
+                            .text_color(fg.ink(Ink::Muted))
                             .child(format!("+{extra}")),
                     )
                 })
@@ -179,7 +178,7 @@ impl BenCodeApp {
                 if active {
                     el.bg(colors.active)
                 } else {
-                    el.hover(|style| style.bg(fg.opacity(tint::HOVER)))
+                    el.hover(|style| style.bg(fg.fill(Fill::Hover)))
                 }
             })
             .tooltip(Tooltip::text(hint))
@@ -194,13 +193,13 @@ impl BenCodeApp {
                         div()
                             .flex_1()
                             .min_w_0()
-                            .text_color(fg.opacity(tint::SOFT))
+                            .text_color(fg.ink(Ink::Secondary))
                             .children(mark),
                     )
                     .child(
                         div()
                             .flex_none()
-                            .text_color(fg.opacity(tint::QUIET))
+                            .text_color(fg.ink(Ink::Muted))
                             .child(relative_time::since(note.updated_at, now)),
                     ),
             )
@@ -219,7 +218,7 @@ impl BenCodeApp {
                         .mt_1()
                         .truncate()
                         .text_size(Text::Base.px())
-                        .text_color(fg.opacity(tint::QUIET))
+                        .text_color(fg.ink(Ink::Muted))
                         .child(preview),
                 )
             })

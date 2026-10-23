@@ -256,7 +256,7 @@ impl BenCodeApp {
             .filter(|s| s.session_id == session_id)
             .map_or(0, |s| s.active);
         self.transcript_find = Some(FindState {
-            session_id,
+            session_id: session_id.clone(),
             active,
             shown_row: None,
             cache: Default::default(),
@@ -266,7 +266,7 @@ impl BenCodeApp {
             .update(cx, |input, cx| input.select(0..len, cx));
         focus_later(self.find_input.read(cx).focus_handle(cx), cx);
         self.reveal_find_match(cx);
-        cx.notify();
+        self.redraw_thread(&session_id, cx);
     }
 
     pub fn close_find(&mut self, cx: &mut Context<Self>) -> bool {
@@ -279,7 +279,7 @@ impl BenCodeApp {
             view.list.remeasure_items(row..row + 1);
         }
         self.refocus_prompt(cx);
-        cx.notify();
+        self.redraw_thread(&state.session_id, cx);
         true
     }
 
@@ -294,16 +294,18 @@ impl BenCodeApp {
         }
         state.active =
             (state.active.min(len - 1) as isize + delta).rem_euclid(len as isize) as usize;
+        let session_id = state.session_id.clone();
         self.reveal_find_match(cx);
-        cx.notify();
+        self.redraw_thread(&session_id, cx);
     }
 
     /// The query changed: back to the first match.
     pub fn on_find_query_changed(&mut self, cx: &mut Context<Self>) {
         if let Some(state) = self.transcript_find.as_mut() {
             state.active = 0;
+            let session_id = state.session_id.clone();
             self.reveal_find_match(cx);
-            cx.notify();
+            self.redraw_thread(&session_id, cx);
         }
     }
 
@@ -356,12 +358,13 @@ impl BenCodeApp {
         // Rows above have no height until drawn, so the gap under the bar is
         // taken once the frame at `row` has measured its neighbours.
         let list = view.list.clone();
+        let sid = session_id.clone();
         cx.spawn(async move |this, cx| {
             cx.background_executor().timer(GAP_SETTLE).await;
-            let settled = this.update(cx, |_, cx| {
+            let settled = this.update(cx, |this, cx| {
                 if list.logical_scroll_top().item_ix == row {
                     list.scroll_by(px(-MATCH_TOP_GAP));
-                    cx.notify();
+                    this.redraw_thread(&sid, cx);
                 }
             });
             if let Err(err) = settled {

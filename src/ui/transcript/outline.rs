@@ -429,7 +429,7 @@ impl BenCodeApp {
                         && std::mem::take(&mut state.open_pending)
                     {
                         state.open = state.hover.is_some();
-                        cx.notify();
+                        this.redraw_thread(&sid, cx);
                     }
                 });
                 if let Err(err) = opened {
@@ -438,7 +438,7 @@ impl BenCodeApp {
             })
             .detach();
         }
-        cx.notify();
+        self.redraw_thread(session_id, cx);
     }
 
     /// MonoCode `close`.
@@ -447,7 +447,7 @@ impl BenCodeApp {
             state.hover = None;
             state.open = false;
             state.open_pending = false;
-            cx.notify();
+            self.redraw_thread(session_id, cx);
         }
     }
 
@@ -484,7 +484,7 @@ impl BenCodeApp {
             state.cursor = tab.clone();
             state.hover = tab;
             state.open = state.hover.is_some();
-            cx.notify();
+            self.redraw_thread(session_id, cx);
         } else if !state.pointer_inside {
             self.close_outline(session_id, cx);
         }
@@ -525,7 +525,7 @@ impl BenCodeApp {
         state.hover = Some(next);
         state.open = true;
         state.keyboard = true;
-        cx.notify();
+        self.redraw_thread(&sid, cx);
     }
 
     /// Enter on the rail: jumps to the bar the keyboard is on.
@@ -559,12 +559,13 @@ impl BenCodeApp {
             offset_in_item: px(0.0),
         });
         let list = view.list.clone();
+        let sid = session_id.to_string();
         cx.spawn(async move |this, cx| {
             cx.background_executor().timer(INSET_SETTLE).await;
-            let settled = this.update(cx, |_, cx| {
+            let settled = this.update(cx, |this, cx| {
                 if list.logical_scroll_top().item_ix == row {
                     list.scroll_by(px(-SCROLL_INSET));
-                    cx.notify();
+                    this.redraw_thread(&sid, cx);
                 }
             });
             if let Err(err) = settled {
@@ -572,6 +573,6 @@ impl BenCodeApp {
             }
         })
         .detach();
-        cx.notify();
+        self.redraw_thread(session_id, cx);
     }
 }

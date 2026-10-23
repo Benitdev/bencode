@@ -6,7 +6,7 @@ use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnimationExt, AnyElement, ClickEvent, Context, FontWeight, InteractiveElement, IntoElement,
-    MouseButton, MouseDownEvent, ParentElement, SharedString, Styled, div, prelude::*, rgb,
+    MouseButton, MouseDownEvent, ParentElement, SharedString, Styled, div, prelude::*,
 };
 
 use crate::app::BenCodeApp;
@@ -15,11 +15,11 @@ use crate::db::SessionRow;
 use crate::harness::catalog;
 use crate::ui::drag_drop::DraggedSession;
 use crate::ui::provider_icon::HarnessIcon;
+use crate::ui::region::Region;
 use crate::ui::scale::px;
 use crate::ui::sidebar_sessions::ListDrop;
 use crate::ui::spinner::terminal_spinner;
-use crate::ui::tokens::{AMBER_400, EMERALD_400};
-use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
+use crate::ui::tokens::{Fill, Ink, Status, Text, Tone as _};
 
 /// The slide-in opens to this height (a usual card's); the cap comes off
 /// when it finishes.
@@ -51,7 +51,7 @@ impl BenCodeApp {
         let icon =
             |name: IconName, color: gpui::Hsla| Icon::new(name).size(IconSize::Xs).color(color);
         if states.approval.contains(&session.id) {
-            let amber: gpui::Hsla = rgb(AMBER_400).into();
+            let amber = Status::Attention.color(colors.fg);
             return row(amber)
                 .child(icon(IconName::CircleAlert, amber))
                 .child(if session.orchestration.is_some() {
@@ -68,7 +68,7 @@ impl BenCodeApp {
                 .into_any_element();
         }
         if states.done.contains(&session.id) {
-            let green: gpui::Hsla = rgb(EMERALD_400).into();
+            let green = Status::Done.color(colors.fg);
             return row(green)
                 .child(icon(IconName::Check, green))
                 .child("Done")
@@ -326,7 +326,7 @@ impl BenCodeApp {
                                 .child(
                                     Icon::new(IconName::Zap)
                                         .size(IconSize::Xs)
-                                        .color(rgb(AMBER_400)),
+                                        .color(Status::Attention.color(fg)),
                                 ),
                         )
                     })
@@ -468,7 +468,7 @@ impl BenCodeApp {
         cx: &Context<Self>,
     ) -> AnyElement {
         let colors = &cx.theme().colors;
-        let amber: gpui::Hsla = rgb(AMBER_400).into();
+        let amber = Status::Attention.color(colors.fg);
         div()
             .w_full()
             .px(px(10.0))
@@ -515,13 +515,13 @@ impl BenCodeApp {
                 .selection
                 .select_range(id, &order, active.as_deref(), add);
             window.focus(&self.session_list_focus, cx);
-            cx.notify();
+            self.redraw_regions(&[Region::Sidebar], cx);
             return;
         }
         if add {
             self.sessions_ui.selection.toggle(id);
             window.focus(&self.session_list_focus, cx);
-            cx.notify();
+            self.redraw_regions(&[Region::Sidebar], cx);
             return;
         }
         self.sessions_ui.selection.clear();

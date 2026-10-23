@@ -143,7 +143,13 @@ impl BenCodeApp {
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.transcript_ui.open_patches.insert(key.clone());
                     this.transcript_ui.reflow += 1;
-                    cx.notify();
+                    this.redraw_regions(
+                        &[
+                            crate::ui::region::Region::Chat,
+                            crate::ui::region::Region::Mono,
+                        ],
+                        cx,
+                    );
                 }))
                 .child(label)
         });

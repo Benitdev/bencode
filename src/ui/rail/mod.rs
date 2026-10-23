@@ -53,8 +53,6 @@ use widgets::{
 
 /// MonoCode `w-[78px]`: room for the traffic lights.
 const TRAFFIC_LIGHT_SPACE: f32 = 78.0;
-/// MonoCode `border-stroke`.
-const STROKE_OPACITY: f32 = 0.07;
 /// MonoCode `Popover` (`DEFAULT_GAP`) and the "Open project" one's width.
 const POPOVER_GAP: f32 = 6.0;
 const ADD_PROJECT_WIDTH: f32 = 230.0;
@@ -139,7 +137,7 @@ impl BenCodeApp {
             .h_full()
             .bg(glass)
             .border_r_1()
-            .border_color(fg.opacity(STROKE_OPACITY))
+            .border_color(fg.fill(Fill::Line))
             .text_color(fg)
             .line_height(relative(1.5))
             .on_drag_move::<RailResize>(cx.listener(

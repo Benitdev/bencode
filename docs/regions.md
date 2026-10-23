@@ -96,6 +96,7 @@ it (`Regions::follow(model, regions)`, set in `BenCodeApp::new`):
 | `InboxState` (`ui/inbox_view.rs`) | `inbox(cx)`, `inbox_mut` | `Surface`, `Sidebar`, rails, `Titlebar` |
 | `TerminalDocks` (`ui/terminal_pane/`) | `terminals(cx)`, `terminals_mut` | `Terminal`, `Footer` |
 | `WorkspaceCache` (`app/workspace_sync.rs`) | `workspace(cx)`, `workspace_mut` | every region but `Terminal` and `Footer` |
+| `TranscriptSelection` (`ui/transcript/selection.rs`) | `transcript_selection.read(cx)` | `Chat`, `Mono` |
 
 Writes go two ways. `model_state.as_mut(cx).field = …` (or `update` with
 `cx.notify()`) notifies the model, so its followers redraw: for what they

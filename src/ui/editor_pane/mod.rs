@@ -350,7 +350,13 @@ impl BenCodeApp {
                     self.editor.files.activate(&path);
                 }
                 self.apply_reveal(&path, cx);
-                cx.notify();
+                self.redraw_regions(
+                    &[
+                        crate::ui::region::Region::FilePane,
+                        crate::ui::region::Region::Sidebar,
+                    ],
+                    cx,
+                );
             }
         }
     }
@@ -406,7 +412,7 @@ impl BenCodeApp {
                 .is_none_or(|s| s.path == selection_key);
             if mine && this.editor.selection != next {
                 this.editor.selection = next;
-                cx.notify();
+                this.redraw_regions(&[crate::ui::region::Region::FilePane], cx);
             }
             this.track_line_blame(&selection_key, cx);
             // A ⌘-click placed the caret on the name to go to.
@@ -428,7 +434,7 @@ impl BenCodeApp {
     pub fn request_close_editor_file(&mut self, path: &str, cx: &mut Context<Self>) {
         if self.editor.files.is_dirty(path) {
             self.editor.pending_close = Some(path.to_string());
-            cx.notify();
+            self.redraw_regions(&[crate::ui::region::Region::FilePane], cx);
         } else {
             self.close_editor_file(path, cx);
         }
@@ -529,7 +535,7 @@ impl BenCodeApp {
         if resave {
             self.save_editor_file(path, cx);
         }
-        cx.notify();
+        self.redraw_regions(&[crate::ui::region::Region::FilePane], cx);
     }
 }
 
