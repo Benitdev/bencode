@@ -59,6 +59,7 @@ pub mod rows;
 pub mod scale;
 pub mod scrollbar;
 pub mod search_view;
+pub mod selection_area;
 pub mod session_delete;
 pub mod settings_accounts;
 mod settings_agy_accounts;

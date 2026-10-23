@@ -155,6 +155,12 @@ fn groups() -> Vec<Group<Entry>> {
                 entry("Select All Lines", I::Type, cmd::DiffSelectAll)
                     .within("DiffText")
                     .note("In a review: one side of a side by side review."),
+                entry("Copy Selected Text", I::Copy, cmd::InboxCopy)
+                    .within("InboxText")
+                    .note("In an Inbox item's description and comments."),
+                entry("Select All Text", I::Type, cmd::InboxSelectAll)
+                    .within("InboxText")
+                    .note("In an Inbox item: its description and comments."),
                 entry("Archive Session", I::Archive, cmd::ArchiveSession),
             ],
         },

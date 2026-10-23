@@ -56,6 +56,9 @@ actions!(
         DiffCopy,
         DiffSelectAll,
         DiffClearSelection,
+        InboxCopy,
+        InboxSelectAll,
+        InboxClearSelection,
         TreeCut,
         TreePaste,
         TreeRename,
@@ -198,6 +201,10 @@ pub(crate) fn keymap() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-c", DiffCopy, Some("DiffText")),
         KeyBinding::new("cmd-a", DiffSelectAll, Some("DiffText")),
         KeyBinding::new("escape", DiffClearSelection, Some("DiffText")),
+        // An Inbox item's text the pointer selected.
+        KeyBinding::new("cmd-c", InboxCopy, Some("InboxText")),
+        KeyBinding::new("cmd-a", InboxSelectAll, Some("InboxText")),
+        KeyBinding::new("escape", InboxClearSelection, Some("InboxText")),
     ];
     keys.extend(
         (0..8).map(|slot| {
@@ -554,6 +561,13 @@ impl BenCodeApp {
         .on_action(cx.listener(|this, _: &DiffSelectAll, _, cx| this.select_all_diff(cx)))
         .on_action(cx.listener(|this, _: &DiffClearSelection, _, cx| {
             if !this.clear_diff_selection(cx) {
+                cx.propagate();
+            }
+        }))
+        .on_action(cx.listener(|this, _: &InboxCopy, _, cx| this.copy_inbox_selection(cx)))
+        .on_action(cx.listener(|this, _: &InboxSelectAll, _, cx| this.select_all_inbox(cx)))
+        .on_action(cx.listener(|this, _: &InboxClearSelection, _, cx| {
+            if !this.clear_inbox_selection(cx) {
                 cx.propagate();
             }
         }))

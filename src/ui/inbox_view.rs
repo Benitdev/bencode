@@ -15,6 +15,7 @@ pub mod ci_repair;
 mod comments;
 mod detail;
 mod pr_actions;
+mod selection;
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::time::{Duration, Instant};
@@ -102,6 +103,14 @@ impl KindFilter {
             Self::PullRequests => kind == Kind::Pr,
         }
     }
+}
+
+/// What a load lands in: the item's text, where a selection is made by
+/// block, or something beside it.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Shown {
+    Text,
+    Other,
 }
 
 /// Something loaded per item (or per job) off the UI thread.
@@ -734,6 +743,7 @@ impl BenCodeApp {
         load(
             self,
             |inbox| &mut inbox.details,
+            Shown::Text,
             key,
             {
                 let item = item.clone();
@@ -789,6 +799,7 @@ impl BenCodeApp {
         load(
             self,
             |inbox| &mut inbox.threads,
+            Shown::Text,
             key,
             move || match item.provider {
                 Provider::GitHub => github::thread(
@@ -1535,6 +1546,7 @@ fn is_dir(path: &str) -> bool {
 fn load<T: Send + 'static>(
     app: &mut BenCodeApp,
     slot: fn(&mut InboxState) -> &mut Loaded<T>,
+    text: Shown,
     key: &str,
     fetch: impl FnOnce() -> Result<T, String> + Send + 'static,
     cx: &mut Context<BenCodeApp>,
@@ -1560,10 +1572,13 @@ fn load<T: Send + 'static>(
                 slot(inbox).loading.remove(&key);
                 // A refresh started since; its own load replaces this one.
                 if inbox.generation == generation {
-                    slot(inbox).value.insert(key, result);
+                    slot(inbox).value.insert(key.clone(), result);
                 }
                 cx.notify();
             });
+            if text == Shown::Text {
+                app.forget_inbox_selection(&key, cx);
+            }
         });
         if let Err(err) = updated {
             log::debug!("inbox load after app drop: {err:#}");

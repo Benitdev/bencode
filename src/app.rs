@@ -374,6 +374,10 @@ pub struct BenCodeApp {
     /// The text selected in a review's lines, and the focus that takes ⌘C.
     pub diff_selection: Entity<crate::ui::transcript::selection::TranscriptSelection>,
     pub diff_focus: gpui::FocusHandle,
+    /// The Inbox item's text the pointer selected, and the focus its keys
+    /// work in.
+    pub inbox_selection: Entity<crate::ui::transcript::selection::TranscriptSelection>,
+    pub inbox_text_focus: gpui::FocusHandle,
     /// Each project's terminals (MonoCode project terminal docks).
     /// The terminal docks, a model the regions showing them follow; read
     /// through `terminals(cx)`, changed through `terminals_mut`.
@@ -662,6 +666,8 @@ impl BenCodeApp {
             cx.new(|_| crate::ui::transcript::selection::TranscriptSelection::default());
         let diff_selection =
             cx.new(|_| crate::ui::transcript::selection::TranscriptSelection::of_lines());
+        let inbox_selection =
+            cx.new(|_| crate::ui::transcript::selection::TranscriptSelection::default());
         let mut regions = crate::ui::region::Regions::default();
         regions.follow(
             &usage_data,
@@ -694,6 +700,7 @@ impl BenCodeApp {
         regions.follow(&transcript_selection, &[Region::Chat, Region::Mono]);
         // Reviews show in the file pane and in the inbox's pull requests.
         regions.follow(&diff_selection, &[Region::FilePane, Region::Surface]);
+        regions.follow(&inbox_selection, &[Region::Surface]);
         let mut subscriptions = vec![
             cx.subscribe(
                 &prompt_input,
@@ -1451,6 +1458,8 @@ impl BenCodeApp {
             transcript_focus: cx.focus_handle(),
             diff_selection,
             diff_focus: cx.focus_handle(),
+            inbox_selection,
+            inbox_text_focus: cx.focus_handle(),
             terminals_state,
             settings_tab: SettingsTab::Providers,
             surface: None,

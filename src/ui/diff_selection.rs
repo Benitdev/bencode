@@ -5,13 +5,13 @@
 //! side review selects within one lane, so a copy is that side's code.
 
 use std::ops::Range;
+use std::rc::Rc;
 
 use gpui::prelude::*;
-use gpui::{
-    App, ClipboardItem, Context, Div, HighlightStyle, MouseMoveEvent, SharedString, TextRun, canvas,
-};
+use gpui::{App, Context, Div, HighlightStyle, SharedString, TextRun};
 
 use crate::app::BenCodeApp;
+use crate::ui::selection_area::{self, SelectionArea};
 use crate::ui::transcript::selection::{Joint, SegCtx};
 
 /// Which lane of a review a row's text is in.
@@ -151,115 +151,59 @@ impl BenCodeApp {
         list: &gpui::ListState,
         cx: &Context<Self>,
     ) -> Div {
-        let owns = self
-            .diff_selection
-            .read(cx)
-            .session()
-            .and_then(parse_place)
-            .is_some_and(|(k, _)| k == key);
-        let scroll = {
-            let (selection, list, app, key) = (
-                self.diff_selection.clone(),
-                list.clone(),
-                cx.entity().downgrade(),
-                key.to_string(),
-            );
-            canvas(
-                |_, _, _| (),
-                move |_, _, window, _| {
-                    let (selection, list, app, key) =
-                        (selection.clone(), list.clone(), app.clone(), key.clone());
-                    window.on_mouse_event(move |event: &MouseMoveEvent, phase, _, cx| {
-                        if phase != gpui::DispatchPhase::Bubble {
-                            return;
-                        }
-                        let dragging_here = selection.read(cx).session().is_some_and(|place| {
-                            parse_place(place).is_some_and(|(k, _)| k == key)
-                                && selection.read(cx).is_dragging_in(place)
-                        });
-                        if !dragging_here {
-                            return;
-                        }
-                        let view = list.viewport_bounds();
-                        let y = event.position.y;
-                        let past = if y < view.top() {
-                            y - view.top()
-                        } else if y > view.bottom() {
-                            y - view.bottom()
-                        } else {
-                            return;
-                        };
-                        list.scroll_by(past / 2.0);
-                        if let Err(err) = app.update(cx, |this, cx| this.redraw_diff_doc(&key, cx))
-                        {
-                            log::debug!("diff selection scroll after app drop: {err:#}");
-                        }
-                    });
-                },
-            )
-            .absolute()
-            .size_full()
-        };
-        body.when(owns, |el| {
-            el.track_focus(&self.diff_focus).key_context("DiffText")
-        })
-        .child(scroll)
+        let app = cx.entity().downgrade();
+        let (owned, redrawn) = (key.to_string(), key.to_string());
+        SelectionArea {
+            selection: self.diff_selection.clone(),
+            focus: self.diff_focus.clone(),
+            key_context: "DiffText",
+            list: Some(list.clone()),
+            owns: Rc::new(move |place| parse_place(place).is_some_and(|(k, _)| k == owned)),
+            // Its lanes are places of their own; a press beside the code
+            // would not know which it meant.
+            beside: None,
+            idle_owner: false,
+            redraw: Rc::new(move |cx| {
+                if let Err(err) = app.update(cx, |this, cx| this.redraw_diff_doc(&redrawn, cx)) {
+                    log::debug!("diff selection scroll after app drop: {err:#}");
+                }
+            }),
+        }
+        .wrap(body, cx)
     }
 
     /// ⌘C: the selected lines as written, rows the list never drew
     /// included.
     pub fn copy_diff_selection(&mut self, cx: &mut Context<Self>) {
-        let selection = self.diff_selection.read(cx);
-        let Some((key, lane)) = selection.session().and_then(parse_place) else {
+        let Some((key, lane)) = (self.diff_selection.read(cx).session()).and_then(parse_place)
+        else {
             return;
         };
-        let rows = self
-            .diff_docs
-            .get(key)
+        let rows = (self.diff_docs.get(key))
             .map(|doc| doc.lane_texts(lane))
             .unwrap_or_default();
-        match selection.selected_text(&rows) {
-            Some(text) => cx.write_to_clipboard(ClipboardItem::new_string(text)),
-            None => log::debug!("diff copy with nothing selected"),
-        }
+        selection_area::copy(&self.diff_selection, &rows, cx);
     }
 
     /// ⌘A: every line of the lane the selection is in.
     pub fn select_all_diff(&mut self, cx: &mut Context<Self>) {
-        self.diff_selection.update(cx, |selection, cx| {
-            let Some(place) = selection
-                .session()
-                .map(|s| SharedString::from(s.to_string()))
-            else {
-                return;
-            };
-            selection.select_all(&place);
-            cx.notify();
-        });
+        let place = (self.diff_selection.read(cx).session()).map(SharedString::new);
+        if let Some(place) = place {
+            selection_area::select_all(&self.diff_selection, &place, cx);
+        }
     }
 
     /// Esc: drops the selection; `false` when there was none.
     pub fn clear_diff_selection(&mut self, cx: &mut Context<Self>) -> bool {
-        self.diff_selection.update(cx, |selection, cx| {
-            let cleared = selection.clear();
-            if cleared {
-                cx.notify();
-            }
-            cleared
-        })
+        selection_area::clear(&self.diff_selection, cx)
     }
 
     /// Review `key`'s rows changed (a load, a fold, a layout): what was
     /// selected by row no longer names the same lines. `None`: every review.
     pub(crate) fn forget_diff_selection(&mut self, key: Option<&str>, cx: &mut Context<Self>) {
-        self.diff_selection.update(cx, |selection, cx| {
-            let gone = |place: &str| {
-                parse_place(place).is_some_and(|(k, _)| key.is_none_or(|key| k == key))
-            };
-            if selection.forget(gone) {
-                cx.notify();
-            }
-        });
+        let gone =
+            |place: &str| parse_place(place).is_some_and(|(k, _)| key.is_none_or(|key| k == key));
+        selection_area::forget(&self.diff_selection, gone, cx);
     }
 }
 

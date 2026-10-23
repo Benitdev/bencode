@@ -2,14 +2,14 @@
 //! Esc on it, and MonoCode's `TranscriptSelectionMenu` (Add to chat, Add
 //! to notes) over a selection inside one answer or prompt.
 
+use std::rc::Rc;
+
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::prelude::*;
-use gpui::{
-    AnyElement, ClipboardItem, Context, Div, MouseButton, MouseMoveEvent, SharedString, Stateful,
-    canvas, deferred, div, point,
-};
+use gpui::{AnyElement, Context, Div, SharedString, Stateful, canvas, deferred, div, point};
 
 use crate::ui::scale::px;
+use crate::ui::selection_area::{self, SelectionArea};
 
 use super::selection::SegCtx;
 use super::turns::{self, Item, Row};
@@ -143,47 +143,27 @@ impl BenCodeApp {
 
     /// ⌘C: the selected text as shown.
     pub fn copy_transcript_selection(&mut self, cx: &mut Context<Self>) {
-        let Some(session) = self
-            .transcript_selection
-            .read(cx)
-            .session()
-            .map(str::to_string)
+        let Some(session) = (self.transcript_selection.read(cx).session()).map(str::to_string)
         else {
             return;
         };
         let shown = self.shown_block_texts(&session);
-        match self.transcript_selection.read(cx).selected_text(&shown) {
-            Some(text) => cx.write_to_clipboard(ClipboardItem::new_string(text)),
-            None => log::debug!("transcript copy with nothing selected"),
-        }
+        selection_area::copy(&self.transcript_selection, &shown, cx);
     }
 
     /// ⌘A: the whole thread the transcript focus is in.
     pub fn select_all_transcript(&mut self, cx: &mut Context<Self>) {
-        let session = self
-            .transcript_selection
-            .read(cx)
-            .session()
+        let session = (self.transcript_selection.read(cx).session())
             .map(str::to_string)
             .or_else(|| self.selected_session_id.clone());
-        let Some(session) = session else {
-            return;
-        };
-        self.transcript_selection.update(cx, |selection, cx| {
-            selection.select_all(&SharedString::from(session));
-            cx.notify();
-        });
+        if let Some(session) = session {
+            selection_area::select_all(&self.transcript_selection, &session.into(), cx);
+        }
     }
 
     /// Esc: drops the selection; `false` when there was none.
     pub fn clear_transcript_selection(&mut self, cx: &mut Context<Self>) -> bool {
-        self.transcript_selection.update(cx, |selection, cx| {
-            let cleared = selection.clear();
-            if cleared {
-                cx.notify();
-            }
-            cleared
-        })
+        selection_area::clear(&self.transcript_selection, cx)
     }
 
     /// MonoCode `saveSelectionNote`: a note titled from the text, linked to
@@ -225,7 +205,9 @@ impl BenCodeApp {
     }
 
     /// Gives the pane of `session_id` the transcript's focus and keys, and
-    /// keeps a drag selecting past the list's edges by scrolling it.
+    /// keeps a drag selecting past the list's edges by scrolling it. A
+    /// press beside the text (margins, gaps between messages) starts at the
+    /// nearest character, as in MonoCode's WebKit transcript.
     pub(crate) fn with_transcript_selection(
         &self,
         body: Stateful<Div>,
@@ -233,88 +215,34 @@ impl BenCodeApp {
         focused: bool,
         cx: &Context<Self>,
     ) -> Stateful<Div> {
-        let selection = self.transcript_selection.read(cx);
-        // The pane the selection was made in owns the focus; with none, the
-        // focused pane does.
-        let owns = selection.session().map_or(focused, |s| s == session_id);
-        let list = self
-            .transcripts
-            .get(session_id)
-            .map(|view| view.list.clone());
-        let entity = self.transcript_selection.clone();
-        let sid = session_id.to_string();
-        let scroll = list.map(|list| {
-            let app = cx.entity().downgrade();
-            canvas(
-                |_, _, _| (),
-                move |_, _, window, _| {
-                    let (entity, list, app, sid) =
-                        (entity.clone(), list.clone(), app.clone(), sid.clone());
-                    window.on_mouse_event(move |event: &MouseMoveEvent, phase, _, cx| {
-                        if phase != gpui::DispatchPhase::Bubble
-                            || !entity.read(cx).is_dragging_in(&sid)
-                        {
-                            return;
-                        }
-                        let view = list.viewport_bounds();
-                        let y = event.position.y;
-                        let past = if y < view.top() {
-                            y - view.top()
-                        } else if y > view.bottom() {
-                            y - view.bottom()
-                        } else {
-                            return;
-                        };
-                        list.scroll_by(past / 2.0);
-                        if let Err(err) = app.update(cx, |this, cx| this.redraw_thread(&sid, cx)) {
-                            log::debug!("selection scroll after app drop: {err:#}");
-                        }
-                    });
-                },
-            )
-            .absolute()
-            .size_full()
-        });
-        let session = session_id.to_string();
-        // A press beside the text (margins, gaps between messages) starts
-        // at the nearest character, as in MonoCode's WebKit transcript.
-        // Text, buttons (`OwnsPress`) and the scroll bar take theirs first.
-        let (beside, focus, sid) = (
-            self.transcript_selection.clone(),
-            self.transcript_focus.clone(),
-            SharedString::from(session_id.to_string()),
-        );
-        let body = body.on_mouse_down(MouseButton::Left, move |event, window, cx| {
-            // A button, a card header or a focusable element took it.
-            if window.default_prevented() {
-                return;
-            }
-            let started = beside.update(cx, |selection, cx| {
-                let started =
-                    selection.press_beside(&sid, event.click_count, event.modifiers.shift);
-                // A plain click selects nothing yet: no redraw until a drag.
-                if started && selection.has_selection() {
-                    cx.notify();
+        let app = cx.entity().downgrade();
+        let (sid, owned) = (session_id.to_string(), session_id.to_string());
+        let body = SelectionArea {
+            selection: self.transcript_selection.clone(),
+            focus: self.transcript_focus.clone(),
+            key_context: "Transcript",
+            list: (self.transcripts.get(session_id)).map(|view| view.list.clone()),
+            // The pane the selection was made in owns the focus; with none,
+            // the focused pane does.
+            owns: Rc::new(move |place| place == owned),
+            beside: Some(SharedString::from(session_id.to_string())),
+            idle_owner: focused,
+            redraw: Rc::new(move |cx| {
+                if let Err(err) = app.update(cx, |this, cx| this.redraw_thread(&sid, cx)) {
+                    log::debug!("selection scroll after app drop: {err:#}");
                 }
-                started
-            });
-            if started {
-                window.focus(&focus, cx);
-            }
-        });
-        body.when(owns, |el| {
-            el.track_focus(&self.transcript_focus)
-                .key_context("Transcript")
-        })
+            }),
+        }
+        .wrap(body, cx);
+        let session = session_id.to_string();
         // MonoCode closes the menu on any scroll; the selection stays.
-        .on_scroll_wheel(cx.listener(move |this, _, _, cx| {
+        body.on_scroll_wheel(cx.listener(move |this, _, _, cx| {
             this.transcript_selection.update(cx, |selection, cx| {
                 if selection.session() == Some(session.as_str()) && selection.dismiss_menu() {
                     cx.notify();
                 }
             });
         }))
-        .children(scroll)
     }
 
     /// MonoCode `TranscriptSelectionMenu`, over the selection's first line.

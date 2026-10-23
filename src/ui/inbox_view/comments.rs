@@ -2,8 +2,10 @@
 //! comments, reviews and review threads (with their replies), a pull
 //! request's commits, and a box to comment or reply to a review thread.
 
+use super::selection::comment_block;
+use crate::ui::transcript::markdown::AgentMarkdown;
+use crate::ui::transcript::selection::SegCtx;
 use ely_gpui_component::buttons::{Button, ButtonVariant};
-use ely_gpui_component::documents::MarkdownRenderer;
 use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
@@ -237,7 +239,8 @@ impl BenCodeApp {
         };
         let comment = thread.comments.get(ix)?;
         let now = crate::app::now_ms();
-        Some(self.render_comment(ix, comment, false, item.kind == Kind::Pr, now, cx))
+        let select = self.inbox_seg_ctx(&item.key(), comment_block(ix, None), cx);
+        Some(self.render_comment(ix, comment, select, false, item.kind == Kind::Pr, now, cx))
     }
 
     /// A pull request's commits, once loaded.
@@ -257,6 +260,7 @@ impl BenCodeApp {
         &self,
         ix: usize,
         comment: &Comment,
+        select: SegCtx,
         nested: bool,
         pr: bool,
         now: i64,
@@ -346,10 +350,13 @@ impl BenCodeApp {
             div()
                 .when(!nested, |el| el.px_3().py_2())
                 .text_size(Text::Md.px())
-                .child(MarkdownRenderer::new(
-                    SharedString::from(format!("comment-{}", comment.id)),
-                    comment.body.clone(),
-                ))
+                .child(
+                    AgentMarkdown::new(
+                        SharedString::from(format!("comment-{}", comment.id)),
+                        comment.body.clone(),
+                    )
+                    .selectable(select.clone()),
+                )
         });
         let replies = (!nested && !comment.replies.is_empty()).then(|| {
             div()
@@ -361,7 +368,11 @@ impl BenCodeApp {
                 .border_t_1()
                 .border_color(colors.border)
                 .children(comment.replies.iter().enumerate().map(|(r, reply)| {
-                    self.render_comment(ix * 100 + r + 1, reply, true, pr, now, cx)
+                    let select = SegCtx {
+                        block: comment_block(ix, Some(r)),
+                        ..select.clone()
+                    };
+                    self.render_comment(ix * 100 + r + 1, reply, select, true, pr, now, cx)
                 }))
         });
         if nested {

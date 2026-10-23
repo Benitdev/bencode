@@ -88,6 +88,7 @@ impl BenCodeApp {
         super::load(
             self,
             |inbox| &mut inbox.checks,
+            super::Shown::Other,
             key,
             move || github::pr_checks(std::path::Path::new(&item.project), &item.repo, item.number),
             cx,
@@ -108,6 +109,7 @@ impl BenCodeApp {
                 super::load(
                     self,
                     |inbox| &mut inbox.jobs,
+                    super::Shown::Other,
                     &job,
                     move || github::check_details(std::path::Path::new(&project), &repo, &job_id),
                     cx,

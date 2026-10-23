@@ -10,7 +10,6 @@
 use std::ops::Range;
 
 use ely_gpui_component::buttons::{Button, ButtonVariant, IconButton};
-use ely_gpui_component::documents::MarkdownRenderer;
 use ely_gpui_component::feedback::EmptyState;
 use ely_gpui_component::forms::Choice;
 use ely_gpui_component::menus::{DropdownMenu, Menu, MenuItem};
@@ -32,6 +31,7 @@ use crate::ui::app_callback::{app_callback, on_value};
 use crate::ui::composer::inbox_card::label_chip;
 use crate::ui::diff_viewer::pr_doc_key;
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
+use crate::ui::transcript::markdown::AgentMarkdown;
 use crate::work_items::Provider;
 
 /// A row of the detail's list.
@@ -116,6 +116,7 @@ impl BenCodeApp {
         let rows = self.inbox_detail_rows(item, cx);
         let inbox = self.inbox(cx);
         let key = item.key();
+        let selected_key = key.clone();
         // The comment box stays drawn while it has the keyboard, scrolled
         // out of view or not.
         let input = gpui::Focusable::focus_handle(self.inbox_comment_input.read(cx), cx);
@@ -146,7 +147,13 @@ impl BenCodeApp {
         )
         .size_full()
         .pr(crate::ui::scrollbar::gutter(state));
-        crate::ui::scrollbar::framed("inbox-detail-scrollbar", state, rows).into_any_element()
+        let framed = crate::ui::scrollbar::framed("inbox-detail-scrollbar", state, rows);
+        self.with_inbox_selection(
+            div().size_full().relative().child(framed),
+            &selected_key,
+            cx,
+        )
+        .into_any_element()
     }
 
     /// The rows the selected item shows, as far as it has loaded.
@@ -454,10 +461,11 @@ impl BenCodeApp {
                 .child("No description provided.")
                 .into_any_element(),
             Some(Ok(d)) => match d.blocks.get(block) {
-                Some(source) => MarkdownRenderer::new(
+                Some(source) => AgentMarkdown::new(
                     SharedString::from(format!("inbox-body-{key}-{block}")),
                     source.clone(),
                 )
+                .selectable(self.inbox_seg_ctx(&key, block, cx))
                 .into_any_element(),
                 None => div().into_any_element(),
             },

@@ -9,6 +9,10 @@ tagging (`docs/releasing.md`).
 - In the dark theme, the row under the pointer or the keyboard in a
   select's list or a menu shows, as it does in the model picker; those
   lists sit on the same glass as BenCode's popovers.
+- An Inbox item's description and comments can be selected and copied:
+  a drag across them, a double or triple click, ⌘C, ⌘A and Esc, and a
+  click on empty space clears, as in the transcript. They are drawn as
+  the transcript draws a reply.
 - A Backlog issue's Milestone field stays one row high with a long
   milestone: its name shortens and the chevron keeps its place.
 
