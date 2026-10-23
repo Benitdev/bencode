@@ -4,6 +4,15 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
+## [Unreleased]
+
+- Signing in to Claude or Codex (Add account, or the usage popover's
+  Sign in) shows the link the CLI printed, with Open link and Copy link,
+  for a browser that did not open or one on another device. For Claude,
+  the code that page shows is pasted back in BenCode and sent to the CLI,
+  like Claude Code's own "Paste code here" prompt. A sign-in that is
+  waiting can be cancelled.
+
 ## [0.1.30] - 2026-10-23
 
 - Settings › Providers › Import sessions brings the sessions you ran in

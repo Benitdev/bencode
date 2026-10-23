@@ -13,7 +13,7 @@ use crate::ui::scale::px;
 
 use super::usage_chip::{ChipAccounts, usage_bar};
 use crate::app::BenCodeApp;
-use crate::app::accounts::SignIn;
+use crate::app::accounts::{LoginOrigin, SignIn};
 use crate::app::usage::UsageView;
 use crate::harness::accounts::ProviderAccount;
 use crate::rate_limits::{
@@ -423,6 +423,7 @@ impl BenCodeApp {
                     ),
                 ),
             )
+            .children(self.render_login_prompt(LoginOrigin::AddAccount, cx))
             .when_some(self.usage.add_error.clone(), |el, error| {
                 el.child(
                     div()
@@ -567,6 +568,10 @@ impl BenCodeApp {
                             .child(error),
                     )
                 },
+            )
+            .when_some(
+                self.render_login_prompt(LoginOrigin::Reconnect, cx),
+                |el, prompt| el.child(div().w_full().max_w(px(260.0)).child(prompt)),
             )
             .into_any_element()
     }

@@ -32,6 +32,7 @@ pub mod launched_session;
 pub mod layout;
 pub mod lightbox;
 pub mod link_dialog;
+pub mod login_prompt;
 pub mod marks;
 pub mod mascot;
 pub mod mono_background;

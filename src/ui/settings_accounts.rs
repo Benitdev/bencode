@@ -13,7 +13,7 @@ use gpui::{
 };
 
 use crate::app::BenCodeApp;
-use crate::app::accounts::{ACCOUNT_PROVIDERS, Working};
+use crate::app::accounts::{ACCOUNT_PROVIDERS, LoginOrigin, Working};
 use crate::harness::accounts::ProviderAccount;
 use crate::rate_limits::{ProviderRateLimits, RateLimitProvider, account_status};
 use crate::ui::HarnessIcon;
@@ -165,6 +165,10 @@ impl BenCodeApp {
                     .children(rows)
                     .when(adding, |el| {
                         el.child(self.render_account_editor(provider.id(), true, cx))
+                            .children(
+                                self.render_login_prompt(LoginOrigin::Settings, cx)
+                                    .map(|prompt| div().px_4().pb_3().child(prompt)),
+                            )
                     }),
             )
             .into_any_element()

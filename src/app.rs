@@ -425,6 +425,8 @@ pub struct BenCodeApp {
     pub account_name_input: Entity<TextInput>,
     /// Settings › Accounts' name field, for adding and renaming.
     pub account_editor_input: Entity<TextInput>,
+    /// The code a provider's sign-in page shows, pasted back to its CLI.
+    pub login_code_input: Entity<TextInput>,
     pub file_tree: crate::ui::file_tree::FileTreeState,
     /// The Explorer's inline name field (MonoCode `NameRow`).
     pub file_dialog_input: Entity<TextInput>,
@@ -596,6 +598,7 @@ impl BenCodeApp {
         let file_dialog_input = text_input(window, cx, "");
         let account_name_input = text_input(window, cx, "Work or Personal");
         let account_editor_input = text_input(window, cx, "Work or Personal");
+        let login_code_input = text_input(window, cx, "Paste code");
         let name_keys_input = file_dialog_input.clone();
         let rename_keys_input = rename_input.clone();
         let model_search_input = text_input(window, cx, "Search models");
@@ -922,6 +925,16 @@ impl BenCodeApp {
                 |this: &mut Self, _, event: &InputEvent, cx| match event {
                     InputEvent::Submit => this.submit_account_editor(cx),
                     InputEvent::Changed => this.redraw_regions(&[Region::Surface], cx),
+                    _ => {}
+                },
+            ),
+            // Enter sends the pasted sign-in code; its Submit button follows
+            // the text in the popover or in Settings.
+            cx.subscribe(
+                &login_code_input,
+                |this: &mut Self, _, event: &InputEvent, cx| match event {
+                    InputEvent::Submit => this.submit_login_code(cx),
+                    InputEvent::Changed => cx.notify(),
                     _ => {}
                 },
             ),
@@ -1460,6 +1473,7 @@ impl BenCodeApp {
             agy_accounts: Default::default(),
             account_name_input,
             account_editor_input,
+            login_code_input,
             file_tree: Default::default(),
             file_dialog_input,
             file_tree_focus: cx.focus_handle(),

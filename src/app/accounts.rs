@@ -1,7 +1,8 @@
 //! Provider accounts in the app (MonoCode `providerAccounts.ts`,
 //! `UsageFooter`'s account callbacks and `App.tsx` `onSelectProviderAccount`):
 //! which profile a thread runs under, switching, adding one through the
-//! provider's browser sign-in, and who each profile is signed in as; and
+//! provider's browser sign-in (with its link and pasted code for a browser
+//! elsewhere), and who each profile is signed in as; and
 //! Settings › Accounts (`SettingsView.tsx` `ProviderAccountsSettings`):
 //! rename and remove.
 
@@ -17,6 +18,7 @@ use crate::harness::account_identity::{self, AccountIdentity};
 use crate::harness::accounts::{
     self, AccountProfile, DEFAULT_ACCOUNT_ID, ProviderAccount, supports_accounts,
 };
+use crate::harness::login::{self, LoginCancel, LoginPrompt};
 use crate::rate_limits::RateLimitProvider;
 
 /// The providers Settings › Accounts lists (MonoCode
@@ -68,6 +70,32 @@ pub struct AccountsState {
     pub error: Option<String>,
     /// The account the Remove confirmation asks about.
     pub pending_remove: Option<ProviderAccount>,
+    /// The sign-in running, from any form; one at a time.
+    pub login: Option<LoginRun>,
+    login_runs: u64,
+}
+
+/// Where a sign-in was started, so only that form shows its link.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LoginOrigin {
+    /// The popover's Add account page.
+    AddAccount,
+    /// The popover's sign-in panel, for the footer's account.
+    Reconnect,
+    /// Settings › Accounts' Add account.
+    Settings,
+}
+
+/// The one sign-in running: its link once the CLI prints it, and the code
+/// pasted from that page.
+pub struct LoginRun {
+    pub origin: LoginOrigin,
+    run: u64,
+    cancel: LoginCancel,
+    pub prompt: Option<LoginPrompt>,
+    /// A code went to the CLI; it is checking it.
+    pub code_sent: bool,
+    pub code_error: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -342,7 +370,11 @@ impl BenCodeApp {
         let Some(kind) = HarnessKind::from_id(provider.id()) else {
             return;
         };
-        if label.trim().is_empty() || self.usage.adding || self.accounts.working.is_some() {
+        if label.trim().is_empty()
+            || self.usage.adding
+            || self.accounts.working.is_some()
+            || self.accounts.login.is_some()
+        {
             return;
         }
         let account = accounts::new_account(
@@ -364,16 +396,15 @@ impl BenCodeApp {
             }
         }
         cx.notify();
-        let task = cx.background_executor().spawn(async move {
-            let result = crate::harness::login::login(kind, Some(&profile));
-            if result.is_err() {
-                profile.discard();
-            }
-            result
-        });
+        let origin = match form {
+            AccountForm::Popover => LoginOrigin::AddAccount,
+            AccountForm::Settings => LoginOrigin::Settings,
+        };
+        let task = self.start_login(kind, Some(profile), true, origin, cx);
         cx.spawn(async move |this, cx| {
             let result = task.await;
             let landed = this.update(cx, |app, cx| {
+                app.accounts.login = None;
                 match form {
                     AccountForm::Popover => app.usage.adding = false,
                     AccountForm::Settings => app.accounts.working = None,
@@ -405,6 +436,7 @@ impl BenCodeApp {
                             AccountForm::Settings => app.accounts.editor = None,
                         }
                     }
+                    Err(error) if error == login::CANCELLED => {}
                     Err(error) => match form {
                         AccountForm::Popover => app.usage.add_error = Some(error),
                         AccountForm::Settings => app.accounts.error = Some(error),
@@ -639,24 +671,24 @@ impl BenCodeApp {
         let Some(kind) = HarnessKind::from_id(target.provider.id()) else {
             return;
         };
-        if self.usage.sign_in == SignIn::Running {
+        if self.usage.sign_in == SignIn::Running || self.accounts.login.is_some() {
             return;
         }
         self.usage.sign_in = SignIn::Running;
         cx.notify();
         let profile = AccountProfile::resolve(target.provider.id(), Some(&target.account_id));
-        let task = cx
-            .background_executor()
-            .spawn(async move { crate::harness::login::login(kind, profile.as_ref()) });
+        let task = self.start_login(kind, profile, false, LoginOrigin::Reconnect, cx);
         cx.spawn(async move |this, cx| {
             let result = task.await;
             let landed = this.update(cx, |app, cx| {
+                app.accounts.login = None;
                 match result {
                     Ok(()) => {
                         app.usage.sign_in = SignIn::Complete;
                         app.load_rate_limits(target.provider, &target.account_id, true, cx);
                         app.load_account_identities(target.provider.id(), cx);
                     }
+                    Err(error) if error == login::CANCELLED => app.usage.sign_in = SignIn::Idle,
                     Err(error) => app.usage.sign_in = SignIn::Failed(error),
                 }
                 cx.notify();
@@ -666,6 +698,104 @@ impl BenCodeApp {
             }
         })
         .detach();
+    }
+
+    /// Runs the provider's sign-in off the UI thread as the one
+    /// `accounts.login`, whose link lands when the CLI prints it. The
+    /// caller clears `accounts.login` when the task ends.
+    fn start_login(
+        &mut self,
+        kind: HarnessKind,
+        profile: Option<AccountProfile>,
+        discard_on_failure: bool,
+        origin: LoginOrigin,
+        cx: &mut Context<Self>,
+    ) -> gpui::Task<Result<(), String>> {
+        self.accounts.login_runs += 1;
+        let run = self.accounts.login_runs;
+        let cancel = LoginCancel::default();
+        self.accounts.login = Some(LoginRun {
+            origin,
+            run,
+            cancel: cancel.clone(),
+            prompt: None,
+            code_sent: false,
+            code_error: None,
+        });
+        self.login_code_input
+            .update(cx, |input, cx| input.set_text("", cx));
+        let (prompt_tx, prompt_rx) = tokio::sync::oneshot::channel();
+        cx.spawn(async move |this, cx| {
+            // The sign-in ended without printing a link: nothing to show.
+            let Ok(prompt) = prompt_rx.await else { return };
+            let landed = this.update(cx, |app, cx| {
+                if let Some(login) = app.accounts.login.as_mut().filter(|l| l.run == run) {
+                    login.prompt = Some(prompt);
+                    cx.notify();
+                }
+            });
+            if let Err(err) = landed {
+                log::debug!("sign-in link after app drop: {err:#}");
+            }
+        })
+        .detach();
+        cx.background_executor().spawn(async move {
+            let result = login::login(kind, profile.as_ref(), &cancel, move |prompt| {
+                if prompt_tx.send(prompt).is_err() {
+                    log::debug!("sign-in link after its run ended");
+                }
+            });
+            if result.is_err()
+                && discard_on_failure
+                && let Some(profile) = profile
+            {
+                profile.discard();
+            }
+            result
+        })
+    }
+
+    /// Sends the code pasted from the sign-in page to the CLI.
+    pub fn submit_login_code(&mut self, cx: &mut Context<Self>) {
+        let code = self.login_code_input.read(cx).text().trim().to_string();
+        let Some(login) = self.accounts.login.as_mut() else {
+            return;
+        };
+        let Some(prompt) = login.prompt.clone().filter(|p| p.accepts_code) else {
+            return;
+        };
+        if code.is_empty() || login.code_sent {
+            return;
+        }
+        login.code_sent = true;
+        login.code_error = None;
+        let run = login.run;
+        cx.notify();
+        let task = cx
+            .background_executor()
+            .spawn(async move { prompt.submit_code(&code) });
+        cx.spawn(async move |this, cx| {
+            let Err(error) = task.await else { return };
+            let landed = this.update(cx, |app, cx| {
+                if let Some(login) = app.accounts.login.as_mut().filter(|l| l.run == run) {
+                    login.code_sent = false;
+                    login.code_error = Some(error);
+                    cx.notify();
+                }
+            });
+            if let Err(err) = landed {
+                log::debug!("sign-in code after app drop: {err:#}");
+            }
+        })
+        .detach();
+    }
+
+    /// Stops the sign-in that is waiting; its form goes back as it was.
+    pub fn cancel_login(&mut self, cx: &mut Context<Self>) {
+        if let Some(login) = &self.accounts.login {
+            login.cancel.cancel();
+            cx.notify();
+        }
     }
 
     /// Reads who each of `provider`'s accounts is signed in as.
