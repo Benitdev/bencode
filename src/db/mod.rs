@@ -661,6 +661,15 @@ impl AppDb {
         Ok(())
     }
 
+    /// Every CLI session a thread resumes.
+    pub fn provider_session_ids(&self) -> Result<std::collections::HashSet<String>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT provider_session_id FROM sessions WHERE provider_session_id IS NOT NULL",
+        )?;
+        let ids = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        Ok(ids.collect::<rusqlite::Result<_>>()?)
+    }
+
     /// Whether a thread other than `session_id` resumes CLI session
     /// `provider_session_id`, loaded in the app or not.
     pub fn provider_session_shared(

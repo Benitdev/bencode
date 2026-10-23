@@ -35,13 +35,24 @@ pub fn supported(harness: &str) -> bool {
 /// The folders `harness` may keep a session in: its default home, then
 /// each account profile's. Blocking (lists the profiles on disk).
 pub fn homes(harness: &str) -> Vec<PathBuf> {
+    homes_by_account(harness)
+        .into_iter()
+        .map(|(_, dir)| dir)
+        .collect()
+}
+
+/// [`homes`], each with the account profile it belongs to (`None` for the
+/// default home). Blocking.
+pub fn homes_by_account(harness: &str) -> Vec<(Option<String>, PathBuf)> {
     let home = std::env::var_os("HOME").map(PathBuf::from);
     let profiles = |provider: &str| {
         profiles_on_disk()
             .into_iter()
             .filter(|(p, _)| p == provider)
-            .filter_map(|(_, id)| AccountProfile::resolve(provider, Some(&id)))
-            .map(|profile| profile.dir)
+            .filter_map(|(_, id)| {
+                let dir = AccountProfile::resolve(provider, Some(&id))?.dir;
+                Some((Some(id), dir))
+            })
             .collect::<Vec<_>>()
     };
     let (default, provider) = match HarnessKind::from_id(harness) {
@@ -53,16 +64,22 @@ pub fn homes(harness: &str) -> Vec<PathBuf> {
                 .or_else(|| home.map(|h| h.join(".codex"))),
             "codex",
         ),
-        Some(HarnessKind::Grok) => return home.map(|h| h.join(".grok")).into_iter().collect(),
+        Some(HarnessKind::Grok) => {
+            return home.map(|h| (None, h.join(".grok"))).into_iter().collect();
+        }
         Some(HarnessKind::Antigravity) => {
             return home
-                .map(|h| h.join(".gemini/antigravity-cli"))
+                .map(|h| (None, h.join(".gemini/antigravity-cli")))
                 .into_iter()
                 .collect();
         }
         _ => return Vec::new(),
     };
-    default.into_iter().chain(profiles(provider)).collect()
+    default
+        .map(|dir| (None, dir))
+        .into_iter()
+        .chain(profiles(provider))
+        .collect()
 }
 
 /// Removes everything `harness` keeps of `session_id` under `homes`.

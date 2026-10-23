@@ -4,6 +4,15 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
+## [0.1.30] - Unreleased
+
+- Settings › Providers › Import sessions brings the sessions you ran in
+  Claude Code or Codex outside BenCode in as threads, one button per
+  provider. Each lands in its project with its transcript, model, branch
+  and account, and the next message resumes the same CLI session.
+  Sessions a thread already resumes are left as they are; ones whose
+  folder is gone, or that ran in the home folder, are skipped.
+
 ## [0.1.29] - 2026-10-22
 
 - Sync Changes, Pull, Commit and the other Changes actions keep running

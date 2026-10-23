@@ -500,7 +500,69 @@ impl BenCodeApp {
             .page()
             .group(self.render_settings_accounts(cx))
             .group(clis)
+            .group(self.render_settings_cli_import(cx))
             .group(advanced)
+    }
+
+    /// One row per CLI whose sessions BenCode can read, each with its
+    /// Import button and how the last import went.
+    fn render_settings_cli_import(&self, cx: &Context<Self>) -> SettingsGroup {
+        use crate::app::cli_import::ImportState;
+        use crate::harness::HarnessKind;
+        let rows = [
+            (HarnessKind::Claude, "Claude Code", "~/.claude/projects"),
+            (HarnessKind::Codex, "Codex", "~/.codex/sessions"),
+        ]
+        .into_iter()
+        .map(|(kind, name, folder)| {
+            let state = self.cli_imports.get(&kind);
+            let description = match state {
+                None => format!("Sessions in {folder} and your accounts' folders."),
+                Some(ImportState::Running) => "Reading sessions…".to_string(),
+                Some(ImportState::Done(report)) => {
+                    let mut parts = vec![format!(
+                        "Imported {}",
+                        plural(report.added, "session", "sessions")
+                    )];
+                    if report.known > 0 {
+                        parts.push(format!("{} already in BenCode", report.known));
+                    }
+                    if report.homeless > 0 {
+                        parts.push(format!(
+                            "{} skipped (folder gone or home folder)",
+                            report.homeless
+                        ));
+                    }
+                    format!("{}.", parts.join(", "))
+                }
+                Some(ImportState::Failed(err)) => format!("Import failed: {err}"),
+            };
+            SettingsRow::new(name)
+                .leading(icon_tile(
+                    HarnessIcon::new(kind.id()).size(px(16.0)),
+                    cx.theme().colors.fg,
+                ))
+                .description(description)
+                .control(
+                    Button::new(
+                        SharedString::from(format!("cli-import-{}", kind.id())),
+                        "Import",
+                    )
+                    .variant(ButtonVariant::Outline)
+                    .size(ControlSize::Sm)
+                    .icon(IconName::Download)
+                    .loading(state == Some(&ImportState::Running))
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.import_cli_sessions(kind, cx);
+                    })),
+                )
+        });
+        SettingsGroup::new("Import sessions")
+            .description(
+                "Bring in the sessions you ran in a terminal, as threads that carry on in the \
+                 same conversation. Sessions BenCode already has are left as they are.",
+            )
+            .rows(rows)
     }
 
     fn render_settings_mcp(&self, cx: &Context<Self>) -> SettingsPage {

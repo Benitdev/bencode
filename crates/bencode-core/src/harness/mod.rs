@@ -21,6 +21,7 @@ pub mod probe;
 pub mod process;
 pub mod resolver;
 pub mod runtime;
+pub mod session_import;
 pub mod session_purge;
 pub mod updates;
 

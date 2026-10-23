@@ -1,0 +1,13 @@
+{"timestamp":"2026-01-02T00:00:00.000Z","type":"session_meta","payload":{"id":"019a-codex","timestamp":"2026-01-02T00:00:00.000Z","cwd":"/Users/me/app","originator":"codex_cli_rs","cli_version":"0.50.0","git":{"branch":"main"}}}
+{"timestamp":"2026-01-02T00:00:00.100Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"<environment_context>\n  <cwd>/Users/me/app</cwd>\n</environment_context>"}]}}
+{"timestamp":"2026-01-02T00:00:00.200Z","type":"turn_context","payload":{"cwd":"/Users/me/app","model":"gpt-5.5","approval_policy":"on-request"}}
+{"timestamp":"2026-01-02T00:00:01.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"List the files"}]}}
+{"timestamp":"2026-01-02T00:00:01.000Z","type":"event_msg","payload":{"type":"user_message","message":"List the files","images":[]}}
+{"timestamp":"2026-01-02T00:00:02.000Z","type":"response_item","payload":{"type":"reasoning","summary":[{"type":"summary_text","text":"Listing."}],"encrypted_content":"x"}}
+{"timestamp":"2026-01-02T00:00:03.000Z","type":"response_item","payload":{"type":"function_call","name":"shell","arguments":"{\"command\":[\"bash\",\"-lc\",\"ls\"],\"workdir\":\"/Users/me/app\"}","call_id":"call_1"}}
+{"timestamp":"2026-01-02T00:00:04.000Z","type":"response_item","payload":{"type":"function_call_output","call_id":"call_1","output":"{\"output\":\"a\\nb\",\"metadata\":{\"exit_code\":0,\"duration_seconds\":0.1}}"}}
+{"timestamp":"2026-01-02T00:00:05.000Z","type":"response_item","payload":{"type":"custom_tool_call","status":"completed","call_id":"call_2","name":"apply_patch","input":"*** Begin Patch\n*** Update File: a.txt\n@@\n-x\n+y\n*** End Patch"}}
+{"timestamp":"2026-01-02T00:00:06.000Z","type":"response_item","payload":{"type":"custom_tool_call_output","call_id":"call_2","output":"Success. Updated the following files:\nM a.txt\n"}}
+{"timestamp":"2026-01-02T00:00:06.500Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"output_tokens":20,"total_tokens":120},"last_token_usage":{"input_tokens":100,"output_tokens":20,"total_tokens":120},"model_context_window":258400}}}
+{"timestamp":"2026-01-02T00:00:07.000Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Two files."}]}}
+{"timestamp":"2026-01-02T00:00:07.000Z","type":"event_msg","payload":{"type":"agent_message","message":"Two files."}}

@@ -476,7 +476,7 @@ impl ClaudeParser {
 }
 
 /// The `tool_result` blocks of a `user` record: call id, text, success.
-fn tool_results(rec: &Value) -> Vec<(String, String, bool)> {
+pub(crate) fn tool_results(rec: &Value) -> Vec<(String, String, bool)> {
     let Some(content) = rec.pointer("/message/content").and_then(Value::as_array) else {
         return Vec::new();
     };

@@ -10,6 +10,7 @@ pub mod backlog;
 pub mod blame;
 pub mod browser;
 pub mod chat_background;
+pub mod cli_import;
 pub mod commands;
 mod composer_input;
 pub mod file_pane;
@@ -275,6 +276,8 @@ pub struct BenCodeApp {
     pub catalog_probes: HashMap<crate::harness::HarnessKind, Option<std::time::Instant>>,
     /// The Providers page's rescan of PATH for agent CLIs is running.
     pub harness_rescan: bool,
+    /// Each provider's last "Import sessions" (`app/cli_import.rs`).
+    pub cli_imports: crate::app::cli_import::CliImports,
     /// The launch check's harness updates and each row's progress.
     pub harness_updates: crate::app::harness_updates::HarnessUpdates,
     /// Sounds, notifications and what decides them.
@@ -1373,6 +1376,7 @@ impl BenCodeApp {
             last_model_settings: Default::default(),
             catalog_probes: Default::default(),
             harness_rescan: false,
+            cli_imports: Default::default(),
             harness_updates: Default::default(),
             alerts: crate::app::alerts::Alerts {
                 window_active: true,

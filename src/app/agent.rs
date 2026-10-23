@@ -1544,9 +1544,8 @@ fn finish_turn(session: &mut SessionRow, now: i64) {
     }
 }
 
-/// MonoCode `markTurnInterrupted` (inFlight.ts): open tools become
-/// cancelled and the turn ends with an interrupt notice (once).
-pub(super) fn mark_turn_interrupted(session: &mut SessionRow, now: i64) {
+/// Tool rows still running become cancelled: their turn is over.
+pub(super) fn cancel_open_tools(session: &mut SessionRow) {
     for block in &mut session.blocks {
         let open = block
             .tool
@@ -1567,6 +1566,12 @@ pub(super) fn mark_turn_interrupted(session: &mut SessionRow, now: i64) {
             tool.insert("status".into(), json!("cancelled"));
         }
     }
+}
+
+/// MonoCode `markTurnInterrupted` (inFlight.ts): open tools become
+/// cancelled and the turn ends with an interrupt notice (once).
+pub(super) fn mark_turn_interrupted(session: &mut SessionRow, now: i64) {
+    cancel_open_tools(session);
     let noted = session
         .blocks
         .last()
