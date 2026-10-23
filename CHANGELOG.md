@@ -4,6 +4,14 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
+## [Unreleased]
+
+- In the dark theme, the row under the pointer or the keyboard in a
+  select's list or a menu shows, as it does in the model picker; those
+  lists sit on the same glass as BenCode's popovers.
+- A Backlog issue's Milestone field stays one row high with a long
+  milestone: its name shortens and the chevron keeps its place.
+
 ## [0.1.31] - 2026-10-23
 
 - Signing in to Claude or Codex (Add account, or the usage popover's

@@ -87,6 +87,7 @@ opt-level = 1
 opt-level = 3
 
 # Ely's code editor with sideways scroll and the editor tabs' right-click
-# hook: 7f7a715 plus two commits, on Benitdev's fork, until it is upstream.
+# hook and MultiSelect's chevron kept on the first row: 7f7a715 plus three
+# commits, on Benitdev's fork, until they are upstream.
 [patch."https://git.zacharyzhang.com/ZacharyZhang-NY/Ely-GPUI-Components"]
-ely-gpui-component = { git = "https://github.com/Benitdev/Ely-GPUI-Components", rev = "9319f371317c99bd5f8ce72c0dfbee8a267812fa" }
+ely-gpui-component = { git = "https://github.com/Benitdev/Ely-GPUI-Components", rev = "0c7b0a80ceebaedecc927bc2ec471521875a8b45" }

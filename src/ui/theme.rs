@@ -51,8 +51,11 @@ fn monocode_dark(tint: &ThemeTint) -> Palette {
     p.bg = bg;
     p.surface = ink(0.04);
     p.sunken = mix(bg, gpui::black(), 0.22);
-    p.overlay = p.surface;
-    p.hover = ink(0.05);
+    // Ely's popups (select lists, menus) on BenCode's popover glass, and
+    // their hover as BenCode's `Fill::Hover` over it: at the surface's 4%
+    // with a 5% hover the hovered row could not be told apart.
+    p.overlay = ink(0.02);
+    p.hover = ink(0.07);
     p.active = ink(0.10);
     p.border = fg.fill(Fill::Strong);
     p.border_strong = fg.opacity(0.20);
@@ -186,7 +189,7 @@ mod tests {
         assert_eq!(
             greys.map(hex),
             [
-                0x171717, 0x1f1f1f, 0x121212, 0x222222, 0x2c2c2c, 0xebebeb, 0x8a8a8a, 0x6c6c6c,
+                0x171717, 0x1f1f1f, 0x121212, 0x262626, 0x2c2c2c, 0xebebeb, 0x8a8a8a, 0x6c6c6c,
                 0x4a4a4a
             ]
         );
