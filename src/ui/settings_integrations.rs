@@ -3,7 +3,8 @@
 //! `app/github_accounts.rs`). Nulab Backlog (shaped after MonoCode's
 //! `JiraSettings.tsx`): connect with the space's address and a personal
 //! API key, pick which projects the Inbox lists, disconnect behind one
-//! confirmation. State and logic: `app/backlog.rs`.
+//! confirmation. State and logic: `app/backlog.rs`. Inbox: the model
+//! items and comments are translated with (`ui/inbox_view/translate.rs`).
 
 use ely_gpui_component::buttons::{Button, ButtonVariant};
 use ely_gpui_component::data_display::{Badge, Tone};
@@ -37,12 +38,25 @@ impl BenCodeApp {
             Some(group) => page.group(group),
             None => page,
         };
-        match &self.backlog.account {
+        let page = match &self.backlog.account {
             Some(account) => page
                 .group(self.render_backlog_connection(account, cx))
                 .group(self.render_backlog_projects(cx)),
             None => page.group(self.render_backlog_form(cx)),
-        }
+        };
+        page.group(self.render_inbox_translation(cx))
+    }
+
+    /// The model Translate runs on, from any installed harness.
+    fn render_inbox_translation(&self, cx: &Context<Self>) -> SettingsGroup {
+        SettingsGroup::new("Inbox").row(
+            SettingsRow::new("Translation model")
+                .description(
+                    "The model an item's or a comment's Translate runs on, one turn on your own \
+                     sign-in. A small model answers in seconds.",
+                )
+                .control(self.render_translate_model(cx)),
+        )
     }
 
     /// The accounts `gh` is signed in with.

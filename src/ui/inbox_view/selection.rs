@@ -80,17 +80,23 @@ impl BenCodeApp {
         let mut texts = Vec::new();
         if let Some(Ok(described)) = inbox.details.get(key) {
             texts.extend(
-                (described.blocks.iter().enumerate())
+                (inbox.description_blocks(key, described).iter().enumerate())
                     .map(|(ix, block)| (ix, block.trim().to_string())),
             );
         }
         if let Some(Ok(thread)) = inbox.threads.get(key) {
+            // As shown: a translated comment copies its translation.
+            let shown = |comment: &crate::github::Comment| {
+                (inbox.translations.shown_comment(key, &comment.id))
+                    .map_or(comment.body.as_str(), |t| t.as_ref())
+                    .trim()
+                    .to_string()
+            };
             for (ix, comment) in thread.comments.iter().enumerate() {
-                texts.push((comment_block(ix, None), comment.body.trim().to_string()));
+                texts.push((comment_block(ix, None), shown(comment)));
                 texts.extend(
-                    (comment.replies.iter().enumerate()).map(|(r, reply)| {
-                        (comment_block(ix, Some(r)), reply.body.trim().to_string())
-                    }),
+                    (comment.replies.iter().enumerate())
+                        .map(|(r, reply)| (comment_block(ix, Some(r)), shown(reply))),
                 );
             }
         }

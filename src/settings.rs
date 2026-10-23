@@ -73,6 +73,11 @@ pub struct AppSettings {
     pub inbox_list_width: Option<f32>,
     /// CI repairs sent from the Inbox, oldest first.
     pub inbox_repairs: Vec<crate::ui::inbox_view::Repair>,
+    /// The language an Inbox comment's Translate uses (the last picked)
+    /// and the model translations run on.
+    pub inbox_translate_language: crate::work_items::translate::Language,
+    /// `harness:model`; `None` is `translate::DEFAULT_MODEL`.
+    pub inbox_translate_model: Option<String>,
     /// Backlog project ids left out of the Inbox.
     pub backlog_hidden_projects: Vec<String>,
     /// The folder "Send to agent" starts in, by Backlog project key.
@@ -255,6 +260,8 @@ mod tests {
             inbox_seen: std::collections::BTreeMap::from([("o/r:issue:1".to_string(), 5)]),
             inbox_seen_seeded: true,
             inbox_list_width: Some(400.0),
+            inbox_translate_language: crate::work_items::translate::Language::Japanese,
+            inbox_translate_model: Some("codex:gpt-5.5".into()),
             backlog_hidden_projects: vec!["12".to_string()],
             backlog_project_folders: std::collections::BTreeMap::from([(
                 "WEB".to_string(),

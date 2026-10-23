@@ -15,6 +15,15 @@ tagging (`docs/releasing.md`).
   the transcript draws a reply.
 - A Backlog issue's Milestone field stays one row high with a long
   milestone: its name shortens and the chevron keeps its place.
+- A copy button beside an Inbox item's key copies the key and title
+  (`PROJ-1120 Fix the login`), as Backlog's clipboard button does.
+- Translate on an Inbox item puts its title and description into
+  Vietnamese, English or Japanese in place (one turn on your own
+  sign-in); the same menu turns back to the original. Each comment and
+  reply has its own Translate on hover, into the language last picked.
+  Settings › Integrations › Translation model picks the model from any
+  installed provider (Claude Haiku by default); the model and language
+  are remembered.
 
 ## [0.1.31] - 2026-10-23
 

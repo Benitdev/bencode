@@ -239,8 +239,10 @@ impl BenCodeApp {
         };
         let comment = thread.comments.get(ix)?;
         let now = crate::app::now_ms();
-        let select = self.inbox_seg_ctx(&item.key(), comment_block(ix, None), cx);
-        Some(self.render_comment(ix, comment, select, false, item.kind == Kind::Pr, now, cx))
+        let key = item.key();
+        let select = self.inbox_seg_ctx(&key, comment_block(ix, None), cx);
+        let pr = item.kind == Kind::Pr;
+        Some(self.render_comment(&key, ix, comment, select, false, pr, now, cx))
     }
 
     /// A pull request's commits, once loaded.
@@ -256,8 +258,10 @@ impl BenCodeApp {
         Some(self.render_commits(&thread.commits, now, cx))
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn render_comment(
         &self,
+        item_key: &str,
         ix: usize,
         comment: &Comment,
         select: SegCtx,
@@ -346,14 +350,71 @@ impl BenCodeApp {
             );
         }
         let has_body = !comment.body.trim().is_empty();
+        // Shown on hover, or while it is running or made.
+        let group = if nested {
+            "inbox-reply"
+        } else {
+            "inbox-comment"
+        };
+        let translations = &self.inbox(cx).translations;
+        let translation_key = super::translate::comment_key(item_key, &comment.id);
+        let running = translations.is_running(&translation_key);
+        let translated = translations.shown(&translation_key);
+        if has_body {
+            let label = match translated {
+                _ if running => "Translating…",
+                Some(_) => "Show original",
+                None if translations.is_made(&translation_key) => "Show translation",
+                None => "Translate",
+            };
+            let pinned = running || translations.is_made(&translation_key);
+            let tooltip = format!(
+                "Translate into {}; the item's Translate menu picks the language",
+                translations.language.label()
+            );
+            let (item_key, id, source) = (
+                item_key.to_string(),
+                comment.id.clone(),
+                comment.body.clone(),
+            );
+            header = header.child(
+                div()
+                    .id(("comment-translate", ix))
+                    .flex()
+                    .gap_x_2()
+                    .when(!pinned, |el| {
+                        el.invisible().group_hover(group, |s| s.visible())
+                    })
+                    .child(dot())
+                    .child(
+                        div()
+                            .id(("comment-translate-link", ix))
+                            .cursor_pointer()
+                            .hover(move |s| s.text_color(fg))
+                            .tooltip(Tooltip::text(tooltip))
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.translate_inbox_comment(&item_key, &id, &source, cx)
+                            }))
+                            .child(label),
+                    ),
+            );
+        }
+        let language = translated.map_or("", |t| t.language.label());
+        let error = translations.error(&translation_key).map(|err| {
+            div()
+                .when(!nested, |el| el.px_3().pb_2())
+                .text_size(Text::Base.px())
+                .text_color(colors.danger.opacity(0.9))
+                .child(SharedString::from(err.to_string()))
+        });
         let body = has_body.then(|| {
             div()
                 .when(!nested, |el| el.px_3().py_2())
                 .text_size(Text::Md.px())
                 .child(
                     AgentMarkdown::new(
-                        SharedString::from(format!("comment-{}", comment.id)),
-                        comment.body.clone(),
+                        SharedString::from(format!("comment-{}{language}", comment.id)),
+                        translated.map_or_else(|| comment.body.clone().into(), |t| t.body.clone()),
                     )
                     .selectable(select.clone()),
                 )
@@ -372,23 +433,28 @@ impl BenCodeApp {
                         block: comment_block(ix, Some(r)),
                         ..select.clone()
                     };
-                    self.render_comment(ix * 100 + r + 1, reply, select, true, pr, now, cx)
+                    let ix = ix * 100 + r + 1;
+                    self.render_comment(item_key, ix, reply, select, true, pr, now, cx)
                 }))
         });
         if nested {
             return div()
+                .group(group)
                 .flex()
                 .flex_col()
                 .gap_1()
                 .child(header)
                 .children(body)
+                .children(error)
                 .into_any_element();
         }
         comment_card(fg)
+            .group(group)
             .child(header.when(has_body || replies.is_some(), |el| {
                 el.border_b_1().border_color(colors.border)
             }))
             .children(body)
+            .children(error)
             .children(replies)
             .into_any_element()
     }

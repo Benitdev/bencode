@@ -16,6 +16,7 @@ mod comments;
 mod detail;
 mod pr_actions;
 mod selection;
+mod translate;
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::time::{Duration, Instant};
@@ -43,6 +44,7 @@ use blocks::Described;
 pub use checks::{Repair, RepairForm};
 pub use comments::ReplyTarget;
 pub use pr_actions::PrActionUi;
+pub use translate::Translations;
 
 /// MonoCode keeps a fetched list this long before refetching on open.
 const FRESH_FOR: Duration = Duration::from_secs(60);
@@ -186,6 +188,8 @@ pub struct InboxState {
     pub pr_tab: PrTab,
     /// The project "Send to agent" starts in, when changed from the item's.
     pub start_project: HashMap<String, String>,
+    /// Items' titles and descriptions in another language (`translate.rs`).
+    pub translations: Translations,
     /// Folders the inbox may name that the last list found gone from disk:
     /// drawing reads this, never the disk (`inbox_projects_shown`).
     pub missing_dirs: HashSet<String>,
@@ -238,6 +242,7 @@ impl Default for InboxState {
             pr: PrActionUi::default(),
             pr_tab: PrTab::default(),
             start_project: HashMap::new(),
+            translations: Translations::default(),
             missing_dirs: HashSet::new(),
             seen: BTreeMap::new(),
             seen_seeded: false,
@@ -263,6 +268,15 @@ impl InboxState {
     /// The source filter in force: none while GitHub is the only source.
     fn source_filter(&self) -> Option<Provider> {
         self.source.filter(|_| self.backlog_connected)
+    }
+
+    /// Item `key`'s description as shown: its translation's blocks, or
+    /// the original's.
+    fn description_blocks<'a>(&'a self, key: &str, described: &'a Described) -> &'a [SharedString] {
+        match self.translations.shown(key) {
+            Some(t) => &t.blocks,
+            None => &described.blocks,
+        }
     }
 
     pub fn item(&self, key: &str) -> Option<&WorkItem> {
@@ -580,6 +594,7 @@ impl BenCodeApp {
                     inbox.fetched_at = Some(Instant::now());
                     if !quiet {
                         inbox.details.clear();
+                        inbox.translations.clear();
                         inbox.threads.clear();
                         inbox.checks.clear();
                         inbox.jobs.clear();

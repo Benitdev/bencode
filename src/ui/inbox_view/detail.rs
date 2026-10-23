@@ -17,8 +17,8 @@ use ely_gpui_component::navigation::Tabs;
 use ely_gpui_component::primitives::{Icon, IconName};
 use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
-    AnyElement, Context, FontWeight, IntoElement, ParentElement, SharedString, Styled, div, list,
-    prelude::*,
+    AnyElement, ClipboardItem, Context, FontWeight, IntoElement, ParentElement, SharedString,
+    Styled, div, list, prelude::*,
 };
 
 use crate::ui::scale::px;
@@ -162,7 +162,7 @@ impl BenCodeApp {
         let key = item.key();
         let pr = item.kind == Kind::Pr;
         let blocks = match inbox.details.get(&key) {
-            Some(Ok(d)) => d.blocks.len().max(1),
+            Some(Ok(d)) => inbox.description_blocks(&key, d).len().max(1),
             _ => 1,
         };
         let mut rows = vec![DetailRow::Head, DetailRow::DescriptionTop];
@@ -243,6 +243,9 @@ impl BenCodeApp {
             .map(|d| (d.base_ref.clone(), d.head_ref.clone()))
             .unwrap_or_default();
         let url = item.url.clone();
+        // Backlog's clipboard button: the key and the title, ready to paste
+        // into a commit or a chat.
+        let ticket = format!("{} {}", item.identifier, item.title);
 
         // State, number and repository, with Open in GitHub at the far end.
         let identity = div()
@@ -257,6 +260,15 @@ impl BenCodeApp {
                 item.identifier,
                 source_label(item)
             )))
+            .child(
+                IconButton::new("inbox-copy-ticket", IconName::Copy)
+                    .variant(ButtonVariant::Ghost)
+                    .size(ControlSize::Sm)
+                    .tooltip("Copy key and title")
+                    .on_click(move |_, _, cx| {
+                        cx.write_to_clipboard(ClipboardItem::new_string(ticket.clone()))
+                    }),
+            )
             .child(div().flex_1())
             .child(
                 IconButton::new("inbox-open", IconName::ExternalLink)
@@ -347,6 +359,7 @@ impl BenCodeApp {
                 .when(item.provider == Provider::Backlog, |el| {
                     el.children(self.render_backlog_status_picker(item, cx))
                 })
+                .child(self.render_translate_menu(item, cx))
                 .when(item.kind == Kind::Pr, |el| {
                     el.children(self.render_pr_actions(item, &base, &head, cx))
                 });
@@ -368,7 +381,10 @@ impl BenCodeApp {
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_color(fg)
                             .line_clamp(3)
-                            .child(SharedString::from(item.title.clone())),
+                            .child(match self.inbox(cx).translations.shown(&key) {
+                                Some(t) => t.title.clone(),
+                                None => SharedString::from(item.title.clone()),
+                            }),
                     )
                     .child(meta)
                     .children(branches)
@@ -387,6 +403,12 @@ impl BenCodeApp {
                 el.children(self.render_backlog_fields(item, cx))
             })
             .children(self.render_pr_action_status(cx))
+            .children((self.inbox(cx).translations.error(&key)).map(|err| {
+                div()
+                    .text_size(Text::Base.px())
+                    .text_color(colors.danger.opacity(0.9))
+                    .child(SharedString::from(err.to_string()))
+            }))
             .children(
                 self.backlog
                     .issue_error
@@ -438,11 +460,15 @@ impl BenCodeApp {
         let colors = &cx.theme().colors;
         let fg = colors.fg;
         let key = item.key();
-        let details = self.inbox(cx).details.get(&key);
+        let inbox = self.inbox(cx);
+        let details = inbox.details.get(&key);
+        let shown = |d| inbox.description_blocks(&key, d);
         let blocks = match details {
-            Some(Ok(d)) => d.blocks.len().max(1),
+            Some(Ok(d)) => shown(d).len().max(1),
             _ => 1,
         };
+        // A translation's blocks are other markdown than the original's.
+        let language = (inbox.translations.shown(&key)).map_or("", |t| t.language.label());
         let body = match details {
             None => div()
                 .text_size(Text::Md.px())
@@ -454,15 +480,15 @@ impl BenCodeApp {
                 .text_color(colors.danger.opacity(0.9))
                 .child(SharedString::from(err.clone()))
                 .into_any_element(),
-            Some(Ok(d)) if d.blocks.is_empty() => div()
+            Some(Ok(d)) if shown(d).is_empty() => div()
                 .text_size(Text::Md.px())
                 .italic()
                 .text_color(fg.ink(Ink::Muted))
                 .child("No description provided.")
                 .into_any_element(),
-            Some(Ok(d)) => match d.blocks.get(block) {
+            Some(Ok(d)) => match shown(d).get(block) {
                 Some(source) => AgentMarkdown::new(
-                    SharedString::from(format!("inbox-body-{key}-{block}")),
+                    SharedString::from(format!("inbox-body-{key}-{language}-{block}")),
                     source.clone(),
                 )
                 .selectable(self.inbox_seg_ctx(&key, block, cx))

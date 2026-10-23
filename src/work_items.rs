@@ -5,6 +5,8 @@
 
 use serde::Deserialize;
 
+pub mod translate;
+
 /// Where an item lives.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum Provider {

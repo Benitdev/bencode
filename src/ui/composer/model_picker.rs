@@ -46,12 +46,17 @@ pub enum ModelsAnchor {
     MonoSettings,
     /// The model of the automation being edited; it opens below.
     Automation,
+    /// The model Inbox translations run on, in Settings; it opens below.
+    Translate,
 }
 
 impl ModelsAnchor {
     /// Hung below its trigger rather than above.
     fn opens_below(self) -> bool {
-        matches!(self, Self::MonoSettings | Self::Automation)
+        matches!(
+            self,
+            Self::MonoSettings | Self::Automation | Self::Translate
+        )
     }
 }
 
@@ -139,12 +144,26 @@ impl BenCodeApp {
         self.model_search_input.read(cx).text().to_string()
     }
 
+    /// The models are open for Inbox translations: this computer's.
+    pub(crate) fn models_for_translation(&self) -> bool {
+        self.composer_menus.models_only == Some(ModelsAnchor::Translate)
+    }
+
     /// The models are open for the automation being edited.
     pub(crate) fn models_for_automation(&self) -> bool {
         self.composer_menus.models_only == Some(ModelsAnchor::Automation)
     }
 
-    pub(super) fn current_model_key(&self) -> String {
+    /// The model the open picker marks as current.
+    pub(super) fn current_model_key(&self, cx: &gpui::App) -> String {
+        if self.models_for_translation() {
+            return self.inbox(cx).translations.model_key().to_string();
+        }
+        self.composer_model_key()
+    }
+
+    /// The automation's model being edited, else the thread's.
+    pub(super) fn composer_model_key(&self) -> String {
         if self.models_for_automation()
             && let Some(draft) = self.automations.draft.as_ref()
         {
@@ -221,7 +240,7 @@ impl BenCodeApp {
 
     /// The highlighted row on the current model, else the top.
     pub(crate) fn highlight_current_model(&mut self, cx: &Context<Self>) {
-        let current = self.current_model_key();
+        let current = self.current_model_key(cx);
         self.model_picker_index = self
             .visible_models(cx)
             .iter()
@@ -250,7 +269,7 @@ impl BenCodeApp {
         self.close_composer_popovers(cx);
         self.composer_popover = Some(ComposerPopover::Model);
         self.composer_menus.models_only = models_only;
-        let current = self.current_model_key();
+        let current = self.current_model_key(cx);
         match self.composer_machine_id() {
             // A machine's CLIs and models, asked of its host once.
             Some(machine) => {
@@ -288,7 +307,7 @@ impl BenCodeApp {
             return;
         }
         self.close_composer_popovers(cx);
-        let current = self.current_model_key();
+        let current = self.current_model_key(cx);
         self.composer_menus.recent_index = recent_menu_models(&self.recent_models, &current)
             .iter()
             .position(|m| m.key == current)
@@ -300,8 +319,11 @@ impl BenCodeApp {
 
     pub fn close_model_picker(&mut self, cx: &mut Context<Self>) {
         self.close_popover(ComposerPopover::Model);
-        // The composer is not on screen beside an automation.
-        let automation = self.composer_menus.models_only == Some(ModelsAnchor::Automation);
+        // The composer is not on screen beside an automation or Settings.
+        let automation = matches!(
+            self.composer_menus.models_only,
+            Some(ModelsAnchor::Automation | ModelsAnchor::Translate)
+        );
         self.composer_menus.models_only = None;
         self.composer_menus.recent_open = false;
         self.composer_menus.model_submenu = None;
@@ -313,6 +335,11 @@ impl BenCodeApp {
 
     fn pick_model(&mut self, key: &str, cx: &mut Context<Self>) {
         if catalog::find(key).is_some_and(|m| !self.harness_available(m.harness)) {
+            return;
+        }
+        if self.composer_menus.models_only == Some(ModelsAnchor::Translate) {
+            self.set_translate_model(key, cx);
+            self.close_model_picker(cx);
             return;
         }
         // An automation's model is part of its draft, kept until Save. Its
@@ -383,7 +410,7 @@ impl BenCodeApp {
     /// `value`, and it is remembered for threads to come.
     pub(super) fn set_model_setting(&mut self, id: &str, value: &str, cx: &mut Context<Self>) {
         let mut next =
-            catalog::merge_settings(&self.current_model_key(), self.current_model_values());
+            catalog::merge_settings(&self.current_model_key(cx), self.current_model_values());
         next.insert(id.to_string(), Value::String(value.to_string()));
         self.save_last_model_settings(&next, false, cx);
         if let Some(session) = self.selected_session_mut() {
@@ -410,7 +437,7 @@ impl BenCodeApp {
     /// MonoCode `showEntrySubmenu`: a select or the Model row opens its
     /// flyout on the current value; a toggle has none.
     fn show_entry_submenu(&mut self, entry: usize, cx: &mut Context<Self>) {
-        let settings = catalog::picker_settings(&self.current_model_key());
+        let settings = catalog::picker_settings(&self.current_model_key(cx));
         self.composer_menus.model_submenu = match settings.get(entry) {
             Some(setting) if setting.kind == SettingKind::Select => {
                 let value = setting.value(self.current_model_values());
@@ -434,7 +461,7 @@ impl BenCodeApp {
 
     /// MonoCode `onMenuKey` for the model menu.
     pub(super) fn model_menu_key(&mut self, key: &str, cx: &mut Context<Self>) -> bool {
-        let settings = catalog::picker_settings(&self.current_model_key());
+        let settings = catalog::picker_settings(&self.current_model_key(cx));
         let entries = settings.len() + 1;
         let submenu = self.composer_menus.model_submenu;
         // The models alone have no menu to go back to.
@@ -484,7 +511,7 @@ impl BenCodeApp {
 
     /// The recent-models menu: ↑/↓ wrap, Enter or Space picks.
     pub(super) fn recent_menu_key(&mut self, key: &str, cx: &mut Context<Self>) -> bool {
-        let models = recent_menu_models(&self.recent_models, &self.current_model_key());
+        let models = recent_menu_models(&self.recent_models, &self.current_model_key(cx));
         let len = models.len().max(1);
         let index = &mut self.composer_menus.recent_index;
         match key {
@@ -725,9 +752,40 @@ impl BenCodeApp {
         model: &str,
         cx: &Context<Self>,
     ) -> AnyElement {
-        let open = self.composer_menus.models_only == Some(ModelsAnchor::Automation);
-        let chip = super::composer_chip(
+        self.models_chip(
             "automation-model",
+            ModelsAnchor::Automation,
+            harness,
+            model,
+            cx,
+        )
+    }
+
+    /// The model Inbox translations run on, for Settings.
+    pub(crate) fn render_translate_model(&self, cx: &Context<Self>) -> AnyElement {
+        let model = self.inbox(cx).translations.model_key().to_string();
+        let harness = model.split_once(':').map_or("", |(harness, _)| harness);
+        self.models_chip(
+            "translate-model",
+            ModelsAnchor::Translate,
+            harness,
+            &model,
+            cx,
+        )
+    }
+
+    /// The composer's chip for `model`, opening the models below it.
+    fn models_chip(
+        &self,
+        id: &'static str,
+        anchor: ModelsAnchor,
+        harness: &str,
+        model: &str,
+        cx: &Context<Self>,
+    ) -> AnyElement {
+        let open = self.composer_menus.models_only == Some(anchor);
+        let chip = super::composer_chip(
+            id,
             HarnessIcon::new(harness).size(px(16.0)).into_any_element(),
             catalog::display_label(harness, model),
             None,
@@ -735,15 +793,13 @@ impl BenCodeApp {
             220.0,
             cx,
         )
-        .on_click(
-            cx.listener(|this, _, _, cx| this.toggle_models_only(ModelsAnchor::Automation, cx)),
-        );
+        .on_click(cx.listener(move |this, _, _, cx| this.toggle_models_only(anchor, cx)));
         div()
             .relative()
             .min_w_0()
             .child(super::menus::popover_anchor(chip, cx))
             .children(
-                self.render_models_only(ModelsAnchor::Automation, false, cx)
+                self.render_models_only(anchor, false, cx)
                     .map(super::menus::over_composer),
             )
             .into_any_element()
@@ -764,7 +820,7 @@ impl BenCodeApp {
         }
         // The menu that holds the keyboard is this one.
         let flyout = self
-            .model_flyout(&self.current_model_key(), cx)
+            .model_flyout(&self.current_model_key(cx), cx)
             .track_focus(&self.composer_menus.focus)
             .absolute()
             .map(|el| {
@@ -1029,7 +1085,7 @@ impl BenCodeApp {
         cx: &Context<Self>,
     ) -> gpui::Stateful<gpui::Div> {
         let colors = &cx.theme().colors;
-        let current = self.current_model_key();
+        let current = self.current_model_key(cx);
         let active = self.composer_menus.recent_index;
         let rows = recent_menu_models(&self.recent_models, &current)
             .into_iter()

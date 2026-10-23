@@ -137,6 +137,8 @@ impl BenCodeApp {
             inbox.seen = saved.inbox_seen.clone();
             inbox.seen_seeded = saved.inbox_seen_seeded;
             inbox.repairs = saved.inbox_repairs.clone();
+            inbox.translations.language = saved.inbox_translate_language;
+            inbox.translations.model = saved.inbox_translate_model.clone();
         });
         self.backlog.hidden_projects = saved.backlog_hidden_projects.clone();
         self.backlog.project_folders = saved.backlog_project_folders.clone();
@@ -197,6 +199,8 @@ impl BenCodeApp {
             inbox_seen: self.inbox(cx).seen.clone(),
             inbox_seen_seeded: self.inbox(cx).seen_seeded,
             inbox_repairs: self.inbox(cx).repairs.clone(),
+            inbox_translate_language: self.inbox(cx).translations.language,
+            inbox_translate_model: self.inbox(cx).translations.model.clone(),
             backlog_hidden_projects: self.backlog.hidden_projects.clone(),
             backlog_project_folders: self.backlog.project_folders.clone(),
             github_accounts: self.github.choices.clone(),

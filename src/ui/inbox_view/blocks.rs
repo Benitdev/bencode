@@ -18,12 +18,17 @@ pub struct Described {
 
 impl From<Details> for Described {
     fn from(details: Details) -> Self {
-        let blocks = blocks(&details.body)
-            .into_iter()
-            .map(|range| SharedString::from(details.body[range].to_string()))
-            .collect();
+        let blocks = cut(&details.body);
         Self { details, blocks }
     }
+}
+
+/// `source` as the rows the detail draws.
+pub(super) fn cut(source: &str) -> Vec<SharedString> {
+    blocks(source)
+        .into_iter()
+        .map(|range| SharedString::from(source[range].to_string()))
+        .collect()
 }
 
 /// The byte ranges of `source`'s top-level blocks. A source whose links

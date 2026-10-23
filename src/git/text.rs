@@ -19,7 +19,7 @@ const TEXT_MODEL: &str = "claude-haiku-4-5";
 const TIMEOUT: Duration = Duration::from_secs(90);
 
 /// MonoCode `limitSection`.
-fn limit(value: &str, max: usize) -> String {
+pub(crate) fn limit(value: &str, max: usize) -> String {
     if value.chars().count() <= max {
         return value.to_string();
     }
@@ -198,13 +198,13 @@ pub fn parse_pr_content(raw: &str) -> Option<(String, String)> {
 /// MonoCode's isolated helper launch (`buildClaudeSpawnArgs({ isolated })`):
 /// no hooks, no MCP servers, no saved session. The prompt goes on stdin,
 /// so the staged diff never shows in `ps` or hits the argv limit.
-fn claude_text_args() -> Vec<String> {
+fn claude_text_args(model: &str) -> Vec<String> {
     let mcp = serde_json::json!({ "mcpServers": {} }).to_string();
     let settings = serde_json::json!({ "disableAllHooks": true }).to_string();
     [
         "-p",
         "--model",
-        TEXT_MODEL,
+        model,
         "--output-format",
         "text",
         "--max-turns",
@@ -222,16 +222,25 @@ fn claude_text_args() -> Vec<String> {
     .to_vec()
 }
 
-/// Runs `claude -p` in `cwd` until it answers, `cancel` is set, or the
-/// timeout passes.
 fn run_claude(cwd: &str, prompt: &str, cancel: &AtomicBool) -> Result<String, String> {
+    run_claude_on(TEXT_MODEL, cwd, prompt, cancel)
+}
+
+/// Runs `claude -p` on `model` in `cwd` until it answers, `cancel` is
+/// set, or the timeout passes.
+pub(crate) fn run_claude_on(
+    model: &str,
+    cwd: &str,
+    prompt: &str,
+    cancel: &AtomicBool,
+) -> Result<String, String> {
     let claude = crate::harness::resolver::HarnessResolver::resolve_claude()
         .ok_or_else(|| "Claude Code CLI not found. Install it to generate text.".to_string())?;
     // Not per-thread (the Changes panel), so the default account, as in
     // MonoCode's `generateCommitMessage`.
     let mut child = Command::new(&claude)
         .current_dir(cwd)
-        .args(claude_text_args())
+        .args(claude_text_args(model))
         .env("PATH", crate::harness::process::child_path(&claude))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -368,20 +377,20 @@ mod tests {
 
     #[test]
     fn the_prompt_is_not_on_argv() {
-        let args = claude_text_args();
+        let args = claude_text_args(TEXT_MODEL);
         assert!(args.contains(&"-p".to_string()));
         assert!(args.iter().all(|arg| arg.len() <= 200));
     }
 
     #[test]
     fn helper_calls_run_no_hooks() {
-        let settings = value_after(&claude_text_args(), "--settings");
+        let settings = value_after(&claude_text_args(TEXT_MODEL), "--settings");
         assert_eq!(settings["disableAllHooks"], true);
     }
 
     #[test]
     fn helper_calls_load_no_mcp_servers() {
-        let args = claude_text_args();
+        let args = claude_text_args(TEXT_MODEL);
         assert_eq!(
             value_after(&args, "--mcp-config"),
             serde_json::json!({ "mcpServers": {} })
@@ -391,7 +400,7 @@ mod tests {
 
     #[test]
     fn helper_calls_save_no_session() {
-        assert!(claude_text_args().contains(&"--no-session-persistence".to_string()));
+        assert!(claude_text_args(TEXT_MODEL).contains(&"--no-session-persistence".to_string()));
     }
 
     #[test]

@@ -197,6 +197,10 @@ impl BenCodeApp {
     /// The machine the composer's thread runs on: the selected thread's
     /// folder, else the current project's.
     pub(crate) fn composer_machine_id(&self) -> Option<String> {
+        // Translations run here.
+        if self.models_for_translation() {
+            return None;
+        }
         // The models an automation picks are those of its own project.
         let automation = self
             .models_for_automation()
