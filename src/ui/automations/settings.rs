@@ -383,7 +383,7 @@ impl BenCodeApp {
                     .child(
                         SettingsRow::new("Project")
                             .description("Where runs happen")
-                            .control_width(SELECT_WIDTH)
+                            .control_fill(SELECT_WIDTH)
                             .control(
                                 Select::new("automation-project", projects)
                                     .label("Project")
@@ -404,7 +404,7 @@ impl BenCodeApp {
                     .child(
                         SettingsRow::new("Working copy")
                             .description("This repo, or a fresh worktree")
-                            .control_width(SELECT_WIDTH)
+                            .control_fill(SELECT_WIDTH)
                             .control(
                                 Select::new(
                                     "automation-working-copy",
@@ -433,7 +433,7 @@ impl BenCodeApp {
                     .child(
                         SettingsRow::new("Conversation")
                             .description("New chat, or continue the last run")
-                            .control_width(SELECT_WIDTH)
+                            .control_fill(SELECT_WIDTH)
                             .control(
                                 Select::new(
                                     "automation-conversation",
@@ -461,7 +461,7 @@ impl BenCodeApp {
                     .child(
                         SettingsRow::new("Session folder")
                             .description("Where runs appear in the sidebar")
-                            .control_width(SELECT_WIDTH)
+                            .control_fill(SELECT_WIDTH)
                             .control(
                                 Select::new("automation-folder", folder_choices)
                                     .label("Session folder")
@@ -549,7 +549,7 @@ impl BenCodeApp {
                 el.child(rule(fg)).child(
                     SettingsRow::new("Missed-run grace")
                         .description("Catch up if a scheduled run was missed")
-                        .control_width(SELECT_WIDTH)
+                        .control_fill(SELECT_WIDTH)
                         .control(
                             Select::new("automation-grace", options)
                                 .label("Missed-run grace")

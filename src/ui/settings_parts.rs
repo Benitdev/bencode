@@ -193,6 +193,8 @@ pub struct SettingsRow {
     error: bool,
     control: Option<AnyElement>,
     control_width: Option<f32>,
+    /// The control fills its column (a `Select`, which has no width).
+    control_fills: bool,
 }
 
 impl SettingsRow {
@@ -205,6 +207,7 @@ impl SettingsRow {
             error: false,
             control: None,
             control_width: None,
+            control_fills: false,
         }
     }
 
@@ -240,6 +243,13 @@ impl SettingsRow {
     /// Gives the control slot a fixed width (e.g. a `Select` or `Input` column).
     pub fn control_width(mut self, width: f32) -> Self {
         self.control_width = Some(width);
+        self
+    }
+
+    /// A column of `width` the control fills, as a `Select` does in a box.
+    pub fn control_fill(mut self, width: f32) -> Self {
+        self.control_width = Some(width);
+        self.control_fills = true;
         self
     }
 }
@@ -318,7 +328,13 @@ impl RenderOnce for SettingsRow {
                         .justify_end()
                         .text_size(Text::Base.px())
                         .text_color(fg.ink(Ink::Strong))
-                        .child(control)
+                        .map(|el| {
+                            if self.control_fills {
+                                el.child(div().w_full().child(control))
+                            } else {
+                                el.child(control)
+                            }
+                        })
                 } else {
                     div()
                         .flex()

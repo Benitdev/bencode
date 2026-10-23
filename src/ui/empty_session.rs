@@ -187,7 +187,7 @@ impl BenCodeApp {
                 .w_full()
                 .max_w(px(COMPOSER_MAX_WIDTH))
                 .mx_auto()
-                .child(self.render_composer_halo(tint, colors.bg, dark))
+                .child(self.render_composer_halo(tint, colors.bg, dark, focused))
                 .child(self.render_composer_view(Some(session), focused, true, cx))
                 .when(focused, |el| {
                     el.child(self.dock_probe_canvas(DockProbe::Composer))
@@ -255,8 +255,15 @@ impl BenCodeApp {
     /// caret. An opaque plate sits on it so the glow shows only outside
     /// the box (the box's own fill is see-through); a little of the chat
     /// background still shows through it in dark mode.
-    fn render_composer_halo(&self, tint: Hsla, page: Hsla, dark: bool) -> impl IntoElement {
-        let lit = self.prompt_focused;
+    fn render_composer_halo(
+        &self,
+        tint: Hsla,
+        page: Hsla,
+        dark: bool,
+        focused: bool,
+    ) -> impl IntoElement {
+        // Only the pane holding the prompt has the caret.
+        let lit = focused && self.prompt_focused;
         let strength = match (dark, lit) {
             (true, true) => 0.30,
             (true, false) => 0.16,

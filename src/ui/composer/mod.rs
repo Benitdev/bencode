@@ -566,7 +566,12 @@ impl BenCodeApp {
                     } else {
                         colors
                             .fg
-                            .opacity(if self.prompt_focused { 0.2 } else { 0.1 })
+                            // Only the pane holding the prompt shows its focus.
+                            .opacity(if focused && self.prompt_focused {
+                                0.2
+                            } else {
+                                0.1
+                            })
                     })
                     .bg(colors.fg.fill(Fill::Faint))
                     // MonoCode light theme: the page colour, lifted by a shadow.

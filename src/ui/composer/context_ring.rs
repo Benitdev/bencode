@@ -105,7 +105,10 @@ impl BenCodeApp {
         let window = session.context_window.filter(|w| *w > 0)?;
         let (share, headline, detail) = meter_text(used, window);
         let compactable = compact && can_compact(&session.harness);
-        let pinned = compactable && self.composer_menus.context_pinned;
+        // The card is pinned in the pane holding the prompt only.
+        let pinned = compactable
+            && self.composer_menus.context_pinned
+            && self.selected_session_id.as_deref() == Some(session.id.as_str());
         let card_lines = (headline.clone(), detail.clone());
         let ring = div()
             .id("composer-context")
