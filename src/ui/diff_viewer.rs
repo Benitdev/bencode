@@ -24,10 +24,10 @@ use crate::app::file_pane::PaneTab;
 use crate::git::checkpoint::CheckpointStore;
 use crate::git::{self, DiffSource};
 use crate::ui::diff_counts::diff_counts;
-use crate::ui::diff_selection::{Lane, LineText};
 use crate::ui::diff_model::{
     self, Block, BodyRow, Expand, Line, LineKind, Reveal, SplitRow, Syntax,
 };
+use crate::ui::diff_selection::{Lane, LineText};
 use crate::ui::git_changes_panel::{Busy, Side};
 use crate::ui::icons::ExtraIcon;
 use crate::ui::scale::{self, px};
@@ -184,12 +184,15 @@ impl DiffDoc {
         }
     }
 
-    fn set_wide(&mut self, wide: bool) {
+    /// `true` when the rows changed to the other layout.
+    fn set_wide(&mut self, wide: bool) -> bool {
         let was = self.side_by_side();
         self.wide = wide;
-        if self.side_by_side() != was {
+        let relaid = self.side_by_side() != was;
+        if relaid {
             self.relayout();
         }
+        relaid
     }
 
     /// Rebuilds the rows in the other layout, with the line that was at
@@ -372,7 +375,8 @@ impl DiffDoc {
         let scrolled = self.side_scroll.get(&file.id).copied().unwrap_or_default();
         let syntax = diff_model::syntax_for(&file.path);
         let highlights = line_highlights(&line.text, syntax, strength(line.kind), cx);
-        let text = LineText::new(seg, SharedString::from(line.text.clone()), highlights).into_any_element();
+        let text = LineText::new(seg, SharedString::from(line.text.clone()), highlights)
+            .into_any_element();
         line_row(line, number, Some(text), scrolled, cx)
     }
 
@@ -707,34 +711,42 @@ impl BenCodeApp {
                 if doc.generation != generation {
                     return;
                 }
-                match result {
+                // A reload that changed nothing keeps the selection.
+                let rows_changed = match result {
                     Ok(files) => {
-                        match changed_files(&doc.files, &files) {
+                        let rows_changed = match changed_files(&doc.files, &files) {
                             None => {
                                 // MonoCode `initialExpansion = "all"`.
                                 doc.open = files.iter().map(|f| f.id.clone()).collect();
                                 doc.reveals.clear();
                                 doc.files = files;
                                 doc.rebuild();
+                                true
                             }
                             // The same files: only the changed ones get new
                             // rows, so the others keep their measured heights.
                             Some(changed) => {
                                 doc.files = files;
-                                for ix in changed {
+                                for &ix in &changed {
                                     doc.rebuild_file(ix);
                                 }
+                                !changed.is_empty()
                             }
-                        }
+                        };
+                        let was_ready = doc.status == DocStatus::Ready;
                         doc.status = DocStatus::Ready;
                         doc.scroll_to_focus();
+                        rows_changed || !was_ready
                     }
                     Err(err) => {
                         log::error!("could not load {key}: {err}");
                         doc.status = DocStatus::Failed(err);
+                        true
                     }
+                };
+                if rows_changed {
+                    app.forget_diff_selection(Some(&key), cx);
                 }
-                app.forget_diff_selection(Some(&key), cx);
                 app.redraw_diff_doc(&key, cx);
             });
             if let Err(err) = landed {
@@ -990,8 +1002,15 @@ impl BenCodeApp {
                         return;
                     }
                     cx.defer(move |cx| {
+                        // Only a change of layout moves the rows.
                         let set = app.update(cx, |this, cx| {
-                            this.with_doc(&key, cx, |doc| doc.set_wide(wide))
+                            let Some(doc) = this.diff_docs.get_mut(&key) else {
+                                return;
+                            };
+                            if doc.set_wide(wide) {
+                                this.forget_diff_selection(Some(&key), cx);
+                            }
+                            this.redraw_diff_doc(&key, cx);
                         });
                         if let Err(err) = set {
                             log::debug!("diff measured after app drop: {err:#}");
@@ -1010,13 +1029,8 @@ impl BenCodeApp {
             .min_h_0()
             .child(self.render_doc_bar(key, doc, cx))
             .child(
-                self.with_diff_selection(
-                    div().relative().flex_1().min_h_0(),
-                    key,
-                    &doc.list,
-                    cx,
-                )
-                .child(probe)
+                self.with_diff_selection(div().relative().flex_1().min_h_0(), key, &doc.list, cx)
+                    .child(probe)
                     // A `list` lays its rows out across its whole width,
                     // padding or not: the box keeps them, like the pinned
                     // header, off the scrollbar's track.
@@ -1563,12 +1577,7 @@ pub(crate) fn render_line(
 ) -> gpui::Div {
     let text = (!line.text.is_empty()).then(|| {
         StyledText::new(SharedString::from(line.text.clone()))
-            .with_highlights(line_highlights(
-                &line.text,
-                syntax,
-                strength(line.kind),
-                cx,
-            ))
+            .with_highlights(line_highlights(&line.text, syntax, strength(line.kind), cx))
             .into_any_element()
     });
     line_row(line, number, text, scrolled, cx)

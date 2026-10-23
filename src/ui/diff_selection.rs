@@ -8,12 +8,11 @@ use std::ops::Range;
 
 use gpui::prelude::*;
 use gpui::{
-    App, ClipboardItem, Context, Div, HighlightStyle, MouseMoveEvent, SharedString,
-    TextRun, canvas,
+    App, ClipboardItem, Context, Div, HighlightStyle, MouseMoveEvent, SharedString, TextRun, canvas,
 };
 
 use crate::app::BenCodeApp;
-use crate::ui::transcript::selection::{Joint, SegCtx, restyle};
+use crate::ui::transcript::selection::{Joint, SegCtx};
 
 /// Which lane of a review a row's text is in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -78,22 +77,45 @@ impl LineText {
 impl RenderOnce for LineText {
     fn render(self, window: &mut gpui::Window, cx: &mut App) -> impl IntoElement {
         let style = window.text_style();
-        let mut runs = if self.text.is_empty() {
-            Vec::new()
-        } else {
-            vec![TextRun {
-                len: self.text.len(),
-                font: style.font(),
-                color: style.color,
-                background_color: None,
-                underline: None,
-                strikethrough: None,
-            }]
+        let base = TextRun {
+            len: 0,
+            font: style.font(),
+            color: style.color,
+            background_color: None,
+            underline: None,
+            strikethrough: None,
         };
+        // One pass over the sorted spans: a long line has hundreds of them,
+        // and restyling run by run would copy the runs once per span.
+        let len = self.text.len();
+        let mut runs = Vec::with_capacity(self.highlights.len() * 2 + 1);
+        let mut at = 0;
         for (range, highlight) in &self.highlights {
-            if let Some(color) = highlight.color {
-                restyle(&mut runs, range, |run| run.color = color);
+            let Some(color) = highlight.color else {
+                continue;
+            };
+            let (start, end) = (range.start.clamp(at, len), range.end.min(len));
+            if start >= end {
+                continue;
             }
+            if start > at {
+                runs.push(TextRun {
+                    len: start - at,
+                    ..base.clone()
+                });
+            }
+            runs.push(TextRun {
+                len: end - start,
+                color,
+                ..base.clone()
+            });
+            at = end;
+        }
+        if at < len {
+            runs.push(TextRun {
+                len: len - at,
+                ..base
+            });
         }
         self.ctx
             .text(0, Joint::Line, false, self.text, runs, cx)
@@ -205,7 +227,9 @@ impl BenCodeApp {
     /// ⌘A: every line of the lane the selection is in.
     pub fn select_all_diff(&mut self, cx: &mut Context<Self>) {
         self.diff_selection.update(cx, |selection, cx| {
-            let Some(place) = selection.session().map(|s| SharedString::from(s.to_string()))
+            let Some(place) = selection
+                .session()
+                .map(|s| SharedString::from(s.to_string()))
             else {
                 return;
             };
