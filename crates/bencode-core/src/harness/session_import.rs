@@ -12,8 +12,12 @@
 //!
 //! A session becomes turns of [`AgentEvent`]s, the same events a live run
 //! folds into a transcript, so the app builds its blocks the usual way.
+//!
+//! A session started headless (`claude -p`, `codex exec`) is marked: that is
+//! how BenCode, MonoCode and scripts run them, not a person at a terminal.
+//! Compressed archives (`.jsonl.zst`) are not read.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
@@ -38,6 +42,9 @@ pub struct ImportedSession {
     pub account_id: Option<String>,
     /// Codex moved it to `archived_sessions/`.
     pub archived: bool,
+    /// Started headless (`claude -p`, `codex exec`): by BenCode, MonoCode
+    /// or a script.
+    pub headless: bool,
     pub created_at: i64,
     pub updated_at: i64,
     pub turns: Vec<ImportedTurn>,
@@ -104,17 +111,13 @@ pub fn read_session(
     kind: HarnessKind,
     file: &SessionFile,
 ) -> Result<Option<ImportedSession>, String> {
-    let text = std::fs::read_to_string(&file.path)
-        .map_err(|err| format!("{}: {err}", file.path.display()))?;
+    let bytes =
+        std::fs::read(&file.path).map_err(|err| format!("{}: {err}", file.path.display()))?;
+    // A line cut off mid-character (a crash) costs that line, not the file.
+    let text = String::from_utf8_lossy(&bytes);
     let session = match kind {
-        HarnessKind::Claude => {
-            let fallback_id = file
-                .path
-                .file_stem()
-                .and_then(|stem| stem.to_str())
-                .unwrap_or_default();
-            parse_claude(&text, fallback_id)
-        }
+        // `--resume` and the purge go by the file's name.
+        HarnessKind::Claude => parse_claude(&text, &file_key(&file.path)),
         HarnessKind::Codex => parse_codex(&text),
         _ => None,
     };
@@ -125,32 +128,56 @@ pub fn read_session(
     }))
 }
 
-/// The sessions of `kind` on this machine, each passed to `build` as it is
-/// read (so only what `build` keeps stays in memory), one per session id:
+/// The session id a file's name carries: Claude's `<id>.jsonl`, Codex's
+/// `rollout-<time>-<id>.jsonl`.
+fn file_key(path: &Path) -> String {
+    let stem = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or_default();
+    // `rollout-YYYY-MM-DDThh-mm-ss-`
+    const ROLLOUT_PREFIX: usize = "rollout-0000-00-00T00-00-00-".len();
+    match stem.strip_prefix("rollout-") {
+        Some(_) if stem.len() > ROLLOUT_PREFIX && stem.is_char_boundary(ROLLOUT_PREFIX) => {
+            stem[ROLLOUT_PREFIX..].to_string()
+        }
+        _ => stem.to_string(),
+    }
+}
+
+/// The sessions of `kind` on this machine, each passed to `each` as it is
+/// read, so one session at a time is in memory, once per session id:
 /// where an account was switched mid-session, the copy that went
 /// furthest. Unreadable files are logged and left out. Blocking.
-pub fn read_all<T>(kind: HarnessKind, mut build: impl FnMut(ImportedSession) -> T) -> Vec<T> {
-    let mut by_id: HashMap<String, (i64, T)> = HashMap::new();
+pub fn read_each(kind: HarnessKind, mut each: impl FnMut(ImportedSession)) {
+    // The copies of one session share their file's name.
+    let mut by_key: HashMap<String, Vec<SessionFile>> = HashMap::new();
     for file in session_files(kind) {
-        let session = match read_session(kind, &file) {
-            Ok(Some(session)) => session,
-            Ok(None) => continue,
-            Err(err) => {
-                log::warn!("could not read a {} session: {err}", kind.id());
-                continue;
+        by_key.entry(file_key(&file.path)).or_default().push(file);
+    }
+    let mut seen = HashSet::new();
+    for files in by_key.into_values() {
+        let mut furthest: Option<ImportedSession> = None;
+        for file in files {
+            match read_session(kind, &file) {
+                Ok(Some(session)) => {
+                    if furthest
+                        .as_ref()
+                        .is_none_or(|kept| kept.updated_at < session.updated_at)
+                    {
+                        furthest = Some(session);
+                    }
+                }
+                Ok(None) => {}
+                Err(err) => log::warn!("could not read a {} session: {err}", kind.id()),
             }
-        };
-        let further = by_id
-            .get(&session.provider_session_id)
-            .is_none_or(|(kept, _)| *kept < session.updated_at);
-        if further {
-            let (id, updated_at) = (session.provider_session_id.clone(), session.updated_at);
-            by_id.insert(id, (updated_at, build(session)));
+        }
+        if let Some(session) = furthest
+            && seen.insert(session.provider_session_id.clone())
+        {
+            each(session);
         }
     }
-    let mut sessions: Vec<_> = by_id.into_values().collect();
-    sessions.sort_by_key(|(updated_at, _)| std::cmp::Reverse(*updated_at));
-    sessions.into_iter().map(|(_, built)| built).collect()
 }
 
 fn claude_files(projects: &Path) -> Vec<PathBuf> {
@@ -216,10 +243,19 @@ impl Turns {
     }
 
     fn event(&mut self, event: AgentEvent, at: i64) {
-        if let Some(turn) = self.turns.last_mut() {
-            turn.events.push((at, event));
-            turn.ended_at = at;
-        }
+        let Some(turn) = self.turns.last_mut() else {
+            return;
+        };
+        // Each message is a whole paragraph, as the live Codex parser
+        // spaces them; one after another they would run together.
+        let event = match (event, turn.events.last()) {
+            (AgentEvent::TextDelta(text), Some((_, AgentEvent::TextDelta(_)))) => {
+                AgentEvent::TextDelta(format!("\n\n{text}"))
+            }
+            (event, _) => event,
+        };
+        turn.events.push((at, event));
+        turn.ended_at = at;
     }
 }
 
@@ -241,10 +277,13 @@ fn is_typed_prompt(text: &str) -> bool {
         && !text.starts_with("# AGENTS.md instructions")
 }
 
-/// Reads a Claude Code session file; `fallback_id` is its file name.
-pub fn parse_claude(text: &str, fallback_id: &str) -> Option<ImportedSession> {
+/// Reads Claude Code session `id` (its file's name).
+pub fn parse_claude(text: &str, id: &str) -> Option<ImportedSession> {
     let mut turns = Turns::default();
-    let (mut id, mut cwd, mut branch) = (None::<String>, None::<String>, None::<String>);
+    let (mut cwd, mut branch) = (None::<String>, None::<String>);
+    // `cli` at a terminal, `claude-vscode` in the editor, `sdk-cli` for
+    // `claude -p`.
+    let mut entrypoint = None::<String>;
     let (mut model, mut title, mut summary) = (None::<String>, None::<String>, None::<String>);
     let mut last_usage = None;
     for line in text.lines() {
@@ -267,8 +306,8 @@ pub fn parse_claude(text: &str, fallback_id: &str) -> Option<ImportedSession> {
             Some("user" | "assistant") => {}
             _ => continue,
         }
-        if id.is_none() {
-            id = str_field(&rec, "sessionId").map(String::from);
+        if entrypoint.is_none() {
+            entrypoint = str_field(&rec, "entrypoint").map(String::from);
         }
         if let Some(dir) = str_field(&rec, "cwd").filter(|dir| !dir.is_empty()) {
             cwd.get_or_insert_with(|| dir.to_string());
@@ -281,7 +320,8 @@ pub fn parse_claude(text: &str, fallback_id: &str) -> Option<ImportedSession> {
             continue;
         };
         if str_field(&rec, "type") == Some("user") {
-            if flag("isMeta") {
+            // A compaction's summary is the CLI's, not a prompt.
+            if flag("isMeta") || flag("isCompactSummary") {
                 continue;
             }
             let results = tool_results(&rec);
@@ -366,20 +406,21 @@ pub fn parse_claude(text: &str, fallback_id: &str) -> Option<ImportedSession> {
             at,
         );
     }
-    finish(
-        turns,
-        id.unwrap_or_else(|| fallback_id.to_string()),
-        cwd,
-        model,
-        title.or(summary),
-        branch,
-    )
+    let headless = entrypoint.is_some_and(|e| e.starts_with("sdk"));
+    finish(turns, id.to_string(), cwd, model, title.or(summary), branch).map(|session| {
+        ImportedSession {
+            headless,
+            ..session
+        }
+    })
 }
 
 /// Reads a Codex rollout file.
 pub fn parse_codex(text: &str) -> Option<ImportedSession> {
     let mut turns = Turns::default();
     let (mut id, mut cwd, mut branch, mut model) = (None, None, None, None);
+    // `codex_cli_rs` at a terminal, `codex_exec` for `codex exec`.
+    let mut originator = None::<String>;
     // Tool names by call id, for their outputs.
     let mut calls: HashMap<String, String> = HashMap::new();
     for line in text.lines() {
@@ -394,6 +435,8 @@ pub fn parse_codex(text: &str) -> Option<ImportedSession> {
             Some("session_meta") => {
                 id = id.or_else(|| str_field(payload, "id").map(String::from));
                 cwd = cwd.or_else(|| str_field(payload, "cwd").map(String::from));
+                originator =
+                    originator.or_else(|| str_field(payload, "originator").map(String::from));
                 branch = payload
                     .pointer("/git/branch")
                     .and_then(Value::as_str)
@@ -433,7 +476,11 @@ pub fn parse_codex(text: &str) -> Option<ImportedSession> {
             _ => {}
         }
     }
-    finish(turns, id?, cwd, model, None, branch)
+    let headless = originator.as_deref() == Some("codex_exec");
+    finish(turns, id?, cwd, model, None, branch).map(|session| ImportedSession {
+        headless,
+        ..session
+    })
 }
 
 enum CodexItem {
@@ -543,12 +590,17 @@ fn codex_tool(item: &Value) -> (String, Value) {
                 .map(String::from)
                 .or_else(|| str_field(&args, "input").map(String::from))
                 .unwrap_or_default();
-            let file = patch.lines().find_map(|line| {
-                ["*** Update File: ", "*** Add File: ", "*** Delete File: "]
-                    .iter()
-                    .find_map(|prefix| line.strip_prefix(prefix))
-            });
-            ("Edit".into(), json!({ "file_path": file.unwrap_or("") }))
+            let file = patch_file(&patch).unwrap_or("");
+            ("Edit".into(), json!({ "file_path": file }))
+        }
+        // Newer Codex runs its tools from a script (`tools.apply_patch(..)`).
+        "exec"
+            if str_field(item, "input").is_some_and(|script| {
+                script.contains("tools.apply_patch(") && patch_file(script).is_some()
+            }) =>
+        {
+            let file = str_field(item, "input").and_then(patch_file).unwrap_or("");
+            ("Edit".into(), json!({ "file_path": file }))
         }
         _ => {
             let input = match (args, str_field(item, "input")) {
@@ -559,6 +611,22 @@ fn codex_tool(item: &Value) -> (String, Value) {
             (name.to_string(), input)
         }
     }
+}
+
+/// The first file a patch names; in a script its line breaks are
+/// escaped, so the name also ends at a backslash or a quote.
+fn patch_file(patch: &str) -> Option<&str> {
+    ["*** Update File: ", "*** Add File: ", "*** Delete File: "]
+        .iter()
+        .filter_map(|prefix| {
+            let at = patch.find(prefix)? + prefix.len();
+            let rest = &patch[at..];
+            let end = rest.find(['\n', '\\', '"']).unwrap_or(rest.len());
+            Some((at, &rest[..end]))
+        })
+        .min_by_key(|(at, _)| *at)
+        .map(|(_, file)| file)
+        .filter(|file| !file.is_empty())
 }
 
 /// `bash -lc "ls"` shows as `ls`.
@@ -631,6 +699,7 @@ fn finish(
         branch,
         account_id: None,
         archived: false,
+        headless: false,
         created_at: turns.first_at.unwrap_or(turns.last_at),
         updated_at: turns.last_at,
         turns: turns.turns,
@@ -648,7 +717,7 @@ mod tests {
 
     #[test]
     fn a_claude_session_reads_as_turns() {
-        let session = parse_claude(&fixture("claude_session_file.jsonl"), "file-id").unwrap();
+        let session = parse_claude(&fixture("claude_session_file.jsonl"), "c0ffee-1").unwrap();
         assert_eq!(session.provider_session_id, "c0ffee-1");
         assert_eq!(session.cwd, "/Users/me/app");
         assert_eq!(session.branch.as_deref(), Some("main"));
@@ -680,6 +749,59 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    #[test]
+    fn headless_sessions_and_compaction_summaries_are_marked() {
+        let at = r#""timestamp":"2026-01-01T00:00:00.000Z","cwd":"/a""#;
+        let text = format!(
+            "{{\"type\":\"user\",\"entrypoint\":\"sdk-cli\",{at},\"message\":{{\"content\":\"Go\"}}}}\n\
+             {{\"type\":\"user\",\"isCompactSummary\":true,{at},\"message\":{{\"content\":\"This session is being continued\"}}}}\n\
+             {{\"type\":\"assistant\",{at},\"message\":{{\"content\":[{{\"type\":\"text\",\"text\":\"One.\"}}]}}}}\n\
+             {{\"type\":\"assistant\",{at},\"message\":{{\"content\":[{{\"type\":\"text\",\"text\":\"Two.\"}}]}}}}"
+        );
+        let session = parse_claude(&text, "s-1").unwrap();
+        assert!(session.headless);
+        let prompts: Vec<_> = session.turns.iter().map(|t| t.prompt.as_str()).collect();
+        assert_eq!(prompts, ["Go"]);
+        let texts: Vec<_> = session.turns[0]
+            .events
+            .iter()
+            .filter_map(|(_, e)| match e {
+                AgentEvent::TextDelta(t) => Some(t.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(texts, ["One.", "\n\nTwo."]);
+        assert!(
+            !parse_codex(&fixture("codex_rollout.jsonl"))
+                .unwrap()
+                .headless
+        );
+    }
+
+    #[test]
+    fn a_script_s_patch_names_its_file() {
+        let script = r#"const r = await tools.apply_patch("*** Begin Patch\n*** Update File: /a/b.txt\n@@\n-x\n+y\n*** End Patch");"#;
+        let item = json!({ "type": "custom_tool_call", "name": "exec", "input": script });
+        assert_eq!(
+            codex_tool(&item),
+            ("Edit".into(), json!({ "file_path": "/a/b.txt" }))
+        );
+        assert_eq!(
+            patch_file("*** Add File: c.rs\n+fn main() {}"),
+            Some("c.rs")
+        );
+    }
+
+    #[test]
+    fn copies_of_a_session_share_a_key() {
+        let key = |p: &str| file_key(Path::new(p));
+        assert_eq!(key("/h/projects/-a/c0ffee-1.jsonl"), "c0ffee-1");
+        assert_eq!(
+            key("/h/sessions/2026/01/02/rollout-2026-01-02T00-00-00-019a-x.jsonl"),
+            "019a-x"
+        );
     }
 
     #[test]

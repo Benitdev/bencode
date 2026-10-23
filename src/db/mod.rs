@@ -7,6 +7,7 @@
 //! session columns it never reads.
 
 mod artifacts;
+mod cli_sessions;
 mod in_flight;
 mod orchestration;
 mod reminders;
@@ -491,6 +492,7 @@ impl AppDb {
         conn.execute_batch(reminders::REMINDERS_SQL)?;
         conn.execute_batch(orchestration::ORCHESTRATION_SQL)?;
         conn.execute_batch(worktree_removals::WORKTREE_REMOVALS_SQL)?;
+        conn.execute_batch(cli_sessions::LEFT_CLI_SESSIONS_SQL)?;
         let db = Self { conn };
         // MonoCode `SessionStore::open`: finish a deletion that was cut off.
         // A failure must not send BenCode to its fallback database; the
@@ -659,15 +661,6 @@ impl AppDb {
         self.conn
             .execute("DELETE FROM sessions WHERE id = ?1", params![session_id])?;
         Ok(())
-    }
-
-    /// Every CLI session a thread resumes.
-    pub fn provider_session_ids(&self) -> Result<std::collections::HashSet<String>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT provider_session_id FROM sessions WHERE provider_session_id IS NOT NULL",
-        )?;
-        let ids = stmt.query_map([], |row| row.get::<_, String>(0))?;
-        Ok(ids.collect::<rusqlite::Result<_>>()?)
     }
 
     /// Whether a thread other than `session_id` resumes CLI session

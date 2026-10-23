@@ -5,9 +5,11 @@
 //! session into transcript blocks the way a live run does and saves the
 //! threads BenCode does not have yet.
 //!
-//! Left out: sessions a thread already resumes (BenCode's own runs leave
-//! their files there too), and those whose folder is gone or is the home
-//! folder (no project to show or run them in).
+//! Left out: sessions BenCode has or had (`db/cli_sessions.rs`), ones
+//! started headless (BenCode's and MonoCode's own runs, scripts), and those
+//! whose folder is gone or is the home folder (no project to show or run
+//! them in). Threads are saved a few at a time, so the database's other
+//! writes go on between them.
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -32,8 +34,11 @@ pub enum ImportState {
 pub struct ImportReport {
     /// Threads added.
     pub added: usize,
-    /// Sessions a thread already resumes.
+    /// Sessions BenCode has or had.
     pub known: usize,
+    /// Sessions BenCode, MonoCode or a script started (`claude -p`,
+    /// `codex exec`).
+    pub headless: usize,
     /// Sessions whose folder is gone or is the home folder.
     pub homeless: usize,
 }
@@ -92,6 +97,9 @@ pub fn session_row(kind: HarnessKind, imported: ImportedSession) -> SessionRow {
     row
 }
 
+/// How many threads go to the database in one job.
+const SAVE_CHUNK: usize = 25;
+
 /// Whether a thread could show and run in `cwd` on this machine.
 fn has_project(cwd: &str) -> bool {
     !cwd.is_empty() && !is_home_path(cwd) && Path::new(cwd).is_dir()
@@ -114,86 +122,87 @@ impl BenCodeApp {
             .iter()
             .filter_map(|s| s.provider_session_id.clone())
             .collect();
+        // Room for one chunk waiting: reading stays a chunk ahead of saving.
+        let (chunks, mut to_save) = tokio::sync::mpsc::channel::<Vec<SessionRow>>(1);
         let read = cx.background_executor().spawn(async move {
-            let (mut known, mut homeless) = (0, 0);
-            let rows: Vec<SessionRow> = session_import::read_all(kind, |imported| {
+            let mut report = ImportReport::default();
+            let mut chunk = Vec::new();
+            let mut saving = true;
+            session_import::read_each(kind, |imported| {
+                if !saving {
+                    return;
+                }
                 if in_memory.contains(&imported.provider_session_id) {
-                    known += 1;
-                    return None;
+                    report.known += 1;
+                } else if imported.headless {
+                    report.headless += 1;
+                } else if !has_project(&imported.cwd) {
+                    report.homeless += 1;
+                } else {
+                    chunk.push(session_row(kind, imported));
+                    if chunk.len() == SAVE_CHUNK {
+                        // Off the async runtimes, so it may block; an error
+                        // means the save stopped.
+                        saving = chunks.blocking_send(std::mem::take(&mut chunk)).is_ok();
+                    }
                 }
-                if !has_project(&imported.cwd) {
-                    homeless += 1;
-                    return None;
-                }
-                Some(session_row(kind, imported))
-            })
-            .into_iter()
-            .flatten()
-            .collect();
-            let report = ImportReport {
-                added: 0,
-                known,
-                homeless,
-            };
-            (rows, report)
+            });
+            if saving && !chunk.is_empty() && chunks.blocking_send(chunk).is_err() {
+                log::debug!("import's last threads read after the save stopped");
+            }
+            report
         });
         cx.spawn(async move |this, cx| {
-            let (rows, report) = read.await;
-            let landed = this.update(cx, |app, cx| app.save_imported(kind, rows, report, cx));
+            let (mut added, mut known, mut failed) = (Vec::new(), 0, None);
+            while let Some(rows) = to_save.recv().await {
+                let saved =
+                    this.update(cx, |app, _| app.db_read(move |db| db.import_sessions(rows)));
+                let Ok(saved) = saved else {
+                    log::debug!("imported sessions after app drop");
+                    return;
+                };
+                match saved.await {
+                    Ok(Ok((cwds, already))) => {
+                        added.extend(cwds);
+                        known += already;
+                    }
+                    Ok(Err(err)) => {
+                        failed = Some(format!("{err:#}"));
+                        break;
+                    }
+                    Err(_) => {
+                        failed = Some("the database writer stopped".into());
+                        break;
+                    }
+                }
+            }
+            // Reading stops at its next chunk.
+            drop(to_save);
+            let report = read.await;
+            let landed = this.update(cx, |app, cx| {
+                let state = match failed {
+                    None => {
+                        log::info!("imported {} {} sessions", added.len(), kind.id());
+                        ImportState::Done(ImportReport {
+                            added: added.len(),
+                            known: report.known + known,
+                            ..report
+                        })
+                    }
+                    Some(err) => {
+                        log::error!("importing {} sessions failed: {err}", kind.id());
+                        ImportState::Failed(err)
+                    }
+                };
+                app.show_imported_projects(added, cx);
+                app.cli_imports.insert(kind, state);
+                cx.notify();
+            });
             if let Err(err) = landed {
                 log::debug!("imported sessions after app drop: {err:#}");
             }
         })
         .detach();
-    }
-
-    fn save_imported(
-        &mut self,
-        kind: HarnessKind,
-        rows: Vec<SessionRow>,
-        report: ImportReport,
-        cx: &mut Context<Self>,
-    ) {
-        self.db_then(
-            cx,
-            move |db| {
-                let resumed = db.provider_session_ids()?;
-                let (mut added, mut known) = (Vec::new(), 0);
-                for row in rows {
-                    if row
-                        .provider_session_id
-                        .as_ref()
-                        .is_some_and(|id| resumed.contains(id))
-                    {
-                        known += 1;
-                        continue;
-                    }
-                    db.upsert_session(&row)?;
-                    added.push(row.cwd);
-                }
-                Ok((added, known))
-            },
-            move |app, result, cx| {
-                let state = match result {
-                    Ok((added, known)) => {
-                        let report = ImportReport {
-                            added: added.len(),
-                            known: report.known + known,
-                            ..report
-                        };
-                        log::info!("imported {} {} sessions", added.len(), kind.id());
-                        app.show_imported_projects(added, cx);
-                        ImportState::Done(report)
-                    }
-                    Err(err) => {
-                        log::error!("importing {} sessions failed: {err:#}", kind.id());
-                        ImportState::Failed(format!("{err:#}"))
-                    }
-                };
-                app.cli_imports.insert(kind, state);
-                cx.notify();
-            },
-        );
     }
 
     /// The rail gains the projects new threads landed in, and the current
@@ -228,6 +237,7 @@ mod tests {
             branch: Some("main".into()),
             account_id: Some("work".into()),
             archived: false,
+            headless: false,
             created_at: 1_000,
             updated_at: 9_000,
             turns: vec![ImportedTurn {
@@ -310,4 +320,3 @@ mod tests {
         );
     }
 }
-

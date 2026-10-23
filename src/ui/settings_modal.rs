@@ -517,7 +517,9 @@ impl BenCodeApp {
         .map(|(kind, name, folder)| {
             let state = self.cli_imports.get(&kind);
             let description = match state {
-                None => format!("Sessions in {folder} and your accounts' folders."),
+                None => {
+                    format!("Terminal and editor sessions in {folder} and your accounts' folders.")
+                }
                 Some(ImportState::Running) => "Reading sessions…".to_string(),
                 Some(ImportState::Done(report)) => {
                     let mut parts = vec![format!(
@@ -526,6 +528,12 @@ impl BenCodeApp {
                     )];
                     if report.known > 0 {
                         parts.push(format!("{} already in BenCode", report.known));
+                    }
+                    if report.headless > 0 {
+                        parts.push(format!(
+                            "{} skipped (started by BenCode or a script)",
+                            report.headless
+                        ));
                     }
                     if report.homeless > 0 {
                         parts.push(format!(
