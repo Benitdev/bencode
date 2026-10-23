@@ -141,7 +141,7 @@ impl BenCodeApp {
                 true
             }
             // MonoCode runs a lone `/compact`, `/mcp` or `/add-to-folder`
-            // before the picker takes Enter.
+            // (and BenCode a lone `/clear`) before the picker takes Enter.
             ("enter", true)
                 if crate::ui::composer::mode_commands::standalone_command(
                     self.prompt_input.read(cx).text(),

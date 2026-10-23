@@ -490,7 +490,7 @@ impl BenCodeApp {
     pub fn submit_prompt(&mut self, cx: &mut Context<Self>) {
         let typed = self.prompt_input.read(cx).text().trim().to_string();
         // MonoCode runs a lone `/compact` and opens the `/mcp` picker
-        // instead of sending them.
+        // instead of sending them; a lone `/clear` starts a fresh thread.
         match mode_commands::standalone_command(&typed) {
             // The text stays when the thread cannot compact now (MonoCode
             // `if (!onCompactContext?.()) return`).
@@ -502,6 +502,16 @@ impl BenCodeApp {
                     self.prompt_input
                         .update(cx, |input, cx| input.set_text("", cx));
                     self.compact_context(&id, cx);
+                }
+                return;
+            }
+            Some(mode_commands::Command::Clear) => {
+                if let Some(id) = self.selected_session_id.clone()
+                    && !self.is_agent_running_in(&id)
+                {
+                    self.prompt_input
+                        .update(cx, |input, cx| input.set_text("", cx));
+                    self.clear_session(&id, cx);
                 }
                 return;
             }

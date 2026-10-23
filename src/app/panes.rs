@@ -657,6 +657,37 @@ impl BenCodeApp {
         self.create_new_session_id(cx);
     }
 
+    /// `/clear`: swaps the idle thread `id` for a fresh one in the same
+    /// pane, project, worktree, model and account, so the next message starts
+    /// a new provider session. The old thread stays in history; one with no
+    /// message yet is kept as it is.
+    pub fn clear_session(&mut self, id: &str, cx: &mut Context<Self>) {
+        if self.is_agent_running_in(id) || self.mono_for_session(id).is_some() {
+            return;
+        }
+        let Some(old) = self.sessions.iter().find(|s| s.id == id).cloned() else {
+            return;
+        };
+        if is_blank_session(&old, false) {
+            return;
+        }
+        let fresh = self.create_session_row(&old.cwd, cx);
+        if let Some(session) = self.sessions.iter_mut().find(|s| s.id == fresh) {
+            session.harness = old.harness;
+            session.model = old.model;
+            session.model_settings = old.model_settings;
+            session.runtime_mode = old.runtime_mode;
+            session.provider_account_id = old.provider_account_id;
+            session.worktree_cwd = old.worktree_cwd;
+            session.branch = old.branch;
+        }
+        self.persist_session(&fresh);
+        if !self.tabs.replace_pane(id, &fresh) {
+            self.tabs.open(&fresh);
+        }
+        self.sync_selection(cx);
+    }
+
     /// `create_new_session`, returning the new thread's id.
     pub fn create_new_session_id(&mut self, cx: &mut Context<Self>) -> String {
         self.leave_mono_view(cx);

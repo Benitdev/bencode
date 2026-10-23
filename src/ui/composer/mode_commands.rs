@@ -36,15 +36,17 @@ pub enum Command {
     Plan,
     Draft,
     Compact,
+    Clear,
 }
 
 impl Command {
-    pub const ALL: [Command; 5] = [
+    pub const ALL: [Command; 6] = [
         Command::AddToFolder,
         Command::Mcp,
         Command::Plan,
         Command::Draft,
         Command::Compact,
+        Command::Clear,
     ];
 
     pub fn name(self) -> &'static str {
@@ -54,6 +56,7 @@ impl Command {
             Self::Plan => ModeCommand::Plan.name(),
             Self::Draft => ModeCommand::Draft.name(),
             Self::Compact => "compact",
+            Self::Clear => "clear",
         }
     }
 
@@ -64,6 +67,7 @@ impl Command {
             Self::Plan => ModeCommand::Plan.description(),
             Self::Draft => ModeCommand::Draft.description(),
             Self::Compact => "Summarize older conversation context to free space.",
+            Self::Clear => "Start a fresh thread here; this one stays in history.",
         }
     }
 }
@@ -77,6 +81,8 @@ pub struct CommandContext {
     pub compact: bool,
     /// A thread exists to file in a folder.
     pub thread: bool,
+    /// The thread is idle and can be swapped for a fresh one.
+    pub clear: bool,
 }
 
 impl CommandContext {
@@ -86,17 +92,23 @@ impl CommandContext {
             Command::Mcp | Command::Plan => true,
             Command::Draft => self.idle,
             Command::Compact => self.compact,
+            Command::Clear => self.clear,
         }
     }
 }
 
 /// The prompt is exactly one command that runs on its own (`/compact`,
-/// `/mcp`).
+/// `/clear`, `/mcp`).
 pub fn standalone_command(text: &str) -> Option<Command> {
     let name = text.trim().strip_prefix('/')?;
-    [Command::Compact, Command::Mcp, Command::AddToFolder]
-        .into_iter()
-        .find(|c| c.name().eq_ignore_ascii_case(name))
+    [
+        Command::Compact,
+        Command::Clear,
+        Command::Mcp,
+        Command::AddToFolder,
+    ]
+    .into_iter()
+    .find(|c| c.name().eq_ignore_ascii_case(name))
 }
 
 /// The mode commands, as typed at the start of the prompt.
@@ -169,12 +181,15 @@ mod tests {
             idle: true,
             compact: false,
             thread: false,
+            clear: false,
         };
         assert!(!idle.offers(Command::AddToFolder));
+        assert!(!idle.offers(Command::Clear));
         assert!(idle.offers(Command::Draft));
         assert!(!idle.offers(Command::Compact));
         assert_eq!(standalone_command(" /compact "), Some(Command::Compact));
         assert_eq!(standalone_command("/compact now"), None);
+        assert_eq!(standalone_command("/clear"), Some(Command::Clear));
         assert_eq!(standalone_command("/plan"), None);
         assert_eq!(standalone_command(" /MCP"), Some(Command::Mcp));
     }

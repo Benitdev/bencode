@@ -240,6 +240,9 @@ impl BenCodeApp {
             idle: self.can_save_draft(session.map(|s| s.id.as_str())),
             compact: session.is_some_and(|s| crate::app::can_compact(&s.harness)),
             thread: session.is_some(),
+            clear: session.is_some_and(|s| {
+                !self.is_agent_running_in(&s.id) && self.mono_for_session(&s.id).is_none()
+            }),
         }
     }
 
@@ -557,11 +560,13 @@ mod tests {
         idle: true,
         compact: false,
         thread: false,
+        clear: false,
     };
     const BUSY: CommandContext = CommandContext {
         idle: false,
         compact: false,
         thread: false,
+        clear: false,
     };
 
     #[test]
