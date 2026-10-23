@@ -139,6 +139,7 @@ impl BenCodeApp {
             || self.sidebar_menu_open()
             || self.rail_menu_open()
             || self.tab_menu_open()
+            || self.pane_tab_menu_open()
             || self.terminal_menu_open(cx)
     }
 
@@ -156,6 +157,8 @@ impl BenCodeApp {
             self.rail_menu_key(key, cx)
         } else if self.tab_menu_open() {
             self.tab_menu_key(key, cx)
+        } else if self.pane_tab_menu_open() {
+            self.pane_tab_menu_key(key, cx)
         } else if self.terminal_menu_open(cx) {
             self.terminal_menu_key(key, cx)
         } else if self.composer_menus.handoff.is_some() {

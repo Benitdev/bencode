@@ -12,6 +12,11 @@ tagging (`docs/releasing.md`).
   the code that page shows is pasted back in BenCode and sent to the CLI,
   like Claude Code's own "Paste code here" prompt. A sign-in that is
   waiting can be cancelled.
+- Right-clicking a tab beside the chat opens a menu, as in an IDE:
+  Close, Close Others, Close to the Right, Close Saved and Close All;
+  Keep Open for a preview tab; Copy Path, Copy Relative Path and Reveal
+  in Finder for a file, review or history tab; Copy Commit SHA for a
+  commit. A file with unsaved edits stays open unless you discard them.
 
 ## [0.1.30] - 2026-10-23
 

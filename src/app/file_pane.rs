@@ -132,6 +132,14 @@ impl PaneTab {
     }
 }
 
+/// Which tabs a tab's menu closes besides (or with) it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CloseMany {
+    Others,
+    Right,
+    All,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PaneEntry {
     pub tab: PaneTab,
@@ -233,6 +241,21 @@ impl FilePane {
         Some(entry.tab)
     }
 
+    /// The keys `which` closes, counted from `key`'s tab, in strip order.
+    pub fn close_keys(&self, key: &str, which: CloseMany) -> Vec<String> {
+        let Some(at) = self.position(key) else {
+            return Vec::new();
+        };
+        (self.entries.iter().enumerate())
+            .filter(|(ix, _)| match which {
+                CloseMany::Others => *ix != at,
+                CloseMany::Right => *ix > at,
+                CloseMany::All => true,
+            })
+            .map(|(_, e)| e.tab.key())
+            .collect()
+    }
+
     pub fn reorder(&mut self, from: usize, to: usize) {
         if from < self.entries.len() && to < self.entries.len() {
             let entry = self.entries.remove(from);
@@ -322,6 +345,22 @@ mod tests {
         assert_eq!(pane.active_key(), Some("file:a"));
         pane.close("file:a");
         assert!(pane.is_empty() && pane.active_key().is_none());
+    }
+
+    #[test]
+    fn close_keys_count_from_the_clicked_tab() {
+        let mut pane = FilePane::default();
+        for path in ["a", "b", "c"] {
+            pane.open(file(path), false);
+        }
+        assert_eq!(
+            pane.close_keys("file:b", CloseMany::Others),
+            ["file:a", "file:c"]
+        );
+        assert_eq!(pane.close_keys("file:b", CloseMany::Right), ["file:c"]);
+        assert!(pane.close_keys("file:c", CloseMany::Right).is_empty());
+        assert_eq!(pane.close_keys("file:a", CloseMany::All).len(), 3);
+        assert!(pane.close_keys("file:x", CloseMany::All).is_empty());
     }
 
     #[test]

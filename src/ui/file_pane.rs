@@ -221,6 +221,7 @@ impl BenCodeApp {
                     .child(body),
             )
             .children(self.render_editor_close_confirm(cx))
+            .children(self.render_pane_tab_menu(cx))
     }
 
     fn render_pane_tabs(&self, cx: &Context<Self>) -> impl IntoElement {
@@ -254,6 +255,16 @@ impl BenCodeApp {
                 this.file_pane.keep(key);
                 this.redraw_regions(&[Region::FilePane], cx);
             }))
+            .on_menu({
+                let weak = cx.entity().downgrade();
+                move |key, position, _window, cx| {
+                    let opened =
+                        weak.update(cx, |this, cx| this.open_pane_tab_menu(key, position, cx));
+                    if let Err(err) = opened {
+                        log::debug!("tab menu after app drop: {err:#}");
+                    }
+                }
+            })
             .on_reorder({
                 let weak = cx.entity().downgrade();
                 move |from, to, _window, cx| {

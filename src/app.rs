@@ -145,6 +145,8 @@ pub struct BenCodeApp {
     pub tabs: crate::ui::layout::TabSet,
     /// Files, reviews and commits open to the right of the chat.
     pub file_pane: file_pane::FilePane,
+    /// A file pane tab's right-click menu.
+    pub file_pane_menu: Option<crate::ui::file_pane_menu::PaneTabMenu>,
     /// What each thread's agent changed, and the store that records it.
     pub checkpoints: session_review::Checkpoints,
     /// The Quit confirmation is open (agents are running).
@@ -1320,6 +1322,7 @@ impl BenCodeApp {
             selected_session_id,
             tabs,
             file_pane: Default::default(),
+            file_pane_menu: None,
             checkpoints: session_review::Checkpoints::new(
                 crate::git::checkpoint::CheckpointStore::new(
                     crate::git::checkpoint::CheckpointStore::default_dir(),
