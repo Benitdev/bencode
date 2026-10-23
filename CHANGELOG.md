@@ -4,7 +4,7 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
-## [Unreleased]
+## [0.1.32] - 2026-10-23
 
 - In the dark theme, the row under the pointer or the keyboard in a
   select's list or a menu shows, as it does in the model picker; those
