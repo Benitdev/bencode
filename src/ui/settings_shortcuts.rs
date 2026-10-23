@@ -149,6 +149,12 @@ fn groups() -> Vec<Group<Entry>> {
                     .note("In a new thread's composer: start it in a worktree or not."),
                 entry("Copy Selection", I::Copy, cmd::TranscriptCopy).within("Transcript"),
                 entry("Select All", I::Type, cmd::TranscriptSelectAll).within("Transcript"),
+                entry("Copy Selected Lines", I::Copy, cmd::DiffCopy)
+                    .within("DiffText")
+                    .note("In a review of changes."),
+                entry("Select All Lines", I::Type, cmd::DiffSelectAll)
+                    .within("DiffText")
+                    .note("In a review: one side of a side by side review."),
                 entry("Archive Session", I::Archive, cmd::ArchiveSession),
             ],
         },

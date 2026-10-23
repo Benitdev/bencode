@@ -613,6 +613,7 @@ impl BenCodeApp {
         for doc in self.diff_docs.values_mut() {
             doc.set_split(split);
         }
+        self.forget_diff_selection(None, cx);
         self.save_settings(cx);
         cx.notify();
     }

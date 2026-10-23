@@ -24,6 +24,7 @@ use crate::app::file_pane::PaneTab;
 use crate::git::checkpoint::CheckpointStore;
 use crate::git::{self, DiffSource};
 use crate::ui::diff_counts::diff_counts;
+use crate::ui::diff_selection::{Lane, LineText};
 use crate::ui::diff_model::{
     self, Block, BodyRow, Expand, Line, LineKind, Reveal, SplitRow, Syntax,
 };
@@ -352,13 +353,14 @@ impl DiffDoc {
         }
     }
 
-    /// One lane of file `ix`: `line` as `number`, or the blank side of a
-    /// line only the other side has.
+    /// One lane of file `ix`: `line` as `number`, its text selectable
+    /// through `seg`, or the blank side of a line only the other side has.
     fn lane(
         &self,
         ix: usize,
         line: Option<&Line>,
         number: Option<u32>,
+        seg: crate::ui::transcript::selection::SegCtx,
         cx: &gpui::App,
     ) -> gpui::Div {
         let Some(line) = line else {
@@ -369,7 +371,27 @@ impl DiffDoc {
         let file = &self.files[ix];
         let scrolled = self.side_scroll.get(&file.id).copied().unwrap_or_default();
         let syntax = diff_model::syntax_for(&file.path);
-        render_line(line, number, syntax, scrolled, cx)
+        let highlights = line_highlights(&line.text, syntax, strength(line.kind), cx);
+        let text = LineText::new(seg, SharedString::from(line.text.clone()), highlights).into_any_element();
+        line_row(line, number, Some(text), scrolled, cx)
+    }
+
+    /// The text of `lane`'s rows by row, for a copy that reaches rows the
+    /// list has not drawn.
+    pub(crate) fn lane_texts(&self, lane: Lane) -> Vec<(usize, String)> {
+        self.rows
+            .iter()
+            .enumerate()
+            .filter_map(|(ix, row)| {
+                let line = match (row, lane) {
+                    (DocRow::Line(_, line), Lane::Unified) => Some(line),
+                    (DocRow::Pair { old, .. }, Lane::Old) => old.as_ref(),
+                    (DocRow::Pair { new, .. }, Lane::New) => new.as_ref(),
+                    _ => None,
+                }?;
+                Some((ix, line.text.to_string()))
+            })
+            .collect()
     }
 
     fn totals(&self) -> (usize, usize) {
@@ -712,6 +734,7 @@ impl BenCodeApp {
                         doc.status = DocStatus::Failed(err);
                     }
                 }
+                app.forget_diff_selection(Some(&key), cx);
                 app.redraw_diff_doc(&key, cx);
             });
             if let Err(err) = landed {
@@ -721,7 +744,7 @@ impl BenCodeApp {
         .detach();
     }
 
-    fn redraw_diff_doc(&self, key: &str, cx: &mut gpui::App) {
+    pub(crate) fn redraw_diff_doc(&self, key: &str, cx: &mut gpui::App) {
         use crate::ui::region::Region;
         let region = if key.starts_with(PR_DOC_PREFIX) {
             Region::Surface
@@ -774,9 +797,11 @@ impl BenCodeApp {
         }
     }
 
+    /// Changes review `key`'s rows: a selection made by row is dropped.
     fn with_doc(&mut self, key: &str, cx: &mut Context<Self>, f: impl FnOnce(&mut DiffDoc)) {
         if let Some(doc) = self.diff_docs.get_mut(key) {
             f(doc);
+            self.forget_diff_selection(Some(key), cx);
             self.redraw_diff_doc(key, cx);
         }
     }
@@ -985,11 +1010,13 @@ impl BenCodeApp {
             .min_h_0()
             .child(self.render_doc_bar(key, doc, cx))
             .child(
-                div()
-                    .relative()
-                    .flex_1()
-                    .min_h_0()
-                    .child(probe)
+                self.with_diff_selection(
+                    div().relative().flex_1().min_h_0(),
+                    key,
+                    &doc.list,
+                    cx,
+                )
+                .child(probe)
                     // A `list` lays its rows out across its whole width,
                     // padding or not: the box keeps them, like the pinned
                     // header, off the scrollbar's track.
@@ -1130,14 +1157,21 @@ impl BenCodeApp {
                 .render_doc_header(key, doc, *f, false, cx)
                 .into_any_element(),
             DocRow::Line(f, line) => doc
-                .lane(*f, Some(line), line.number(), cx)
+                .lane(
+                    *f,
+                    Some(line),
+                    line.number(),
+                    self.diff_seg_ctx(key, Lane::Unified, ix, &doc.list),
+                    cx,
+                )
                 .w_full()
                 .on_scroll_wheel(self.side_scroll_listener(key, *f, cx))
                 .into_any_element(),
             // Both lanes scroll sideways together, so a pair stays aligned.
             DocRow::Pair { file, old, new } => {
-                let lane = |line: &Option<Line>, number: Option<u32>| {
-                    doc.lane(*file, line.as_ref(), number, cx)
+                let lane = |line: &Option<Line>, number: Option<u32>, lane: Lane| {
+                    let seg = self.diff_seg_ctx(key, lane, ix, &doc.list);
+                    doc.lane(*file, line.as_ref(), number, seg, cx)
                         .flex_1()
                         .min_w_0()
                 };
@@ -1145,11 +1179,11 @@ impl BenCodeApp {
                     .flex()
                     .w_full()
                     .child(
-                        lane(old, old.as_ref().and_then(|line| line.old))
+                        lane(old, old.as_ref().and_then(|line| line.old), Lane::Old)
                             .border_r_1()
                             .border_color(cx.theme().colors.border),
                     )
-                    .child(lane(new, new.as_ref().and_then(|line| line.new)))
+                    .child(lane(new, new.as_ref().and_then(|line| line.new), Lane::New))
                     .on_scroll_wheel(self.side_scroll_listener(key, *file, cx))
                     .into_any_element()
             }
@@ -1527,6 +1561,27 @@ pub(crate) fn render_line(
     scrolled: Pixels,
     cx: &gpui::App,
 ) -> gpui::Div {
+    let text = (!line.text.is_empty()).then(|| {
+        StyledText::new(SharedString::from(line.text.clone()))
+            .with_highlights(line_highlights(
+                &line.text,
+                syntax,
+                strength(line.kind),
+                cx,
+            ))
+            .into_any_element()
+    });
+    line_row(line, number, text, scrolled, cx)
+}
+
+/// `render_line` with its text already built: `None` for a blank line.
+fn line_row(
+    line: &Line,
+    number: Option<u32>,
+    text: Option<AnyElement>,
+    scrolled: Pixels,
+    cx: &gpui::App,
+) -> gpui::Div {
     let theme = cx.theme();
     let colors = &theme.colors;
     let fg = colors.fg;
@@ -1537,14 +1592,6 @@ pub(crate) fn render_line(
         LineKind::Del => (Some((diff.del_bg, diff.del_gutter)), diff.del_fg),
         LineKind::Context => (None, fg.ink(Ink::Faint)),
     };
-    let text = (!line.text.is_empty()).then(|| {
-        StyledText::new(SharedString::from(line.text.clone())).with_highlights(line_highlights(
-            &line.text,
-            syntax,
-            strength(line.kind),
-            cx,
-        ))
-    });
     div()
         .flex()
         .items_center()
@@ -1578,6 +1625,9 @@ pub(crate) fn render_line(
                 .whitespace_nowrap()
                 .overflow_hidden()
                 .text_size(px(LINE_TEXT))
+                // The text fills the row's height, so a drag down the
+                // lines never falls between them.
+                .line_height(px(LINE_HEIGHT))
                 .text_color(fg.opacity(0.8 * strength(line.kind)))
                 .map(|el| match text {
                     None => el.child(" "),

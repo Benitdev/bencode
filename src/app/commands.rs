@@ -53,6 +53,9 @@ actions!(
         TranscriptCopy,
         TranscriptSelectAll,
         TranscriptClearSelection,
+        DiffCopy,
+        DiffSelectAll,
+        DiffClearSelection,
         TreeCut,
         TreePaste,
         TreeRename,
@@ -191,6 +194,10 @@ pub(crate) fn keymap() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-c", TranscriptCopy, Some("Transcript")),
         KeyBinding::new("cmd-a", TranscriptSelectAll, Some("Transcript")),
         KeyBinding::new("escape", TranscriptClearSelection, Some("Transcript")),
+        // A review's lines the pointer selected.
+        KeyBinding::new("cmd-c", DiffCopy, Some("DiffText")),
+        KeyBinding::new("cmd-a", DiffSelectAll, Some("DiffText")),
+        KeyBinding::new("escape", DiffClearSelection, Some("DiffText")),
     ];
     keys.extend(
         (0..8).map(|slot| {
@@ -540,6 +547,13 @@ impl BenCodeApp {
         .on_action(cx.listener(|this, _: &TranscriptClearSelection, _, cx| {
             // Nothing selected: Esc does what it does elsewhere.
             if !this.clear_transcript_selection(cx) {
+                cx.propagate();
+            }
+        }))
+        .on_action(cx.listener(|this, _: &DiffCopy, _, cx| this.copy_diff_selection(cx)))
+        .on_action(cx.listener(|this, _: &DiffSelectAll, _, cx| this.select_all_diff(cx)))
+        .on_action(cx.listener(|this, _: &DiffClearSelection, _, cx| {
+            if !this.clear_diff_selection(cx) {
                 cx.propagate();
             }
         }))

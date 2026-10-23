@@ -140,6 +140,7 @@ bencode/
 | `editor_pane/` | Code editor: open files, saves, disk sync; a markdown file's Preview / Source (`preview.rs`); the toolbar's line blame and its card (`blame.rs`) |
 | `file_history.rs` | A File History tab: the commits that changed a file |
 | `diff_viewer.rs`, `diff_model.rs` | Review of working-tree changes and commits |
+| `diff_selection.rs` | Selecting a review's lines (one lane side by side) and copying them |
 | `terminal_pane/` | Terminal dock: tabs, splits (`split.rs`), menus, running jobs, host sessions (`sessions.rs`) |
 | `footer/` | Status bar: provider usage chip, its details popover and account pages, terminal toggle |
 | `inbox_view*`, `notes/`, `automations/`, `settings_modal.rs` | The four surfaces; `search_view/` is the ⌘K dialog |

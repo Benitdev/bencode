@@ -125,12 +125,23 @@ pub struct TranscriptSelection {
     /// thread's painted text: a press beside the text (a margin, the gap
     /// between messages) starts there, as WebKit does.
     nearest: HashMap<SharedString, (Nearness, Caret)>,
+    /// Each block is one line (a diff's rows): a copy joins blocks with a
+    /// newline, not a blank line.
+    line_blocks: bool,
 }
 
 /// How far a press is from a segment: rows away first, then columns.
 type Nearness = (Pixels, Pixels);
 
 impl TranscriptSelection {
+    /// A selection whose blocks are lines (`line_blocks`).
+    pub fn of_lines() -> Self {
+        Self {
+            line_blocks: true,
+            ..Self::default()
+        }
+    }
+
     fn register(&mut self, session: &SharedString, key: SegKey, segment: Segment) {
         self.segments
             .entry(session.clone())
@@ -254,6 +265,18 @@ impl TranscriptSelection {
         had
     }
 
+    /// Drops the text of every place `gone` names, and the selection if it
+    /// was made there: their rows changed under it. `true` when that
+    /// cleared a selection.
+    pub fn forget(&mut self, gone: impl Fn(&str) -> bool) -> bool {
+        self.segments.retain(|id, _| !gone(id));
+        if !self.session.as_deref().is_some_and(&gone) {
+            return false;
+        }
+        self.session = None;
+        self.clear()
+    }
+
     fn close_menu(&mut self) {
         self.menu_open = false;
         self.menu_bounds.set(None);
@@ -338,27 +361,35 @@ impl TranscriptSelection {
                     .filter(|c| *c != CHIP_PAD)
                     .collect();
                 pieces.insert(*key, (segment.joint, text));
+            } else if self.line_blocks && *key > start.key && *key < end.key {
+                // A blank line inside the selection is still a line.
+                pieces.insert(*key, (segment.joint, String::new()));
             }
         }
         for (block, text) in fallback {
             let keys = SegKey::block(*block);
             let whole = *keys.start() >= start.key && *keys.end() <= end.key;
             let drawn = segments.range(keys.clone()).next().is_some();
-            if whole && !drawn && !text.is_empty() {
+            if whole && !drawn && (self.line_blocks || !text.is_empty()) {
                 pieces.insert(*keys.start(), (Joint::Block, text.clone()));
             }
         }
+        let between = if self.line_blocks {
+            Joint::Line
+        } else {
+            Joint::Block
+        };
         let mut out = String::new();
         let mut previous: Option<usize> = None;
         for (key, (joint, text)) in pieces {
-            if text.is_empty() {
+            if text.is_empty() && !self.line_blocks {
                 continue;
             }
             if let Some(block) = previous {
                 out.push_str(if block == key.block {
                     joint.separator()
                 } else {
-                    Joint::Block.separator()
+                    between.separator()
                 });
             }
             out.push_str(&text);
@@ -497,7 +528,7 @@ impl SegCtx {
         seq: usize,
         joint: Joint,
         cell: bool,
-        text: String,
+        text: impl Into<SharedString>,
         runs: Vec<TextRun>,
         cx: &mut App,
     ) -> Selectable {
@@ -505,7 +536,7 @@ impl SegCtx {
             block: self.block,
             seq,
         };
-        let text = SharedString::from(text);
+        let text: SharedString = text.into();
         let (range, starts_here) = {
             let selection = self.selection.read(cx);
             let range = selection.range_in(&self.session, key, text.len());
@@ -943,6 +974,35 @@ mod tests {
         assert_eq!(
             sel.selected_text(&fallback).as_deref(),
             Some("first\n\nsecond\n\nthird")
+        );
+    }
+
+    #[test]
+    fn line_blocks_copy_as_lines_blank_ones_included() {
+        let session = SharedString::from("d");
+        let mut sel = TranscriptSelection::of_lines();
+        for (block, text) in [(0, "fn a() {"), (1, ""), (3, "}")] {
+            sel.register(
+                &session,
+                key(block, 0),
+                Segment {
+                    text: SharedString::from(text),
+                    joint: Joint::Line,
+                    response: false,
+                },
+            );
+        }
+        sel.select_all(&session);
+        let fallback = vec![(2, "    body".to_string())];
+        assert_eq!(
+            sel.selected_text(&fallback).as_deref(),
+            Some("fn a() {\n\n    body\n}")
+        );
+        sel.press(&session, caret(0, 0, 3), 1, false);
+        sel.drag_to(caret(3, 0, 1));
+        assert_eq!(
+            sel.selected_text(&fallback).as_deref(),
+            Some("a() {\n\n    body\n}")
         );
     }
 
