@@ -17,6 +17,10 @@ tagging (`docs/releasing.md`).
   Keep Open for a preview tab; Copy Path, Copy Relative Path and Reveal
   in Finder for a file, review or history tab; Copy Commit SHA for a
   commit. A file with unsaved edits stays open unless you discard them.
+- Fixed: opening a Backlog issue in the Inbox quit BenCode when its
+  project's milestones had not loaded yet or it had none. Settings ›
+  Worktrees and the automation editor no longer risk the same with no
+  project, or no local branch, to pick.
 
 ## [0.1.30] - 2026-10-23
 

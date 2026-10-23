@@ -56,12 +56,17 @@ impl BenCodeApp {
     pub(crate) fn render_settings_worktrees(&self, cx: &Context<Self>) -> SettingsPage {
         let page = &self.worktrees_page;
         let fg = cx.theme().colors.fg;
-        let project_choices = self.worktree_project_choices().into_iter().map(|path| {
-            Choice::new(path.clone(), self.rail_project_label(&path)).note(pretty_path(&path))
-        });
+        let project_choices: Vec<_> = (self.worktree_project_choices().into_iter())
+            .map(|path| {
+                Choice::new(path.clone(), self.rail_project_label(&path)).note(pretty_path(&path))
+            })
+            .collect();
+        // Ely's `Select` takes an empty list only disabled.
+        let no_projects = project_choices.is_empty();
         let picker = div().w(px(240.0)).child(
             Select::new("worktrees-project", project_choices)
                 .placeholder("Choose a project…")
+                .disabled(no_projects)
                 .selected(page.project.clone())
                 .on_change(on_value(cx, |this, path, cx| {
                     this.select_worktrees_project(path, cx)
@@ -261,22 +266,22 @@ impl BenCodeApp {
             this.set_worktree_creation_existing(value == "existing", cx)
         }));
         let name = if creation.existing {
-            Select::new(
-                "create-worktree-existing",
-                page.branches
-                    .iter()
-                    .filter(|b| !b.remote)
-                    .map(|b| Choice::new(b.name.clone(), b.name.clone())),
-            )
-            .placeholder("Choose a branch…")
-            .when(!creation.existing_branch.is_empty(), |s| {
-                s.selected(creation.existing_branch.clone())
-            })
-            .disabled(busy)
-            .on_change(on_value(cx, |this, value, cx| {
-                this.set_worktree_creation_branch(value, cx)
-            }))
-            .into_any_element()
+            let local: Vec<_> = (page.branches.iter())
+                .filter(|b| !b.remote)
+                .map(|b| Choice::new(b.name.clone(), b.name.clone()))
+                .collect();
+            // Still loading, or none: Ely's `Select` takes no empty list.
+            let none = local.is_empty();
+            Select::new("create-worktree-existing", local)
+                .placeholder("Choose a branch…")
+                .when(!creation.existing_branch.is_empty(), |s| {
+                    s.selected(creation.existing_branch.clone())
+                })
+                .disabled(busy || none)
+                .on_change(on_value(cx, |this, value, cx| {
+                    this.set_worktree_creation_branch(value, cx)
+                }))
+                .into_any_element()
         } else {
             div()
                 .child(self.worktree_branch_input.clone())

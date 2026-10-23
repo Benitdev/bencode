@@ -368,6 +368,8 @@ impl BenCodeApp {
         if !draft.cwd.is_empty() && !paths.contains(&draft.cwd) {
             paths.insert(0, draft.cwd.clone());
         }
+        // Ely's `Select` takes an empty list only disabled.
+        let no_projects = paths.is_empty();
         let projects = paths.into_iter().map(|path| {
             Choice::new(path.clone(), self.rail_project_label(&path))
                 .icon(IconName::Folder)
@@ -389,6 +391,7 @@ impl BenCodeApp {
                                     .label("Project")
                                     .size(ControlSize::Sm)
                                     .placeholder("Choose a project…")
+                                    .disabled(no_projects)
                                     .selected(draft.cwd.clone())
                                     .on_change(on_value(cx, |this, path, cx| {
                                         let path = path.to_string();

@@ -137,29 +137,46 @@ impl BenCodeApp {
             .map(|m| m.id)
             .collect();
         let entity = cx.entity().downgrade();
+        // Ely's `MultiSelect` refuses an empty list: before the options
+        // load, or in a project without milestones, the issue's own show
+        // in a closed `Select`.
+        let shown = match milestones.as_slice() {
+            [] => "No milestone".to_string(),
+            some => (some.iter().map(|m| m.name.as_str()))
+                .collect::<Vec<_>>()
+                .join(", "),
+        };
+        let milestone_picker = if options.milestones.is_empty() {
+            Select::new("backlog-milestones", Vec::<Choice>::new())
+                .size(ControlSize::Sm)
+                .disabled(true)
+                .placeholder(shown)
+                .into_any_element()
+        } else {
+            MultiSelect::new("backlog-milestones", choices(&options.milestones))
+                .size(ControlSize::Sm)
+                .placeholder("No milestone")
+                .selected(milestones.iter().map(|m| m.id.to_string()))
+                .on_change(move |values, _, cx| {
+                    if busy {
+                        return;
+                    }
+                    let ids = (unlisted.iter().copied())
+                        .chain(values.iter().filter_map(|v| v.parse().ok()))
+                        .collect();
+                    let key = milestone_key.clone();
+                    if let Err(err) = entity.update(cx, |this, cx| {
+                        this.update_backlog_issue(&key, Change::Milestones(ids), cx)
+                    }) {
+                        log::debug!("milestones after app drop: {err:#}");
+                    }
+                })
+                .into_any_element()
+        };
         let milestone_field = field(
             "Milestone",
             None,
-            div().w_full().child(
-                MultiSelect::new("backlog-milestones", choices(&options.milestones))
-                    .size(ControlSize::Sm)
-                    .placeholder("No milestone")
-                    .selected(milestones.iter().map(|m| m.id.to_string()))
-                    .on_change(move |values, _, cx| {
-                        if busy {
-                            return;
-                        }
-                        let ids = (unlisted.iter().copied())
-                            .chain(values.iter().filter_map(|v| v.parse().ok()))
-                            .collect();
-                        let key = milestone_key.clone();
-                        if let Err(err) = entity.update(cx, |this, cx| {
-                            this.update_backlog_issue(&key, Change::Milestones(ids), cx)
-                        }) {
-                            log::debug!("milestones after app drop: {err:#}");
-                        }
-                    }),
-            ),
+            div().w_full().child(milestone_picker),
             cx,
         );
 
