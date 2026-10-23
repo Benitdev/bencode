@@ -4,14 +4,25 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
-## [0.1.30] - Unreleased
+## [0.1.30] - 2026-10-23
 
 - Settings › Providers › Import sessions brings the sessions you ran in
   Claude Code or Codex outside BenCode in as threads, one button per
   provider. Each lands in its project with its transcript, model, branch
   and account, and the next message resumes the same CLI session.
-  Sessions a thread already resumes are left as they are; ones whose
-  folder is gone, or that ran in the home folder, are skipped.
+  Sessions BenCode has or once had (a deleted thread's, one a thread
+  moved on from) are left as they are, and so are ones BenCode, MonoCode
+  or a script started (`claude -p`, `codex exec`); ones whose folder is
+  gone, or that ran in the home folder, are skipped.
+- A lone `/clear` in the composer starts a fresh thread in place of the
+  idle one, in the same project, worktree, model, settings and account;
+  the next message opens a new CLI session and the old thread stays in
+  history.
+- A review's lines can be selected and copied: a drag, a double or
+  triple click, ⌘C, ⌘A and Esc. Side by side, a selection stays on the
+  side it started on, so a copy is that side's code. A reload that
+  changed nothing keeps the selection.
+- Settings, Mono settings and Automations share one row and group style.
 
 ## [0.1.29] - 2026-10-22
 
