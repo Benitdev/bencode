@@ -505,9 +505,12 @@ impl BenCodeApp {
                 }
                 return;
             }
+            // As `/compact`, the text stays while the thread cannot clear
+            // (a turn runs; a Mono's chat rotates its threads itself).
             Some(mode_commands::Command::Clear) => {
                 if let Some(id) = self.selected_session_id.clone()
                     && !self.is_agent_running_in(&id)
+                    && self.mono_for_session(&id).is_none()
                 {
                     self.prompt_input
                         .update(cx, |input, cx| input.set_text("", cx));
