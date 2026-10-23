@@ -4,7 +4,7 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
-## [Unreleased]
+## [0.1.31] - 2026-10-23
 
 - Signing in to Claude or Codex (Add account, or the usage popover's
   Sign in) shows the link the CLI printed, with Open link and Copy link,
