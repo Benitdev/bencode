@@ -30,7 +30,6 @@ fn row(item: &MenuItem, ix: usize, current: bool, cx: &App) -> Stateful<Div> {
     };
     let (lead, lead_color) = match &item.kind {
         Kind::Check(true) => (Some(IconName::Check), fg),
-        Kind::Radio(true) => (Some(IconName::Dot), fg),
         _ => (item.icon, if item.disabled { fg } else { colors.fg_muted }),
     };
     div()

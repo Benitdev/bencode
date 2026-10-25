@@ -1,12 +1,9 @@
 use std::ops::Range;
 
-use gpui::{
-    App, Entity, Hsla, IntoElement, ParentElement, RenderOnce, SharedString, Styled, Window, div,
-    prelude::*,
-};
+use gpui::{App, Hsla};
 
-use super::{Highlight, Input, TextInput, syntax::Syntax};
-use crate::theme::{ActiveTheme, ControlSize, TextSize};
+use super::{Highlight, syntax::Syntax};
+use crate::theme::ActiveTheme;
 
 /// What a span of source is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -171,81 +168,6 @@ pub fn json_highlights(source: &str, cx: &App) -> Vec<(Range<usize>, Highlight)>
         };
         Some((range.clone(), color))
     }))
-}
-
-/// A one-line code field in the mono face. Give its state `code_highlights`.
-#[derive(IntoElement)]
-pub struct CodeInput {
-    state: Entity<TextInput>,
-    size: ControlSize,
-}
-
-impl CodeInput {
-    pub fn new(state: &Entity<TextInput>) -> Self {
-        Self {
-            state: state.clone(),
-            size: ControlSize::default(),
-        }
-    }
-
-    pub fn size(mut self, size: ControlSize) -> Self {
-        self.size = size;
-        self
-    }
-}
-
-impl RenderOnce for CodeInput {
-    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
-        assert!(
-            !self.state.read(cx).is_multi_line(),
-            "a code input is one line; JsonInput takes several"
-        );
-        div()
-            .font_family(cx.theme().mono_family.clone())
-            .child(Input::new(&self.state).size(self.size))
-    }
-}
-
-/// A JSON field, checked as you type. Give its state `json_highlights`.
-#[derive(IntoElement)]
-pub struct JsonInput {
-    state: Entity<TextInput>,
-}
-
-impl JsonInput {
-    pub fn new(state: &Entity<TextInput>) -> Self {
-        Self {
-            state: state.clone(),
-        }
-    }
-}
-
-impl RenderOnce for JsonInput {
-    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
-        let source = self.state.read(cx).text().to_string();
-        let problem = (!source.trim().is_empty())
-            .then(|| serde_json::from_str::<serde_json::Value>(&source).err())
-            .flatten()
-            .map(|error| SharedString::from(error.to_string()));
-        let theme = cx.theme();
-        div()
-            .flex()
-            .flex_col()
-            .gap_1()
-            .child(
-                div()
-                    .font_family(theme.mono_family.clone())
-                    .child(Input::new(&self.state).invalid(problem.is_some())),
-            )
-            .when_some(problem, |field, problem| {
-                field.child(
-                    div()
-                        .text_size(theme.text_size(TextSize::Xs))
-                        .text_color(theme.colors.danger)
-                        .child(problem),
-                )
-            })
-    }
 }
 
 #[cfg(test)]

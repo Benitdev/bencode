@@ -28,17 +28,6 @@ impl Disclosure {
             color: None,
         }
     }
-
-    pub fn size(mut self, size: IconSize) -> Self {
-        self.size = size;
-        self
-    }
-
-    /// Its color; the subtle foreground unless set.
-    pub fn color(mut self, color: Hsla) -> Self {
-        self.color = Some(color);
-        self
-    }
 }
 
 impl RenderOnce for Disclosure {

@@ -1,15 +1,13 @@
 mod dropper;
 mod fields;
-mod gradient;
 mod picker;
 mod swatch;
 
 use gpui::Rgba;
 
 pub use dropper::EyeDropper;
-pub use gradient::{GradientEditor, GradientStop};
 pub use picker::ColorPicker;
-pub use swatch::{ColorPalette, ColorSwatch};
+pub use swatch::ColorSwatch;
 
 /// A color by hue in degrees, then saturation, value and alpha from 0 to 1.
 #[derive(Clone, Copy, Debug, PartialEq)]

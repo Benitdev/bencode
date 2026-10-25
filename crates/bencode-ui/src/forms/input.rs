@@ -57,12 +57,6 @@ impl Input {
         self
     }
 
-    /// Adds a clear button while there is text.
-    pub fn clearable(mut self) -> Self {
-        self.clearable = true;
-        self
-    }
-
     /// Draws the frame in the danger tone.
     pub fn invalid(mut self, invalid: bool) -> Self {
         self.invalid = invalid;
@@ -174,11 +168,6 @@ impl PasswordInput {
             state: state.clone(),
             size: ControlSize::default(),
         }
-    }
-
-    pub fn size(mut self, size: ControlSize) -> Self {
-        self.size = size;
-        self
     }
 }
 

@@ -1,21 +1,14 @@
-use std::{rc::Rc, time::Duration};
+use std::rc::Rc;
 
 use gpui::{
-    App, Div, ElementId, Entity, InteractiveElement, IntoElement, ParentElement, Pixels,
-    RenderOnce, ScrollHandle, SharedString, StatefulInteractiveElement, Styled, Window, div, point,
-    prelude::*,
+    App, Div, ElementId, InteractiveElement, IntoElement, ParentElement, Pixels, RenderOnce,
+    ScrollHandle, SharedString, StatefulInteractiveElement, Styled, Window, div, point, prelude::*,
 };
-use jiff::{
-    ToSpan,
-    civil::{Date, DateTime, Time},
-};
+use jiff::civil::{Date, DateTime, Time};
 
 use super::{
-    super::{
-        NumberInput,
-        options::{Run, float, surface},
-    },
-    picker::{CALENDAR_ROWS, Dropdown, Face, dropdown, picker_field, popped},
+    super::options::{Run, float, surface},
+    picker::{CALENDAR_ROWS, Face, dropdown, picker_field, popped},
     show_date, show_time, zoned_now,
 };
 use crate::{
@@ -25,7 +18,6 @@ use crate::{
 
 type OnTime = Rc<dyn Fn(Time, &mut Window, &mut App)>;
 type OnDateTime = Rc<dyn Fn(DateTime, &mut Window, &mut App)>;
-type OnDuration = Rc<dyn Fn(Duration, &mut Window, &mut App)>;
 
 /// Scroll handles of the two columns, and the time they last scrolled to.
 #[derive(Default)]
@@ -33,11 +25,6 @@ struct Columns {
     hours: ScrollHandle,
     minutes: ScrollHandle,
     shown: Option<Time>,
-}
-
-/// `time` moved by `minutes`, wrapping around midnight.
-pub(crate) fn nudged(time: Time, minutes: i64) -> Time {
-    time.wrapping_add(minutes.minutes())
 }
 
 /// Hours and minutes as two scrolling columns. A click sets that part.
@@ -147,131 +134,6 @@ fn time_columns(
         )
 }
 
-/// Arrow keys on a time popup move by `step`; Escape and Enter close it.
-fn time_keys(
-    state: &Entity<Dropdown>,
-    current: Time,
-    step: u8,
-    commit: OnTime,
-    close: Run,
-    cx: &App,
-) -> Div {
-    div()
-        .track_focus(&state.read(cx).inner)
-        .on_key_down(move |event, window, cx| {
-            let by = match event.keystroke.key.as_str() {
-                "up" => -i64::from(step),
-                "down" => i64::from(step),
-                "escape" | "enter" => {
-                    cx.stop_propagation();
-                    return close(window, cx);
-                }
-                _ => return,
-            };
-            cx.stop_propagation();
-            commit(nudged(current, by), window, cx);
-        })
-}
-
-/// A field that opens hour and minute columns. Up and Down move by the step.
-#[derive(IntoElement)]
-pub struct TimePicker {
-    id: ElementId,
-    value: Option<Time>,
-    step: u8,
-    placeholder: SharedString,
-    size: ControlSize,
-    disabled: bool,
-    on_change: Option<OnTime>,
-}
-
-impl TimePicker {
-    pub fn new(id: impl Into<ElementId>, value: Option<Time>) -> Self {
-        Self {
-            id: id.into(),
-            value,
-            step: 5,
-            placeholder: SharedString::from("Pick a time"),
-            size: ControlSize::default(),
-            disabled: false,
-            on_change: None,
-        }
-    }
-
-    /// Minutes between choices; divides the hour.
-    pub fn step(mut self, minutes: u8) -> Self {
-        assert!(
-            minutes > 0 && 60 % minutes == 0,
-            "a {minutes}-minute step does not divide the hour"
-        );
-        self.step = minutes;
-        self
-    }
-
-    pub fn placeholder(mut self, text: impl Into<SharedString>) -> Self {
-        self.placeholder = text.into();
-        self
-    }
-
-    pub fn size(mut self, size: ControlSize) -> Self {
-        self.size = size;
-        self
-    }
-
-    pub fn disabled(mut self, disabled: bool) -> Self {
-        self.disabled = disabled;
-        self
-    }
-
-    pub fn on_change(mut self, handler: impl Fn(Time, &mut Window, &mut App) + 'static) -> Self {
-        self.on_change = Some(Rc::new(handler));
-        self
-    }
-}
-
-impl RenderOnce for TimePicker {
-    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let (id, step, value) = (self.id.clone(), self.step, self.value);
-        let state = dropdown(&id, window, cx);
-        let commit: OnTime = {
-            let (id, on_change) = (id.clone(), self.on_change);
-            Rc::new(move |time, window, cx| {
-                log::info!("time picker {id:?}: {time}");
-                if let Some(on_change) = &on_change {
-                    on_change(time, window, cx);
-                }
-            })
-        };
-        picker_field(
-            self.id,
-            Face {
-                icon: IconName::Clock,
-                shown: value.map(|time| show_time(time).into()),
-                placeholder: self.placeholder,
-                size: self.size,
-                disabled: self.disabled,
-            },
-            move |close, anchor, window, cx| {
-                let time = value.unwrap_or(Time::midnight());
-                let columns = time_columns(&id, time, step, commit.clone(), window, cx);
-                let out = close.clone();
-                float(
-                    id.clone(),
-                    anchor,
-                    CALENDAR_ROWS,
-                    surface((id.clone(), "popup"), cx)
-                        .on_mouse_down_out(move |_, window, cx| out(window, cx))
-                        .child(time_keys(&state, time, step, commit, close, cx).child(columns)),
-                    window,
-                    cx,
-                )
-            },
-            window,
-            cx,
-        )
-    }
-}
-
 /// A day and a time: a calendar beside hour and minute columns.
 #[derive(IntoElement)]
 pub struct DateTimePicker {
@@ -295,15 +157,6 @@ impl DateTimePicker {
             size: ControlSize::default(),
             on_change: None,
         }
-    }
-
-    pub fn step(mut self, minutes: u8) -> Self {
-        assert!(
-            minutes > 0 && 60 % minutes == 0,
-            "a {minutes}-minute step does not divide the hour"
-        );
-        self.step = minutes;
-        self
     }
 
     pub fn today(mut self, date: Date) -> Self {
@@ -391,104 +244,5 @@ impl RenderOnce for DateTimePicker {
             window,
             cx,
         )
-    }
-}
-
-/// Hours, minutes, and optionally seconds, each typed or stepped.
-#[derive(IntoElement)]
-pub struct DurationPicker {
-    id: ElementId,
-    value: Duration,
-    seconds: bool,
-    on_change: Option<OnDuration>,
-}
-
-impl DurationPicker {
-    pub fn new(id: impl Into<ElementId>, value: Duration) -> Self {
-        Self {
-            id: id.into(),
-            value,
-            seconds: false,
-            on_change: None,
-        }
-    }
-
-    /// Adds a seconds field.
-    pub fn seconds(mut self) -> Self {
-        self.seconds = true;
-        self
-    }
-
-    pub fn on_change(
-        mut self,
-        handler: impl Fn(Duration, &mut Window, &mut App) + 'static,
-    ) -> Self {
-        self.on_change = Some(Rc::new(handler));
-        self
-    }
-}
-
-/// Whole hours, minutes and seconds in `total`.
-pub(crate) fn parts(total: Duration) -> [u64; 3] {
-    let secs = total.as_secs();
-    [secs / 3600, secs / 60 % 60, secs % 60]
-}
-
-impl RenderOnce for DurationPicker {
-    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
-        let now = parts(self.value);
-        let theme = cx.theme();
-        let width = theme.control_height(ControlSize::Md) * 4.0;
-        let units: &[(&str, &str, f64)] = if self.seconds {
-            &[
-                ("hours", "h", 9999.0),
-                ("minutes", "m", 59.0),
-                ("seconds", "s", 59.0),
-            ]
-        } else {
-            &[("hours", "h", 9999.0), ("minutes", "m", 59.0)]
-        };
-        let fields: Vec<_> = units
-            .iter()
-            .enumerate()
-            .map(|(ix, (key, unit, max))| {
-                let (id, on_change) = (self.id.clone(), self.on_change.clone());
-                div().w(width).child(
-                    NumberInput::new((self.id.clone(), *key), now[ix] as f64)
-                        .range(0.0, *max)
-                        .suffix(div().child(*unit))
-                        .on_change(move |value, window, cx| {
-                            let mut next = now;
-                            next[ix] = value as u64;
-                            let total =
-                                Duration::from_secs(next[0] * 3600 + next[1] * 60 + next[2]);
-                            log::info!("duration picker {id:?}: {total:?}");
-                            if let Some(on_change) = &on_change {
-                                on_change(total, window, cx);
-                            }
-                        }),
-                )
-            })
-            .collect();
-        div().flex().items_center().gap_2().children(fields)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::time::Duration;
-
-    use jiff::civil::time;
-
-    use super::{nudged, parts};
-
-    #[test]
-    fn times_wrap_and_durations_split() {
-        assert_eq!(nudged(time(23, 55, 0, 0), 10), time(0, 5, 0, 0));
-        assert_eq!(nudged(time(0, 0, 0, 0), -5), time(23, 55, 0, 0));
-        assert_eq!(
-            parts(Duration::from_secs(3 * 3600 + 25 * 60 + 9)),
-            [3, 25, 9]
-        );
     }
 }

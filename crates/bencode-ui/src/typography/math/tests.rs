@@ -184,41 +184,6 @@ fn a_shared_formula_stays_until_its_last_holder_leaves(cx: &mut gpui::TestAppCon
 }
 
 #[test]
-fn an_exported_formula_is_black_outlines() {
-    let svg = formula_svg(r"\sqrt{x}", true).expect("typesets");
-    assert!(svg.starts_with("<svg") && !svg.contains("<text"), "{svg}");
-    assert!(svg.contains("#000000"), "black: {svg}");
-    assert!(formula_svg(r"\frac{", false).is_err());
-}
-
-#[test]
-#[ignore = "depends on the machine: a font installed on macOS covers U+F0000; the SVG export goes in stage 6 of docs/migration/ely-removal.md"]
-fn an_exported_formula_outlines_its_text_or_says_why() {
-    let svg = formula_svg(r"\text{中文} + x", false).expect("a system font sets it");
-    assert!(!svg.contains("<text"), "{svg}");
-    let why = formula_svg("\\text{\u{F0000}}", false).expect_err("no font");
-    assert!(why.to_string().contains("font"), "{why}");
-}
-
-#[test]
-fn an_exported_formula_frames_its_outlined_text() {
-    // Wide or tall system faces, where installed.
-    for source in [r"\text{한글}", r"\text{𓀀} + x"] {
-        let Ok(svg) = formula_svg(source, false) else {
-            continue;
-        };
-        let tree =
-            usvg::Tree::from_data(svg.as_bytes(), &usvg::Options::default()).expect("parses");
-        let (ink, shape) = (tree.root().abs_stroke_bounding_box(), tree.size());
-        let inside = ink.left() >= -0.01
-            && ink.top() >= -0.01
-            && ink.right() <= shape.width() + 0.01
-            && ink.bottom() <= shape.height() + 0.01;
-        assert!(inside, "{source}: {ink:?} in {shape:?}");
-    }
-}
-
-#[test]
 fn drawn_fallback_text_stays_inside_the_frame() {
     let renderer = gpui::SvgRenderer::new(std::sync::Arc::new(crate::Assets));
     let ink = |svg: &str| {

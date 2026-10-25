@@ -72,11 +72,6 @@ impl Latex {
         })
     }
 
-    pub fn size(mut self, size: TextSize) -> Self {
-        self.size = size;
-        self
-    }
-
     /// Display style: limits above and below, larger operators.
     pub fn display(mut self) -> Self {
         self.display = true;
@@ -114,21 +109,6 @@ impl Asset for Typesetter {
             Ok((picture, shape))
         }
     }
-}
-
-/// `source` as black outlined SVG, for export.
-pub fn formula_svg(source: &str, display: bool) -> Result<String, MathError> {
-    let formula = Formula {
-        source: source.to_owned().into(),
-        display,
-        rgba: 0x0000_00ff,
-        font: 1600,
-        scale: 100,
-    };
-    let (svg, width, height) = laid(&formula)?;
-    // RaTeX writes text where it has no outline.
-    let outlined = crate::documents::flatten(&svg).map_err(MathError::said)?;
-    framed(&outlined, width, height).map(|(svg, _)| svg)
 }
 
 /// The formula as outlined SVG holding all ink; its size.

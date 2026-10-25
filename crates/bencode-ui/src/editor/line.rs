@@ -13,9 +13,7 @@ use super::{
     measure::Measured,
     state::{CodeEditor, CursorShape},
 };
-use crate::{
-    theme::{ActiveTheme, Radius},
-};
+use crate::theme::{ActiveTheme, Radius};
 
 impl CodeEditor {
     /// A line's own styles: syntax colors, rainbow brackets, problems, washes, matches and the matched pair.

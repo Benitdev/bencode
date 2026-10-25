@@ -72,53 +72,11 @@ pub(crate) fn clear(marks: &mut Marks) {
     marks.anchors.fill(None);
 }
 
-impl CodeEditor {
-    /// Offsets the editor carries through each edit.
-    pub fn set_anchors(&mut self, offsets: impl IntoIterator<Item = usize>) {
-        let text = self.buffer.text();
-        let whole = |at: usize| {
-            let fits = text.is_char_boundary(at);
-            if !fits {
-                log::error!("code editor: anchor {at} splits a character");
-            }
-            fits.then_some(at)
-        };
-        self.marks.anchors = offsets.into_iter().map(whole).collect();
-    }
-
-    /// Where each anchor is now; none once an edit took it.
-    pub fn anchors(&self) -> &[Option<usize>] {
-        &self.marks.anchors
-    }
-}
-
-/// Whether `range` runs forward between whole characters of `text`.
-pub(crate) fn fits(text: &str, range: &Range<usize>) -> bool {
-    range.start <= range.end
-        && text.is_char_boundary(range.start)
-        && text.is_char_boundary(range.end)
-}
+impl CodeEditor {}
 
 #[cfg(test)]
 mod tests {
-    use super::{carried, fits, moved};
-
-    #[test]
-    fn offsets_ride_their_edits() {
-        let edits = [(2..4, 1), (6..6, 3)];
-        let cut = 0..2;
-        assert_eq!(moved(1, &edits), Some(1), "before every edit");
-        assert_eq!(moved(2, &edits), Some(2), "at an edit's start");
-        assert_eq!(moved(3, &edits), None, "inside what it replaced");
-        assert_eq!(moved(5, &edits), Some(4), "past it, by its change");
-        assert_eq!(
-            moved(6, &edits),
-            Some(5),
-            "at an insertion, before what it adds"
-        );
-        assert_eq!(moved(8, &edits), Some(10));
-        assert!(fits("héllo", &(1..3)) && !fits("héllo", &cut) && !fits("ab", &(1..9)));
-    }
+    use super::carried;
 
     #[test]
     fn anchors_go_after_text_written_at_them() {

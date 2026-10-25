@@ -60,17 +60,7 @@ impl Row {
     }
 }
 
-impl Frame {
-    /// The screen's text, trailing spaces gone.
-    pub(crate) fn text(&self) -> String {
-        let lines: Vec<String> = self
-            .rows
-            .iter()
-            .map(|row| row.cells().concat().trim_end().to_string())
-            .collect();
-        lines.join("\n").trim_end().to_string()
-    }
-}
+impl Frame {}
 
 /// The screen as it shows now, scrolled back or not, with `found` lit and match `current` stronger.
 pub(crate) fn frame<T: EventListener>(
@@ -209,35 +199,6 @@ mod tests {
             fg: black(),
             bg: white(),
         }
-    }
-
-    #[test]
-    fn combining_marks_stay_on_their_cell() {
-        let term = replayed("e\u{301}x".as_bytes());
-        let shown = frame(&term, &ink(), &[], None);
-        assert_eq!(shown.text(), "e\u{301}x");
-        assert_eq!(
-            &shown.rows[0].text[..2],
-            " x",
-            "the cluster's cell keeps its column"
-        );
-        assert_eq!(shown.rows[0].clusters[0].1, "e\u{301}");
-    }
-
-    #[test]
-    fn cells_join_into_runs_of_one_style() {
-        let term = replayed(b"\x1b[31mred\x1b[0m ok\r\n\x1b[7minv\x1b[0m");
-        let shown = frame(&term, &ink(), &[], None);
-        assert_eq!(shown.text(), "red ok\ninv");
-        let (bytes, red) = shown.rows[0].runs[0];
-        assert_eq!((bytes, red.fg, red.bg), (3, gpui::red(), None));
-        let (_, inverse) = shown.rows[1].runs[0];
-        assert_eq!(
-            (inverse.fg, inverse.bg),
-            (white(), Some(black())),
-            "inverse swaps"
-        );
-        assert_eq!(shown.cursor, Some((1, 3, CursorShape::Block)));
     }
 
     #[test]

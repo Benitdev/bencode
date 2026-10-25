@@ -13,7 +13,6 @@ mod onboarding;
 mod palette;
 mod platform;
 mod project;
-mod syntax;
 mod tokens;
 mod tooling;
 
@@ -23,26 +22,9 @@ use gpui::{App, Global, SharedString, WindowAppearance};
 use web_time::Instant;
 
 use crate::motion;
-pub use calendar::CalendarSizes;
-pub use canvas::CanvasSizes;
-pub use chart::ChartSizes;
-pub use dashboard::DashboardSizes;
-pub use files::FileSizes;
-pub use generative::GenerativeSizes;
-pub use interaction::InteractionSizes;
-pub use maps::MapSizes;
-pub use media::MediaSizes;
-pub use messaging::MessagingSizes;
-pub use misc::MiscSizes;
-pub use onboarding::OnboardingSizes;
 pub use palette::{HUE_NAMES, Mix, Palette, Syntax};
 pub use platform::Platform;
-pub use project::ProjectSizes;
-pub use syntax::{SyntaxTheme, syntax_themes};
-pub use tokens::{
-    AvatarSize, ContainerSize, ControlSize, Density, Elevation, IconSize, Radius, TextSize,
-};
-pub use tooling::ToolingSizes;
+pub use tokens::{AvatarSize, ControlSize, Density, Elevation, IconSize, Radius, TextSize};
 
 const FRAME: Duration = Duration::from_millis(8);
 
@@ -114,14 +96,6 @@ impl Theme {
         self.mode
     }
 
-    pub fn high_contrast(&self) -> bool {
-        self.high_contrast
-    }
-
-    pub fn color_blind_safe(&self) -> bool {
-        self.color_blind_safe
-    }
-
     pub fn is_dark(&self) -> bool {
         self.mode == Mode::Dark
     }
@@ -143,19 +117,6 @@ impl Theme {
         cx.refresh_windows();
     }
 
-    pub fn set_high_contrast(on: bool, cx: &mut App) {
-        log::info!("theme: high contrast -> {on}");
-        cx.global_mut::<Theme>().high_contrast = on;
-        Self::fade_to_target(cx);
-    }
-
-    /// Chart hues that stay apart for color-blind eyes, in Ely's own palettes.
-    pub fn set_color_blind_safe(on: bool, cx: &mut App) {
-        log::info!("theme: color-blind safe charts -> {on}");
-        cx.global_mut::<Theme>().color_blind_safe = on;
-        Self::fade_to_target(cx);
-    }
-
     /// The owner's palette for `mode`, as an edited or imported theme gives, or none to bring Ely's back. The colors fade to it when `mode` shows. High contrast and color-blind safe charts change Ely's own palettes alone.
     pub fn set_palette(mode: Mode, palette: Option<Palette>, cx: &mut App) {
         log::info!(
@@ -168,17 +129,6 @@ impl Theme {
         );
         cx.global_mut::<Theme>().custom[mode as usize] = palette;
         Self::fade_to_target(cx);
-    }
-
-    /// The palette the shown mode fades to: the owner's, or Ely's.
-    pub fn palette(&self) -> Palette {
-        self.target()
-    }
-
-    /// Edits non-color tokens, then repaints.
-    pub fn update(cx: &mut App, edit: impl FnOnce(&mut Theme)) {
-        edit(cx.global_mut::<Theme>());
-        cx.refresh_windows();
     }
 
     fn target(&self) -> Palette {

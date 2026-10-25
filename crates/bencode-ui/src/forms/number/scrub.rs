@@ -22,16 +22,6 @@ impl ScrubInput {
         self
     }
 
-    pub fn step(mut self, step: f64) -> Self {
-        self.field = self.field.step(step);
-        self
-    }
-
-    pub fn precision(mut self, places: usize) -> Self {
-        self.field = self.field.precision(places);
-        self
-    }
-
     pub fn on_change(mut self, handler: impl Fn(f64, &mut Window, &mut App) + 'static) -> Self {
         self.field = self.field.on_change(handler);
         self

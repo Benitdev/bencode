@@ -1,26 +1,6 @@
 mod avatar;
 mod badge;
-mod carousel;
-mod changelog;
-mod feed;
-mod measures;
-mod records;
-mod stars;
-mod stat;
 #[cfg(all(test, feature = "test-support"))]
 mod tests;
-mod timeline;
-pub use avatar::{Avatar, AvatarGroup, Presence, UserChip};
-pub(crate) use avatar::{more, tucked};
-pub(crate) use badge::color_mark;
-pub use badge::{Badge, CountBadge, DotBadge, Tag, Tone};
-pub use carousel::Carousel;
-pub use changelog::{Change, Changelog, Release};
-pub use feed::{Activity, ActivityFeed};
-pub(crate) use measures::tone;
-pub use measures::{Gauge, Meter, UsageBar};
-pub use records::{DescriptionList, PropertyGrid, PropertyGroup};
-pub use stars::Stars;
-pub(crate) use stars::star;
-pub use stat::{KpiCard, Statistic, TrendIndicator};
-pub use timeline::{Timeline, TimelineItem};
+pub use avatar::{Avatar, Presence};
+pub use badge::{Badge, Tag, Tone};

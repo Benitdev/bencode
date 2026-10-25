@@ -12,10 +12,8 @@ use gpui::{
     Subscription, Task, Window, WrappedLine,
 };
 
-pub(crate) use actions::{
-    Backspace, Delete, DeleteWordLeft, Down, Enter, Left, Redo, Right, Submit, Undo, Up, bind_keys,
-};
 pub use actions::{Copy, Cut, Paste, SelectAll};
+pub(crate) use actions::{Down, Enter, Left, Right, Up, bind_keys};
 pub use edit::History;
 use edit::Snapshot;
 pub(crate) use edit::{from_utf16, to_utf16};
@@ -149,12 +147,6 @@ impl TextInput {
         self
     }
 
-    /// The name assistive technology reads; the placeholder otherwise.
-    pub fn label(mut self, text: impl Into<SharedString>) -> Self {
-        self.label = text.into();
-        self
-    }
-
     /// Shows bullets instead of the text, and keeps it off the clipboard.
     pub fn masked(mut self) -> Self {
         self.masked = true;
@@ -272,12 +264,6 @@ impl TextInput {
         cx.notify();
     }
 
-    /// Reshapes every edit, as a mask does: text, replaced range and typed text in; text and caret out. Undo starts afresh, since earlier text need not fit.
-    pub(crate) fn set_fit(&mut self, fit: Fit) {
-        self.fit = Some(fit);
-        self.history = History::default();
-    }
-
     /// Replaces the selection, as typing would. An undo step.
     pub fn insert(&mut self, text: &str, cx: &mut Context<Self>) {
         self.replace(self.selection.clone(), text, false, cx);
@@ -310,16 +296,6 @@ impl TextInput {
             Some(max) => allowed.chars().take(max.saturating_sub(keep)).collect(),
             None => allowed,
         }
-    }
-
-    /// The selection the last edit replaced, for an owner's undo to go back to.
-    pub(crate) fn edited_from(&self) -> Range<usize> {
-        self.edited_from.clone()
-    }
-
-    /// How many edits it took, and whether an input method is composing.
-    pub(crate) fn edits(&self) -> (u64, bool) {
-        (self.edits, self.marked.is_some())
     }
 
     pub(crate) fn replace(

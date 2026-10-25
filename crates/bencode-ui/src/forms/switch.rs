@@ -41,12 +41,6 @@ impl Switch {
         self
     }
 
-    /// Names it for assistive technology, drawing nothing.
-    pub fn name(mut self, name: impl Into<SharedString>) -> Self {
-        self.name = Some(name.into());
-        self
-    }
-
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
         self

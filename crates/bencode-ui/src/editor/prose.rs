@@ -1,12 +1,9 @@
 use std::{fmt, ops::Range, rc::Rc};
 
-use gpui::{App, Context, FontStyle, HighlightStyle, StrikethroughStyle};
+use gpui::{App, FontStyle, HighlightStyle, StrikethroughStyle};
 
-use super::{buffer::Buffer, cursor::Selection, state::CodeEditor, syntax};
-use crate::{
-    editor::{EditorEvent, anchors},
-    forms::{Highlight, History},
-};
+use super::{state::CodeEditor, syntax};
+use crate::forms::Highlight;
 
 /// Undo keeps at most this many bytes of past text.
 pub(crate) const HISTORY_BYTES: usize = 64 << 20;
@@ -25,27 +22,6 @@ impl fmt::Debug for LineHighlighter {
 }
 
 impl CodeEditor {
-    /// Colors each line with the owner's highlighter, not code's.
-    pub fn highlighter(
-        mut self,
-        highlight: impl Fn(&str, &App) -> Vec<(Range<usize>, Highlight)> + 'static,
-    ) -> Self {
-        self.options.highlighter = Some(LineHighlighter(Rc::new(highlight)));
-        self
-    }
-
-    /// New text with no history: undo starts here.
-    pub fn reset(&mut self, text: impl Into<String>, cx: &mut Context<Self>) {
-        self.buffer = Buffer::new(text);
-        self.selections = vec![Selection::caret(0)];
-        self.history = History::default();
-        self.folded.clear();
-        (self.marked, self.composing) = (None, None);
-        anchors::clear(&mut self.marks);
-        cx.emit(EditorEvent::Changed);
-        self.restart_blink(cx);
-    }
-
     /// Keeps undo within its byte budget, logging what went.
     pub(crate) fn cap_history(&mut self) {
         let dropped = self

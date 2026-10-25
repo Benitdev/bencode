@@ -1,14 +1,13 @@
 use std::{ops::Range, rc::Rc};
 
 use gpui::{
-    App, ElementId, FontWeight, IntoElement, ParentElement, RenderOnce, SharedString, Styled,
-    Window, div,
+    App, ElementId, IntoElement, ParentElement, RenderOnce, SharedString, Styled, Window, div,
 };
 
 use crate::{
     buttons::{Button, ButtonVariant},
     primitives::{Icon, IconName, Severity},
-    theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize},
+    theme::{ActiveTheme, ControlSize, IconSize, TextSize},
 };
 
 /// A problem in a span of code: squiggled under it and marked in the gutter.
@@ -113,83 +112,6 @@ impl RenderOnce for ReadOnlyBanner {
                     .variant(ButtonVariant::Ghost)
                     .size(ControlSize::Sm)
                     .on_click(move |_, window, cx| handler(window, cx))
-            }))
-    }
-}
-
-/// Which mode a modal editor is in.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum VimMode {
-    #[default]
-    Normal,
-    Insert,
-    Visual,
-    Replace,
-}
-
-impl VimMode {
-    fn word(self) -> &'static str {
-        match self {
-            VimMode::Normal => "NORMAL",
-            VimMode::Insert => "INSERT",
-            VimMode::Visual => "VISUAL",
-            VimMode::Replace => "REPLACE",
-        }
-    }
-}
-
-/// The modal editing mode as a small tag, tinted by mode, and a pending command after it.
-#[derive(IntoElement)]
-pub struct VimModeIndicator {
-    mode: VimMode,
-    pending: Option<SharedString>,
-}
-
-impl VimModeIndicator {
-    pub fn new(mode: VimMode) -> Self {
-        Self {
-            mode,
-            pending: None,
-        }
-    }
-
-    /// Keys typed toward a command, such as `d2`.
-    pub fn pending(mut self, keys: impl Into<SharedString>) -> Self {
-        self.pending = Some(keys.into());
-        self
-    }
-}
-
-impl RenderOnce for VimModeIndicator {
-    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
-        let theme = cx.theme();
-        let colors = &theme.colors;
-        let ink = match self.mode {
-            VimMode::Normal => colors.fg_muted,
-            VimMode::Insert => colors.success,
-            VimMode::Visual => colors.warning,
-            VimMode::Replace => colors.danger,
-        };
-        div()
-            .flex()
-            .items_center()
-            .gap_1p5()
-            .text_size(theme.text_size(TextSize::Xs))
-            .child(
-                div()
-                    .px_1p5()
-                    .rounded(theme.radius(Radius::Sm))
-                    .bg(ink.opacity(0.14))
-                    .text_color(ink)
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .font_family(theme.mono_family.clone())
-                    .child(self.mode.word()),
-            )
-            .children(self.pending.map(|keys| {
-                div()
-                    .font_family(theme.mono_family.clone())
-                    .text_color(colors.fg_muted)
-                    .child(keys)
             }))
     }
 }

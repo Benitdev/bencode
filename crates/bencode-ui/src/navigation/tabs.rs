@@ -55,17 +55,6 @@ impl Tabs {
         }
     }
 
-    pub fn placement(mut self, placement: TabPlacement) -> Self {
-        self.placement = placement;
-        self
-    }
-
-    /// The chosen tab's content.
-    pub fn panel(mut self, panel: impl IntoElement) -> Self {
-        self.panel = Some(panel.into_any_element());
-        self
-    }
-
     pub fn on_change(
         mut self,
         handler: impl Fn(&SharedString, &mut Window, &mut App) + 'static,
@@ -75,16 +64,7 @@ impl Tabs {
     }
 }
 
-impl Tabs {
-    /// A right click on a tab: its value and the pointer.
-    pub fn on_context(
-        mut self,
-        handler: impl Fn(&SharedString, Point<Pixels>, &mut Window, &mut App) + 'static,
-    ) -> Self {
-        self.on_context = Some(Rc::new(handler));
-        self
-    }
-}
+impl Tabs {}
 
 impl RenderOnce for Tabs {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {

@@ -75,18 +75,6 @@ impl Dialog {
         self
     }
 
-    /// Fills the window below its title bar, under a bar with the title and a close button.
-    pub fn fullscreen(mut self) -> Self {
-        self.fullscreen = true;
-        self
-    }
-
-    /// Only its actions and Escape close it; a press on the scrim does not.
-    pub(crate) fn held(mut self) -> Self {
-        self.scrim_closes = false;
-        self
-    }
-
     /// Where focus goes when it opens.
     pub(crate) fn focus_first(mut self, handle: FocusHandle) -> Self {
         self.first = Some(handle);

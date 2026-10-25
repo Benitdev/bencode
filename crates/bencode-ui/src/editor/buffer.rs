@@ -55,10 +55,6 @@ impl Buffer {
         self.text.len()
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.text.is_empty()
-    }
-
     /// How many lines it holds; an empty buffer holds one.
     pub fn lines(&self) -> usize {
         self.starts.len()

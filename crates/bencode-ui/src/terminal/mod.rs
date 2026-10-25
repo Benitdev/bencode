@@ -1,4 +1,3 @@
-mod ansi;
 mod colors;
 #[cfg(not(target_family = "wasm"))]
 mod frame;
@@ -16,7 +15,6 @@ mod search;
 #[cfg(not(target_family = "wasm"))]
 mod view;
 
-pub use ansi::AnsiText;
 #[cfg(not(target_family = "wasm"))]
 pub(crate) use input::bind_keys;
 pub use links::{Target, links};

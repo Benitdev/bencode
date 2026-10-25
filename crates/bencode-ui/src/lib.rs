@@ -22,7 +22,7 @@ pub mod terminal;
 pub mod theme;
 pub mod typography;
 
-pub use assets::{Assets, Before};
+pub use assets::Assets;
 
 use anyhow::Context as _;
 use gpui::{App, KeyBinding};

@@ -75,19 +75,6 @@ impl Calendar {
         self
     }
 
-    /// Marks a run of days: ink at both ends, a band between.
-    pub fn span(mut self, start: Date, end: Date) -> Self {
-        assert!(start <= end, "span {start}..{end} runs backwards");
-        self.span = Some((start, end));
-        self
-    }
-
-    /// Shades the whole week under the pointer.
-    pub fn week(mut self) -> Self {
-        self.week = true;
-        self
-    }
-
     pub fn min(mut self, date: Date) -> Self {
         self.min = Some(date);
         self
@@ -106,17 +93,6 @@ impl Calendar {
 
     pub fn on_pick(mut self, handler: impl Fn(Date, &mut Window, &mut App) + 'static) -> Self {
         self.on_pick = Some(Rc::new(handler));
-        self
-    }
-
-    pub(crate) fn on_hover(mut self, handler: OnHover) -> Self {
-        self.on_hover = Some(handler);
-        self
-    }
-
-    /// The day whose month opens first, when the marks move while picking.
-    pub(crate) fn anchor(mut self, date: Date) -> Self {
-        self.anchor = Some(date);
         self
     }
 

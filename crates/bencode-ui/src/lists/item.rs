@@ -5,7 +5,6 @@ use gpui::{
     MouseButton, ParentElement, RenderOnce, Role, SharedString, StatefulInteractiveElement, Styled,
     Window, div, prelude::*, relative,
 };
-use smallvec::SmallVec;
 
 use crate::{
     theme::{ActiveTheme, ControlSize, Radius, TextSize},
@@ -57,51 +56,15 @@ impl ListItem {
         }
     }
 
-    /// Sets the title in the strong weight, as a channel with unread messages has it.
-    pub fn strong(mut self, strong: bool) -> Self {
-        self.strong = strong;
-        self
-    }
-
-    /// Sets the title in the quiet color, as a muted channel has it.
-    pub fn quiet(mut self, quiet: bool) -> Self {
-        self.quiet = quiet;
-        self
-    }
-
-    /// Strikes the title through, as a finished task has it.
-    pub fn struck(mut self, struck: bool) -> Self {
-        self.struck = struck;
-        self
-    }
-
-    /// A field in place of the title, as a row renamed in place has it; the title stays the row's name.
-    pub fn editor(mut self, editor: impl IntoElement) -> Self {
-        self.editor = Some(editor.into_any_element());
-        self
-    }
-
     /// A second line, quieter than the title.
     pub fn description(mut self, text: impl Into<SharedString>) -> Self {
         self.description = Some(text.into());
         self
     }
 
-    /// A third line, quieter still, such as a message's first words.
-    pub fn detail(mut self, text: impl Into<SharedString>) -> Self {
-        self.detail = Some(text.into());
-        self
-    }
-
     /// An icon or an avatar before the text.
     pub fn leading(mut self, element: impl IntoElement) -> Self {
         self.leading = Some(element.into_any_element());
-        self
-    }
-
-    /// A time, a count or an action after the text.
-    pub fn trailing(mut self, element: impl IntoElement) -> Self {
-        self.trailing = Some(element.into_any_element());
         self
     }
 
@@ -119,11 +82,6 @@ impl ListItem {
     /// Tells assistive tech it is row `at` of `of`, from one.
     pub fn place(mut self, at: usize, of: usize) -> Self {
         self.place = Some((at, of));
-        self
-    }
-
-    pub fn disabled(mut self, disabled: bool) -> Self {
-        self.disabled = disabled;
         self
     }
 
@@ -231,48 +189,6 @@ impl RenderOnce for ListItem {
                     .text_size(theme.text_size(TextSize::Sm))
                     .text_color(colors.fg_subtle)
                     .child(trailing)
-            }))
-    }
-}
-
-/// Rows in a column; `divided` draws a hairline between them.
-#[derive(IntoElement, Default)]
-pub struct List {
-    rows: SmallVec<[AnyElement; 8]>,
-    divided: bool,
-}
-
-impl List {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn divided(mut self) -> Self {
-        self.divided = true;
-        self
-    }
-}
-
-impl ParentElement for List {
-    fn extend(&mut self, elements: impl IntoIterator<Item = AnyElement>) {
-        self.rows.extend(elements);
-    }
-}
-
-impl RenderOnce for List {
-    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
-        let border = cx.theme().colors.border;
-        let divided = self.divided;
-        div()
-            .flex()
-            .flex_col()
-            .when(!divided, |list| list.gap_0p5())
-            .children(self.rows.into_iter().enumerate().map(move |(ix, row)| {
-                div()
-                    .when(divided && ix > 0, |row| {
-                        row.border_t_1().border_color(border)
-                    })
-                    .child(row)
             }))
     }
 }

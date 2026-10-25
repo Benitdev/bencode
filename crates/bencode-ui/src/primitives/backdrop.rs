@@ -41,12 +41,6 @@ impl Backdrop {
         }
     }
 
-    /// Edges stretch children along that edge.
-    pub fn place(mut self, place: Place) -> Self {
-        self.place = place;
-        self
-    }
-
     /// Runs on a click outside the children.
     pub fn on_dismiss(mut self, handler: impl Fn(&mut Window, &mut App) + 'static) -> Self {
         self.on_dismiss = Some(Rc::new(handler));

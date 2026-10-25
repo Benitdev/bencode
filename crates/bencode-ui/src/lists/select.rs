@@ -1,9 +1,9 @@
 use std::{rc::Rc, time::Duration};
 
 use gpui::{
-    App, Div, ElementId, InteractiveElement, IntoElement, MouseButton, ParentElement, RenderOnce,
-    Role, ScrollHandle, SharedString, StatefulInteractiveElement, StyleRefinement, Styled, Window,
-    div, prelude::FluentBuilder as _,
+    App, Div, ElementId, InteractiveElement, IntoElement, ParentElement, RenderOnce, Role,
+    ScrollHandle, SharedString, StatefulInteractiveElement, StyleRefinement, Styled, Window, div,
+    prelude::FluentBuilder as _,
 };
 use web_time::Instant;
 
@@ -114,17 +114,6 @@ impl SelectableList {
 
     pub fn selected(mut self, keys: impl IntoIterator<Item = impl Into<SharedString>>) -> Self {
         self.selected = keys.into_iter().map(Into::into).collect();
-        self
-    }
-
-    /// Names the list for assistive tech.
-    pub fn label(mut self, label: impl Into<SharedString>) -> Self {
-        self.label = Some(label.into());
-        self
-    }
-
-    pub fn multiple(mut self) -> Self {
-        self.multiple = true;
         self
     }
 
@@ -357,23 +346,6 @@ impl RenderOnce for SelectableList {
             })
             .children(rows)
     }
-}
-
-/// A button inside a pressable row: its press and its Space or Enter stay its own, so the row neither selects nor activates.
-pub(crate) fn row_action(button: impl IntoElement) -> gpui::Div {
-    div()
-        .flex_none()
-        .on_mouse_down(MouseButton::Left, |_, window, cx| {
-            window.prevent_default();
-            cx.stop_propagation();
-        })
-        .on_key_down(|event, _, cx| {
-            let key = event.keystroke.key.as_str();
-            if matches!(key, "space" | "enter") && !event.keystroke.modifiers.modified() {
-                cx.stop_propagation();
-            }
-        })
-        .child(button)
 }
 
 #[cfg(test)]

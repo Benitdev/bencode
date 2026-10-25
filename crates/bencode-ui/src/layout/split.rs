@@ -14,11 +14,6 @@ pub fn resize_handle(id: impl Into<ElementId>, axis: Axis, cx: &App) -> Stateful
     handle(id, axis, cx.theme().colors.border, cx)
 }
 
-/// A resize handle whose line shows only while hovered, on an edge whose box draws its own border.
-pub fn resize_edge(id: impl Into<ElementId>, axis: Axis, cx: &App) -> Stateful<gpui::Div> {
-    handle(id, axis, gpui::transparent_black(), cx)
-}
-
 fn handle(id: impl Into<ElementId>, axis: Axis, line: Hsla, cx: &App) -> Stateful<gpui::Div> {
     let theme = cx.theme();
     let (lit, hit) = (theme.colors.focus, theme.handle_hit());

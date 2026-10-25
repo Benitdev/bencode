@@ -241,36 +241,9 @@ impl CodeEditor {
         self
     }
 
-    pub fn cursor_shape(mut self, shape: CursorShape) -> Self {
-        self.options.cursor = shape;
-        self
-    }
-
-    /// Dots for spaces and arrows for tabs.
-    pub fn show_whitespace(mut self) -> Self {
-        self.options.whitespace = true;
-        self
-    }
-
-    pub fn hide_indent_guides(mut self) -> Self {
-        self.options.guides = false;
-        self
-    }
-
-    /// Thin lines at these columns.
-    pub fn rulers(mut self, columns: impl IntoIterator<Item = usize>) -> Self {
-        self.options.rulers = columns.into_iter().collect();
-        self
-    }
-
     /// Brackets colored by how deep they sit.
     pub fn rainbow_brackets(mut self) -> Self {
         self.options.rainbow = true;
-        self
-    }
-
-    pub fn minimap(mut self) -> Self {
-        self.options.minimap = true;
         self
     }
 
@@ -280,24 +253,8 @@ impl CodeEditor {
         self
     }
 
-    pub fn read_only(mut self) -> Self {
-        self.options.read_only = true;
-        self
-    }
-
-    /// Spaces a Tab inserts and an indent guide spans.
-    pub fn tab_size(mut self, size: usize) -> Self {
-        assert!(size > 0, "a tab spans at least one column");
-        self.options.tab = size;
-        self
-    }
-
     pub fn text(&self) -> &str {
         self.buffer.text()
-    }
-
-    pub fn selections(&self) -> &[Selection] {
-        &self.selections
     }
 
     /// The last cursor placed, which scrolling follows.
@@ -311,19 +268,6 @@ impl CodeEditor {
         (line + 1, column + 1)
     }
 
-    pub fn language_name(&self) -> &SharedString {
-        &self.options.language
-    }
-
-    /// The line the inline chat sits under, while it is open.
-    pub fn chat_line(&self) -> Option<usize> {
-        self.marks.chat
-    }
-
-    pub fn is_read_only(&self) -> bool {
-        self.options.read_only
-    }
-
     pub fn set_text(&mut self, text: impl Into<String>, cx: &mut Context<Self>) {
         let before = self.snapshot();
         self.buffer = Buffer::new(text);
@@ -334,44 +278,9 @@ impl CodeEditor {
         self.commit(before, false, cx);
     }
 
-    pub fn set_cursor_shape(&mut self, shape: CursorShape, cx: &mut Context<Self>) {
-        self.options.cursor = shape;
-        cx.notify();
-    }
-
-    pub fn set_line_numbers(&mut self, numbers: LineNumbers, cx: &mut Context<Self>) {
-        self.options.numbers = numbers;
-        cx.notify();
-    }
-
     pub fn set_read_only(&mut self, read_only: bool, cx: &mut Context<Self>) {
         log::info!("code editor: read only {read_only}");
         self.options.read_only = read_only;
-        cx.notify();
-    }
-
-    pub fn set_diagnostics(&mut self, mut diagnostics: Vec<Diagnostic>, cx: &mut Context<Self>) {
-        let text = self.buffer.text();
-        diagnostics
-            .retain(|diagnostic| kept(anchors::fits(text, &diagnostic.range), "a diagnostic"));
-        if self.marks.diagnostics == diagnostics {
-            return;
-        }
-        self.marks.diagnostics = diagnostics;
-        cx.notify();
-    }
-
-    pub fn set_backgrounds(
-        &mut self,
-        mut ranges: Vec<(Range<usize>, gpui::Hsla)>,
-        cx: &mut Context<Self>,
-    ) {
-        let text = self.buffer.text();
-        ranges.retain(|(range, _)| kept(anchors::fits(text, range), "a background"));
-        if self.marks.backgrounds == ranges {
-            return;
-        }
-        self.marks.backgrounds = ranges;
         cx.notify();
     }
 
@@ -383,39 +292,12 @@ impl CodeEditor {
         cx.notify();
     }
 
-    pub fn set_code_lenses(&mut self, lenses: Vec<CodeLens>, cx: &mut Context<Self>) {
-        self.marks.lenses = lenses;
-        cx.notify();
-    }
-
-    /// Suggested text at an offset, in grey until Tab takes it.
-    pub fn set_ghost_text(&mut self, ghost: Option<GhostText>, cx: &mut Context<Self>) {
-        let text = self.buffer.text();
-        self.marks.ghost =
-            ghost.filter(|ghost| kept(text.is_char_boundary(ghost.offset), "ghost text"));
-        cx.notify();
-    }
-
-    pub fn set_diff(&mut self, hunks: Vec<DiffHunk>, cx: &mut Context<Self>) {
-        self.marks.hunks = hunks;
-        cx.notify();
-    }
-
-    pub fn set_git_marks(&mut self, marks: Vec<(usize, GitMark)>, cx: &mut Context<Self>) {
-        self.marks.git = marks;
-        cx.notify();
-    }
-
     pub fn toggle_breakpoint(&mut self, line: usize, cx: &mut Context<Self>) {
         if !self.marks.breakpoints.remove(&line) {
             self.marks.breakpoints.insert(line);
         }
         log::info!("code editor: breakpoints {:?}", self.marks.breakpoints);
         cx.notify();
-    }
-
-    pub fn breakpoints(&self) -> &BTreeSet<usize> {
-        &self.marks.breakpoints
     }
 
     /// Opens the inline chat below a line, or closes it.

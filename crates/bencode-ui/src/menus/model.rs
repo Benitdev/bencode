@@ -2,14 +2,13 @@ use std::{ops::Range, rc::Rc};
 
 use gpui::{App, SharedString, Window};
 
-use crate::{forms::Run, navigation::fuzzy, primitives::IconName};
+use crate::{forms::Run, primitives::IconName};
 
 /// What a row does when chosen.
 #[derive(Clone)]
 pub(super) enum Kind {
     Run,
     Check(bool),
-    Radio(bool),
     Sub(Menu),
 }
 
@@ -45,11 +44,6 @@ impl MenuItem {
     /// A row with a check; the owner flips `checked` in `on_click`.
     pub fn check(label: impl Into<SharedString>, checked: bool) -> Self {
         Self::with(label, Kind::Check(checked))
-    }
-
-    /// One of a set; the owner moves `selected` in `on_click`.
-    pub fn radio(label: impl Into<SharedString>, selected: bool) -> Self {
-        Self::with(label, Kind::Radio(selected))
     }
 
     /// A row that opens `menu` beside it.
@@ -109,35 +103,6 @@ impl Menu {
         self
     }
 
-    /// A titled run of rows, set off from the rows before it.
-    pub fn group(
-        mut self,
-        title: impl Into<SharedString>,
-        items: impl IntoIterator<Item = MenuItem>,
-    ) -> Self {
-        if !self.entries.is_empty() {
-            self.entries.push(Entry::Separator);
-        }
-        self.entries.push(Entry::Heading(title.into()));
-        self.entries.extend(items.into_iter().map(Entry::Item));
-        self
-    }
-
-    /// A row of icon buttons; labels name them.
-    pub fn buttons(mut self, buttons: impl IntoIterator<Item = MenuItem>) -> Self {
-        let buttons: Vec<MenuItem> = buttons.into_iter().collect();
-        assert!(!buttons.is_empty(), "a button row holds buttons");
-        for button in &buttons {
-            assert!(
-                button.icon.is_some() && matches!(button.kind, Kind::Run),
-                "menu button {:?} needs an icon and runs",
-                button.label
-            );
-        }
-        self.entries.push(Entry::Buttons(buttons));
-        self
-    }
-
     /// Row `ix`, or button `column` of its button row.
     pub(super) fn item_at(&self, ix: usize, column: usize) -> Option<&MenuItem> {
         match self.entries.get(ix) {
@@ -187,37 +152,5 @@ impl Menu {
             }
         }
         None
-    }
-
-    /// The rows whose labels fit `query`, best first, with the letters that matched. All of it for an empty query.
-    pub(super) fn filtered(&self, query: &str) -> Menu {
-        if query.is_empty() {
-            return self.clone();
-        }
-        let mut found: Vec<(i32, MenuItem)> = self
-            .entries
-            .iter()
-            .flat_map(|entry| match entry {
-                Entry::Item(item) => std::slice::from_ref(item),
-                Entry::Buttons(buttons) => buttons.as_slice(),
-                _ => &[],
-            })
-            .filter_map(|item| {
-                fuzzy(query, &item.label).map(|fit| {
-                    let item = MenuItem {
-                        hits: fit.hits,
-                        ..item.clone()
-                    };
-                    (fit.score, item)
-                })
-            })
-            .collect();
-        found.sort_by(|(a, _), (b, _)| b.cmp(a));
-        Menu {
-            entries: found
-                .into_iter()
-                .map(|(_, item)| Entry::Item(item))
-                .collect(),
-        }
     }
 }

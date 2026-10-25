@@ -137,7 +137,6 @@ macro_rules! words_builders {
         }
     };
 }
-pub(super) use words_builders;
 
 /// What a view shows with nothing in it: an icon on a soft disc, a title, a line of help and actions. It rises in when it appears.
 #[derive(IntoElement)]

@@ -1,15 +1,14 @@
 use std::rc::Rc;
 
 use gpui::{
-    AnyElement, App, ElementId, FontWeight, Hsla, InteractiveElement, IntoElement, MouseButton,
-    ParentElement, RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window, div,
-    prelude::*,
+    App, ElementId, FontWeight, Hsla, InteractiveElement, IntoElement, MouseButton, ParentElement,
+    RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window, div, prelude::*,
 };
 
 use crate::{
     primitives::{Icon, IconName, Severity},
     theme::{ActiveTheme, ControlSize, IconSize, Palette, Radius, TextSize},
-    typography::{AnimatedNumber, Ellipsis},
+    typography::Ellipsis,
 };
 
 /// How a badge or a tag is tinted: quiet, the accent, or a severity.
@@ -57,16 +56,6 @@ impl Tone {
             other => other.colors(colors).1,
         }
     }
-}
-
-/// Sets `badge` on the top-right corner of `over`, just past its edge.
-fn corner(over: AnyElement, badge: impl IntoElement) -> AnyElement {
-    div()
-        .relative()
-        .flex_none()
-        .child(over)
-        .child(div().absolute().top_neg_1().right_neg_1().child(badge))
-        .into_any_element()
 }
 
 /// A small label for a status or a kind, tinted by its tone, with a dot when it marks a state.
@@ -125,137 +114,6 @@ impl RenderOnce for Badge {
     }
 }
 
-/// What a count badge reads past its cap, as 99+.
-fn capped(count: usize, max: usize) -> Option<String> {
-    (count > max).then(|| format!("{max}+"))
-}
-
-/// A number in a pill, for unread items or a queue. Its digits roll as it changes; past `max` it reads 99+. Zero hides it. Set `over` an icon or an avatar, it sits on the top-right corner.
-#[derive(IntoElement)]
-pub struct CountBadge {
-    id: ElementId,
-    count: usize,
-    max: usize,
-    over: Option<AnyElement>,
-}
-
-impl CountBadge {
-    pub fn new(id: impl Into<ElementId>, count: usize) -> Self {
-        Self {
-            id: id.into(),
-            count,
-            max: 99,
-            over: None,
-        }
-    }
-
-    /// The largest count shown as is; above it reads `max+`.
-    pub fn max(mut self, max: usize) -> Self {
-        assert!(max > 0, "a count badge needs room for one");
-        self.max = max;
-        self
-    }
-
-    pub fn over(mut self, element: impl IntoElement) -> Self {
-        self.over = Some(element.into_any_element());
-        self
-    }
-}
-
-impl RenderOnce for CountBadge {
-    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
-        let theme = cx.theme();
-        let (fill, text) = Tone::Accent.colors(&theme.colors);
-        let height = theme.control_height(ControlSize::Sm) * 0.67;
-        let pill = (self.count > 0).then(|| {
-            div()
-                .flex()
-                .items_center()
-                .justify_center()
-                .min_w(height)
-                .h(height)
-                .px_1()
-                .rounded_full()
-                .bg(fill)
-                .text_color(text)
-                .text_size(theme.text_size(TextSize::Xs))
-                .font_weight(FontWeight::MEDIUM)
-                .child(if let Some(capped) = capped(self.count, self.max) {
-                    capped.into_any_element()
-                } else {
-                    AnimatedNumber::new(self.id, self.count as f64)
-                        .size(TextSize::Xs)
-                        .color(text)
-                        .into_any_element()
-                })
-        });
-        match self.over {
-            Some(over) => corner(over, div().children(pill)),
-            None => div().children(pill).into_any_element(),
-        }
-    }
-}
-
-/// A dot in `color` centered in an icon's box, as a label or an event wears its hue in a row.
-pub(crate) fn color_mark(color: Hsla, cx: &App) -> gpui::Div {
-    let theme = cx.theme();
-    div()
-        .flex_none()
-        .size(theme.icon_size(IconSize::Sm))
-        .flex()
-        .items_center()
-        .justify_center()
-        .child(div().size(theme.status_dot()).rounded_full().bg(color))
-}
-
-/// A small dot that says something is new or live. Set `over` an icon, it sits on the top-right corner.
-#[derive(IntoElement)]
-pub struct DotBadge {
-    tone: Tone,
-    over: Option<AnyElement>,
-}
-
-impl DotBadge {
-    pub fn new() -> Self {
-        Self {
-            tone: Tone::Accent,
-            over: None,
-        }
-    }
-
-    pub fn tone(mut self, tone: impl Into<Tone>) -> Self {
-        self.tone = tone.into();
-        self
-    }
-
-    pub fn over(mut self, element: impl IntoElement) -> Self {
-        self.over = Some(element.into_any_element());
-        self
-    }
-}
-
-impl Default for DotBadge {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl RenderOnce for DotBadge {
-    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
-        let theme = cx.theme();
-        let dot = div()
-            .size(theme.status_dot() * 1.34)
-            .rounded_full()
-            .border_1()
-            .border_color(theme.colors.bg)
-            .bg(self.tone.dot(&theme.colors));
-        match self.over {
-            Some(over) => corner(over, dot),
-            None => dot.into_any_element(),
-        }
-    }
-}
-
 type OnRemove = Rc<dyn Fn(&mut Window, &mut App)>;
 
 /// A short label for a kind, a topic or a filter: an optional icon, the label, and an x when it can be removed. It is never wider than its container; a long label ends in an ellipsis.
@@ -277,16 +135,6 @@ impl Tag {
             tone: Tone::Neutral,
             on_remove: None,
         }
-    }
-
-    pub fn icon(mut self, icon: IconName) -> Self {
-        self.icon = Some(icon);
-        self
-    }
-
-    pub fn tone(mut self, tone: impl Into<Tone>) -> Self {
-        self.tone = tone.into();
-        self
     }
 
     /// Adds an x that runs `handler`; the press stays out of focus.
@@ -348,17 +196,5 @@ impl RenderOnce for Tag {
                         ),
                 )
             })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::capped;
-
-    #[test]
-    fn a_count_past_its_cap_reads_the_cap_and_a_plus() {
-        assert_eq!(capped(128, 99), Some("99+".to_string()));
-        assert_eq!(capped(99, 99), None);
-        assert_eq!(capped(10, 9), Some("9+".to_string()));
     }
 }

@@ -35,32 +35,7 @@ pub(crate) fn load_fonts(cx: &App) -> Result<()> {
     cx.text_system().add_fonts(fonts)
 }
 
-/// Ely's files first, then another source's: one source for an app that runs both.
-pub struct Before<T>(T);
-
-impl Assets {
-    /// Serves Ely's files, and every other path from `other`, such as GPUI Kit's `Assets`.
-    pub fn before<T: AssetSource>(other: T) -> Before<T> {
-        Before(other)
-    }
-}
-
-impl<T: AssetSource> AssetSource for Before<T> {
-    fn load(&self, path: &str) -> Result<Option<Cow<'static, [u8]>>> {
-        match Assets.load(path)? {
-            Some(data) => Ok(Some(data)),
-            None => self.0.load(path),
-        }
-    }
-
-    fn list(&self, path: &str) -> Result<Vec<SharedString>> {
-        let mut names = Assets.list(path)?;
-        names.extend(self.0.list(path)?);
-        names.sort();
-        names.dedup();
-        Ok(names)
-    }
-}
+impl Assets {}
 
 /// Ely's files the source cannot load, each with the reason.
 pub(crate) fn missing(source: &dyn AssetSource) -> Vec<String> {
@@ -114,25 +89,5 @@ mod tests {
             missing.iter().any(|line| line.starts_with(PLEX)),
             "{missing:?}"
         );
-    }
-
-    #[test]
-    fn ely_s_files_come_first_then_the_other_s() {
-        let both = Assets::before(IconsOnly);
-        assert_eq!(missing(&both), Vec::<String>::new());
-        let plex = both.load(PLEX).unwrap().unwrap();
-        assert_eq!(plex, Assets.load(PLEX).unwrap().unwrap());
-        assert_eq!(
-            &*both.load("icons/kit-only.svg").unwrap().unwrap(),
-            b"<svg/>"
-        );
-        assert!(both.load("icons/neither.svg").is_err());
-        let icons = both.list("icons/").unwrap();
-        let checks = icons
-            .iter()
-            .filter(|name| *name == "icons/check.svg")
-            .count();
-        assert_eq!(checks, 1);
-        assert!(icons.iter().any(|name| name == "icons/kit-only.svg"));
     }
 }

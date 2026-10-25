@@ -14,29 +14,6 @@ pub struct IconTheme {
 impl Global for IconTheme {}
 
 impl IconTheme {
-    /// A file of this exact name, in any case: `Cargo.toml`, `Dockerfile`.
-    pub fn name(mut self, name: &str, icon: IconName) -> Self {
-        self.names.insert(name.to_lowercase(), icon);
-        self
-    }
-
-    /// Files ending in this extension, given without its dot.
-    pub fn extension(mut self, extension: &str, icon: IconName) -> Self {
-        self.extensions.insert(extension.to_lowercase(), icon);
-        self
-    }
-
-    /// Serves every window from now on.
-    pub fn apply(self, cx: &mut App) {
-        log::info!(
-            "icon theme: {} names, {} extensions",
-            self.names.len(),
-            self.extensions.len()
-        );
-        cx.set_global(self);
-        cx.refresh_windows();
-    }
-
     pub(crate) fn file(&self, name: &str) -> IconName {
         let name = name.to_lowercase();
         let extension = name.rsplit_once('.').map(|(_, extension)| extension);
@@ -102,15 +79,5 @@ mod tests {
             IconName::FileVideoCamera
         );
         assert_eq!(IconTheme::default().file("Makefile"), IconName::File);
-    }
-
-    #[test]
-    fn an_owners_rules_come_before_elys_map() {
-        let theme = IconTheme::default()
-            .name("Cargo.toml", IconName::Package)
-            .extension("RS", IconName::Braces);
-        assert_eq!(theme.file("cargo.TOML"), IconName::Package);
-        assert_eq!(theme.file("main.rs"), IconName::Braces);
-        assert_eq!(theme.file("deploy.toml"), IconName::FileCog);
     }
 }

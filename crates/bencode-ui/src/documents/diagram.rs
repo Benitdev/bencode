@@ -95,18 +95,6 @@ fn svg(chart: &Chart) -> Result<String, SharedString> {
     }
 }
 
-/// `source` as light SVG of plain paths, for export.
-pub fn diagram_svg(source: &str) -> Result<String, SharedString> {
-    let chart = Chart {
-        source: source.to_owned().into(),
-        dark: false,
-        ground: "#ffffff".into(),
-        ink: "#000000".into(),
-        scale: 100,
-    };
-    flatten(&svg(&chart)?)
-}
-
 /// usvg reading with the system's fonts, chosen as gpui draws.
 pub(crate) fn options() -> usvg::Options<'static> {
     let named = usvg::FontResolver::default_font_selector();
@@ -129,56 +117,6 @@ pub(crate) fn options() -> usvg::Options<'static> {
             select_fallback: usvg::FontResolver::default_fallback_selector(),
         },
         ..usvg::Options::default()
-    }
-}
-
-/// `svg` with markers and text as paths any reader draws.
-pub(crate) fn flatten(svg: &str) -> Result<String, SharedString> {
-    let tree = usvg::Tree::from_data(svg.as_bytes(), &options())
-        .map_err(|error| SharedString::from(format!("{error}")))?;
-    // A letter without a font vanishes: say so.
-    let (mut kept, mut lost) = (0, 0);
-    texts(tree.root(), &mut kept, &mut lost);
-    let written = labels(svg)?;
-    if kept < written || lost > 0 {
-        log::error!("svg: {kept} of {written} texts set, {lost} letters without a font");
-        return Err("no installed font has every letter here".into());
-    }
-    Ok(tree.to_string(&usvg::WriteOptions::default()))
-}
-
-/// The `<text>` elements holding words.
-fn labels(svg: &str) -> Result<usize, SharedString> {
-    let doc = usvg::roxmltree::Document::parse(svg)
-        .map_err(|error| SharedString::from(format!("{error}")))?;
-    let worded = |node: &usvg::roxmltree::Node| {
-        node.descendants()
-            .any(|word| word.text().is_some_and(|text| !text.trim().is_empty()))
-    };
-    Ok(doc
-        .descendants()
-        .filter(|node| node.has_tag_name("text") && worded(node))
-        .count())
-}
-
-/// Text nodes usvg set; letters it found no glyph for.
-fn texts(group: &usvg::Group, kept: &mut usize, lost: &mut usize) {
-    for node in group.children() {
-        match node {
-            usvg::Node::Group(inner) => texts(inner, kept, lost),
-            usvg::Node::Text(text) => {
-                *kept += 1;
-                let glyphs = text
-                    .layouted()
-                    .iter()
-                    .flat_map(|span| &span.positioned_glyphs);
-                // Glyph zero is a font's blank for a missing letter.
-                *lost += glyphs
-                    .filter(|glyph| glyph.id.0 == 0 && !glyph.text.trim().is_empty())
-                    .count();
-            }
-            _ => {}
-        }
     }
 }
 
@@ -319,24 +257,6 @@ mod tests {
     fn a_broken_diagram_says_why() {
         let why = svg(&chart("flowchart LR\n  A -->", false)).expect_err("an error");
         assert!(!why.is_empty());
-    }
-
-    #[test]
-    fn an_exported_diagram_is_plain_paths() {
-        let svg = diagram_svg(
-            "flowchart LR
-  A[Start] --> B",
-        )
-        .expect("draws");
-        assert!(svg.contains("<path"), "{svg}");
-        assert!(!svg.contains("<marker") && !svg.contains("<text"), "{svg}");
-    }
-
-    #[test]
-    #[ignore = "depends on the machine: a font installed on macOS covers U+F0000; the SVG export goes in stage 6 of docs/migration/ely-removal.md"]
-    fn a_letter_no_font_has_is_an_error() {
-        let why = diagram_svg("flowchart LR\n  A[ABC \u{F0000}] --> B").expect_err("no glyph");
-        assert!(why.contains("font"), "{why}");
     }
 
     #[test]

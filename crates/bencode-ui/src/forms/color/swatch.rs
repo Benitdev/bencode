@@ -1,9 +1,7 @@
-use std::rc::Rc;
-
 use gpui::{
     App, Bounds, Corners, ElementId, Hsla, InteractiveElement, IntoElement, MouseButton,
     ParentElement, Pixels, Rems, RenderOnce, SharedString, StatefulInteractiveElement, Styled,
-    Window, canvas, div, fill, point, prelude::*, rems, size,
+    Window, canvas, div, fill, point, prelude::*, size,
 };
 
 use super::super::options::Run;
@@ -90,22 +88,6 @@ impl ColorSwatch {
         self.size = size;
         self
     }
-
-    pub fn selected(mut self, selected: bool) -> Self {
-        self.selected = selected;
-        self
-    }
-
-    /// The color's name, shown on hover.
-    pub fn tooltip(mut self, text: impl Into<SharedString>) -> Self {
-        self.tooltip = Some(text.into());
-        self
-    }
-
-    pub fn on_click(mut self, handler: impl Fn(&mut Window, &mut App) + 'static) -> Self {
-        self.on_click = Some(Rc::new(handler));
-        self
-    }
 }
 
 impl RenderOnce for ColorSwatch {
@@ -142,85 +124,6 @@ impl RenderOnce for ColorSwatch {
                 swatch.tooltip(Tooltip::text(text))
             })
             .child(patch)
-    }
-}
-
-type OnColor = Rc<dyn Fn(Hsla, &mut Window, &mut App)>;
-
-/// A grid of named swatches; one may be chosen.
-#[derive(IntoElement)]
-pub struct ColorPalette {
-    id: ElementId,
-    colors: Vec<(SharedString, Hsla)>,
-    selected: Option<Hsla>,
-    columns: u16,
-    on_change: Option<OnColor>,
-}
-
-impl ColorPalette {
-    pub fn new(
-        id: impl Into<ElementId>,
-        colors: impl IntoIterator<Item = (impl Into<SharedString>, impl Into<Hsla>)>,
-    ) -> Self {
-        Self {
-            id: id.into(),
-            colors: colors
-                .into_iter()
-                .map(|(name, color)| (name.into(), color.into()))
-                .collect(),
-            selected: None,
-            columns: 8,
-            on_change: None,
-        }
-    }
-
-    pub fn selected(mut self, color: impl Into<Hsla>) -> Self {
-        self.selected = Some(color.into());
-        self
-    }
-
-    pub fn columns(mut self, columns: u16) -> Self {
-        assert!(columns > 0, "a palette needs a column");
-        self.columns = columns;
-        self
-    }
-
-    pub fn on_change(mut self, handler: impl Fn(Hsla, &mut Window, &mut App) + 'static) -> Self {
-        self.on_change = Some(Rc::new(handler));
-        self
-    }
-}
-
-impl RenderOnce for ColorPalette {
-    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
-        let theme = cx.theme();
-        let gap = rems(0.375); // gap_1p5
-        let widest = (theme.control_height(ControlSize::Sm) + gap) * f32::from(self.columns) - gap;
-        let swatches: Vec<_> = self
-            .colors
-            .into_iter()
-            .enumerate()
-            .map(|(ix, (name, color))| {
-                let (id, on_change) = (self.id.clone(), self.on_change.clone());
-                let label = name.clone();
-                ColorSwatch::new((self.id.clone(), format!("swatch-{ix}")), color)
-                    .tooltip(name)
-                    .selected(self.selected == Some(color))
-                    .on_click(move |window, cx| {
-                        log::info!("color palette {id:?}: {label}");
-                        if let Some(on_change) = &on_change {
-                            on_change(color, window, cx);
-                        }
-                    })
-            })
-            .collect();
-        div()
-            .id(self.id)
-            .flex()
-            .flex_wrap()
-            .gap_1p5()
-            .max_w(widest)
-            .children(swatches)
     }
 }
 

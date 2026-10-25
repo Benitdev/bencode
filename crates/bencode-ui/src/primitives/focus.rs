@@ -210,14 +210,6 @@ pub(crate) fn take_focus(
     state
 }
 
-/// Whether an open overlay holds the window's focus.
-pub(crate) fn lent(window: &Window, cx: &App) -> bool {
-    cx.try_global::<Holders>().is_some_and(|holders| {
-        (holders.0.iter())
-            .any(|holder| holder.takeover.upgrade().is_some() && holder.focus.is_focused(window))
-    })
-}
-
 /// Returns focus to whatever held it before the overlay opened.
 pub(crate) fn give_back(state: &Entity<Takeover>, window: &mut Window, cx: &mut App) {
     let closed = state.downgrade();
@@ -234,46 +226,6 @@ pub(crate) fn give_back(state: &Entity<Takeover>, window: &mut Window, cx: &mut 
             log::info!("focus: handed back after an overlay");
         }
         None => log::info!("focus: overlay closed, nothing was focused before"),
-    }
-}
-
-/// A mode's own focus, where focus was before the mode took it, and whether the mode was on last frame.
-pub(crate) struct Held {
-    pub focus: FocusHandle,
-    previous: Option<FocusHandle>,
-    was_on: bool,
-}
-
-/// The focus a mode keyed `key` holds: turned on while focus is elsewhere, it takes focus so Escape reaches it.
-pub(crate) fn hold_focus(
-    key: impl Into<ElementId>,
-    on: bool,
-    window: &mut Window,
-    cx: &mut App,
-) -> Entity<Held> {
-    let held = window.use_keyed_state(key, cx, |_, cx| Held {
-        focus: cx.focus_handle(),
-        previous: None,
-        was_on: false,
-    });
-    let (focus, was_on) = (held.read(cx).focus.clone(), held.read(cx).was_on);
-    if on && !was_on && !focus.contains_focused(window, cx) {
-        log::info!("focus: a mode takes it, so Escape reaches it");
-        let previous = window.focused(cx);
-        window.focus(&focus, cx);
-        held.update(cx, |held, _| held.previous = previous);
-    }
-    if on != was_on {
-        held.update(cx, |held, _| held.was_on = on);
-    }
-    held
-}
-
-/// Hands focus back to where it was before the mode took it.
-pub(crate) fn hand_back(held: &Entity<Held>, window: &mut Window, cx: &mut App) {
-    if let Some(previous) = held.update(cx, |held, _| held.previous.take()) {
-        log::info!("focus: handed back after a mode");
-        window.focus(&previous, cx);
     }
 }
 

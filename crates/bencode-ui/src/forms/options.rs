@@ -40,12 +40,6 @@ impl Choice {
         }
     }
 
-    /// How far it sits under a parent, for choices that come from a tree.
-    pub fn depth(mut self, depth: usize) -> Self {
-        self.depth = depth;
-        self
-    }
-
     pub fn icon(mut self, icon: IconName) -> Self {
         self.icon = Some(icon);
         self
@@ -60,11 +54,6 @@ impl Choice {
     /// Quiet text at the row's end, such as a count or a shortcut.
     pub fn note(mut self, note: impl Into<SharedString>) -> Self {
         self.note = Some(note.into());
-        self
-    }
-
-    pub fn disabled(mut self) -> Self {
-        self.disabled = true;
         self
     }
 }
@@ -343,7 +332,7 @@ impl Popup<'_> {
 mod tests {
     use gpui::{Bounds, point, px, size};
 
-    use super::{Choice, opens_up, step};
+    use super::opens_up;
 
     #[test]
     fn a_panel_opens_up_only_when_it_does_not_fit_below_and_above_has_more() {
@@ -352,19 +341,5 @@ mod tests {
         assert!(!opens_up(low, px(120.0), px(790.0)));
         let high = Bounds::new(point(px(0.0), px(100.0)), size(px(80.0), px(28.0)));
         assert!(!opens_up(high, px(700.0), px(790.0)));
-    }
-
-    #[test]
-    fn stepping_wraps_and_skips_disabled_rows() {
-        let rows = [
-            Choice::new("a", "A"),
-            Choice::new("b", "B").disabled(),
-            Choice::new("c", "C"),
-        ];
-        assert_eq!(step(&rows, 0, 1), 2);
-        assert_eq!(step(&rows, 2, 1), 0);
-        assert_eq!(step(&rows, 0, -1), 2);
-        let none = [Choice::new("a", "A").disabled()];
-        assert_eq!(step(&none, 0, 1), 0);
     }
 }

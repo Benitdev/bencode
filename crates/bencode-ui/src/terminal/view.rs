@@ -143,18 +143,9 @@ impl Terminal {
         }
     }
 
-    pub fn title(&self) -> &SharedString {
-        &self.title
-    }
-
     /// How the program ended, once it has.
     pub fn exit_status(&self) -> Option<ExitStatus> {
         self.exited
-    }
-
-    /// The screen's text as it shows now, trailing spaces gone.
-    pub fn text(&self) -> String {
-        self.shown.text()
     }
 
     /// Sends bytes to the program, as typing would.

@@ -23,14 +23,7 @@ pub struct FileItem {
     entry: DirEntry,
 }
 
-impl FileItem {
-    pub fn new(id: impl Into<ElementId>, entry: DirEntry) -> Self {
-        Self {
-            id: id.into(),
-            entry,
-        }
-    }
-}
+impl FileItem {}
 
 impl From<FileItem> for ListItem {
     fn from(item: FileItem) -> Self {

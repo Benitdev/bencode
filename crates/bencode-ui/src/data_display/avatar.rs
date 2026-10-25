@@ -1,5 +1,5 @@
 use gpui::{
-    AnyElement, App, Div, ElementId, FontWeight, Hsla, ImageSource, IntoElement, ObjectFit,
+    AnyElement, App, ElementId, FontWeight, Hsla, ImageSource, IntoElement, ObjectFit,
     ParentElement, RenderOnce, SharedString, Styled, Window, div, prelude::*,
 };
 
@@ -24,15 +24,6 @@ impl Presence {
             Self::Away => colors.warning,
             Self::Busy => colors.danger,
             Self::Offline => colors.fg_subtle,
-        }
-    }
-
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Online => "Online",
-            Self::Away => "Away",
-            Self::Busy => "Busy",
-            Self::Offline => "Offline",
         }
     }
 }
@@ -86,49 +77,8 @@ impl Avatar {
         }
     }
 
-    /// A picture, cropped to fill the avatar.
-    pub fn image(mut self, source: impl Into<ImageSource>) -> Self {
-        self.image = Some(source.into());
-        self
-    }
-
-    /// Shown instead of initials, for a bot or a place.
-    pub fn icon(mut self, icon: IconName) -> Self {
-        self.icon = Some(icon);
-        self
-    }
-
     pub fn size(mut self, size: AvatarSize) -> Self {
         self.size = size;
-        self
-    }
-
-    /// Whether it is a rounded square rather than a circle.
-    pub(crate) fn is_square(&self) -> bool {
-        self.square
-    }
-
-    /// A rounded square, as teams and apps take.
-    pub fn square(mut self) -> Self {
-        self.square = true;
-        self
-    }
-
-    /// A ring in the page color, so avatars that overlap stay apart.
-    pub fn ring(mut self) -> Self {
-        self.ring = true;
-        self
-    }
-
-    /// A ring in `color`, as someone's own color marks them.
-    pub fn ring_color(mut self, color: Hsla) -> Self {
-        self.ring = true;
-        self.ring_color = Some(color);
-        self
-    }
-
-    pub fn presence(mut self, presence: Presence) -> Self {
-        self.presence = Some(presence);
         self
     }
 }
@@ -202,121 +152,6 @@ impl RenderOnce for Avatar {
                     .child(face),
             )
             .children(dot)
-    }
-}
-
-/// An avatar's slot in a row, tucked under the one before unless `first`.
-pub(crate) fn tucked(first: bool, size: AvatarSize) -> Div {
-    match (first, size) {
-        (true, _) => div(),
-        (false, AvatarSize::Xs | AvatarSize::Sm) => div().ml_neg_1(),
-        (false, AvatarSize::Md) => div().ml_neg_2(),
-        (false, AvatarSize::Lg | AvatarSize::Xl) => div().ml_neg_3(),
-    }
-}
-
-/// The count that stands for `rest` people past the ones shown.
-pub(crate) fn more(rest: usize, size: AvatarSize, cx: &App) -> Div {
-    let theme = cx.theme();
-    div()
-        .flex()
-        .items_center()
-        .justify_center()
-        .size(theme.avatar_size(size))
-        .rounded_full()
-        .border_2()
-        .border_color(theme.colors.bg)
-        .bg(theme.colors.hover)
-        .text_size(theme.text_size(TextSize::Xs))
-        .font_weight(FontWeight::MEDIUM)
-        .text_color(theme.colors.fg_muted)
-        .child(format!("+{rest}"))
-}
-
-/// People side by side, each tucked under the next, and a count of the rest.
-#[derive(IntoElement)]
-pub struct AvatarGroup {
-    people: Vec<Avatar>,
-    max: usize,
-    size: AvatarSize,
-}
-
-impl AvatarGroup {
-    pub fn new(people: impl IntoIterator<Item = Avatar>) -> Self {
-        Self {
-            people: people.into_iter().collect(),
-            max: 4,
-            size: AvatarSize::default(),
-        }
-    }
-
-    /// How many show before the rest become +N.
-    pub fn max(mut self, max: usize) -> Self {
-        assert!(max > 0, "a group shows at least one avatar");
-        self.max = max;
-        self
-    }
-
-    pub fn size(mut self, size: AvatarSize) -> Self {
-        self.size = size;
-        self
-    }
-}
-
-impl RenderOnce for AvatarGroup {
-    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
-        let rest = self.people.len().saturating_sub(self.max);
-        let size = self.size;
-        let shown = self
-            .people
-            .into_iter()
-            .take(self.max)
-            .enumerate()
-            .map(|(ix, person)| tucked(ix == 0, size).child(person.size(size).ring()));
-        let extra = (rest > 0).then(|| tucked(false, size).child(more(rest, size, cx)));
-        div().flex().items_center().children(shown).children(extra)
-    }
-}
-
-/// Someone named in a line or a field: a small avatar and the name, in a pill.
-#[derive(IntoElement)]
-pub struct UserChip {
-    avatar: Avatar,
-    name: SharedString,
-}
-
-impl UserChip {
-    pub fn new(id: impl Into<ElementId>, name: impl Into<SharedString>) -> Self {
-        let name = name.into();
-        Self {
-            avatar: Avatar::new(id, name.clone()).size(AvatarSize::Xs),
-            name,
-        }
-    }
-
-    pub fn image(mut self, source: impl Into<ImageSource>) -> Self {
-        self.avatar = self.avatar.image(source);
-        self
-    }
-}
-
-impl RenderOnce for UserChip {
-    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
-        let theme = cx.theme();
-        div()
-            .flex()
-            .flex_none()
-            .items_center()
-            .gap_1p5()
-            .pl_0p5()
-            .pr_2()
-            .py_0p5()
-            .rounded_full()
-            .bg(theme.colors.hover)
-            .text_size(theme.text_size(TextSize::Sm))
-            .text_color(theme.colors.fg)
-            .child(self.avatar)
-            .child(self.name)
     }
 }
 

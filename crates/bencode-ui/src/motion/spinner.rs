@@ -64,11 +64,6 @@ impl Spinner {
         }
     }
 
-    pub fn style(mut self, style: SpinnerStyle) -> Self {
-        self.style = style;
-        self
-    }
-
     pub fn size(mut self, size: IconSize) -> Self {
         self.size = size;
         self

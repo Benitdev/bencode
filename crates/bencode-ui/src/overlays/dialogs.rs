@@ -56,58 +56,6 @@ fn said(
         )
 }
 
-/// A message to acknowledge: its severity's icon, the text and one button. The scrim does not close it.
-#[derive(IntoElement)]
-pub struct AlertDialog {
-    id: ElementId,
-    severity: Severity,
-    title: SharedString,
-    message: SharedString,
-    label: SharedString,
-    on_close: Run,
-}
-
-impl AlertDialog {
-    pub fn new(
-        id: impl Into<ElementId>,
-        severity: Severity,
-        title: impl Into<SharedString>,
-        message: impl Into<SharedString>,
-        on_close: impl Fn(&mut Window, &mut App) + 'static,
-    ) -> Self {
-        Self {
-            id: id.into(),
-            severity,
-            title: title.into(),
-            message: message.into(),
-            label: "OK".into(),
-            on_close: Rc::new(on_close),
-        }
-    }
-
-    /// The button's label, OK unless set.
-    pub fn label(mut self, label: impl Into<SharedString>) -> Self {
-        self.label = label.into();
-        self
-    }
-}
-
-impl RenderOnce for AlertDialog {
-    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
-        let (ok, label) = ((self.id.clone(), "ok"), self.label);
-        let id = self.id.clone();
-        let on_close = self.on_close;
-        Dialog::new(self.id, self.title, move |window, cx| on_close(window, cx))
-            .held()
-            .child(said(&id, Some(self.severity), self.message, cx))
-            .action(move |close| {
-                Button::new(ok, label)
-                    .primary()
-                    .on_click(move |_, window, cx| close(window, cx))
-            })
-    }
-}
-
 /// Asks before an action: Cancel, and a button that confirms, red when the action destroys.
 #[derive(IntoElement)]
 pub struct ConfirmDialog {

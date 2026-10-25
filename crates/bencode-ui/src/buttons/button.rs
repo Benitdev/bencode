@@ -117,11 +117,6 @@ pub(crate) enum Slot {
     Last,
 }
 
-/// Fails on a keystroke gpui cannot read, when a builder takes it.
-pub(crate) fn keystroke_of(source: &str) {
-    keystroke(source, Platform::current());
-}
-
 /// A keystroke in gpui key syntax as `platform` spells it: `⌘S`, or `Ctrl+S`.
 pub(crate) fn shortcut_text(source: &str, platform: Platform) -> String {
     let glue = if platform == Platform::Mac { "" } else { "+" };
@@ -185,19 +180,6 @@ impl Button {
 
     pub fn trailing_icon(mut self, icon: IconName) -> Self {
         self.trailing_icon = Some(icon);
-        self
-    }
-
-    /// Shows the keystroke that also runs it, e.g. `"cmd-s"`. Panics on a bad keystroke.
-    pub fn shortcut(mut self, keystroke: &str) -> Self {
-        keystroke_of(keystroke);
-        self.shortcut = Some(SharedString::from(keystroke.to_string()));
-        self
-    }
-
-    /// Takes focus through the owner's handle, one that outlives a mode where the button changes; a Tab stop when built with `tab_stop`.
-    pub fn focus_handle(mut self, handle: &FocusHandle) -> Self {
-        self.focus = Some(handle.clone());
         self
     }
 

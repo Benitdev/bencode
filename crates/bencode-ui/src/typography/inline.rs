@@ -1,42 +1,13 @@
 use std::ops::Range;
 
 use gpui::{
-    AnyElement, App, FontWeight, HighlightStyle, IntoElement, Keystroke, ParentElement, RenderOnce,
+    App, FontWeight, HighlightStyle, IntoElement, Keystroke, ParentElement, RenderOnce,
     SharedString, Styled, StyledText, Window, div,
 };
 use regex::RegexBuilder;
-use smallvec::SmallVec;
 
 use super::keys::{keystroke, keystroke_labels};
 use crate::theme::{ActiveTheme, Platform, Radius, TextSize};
-
-/// Monospace fragment on a quiet fill.
-#[derive(IntoElement)]
-pub struct Code {
-    text: SharedString,
-}
-
-impl Code {
-    pub fn new(text: impl Into<SharedString>) -> Self {
-        Self { text: text.into() }
-    }
-}
-
-impl RenderOnce for Code {
-    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
-        let theme = cx.theme();
-        div()
-            .px_1()
-            .rounded(theme.radius(Radius::Sm))
-            .bg(theme.colors.sunken)
-            .border_1()
-            .border_color(theme.colors.border)
-            .font_family(theme.mono_family.clone())
-            .text_size(theme.text_size(TextSize::Sm))
-            .text_color(theme.colors.fg)
-            .child(self.text)
-    }
-}
 
 fn cap(label: String, cx: &App) -> impl IntoElement + use<> {
     let theme = cx.theme();
@@ -126,45 +97,6 @@ impl RenderOnce for KbdCombo {
     }
 }
 
-/// Quoted passage behind a rule.
-#[derive(IntoElement)]
-pub struct Blockquote {
-    children: SmallVec<[AnyElement; 2]>,
-}
-
-impl Blockquote {
-    pub fn new() -> Self {
-        Self {
-            children: SmallVec::new(),
-        }
-    }
-}
-
-impl Default for Blockquote {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl ParentElement for Blockquote {
-    fn extend(&mut self, elements: impl IntoIterator<Item = AnyElement>) {
-        self.children.extend(elements);
-    }
-}
-
-impl RenderOnce for Blockquote {
-    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
-        let theme = cx.theme();
-        div()
-            .pl_4()
-            .border_l_2()
-            .border_color(theme.colors.border_strong)
-            .text_color(theme.colors.fg_muted)
-            .text_size(theme.text_size(TextSize::Md))
-            .children(self.children)
-    }
-}
-
 /// Text with marked ranges, as for search matches.
 #[derive(IntoElement)]
 pub struct Highlight {
@@ -173,14 +105,6 @@ pub struct Highlight {
 }
 
 impl Highlight {
-    /// Byte ranges on char boundaries.
-    pub fn new(text: impl Into<SharedString>, ranges: Vec<Range<usize>>) -> Self {
-        Self {
-            text: text.into(),
-            ranges,
-        }
-    }
-
     /// Marks every case-insensitive occurrence of `query`.
     pub fn matching(text: impl Into<SharedString>, query: &str) -> Self {
         let text = text.into();

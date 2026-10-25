@@ -49,12 +49,6 @@ impl EditorTab {
         self
     }
 
-    /// A pin in place of the close button.
-    pub fn pinned(mut self, pinned: bool) -> Self {
-        self.pinned = pinned;
-        self
-    }
-
     /// A tab the next preview replaces, shown in italics.
     pub fn preview(mut self, preview: bool) -> Self {
         self.preview = preview;
@@ -119,15 +113,6 @@ impl EditorTabs {
         handler: impl Fn(&SharedString, &mut Window, &mut App) + 'static,
     ) -> Self {
         self.on_close = Some(Rc::new(handler));
-        self
-    }
-
-    /// The pin on a pinned tab, which unpins it.
-    pub fn on_pin(
-        mut self,
-        handler: impl Fn(&SharedString, &mut Window, &mut App) + 'static,
-    ) -> Self {
-        self.on_pin = Some(Rc::new(handler));
         self
     }
 

@@ -259,18 +259,6 @@ impl NumberInput {
         }
     }
 
-    /// The name assistive technology reads, drawn nowhere.
-    pub fn label(mut self, text: impl Into<SharedString>) -> Self {
-        self.label = text.into();
-        self
-    }
-
-    /// Shows `placeholder`, not a number, as for a mixed selection; commits once typed in.
-    pub fn blank(mut self, placeholder: impl Into<SharedString>) -> Self {
-        self.blank = Some(placeholder.into());
-        self
-    }
-
     pub fn range(mut self, min: f64, max: f64) -> Self {
         assert!(min <= max, "number range {min}..{max} is empty");
         self.min = min;
@@ -278,56 +266,8 @@ impl NumberInput {
         self
     }
 
-    pub fn step(mut self, step: f64) -> Self {
-        assert!(step > 0.0, "number step {step} must be positive");
-        self.step = step;
-        self
-    }
-
-    /// Decimal places kept and shown.
-    pub fn precision(mut self, places: usize) -> Self {
-        self.precision = places;
-        self
-    }
-
-    /// A symbol before the digits, such as `$`.
-    pub fn prefix(mut self, symbol: impl Into<SharedString>) -> Self {
-        self.prefix = Some(symbol.into());
-        self
-    }
-
-    /// Money in an ISO 4217 currency: its symbol and minor units.
-    pub fn currency(mut self, code: &str) -> Self {
-        let (symbol, places, _) = format::currency_parts(code);
-        self.prefix = Some(SharedString::from(symbol.to_string()));
-        self.precision = places;
-        self
-    }
-
-    /// A percentage, marked with `%`.
-    pub fn percent(self) -> Self {
-        self.suffix(div().child("%"))
-    }
-
-    /// Something after the digits, such as `%` or a unit.
-    pub fn suffix(mut self, suffix: impl IntoElement) -> Self {
-        self.suffix = Some(suffix.into_any_element());
-        self
-    }
-
-    pub fn size(mut self, size: ControlSize) -> Self {
-        self.size = size;
-        self
-    }
-
     pub fn on_change(mut self, handler: impl Fn(f64, &mut Window, &mut App) + 'static) -> Self {
         self.on_change = Some(Rc::new(handler));
-        self
-    }
-
-    /// Runs on Enter, blur, steps and scrubs; never while typing.
-    pub fn on_commit(mut self, handler: impl Fn(f64, &mut Window, &mut App) + 'static) -> Self {
-        self.on_commit = Some(Rc::new(handler));
         self
     }
 }
@@ -493,4 +433,3 @@ impl RenderOnce for NumberInput {
 
 mod scrub;
 pub use scrub::ScrubInput;
-

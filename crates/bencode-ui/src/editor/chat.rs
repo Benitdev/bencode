@@ -38,12 +38,6 @@ impl InlineChat {
         }
     }
 
-    /// An answer is on its way.
-    pub fn working(mut self, working: bool) -> Self {
-        self.working = working;
-        self
-    }
-
     pub fn on_ask(
         mut self,
         handler: impl Fn(SharedString, &mut Window, &mut App) + 'static,

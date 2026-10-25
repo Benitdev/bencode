@@ -69,7 +69,6 @@ pub(super) struct Level {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum Spot {
     Under,
-    At(Point<Pixels>),
 }
 
 /// A host's menu: where it hangs, its open levels root first, the host's box, the box it hangs under, and the focus to hand back.
@@ -93,25 +92,10 @@ impl Open {
         self.spot.is_some()
     }
 
-    /// Hangs the menu under `anchor`, kept current as its owner moves.
-    pub(crate) fn set_anchor(state: &Entity<Open>, anchor: Bounds<Pixels>, cx: &mut App) {
-        if state.read(cx).anchor != anchor {
-            state.update(cx, |open, cx| {
-                open.anchor = anchor;
-                cx.notify();
-            });
-        }
-    }
-
     /// Opens at `spot`, with the first row marked when `marked`.
     pub(crate) fn show(state: &Entity<Open>, menu: &Menu, spot: Spot, marked: bool, cx: &mut App) {
         state.update(cx, |open, _| open.spot = Some(spot));
         Self::begin(state, menu, menu.step(None, 1).filter(|_| marked), cx);
-    }
-
-    /// Starts over on new rows with the first marked; the menu stays where it hangs.
-    pub(crate) fn restart(state: &Entity<Open>, menu: &Menu, cx: &mut App) {
-        Self::begin(state, menu, menu.step(None, 1), cx);
     }
 
     /// Fresh levels marking `first`; the old hover is dropped.
@@ -440,19 +424,6 @@ pub(crate) fn hang(
             window,
             cx,
         ),
-        Spot::At(point) => raise(
-            (id.clone(), "panel"),
-            anchored()
-                .position(point)
-                .snap_to_window()
-                .child(
-                    root.with_animation((id.clone(), "in"), enter.clone(), |root, t| {
-                        root.opacity(t)
-                    }),
-                ),
-        )
-        .with_priority(1)
-        .into_any_element(),
     };
     let room = window.viewport_size().width;
     let subs = (1..depth).filter_map(|level| {

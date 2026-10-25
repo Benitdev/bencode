@@ -6,10 +6,7 @@ use gpui::{
     Toggled, Window, div, prelude::*,
 };
 
-use super::{
-    Choice,
-    options::{OnFlag, OnValues},
-};
+use super::{Choice, options::OnFlag};
 use crate::{
     i18n, motion,
     primitives::{Icon, IconName, tab_stop},
@@ -122,11 +119,6 @@ impl Checkbox {
         self
     }
 
-    pub fn disabled(mut self, disabled: bool) -> Self {
-        self.disabled = disabled;
-        self
-    }
-
     /// Runs with the new value. Mixed and off both turn on.
     pub fn on_change(mut self, handler: impl Fn(bool, &mut Window, &mut App) + 'static) -> Self {
         self.on_change = Some(Rc::new(handler));
@@ -192,39 +184,6 @@ impl RenderOnce for Checkbox {
     }
 }
 
-/// Checkboxes for a list of choices; any number can be on.
-#[derive(IntoElement)]
-pub struct CheckboxGroup {
-    id: ElementId,
-    choices: Vec<Choice>,
-    selected: Vec<SharedString>,
-    on_change: Option<OnValues>,
-}
-
-impl CheckboxGroup {
-    pub fn new(id: impl Into<ElementId>, choices: impl IntoIterator<Item = Choice>) -> Self {
-        Self {
-            id: id.into(),
-            choices: choices.into_iter().collect(),
-            selected: Vec::new(),
-            on_change: None,
-        }
-    }
-
-    pub fn selected(mut self, values: impl IntoIterator<Item = impl Into<SharedString>>) -> Self {
-        self.selected = values.into_iter().map(Into::into).collect();
-        self
-    }
-
-    pub fn on_change(
-        mut self,
-        handler: impl Fn(&[SharedString], &mut Window, &mut App) + 'static,
-    ) -> Self {
-        self.on_change = Some(Rc::new(handler));
-        self
-    }
-}
-
 /// `selected` with `value` turned on or off, in choice order.
 pub(crate) fn toggled(
     choices: &[Choice],
@@ -244,35 +203,6 @@ pub(crate) fn toggled(
         })
         .cloned()
         .collect()
-}
-
-impl RenderOnce for CheckboxGroup {
-    fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
-        let (choices, selected, on_change) = (
-            Rc::new(self.choices),
-            Rc::new(self.selected),
-            self.on_change,
-        );
-        let boxes: Vec<_> = choices
-            .iter()
-            .enumerate()
-            .map(|(ix, choice)| {
-                let (choices, selected, on_change) =
-                    (choices.clone(), selected.clone(), on_change.clone());
-                let value = choice.value.clone();
-                Checkbox::new(("check", ix), selected.contains(&choice.value))
-                    .label(choice.label.clone())
-                    .disabled(choice.disabled)
-                    .on_change(move |on, window, cx| {
-                        let next = toggled(&choices, &selected, &value, on);
-                        if let Some(on_change) = &on_change {
-                            on_change(&next, window, cx);
-                        }
-                    })
-            })
-            .collect();
-        div().id(self.id).flex().flex_col().gap_2().children(boxes)
-    }
 }
 
 #[cfg(test)]

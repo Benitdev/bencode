@@ -469,28 +469,6 @@ impl CodeEditor {
             .scroll_to_item(self.primary_row(), ScrollStrategy::Center);
     }
 
-    /// Replaces ranges of the text at once, as one undo step; read-only text refuses.
-    pub fn edit(
-        &mut self,
-        edits: impl IntoIterator<Item = (Range<usize>, String)>,
-        cx: &mut Context<Self>,
-    ) {
-        let edits: Vec<(Range<usize>, String)> = edits.into_iter().collect();
-        let mut starts: Vec<&Range<usize>> = edits.iter().map(|(range, _)| range).collect();
-        starts.sort_by_key(|range| range.start);
-        let apart = starts.windows(2).all(|pair| pair[0].end <= pair[1].start);
-        let forward = edits.iter().all(|(range, _)| range.start <= range.end);
-        if !apart || !forward || !edits.iter().all(|(range, _)| self.whole(range)) {
-            log::error!(
-                "code editor: edits {:?} do not fit {} bytes; none made",
-                starts,
-                self.buffer.len()
-            );
-            return;
-        }
-        self.apply(edits, false, cx);
-    }
-
     /// Whether both ends of `range` fall between whole characters of the text.
     fn whole(&self, range: &Range<usize>) -> bool {
         let text = self.buffer.text();
