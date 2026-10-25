@@ -134,7 +134,7 @@ pub const SKY_300: u32 = 0x7dd3fc;
 
 /// A link in agent text and artifacts: MonoCode's `text-sky-400/90` on
 /// dark; the theme's link blue keeps contrast on light.
-pub fn link_color(theme: &ely_gpui_component::theme::Theme) -> Hsla {
+pub fn link_color(theme: &bencode_ui::theme::Theme) -> Hsla {
     if theme.is_dark() {
         Hsla::from(rgb(SKY_400)).opacity(0.9)
     } else {
@@ -143,7 +143,7 @@ pub fn link_color(theme: &ely_gpui_component::theme::Theme) -> Hsla {
 }
 
 /// [`link_color`] under the pointer.
-pub fn link_hover_color(theme: &ely_gpui_component::theme::Theme) -> Hsla {
+pub fn link_hover_color(theme: &bencode_ui::theme::Theme) -> Hsla {
     if theme.is_dark() {
         rgb(SKY_300).into()
     } else {

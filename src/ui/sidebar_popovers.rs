@@ -2,8 +2,8 @@
 //! `SidebarWorktreeSwitcher`), the filter menu (`SessionFiltersMenu`) and
 //! the folder menu's colour swatches (`FolderColorSwatches`).
 
-use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
-use ely_gpui_component::theme::{ActiveTheme, IconSize};
+use bencode_ui::primitives::{Icon, IconName, Tooltip};
+use bencode_ui::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, App, Context, Div, Hsla, InteractiveElement, IntoElement, ParentElement, Pixels,
     Point, SharedString, Styled, anchored, deferred, div, prelude::*, relative,
@@ -289,7 +289,7 @@ impl BenCodeApp {
                 .child(row)
                 .when(picker_open, |el| {
                     el.child(
-                        ely_gpui_component::forms::ColorPicker::new("folder-color-picker", value)
+                        bencode_ui::forms::ColorPicker::new("folder-color-picker", value)
                             .opaque()
                             .on_change(crate::ui::app_callback::app_callback_with(
                                 cx,

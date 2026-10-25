@@ -5,8 +5,8 @@
 use std::time::Duration;
 
 use crate::ui::appearance::DiffColors;
-use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
-use ely_gpui_component::theme::{ActiveTheme, IconSize};
+use bencode_ui::primitives::{Icon, IconName, Tooltip};
+use bencode_ui::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, App, ClickEvent, Context, Div, FontWeight, Hsla, InteractiveElement, IntoElement,
     ParentElement, SharedString, Stateful, Styled, Window, div, prelude::*, relative,

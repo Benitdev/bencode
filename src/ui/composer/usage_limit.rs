@@ -12,8 +12,8 @@
 //! in the extra fields of a block after the last prompt), so the notice
 //! and an armed resume outlive a restart. MonoCode keeps it in memory.
 
-use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
-use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
+use bencode_ui::primitives::{Icon, IconName, Tooltip};
+use bencode_ui::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
     AnyElement, Context, InteractiveElement, IntoElement, ParentElement, SharedString, Styled, div,
     prelude::*,
@@ -35,8 +35,8 @@ use crate::ui::HarnessIcon;
 use crate::ui::app_callback::app_callback;
 use crate::ui::buttons::with_tooltip;
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
-use ely_gpui_component::buttons::{Button, ButtonVariant};
-use ely_gpui_component::menus::{DropdownMenu, Menu, MenuItem};
+use bencode_ui::buttons::{Button, ButtonVariant};
+use bencode_ui::menus::{DropdownMenu, Menu, MenuItem};
 use serde_json::{Value, json};
 
 /// MonoCode `USAGE_LIMIT_RESUME_GRACE_MS`: providers can still refuse right

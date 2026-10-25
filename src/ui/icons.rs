@@ -4,7 +4,7 @@
 
 use std::borrow::Cow;
 
-use ely_gpui_component::primitives::Icon;
+use bencode_ui::primitives::Icon;
 use gpui::{AssetSource, SharedString};
 
 macro_rules! extra_icons {
@@ -75,12 +75,12 @@ impl AssetSource for Assets {
     fn load(&self, path: &str) -> anyhow::Result<Option<Cow<'static, [u8]>>> {
         match ExtraIcon::ALL.iter().find(|icon| icon.path() == path) {
             Some(icon) => Ok(Some(Cow::Borrowed(icon.data()))),
-            None => ely_gpui_component::Assets.load(path),
+            None => bencode_ui::Assets.load(path),
         }
     }
 
     fn list(&self, path: &str) -> anyhow::Result<Vec<SharedString>> {
-        let mut names = ely_gpui_component::Assets.list(path)?;
+        let mut names = bencode_ui::Assets.list(path)?;
         names.extend(
             ExtraIcon::ALL
                 .iter()
@@ -94,7 +94,7 @@ impl AssetSource for Assets {
 
 #[cfg(test)]
 mod tests {
-    use ely_gpui_component::primitives::IconName;
+    use bencode_ui::primitives::IconName;
     use gpui::AssetSource;
 
     use super::{Assets, ExtraIcon};

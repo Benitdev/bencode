@@ -10,7 +10,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use base64::Engine as _;
-use ely_gpui_component::forms::{InputEvent, TextInput};
+use bencode_ui::forms::{InputEvent, TextInput};
 use gpui::{
     AsyncApp, Context, Entity, Focusable as _, FutureExt as _, Subscription, WeakEntity, Window,
 };

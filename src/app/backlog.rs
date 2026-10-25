@@ -68,11 +68,11 @@ impl BenCodeApp {
     /// The connection form: Connect follows what is typed, Enter submits.
     pub(crate) fn on_backlog_form_input(
         &mut self,
-        _: gpui::Entity<ely_gpui_component::forms::TextInput>,
-        event: &ely_gpui_component::forms::InputEvent,
+        _: gpui::Entity<bencode_ui::forms::TextInput>,
+        event: &bencode_ui::forms::InputEvent,
         cx: &mut Context<Self>,
     ) {
-        use ely_gpui_component::forms::InputEvent;
+        use bencode_ui::forms::InputEvent;
         match event {
             InputEvent::Submit => self.connect_backlog(cx),
             InputEvent::Changed => self.redraw_regions(&[crate::ui::region::Region::Surface], cx),

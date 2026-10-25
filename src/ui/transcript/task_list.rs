@@ -1,8 +1,8 @@
 //! MonoCode `TaskListPreview`: the agent's task list as a card, one row per
 //! task with its state.
 
-use ely_gpui_component::primitives::{Icon, IconName};
-use ely_gpui_component::theme::{ActiveTheme, IconSize};
+use bencode_ui::primitives::{Icon, IconName};
+use bencode_ui::theme::{ActiveTheme, IconSize};
 use gpui::{AnyElement, App, IntoElement, ParentElement, SharedString, Styled, div};
 
 use crate::app::task_list::progress_label;

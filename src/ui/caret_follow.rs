@@ -6,7 +6,7 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
-use ely_gpui_component::forms::TextInput;
+use bencode_ui::forms::TextInput;
 use gpui::{Canvas, Entity, Pixels, ScrollHandle, canvas, point};
 
 #[derive(Default)]

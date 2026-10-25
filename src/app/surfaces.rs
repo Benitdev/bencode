@@ -3,9 +3,9 @@
 //! at a time; Settings returns to the view it was opened from (MonoCode
 //! `App.tsx:9788-9950,10881-11160`).
 
-use ely_gpui_component::buttons::{ButtonVariant, IconButton};
-use ely_gpui_component::primitives::{Icon, IconName};
-use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
+use bencode_ui::buttons::{ButtonVariant, IconButton};
+use bencode_ui::primitives::{Icon, IconName};
+use bencode_ui::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{AnyElement, Context, FontWeight, IntoElement, ParentElement, Styled, div, prelude::*};
 
 use crate::app::BenCodeApp;

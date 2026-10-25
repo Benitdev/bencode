@@ -3,10 +3,10 @@
 //! and Remove. Laid out like the other providers' accounts
 //! (`settings_accounts.rs`). State and logic: `app/agy_accounts.rs`.
 
-use ely_gpui_component::buttons::{Button, ButtonVariant, IconButton};
-use ely_gpui_component::overlays::Dialog;
-use ely_gpui_component::primitives::IconName;
-use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
+use bencode_ui::buttons::{Button, ButtonVariant, IconButton};
+use bencode_ui::overlays::Dialog;
+use bencode_ui::primitives::IconName;
+use bencode_ui::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
     AnyElement, Context, FontWeight, IntoElement, ParentElement, SharedString, Styled, div,
     prelude::*, relative,

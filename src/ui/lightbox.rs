@@ -5,8 +5,8 @@
 
 use std::path::{Path, PathBuf};
 
-use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
-use ely_gpui_component::theme::IconSize;
+use bencode_ui::primitives::{Icon, IconName, Tooltip};
+use bencode_ui::theme::IconSize;
 use gpui::{
     AnyElement, ClipboardItem, Context, Image, ImageFormat, InteractiveElement, IntoElement,
     MouseButton, MouseDownEvent, ObjectFit, ParentElement, Pixels, Point, Styled, StyledImage,

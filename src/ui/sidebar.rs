@@ -3,8 +3,8 @@
 //! inline renames, and the thread-level dialogs. The list itself is
 //! `sidebar_sessions.rs`, its cards `sidebar_cards.rs`.
 
-use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
-use ely_gpui_component::theme::{ActiveTheme, IconSize};
+use bencode_ui::primitives::{Icon, IconName, Tooltip};
+use bencode_ui::theme::{ActiveTheme, IconSize};
 use gpui::{
     ClickEvent, Context, InteractiveElement, IntoElement, ParentElement, SharedString, Styled,
     Window, div, prelude::*,

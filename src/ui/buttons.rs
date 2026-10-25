@@ -1,7 +1,7 @@
 //! What BenCode adds around Ely's buttons: a tooltip on a labelled
 //! `Button`, which Ely leaves to its caller.
 
-use ely_gpui_component::primitives::Tooltip;
+use bencode_ui::primitives::Tooltip;
 use gpui::{Div, ElementId, IntoElement, SharedString, Stateful, div, prelude::*};
 
 /// `button` with `tip` on hover; `id` names the box and must be unique

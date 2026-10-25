@@ -1,11 +1,11 @@
 //! Editor rendering inside the file pane: a toolbar, the active editor, notices and the discard dialog.
 
-use ely_gpui_component::buttons::{Button, ButtonVariant, IconButton, SegmentedControl};
-use ely_gpui_component::data_display::Badge;
-use ely_gpui_component::feedback::{Alert, EmptyState};
-use ely_gpui_component::overlays::ConfirmDialog;
-use ely_gpui_component::primitives::{Icon, IconName, Severity};
-use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize, TextSize};
+use bencode_ui::buttons::{Button, ButtonVariant, IconButton, SegmentedControl};
+use bencode_ui::data_display::Badge;
+use bencode_ui::feedback::{Alert, EmptyState};
+use bencode_ui::overlays::ConfirmDialog;
+use bencode_ui::primitives::{Icon, IconName, Severity};
+use bencode_ui::theme::{ActiveTheme, ControlSize, IconSize, TextSize};
 use gpui::{
     AnyElement, Context, IntoElement, MouseButton, MouseDownEvent, MouseUpEvent, ParentElement,
     SharedString, Styled, div, prelude::*,

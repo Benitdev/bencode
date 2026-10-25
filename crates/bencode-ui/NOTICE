@@ -1,0 +1,10 @@
+bencode-ui is adapted from Ely GPUI Components
+(https://git.zacharyzhang.com/ZacharyZhang-NY/Ely-GPUI-Components), MIT,
+Copyright (c) 2026 Ely GPUI Component contributors (LICENSE), as built by
+BenCode from the fork https://github.com/Benitdev/Ely-GPUI-Components at
+rev 0c7b0a80ceebaedecc927bc2ec471521875a8b45.
+
+BenCode keeps only what it uses and changes it freely; see
+docs/migration/ely-removal.md for what was cut and changed.
+
+assets/icons are Lucide (ISC, assets/icons/LICENSE).

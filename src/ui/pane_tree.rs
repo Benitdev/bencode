@@ -3,11 +3,11 @@
 //! The tree is the shell's; each pane is a region of its own
 //! (`ui/region.rs`), drawn by `render_session_pane`.
 
-use ely_gpui_component::buttons::{ButtonVariant, IconButton};
-use ely_gpui_component::feedback::EmptyState;
-use ely_gpui_component::layout::SplitPane;
-use ely_gpui_component::primitives::{DragGhost, Icon, IconName, Tooltip};
-use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
+use bencode_ui::buttons::{ButtonVariant, IconButton};
+use bencode_ui::feedback::EmptyState;
+use bencode_ui::layout::SplitPane;
+use bencode_ui::primitives::{DragGhost, Icon, IconName, Tooltip};
+use bencode_ui::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::prelude::*;
 use gpui::{
     AnyElement, Axis, Context, DragMoveEvent, FollowMode, IntoElement, ListState, ObjectFit,

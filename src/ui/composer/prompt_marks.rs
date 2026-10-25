@@ -6,9 +6,9 @@
 
 use std::ops::Range;
 
-use ely_gpui_component::forms::Highlight;
-use ely_gpui_component::primitives::{Icon, IconName};
-use ely_gpui_component::theme::{ActiveTheme, IconSize};
+use bencode_ui::forms::Highlight;
+use bencode_ui::primitives::{Icon, IconName};
+use bencode_ui::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, App, IntoElement, ParentElement, Pixels, Point, Styled, Window, anchored, deferred,
     div, point,

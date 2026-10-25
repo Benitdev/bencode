@@ -8,8 +8,8 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::rc::Rc;
 
-use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
-use ely_gpui_component::theme::{ActiveTheme, IconSize};
+use bencode_ui::primitives::{Icon, IconName, Tooltip};
+use bencode_ui::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, Context, InteractiveElement, IntoElement, MouseButton, MouseDownEvent,
     ParentElement, SharedString, Styled, canvas, div, prelude::*,

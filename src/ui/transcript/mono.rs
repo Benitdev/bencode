@@ -8,7 +8,7 @@
 //! and the one-line status of the work while a turn runs. The logic is
 //! pure, so it is tested without GPUI.
 
-use ely_gpui_component::theme::ActiveTheme;
+use bencode_ui::theme::ActiveTheme;
 use gpui::{
     AnyElement, App, BoxShadow, ElementId, FontWeight, Hsla, InteractiveElement, IntoElement,
     ParentElement, Stateful, Styled, div, point,

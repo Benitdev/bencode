@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use ely_gpui_component::forms::{InputEvent, TextInput};
+use bencode_ui::forms::{InputEvent, TextInput};
 use gpui::{Context, Entity, Focusable, ScrollHandle, Window};
 
 use crate::app::{BenCodeApp, InspectorMode, text_input};

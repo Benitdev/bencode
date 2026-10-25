@@ -5,9 +5,9 @@
 use super::selection::comment_block;
 use crate::ui::transcript::markdown::AgentMarkdown;
 use crate::ui::transcript::selection::SegCtx;
-use ely_gpui_component::buttons::{Button, ButtonVariant};
-use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
-use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
+use bencode_ui::buttons::{Button, ButtonVariant};
+use bencode_ui::primitives::{Icon, IconName, Tooltip};
+use bencode_ui::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
     AnyElement, Context, Div, FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement,
     SharedString, Styled, div, prelude::*,
@@ -43,7 +43,7 @@ fn review_label(state: &str) -> &'static str {
 /// decision); `None` keeps the row's muted text.
 pub(super) fn review_tint(
     state: &str,
-    colors: &ely_gpui_component::theme::Palette,
+    colors: &bencode_ui::theme::Palette,
 ) -> Option<Hsla> {
     match state {
         "APPROVED" => Some(colors.success),

@@ -12,7 +12,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use ely_gpui_component::editor::{CodeEditor, EditorEvent, LineNumbers};
+use bencode_ui::editor::{CodeEditor, EditorEvent, LineNumbers};
 use gpui::{Context, Entity, SharedString, Subscription, Window, prelude::*};
 
 use crate::app::BenCodeApp;

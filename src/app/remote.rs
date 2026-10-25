@@ -10,7 +10,7 @@ use std::sync::Arc;
 use bencode_core::harness::HarnessKind;
 use bencode_core::harness::catalog::ModelOption;
 use bencode_core::remote::protocol::{EntryKind, EntryWire, HarnessWire, Request};
-use ely_gpui_component::forms::{InputEvent, TextInput};
+use bencode_ui::forms::{InputEvent, TextInput};
 use gpui::{AppContext as _, Context, Entity, Window};
 
 use crate::app::BenCodeApp;

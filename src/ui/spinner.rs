@@ -15,7 +15,7 @@ use std::f32::consts::{FRAC_PI_2, TAU};
 use std::ops::Range;
 use std::time::{Duration, Instant};
 
-use ely_gpui_component::theme::{ActiveTheme, IconSize, Mix};
+use bencode_ui::theme::{ActiveTheme, IconSize, Mix};
 use gpui::{
     AnyElement, App, Bounds, DecorationRun, Hsla, IntoElement, ParentElement, PathBuilder, Pixels,
     Point, Styled, StyledText, TextAlign, Window, canvas, div, point,

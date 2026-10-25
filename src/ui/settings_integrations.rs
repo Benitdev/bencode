@@ -6,12 +6,12 @@
 //! confirmation. State and logic: `app/backlog.rs`. Inbox: the model
 //! items and comments are translated with (`ui/inbox_view/translate.rs`).
 
-use ely_gpui_component::buttons::{Button, ButtonVariant};
-use ely_gpui_component::data_display::{Badge, Tone};
-use ely_gpui_component::forms::{Choice, Input, PasswordInput, Select, Switch};
-use ely_gpui_component::overlays::Dialog;
-use ely_gpui_component::primitives::{Icon, IconName};
-use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
+use bencode_ui::buttons::{Button, ButtonVariant};
+use bencode_ui::data_display::{Badge, Tone};
+use bencode_ui::forms::{Choice, Input, PasswordInput, Select, Switch};
+use bencode_ui::overlays::Dialog;
+use bencode_ui::primitives::{Icon, IconName};
+use bencode_ui::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{AnyElement, Context, IntoElement, ParentElement, SharedString, Styled, div, relative};
 
 use crate::app::BenCodeApp;

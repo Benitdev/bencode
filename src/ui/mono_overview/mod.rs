@@ -16,9 +16,9 @@ mod board;
 mod changes;
 mod habits;
 
-use ely_gpui_component::buttons::{ButtonVariant, IconButton};
-use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
-use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
+use bencode_ui::buttons::{ButtonVariant, IconButton};
+use bencode_ui::primitives::{Icon, IconName, Tooltip};
+use bencode_ui::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
     AnyElement, Context, FontWeight, Hsla, InteractiveElement, IntoElement, MouseButton,
     ParentElement, SharedString, StatefulInteractiveElement, Styled, div, prelude::*,

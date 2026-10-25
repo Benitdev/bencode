@@ -4,7 +4,7 @@
 
 use std::time::{Duration, Instant};
 
-use ely_gpui_component::theme::ActiveTheme;
+use bencode_ui::theme::ActiveTheme;
 use gpui::{
     Animation, AnimationExt, AnyElement, Context, DragMoveEvent, FontWeight, Hsla,
     InteractiveElement, IntoElement, MouseButton, MouseDownEvent, ParentElement, Render,

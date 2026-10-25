@@ -3,9 +3,9 @@
 //! an inline git error, and, for the branch picker, "Create and checkout
 //! …" / "New branch". Keyboard: ↑/↓ (clamped), Enter, Esc.
 
-use ely_gpui_component::overlays::PromptDialog;
-use ely_gpui_component::primitives::{Icon, IconName};
-use ely_gpui_component::theme::{ActiveTheme, IconSize};
+use bencode_ui::overlays::PromptDialog;
+use bencode_ui::primitives::{Icon, IconName};
+use bencode_ui::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, App, Context, FontWeight, InteractiveElement, IntoElement, ParentElement,
     SharedString, Styled, Window, anchored, deferred, div, prelude::*,

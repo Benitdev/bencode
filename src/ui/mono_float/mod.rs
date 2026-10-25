@@ -34,8 +34,8 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Instant;
 
-use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
-use ely_gpui_component::theme::{ActiveTheme, IconSize};
+use bencode_ui::primitives::{Icon, IconName, Tooltip};
+use bencode_ui::theme::{ActiveTheme, IconSize};
 
 use gpui::{
     AnyElement, AnyWindowHandle, App, AppContext as _, Bounds, Context, Entity, EntityInputHandler,
@@ -45,7 +45,7 @@ use gpui::{
     WindowControlArea, WindowHandle, WindowKind, WindowOptions, div, prelude::*, size,
 };
 
-use ely_gpui_component::forms::{InputEvent, TextInput};
+use bencode_ui::forms::{InputEvent, TextInput};
 
 use crate::app::BenCodeApp;
 use crate::app::commands::{CloseActive, Quit};

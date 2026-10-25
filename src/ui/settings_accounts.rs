@@ -3,10 +3,10 @@
 //! accounts with who they are and their usage, Add account, Rename, and
 //! Remove behind one confirmation. State and logic: `app/accounts.rs`.
 
-use ely_gpui_component::buttons::{Button, ButtonVariant, IconButton};
-use ely_gpui_component::overlays::Dialog;
-use ely_gpui_component::primitives::IconName;
-use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
+use bencode_ui::buttons::{Button, ButtonVariant, IconButton};
+use bencode_ui::overlays::Dialog;
+use bencode_ui::primitives::IconName;
+use bencode_ui::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
     AnyElement, Context, FontWeight, IntoElement, ParentElement, SharedString, Styled, div,
     prelude::*, relative,

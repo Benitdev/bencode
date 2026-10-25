@@ -5,8 +5,8 @@
 //!
 //! A Mono with replies the user has not read shows their count.
 
-use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
-use ely_gpui_component::theme::{ActiveTheme, IconSize};
+use bencode_ui::primitives::{Icon, IconName, Tooltip};
+use bencode_ui::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnimationExt as _, AnyElement, Context, FontWeight, InteractiveElement, IntoElement,
     MouseButton, MouseDownEvent, ParentElement, SharedString, Styled, div, prelude::*, relative,
@@ -260,7 +260,7 @@ impl BenCodeApp {
                     ),
             );
         let entity = cx.entity().downgrade();
-        let hide = ely_gpui_component::forms::Switch::new("mono-intro-show", true).on_change(
+        let hide = bencode_ui::forms::Switch::new("mono-intro-show", true).on_change(
             move |on, _, cx| {
                 let hidden = entity.update(cx, |this, cx| {
                     this.set_monos_enabled(on, cx);

@@ -5,8 +5,8 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
-use ely_gpui_component::primitives::{Icon, IconName};
-use ely_gpui_component::theme::{ActiveTheme, IconSize};
+use bencode_ui::primitives::{Icon, IconName};
+use bencode_ui::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, Bounds, Context, Div, Hsla, InteractiveElement, IntoElement, MouseButton,
     MouseDownEvent, ParentElement, Pixels, Point, SharedString, Stateful, Styled, anchored, canvas,
@@ -225,7 +225,7 @@ impl BenCodeApp {
                 let target = target.clone();
                 el.child(
                     div().mb_2().child(
-                        ely_gpui_component::forms::ColorPicker::new(
+                        bencode_ui::forms::ColorPicker::new(
                             "rail-color-picker",
                             custom.unwrap_or(current),
                         )
@@ -376,7 +376,7 @@ impl BenCodeApp {
                     .border_color(fg.fill(Fill::Strong))
                     .bg(fg.fill(Fill::Hover))
                     .hover(move |s| s.bg(fg.fill(Fill::Strong)))
-                    .tooltip(ely_gpui_component::primitives::Tooltip::text(if has_logo {
+                    .tooltip(bencode_ui::primitives::Tooltip::text(if has_logo {
                         "Change project logo"
                     } else {
                         "Add project logo"
@@ -428,7 +428,7 @@ impl BenCodeApp {
                         .justify_center()
                         .rounded(px(6.0))
                         .hover(move |s| s.bg(fg.fill(Fill::Strong)))
-                        .tooltip(ely_gpui_component::primitives::Tooltip::text(
+                        .tooltip(bencode_ui::primitives::Tooltip::text(
                             "Remove project logo",
                         ))
                         .on_click(cx.listener(move |this, _, _, cx| {
@@ -506,7 +506,7 @@ impl BenCodeApp {
                     palette_color(ix),
                     selected,
                 )
-                .tooltip(ely_gpui_component::primitives::Tooltip::text(format!(
+                .tooltip(bencode_ui::primitives::Tooltip::text(format!(
                     "Color {}",
                     ix + 1
                 )))
@@ -519,7 +519,7 @@ impl BenCodeApp {
         let pipette = custom.is_some() || picker_open;
         row.child(
             swatch(SharedString::from("rail-color-custom"), custom, pipette)
-                .tooltip(ely_gpui_component::primitives::Tooltip::text(
+                .tooltip(bencode_ui::primitives::Tooltip::text(
                     "Custom color",
                 ))
                 .on_click(cx.listener(|this, _, _, cx| {
@@ -590,7 +590,7 @@ impl BenCodeApp {
                                     el.hover(move |s| s.bg(fg.fill(Fill::Selected)))
                                 }
                             })
-                            .tooltip(ely_gpui_component::primitives::Tooltip::text(*mascot))
+                            .tooltip(bencode_ui::primitives::Tooltip::text(*mascot))
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 this.set_rail_mascot(&target, mascot, cx)
                             }))

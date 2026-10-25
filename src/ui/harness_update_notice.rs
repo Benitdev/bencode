@@ -2,9 +2,9 @@
 //! top right under the due reminders, each with Update; Update all when
 //! several can start.
 
-use ely_gpui_component::motion::Spinner;
-use ely_gpui_component::primitives::{Icon, IconName};
-use ely_gpui_component::theme::{ActiveTheme, IconSize};
+use bencode_ui::motion::Spinner;
+use bencode_ui::primitives::{Icon, IconName};
+use bencode_ui::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, Context, FontWeight, InteractiveElement, IntoElement, MouseButton, ParentElement,
     SharedString, Styled, Window, deferred, div, prelude::*, relative, rgb,

@@ -25,8 +25,8 @@ use std::ops::Range;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use ely_gpui_component::buttons::{Button, ButtonVariant};
-use ely_gpui_component::theme::{ActiveTheme, ControlSize};
+use bencode_ui::buttons::{Button, ButtonVariant};
+use bencode_ui::theme::{ActiveTheme, ControlSize};
 use gpui::{
     AnyElement, Context, FollowMode, IntoElement, ListAlignment, ListOffset, ListState,
     ParentElement, Pixels, SharedString, Styled, Window, canvas, div, prelude::*,

@@ -4,10 +4,10 @@
 //! time (`AppSettings::delete_cli_sessions`), removes what the CLI keeps
 //! of each session too (`harness::session_purge`).
 
-use ely_gpui_component::buttons::{Button, ButtonVariant};
-use ely_gpui_component::forms::Checkbox;
-use ely_gpui_component::overlays::Dialog;
-use ely_gpui_component::theme::ActiveTheme;
+use bencode_ui::buttons::{Button, ButtonVariant};
+use bencode_ui::forms::Checkbox;
+use bencode_ui::overlays::Dialog;
+use bencode_ui::theme::ActiveTheme;
 use gpui::{AnyElement, Context, IntoElement, ParentElement, Styled, div, relative};
 
 use crate::app::BenCodeApp;

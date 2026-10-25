@@ -11,7 +11,7 @@
 
 use std::time::{Duration, Instant};
 
-use ely_gpui_component::theme::ActiveTheme;
+use bencode_ui::theme::ActiveTheme;
 use gpui::{
     Context, FontWeight, InteractiveElement, ParentElement, SharedString, Stateful,
     StatefulInteractiveElement, Styled, Window, div, prelude::*,

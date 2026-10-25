@@ -1,9 +1,9 @@
 //! MonoCode `NotesView`'s list and `NoteCard`: the filter, New note, and a
 //! card per note with its project, age, title, first prose and tags.
 
-use ely_gpui_component::buttons::{ButtonVariant, IconButton};
-use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
-use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
+use bencode_ui::buttons::{ButtonVariant, IconButton};
+use bencode_ui::primitives::{Icon, IconName, Tooltip};
+use bencode_ui::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{AnyElement, Context, FontWeight, IntoElement, ParentElement, Styled, div, prelude::*};
 
 use crate::app::notes::{note_matches, note_preview, note_project};

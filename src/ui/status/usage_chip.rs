@@ -4,8 +4,8 @@
 //! icon rail the provider over the bar), and the details popover it opens
 //! (one card per window; the account pages are in `account_views`).
 
-use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
-use ely_gpui_component::theme::{ActiveTheme, IconSize, Palette};
+use bencode_ui::primitives::{Icon, IconName, Tooltip};
+use bencode_ui::theme::{ActiveTheme, IconSize, Palette};
 use gpui::{
     AnyElement, Context, FontWeight, Hsla, IntoElement, ParentElement, Styled, anchored, deferred,
     div, point, prelude::*, relative,

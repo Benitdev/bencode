@@ -5,7 +5,7 @@
 //! left edge drags to resize. Whether it shows, what and how wide are kept
 //! in `settings.json`.
 
-use ely_gpui_component::theme::ActiveTheme;
+use bencode_ui::theme::ActiveTheme;
 use gpui::{Context, InteractiveElement, IntoElement, ParentElement, Styled, div, prelude::*};
 
 use crate::app::{BenCodeApp, InspectorMode};

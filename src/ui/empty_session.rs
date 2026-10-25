@@ -6,8 +6,8 @@
 
 use std::time::Duration;
 
-use ely_gpui_component::primitives::{Icon, IconName};
-use ely_gpui_component::theme::{ActiveTheme, IconSize};
+use bencode_ui::primitives::{Icon, IconName};
+use bencode_ui::theme::{ActiveTheme, IconSize};
 use gpui::prelude::*;
 use gpui::{
     Animation, AnimationExt as _, AnyElement, BoxShadow, Context, FontWeight, Hsla, IntoElement,

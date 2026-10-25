@@ -2,8 +2,8 @@
 //! thread in one of the project's sidebar folders, or a new one named by
 //! the search.
 
-use ely_gpui_component::primitives::{Icon, IconName};
-use ely_gpui_component::theme::{ActiveTheme, IconSize};
+use bencode_ui::primitives::{Icon, IconName};
+use bencode_ui::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, Context, Focusable, InteractiveElement, IntoElement, ParentElement, SharedString,
     Styled, div, prelude::*,

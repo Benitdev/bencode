@@ -2,7 +2,7 @@
 //! `cx.theme().colors` like every Ely component, so light/dark and Ely's
 //! own widgets stay consistent.
 
-use ely_gpui_component::theme::{ActiveTheme, Mode, Palette, Theme};
+use bencode_ui::theme::{ActiveTheme, Mode, Palette, Theme};
 use gpui::{App, Hsla, rgb, rgba};
 
 use crate::ui::appearance::{ThemeTint, UserAccent, mix};

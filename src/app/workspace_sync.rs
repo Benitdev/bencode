@@ -671,7 +671,7 @@ impl BenCodeApp {
 
     /// MonoCode's `SwitchBranchDialog`: Cancel or Stash & switch.
     pub fn render_branch_switch_confirm(&self, cx: &Context<Self>) -> Option<gpui::AnyElement> {
-        use ely_gpui_component::overlays::ConfirmDialog;
+        use bencode_ui::overlays::ConfirmDialog;
         use gpui::IntoElement;
         let target = self.blocked_branch_switch.clone()?;
         let cancel = crate::ui::app_callback::app_callback(cx, |this, cx| {

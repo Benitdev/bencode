@@ -1,7 +1,7 @@
 //! Applies `settings.json` at startup and writes it back, off the UI thread,
 //! whenever a persisted preference changes.
 
-use ely_gpui_component::theme::{Mode, Theme};
+use bencode_ui::theme::{Mode, Theme};
 use gpui::{Context, WindowAppearance};
 
 use crate::app::{BenCodeApp, PermissionMode};

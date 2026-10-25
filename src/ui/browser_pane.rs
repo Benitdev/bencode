@@ -3,10 +3,10 @@
 //! page is a native view (`browser/page.rs`) placed over this pane's box on
 //! every frame it is drawn; `BenCodeApp::render` hides the rest.
 
-use ely_gpui_component::buttons::{Button, ButtonVariant, IconButton};
-use ely_gpui_component::feedback::EmptyState;
-use ely_gpui_component::primitives::IconName;
-use ely_gpui_component::theme::{ActiveTheme, ControlSize, TextSize};
+use bencode_ui::buttons::{Button, ButtonVariant, IconButton};
+use bencode_ui::feedback::EmptyState;
+use bencode_ui::primitives::IconName;
+use bencode_ui::theme::{ActiveTheme, ControlSize, TextSize};
 use gpui::{
     AnyElement, Context, DispatchPhase, IntoElement, MouseDownEvent, ParentElement, Styled, canvas,
     div, prelude::*,

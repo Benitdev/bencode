@@ -8,7 +8,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock, Mutex, PoisonError};
 
-use ely_gpui_component::theme::{ActiveTheme, IconSize};
+use bencode_ui::theme::{ActiveTheme, IconSize};
 use gpui::{App, Image, ImageFormat, IntoElement, RenderOnce, Styled, Window, img};
 
 const PACK_TEXT: &str = include_str!("../../../assets/file-icons/material-icons.txt");

@@ -1,10 +1,10 @@
 //! MonoCode `SessionReview`: under a finished turn, the files the thread's
 //! agent changed, with Undo, Keep and Review.
 
-use ely_gpui_component::buttons::{Button, ButtonVariant};
-use ely_gpui_component::overlays::ConfirmDialog;
-use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
-use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
+use bencode_ui::buttons::{Button, ButtonVariant};
+use bencode_ui::overlays::ConfirmDialog;
+use bencode_ui::primitives::{Icon, IconName, Tooltip};
+use bencode_ui::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
     AnyElement, Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString,
     StatefulInteractiveElement, Styled, div, prelude::*,

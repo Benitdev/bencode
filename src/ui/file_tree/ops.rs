@@ -5,7 +5,7 @@
 
 use std::path::{Path, PathBuf};
 
-use ely_gpui_component::overlays::ConfirmDialog;
+use bencode_ui::overlays::ConfirmDialog;
 use gpui::{AnyElement, ClipboardEntry, Context, IntoElement};
 
 use super::name::{dirs_touched_by_create, is_within, parent_of, rebase, well_formed};

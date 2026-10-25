@@ -4,8 +4,8 @@
 //! in the states MonoCode draws (picked, needs approval, open, draft),
 //! dragged to group or split, right-clicked for its menu.
 
-use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
-use ely_gpui_component::theme::{ActiveTheme, IconSize};
+use bencode_ui::primitives::{Icon, IconName, Tooltip};
+use bencode_ui::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnimationExt, AnyElement, ClickEvent, Context, InteractiveElement, IntoElement, MouseButton,
     MouseDownEvent, ParentElement, SharedString, Styled, div, prelude::*,

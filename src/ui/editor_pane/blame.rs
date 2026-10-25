@@ -3,11 +3,11 @@
 //! commit's message, its change to that line, and ways to open the commit
 //! or the file's history.
 
-use ely_gpui_component::buttons::{Button, ButtonVariant, IconButton};
-use ely_gpui_component::data_display::Avatar;
-use ely_gpui_component::overlays::HoverCard;
-use ely_gpui_component::primitives::{Icon, IconName};
-use ely_gpui_component::theme::{ActiveTheme, AvatarSize, ControlSize, IconSize};
+use bencode_ui::buttons::{Button, ButtonVariant, IconButton};
+use bencode_ui::data_display::Avatar;
+use bencode_ui::overlays::HoverCard;
+use bencode_ui::primitives::{Icon, IconName};
+use bencode_ui::theme::{ActiveTheme, AvatarSize, ControlSize, IconSize};
 use gpui::{
     AnyElement, App, ClipboardItem, Context, FontWeight, IntoElement, ParentElement, SharedString,
     Styled, WeakEntity, div, prelude::*,

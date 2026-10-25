@@ -8,8 +8,8 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use ely_gpui_component::primitives::{Icon, IconName};
-use ely_gpui_component::theme::{ActiveTheme, IconSize};
+use bencode_ui::primitives::{Icon, IconName};
+use bencode_ui::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, Context, Focusable, FontWeight, HighlightStyle, InteractiveElement, IntoElement,
     ParentElement, SharedString, Styled, StyledText, Window, deferred, div, prelude::*,

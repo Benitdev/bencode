@@ -4,7 +4,7 @@
 //! `features/automations/model/automations.ts`. Runs are started in
 //! `automation_runs.rs`; the views are in `ui/automations/`.
 
-use ely_gpui_component::forms::{InputEvent, TextInput};
+use bencode_ui::forms::{InputEvent, TextInput};
 use gpui::{Context, Entity, Window};
 use jiff::tz::TimeZone;
 use serde_json::Value;

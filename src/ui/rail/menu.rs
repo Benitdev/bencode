@@ -4,7 +4,7 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use ely_gpui_component::primitives::IconName;
+use bencode_ui::primitives::IconName;
 use gpui::{Bounds, Context, Pixels, Point};
 
 use super::menu_view::{ExtraItem, submenu_origin};

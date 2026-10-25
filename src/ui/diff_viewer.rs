@@ -9,10 +9,10 @@
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 
-use ely_gpui_component::files::FileIcon;
-use ely_gpui_component::forms::{code_highlights, json_highlights};
-use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
-use ely_gpui_component::theme::{ActiveTheme, IconSize};
+use bencode_ui::files::FileIcon;
+use bencode_ui::forms::{code_highlights, json_highlights};
+use bencode_ui::primitives::{Icon, IconName, Tooltip};
+use bencode_ui::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, Context, HighlightStyle, Hsla, InteractiveElement, IntoElement, ListAlignment,
     ListOffset, ListState, ParentElement, Pixels, ScrollWheelEvent, SharedString,

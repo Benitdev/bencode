@@ -2,11 +2,11 @@
 //! or mark ready, close or reopen a pull request. Each asks first, runs
 //! through `gh`, then the item is read back into the list.
 
-use ely_gpui_component::buttons::{Button, ButtonVariant};
-use ely_gpui_component::menus::{Menu, MenuItem, SplitButton};
-use ely_gpui_component::overlays::ConfirmDialog;
-use ely_gpui_component::primitives::IconName;
-use ely_gpui_component::theme::ActiveTheme;
+use bencode_ui::buttons::{Button, ButtonVariant};
+use bencode_ui::menus::{Menu, MenuItem, SplitButton};
+use bencode_ui::overlays::ConfirmDialog;
+use bencode_ui::primitives::IconName;
+use bencode_ui::theme::ActiveTheme;
 use gpui::{AnyElement, Context, IntoElement, ParentElement, SharedString, Styled, div};
 
 use crate::app::BenCodeApp;

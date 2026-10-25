@@ -450,7 +450,7 @@ impl AppearanceTokens {
 
 /// The diff colours for the palette chosen and the mode shown.
 pub fn diff_colors(cx: &App) -> DiffColors {
-    use ely_gpui_component::theme::ActiveTheme;
+    use bencode_ui::theme::ActiveTheme;
     DiffColors::new(AppearanceTokens::get(cx).diff_palette, cx.theme().is_dark())
 }
 
@@ -463,7 +463,7 @@ pub fn user_accent(cx: &App) -> Option<UserAccent> {
 /// light button; dimmed while it cannot be pressed. Its fill, its ink and
 /// its fill under the pointer.
 pub fn primary_action(enabled: bool, cx: &App) -> (Hsla, Hsla, Hsla) {
-    use ely_gpui_component::theme::ActiveTheme;
+    use bencode_ui::theme::ActiveTheme;
     let colors = &cx.theme().colors;
     let accent = user_accent(cx);
     let (bg, ink) = match (accent, enabled) {

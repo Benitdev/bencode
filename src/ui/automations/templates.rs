@@ -3,7 +3,7 @@
 //! opened, GitHub issue opened, Linear issue created) are left out:
 //! BenCode runs time triggers only.
 
-use ely_gpui_component::primitives::IconName;
+use bencode_ui::primitives::IconName;
 
 use crate::schedule::ScheduleKind;
 

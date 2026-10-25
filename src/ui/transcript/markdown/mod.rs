@@ -15,11 +15,11 @@ use std::ops::Range;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use ely_gpui_component::documents::Diagram;
-use ely_gpui_component::forms::code_highlights;
-use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
-use ely_gpui_component::theme::{ActiveTheme, IconSize, Syntax};
-use ely_gpui_component::typography::Latex;
+use bencode_ui::documents::Diagram;
+use bencode_ui::forms::code_highlights;
+use bencode_ui::primitives::{Icon, IconName, Tooltip};
+use bencode_ui::theme::{ActiveTheme, IconSize, Syntax};
+use bencode_ui::typography::Latex;
 use gpui::prelude::*;
 use gpui::{
     AnyElement, App, ClickEvent, CursorStyle, ElementId, Font, FontStyle, FontWeight, Hsla,

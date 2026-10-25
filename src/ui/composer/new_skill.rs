@@ -2,10 +2,10 @@
 //! from the `/` query, writes a starter `SKILL.md` in the project or home
 //! `.agents/skills`, takes the `/query` out of the prompt and opens the file.
 
-use ely_gpui_component::buttons::{Button, ButtonVariant};
-use ely_gpui_component::forms::Input;
-use ely_gpui_component::primitives::{Icon, IconName};
-use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
+use bencode_ui::buttons::{Button, ButtonVariant};
+use bencode_ui::forms::Input;
+use bencode_ui::primitives::{Icon, IconName};
+use bencode_ui::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
     AnyElement, Context, Focusable, InteractiveElement, IntoElement, ParentElement, SharedString,
     Styled, Window, div, prelude::*,

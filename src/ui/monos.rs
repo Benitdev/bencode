@@ -7,10 +7,10 @@
 //! Settings › Monos ask for. The model is the composer's
 //! (`ui/composer/mono.rs`).
 
-use ely_gpui_component::feedback::EmptyState;
-use ely_gpui_component::overlays::ConfirmDialog;
-use ely_gpui_component::primitives::IconName;
-use ely_gpui_component::theme::ActiveTheme;
+use bencode_ui::feedback::EmptyState;
+use bencode_ui::overlays::ConfirmDialog;
+use bencode_ui::primitives::IconName;
+use bencode_ui::theme::ActiveTheme;
 use gpui::{AnyElement, Context, FontWeight, IntoElement, ParentElement, Styled, div, prelude::*};
 
 use crate::app::BenCodeApp;

@@ -3,11 +3,11 @@
 //! Translucency and Layout. State and persistence: `app/preferences.rs`;
 //! the colours themselves: `ui/appearance.rs` and `ui/theme.rs`.
 
-use ely_gpui_component::buttons::{Button, ButtonVariant, SegmentedControl};
-use ely_gpui_component::forms::{Choice, ColorPicker, Select, Slider, Switch};
-use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
-use ely_gpui_component::settings::{Appearance, ThemeSelector};
-use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
+use bencode_ui::buttons::{Button, ButtonVariant, SegmentedControl};
+use bencode_ui::forms::{Choice, ColorPicker, Select, Slider, Switch};
+use bencode_ui::primitives::{Icon, IconName, Tooltip};
+use bencode_ui::settings::{Appearance, ThemeSelector};
+use bencode_ui::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
     Anchor, Context, Hsla, IntoElement, MouseButton, ObjectFit, ParentElement, SharedString,
     Styled, anchored, deferred, div, img, point, prelude::*,

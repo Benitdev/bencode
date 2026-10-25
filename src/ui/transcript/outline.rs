@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use ely_gpui_component::theme::ActiveTheme;
+use bencode_ui::theme::ActiveTheme;
 use gpui::{
     AnyElement, Context, FocusHandle, InteractiveElement, IntoElement, ListOffset, ParentElement,
     SharedString, StatefulInteractiveElement, Styled, Window, canvas, div, relative,

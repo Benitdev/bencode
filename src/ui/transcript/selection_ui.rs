@@ -4,7 +4,7 @@
 
 use std::rc::Rc;
 
-use ely_gpui_component::theme::{ActiveTheme, IconSize};
+use bencode_ui::theme::{ActiveTheme, IconSize};
 use gpui::prelude::*;
 use gpui::{AnyElement, Context, Div, SharedString, Stateful, canvas, deferred, div, point};
 

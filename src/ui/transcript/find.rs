@@ -8,9 +8,9 @@ use std::ops::Range;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use ely_gpui_component::buttons::IconButton;
-use ely_gpui_component::primitives::{Icon, IconName};
-use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
+use bencode_ui::buttons::IconButton;
+use bencode_ui::primitives::{Icon, IconName};
+use bencode_ui::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
     AnyElement, Context, Focusable, InteractiveElement, IntoElement, ListOffset, ParentElement,
     Styled, div,

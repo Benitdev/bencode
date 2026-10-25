@@ -15,9 +15,9 @@ pub mod tabs;
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
-use ely_gpui_component::buttons::{ButtonVariant, IconButton};
-use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
-use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
+use bencode_ui::buttons::{ButtonVariant, IconButton};
+use bencode_ui::primitives::{Icon, IconName, Tooltip};
+use bencode_ui::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
     Animation, AnimationExt, AnyElement, Context, FontWeight, InteractiveElement, IntoElement,
     MouseButton, ParentElement, Render, ScrollHandle, ScrollWheelEvent, SharedString, Styled,

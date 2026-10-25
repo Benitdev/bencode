@@ -3,8 +3,8 @@
 //! Regex, include and exclude globs, a status line, then the matches
 //! grouped by file; a click opens the match in the editor.
 
-use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
-use ely_gpui_component::theme::{ActiveTheme, IconSize};
+use bencode_ui::primitives::{Icon, IconName, Tooltip};
+use bencode_ui::theme::{ActiveTheme, IconSize};
 use gpui::prelude::*;
 use gpui::{
     AnyElement, Context, Entity, FontWeight, HighlightStyle, Hsla, IntoElement, SharedString,
@@ -395,7 +395,7 @@ fn render_file_row(name: &str, path: &str, count: usize, cx: &gpui::App) -> impl
 }
 
 /// MonoCode's search fields: a tinted box around the input.
-fn field(input: &Entity<ely_gpui_component::forms::TextInput>, size: f32, fg: Hsla) -> gpui::Div {
+fn field(input: &Entity<bencode_ui::forms::TextInput>, size: f32, fg: Hsla) -> gpui::Div {
     div()
         .flex()
         .items_center()

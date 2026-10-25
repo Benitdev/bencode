@@ -31,10 +31,10 @@ mod suggestions;
 pub mod tokens;
 pub mod usage_limit;
 
-use ely_gpui_component::buttons::ButtonVariant;
-use ely_gpui_component::menus::{DropdownMenu, Menu, MenuItem};
-use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
-use ely_gpui_component::theme::{ActiveTheme, IconSize};
+use bencode_ui::buttons::ButtonVariant;
+use bencode_ui::menus::{DropdownMenu, Menu, MenuItem};
+use bencode_ui::primitives::{Icon, IconName, Tooltip};
+use bencode_ui::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnimationExt, AnyElement, Context, FontWeight, InteractiveElement, IntoElement, ParentElement,
     Pixels, SharedString, Styled, div, prelude::*,

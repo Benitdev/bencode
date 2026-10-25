@@ -18,12 +18,12 @@ use std::ops::Range;
 use std::sync::Arc;
 use std::time::Duration;
 
-use ely_gpui_component::buttons::SegmentedControl;
-use ely_gpui_component::data_display::Tag;
-use ely_gpui_component::feedback::EmptyState;
-use ely_gpui_component::primitives::{Backdrop, Icon, IconName};
-use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
-use ely_gpui_component::typography::Kbd;
+use bencode_ui::buttons::SegmentedControl;
+use bencode_ui::data_display::Tag;
+use bencode_ui::feedback::EmptyState;
+use bencode_ui::primitives::{Backdrop, Icon, IconName};
+use bencode_ui::theme::{ActiveTheme, ControlSize, IconSize};
+use bencode_ui::typography::Kbd;
 use gpui::{
     AnyElement, Context, Focusable, FontWeight, HighlightStyle, InteractiveElement, IntoElement,
     ListAlignment, ListState, MouseButton, ParentElement, SharedString, StatefulInteractiveElement,

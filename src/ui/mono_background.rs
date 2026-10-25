@@ -2,10 +2,10 @@
 //! opens it: only the image is the user's choice, shown behind the Mono's
 //! chat under the Haze at the default dimming (`app/mono_background.rs`).
 
-use ely_gpui_component::buttons::{Button, ButtonVariant};
-use ely_gpui_component::overlays::Dialog;
-use ely_gpui_component::primitives::IconName;
-use ely_gpui_component::theme::{ActiveTheme, IconSize};
+use bencode_ui::buttons::{Button, ButtonVariant};
+use bencode_ui::overlays::Dialog;
+use bencode_ui::primitives::IconName;
+use bencode_ui::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, Context, InteractiveElement, IntoElement, ObjectFit, ParentElement,
     StatefulInteractiveElement, Styled, StyledImage, div, img, prelude::*, rgb,

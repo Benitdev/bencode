@@ -6,9 +6,9 @@
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
-use ely_gpui_component::buttons::{Button, ButtonVariant};
-use ely_gpui_component::feedback::Alert;
-use ely_gpui_component::primitives::Severity;
+use bencode_ui::buttons::{Button, ButtonVariant};
+use bencode_ui::feedback::Alert;
+use bencode_ui::primitives::Severity;
 use gpui::{Context, IntoElement, ParentElement, Styled, div};
 
 use super::files::{MAX_EDITOR_FILE_BYTES, count_lines, file_name, read_text_file};

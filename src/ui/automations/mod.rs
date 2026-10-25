@@ -10,8 +10,8 @@ mod picker;
 mod settings;
 pub mod templates;
 
-use ely_gpui_component::overlays::ConfirmDialog;
-use ely_gpui_component::theme::ActiveTheme;
+use bencode_ui::overlays::ConfirmDialog;
+use bencode_ui::theme::ActiveTheme;
 use gpui::{AnyElement, Context, IntoElement, ParentElement, Styled, div};
 
 use crate::app::BenCodeApp;

@@ -2,9 +2,9 @@
 //! (`app/release_notes.rs`) in a dialog, from the "Updated to" card and
 //! Settings › About.
 
-use ely_gpui_component::buttons::{Button, ButtonVariant};
-use ely_gpui_component::overlays::Dialog;
-use ely_gpui_component::theme::ActiveTheme;
+use bencode_ui::buttons::{Button, ButtonVariant};
+use bencode_ui::overlays::Dialog;
+use bencode_ui::theme::ActiveTheme;
 use gpui::{
     AnyElement, Context, InteractiveElement, IntoElement, ParentElement, Styled, div, prelude::*,
 };

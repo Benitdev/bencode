@@ -4,10 +4,10 @@
 //! opens the habit's page, and Run now, Pause and Remove show on hover. A
 //! page replaces the list until Back, as an artifact does.
 
-use ely_gpui_component::buttons::{ButtonVariant, IconButton};
-use ely_gpui_component::forms::{Choice, Select};
-use ely_gpui_component::primitives::{Icon, IconName};
-use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
+use bencode_ui::buttons::{ButtonVariant, IconButton};
+use bencode_ui::forms::{Choice, Select};
+use bencode_ui::primitives::{Icon, IconName};
+use bencode_ui::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
     AnyElement, Context, FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement,
     SharedString, StatefulInteractiveElement, Styled, div, prelude::*,

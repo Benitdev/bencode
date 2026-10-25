@@ -5,8 +5,8 @@
 
 use std::f32::consts::{FRAC_PI_2, TAU};
 
-use ely_gpui_component::primitives::Tooltip;
-use ely_gpui_component::theme::ActiveTheme;
+use bencode_ui::primitives::Tooltip;
+use bencode_ui::theme::ActiveTheme;
 use gpui::{
     AnyElement, App, Context, Hsla, InteractiveElement, IntoElement, ParentElement, PathBuilder,
     Pixels, Point, Styled, Window, anchored, canvas, deferred, div, point, prelude::*,

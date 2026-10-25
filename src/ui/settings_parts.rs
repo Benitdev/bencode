@@ -3,7 +3,7 @@
 //! it reads as a few topics instead of one long list of switches.
 //! BenCode centres a row's control on it, where MonoCode tops it.
 
-use ely_gpui_component::theme::ActiveTheme;
+use bencode_ui::theme::ActiveTheme;
 use gpui::{
     AnyElement, App, Div, FontWeight, Hsla, IntoElement, ParentElement, RenderOnce, SharedString,
     Styled, Window, div, prelude::*, relative,

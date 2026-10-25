@@ -2,11 +2,11 @@
 //! one file, newest first; a click opens the commit beside it, a double
 //! click keeps it.
 
-use ely_gpui_component::buttons::{ButtonVariant, IconButton};
-use ely_gpui_component::data_display::Avatar;
-use ely_gpui_component::feedback::EmptyState;
-use ely_gpui_component::primitives::{Icon, IconName};
-use ely_gpui_component::theme::{ActiveTheme, AvatarSize, ControlSize, IconSize};
+use bencode_ui::buttons::{ButtonVariant, IconButton};
+use bencode_ui::data_display::Avatar;
+use bencode_ui::feedback::EmptyState;
+use bencode_ui::primitives::{Icon, IconName};
+use bencode_ui::theme::{ActiveTheme, AvatarSize, ControlSize, IconSize};
 use gpui::{
     AnyElement, ClipboardItem, Context, IntoElement, ParentElement, SharedString, Styled, div,
     uniform_list,

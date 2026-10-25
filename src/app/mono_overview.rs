@@ -7,7 +7,7 @@
 
 use std::collections::HashSet;
 
-use ely_gpui_component::forms::{InputEvent, TextInput};
+use bencode_ui::forms::{InputEvent, TextInput};
 use gpui::{AppContext as _, Context, Entity, Focusable as _, Window};
 
 use crate::app::BenCodeApp;

@@ -11,8 +11,8 @@ mod usage_chip;
 pub(crate) use account_views::{account_status_label, usage_meter};
 pub use usage_chip::UsageChipVariant;
 
-use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
-use ely_gpui_component::theme::{ActiveTheme, IconSize};
+use bencode_ui::primitives::{Icon, IconName, Tooltip};
+use bencode_ui::theme::{ActiveTheme, IconSize};
 use gpui::{AnyElement, Context, IntoElement, ParentElement, Styled, div, prelude::*};
 
 use crate::app::BenCodeApp;

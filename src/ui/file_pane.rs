@@ -3,10 +3,10 @@
 //! tab strip.
 //! The chat stays beside it and takes the full width once it is empty.
 
-use ely_gpui_component::layout::SplitPane;
-use ely_gpui_component::navigation::{EditorTab, EditorTabs};
-use ely_gpui_component::primitives::IconName;
-use ely_gpui_component::theme::ActiveTheme;
+use bencode_ui::layout::SplitPane;
+use bencode_ui::navigation::{EditorTab, EditorTabs};
+use bencode_ui::primitives::IconName;
+use bencode_ui::theme::ActiveTheme;
 use gpui::{
     AnyElement, Axis, Context, IntoElement, ParentElement, SharedString, StyleRefinement, Styled,
     div, prelude::*,

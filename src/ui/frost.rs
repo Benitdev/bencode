@@ -9,7 +9,7 @@
 //! blurred, then its own fill laid on as the tint. The light theme and other
 //! platforms paint an opaque fill instead.
 
-use ely_gpui_component::theme::ActiveTheme;
+use bencode_ui::theme::ActiveTheme;
 use gpui::{App, Hsla, IntoElement, Styled, canvas};
 
 use crate::ui::scale::px;

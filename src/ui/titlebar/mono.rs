@@ -7,9 +7,9 @@
 //! MonoCode's header has no floating-chat button; BenCode opens the float
 //! from the Mono's rail menu, as MonoCode does.
 
-use ely_gpui_component::buttons::{ButtonVariant, IconButton};
-use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
-use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
+use bencode_ui::buttons::{ButtonVariant, IconButton};
+use bencode_ui::primitives::{Icon, IconName, Tooltip};
+use bencode_ui::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
     Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString, Styled, div,
     prelude::*,

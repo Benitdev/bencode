@@ -12,8 +12,8 @@
 //! are no `/` or `@` pickers, no project, checkout or branch, and no Stop:
 //! Escape stops a reply.
 
-use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
-use ely_gpui_component::theme::{ActiveTheme, IconSize};
+use bencode_ui::primitives::{Icon, IconName, Tooltip};
+use bencode_ui::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, Context, Hsla, InteractiveElement, IntoElement, ParentElement, SharedString,
     Styled, div, prelude::*,
@@ -472,7 +472,7 @@ impl BenCodeApp {
             .children(
                 self.render_models_only(ModelsAnchor::MonoSettings, false, cx)
                     .map(|flyout| {
-                        ely_gpui_component::primitives::raise("mono-settings-models", flyout)
+                        bencode_ui::primitives::raise("mono-settings-models", flyout)
                             .with_priority(2)
                     }),
             )
@@ -486,7 +486,7 @@ impl BenCodeApp {
         session: &SessionRow,
         cx: &Context<Self>,
     ) -> Vec<(String, AnyElement)> {
-        use ely_gpui_component::forms::{Choice, Select, Switch};
+        use bencode_ui::forms::{Choice, Select, Switch};
         let values = session.model_settings.as_ref();
         let weak = cx.entity().downgrade();
         catalog::picker_settings(&session.model)

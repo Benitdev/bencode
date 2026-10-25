@@ -2,9 +2,9 @@
 //! `ProviderAccountPicker`, `AddProviderAccount`, `AccountSwitchRow`,
 //! `SwitchSuggestion`; `ProviderSignInPanel.tsx`; `ProviderAccountUsage.tsx`).
 
-use ely_gpui_component::buttons::Button;
-use ely_gpui_component::primitives::{Icon, IconName};
-use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize, Palette};
+use bencode_ui::buttons::Button;
+use bencode_ui::primitives::{Icon, IconName};
+use bencode_ui::theme::{ActiveTheme, ControlSize, IconSize, Palette};
 use gpui::{
     AnyElement, Context, FontWeight, Hsla, IntoElement, ParentElement, Styled, div, prelude::*,
 };

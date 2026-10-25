@@ -614,9 +614,9 @@ dependencies = [
  "anyhow",
  "base64",
  "bencode-core",
+ "bencode-ui",
  "block",
  "cocoa 0.26.0",
- "ely-gpui-component",
  "env_logger",
  "gpui-pre",
  "gpui-pre-apple",
@@ -666,6 +666,55 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+]
+
+[[package]]
+name = "bencode-ui"
+version = "0.1.32"
+dependencies = [
+ "alacritty_terminal",
+ "anyhow",
+ "barcoders",
+ "base64",
+ "block",
+ "cocoa 0.26.0",
+ "core-foundation 0.10.1",
+ "core-graphics 0.24.0",
+ "emojis",
+ "env_logger",
+ "futures",
+ "gpui-pre",
+ "gpui-pre-platform",
+ "image",
+ "iso_currency",
+ "isocountry",
+ "isolang",
+ "jiff",
+ "log",
+ "markdown",
+ "mermaid-rs-renderer",
+ "objc",
+ "pulldown-cmark",
+ "qrcode",
+ "ratex-layout",
+ "ratex-parser",
+ "ratex-svg",
+ "ratex-types",
+ "raw-window-handle",
+ "regex",
+ "rqrr",
+ "rust-embed",
+ "rustix",
+ "serde",
+ "serde_json",
+ "similar",
+ "smallvec",
+ "unicode-segmentation",
+ "unicode-width",
+ "usvg",
+ "vte",
+ "web-time",
+ "wry",
 ]
 
 [[package]]
@@ -1761,53 +1810,6 @@ name = "either"
 version = "1.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "252afb9ae5eaa683babdc6a068b3f5726eb19e05070c731f9b2a23a7c3e8ed34"
-
-[[package]]
-name = "ely-gpui-component"
-version = "0.1.1"
-source = "git+https://github.com/Benitdev/Ely-GPUI-Components?rev=0c7b0a80ceebaedecc927bc2ec471521875a8b45#0c7b0a80ceebaedecc927bc2ec471521875a8b45"
-dependencies = [
- "alacritty_terminal",
- "anyhow",
- "barcoders",
- "base64",
- "block",
- "cocoa 0.26.0",
- "emojis",
- "futures",
- "gpui-pre",
- "gpui-pre-platform",
- "image",
- "iso_currency",
- "isocountry",
- "isolang",
- "jiff",
- "log",
- "markdown",
- "mermaid-rs-renderer",
- "objc",
- "pulldown-cmark",
- "qrcode",
- "ratex-layout",
- "ratex-parser",
- "ratex-svg",
- "ratex-types",
- "raw-window-handle",
- "regex",
- "rqrr",
- "rust-embed",
- "rustix",
- "serde",
- "serde_json",
- "similar",
- "smallvec",
- "unicode-segmentation",
- "unicode-width",
- "usvg",
- "vte",
- "web-time",
- "wry",
-]
 
 [[package]]
 name = "embed-resource"
@@ -3414,12 +3416,10 @@ dependencies = [
  "jiff-core",
  "jiff-static",
  "jiff-tzdb-platform",
- "js-sys",
  "log",
  "portable-atomic",
  "portable-atomic-util",
  "serde_core",
- "wasm-bindgen",
  "windows-link 0.2.1",
 ]
 
@@ -6167,7 +6167,6 @@ checksum = "4f66ca1f7aca2474dc10c942eb22feffc897735f54cd1db90138c2fddb490987"
 dependencies = [
  "bstr",
  "unicode-segmentation",
- "web-time",
 ]
 
 [[package]]

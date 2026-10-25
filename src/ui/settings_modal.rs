@@ -1,12 +1,12 @@
 //! Settings: general defaults, provider CLIs, MCP, skills, integrations,
 //! appearance, shortcuts, about.
 
-use ely_gpui_component::buttons::{Button, ButtonVariant, IconButton};
-use ely_gpui_component::data_display::{Badge, Tone};
-use ely_gpui_component::forms::Switch;
-use ely_gpui_component::primitives::{Icon, IconName};
-use ely_gpui_component::settings::SettingsLayout;
-use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
+use bencode_ui::buttons::{Button, ButtonVariant, IconButton};
+use bencode_ui::data_display::{Badge, Tone};
+use bencode_ui::forms::Switch;
+use bencode_ui::primitives::{Icon, IconName};
+use bencode_ui::settings::SettingsLayout;
+use bencode_ui::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
     AnyElement, Context, InteractiveElement, IntoElement, ParentElement, SharedString,
     StatefulInteractiveElement, Styled, div,

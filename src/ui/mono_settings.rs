@@ -14,11 +14,11 @@
 //! The dialog is drawn in an Ely layer (`Backdrop`), so what opens inside
 //! it is raised in that layer, never deferred.
 
-use ely_gpui_component::buttons::{ButtonVariant, IconButton};
-use ely_gpui_component::forms::{Choice, Select};
-use ely_gpui_component::menus::{DropdownMenu, Menu, MenuItem};
-use ely_gpui_component::primitives::{Backdrop, Icon, IconName, Tooltip, raise};
-use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
+use bencode_ui::buttons::{ButtonVariant, IconButton};
+use bencode_ui::forms::{Choice, Select};
+use bencode_ui::menus::{DropdownMenu, Menu, MenuItem};
+use bencode_ui::primitives::{Backdrop, Icon, IconName, Tooltip, raise};
+use bencode_ui::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
     AnyElement, Context, FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement,
     SharedString, StatefulInteractiveElement, Styled, div, prelude::*, relative,
@@ -408,7 +408,7 @@ impl BenCodeApp {
         let shown = mono.show_started_sessions_in_sidebar;
         let switch = |id: String, on: bool, set: fn(&mut Mono, bool)| {
             let (entity, mono_id) = (cx.entity().downgrade(), mono.id.clone());
-            ely_gpui_component::forms::Switch::new(SharedString::from(id), on).on_change(
+            bencode_ui::forms::Switch::new(SharedString::from(id), on).on_change(
                 move |on, _, cx| {
                     let mono_id = mono_id.clone();
                     let toggled = entity.update(cx, |this, cx| {

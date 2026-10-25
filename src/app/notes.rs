@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use ely_gpui_component::forms::{InputEvent, TextInput};
+use bencode_ui::forms::{InputEvent, TextInput};
 use gpui::{App, AppContext, Context, Entity, Window};
 
 use super::note_images::{
@@ -132,9 +132,9 @@ fn atx_heading(line: &str) -> Option<&str> {
 fn source_highlights(
     text: &str,
     cx: &App,
-) -> Vec<(std::ops::Range<usize>, ely_gpui_component::forms::Highlight)> {
-    use ely_gpui_component::forms::Highlight;
-    use ely_gpui_component::theme::ActiveTheme;
+) -> Vec<(std::ops::Range<usize>, bencode_ui::forms::Highlight)> {
+    use bencode_ui::forms::Highlight;
+    use bencode_ui::theme::ActiveTheme;
     let fg = cx.theme().colors.fg;
     let mut spans = Vec::new();
     let mut start = 0;

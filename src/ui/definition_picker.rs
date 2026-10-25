@@ -2,8 +2,8 @@
 //! `SearchPalette`, grouped by file in rank order, each its declaring line
 //! and line number; typing narrows them, Enter opens the first.
 
-use ely_gpui_component::forms::Choice;
-use ely_gpui_component::navigation::SearchPalette;
+use bencode_ui::forms::Choice;
+use bencode_ui::navigation::SearchPalette;
 use gpui::{AnyElement, Context, IntoElement, SharedString};
 
 use crate::app::BenCodeApp;

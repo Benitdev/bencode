@@ -4,8 +4,8 @@
 //! provider rail (Favorites first), a search field and stars. ⌘. and a
 //! right-click on the chip open the recent-models menu instead.
 
-use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
-use ely_gpui_component::theme::{ActiveTheme, IconSize};
+use bencode_ui::primitives::{Icon, IconName, Tooltip};
+use bencode_ui::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, Context, InteractiveElement, IntoElement, ParentElement, SharedString, Styled, div,
     prelude::*,

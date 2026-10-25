@@ -7,8 +7,8 @@
 
 use std::ops::Range;
 
-use ely_gpui_component::terminal::Terminal;
-use ely_gpui_component::theme::{ActiveTheme, TextSize};
+use bencode_ui::terminal::Terminal;
+use bencode_ui::theme::{ActiveTheme, TextSize};
 use gpui::{
     App, Bounds, Context, ElementInputHandler, Entity, EntityInputHandler, Focusable, IntoElement,
     ParentElement, Pixels, Point, Render, Styled, TextAlign, TextRun, UTF16Selection,

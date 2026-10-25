@@ -3,9 +3,9 @@
 //! prompt asks for a working copy, and nothing is sent until the thread is
 //! moved to the project folder or another worktree.
 
-use ely_gpui_component::buttons::ButtonVariant;
-use ely_gpui_component::menus::{DropdownMenu, Menu, MenuItem};
-use ely_gpui_component::primitives::IconName;
+use bencode_ui::buttons::ButtonVariant;
+use bencode_ui::menus::{DropdownMenu, Menu, MenuItem};
+use bencode_ui::primitives::IconName;
 use gpui::{Context, IntoElement};
 
 use crate::app::BenCodeApp;

@@ -2,11 +2,11 @@
 //! with model and access, session, advanced. Event triggers are shown but
 //! cannot be added: BenCode runs time triggers only.
 
-use ely_gpui_component::buttons::{ButtonVariant, IconButton};
-use ely_gpui_component::forms::{Choice, Select};
-use ely_gpui_component::menus::{DropdownMenu, Menu, MenuItem};
-use ely_gpui_component::primitives::{Icon, IconName};
-use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
+use bencode_ui::buttons::{ButtonVariant, IconButton};
+use bencode_ui::forms::{Choice, Select};
+use bencode_ui::menus::{DropdownMenu, Menu, MenuItem};
+use bencode_ui::primitives::{Icon, IconName};
+use bencode_ui::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
     AnyElement, Context, Div, FontWeight, IntoElement, ParentElement, Styled, div, prelude::*,
 };

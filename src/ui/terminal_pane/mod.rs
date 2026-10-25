@@ -19,11 +19,11 @@ mod split;
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 
-use ely_gpui_component::buttons::{ButtonVariant, IconButton};
-use ely_gpui_component::layout::SplitPane;
-use ely_gpui_component::primitives::{DragGhost, Icon, IconName, Tooltip};
-use ely_gpui_component::terminal::{Launch, Terminal, TerminalEvent};
-use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
+use bencode_ui::buttons::{ButtonVariant, IconButton};
+use bencode_ui::layout::SplitPane;
+use bencode_ui::primitives::{DragGhost, Icon, IconName, Tooltip};
+use bencode_ui::terminal::{Launch, Terminal, TerminalEvent};
+use bencode_ui::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
     AnyElement, Axis, Context, Entity, InteractiveElement, IntoElement, ParentElement,
     SharedString, StyleRefinement, Styled, Subscription, Window, div, prelude::*,

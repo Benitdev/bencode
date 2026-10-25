@@ -4,7 +4,7 @@
 //! came to), then the work the turn folds, drawn with the transcript's own
 //! rows (phases, tool calls, subagents, the prose between them).
 
-use ely_gpui_component::theme::ActiveTheme;
+use bencode_ui::theme::ActiveTheme;
 use gpui::{AnyElement, Context, IntoElement, ParentElement, Styled, div};
 
 use super::turns::{self, Item, TurnLayout};

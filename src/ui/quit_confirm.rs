@@ -1,7 +1,7 @@
 //! MonoCode's quit-while-busy confirmation (`inFlight.ts`
 //! `quitWhileBusyMessage`, `appLifecycle.ts` `askQuitConfirmation`).
 
-use ely_gpui_component::overlays::ConfirmDialog;
+use bencode_ui::overlays::ConfirmDialog;
 use gpui::{AnyElement, Context, IntoElement};
 
 use crate::app::BenCodeApp;

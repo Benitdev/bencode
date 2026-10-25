@@ -1,7 +1,7 @@
 //! Taking a project off the rail: MonoCode `onRemoveProject` (Archive,
 //! or Delete with its `RemoveProjectDialog`) and `onRestoreProject`.
 
-use ely_gpui_component::overlays::ConfirmDialog;
+use bencode_ui::overlays::ConfirmDialog;
 use gpui::{AnyElement, Context, IntoElement};
 
 use super::state::RemoveProject;

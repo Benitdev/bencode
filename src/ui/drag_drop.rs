@@ -1,7 +1,7 @@
 //! Drag payloads and the drop-target overlays drawn over panes.
 
-use ely_gpui_component::primitives::{Icon, IconName};
-use ely_gpui_component::theme::{ActiveTheme, IconSize, Radius, TextSize};
+use bencode_ui::primitives::{Icon, IconName};
+use bencode_ui::theme::{ActiveTheme, IconSize, Radius, TextSize};
 use gpui::{App, Context, IntoElement, ParentElement, Render, Styled, Window, div};
 
 use crate::ui::layout::PaneEdge;

@@ -3,9 +3,9 @@
 //! (`NotificationMuteDatePicker`). A mute silences the project's sounds and
 //! notifications (`app/alerts.rs`) and is shown on the rail.
 
-use ely_gpui_component::buttons::{Button, ButtonVariant};
-use ely_gpui_component::forms::DateTimePicker;
-use ely_gpui_component::theme::{ActiveTheme, ControlSize};
+use bencode_ui::buttons::{Button, ButtonVariant};
+use bencode_ui::forms::DateTimePicker;
+use bencode_ui::theme::{ActiveTheme, ControlSize};
 use gpui::{
     AnyElement, Bounds, Context, FontWeight, InteractiveElement, IntoElement, MouseDownEvent,
     ParentElement, Pixels, Point, Styled, anchored, deferred, div, rgb,

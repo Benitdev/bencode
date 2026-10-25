@@ -3,8 +3,8 @@
 //! ↑/↓ move over the rows (wrapping), Enter or Space picks, Esc closes, and
 //! a mouse-down anywhere else dismisses it.
 
-use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
-use ely_gpui_component::theme::{ActiveTheme, IconSize};
+use bencode_ui::primitives::{Icon, IconName, Tooltip};
+use bencode_ui::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnimationExt, AnyElement, App, Hsla, InteractiveElement, IntoElement, ParentElement, Pixels,
     Point, SharedString, Styled, anchored, deferred, div, prelude::*, relative, rgb,

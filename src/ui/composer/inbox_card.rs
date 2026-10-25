@@ -3,8 +3,8 @@
 //! send its prompt ("Work on this GitHub issue: …") goes first and the
 //! typed note after it (`composeInboxMessage`).
 
-use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
-use ely_gpui_component::theme::{ActiveTheme, IconSize};
+use bencode_ui::primitives::{Icon, IconName, Tooltip};
+use bencode_ui::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString,
     Styled, div, prelude::*,

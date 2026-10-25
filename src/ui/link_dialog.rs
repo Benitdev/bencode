@@ -2,9 +2,9 @@
 //! pull request by URL (or edit / remove the link), and open the linked
 //! item from the card's badge.
 
-use ely_gpui_component::buttons::{Button, ButtonVariant};
-use ely_gpui_component::overlays::Dialog;
-use ely_gpui_component::theme::ActiveTheme;
+use bencode_ui::buttons::{Button, ButtonVariant};
+use bencode_ui::overlays::Dialog;
+use bencode_ui::theme::ActiveTheme;
 use gpui::{
     AnyElement, Context, FontWeight, Hsla, InteractiveElement, IntoElement, MouseButton,
     ParentElement, StatefulInteractiveElement, Styled, div, relative, rgb,

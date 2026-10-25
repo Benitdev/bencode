@@ -4,8 +4,8 @@
 mod detail;
 mod list;
 
-use ely_gpui_component::layout::SplitPane;
-use ely_gpui_component::overlays::ConfirmDialog;
+use bencode_ui::layout::SplitPane;
+use bencode_ui::overlays::ConfirmDialog;
 use gpui::{AnyElement, Axis, Context, IntoElement, ParentElement, Styled, div};
 
 use crate::app::BenCodeApp;

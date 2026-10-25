@@ -5,9 +5,9 @@
 
 use std::collections::{HashMap, HashSet};
 
-use ely_gpui_component::buttons::ButtonVariant;
-use ely_gpui_component::menus::{DropdownMenu, Menu, MenuItem};
-use ely_gpui_component::primitives::IconName;
+use bencode_ui::buttons::ButtonVariant;
+use bencode_ui::menus::{DropdownMenu, Menu, MenuItem};
+use bencode_ui::primitives::IconName;
 use gpui::{Context, IntoElement, SharedString};
 
 use super::blocks::cut;

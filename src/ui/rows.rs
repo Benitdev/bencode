@@ -5,9 +5,9 @@
 //! The row owns its hover: callers pass what a click does and the buttons,
 //! never a hover of their own (GPUI takes one hover per element).
 
-use ely_gpui_component::buttons::{ButtonVariant, IconButton};
-use ely_gpui_component::primitives::{IconName, Tooltip};
-use ely_gpui_component::theme::{ActiveTheme, ControlSize};
+use bencode_ui::buttons::{ButtonVariant, IconButton};
+use bencode_ui::primitives::{IconName, Tooltip};
+use bencode_ui::theme::{ActiveTheme, ControlSize};
 use gpui::{
     AnyElement, App, ClickEvent, InteractiveElement, IntoElement, ParentElement, RenderOnce,
     SharedString, StatefulInteractiveElement, Styled, Window, div, prelude::*,

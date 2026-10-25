@@ -77,7 +77,7 @@ fn main() {
         .run(|cx: &mut App| {
             startup_trace::mark("application launched");
             // Without Ely's assets and fonts nothing can be drawn.
-            if let Err(err) = ely_gpui_component::init(cx) {
+            if let Err(err) = bencode_ui::init(cx) {
                 log::error!("ely init failed: {err:#}");
                 cx.quit();
                 return;

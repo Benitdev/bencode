@@ -3,12 +3,12 @@
 //! Delete, and the Settings / Run history tabs.
 //! The Settings page itself is in `settings.rs`.
 
-use ely_gpui_component::buttons::{Button, ButtonVariant};
-use ely_gpui_component::forms::{Choice, Switch};
-use ely_gpui_component::menus::{Menu, MenuItem, OverflowMenu};
-use ely_gpui_component::navigation::Tabs;
-use ely_gpui_component::primitives::{Icon, IconName};
-use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
+use bencode_ui::buttons::{Button, ButtonVariant};
+use bencode_ui::forms::{Choice, Switch};
+use bencode_ui::menus::{Menu, MenuItem, OverflowMenu};
+use bencode_ui::navigation::Tabs;
+use bencode_ui::primitives::{Icon, IconName};
+use bencode_ui::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
     AnyElement, Context, Div, FontWeight, Hsla, IntoElement, ParentElement, Styled, div, prelude::*,
 };

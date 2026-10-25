@@ -2,9 +2,9 @@
 //! notices, and the footer a finished turn leaves (MonoCode
 //! `TranscriptBlock`, `UserMessage`, `TurnDuration`).
 
-use ely_gpui_component::buttons::{Button, ButtonVariant};
-use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
-use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
+use bencode_ui::buttons::{Button, ButtonVariant};
+use bencode_ui::primitives::{Icon, IconName, Tooltip};
+use bencode_ui::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::prelude::*;
 use gpui::{
     AnyElement, App, Context, Hsla, InteractiveElement, IntoElement, ParentElement, SharedString,

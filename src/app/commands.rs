@@ -6,7 +6,7 @@ use gpui::{
     actions,
 };
 
-use ely_gpui_component::forms as input;
+use bencode_ui::forms as input;
 
 use crate::app::BenCodeApp;
 use crate::app::file_pane::PaneTab;

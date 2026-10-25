@@ -4,10 +4,10 @@
 //! theme an `html` page gets as CSS variables (`HtmlArtifactFrame`'s
 //! `THEME_COLORS`, `CHART_COLORS`).
 
-use ely_gpui_component::buttons::{ButtonVariant, IconButton};
-use ely_gpui_component::overlays::ConfirmDialog;
-use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
-use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
+use bencode_ui::buttons::{ButtonVariant, IconButton};
+use bencode_ui::overlays::ConfirmDialog;
+use bencode_ui::primitives::{Icon, IconName, Tooltip};
+use bencode_ui::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
     AnyElement, App, Context, DispatchPhase, FontWeight, Hsla, InteractiveElement, IntoElement,
     MouseDownEvent, ParentElement, Rgba, SharedString, Stateful, StatefulInteractiveElement,

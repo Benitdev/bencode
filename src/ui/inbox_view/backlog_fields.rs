@@ -4,10 +4,10 @@
 //! change is one `PATCH` (`app/backlog.rs`); the fields wait while one is
 //! on its way.
 
-use ely_gpui_component::buttons::{ButtonVariant, IconButton};
-use ely_gpui_component::forms::{Choice, DatePicker, Input, MultiSelect, Select, TextInput};
-use ely_gpui_component::primitives::IconName;
-use ely_gpui_component::theme::{ActiveTheme, ControlSize};
+use bencode_ui::buttons::{ButtonVariant, IconButton};
+use bencode_ui::forms::{Choice, DatePicker, Input, MultiSelect, Select, TextInput};
+use bencode_ui::primitives::IconName;
+use bencode_ui::theme::{ActiveTheme, ControlSize};
 use gpui::{
     AnyElement, Context, Entity, IntoElement, ParentElement, SharedString, Styled, div, prelude::*,
 };

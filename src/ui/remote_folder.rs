@@ -3,11 +3,11 @@
 //! project of the rail whose threads run on that machine. State and logic:
 //! `app/remote.rs`.
 
-use ely_gpui_component::buttons::{Button, ButtonVariant};
-use ely_gpui_component::forms::{Choice, Input, Select};
-use ely_gpui_component::overlays::Dialog;
-use ely_gpui_component::primitives::{Icon, IconName};
-use ely_gpui_component::theme::{ActiveTheme, IconSize};
+use bencode_ui::buttons::{Button, ButtonVariant};
+use bencode_ui::forms::{Choice, Input, Select};
+use bencode_ui::overlays::Dialog;
+use bencode_ui::primitives::{Icon, IconName};
+use bencode_ui::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, Context, Hsla, InteractiveElement, IntoElement, ParentElement, SharedString,
     StatefulInteractiveElement, Styled, div, relative, rgb,

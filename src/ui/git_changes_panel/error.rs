@@ -4,9 +4,9 @@
 //! keeps long output in a scrolling box, and copies the raw text.
 
 use super::*;
-use ely_gpui_component::buttons::{Button, ButtonVariant};
-use ely_gpui_component::overlays::Dialog;
-use ely_gpui_component::theme::TextSize;
+use bencode_ui::buttons::{Button, ButtonVariant};
+use bencode_ui::overlays::Dialog;
+use bencode_ui::theme::TextSize;
 
 /// A failed git action, shown in a dialog until it is dismissed.
 #[derive(Clone, Debug)]

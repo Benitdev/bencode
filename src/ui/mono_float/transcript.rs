@@ -15,9 +15,9 @@
 use std::path::PathBuf;
 use std::time::Instant;
 
-use ely_gpui_component::buttons::{Button, ButtonVariant};
-use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
-use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
+use bencode_ui::buttons::{Button, ButtonVariant};
+use bencode_ui::primitives::{Icon, IconName, Tooltip};
+use bencode_ui::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
     Animation, AnimationExt as _, AnyElement, Context, Hsla, InteractiveElement, IntoElement,
     ObjectFit, ParentElement, Pixels, SharedString, Stateful, StatefulInteractiveElement, Styled,

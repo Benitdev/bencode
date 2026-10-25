@@ -12,8 +12,8 @@ version = "0.1.33"
 
 [workspace]
 exclude = ["vendor/gpui-pre-apple"]
-members = [".", "crates/bencode-core", "crates/bencode-host"]
-default-members = [".", "crates/bencode-core", "crates/bencode-host"]
+members = [".", "crates/bencode-core", "crates/bencode-host", "crates/bencode-ui"]
+default-members = [".", "crates/bencode-core", "crates/bencode-host", "crates/bencode-ui"]
 
 [features]
 # Pictures of the window for UI work (`src/app/snapshot.rs`).
@@ -23,10 +23,8 @@ snapshot = ["gpui/test-support", "gpui_platform/test-support"]
 # What the app shares with its remote host: the agent CLIs, the protocol.
 bencode-core = { path = "crates/bencode-core" }
 
-# Ely GPUI Component Library
-# repository (ZacharyZhang-NY/Ely-GPUI-Components) is gone from GitHub.
-# Pinned: later Ely commits change ThemeSelector / SettingsLayout (ad47249).
-ely-gpui-component = { git = "https://git.zacharyzhang.com/ZacharyZhang-NY/Ely-GPUI-Components" }
+# BenCode's components, adapted from Ely GPUI Components (crates/bencode-ui).
+bencode-ui = { path = "crates/bencode-ui" }
 gpui = { package = "gpui-pre", version = "=0.3.8" }
 gpui_platform = { package = "gpui-pre-platform", version = "=0.3.8", features = ["font-kit"] }
 
@@ -93,12 +91,6 @@ opt-level = 1
 
 [profile.dev.package."*"]
 opt-level = 3
-
-# Ely's code editor with sideways scroll and the editor tabs' right-click
-# hook and MultiSelect's chevron kept on the first row: 7f7a715 plus three
-# commits, on Benitdev's fork, until they are upstream.
-[patch."https://git.zacharyzhang.com/ZacharyZhang-NY/Ely-GPUI-Components"]
-ely-gpui-component = { git = "https://github.com/Benitdev/Ely-GPUI-Components", rev = "0c7b0a80ceebaedecc927bc2ec471521875a8b45" }
 
 # GPUI's Metal renderer with MonoCode's backdrop blur (`backdrop_blur_marker`):
 # 0.3.8 plus that one patch, see vendor/gpui-pre-apple/NOTICE.

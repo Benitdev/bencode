@@ -3,10 +3,10 @@
 //! turns a quit, an update's restart or a crash cut off, each picked by
 //! default, and whether to stop asking. State: `app/in_flight.rs`.
 
-use ely_gpui_component::buttons::{Button, ButtonVariant};
-use ely_gpui_component::forms::Checkbox;
-use ely_gpui_component::overlays::Dialog;
-use ely_gpui_component::theme::ActiveTheme;
+use bencode_ui::buttons::{Button, ButtonVariant};
+use bencode_ui::forms::Checkbox;
+use bencode_ui::overlays::Dialog;
+use bencode_ui::theme::ActiveTheme;
 use gpui::{AnyElement, Context, IntoElement, ParentElement, SharedString, Styled, div, relative};
 
 use crate::app::BenCodeApp;

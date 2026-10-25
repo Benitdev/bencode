@@ -2,8 +2,8 @@
 //! and "updated" dot, and an orchestrator's subagents (the Share icon's
 //! hover card, and the inline list while the card is open or busy).
 
-use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
-use ely_gpui_component::theme::{ActiveTheme, IconSize};
+use bencode_ui::primitives::{Icon, IconName, Tooltip};
+use bencode_ui::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, App, ClickEvent, Context, Hsla, InteractiveElement, IntoElement, MouseButton,
     ParentElement, Render, SharedString, Styled, Window, div, prelude::*, rgb,

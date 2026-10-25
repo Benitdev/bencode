@@ -4,8 +4,8 @@
 //! the header's `…`. BenCode's own: a commit's menu in the graph (Undo
 //! Last Commit, Revert Commit, Copy), which MonoCode's graph does not have.
 
-use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
-use ely_gpui_component::theme::IconSize;
+use bencode_ui::primitives::{Icon, IconName, Tooltip};
+use bencode_ui::theme::IconSize;
 use gpui::{
     AnyElement, Context, Div, Hsla, InteractiveElement, IntoElement, MouseButton, MouseDownEvent,
     ParentElement, Pixels, Point, SharedString, Stateful, Styled, canvas, div, prelude::*,

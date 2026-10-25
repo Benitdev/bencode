@@ -3,8 +3,8 @@
 //! `@mcp/name` tag in the prompt; a turn that still holds the tag is sent
 //! with an "MCP context" line naming the server.
 
-use ely_gpui_component::primitives::IconName;
-use ely_gpui_component::theme::ActiveTheme;
+use bencode_ui::primitives::IconName;
+use bencode_ui::theme::ActiveTheme;
 use gpui::{
     AnyElement, Context, Focusable, InteractiveElement, IntoElement, ParentElement, SharedString,
     Styled, div, prelude::*,

@@ -3,8 +3,8 @@
 //! dropped from the Finder attach too, Plan mode and Draft show as removable
 //! pills beside "+".
 
-use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
-use ely_gpui_component::theme::{ActiveTheme, IconSize};
+use bencode_ui::primitives::{Icon, IconName, Tooltip};
+use bencode_ui::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, ClipboardEntry, Context, ImageFormat, InteractiveElement, IntoElement,
     ParentElement, PathPromptOptions, SharedString, Styled, div, prelude::*,

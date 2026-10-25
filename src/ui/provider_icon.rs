@@ -3,7 +3,7 @@
 //! Renders native vector SVG icons for all supported providers:
 //! Claude, Codex (OpenAI), Antigravity, Cursor, OpenCode, Pi, Grok, Fx, Omp, Hermes.
 
-use ely_gpui_component::theme::ActiveTheme;
+use bencode_ui::theme::ActiveTheme;
 use gpui::{App, Hsla, IntoElement, Pixels, RenderOnce, Styled, Window, svg};
 
 use crate::ui::scale::px;
@@ -48,7 +48,7 @@ pub fn harness_svg_data(harness: &str) -> &'static [u8] {
 }
 
 /// Returns the default color for a harness icon, matching MonoCode's branding rules.
-pub fn default_harness_color(harness: &str, theme: &ely_gpui_component::theme::Theme) -> Hsla {
+pub fn default_harness_color(harness: &str, theme: &bencode_ui::theme::Theme) -> Hsla {
     crate::ui::theme::harness_color(harness, &theme.colors)
 }
 

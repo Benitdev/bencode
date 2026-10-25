@@ -3,8 +3,8 @@
 //! same shell for the Pinned group. A click folds it, F2 or its menu
 //! renames it inline, and cards dropped on it join it.
 
-use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
-use ely_gpui_component::theme::{ActiveTheme, IconSize};
+use bencode_ui::primitives::{Icon, IconName, Tooltip};
+use bencode_ui::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, Context, FontWeight, Hsla, InteractiveElement, IntoElement, MouseButton,
     MouseDownEvent, ParentElement, SharedString, Styled, div, prelude::*, rgb,

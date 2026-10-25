@@ -10,7 +10,7 @@
 
 use std::collections::HashMap;
 
-use ely_gpui_component::forms::TextInput;
+use bencode_ui::forms::TextInput;
 use gpui::{AppContext as _, Context, Entity, Window};
 
 use crate::app::BenCodeApp;

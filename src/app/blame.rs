@@ -10,7 +10,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use ely_gpui_component::editor::InlayHint;
+use bencode_ui::editor::InlayHint;
 use gpui::{Context, Task};
 
 use crate::app::BenCodeApp;

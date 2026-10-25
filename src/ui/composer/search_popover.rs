@@ -3,9 +3,9 @@
 //! with a search row (icon, field, close button), a scrolling list and an
 //! optional footer. A click outside closes it.
 
-use ely_gpui_component::forms::TextInput;
-use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
-use ely_gpui_component::theme::{ActiveTheme, IconSize};
+use bencode_ui::forms::TextInput;
+use bencode_ui::primitives::{Icon, IconName, Tooltip};
+use bencode_ui::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, Context, ElementId, Entity, InteractiveElement, IntoElement, ParentElement, Pixels,
     SharedString, Styled, div, prelude::*,

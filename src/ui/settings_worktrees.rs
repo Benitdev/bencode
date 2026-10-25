@@ -3,13 +3,13 @@
 //! linked worktrees with their sessions and status, Reveal, Create, and
 //! Delete behind one confirmation. State and logic: `app/worktree_lifecycle.rs`.
 
-use ely_gpui_component::buttons::{Button, ButtonVariant, IconButton};
-use ely_gpui_component::data_display::{Badge, Tone};
-use ely_gpui_component::forms::{Choice, Select, Switch};
-use ely_gpui_component::motion::Spinner;
-use ely_gpui_component::overlays::Dialog;
-use ely_gpui_component::primitives::{Icon, IconName};
-use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
+use bencode_ui::buttons::{Button, ButtonVariant, IconButton};
+use bencode_ui::data_display::{Badge, Tone};
+use bencode_ui::forms::{Choice, Select, Switch};
+use bencode_ui::motion::Spinner;
+use bencode_ui::overlays::Dialog;
+use bencode_ui::primitives::{Icon, IconName};
+use bencode_ui::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
     AnyElement, Context, Hsla, IntoElement, ParentElement, SharedString, Styled, div, prelude::*,
     relative,

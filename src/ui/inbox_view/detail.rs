@@ -9,13 +9,13 @@
 
 use std::ops::Range;
 
-use ely_gpui_component::buttons::{Button, ButtonVariant, IconButton};
-use ely_gpui_component::feedback::EmptyState;
-use ely_gpui_component::forms::Choice;
-use ely_gpui_component::menus::{DropdownMenu, Menu, MenuItem};
-use ely_gpui_component::navigation::Tabs;
-use ely_gpui_component::primitives::{Icon, IconName};
-use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
+use bencode_ui::buttons::{Button, ButtonVariant, IconButton};
+use bencode_ui::feedback::EmptyState;
+use bencode_ui::forms::Choice;
+use bencode_ui::menus::{DropdownMenu, Menu, MenuItem};
+use bencode_ui::navigation::Tabs;
+use bencode_ui::primitives::{Icon, IconName};
+use bencode_ui::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
     AnyElement, ClipboardItem, Context, FontWeight, IntoElement, ParentElement, SharedString,
     Styled, div, list, prelude::*,

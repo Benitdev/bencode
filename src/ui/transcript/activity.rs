@@ -7,8 +7,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use ely_gpui_component::primitives::{Icon, IconName};
-use ely_gpui_component::theme::{ActiveTheme, IconSize};
+use bencode_ui::primitives::{Icon, IconName};
+use bencode_ui::theme::{ActiveTheme, IconSize};
 use gpui::{
     Animation, AnimationExt, AnyElement, App, Context, Hsla, InteractiveElement, IntoElement,
     ParentElement, SharedString, Styled, div, prelude::*, relative,
@@ -121,7 +121,7 @@ fn shimmer_label(text: String, cx: &App) -> AnyElement {
 }
 
 fn gpui_tooltip(text: &'static str) -> impl Fn(&mut gpui::Window, &mut App) -> gpui::AnyView {
-    ely_gpui_component::primitives::Tooltip::text(text)
+    bencode_ui::primitives::Tooltip::text(text)
 }
 
 /// The blocks a list of work rows draws from: the thread's own, or the

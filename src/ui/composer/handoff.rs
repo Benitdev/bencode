@@ -4,8 +4,8 @@
 //! with a recap of the conversation so far, so it continues the work rather
 //! than starting over.
 
-use ely_gpui_component::primitives::{Icon, IconName};
-use ely_gpui_component::theme::{ActiveTheme, IconSize};
+use bencode_ui::primitives::{Icon, IconName};
+use bencode_ui::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, Context, FontWeight, IntoElement, ParentElement, Pixels, Point, Styled, div,
     prelude::*,

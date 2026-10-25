@@ -14,7 +14,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::ops::Range;
 use std::rc::Rc;
 
-use ely_gpui_component::theme::ActiveTheme;
+use bencode_ui::theme::ActiveTheme;
 use gpui::prelude::*;
 use gpui::{
     App, Bounds, CursorStyle, DispatchPhase, Div, Entity, FocusHandle, Hsla, MouseButton,

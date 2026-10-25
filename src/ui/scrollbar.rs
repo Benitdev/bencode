@@ -10,7 +10,7 @@ use std::cell::Cell;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use ely_gpui_component::theme::ActiveTheme;
+use bencode_ui::theme::ActiveTheme;
 use gpui::prelude::*;
 use gpui::{
     App, Bounds, CursorStyle, DispatchPhase, ElementId, ListState, MouseButton, MouseDownEvent,

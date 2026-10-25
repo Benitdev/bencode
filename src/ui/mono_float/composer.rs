@@ -9,8 +9,8 @@
 //! transcript: the agent's question (`QuestionForm`) or the provider's
 //! usage limit.
 
-use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
-use ely_gpui_component::theme::{ActiveTheme, IconSize};
+use bencode_ui::primitives::{Icon, IconName, Tooltip};
+use bencode_ui::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, App, Context, Focusable, InteractiveElement, IntoElement, ParentElement, Pixels,
     SharedString, StatefulInteractiveElement, Styled, TextRun, Window, div, prelude::*,

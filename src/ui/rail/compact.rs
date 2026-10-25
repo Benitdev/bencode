@@ -5,8 +5,8 @@
 
 use std::rc::Rc;
 
-use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
-use ely_gpui_component::theme::{ActiveTheme, IconSize};
+use bencode_ui::primitives::{Icon, IconName, Tooltip};
+use bencode_ui::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, ClickEvent, Context, Div, IntoElement, MouseButton, MouseDownEvent, ParentElement,
     Pixels, Point, SharedString, Stateful, Styled, anchored, canvas, deferred, div, prelude::*,

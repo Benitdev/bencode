@@ -5,9 +5,9 @@
 
 use std::sync::OnceLock;
 
-use ely_gpui_component::primitives::{Icon, IconName};
-use ely_gpui_component::theme::{ActiveTheme, IconSize};
-use ely_gpui_component::typography::KbdCombo;
+use bencode_ui::primitives::{Icon, IconName};
+use bencode_ui::theme::{ActiveTheme, IconSize};
+use bencode_ui::typography::KbdCombo;
 use gpui::{Action, Context};
 
 use crate::app::BenCodeApp;

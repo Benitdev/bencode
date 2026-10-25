@@ -5,8 +5,8 @@
 
 use std::time::{Duration, Instant};
 
-use ely_gpui_component::primitives::Tooltip;
-use ely_gpui_component::theme::ActiveTheme;
+use bencode_ui::primitives::Tooltip;
+use bencode_ui::theme::ActiveTheme;
 use gpui::{Context, Hsla, IntoElement, ParentElement, Styled, div, prelude::*, rgb};
 
 use crate::app::BenCodeApp;

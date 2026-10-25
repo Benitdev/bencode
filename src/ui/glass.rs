@@ -15,7 +15,7 @@
 //! the window's content. Either way the blur strength is the system's:
 //! MonoCode's "Blur radius" slider has no counterpart.
 
-use ely_gpui_component::theme::ActiveTheme;
+use bencode_ui::theme::ActiveTheme;
 use gpui::{App, Hsla, Window, WindowBackgroundAppearance};
 
 use crate::app::BenCodeApp;

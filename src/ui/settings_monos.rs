@@ -3,10 +3,10 @@
 //! (its soul and name back to their defaults) and the switch showing the
 //! sessions it starts in the sidebar.
 
-use ely_gpui_component::buttons::{ButtonVariant, IconButton};
-use ely_gpui_component::forms::Switch;
-use ely_gpui_component::primitives::IconName;
-use ely_gpui_component::theme::ControlSize;
+use bencode_ui::buttons::{ButtonVariant, IconButton};
+use bencode_ui::forms::Switch;
+use bencode_ui::primitives::IconName;
+use bencode_ui::theme::ControlSize;
 use gpui::{Context, IntoElement, ParentElement as _, SharedString, Styled as _};
 
 use crate::app::BenCodeApp;

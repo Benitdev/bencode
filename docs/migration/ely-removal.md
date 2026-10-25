@@ -1,6 +1,6 @@
 # Leaving Ely: owning the components BenCode uses
 
-Plan, 2026-10-25. Status: agreed; stage 0 next.
+Plan, 2026-10-25. Status: Ely removed; trimming `bencode-ui` (§4).
 
 BenCode depends on the whole of Ely GPUI Components (227k lines, 46
 chapters) for about 80 items. This plan copies those items, and only
@@ -95,6 +95,28 @@ Rules for the copy:
 
 ## 4. Stages
 
+**Changed while doing it (2026-10-25).** Moving one group at a time does
+not work: Ely's components take Ely's own types (`IconName`, the theme
+global), so a `bencode_ui` icon cannot be handed to an Ely button that
+has not moved yet. Instead the whole library was copied into
+`crates/bencode-ui`, every import switched at once, Ely dropped, and the
+copy pruned with the compiler checking each cut:
+
+1. Done: copy, switch, drop the Ely dependency and the fork `[patch]`.
+2. Done: remove the 24 chapters nothing reaches (account, agent,
+   calendar, charts, chat, collab, dashboard, debug, devtools, finance,
+   generative, git, interaction, mail, maps, media, messaging, misc,
+   onboarding, project, rendering, tables, tooling, and so on); 120k lines.
+3. Done: remove every file outside the closure of what BenCode imports
+   (§7, which also keeps any file adding an `impl` to a kept type, and a
+   child module used by path); 88k lines, 381 files. Ely's 337 tests that
+   remain pass; two that depend on the fonts installed are ignored.
+4. Next: trim inside the kept files (stage 5 below), the icons and fonts
+   (stage 1), the glass (stage 4), Diagram and Latex (stage 6).
+
+The stages below now describe the trimming that follows, in that order
+of value; none of them blocks the app any more.
+
 Each stage builds, passes `cargo test`, and is exercised in the app
 before the next. Ely stays a dependency until stage 7.
 
@@ -178,5 +200,5 @@ with stage 0.
 The numbers above came from a script that resolves `use crate::…`,
 `super::…` and `crate::` paths file by file, from the items BenCode
 imports. Run before each stage to list exactly which Ely files it needs:
-`/tmp/ely_closure2.py` in the session that wrote this plan; to be added
-as `scripts/ely-closure.py` in stage 0.
+`scripts/ui-closure.py` (run from `crates/bencode-ui`; `--apply` deletes
+what is outside the closure).

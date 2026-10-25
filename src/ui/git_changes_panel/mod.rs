@@ -21,9 +21,9 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
-use ely_gpui_component::overlays::ConfirmDialog;
-use ely_gpui_component::primitives::{Icon, IconName, Severity, Tooltip};
-use ely_gpui_component::theme::{ActiveTheme, IconSize};
+use bencode_ui::overlays::ConfirmDialog;
+use bencode_ui::primitives::{Icon, IconName, Severity, Tooltip};
+use bencode_ui::theme::{ActiveTheme, IconSize};
 use gpui::{
     Animation, AnimationExt, AnyElement, Bounds, Context, FontWeight, Hsla, InteractiveElement,
     IntoElement, MouseButton, ParentElement, PathBuilder, Pixels, ScrollHandle, SharedString,

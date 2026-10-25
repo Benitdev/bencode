@@ -6,11 +6,11 @@
 //! BenCode connects through SSH alone, so MonoCode's "Connect to an
 //! existing host by URL" and its device tokens (Revoke access) are not here.
 
-use ely_gpui_component::buttons::{Button, ButtonVariant, IconButton};
-use ely_gpui_component::forms::{Input, PasswordInput};
-use ely_gpui_component::motion::Spinner;
-use ely_gpui_component::primitives::{Icon, IconName};
-use ely_gpui_component::theme::{ActiveTheme, ControlSize, IconSize};
+use bencode_ui::buttons::{Button, ButtonVariant, IconButton};
+use bencode_ui::forms::{Input, PasswordInput};
+use bencode_ui::motion::Spinner;
+use bencode_ui::primitives::{Icon, IconName};
+use bencode_ui::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
     AnyElement, Context, IntoElement, ParentElement, SharedString, Styled, div, prelude::*,
     relative,
@@ -337,7 +337,7 @@ impl BenCodeApp {
             name = machine.name
         );
         Some(
-            ely_gpui_component::overlays::ConfirmDialog::new(
+            bencode_ui::overlays::ConfirmDialog::new(
                 "remove-machine",
                 format!("Remove {} from this computer?", machine.name),
                 body,

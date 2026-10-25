@@ -26,8 +26,8 @@ pub(crate) use update::APP_ICON;
 use std::cell::Cell;
 use std::rc::Rc;
 
-use ely_gpui_component::primitives::{Icon, IconName};
-use ely_gpui_component::theme::{ActiveTheme, IconSize};
+use bencode_ui::primitives::{Icon, IconName};
+use bencode_ui::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, Bounds, Context, DragMoveEvent, Hsla, InteractiveElement, IntoElement, MouseButton,
     MouseDownEvent, ParentElement, Pixels, Point, SharedString, Styled, anchored, canvas, deferred,

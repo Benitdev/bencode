@@ -2,9 +2,9 @@
 //! (Open, Copy), the code its page shows pasted back, and Cancel. Drawn
 //! under whichever form started the sign-in. State: `app/accounts.rs`.
 
-use ely_gpui_component::buttons::{Button, ButtonVariant};
-use ely_gpui_component::primitives::IconName;
-use ely_gpui_component::theme::{ActiveTheme, ControlSize};
+use bencode_ui::buttons::{Button, ButtonVariant};
+use bencode_ui::primitives::IconName;
+use bencode_ui::theme::{ActiveTheme, ControlSize};
 use gpui::{
     AnyElement, ClipboardItem, Context, IntoElement, ParentElement, Styled, div, prelude::*,
 };

@@ -15,8 +15,8 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::rc::Rc;
 
-use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
-use ely_gpui_component::theme::{ActiveTheme, IconSize};
+use bencode_ui::primitives::{Icon, IconName, Tooltip};
+use bencode_ui::theme::{ActiveTheme, IconSize};
 use gpui::prelude::*;
 use gpui::{
     AnyElement, ClickEvent, Context, FontWeight, HighlightStyle, IntoElement, MouseButton,

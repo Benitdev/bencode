@@ -68,9 +68,9 @@ use std::collections::HashMap;
 use crate::ui::composer::mcp_tags::McpTag;
 use crate::ui::composer::mentions::MentionIndex;
 use crate::ui::composer::{ComposerPopover, TokenPicker};
-use ely_gpui_component::forms::{InputEvent, TextInput};
-use ely_gpui_component::primitives::FocusScope;
-use ely_gpui_component::theme::ActiveTheme;
+use bencode_ui::forms::{InputEvent, TextInput};
+use bencode_ui::primitives::FocusScope;
+use bencode_ui::theme::ActiveTheme;
 use gpui::{
     AnyElement, AppContext, Context, Entity, Focusable, IntoElement, ParentElement, Render,
     StyleRefinement, Styled, Subscription, Window, div, prelude::*,

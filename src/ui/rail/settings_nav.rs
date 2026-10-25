@@ -1,8 +1,8 @@
 //! MonoCode `SettingsNav`: the rail's body while Settings is open, its
 //! sections by group and Back at the foot.
 
-use ely_gpui_component::primitives::{Icon, IconName};
-use ely_gpui_component::theme::{ActiveTheme, IconSize};
+use bencode_ui::primitives::{Icon, IconName};
+use bencode_ui::theme::{ActiveTheme, IconSize};
 use gpui::{
     Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString, Styled, div,
     prelude::*, relative,
