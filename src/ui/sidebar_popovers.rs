@@ -21,9 +21,9 @@ use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 /// MonoCode's filter popover is 228px wide.
 const MENU_WIDTH: f32 = 228.0;
 
-/// MonoCode `.popover-backdrop`: `content` at 2% over a `backdrop-blur-xl`
-/// (the base background alone in the light theme). GPUI cannot blur what
-/// lies behind an element, so the tint is laid on the opaque background.
+/// MonoCode `.popover-backdrop` without its blur: `content` at 2% laid on
+/// the opaque background (the base background alone in the light theme).
+/// Frosted popovers draw it where they cannot blur (`ui::frost`).
 pub(crate) fn popover_glass(cx: &App) -> Hsla {
     let theme = cx.theme();
     let colors = &theme.colors;
@@ -35,16 +35,16 @@ pub(crate) fn popover_glass(cx: &App) -> Hsla {
 }
 
 /// MonoCode `Popover`'s frame: `rounded-xl border border-content/10
-/// shadow-xl` over its glass (`content` at 2% on the base background; the
-/// base alone in the light theme). Popovers draw outside the sidebar, so
-/// the web's 1.5 line height and text colour are set here too.
+/// shadow-xl` over its frosted glass (`ui::frost`). Popovers draw outside
+/// the sidebar, so the web's 1.5 line height and text colour are set here
+/// too. Children go after the glass, so callers add theirs.
 pub(crate) fn popover_frame(cx: &App) -> Div {
     let colors = &cx.theme().colors;
     div()
         .rounded(px(12.0))
         .border_1()
         .border_color(colors.fg.fill(Fill::Strong))
-        .bg(popover_glass(cx))
+        .child(crate::ui::frost::frost(crate::ui::frost::POPOVER_RADIUS, cx))
         .shadow_xl()
         .text_color(colors.fg)
         .line_height(relative(1.5))

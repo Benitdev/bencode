@@ -22,6 +22,7 @@ pub mod file_history;
 pub mod file_pane;
 pub mod file_pane_menu;
 pub mod file_tree;
+pub mod frost;
 pub mod git_changes_panel;
 pub mod git_menus;
 pub mod glass;

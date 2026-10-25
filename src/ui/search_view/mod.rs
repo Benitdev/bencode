@@ -361,9 +361,13 @@ impl BenCodeApp {
             .rounded(px(12.0))
             .border_1()
             .border_color(colors.fg.fill(Fill::Bold))
-            .bg(colors.surface)
             .shadow_lg()
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            .child(crate::ui::frost::dialog_frost(
+                crate::ui::frost::POPOVER_RADIUS,
+                colors.surface,
+                cx,
+            ))
             .child(self.render_search_field(cx))
             .child(self.render_search_scopes(cx))
             .child(

@@ -426,19 +426,21 @@ pub fn render_menu_layered(
         .border_1()
         .border_color(colors.fg.fill(Fill::Strong))
         .on_mouse_down_out(move |_, window, cx| on_dismiss(window, cx))
+        // MonoCode `Popover` glass, under everything the menu holds.
+        .when(matches!(style, MenuStyle::Explorer), |el| {
+            el.child(crate::ui::frost::frost(crate::ui::frost::POPOVER_RADIUS, cx))
+        })
         // The header brings its own `my-1 h-px` separator.
         .children(header)
         .children(rows);
     let menu = match style {
         // MonoCode `Popover` FRAME: `rounded-xl border border-content/10
         // shadow-xl` over a `backdrop-blur-xl` glass tinted
-        // `content/2%` (dark) or `background-base` (light); `p-1` content.
-        // GPUI cannot blur what lies behind an element, so the glass is
-        // the opaque background with that tint laid on.
+        // `content/2%` (dark) or `background-base` (light), added above;
+        // `p-1` content.
         MenuStyle::Explorer => {
             menu.p_1()
                 .rounded(px(12.0))
-                .bg(crate::ui::sidebar_popovers::popover_glass(cx))
                 .shadow_xl()
                 // `popover-open`: 170ms `cubic-bezier(0.16, 1, 0.3, 1)` from
                 // opacity 0, `scale(0.94)` and 8px towards the anchor

@@ -21,7 +21,7 @@ use crate::harness::HarnessKind;
 use crate::harness::catalog::{self, ModelOption, ModelSetting, SettingKind};
 use crate::ui::HarnessIcon;
 use crate::ui::composer::ComposerPopover;
-use crate::ui::sidebar_popovers::popover_glass;
+use crate::ui::frost::{POPOVER_RADIUS, frost};
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// MonoCode `MENU_WIDTH`, `MODEL_MENU_WIDTH`, `SETTING_MENU_WIDTH`.
@@ -638,7 +638,7 @@ impl BenCodeApp {
             .w(px(MENU_WIDTH))
             .p_1()
             .rounded(px(12.0))
-            .bg(popover_glass(cx))
+            .child(frost(POPOVER_RADIUS, cx))
             .border_1()
             .border_color(colors.border)
             .shadow_xl()
@@ -713,7 +713,7 @@ impl BenCodeApp {
             .w(px(SETTING_MENU_WIDTH))
             .p_1()
             .rounded(px(12.0))
-            .bg(popover_glass(cx))
+            .child(frost(POPOVER_RADIUS, cx))
             .border_1()
             .border_color(colors.border)
             .shadow_xl()
@@ -1062,7 +1062,7 @@ impl BenCodeApp {
             .flex()
             .overflow_hidden()
             .rounded(px(12.0))
-            .bg(popover_glass(cx))
+            .child(frost(POPOVER_RADIUS, cx))
             .border_1()
             .border_color(colors.border)
             .shadow_xl()
@@ -1160,7 +1160,7 @@ impl BenCodeApp {
             .w(px(MENU_WIDTH))
             .p_1()
             .rounded(px(12.0))
-            .bg(popover_glass(cx))
+            .child(frost(POPOVER_RADIUS, cx))
             .border_1()
             .border_color(colors.border)
             .shadow_xl()

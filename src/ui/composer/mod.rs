@@ -47,7 +47,7 @@ use crate::ui::HarnessIcon;
 use crate::ui::app_callback::app_callback;
 use crate::ui::scale::px;
 use crate::ui::scrollbar;
-use crate::ui::sidebar_popovers::popover_glass;
+use crate::ui::frost::{POPOVER_RADIUS, frost};
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 pub use mcp_picker::McpPicker;
 pub use menus::{MenuState, focus_later};
@@ -1397,7 +1397,7 @@ impl BenCodeApp {
             .w(px(250.0))
             .p_1p5()
             .rounded(px(12.0))
-            .bg(popover_glass(cx))
+            .child(frost(POPOVER_RADIUS, cx))
             .border_1()
             .border_color(colors.border)
             .shadow_xl()
@@ -1568,7 +1568,7 @@ impl BenCodeApp {
             .w(px(288.0))
             .p_1()
             .rounded(px(12.0))
-            .bg(popover_glass(cx))
+            .child(frost(POPOVER_RADIUS, cx))
             .border_1()
             .border_color(colors.border)
             .shadow_xl()

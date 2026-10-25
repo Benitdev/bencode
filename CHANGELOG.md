@@ -4,6 +4,16 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
+## [Unreleased]
+
+- In the dark theme on macOS, popovers and menus are frosted glass, as in
+  MonoCode: what lies behind them shows through blurred instead of being
+  covered by an opaque card. GPUI's Metal renderer is vendored with
+  MonoCode's backdrop blur to draw it.
+- The Mono settings dialog and the search panel (⌘K) are frosted too, so
+  the window behind them shows through blurred instead of the dialog
+  sitting dark on the dimmed window.
+
 ## [0.1.33] - 2026-10-26
 
 - BenCode has a layout of its own. The project rail and the Sessions

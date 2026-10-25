@@ -28,7 +28,7 @@ use crate::harness::catalog::{self, ModelSetting, SettingKind};
 use crate::rate_limits::RateLimitProvider;
 use crate::ui::HarnessIcon;
 use crate::ui::scale::px;
-use crate::ui::sidebar_popovers::popover_glass;
+use crate::ui::frost::{POPOVER_RADIUS, frost};
 use crate::ui::status::UsageChipVariant;
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
@@ -673,7 +673,7 @@ impl BenCodeApp {
             .w(px(PILL_MENU_WIDTH))
             .p_1()
             .rounded(px(12.0))
-            .bg(popover_glass(cx))
+            .child(frost(POPOVER_RADIUS, cx))
             .border_1()
             .border_color(colors.border)
             .shadow_xl()

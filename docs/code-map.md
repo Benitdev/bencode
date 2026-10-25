@@ -30,6 +30,7 @@ bencode/
 ├── site/                     the landing page (GitHub Pages)
 ├── reference/monocode        symlink to the MonoCode source (git-ignored)
 ├── tests/fixtures/           recorded CLI output for parser tests
+├── vendor/gpui-pre-apple/    GPUI's Metal renderer, 0.3.8 plus MonoCode's backdrop blur (its NOTICE says what changed)
 └── src/
     ├── main.rs               window, theme, keymap, root view
     ├── app.rs                BenCodeApp: the one app entity and its state
@@ -154,6 +155,7 @@ bencode/
 | `tokens.rs`, `rows.rs`, `buttons.rs` | The design tokens (ink, fills, type sizes, the status palette, the link colour), `ListRow`, the list row with a tile, two lines and buttons on hover, and `with_tooltip` for a labelled Ely `Button` |
 | `theme.rs`, `appearance.rs`, `scale.rs`, `background_effects.rs`, `icons.rs`, `provider_icon.rs`, `mascot.rs`, `motion.rs`, `spinner.rs` | Look and shared drawing: palettes, tint / accent / diff colours, interface scale, chat background effects; the mascots and their motion by status (`moving_sprite`) |
 | `app_callback.rs`, `virtual_rows.rs`, `explorer_menu.rs`, `drag_drop.rs`, `thumbnail.rs`, `emoji_picker.rs` | Shared helpers; `emoji_picker.rs` is the emoji picker (its groups and the popover, for any view); `thumbnail.rs` draws a file image scaled down to its size (use it, not `img(path)`, for anything drawn smaller than the file) |
+| `frost.rs` | Frosted glass for popovers (`frost`) and dialog cards (`dialog_frost`): the vendored renderer blurs what is drawn behind it in the dark theme on macOS; elsewhere the opaque popover fill |
 
 ---
 
