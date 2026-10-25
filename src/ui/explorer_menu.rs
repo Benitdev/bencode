@@ -428,7 +428,10 @@ pub fn render_menu_layered(
         .on_mouse_down_out(move |_, window, cx| on_dismiss(window, cx))
         // MonoCode `Popover` glass, under everything the menu holds.
         .when(matches!(style, MenuStyle::Explorer), |el| {
-            el.child(crate::ui::frost::frost(crate::ui::frost::POPOVER_RADIUS, cx))
+            el.child(crate::ui::frost::frost(
+                crate::ui::frost::POPOVER_RADIUS,
+                cx,
+            ))
         })
         // The header brings its own `my-1 h-px` separator.
         .children(header)

@@ -496,7 +496,10 @@ impl BenCodeApp {
                 .rounded(px(12.0))
                 .border_1()
                 .border_color(cx.theme().colors.border)
-                .child(crate::ui::frost::frost(crate::ui::frost::POPOVER_RADIUS, cx))
+                .child(crate::ui::frost::frost(
+                    crate::ui::frost::POPOVER_RADIUS,
+                    cx,
+                ))
                 .shadow_xl()
                 .child(self.render_mono_mascot_grid(mono, cx))
                 .child(div().my_3().h(px(1.0)).bg(fg.fill(Fill::Strong)))

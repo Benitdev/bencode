@@ -260,8 +260,8 @@ impl BenCodeApp {
                     ),
             );
         let entity = cx.entity().downgrade();
-        let hide = bencode_ui::forms::Switch::new("mono-intro-show", true).on_change(
-            move |on, _, cx| {
+        let hide =
+            bencode_ui::forms::Switch::new("mono-intro-show", true).on_change(move |on, _, cx| {
                 let hidden = entity.update(cx, |this, cx| {
                     this.set_monos_enabled(on, cx);
                     this.play_cue(crate::sounds::Cue::Switch);
@@ -269,8 +269,7 @@ impl BenCodeApp {
                 if let Err(err) = hidden {
                     log::debug!("intro switch after app drop: {err:#}");
                 }
-            },
-        );
+            });
         div()
             .mx_2()
             .overflow_hidden()

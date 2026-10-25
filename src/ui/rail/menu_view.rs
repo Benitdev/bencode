@@ -428,9 +428,7 @@ impl BenCodeApp {
                         .justify_center()
                         .rounded(px(6.0))
                         .hover(move |s| s.bg(fg.fill(Fill::Strong)))
-                        .tooltip(bencode_ui::primitives::Tooltip::text(
-                            "Remove project logo",
-                        ))
+                        .tooltip(bencode_ui::primitives::Tooltip::text("Remove project logo"))
                         .on_click(cx.listener(move |this, _, _, cx| {
                             this.update_rail_prefs(|prefs| prefs.with_logo(&clear_path, None), cx);
                         }))
@@ -519,9 +517,7 @@ impl BenCodeApp {
         let pipette = custom.is_some() || picker_open;
         row.child(
             swatch(SharedString::from("rail-color-custom"), custom, pipette)
-                .tooltip(bencode_ui::primitives::Tooltip::text(
-                    "Custom color",
-                ))
+                .tooltip(bencode_ui::primitives::Tooltip::text("Custom color"))
                 .on_click(cx.listener(|this, _, _, cx| {
                     this.rail_ui.custom_color_open = !this.rail_ui.custom_color_open;
                     cx.notify();

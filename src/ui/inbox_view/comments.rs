@@ -41,10 +41,7 @@ fn review_label(state: &str) -> &'static str {
 
 /// The colour of a review state (a comment's, or a pull request's
 /// decision); `None` keeps the row's muted text.
-pub(super) fn review_tint(
-    state: &str,
-    colors: &bencode_ui::theme::Palette,
-) -> Option<Hsla> {
+pub(super) fn review_tint(state: &str, colors: &bencode_ui::theme::Palette) -> Option<Hsla> {
     match state {
         "APPROVED" => Some(colors.success),
         "CHANGES_REQUESTED" => Some(colors.danger),

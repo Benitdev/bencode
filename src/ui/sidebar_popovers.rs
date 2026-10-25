@@ -44,7 +44,10 @@ pub(crate) fn popover_frame(cx: &App) -> Div {
         .rounded(px(12.0))
         .border_1()
         .border_color(colors.fg.fill(Fill::Strong))
-        .child(crate::ui::frost::frost(crate::ui::frost::POPOVER_RADIUS, cx))
+        .child(crate::ui::frost::frost(
+            crate::ui::frost::POPOVER_RADIUS,
+            cx,
+        ))
         .shadow_xl()
         .text_color(colors.fg)
         .line_height(relative(1.5))

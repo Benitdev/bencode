@@ -27,8 +27,8 @@ use crate::db::SessionRow;
 use crate::harness::catalog::{self, ModelSetting, SettingKind};
 use crate::rate_limits::RateLimitProvider;
 use crate::ui::HarnessIcon;
-use crate::ui::scale::px;
 use crate::ui::frost::{POPOVER_RADIUS, frost};
+use crate::ui::scale::px;
 use crate::ui::status::UsageChipVariant;
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
