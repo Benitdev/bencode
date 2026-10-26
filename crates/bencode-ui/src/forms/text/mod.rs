@@ -13,7 +13,7 @@ use gpui::{
 };
 
 pub use actions::{Copy, Cut, Paste, SelectAll};
-pub(crate) use actions::{Down, Enter, Left, Right, Up, bind_keys};
+pub(crate) use actions::{Down, Enter, Up, bind_keys};
 pub use edit::History;
 use edit::Snapshot;
 pub(crate) use edit::{from_utf16, to_utf16};

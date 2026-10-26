@@ -1,9 +1,6 @@
-use std::rc::Rc;
-
 use gpui::{
-    AnyElement, App, Bounds, Div, ElementId, Entity, FontWeight, InteractiveElement, IntoElement,
-    MouseButton, ParentElement, Pixels, Role, SharedString, Stateful, Styled, Window,
-    accesskit::Action, canvas, div, prelude::*,
+    AnyElement, App, Bounds, Div, ElementId, Entity, InteractiveElement, IntoElement, MouseButton,
+    ParentElement, Pixels, Role, Stateful, Styled, Window, canvas, div, prelude::*,
 };
 
 use super::{
@@ -13,10 +10,9 @@ use super::{
 };
 use crate::{
     forms::{Run, surface},
-    i18n,
     navigation::marked,
-    primitives::{Icon, IconName, Tooltip},
-    theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize},
+    primitives::{Icon, IconName},
+    theme::{ActiveTheme, ControlSize, IconSize, Radius},
     typography::KbdCombo,
 };
 
@@ -86,71 +82,6 @@ fn row(item: &MenuItem, ix: usize, current: bool, cx: &App) -> Stateful<Div> {
         })
 }
 
-/// Button `column` of row `ix`, named by its label.
-pub(super) fn button(
-    item: &MenuItem,
-    (ix, column): (usize, usize),
-    current: bool,
-    press: Run,
-    cx: &App,
-) -> Stateful<Div> {
-    let theme = cx.theme();
-    let colors = &theme.colors;
-    let fg = match (item.disabled, current) {
-        (true, _) => colors.fg_disabled,
-        (false, true) => colors.fg,
-        (false, false) => colors.fg_muted,
-    };
-    let (label, keys) = (item.label.clone(), item.keys.clone());
-    let icon = item.icon.expect("a menu button has its icon");
-    div()
-        .id((SharedString::from(format!("button-{ix}")), column))
-        .debug_selector(move || format!("menu-button-{ix}-{column}"))
-        .role(Role::Button)
-        .aria_label(item.label.clone())
-        .flex_1()
-        .flex()
-        .items_center()
-        .justify_center()
-        .h(theme.control_height(ControlSize::Md))
-        .rounded(theme.radius(Radius::Md))
-        .border_1()
-        .border_color(colors.border)
-        .aria_selected(current)
-        .when(current, |button| button.aria_active_descendant())
-        .when(current && !item.disabled, |button| button.bg(colors.hover))
-        .when(item.disabled, |button| {
-            button.aria_description(i18n::text(cx, "state.unavailable", &[]))
-        })
-        .when(!item.disabled, |button| {
-            let read = press.clone();
-            button
-                .cursor_pointer()
-                .on_mouse_down(MouseButton::Left, move |_, window, cx| {
-                    window.prevent_default();
-                    cx.stop_propagation();
-                    press(window, cx);
-                })
-                .on_a11y_action(Action::Click, move |_, window, cx| read(window, cx))
-        })
-        .child(Icon::new(icon).size(IconSize::Sm).color(fg))
-        .tooltip(Tooltip::rich(move |_, cx| {
-            div()
-                .flex()
-                .items_center()
-                .gap_2()
-                .child(label.clone())
-                .when_some(keys.clone(), |tip, keys| {
-                    tip.child(
-                        div()
-                            .text_color(cx.theme().colors.tooltip_fg.opacity(0.6))
-                            .child(KbdCombo::new(&keys)),
-                    )
-                })
-                .into_any_element()
-        }))
-}
-
 pub(super) fn panel(
     id: &ElementId,
     menu: &Menu,
@@ -172,43 +103,6 @@ pub(super) fn panel(
         .enumerate()
         .map(|(ix, entry)| match entry {
             Entry::Separator => div().h_px().my_1().bg(colors.border).into_any_element(),
-            Entry::Heading(title) => div()
-                .px_2()
-                .pt_1p5()
-                .pb_1()
-                .text_size(theme.text_size(TextSize::Xs))
-                .font_weight(FontWeight::MEDIUM)
-                .text_color(colors.fg_subtle)
-                .child(title.clone())
-                .into_any_element(),
-            Entry::Buttons(buttons) => div()
-                .flex()
-                .gap_1()
-                .py_0p5()
-                .children(buttons.iter().enumerate().map(|(column, item)| {
-                    let current = at == Some(ix) && open.levels[depth].column == column;
-                    let (hover, click, close, menu) =
-                        (state.clone(), state.clone(), close.clone(), menu.clone());
-                    let hover_menu = menu.clone();
-                    let press: Run = Rc::new(move |window, cx| {
-                        choose(&click, &menu, depth, (ix, column), &close, window, cx)
-                    });
-                    let drawn = button(item, (ix, column), current, press, cx);
-                    let left = state.clone();
-                    let here = (depth, (ix, column));
-                    drawn.when(!item.disabled, |button| {
-                        button
-                            .on_mouse_move(move |event, _, cx| {
-                                aim::hover(&hover, &hover_menu, here, false, event.position, cx)
-                            })
-                            .on_hover(move |hovered, _, cx| {
-                                if !hovered {
-                                    aim::leave(&left, here, cx);
-                                }
-                            })
-                    })
-                }))
-                .into_any_element(),
             Entry::Item(item) => {
                 let marked = at == Some(ix);
                 let sub = matches!(item.kind, Kind::Sub(_));
@@ -221,18 +115,11 @@ pub(super) fn panel(
                     .when(!item.disabled, |row| {
                         let left = state.clone();
                         row.on_mouse_move(move |event, _, cx| {
-                            aim::hover(
-                                &hover,
-                                &hover_menu,
-                                (depth, (ix, 0)),
-                                sub,
-                                event.position,
-                                cx,
-                            )
+                            aim::hover(&hover, &hover_menu, (depth, ix), sub, event.position, cx)
                         })
                         .on_hover(move |hovered, _, cx| {
                             if !hovered {
-                                aim::leave(&left, (depth, (ix, 0)), cx);
+                                aim::leave(&left, (depth, ix), cx);
                             }
                         })
                         .on_mouse_down(
@@ -240,7 +127,7 @@ pub(super) fn panel(
                             move |_, window, cx| {
                                 window.prevent_default();
                                 cx.stop_propagation();
-                                choose(&click, &menu, depth, (ix, 0), &close, window, cx);
+                                choose(&click, &menu, depth, ix, &close, window, cx);
                             },
                         )
                     })

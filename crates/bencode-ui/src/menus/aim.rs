@@ -18,26 +18,26 @@ pub(super) const HOLD: Duration = Duration::from_millis(300);
 pub(super) fn hover(
     state: &Entity<Open>,
     menu: &Menu,
-    (depth, cell): (usize, (usize, usize)),
+    (depth, ix): (usize, usize),
     sub: bool,
     at: Point<Pixels>,
     cx: &mut App,
 ) {
     let seen = state.update(cx, |open, _| {
         let from = open.pointer.replace(at);
-        open.over = Some((depth, cell));
+        open.over = Some((depth, ix));
         let level = open.levels.get(depth)?;
         let shown = (open.levels.get(depth + 1)).map(|level| level.panel);
-        Some((from, (level.at, level.column), shown))
+        Some((from, level.at, shown))
     });
     let Some((from, marked, shown)) = seen else {
         return;
     };
-    if marked == (Some(cell.0), cell.1) {
+    if marked == Some(ix) {
         if !sub || shown.is_some() {
             state.update(cx, |open, _| open.pending = None);
         } else if state.read(cx).pending.is_none() {
-            later(state, menu, (depth, cell), OPEN, cx);
+            later(state, menu, (depth, ix), OPEN, cx);
         }
         return;
     }
@@ -45,18 +45,18 @@ pub(super) fn hover(
         .zip(shown.filter(|panel| *panel != Bounds::default()))
         .is_some_and(|(from, panel)| toward(from, at, panel));
     if aimed {
-        log::debug!("menu: row {} of level {depth} waits on the aim", cell.0);
-        return later(state, menu, (depth, cell), HOLD, cx);
+        log::debug!("menu: row {ix} of level {depth} waits on the aim");
+        return later(state, menu, (depth, ix), HOLD, cx);
     }
     state.update(cx, |open, _| open.pending = None);
-    mark(state, menu, depth, cell, false, cx);
+    mark(state, menu, depth, ix, false, cx);
     if sub {
-        later(state, menu, (depth, cell), OPEN, cx);
+        later(state, menu, (depth, ix), OPEN, cx);
     }
 }
 
 /// The pointer left a row: its delayed mark is dropped.
-pub(super) fn leave(state: &Entity<Open>, over: (usize, (usize, usize)), cx: &mut App) {
+pub(super) fn leave(state: &Entity<Open>, over: (usize, usize), cx: &mut App) {
     state.update(cx, |open, _| {
         if open.over == Some(over) {
             (open.over, open.pending) = (None, None);
@@ -68,7 +68,7 @@ pub(super) fn leave(state: &Entity<Open>, over: (usize, (usize, usize)), cx: &mu
 fn later(
     state: &Entity<Open>,
     menu: &Menu,
-    (depth, cell): (usize, (usize, usize)),
+    (depth, ix): (usize, usize),
     wait: Duration,
     cx: &mut App,
 ) {
@@ -76,11 +76,11 @@ fn later(
     let task = cx.spawn(async move |cx| {
         cx.background_executor().timer(wait).await;
         cx.update(|cx| {
-            if state_.read(cx).over != Some((depth, cell)) {
-                return log::debug!("menu: the pointer left row {} before it opened", cell.0);
+            if state_.read(cx).over != Some((depth, ix)) {
+                return log::debug!("menu: the pointer left row {ix} before it opened");
             }
             state_.update(cx, |open, _| open.pending = None);
-            mark(&state_, &menu, depth, cell, true, cx);
+            mark(&state_, &menu, depth, ix, true, cx);
         });
     });
     state.update(cx, |open, _| open.pending = Some(task));

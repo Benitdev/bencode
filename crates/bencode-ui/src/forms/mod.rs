@@ -30,4 +30,4 @@ pub(crate) use select::{Listing, listing};
 pub use slider::Slider;
 pub use switch::Switch;
 pub use text::{Copy, Cut, Highlight, History, InputEvent, Paste, SelectAll, TextInput};
-pub(crate) use text::{Down, Enter, Left, Right, Up, bind_keys, from_utf16, to_utf16};
+pub(crate) use text::{Down, Enter, Up, bind_keys, from_utf16, to_utf16};

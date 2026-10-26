@@ -76,13 +76,10 @@ impl MenuItem {
 #[derive(Clone)]
 pub(super) enum Entry {
     Item(MenuItem),
-    /// Icon buttons side by side; labels name them.
-    Buttons(Vec<MenuItem>),
     Separator,
-    Heading(SharedString),
 }
 
-/// Rows, separators and titled groups. A row can open a submenu.
+/// Rows and separators. A row can open a submenu.
 #[derive(Clone, Default)]
 pub struct Menu {
     pub(super) entries: Vec<Entry>,
@@ -103,26 +100,17 @@ impl Menu {
         self
     }
 
-    /// Row `ix`, or button `column` of its button row.
-    pub(super) fn item_at(&self, ix: usize, column: usize) -> Option<&MenuItem> {
+    /// Row `ix`, when it is an item.
+    pub(super) fn item_at(&self, ix: usize) -> Option<&MenuItem> {
         match self.entries.get(ix) {
-            Some(Entry::Item(item)) if column == 0 => Some(item),
-            Some(Entry::Buttons(buttons)) => buttons.get(column),
+            Some(Entry::Item(item)) => Some(item),
             _ => None,
         }
     }
 
-    /// Row `ix`'s first spot that runs.
-    pub(super) fn first(&self, ix: usize) -> Option<usize> {
-        match self.entries.get(ix) {
-            Some(Entry::Item(item)) => (!item.disabled).then_some(0),
-            Some(Entry::Buttons(buttons)) => buttons.iter().position(|button| !button.disabled),
-            _ => None,
-        }
-    }
-
-    pub(super) fn is_buttons(&self, ix: usize) -> bool {
-        matches!(self.entries.get(ix), Some(Entry::Buttons(_)))
+    /// Whether row `ix` runs: an enabled item.
+    pub(super) fn runs(&self, ix: usize) -> bool {
+        self.item_at(ix).is_some_and(|item| !item.disabled)
     }
 
     /// The next enabled row from `from`, stepping by `by` and wrapping.
@@ -131,23 +119,7 @@ impl Menu {
         let mut at = from.map_or(if by > 0 { -1 } else { count }, |at| at as isize);
         for _ in 0..count {
             at = (at + by).rem_euclid(count);
-            if self.first(at as usize).is_some() {
-                return Some(at as usize);
-            }
-        }
-        None
-    }
-
-    /// Row `ix`'s next enabled button after `column`, wrapping.
-    pub(super) fn across(&self, ix: usize, column: usize, by: isize) -> Option<usize> {
-        let Some(Entry::Buttons(buttons)) = self.entries.get(ix) else {
-            return None;
-        };
-        let count = buttons.len() as isize;
-        let mut at = column as isize;
-        for _ in 0..count {
-            at = (at + by).rem_euclid(count);
-            if !buttons[at as usize].disabled {
+            if self.runs(at as usize) {
                 return Some(at as usize);
             }
         }
