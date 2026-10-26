@@ -32,6 +32,19 @@ const FILE_MAX: usize = 256 * 1024;
 /// given version (the floating chat and the main window share the files).
 static FILES_LOCK: Mutex<()> = Mutex::new(());
 
+/// Takes a Mono's folder away, for one that was never kept.
+pub fn remove(dir: &Path) -> Result<()> {
+    let _lock = FILES_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    match std::fs::remove_dir_all(dir) {
+        Err(err) if err.kind() != std::io::ErrorKind::NotFound => {
+            Err(err).with_context(|| format!("removing {}", dir.display()))
+        }
+        _ => Ok(()),
+    }
+}
+
 /// MonoCode `MonoFiles`.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct MonoFiles {
@@ -270,6 +283,15 @@ mod tests {
         save(&dir, SOUL_FILE, "# Mine\n", None).unwrap();
         assert_eq!(load(&dir).unwrap().soul, "# Mine\n");
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_removed_folder_is_gone_and_removing_it_again_is_fine() {
+        let dir = temp_dir("remove");
+        load(&dir).unwrap();
+        remove(&dir).unwrap();
+        assert!(!dir.exists());
+        remove(&dir).unwrap();
     }
 
     #[test]

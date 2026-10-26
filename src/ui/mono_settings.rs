@@ -14,7 +14,7 @@
 //! The dialog is drawn in a bencode-ui layer (`Backdrop`), so what opens inside
 //! it is raised in that layer, never deferred.
 
-use bencode_ui::buttons::{ButtonVariant, IconButton};
+use bencode_ui::buttons::{Button, ButtonVariant, IconButton};
 use bencode_ui::forms::{Choice, Select};
 use bencode_ui::menus::{DropdownMenu, Menu, MenuItem};
 use bencode_ui::primitives::{Backdrop, Icon, IconName, Tooltip, raise};
@@ -232,7 +232,13 @@ impl BenCodeApp {
                     .flex_1()
                     .min_w_0()
                     .h_full()
-                    .child(body),
+                    .child(div().flex_1().min_h_0().child(body))
+                    .children(
+                        self.monos
+                            .creating
+                            .is_some()
+                            .then(|| self.render_new_mono_footer(cx)),
+                    ),
             )
             .child(
                 div()
@@ -247,6 +253,34 @@ impl BenCodeApp {
                 .child(card)
                 .into_any_element(),
         )
+    }
+
+    /// A new Mono's Cancel and Create: until Create it is not kept.
+    fn render_new_mono_footer(&self, cx: &Context<Self>) -> AnyElement {
+        div()
+            .flex()
+            .flex_none()
+            .justify_end()
+            .gap_2()
+            .px_8()
+            .py_3()
+            .border_t_1()
+            .border_color(cx.theme().colors.fg.fill(Fill::Line))
+            .child(
+                Button::new("mono-settings-cancel", "Cancel")
+                    .variant(ButtonVariant::Outline)
+                    .size(ControlSize::Sm)
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.close_mono_settings(cx);
+                    })),
+            )
+            .child(
+                Button::new("mono-settings-create", "Create")
+                    .primary()
+                    .size(ControlSize::Sm)
+                    .on_click(cx.listener(|this, _, _, cx| this.confirm_new_mono(cx))),
+            )
+            .into_any_element()
     }
 
     /// MonoCode `GeneralSection`: `px-8 pb-8 pt-6`, scrolling.

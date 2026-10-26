@@ -59,6 +59,9 @@ pub struct MonosState {
     pub changes: crate::app::mono_changes::ChangesState,
     /// Mono id awaiting delete confirmation.
     pub pending_delete: Option<String>,
+    /// A Mono the rail's + made, kept only once its settings say Create:
+    /// closing them otherwise takes it away.
+    pub creating: Option<String>,
     /// The open Mono's chat is awaiting a reset confirmation.
     pub pending_reset: bool,
     /// Mono id awaiting Settings › Monos' Reset Mono confirmation.
@@ -100,6 +103,7 @@ impl MonosState {
             overview: OverviewState::default(),
             changes,
             pending_delete: None,
+            creating: None,
             pending_reset: false,
             pending_defaults: None,
             reset_error: None,
@@ -226,7 +230,14 @@ impl BenCodeApp {
         // new Mono has no conversation to read, so it is in view already).
         if self.monos.view.as_deref() == Some(id.as_str()) {
             self.open_mono_settings(SettingsSection::General, cx);
+            self.monos.creating = Some(id);
         }
+    }
+
+    /// The new Mono's Create: it stays, with what its settings hold.
+    pub fn confirm_new_mono(&mut self, cx: &mut Context<Self>) {
+        self.monos.creating = None;
+        self.close_mono_settings(cx);
     }
 
     /// MonoCode `createMono`: a new Mono on the roster; its id.
@@ -531,6 +542,14 @@ impl BenCodeApp {
         if !self.monos.settings_open {
             return false;
         }
+        // A new Mono's settings closed without Create: it was never made.
+        if let Some(id) = self.monos.creating.take() {
+            self.monos.look_open = false;
+            self.delete_mono(&id, cx);
+            self.discard_mono_files(&id, cx);
+            cx.notify();
+            return true;
+        }
         self.save_mono_soul(false, cx);
         self.commit_mono_name(cx);
         self.monos.settings_open = false;
@@ -730,6 +749,9 @@ impl BenCodeApp {
     /// files stays on disk.
     pub fn delete_mono(&mut self, id: &str, cx: &mut Context<Self>) {
         self.monos.pending_delete = None;
+        if self.monos.creating.as_deref() == Some(id) {
+            self.monos.creating = None;
+        }
         let Some(mono) = self.mono(id).cloned() else {
             return;
         };

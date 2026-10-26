@@ -6,7 +6,7 @@
 //! being added or reworded. Reads and writes run off the UI thread; the
 //! model is `crate::monos::files` and `crate::monos::memory`.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use bencode_ui::forms::{InputEvent, TextInput};
@@ -31,6 +31,9 @@ pub struct FilesState {
     /// Bumped by each read, by Mono: a read that lands after a newer one
     /// is dropped.
     generations: HashMap<String, u64>,
+    /// New Monos closed without Create: their folders go, and a read
+    /// still in flight takes away what it seeded.
+    discarded: HashSet<String>,
     pub soul_input: Entity<TextInput>,
     /// The Mono whose soul the field holds.
     soul_of: Option<String>,
@@ -95,6 +98,7 @@ impl FilesState {
             loaded: HashMap::new(),
             load_error: None,
             generations: HashMap::new(),
+            discarded: HashSet::new(),
             soul_input,
             soul_of: None,
             soul_base: None,
@@ -162,6 +166,10 @@ impl BenCodeApp {
         cx.spawn(async move |this, cx| {
             let loaded = task.await;
             let landed = this.update(cx, |this, cx| {
+                if this.monos.files.discarded.contains(&id) {
+                    this.remove_mono_files(&id, cx);
+                    return;
+                }
                 if this.monos.files.generations.get(&id) != Some(&generation) {
                     return;
                 }
@@ -182,6 +190,25 @@ impl BenCodeApp {
             }
         })
         .detach();
+    }
+
+    /// A new Mono's folder, gone with it: it was never kept.
+    pub(crate) fn discard_mono_files(&mut self, id: &str, cx: &mut Context<Self>) {
+        self.monos.files.discarded.insert(id.to_string());
+        self.remove_mono_files(id, cx);
+    }
+
+    fn remove_mono_files(&self, id: &str, cx: &mut Context<Self>) {
+        let Some(dir) = mono_files_dir(id) else {
+            return;
+        };
+        cx.background_executor()
+            .spawn(async move {
+                if let Err(err) = files::remove(&dir) {
+                    log::error!("could not remove a discarded Mono's files: {err:#}");
+                }
+            })
+            .detach();
     }
 
     fn land_mono_files(&mut self, id: &str, loaded: MonoFiles, cx: &mut Context<Self>) {
@@ -267,6 +294,10 @@ impl BenCodeApp {
         ) else {
             return;
         };
+        // Deleted or discarded since: nothing to save it into.
+        if self.mono(&id).is_none() {
+            return;
+        }
         let Some(dir) = mono_files_dir(&id) else {
             return;
         };
