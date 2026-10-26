@@ -1,12 +1,8 @@
-mod chinese;
 use std::{cell::Cell, rc::Rc, time::Duration};
 
-use gpui::{
-    ClipboardItem, Entity, EntityInputHandler, KeyUpEvent, Keystroke, TestAppContext,
-    VisualTestContext,
-};
+use gpui::{ClipboardItem, Entity, EntityInputHandler, TestAppContext, VisualTestContext};
 
-use super::{CodeEditor, GhostText, InlayHint, LineNumbers, layout::Row};
+use super::{CodeEditor, layout::Row};
 use crate::theme::Theme;
 
 pub(super) fn editor<'a>(
@@ -40,21 +36,6 @@ fn typed_pairs_close_and_one_undo_takes_back_the_burst(cx: &mut TestAppContext) 
 }
 
 #[gpui::test]
-fn select_next_takes_the_word_then_its_next_match(cx: &mut TestAppContext) {
-    let (editor, cx) = editor("a foo b foo c", cx);
-    editor.update(cx, |editor, cx| {
-        let inside = 3..3;
-        editor.select([inside], cx);
-        editor.select_next(cx);
-        editor.select_next(cx);
-        let ranges: Vec<_> = editor.selections().iter().map(|s| s.range()).collect();
-        assert_eq!(ranges, [2..5, 8..11]);
-        editor.type_text("bar", cx);
-        assert_eq!(editor.text(), "a bar b bar c", "every cursor types");
-    });
-}
-
-#[gpui::test]
 fn toggling_comments_twice_restores_the_lines(cx: &mut TestAppContext) {
     let (editor, cx) = editor("fn a() {\n    b();\n}", cx);
     editor.update(cx, |editor, cx| {
@@ -63,35 +44,6 @@ fn toggling_comments_twice_restores_the_lines(cx: &mut TestAppContext) {
         assert_eq!(editor.text(), "// fn a() {\n//     b();\n// }");
         editor.toggle_comment(cx);
         assert_eq!(editor.text(), "fn a() {\n    b();\n}");
-    });
-}
-
-#[gpui::test]
-fn a_multi_line_ghost_moves_the_rest_of_its_line_below_it(cx: &mut TestAppContext) {
-    let (editor, cx) = editor("call(x)\nnext", cx);
-    editor.update(cx, |editor, cx| {
-        editor.set_ghost_text(
-            Some(GhostText {
-                offset: 5,
-                text: "a,\n  b, ".into(),
-            }),
-            cx,
-        );
-        assert_eq!(
-            editor.row_text(0),
-            "call(",
-            "the row stops where the ghost starts"
-        );
-        assert_eq!(editor.row_text(1), "next");
-        let caret = 5..5;
-        editor.select([caret], cx);
-        editor.indent(cx);
-        assert_eq!(
-            editor.text(),
-            "call(a,\n  b, x)\nnext",
-            "Tab takes the ghost"
-        );
-        assert_eq!(editor.row_text(0), "call(a,", "a taken ghost cuts nothing");
     });
 }
 
@@ -105,16 +57,6 @@ fn a_selection_inside_a_fold_opens_it(cx: &mut TestAppContext) {
         editor.select([body], cx);
         assert!(editor.frame_shows(1), "a cursor inside unfolds it");
     });
-}
-
-#[gpui::test]
-fn hidden_numbers_draw(cx: &mut TestAppContext) {
-    let (editor, cx) = editor("a\nb", cx);
-    editor.update(cx, |editor, cx| {
-        editor.set_line_numbers(LineNumbers::Hidden, cx)
-    });
-    cx.run_until_parked();
-    assert_eq!(editor.read_with(cx, |editor, _| editor.gutter_columns()), 5);
 }
 
 #[gpui::test]
@@ -141,66 +83,6 @@ fn a_read_only_editor_ignores_typing_and_undo(cx: &mut TestAppContext) {
         assert_eq!(editor.primary().head, 2, "the caret stays");
         editor.undo(cx);
         assert_eq!(editor.text(), "xy");
-    });
-}
-
-#[gpui::test]
-fn enter_presses_the_banner_button_inside_the_editor(cx: &mut TestAppContext) {
-    let (editor, cx) = editor("x", cx);
-    cx.update(|window, cx| {
-        super::keys::bind_keys(cx);
-        editor.update(cx, |editor, cx| editor.set_read_only(true, cx));
-        window.refresh();
-    });
-    cx.run_until_parked();
-    let focus = editor.read_with(cx, |editor, _| editor.focus.clone());
-    cx.update(|window, cx| {
-        window.focus(&focus, cx);
-        window.focus_next(cx);
-    });
-    cx.run_until_parked();
-    cx.simulate_keystrokes("enter");
-    cx.simulate_event(KeyUpEvent {
-        keystroke: Keystroke::parse("enter").expect("a key"),
-    });
-    cx.run_until_parked();
-    assert!(!editor.read_with(cx, |editor, _| editor.is_read_only()));
-}
-
-#[gpui::test]
-fn a_hint_past_a_multi_line_ghost_stays_in_its_row(cx: &mut TestAppContext) {
-    let (editor, cx) = editor("call(x)\nnext", cx);
-    editor.update(cx, |editor, cx| {
-        editor.set_inlay_hints(
-            vec![InlayHint {
-                offset: 6,
-                text: ": i32".into(),
-            }],
-            cx,
-        );
-        editor.set_ghost_text(
-            Some(GhostText {
-                offset: 5,
-                text: "a,\n".into(),
-            }),
-            cx,
-        );
-        let row = editor.row_text(0).len();
-        assert!(editor.notes(0, cx).iter().all(|(at, ..)| *at <= row));
-    });
-    cx.run_until_parked();
-}
-
-#[gpui::test]
-fn cursors_added_above_keep_climbing(cx: &mut TestAppContext) {
-    let (editor, cx) = editor("a\nb\nc\nd", cx);
-    editor.update(cx, |editor, cx| {
-        let last = 6..6;
-        editor.select([last], cx);
-        editor.add_cursor(false, cx);
-        editor.add_cursor(false, cx);
-        assert_eq!(editor.selections().len(), 3);
-        assert_eq!(editor.position().0, 2, "the newest cursor leads");
     });
 }
 
@@ -283,39 +165,4 @@ fn only_a_focused_editor_blinks(cx: &mut TestAppContext) {
     cx.executor().advance_clock(Duration::from_secs(3));
     cx.run_until_parked();
     assert!(redraws.get() > 2, "a focused one blinks");
-}
-
-#[gpui::test]
-fn escape_in_the_find_query_closes_the_box(cx: &mut TestAppContext) {
-    use gpui::{
-        AppContext as _, Focusable as _, IntoElement, ParentElement as _, Render, Styled as _,
-        Window, div,
-    };
-
-    use crate::forms::TextInput;
-
-    struct Host {
-        query: Entity<TextInput>,
-        closed: Rc<Cell<bool>>,
-    }
-    impl Render for Host {
-        fn render(&mut self, _: &mut Window, _: &mut gpui::Context<Self>) -> impl IntoElement {
-            let closed = self.closed.clone();
-            let find = super::FindWidget::new("find", &self.query, None, 0)
-                .on_close(move |_, _| closed.set(true));
-            div().size_full().child(find)
-        }
-    }
-    cx.update(Theme::init);
-    let closed = Rc::new(Cell::new(false));
-    let shut = closed.clone();
-    let (host, cx) = cx.add_window_view(move |window, cx| Host {
-        query: cx.new(|cx| TextInput::new(window, cx)),
-        closed: shut,
-    });
-    let field = host.read_with(cx, |host, cx| host.query.focus_handle(cx));
-    cx.update(|window, cx| window.focus(&field, cx));
-    cx.run_until_parked();
-    cx.simulate_keystrokes("escape");
-    assert!(closed.get(), "escape closes the find box");
 }

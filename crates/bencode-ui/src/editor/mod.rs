@@ -16,7 +16,7 @@ mod prose;
 mod row;
 mod state;
 mod syntax;
-#[cfg(all(test, feature = "test-support"))]
+#[cfg(test)]
 mod tests;
 mod view;
 mod writing;

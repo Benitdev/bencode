@@ -12,7 +12,7 @@ mod slider;
 mod structure;
 mod switch;
 mod syntax;
-#[cfg(all(test, feature = "test-support"))]
+#[cfg(test)]
 mod tests;
 mod text;
 pub use check::{CheckState, Checkbox};

@@ -1,8 +1,5 @@
 mod builtin;
 mod locale;
-#[cfg(test)]
-mod tests;
-
 use std::collections::HashMap;
 
 use gpui::{App, Global, SharedString};

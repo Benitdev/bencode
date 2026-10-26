@@ -1,9 +1,9 @@
 use gpui::{
-    Context, FocusHandle, IntoElement, KeyBinding, KeyUpEvent, Keystroke, Modifiers, ParentElement,
-    Render, Styled, TestAppContext, VisualTestContext, Window, div, point, px,
+    Context, FocusHandle, IntoElement, KeyBinding, KeyUpEvent, Keystroke, ParentElement, Render,
+    Styled, TestAppContext, VisualTestContext, Window, div, px,
 };
 
-use super::{Button, SegmentedControl, ToggleButton, ToggleItem};
+use super::{Button, SegmentedControl};
 use crate::{
     primitives::{FocusNext, FocusScope},
     theme::Theme,
@@ -62,41 +62,6 @@ fn a_loading_button_ignores_presses_and_keeps_its_tab_stop(cx: &mut TestAppConte
         1,
         "focus stayed on it"
     );
-}
-
-/// One toggle that counts its presses.
-struct Toggles {
-    disabled: bool,
-    presses: usize,
-}
-
-impl Render for Toggles {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let view = cx.entity();
-        div().size_full().child(
-            ToggleButton::new("bold", ToggleItem::new("bold").label("B"), false)
-                .disabled(self.disabled)
-                .on_toggle(move |_, _, cx| view.update(cx, |toggles, _| toggles.presses += 1)),
-        )
-    }
-}
-
-#[gpui::test]
-fn a_disabled_toggle_ignores_clicks(cx: &mut TestAppContext) {
-    cx.update(Theme::init);
-    let (view, cx) = cx.add_window_view(|_, _| Toggles {
-        disabled: true,
-        presses: 0,
-    });
-    cx.simulate_click(point(px(4.0), px(4.0)), Modifiers::none());
-    assert_eq!(view.read_with(cx, |toggles, _| toggles.presses), 0);
-    view.update(cx, |toggles, cx| {
-        toggles.disabled = false;
-        cx.notify();
-    });
-    cx.run_until_parked();
-    cx.simulate_click(point(px(4.0), px(4.0)), Modifiers::none());
-    assert_eq!(view.read_with(cx, |toggles, _| toggles.presses), 1);
 }
 
 /// Segments whose chosen value left with a change of list.

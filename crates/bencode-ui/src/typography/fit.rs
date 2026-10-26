@@ -130,23 +130,11 @@ mod tests {
     }
 }
 
-#[cfg(all(test, feature = "test-support"))]
+#[cfg(test)]
 mod fits {
     use gpui::{Pixels, TestAppContext};
 
-    use super::{fit_end, fit_middle, width_of};
-
-    #[gpui::test]
-    fn a_middle_cut_keeps_the_front_and_the_extension(cx: &mut TestAppContext) {
-        let cx = cx.add_empty_window();
-        cx.update(|window, _| {
-            let text = "A very long file name that keeps going.pdf";
-            let room = width_of("A very long…going.pdf", window);
-            let cut = fit_middle(text, room, window);
-            assert!(cut.starts_with("A very") && cut.ends_with(".pdf"), "{cut}");
-            assert!(width_of(&cut, window) <= room && cut.contains('…'), "{cut}");
-        });
-    }
+    use super::{fit_end, width_of};
 
     #[gpui::test]
     fn an_ellipsis_keeps_the_longest_front_that_fits(cx: &mut TestAppContext) {

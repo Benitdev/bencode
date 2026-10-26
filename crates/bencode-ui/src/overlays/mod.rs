@@ -1,7 +1,7 @@
 mod dialog;
 mod dialogs;
 mod hover;
-#[cfg(all(test, feature = "test-support"))]
+#[cfg(test)]
 mod tests;
 
 pub use dialog::{Close, Dialog};

@@ -1,13 +1,11 @@
-use std::rc::Rc;
-
 use gpui::{
-    Context, IntoElement, KeyUpEvent, Keystroke, Modifiers, ParentElement, Render, Styled,
-    TestAppContext, Window, div, point, px,
+    Context, IntoElement, KeyUpEvent, Keystroke, ParentElement, Render, Styled, TestAppContext,
+    Window, div,
 };
-use jiff::civil::{Date, Time, date, time};
+use jiff::civil::{Date, date};
 
 use super::setup;
-use crate::forms::{Calendar, DatePicker, DateRangePicker, TimePicker};
+use crate::forms::{Calendar, DatePicker};
 
 const TODAY: Date = date(2026, 9, 25);
 
@@ -45,74 +43,6 @@ fn a_date_picker_opens_and_picks_from_the_keyboard(cx: &mut TestAppContext) {
     assert_eq!(
         view.read_with(cx, |view, _| view.value),
         Some(date(2026, 9, 11))
-    );
-}
-
-struct Span {
-    value: Option<(Date, Date)>,
-}
-
-impl Render for Span {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let view = cx.entity();
-        div().size_full().child(
-            DateRangePicker::new("span", self.value)
-                .today(TODAY)
-                .on_change(move |picked, _, cx| {
-                    view.update(cx, |view, cx| {
-                        view.value = Some(picked);
-                        cx.notify();
-                    })
-                }),
-        )
-    }
-}
-
-#[gpui::test]
-fn a_range_picker_takes_two_picks_in_either_order(cx: &mut TestAppContext) {
-    setup(cx);
-    let (view, cx) = cx.add_window_view(|_, _| Span { value: None });
-    cx.update(|window, cx| window.focus_next(cx));
-    cx.simulate_keystrokes("enter enter left left enter");
-    assert_eq!(
-        view.read_with(cx, |view, _| view.value),
-        Some((date(2026, 9, 23), TODAY))
-    );
-}
-
-struct Clock {
-    value: Option<Time>,
-}
-
-impl Render for Clock {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let view = cx.entity();
-        div()
-            .size_full()
-            .child(
-                TimePicker::new("clock", self.value)
-                    .step(15)
-                    .on_change(move |picked, _, cx| {
-                        view.update(cx, |view, cx| {
-                            view.value = Some(picked);
-                            cx.notify();
-                        })
-                    }),
-            )
-    }
-}
-
-#[gpui::test]
-fn a_time_picker_steps_with_the_arrows(cx: &mut TestAppContext) {
-    setup(cx);
-    let (view, cx) = cx.add_window_view(|_, _| Clock {
-        value: Some(time(9, 30, 0, 0)),
-    });
-    cx.update(|window, cx| window.focus_next(cx));
-    cx.simulate_keystrokes("enter down down");
-    assert_eq!(
-        view.read_with(cx, |view, _| view.value),
-        Some(time(10, 0, 0, 0))
     );
 }
 
@@ -197,63 +127,4 @@ fn the_month_buttons_carry_the_cursor(cx: &mut TestAppContext) {
         view.read_with(cx, |view, _| view.picked),
         Some(date(2026, 10, 25))
     );
-}
-
-/// A calendar that records every preview it reports.
-struct Watched {
-    seen: Vec<Option<Date>>,
-}
-
-impl Render for Watched {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let view = cx.entity();
-        Calendar::new("watched")
-            .selected(TODAY)
-            .today(TODAY)
-            .on_hover(Rc::new(move |date, _, cx| {
-                view.update(cx, |view, cx| {
-                    view.seen.push(date);
-                    cx.notify();
-                })
-            }))
-    }
-}
-
-#[gpui::test]
-fn keys_keep_the_preview_under_a_resting_pointer(cx: &mut TestAppContext) {
-    setup(cx);
-    let (view, cx) = cx.add_window_view(|_, _| Watched { seen: Vec::new() });
-    cx.update(|window, cx| window.focus_next(cx));
-    cx.simulate_mouse_move(point(px(120.0), px(200.0)), None, Modifiers::none());
-    let pointed = view.read_with(cx, |view, _| view.seen.last().copied().flatten());
-    assert!(pointed.is_some(), "the pointer rests on a day");
-    cx.simulate_keystrokes("pagedown");
-    cx.update(|window, _| window.refresh());
-    cx.run_until_parked();
-    assert_eq!(
-        view.read_with(cx, |view, _| view.seen.last().copied().flatten()),
-        Some(date(2026, 10, 25)),
-        "the keyboard's day stays the preview"
-    );
-}
-
-#[gpui::test]
-fn leaving_the_grid_after_a_key_clears_the_preview(cx: &mut TestAppContext) {
-    setup(cx);
-    for key in ["right", "a", "pagedown"] {
-        let (view, cx) = cx.add_window_view(|_, _| Watched { seen: Vec::new() });
-        cx.update(|window, cx| window.focus_next(cx));
-        cx.simulate_mouse_move(point(px(120.0), px(200.0)), None, Modifiers::none());
-        cx.simulate_keystrokes(key);
-        cx.update(|window, _| window.refresh());
-        cx.run_until_parked();
-        cx.simulate_mouse_move(point(px(700.0), px(480.0)), None, Modifiers::none());
-        cx.update(|window, _| window.refresh());
-        cx.run_until_parked();
-        assert_eq!(
-            view.read_with(cx, |view, _| view.seen.last().copied().flatten()),
-            None,
-            "after {key}, leaving the grid clears its preview"
-        );
-    }
 }

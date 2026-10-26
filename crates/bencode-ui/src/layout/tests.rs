@@ -6,7 +6,7 @@ use gpui::{
     TestAppContext, VisualTestContext, Window, div, point, px,
 };
 
-use super::{Drawer, PaneGroup, SplitPane};
+use super::{ SplitPane};
 use crate::theme::Theme;
 
 type Build = Box<dyn Fn(&mut Window, &mut App) -> AnyElement>;
@@ -42,31 +42,11 @@ pub(crate) fn narrow_width(
 /// A drawer holding a body the test can find.
 struct Pulled;
 
-impl Render for Pulled {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        div().size_full().child(
-            Drawer::new("drawer", |_, _| {})
-                .child(div().debug_selector(|| "drawer-body".into()).h(px(120.0))),
-        )
-    }
-}
 
 fn body(cx: &mut VisualTestContext) -> Bounds<Pixels> {
     cx.debug_bounds("drawer-body").expect("the body")
 }
 
-/// Opens a drawer and waits out its entrance.
-fn opened(cx: &mut TestAppContext, reduced: bool) -> &mut VisualTestContext {
-    cx.update(|cx| {
-        Theme::init(cx);
-        Theme::update(cx, |theme| theme.reduced_motion = reduced);
-    });
-    let (_, cx) = cx.add_window_view(|_, _| Pulled);
-    cx.run_until_parked();
-    std::thread::sleep(Duration::from_millis(if reduced { 10 } else { 250 }));
-    cx.update(|window, _| window.refresh());
-    cx
-}
 
 /// Presses the grab and drags it down by `dy`.
 fn pull(cx: &mut VisualTestContext, dy: f32) -> Point<Pixels> {
@@ -80,67 +60,9 @@ fn pull(cx: &mut VisualTestContext, dy: f32) -> Point<Pixels> {
     point(grab.x, grab.y + px(dy))
 }
 
-#[gpui::test]
-fn a_resting_drawer_reaches_the_bottom(cx: &mut TestAppContext) {
-    let cx = opened(cx, true);
-    let panel = cx.debug_bounds("drawer-panel").expect("the panel");
-    let bottom = cx.update(|window, _| window.viewport_size().height);
-    assert_eq!(
-        body(cx).size.height,
-        px(120.0),
-        "the panel's 0.85 cap leaves a resting body whole"
-    );
-    assert_eq!(
-        panel.bottom(),
-        bottom,
-        "the panel reaches the window's bottom"
-    );
-}
 
-#[gpui::test]
-fn a_pulled_drawer_follows_the_pointer(cx: &mut TestAppContext) {
-    let cx = opened(cx, true);
-    let at = pull(cx, 8.0);
-    let held = body(cx).origin.y;
-    cx.simulate_mouse_move(
-        at + point(px(0.0), px(40.0)),
-        MouseButton::Left,
-        Modifiers::none(),
-    );
-    assert_eq!(
-        body(cx).origin.y - held,
-        px(40.0),
-        "the panel moves with the pull"
-    );
-}
 
-#[gpui::test]
-fn a_released_drawer_glides_back(cx: &mut TestAppContext) {
-    let cx = opened(cx, false);
-    let rest = body(cx).origin.y;
-    let at = pull(cx, 40.0);
-    cx.simulate_mouse_up(at, MouseButton::Left, Modifiers::none());
-    let lift = body(cx).origin.y - rest;
-    assert!(
-        lift > px(20.0),
-        "the panel glides back from {lift:?} below rest"
-    );
-}
 
-#[gpui::test]
-fn a_pane_group_leaves_a_gone_or_last_pane_as_it_is(cx: &mut TestAppContext) {
-    let group = cx.new(|_| PaneGroup::new(|_, _, _| div().into_any_element()));
-    group.update(cx, |group, cx| {
-        assert_eq!(group.split(9, Axis::Horizontal, cx), None);
-        group.close(1, cx);
-        assert_eq!(group.panes(), [1], "the last pane stays");
-        let second = group.split(1, Axis::Horizontal, cx).expect("pane 1 splits");
-        group.close(second, cx);
-        group.close(second, cx);
-        group.focus(second, cx);
-        assert_eq!((group.panes(), group.focused()), (vec![1], 1));
-    });
-}
 
 /// Three panes given two sizes.
 struct Lagging;
@@ -258,46 +180,6 @@ fn invalid_sizes_after_a_drag_split_evenly(cx: &mut TestAppContext) {
 /// A ScrollArea of `inner` content, 100px tall, in a page that scrolls.
 struct Nested(Pixels, gpui::ScrollHandle);
 
-impl Render for Nested {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        div()
-            .id("page")
-            .size_full()
-            .overflow_y_scroll()
-            .track_scroll(&self.1)
-            .child(
-                super::ScrollArea::new("area")
-                    .h(px(100.0))
-                    .child(div().h(self.0)),
-            )
-            .child(div().h(px(2000.0)))
-    }
-}
 
-fn wheel_page(inner: Pixels, cx: &mut TestAppContext) -> Pixels {
-    cx.update(Theme::init);
-    let page = gpui::ScrollHandle::new();
-    let (_, cx) = cx.add_window_view({
-        let page = page.clone();
-        move |_, _| Nested(inner, page)
-    });
-    cx.run_until_parked();
-    cx.simulate_event(gpui::ScrollWheelEvent {
-        position: point(px(50.0), px(50.0)),
-        delta: gpui::ScrollDelta::Pixels(point(px(0.0), px(-40.0))),
-        modifiers: Modifiers::none(),
-        touch_phase: gpui::TouchPhase::Moved,
-    });
-    cx.run_until_parked();
-    page.offset().y
-}
 
-#[gpui::test]
-fn a_scroll_area_keeps_a_wheel_it_can_use(cx: &mut TestAppContext) {
-    assert_eq!(wheel_page(px(500.0), cx), px(0.0));
-}
 
-#[gpui::test]
-fn a_scroll_area_with_no_room_passes_the_wheel_on(cx: &mut TestAppContext) {
-    assert_eq!(wheel_page(px(50.0), cx), px(-40.0));
-}

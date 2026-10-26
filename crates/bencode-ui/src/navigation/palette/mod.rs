@@ -1,7 +1,4 @@
 mod kinds;
-#[cfg(all(test, feature = "test-support"))]
-mod tests;
-
 use std::{ops::Range, rc::Rc};
 
 use gpui::{

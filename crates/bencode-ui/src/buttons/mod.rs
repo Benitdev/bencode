@@ -3,7 +3,7 @@ mod group;
 mod icon_button;
 mod segmented;
 mod share;
-#[cfg(all(test, feature = "test-support"))]
+#[cfg(test)]
 mod tests;
 
 pub use button::{Button, ButtonVariant};

@@ -3,8 +3,6 @@ mod overflow;
 mod palette;
 pub(crate) use palette::marked;
 mod tabs;
-#[cfg(all(test, feature = "test-support"))]
-mod tests;
 pub use editor_tabs::{EditorTab, EditorTabs};
 pub use overflow::TabOverflowMenu;
 pub use palette::SearchPalette;

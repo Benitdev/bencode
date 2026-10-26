@@ -43,7 +43,7 @@ pub fn init(cx: &mut App) -> anyhow::Result<()> {
 }
 
 /// `init` without assets or fonts, for app tests that render.
-#[cfg(any(test, feature = "test-support"))]
+#[cfg(test)]
 pub fn init_for_tests(cx: &mut App) {
     setup(cx);
 }
@@ -65,7 +65,7 @@ fn setup(cx: &mut App) {
     documents::bind_keys(cx);
 }
 
-#[cfg(all(test, feature = "test-support"))]
+#[cfg(test)]
 mod tests {
     use gpui::{AppContext, TestAppContext};
 

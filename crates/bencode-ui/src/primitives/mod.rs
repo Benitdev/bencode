@@ -11,7 +11,7 @@ mod layer;
 mod severity;
 mod tooltip;
 
-#[cfg(all(test, feature = "test-support"))]
+#[cfg(test)]
 mod tests;
 
 pub use backdrop::{Backdrop, Place};

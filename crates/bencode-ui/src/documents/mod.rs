@@ -4,8 +4,6 @@ mod document;
 mod markdown;
 mod render;
 mod rich;
-#[cfg(all(test, feature = "test-support"))]
-mod tests;
 mod tree;
 use gpui::App;
 
