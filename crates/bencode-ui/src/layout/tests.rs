@@ -1,68 +1,10 @@
-use std::time::Duration;
-
 use gpui::{
-    AnyElement, App, AppContext, Axis, Bounds, Context, InteractiveElement, IntoElement, Modifiers,
-    MouseButton, ParentElement, Pixels, Point, Render, StatefulInteractiveElement, Styled,
-    TestAppContext, VisualTestContext, Window, div, point, px,
+    Axis, Context, InteractiveElement, IntoElement, Modifiers, MouseButton, ParentElement, Pixels,
+    Point, Render, Styled, TestAppContext, VisualTestContext, Window, div, point, px,
 };
 
-use super::{ SplitPane};
+use super::SplitPane;
 use crate::theme::Theme;
-
-type Build = Box<dyn Fn(&mut Window, &mut App) -> AnyElement>;
-
-/// One element in a column that a padded block measures by content.
-struct Narrow(Build);
-
-impl Render for Narrow {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        div().w(px(280.0)).flex().flex_col().child(
-            div().p_5().child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .child((self.0)(window, cx))
-                    .child("A line long enough to wrap in a narrow card, so the column fills it."),
-            ),
-        )
-    }
-}
-
-/// The width of `selector` in that column; a root that fills it takes all 240px.
-pub(crate) fn narrow_width(
-    cx: &mut TestAppContext,
-    selector: &'static str,
-    build: impl Fn(&mut Window, &mut App) -> AnyElement + 'static,
-) -> Pixels {
-    let (_, cx) = cx.add_window_view(|_, _| Narrow(Box::new(build)));
-    cx.run_until_parked();
-    cx.debug_bounds(selector).expect(selector).size.width
-}
-
-/// A drawer holding a body the test can find.
-struct Pulled;
-
-
-fn body(cx: &mut VisualTestContext) -> Bounds<Pixels> {
-    cx.debug_bounds("drawer-body").expect("the body")
-}
-
-
-/// Presses the grab and drags it down by `dy`.
-fn pull(cx: &mut VisualTestContext, dy: f32) -> Point<Pixels> {
-    let rest = body(cx).origin;
-    let grab = point(rest.x + px(10.0), rest.y - px(28.0));
-    cx.simulate_mouse_down(grab, MouseButton::Left, Modifiers::none());
-    for step in [4.0, 8.0, dy] {
-        let at = point(grab.x, grab.y + px(step));
-        cx.simulate_mouse_move(at, MouseButton::Left, Modifiers::none());
-    }
-    point(grab.x, grab.y + px(dy))
-}
-
-
-
-
 
 /// Three panes given two sizes.
 struct Lagging;
@@ -176,10 +118,3 @@ fn invalid_sizes_after_a_drag_split_evenly(cx: &mut TestAppContext) {
     let second = cx.debug_bounds("second").expect("second").size.width;
     assert_eq!(first, second);
 }
-
-/// A ScrollArea of `inner` content, 100px tall, in a page that scrolls.
-struct Nested(Pixels, gpui::ScrollHandle);
-
-
-
-

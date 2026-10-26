@@ -1,10 +1,6 @@
-mod blocks;
 mod diagram;
 mod document;
-mod markdown;
-mod render;
 mod rich;
-mod tree;
 use gpui::App;
 
 pub use diagram::Diagram;

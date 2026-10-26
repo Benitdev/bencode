@@ -1,7 +1,6 @@
 mod assets;
 
 pub mod buttons;
-pub mod canvas;
 pub mod data_display;
 pub mod documents;
 pub mod editor;
@@ -17,7 +16,6 @@ pub mod navigation;
 pub mod overlays;
 pub mod primitives;
 pub mod settings;
-pub mod shell;
 pub mod terminal;
 pub mod theme;
 pub mod typography;
