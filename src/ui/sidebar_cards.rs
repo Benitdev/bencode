@@ -92,9 +92,16 @@ impl BenCodeApp {
 
     /// The card title; a title that just changed sweeps in as the old one
     /// drifts up and fades (MonoCode `ParticleText`, without particles).
-    fn render_card_title(&self, id: &str, title: &str) -> AnyElement {
+    /// A working thread's title shimmers, as a busy project's name.
+    fn render_card_title(&self, id: &str, title: &str, busy: bool, cx: &gpui::App) -> AnyElement {
         // The navigator rows' name (`nav_label`), as a project's.
-        let text = |text: String| nav_label().child(text);
+        let text = |text: String| {
+            nav_label().child(if busy {
+                crate::ui::spinner::shimmer(text, cx)
+            } else {
+                text.into_any_element()
+            })
+        };
         let Some(change) = self.sessions_ui.title_changes.get(id) else {
             return text(title.to_string()).flex_1().into_any_element();
         };
@@ -263,7 +270,7 @@ impl BenCodeApp {
                         .color(fg.ink(Ink::Muted)),
                 )
             })
-            .child(self.render_card_title(&id, &title))
+            .child(self.render_card_title(&id, &title, states.busy.contains(&id), cx))
             .when(in_worktree, |el| {
                 el.child(
                     div()

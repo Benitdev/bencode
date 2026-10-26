@@ -15,6 +15,8 @@ tagging (`docs/releasing.md`).
   blurred instead of the dialog sitting dark on the dimmed window; and so
   are the lists of menus, selects and date pickers, hover cards, and the
   reminder and harness update notices.
+- A working thread's title shimmers in the navigator, as a busy
+  project's name does.
 - The interface uses the system's fonts, San Francisco and SF Mono.
 - BenCode's components are its own code now, no longer a library it
   fetches: the app is smaller (27MB instead of 30MB) and builds faster.
