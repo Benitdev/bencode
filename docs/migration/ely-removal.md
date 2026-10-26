@@ -92,3 +92,37 @@ before this work), release builds.
 - **The frosted glass is not frame-benched**: the bench opens no popup
   or dialog. Each frosted card costs a copy and a Gaussian blur of what
   lies under it, only while it is shown.
+
+## 6. What is still Ely's code
+
+Every module of `bencode-ui` is Ely's code, copied at `0c7b0a8`
+(commit `9a9b2a0`) and pruned; none was rewritten. "Changed" counts the
+lines BenCode wrote since the copy, renames included; what it removed
+(unused items) is not counted. Lines are today's, tests included.
+
+| Module | What the app uses | Lines | Changed | BenCode's own changes |
+| :--- | :--- | ---: | ---: | :--- |
+| `editor` | `CodeEditor`, `EditorEvent`, `LineNumbers`, `InlayHint` (file pane, blame) | 4,641 | 15 | none |
+| `terminal` | `Terminal`, `Launch`, `TerminalEvent`, `links` (terminal dock) | 1,716 | 15 | none; emulation is `alacritty_terminal` and `vte`, the shells live in BenCode's own `src/pty_host/` |
+| `forms` | `TextInput`, `Input`, `Select`, `MultiSelect`, `Checkbox`, `Switch`, `Slider`, `NumberInput`, `DatePicker`, `ColorPicker`, `EyeDropper`, `code_highlights` | 6,997 | 71 | option lists draw the frosted `surface`; the eye dropper off `cocoa` |
+| `primitives` | `Icon`, `IconName`, `Tooltip`, `Backdrop`, `DragGhost`, `FocusRing`, `Disclosure`, `Image`, `raise` | 1,777 | 83 | `frost.rs` is BenCode's (65 lines) |
+| `navigation` | `Tabs`, `EditorTabs`, `TabOverflowMenu`, `SearchPalette` | 1,266 | 12 | the palette is frosted |
+| `typography` | `Label`, `Heading`, `Paragraph`, `Kbd`, `Highlight`, `Ellipsis`, `Latex` | 1,321 | 12 | none |
+| `menus` | `DropdownMenu`, `OverflowMenu`, `SplitButton`, `Menu`, `MenuItem` | 1,078 | 61 | reduced to rows and separators, frosted |
+| `layout` | `SplitPane`, `Card`, `Panel`, `Section`, scrolling | 926 | 9 | none |
+| `theme` | the theme global, tokens, palette, syntax colours | 874 | 35 | the system's fonts |
+| `buttons` | `Button`, `IconButton`, `ButtonGroup`, `SegmentedControl` | 826 | 8 | none |
+| `overlays` | `Dialog`, `ConfirmDialog`, `PromptDialog`, `HoverCard` | 780 | 13 | dialogs and hover cards frosted |
+| `lists` | `ListItem`, `SelectableList`, `DirEntry` | 642 | 6 | none |
+| `motion` | `Spinner`, easing curves | 491 | 0 | none |
+| `i18n` | `Locale`, `Direction` | 415 | 6 | none |
+| `feedback` | `Alert`, `EmptyState`, `ErrorView` | 412 | 4 | none |
+| `data_display` | `Avatar`, `Badge`, `Tag` | 374 | 6 | none |
+| `documents` | `Diagram` | 286 | 5 | none |
+| `settings` | `SettingsLayout`, `ThemeSelector` | 179 | 7 | none |
+| `files` | `FileIcon`, `FileItem` | 110 | 1 | none |
+| `assets.rs`, `lib.rs` | the icons, `init` | | 21 | icons only, no fonts |
+
+So the editor and the terminal, the largest parts, are Ely's logic
+untouched: a bug Ely had there BenCode has, and fixing it is BenCode's
+work now.
