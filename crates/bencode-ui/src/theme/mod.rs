@@ -85,8 +85,9 @@ impl Theme {
             density: Density::Standard,
             radius_scale: 1.0,
             font_scale: 1.0,
-            font_family: "Inter".into(),
-            mono_family: "JetBrains Mono".into(),
+            // The system's faces: San Francisco and SF Mono on macOS.
+            font_family: ".SystemUIFont".into(),
+            mono_family: ".AppleSystemUIFontMonospaced".into(),
             reduced_motion: false,
             platform: Platform::current(),
         });

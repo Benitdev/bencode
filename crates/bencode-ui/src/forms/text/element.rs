@@ -440,7 +440,7 @@ mod tests {
     fn a_highlight_sets_weight_slant_and_strike_on_its_runs() {
         let base = TextRun {
             len: 3,
-            font: font("Inter"),
+            font: font(".SystemUIFont"),
             color: hsla(0., 0., 0., 1.),
             background_color: None,
             underline: None,

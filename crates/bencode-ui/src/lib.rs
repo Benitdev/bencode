@@ -24,22 +24,20 @@ pub mod typography;
 
 pub use assets::Assets;
 
-use anyhow::Context as _;
 use gpui::{App, KeyBinding};
 
 use crate::primitives::{FOCUS_CONTEXT, FocusNext, FocusPrev};
 
-/// Loads fonts and the theme, binds Tab and text keys. Call once, first.
+/// Checks the assets, loads the theme, binds Tab and text keys. Call once, first.
 pub fn init(cx: &mut App) -> anyhow::Result<()> {
     let missing = assets::missing(cx.asset_source().as_ref());
     if let Some(first) = missing.first() {
         anyhow::bail!(
-            "ely: the asset source lacks {} of Ely's files, first {first}; pass `bencode_ui::Assets`, or `Assets::before` your own, to `Application::with_assets`",
+            "bencode-ui: the asset source lacks {} of its files, first {first}; pass `bencode_ui::Assets`, or `Assets::before` your own, to `Application::with_assets`",
             missing.len()
         );
     }
-    log::info!("assets: the app's source loads all of Ely's files");
-    assets::load_fonts(cx).context("ely: embedded fonts failed to register")?;
+    log::info!("assets: the app's source loads all of bencode-ui's files");
     setup(cx);
     Ok(())
 }

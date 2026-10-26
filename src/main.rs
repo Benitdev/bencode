@@ -76,9 +76,9 @@ fn main() {
     application
         .run(|cx: &mut App| {
             startup_trace::mark("application launched");
-            // Without Ely's assets and fonts nothing can be drawn.
+            // Without bencode-ui's icons and theme nothing can be drawn.
             if let Err(err) = bencode_ui::init(cx) {
-                log::error!("ely init failed: {err:#}");
+                log::error!("bencode-ui init failed: {err:#}");
                 cx.quit();
                 return;
             }

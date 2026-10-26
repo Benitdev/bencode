@@ -1,10 +1,9 @@
 use std::borrow::Cow;
 
-use anyhow::Context as _;
-use gpui::{App, AssetSource, Result, SharedString};
+use gpui::{AssetSource, Result, SharedString};
 use rust_embed::RustEmbed;
 
-/// Icons and fonts. Pass to `Application::with_assets`, alone or through `Assets::before`.
+/// Icons. Pass to `Application::with_assets`, alone or through `Assets::before`.
 #[derive(RustEmbed)]
 #[folder = "assets"]
 pub struct Assets;
@@ -22,22 +21,7 @@ impl AssetSource for Assets {
     }
 }
 
-pub(crate) fn load_fonts(cx: &App) -> Result<()> {
-    let fonts = Assets::iter()
-        .filter(|name| name.ends_with(".ttf"))
-        .map(|name| {
-            Assets::get(&name)
-                .map(|file| file.data)
-                .with_context(|| format!("font {name} vanished from the bundle"))
-        })
-        .collect::<Result<Vec<_>>>()?;
-    log::info!("assets: registering {} fonts", fonts.len());
-    cx.text_system().add_fonts(fonts)
-}
-
-impl Assets {}
-
-/// Ely's files the source cannot load, each with the reason.
+/// bencode-ui's files the source cannot load, each with the reason.
 pub(crate) fn missing(source: &dyn AssetSource) -> Vec<String> {
     Assets::iter()
         .filter_map(|path| match source.load(&path) {
@@ -56,37 +40,31 @@ mod tests {
 
     use super::{Assets, missing};
 
-    const PLEX: &str = "fonts/ibm-plex-sans/IBMPlexSans-Regular.ttf";
+    /// A source with none of bencode-ui's files.
+    struct Empty;
 
-    /// Icons alone, and an error for any other path, as GPUI Kit's source answers.
-    struct IconsOnly;
-
-    impl AssetSource for IconsOnly {
-        fn load(&self, path: &str) -> Result<Option<Cow<'static, [u8]>>> {
-            if path == "icons/kit-only.svg" {
-                return Ok(Some(Cow::Borrowed(b"<svg/>")));
-            }
-            match Assets.load(path)? {
-                Some(data) if path.starts_with("icons/") => Ok(Some(data)),
-                _ => Err(anyhow::anyhow!("could not find asset at path {path}")),
-            }
+    impl AssetSource for Empty {
+        fn load(&self, _: &str) -> Result<Option<Cow<'static, [u8]>>> {
+            Ok(None)
         }
 
         fn list(&self, _: &str) -> Result<Vec<SharedString>> {
-            Ok(vec!["icons/check.svg".into(), "icons/kit-only.svg".into()])
+            Ok(Vec::new())
         }
     }
 
     #[test]
-    fn ely_s_own_source_holds_every_file() {
+    fn its_own_source_holds_every_file() {
         assert_eq!(missing(&Assets), Vec::<String>::new());
     }
 
     #[test]
-    fn an_icons_only_source_lacks_ely_s_fonts() {
-        let missing = missing(&IconsOnly);
+    fn another_source_is_told_what_it_lacks() {
+        let missing = missing(&Empty);
         assert!(
-            missing.iter().any(|line| line.starts_with(PLEX)),
+            missing
+                .iter()
+                .any(|line| line.starts_with("icons/check.svg")),
             "{missing:?}"
         );
     }
