@@ -1,5 +1,5 @@
-//! The navigator's Agents section (MonoCode's "Working" card, moved to the
-//! top and made BenCode's own): the threads in flight or finished unseen,
+//! The navigator's Agents section (MonoCode's "Working" card, made
+//! BenCode's own), under the threads: the threads in flight or finished unseen,
 //! across projects, those waiting on the user first. What a thread asks to
 //! run is answered here (Allow / Deny) without leaving the thread in view;
 //! a question opens its thread. It shows once two agents are live, or one
@@ -28,7 +28,7 @@ use crate::ui::tokens::{Fill, Ink, Status, Text, Tone as _};
 const LIVE_AGENT_MIN: usize = 2;
 const LIVE_AGENT_CAP: usize = 4;
 /// The most of the navigator's height the section takes, so the threads
-/// below keep theirs; expanded (MonoCode `max-h-[45vh]`) it takes more.
+/// above keep theirs; expanded (MonoCode `max-h-[45vh]`) it takes more.
 const SECTION_SHARE: f32 = 0.35;
 const EXPANDED_SHARE: f32 = 0.5;
 /// The second line and the buttons start under the title, past the mascot.
@@ -41,7 +41,7 @@ pub struct LiveAgentsUi {
 }
 
 impl BenCodeApp {
-    /// Whether the section has anything the project's threads below do not
+    /// Whether the section has anything the project's threads above do not
     /// already show.
     fn live_agents_shown(&self, agents: &[LiveAgent]) -> bool {
         agents.len() >= LIVE_AGENT_MIN
@@ -50,7 +50,7 @@ impl BenCodeApp {
             })
     }
 
-    /// The section, or nothing while the threads below say it all.
+    /// The section, or nothing while the threads above say it all.
     pub(crate) fn render_live_agents(&self, cx: &Context<Self>) -> Option<AnyElement> {
         let agents = self.live_agents();
         if agents.is_empty() || !self.live_agents_shown(&agents) {
@@ -67,7 +67,7 @@ impl BenCodeApp {
         let waiting = agents.iter().filter(|agent| agent.needs_approval).count();
         let now = crate::app::now_ms();
 
-        // As the Projects header below: `px-3`, the label `px-1`.
+        // As the Projects header: `px-3`, the label `px-1`.
         let header = div()
             .flex()
             .items_center()
@@ -165,7 +165,10 @@ impl BenCodeApp {
                 } else {
                     SECTION_SHARE
                 }))
+                .pt_2()
                 .pb_2()
+                .border_t_1()
+                .border_color(fg.fill(Fill::Line))
                 .child(header)
                 .child(crate::ui::scrollbar::Scrolled::new(
                     "live-agents-scrollbar",

@@ -142,9 +142,9 @@ painted keeps it; the shell resets it while the region is not drawn
 
 BenCode's own layout (MonoCode keeps a project rail, a Sessions /
 Explorer / Changes sidebar and a usage footer). The **navigator** (`Rail`,
-⌘B) is one column: Search and the views' icons, the **Agents** section
-(turns in flight across projects; a waiting command is allowed or denied
-there), the projects, then the project's threads. The **inspector** at the
+⌘B) is one column: Search and the views' icons, the projects, the
+project's threads, then the **Agents** section (turns in flight across
+projects; a waiting command is allowed or denied there). The **inspector** at the
 right edge holds Changes or the Explorer (⇧⌘B, ⌃⇧G, ⇧⌘E), so the threads
 stay in view while it shows. The focused thread's usage sits at the
 navigator's foot beside Settings (on the icon rail while it is

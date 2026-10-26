@@ -35,7 +35,7 @@
 
 ### Agents side by side
 
-One thread per task, each with its own agent, model and permission mode. Split the chat (⌘D), queue follow-ups, stop a turn, or hand a thread off to another agent. The **Agents** section at the top of the navigator follows every turn in flight across projects, and lets you Allow or Deny a waiting command without leaving the thread you are in.
+One thread per task, each with its own agent, model and permission mode. Split the chat (⌘D), queue follow-ups, stop a turn, or hand a thread off to another agent. The **Agents** section under the navigator's threads follows every turn in flight across projects, and lets you Allow or Deny a waiting command without leaving the thread you are in.
 
 </td>
 <td width="50%">

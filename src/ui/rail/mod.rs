@@ -121,8 +121,8 @@ impl BenCodeApp {
         mascot_for(project_name(path), pick.map(String::as_str))
     }
 
-    /// The navigator, top to bottom: Search and the views, the agents at
-    /// work, the Monos, the projects, the project's threads, and the
+    /// The navigator, top to bottom: Search and the views, the Monos, the
+    /// projects, the project's threads, the agents at work, and the
     /// focused thread's usage beside Settings. While Settings is open its
     /// sections take the body.
     pub fn render_project_rail(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -170,7 +170,6 @@ impl BenCodeApp {
                 None => el.child(self.render_settings_nav(cx)),
                 Some(threads) => el
                     .child(self.render_rail_actions(cx))
-                    .children(self.render_live_agents(cx))
                     // MonoCode: the Monos section above the projects, out of
                     // their scroll so neither crowds the other.
                     .when(self.monos_enabled(), |el| {
@@ -179,6 +178,7 @@ impl BenCodeApp {
                     .child(self.render_rail_projects(cx))
                     .child(self.render_threads_header(cx))
                     .child(threads)
+                    .children(self.render_live_agents(cx))
                     .children(self.render_update_footer(false, cx))
                     .child(self.render_rail_foot(usage, cx)),
             })
