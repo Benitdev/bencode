@@ -196,8 +196,7 @@ impl BenCodeApp {
         });
         let header_button = |id: &'static str| div().id(id).flex_none().rounded(px(6.0));
         // MonoCode: `rounded-xl border border-content/10 shadow-xl` over its
-        // glass backdrop; GPUI cannot blur what is behind, so the reminders'
-        // 95% fill stands in.
+        // glass backdrop (`ui::frost`).
         let panel = div()
             .id("harness-updates")
             .occlude()
@@ -208,7 +207,10 @@ impl BenCodeApp {
             .rounded(px(12.0))
             .border_1()
             .border_color(fg.fill(Fill::Strong))
-            .bg(colors.bg.opacity(0.95))
+            .child(crate::ui::frost::frost(
+                crate::ui::frost::POPOVER_RADIUS,
+                cx,
+            ))
             .text_color(fg)
             .line_height(relative(PREFLIGHT_LEADING))
             .shadow_xl()

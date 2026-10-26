@@ -241,7 +241,7 @@ impl RenderOnce for DatePicker {
                     id.clone(),
                     anchor,
                     CALENDAR_ROWS,
-                    surface((id.clone(), "popup"), cx)
+                    surface((id.clone(), "popup"), window, cx)
                         .on_mouse_down_out(move |_, window, cx| close(window, cx))
                         .child(calendar.on_escape(escape).on_pick(move |date, window, cx| {
                             if let Some(on_change) = &on_change {

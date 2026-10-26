@@ -106,7 +106,7 @@ impl RenderOnce for HoverCard {
             return host;
         }
         let (over, tall) = (state.clone(), state.clone());
-        let card = surface((self.id.clone(), "card"), cx)
+        let card = surface((self.id.clone(), "card"), window, cx)
             .relative()
             .occlude()
             .p_4()

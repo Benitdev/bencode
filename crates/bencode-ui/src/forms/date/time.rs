@@ -225,7 +225,7 @@ impl RenderOnce for DateTimePicker {
                     id.clone(),
                     anchor,
                     CALENDAR_ROWS,
-                    surface((id.clone(), "popup"), cx)
+                    surface((id.clone(), "popup"), window, cx)
                         .flex()
                         .on_mouse_down_out(move |_, window, cx| out(window, cx))
                         .child(calendar.on_escape(close).on_pick(move |date, window, cx| {

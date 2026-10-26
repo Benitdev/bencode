@@ -166,9 +166,9 @@ impl BenCodeApp {
                         ),
                 )
         });
-        // MonoCode: `rounded-xl border border-content/15 bg-background-base/95
-        // text-content shadow-xl backdrop-blur-xl` (GPUI cannot blur what
-        // is behind, so the 95% fill stands alone).
+        // MonoCode: `rounded-xl border border-content/15 text-content
+        // shadow-xl` on the notices' glass (its GPUI port's
+        // `notifications/surface.rs`; `ui::frost`).
         let panel = div()
             .id("due-reminders")
             .occlude()
@@ -179,7 +179,10 @@ impl BenCodeApp {
             .rounded(px(12.0))
             .border_1()
             .border_color(fg.fill(Fill::Bold))
-            .bg(colors.bg.opacity(0.95))
+            .child(crate::ui::frost::frost(
+                crate::ui::frost::POPOVER_RADIUS,
+                cx,
+            ))
             .text_color(fg)
             .line_height(relative(PREFLIGHT_LEADING))
             .shadow_xl()

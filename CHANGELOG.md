@@ -10,9 +10,12 @@ tagging (`docs/releasing.md`).
   MonoCode: what lies behind them shows through blurred instead of being
   covered by an opaque card. GPUI's Metal renderer is vendored with
   MonoCode's backdrop blur to draw it.
-- The Mono settings dialog and the search panel (⌘K) are frosted too, so
-  the window behind them shows through blurred instead of the dialog
-  sitting dark on the dimmed window.
+- Every dialog is frosted too (the Mono settings, ⌘K search, confirmations,
+  prompts and the command palette), so the window behind shows through
+  blurred instead of the dialog sitting dark on the dimmed window; and so
+  are the lists of menus, selects and date pickers, hover cards, and the
+  reminder and harness update notices.
+- The interface uses the system's fonts, San Francisco and SF Mono.
 
 ## [0.1.33] - 2026-10-26
 

@@ -354,7 +354,7 @@ pub(crate) fn hang(
     let (down_menu, down_state, down_close) = (menu.clone(), state.clone(), close.clone());
     let (left_menu, left_state, left_close) = (menu.clone(), state.clone(), close.clone());
     let (right_menu, right_state, right_close) = (menu.clone(), state.clone(), close.clone());
-    let root = draw::panel(id, menu, state, 0, &close, head, cx)
+    let root = draw::panel(id, menu, state, 0, &close, head, window, cx)
         .track_focus(&focus)
         .when(!spaced, |root| {
             root.capture_action(move |_: &Up, window, cx| {
@@ -447,7 +447,7 @@ pub(crate) fn hang(
                     .position(from)
                     .snap_to_window()
                     .child(
-                        draw::panel(id, menu, state, level, &close, None, cx)
+                        draw::panel(id, menu, state, level, &close, None, window, cx)
                             .mt_neg_1()
                             .with_animation(
                                 (id.clone(), format!("sub-{level}")),

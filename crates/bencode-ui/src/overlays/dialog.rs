@@ -3,7 +3,7 @@ use std::rc::Rc;
 use gpui::{
     Animation, AnimationExt, AnyElement, App, ElementId, FocusHandle, FontWeight,
     InteractiveElement, IntoElement, ParentElement, Pixels, RenderOnce, Role, SharedString,
-    StatefulInteractiveElement, Styled, Window, anchored, div, point, prelude::*,
+    StatefulInteractiveElement, Styled, Window, anchored, div, point, prelude::*, px,
 };
 use smallvec::SmallVec;
 
@@ -11,7 +11,7 @@ use crate::{
     buttons::{ButtonVariant, IconButton},
     forms::{Enter, Run},
     i18n, motion,
-    primitives::{Backdrop, FocusScope, IconName, give_back, raise, take_focus},
+    primitives::{Backdrop, FocusScope, IconName, frost, give_back, raise, take_focus},
     theme::{ActiveTheme, Elevation, Radius, TextSize},
 };
 
@@ -197,6 +197,7 @@ impl RenderOnce for Dialog {
                 }))
         } else {
             let margin = theme.titlebar_height().to_pixels(window.rem_size());
+            let radius = theme.radius(Radius::Xl).to_pixels(window.rem_size());
             let body = (!self.body.is_empty()).then(|| {
                 div()
                     .id((self.id.clone(), "body"))
@@ -215,11 +216,11 @@ impl RenderOnce for Dialog {
                 .w(theme.dialog_width())
                 .max_h(window.viewport_size().height - margin * 2.0)
                 .p_6()
-                .rounded(theme.radius(Radius::Xl))
-                .bg(colors.overlay)
+                .rounded(radius)
                 .border_1()
                 .border_color(colors.border)
                 .shadow(theme.elevation(Elevation::Modal))
+                .child(frost::dialog(radius - px(1.0), colors.overlay, cx))
                 .child(heading)
                 .children(body)
                 .children(actions)

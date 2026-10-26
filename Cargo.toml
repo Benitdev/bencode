@@ -73,9 +73,6 @@ block = "0.1"
 # The window's NSView, for the Liquid Glass under it (ui/native_glass.rs);
 # the version GPUI already builds.
 raw-window-handle = "0.6"
-# The backdrop-blur marker its Metal renderer frosts (ui/frost.rs); the
-# renderer is vendored with the patch (vendor/gpui-pre-apple).
-gpui_apple = { package = "gpui-pre-apple", version = "=0.3.8" }
 
 # The shipped binary: whole-program LTO and no symbols take it from 33 MB to
 # about 22 MB at the same speed, for a release build about twice as long.

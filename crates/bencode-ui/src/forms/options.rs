@@ -4,13 +4,13 @@ use gpui::{
     Anchor, Animation, AnimationExt, AnyElement, App, Bounds, Div, ElementId, Entity,
     InteractiveElement, IntoElement, MouseButton, ParentElement, Pixels, ScrollHandle,
     SharedString, Stateful, StatefulInteractiveElement, Styled, Window, anchored, canvas, div,
-    prelude::*,
+    prelude::*, px,
 };
 
 use crate::{
     data_display::Avatar,
     motion,
-    primitives::{Icon, IconName, raise},
+    primitives::{Icon, IconName, frost, raise},
     theme::{ActiveTheme, AvatarSize, ControlSize, Elevation, IconSize, Radius, TextSize},
     typography::Ellipsis,
 };
@@ -154,18 +154,20 @@ pub(crate) fn marked_row(
         })
 }
 
-/// The card a floating list sits on.
-pub(crate) fn surface(id: impl Into<ElementId>, cx: &App) -> Stateful<Div> {
+/// The card a floating list sits on: frosted glass (`primitives::frost`)
+/// first, then the caller's children.
+pub(crate) fn surface(id: impl Into<ElementId>, window: &Window, cx: &App) -> Stateful<Div> {
     let theme = cx.theme();
     let colors = &theme.colors;
+    let radius = theme.radius(Radius::Lg).to_pixels(window.rem_size());
     div()
         .id(id)
-        .rounded(theme.radius(Radius::Lg))
-        .bg(colors.overlay)
+        .rounded(radius)
         .border_1()
         .border_color(colors.border)
         .shadow(theme.elevation(Elevation::Floating))
         .text_size(theme.text_size(TextSize::Sm))
+        .child(frost::popover(radius - px(1.0), colors.overlay, cx))
 }
 
 /// Floats `content` of about `rows` rows under `anchor`, or over it when only above has room; `id` is its owner's.
@@ -302,7 +304,7 @@ impl Popup<'_> {
                 })
             })
         });
-        let list = surface(self.id.clone(), cx)
+        let list = surface(self.id.clone(), window, cx)
             .debug_selector(|| "option-list".into())
             .min_w(theme.tooltip_max_width())
             .when(anchor.size.width > Pixels::ZERO, |list| {

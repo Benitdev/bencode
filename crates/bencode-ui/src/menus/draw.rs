@@ -2,8 +2,8 @@ use std::rc::Rc;
 
 use gpui::{
     AnyElement, App, Bounds, Div, ElementId, Entity, FontWeight, InteractiveElement, IntoElement,
-    MouseButton, ParentElement, Pixels, Role, SharedString, Stateful, Styled, accesskit::Action,
-    canvas, div, prelude::*,
+    MouseButton, ParentElement, Pixels, Role, SharedString, Stateful, Styled, Window,
+    accesskit::Action, canvas, div, prelude::*,
 };
 
 use super::{
@@ -158,6 +158,7 @@ pub(super) fn panel(
     depth: usize,
     close: &Run,
     head: Option<AnyElement>,
+    window: &Window,
     cx: &App,
 ) -> Stateful<Div> {
     let open = state.read(cx);
@@ -254,7 +255,7 @@ pub(super) fn panel(
                     .into_any_element()
             }
         });
-    surface((id.clone(), format!("panel-{depth}")), cx)
+    surface((id.clone(), format!("panel-{depth}")), window, cx)
         .role(Role::Menu)
         .debug_selector(move || format!("menu-panel-{depth}"))
         .relative()

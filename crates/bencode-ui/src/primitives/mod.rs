@@ -3,6 +3,7 @@ mod caret;
 mod disclosure;
 mod files;
 mod focus;
+pub mod frost;
 mod ghost;
 mod held;
 mod icon;

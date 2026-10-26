@@ -4,13 +4,13 @@ use std::{ops::Range, rc::Rc};
 use gpui::{
     Animation, AnimationExt, AnyElement, App, ElementId, Entity, FontWeight, HighlightStyle,
     InteractiveElement, IntoElement, MouseButton, ParentElement, Point, Role, ScrollHandle,
-    SharedString, StatefulInteractiveElement, Styled, StyledText, Window, div, prelude::*,
+    SharedString, StatefulInteractiveElement, Styled, StyledText, Window, div, prelude::*, px,
 };
 
 use crate::{
     forms::{Down, Enter, OnValue, Pick, Run, TextInput, Up},
     motion,
-    primitives::{Backdrop, FocusScope, Icon, IconName, give_back, take_focus},
+    primitives::{Backdrop, FocusScope, Icon, IconName, frost, give_back, take_focus},
     theme::{ActiveTheme, ControlSize, Elevation, IconSize, Radius, TextSize},
 };
 
@@ -240,6 +240,7 @@ impl Palette {
         }
         let (up, down, escape) = (go.clone(), go, self.on_close);
         let (enter, chosen) = (pick, cursor.clone());
+        let radius = theme.radius(Radius::Xl).to_pixels(window.rem_size());
         let card = div()
             .id(self.id.clone())
             .debug_selector(|| "palette-card".into())
@@ -247,13 +248,13 @@ impl Palette {
             .flex_col()
             .w(theme.palette_size().width)
             .h(theme.palette_size().height)
-            .rounded(theme.radius(Radius::Xl))
-            .bg(colors.overlay)
+            .rounded(radius)
             .border_1()
             .border_color(colors.border)
             .shadow(theme.elevation(Elevation::Modal))
             .text_size(theme.text_size(TextSize::Sm))
             .text_color(colors.fg)
+            .child(frost::dialog(radius - px(1.0), colors.overlay, cx))
             .capture_action(move |_: &Up, _, cx| {
                 cx.stop_propagation();
                 up(-1, cx);
