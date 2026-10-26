@@ -4,6 +4,14 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
+## [Unreleased]
+
+- Git hooks find the tools your terminal finds when `.zshrc` sets them
+  up (nvm, pyenv, conda): BenCode reads PATH from an interactive login
+  shell, not a login shell alone, so a husky hook no longer runs
+  Volta's empty `pnpm` over nvm's. A slow `.zshrc` can skip work while
+  `BENCODE_RESOLVING_ENVIRONMENT` is set; after 5s BenCode falls back.
+
 ## [0.1.32] - 2026-10-23
 
 - In the dark theme, the row under the pointer or the keyboard in a

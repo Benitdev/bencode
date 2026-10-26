@@ -150,7 +150,8 @@ fn adopt_login_path() {
         return;
     }
     if let Some(path) = bencode_core::login_path::read() {
-        // SAFETY: called before any thread of this process starts.
+        // SAFETY: called before any thread of this process starts but
+        // `read`'s pipe reader, which touches no environment.
         unsafe { std::env::set_var("PATH", path) };
     }
 }

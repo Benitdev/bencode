@@ -4,36 +4,134 @@
 //! fails there though it works in the terminal.
 
 use std::ffi::OsString;
+use std::io::Read;
 use std::path::PathBuf;
+use std::process::{Child, Command, Stdio};
 use std::sync::OnceLock;
+use std::sync::mpsc;
+use std::time::{Duration, Instant};
 
 static LOGIN: OnceLock<OsString> = OnceLock::new();
+
+/// Set while the shell runs, so a slow `.zshrc` can skip what a PATH does
+/// not need (`[[ -n $BENCODE_RESOLVING_ENVIRONMENT ]] && return`).
+const RESOLVING: &str = "BENCODE_RESOLVING_ENVIRONMENT";
+/// Around the PATH in the shell's output: an rc file may print its own.
+const MARK: &str = "__BENCODE_PATH__";
+/// Longer than any rc file the user would wait for in a terminal.
+const TIMEOUT: Duration = Duration::from_secs(5);
 
 /// The login shell's PATH, then this process's folders it lacks. `None`
 /// when the shell cannot say. Runs the shell: never on the UI thread.
 pub fn read() -> Option<OsString> {
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
-    let output = std::process::Command::new(&shell)
-        .args(["-lc", "printf '%s' \"$PATH\""])
-        .stdin(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .output();
-    let login = match output {
-        Ok(out) if out.status.success() => String::from_utf8_lossy(&out.stdout).trim().to_string(),
-        Ok(out) => {
-            log::warn!("{shell} -l exited with {}; keeping PATH", out.status);
-            return None;
+    // Interactive as well: nvm, pyenv and conda add their folders in
+    // `.zshrc`, which a login shell alone does not read.
+    let login = shell_path(&shell, "-ilc").or_else(|| shell_path(&shell, "-lc"))?;
+    let current = std::env::var_os("PATH").unwrap_or_default();
+    join(std::env::split_paths(&login).chain(std::env::split_paths(&current)))
+}
+
+/// The PATH `shell flags` prints, or `None` when it fails, prints none or
+/// outlasts `TIMEOUT`.
+fn shell_path(shell: &str, flags: &str) -> Option<String> {
+    let mut command = Command::new(shell);
+    command
+        .args([flags, &format!("printf '{MARK}%s{MARK}' \"$PATH\"")])
+        .env(RESOLVING, "1")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    // A session of its own: an interactive shell would otherwise take the
+    // terminal BenCode was started from, and the timeout ends all it started.
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        // SAFETY: `setsid` is async-signal-safe.
+        unsafe {
+            command.pre_exec(|| {
+                if libc::setsid() == -1 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
         }
+    }
+    let mut child = match command.spawn() {
+        Ok(child) => child,
         Err(err) => {
             log::warn!("cannot run {shell}: {err}; keeping PATH");
             return None;
         }
     };
-    if login.is_empty() || login.contains('\n') {
+    let mut stdout = child.stdout.take()?;
+    // Read apart from the wait: a chatty rc file could fill the pipe.
+    let (sent, output) = mpsc::channel();
+    std::thread::spawn(move || {
+        let mut out = Vec::new();
+        let _ = sent.send(stdout.read_to_end(&mut out).map(|_| out));
+    });
+    let deadline = Instant::now() + TIMEOUT;
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(10)),
+            Ok(None) => {
+                log::warn!("{shell} {flags} took over {TIMEOUT:?}; stopped it");
+                stop(&mut child);
+                return None;
+            }
+            Err(err) => {
+                log::warn!("cannot wait for {shell} {flags}: {err}");
+                stop(&mut child);
+                return None;
+            }
+        }
+    };
+    if !status.success() {
+        log::warn!("{shell} {flags} exited with {status}");
         return None;
     }
-    let current = std::env::var_os("PATH").unwrap_or_default();
-    join(std::env::split_paths(&login).chain(std::env::split_paths(&current)))
+    // Something the rc file left running may hold the pipe open.
+    let wait = deadline.saturating_duration_since(Instant::now());
+    let out = match output.recv_timeout(wait) {
+        Ok(Ok(out)) => out,
+        Ok(Err(err)) => {
+            log::warn!("cannot read {shell} {flags}: {err}");
+            return None;
+        }
+        Err(_) => {
+            log::warn!("{shell} {flags} left its output open");
+            return None;
+        }
+    };
+    let path = between_marks(&String::from_utf8_lossy(&out));
+    if path.is_none() {
+        log::warn!("{shell} {flags} printed no PATH");
+    }
+    path
+}
+
+/// The text between the first two `MARK`s, when it is one non-empty line.
+fn between_marks(output: &str) -> Option<String> {
+    let (_, rest) = output.split_once(MARK)?;
+    let (path, _) = rest.split_once(MARK)?;
+    (!path.is_empty() && !path.contains('\n')).then(|| path.to_string())
+}
+
+/// Kills the shell and everything in its session, and reaps it.
+fn stop(child: &mut Child) {
+    #[cfg(unix)]
+    if let Ok(group) = i32::try_from(child.id()) {
+        // SAFETY: a plain syscall; the group is the session `setsid` made.
+        unsafe { libc::kill(-group, libc::SIGKILL) };
+    }
+    if let Err(err) = child.kill() {
+        log::debug!("shell already gone: {err}");
+    }
+    if let Err(err) = child.wait() {
+        log::warn!("cannot reap the shell: {err}");
+    }
 }
 
 /// Reads the login shell's PATH on a thread of its own, so the launches
@@ -84,6 +182,15 @@ mod tests {
     fn join_keeps_the_first_of_each_folder() {
         let dirs = ["/a", "/b", "/a", "", "/c", "/b"].map(PathBuf::from);
         assert_eq!(join(dirs.into_iter()), Some(OsString::from("/a:/b:/c")));
+    }
+
+    #[test]
+    fn between_marks_skips_what_the_rc_file_prints() {
+        let out = format!("Welcome!\n{MARK}/a:/b{MARK}\nbye");
+        assert_eq!(between_marks(&out), Some("/a:/b".into()));
+        assert_eq!(between_marks(&format!("{MARK}{MARK}")), None);
+        assert_eq!(between_marks(&format!("{MARK}/a\n/b{MARK}")), None);
+        assert_eq!(between_marks("/a:/b"), None);
     }
 
     #[test]

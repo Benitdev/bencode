@@ -644,6 +644,7 @@ dependencies = [
  "anyhow",
  "base64",
  "jiff",
+ "libc",
  "log",
  "serde",
  "serde_json",
