@@ -4,7 +4,7 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
-## [Unreleased]
+## [0.1.34] - 2026-10-26
 
 - In the dark theme on macOS, popovers and menus are frosted glass, as in
   MonoCode: what lies behind them shows through blurred instead of being
@@ -16,6 +16,8 @@ tagging (`docs/releasing.md`).
   are the lists of menus, selects and date pickers, hover cards, and the
   reminder and harness update notices.
 - The interface uses the system's fonts, San Francisco and SF Mono.
+- BenCode's components are its own code now, no longer a library it
+  fetches: the app is smaller (27MB instead of 30MB) and builds faster.
 
 ## [0.1.33] - 2026-10-26
 
