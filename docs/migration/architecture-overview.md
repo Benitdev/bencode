@@ -19,7 +19,7 @@ IPC layer.
 | UI | React 19 in WKWebView | GPUI, drawn on the GPU (Metal) |
 | Language | TypeScript + Rust | Rust |
 | UI ↔ backend | JSON over the Tauri IPC bridge | Direct function calls in one process |
-| Components | Tailwind, CodeMirror, xterm.js | Ely GPUI Components |
+| Components | Tailwind, CodeMirror, xterm.js | `crates/bencode-ui` (adapted from Ely GPUI Components) |
 | Agent output | Rust backend → WebView events | `mpsc` channel of `AgentEvent` → app entity |
 | Database | SQLite (`monocode.db`) | Its own `bencode.db`, same schema; MonoCode's is copied in once |
 | Preferences | WebView storage | `settings.json` |
@@ -63,7 +63,7 @@ Three rules follow from this picture:
 ## 3. State: one entity
 
 `BenCodeApp` (`src/app.rs`) owns all app state. Views are `impl BenCodeApp`
-blocks in `src/ui/`, not separate entities. The exceptions are stateful Ely
+blocks in `src/ui/`, not separate entities. The exceptions are stateful `bencode-ui`
 widgets (text inputs, `CodeEditor`, `Terminal`), which are entities held by the
 app.
 
@@ -106,8 +106,8 @@ without re-rendering the app. The app redraws only on `cx.notify()`.
 - **Sidebar** (`ui/sidebar*.rs`): three tabs, `SidebarMode::{Sessions, Files, Changes}`.
 - **Title bar** (`ui/titlebar/`): workspace tabs. Each tab owns a layout tree
   (`ui/layout/`) of chat panes.
-- **Chat panes** (`ui/pane_tree.rs`): always visible. Split, resized with Ely
-  `SplitPane`, docked by drag and drop.
+- **Chat panes** (`ui/pane_tree.rs`): always visible. Split, resized with
+  `bencode-ui`'s `SplitPane`, docked by drag and drop.
 - **File pane** (`ui/file_pane.rs`): appears to the right of the chat while it
   has tabs. A tab is a `PaneTab`: `File`, `Review` (one file's working-tree
   diff), `Changes` (all changes stacked), `SessionChanges` (what one thread's

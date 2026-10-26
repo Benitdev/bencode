@@ -155,7 +155,7 @@ BenCode điều khiển CLI của agent qua stdio và đọc luồng JSON mà ch
 
 |  |  |
 | :--- | :--- |
-| **Không có trình duyệt bên trong** | Rust và [GPUI](https://www.gpui.rs/) của Zed, cùng [Ely GPUI Components](https://elygpui.com/). Không Electron, không Chromium, không WebKit; Metal vẽ toàn bộ giao diện. |
+| **Không có trình duyệt bên trong** | Rust và [GPUI](https://www.gpui.rs/) của Zed, cùng bộ component riêng của BenCode (`crates/bencode-ui`, chuyển thể từ [Ely GPUI Components](https://elygpui.com/)). Không Electron, không Chromium, không WebKit; Metal vẽ toàn bộ giao diện. |
 | **Nhanh và nhẹ** | Mục tiêu: khởi động dưới 50ms, dùng khoảng 30MB RAM. |
 | **Dữ liệu ở máy bạn** | Thread, ghi chú, checkpoint và hồ sơ tài khoản nằm trên Mac của bạn, trong thư mục riêng của BenCode. |
 | **Không tốn thêm** | BenCode không cần thêm API key, không tốn thêm token. Nó chạy các CLI bạn đã đăng nhập sẵn. |

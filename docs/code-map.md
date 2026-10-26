@@ -12,11 +12,13 @@ bencode/
 ├── README.md                 overview and quick start
 ├── CHANGELOG.md              per-release notes; the release workflow publishes a version's section
 ├── LICENSE                   MIT
-├── Cargo.toml                the workspace (one version for all three crates), dependencies, build profiles
+├── Cargo.toml                the workspace (one version for all four crates), dependencies, build profiles
 ├── crates/bencode-core/      what the app and its host share: `harness/`, the file index, search, Go to Definition's search and ranking (`definitions.rs`), the Explorer's disk ops (`tree/`), `remote/` (paths, protocol)
 ├── crates/bencode-host/      BenCode Host, the daemon on a remote machine (`bencode-host connect | daemon | status | stop`)
+├── crates/bencode-ui/        the components, theme and Lucide icons, adapted from Ely GPUI Components and kept to what the app reaches (NOTICE)
+├── vendor/gpui-pre-apple/    GPUI's Metal renderer with the backdrop blur (NOTICE)
 ├── assets/
-│   ├── icons/                Lucide SVGs Ely does not ship (ui/icons.rs)
+│   ├── icons/                Lucide SVGs bencode-ui does not ship (ui/icons.rs)
 │   ├── file-icons/           Material Icon Theme SVGs and lookup tables (ui/file_tree/icons.rs)
 │   └── providers/            harness brand icons (ui/provider_icon.rs)
 ├── docs/migration/           what is left open from the MonoCode port, migration notes
@@ -30,7 +32,6 @@ bencode/
 ├── site/                     the landing page (GitHub Pages)
 ├── reference/monocode        symlink to the MonoCode source (git-ignored)
 ├── tests/fixtures/           recorded CLI output for parser tests
-├── vendor/gpui-pre-apple/    GPUI's Metal renderer, 0.3.8 plus MonoCode's backdrop blur (its NOTICE says what changed)
 └── src/
     ├── main.rs               window, theme, keymap, root view
     ├── app.rs                BenCodeApp: the one app entity and its state
@@ -164,7 +165,7 @@ bencode/
 
 | MonoCode (`reference/monocode/src/...`) | BenCode (`src/...`) | Notes |
 | :--- | :--- | :--- |
-| `features/sessions/ui/Transcript.tsx`, `AgentMarkdown.tsx` | `ui/transcript/` | Turns, tool calls, reasoning, find. Markdown: a closed `mermaid` fence draws through Ely's `Diagram`; BenCode's own: a `$$…$$` paragraph or `math` fence through Ely's `Latex` (inline `$` stays text) |
+| `features/sessions/ui/Transcript.tsx`, `AgentMarkdown.tsx` | `ui/transcript/` | Turns, tool calls, reasoning, find. Markdown: a closed `mermaid` fence draws through bencode-ui's `Diagram`; BenCode's own: a `$$…$$` paragraph or `math` fence through Ely's `Latex` (inline `$` stays text) |
 | `features/sessions/ui/Composer.tsx` | `ui/composer/` | Model, permission and branch pickers, `@` mentions, `/` skills, attachments, handoff, questions |
 | `features/files/ui/FileTree.tsx` | `ui/file_tree/` | Explorer with create, rename, copy, cut, paste, delete, git tints |
 | `features/files/ui/FileEditor.tsx` | `ui/editor_pane/` | One `CodeEditor` per file, atomic saves, disk-conflict handling; markdown opens as Preview or Source (`fileViewMode`), frontmatter folded into Properties |
@@ -172,7 +173,7 @@ bencode/
 | `features/source-control/ui/GitChangesPanel.tsx`, `GitHistoryGraph` | `ui/git_changes_panel/`, `app/source_control.rs`, `git/` | Staged / unstaged, commit, sync, PR, graph. BenCode's own: a commit's menu in the graph (Undo Last Commit, Revert Commit, Copy Commit ID / Message) |
 | `features/source-control/ui/UnifiedDiffView.tsx`, `model/unifiedDiff.ts` | `ui/diff_viewer.rs`, `ui/diff_model.rs`, `git/diffs.rs` | Stacked files, sticky headers, folds, stage / discard, syntax colours (Ely's one lexer for every language, a line at a time: no block comments). BenCode's own: the review side by side, where MonoCode has its `@codemirror/merge` editor diff |
 | `sessions/ui/SessionReview.tsx`, `sessions/model/checkpoint.ts`, `source-control/ui/SessionChangesDiff.tsx` | `ui/transcript/review_card.rs`, `app/session_review.rs`, `git/checkpoint.rs` | "Changed N files" card with Undo / Keep / Review |
-| `features/terminal/` | `ui/terminal_pane/`, `pty_host/` | Ely terminal, one dock per project. BenCode's own: terminals side by side (a tab dragged onto a terminal's edge), and shells that outlive an update's restart or a crash (the terminal host; ⌘Q ends them) |
+| `features/terminal/` | `ui/terminal_pane/`, `pty_host/` | bencode-ui's terminal, one dock per project. BenCode's own: terminals side by side (a tab dragged onto a terminal's edge), and shells that outlive an update's restart or a crash (the terminal host; ⌘Q ends them) |
 | `features/notes/` | `ui/notes/`, `app/notes.rs`, `db/mod.rs` | Cards, tags, project, Preview / Source, dropped images, autosave, Add to chat. Source has no line numbers |
 | `features/automations/` | `ui/automations/`, `app/automations.rs`, `app/automation_runs.rs`, `schedule.rs`, `db/schedule.rs` | Templates, time triggers, session settings, run history, 30s scheduler. No event triggers |
 | `features/inbox/` | `ui/inbox_view*`, `github.rs`, `work_items.rs` | GitHub issues and PRs, checks, CI repair, comments; a PR's Files changed (`gh pr diff` in `ui/diff_viewer.rs`'s review, hunks only: no Full file mode) |
@@ -193,7 +194,7 @@ bencode/
 | `app/shell/UsageFooter.tsx`, `UsageProviderChip.tsx`, `providers/model/rateLimits*.ts`, `src-tauri/src/rate_limits.rs` | `ui/status/`, `app/usage.rs`, `rate_limits/` | 5h / weekly / monthly usage per account, at the navigator's foot; HTTP through `curl` |
 | `providers/model/providerAccounts.ts`, `accountUsage.ts`, `harness/core/auth.ts`, `src-tauri/src/account_identity.rs` | `harness/accounts.rs`, `harness/login.rs`, `harness/account_identity.rs`, `app/accounts.rs` | Account profiles in BenCode's own `provider-accounts`; the list is in `settings.json`. BenCode's own: a thread's usage-limit tab offers another account (`switch_usage_limit_account`); a Claude session's files are copied into the new profile and the same session resumes (`carry_session_to_account`, `harness/claude/session_files.rs`), else a Handoff recap starts a new one |
 | the user's `agy-save` / `agy-switch` scripts | `harness/agy_accounts.rs`, `app/agy_accounts.rs`, `ui/settings_agy_accounts.rs`, `keychain.rs` | Antigravity accounts. BenCode's own; one sign-in for the whole machine, not one per thread |
-| `shared/ui/` (buttons, dialogs) | Ely components directly | No local component library |
+| `shared/ui/` (buttons, dialogs) | `crates/bencode-ui` | The components, adapted from Ely |
 | `integrations/harness/` | `harness/` | Argv builders and stdout parsers |
 | `integrations/harness/providers/grok/` | `harness/grok.rs` | Grok Build over ACP, one `grok agent stdio` per turn; `/compact` through `_x.ai/compact_conversation`. BenCode's own: follow-ups go into the running turn (`_x.ai/interject`), where MonoCode queues them, and the context meter reads the count Grok stamps on its updates |
 | `harness/providers/claude/claude.ts` (`handleAgentLifecycle`, `noteSubagent*`), `sessions/ui/AgentTranscript.tsx` `SubagentPanel`, `transcriptActivity.ts` | `harness/claude/tasks.rs`, `app/subagents.rs`, `ui/transcript/subagents.rs` | Claude's subagents and backgrounded commands: the turn stays open until they finish and Claude reports back ("· running in background" on the fold line); a run's row (mascot, name, model, steps) holds its place while the turn is live and opens onto its trail. Stop kills the process, so no `stop_task` |

@@ -155,7 +155,7 @@ BenCode drives the agent CLIs over stdio and reads the JSON stream they print.
 
 |  |  |
 | :--- | :--- |
-| **No browser engine** | Rust and Zed's [GPUI](https://www.gpui.rs/) with [Ely GPUI Components](https://elygpui.com/). No Electron, no Chromium, no WebKit; Metal draws everything. |
+| **No browser engine** | Rust and Zed's [GPUI](https://www.gpui.rs/) with BenCode's own components (`crates/bencode-ui`, adapted from [Ely GPUI Components](https://elygpui.com/)). No Electron, no Chromium, no WebKit; Metal draws everything. |
 | **Fast and small** | The targets are a sub-50ms start and about 30MB of RAM. |
 | **Local-first** | Threads, notes, checkpoints and account profiles stay on your Mac, in BenCode's own folder. |
 | **No extra cost** | BenCode adds no API keys and no tokens. It runs the CLIs you are already signed in to. |
@@ -311,8 +311,8 @@ A few core principles:
   (`self.workspace`).
 - **Tokio is for harness processes only** (`src/harness/runtime.rs`); GPUI's
   executor has no Tokio reactor.
-- **Use Ely's components** instead of hand-rolling them; colours come from
-  `cx.theme().colors`.
+- **Use `bencode-ui`'s components** (`crates/bencode-ui`) instead of
+  hand-rolling them; colours come from `cx.theme().colors`.
 - **Preserve data BenCode does not understand** when writing to the database:
   rows copied from MonoCode carry columns BenCode does not use yet.
 
@@ -320,7 +320,7 @@ A few core principles:
 | :--- | :--- |
 | Language | Rust (2024 edition) |
 | UI | Zed's [GPUI](https://www.gpui.rs/) |
-| Components | [Ely GPUI Components](https://github.com/Benitdev/Ely-GPUI-Components) |
+| Components | `crates/bencode-ui`, adapted from [Ely GPUI Components](https://github.com/Benitdev/Ely-GPUI-Components) |
 | Database | SQLite via `rusqlite` (bundled) |
 | Agent processes | Tokio |
 | Time, hashing, JSON | `jiff`, `sha2`, `serde_json` |

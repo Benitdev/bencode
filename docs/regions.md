@@ -76,7 +76,7 @@ the shell or the floating chat paints itself.
 | Cards' ages (30s) | the navigator and the icon rail |
 | A title's sweep ending | the navigator (`Rail`) |
 | The Inbox poll with nothing new (30s) | nothing |
-| Any view a region draws (input, editor, terminal, Ely animation, scrollbar fade, markdown reveal) | that region |
+| Any view a region draws (input, editor, terminal, bencode-ui animation, scrollbar fade, markdown reveal) | that region |
 | Hovering (GPUI notifies the view under the pointer) | that region |
 
 The other background loops (git poll, project stats, reminders every 5s,

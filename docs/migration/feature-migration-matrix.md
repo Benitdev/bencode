@@ -104,8 +104,8 @@ MonoCode paths are relative to `reference/monocode/src`, BenCode paths to `src`.
    `CREATE TABLE IF NOT EXISTS` and optional columns; keep unknown JSON fields.
 2. **Port behaviour before pixels, then pixels.** Read the MonoCode model
    (`model/*.ts`) first and port it as pure, tested Rust; then build the view.
-3. **Check Ely before hand-rolling.** See
-   [`ely-gpui-components.md`](ely-gpui-components.md).
+3. **Check `crates/bencode-ui` before hand-rolling.** It holds the
+   components BenCode adapted from Ely ([`ely-removal.md`](ely-removal.md)).
 4. **Stay off the UI thread.** No disk reads, git commands or database access
    in `render` or in event callbacks.
 5. **Name the source.** Start each module with a doc comment naming the

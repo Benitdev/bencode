@@ -12,7 +12,8 @@ A native, GPU-drawn control plane for coding-agent CLIs (Claude Code,
 Antigravity, Codex, Grok Build, OpenCode): it starts them, streams them
 into transcripts, and keeps files, git, terminal, browser, notes,
 automations and inbox in one window. Rust, [GPUI](https://www.gpui.rs/)
-(crates.io's `gpui-pre`, at the snapshot Ely pins) and
+(crates.io's `gpui-pre` 0.3.8, its Metal renderer vendored) and
+`bencode-ui`, BenCode's own components, adapted from
 [Ely GPUI Components](https://git.zacharyzhang.com/ZacharyZhang-NY/Ely-GPUI-Components).
 It began as a port of MonoCode (Tauri + React); MonoCode is now a
 reference, not the spec.
@@ -53,6 +54,11 @@ schema, transcript block roles, the checkpoint manifest format, and
   index, search, the Explorer's disk ops, `remote/` paths and protocol).
   Never links GPUI.
 - `crates/bencode-host`: the daemon on a remote machine.
+- `crates/bencode-ui`: the components (buttons, inputs, dialogs, menus,
+  the code editor, the terminal…), the theme and the icons; adapted from
+  Ely, keeping only what the app reaches. Knows nothing of the app.
+- `vendor/gpui-pre-apple`: GPUI's Metal renderer with the backdrop blur
+  (its `NOTICE` says what changed).
 - `src/app.rs`: `BenCodeApp`, the app's state; `src/app/`: its logic by
   concern, no rendering. `src/ui/`: every view. The rest of `src/` is
   subsystems (git, db, remote, browser, pty host, monos, …).
@@ -64,7 +70,7 @@ schema, transcript block roles, the checkpoint manifest format, and
 
 `BenCodeApp` holds the app's state. `ui/` modules add
 `impl BenCodeApp { fn render_…() }` and read `self`; text inputs, editors
-and terminals are Ely entities stored on it. The app's own `render` is the
+and terminals are `bencode-ui` entities stored on it. The app's own `render` is the
 **shell**: the window's layout, menus, notices and dialogs. It is drawn
 uncached under `WindowRoot`, beside `RunnerLayer`.
 
@@ -161,13 +167,22 @@ thread into the `workspace_state` model, which views only read.
 
 ## 5. UI rules
 
-Ely is the source of truth for components
-(`~/.cargo/git/checkouts/Ely-GPUI-Components-*/<rev>/src/`, the rev
-`Cargo.lock` pins; other `ely-gpui-components-*` checkouts are stale; gallery in
-`examples/gallery/pages/`); read its own `AGENTS.md` rules before adding UI.
+`crates/bencode-ui` is the source of truth for components; it is
+BenCode's code, changed like the app's.
 
-- **Ely components first**; hand-roll only layout and BenCode's own look.
-  No local button, modal or tab widgets. A list row is `ui::rows::ListRow`.
+- **`bencode-ui` components first**; hand-roll only layout and BenCode's
+  own look. No local button, modal or tab widgets. A list row is
+  `ui::rows::ListRow`. A component it lacks is written there (or taken
+  from Ely at rev `0c7b0a8`, its `NOTICE`), not in `src/ui/`.
+- **`bencode-ui` keeps only what the app reaches**: what the app stops
+  using leaves the crate (`scripts/ui-closure.py` lists the files the app
+  reaches; for items, build it as a module of the app and let rustc's
+  dead-code lint answer, `docs/migration/ely-removal.md`).
+- **Popups and dialogs are frosted glass**: a card's first child is
+  `primitives::frost::popover` (menus, lists, popovers, notices) or
+  `frost::dialog` (dialog cards), the app's `ui::frost` at BenCode's
+  lengths. It blurs only in the dark theme on macOS; a card that is not
+  a popup or a dialog takes no frost (each costs a blur pass per frame).
 - **Tokens, never literals**: ink, fills, type sizes and states from
   `ui/tokens.rs` (`fg.ink(Ink::Muted)`, `Text::Sm.px()`,
   `Status::Attention.color(fg)`); colours from `cx.theme().colors`
@@ -178,7 +193,9 @@ Ely is the source of truth for components
   number through `scale::logical(..)`.
 - An image drawn smaller than its file goes through `ui/thumbnail.rs`,
   not `img(path)`.
-- Icons: Ely's `IconName`, else `assets/icons/` + `ui/icons.rs::ExtraIcon`;
+- Icons: `bencode_ui::primitives::IconName` (Lucide; a new one adds its
+  SVG to `crates/bencode-ui/assets/icons`), else `assets/icons/` +
+  `ui/icons.rs::ExtraIcon`;
   file names take `file_tree::resolve_entry_icon(..)`.
 - **Callbacks**: `cx.listener(..)` for `Fn(&T, &mut Window, &mut App)`;
   `ui::app_callback::app_callback` for `Fn(&mut Window, &mut App)`; other
@@ -204,8 +221,8 @@ Ely is the source of truth for components
 
 - **A change without a redraw does not show**: notify the app, or redraw
   the regions that show it (§4).
-- **Animation**: `with_animation`, Ely's `Spinner` and `ShimmerText` notify
-  the view they are in every frame; a one-shot transition is fine. Anything
+- **Animation**: `with_animation` and `bencode-ui`'s `Spinner` notify the
+  view they are in every frame; a one-shot transition is fine. Anything
   that loops while agents run is a busy mark (`ui/spinner.rs`,
   `ui/marks.rs`), stepped by the app's clock (`start_clock`) on the mark
   layer. Idle Mono mascots wake the clock only while drawn
@@ -252,7 +269,7 @@ Ely is the source of truth for components
   turn ends. Its files live in the data folder (`monos/<id>/`); every save
   names the hash it was made over; memory edits go through
   `monos/memory.rs`.
-- Its settings dialog is an Ely layer: what opens inside is raised, never
+- Its settings dialog is a `bencode-ui` layer: what opens inside is raised, never
   `deferred`. The floating chat is a second window (`ui/mono_float/`) that
   owns no conversation state and binds the commands it answers.
 
@@ -315,8 +332,8 @@ Ely is the source of truth for components
 ## 8. Workflow
 
 **Building a feature**: check it against the principles, read MonoCode's
-version, model data as Serde structs with pure logic under test, pick Ely
-components, add the view, wire state and persistence, verify.
+version, model data as Serde structs with pure logic under test, pick
+`bencode-ui` components, add the view, wire state and persistence, verify.
 
 **Verifying**
 
@@ -352,6 +369,10 @@ HOME="${B%/Library/*}" BENCODE_FRAME_BENCH=1 target/release/bencode
   `BENCODE_FRAME_BENCH_CASE=word` runs matching cases;
   `BENCODE_FRAME_BENCH_FLINGS=50` repeats the scroll flings. A layout
   change also checks that rows' bounds did not move.
+  To compare binaries, copy the data once and run them alternately on
+  that copy, each at least twice: the bench draws the copy's longest
+  thread, which grows while you work, and some cases swing between a
+  fast and a slow mode from run to run.
 - **Launch cost** is measured with `BENCODE_STARTUP_TRACE=1` and
   `scripts/startup-bench.py --runs 12 before/bencode target/release/bencode`
   (`--heavy` for a long history). Launch work runs off the main thread or
