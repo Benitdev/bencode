@@ -185,7 +185,7 @@ impl BenCodeApp {
             ConfirmDialog::new(
                 "remove-project",
                 format!("Delete “{}”?", removing.name),
-                // Broken by hand: Ely's dialog does not wrap its message.
+                // Broken by hand: bencode-ui's dialog does not wrap its message.
                 format!(
                     "All conversations for this project will be deleted.\n\
                      It also leaves the sidebar. The folder on disk stays put,\n\

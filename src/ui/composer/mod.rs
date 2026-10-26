@@ -182,8 +182,8 @@ fn git_trigger(
     git_label(id, icon, label, Some(enabled), open, cx)
 }
 
-/// A trigger's glyph: an Ely icon, or MonoCode's worktree folder (which
-/// Ely does not ship).
+/// A trigger's glyph: a bencode-ui icon, or MonoCode's worktree folder (which
+/// bencode-ui does not ship).
 #[derive(Clone, Copy)]
 enum TriggerIcon {
     Named(IconName),
@@ -403,7 +403,7 @@ impl BenCodeApp {
     }
 
     /// The prompt in its scroll box, `max_height` tall at most, with its
-    /// bar: Ely's field takes no wheel (`ui/caret_follow.rs`).
+    /// bar: bencode-ui's field takes no wheel (`ui/caret_follow.rs`).
     pub(crate) fn render_prompt_field(&self, id: &'static str, max_height: Pixels) -> AnyElement {
         let scroll = &self.prompt_scroll.scroll;
         div()

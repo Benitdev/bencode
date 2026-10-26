@@ -43,16 +43,16 @@ const RED_500: u32 = 0xef4444;
 
 type Anchor = Rc<Cell<Option<Bounds<Pixels>>>>;
 
-/// A menu row's glyph: Ely's, or a Lucide one Ely lacks.
+/// A menu row's glyph: one of bencode-ui's icons, or one of BenCode's own.
 #[derive(Clone, Copy)]
 pub(super) enum RowIcon {
-    Ely(IconName),
+    Ui(IconName),
     Extra(ExtraIcon),
 }
 
 impl From<IconName> for RowIcon {
     fn from(icon: IconName) -> Self {
-        Self::Ely(icon)
+        Self::Ui(icon)
     }
 }
 
@@ -66,7 +66,7 @@ impl RowIcon {
     /// `size-3.5` in `color`.
     fn render(self, color: Hsla) -> AnyElement {
         match self {
-            Self::Ely(icon) => Icon::new(icon)
+            Self::Ui(icon) => Icon::new(icon)
                 .size(IconSize::Sm)
                 .color(color)
                 .into_any_element(),

@@ -1,5 +1,5 @@
-//! Lucide icons MonoCode uses that Ely does not ship. [`Assets`] serves
-//! their embedded SVGs beside Ely's own, so [`ExtraIcon::icon`] is an Ely
+//! Lucide icons MonoCode uses that bencode-ui does not ship. [`Assets`] serves
+//! their embedded SVGs beside bencode-ui's own, so [`ExtraIcon::icon`] is a bencode-ui
 //! `Icon` with the theme's sizes, colours and hover.
 
 use std::borrow::Cow;
@@ -17,7 +17,7 @@ macro_rules! extra_icons {
         impl ExtraIcon {
             const ALL: &[ExtraIcon] = &[$(ExtraIcon::$variant,)*];
 
-            /// Where [`Assets`] serves it, clear of Ely's `icons/`.
+            /// Where [`Assets`] serves it, clear of bencode-ui's `icons/`.
             fn path(self) -> &'static str {
                 match self {
                     $(Self::$variant => concat!("bencode/icons/", $file, ".svg"),)*
@@ -68,7 +68,7 @@ impl ExtraIcon {
     }
 }
 
-/// Ely's assets plus BenCode's icons. Pass to `Application::with_assets`.
+/// bencode-ui's assets plus BenCode's icons. Pass to `Application::with_assets`.
 pub struct Assets;
 
 impl AssetSource for Assets {

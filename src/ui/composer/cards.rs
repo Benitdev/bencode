@@ -117,7 +117,7 @@ pub fn card_frame(id: &str, on_dismiss: Option<OnRemove>, cx: &Context<BenCodeAp
         })
 }
 
-/// A card's leading icon: Ely's, or one Ely lacks.
+/// A card's leading icon: bencode-ui's, or one bencode-ui lacks.
 pub enum CardIcon {
     Named(IconName),
     Extra(crate::ui::icons::ExtraIcon),

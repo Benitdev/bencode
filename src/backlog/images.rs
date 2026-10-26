@@ -1,6 +1,6 @@
 //! Pictures in a Backlog issue. Its Markdown names an attached file by
 //! name (`![image][shot.png]`, or `#image(shot.png)` in Backlog's own
-//! notation), which only the API fetches, with the key; Ely draws only
+//! notation), which only the API fetches, with the key; bencode-ui draws only
 //! pictures on disk. Each is saved once under the data folder
 //! (`backlog-attachments/<issue>/`) and the Markdown points at the copy.
 

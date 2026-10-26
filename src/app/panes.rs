@@ -303,7 +303,7 @@ impl BenCodeApp {
     }
 
     /// Stores the shares reported by a split's resize handle. No notify:
-    /// the Ely `SplitPane` already redraws while dragging.
+    /// the bencode-ui `SplitPane` already redraws while dragging.
     pub fn resize_split(&mut self, split_id: &str, shares: &[f32]) {
         self.tabs.resize(split_id, shares);
     }

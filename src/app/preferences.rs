@@ -681,7 +681,7 @@ impl BenCodeApp {
         );
     }
 
-    /// Sizes the window's rem for the interface scale, for Ely's components
+    /// Sizes the window's rem for the interface scale, for bencode-ui's components
     /// (the views' own lengths go through `ui::scale::px`).
     pub fn apply_ui_scale(&self, window: &mut gpui::Window) {
         let rem = crate::ui::scale::px(appearance::REM);

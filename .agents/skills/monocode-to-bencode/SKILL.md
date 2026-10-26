@@ -1,11 +1,11 @@
 ---
 name: monocode-to-bencode
-description: Guide and runbook for migrating MonoCode (Tauri + React 19) features to BenCode (Rust + GPUI + Ely-GPUI). Use when porting UI components, SQLite data models, agent CLI harnesses, or state machines.
+description: Guide and runbook for migrating MonoCode (Tauri + React 19) features to BenCode (Rust + GPUI + bencode-ui). Use when porting UI components, SQLite data models, agent CLI harnesses, or state machines.
 ---
 
 # MonoCode to BenCode Migration Runbook ⚡
 
-This skill guides you through migrating features from **MonoCode** to **BenCode** using **Rust**, **Zed GPUI**, and **Ely GPUI Components**.
+This skill guides you through migrating features from **MonoCode** to **BenCode** using **Rust**, **Zed GPUI**, and **bencode-ui** (`crates/bencode-ui`).
 
 ---
 
@@ -40,15 +40,15 @@ This skill guides you through migrating features from **MonoCode** to **BenCode*
    - Prepare statements or execute queries with `params![]`.
    - Map rows safely with `.optional()`.
 
-### Step 3: UI View Construction with GPUI & Ely
+### Step 3: UI View Construction with GPUI & bencode-ui
 1. Check how the component looks in MonoCode.
-2. Select appropriate Ely components:
-   - Buttons: `MonoButton` (wrapper around Ely style) or `ely_gpui_component::buttons`
-   - Text Inputs: `ely_gpui_component::forms::TextInput`
-   - Icons: `ely_gpui_component::primitives::{Icon, IconName}`
-   - Navigation: `ely_gpui_component::navigation` or `ui/rail.rs`
-   - Terminal: `ely_gpui_component::terminal::{Launch, Terminal}`
-   - Modals & Overlays: `ely_gpui_component::overlays`
+2. Select appropriate bencode-ui components:
+   - Buttons: `MonoButton` (wrapper around bencode-ui style) or `bencode_ui::buttons`
+   - Text Inputs: `bencode_ui::forms::TextInput`
+   - Icons: `bencode_ui::primitives::{Icon, IconName}`
+   - Navigation: `bencode_ui::navigation` or `ui/rail.rs`
+   - Terminal: `bencode_ui::terminal::{Launch, Terminal}`
+   - Modals & Overlays: `bencode_ui::overlays`
 3. Implement `gpui::Render` or `gpui::RenderOnce` for the view struct.
 4. Chaining layout:
    ```rust
@@ -68,11 +68,11 @@ This skill guides you through migrating features from **MonoCode** to **BenCode*
 
 ---
 
-## 3. Ely GPUI Component Cheatsheet
+## 3. bencode-ui Component Cheatsheet
 
 ### 1. Icons
 ```rust
-use ely_gpui_component::primitives::{Icon, IconName};
+use bencode_ui::primitives::{Icon, IconName};
 
 Icon::new(IconName::Sparkles)
     .size(px(16.0))
@@ -81,7 +81,7 @@ Icon::new(IconName::Sparkles)
 
 ### 2. Text Input
 ```rust
-use ely_gpui_component::forms::{InputEvent, TextInput};
+use bencode_ui::forms::{InputEvent, TextInput};
 
 let input = cx.new(|cx| {
     TextInput::new(cx, "Search files...")
@@ -93,7 +93,7 @@ div().child(self.input.clone())
 
 ### 3. Terminal Integration
 ```rust
-use ely_gpui_component::terminal::{Launch, Terminal};
+use bencode_ui::terminal::{Launch, Terminal};
 
 let terminal = cx.new(|cx| {
     Terminal::new(

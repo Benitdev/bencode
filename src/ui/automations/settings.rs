@@ -368,7 +368,7 @@ impl BenCodeApp {
         if !draft.cwd.is_empty() && !paths.contains(&draft.cwd) {
             paths.insert(0, draft.cwd.clone());
         }
-        // Ely's `Select` takes an empty list only disabled.
+        // bencode-ui's `Select` takes an empty list only disabled.
         let no_projects = paths.is_empty();
         let projects = paths.into_iter().map(|path| {
             Choice::new(path.clone(), self.rail_project_label(&path))

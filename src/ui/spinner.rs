@@ -8,8 +8,8 @@
 //!
 //! MonoCode `TerminalSpinner` (a braille spinner, one frame every 80ms),
 //! and in place of their frame-driven forms: the rail's mascot beat
-//! (`--mascot-beat`) and pulse (`animate-pulse`, [`pulse`]), Ely's `ShimmerText` and
-//! the ring of Ely's `Spinner`.
+//! (`--mascot-beat`) and pulse (`animate-pulse`, [`pulse`]), bencode-ui's `ShimmerText` and
+//! the ring of bencode-ui's `Spinner`.
 
 use std::f32::consts::{FRAC_PI_2, TAU};
 use std::ops::Range;
@@ -32,15 +32,15 @@ pub const FRAME: Duration = Duration::from_millis(80);
 /// The clock's tick while a running thread is in view: its ring and
 /// shimmer turn smoothly where they are watched.
 pub const WATCHED_FRAME: Duration = Duration::from_millis(33);
-/// Ely `ShimmerText`'s sweep.
+/// bencode-ui `ShimmerText`'s sweep.
 const SHIMMER: Duration = Duration::from_millis(1800);
-/// Ely `Spinner`'s ring: one turn.
+/// bencode-ui `Spinner`'s ring: one turn.
 const RING: Duration = Duration::from_millis(900);
 /// Tailwind `animate-pulse`: one breath.
 const PULSE: Duration = Duration::from_secs(2);
-/// Where a still ring rests in its turn (Ely `STILL`).
+/// Where a still ring rests in its turn (bencode-ui `STILL`).
 const RING_STILL: f32 = 0.3;
-/// Segments in a drawn arc (Ely `ARC`).
+/// Segments in a drawn arc (bencode-ui `ARC`).
 const ARC: usize = 32;
 
 /// One start for every spinner, so they turn together.
@@ -102,7 +102,7 @@ fn cycle_at(elapsed: Duration, period: Duration) -> f32 {
     (elapsed.as_millis() % period) as f32 / period as f32
 }
 
-/// Motion held still: the system's reduced motion, or Ely's.
+/// Motion held still: the system's reduced motion, or bencode-ui's.
 pub fn still(cx: &App) -> bool {
     cx.reduce_motion() || cx.theme().reduced_motion
 }
@@ -168,7 +168,7 @@ fn pulse_at(t: f32) -> f32 {
     (t * TAU).cos() * 0.25 + 0.75
 }
 
-/// Ely `ShimmerText`: a band of light sweeping `text` while it waits, a
+/// bencode-ui `ShimmerText`: a band of light sweeping `text` while it waits, a
 /// busy mark (`ui/marks.rs`).
 pub fn shimmer(text: impl Into<gpui::SharedString>, cx: &App) -> AnyElement {
     let text = text.into();
@@ -252,7 +252,7 @@ fn shimmer_runs(text: &str, band: f32, ink: impl Fn(f32) -> Hsla) -> Vec<(Range<
         .collect()
 }
 
-/// Ely `Spinner`'s ring at `size` in muted ink: an arc running around a
+/// bencode-ui `Spinner`'s ring at `size` in muted ink: an arc running around a
 /// faint circle; a busy mark (`ui/marks.rs`).
 pub fn ring(size: IconSize, cx: &App) -> AnyElement {
     crate::ui::marks::mark(move |cx| ring_now(size, cx), cx)
@@ -275,14 +275,14 @@ fn ring_now(size: IconSize, cx: &App) -> AnyElement {
         .into_any_element()
 }
 
-/// Ely `paint` for `SpinnerStyle::Ring` at `t` in its turn.
+/// bencode-ui `paint` for `SpinnerStyle::Ring` at `t` in its turn.
 fn paint_ring(bounds: Bounds<Pixels>, t: f32, color: Hsla, window: &mut Window) {
     let side = bounds.size.width.min(bounds.size.height);
     let center = bounds.center();
     let stroke = side / 8.0;
     let radius = side / 2.0 - stroke;
     arc(center, radius, 0.0, TAU, stroke, color.opacity(0.2), window);
-    // Ely `bump(t, 0)`: the arc grows and shrinks once a turn.
+    // bencode-ui `bump(t, 0)`: the arc grows and shrinks once a turn.
     let sweep = TAU * (0.2 + 0.3 * (0.5 - 0.5 * (TAU * t).cos()));
     arc(
         center,
@@ -295,7 +295,7 @@ fn paint_ring(bounds: Bounds<Pixels>, t: f32, color: Hsla, window: &mut Window) 
     );
 }
 
-/// Ely `arc`.
+/// bencode-ui `arc`.
 fn arc(
     center: Point<Pixels>,
     radius: Pixels,

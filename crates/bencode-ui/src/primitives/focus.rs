@@ -6,7 +6,7 @@ use gpui::{
 
 use crate::theme::ActiveTheme;
 
-actions!(ely, [FocusNext, FocusPrev]);
+actions!(bencode_ui, [FocusNext, FocusPrev]);
 
 /// The key context of every `FocusScope`; Tab and Shift-Tab bind under it.
 pub(crate) const CONTEXT: &str = "ElyFocus";

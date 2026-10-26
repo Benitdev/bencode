@@ -154,7 +154,7 @@ mod tests {
 
     #[test]
     fn matching_finds_every_case_insensitive_hit() {
-        let found = Highlight::matching("Ely, ely, ELY and élan", "ely");
+        let found = Highlight::matching("Ben, ben, BEN and bénit", "ben");
         assert_eq!(found.ranges, [0..3, 5..8, 10..13]);
         let none = Highlight::matching("abc", "");
         assert!(none.ranges.is_empty());

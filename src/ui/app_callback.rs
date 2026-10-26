@@ -1,4 +1,4 @@
-//! Adapts a `BenCodeApp` method to Ely's `Fn(&mut Window, &mut App)` callbacks.
+//! Adapts a `BenCodeApp` method to bencode-ui's `Fn(&mut Window, &mut App)` callbacks.
 
 use gpui::{App, Context, Window};
 
@@ -12,7 +12,7 @@ pub fn app_callback(
     move |window, cx| listener(&(), window, cx)
 }
 
-/// `app_callback` for Ely callbacks that hand over a value first, e.g.
+/// `app_callback` for bencode-ui callbacks that hand over a value first, e.g.
 /// `Fn(Hsla, &mut Window, &mut App)`.
 pub fn app_callback_with<T: 'static>(
     cx: &Context<BenCodeApp>,

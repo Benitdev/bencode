@@ -62,7 +62,7 @@ static IMAGES: LazyLock<Mutex<HashMap<&'static str, Arc<Image>>>> =
 pub struct EntryIcon(&'static str);
 
 impl EntryIcon {
-    /// The element, at one of Ely's icon sizes.
+    /// The element, at one of bencode-ui's icon sizes.
     pub fn size(self, size: IconSize) -> EntryIconView {
         EntryIconView { icon: self, size }
     }

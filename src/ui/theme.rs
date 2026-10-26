@@ -1,5 +1,5 @@
-//! MonoCode's look expressed as Ely palettes. Views read colours from
-//! `cx.theme().colors` like every Ely component, so light/dark and Ely's
+//! MonoCode's look expressed as bencode-ui palettes. Views read colours from
+//! `cx.theme().colors` like every bencode-ui component, so light/dark and bencode-ui's
 //! own widgets stay consistent.
 
 use bencode_ui::theme::{ActiveTheme, Mode, Palette, Theme};
@@ -51,7 +51,7 @@ fn monocode_dark(tint: &ThemeTint) -> Palette {
     p.bg = bg;
     p.surface = ink(0.04);
     p.sunken = mix(bg, gpui::black(), 0.22);
-    // Ely's popups (select lists, menus) on BenCode's popover glass, and
+    // bencode-ui's popups (select lists, menus) on BenCode's popover glass, and
     // their hover as BenCode's `Fill::Hover` over it: at the surface's 4%
     // with a 5% hover the hovered row could not be told apart.
     p.overlay = ink(0.02);
@@ -79,7 +79,7 @@ fn monocode_dark(tint: &ThemeTint) -> Palette {
     p.info_subtle = a(0x38bdf826);
     p.glass = bg.opacity(0.85);
     // Under the window's glass (dark mode, `ui/glass.rs`) a dialog's scrim
-    // lies over the tint: Ely's black at 50% leaves the blurred desktop
+    // lies over the tint: bencode-ui's black at 50% leaves the blurred desktop
     // 7.5% of the pixel and the window reads as opaque. A lighter scrim
     // keeps the glass showing around the dialog.
     if crate::ui::glass::SUPPORTED {

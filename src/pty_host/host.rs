@@ -1,5 +1,5 @@
 //! `bencode --pty-host`: holds the dock's shells. Each session is a PTY,
-//! the shell on it (started as Alacritty starts it, which is what Ely's
+//! the shell on it (started as Alacritty starts it, which is what bencode-ui's
 //! terminal did before), its screen for showing it again (`screen.rs`),
 //! and the one client showing it now. The host leaves once nothing has
 //! run and nobody has been attached for a while.
@@ -508,7 +508,7 @@ impl ShellUser {
     }
 }
 
-/// Alacritty's `default_shell_command`, as Ely's terminal ran it: on macOS
+/// Alacritty's `default_shell_command`, as bencode-ui's terminal ran it: on macOS
 /// `login`, so the shell is a login shell on its own tty session.
 #[cfg(target_os = "macos")]
 fn shell_command(user: &ShellUser) -> Command {

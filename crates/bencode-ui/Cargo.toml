@@ -9,7 +9,7 @@ publish = false
 [features]
 default = ["runtime_shaders"]
 # Shaders compiled when the window opens: building them ahead needs Xcode's
-# `metal`, which the Command Line Tools lack (as Ely did).
+# `metal`, which the Command Line Tools lack.
 runtime_shaders = ["gpui_platform/runtime_shaders"]
 
 [dependencies]

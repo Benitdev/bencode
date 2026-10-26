@@ -377,7 +377,7 @@ impl TextInput {
 impl Render for TextInput {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
-            .id("ely-text-input")
+            .id("text-input")
             .role(Role::TextInput)
             .when_some(
                 [&self.label, &self.placeholder]

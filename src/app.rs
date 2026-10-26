@@ -449,7 +449,7 @@ pub struct BenCodeApp {
     /// The "New branch name" field of `worktree_creation`.
     pub worktree_branch_input: Entity<TextInput>,
     pub rename_input: Entity<TextInput>,
-    /// Root focus scope; Ely overlays hand focus back to it.
+    /// Root focus scope; bencode-ui overlays hand focus back to it.
     pub focus_handle: gpui::FocusHandle,
     // Agent execution
     /// The running turn of each thread that has one, keyed by session id.

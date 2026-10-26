@@ -1,5 +1,5 @@
 //! One browser tab's native view: a WKWebView through wry, in a box of its
-//! own in the window's view (`container.rs`; Ely's `WebView` only shows an
+//! own in the window's view (`container.rs`; bencode-ui's `WebView` only shows an
 //! address, this one navigates, runs scripts and takes snapshots). What the
 //! page does comes back as `PageEvent`s on the app's channel, tagged with
 //! the tab's id.

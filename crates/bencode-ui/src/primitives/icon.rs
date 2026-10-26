@@ -9,7 +9,7 @@ use crate::theme::{ActiveTheme, IconSize};
 
 macro_rules! icons {
     ($($variant:ident => $file:literal,)*) => {
-        /// Lucide icons bundled with Ely.
+        /// Lucide icons bundled with bencode-ui.
         #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
         pub enum IconName {
             $($variant,)*
@@ -259,11 +259,11 @@ fn found(source: &dyn AssetSource, path: &str) -> bool {
     match source.load(path) {
         Ok(Some(_)) => true,
         Ok(None) => {
-            log::error!("ely: icon {path} is not in the app's asset source");
+            log::error!("bencode-ui: icon {path} is not in the app's asset source");
             false
         }
         Err(error) => {
-            log::error!("ely: icon {path} failed to load: {error:#}");
+            log::error!("bencode-ui: icon {path} failed to load: {error:#}");
             false
         }
     }

@@ -752,7 +752,7 @@ impl Painted {
 }
 
 /// An element that answers its own press (a card header, a copy button,
-/// a chip): a drag that starts on it selects no text. Ely's buttons and
+/// a chip): a drag that starts on it selects no text. bencode-ui's buttons and
 /// focusable elements already mark their presses so.
 pub trait OwnsPress: InteractiveElement + Sized {
     fn owns_press(self) -> Self {

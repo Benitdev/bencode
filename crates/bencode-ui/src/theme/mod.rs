@@ -118,14 +118,14 @@ impl Theme {
         cx.refresh_windows();
     }
 
-    /// The owner's palette for `mode`, as an edited or imported theme gives, or none to bring Ely's back. The colors fade to it when `mode` shows. High contrast and color-blind safe charts change Ely's own palettes alone.
+    /// The owner's palette for `mode`, as an edited or imported theme gives, or none to bring the built-in one back. The colors fade to it when `mode` shows. High contrast and color-blind safe charts change the built-in palettes alone.
     pub fn set_palette(mode: Mode, palette: Option<Palette>, cx: &mut App) {
         log::info!(
             "theme: {mode:?} palette -> {}",
             if palette.is_some() {
                 "the owner's"
             } else {
-                "Ely's"
+                "the built-in one"
             }
         );
         cx.global_mut::<Theme>().custom[mode as usize] = palette;

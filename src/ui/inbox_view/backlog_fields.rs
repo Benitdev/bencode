@@ -137,7 +137,7 @@ impl BenCodeApp {
             .map(|m| m.id)
             .collect();
         let entity = cx.entity().downgrade();
-        // Ely's `MultiSelect` refuses an empty list: before the options
+        // bencode-ui's `MultiSelect` refuses an empty list: before the options
         // load, or in a project without milestones, the issue's own show
         // in a closed `Select`.
         let shown = match milestones.as_slice() {

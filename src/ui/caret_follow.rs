@@ -1,4 +1,4 @@
-//! A multi-line field that scrolls in a box of its own. Ely's `TextInput`
+//! A multi-line field that scrolls in a box of its own. bencode-ui's `TextInput`
 //! scrolls only to keep its caret in view and ignores the wheel, so such a
 //! field grows to fit its text, sits in a scrolling `div` with this handle,
 //! and the box follows the caret when it moves (not while the wheel scrolls).

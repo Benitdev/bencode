@@ -61,7 +61,7 @@ impl BenCodeApp {
                 Choice::new(path.clone(), self.rail_project_label(&path)).note(pretty_path(&path))
             })
             .collect();
-        // Ely's `Select` takes an empty list only disabled.
+        // bencode-ui's `Select` takes an empty list only disabled.
         let no_projects = project_choices.is_empty();
         let picker = div().w(px(240.0)).child(
             Select::new("worktrees-project", project_choices)
@@ -270,7 +270,7 @@ impl BenCodeApp {
                 .filter(|b| !b.remote)
                 .map(|b| Choice::new(b.name.clone(), b.name.clone()))
                 .collect();
-            // Still loading, or none: Ely's `Select` takes no empty list.
+            // Still loading, or none: bencode-ui's `Select` takes no empty list.
             let none = local.is_empty();
             Select::new("create-worktree-existing", local)
                 .placeholder("Choose a branch…")

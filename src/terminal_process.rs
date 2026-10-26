@@ -1,4 +1,4 @@
-//! What runs in a dock terminal, read from the kernel: the shell Ely
+//! What runs in a dock terminal, read from the kernel: the shell bencode-ui
 //! started, the job in its foreground and the folder the shell is in.
 //! MonoCode owns its PTY and asks it (`src-tauri/src/pty.rs`
 //! `foreground_label`), and takes the folder from OSC 7; BenCode reads the

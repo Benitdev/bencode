@@ -138,7 +138,7 @@ impl BenCodeApp {
             // text-content`, `border-red-400/60` when invalid, else
             // `border-content/10` (`focus:border-content/30`; the field
             // holds focus while the dialog is open). Drawn here, not with
-            // Ely `Input`, whose frame has other metrics.
+            // bencode-ui `Input`, whose frame has other metrics.
             .child(
                 div()
                     .h(px(36.0))
@@ -151,7 +151,7 @@ impl BenCodeApp {
                     .bg(fg.fill(Fill::Hover))
                     .text_size(Text::Md.px())
                     .text_color(fg)
-                    // Like Ely `Input`: a press on the frame focuses the field.
+                    // Like bencode-ui `Input`: a press on the frame focuses the field.
                     .on_mouse_down(MouseButton::Left, {
                         let handle = gpui::Focusable::focus_handle(self.link_input.read(cx), cx);
                         move |_, window, cx| window.focus(&handle, cx)
@@ -186,7 +186,7 @@ impl BenCodeApp {
         .child(field);
         if linked {
             // MonoCode `mr-auto rounded-md px-3 py-1.5 text-red-400
-            // hover:bg-red-400/10`: red text, not Ely's filled Danger.
+            // hover:bg-red-400/10`: red text, not bencode-ui's filled Danger.
             built = built.action(move |_| {
                 div()
                     .id("link-remove")

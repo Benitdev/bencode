@@ -89,7 +89,7 @@ const SECTIONS: [(SettingsTab, &str, &str, IconName); 12] = [
         "Archive",
         IconName::Archive,
     ),
-    // MonoCode's nav uses `FolderTree`, which Ely's `IconName` lacks.
+    // MonoCode's nav uses `FolderTree`, which bencode-ui's `IconName` lacks.
     (
         SettingsTab::Worktrees,
         "worktrees",
@@ -234,7 +234,7 @@ impl BenCodeApp {
         )
         // The page's `max-w-5xl`, as with the rail open.
         .page(div().max_w(px(1024.0)).child(self.render_settings_page(cx)));
-        // Ely's layout has no insets and does not scroll: the page's
+        // bencode-ui's layout has no insets and does not scroll: the page's
         // `px-8 py-8 pb-16`, with the sections nearer the window's edge.
         let page = div()
             .id("settings-page")

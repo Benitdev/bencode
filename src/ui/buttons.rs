@@ -1,5 +1,5 @@
-//! What BenCode adds around Ely's buttons: a tooltip on a labelled
-//! `Button`, which Ely leaves to its caller.
+//! What BenCode adds around bencode-ui's buttons: a tooltip on a labelled
+//! `Button`, which bencode-ui leaves to its caller.
 
 use bencode_ui::primitives::Tooltip;
 use gpui::{Div, ElementId, IntoElement, SharedString, Stateful, div, prelude::*};

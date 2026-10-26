@@ -8,7 +8,7 @@ use crate::ui::layout::PaneEdge;
 use crate::ui::scale::px;
 use crate::ui::tokens::Text;
 
-/// Payload when dragging a split pane by its grip. The preview is an Ely
+/// Payload when dragging a split pane by its grip. The preview is a bencode-ui
 /// `DragGhost`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct DraggedPane {

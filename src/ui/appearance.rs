@@ -3,7 +3,7 @@
 //! `src/styles/index.css`): the tint every surface takes, the accent of the
 //! send button and the user's bubbles, and the diff colours.
 //!
-//! The palettes themselves are built in `ui/theme.rs`; what Ely's `Palette`
+//! The palettes themselves are built in `ui/theme.rs`; what bencode-ui's `Palette`
 //! has no room for (the user accent, the diff colours) lives in the
 //! [`AppearanceTokens`] global for views to read.
 
@@ -24,7 +24,7 @@ pub const DARK_LIGHTNESS_MIN: f32 = 0.0;
 pub const DARK_LIGHTNESS_MAX: f32 = 30.0;
 pub const DARK_LIGHTNESS_DEFAULT: f32 = 9.0;
 
-/// The rem at 100%: GPUI's and Ely's `base_rem`.
+/// The rem at 100%: GPUI's and bencode-ui's `base_rem`.
 pub const REM: f32 = 16.0;
 
 /// MonoCode `UI_SCALE_*`.
@@ -417,7 +417,7 @@ impl AppearancePrefs {
     }
 }
 
-/// What views read beyond Ely's palette.
+/// What views read beyond bencode-ui's palette.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct AppearanceTokens {
     pub diff_palette: DiffPalette,

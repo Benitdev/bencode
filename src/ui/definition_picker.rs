@@ -1,4 +1,4 @@
-//! The candidates for one name when Go to Definition finds several: Ely's
+//! The candidates for one name when Go to Definition finds several: bencode-ui's
 //! `SearchPalette`, grouped by file in rank order, each its declaring line
 //! and line number; typing narrows them, Enter opens the first.
 

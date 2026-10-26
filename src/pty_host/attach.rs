@@ -1,7 +1,7 @@
 //! `bencode --pty-attach <id> <cwd>`: what a dock tab runs. It puts its
-//! own terminal (Ely's PTY) in raw mode and relays it to session `id` on
+//! own terminal (bencode-ui's PTY) in raw mode and relays it to session `id` on
 //! the host: keys and size one way, output the other. The session's end
-//! is this process's end, which Ely shows as the tab's `[process exited]`.
+//! is this process's end, which bencode-ui shows as the tab's `[process exited]`.
 //! Its own end (the tab closed, the app gone) leaves the session running.
 
 use std::io::{self, Read, Write};

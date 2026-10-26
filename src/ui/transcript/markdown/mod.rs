@@ -4,9 +4,9 @@
 //! that open the file they name, fenced code in a rounded shell with its
 //! language or path and a copy button, and Streamdown's block spacing.
 //! A closed `mermaid` fence draws as its diagram (MonoCode `MermaidBlock`)
-//! and display math as its formula, both through Ely.
+//! and display math as its formula, both through bencode-ui.
 //!
-//! Ely's `MarkdownRenderer` paints every paragraph at full ink with fixed
+//! bencode-ui's `MarkdownRenderer` paints every paragraph at full ink with fixed
 //! gaps, so the transcript draws its own blocks from `parse`.
 
 mod parse;
@@ -73,7 +73,7 @@ const CODE_LEADING: f32 = 20.0;
 /// How long the code copy button shows its check (MonoCode: 1.5s).
 const COPIED_FOR: Duration = Duration::from_millis(1500);
 /// Graphemes a live reply reveals per second when it keeps up, and the
-/// longest a backlog takes to show (as Ely's `StreamingMarkdown`).
+/// longest a backlog takes to show (as bencode-ui's `StreamingMarkdown`).
 const PACE: f32 = 90.0;
 const CATCH_UP: Duration = Duration::from_millis(350);
 /// Graphemes at the live edge that fade in (MonoCode `word-fading`), and
@@ -890,7 +890,7 @@ impl Draw<'_> {
     }
 
     /// MonoCode `.mermaid-block` (`overflow-x-auto rounded-[10px] border
-    /// border-content/10 p-3`), the diagram centred on the ground Ely paints
+    /// border-content/10 p-3`), the diagram centred on the ground bencode-ui paints
     /// it on (`surface`, near MonoCode's `bg-content/6`); a formula
     /// centred on its own. A formula RaTeX cannot read shows as its code,
     /// as MonoCode shows a diagram Mermaid cannot draw.

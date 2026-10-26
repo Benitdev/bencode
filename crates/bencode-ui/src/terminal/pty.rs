@@ -143,7 +143,7 @@ mod tests {
     #[test]
     fn a_folder_that_cannot_be_entered_stops_the_start() {
         use std::os::unix::fs::PermissionsExt;
-        let folder = std::env::temp_dir().join(format!("ely-shut-{}", std::process::id()));
+        let folder = std::env::temp_dir().join(format!("bencode-ui-shut-{}", std::process::id()));
         std::fs::create_dir_all(&folder).expect("a temp folder");
         std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o600))
             .expect("mode 600");
@@ -157,20 +157,20 @@ mod tests {
             .expect("mode 700");
         std::fs::remove_dir(&folder).expect("the temp folder goes");
         let error = started.err().expect("a folder it cannot enter is an error");
-        assert!(error.to_string().contains("ely-shut"));
+        assert!(error.to_string().contains("bencode-ui-shut"));
     }
 
     #[test]
     fn a_missing_folder_stops_the_start() {
         let launch = Launch {
             program: Some(("/bin/sh".into(), vec!["-c".into(), "true".into()])),
-            cwd: Some("/nonexistent/ely".into()),
+            cwd: Some("/nonexistent/folder".into()),
             ..Launch::default()
         };
         let error = spawn(&launch, TermSize::new(20, 4), (8, 16))
             .err()
             .expect("a missing folder is an error");
-        assert!(error.to_string().contains("/nonexistent/ely"));
+        assert!(error.to_string().contains("/nonexistent/folder"));
     }
 
     #[test]
@@ -178,9 +178,9 @@ mod tests {
         let launch = Launch {
             program: Some((
                 "/bin/sh".into(),
-                vec!["-c".into(), "printf 'ely %s' \"$ELY\"".into()],
+                vec!["-c".into(), "printf 'shell %s' \"$PROBE\"".into()],
             )),
-            env: vec![("ELY".into(), "ok".into())],
+            env: vec![("PROBE".into(), "ok".into())],
             ..Launch::default()
         };
         let mut session = spawn(&launch, TermSize::new(20, 4), (8, 16)).expect("sh starts");
@@ -198,7 +198,7 @@ mod tests {
         assert!(status.expect("the program ended").success());
         let term = session.term.lock();
         let row = &term.grid()[Line(0)];
-        let text: String = (0..6).map(|column| row[Column(column)].c).collect();
-        assert_eq!(text, "ely ok");
+        let text: String = (0..8).map(|column| row[Column(column)].c).collect();
+        assert_eq!(text, "shell ok");
     }
 }

@@ -1,4 +1,4 @@
-//! Text composition for the terminal. Ely's `Terminal` drops the text an
+//! Text composition for the terminal. bencode-ui's `Terminal` drops the text an
 //! input method is still composing (Vietnamese Telex / VNI, Japanese,
 //! Chinese, dead keys), so macOS never sees a composition under way and
 //! nothing reaches the shell. `TerminalIme` wraps a terminal, answers the

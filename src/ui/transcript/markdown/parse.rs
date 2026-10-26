@@ -1,7 +1,7 @@
 //! Markdown as the blocks MonoCode's `AgentMarkdown` (Streamdown) draws:
 //! paragraphs, headings, quotes, lists and tasks, fenced code with its
 //! file path, tables and rules, each with its inline styles and links.
-//! Display math (`$$…$$`) becomes a `math` fence, for Ely to typeset.
+//! Display math (`$$…$$`) becomes a `math` fence, for bencode-ui to typeset.
 
 use std::ops::Range;
 
@@ -43,7 +43,7 @@ pub struct Fence {
 }
 
 impl Fence {
-    /// What Ely draws in place of the code: a Mermaid diagram, a formula.
+    /// What bencode-ui draws in place of the code: a Mermaid diagram, a formula.
     pub fn drawing(&self) -> Option<Drawing> {
         if !self.closed || self.path.is_some() {
             return None;

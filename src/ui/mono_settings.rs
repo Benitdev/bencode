@@ -11,7 +11,7 @@
 //! mine" when it changed on disk meanwhile. Memory: one fact per row,
 //! added, reworded and forgotten in place, over the gauge of what loads.
 //!
-//! The dialog is drawn in an Ely layer (`Backdrop`), so what opens inside
+//! The dialog is drawn in a bencode-ui layer (`Backdrop`), so what opens inside
 //! it is raised in that layer, never deferred.
 
 use bencode_ui::buttons::{ButtonVariant, IconButton};

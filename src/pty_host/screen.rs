@@ -1,5 +1,5 @@
 //! What the host keeps of a session's output: the screen and scrollback a
-//! terminal would show, kept by the emulator Ely's terminal is built on. A
+//! terminal would show, kept by the emulator bencode-ui's terminal is built on. A
 //! client attaching gets them drawn again at its own size (`redraw`), not
 //! the bytes the shell wrote: those only mean what they meant at the size
 //! they were written for (a prompt's padding, a redraw's cursor moves), and
@@ -16,7 +16,7 @@ use alacritty_terminal::term::test::TermSize;
 use alacritty_terminal::term::{Config, Term, TermMode};
 use alacritty_terminal::vte::ansi::{Color, NamedColor, Processor};
 
-/// The lines of scrollback kept, as many as Ely's terminal keeps.
+/// The lines of scrollback kept, as many as bencode-ui's terminal keeps.
 const SCROLLBACK: usize = 10_000;
 
 pub(super) struct Screen {

@@ -1,6 +1,6 @@
 //! An item's description cut into its top-level blocks, so the detail
 //! draws it as rows of a virtual list: a scroll frame lays out the blocks
-//! in view, not every row of every table of a long Backlog issue (Ely's
+//! in view, not every row of every table of a long Backlog issue (bencode-ui's
 //! `MarkdownRenderer` parses and lays out its whole source each frame).
 
 use std::ops::Range;

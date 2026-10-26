@@ -207,7 +207,7 @@ impl TerminalDocks {
 }
 
 /// A terminal showing host session `session`, whose shell starts in `cwd`
-/// when the session is new; Ely's own shell when the host cannot be used.
+/// when the session is new; bencode-ui's own shell when the host cannot be used.
 fn spawn_attached(session: &str, cwd: &str, cx: &mut Context<Terminal>) -> Terminal {
     // A folder on a machine gets a shell there, over SSH (BenCode's own:
     // MonoCode has no terminals in these projects). It does not outlive
@@ -660,7 +660,7 @@ impl BenCodeApp {
             .child(self.render_terminal_sash(layout.side, cx))
     }
 
-    /// The split's tree as Ely `SplitPane`s, like the chat's panes.
+    /// The split's tree as bencode-ui `SplitPane`s, like the chat's panes.
     fn render_terminal_split(&self, node: &LayoutNode, cx: &Context<Self>) -> AnyElement {
         let (split_id, dir, children, sizes) = match node {
             LayoutNode::Leaf { id } => {
@@ -779,7 +779,7 @@ impl BenCodeApp {
                     .p_1()
                     .child(div().flex_1().min_h_0().min_w_0().child(tab.view.clone())),
             )
-            // MonoCode writes this line into the terminal; Ely's grid
+            // MonoCode writes this line into the terminal; bencode-ui's grid
             // takes no text once its program is gone, so it sits under it.
             .children(exited.map(|status| {
                 div()
@@ -988,7 +988,7 @@ impl BenCodeApp {
                     .tooltip("New Terminal (⌘`)")
                     .on_click(cx.listener(|this, _, _, cx| this.new_terminal(cx))),
             )
-            // An Ely `IconButton` takes Ely's icons only; Lucide's
+            // A bencode-ui `IconButton` takes bencode-ui's icons only; Lucide's
             // `panel-top` is one of BenCode's own.
             .child(
                 div()

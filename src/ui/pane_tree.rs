@@ -1,4 +1,4 @@
-//! Pane tree view: the active tab's split chat panes, resized with Ely
+//! Pane tree view: the active tab's split chat panes, resized with bencode-ui
 //! `SplitPane`, docked by drag-and-drop, each streaming its own transcript.
 //! The tree is the shell's; each pane is a region of its own
 //! (`ui/region.rs`), drawn by `render_session_pane`.
@@ -89,7 +89,7 @@ impl BenCodeApp {
         }
     }
 
-    /// A split node as an Ely `SplitPane`; dragged shares go back into the tree.
+    /// A split node as a bencode-ui `SplitPane`; dragged shares go back into the tree.
     fn render_split(
         &mut self,
         split_id: &str,

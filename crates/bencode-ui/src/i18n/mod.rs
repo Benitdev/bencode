@@ -30,7 +30,7 @@ impl I18n {
     }
 }
 
-/// A component's message: the app's catalog first, Ely's builtin copy after. Without an `I18n` global it reads the English builtin.
+/// A component's message: the app's catalog first, the built-in copy after. Without an `I18n` global it reads the English builtin.
 pub fn text(cx: &App, key: &str, args: &[(&str, &str)]) -> SharedString {
     let (message, direction) = if cx.has_global::<I18n>() {
         let i18n = cx.global::<I18n>();

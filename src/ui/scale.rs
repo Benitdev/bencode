@@ -1,7 +1,7 @@
 //! Interface scale (MonoCode `features/settings/model/uiScale.ts`, which
 //! zooms the webview). GPUI has no page zoom, so the views write every
 //! pixel length through [`px`], which carries the scale, and the window's
-//! rem follows for Ely's components (`BenCodeApp::apply_ui_scale`).
+//! rem follows for bencode-ui's components (`BenCodeApp::apply_ui_scale`).
 //!
 //! Lengths the views keep as plain numbers (pane widths, scroll offsets,
 //! row heights) are at 100%; [`logical`] brings a measured length back to

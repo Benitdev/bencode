@@ -4,7 +4,7 @@ use gpui::{App, Global};
 
 use super::IconName;
 
-/// Which icon a file shows: an owner's rules by name and by extension, laid over Ely's map. Without one, Ely's map alone.
+/// Which icon a file shows: an owner's rules by name and by extension, laid over the default map. Without one, the default map alone.
 #[derive(Clone, Default)]
 pub struct IconTheme {
     names: HashMap<String, IconName>,
@@ -25,11 +25,11 @@ impl IconTheme {
     }
 }
 
-static ELY: LazyLock<IconTheme> = LazyLock::new(IconTheme::default);
+static DEFAULT: LazyLock<IconTheme> = LazyLock::new(IconTheme::default);
 
-/// The owner's icon theme, or Ely's map alone.
+/// The owner's icon theme, or the default map alone.
 pub(crate) fn icon_theme(cx: &App) -> &IconTheme {
-    cx.try_global::<IconTheme>().unwrap_or(&ELY)
+    cx.try_global::<IconTheme>().unwrap_or(&DEFAULT)
 }
 
 /// The icon a file's name suggests, under the owner's icon theme.
@@ -37,7 +37,7 @@ pub(crate) fn file_icon(name: &str, cx: &App) -> IconName {
     icon_theme(cx).file(name)
 }
 
-/// Ely's icon for a file by its extension, in lower case.
+/// The default icon for a file by its extension, in lower case.
 fn ely_icon(extension: Option<&str>) -> IconName {
     match extension {
         Some(
