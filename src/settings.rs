@@ -121,6 +121,12 @@ pub struct AppSettings {
     pub file_source_view: bool,
     /// The file pane sits left of the chat instead of right.
     pub file_pane_left: bool,
+    /// The inspector, Changes or the Explorer at the workspace's right, is
+    /// shown (BenCode's own).
+    pub inspector_open: bool,
+    pub inspector_mode: crate::app::InspectorMode,
+    /// The inspector's width; `None` is the default.
+    pub inspector_width: Option<f32>,
     /// MonoCode `monocode.favoriteModels`: starred model keys.
     pub favorite_models: Vec<String>,
     /// MonoCode recent model choices, newest first (⌘. menu).
@@ -138,8 +144,6 @@ pub struct AppSettings {
     pub pinned_sessions_collapsed: std::collections::BTreeMap<String, bool>,
     /// MonoCode `monocode.reminderSessionsCollapsed`.
     pub reminder_sessions_collapsed: std::collections::BTreeMap<String, bool>,
-    /// MonoCode `monocode.sidebarTabOrder` (`sessions`, `files`, `changes`).
-    pub sidebar_tab_order: Vec<String>,
     /// Each project's terminal dock side, size and shown state (MonoCode
     /// keeps them on its `ProjectTerminalDock`); projects with the default,
     /// hidden bottom dock are left out.
@@ -172,6 +176,9 @@ pub struct AppSettings {
     /// MonoCode `monocode.railMonosPinned`: each Mono at the top of the
     /// icon rail, above a divider. Off by default.
     pub rail_monos_pinned: bool,
+    /// The navigator lists the Monos as rows; folded (the default) they
+    /// are faces in their section's header. BenCode's own.
+    pub navigator_monos_expanded: bool,
     /// MonoCode `monocode.monoMenuBarIcon` switched off: no Monos icon in
     /// the macOS menu bar. On by default.
     pub mono_menu_bar_off: bool,
@@ -275,6 +282,9 @@ mod tests {
             diff_split: true,
             file_source_view: true,
             file_pane_left: true,
+            inspector_open: true,
+            inspector_mode: crate::app::InspectorMode::Files,
+            inspector_width: Some(380.0),
             theme_hue: Some(210.0),
             theme_saturation: Some(12.0),
             theme_dark_lightness: Some(4.0),
@@ -325,7 +335,6 @@ mod tests {
                 "/repo".to_string(),
                 true,
             )]),
-            sidebar_tab_order: vec!["files".into(), "sessions".into(), "changes".into()],
             terminal_docks: std::collections::BTreeMap::from([(
                 "/repo".to_string(),
                 crate::ui::terminal_pane::DockLayout {
@@ -374,6 +383,7 @@ mod tests {
             mono_float_size: Some([480.0, 620.0]),
             monos_off: true,
             rail_monos_pinned: true,
+            navigator_monos_expanded: true,
             mono_menu_bar_off: true,
             open_mono: Some("mono-1".into()),
             mono_overview_width: Some(520.0),

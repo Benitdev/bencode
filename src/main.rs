@@ -14,7 +14,6 @@ mod mono_menu_bar;
 mod monocode_import;
 mod monos;
 mod notifications;
-mod process_stats;
 mod project_search;
 mod pty_host;
 mod rate_limits;
@@ -100,7 +99,13 @@ fn main() {
             ui::appearance::AppearanceTokens::set(appearance.tokens(), cx);
 
             let bounds = Bounds::centered(None, size(px(1200.0), px(780.0)), cx);
+            // The frame bench and the window's pictures draw it by hand
+            // (`app/frame_bench.rs`, `app/snapshot.rs`): never shown, it
+            // takes no keyboard and no stray input changes what they draw.
+            let shown = !(app::frame_bench::enabled() || app::snapshots_enabled());
             let options = WindowOptions {
+                show: shown,
+                focus: shown,
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
                 titlebar: Some(TitlebarOptions {
                     title: Some("BenCode".into()),
@@ -182,6 +187,8 @@ fn main() {
                 }
             }
 
-            cx.activate(true);
+            if shown {
+                cx.activate(true);
+            }
         });
 }

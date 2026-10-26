@@ -166,7 +166,7 @@ impl BenCodeApp {
 
         let rows = chip.accounts.iter().enumerate().map(|(ix, account)| {
             let selected = account.id == chip.active_id;
-            // The footer's own snapshot is the active account's.
+            // The chip's own snapshot is the active account's.
             let usage = if selected {
                 Some(chip.limits)
             } else {

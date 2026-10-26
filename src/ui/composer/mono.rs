@@ -27,9 +27,9 @@ use crate::db::SessionRow;
 use crate::harness::catalog::{self, ModelSetting, SettingKind};
 use crate::rate_limits::RateLimitProvider;
 use crate::ui::HarnessIcon;
-use crate::ui::footer::UsageChipVariant;
 use crate::ui::scale::px;
 use crate::ui::sidebar_popovers::popover_glass;
+use crate::ui::status::UsageChipVariant;
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// MonoCode `MAX_HEIGHT`: the field grows to this before it scrolls.

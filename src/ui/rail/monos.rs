@@ -1,17 +1,18 @@
-//! MonoCode `MonoRailSection`: the user's Monos, above the projects. Each
-//! opens like a project does, but into its conversation. Its menu is the
-//! rail's own (`menu`, `MenuTarget::Mono`).
+//! MonoCode `MonoRailSection`: the user's Monos, above the projects, as
+//! faces in the section's header until unfolded into rows. Each opens like
+//! a project does, but into its conversation. Its menu is the rail's own
+//! (`menu`, `MenuTarget::Mono`).
 //!
 //! A Mono with replies the user has not read shows their count.
 
-use ely_gpui_component::primitives::{IconName, Tooltip};
+use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnimationExt as _, AnyElement, Context, FontWeight, InteractiveElement, IntoElement,
     MouseButton, MouseDownEvent, ParentElement, SharedString, Styled, div, prelude::*, relative,
 };
 
-use super::widgets::{ROW_HEIGHT, hover_control, section_button};
+use super::widgets::{hover_control, nav_label, nav_row, section_button};
 use crate::app::BenCodeApp;
 use crate::monos::{Mono, MonoState, MonoStatus, projects_phrase};
 use crate::ui::scale::px;
@@ -21,8 +22,10 @@ use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 pub(super) const MONO_LIST: &str = "monos";
 
 impl BenCodeApp {
-    /// `mb-2 shrink-0`: the "Monos" header with its New mono button, then
-    /// the rows; with none yet, a dashed row is the way to add one.
+    /// `mb-2 shrink-0`: the "Monos" header with its fold toggle and New mono
+    /// button. Folded (BenCode's default) the Monos are faces in the header,
+    /// a click away like a row; unfolded their rows follow. With none yet,
+    /// a dashed row is the way to add one.
     pub(super) fn render_rail_monos(&self, cx: &Context<Self>) -> AnyElement {
         let fg = cx.theme().colors.fg;
         let monos = &self.settings.monos;
@@ -34,19 +37,72 @@ impl BenCodeApp {
                 .child(self.render_mono_intro(cx))
                 .into_any_element();
         }
+        let expanded = self.settings.navigator_monos_expanded;
+        let add = section_button("rail-new-mono", IconName::Plus, "New mono", false, fg)
+            .on_click(cx.listener(|this, _, _, cx| this.create_mono(cx)));
+        // As the other sections' headers (`render_rail_section_header`).
+        let header = div()
+            .flex()
+            .items_center()
+            .gap_1()
+            .px_3()
+            .pb(px(6.0))
+            .pt_1()
+            .child(
+                div()
+                    .id("rail-monos-fold")
+                    .group("rail-monos-fold")
+                    .flex()
+                    .flex_none()
+                    .items_center()
+                    .gap_1()
+                    .px_1()
+                    .cursor_pointer()
+                    .text_size(Text::Base.px())
+                    .text_color(fg.ink(Ink::Secondary))
+                    .hover(move |s| s.text_color(fg))
+                    .tooltip(Tooltip::text(if expanded {
+                        "Show Monos as faces"
+                    } else {
+                        "List Monos"
+                    }))
+                    .on_click(cx.listener(|this, _, _, cx| this.toggle_navigator_monos(cx)))
+                    .child("Monos")
+                    .child(
+                        Icon::new(if expanded {
+                            IconName::ChevronDown
+                        } else {
+                            IconName::ChevronRight
+                        })
+                        .size(IconSize::Xs)
+                        .color(fg.ink(Ink::Muted))
+                        .group_hover_color("rail-monos-fold", fg),
+                    ),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_1()
+                    .min_w_0()
+                    .flex_wrap()
+                    .items_center()
+                    .gap(px(2.0))
+                    .when(!expanded, |el| {
+                        el.children(monos.iter().map(|mono| self.render_mono_face(mono, cx)))
+                    }),
+            )
+            .child(add);
+        if !expanded {
+            return div().flex_none().mb_1().child(header).into_any_element();
+        }
         // MonoCode `useAnimatedReorder(ids, reorderMonos)`.
         let ids: Vec<String> = monos.iter().map(|m| m.id.clone()).collect();
         let shown = super::reorder::preview_order(MONO_LIST, &ids, self.rail_ui.reorder.as_ref());
         let draggable = ids.len() > 1;
-        let add = (!monos.is_empty()).then(|| {
-            section_button("rail-new-mono", IconName::Plus, "New mono", false, fg)
-                .on_click(cx.listener(|this, _, _, cx| this.create_mono(cx)))
-                .into_any_element()
-        });
         div()
             .flex_none()
             .mb_2()
-            .child(self.render_rail_section_header("Monos", add, cx))
+            .child(header)
             .child(
                 div()
                     .flex()
@@ -70,6 +126,65 @@ impl BenCodeApp {
                         Some(self.slide_rail_row(id, self.render_mono_card(mono, draggable, cx)))
                     })),
             )
+            .into_any_element()
+    }
+
+    /// A folded Mono: its face (moving with its status, its circle at the
+    /// corner) and its unread count; a click opens it, a right click its
+    /// menu, and the tooltip says what the row would.
+    fn render_mono_face(&self, mono: &Mono, cx: &Context<Self>) -> AnyElement {
+        let theme = cx.theme();
+        let fg = theme.colors.fg;
+        let state = self.mono_state(mono);
+        let selected = self.surface.is_none() && self.monos.view.as_deref() == Some(&mono.id);
+        let strong = fg.opacity(if theme.is_dark() { 0.12 } else { 0.07 });
+        let hover = fg.fill(Fill::Hover);
+        let (open_id, menu_id) = (mono.id.clone(), mono.id.clone());
+        let unread = self.mono_unread(mono).map(|count| {
+            div()
+                .absolute()
+                .top(px(-3.0))
+                .right(px(-3.0))
+                .flex()
+                .h(px(12.0))
+                .min_w(px(12.0))
+                .px(px(3.0))
+                .items_center()
+                .justify_center()
+                .rounded_full()
+                .bg(theme.colors.accent)
+                .text_size(Text::Xs.px())
+                .text_color(gpui::white())
+                .child(crate::monos::unread_badge(count))
+        });
+        div()
+            .id(SharedString::from(format!("rail-mono-face-{}", mono.id)))
+            .relative()
+            .flex()
+            .flex_none()
+            .size(px(24.0))
+            .items_center()
+            .justify_center()
+            .rounded(px(6.0))
+            .cursor_pointer()
+            .map(|el| {
+                if selected {
+                    el.bg(strong)
+                } else {
+                    el.hover(move |s| s.bg(hover))
+                }
+            })
+            .tooltip(Tooltip::text(self.mono_card_title(mono, &state)))
+            .on_click(cx.listener(move |this, _, _, cx| this.open_mono(&open_id, cx)))
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(move |this, event: &MouseDownEvent, _, cx| {
+                    cx.stop_propagation();
+                    this.open_rail_mono_menu(&menu_id, event.position, cx);
+                }),
+            )
+            .child(self.render_mono_rail_mascot(mono, &state, cx))
+            .children(unread)
             .into_any_element()
     }
 
@@ -223,16 +338,13 @@ impl BenCodeApp {
     /// One Mono's row: `group relative flex h-8 items-stretch rounded-md
     /// px-2`, `bg-selection-strong` while open, else `opacity-65`.
     fn render_mono_card(&self, mono: &Mono, draggable: bool, cx: &Context<Self>) -> AnyElement {
-        let theme = cx.theme();
-        let fg = theme.colors.fg;
+        let fg = cx.theme().colors.fg;
         let id = format!("rail-mono-{}", mono.id);
         let group = SharedString::from(id.clone());
         let name = mono.display_name();
         let state = self.mono_state(mono);
         let working = state.status == MonoStatus::Working;
         let selected = self.surface.is_none() && self.monos.view.as_deref() == Some(&mono.id);
-        let strong = fg.opacity(if theme.is_dark() { 0.12 } else { 0.07 });
-        let hover = fg.fill(Fill::Hover);
         let label = if working {
             crate::ui::spinner::shimmer(name.clone(), cx)
         } else {
@@ -252,81 +364,65 @@ impl BenCodeApp {
             mascot: self.mono_mascot(mono),
             width: self.rail_width() - 16.0,
         };
-        div()
-            .id(SharedString::from(id.clone()))
-            .group(group.clone())
-            .relative()
-            .flex()
-            .items_stretch()
-            .h(px(ROW_HEIGHT))
-            .px_2()
-            .rounded(px(6.0))
-            .map(|el| {
-                if selected {
-                    el.bg(strong)
-                } else {
-                    el.opacity(0.65).hover(move |s| s.bg(hover))
-                }
-            })
-            // The held row's slot stays open while it rides the pointer.
-            .when(held, |el| el.opacity(0.0))
-            .when(draggable, |el| {
-                el.on_drag(drag, |dragged, _, _, cx| cx.new(|_| dragged.clone()))
-            })
-            .on_click(cx.listener(move |this, _, _, cx| this.open_mono(&open_id, cx)))
+        nav_row(
+            div()
+                .id(SharedString::from(id.clone()))
+                .group(group.clone())
+                .relative()
+                .flex()
+                .items_stretch(),
+            selected,
+            cx,
+        )
+        // The held row's slot stays open while it rides the pointer.
+        .when(held, |el| el.opacity(0.0))
+        .when(draggable, |el| {
+            el.on_drag(drag, |dragged, _, _, cx| cx.new(|_| dragged.clone()))
+        })
+        .on_click(cx.listener(move |this, _, _, cx| this.open_mono(&open_id, cx)))
+        .on_mouse_down(
+            MouseButton::Right,
+            cx.listener(move |this, event: &MouseDownEvent, _, cx| {
+                cx.stop_propagation();
+                this.open_rail_mono_menu(&menu_id, event.position, cx);
+            }),
+        )
+        .child(
+            // `flex min-w-0 flex-1 items-center gap-2 group-hover:pr-6`
+            div()
+                .id(SharedString::from(format!("{id}-main")))
+                .flex()
+                .min_w_0()
+                .flex_1()
+                .items_center()
+                .gap_2()
+                .group_hover(group.clone(), |s| s.pr(px(24.0)))
+                .tooltip(Tooltip::text(self.mono_card_title(mono, &state)))
+                .child(self.render_mono_rail_mascot(mono, &state, cx))
+                .child(nav_label().flex_1().child(label))
+                .children(self.render_mono_unread(mono, &group, cx)),
+        )
+        .child(
+            hover_control(
+                SharedString::from(format!("{id}-options")),
+                IconName::Ellipsis,
+                IconSize::Md,
+                "Mono options",
+                &group,
+                fg,
+            )
+            .right_1()
+            .top(px(4.0))
+            .size_6()
             .on_mouse_down(
-                MouseButton::Right,
+                MouseButton::Left,
                 cx.listener(move |this, event: &MouseDownEvent, _, cx| {
                     cx.stop_propagation();
-                    this.open_rail_mono_menu(&menu_id, event.position, cx);
+                    this.open_rail_mono_menu(&options_id, event.position, cx);
                 }),
-            )
-            .child(
-                // `flex min-w-0 flex-1 items-center gap-2 group-hover:pr-6`
-                div()
-                    .id(SharedString::from(format!("{id}-main")))
-                    .flex()
-                    .min_w_0()
-                    .flex_1()
-                    .items_center()
-                    .gap_2()
-                    .group_hover(group.clone(), |s| s.pr(px(24.0)))
-                    .tooltip(Tooltip::text(self.mono_card_title(mono, &state)))
-                    .child(self.render_mono_rail_mascot(mono, &state, cx))
-                    .child(
-                        // `min-w-0 flex-1 truncate text-sm font-medium leading-tight`
-                        div()
-                            .min_w_0()
-                            .flex_1()
-                            .truncate()
-                            .text_size(Text::Lg.px())
-                            .font_weight(FontWeight::MEDIUM)
-                            .line_height(relative(1.25))
-                            .child(label),
-                    )
-                    .children(self.render_mono_unread(mono, &group, cx)),
-            )
-            .child(
-                hover_control(
-                    SharedString::from(format!("{id}-options")),
-                    IconName::Ellipsis,
-                    IconSize::Md,
-                    "Mono options",
-                    &group,
-                    fg,
-                )
-                .right_1()
-                .top(px(4.0))
-                .size_6()
-                .on_mouse_down(
-                    MouseButton::Left,
-                    cx.listener(move |this, event: &MouseDownEvent, _, cx| {
-                        cx.stop_propagation();
-                        this.open_rail_mono_menu(&options_id, event.position, cx);
-                    }),
-                ),
-            )
-            .into_any_element()
+            ),
+        )
+        .into_any_element()
     }
 
     /// MonoCode's unread badge (`h-4 min-w-4 rounded-full bg-accent px-1

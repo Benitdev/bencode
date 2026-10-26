@@ -66,7 +66,7 @@ impl BenCodeApp {
                             IconButton::new("mono-toggle-projects", IconName::PanelLeft)
                                 .size(ControlSize::Sm)
                                 .variant(ButtonVariant::Ghost)
-                                .tooltip("Toggle Sidebar (⌘B)")
+                                .tooltip("Show Navigator (⌘B)")
                                 .on_click(cx.listener(|this, _, _, cx| {
                                     this.is_rail_open = true;
                                     cx.notify();

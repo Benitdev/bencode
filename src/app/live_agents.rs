@@ -1,5 +1,5 @@
 //! MonoCode `features/sessions/model/liveAgents.ts`: the threads the
-//! Working agents card lists, across every project. A thread is listed
+//! navigator's Agents section lists, across every project. A thread is listed
 //! while its agent runs or waits on the user, and stays as "Done" after it
 //! finishes until it is looked at.
 
@@ -171,12 +171,39 @@ impl BenCodeApp {
         }
         self.open_session(id.to_string(), cx);
     }
+
+    /// Go › Next Agent (BenCode's own): the Agents section's next thread
+    /// after the one in view, those waiting on the user first, wrapping.
+    pub fn select_next_live_agent(&mut self, cx: &mut Context<Self>) {
+        let ids: Vec<String> = self.live_agents().into_iter().map(|a| a.id).collect();
+        if let Some(id) = next_agent(&ids, self.selected_session_id.as_deref()) {
+            self.select_live_agent(&id, cx);
+        }
+    }
+}
+
+/// The agent after `current` in the section's order, the first when the
+/// thread in view is none of them.
+fn next_agent(ids: &[String], current: Option<&str>) -> Option<String> {
+    let at = current.and_then(|current| ids.iter().position(|id| id == current));
+    let next = at.map_or(0, |at| (at + 1) % ids.len().max(1));
+    ids.get(next).cloned()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn next_agent_steps_on_and_wraps() {
+        let ids: Vec<String> = ["a", "b", "c"].map(String::from).to_vec();
+        assert_eq!(next_agent(&ids, None).as_deref(), Some("a"));
+        assert_eq!(next_agent(&ids, Some("elsewhere")).as_deref(), Some("a"));
+        assert_eq!(next_agent(&ids, Some("a")).as_deref(), Some("b"));
+        assert_eq!(next_agent(&ids, Some("c")).as_deref(), Some("a"));
+        assert_eq!(next_agent(&[], Some("a")), None);
+    }
 
     fn session(id: &str, blocks: Vec<Arc<Block>>) -> SessionRow {
         SessionRow {

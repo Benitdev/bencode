@@ -1,8 +1,9 @@
-//! MonoCode `ProjectRail`: the visit arrows, Search / Inbox / Notes /
-//! Automations, the Pinned, Groups and Projects lists with their diff
-//! stats, and Settings at the foot; while Settings is open its sections
-//! take the rail's body. Rows drag to reorder and the right edge drags to
-//! resize. The saved state lives in [`model`].
+//! The navigator (MonoCode's `ProjectRail` and Sessions sidebar in one
+//! column): the visit arrows, Search with the views' icons, the agents at
+//! work, the Pinned, Groups and Projects lists with their diff stats, the
+//! project's threads, and Settings and the usage chip at the foot; while
+//! Settings is open its sections take the body. Rows drag to reorder and
+//! the right edge drags to resize. The saved state lives in [`model`].
 
 mod cards;
 mod compact;
@@ -47,12 +48,13 @@ use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 use crate::ui::window_drag::claim_press;
 use model::{ProjectGroup, RailSections, path_key, rail_sections, sync_rail_order};
 use reorder::RailResize;
-use widgets::{
-    RailTrailing, TitleButtonState, rail_action, rail_search, section_button, title_icon_button,
-};
+use widgets::{TitleButtonState, rail_icon_button, rail_search, section_button, title_icon_button};
 
 /// MonoCode `w-[78px]`: room for the traffic lights.
 const TRAFFIC_LIGHT_SPACE: f32 = 78.0;
+/// The most of the navigator's height the projects take, so the threads
+/// below keep the rest.
+const PROJECTS_SHARE: f32 = 0.4;
 /// MonoCode `Popover` (`DEFAULT_GAP`) and the "Open project" one's width.
 const POPOVER_GAP: f32 = 6.0;
 const ADD_PROJECT_WIDTH: f32 = 230.0;
@@ -119,14 +121,24 @@ impl BenCodeApp {
         mascot_for(project_name(path), pick.map(String::as_str))
     }
 
+    /// The navigator, top to bottom: Search and the views, the agents at
+    /// work, the Monos, the projects, the project's threads, and the
+    /// focused thread's usage beside Settings. While Settings is open its
+    /// sections take the body.
     pub fn render_project_rail(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+        let settings_open = self.surface == Some(Surface::Settings);
+        // The list keeps its picks and row heights as it draws, and the
+        // usage chip loads its account's usage the first time it shows.
+        let threads = (!settings_open).then(|| self.render_session_list(cx));
+        let usage = (!settings_open)
+            .then(|| self.render_usage_status(crate::ui::status::UsageChipVariant::Navigator, cx))
+            .flatten();
         let theme = cx.theme();
         let colors = &theme.colors;
         // `.sidebar-glass`: the background mixed 10% toward black, plain in
         // light, tinted at the sidebar opacity over the window's blur.
         let glass = self.glass(cx).sidebar(colors.bg, theme.is_dark());
         let fg = colors.fg;
-        let settings_open = self.surface == Some(Surface::Settings);
         div()
             .id("project-rail")
             .relative()
@@ -154,35 +166,55 @@ impl BenCodeApp {
                 cx.listener(|this, _, _, cx| this.finish_rail_drags(cx)),
             )
             .child(self.render_rail_top_strip(settings_open, cx))
-            .map(|el| {
-                if settings_open {
-                    el.child(self.render_settings_nav(cx))
-                } else {
-                    el.child(self.render_rail_actions(cx))
-                        .child(self.render_rail_projects(cx))
-                        .children(self.render_live_agents(false, cx))
-                        .children(self.render_update_footer(false, cx))
-                        .child(
-                            // `flex shrink-0 flex-col gap-px p-2`
-                            div()
-                                .flex()
-                                .flex_none()
-                                .flex_col()
-                                .gap(px(1.0))
-                                .p_2()
-                                .child(rail_action(
-                                    "rail-settings",
-                                    IconName::Settings,
-                                    "Settings",
-                                    false,
-                                    RailTrailing::Shortcut("⌘,"),
-                                    cx,
-                                    |this, _, _, cx| this.open_settings(cx),
-                                )),
-                        )
-                }
+            .map(|el| match threads {
+                None => el.child(self.render_settings_nav(cx)),
+                Some(threads) => el
+                    .child(self.render_rail_actions(cx))
+                    .children(self.render_live_agents(cx))
+                    // MonoCode: the Monos section above the projects, out of
+                    // their scroll so neither crowds the other.
+                    .when(self.monos_enabled(), |el| {
+                        el.child(self.render_rail_monos(cx))
+                    })
+                    .child(self.render_rail_projects(cx))
+                    .child(self.render_threads_header(cx))
+                    .child(threads)
+                    .children(self.render_update_footer(false, cx))
+                    .child(self.render_rail_foot(usage, cx)),
             })
             .child(self.render_rail_sash(cx))
+    }
+
+    /// Settings, then the focused thread's usage (its chip and Refresh).
+    fn render_rail_foot(&self, usage: Option<AnyElement>, cx: &Context<Self>) -> impl IntoElement {
+        let fg = cx.theme().colors.fg;
+        div()
+            .id("navigator-foot")
+            .flex()
+            .flex_none()
+            .items_center()
+            .gap_1()
+            .px_2()
+            .py(px(6.0))
+            .border_t_1()
+            .border_color(fg.fill(Fill::Line))
+            .child(title_icon_button(
+                "rail-settings",
+                IconName::Settings,
+                "Settings (⌘,)",
+                TitleButtonState::Normal,
+                cx,
+                |this, _, _, cx| this.open_settings(cx),
+            ))
+            .child(
+                div()
+                    .flex()
+                    .flex_1()
+                    .min_w_0()
+                    .items_center()
+                    .justify_end()
+                    .children(usage),
+            )
     }
 
     /// `flex h-10 shrink-0 select-none items-center pr-1.5`, a drag region
@@ -210,7 +242,7 @@ impl BenCodeApp {
                         el.child(title_icon_button(
                             "rail-toggle-projects",
                             IconName::PanelLeft,
-                            "Toggle Projects",
+                            "Hide Navigator (⌘B)",
                             TitleButtonState::Active,
                             cx,
                             |this, _, _, cx| {
@@ -223,30 +255,35 @@ impl BenCodeApp {
             )
     }
 
-    /// `flex shrink-0 flex-col gap-px px-2 pb-2 pt-0.5`.
+    /// Search, then the views as icons: Inbox (its dot while something is
+    /// unread, its notification menu on a right click), Notes, Automations.
     fn render_rail_actions(&self, cx: &Context<Self>) -> impl IntoElement {
         div()
             .flex()
             .flex_none()
-            .flex_col()
-            .gap(px(1.0))
+            .items_center()
+            .gap(px(2.0))
             .px_2()
             .pb_2()
             .pt(px(2.0))
-            .child(rail_search(self.search.open, cx))
-            // `mt-0.5`
-            .child(div().mt(px(2.0)))
             .child(
-                rail_action(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .mr(px(2.0))
+                    .child(rail_search(self.search.open, cx)),
+            )
+            .child(
+                rail_icon_button(
                     "rail-inbox",
                     IconName::Inbox,
-                    "Inbox",
-                    self.surface_open(Surface::Inbox),
                     if self.inbox_has_unseen(cx) {
-                        RailTrailing::Dot
+                        "Inbox, new items"
                     } else {
-                        RailTrailing::None
+                        "Inbox"
                     },
+                    self.surface_open(Surface::Inbox),
+                    self.inbox_has_unseen(cx),
                     cx,
                     |this, _, _, cx| this.open_inbox_modal(cx),
                 )
@@ -259,21 +296,21 @@ impl BenCodeApp {
                     }),
                 ),
             )
-            .child(rail_action(
+            .child(rail_icon_button(
                 "rail-notes",
                 IconName::FileText,
                 "Notes",
                 self.surface_open(Surface::Notes),
-                RailTrailing::None,
+                false,
                 cx,
                 |this, _, _, cx| this.open_notes(cx),
             ))
-            .child(rail_action(
+            .child(rail_icon_button(
                 "rail-automations",
                 IconName::Zap,
                 "Automations",
                 self.surface_open(Surface::Automations),
-                RailTrailing::None,
+                false,
                 cx,
                 |this, _, _, cx| this.open_automations(cx),
             ))
@@ -296,7 +333,9 @@ impl BenCodeApp {
         rail_sections(order, &self.settings.pinned_projects, &self.settings.rail)
     }
 
-    /// The scrolling lists: Pinned (when any), Groups (when any), Projects.
+    /// The scrolling lists: Pinned (when any), Groups (when any), Projects,
+    /// as tall as they are up to a share of the navigator, so the threads
+    /// below keep the rest.
     fn render_rail_projects(&self, cx: &Context<Self>) -> impl IntoElement {
         let order = self.rail_order();
         let sections = self.rail_sections_for(&order);
@@ -313,10 +352,6 @@ impl BenCodeApp {
             .flex_col()
             .overflow_y_scroll()
             .pb_2()
-            // MonoCode: the Monos section above the projects.
-            .when(self.monos_enabled(), |el| {
-                el.child(self.render_rail_monos(cx))
-            })
             .when(!pinned.is_empty(), |el| {
                 el.child(self.render_project_section("Pinned", "pinned", &pinned, false, false, cx))
             })
@@ -331,7 +366,16 @@ impl BenCodeApp {
                 empty,
                 cx,
             ));
-        crate::ui::scrollbar::Scrolled::new("rail-projects-scrollbar", projects).gutter(px(0.0))
+        div()
+            .flex()
+            .flex_col()
+            .flex_initial()
+            .min_h_0()
+            .max_h(relative(PROJECTS_SHARE))
+            .child(
+                crate::ui::scrollbar::Scrolled::new("rail-projects-scrollbar", projects)
+                    .gutter(px(0.0)),
+            )
     }
 
     /// MonoCode `AddProjectButton`, lit while its popover is open.

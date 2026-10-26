@@ -14,6 +14,10 @@ version = "0.1.32"
 members = [".", "crates/bencode-core", "crates/bencode-host"]
 default-members = [".", "crates/bencode-core", "crates/bencode-host"]
 
+[features]
+# Pictures of the window for UI work (`src/app/snapshot.rs`).
+snapshot = ["gpui/test-support", "gpui_platform/test-support"]
+
 [dependencies]
 # What the app shares with its remote host: the agent CLIs, the protocol.
 bencode-core = { path = "crates/bencode-core" }

@@ -1,4 +1,4 @@
-//! Provider usage for the footer (MonoCode `rateLimitsCache.ts` and
+//! Provider usage for the usage chip (MonoCode `rateLimitsCache.ts` and
 //! `UsageFooter`'s loading): each account is read once per run, again on
 //! Refresh and after a turn that spent it, off the UI thread.
 
@@ -40,7 +40,7 @@ pub enum UsageView {
     Add,
 }
 
-/// What the footer reports: the active thread's provider and account.
+/// What the chip reports: the active thread's provider and account.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct UsageTarget {
     pub provider: RateLimitProvider,
@@ -50,8 +50,9 @@ pub struct UsageTarget {
 }
 
 /// Each account's last usage and the reads running: a model, followed by
-/// the regions that show usage (`Region::Footer`, `Mono`, `Surface`), so a
-/// read landing redraws those and not the app (`docs/regions.md`).
+/// the regions that show usage (`Region::Rail`, `CompactRail`, `Mono`,
+/// `Surface`), so a read landing redraws those and not the app
+/// (`docs/regions.md`).
 #[derive(Default)]
 pub struct UsageSnapshots {
     snapshots: HashMap<UsageKey, ProviderRateLimits>,
@@ -59,16 +60,16 @@ pub struct UsageSnapshots {
     pending: HashMap<UsageKey, bool>,
 }
 
-/// The footer's usage chip and popover: what is open and in progress.
+/// The usage chip and its popover: what is open and in progress.
 #[derive(Default)]
 pub struct UsageState {
     /// The provider whose details popover is open, and its page.
     pub popover: Option<RateLimitProvider>,
     pub view: UsageView,
-    /// The pointer is over the footer chip, so a press there is the chip's
+    /// The pointer is over the usage chip, so a press there is the chip's
     /// to toggle and not an outside click.
     pub chip_hovered: bool,
-    /// The sign-in panel's run for the footer's account.
+    /// The sign-in panel's run for the chip's account.
     pub sign_in: SignIn,
     /// The Add account form is waiting for the browser, or why it failed.
     pub adding: bool,
@@ -100,10 +101,23 @@ impl UsageSnapshots {
     pub fn refreshing(&self) -> bool {
         self.pending.values().any(|forced| *forced)
     }
+
+    /// Pictures of the window (`app/snapshot.rs`) show an account's usage
+    /// without reading it.
+    #[cfg(feature = "snapshot")]
+    pub(crate) fn stage(
+        &mut self,
+        provider: RateLimitProvider,
+        account_id: &str,
+        limits: ProviderRateLimits,
+    ) {
+        self.snapshots
+            .insert((provider, account_id.to_string()), limits);
+    }
 }
 
 impl BenCodeApp {
-    /// The provider and account the footer reports, when the active
+    /// The provider and account the chip reports, when the active
     /// thread's harness has readable usage.
     pub fn usage_target(&self) -> Option<UsageTarget> {
         let session = self.selected_session()?;
@@ -177,7 +191,7 @@ impl BenCodeApp {
         .detach();
     }
 
-    /// The footer's Refresh button.
+    /// The usage chip's Refresh button.
     pub fn refresh_usage(&mut self, cx: &mut Context<Self>) {
         if let Some(target) = self.usage_target().filter(|target| target.available) {
             self.load_rate_limits(target.provider, &target.account_id, true, cx);
@@ -273,7 +287,7 @@ impl BenCodeApp {
         }
     }
 
-    /// Redraws the footer's countdowns while it shows usage.
+    /// Redraws the chip's countdowns while it shows usage.
     pub(crate) fn start_usage_clock(&mut self, cx: &mut Context<Self>) {
         cx.spawn(async move |this, cx| {
             loop {

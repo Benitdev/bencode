@@ -35,7 +35,7 @@
 
 ### Agents side by side
 
-One thread per task, each with its own agent, model and permission mode. Split the chat (⌘D), queue follow-ups, stop a turn, or hand a thread off to another agent. The **Working** card follows every turn in flight, across projects.
+One thread per task, each with its own agent, model and permission mode. Split the chat (⌘D), queue follow-ups, stop a turn, or hand a thread off to another agent. The **Agents** section at the top of the navigator follows every turn in flight across projects, and lets you Allow or Deny a waiting command without leaving the thread you are in.
 
 </td>
 <td width="50%">
@@ -83,7 +83,7 @@ A turn that edits files ends with a **Changed N files** card. Undo it, Keep it, 
 
 ### Git built in
 
-Stage, discard and commit from the Changes tab, with a generated commit message if you like. Fetch, pull, push, open a pull request, browse the commit graph and work in worktrees without leaving the chat.
+Stage, discard and commit from Changes in the inspector (⌃⇧G), with a generated commit message if you like. Fetch, pull, push, open a pull request, browse the commit graph and work in worktrees without leaving the chat.
 
 </td>
 <td width="50%">
@@ -131,7 +131,7 @@ Scheduled prompts, from a template or from scratch: pick the trigger, the model 
 **Also in the box:**
 
 - **Inbox:** GitHub issues and pull requests through `gh` (checks, comments, merge, ask an agent to fix CI), each project with its own `gh` account. Nulab Backlog issues through an API key: comments, status changes, send to an agent.
-- **Accounts and usage:** several Claude Code and Codex accounts, each thread pinned to one, with 5-hour, weekly and monthly usage in the footer. Switch between saved Antigravity sign-ins.
+- **Accounts and usage:** several Claude Code and Codex accounts, each thread pinned to one, with 5-hour, weekly and monthly usage at the foot of the navigator. Switch between saved Antigravity sign-ins.
 - **Composer:** `@` to mention files and notes, `/` for skills and `/mcp`, attachments, editing and resending the last prompt.
 - **Search (⌘K)** across threads, files and projects; **find in conversation (⌘F)** and a prompt outline.
 - **Organise:** thread folders, pins, archive, reminders, and opening the project in VS Code, Cursor, Zed and others.
@@ -156,7 +156,7 @@ BenCode drives the agent CLIs over stdio and reads the JSON stream they print.
 |  |  |
 | :--- | :--- |
 | **No browser engine** | Rust and Zed's [GPUI](https://www.gpui.rs/) with [Ely GPUI Components](https://elygpui.com/). No Electron, no Chromium, no WebKit; Metal draws everything. |
-| **Fast and small** | The targets are a sub-50ms start and about 30MB of RAM. The footer shows BenCode's own CPU and memory, so you can check. |
+| **Fast and small** | The targets are a sub-50ms start and about 30MB of RAM. |
 | **Local-first** | Threads, notes, checkpoints and account profiles stay on your Mac, in BenCode's own folder. |
 | **No extra cost** | BenCode adds no API keys and no tokens. It runs the CLIs you are already signed in to. |
 
@@ -205,7 +205,9 @@ an [issue](https://github.com/Benitdev/bencode/issues).
 | ⌘. | Switch model |
 | ⌘S | Save the open file |
 | ⌘W | Close the file pane's tab (when that pane has focus), otherwise close the thread |
-| ⌘B / ⇧⌘B | Toggle the project rail / sidebar |
+| ⌘B / ⇧⌘B | Toggle the navigator / inspector |
+| ⇧⌘E / ⌃⇧G | Explorer / Changes in the inspector |
+| ⌥⌘A | Next agent, those waiting on you first |
 | ⌘J / ⌘` | Toggle the terminal / new terminal |
 | ⌘D / ⇧⌘D | Split the pane right / down |
 | ⌥⌘←→↑↓ | Move focus between panes |

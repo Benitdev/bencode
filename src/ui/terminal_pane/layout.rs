@@ -112,7 +112,7 @@ impl DockLayout {
 }
 
 /// What the window keeps beside a vertical dock besides the chat: the title
-/// bar, the footer and a pane's header.
+/// bar and a pane's header.
 const VERTICAL_CHROME: f32 = 80.0;
 
 /// MonoCode `clampDockSize`: at least the side's minimum, at most 70% of
@@ -126,7 +126,7 @@ pub fn clamp_size(side: DockSide, value: f32, viewport: (f32, f32)) -> f32 {
     } else {
         (
             viewport.0,
-            crate::ui::sidebar::SIDEBAR_MIN_WIDTH + CHAT_MIN_WIDTH,
+            crate::ui::rail::model::RAIL_WIDTH_MIN + CHAT_MIN_WIDTH,
         )
     };
     let max = (span * 0.7).min(span - kept).floor().max(min);
@@ -184,7 +184,8 @@ mod tests {
         assert_eq!(clamp_size(DockSide::Bottom, 10.0, VIEWPORT), 88.0);
         assert_eq!(clamp_size(DockSide::Bottom, 5000.0, VIEWPORT), 680.0);
         assert_eq!(clamp_size(DockSide::Left, 10.0, VIEWPORT), 180.0);
-        assert_eq!(clamp_size(DockSide::Right, 5000.0, VIEWPORT), 840.0);
+        // The chat and the navigator keep their least widths beside it.
+        assert_eq!(clamp_size(DockSide::Right, 5000.0, VIEWPORT), 860.0);
         // The chat keeps its minimum in a small window.
         assert_eq!(clamp_size(DockSide::Bottom, 5000.0, (880.0, 560.0)), 240.0);
         // A window too small for 70% still allows the minimum.

@@ -36,7 +36,6 @@ pub mod note_images;
 pub mod notes;
 mod panes;
 mod preferences;
-pub mod process_monitor;
 pub mod project_files;
 pub mod project_search;
 mod project_stats;
@@ -49,6 +48,8 @@ mod session_flags;
 pub mod session_folders;
 pub mod session_list;
 pub mod session_review;
+#[cfg(feature = "snapshot")]
+pub mod snapshot;
 mod source_control;
 pub mod subagents;
 mod surfaces;
@@ -123,12 +124,13 @@ impl PermissionMode {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-pub enum SidebarMode {
+/// What the inspector, at the workspace's right, shows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum InspectorMode {
     #[default]
-    Sessions,
-    Files,
     Changes,
+    Files,
 }
 
 /// The working copy a project's workspace is narrowed to.
@@ -177,11 +179,11 @@ pub struct BenCodeApp {
     pub mono_menu_bar: mono_menu_bar::MonoMenuBar,
     /// A Mono's artifacts: the reader and its page.
     pub artifacts: artifacts::ArtifactsState,
-    /// The sidebar's Sessions tab: filters, picks, inline renames.
+    /// The navigator's threads: filters, picks, inline renames.
     pub sessions_ui: crate::ui::sidebar_sessions::SessionsUi,
-    /// The sidebar's width (MonoCode keeps it for the run, not on disk).
-    pub sidebar_width: f32,
-    pub sidebar_resizing: bool,
+    /// The inspector's width (`inspectorWidth` in `settings.json`).
+    pub inspector_width: f32,
+    pub inspector_resizing: bool,
     /// MonoCode `session_reminders`, every project's, soonest first.
     pub reminders: Vec<crate::db::Reminder>,
     /// Listing reminders failed ("Couldn’t load reminders." + Retry).
@@ -193,16 +195,14 @@ pub struct BenCodeApp {
     /// MonoCode `LinkSessionWorkItemDialog`, while open.
     pub link_dialog: Option<crate::ui::link_dialog::LinkDialog>,
     pub link_input: Entity<TextInput>,
-    /// MonoCode `monocode.sidebarTabOrder`.
-    pub sidebar_tab_order: Vec<SidebarMode>,
-    /// Where the sash was pressed (window x).
-    pub sidebar_drag_x: f32,
-    /// The card, folder or filter menu open in the sidebar.
+    /// Where the inspector's sash was pressed (window x).
+    pub inspector_drag_x: f32,
+    /// The card, folder or filter menu open over the navigator's threads.
     pub sidebar_menu: Option<crate::ui::sidebar_menus::SidebarMenu>,
     /// Focused while cards are picked, so F2 / ⌫ / Esc reach them.
     pub session_list_focus: gpui::FocusHandle,
     pub permission_mode: PermissionMode,
-    pub sidebar_mode: SidebarMode,
+    pub inspector_mode: InspectorMode,
     pub search_query: String,
     /// Model key in MonoCode's `harness:model` form, e.g. `claude:opus`.
     pub selected_model: String,
@@ -310,15 +310,13 @@ pub struct BenCodeApp {
     /// MonoCode `ComposerRunner`: the composer geometry the mascot runs on
     /// (measured by layout, read by `RunnerLayer`), and the setting.
     pub runner_geometry: crate::ui::composer::runner_view::RunnerGeometry,
-    /// The footer's slot for the CPU and memory readout, measured by layout
-    /// and drawn over by `ProcessLayer`.
-    pub process_slot: std::rc::Rc<std::cell::Cell<Option<crate::ui::composer::runner::Rect>>>,
     /// The window's parts as cached views (`ui/region.rs`).
     pub regions: crate::ui::region::Regions,
     /// The busy marks over the regions (`ui/marks.rs`), made on first draw.
     pub mark_layer: Option<Entity<crate::ui::marks::MarkLayer>>,
     pub composer_mascot_off: bool,
-    /// MonoCode `LiveAgentsPreview`: the Working agents card and its setting.
+    /// The navigator's Agents section (MonoCode `LiveAgentsPreview`) and its
+    /// setting.
     pub live_agents_ui: crate::ui::rail::LiveAgentsUi,
     pub live_agents_off: bool,
     /// Settings › General: resume interrupted turns at launch without asking.
@@ -339,9 +337,6 @@ pub struct BenCodeApp {
     /// Each chat pane's place in the pane tree this frame, for the part of
     /// the background it shows.
     pub pane_rects: HashMap<String, crate::ui::layout::LayoutRect>,
-    /// The sidebar opened from the icon rail while collapsed (MonoCode's
-    /// drawer): the next press elsewhere closes it.
-    pub sidebar_drawer_open: bool,
     pub body_glass: bool,
     /// The window background last set, so the blur toggles only on change.
     pub window_background: Option<gpui::WindowBackgroundAppearance>,
@@ -419,11 +414,10 @@ pub struct BenCodeApp {
     pub workspace_state: Entity<WorkspaceCache>,
     /// Every rail project's +/- lines (MonoCode `useProjectDiffStats`).
     pub project_stats: project_stats::ProjectStats,
-    /// Provider usage for the footer (MonoCode `rateLimitsCache`).
+    /// Provider usage for the usage chip (MonoCode `rateLimitsCache`).
     pub usage: usage::UsageState,
     /// Each account's usage, a model the usage regions follow.
     pub usage_data: Entity<usage::UsageSnapshots>,
-    /// The footer's CPU and memory readout for BenCode itself.
     /// Provider account profiles (MonoCode `providerAccounts`).
     pub accounts: accounts::AccountsState,
     pub agy_accounts: agy_accounts::AgyAccountsState,
@@ -484,8 +478,9 @@ pub struct BenCodeApp {
     pub blame: blame::BlameState,
     /// Go to Definition: the jump under way, its picker, its message.
     pub definition: go_to_definition::DefinitionState,
-    pub is_sidebar_open: bool,
-    /// The project rail (⌘B); the session sidebar is `is_sidebar_open` (⇧⌘B).
+    /// The inspector, Files or Changes at the workspace's right (⇧⌘B).
+    pub inspector_open: bool,
+    /// The navigator: projects, agents and the project's threads (⌘B).
     pub is_rail_open: bool,
     /// The project rail's menus, dialogs and drags.
     pub rail_ui: crate::ui::rail::RailUi,
@@ -671,26 +666,30 @@ impl BenCodeApp {
         let mut regions = crate::ui::region::Regions::default();
         regions.follow(
             &usage_data,
-            &[Region::Footer, Region::Mono, Region::Surface],
+            &[
+                Region::Rail,
+                Region::CompactRail,
+                Region::Mono,
+                Region::Surface,
+            ],
         );
         regions.follow(
             &inbox_state,
             &[
                 Region::Surface,
-                Region::Sidebar,
                 Region::Rail,
                 Region::CompactRail,
                 Region::Titlebar,
             ],
         );
-        regions.follow(&terminals_state, &[Region::Terminal, Region::Footer]);
+        regions.follow(&terminals_state, &[Region::Terminal, Region::Titlebar]);
         regions.follow(
             &workspace_state,
             &[
                 Region::Titlebar,
                 Region::Rail,
                 Region::CompactRail,
-                Region::Sidebar,
+                Region::Inspector,
                 Region::Chat,
                 Region::FilePane,
                 Region::Surface,
@@ -734,7 +733,7 @@ impl BenCodeApp {
                 |this: &mut Self, input, event: &InputEvent, cx| {
                     if *event == InputEvent::Changed {
                         this.search_query = input.read(cx).text().to_string();
-                        this.redraw_regions(&[Region::Sidebar], cx);
+                        this.redraw_regions(&[Region::Rail], cx);
                     }
                 },
             ),
@@ -911,7 +910,7 @@ impl BenCodeApp {
                 |this: &mut Self, _, event: &InputEvent, cx| match event {
                     InputEvent::Submit => this.commit_staged_changes(cx),
                     // The Commit button follows the message.
-                    InputEvent::Changed => this.redraw_regions(&[Region::Sidebar], cx),
+                    InputEvent::Changed => this.redraw_regions(&[Region::Inspector], cx),
                     _ => {}
                 },
             ),
@@ -955,7 +954,7 @@ impl BenCodeApp {
                     InputEvent::Blur if this.tree_edit_active() => this.commit_tree_edit(true, cx),
                     InputEvent::Changed => {
                         this.file_tree.edit_state.submit_error = None;
-                        this.redraw_regions(&[Region::Sidebar], cx);
+                        this.redraw_regions(&[Region::Inspector], cx);
                     }
                     _ => {}
                 },
@@ -1310,7 +1309,7 @@ impl BenCodeApp {
         // Once the app is built and on screen.
         cx.spawn(async move |this, cx| {
             let _ = this.update(cx, |this, cx| {
-                if frame_bench::enabled() {
+                if frame_bench::enabled() || snapshots_enabled() {
                     return;
                 }
                 this.start_automation_scheduler(cx);
@@ -1349,19 +1348,18 @@ impl BenCodeApp {
             artifacts,
             sessions_ui: Default::default(),
             sidebar_menu: None,
-            sidebar_width: crate::ui::sidebar::SIDEBAR_MIN_WIDTH,
-            sidebar_resizing: false,
+            inspector_width: crate::ui::inspector::INSPECTOR_DEFAULT_WIDTH,
+            inspector_resizing: false,
             reminders: Vec::new(),
             reminder_error: None,
             reminder_generation: 0,
             reminder_failure: None,
             link_dialog: None,
             link_input,
-            sidebar_tab_order: crate::ui::sidebar::parse_tab_order(&[]),
-            sidebar_drag_x: 0.0,
+            inspector_drag_x: 0.0,
             session_list_focus: cx.focus_handle(),
             permission_mode: PermissionMode::default(),
-            sidebar_mode: SidebarMode::Sessions,
+            inspector_mode: InspectorMode::default(),
             search_query: String::new(),
             selected_model,
             harnesses,
@@ -1424,7 +1422,6 @@ impl BenCodeApp {
             editing_last_turn: None,
             new_worktrees: HashMap::new(),
             runner_geometry: Default::default(),
-            process_slot: Default::default(),
             regions,
             mark_layer: None,
             composer_mascot_off: false,
@@ -1438,7 +1435,6 @@ impl BenCodeApp {
             accent_picker_open: false,
             chat_background: Default::default(),
             pane_rects: HashMap::new(),
-            sidebar_drawer_open: false,
             body_glass: true,
             window_background: None,
             native_glass: None,
@@ -1519,7 +1515,7 @@ impl BenCodeApp {
             editor: Default::default(),
             blame: Default::default(),
             definition: Default::default(),
-            is_sidebar_open: true,
+            inspector_open: false,
             is_rail_open: true,
             rail_ui,
             monos: monos::MonosState::new(window, cx),
@@ -1541,12 +1537,17 @@ impl BenCodeApp {
         // worktree focus (`apply_settings`) picks.
         app.refresh_workspace(cx);
         app.refresh_integrations(cx);
-        if frame_bench::enabled() {
+        if frame_bench::enabled() || snapshots_enabled() {
             // Only what fills the window from the data folder: a bench runs
             // on a copy and starts no agent, fetch or sign-in.
             app.start_git_poll(cx);
             app.start_project_stats_poll(cx);
             app.load_folder_members(cx);
+            #[cfg(feature = "snapshot")]
+            if snapshot::enabled() {
+                app.start_snapshots(window, cx);
+                return app;
+            }
             app.start_frame_bench(window, cx);
             return app;
         }
@@ -1693,6 +1694,15 @@ impl BenCodeApp {
     }
 }
 
+/// Whether this launch takes the window's pictures (`app/snapshot.rs`):
+/// its window is drawn but never shown, so it takes no one's keyboard.
+pub fn snapshots_enabled() -> bool {
+    #[cfg(feature = "snapshot")]
+    return snapshot::enabled();
+    #[cfg(not(feature = "snapshot"))]
+    false
+}
+
 fn any_elements(items: impl IntoIterator<Item = impl IntoElement>) -> Vec<AnyElement> {
     items
         .into_iter()
@@ -1713,8 +1723,6 @@ impl Render for BenCodeApp {
             }
         }
         self.apply_ui_scale(window);
-        self.live_agents_ui.window_height =
-            crate::ui::scale::logical(window.viewport_size().height);
         self.sync_chat_background(!cx.theme().is_dark(), cx);
         self.sync_mono_background(!cx.theme().is_dark(), cx);
         if std::mem::take(&mut self.question_focus_wanted) {
@@ -1736,8 +1744,8 @@ impl Render for BenCodeApp {
         let glass = self.glass(cx);
         let colors = &cx.theme().colors;
         let (bg, fg) = (colors.bg, colors.fg);
-        // Inbox, Notes, Automations and Settings replace the
-        // sidebar and the workspace column (MonoCode in-shell views).
+        // Inbox, Notes, Automations and Settings replace everything right
+        // of the navigator (MonoCode in-shell views).
         let surface_open = self.surface.is_some();
         // A Mono's conversation does too (MonoCode `monoCovers`).
         let mono_open = self.mono_covers() && self.mono_in_view().is_some();
@@ -1810,35 +1818,16 @@ impl Render for BenCodeApp {
             let style = StyleRefinement::default().flex_none().h_full().w(width);
             region(self, Region::CompactRail, style, cx)
         });
-        let sidebar = (self.sidebar_shown() && workspace_visible).then(|| {
-            let width = crate::ui::scale::px(self.sidebar_width);
-            let style = StyleRefinement::default().flex_none().h_full().w(width);
-            let drawer = self.sidebar_is_drawer();
-            div()
-                .flex()
-                .flex_none()
-                .h_full()
-                .when(drawer, |el| {
-                    el.on_mouse_down_out(cx.listener(
-                        |this, event: &gpui::MouseDownEvent, _, cx| {
-                            this.dismiss_sidebar_drawer(event, cx)
-                        },
-                    ))
-                })
-                .child(region(self, Region::Sidebar, style, cx))
-        });
         let main = workspace_visible.then(|| {
             let titlebar =
                 (!title_bar_above).then(|| region(self, Region::Titlebar, titlebar_style(), cx));
-            let footer = region(
-                self,
-                Region::Footer,
-                StyleRefinement::default()
-                    .w_full()
-                    .flex_none()
-                    .h(crate::ui::scale::px(28.0)),
-                cx,
-            );
+            // Files and Changes, at the right of the workspace under the
+            // title bar: the navigator keeps the threads in view.
+            let inspector = self.inspector_open.then(|| {
+                let width = crate::ui::scale::px(self.inspector_width);
+                let style = StyleRefinement::default().flex_none().h_full().w(width);
+                region(self, Region::Inspector, style, cx)
+            });
             div()
                 .flex()
                 .flex_col()
@@ -1851,12 +1840,18 @@ impl Render for BenCodeApp {
                 .child(
                     div()
                         .flex()
-                        .flex_col()
                         .flex_1()
                         .min_h_0()
                         .bg(glass.body(bg))
-                        .child(self.render_workspace_with_dock(window, cx))
-                        .child(footer),
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .flex_1()
+                                .min_w_0()
+                                .child(self.render_workspace_with_dock(window, cx)),
+                        )
+                        .children(inspector),
                 )
         });
         let column = || StyleRefinement::default().flex_1().min_w_0().h_full();
@@ -1885,23 +1880,23 @@ impl Render for BenCodeApp {
             .child(
                 div()
                     .id("bencode-root")
-                    .on_drag_move::<crate::ui::sidebar::SidebarResize>(cx.listener(
+                    .on_drag_move::<crate::ui::inspector::InspectorResize>(cx.listener(
                         |this,
-                         event: &gpui::DragMoveEvent<crate::ui::sidebar::SidebarResize>,
+                         event: &gpui::DragMoveEvent<crate::ui::inspector::InspectorResize>,
                          window,
                          cx| {
-                            let drag = crate::ui::sidebar::SidebarResize {
-                                start_x: this.sidebar_drag_x,
+                            let drag = crate::ui::inspector::InspectorResize {
+                                start_x: this.inspector_drag_x,
                                 ..event.drag(cx).clone()
                             };
-                            let width = crate::ui::sidebar::resized_width(
+                            let width = crate::ui::inspector::resized_width(
                                 &drag,
                                 crate::ui::scale::logical(event.event.position.x),
                                 crate::ui::scale::logical(window.viewport_size().width),
                             );
-                            if width != this.sidebar_width || !this.sidebar_resizing {
-                                this.sidebar_width = width;
-                                this.sidebar_resizing = true;
+                            if width != this.inspector_width || !this.inspector_resizing {
+                                this.inspector_width = width;
+                                this.inspector_resizing = true;
                                 cx.notify();
                             }
                         },
@@ -1909,7 +1904,8 @@ impl Render for BenCodeApp {
                     .on_mouse_up(
                         gpui::MouseButton::Left,
                         cx.listener(|this, _, _, cx| {
-                            if std::mem::take(&mut this.sidebar_resizing) {
+                            if std::mem::take(&mut this.inspector_resizing) {
+                                this.save_settings(cx);
                                 cx.notify();
                             }
                         }),
@@ -1929,14 +1925,12 @@ impl Render for BenCodeApp {
                             .size_full()
                             .min_h_0()
                             .overflow_hidden()
-                            // Column 1: the project rail, or its icons
+                            // The navigator: projects, agents and threads,
+                            // or its icons
                             .children(rail)
                             .children(compact)
-                            // Column 2: the sidebar (when open, or drawn
-                            // out from the icon rail)
-                            .children(sidebar)
-                            // Column 3: title bar, chat and file pane,
-                            // terminal dock, footer
+                            // The title bar over the chat and file pane,
+                            // the terminal dock and the inspector
                             .children(main)
                             .children(surface)
                             .children(mono_view),

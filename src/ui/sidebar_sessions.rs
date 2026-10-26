@@ -28,6 +28,9 @@ use crate::ui::sidebar_folders::SessionGroup;
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 use crate::ui::virtual_rows;
 
+/// The least the threads keep in the navigator: the search and about two
+/// cards.
+const THREADS_MIN_HEIGHT: f32 = 140.0;
 /// The list's padding, and the gap between its rows.
 const LIST_PAD: f32 = 6.0;
 const ROW_GAP: f32 = 2.0;
@@ -118,17 +121,14 @@ fn entry_key(entry: &ListEntry<'_>) -> String {
 }
 
 impl BenCodeApp {
-    /// Redraws the cards' ages every 30s while the Sessions tab shows.
+    /// Redraws the cards' ages every 30s while the navigator shows them.
     pub fn start_session_age_tick(&mut self, cx: &mut Context<Self>) {
         cx.spawn(async move |this, cx| {
             loop {
                 cx.background_executor().timer(AGE_TICK).await;
                 let ticked = this.update(cx, |app, cx| {
-                    if app.sidebar_mode == crate::app::SidebarMode::Sessions {
-                        app.redraw_regions(
-                            &[Region::Sidebar, Region::Rail, Region::CompactRail],
-                            cx,
-                        );
+                    if app.is_rail_open || app.compact_rail_active() {
+                        app.redraw_regions(&[Region::Rail, Region::CompactRail], cx);
                     }
                 });
                 if ticked.is_err() {
@@ -169,7 +169,7 @@ impl BenCodeApp {
             map.insert(project, true);
         }
         self.save_settings(cx);
-        self.redraw_regions(&[Region::Sidebar], cx);
+        self.redraw_regions(&[Region::Rail], cx);
     }
 
     pub(crate) fn toggle_pinned_group(&mut self, cx: &mut Context<Self>) {
@@ -181,7 +181,7 @@ impl BenCodeApp {
             self.sessions_ui.pinned_collapsed.remove(&project);
         }
         self.save_settings(cx);
-        self.redraw_regions(&[Region::Sidebar], cx);
+        self.redraw_regions(&[Region::Rail], cx);
     }
 
     /// The project's threads that are listed at all: sent at least once
@@ -331,7 +331,7 @@ impl BenCodeApp {
                                         let app = app.clone();
                                         cx.defer(move |cx| {
                                             if let Err(err) = app.update(cx, |this, cx| {
-                                                this.redraw_regions(&[Region::Sidebar], cx);
+                                                this.redraw_regions(&[Region::Rail], cx);
                                             }) {
                                                 log::debug!("row measured after app drop: {err:#}");
                                             }
@@ -385,22 +385,24 @@ impl BenCodeApp {
             self.sessions_ui.order = order;
         }
         if selection_changed {
-            // The Sidebar is drawing this: a redraw now would update it
+            // The navigator is drawing this: a redraw now would update it
             // while it is being updated.
             let app = cx.entity().downgrade();
             cx.defer(move |cx| {
                 if let Err(err) = app.update(cx, |this, cx| {
-                    this.redraw_regions(&[Region::Sidebar], cx);
+                    this.redraw_regions(&[Region::Rail], cx);
                 }) {
                     log::debug!("selection pruned after app drop: {err:#}");
                 }
             });
         }
+        // The navigator's sections above give way before the threads go
+        // under the search and a couple of cards.
         div()
             .flex()
             .flex_col()
             .flex_1()
-            .min_h_0()
+            .min_h(px(THREADS_MIN_HEIGHT))
             .child(self.render_session_search(cx))
             .child(crate::ui::scrollbar::framed(
                 "thread-list-scrollbar",
@@ -432,9 +434,7 @@ impl BenCodeApp {
         cx: &Context<Self>,
     ) -> AnyElement {
         match entry {
-            ListEntry::Session(session) => {
-                self.render_session_card(session, false, states, now, cx)
-            }
+            ListEntry::Session(session) => self.render_session_card(session, states, now, cx),
             ListEntry::Pinned {
                 collapsed,
                 sessions,
@@ -452,7 +452,7 @@ impl BenCodeApp {
                 let cards = expanded.then(|| {
                     sessions
                         .iter()
-                        .map(|s| self.render_session_card(s, true, states, now, cx))
+                        .map(|s| self.render_session_card(s, states, now, cx))
                         .collect()
                 });
                 self.render_session_group(
@@ -470,7 +470,7 @@ impl BenCodeApp {
                 let cards = expanded.then(|| {
                     sessions
                         .iter()
-                        .map(|s| self.render_session_card(s, true, states, now, cx))
+                        .map(|s| self.render_session_card(s, states, now, cx))
                         .collect()
                 });
                 self.render_session_folder(
@@ -621,7 +621,7 @@ impl BenCodeApp {
                         .title_changes
                         .retain(|_, change| change.at.elapsed() < TITLE_SWEEP);
                     // The sweep is drawn on the sidebar's cards alone.
-                    app.redraw_regions(&[Region::Sidebar], cx);
+                    app.redraw_regions(&[Region::Rail], cx);
                 });
                 if let Err(err) = cleared {
                     log::debug!("title sweep after app drop: {err:#}");
@@ -671,10 +671,10 @@ impl BenCodeApp {
         let current = self.sessions_ui.drop.as_ref();
         if over && current != Some(&target) {
             self.sessions_ui.drop = Some(target);
-            self.redraw_regions(&[Region::Sidebar], cx);
+            self.redraw_regions(&[Region::Rail], cx);
         } else if !over && current == Some(&target) {
             self.sessions_ui.drop = None;
-            self.redraw_regions(&[Region::Sidebar], cx);
+            self.redraw_regions(&[Region::Rail], cx);
         }
     }
 
@@ -687,7 +687,7 @@ impl BenCodeApp {
         // MonoCode keeps reminder threads out of folder drops.
         let reminded = |id: &str| self.reminders.iter().any(|r| r.session_id == id);
         if reminded(dragged) || matches!(&target, ListDrop::Session(other) if reminded(other)) {
-            self.redraw_regions(&[Region::Sidebar], cx);
+            self.redraw_regions(&[Region::Rail], cx);
             return;
         }
         let folders = self.project_folders().to_vec();
@@ -709,7 +709,7 @@ impl BenCodeApp {
             }
             ListDrop::Session(_) => {}
         }
-        self.redraw_regions(&[Region::Sidebar], cx);
+        self.redraw_regions(&[Region::Rail], cx);
     }
 }
 

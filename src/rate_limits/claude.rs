@@ -27,7 +27,7 @@ pub fn fetch(account: Option<&AccountProfile>, now: i64) -> Fetched {
         return Fetched::Unavailable("Claude not signed in".into());
     };
     // Claude Code owns this credential and rotates its refresh token. The
-    // usage footer must remain read-only: independently refreshing here can
+    // usage chip must remain read-only: independently refreshing here can
     // race a live CLI (or MonoCode) and leave one process with a spent
     // refresh token, which forces the user through sign-in again.
     if token_expired(creds.expires_at_ms, now) {
@@ -63,7 +63,7 @@ fn status_error(status: u16) -> String {
 }
 
 /// An expired access token the CLI can still refresh is not a lost sign-in:
-/// the account's next turn renews it, so the footer must not offer to sign
+/// the account's next turn renews it, so the chip must not offer to sign
 /// in (the text avoids the words `needs_provider_login` looks for).
 fn expired_token_error(has_refresh_token: bool) -> String {
     if has_refresh_token {

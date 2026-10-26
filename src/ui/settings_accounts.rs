@@ -18,10 +18,10 @@ use crate::harness::accounts::ProviderAccount;
 use crate::rate_limits::{ProviderRateLimits, RateLimitProvider, account_status};
 use crate::ui::HarnessIcon;
 use crate::ui::app_callback::app_callback;
-use crate::ui::footer::{account_status_label, usage_meter};
 use crate::ui::git_changes_panel::spinning_icon;
 use crate::ui::scale::px;
 use crate::ui::settings_parts::{SettingsGroup, SettingsRow, icon_tile};
+use crate::ui::status::{account_status_label, usage_meter};
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// MonoCode `UsageMeter`'s `w-36`.
@@ -82,7 +82,7 @@ impl BenCodeApp {
         let group = SettingsGroup::new("Accounts")
             .description(
                 "Isolated sign-ins for providers that support account profiles. Switch \
-                 accounts from the usage control in the footer.",
+                 accounts from the usage control in the title bar.",
             )
             .action(
                 IconButton::new("accounts-refresh", IconName::RefreshCw)

@@ -1,8 +1,8 @@
 //! MonoCode `SidebarUpdateFooter` (`SidebarUpdate.tsx`, `UpdateRailCard.tsx`):
-//! under the Working agents card, the "Updated to" card a restart leaves
-//! and the "Update to" button while there is an update to act on. Nothing
-//! shows otherwise; manual checks live in Settings and the menu. The state
-//! is `app/updater.rs`.
+//! above Settings at the navigator's foot, the "Updated to" card a restart
+//! leaves and the "Update to" button while there is an update to act on.
+//! Nothing shows otherwise; manual checks live in Settings and the menu.
+//! The state is `app/updater.rs`.
 
 use std::sync::{Arc, LazyLock};
 

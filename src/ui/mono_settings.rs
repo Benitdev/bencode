@@ -429,9 +429,9 @@ impl BenCodeApp {
             )
         };
         vec![
-            SettingsRow::new("Show sessions in sidebar")
+            SettingsRow::new("Show sessions in the navigator")
                 .description(
-                    "Sessions it starts appear in your project sidebar. Hidden ones stay saved and open from its overview.",
+                    "Sessions it starts appear among your project's threads. Hidden ones stay saved and open from its overview.",
                 )
                 .control_width(CONTROL_WIDTH)
                 .control(switch(format!("mono-started-shown-{}", mono.id), shown, |m, on| {

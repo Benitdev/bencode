@@ -7,9 +7,9 @@ use std::rc::Rc;
 use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
-    AnyElement, Bounds, Context, DragMoveEvent, FontWeight, InteractiveElement, IntoElement,
-    MouseButton, MouseDownEvent, ParentElement, Pixels, Point, SharedString, Styled, canvas, div,
-    prelude::*, relative, rgb,
+    AnyElement, Bounds, Context, DragMoveEvent, InteractiveElement, IntoElement, MouseButton,
+    MouseDownEvent, ParentElement, Pixels, Point, SharedString, Styled, canvas, div, prelude::*,
+    relative, rgb,
 };
 
 use crate::ui::scale::px;
@@ -19,8 +19,8 @@ use super::group_color;
 use super::model::{ProjectGroup, mute_status, notification_id, path_key};
 use super::reorder::{DraggedRailProject, preview_order};
 use super::widgets::{
-    AMBER_400, EMERALD_400, ROW_HEIGHT, hover_control, project_card_title, project_diff_stat,
-    project_mascot_icon, rail_label, section_button,
+    AMBER_400, EMERALD_400, ROW_HEIGHT, hover_control, nav_label, nav_row, project_card_title,
+    project_diff_stat, project_mascot_icon, rail_label, section_button,
 };
 use crate::app::{BenCodeApp, same_project_path};
 use crate::ui::mascot::mascot_for;
@@ -384,9 +384,7 @@ impl BenCodeApp {
 
     /// MonoCode `ProjectCard`.
     fn render_project_card(&self, card: ProjectCard, cx: &Context<Self>) -> AnyElement {
-        let theme = cx.theme();
-        let fg = theme.colors.fg;
-        let dark = theme.is_dark();
+        let fg = cx.theme().colors.fg;
         let id = format!("rail-{}-{}", card.list, path_key(&card.path));
         let group = SharedString::from(id.clone());
         let name = self.rail_project_label(&card.path);
@@ -441,10 +439,6 @@ impl BenCodeApp {
             card.path.clone(),
             card.path.clone(),
         );
-        // `bg-selection-strong` (content 12%, 7% in light), else `opacity-65`
-        // with the `content/5` hover from `.project-reorder-item`.
-        let strong = fg.opacity(if dark { 0.12 } else { 0.07 });
-        let hover = fg.fill(Fill::Hover);
         let label = if card.busy {
             crate::ui::spinner::shimmer(name, cx)
         } else {
@@ -458,216 +452,204 @@ impl BenCodeApp {
                 .into_any_element(),
             None => project_mascot_icon(mascot, color, card.busy, cx),
         };
-        div()
-            .id(SharedString::from(id.clone()))
-            .group(group.clone())
-            .relative()
-            .flex()
-            .items_stretch()
-            .h(px(ROW_HEIGHT))
-            .px_2()
-            .rounded(px(6.0))
-            .map(|el| {
-                if card.selected {
-                    el.bg(strong)
-                } else {
-                    el.opacity(0.65).hover(move |s| s.bg(hover))
-                }
-            })
-            // The held row's slot stays open while it rides the pointer.
-            .when(held, |el| el.opacity(0.0))
-            .on_click(cx.listener(move |this, _, _, cx| {
-                this.switch_project(select_path.clone(), cx);
-            }))
-            .on_mouse_down(
-                MouseButton::Right,
-                cx.listener(move |this, event: &MouseDownEvent, _, cx| {
-                    cx.stop_propagation();
-                    this.open_rail_project_menu(&menu_path, event.position, cx);
-                }),
-            )
-            .when(card.draggable, |el| {
-                el.on_drag(drag, |dragged, _, _, cx| cx.new(|_| dragged.clone()))
-            })
-            .child(
-                // The card's button: `flex min-w-0 flex-1 items-center gap-2
-                // group-hover:pr-6`, titled with the path and its changes.
-                div()
-                    .id(SharedString::from(format!("{id}-main")))
-                    .flex()
-                    .min_w_0()
-                    .flex_1()
-                    .items_center()
-                    .gap_2()
-                    // Hidden stats keep their width (`invisible`, never
-                    // `display`): when they end the row, the options button
-                    // covers them and the name keeps its room.
-                    .when(!stats_last, |el| {
-                        el.group_hover(group.clone(), |s| s.pr(px(24.0)))
-                    })
-                    .tooltip(Tooltip::text(title))
-                    .child(
-                        // `project-card-logo grid size-4 group-hover:opacity-0`
-                        div()
-                            .flex()
-                            .flex_none()
-                            .size_4()
-                            .items_center()
-                            .justify_center()
-                            .group_hover(group.clone(), |s| s.opacity(0.0))
-                            .child(icon),
-                    )
-                    .child(
-                        // `min-w-0 flex-1 truncate text-sm font-medium leading-tight`;
-                        // beside a machine's name, `max-w-[75%] shrink-0`.
-                        div()
-                            .min_w_0()
-                            .map(|el| match remote.as_ref().and_then(|(m, ..)| m.as_ref()) {
-                                Some(_) => el.flex_none().max_w(relative(0.75)),
-                                None => el.flex_1(),
-                            })
-                            .truncate()
-                            .text_size(Text::Lg.px())
-                            .font_weight(FontWeight::MEDIUM)
-                            .line_height(relative(1.25))
-                            .child(label),
-                    )
-                    .when_some(
-                        remote.as_ref().and_then(|(m, ..)| m.clone()),
-                        |el, machine| {
-                            // `min-w-0 flex-1 truncate text-[11px] leading-tight text-content/45`
-                            el.child(
-                                div()
-                                    .min_w_0()
-                                    .flex_1()
-                                    .truncate()
-                                    .text_size(Text::Sm.px())
-                                    .line_height(relative(1.25))
-                                    .text_color(fg.ink(Ink::Muted))
-                                    .child(machine),
-                            )
-                        },
-                    )
-                    .when(has_changes, |el| {
-                        // `project-card-stats shrink-0 group-hover:hidden`
+        nav_row(
+            div()
+                .id(SharedString::from(id.clone()))
+                .group(group.clone())
+                .relative()
+                .flex()
+                .items_stretch(),
+            card.selected,
+            cx,
+        )
+        // The held row's slot stays open while it rides the pointer.
+        .when(held, |el| el.opacity(0.0))
+        .on_click(cx.listener(move |this, _, _, cx| {
+            this.switch_project(select_path.clone(), cx);
+        }))
+        .on_mouse_down(
+            MouseButton::Right,
+            cx.listener(move |this, event: &MouseDownEvent, _, cx| {
+                cx.stop_propagation();
+                this.open_rail_project_menu(&menu_path, event.position, cx);
+            }),
+        )
+        .when(card.draggable, |el| {
+            el.on_drag(drag, |dragged, _, _, cx| cx.new(|_| dragged.clone()))
+        })
+        .child(
+            // The card's button: `flex min-w-0 flex-1 items-center gap-2
+            // group-hover:pr-6`, titled with the path and its changes.
+            div()
+                .id(SharedString::from(format!("{id}-main")))
+                .flex()
+                .min_w_0()
+                .flex_1()
+                .items_center()
+                .gap_2()
+                // Hidden stats keep their width (`invisible`, never
+                // `display`): when they end the row, the options button
+                // covers them and the name keeps its room.
+                .when(!stats_last, |el| {
+                    el.group_hover(group.clone(), |s| s.pr(px(24.0)))
+                })
+                .tooltip(Tooltip::text(title))
+                .child(
+                    // `project-card-logo grid size-4 group-hover:opacity-0`
+                    div()
+                        .flex()
+                        .flex_none()
+                        .size_4()
+                        .items_center()
+                        .justify_center()
+                        .group_hover(group.clone(), |s| s.opacity(0.0))
+                        .child(icon),
+                )
+                .child(
+                    // Beside a machine's name, `max-w-[75%] shrink-0`.
+                    nav_label()
+                        .map(|el| match remote.as_ref().and_then(|(m, ..)| m.as_ref()) {
+                            Some(_) => el.flex_none().max_w(relative(0.75)),
+                            None => el.flex_1(),
+                        })
+                        .child(label),
+                )
+                .when_some(
+                    remote.as_ref().and_then(|(m, ..)| m.clone()),
+                    |el, machine| {
+                        // `min-w-0 flex-1 truncate text-[11px] leading-tight text-content/45`
                         el.child(
                             div()
-                                .flex_none()
-                                // Wide enough, with the gap, for the button over it.
-                                .group_hover(group.clone(), |s| s.invisible().min_w(px(16.0)))
-                                .child(project_diff_stat(
-                                    additions,
-                                    deletions,
-                                    crate::ui::appearance::diff_colors(cx),
-                                )),
+                                .min_w_0()
+                                .flex_1()
+                                .truncate()
+                                .text_size(Text::Sm.px())
+                                .line_height(relative(1.25))
+                                .text_color(fg.ink(Ink::Muted))
+                                .child(machine),
                         )
-                    })
-                    .when_some(
-                        remote.as_ref().map(|(_, online, _)| *online),
-                        |el, online| {
-                            // `relative grid size-4 text-content/45`, `Internet size-3`
-                            // and a `size-1.5` dot: emerald while connected.
-                            el.child(
-                                div()
-                                    .relative()
-                                    .flex()
-                                    .flex_none()
-                                    .size_4()
-                                    .items_center()
-                                    .justify_center()
-                                    .child(
-                                        Icon::new(IconName::Globe)
-                                            .size(IconSize::Xs)
-                                            .color(fg.ink(Ink::Muted)),
-                                    )
-                                    .child(
-                                        div()
-                                            .absolute()
-                                            .right_0()
-                                            .bottom_0()
-                                            .size(px(6.0))
-                                            .rounded_full()
-                                            .border_1()
-                                            .border_color(cx.theme().colors.bg)
-                                            .bg(if online == Some(true) {
-                                                rgb(EMERALD_400).into()
-                                            } else {
-                                                fg.ink(Ink::Faint)
-                                            }),
-                                    ),
-                            )
-                        },
+                    },
+                )
+                .when(has_changes, |el| {
+                    // `project-card-stats shrink-0 group-hover:hidden`
+                    el.child(
+                        div()
+                            .flex_none()
+                            // Wide enough, with the gap, for the button over it.
+                            .group_hover(group.clone(), |s| s.invisible().min_w(px(16.0)))
+                            .child(project_diff_stat(
+                                additions,
+                                deletions,
+                                crate::ui::appearance::diff_colors(cx),
+                            )),
                     )
-                    .when_some(card.mute, |el, status| {
-                        // `grid size-4 shrink-0 place-items-center text-amber-400`, `BellOff size-3.5`
+                })
+                .when_some(
+                    remote.as_ref().map(|(_, online, _)| *online),
+                    |el, online| {
+                        // `relative grid size-4 text-content/45`, `Internet size-3`
+                        // and a `size-1.5` dot: emerald while connected.
                         el.child(
                             div()
-                                .id(SharedString::from(format!("{id}-muted")))
+                                .relative()
                                 .flex()
                                 .flex_none()
                                 .size_4()
                                 .items_center()
                                 .justify_center()
-                                .tooltip(Tooltip::text(status))
                                 .child(
-                                    crate::ui::icons::ExtraIcon::BellOff
-                                        .icon()
-                                        .size(IconSize::Sm)
-                                        .color(rgb(AMBER_400)),
+                                    Icon::new(IconName::Globe)
+                                        .size(IconSize::Xs)
+                                        .color(fg.ink(Ink::Muted)),
+                                )
+                                .child(
+                                    div()
+                                        .absolute()
+                                        .right_0()
+                                        .bottom_0()
+                                        .size(px(6.0))
+                                        .rounded_full()
+                                        .border_1()
+                                        .border_color(cx.theme().colors.bg)
+                                        .bg(if online == Some(true) {
+                                            rgb(EMERALD_400).into()
+                                        } else {
+                                            fg.ink(Ink::Faint)
+                                        }),
                                 ),
                         )
-                    }),
-            )
-            .child(
-                // "Project options": `absolute right-1 top-1/2 hidden size-6
-                // rounded-md text-content/55 hover:bg-content/8 group-hover:grid`.
-                hover_control(
-                    SharedString::from(format!("{id}-options")),
-                    IconName::Ellipsis,
-                    IconSize::Md,
-                    "Project options",
-                    &group,
-                    fg,
-                )
-                .right_1()
-                .top(px(4.0))
-                .size_6()
-                .on_mouse_down(
-                    MouseButton::Left,
-                    cx.listener(move |this, event: &MouseDownEvent, _, cx| {
-                        cx.stop_propagation();
-                        this.open_rail_project_menu(&options_path, event.position, cx);
-                    }),
-                ),
-            )
-            .child(
-                // Pin: `absolute left-2 top-1/2 size-4 rounded-sm opacity-0
-                // group-hover:opacity-100`, over the logo it replaces.
-                hover_control(
-                    SharedString::from(format!("{id}-pin")),
-                    if card.pinned {
-                        IconName::PinOff
-                    } else {
-                        IconName::Pin
                     },
-                    IconSize::Sm,
-                    if card.pinned {
-                        "Unpin project"
-                    } else {
-                        "Pin project"
-                    },
-                    &group,
-                    fg,
                 )
-                .left_2()
-                .top(px(8.0))
-                .size_4()
-                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                .on_click(cx.listener(move |this, _, _, cx| {
+                .when_some(card.mute, |el, status| {
+                    // `grid size-4 shrink-0 place-items-center text-amber-400`, `BellOff size-3.5`
+                    el.child(
+                        div()
+                            .id(SharedString::from(format!("{id}-muted")))
+                            .flex()
+                            .flex_none()
+                            .size_4()
+                            .items_center()
+                            .justify_center()
+                            .tooltip(Tooltip::text(status))
+                            .child(
+                                crate::ui::icons::ExtraIcon::BellOff
+                                    .icon()
+                                    .size(IconSize::Sm)
+                                    .color(rgb(AMBER_400)),
+                            ),
+                    )
+                }),
+        )
+        .child(
+            // "Project options": `absolute right-1 top-1/2 hidden size-6
+            // rounded-md text-content/55 hover:bg-content/8 group-hover:grid`.
+            hover_control(
+                SharedString::from(format!("{id}-options")),
+                IconName::Ellipsis,
+                IconSize::Md,
+                "Project options",
+                &group,
+                fg,
+            )
+            .right_1()
+            .top(px(4.0))
+            .size_6()
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |this, event: &MouseDownEvent, _, cx| {
                     cx.stop_propagation();
-                    this.toggle_project_pin(&pin_path, cx);
-                })),
+                    this.open_rail_project_menu(&options_path, event.position, cx);
+                }),
+            ),
+        )
+        .child(
+            // Pin: `absolute left-2 top-1/2 size-4 rounded-sm opacity-0
+            // group-hover:opacity-100`, over the logo it replaces.
+            hover_control(
+                SharedString::from(format!("{id}-pin")),
+                if card.pinned {
+                    IconName::PinOff
+                } else {
+                    IconName::Pin
+                },
+                IconSize::Sm,
+                if card.pinned {
+                    "Unpin project"
+                } else {
+                    "Pin project"
+                },
+                &group,
+                fg,
             )
-            .into_any_element()
+            .left_2()
+            .top(px(8.0))
+            .size_4()
+            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            .on_click(cx.listener(move |this, _, _, cx| {
+                cx.stop_propagation();
+                this.toggle_project_pin(&pin_path, cx);
+            })),
+        )
+        .into_any_element()
     }
 }

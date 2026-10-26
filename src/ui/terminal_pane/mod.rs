@@ -1,6 +1,6 @@
 //! Terminal dock (MonoCode `ProjectTerminalDock`): each project keeps its
 //! own terminals, opened in the project folder, under a tab strip with
-//! New Terminal (⌘`). Toggled from the footer or with ⌘J. It docks on any
+//! New Terminal (⌘`). Toggled from the title bar or with ⌘J. It docks on any
 //! edge of the workspace (Move Terminal), the sash on its inner edge
 //! resizes it, and each project's side, size and shown state are saved.
 //! A tab is named for the job it runs or the folder its shell is in, and
@@ -122,7 +122,7 @@ pub struct TerminalDocks {
     close_confirm: Option<running::CloseConfirm>,
     /// The process poll is running (while any terminal's shell is).
     polling: bool,
-    /// The footer chip's list was open when the chip was pressed.
+    /// The title bar chip's list was open when the chip was pressed.
     pub(crate) running_menu_at_press: bool,
     /// The window's size at the last render, for picks made by key.
     viewport: (f32, f32),
@@ -141,7 +141,7 @@ impl BenCodeApp {
     }
 
     /// Changes the terminal docks; the caller redraws (the app's notify,
-    /// or the model's, which the dock and the footer follow).
+    /// or the model's, which the dock and the title bar follow).
     pub fn terminals_mut<R>(
         &self,
         cx: &mut gpui::App,
@@ -436,8 +436,8 @@ impl BenCodeApp {
     }
 
     /// MonoCode `reorderDockTerminals`: a tab dropped on another.
-    /// Changes the current project's dock; the dock and the footer, which
-    /// follow the model, redraw.
+    /// Changes the current project's dock; the dock and the title bar,
+    /// which follow the model, redraw.
     fn change_current_dock(&self, cx: &mut Context<Self>, change: impl FnOnce(&mut TerminalDock)) {
         let project = self.current_cwd.clone();
         self.terminals_state.update(cx, |docks, cx| {

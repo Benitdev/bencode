@@ -23,21 +23,23 @@ use gpui::{
 };
 
 use crate::app::BenCodeApp;
+use crate::ui::status::UsageChipVariant;
 
 /// One part of the window.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Region {
     Titlebar,
+    /// The navigator: projects, agents and the project's threads.
     Rail,
     CompactRail,
-    Sidebar,
+    /// Files or Changes, at the workspace's right.
+    Inspector,
     /// Every chat pane (`RegionKind::Pane`): a group, never a view of its
     /// own. Redrawing it redraws each pane.
     Chat,
     /// The tabs beside the chat: files, reviews, commits, browser pages.
     FilePane,
     Terminal,
-    Footer,
     /// Inbox, Notes, Automations or Settings.
     Surface,
     /// A Mono in the main area, its Overview beside it.
@@ -46,13 +48,12 @@ pub enum Region {
 
 impl Region {
     /// Where the busy marks the app's clock steps are drawn
-    /// (`ui/spinner.rs`): the rail's mascots, the sidebar's cards, the
+    /// (`ui/spinner.rs`): the navigator's mascots and thread cards, the
     /// title bar's tabs, the transcript's fold line, a Mono's mascot.
-    pub const BUSY_MARKS: [Region; 6] = [
+    pub const BUSY_MARKS: [Region; 5] = [
         Region::Titlebar,
         Region::Rail,
         Region::CompactRail,
-        Region::Sidebar,
         Region::Chat,
         Region::Mono,
     ];
@@ -300,7 +301,7 @@ impl BenCodeApp {
     }
 
     /// Draws one region. What a region measures or places as it is drawn
-    /// (the runner's geometry, the footer's slot, a page's box) is reset
+    /// (the runner's geometry, a page's box) is reset
     /// here, by the region that sets it, so a region reused as painted
     /// keeps what it set; the shell resets it while the region is not
     /// drawn at all (`settle_undrawn_regions`).
@@ -313,8 +314,11 @@ impl BenCodeApp {
         match region {
             Region::Titlebar => self.render_titlebar(window, cx).into_any_element(),
             Region::Rail => self.render_project_rail(cx).into_any_element(),
-            Region::CompactRail => self.render_compact_rail(cx).into_any_element(),
-            Region::Sidebar => self.render_sidebar(cx).into_any_element(),
+            Region::CompactRail => {
+                let usage = self.render_usage_status(UsageChipVariant::Icon, cx);
+                self.render_compact_rail(usage, cx).into_any_element()
+            }
+            Region::Inspector => self.render_inspector(cx).into_any_element(),
             // A group: each pane is a region of its own.
             Region::Chat => div().into_any_element(),
             Region::FilePane => {
@@ -324,10 +328,6 @@ impl BenCodeApp {
                 pane
             }
             Region::Terminal => self.render_terminal_region(cx),
-            Region::Footer => {
-                self.process_slot.set(None);
-                self.render_usage_footer(cx).into_any_element()
-            }
             Region::Surface => self
                 .render_surface(cx)
                 .unwrap_or_else(|| div().into_any_element()),
@@ -370,9 +370,6 @@ impl BenCodeApp {
         if !drawn.contains(&Region::FilePane) {
             self.browser.drawn.set(None);
             self.browser.hide_undrawn();
-        }
-        if !drawn.contains(&Region::Footer) {
-            self.process_slot.set(None);
         }
         if !drawn.contains(&Region::Mono) {
             self.artifacts.page_drawn.set(false);

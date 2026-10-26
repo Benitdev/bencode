@@ -147,6 +147,9 @@ impl BenCodeApp {
         self.changes_ui.tree = saved.changes_tree;
         self.diff_split = saved.diff_split;
         self.file_pane_left = saved.file_pane_left;
+        self.inspector_open = saved.inspector_open;
+        self.inspector_mode = saved.inspector_mode;
+        self.inspector_width = crate::ui::inspector::saved_width(saved.inspector_width);
         self.editor.default_view_mode = if saved.file_source_view {
             crate::ui::editor_pane::FileViewMode::Source
         } else {
@@ -175,7 +178,6 @@ impl BenCodeApp {
         self.sessions_ui.filters = saved.session_sidebar_filters.clone();
         self.sessions_ui.pinned_collapsed = saved.pinned_sessions_collapsed.clone();
         self.sessions_ui.reminders_collapsed = saved.reminder_sessions_collapsed.clone();
-        self.sidebar_tab_order = crate::ui::sidebar::parse_tab_order(&saved.sidebar_tab_order);
         self.appearance = appearance_prefs(&saved);
         crate::ui::scale::set_ui_scale(self.appearance.ui_scale);
         self.settings = saved;
@@ -207,6 +209,10 @@ impl BenCodeApp {
             changes_tree: self.changes_ui.tree,
             diff_split: self.diff_split,
             file_pane_left: self.file_pane_left,
+            inspector_open: self.inspector_open,
+            inspector_mode: self.inspector_mode,
+            inspector_width: Some(self.inspector_width)
+                .filter(|width| *width != crate::ui::inspector::INSPECTOR_DEFAULT_WIDTH),
             file_source_view: self.editor.default_view_mode
                 == crate::ui::editor_pane::FileViewMode::Source,
             theme_hue: Some(self.appearance.tint.hue).filter(|v| *v != appearance::HUE_DEFAULT),
@@ -238,11 +244,6 @@ impl BenCodeApp {
             session_sidebar_filters: self.sessions_ui.filters.clone(),
             pinned_sessions_collapsed: self.sessions_ui.pinned_collapsed.clone(),
             reminder_sessions_collapsed: self.sessions_ui.reminders_collapsed.clone(),
-            sidebar_tab_order: self
-                .sidebar_tab_order
-                .iter()
-                .map(|t| crate::ui::sidebar::tab_id(*t).to_string())
-                .collect(),
             pinned_projects: self.settings.pinned_projects.clone(),
             default_editor: self.settings.default_editor.clone(),
             delete_cli_sessions: self.settings.delete_cli_sessions,
@@ -252,6 +253,7 @@ impl BenCodeApp {
             mono_float_size: self.settings.mono_float_size,
             monos_off: self.settings.monos_off,
             rail_monos_pinned: self.settings.rail_monos_pinned,
+            navigator_monos_expanded: self.settings.navigator_monos_expanded,
             mono_menu_bar_off: self.settings.mono_menu_bar_off,
             open_mono: self.settings.open_mono.clone(),
             mono_overview_width: Some(self.monos.overview.width)
@@ -353,6 +355,14 @@ impl BenCodeApp {
             self.write_settings(next, cx);
         }
         self.sync_mono_menu_bar(cx);
+        cx.notify();
+    }
+
+    /// The navigator's Monos as rows, or as faces in their header.
+    pub fn toggle_navigator_monos(&mut self, cx: &mut Context<Self>) {
+        let mut next = self.current_settings(cx);
+        next.navigator_monos_expanded = !next.navigator_monos_expanded;
+        self.write_settings(next, cx);
         cx.notify();
     }
 
@@ -546,7 +556,7 @@ impl BenCodeApp {
         cx.notify();
     }
 
-    /// MonoCode Settings › "Working agents".
+    /// Settings › "Agents section" (MonoCode's "Working agents").
     pub fn set_live_agents(&mut self, enabled: bool, cx: &mut Context<Self>) {
         self.live_agents_off = !enabled;
         self.save_settings(cx);
@@ -638,7 +648,6 @@ impl BenCodeApp {
     /// MonoCode `onCollapsedProjectRailMode`.
     pub fn set_collapsed_rail_mode(&mut self, mode: CollapsedRailMode, cx: &mut Context<Self>) {
         self.appearance.collapsed_rail = mode;
-        self.sidebar_drawer_open = false;
         self.save_settings(cx);
         cx.notify();
     }

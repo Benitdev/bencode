@@ -321,7 +321,7 @@ impl BenCodeApp {
                 app.recheck_open_files_on_disk(cx);
                 // No app notify: `apply_snapshot` notified the snapshot's
                 // model, which the regions showing git state follow; the
-                // terminal dock and the footer show none.
+                // terminal dock shows none.
                 crate::startup_trace::landed(
                     crate::startup_trace::WORKSPACE,
                     "workspace snapshot landed",

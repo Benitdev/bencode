@@ -110,6 +110,7 @@ fn groups() -> Vec<Group<Entry>> {
                 .note("Opens it in place of the focused pane."),
                 entry("Previous Project", I::ChevronLeft, cmd::PreviousProject),
                 entry("Next Project", I::ChevronRight, cmd::NextProject),
+                entry("Next Agent", I::Bot, cmd::NextAgent).note("Those waiting on you first."),
                 entry("Open Settings", I::Settings, cmd::OpenSettings),
             ],
         },
@@ -168,12 +169,10 @@ fn groups() -> Vec<Group<Entry>> {
             title: "View",
             description: None,
             rows: vec![
-                entry("Toggle Projects", I::Folder, cmd::ToggleSidebar),
-                entry(
-                    "Toggle Session Sidebar",
-                    I::PanelLeft,
-                    cmd::ToggleSessionSidebar,
-                ),
+                entry("Toggle Navigator", I::PanelLeft, cmd::ToggleSidebar),
+                entry("Toggle Inspector", I::PanelRight, cmd::ToggleInspector),
+                entry("Explorer", I::Folder, cmd::ShowExplorer),
+                entry("Changes", I::GitBranch, cmd::ShowChanges),
                 entry("Toggle Terminal", I::PanelBottom, cmd::ToggleTerminal),
                 entry("Toggle Mono", I::Bot, cmd::ToggleMono),
                 entry("New Terminal", I::Terminal, cmd::NewTerminal),
@@ -190,7 +189,7 @@ fn groups() -> Vec<Group<Entry>> {
         },
         Group {
             title: "Session list",
-            description: Some("While the sidebar's sessions have focus."),
+            description: Some("While the navigator's threads have focus."),
             rows: vec![
                 entry("Rename", I::Pencil, cmd::RenameSelectedSession).within("SessionList"),
                 entry("Delete", I::Trash2, cmd::DeleteSelectedSessions).within("SessionList"),

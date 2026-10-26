@@ -9,7 +9,7 @@ use std::time::Duration;
 use ely_gpui_component::forms::{InputEvent, TextInput};
 use gpui::{Context, Entity, Focusable, ScrollHandle, Window};
 
-use crate::app::{BenCodeApp, SidebarMode, text_input};
+use crate::app::{BenCodeApp, InspectorMode, text_input};
 use crate::project_search::{SearchMatch, SearchOptions, SearchResult};
 
 /// MonoCode waits this long after typing before it searches.
@@ -102,7 +102,7 @@ impl BenCodeApp {
         if self.surface.is_some() {
             self.close_surface(cx);
         }
-        self.show_sidebar(SidebarMode::Files, cx);
+        self.show_inspector(InspectorMode::Files, cx);
         self.project_search.open = true;
         let input = self.project_search.query_input.clone();
         input.update(cx, |input, cx| {
@@ -166,7 +166,7 @@ impl BenCodeApp {
             state.error = None;
             state.result = SearchResult::default();
             state.searched = options;
-            self.redraw_regions(&[crate::ui::region::Region::Sidebar], cx);
+            self.redraw_regions(&[crate::ui::region::Region::Inspector], cx);
             return;
         }
         let generation = state.generation;
@@ -180,7 +180,7 @@ impl BenCodeApp {
                 if current {
                     this.project_search.loading = true;
                     this.project_search.error = None;
-                    this.redraw_regions(&[crate::ui::region::Region::Sidebar], cx);
+                    this.redraw_regions(&[crate::ui::region::Region::Inspector], cx);
                 }
                 current
             });
@@ -212,14 +212,14 @@ impl BenCodeApp {
                         state.result = SearchResult::default();
                     }
                 }
-                this.redraw_regions(&[crate::ui::region::Region::Sidebar], cx);
+                this.redraw_regions(&[crate::ui::region::Region::Inspector], cx);
             });
             if let Err(err) = landed {
                 log::debug!("search in files after app drop: {err:#}");
             }
         })
         .detach();
-        self.redraw_regions(&[crate::ui::region::Region::Sidebar], cx);
+        self.redraw_regions(&[crate::ui::region::Region::Inspector], cx);
     }
 
     /// Opens a result in the editor with its match selected.

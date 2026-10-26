@@ -1049,7 +1049,7 @@ impl BenCodeApp {
                 // they redraw the region showing it, or nothing while it
                 // is not on screen. Anything else may show anywhere.
                 let streaming = batch.iter().all(streams_only);
-                // A usage report also moves the footer's context meter.
+                // A usage report also moves the usage chip.
                 let usage = batch
                     .iter()
                     .any(|event| matches!(event, AgentEvent::Usage { .. }));
@@ -1065,7 +1065,13 @@ impl BenCodeApp {
                     }
                     app.redraw_thread(&session_id, cx);
                     if usage {
-                        app.redraw_regions(&[crate::ui::region::Region::Footer], cx);
+                        app.redraw_regions(
+                            &[
+                                crate::ui::region::Region::Rail,
+                                crate::ui::region::Region::CompactRail,
+                            ],
+                            cx,
+                        );
                     }
                     // The floating chat follows the app's notifies.
                     app.is_mono_session(&session_id)

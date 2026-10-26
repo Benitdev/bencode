@@ -1,11 +1,13 @@
-//! Title bar (MonoCode `TitleBar.tsx`): the sidebar toggles, a hand-rolled
-//! strip of workspace tabs, and the trailing actions when the rail is closed.
+//! Title bar (MonoCode `TitleBar.tsx`): the navigator's toggle while it is
+//! hidden, a hand-rolled strip of workspace tabs, and at the right the
+//! browser and terminal toggles and the inspector's.
 //!
-//! Each tab is 224px (shrinking to 112px before the strip scrolls) and shows
-//! its threads' harness icons (a spinner while one works, a check when one
-//! finished unseen), the focused thread's title with a meta line, a close
-//! button on hover, a tooltip and a context menu. Middle-click closes, tabs
-//! drag to reorder, and opening or closing a tab sweeps its width.
+//! Each tab is 208px (shrinking to 104px before the strip scrolls) and shows
+//! in one line its threads' harness icons (a spinner while one works, a
+//! check when one finished unseen) and the focused thread's title, a close
+//! button on hover, a tooltip naming the rest and a context menu.
+//! Middle-click closes, tabs drag to reorder, and opening or closing a tab
+//! sweeps its width.
 
 mod mono;
 pub mod tabs;
@@ -22,7 +24,7 @@ use gpui::{
     Window, div, ease_out_quint, point, prelude::*,
 };
 
-use crate::app::{BenCodeApp, NEW_SESSION_TITLE};
+use crate::app::{BenCodeApp, InspectorMode, NEW_SESSION_TITLE};
 use crate::ui::HarnessIcon;
 use crate::ui::drag_drop::DraggedPane;
 use crate::ui::explorer_menu::{self, MenuAction, MenuEntry};
@@ -35,11 +37,9 @@ use tabs::{
     CloseMany, TitleTab, closable, close_ids, next_unseen_finished, strip_overflow, tab_copy,
 };
 
-/// MonoCode `w-56 min-w-28`.
-const TAB_WIDTH: f32 = 224.0;
-const TAB_MIN_WIDTH: f32 = 112.0;
-/// The meta line shows from this tab width up (`@min-[11rem]`).
-const TWO_LINE_WIDTH: f32 = 176.0;
+/// MonoCode `w-56 min-w-28`, in one line here.
+const TAB_WIDTH: f32 = 208.0;
+const TAB_MIN_WIDTH: f32 = 104.0;
 const TAB_GAP: f32 = 2.0;
 /// `pl-1.5 pr-2.5`.
 const STRIP_PADDING: f32 = 16.0;
@@ -100,7 +100,7 @@ impl Render for DraggedTitleTab {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let colors = &cx.theme().colors;
         div()
-            .h(px(30.0))
+            .h(px(28.0))
             .w(px(TAB_WIDTH))
             .px_2()
             .flex()
@@ -639,19 +639,17 @@ impl BenCodeApp {
             .into_any_element()
     }
 
-    /// One tab: icons, headline over meta, the hover close button.
+    /// One tab: icons, the headline, the hover close button.
     fn render_title_tab(
         &self,
         tab: &TitleTab,
         tabs: &[TitleTab],
-        width: f32,
         cx: &Context<Self>,
     ) -> AnyElement {
         let colors = &cx.theme().colors;
         let active = self.tabs.active_id() == Some(tab.id.as_str());
         let can_close = closable(tab, tabs.len());
-        let (headline, meta, tooltip) = tab_copy(tab);
-        let two_line = !meta.is_empty() && width >= TWO_LINE_WIDTH;
+        let (headline, tooltip) = tab_copy(tab);
         let group = SharedString::from(format!("title-tab-{}", tab.id));
         let hover_bg = colors.fg.fill(Fill::Hover);
         let fg = colors.fg;
@@ -661,43 +659,20 @@ impl BenCodeApp {
             headline: headline.clone(),
         };
         let text = div()
-            .flex()
             .flex_1()
             .min_w_0()
-            .flex_col()
-            .justify_center()
-            .child(
-                div()
-                    .min_w_0()
-                    .truncate()
-                    .line_height(px(15.0))
-                    .map(|el| {
-                        if two_line {
-                            el.text_size(Text::Xs.px()).font_weight(FontWeight::MEDIUM)
-                        } else {
-                            el.text_size(Text::Md.px())
-                        }
-                    })
-                    .child(headline),
-            )
-            .when(two_line, |el| {
-                el.child(
-                    div()
-                        .min_w_0()
-                        .truncate()
-                        .line_height(px(13.0))
-                        .text_size(Text::Xs.px())
-                        .text_color(colors.fg.ink(Ink::Muted))
-                        .child(meta),
-                )
-            });
+            .truncate()
+            .line_height(px(15.0))
+            .text_size(Text::Base.px())
+            .when(active, |el| el.font_weight(FontWeight::MEDIUM))
+            .child(headline);
         let button = div()
             .id(SharedString::from(format!("title-tab-btn-{}", tab.id)))
             .relative()
             .flex()
             .flex_1()
             .min_w_0()
-            .h(px(30.0))
+            .h(px(28.0))
             .items_center()
             .gap(px(6.0))
             .px_2()
@@ -838,7 +813,7 @@ impl BenCodeApp {
             // instead of growing to its text.
             .flex_col()
             .justify_center()
-            .child(self.render_title_tab(tab, tabs, width, cx));
+            .child(self.render_title_tab(tab, tabs, cx));
         let dragged = self
             .title_strip
             .reorder
@@ -879,7 +854,7 @@ impl BenCodeApp {
 
     /// The ghost of a closed tab, sweeping shut.
     fn closing_tab_slot(&self, closing: &ClosingTab, cx: &Context<Self>) -> AnyElement {
-        let (headline, _, _) = tab_copy(&closing.tab);
+        let (headline, _) = tab_copy(&closing.tab);
         let colors = &cx.theme().colors;
         let width = closing.width;
         div()
@@ -891,7 +866,7 @@ impl BenCodeApp {
             .items_center()
             .child(
                 div()
-                    .h(px(30.0))
+                    .h(px(28.0))
                     .w(px(width))
                     .flex_none()
                     .px_2()
@@ -1068,127 +1043,146 @@ impl BenCodeApp {
             .child(self.render_titlebar_leading(cx))
             .child(self.render_tab_strip(&tabs, cx))
             .children(self.render_tab_menu(cx))
-            .children(self.render_titlebar_trailing(cx))
+            .child(self.render_titlebar_trailing(cx))
     }
 
-    /// With the rail hidden the title bar takes over its traffic-light space
-    /// and controls; with the sidebar hidden it offers to bring it back
-    /// (MonoCode `TitleBar.tsx:856-941`).
+    /// With the navigator hidden the title bar takes over its traffic-light
+    /// space, its toggle, Back / Forward and New thread (MonoCode
+    /// `TitleBar.tsx:856-941`), and the agents at work.
     fn render_titlebar_leading(&self, cx: &Context<Self>) -> impl IntoElement {
-        // The icon rail expands the projects itself; with the title bar
+        // The icon rail expands the navigator itself; with the title bar
         // above it (MonoCode `compactRail`: `pl-[70px]` then `TabVisitNav`)
         // only the traffic-light gap and Back / Forward lead.
         let compact = self.compact_rail_active();
         let rail_hidden = !self.is_rail_open && !compact;
-        let sidebar_hidden = !self.is_sidebar_open;
         claim_press(div())
             .flex()
             .flex_none()
             .items_center()
             .gap_0p5()
-            .when(rail_hidden || sidebar_hidden, |el| el.px_1p5())
+            .when(rail_hidden, |el| el.px_1p5())
             .when(self.compact_title_bar(), |el| {
                 el.pl(gpui::px(70.0))
                     .children(self.history_buttons("titlebar", cx))
             })
-            .when(
-                rail_hidden && sidebar_hidden && cfg!(target_os = "macos"),
-                |el| el.child(div().w(TRAFFIC_LIGHT_SPACE)),
-            )
+            .when(rail_hidden && cfg!(target_os = "macos"), |el| {
+                el.child(div().w(TRAFFIC_LIGHT_SPACE))
+            })
             .when(rail_hidden, |el| {
                 el.child(
                     IconButton::new("titlebar-toggle-projects", IconName::PanelLeft)
                         .size(ControlSize::Sm)
                         .variant(ButtonVariant::Ghost)
-                        .tooltip("Toggle Projects (⌘B)")
+                        .tooltip("Show Navigator (⌘B)")
                         .on_click(cx.listener(|this, _, _, cx| {
                             this.is_rail_open = true;
                             cx.notify();
                         })),
                 )
                 .children(self.history_buttons("titlebar", cx))
-            })
-            .when(sidebar_hidden, |el| {
-                el.child(
-                    IconButton::new("titlebar-toggle-sidebar", IconName::LayoutDashboard)
+                .child(
+                    IconButton::new("titlebar-new-session", IconName::Plus)
                         .size(ControlSize::Sm)
                         .variant(ButtonVariant::Ghost)
-                        .tooltip("Toggle Session Sidebar (⌘⇧B)")
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.is_sidebar_open = true;
-                            cx.notify();
-                        })),
+                        .tooltip("New thread (⌘T)")
+                        .on_click(cx.listener(|this, _, _, cx| this.create_new_session(cx))),
                 )
+                .children(self.render_agents_badge(false, cx))
             })
     }
 
-    /// MonoCode's trailing actions while the rail is closed: Go to File and
-    /// New session with a project, else Inbox, Notes and Settings.
-    fn render_titlebar_trailing(&self, cx: &Context<Self>) -> Option<AnyElement> {
-        if self.is_rail_open {
-            return None;
-        }
+    /// The window's status at the right: the browser and terminal toggles,
+    /// then what the inspector shows.
+    fn render_titlebar_trailing(&self, cx: &Context<Self>) -> impl IntoElement {
+        let fg = cx.theme().colors.fg;
         let projectless = self.current_cwd.trim().is_empty();
-        let button = |id: &'static str, icon: IconName, tip: &'static str| {
-            IconButton::new(id, icon)
-                .size(ControlSize::Sm)
-                .variant(ButtonVariant::Ghost)
-                .tooltip(tip)
-        };
-        let row = claim_press(div())
+        claim_press(div())
             .flex()
             .flex_none()
             .items_center()
-            .gap_0p5()
-            .px_2();
-        Some(
-            if projectless {
-                row.child(
+            .gap(px(2.0))
+            .pl_2()
+            .pr(px(8.0))
+            .child(self.render_browser_toggle(cx))
+            .child(self.render_terminal_status(cx))
+            .when(!projectless, |el| {
+                el.child(
                     div()
-                        .relative()
-                        .child(
-                            button(
-                                "titlebar-inbox",
-                                IconName::Inbox,
-                                if self.inbox_has_unseen(cx) {
-                                    "Inbox, new items"
-                                } else {
-                                    "Inbox"
-                                },
-                            )
-                            .on_click(cx.listener(|this, _, _, cx| this.open_inbox_modal(cx))),
-                        )
-                        .when(self.inbox_has_unseen(cx), |el| {
-                            el.child(
-                                div()
-                                    .absolute()
-                                    .top(px(3.0))
-                                    .right(px(3.0))
-                                    .size(px(6.0))
-                                    .rounded_full()
-                                    .bg(cx.theme().colors.accent),
-                            )
-                        }),
+                        .flex_none()
+                        .w(px(1.0))
+                        .h(px(16.0))
+                        .mx(px(6.0))
+                        .bg(fg.fill(Fill::Strong)),
                 )
-                .child(
-                    button("titlebar-notes", IconName::StickyNote, "Notes")
-                        .on_click(cx.listener(|this, _, _, cx| this.open_notes(cx))),
+                .child(self.render_inspector_toggles(cx))
+            })
+    }
+
+    /// Changes (with the working tree's diff stat) and Explorer: each shows
+    /// the inspector on itself, or hides it when it already does.
+    fn render_inspector_toggles(&self, cx: &Context<Self>) -> impl IntoElement {
+        let colors = &cx.theme().colors;
+        let fg = colors.fg;
+        let (added, removed) = self
+            .git_status
+            .staged
+            .iter()
+            .chain(&self.git_status.unstaged)
+            .fold((0, 0), |(a, d), f| (a + f.additions, d + f.deletions));
+        let toggle = |id: &'static str, mode: InspectorMode, tip: &'static str| {
+            let active = self.inspector_open && self.inspector_mode == mode;
+            div()
+                .id(id)
+                .flex()
+                .flex_none()
+                .items_center()
+                .gap_1p5()
+                .h(px(24.0))
+                .px(px(7.0))
+                .rounded(px(6.0))
+                .cursor_pointer()
+                .text_size(Text::Sm.px())
+                .map(|el| {
+                    if active {
+                        el.bg(colors.active).text_color(fg)
+                    } else {
+                        el.text_color(fg.ink(Ink::Secondary))
+                            .hover(move |s| s.bg(fg.fill(Fill::Strong)).text_color(fg))
+                    }
+                })
+                .tooltip(Tooltip::text(tip))
+                .on_click(cx.listener(move |this, _, _, cx| this.toggle_inspector_mode(mode, cx)))
+        };
+        let changes = toggle("toolbar-changes", InspectorMode::Changes, "Changes (⌃⇧G)")
+            .child(
+                crate::ui::icons::ExtraIcon::FileDiff
+                    .icon()
+                    .size(IconSize::Sm)
+                    .color(fg.ink(Ink::Secondary)),
+            )
+            .when(added + removed > 0, |el| {
+                el.child(
+                    crate::ui::diff_counts::diff_counts(
+                        added,
+                        removed,
+                        crate::ui::appearance::diff_colors(cx),
+                    )
+                    .gap_1()
+                    .text_size(Text::Sm.px()),
                 )
-                .child(
-                    button("titlebar-settings", IconName::Settings, "Settings (⌘,)")
-                        .on_click(cx.listener(|this, _, _, cx| this.open_settings(cx))),
-                )
-            } else {
-                row.child(
-                    button("titlebar-goto-file", IconName::Search, "Go to File (⌘P)")
-                        .on_click(cx.listener(|this, _, _, cx| this.open_quick_open(cx))),
-                )
-                .child(
-                    button("titlebar-new-session", IconName::Plus, "New session (⌘T)")
-                        .on_click(cx.listener(|this, _, _, cx| this.create_new_session(cx))),
-                )
-            }
-            .into_any_element(),
-        )
+            });
+        let files = toggle("toolbar-files", InspectorMode::Files, "Explorer (⇧⌘E)").child(
+            crate::ui::icons::ExtraIcon::FolderTree
+                .icon()
+                .size(IconSize::Sm)
+                .color(fg.ink(Ink::Secondary)),
+        );
+        div()
+            .flex()
+            .flex_none()
+            .items_center()
+            .gap(px(2.0))
+            .child(changes)
+            .child(files)
     }
 }

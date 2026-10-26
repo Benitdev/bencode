@@ -66,17 +66,18 @@ schema, transcript block roles, the checkpoint manifest format, and
 `impl BenCodeApp { fn render_…() }` and read `self`; text inputs, editors
 and terminals are Ely entities stored on it. The app's own `render` is the
 **shell**: the window's layout, menus, notices and dialogs. It is drawn
-uncached under `WindowRoot`, beside `RunnerLayer` and `ProcessLayer`.
+uncached under `WindowRoot`, beside `RunnerLayer`.
 
 ### Regions (`ui/region.rs`)
 
 The window's parts are **regions**, each a cached view of its own:
-`Titlebar`, `Rail`, `CompactRail`, `Sidebar`, `FilePane`, `Terminal`,
-`Footer`, `Surface`, `Mono`, and one per chat pane, keyed by its thread
-(`Regions::pane_element`; `Region::Chat` names them all). A region renders
-through the app's functions (`render_region`, `render_session_pane`) with
-the app's context, so listeners and state work as before. What GPUI does,
-and why regions are shaped so (`docs/regions.md`):
+`Titlebar`, `Rail` (the navigator), `CompactRail`, `Inspector`,
+`FilePane`, `Terminal`, `Surface`, `Mono`, and one per chat pane, keyed
+by its thread (`Regions::pane_element`; `Region::Chat` names them all). A
+region renders through the app's functions (`render_region`,
+`render_session_pane`) with the app's context, so listeners and state
+work as before. What GPUI does, and why regions are shaped so
+(`docs/regions.md`):
 
 - `notify` marks that view and **every ancestor** dirty. A cached view
   that re-renders re-renders **everything inside it**, cached or not. A
@@ -115,30 +116,39 @@ A new looping mark goes through `marks::mark`, its builder a function of
 plain values and the clock.
 
 **Measured while drawn.** What a region measures or places as it draws
-(the runner's geometry, the footer's slot, the browser and artifact
-pages) is reset by that region in `render_region`, so a region reused as
+(the runner's geometry, the browser and artifact pages) is reset by that region in `render_region`, so a region reused as
 painted keeps it; the shell resets it while the region is not drawn
 (`settle_undrawn_regions`). Never reset such state in the shell's render.
 
 ### Window
 
 ```
-┌──────┬───────────┬──────────────────────────────────────────┐
-│ Rail │ Sidebar   │ Title bar (workspace tabs)               │
-│      │ Sessions  ├──────────────────────┬───────────────────┤
-│      │ Explorer  │ Chat panes           │ File pane (tabs)  │
-│      │ Changes   ├──────────────────────┴───────────────────┤
-│      │           │ Terminal dock (optional)                 │
-│      │           │ Usage footer                             │
-└──────┴───────────┴──────────────────────────────────────────┘
+┌──────────────┬───────────────────────────────────────────────────────┐
+│ Navigator    │ Title bar (tabs · browser · terminal · ⇆)             │
+│ Search, views├─────────────────────┬─────────────────┬───────────────┤
+│ Agents       │ Chat panes          │ File pane       │ Inspector     │
+│ Projects     │                     │ (tabs)          │ Changes or    │
+│ Threads      ├─────────────────────┴─────────────────┤ Explorer      │
+│ Settings,    │ Terminal dock (optional)              │ (optional)    │
+│ usage        │                                       │               │
+└──────────────┴───────────────────────────────────────┴───────────────┘
 ```
 
-A `Surface` (Inbox, Notes, Automations, Settings) or a Mono in view
-replaces the sidebar and the workspace column. The chat is always shown;
-files, reviews, Changes and commits open as tabs beside it through
-`open_pane_tab(PaneTab, pin, cx)` or `open_file_in_editor` (a click opens a
-preview tab, a double click keeps it). A finished turn that edited files
-shows the review card (Undo, Keep, Review).
+BenCode's own layout (MonoCode keeps a project rail, a Sessions /
+Explorer / Changes sidebar and a usage footer). The **navigator** (`Rail`,
+⌘B) is one column: Search and the views' icons, the **Agents** section
+(turns in flight across projects; a waiting command is allowed or denied
+there), the projects, then the project's threads. The **inspector** at the
+right edge holds Changes or the Explorer (⇧⌘B, ⌃⇧G, ⇧⌘E), so the threads
+stay in view while it shows. The focused thread's usage sits at the
+navigator's foot beside Settings (on the icon rail while it is
+collapsed); the title bar carries the browser and terminal toggles and
+the inspector's. A `Surface` (Inbox, Notes, Automations, Settings) or
+a Mono in view replaces everything right of the navigator. The chat is
+always shown; files, reviews, Changes and commits open as tabs beside it
+through `open_pane_tab(PaneTab, pin, cx)` or `open_file_in_editor` (a
+click opens a preview tab, a double click keeps it). A finished turn that
+edited files shows the review card (Undo, Keep, Review).
 
 ### Data flow
 
@@ -318,6 +328,13 @@ packaging/macos/bundle.sh      # BenCode.app and dmgs in target/bundle
 
 - UI changes need the app run and exercised, hover, empty, loading and
   error states included. Logs: `~/Library/Logs/BenCode/bencode.log`.
+- **Pictures of the window** need no screen-recording grant and work with
+  the screen locked: build with `cargo build --features snapshot`, then on
+  a copy of the data folder (as for the frame bench below)
+  `HOME=… BENCODE_SNAPSHOT=/tmp/shots target/debug/bencode` saves each
+  scene of `app/snapshot.rs` as a PNG and quits
+  (`BENCODE_SNAPSHOT_SCENES=home,changes`, `BENCODE_SNAPSHOT_SIZE=1440x900`).
+  Its window is drawn but never shown, so it takes no one's keyboard.
 - Ignored tests are live or need a loopback sshd
   (`docs/remote-access.md`).
 - **Frame cost is measured** (`app/frame_bench.rs`), on a copy of the data
@@ -330,7 +347,8 @@ sqlite3 "$D/bencode.db" ".backup '$B/bencode.db'" && cp "$D/settings.json" "$B/"
 HOME="${B%/Library/*}" BENCODE_FRAME_BENCH=1 target/release/bencode
 ```
 
-  `BENCODE_FRAME_BENCH=2000` draws long enough to `sample`;
+  Its window is drawn by hand and never shown. `BENCODE_FRAME_BENCH=2000`
+  draws long enough to `sample`;
   `BENCODE_FRAME_BENCH_CASE=word` runs matching cases;
   `BENCODE_FRAME_BENCH_FLINGS=50` repeats the scroll flings. A layout
   change also checks that rows' bounds did not move.

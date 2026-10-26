@@ -1,7 +1,7 @@
-//! MonoCode `UsageFooter` `RunningTerminalChip`: in place of the Terminal
-//! button while jobs run in the project's terminals, their names after a
-//! live mark. A click shows or hides the terminal; with several running and
-//! the dock hidden it lists them to pick one.
+//! MonoCode `UsageFooter` `RunningTerminalChip`, in the title bar: in place
+//! of the Terminal button while jobs run in the project's terminals, their
+//! names after a live mark. A click shows or hides the terminal; with
+//! several running and the dock hidden it lists them to pick one.
 
 use std::time::{Duration, Instant};
 
@@ -83,15 +83,15 @@ impl BenCodeApp {
             .flex_none()
             .child(
                 div()
-                    .id("footer-running-terminals")
+                    .id("toolbar-running-terminals")
                     .flex()
                     .min_w_0()
                     .max_w(px(256.0))
                     .items_center()
                     .gap(px(6.0))
-                    .h(px(20.0))
-                    .px(px(4.0))
-                    .rounded(px(4.0))
+                    .h(px(26.0))
+                    .px(px(6.0))
+                    .rounded(px(6.0))
                     .cursor_pointer()
                     .when(self.running_terminals_menu_open(cx), |el| {
                         el.bg(fg.fill(Fill::Strong))

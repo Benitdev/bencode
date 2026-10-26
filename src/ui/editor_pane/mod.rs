@@ -353,7 +353,7 @@ impl BenCodeApp {
                 self.redraw_regions(
                     &[
                         crate::ui::region::Region::FilePane,
-                        crate::ui::region::Region::Sidebar,
+                        crate::ui::region::Region::Inspector,
                     ],
                     cx,
                 );

@@ -345,7 +345,6 @@ impl BenCodeApp {
 
     /// Opens a reminder's thread, now in `self.sessions`, and clears it.
     fn show_reminder_thread(&mut self, session_id: &str, due_at: i64, cx: &mut Context<Self>) {
-        self.sidebar_mode = crate::app::SidebarMode::Sessions;
         self.open_session(session_id.to_string(), cx);
         self.cancel_reminders(&[session_id.to_string()], Some(due_at), cx);
     }

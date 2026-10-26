@@ -22,7 +22,7 @@ use gpui::{AsyncWindowContext, Context, ListOffset, WeakEntity, Window, px, size
 
 use crate::app::file_pane::PaneTab;
 use crate::app::surfaces::Surface;
-use crate::app::{BenCodeApp, subagents};
+use crate::app::{BenCodeApp, InspectorMode, subagents};
 use crate::ui::region::Region;
 use crate::ui::transcript::turns::{self, Item, Row};
 
@@ -209,23 +209,24 @@ fn cases(thread: Option<String>) -> Vec<Case> {
             |app, cx| app.select_all_transcript(cx),
         ),
         case(
-            "app notified, sidebar closed",
+            "app notified, inspector on Changes",
             Box::new(|app, cx| {
                 app.clear_transcript_selection(cx);
-                app.is_sidebar_open = false;
-                app.sidebar_drawer_open = false;
+                app.show_inspector(InspectorMode::Changes, cx);
             }),
             notify_app,
         ),
         case(
-            "app notified, sidebar and rail closed",
-            Box::new(|app, _| app.is_rail_open = false),
+            "app notified, inspector and navigator closed",
+            Box::new(|app, _| {
+                app.inspector_open = false;
+                app.is_rail_open = false;
+            }),
             notify_app,
         ),
         case(
-            "app notified, empty thread (sidebar, rail back)",
+            "app notified, empty thread (navigator back)",
             Box::new(|app, cx| {
-                app.is_sidebar_open = true;
                 app.is_rail_open = true;
                 app.create_new_session(cx);
             }),
@@ -279,9 +280,9 @@ fn cases(thread: Option<String>) -> Vec<Case> {
             |app, cx| app.redraw_regions(&[Region::FilePane], cx),
         ),
         case(
-            "long thread and a file: footer redrawn",
+            "long thread and a file: title bar redrawn",
             Box::new(nothing),
-            |app, cx| app.redraw_regions(&[Region::Footer], cx),
+            |app, cx| app.redraw_regions(&[Region::Titlebar], cx),
         ),
         case(
             "app notified, long thread, Changes beside it",

@@ -1,6 +1,6 @@
 //! What runs in the dock's terminals (MonoCode `terminal/model/terminalTab.ts`
 //! and `terminalClose.ts`): a poll of each terminal's shell that names its
-//! tab, the footer chip's list of running jobs, and the "Close anyway?"
+//! tab, the title bar chip's list of running jobs, and the "Close anyway?"
 //! asked before closing a terminal a job still runs in.
 
 use std::time::Duration;
@@ -13,7 +13,7 @@ use crate::terminal_process::{self, Foreground, Probe};
 use crate::ui::app_callback::app_callback;
 
 /// MonoCode reads each terminal's job every second; 800ms also steps the
-/// footer's live mark, a quarter of its 3.2s cycle per read.
+/// title bar's live mark, a quarter of its 3.2s cycle per read.
 pub const POLL_EVERY: Duration = Duration::from_millis(800);
 
 /// MonoCode `RunningTerminal`: a terminal whose foreground is not its shell.
@@ -201,22 +201,22 @@ impl BenCodeApp {
             }
             changed
         });
-        // The footer's live mark steps with each read while it shows: that
-        // step redraws the footer alone.
+        // The title bar's live mark steps with each read while it shows:
+        // that step redraws the title bar alone.
         let live_mark = !cx.reduce_motion() && !self.running_terminals(cx).is_empty();
         if changed {
-            // A tab's job and folder show in the dock and the footer's chip
-            // alone (the close confirmations are the shell's, drawn with
-            // any region).
+            // A tab's job and folder show in the dock and the title bar's
+            // chip alone (the close confirmations are the shell's, drawn
+            // with any region).
             self.redraw_regions(
                 &[
                     crate::ui::region::Region::Terminal,
-                    crate::ui::region::Region::Footer,
+                    crate::ui::region::Region::Titlebar,
                 ],
                 cx,
             );
         } else if live_mark {
-            self.redraw_regions(&[crate::ui::region::Region::Footer], cx);
+            self.redraw_regions(&[crate::ui::region::Region::Titlebar], cx);
         }
     }
 

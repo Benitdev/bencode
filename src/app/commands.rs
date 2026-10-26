@@ -67,7 +67,9 @@ actions!(
         FindNext,
         FindPrevious,
         ToggleWorkspaceMode,
-        ToggleSessionSidebar,
+        ToggleInspector,
+        ShowExplorer,
+        ShowChanges,
         GoBack,
         GoForward,
         InboxNext,
@@ -87,6 +89,7 @@ actions!(
         NextSessionInTab,
         PreviousProject,
         NextProject,
+        NextAgent,
         ShowLogs,
         CheckForUpdates,
     ]
@@ -138,7 +141,9 @@ pub(crate) fn keymap() -> Vec<KeyBinding> {
         KeyBinding::new("j", InboxNext, Some("InboxList")),
         KeyBinding::new("k", InboxPrevious, Some("InboxList")),
         KeyBinding::new("cmd-b", ToggleSidebar, None),
-        KeyBinding::new("cmd-shift-b", ToggleSessionSidebar, None),
+        KeyBinding::new("cmd-shift-b", ToggleInspector, None),
+        KeyBinding::new("cmd-shift-e", ShowExplorer, None),
+        KeyBinding::new("ctrl-shift-g", ShowChanges, None),
         KeyBinding::new("cmd-[", GoBack, None),
         KeyBinding::new("cmd-]", GoForward, None),
         // MonoCode "View: Zoom In" / "Zoom Out" / "Reset Zoom".
@@ -179,6 +184,8 @@ pub(crate) fn keymap() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-down", NextSessionInTab, None),
         KeyBinding::new("cmd-shift-left", PreviousProject, None),
         KeyBinding::new("cmd-shift-right", NextProject, None),
+        // The Agents section's threads, those waiting on you first.
+        KeyBinding::new("cmd-alt-a", NextAgent, None),
         // MonoCode session cards: F2 renames, ⌫ deletes, Esc drops the picks.
         KeyBinding::new("f2", RenameSelectedSession, Some("SessionList")),
         KeyBinding::new("backspace", DeleteSelectedSessions, Some("SessionList")),
@@ -289,8 +296,10 @@ fn menus() -> Vec<Menu> {
         ]),
         edit_menu(),
         Menu::new("View").items([
-            MenuItem::action("Toggle Projects", ToggleSidebar),
-            MenuItem::action("Toggle Session Sidebar", ToggleSessionSidebar),
+            MenuItem::action("Toggle Navigator", ToggleSidebar),
+            MenuItem::action("Toggle Inspector", ToggleInspector),
+            MenuItem::action("Explorer", ShowExplorer),
+            MenuItem::action("Changes", ShowChanges),
             MenuItem::action("Switch Model…", SwitchModel),
             MenuItem::action("Find in Conversation", FindInConversation),
             MenuItem::action("Find in Files…", FindInProject),
@@ -321,6 +330,7 @@ fn menus() -> Vec<Menu> {
             MenuItem::action("Next Session", NextSession),
             MenuItem::action("Previous Project", PreviousProject),
             MenuItem::action("Next Project", NextProject),
+            MenuItem::action("Next Agent", NextAgent),
             MenuItem::separator(),
             MenuItem::action("Focus Pane Left", FocusLeft),
             MenuItem::action("Focus Pane Right", FocusRight),
@@ -507,17 +517,20 @@ impl BenCodeApp {
         // MonoCode: ⌘B toggles the project rail, ⇧⌘B the session sidebar.
         .on_action(cx.listener(|this, _: &ToggleSidebar, _, cx| {
             this.is_rail_open = !this.is_rail_open;
-            this.sidebar_drawer_open = false;
             // MonoCode dismisses the rail's menus when it hides.
             if !this.is_rail_open {
                 this.close_rail_menu(cx);
             }
             cx.notify();
         }))
-        .on_action(cx.listener(|this, _: &ToggleSessionSidebar, _, cx| {
-            this.is_sidebar_open = !this.is_sidebar_open;
-            this.sidebar_drawer_open = false;
-            cx.notify();
+        .on_action(cx.listener(|this, _: &ToggleInspector, _, cx| {
+            this.set_inspector_open(!this.inspector_open, cx)
+        }))
+        .on_action(cx.listener(|this, _: &ShowExplorer, _, cx| {
+            this.show_inspector(crate::app::InspectorMode::Files, cx)
+        }))
+        .on_action(cx.listener(|this, _: &ShowChanges, _, cx| {
+            this.show_inspector(crate::app::InspectorMode::Changes, cx)
         }))
         .on_action(cx.listener(|this, _: &OpenProject, _, cx| this.open_project_dialog(cx)))
         .on_action(cx.listener(|this, _: &SwitchModel, _, cx| this.toggle_recent_models(cx)))
@@ -601,7 +614,6 @@ impl BenCodeApp {
                 this.close_surface(cx);
             } else if !this.close_lightbox(cx)
                 && !this.close_quick_open(cx)
-                && !this.close_sidebar_drawer(cx)
                 && !this.close_mcp_picker(true, cx)
                 && !this.close_folder_picker(true, cx)
                 && !this.close_handoff_menu(cx)
@@ -672,6 +684,7 @@ impl BenCodeApp {
         }))
         .on_action(cx.listener(|this, _: &PreviousProject, _, cx| this.step_project(-1, cx)))
         .on_action(cx.listener(|this, _: &NextProject, _, cx| this.step_project(1, cx)))
+        .on_action(cx.listener(|this, _: &NextAgent, _, cx| this.select_next_live_agent(cx)))
         .on_action(cx.listener(|this, _: &NextTab, _, cx| this.cycle_tab(1, cx)))
         .on_action(cx.listener(|this, _: &PreviousTab, _, cx| this.cycle_tab(-1, cx)))
         .on_action(cx.listener(|this, _: &OpenNotes, _, cx| this.open_notes(cx)))

@@ -1,20 +1,23 @@
-//! MonoCode `SessionCard`: model row, title, git line and status, in the
-//! states MonoCode draws (picked, needs approval, open, draft), dragged to
-//! group or split, right-clicked for its menu.
+//! The navigator's thread cards (MonoCode `SessionCard`, in one line and
+//! in the look of the navigator's other rows, `rail::widgets::nav_row`):
+//! harness, title, badges and status, the model and branch in the tooltip,
+//! in the states MonoCode draws (picked, needs approval, open, draft),
+//! dragged to group or split, right-clicked for its menu.
 
 use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize};
 use gpui::{
-    AnimationExt, AnyElement, ClickEvent, Context, FontWeight, InteractiveElement, IntoElement,
-    MouseButton, MouseDownEvent, ParentElement, SharedString, Styled, div, prelude::*,
+    AnimationExt, AnyElement, ClickEvent, Context, InteractiveElement, IntoElement, MouseButton,
+    MouseDownEvent, ParentElement, SharedString, Styled, div, prelude::*,
 };
 
 use crate::app::BenCodeApp;
-use crate::app::session_list::{self, LiveStates, NO_BRANCH_LABEL, format_relative, git_label};
+use crate::app::session_list::{self, LiveStates, NO_BRANCH_LABEL, format_age, git_label};
 use crate::db::SessionRow;
 use crate::harness::catalog;
 use crate::ui::drag_drop::DraggedSession;
 use crate::ui::provider_icon::HarnessIcon;
+use crate::ui::rail::widgets::{ROW_HEIGHT, UNSELECTED_OPACITY, nav_label, selection_strong};
 use crate::ui::region::Region;
 use crate::ui::scale::px;
 use crate::ui::sidebar_sessions::ListDrop;
@@ -24,12 +27,13 @@ use crate::ui::tokens::{Fill, Ink, Status, Text, Tone as _};
 /// The slide-in opens to this height (a usual card's); the cap comes off
 /// when it finishes.
 const CARD_MAX_HEIGHT: f32 = 160.0;
-
-/// MonoCode's `text-[13px] leading-snug` card title.
-const TITLE_LINE_HEIGHT: f32 = 13.0 * 1.375;
+/// How far the selected thread's accent bar stands off its row's top and
+/// bottom.
+const SELECTED_BAR_INSET: f32 = 8.0;
 
 impl BenCodeApp {
-    /// MonoCode's card status: approval, working, done, draft, else age.
+    /// MonoCode's card status, shortened to fit beside the title:
+    /// approval, working, done, draft, else age.
     fn session_status(
         &self,
         session: &SessionRow,
@@ -55,16 +59,16 @@ impl BenCodeApp {
             return row(amber)
                 .child(icon(IconName::CircleAlert, amber))
                 .child(if session.orchestration.is_some() {
-                    "Needs input"
+                    "Input"
                 } else {
-                    "Need approval"
+                    "Approve"
                 })
                 .into_any_element();
         }
+        // The spinner says it all where the title needs the room.
         if states.busy.contains(&session.id) {
             return row(colors.accent)
                 .child(terminal_spinner(colors.accent, cx))
-                .child("Working...")
                 .into_any_element();
         }
         if states.done.contains(&session.id) {
@@ -82,24 +86,15 @@ impl BenCodeApp {
                 .into_any_element();
         }
         row(colors.fg.ink(Ink::Muted))
-            .child(format_relative(session.updated_at, now))
+            .child(format_age(session.updated_at, now))
             .into_any_element()
     }
 
     /// The card title; a title that just changed sweeps in as the old one
     /// drifts up and fades (MonoCode `ParticleText`, without particles).
-    fn render_card_title(&self, id: &str, title: &str, cx: &Context<Self>) -> AnyElement {
-        let fg = cx.theme().colors.fg;
-        let text = |text: String| {
-            div()
-                .min_w_0()
-                .truncate()
-                .text_size(Text::Md.px())
-                .line_height(px(TITLE_LINE_HEIGHT))
-                .font_weight(FontWeight::SEMIBOLD)
-                .text_color(fg)
-                .child(text)
-        };
+    fn render_card_title(&self, id: &str, title: &str) -> AnyElement {
+        // The navigator rows' name (`nav_label`), as a project's.
+        let text = |text: String| nav_label().child(text);
         let Some(change) = self.sessions_ui.title_changes.get(id) else {
             return text(title.to_string()).flex_1().into_any_element();
         };
@@ -137,11 +132,12 @@ impl BenCodeApp {
             .into_any_element()
     }
 
-    /// MonoCode's card git line: `repo/branch`, or "No branch selected"
-    /// once the thread's worktree is gone.
-    fn session_git_label(&self, session: &SessionRow, cx: &gpui::App) -> String {
+    /// The card's branch: the thread's, else the project's live one, or
+    /// "No branch selected" once its worktree is gone; and the tooltip that
+    /// names its repository and worktree (MonoCode's git line).
+    fn session_branch(&self, session: &SessionRow, cx: &gpui::App) -> (String, String) {
         if session.worktree_removed {
-            return NO_BRANCH_LABEL.to_string();
+            return (NO_BRANCH_LABEL.to_string(), NO_BRANCH_LABEL.to_string());
         }
         let repo = self.workspace(cx).repo.clone().or_else(|| {
             std::path::Path::new(&session.cwd)
@@ -151,15 +147,22 @@ impl BenCodeApp {
         // MonoCode falls back to the project's live branch.
         let live = (!self.git_status.branch.is_empty() && session.worktree_cwd.is_none())
             .then_some(self.git_status.branch.as_str());
-        git_label(repo.as_deref(), session.branch.as_deref().or(live))
+        let branch = session.branch.as_deref().or(live);
+        let full = git_label(repo.as_deref(), branch);
+        let tip = match session.worktree_cwd.as_deref().filter(|w| !w.is_empty()) {
+            Some(tree) if !full.is_empty() => format!("{full}\n{tree}"),
+            _ => full,
+        };
+        (git_label(None, branch), tip)
     }
 
-    /// MonoCode `SessionCard`; `compact` (in a folder or group) drops the
-    /// model row and puts the status after the title.
+    /// A thread in one line (BenCode's own, where MonoCode's card takes
+    /// three): its harness, title, badges and status, Archive over the
+    /// status on hover. The model and branch are in its tooltip, and a
+    /// worktree's thread marks its branch.
     pub(crate) fn render_session_card(
         &self,
         session: &SessionRow,
-        compact: bool,
         states: &LiveStates,
         now: i64,
         cx: &Context<Self>,
@@ -180,27 +183,79 @@ impl BenCodeApp {
             .flex_none()
             .items_center()
             .gap_1p5()
+            .group_hover(group.clone(), |s| s.invisible())
             .children(self.linked_update_dot(session, cx))
             .child(self.session_status(session, draft, states, now, cx));
         // MonoCode `orchestrationExpanded`: an orchestrator lists its agents
-        // while open, picked or working, and keeps its model row then.
+        // while open, picked or working.
         let expanded =
             session.orchestration.is_some() && (active || picked || states.busy.contains(&id));
-        // The card's insets follow where it is listed; its layout follows
-        // whether the model row shows.
-        let in_group = compact;
-        let compact = compact && !expanded;
 
         if self.sessions_ui.renaming_session.as_deref() == Some(id.as_str()) {
             return self.render_session_rename_row(active, needs_approval, cx);
         }
 
-        let title_row = div()
+        let model = catalog::display_label(&session.harness, &session.model);
+        let (branch, branch_tip) = self.session_branch(session, cx);
+        let tooltip = [title.clone(), model, branch_tip.clone()]
+            .into_iter()
+            .filter(|line| !line.is_empty())
+            .collect::<Vec<_>>()
+            .join("\n");
+        let in_worktree = !session.worktree_removed
+            && session
+                .worktree_cwd
+                .as_deref()
+                .is_some_and(|tree| !tree.is_empty());
+        let archive_label = if session.archived {
+            "Unarchive"
+        } else {
+            "Archive"
+        };
+        let archive_id = id.clone();
+        let archive = div()
+            .id(SharedString::from(format!("{group}-archive")))
+            .group(SharedString::from(format!("{group}-archive")))
+            .absolute()
+            .right_0()
+            .size(px(18.0))
+            .flex()
+            .items_center()
+            .justify_center()
+            .rounded(px(5.0))
+            .invisible()
+            .group_hover(group.clone(), |s| s.visible())
+            .cursor_pointer()
+            .hover(move |s| s.bg(fg.fill(Fill::Strong)))
+            .tooltip(Tooltip::text(archive_label))
+            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            .on_click(cx.listener(move |this, _, _, cx| {
+                cx.stop_propagation();
+                this.toggle_archive_session(&archive_id, cx);
+            }))
+            .child(
+                Icon::new(IconName::Archive)
+                    .size(IconSize::Xs)
+                    .color(fg.ink(Ink::Secondary))
+                    .group_hover_color(format!("{group}-archive"), fg),
+            );
+        // As a project's row: `h-8`, the icon in a `size-4` box, `gap-2`
+        // (the card's 1px border is inside the height).
+        let row = div()
             .flex()
             .min_w_0()
+            .h(px(ROW_HEIGHT - 2.0))
             .items_center()
-            .gap_1p5()
-            .when(!compact, |el| el.mt_1())
+            .gap_2()
+            .child(
+                div()
+                    .flex()
+                    .flex_none()
+                    .size_4()
+                    .items_center()
+                    .justify_center()
+                    .child(HarnessIcon::new(&session.harness).size(px(14.0))),
+            )
             .when(session.pinned, |el| {
                 el.child(
                     Icon::new(IconName::Pin)
@@ -208,129 +263,46 @@ impl BenCodeApp {
                         .color(fg.ink(Ink::Muted)),
                 )
             })
-            .child(self.render_card_title(&id, &title, cx));
-        let (model_row, title_row) = if compact {
-            (None, title_row.child(status))
-        } else {
-            let model = catalog::display_label(&session.harness, &session.model);
-            let row = div()
-                .flex()
-                .items_center()
-                .gap_2()
-                .child(
+            .child(self.render_card_title(&id, &title))
+            .when(in_worktree, |el| {
+                el.child(
                     div()
-                        .flex()
-                        .flex_1()
-                        .min_w_0()
-                        .items_center()
-                        .gap_1p5()
-                        .child(HarnessIcon::new(&session.harness).size(px(14.0)))
+                        .id(SharedString::from(format!("{group}-worktree")))
+                        .flex_none()
+                        .tooltip(Tooltip::text(format!("In a worktree: {branch}")))
                         .child(
-                            div()
-                                .min_w_0()
-                                .truncate()
-                                .text_size(Text::Sm.px())
-                                .text_color(fg.ink(Ink::Secondary))
-                                .child(model),
+                            Icon::new(IconName::GitBranch)
+                                .size(IconSize::Xs)
+                                .color(fg.ink(Ink::Muted)),
                         ),
                 )
-                .child(status);
-            (Some(row), title_row)
-        };
-
-        let git = self.session_git_label(session, cx);
-        let git_tip = match session.worktree_cwd.as_deref().filter(|w| !w.is_empty()) {
-            Some(tree) if !git.is_empty() => format!("{git}\n{tree}"),
-            _ => git.clone(),
-        };
-        let archive_label = if session.archived {
-            "Unarchive"
-        } else {
-            "Archive"
-        };
-        let archive_id = id.clone();
-        let bottom = div()
-            .mt_1()
-            .flex()
-            .items_center()
-            .gap_2()
-            .map(|el| {
-                if git.is_empty() {
-                    el.child(div().flex_1().min_w_0())
-                } else {
-                    el.child(
-                        div()
-                            .id(SharedString::from(format!("{group}-git")))
-                            .flex()
-                            .flex_1()
-                            .min_w_0()
-                            .items_center()
-                            .gap_1()
-                            .text_size(Text::Sm.px())
-                            .text_color(fg.ink(Ink::Muted))
-                            .tooltip(Tooltip::text(git_tip))
-                            .child(
-                                div().flex_none().child(
-                                    Icon::new(IconName::GitBranch)
-                                        .size(IconSize::Xs)
-                                        .color(fg.ink(Ink::Muted)),
-                                ),
-                            )
-                            .child(div().min_w_0().truncate().child(git)),
-                    )
-                }
             })
+            .children(self.work_item_badge(session, cx))
+            .when(session.automation_id.is_some(), |el| {
+                el.child(
+                    div()
+                        .id(SharedString::from(format!("{group}-automation")))
+                        .flex_none()
+                        .tooltip(Tooltip::text("Started by an automation"))
+                        .child(
+                            Icon::new(IconName::Zap)
+                                .size(IconSize::Xs)
+                                .color(Status::Attention.color(fg)),
+                        ),
+                )
+            })
+            .children(self.orchestration_button(session, states, cx))
             .child(
                 div()
+                    .relative()
                     .flex()
                     .flex_none()
+                    .min_w(px(18.0))
+                    .h(px(18.0))
                     .items_center()
-                    .gap(px(1.0))
-                    .child(
-                        div()
-                            .id(SharedString::from(format!("{group}-archive")))
-                            .group(SharedString::from(format!("{group}-archive")))
-                            .size(px(20.0))
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .rounded(px(6.0))
-                            .invisible()
-                            .group_hover(group.clone(), |s| s.visible())
-                            .cursor_pointer()
-                            .hover(move |s| s.bg(fg.fill(Fill::Strong)))
-                            .tooltip(Tooltip::text(archive_label))
-                            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                cx.stop_propagation();
-                                this.toggle_archive_session(&archive_id, cx);
-                            }))
-                            .child(
-                                Icon::new(IconName::Archive)
-                                    .size(IconSize::Xs)
-                                    .color(fg.ink(Ink::Secondary))
-                                    .group_hover_color(format!("{group}-archive"), fg),
-                            ),
-                    )
-                    .children(self.work_item_badge(session, cx))
-                    .when(session.automation_id.is_some(), |el| {
-                        el.child(
-                            div()
-                                .id(SharedString::from(format!("{group}-automation")))
-                                .size(px(20.0))
-                                .mr(px(-4.0))
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .tooltip(Tooltip::text("Started by an automation"))
-                                .child(
-                                    Icon::new(IconName::Zap)
-                                        .size(IconSize::Xs)
-                                        .color(Status::Attention.color(fg)),
-                                ),
-                        )
-                    })
-                    .children(self.orchestration_button(session, states, cx)),
+                    .justify_end()
+                    .child(status)
+                    .child(archive),
             );
 
         let agents = if expanded {
@@ -339,7 +311,7 @@ impl BenCodeApp {
             None
         };
         let accent = colors.accent;
-        let selection_bg = colors.active;
+        let selection_bg = selection_strong(cx);
         let dashed = fg.opacity(if needs_approval || picked || active {
             0.30
         } else {
@@ -360,19 +332,18 @@ impl BenCodeApp {
             // flex column every row is measured several times over).
             .w_full()
             .min_w_0()
-            .px(px(10.0))
-            // Opening the agents keeps the top inset; only the bottom grows.
-            .pt(px(if in_group { 6.0 } else { 8.0 }))
-            .pb(px(if expanded {
-                10.0
-            } else if in_group {
-                6.0
-            } else {
-                8.0
-            }))
+            .px_2()
+            // Opening the agents keeps the row; only the bottom grows.
+            .when(expanded, |el| el.pb(px(10.0)))
             .rounded(px(6.0))
             .border_1()
             .border_color(gpui::transparent_black())
+            // The navigator rows' look (`nav_row`): the thread in view on
+            // the selection's strong fill, the others at 65% until hovered;
+            // one waiting on the user stays in full.
+            .when(!(active || picked || needs_approval || drop_target), |el| {
+                el.opacity(UNSELECTED_OPACITY)
+            })
             .map(|el| {
                 if drop_target {
                     el
@@ -395,7 +366,7 @@ impl BenCodeApp {
                     el.hover(move |s| s.bg(fg.fill(Fill::Hover)))
                 }
             })
-            .tooltip(Tooltip::text(title))
+            .tooltip(Tooltip::text(tooltip))
             .on_click(cx.listener(move |this, event: &ClickEvent, window, cx| {
                 this.on_session_card_click(&open_id, event, window, cx)
             }))
@@ -427,10 +398,24 @@ impl BenCodeApp {
                         .bg(accent.opacity(0.20)),
                 )
             })
-            .children(model_row)
-            .child(title_row)
-            .children(agents)
-            .child(bottom);
+            // The thread in view also carries the accent's bar at its left
+            // edge, so it reads apart from a hovered row at a glance.
+            .when(active && !(picked || needs_approval || drop_target), |el| {
+                // Settings' accent colour; Default is the text colour.
+                let bar = crate::ui::appearance::user_accent(cx).map_or(fg, |a| a.color);
+                el.child(
+                    div()
+                        .absolute()
+                        .left(px(1.0))
+                        .top(px(SELECTED_BAR_INSET))
+                        .w(px(3.0))
+                        .h(px(ROW_HEIGHT - 2.0 - 2.0 * SELECTED_BAR_INSET))
+                        .rounded_full()
+                        .bg(bar),
+                )
+            })
+            .child(row)
+            .children(agents);
         if !self.card_is_fresh(session) {
             return card.into_any_element();
         }
@@ -459,8 +444,8 @@ impl BenCodeApp {
     }
 
     /// The inline title field that replaces a card while renaming
-    /// (MonoCode `SessionRenameRow`: `px-2.5 py-2`, amber while it needs
-    /// approval, the selection fill while open).
+    /// (MonoCode `SessionRenameRow`), in the row's place and type: amber
+    /// while it needs approval, the selection's fill while open.
     fn render_session_rename_row(
         &self,
         active: bool,
@@ -470,26 +455,26 @@ impl BenCodeApp {
         let colors = &cx.theme().colors;
         let amber = Status::Attention.color(colors.fg);
         div()
+            .flex()
             .w_full()
-            .px(px(10.0))
-            .py(px(8.0))
+            .h(px(ROW_HEIGHT))
+            .items_center()
+            .px_1()
             .rounded(px(6.0))
             .when(needs_approval, |el| el.bg(amber.opacity(0.10)))
-            .when(!needs_approval && active, |el| el.bg(colors.active))
+            .when(!needs_approval && active, |el| el.bg(selection_strong(cx)))
             // MonoCode's input: `rounded bg-content/10 px-2 py-1` with a
             // `ring-1 ring-accent/40`; the 1px border takes the ring's
             // place, so the padding gives up that pixel.
             .child(
-                div()
+                nav_label()
+                    .flex_1()
                     .rounded(px(4.0))
                     .px(px(7.0))
-                    .py(px(3.0))
+                    .py(px(2.0))
                     .bg(colors.fg.fill(Fill::Strong))
                     .border_1()
                     .border_color(colors.accent.opacity(0.4))
-                    .text_size(Text::Md.px())
-                    .line_height(px(TITLE_LINE_HEIGHT))
-                    .font_weight(FontWeight::SEMIBOLD)
                     .text_color(colors.fg)
                     .child(self.rename_input.clone()),
             )
@@ -515,13 +500,13 @@ impl BenCodeApp {
                 .selection
                 .select_range(id, &order, active.as_deref(), add);
             window.focus(&self.session_list_focus, cx);
-            self.redraw_regions(&[Region::Sidebar], cx);
+            self.redraw_regions(&[Region::Rail], cx);
             return;
         }
         if add {
             self.sessions_ui.selection.toggle(id);
             window.focus(&self.session_list_focus, cx);
-            self.redraw_regions(&[Region::Sidebar], cx);
+            self.redraw_regions(&[Region::Rail], cx);
             return;
         }
         self.sessions_ui.selection.clear();

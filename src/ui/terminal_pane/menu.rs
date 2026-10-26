@@ -1,6 +1,6 @@
 //! The terminal dock's menus: a tab's right click (`surfaceTabMenuItems`
 //! for a terminal: Close, Close Others) and Move Terminal (`SIDE_ITEMS`),
-//! both MonoCode `ExplorerMenu`s, and the footer's list of running
+//! both MonoCode `ExplorerMenu`s, and the title bar's list of running
 //! terminals (`UsageFooter` `RunningTerminalChip`'s popover).
 
 use gpui::{AnyElement, Context, Pixels, Point};
@@ -19,7 +19,7 @@ enum MenuTarget {
     Tab(u64),
     /// Move Terminal.
     Side,
-    /// The footer chip's running terminals, above the chip.
+    /// The title bar chip's running terminals, under the chip.
     Running,
 }
 
@@ -123,7 +123,7 @@ impl BenCodeApp {
         self.open_terminal_menu(MenuTarget::Side, position, cx);
     }
 
-    /// The footer chip's list: opens above the chip, or closes when open.
+    /// The title bar chip's list: opens under the chip, or closes when open.
     pub(crate) fn toggle_running_terminals_menu(&mut self, cx: &mut Context<Self>) {
         if self
             .terminals(cx)
@@ -236,14 +236,15 @@ impl BenCodeApp {
         Some(self.render_terminal_menu_at(menu, explorer_menu::MenuPlace::At(menu.position), cx))
     }
 
-    /// The running terminals' list, placed in the footer chip.
+    /// The running terminals' list, placed in the title bar's chip.
     pub(crate) fn render_running_terminals_menu(&self, cx: &Context<Self>) -> Option<AnyElement> {
         let menu = self
             .terminals(cx)
             .menu
             .as_ref()
             .filter(|menu| menu.is_running())?;
-        Some(self.render_terminal_menu_at(menu, explorer_menu::MenuPlace::Above, cx))
+        // The chip is in the title bar: its list hangs below it.
+        Some(self.render_terminal_menu_at(menu, explorer_menu::MenuPlace::Below, cx))
     }
 
     fn render_terminal_menu_at(

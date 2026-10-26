@@ -1,6 +1,6 @@
-//! The rail's small pieces: MonoCode `RailAction` / `RailSearch`, the
-//! title-bar `IconButton`, a card's hover controls, its diff stat and
-//! mascot.
+//! The navigator's small pieces: MonoCode `RailAction` / `RailSearch`, the
+//! views' icons, the title-bar `IconButton`, a card's hover controls, its
+//! diff stat and mascot.
 
 use std::time::Duration;
 
@@ -18,7 +18,7 @@ use crate::ui::scale::px;
 use crate::ui::spinner;
 
 /// MonoCode `h-8`: every rail row.
-pub(super) const ROW_HEIGHT: f32 = 32.0;
+pub(crate) const ROW_HEIGHT: f32 = 32.0;
 /// MonoCode `--mascot-beat`.
 const MASCOT_BEAT: Duration = Duration::from_millis(460);
 pub(super) use crate::ui::tokens::{AMBER_400, EMERALD_400};
@@ -104,7 +104,7 @@ pub(super) fn project_mascot_icon(
     mascot_icon(mascot, color, busy, 12.0, cx)
 }
 
-/// The mascot at `size` (the Working agents card draws it at `size-2`).
+/// The mascot at `size` (the Agents section draws it at `size-2`).
 /// Its beat is stepped by the app's clock (`ui/spinner.rs`).
 pub(crate) fn mascot_icon(
     mascot: &'static Mascot,
@@ -179,51 +179,96 @@ pub(super) fn hover_control(
         )
 }
 
-/// What a rail row shows at its end.
-pub(super) enum RailTrailing {
-    None,
-    /// `size-2 rounded-full bg-accent`: activity not read yet.
-    Dot,
-    /// `text-[11px] text-content/40`.
-    Shortcut(&'static str),
+/// A navigator row while not selected (MonoCode `ProjectCard`'s
+/// `opacity-65`): the whole row, its icon and counts too.
+pub(crate) const UNSELECTED_OPACITY: f32 = 0.65;
+
+/// The selected navigator row's fill: content 14%, 8% in light (MonoCode
+/// `bg-selection-strong` is 12% and 7%, too close to the hover's 5%).
+pub(crate) fn selection_strong(cx: &App) -> Hsla {
+    let theme = cx.theme();
+    theme
+        .colors
+        .fg
+        .opacity(if theme.is_dark() { 0.14 } else { 0.08 })
 }
 
-/// The row label: `min-w-0 flex-1 truncate text-sm font-medium leading-tight`.
-pub(super) fn rail_label(label: impl Into<SharedString>) -> impl IntoElement {
+/// The navigator's rows, one look for its projects, Monos and threads
+/// (MonoCode `ProjectCard`): `h-8 rounded-md px-2`, the selection's strong
+/// fill, else the row at 65% with a `content/5` fill on hover.
+pub(crate) fn nav_row(row: Stateful<Div>, selected: bool, cx: &App) -> Stateful<Div> {
+    let hover = cx.theme().colors.fg.fill(Fill::Hover);
+    let strong = selection_strong(cx);
+    row.h(px(ROW_HEIGHT)).px_2().rounded(px(6.0)).map(|el| {
+        if selected {
+            el.bg(strong)
+        } else {
+            el.opacity(UNSELECTED_OPACITY).hover(move |s| s.bg(hover))
+        }
+    })
+}
+
+/// A navigator row's name: `min-w-0 truncate text-sm font-medium
+/// leading-tight`, in the row's ink.
+pub(crate) fn nav_label() -> Div {
     div()
         .min_w_0()
-        .flex_1()
         .truncate()
         .text_size(Text::Lg.px())
         .font_weight(FontWeight::MEDIUM)
         .line_height(relative(1.25))
-        .child(label.into())
 }
 
-/// MonoCode `RailAction`: `flex h-8 items-center gap-2 rounded-md px-2`,
-/// `bg-selection text-content` when active, else `text-content/50
-/// hover:bg-content/10 hover:text-content`, its `size-4` icon at 70%.
-pub(super) fn rail_action(
+/// The row label: a navigator row's name that takes the room left.
+pub(super) fn rail_label(label: impl Into<SharedString>) -> impl IntoElement {
+    nav_label().flex_1().child(label.into())
+}
+
+/// A view's icon beside the search (BenCode's own, where MonoCode lists
+/// each view as a row): `size-8 rounded-md`, lit while the view is open,
+/// with an accent dot for activity not read yet.
+pub(super) fn rail_icon_button(
     id: &'static str,
     icon: IconName,
-    label: &'static str,
+    tip: &'static str,
     active: bool,
-    trailing: RailTrailing,
+    dot: bool,
     cx: &Context<BenCodeApp>,
     on_click: impl Fn(&mut BenCodeApp, &ClickEvent, &mut Window, &mut Context<BenCodeApp>) + 'static,
 ) -> Stateful<Div> {
     let theme = cx.theme();
     let (fg, accent) = (theme.colors.fg, theme.colors.accent);
     let selection = fg.opacity(if theme.is_dark() { 0.10 } else { 0.06 });
-    rail_row(id, active, selection, fg)
-        .px_2()
+    div()
+        .id(id)
+        .group(id)
+        .relative()
+        .flex()
+        .flex_none()
+        .size(px(ROW_HEIGHT))
+        .items_center()
+        .justify_center()
+        .rounded(px(6.0))
+        .tooltip(Tooltip::text(tip))
+        .map(|el| {
+            if active {
+                el.bg(selection)
+            } else {
+                el.hover(move |s| s.bg(fg.fill(Fill::Strong)))
+            }
+        })
         .on_click(cx.listener(on_click))
         .child(rail_icon(id, icon, active, fg))
-        .child(rail_label(label))
-        .map(|el| match trailing {
-            RailTrailing::None => el,
-            RailTrailing::Dot => el.child(div().flex_none().size_2().rounded_full().bg(accent)),
-            RailTrailing::Shortcut(keys) => el.child(shortcut_hint(keys, fg)),
+        .when(dot, |el| {
+            el.child(
+                div()
+                    .absolute()
+                    .top(px(6.0))
+                    .right(px(6.0))
+                    .size(px(6.0))
+                    .rounded_full()
+                    .bg(accent),
+            )
         })
 }
 

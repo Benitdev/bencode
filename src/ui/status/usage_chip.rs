@@ -1,7 +1,8 @@
-//! MonoCode `app/shell/UsageProviderChip.tsx`: the footer chip with the
-//! account's name, the tightest window's bar and each window's
-//! "11% 6d 14h", and the details popover it opens (one card per window;
-//! the account pages are in `account_views`).
+//! MonoCode `app/shell/UsageProviderChip.tsx`: the usage chip (at the
+//! navigator's foot the tightest window's bar and each window's percent,
+//! under a Mono's composer with the account and each "11% 6d 14h"; on the
+//! icon rail the provider over the bar), and the details popover it opens
+//! (one card per window; the account pages are in `account_views`).
 
 use ely_gpui_component::primitives::{Icon, IconName, Tooltip};
 use ely_gpui_component::theme::{ActiveTheme, IconSize, Palette};
@@ -92,16 +93,22 @@ fn chip_tooltip(limits: &ProviderRateLimits, now: i64) -> String {
     }
 }
 
-/// MonoCode `UsageChipVariant`: the footer's chip, or the quiet tool
-/// buttons under a Mono's composer (`composer`), which name no account and
-/// switch none (`accountPicker={false}`).
+/// MonoCode `UsageChipVariant`: where the chip is drawn. MonoCode's footer
+/// chip is BenCode's `Navigator` one, made compact.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum UsageChipVariant {
-    Footer,
+    /// At the navigator's foot: the tightest window's bar and each window's
+    /// percent; the account and the resets are in its tooltip.
+    Navigator,
+    /// On the icon rail while the navigator is collapsed: the provider's
+    /// icon over the tightest window's bar.
+    Icon,
+    /// The quiet tool buttons under a Mono's composer, which name no
+    /// account and switch none (MonoCode `accountPicker={false}`).
     Composer,
 }
 
-/// What the popover needs to know about the footer's account.
+/// What the popover needs to know about the chip's account.
 pub(super) struct ChipAccounts<'a> {
     pub provider: RateLimitProvider,
     /// The popover may switch accounts (MonoCode `accountPicker`).
@@ -177,99 +184,144 @@ impl BenCodeApp {
             now,
         };
         let windows = limits.windows();
+        let tightest = windows
+            .iter()
+            .map(|(_, window)| window.used_percent)
+            .fold(0.0, f64::max);
+        // The account is only named once there is more than one;
+        // Antigravity's is the one `agy` is signed in as.
+        let account_width = if provider == RateLimitProvider::Antigravity {
+            160.0
+        } else {
+            96.0
+        };
+        let account = if provider == RateLimitProvider::Antigravity {
+            self.agy_live_label()
+        } else {
+            chip_accounts
+                .active()
+                .filter(|_| accounts.len() > 1)
+                .map(|active| active.label.clone())
+        };
+        let tooltip = match (&account, variant) {
+            (Some(account), UsageChipVariant::Navigator | UsageChipVariant::Icon) => {
+                format!("{account}\n{}", chip_tooltip(limits, now))
+            }
+            _ => chip_tooltip(limits, now),
+        };
         let faint = |text: &'static str| div().text_color(fg.ink(Ink::Faint)).child(text);
-
-        // MonoCode `USAGE_CHIP_CLASSES`: `h-5 rounded px-1
-        // hover:bg-content/10` in the footer, `h-6.5 rounded-md px-1.5
-        // hover:bg-content/8` under the composer.
         let chip = div()
-            .id(if composer {
-                "usage-chip-composer"
-            } else {
-                "usage-chip"
+            .id(match variant {
+                UsageChipVariant::Navigator => "usage-chip",
+                UsageChipVariant::Icon => "usage-chip-icon",
+                UsageChipVariant::Composer => "usage-chip-composer",
             })
-            .flex()
-            .flex_none()
-            .items_center()
-            .gap(px(6.0))
-            .h(px(if composer { 26.0 } else { 20.0 }))
-            .map(|el| if composer { el.px_1p5() } else { el.px_1() })
-            .rounded(px(if composer { 6.0 } else { 4.0 }))
-            .text_color(fg.ink(Ink::Secondary))
-            .whitespace_nowrap()
             .cursor_pointer()
-            .hover(move |s| {
-                s.bg(fg.opacity(if composer { 0.08 } else { 0.10 }))
-                    .text_color(fg)
-            })
             .on_hover(cx.listener(|this, hovered: &bool, _, _| this.usage.chip_hovered = *hovered))
             .on_click(cx.listener(move |this, _, _, cx| this.toggle_usage_popover(provider, cx)))
-            .tooltip(Tooltip::text(chip_tooltip(limits, now)))
-            .child(HarnessIcon::new(provider.id()).size(px(12.0)))
-            .map(|el| {
-                if limits.is_loading() {
-                    el.child(faint("···"))
-                } else if limits.status == RateLimitStatus::Unavailable {
-                    el.child(faint("not connected"))
-                } else if windows.is_empty() {
-                    el.child(faint(empty_usage_label(limits)))
-                } else {
-                    let tightest = windows
-                        .iter()
-                        .map(|(_, window)| window.used_percent)
-                        .fold(0.0, f64::max);
-                    // The account is only named once there is more than one;
-                    // Antigravity's is the one `agy` is signed in as.
-                    let account = if provider == RateLimitProvider::Antigravity {
-                        self.agy_live_label().map(|label| (label, 160.0))
-                    } else {
-                        chip_accounts
-                            .active()
-                            .filter(|_| accounts.len() > 1)
-                            .map(|active| (active.label.clone(), 96.0))
-                    };
-                    el.when_some(account, |el, (label, width)| {
-                        el.child(
-                            div()
-                                .max_w(px(width))
-                                .truncate()
-                                .text_color(fg.ink(Ink::Muted))
-                                .child(label),
-                        )
+            .tooltip(Tooltip::text(tooltip));
+        let chip = match variant {
+            // The provider over the tightest window, in the icon rail's
+            // `size-8` button.
+            UsageChipVariant::Icon => chip
+                .flex()
+                .flex_col()
+                .flex_none()
+                .size(px(32.0))
+                .items_center()
+                .justify_center()
+                .gap(px(5.0))
+                .rounded(px(6.0))
+                .hover(move |s| s.bg(fg.fill(Fill::Strong)))
+                .child(HarnessIcon::new(provider.id()).size(px(14.0)))
+                .child(usage_bar(tightest, 3.0, colors).w(px(18.0)).flex_none()),
+            // MonoCode `USAGE_CHIP_CLASSES`: `h-5 rounded px-1
+            // hover:bg-content/10` in the footer, here `h-6 rounded-md`
+            // with the percents alone; `h-6.5 rounded-md px-1.5
+            // hover:bg-content/8` under the composer, with the resets.
+            UsageChipVariant::Navigator | UsageChipVariant::Composer => {
+                let composer = variant == UsageChipVariant::Composer;
+                chip.flex()
+                    .min_w_0()
+                    .items_center()
+                    .gap(px(6.0))
+                    .h(px(if composer { 26.0 } else { 24.0 }))
+                    .map(|el| {
+                        if composer {
+                            el.px_1p5()
+                        } else {
+                            el.px(px(6.0))
+                        }
                     })
-                    .child(usage_bar(tightest, 4.0, colors).w(px(32.0)).flex_none())
-                    .child(div().flex().items_center().gap_1().children(
-                        windows.iter().enumerate().map(|(ix, (_, window))| {
-                            div()
-                                .flex()
-                                .items_center()
-                                .gap_1()
-                                .when(ix > 0, |el| {
-                                    el.child(div().text_color(fg.ink(Ink::Faint)).child("·"))
-                                })
-                                .child(format!(
-                                    "{} {}",
-                                    format_usage_percent(window.used_percent),
-                                    chip_label(window, now)
-                                ))
-                        }),
-                    ))
-                }
-            });
+                    .rounded(px(6.0))
+                    .text_color(fg.ink(Ink::Secondary))
+                    .whitespace_nowrap()
+                    .hover(move |s| {
+                        s.bg(fg.opacity(if composer { 0.08 } else { 0.10 }))
+                            .text_color(fg)
+                    })
+                    .child(HarnessIcon::new(provider.id()).size(px(12.0)))
+                    .map(|el| {
+                        if limits.is_loading() {
+                            el.child(faint("···"))
+                        } else if limits.status == RateLimitStatus::Unavailable {
+                            el.child(faint("not connected"))
+                        } else if windows.is_empty() {
+                            el.child(faint(empty_usage_label(limits)))
+                        } else {
+                            el.when_some(account.filter(|_| composer), |el, label| {
+                                el.child(
+                                    div()
+                                        .max_w(px(account_width))
+                                        .truncate()
+                                        .text_color(fg.ink(Ink::Muted))
+                                        .child(label),
+                                )
+                            })
+                            .child(
+                                usage_bar(tightest, 4.0, colors)
+                                    .w(px(if composer { 32.0 } else { 20.0 }))
+                                    .flex_none(),
+                            )
+                            .child(
+                                div().flex().min_w_0().items_center().gap_1().children(
+                                    windows.iter().enumerate().map(|(ix, (_, window))| {
+                                        let percent = format_usage_percent(window.used_percent);
+                                        div()
+                                            .flex()
+                                            .flex_none()
+                                            .items_center()
+                                            .gap_1()
+                                            .when(ix > 0, |el| {
+                                                el.child(
+                                                    div().text_color(fg.ink(Ink::Faint)).child("·"),
+                                                )
+                                            })
+                                            .child(if composer {
+                                                format!("{percent} {}", chip_label(window, now))
+                                            } else {
+                                                percent
+                                            })
+                                    }),
+                                ),
+                            )
+                        }
+                    })
+            }
+        };
 
-        // The chip's padding hangs into the footer's, so its content lines up
-        // with a plain harness label (MonoCode `-mx-1`).
         div()
             .relative()
             .flex_none()
-            .when(!composer, |el| el.mx(px(-4.0)))
+            .min_w_0()
             .child(chip)
             .when(self.usage.popover == Some(provider), |el| {
                 el.child(self.render_usage_popover(&chip_accounts, target.available, cx))
             })
     }
 
-    /// MonoCode `Popover side="top" align="start"` over the chip.
+    /// MonoCode `Popover side="top" align="start"` over the chip: each sits
+    /// at the window's foot.
     fn render_usage_popover(
         &self,
         chip: &ChipAccounts,

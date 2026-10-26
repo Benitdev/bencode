@@ -1,6 +1,6 @@
 //! A Mono in the main area (MonoCode `App.tsx`'s `monoCovers`,
 //! `MonoHeader`, `ConfirmReset`): its conversation in place of the
-//! sidebar, the tabs and the footer, under its title bar
+//! workspace, its tabs and the inspector, under its title bar
 //! (`ui/titlebar/mono.rs`), with its Overview beside the chat
 //! (`ui/mono_overview/`), the greeting that fills the chat before the first
 //! message, and the confirmations its settings (`ui/mono_settings.rs`) and
@@ -28,7 +28,7 @@ impl BenCodeApp {
     }
 
     /// The Mono's column: its title bar, then the chat and details. It
-    /// covers the footer, as MonoCode's does.
+    /// covers the workspace's status, as MonoCode's covers its footer.
     pub(crate) fn render_mono_view(&mut self, cx: &mut Context<Self>) -> Option<AnyElement> {
         if !self.mono_covers() {
             return None;
@@ -36,7 +36,7 @@ impl BenCodeApp {
         let mono = self.mono_in_view()?.clone();
         let state = self.mono_state(&mono);
         // The plan's usage shows under its composer: read once, as the
-        // footer's chip does.
+        // navigator's chip does.
         let harness = self
             .mono_view_session()
             .and_then(|id| self.sessions.iter().find(|s| s.id == id))

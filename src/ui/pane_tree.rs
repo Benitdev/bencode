@@ -16,10 +16,11 @@ use gpui::{
 
 use crate::app::BenCodeApp;
 use crate::db::SessionRow;
+use crate::harness::catalog;
 use crate::ui::drag_drop::{DraggedFile, DraggedPane, DraggedSession, render_pane_drop_hint};
 use crate::ui::layout::{LayoutNode, SplitDir, layout_leaves, pane_edge_from_point, split_shares};
 use crate::ui::scale::px;
-use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
+use crate::ui::tokens::{Fill, Ink, Status, Text, Tone as _};
 
 const UNTITLED: &str = "Untitled thread";
 
@@ -64,7 +65,7 @@ impl BenCodeApp {
         let Some(layout) = self.active_layout().cloned() else {
             return shell.justify_center().items_center().child(
                 EmptyState::new("no-thread", IconName::MessageSquare, "No thread selected")
-                    .body("Pick a thread from the sidebar or start a new one."),
+                    .body("Pick a thread in the navigator or start a new one."),
             );
         };
         self.pane_rects.clear();
@@ -447,8 +448,10 @@ impl BenCodeApp {
             )
     }
 
-    /// MonoCode `SessionPane` header, shown only in a split: a grip to drag
-    /// the pane, a dot lit on the focused pane, the title, and close.
+    /// The header of a pane in a split (MonoCode `SessionPane`'s, with
+    /// what tells runs apart): a grip to drag the pane, its harness (or
+    /// the run's state), the title, the model, and close. The focused pane
+    /// carries the accent along its foot.
     fn render_pane_header(
         &self,
         session: &SessionRow,
@@ -456,12 +459,29 @@ impl BenCodeApp {
         cx: &Context<Self>,
     ) -> impl IntoElement {
         let colors = &cx.theme().colors;
+        let fg = colors.fg;
         let title = display_title(session).to_string();
         let ghost_title = SharedString::from(title.clone());
         let close_id = session.id.clone();
-        let hover = colors.fg.fill(Fill::Strong);
+        let hover = fg.fill(Fill::Strong);
+        let waiting = self.pending_permission_for(&session.id).is_some();
+        let running = self.is_agent_running_in(&session.id);
+        let state = if waiting {
+            Icon::new(IconName::CircleAlert)
+                .size(IconSize::Xs)
+                .color(Status::Attention.color(fg))
+                .into_any_element()
+        } else if running {
+            crate::ui::spinner::terminal_spinner(colors.accent, cx).into_any_element()
+        } else {
+            crate::ui::HarnessIcon::new(&session.harness)
+                .size(px(14.0))
+                .into_any_element()
+        };
+        let model = catalog::display_label(&session.harness, &session.model);
         div()
             .id(SharedString::from(format!("pane-header-{}", session.id)))
+            .relative()
             .flex()
             .flex_none()
             .items_center()
@@ -482,18 +502,16 @@ impl BenCodeApp {
             .child(
                 Icon::new(IconName::GripVertical)
                     .size(IconSize::Xs)
-                    .color(colors.fg.ink(Ink::Faint)),
+                    .color(fg.ink(Ink::Faint)),
             )
             .child(
                 div()
-                    .size(px(8.0))
+                    .flex()
                     .flex_none()
-                    .rounded_full()
-                    .bg(if is_focused {
-                        colors.accent
-                    } else {
-                        gpui::transparent_black()
-                    }),
+                    .size(px(16.0))
+                    .items_center()
+                    .justify_center()
+                    .child(state),
             )
             .child(
                 div()
@@ -501,14 +519,28 @@ impl BenCodeApp {
                     .min_w_0()
                     .truncate()
                     .text_size(Text::Base.px())
-                    .text_color(colors.fg)
+                    .text_color(if is_focused {
+                        fg
+                    } else {
+                        fg.ink(Ink::Secondary)
+                    })
                     .child(title),
+            )
+            .child(
+                div()
+                    .flex_none()
+                    .max_w(px(140.0))
+                    .truncate()
+                    .text_size(Text::Sm.px())
+                    .text_color(fg.ink(Ink::Muted))
+                    .child(model),
             )
             .child(
                 div()
                     .id(SharedString::from(format!("close-pane-{}", session.id)))
                     .size(px(20.0))
                     .flex()
+                    .flex_none()
                     .items_center()
                     .justify_center()
                     .rounded(px(4.0))
@@ -522,5 +554,16 @@ impl BenCodeApp {
                             .color(colors.fg_muted),
                     ),
             )
+            .when(is_focused, |el| {
+                el.child(
+                    div()
+                        .absolute()
+                        .left_0()
+                        .right_0()
+                        .bottom(px(-1.0))
+                        .h(px(2.0))
+                        .bg(colors.accent),
+                )
+            })
     }
 }

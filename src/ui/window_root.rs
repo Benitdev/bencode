@@ -1,5 +1,4 @@
-//! The window's root: the app's shell between the composer runner's layer
-//! and the process readout's.
+//! The window's root: the composer runner's layer, then the app's shell.
 //! The runner redraws every frame of a turn; the app's regions are cached
 //! (`ui/region.rs`), so those frames re-render only the shell. A region
 //! redraws when the app notifies, when asked alone, or when a view or
@@ -10,12 +9,10 @@ use gpui::{AppContext, Context, Entity, IntoElement, ParentElement, Render, Styl
 use crate::app::BenCodeApp;
 use crate::launch::LaunchData;
 use crate::ui::composer::runner_view::RunnerLayer;
-use crate::ui::footer::ProcessLayer;
 
 pub struct WindowRoot {
     app: Entity<BenCodeApp>,
     runner: Entity<RunnerLayer>,
-    process: Entity<ProcessLayer>,
     /// For the startup trace: the first render is marked.
     drawn: bool,
 }
@@ -25,12 +22,9 @@ impl WindowRoot {
         let app = cx.new(|cx| BenCodeApp::new(window, launch, cx));
         let weak = app.downgrade();
         let runner = cx.new(|_| RunnerLayer::new(weak));
-        let slot = app.read(cx).process_slot.clone();
-        let process = cx.new(|cx| ProcessLayer::new(slot, window, cx));
         Self {
             app,
             runner,
-            process,
             drawn: false,
         }
     }
@@ -62,8 +56,5 @@ impl Render for WindowRoot {
             // (`ui/region.rs`). A cached app would re-render every region
             // whenever one of them redraws, being their ancestor.
             .child(self.app.clone())
-            // After the app: it lays its readout out over the footer slot
-            // the app has just measured, and paints above it.
-            .child(self.process.clone())
     }
 }

@@ -350,7 +350,7 @@ impl BenCodeApp {
             .description(description)
             .row(
                 SettingsRow::new("Sidebar opacity")
-                    .description("Applies to the project rail and the other glass panes.")
+                    .description("Applies to the navigator and the other glass panes.")
                     .control(opacity),
             )
             .row(
@@ -592,10 +592,10 @@ impl BenCodeApp {
         }));
         SettingsGroup::new("Layout")
             .row(
-                SettingsRow::new("Collapsed project rail")
+                SettingsRow::new("Collapsed navigator")
                     .description(
-                        "Keep project navigation available as a compact icon rail, or hide the \
-                         rail completely.",
+                        "Keep the projects and the agents at work available as a compact icon \
+                         rail, or hide the navigator completely.",
                     )
                     .control(rail),
             )

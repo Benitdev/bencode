@@ -80,7 +80,7 @@ pub struct AccountsState {
 pub enum LoginOrigin {
     /// The popover's Add account page.
     AddAccount,
-    /// The popover's sign-in panel, for the footer's account.
+    /// The popover's sign-in panel, for the chip's account.
     Reconnect,
     /// Settings › Accounts' Add account.
     Settings,
@@ -662,7 +662,7 @@ impl BenCodeApp {
         }
     }
 
-    /// The sign-in panel's button: signs the footer's account in again,
+    /// The sign-in panel's button: signs the chip's account in again,
     /// then reads its usage.
     pub fn reconnect_provider(&mut self, cx: &mut Context<Self>) {
         let Some(target) = self.usage_target().filter(|target| target.available) else {

@@ -170,6 +170,15 @@ pub fn git_label(repo: Option<&str>, branch: Option<&str>) -> String {
 
 /// MonoCode `formatRelative`: now, 5m, 2h 15m, 3d, then "Oct 3".
 pub fn format_relative(updated_at: i64, now: i64) -> String {
+    relative(updated_at, now, true)
+}
+
+/// `format_relative` with hours alone ("2h"), for a thread's one-line row.
+pub fn format_age(updated_at: i64, now: i64) -> String {
+    relative(updated_at, now, false)
+}
+
+fn relative(updated_at: i64, now: i64, minutes_after_hours: bool) -> String {
     if updated_at <= 0 {
         return String::new();
     }
@@ -183,7 +192,7 @@ pub fn format_relative(updated_at: i64, now: i64) -> String {
     if diff < DAY_MS {
         let hours = diff / HOUR_MS;
         let minutes = (diff % HOUR_MS) / MINUTE_MS;
-        return if minutes > 0 {
+        return if minutes > 0 && minutes_after_hours {
             format!("{hours}h {minutes}m")
         } else {
             format!("{hours}h")
@@ -492,6 +501,14 @@ mod tests {
         assert_eq!(format_relative(now - 3 * DAY_MS, now), "3d");
         let old = format_relative(now - 10 * DAY_MS, now);
         assert!(!old.ends_with('d') && !old.is_empty(), "{old}");
+    }
+
+    #[test]
+    fn an_age_keeps_hours_alone() {
+        let now = 100 * DAY_MS;
+        assert_eq!(format_age(now - 5 * MINUTE_MS, now), "5m");
+        assert_eq!(format_age(now - 2 * HOUR_MS - 15 * MINUTE_MS, now), "2h");
+        assert_eq!(format_age(now - 3 * DAY_MS, now), "3d");
     }
 
     #[test]

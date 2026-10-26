@@ -84,7 +84,7 @@ pub fn fetch(group: &str, now: i64) -> Fetched {
     }
 }
 
-/// One JSON call; the failure is what the footer shows.
+/// One JSON call; the failure is what the usage chip shows.
 fn post(token: &str, method: &str, body: &str) -> Result<Value, String> {
     let response = http::send(
         &format!("{API}:{method}"),

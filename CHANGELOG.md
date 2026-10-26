@@ -6,6 +6,38 @@ tagging (`docs/releasing.md`).
 
 ## [Unreleased]
 
+- BenCode has a layout of its own. The project rail and the Sessions
+  sidebar are one column, the navigator (⌘B): Search with Inbox, Notes
+  and Automations as icons, the Agents section, the projects, then the
+  project's threads, with Settings and the focused thread's usage at
+  its foot (Refresh always beside it). A width kept for the old rail of projects alone gives way to the
+  navigator's default.
+- The Agents section at the top of the navigator lists every turn in
+  flight across projects, those waiting on you first: a command an agent
+  asks to run is allowed or denied right there, a question opens its
+  thread. While the navigator is collapsed, a badge on the icon rail or
+  in the title bar counts them, amber while one waits. Go › Next Agent
+  (⌥⌘A) steps through them, those waiting first.
+- Changes and the Explorer open in the inspector at the window's right
+  (⇧⌘B shows or hides it, ⌃⇧G and ⇧⌘E pick one), so the threads stay in
+  view beside them. It remembers whether it shows, what and how wide.
+- The footer is gone: the browser and the terminal (or its running jobs)
+  sit at the title bar's right, beside the inspector's toggles, Changes
+  with the working tree's diff stat. BenCode's CPU and memory readout is
+  gone with it.
+- A thread takes one line: its harness, title, badges and age (hours
+  alone), Archive over the age on hover; the model and branch are in its
+  tooltip, and a worktree's thread marks its branch. About twice as many
+  fit, and the thread in view carries the accent at its edge. Title bar
+  tabs keep to one line.
+- The navigator's sections share one look: Agents, Monos, Projects and
+  Threads, each with its count or button. The Monos fold into their faces
+  in the section's header (a click on "Monos" lists them), the projects
+  no longer scroll under them, and Threads names no project twice: it
+  counts them, with the working copy switcher when the project has
+  worktrees.
+- A pane of a split names its harness (or what its run waits on) and its
+  model in its header; the focused pane is underlined in the accent.
 - Git hooks find the tools your terminal finds when `.zshrc` sets them
   up (nvm, pyenv, conda): BenCode reads PATH from an interactive login
   shell, not a login shell alone, so a husky hook no longer runs

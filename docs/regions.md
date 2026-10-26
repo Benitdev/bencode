@@ -28,12 +28,13 @@ parent, and each must have a definite size from its style.
 ## Stage 1: regions (done)
 
 `ui/region.rs`. The app's render is the shell; the regions (`Titlebar`,
-`Rail`, `CompactRail`, `Sidebar`, `FilePane`, `Terminal`, `Footer`,
-`Surface`, `Mono`, and one per chat pane) are cached views that render
-through `render_region`. A region's content is laid out as a root, so it
-sits in a box that fills the region (a root with no size of its own would
-shrink to its content). Every region observes the app, so `cx.notify()` on
-the app still redraws everything: nothing that worked before can go stale.
+`Rail` (the navigator), `CompactRail`, `Inspector`, `FilePane`,
+`Terminal`, `Surface`, `Mono`, and one per chat pane) are cached views
+that render through `render_region`. A region's content is laid out as a
+root, so it sits in a box that fills the region (a root with no size of
+its own would shrink to its content). Every region observes the app, so
+`cx.notify()` on the app still redraws everything: nothing that worked
+before can go stale.
 
 ## Stage 2: one region per chat pane (done)
 
@@ -66,14 +67,14 @@ the shell or the floating chat paints itself.
 | Path | Redraws now |
 | :--- | :--- |
 | Agent text, thinking, tool rows, steps, status | its pane or the Mono, or none off screen |
-| Agent usage reports | its pane, and the footer |
+| Agent usage reports | its pane, and the title bar (its usage chip) |
 | A keystroke in the prompt, its pickers | the focused composer's pane |
 | The prompt's `@` marks moving | the composer regions, next frame |
 | An edit in the code editor | `FilePane` |
-| The terminal chip's live mark (800ms) | `Footer` |
-| A terminal's job or folder changing | `Terminal`, `Footer` |
-| Cards' ages (30s) | `Sidebar`, rails |
-| A title's sweep ending | `Sidebar` |
+| The terminal chip's live mark (800ms) | `Titlebar` |
+| A terminal's job or folder changing | `Terminal`, `Titlebar` |
+| Cards' ages (30s) | the navigator and the icon rail |
+| A title's sweep ending | the navigator (`Rail`) |
 | The Inbox poll with nothing new (30s) | nothing |
 | Any view a region draws (input, editor, terminal, Ely animation, scrollbar fade, markdown reveal) | that region |
 | Hovering (GPUI notifies the view under the pointer) | that region |
@@ -92,10 +93,10 @@ it (`Regions::follow(model, regions)`, set in `BenCodeApp::new`):
 
 | Model | Read through | Followed by |
 | :--- | :--- | :--- |
-| `UsageSnapshots` (`app/usage.rs`) | `usage_data.read(cx)` | `Footer`, `Mono`, `Surface` |
-| `InboxState` (`ui/inbox_view.rs`) | `inbox(cx)`, `inbox_mut` | `Surface`, `Sidebar`, rails, `Titlebar` |
-| `TerminalDocks` (`ui/terminal_pane/`) | `terminals(cx)`, `terminals_mut` | `Terminal`, `Footer` |
-| `WorkspaceCache` (`app/workspace_sync.rs`) | `workspace(cx)`, `workspace_mut` | every region but `Terminal` and `Footer` |
+| `UsageSnapshots` (`app/usage.rs`) | `usage_data.read(cx)` | `Titlebar`, `Mono`, `Surface` |
+| `InboxState` (`ui/inbox_view.rs`) | `inbox(cx)`, `inbox_mut` | `Surface`, rails, `Titlebar` |
+| `TerminalDocks` (`ui/terminal_pane/`) | `terminals(cx)`, `terminals_mut` | `Terminal`, `Titlebar` |
+| `WorkspaceCache` (`app/workspace_sync.rs`) | `workspace(cx)`, `workspace_mut` | every region but `Terminal` |
 | `TranscriptSelection` (`ui/transcript/selection.rs`) | `transcript_selection.read(cx)` | `Chat`, `Mono` |
 
 Writes go two ways. `model_state.as_mut(cx).field = …` (or `update` with

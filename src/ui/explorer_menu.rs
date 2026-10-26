@@ -153,6 +153,8 @@ pub enum MenuPlace {
     At(Point<Pixels>),
     /// Above the element it is placed in (MonoCode `Popover side="top"`).
     Above,
+    /// Under the element it is placed in (`Popover side="bottom"`).
+    Below,
     /// Top-right corner at a window point, growing left with its rows;
     /// `width` is then a floor (MonoCode `absolute top-full right-0 min-w-*`).
     UnderRight(Point<Pixels>),
@@ -470,6 +472,9 @@ pub fn render_menu_layered(
         MenuPlace::Above => anchored()
             .anchor(gpui::Anchor::BottomLeft)
             .offset(gpui::point(px(0.0), px(-4.0))),
+        MenuPlace::Below => anchored()
+            .anchor(gpui::Anchor::TopLeft)
+            .offset(gpui::point(px(0.0), px(4.0))),
     };
     deferred(anchored.snap_to_window().child(menu))
         .with_priority(layer)

@@ -1,8 +1,7 @@
 //! MonoCode `CompactProjectRail` and `CompactRailAction` (`Sidebar.tsx`):
-//! the column of icons the project rail leaves behind when collapsed with
-//! Appearance › "Collapsed project rail" on "Icon rail". It expands the
-//! rail, switches project, opens a sidebar tab (as a drawer while the
-//! sidebar is hidden) and the views.
+//! the column of icons the navigator leaves behind when collapsed with
+//! Appearance › "Collapsed navigator" on "Icon rail". It expands the
+//! navigator, switches project and opens the views.
 
 use std::rc::Rc;
 
@@ -15,7 +14,7 @@ use gpui::{
 
 use super::widgets::project_mascot_icon;
 use super::{TITLEBAR_HEIGHT, path_key};
-use crate::app::{BenCodeApp, SidebarMode, Surface, same_project_path};
+use crate::app::{BenCodeApp, Surface, same_project_path};
 use crate::ui::appearance::CollapsedRailMode;
 use crate::ui::scale::px;
 use crate::ui::sidebar_menus::SidebarMenuKind;
@@ -46,58 +45,6 @@ impl BenCodeApp {
             && self.monos.view.is_none()
     }
 
-    /// MonoCode `drawerMode`: beside the icon rail a hidden sidebar opens
-    /// for a while instead of staying.
-    fn sidebar_drawer_mode(&self) -> bool {
-        self.compact_rail_active() && !self.is_sidebar_open
-    }
-
-    /// The sidebar shows: opened, or drawn out from the icon rail.
-    pub fn sidebar_shown(&self) -> bool {
-        self.is_sidebar_open || (self.sidebar_drawer_open && self.sidebar_drawer_mode())
-    }
-
-    /// Whether the sidebar on screen is the drawer.
-    pub fn sidebar_is_drawer(&self) -> bool {
-        !self.is_sidebar_open && self.sidebar_shown()
-    }
-
-    /// MonoCode's drawer `pointerdown`: a press outside the drawer closes
-    /// it, except on the icon rail, whose buttons toggle it themselves.
-    pub fn dismiss_sidebar_drawer(&mut self, event: &MouseDownEvent, cx: &mut Context<Self>) {
-        if !self.sidebar_drawer_open || event.position.x < px(COMPACT_RAIL_WIDTH) {
-            return;
-        }
-        self.sidebar_drawer_open = false;
-        cx.notify();
-    }
-
-    /// Escape closes the drawer; `false` when there was none.
-    pub fn close_sidebar_drawer(&mut self, cx: &mut Context<Self>) -> bool {
-        if !self.sidebar_is_drawer() {
-            return false;
-        }
-        self.sidebar_drawer_open = false;
-        cx.notify();
-        true
-    }
-
-    /// MonoCode `openWorkspaceTab` + `onCompactTabPick`: back to the
-    /// workspace on that tab; as a drawer the shown tab's icon closes it.
-    fn pick_compact_tab(&mut self, tab: SidebarMode, cx: &mut Context<Self>) {
-        if self.surface.is_some() {
-            self.close_surface(cx);
-        }
-        if self.sidebar_drawer_mode() {
-            self.sidebar_drawer_open = !(self.sidebar_drawer_open && self.sidebar_mode == tab);
-        }
-        self.show_sidebar(tab, cx);
-        if tab == SidebarMode::Changes {
-            self.refresh_workspace(cx);
-            self.reload_branch_pr_if_stale(cx);
-        }
-    }
-
     /// MonoCode `action(active, open)`: a view's icon opens it, or leaves
     /// it when it is the one open.
     fn toggle_surface(&mut self, surface: Surface, cx: &mut Context<Self>) {
@@ -114,36 +61,18 @@ impl BenCodeApp {
     }
 
     /// MonoCode `CompactProjectRail`: `sidebar-glass flex h-full w-12
-    /// shrink-0 flex-col items-center`, a hairline down its right edge.
-    pub fn render_compact_rail(&self, cx: &Context<Self>) -> impl IntoElement {
+    /// shrink-0 flex-col items-center`, a hairline down its right edge;
+    /// `usage` is the focused thread's usage icon, above Settings.
+    pub fn render_compact_rail(
+        &self,
+        usage: Option<AnyElement>,
+        cx: &Context<Self>,
+    ) -> impl IntoElement {
         let theme = cx.theme();
         let colors = &theme.colors;
         let fg = colors.fg;
         let glass = self.glass(cx).sidebar(colors.bg, theme.is_dark());
         let title_bar_above = self.compact_title_bar();
-        let workspace_active = self.surface.is_none();
-        let tab_shown = self.sidebar_shown();
-        let has_changes =
-            !self.git_status.staged.is_empty() || !self.git_status.unstaged.is_empty();
-        let tabs = self.sidebar_tab_order.iter().map(|&tab| {
-            let (id, icon, label) = match tab {
-                SidebarMode::Sessions => {
-                    ("compact-rail-sessions", IconName::MessageSquare, "Sessions")
-                }
-                SidebarMode::Files => ("compact-rail-files", IconName::FileCode, "Explorer"),
-                SidebarMode::Changes => ("compact-rail-changes", IconName::GitBranch, "Changes"),
-            };
-            let active = workspace_active && tab_shown && self.sidebar_mode == tab;
-            compact_action(
-                id,
-                icon,
-                label,
-                active,
-                tab == SidebarMode::Changes && has_changes,
-                cx,
-            )
-            .on_click(cx.listener(move |this, _, _, cx| this.pick_compact_tab(tab, cx)))
-        });
         let surface_action =
             |id: &'static str, icon: IconName, label: &'static str, surface: Surface, dot: bool| {
                 compact_action(id, icon, label, self.surface_open(surface), dot, cx)
@@ -187,20 +116,19 @@ impl BenCodeApp {
                         compact_action(
                             "compact-rail-expand",
                             IconName::PanelLeft,
-                            "Expand projects",
+                            "Show Navigator (⌘B)",
                             false,
                             false,
                             cx,
                         )
                         .on_click(cx.listener(|this, _, _, cx| {
                             this.is_rail_open = true;
-                            this.sidebar_drawer_open = false;
                             cx.notify();
                         })),
                     )
                     .children(self.render_compact_monos(cx))
                     .child(self.render_compact_project_button(cx))
-                    .children(tabs)
+                    .children(self.render_agents_badge(true, cx))
                     .child(
                         compact_action(
                             "compact-rail-search",
@@ -255,6 +183,7 @@ impl BenCodeApp {
                     .w_full()
                     .gap_1()
                     .py_1p5()
+                    .children(usage)
                     .child(
                         compact_action(
                             "compact-rail-settings",
@@ -378,7 +307,7 @@ impl BenCodeApp {
     }
 
     /// A project's logo, else its mascot; a folder with no project.
-    fn project_glyph(&self, path: &str, cx: &Context<Self>) -> AnyElement {
+    pub(crate) fn project_glyph(&self, path: &str, cx: &Context<Self>) -> AnyElement {
         if path.trim().is_empty() {
             let fg = cx.theme().colors.fg;
             return Icon::new(IconName::FolderPlus)

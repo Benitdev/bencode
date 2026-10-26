@@ -12,10 +12,11 @@ use serde_json::{Map, Value};
 
 use crate::app::normalize_project_path;
 
-/// MonoCode `PROJECT_RAIL_WIDTH_MIN` / `MAX` / `DEFAULT`.
-pub const RAIL_WIDTH_MIN: f32 = 180.0;
-pub const RAIL_WIDTH_MAX: f32 = 360.0;
-pub const RAIL_WIDTH_DEFAULT: f32 = 200.0;
+/// The navigator's widths: room for a thread card's title at the least
+/// (MonoCode's rail, holding projects alone, went down to 180px).
+pub const RAIL_WIDTH_MIN: f32 = 240.0;
+pub const RAIL_WIDTH_MAX: f32 = 440.0;
+pub const RAIL_WIDTH_DEFAULT: f32 = 280.0;
 /// MonoCode `useDragResize` `max`: at most 35% of the window.
 const RAIL_WIDTH_WINDOW_SHARE: f32 = 0.35;
 /// MonoCode `NOTIFICATION_MUTE_HOURS`.
@@ -441,6 +442,9 @@ impl RailPrefs {
     /// The width shown, clamped like MonoCode `loadProjectRailWidth`.
     pub fn rail_width(&self) -> f32 {
         self.project_rail_width
+            // A width kept for MonoCode's rail of projects alone, narrower
+            // than the navigator's least, gives way to its default.
+            .filter(|width| *width >= RAIL_WIDTH_MIN)
             .unwrap_or(RAIL_WIDTH_DEFAULT)
             .clamp(RAIL_WIDTH_MIN, RAIL_WIDTH_MAX)
             .round()
@@ -699,9 +703,24 @@ mod tests {
     }
 
     #[test]
+    fn a_projects_only_width_gives_way_to_the_navigators_default() {
+        let width = |saved| {
+            RailPrefs {
+                project_rail_width: saved,
+                ..Default::default()
+            }
+            .rail_width()
+        };
+        assert_eq!(width(None), RAIL_WIDTH_DEFAULT);
+        assert_eq!(width(Some(180.0)), RAIL_WIDTH_DEFAULT);
+        assert_eq!(width(Some(300.4)), 300.0);
+        assert_eq!(width(Some(900.0)), RAIL_WIDTH_MAX);
+    }
+
+    #[test]
     fn resize_clamps_to_range_and_window() {
-        assert_eq!(resized_rail_width(200.0, 500.0, 2000.0), RAIL_WIDTH_MAX);
-        assert_eq!(resized_rail_width(200.0, 500.0, 800.0), 280.0);
-        assert_eq!(resized_rail_width(200.0, -100.0, 2000.0), RAIL_WIDTH_MIN);
+        assert_eq!(resized_rail_width(280.0, 500.0, 2000.0), RAIL_WIDTH_MAX);
+        assert_eq!(resized_rail_width(280.0, 500.0, 1000.0), 350.0);
+        assert_eq!(resized_rail_width(280.0, -100.0, 2000.0), RAIL_WIDTH_MIN);
     }
 }

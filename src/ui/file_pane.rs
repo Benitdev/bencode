@@ -96,7 +96,7 @@ impl BenCodeApp {
         if self.file_pane.activate(key) {
             self.file_pane_focused = true;
             self.settle_file_pane(cx);
-            self.redraw_regions(&[Region::FilePane, Region::Sidebar], cx);
+            self.redraw_regions(&[Region::FilePane, Region::Inspector], cx);
         }
     }
 

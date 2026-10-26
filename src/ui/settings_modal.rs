@@ -175,7 +175,7 @@ impl SettingsTab {
                 "File skills from project and personal folders. Type / in the composer to use one."
             }
             Self::Monos => "The resident agent beside your tabs, and which projects have one.",
-            Self::Archive => "Projects you have archived from the rail.",
+            Self::Archive => "Projects you have archived from the navigator.",
             Self::Worktrees => "Manage additional worktrees for each project.",
             Self::Integrations => {
                 "Where the Inbox reads from: GitHub through its CLI, and a Nulab Backlog space."
@@ -283,11 +283,11 @@ impl BenCodeApp {
             .description("What BenCode shows around your chats.")
             .row({
                 let entity = cx.entity().downgrade();
-                SettingsRow::new("Working agents")
+                SettingsRow::new("Agents section")
                     .description(
-                        "When two or more chats are in flight, a card on the project rail lists \
-                         them so you can jump across projects. Finished turns stay until you \
-                         open that session.",
+                        "At the top of the navigator, the chats in flight across projects, those \
+                         waiting on you first, with Allow and Deny for a command one asks to run. \
+                         Finished turns stay until you open that session.",
                     )
                     .control(
                         Switch::new("working-agents", !self.live_agents_off).on_change(
@@ -625,7 +625,7 @@ impl BenCodeApp {
         let fg = cx.theme().colors.fg;
         let archived = &self.settings.rail.archived_projects;
         let group = SettingsGroup::new("Archived projects").description(
-            "Archive a project from the rail to keep its chats without listing it in the sidebar.",
+            "Archive a project from the navigator to keep its chats without listing it there.",
         );
         let group = if archived.is_empty() {
             group.note("No archived projects.")

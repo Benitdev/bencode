@@ -62,7 +62,7 @@ impl Command {
 
     pub fn description(self) -> &'static str {
         match self {
-            Self::AddToFolder => "Place this session in an existing or new sidebar folder.",
+            Self::AddToFolder => "Place this session in an existing or new folder of threads.",
             Self::Mcp => "Find an MCP server for this message.",
             Self::Plan => ModeCommand::Plan.description(),
             Self::Draft => ModeCommand::Draft.description(),

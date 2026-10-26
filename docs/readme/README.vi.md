@@ -35,7 +35,7 @@
 
 ### Nhiều agent song song
 
-Mỗi việc một thread, mỗi thread có agent, model và chế độ quyền riêng. Chia đôi khung chat (⌘D), xếp hàng tin nhắn tiếp theo, dừng một lượt, hoặc chuyển thread sang agent khác. Thẻ **Working** theo dõi mọi lượt đang chạy, ở tất cả project.
+Mỗi việc một thread, mỗi thread có agent, model và chế độ quyền riêng. Chia đôi khung chat (⌘D), xếp hàng tin nhắn tiếp theo, dừng một lượt, hoặc chuyển thread sang agent khác. Mục **Agents** ở đầu navigator theo dõi mọi lượt đang chạy ở tất cả project, và cho bạn Allow hay Deny một lệnh đang chờ mà không rời thread đang mở.
 
 </td>
 <td width="50%">
@@ -83,7 +83,7 @@ Lượt nào sửa file sẽ kết thúc bằng thẻ **Changed N files**. Undo,
 
 ### Git có sẵn
 
-Stage, discard và commit từ tab Changes, có thể để agent viết commit message. Fetch, pull, push, mở pull request, xem đồ thị commit và làm việc với worktree mà không rời khung chat.
+Stage, discard và commit từ Changes trong inspector (⌃⇧G), có thể để agent viết commit message. Fetch, pull, push, mở pull request, xem đồ thị commit và làm việc với worktree mà không rời khung chat.
 
 </td>
 <td width="50%">
@@ -131,7 +131,7 @@ Prompt chạy theo lịch, từ mẫu có sẵn hoặc tự viết: chọn thờ
 **Và còn nữa:**
 
 - **Inbox:** issue và pull request GitHub qua `gh` (checks, bình luận, merge, nhờ agent sửa CI), mỗi project dùng tài khoản `gh` riêng. Issue Nulab Backlog qua API key: bình luận, đổi trạng thái, gửi cho agent.
-- **Tài khoản và mức dùng:** nhiều tài khoản Claude Code và Codex, mỗi thread gắn với một tài khoản, mức dùng 5 giờ, tuần và tháng hiện ở thanh dưới cùng. Chuyển qua lại giữa các lần đăng nhập Antigravity đã lưu.
+- **Tài khoản và mức dùng:** nhiều tài khoản Claude Code và Codex, mỗi thread gắn với một tài khoản, mức dùng 5 giờ, tuần và tháng hiện ở chân navigator. Chuyển qua lại giữa các lần đăng nhập Antigravity đã lưu.
 - **Ô soạn prompt:** `@` để nhắc tới file và ghi chú, `/` cho skill và `/mcp`, đính kèm file, sửa và gửi lại prompt vừa rồi.
 - **Tìm kiếm (⌘K)** trong thread, file và project; **tìm trong hội thoại (⌘F)** và mục lục các prompt.
 - **Sắp xếp:** thư mục thread, ghim, lưu trữ, nhắc việc, mở project bằng VS Code, Cursor, Zed và các editor khác.
@@ -156,7 +156,7 @@ BenCode điều khiển CLI của agent qua stdio và đọc luồng JSON mà ch
 |  |  |
 | :--- | :--- |
 | **Không có trình duyệt bên trong** | Rust và [GPUI](https://www.gpui.rs/) của Zed, cùng [Ely GPUI Components](https://elygpui.com/). Không Electron, không Chromium, không WebKit; Metal vẽ toàn bộ giao diện. |
-| **Nhanh và nhẹ** | Mục tiêu: khởi động dưới 50ms, dùng khoảng 30MB RAM. Thanh dưới cùng hiện CPU và bộ nhớ của chính BenCode để bạn tự kiểm tra. |
+| **Nhanh và nhẹ** | Mục tiêu: khởi động dưới 50ms, dùng khoảng 30MB RAM. |
 | **Dữ liệu ở máy bạn** | Thread, ghi chú, checkpoint và hồ sơ tài khoản nằm trên Mac của bạn, trong thư mục riêng của BenCode. |
 | **Không tốn thêm** | BenCode không cần thêm API key, không tốn thêm token. Nó chạy các CLI bạn đã đăng nhập sẵn. |
 
@@ -205,7 +205,9 @@ Gặp lỗi? **Help › Show Logs** mở file log để bạn đính kèm vào m
 | ⌘. | Đổi model |
 | ⌘S | Lưu file đang mở |
 | ⌘W | Đóng tab của file pane (khi pane đó đang focus), nếu không thì đóng thread |
-| ⌘B / ⇧⌘B | Ẩn/hiện rail project / sidebar |
+| ⌘B / ⇧⌘B | Ẩn/hiện navigator / inspector |
+| ⇧⌘E / ⌃⇧G | Explorer / Changes trong inspector |
+| ⌥⌘A | Agent kế tiếp, ưu tiên agent đang chờ bạn |
 | ⌘J / ⌘` | Ẩn/hiện terminal / terminal mới |
 | ⌘D / ⇧⌘D | Chia pane sang phải / xuống dưới |
 | ⌥⌘←→↑↓ | Chuyển focus giữa các pane |
