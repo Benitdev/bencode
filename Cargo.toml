@@ -8,7 +8,7 @@ description = "A native GPU-accelerated control plane for MonoCode using Rust an
 [workspace.package]
 # One version for the app, its host and what they share: Settings ›
 # Connections installs the host of the app's own version.
-version = "0.1.32"
+version = "0.1.33"
 
 [workspace]
 members = [".", "crates/bencode-core", "crates/bencode-host"]

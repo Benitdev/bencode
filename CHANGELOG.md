@@ -4,7 +4,7 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
-## [Unreleased]
+## [0.1.33] - 2026-10-26
 
 - BenCode has a layout of its own. The project rail and the Sessions
   sidebar are one column, the navigator (⌘B): Search with Inbox, Notes
