@@ -48,15 +48,21 @@ impl RenderOnce for EyeDropper {
     }
 }
 
+// NSColorSampler and NSColor; the app links AppKit through GPUI, a test
+// binary of this crate alone does not.
+#[cfg(target_os = "macos")]
+#[link(name = "AppKit", kind = "framework")]
+unsafe extern "C" {}
+
 /// An `NSColor` as sRGB, or `None` when AppKit cannot convert it.
 #[cfg(target_os = "macos")]
-unsafe fn read_srgb(color: cocoa::base::id) -> Option<gpui::Rgba> {
-    use cocoa::base::{id, nil};
-    use objc::{class, msg_send, sel, sel_impl};
+unsafe fn read_srgb(color: *mut objc::runtime::Object) -> Option<gpui::Rgba> {
+    use objc::{class, msg_send, runtime::Object, sel, sel_impl};
+    type Id = *mut Object;
     unsafe {
-        let space: id = msg_send![class!(NSColorSpace), sRGBColorSpace];
-        let srgb: id = msg_send![color, colorUsingColorSpace: space];
-        if srgb == nil {
+        let space: Id = msg_send![class!(NSColorSpace), sRGBColorSpace];
+        let srgb: Id = msg_send![color, colorUsingColorSpace: space];
+        if srgb.is_null() {
             return None;
         }
         let (r, g, b, a): (f64, f64, f64, f64) = (
@@ -78,15 +84,15 @@ unsafe fn read_srgb(color: cocoa::base::id) -> Option<gpui::Rgba> {
 #[cfg(target_os = "macos")]
 fn sample(window: AnyWindowHandle, cx: AsyncApp, on_pick: Option<OnColor>) {
     use block::ConcreteBlock;
-    use cocoa::base::{id, nil};
-    use objc::{class, msg_send, sel, sel_impl};
+    use objc::{class, msg_send, runtime::Object, sel, sel_impl};
+    type Id = *mut Object;
 
     log::info!("eye dropper: sampling");
     unsafe {
-        let sampler: id = msg_send![class!(NSColorSampler), new];
-        let handler = ConcreteBlock::new(move |color: id| {
+        let sampler: Id = msg_send![class!(NSColorSampler), new];
+        let handler = ConcreteBlock::new(move |color: Id| {
             let _: () = msg_send![sampler, release];
-            if color == nil {
+            if color.is_null() {
                 log::info!("eye dropper: cancelled");
                 return;
             }
@@ -117,14 +123,13 @@ fn sample(_: AnyWindowHandle, _: AsyncApp, _: Option<OnColor>) {
 
 #[cfg(all(test, target_os = "macos"))]
 mod tests {
-    use cocoa::base::id;
-    use objc::{class, msg_send, sel, sel_impl};
+    use objc::{class, msg_send, runtime::Object, sel, sel_impl};
 
     use super::read_srgb;
 
     #[test]
     fn a_display_p3_color_reads_back_as_srgb() {
-        let color: id = unsafe {
+        let color: *mut Object = unsafe {
             msg_send![class!(NSColor), colorWithDisplayP3Red: 1.0f64 green: 0.0f64 blue: 0.0f64 alpha: 0.5f64]
         };
         let srgb = unsafe { read_srgb(color) }.expect("P3 red converts to sRGB");

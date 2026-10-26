@@ -668,7 +668,6 @@ dependencies = [
  "alacritty_terminal",
  "anyhow",
  "block",
- "cocoa 0.26.0",
  "core-foundation 0.10.1",
  "core-graphics 0.24.0",
  "env_logger",
