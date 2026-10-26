@@ -28,11 +28,13 @@ const RED_300: u32 = 0xfca5a5;
 
 impl BenCodeApp {
     /// The top-right notices, stacked as MonoCode stacks them: due reminders,
-    /// then harness updates.
+    /// then harness updates; then a file that did not open while no tab is
+    /// open to show it over.
     pub fn render_corner_notices(&self, window: &Window, cx: &Context<Self>) -> Option<AnyElement> {
         let reminders = self.render_reminder_notices(cx);
         let updates = self.render_harness_update_notice(cx);
-        if reminders.is_none() && updates.is_none() {
+        let editor = self.render_editor_corner_notice(cx);
+        if reminders.is_none() && updates.is_none() && editor.is_none() {
             return None;
         }
         // A browser page is a native view above everything drawn here: the
@@ -54,10 +56,39 @@ impl BenCodeApp {
                     .items_end()
                     .gap(px(STACK_GAP))
                     .children(reminders)
-                    .children(updates),
+                    .children(updates)
+                    .children(editor),
             )
             .with_priority(2)
             .into_any_element(),
+        )
+    }
+
+    /// The editor's notice on the notices' glass, while the file pane is
+    /// closed (with a tab open, the pane shows it).
+    fn render_editor_corner_notice(&self, cx: &Context<Self>) -> Option<AnyElement> {
+        if !self.file_pane.is_empty() {
+            return None;
+        }
+        let alert = self.render_editor_notice(cx)?;
+        let fg = cx.theme().colors.fg;
+        Some(
+            div()
+                .id("editor-corner-notice")
+                .occlude()
+                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                .w(px(PANEL_WIDTH))
+                .rounded(px(12.0))
+                .border_1()
+                .border_color(fg.fill(Fill::Bold))
+                .child(crate::ui::frost::frost(
+                    crate::ui::frost::POPOVER_RADIUS,
+                    cx,
+                ))
+                .shadow_xl()
+                .overflow_hidden()
+                .child(alert)
+                .into_any_element(),
         )
     }
 

@@ -135,7 +135,9 @@ impl BenCodeApp {
             .capture_any_mouse_down(cx.listener(|this, _, _, _| this.file_pane_focused = false))
             // The splits are the shell's; each pane is a region.
             .child(self.render_pane_tree(cx));
-        if self.file_pane.is_empty() && self.editor.notice.is_none() {
+        // A notice with no tab to show it over goes to the window's
+        // corner (`render_editor_corner_notice`), not into an empty pane.
+        if self.file_pane.is_empty() {
             return chat.into_any_element();
         }
         // The chat keeps its room beside the file pane (and the file pane
@@ -207,10 +209,11 @@ impl BenCodeApp {
                 }
             })
             .border_color(colors.border)
-            .when(!self.file_pane.is_empty(), |el| {
-                el.child(self.render_pane_tabs(cx))
-            })
-            .children(self.render_editor_notice(cx))
+            .child(self.render_pane_tabs(cx))
+            .children(
+                self.render_editor_notice(cx)
+                    .map(|alert| div().p_2().child(alert)),
+            )
             .child(
                 div()
                     .flex()

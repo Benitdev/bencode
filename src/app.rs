@@ -1859,7 +1859,7 @@ impl Render for BenCodeApp {
         let mono_view = mono_open.then(|| region(self, Region::Mono, column(), cx));
         if workspace_visible {
             drawn.push(Region::Chat);
-            if !(self.file_pane.is_empty() && self.editor.notice.is_none()) {
+            if !self.file_pane.is_empty() {
                 drawn.push(Region::FilePane);
             }
             if self.terminals(cx).layout(&self.current_cwd).open {

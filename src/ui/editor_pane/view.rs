@@ -92,18 +92,17 @@ impl BenCodeApp {
             .into_any_element()
     }
 
-    pub(crate) fn render_editor_notice(&self, cx: &Context<Self>) -> Option<impl IntoElement> {
+    /// Why a file did not open, or an external editor did not start.
+    pub(crate) fn render_editor_notice(&self, cx: &Context<Self>) -> Option<Alert> {
         let notice = self.editor.notice.clone()?;
         let dismiss = app_callback(cx, |this, cx| {
             this.editor.notice = None;
             cx.notify();
         });
         Some(
-            div().p_2().child(
-                Alert::new("editor-notice", Severity::Danger, notice.title)
-                    .body(notice.body)
-                    .on_dismiss(dismiss),
-            ),
+            Alert::new("editor-notice", Severity::Danger, notice.title)
+                .body(notice.body)
+                .on_dismiss(dismiss),
         )
     }
 
