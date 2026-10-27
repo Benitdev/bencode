@@ -4,7 +4,7 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
-## Unreleased
+## [0.1.36] - 2026-10-27
 
 - A git pill under a settled thread whose own edits are still uncommitted
   asks its agent to Stage, Commit, or Commit & push only the files it
