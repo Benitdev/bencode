@@ -305,7 +305,7 @@ impl BenCodeApp {
                 } else if chip.mono {
                     "The next message starts a new session on the account you pick, briefed on the recent conversation."
                 } else {
-                    "Each conversation stays pinned to the account that started it."
+                    "Choosing an account moves the current conversation to it."
                 },
                 fg,
             ))

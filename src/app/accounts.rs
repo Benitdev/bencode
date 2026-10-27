@@ -285,8 +285,10 @@ impl BenCodeApp {
     }
 
     /// MonoCode `selectAccount` + `onSelectProviderAccount`: remembers the
-    /// choice for the project; an empty active thread takes the account, a
-    /// started one stays on its own and a new thread opens for the choice.
+    /// choice for the project, and the active thread moves to the account
+    /// in place (`move_thread_account`). Only a thread whose turn runs keeps
+    /// its account, its process being the old one's; a new thread opens for
+    /// the choice then.
     pub fn select_provider_account(
         &mut self,
         provider: &str,
@@ -331,10 +333,16 @@ impl BenCodeApp {
             }
             return;
         }
+        let running = self.is_agent_running_in(&active_id);
+        if !empty && current == account_id {
+            return;
+        }
+        if !empty && !running {
+            self.move_thread_account(&active_id, account_id, cx);
+            return;
+        }
         let target = if empty {
             active_id
-        } else if current == account_id {
-            return;
         } else {
             let id = self.create_session_row(&cwd, cx);
             if let Some(session) = self.sessions.iter_mut().find(|s| s.id == id) {
@@ -350,6 +358,79 @@ impl BenCodeApp {
             session.provider_account_id = Some(account_id.to_string());
         }
         self.persist_session(&target);
+        cx.notify();
+    }
+
+    /// MonoCode `switch_account`: an idle, started thread carries on as
+    /// another account. A limited one resumes there
+    /// (`switch_usage_limit_account`). Otherwise a Claude session's files
+    /// are carried to the account's profile and the session resumes on the
+    /// next message; when they cannot be, the composer holds a Handoff card,
+    /// so the new provider session starts with the conversation's recap.
+    pub(crate) fn move_thread_account(
+        &mut self,
+        session_id: &str,
+        account_id: &str,
+        cx: &mut Context<Self>,
+    ) {
+        if self
+            .thread(session_id)
+            .is_some_and(|thread| thread.usage_limit.is_some())
+        {
+            self.switch_usage_limit_account(session_id, account_id, cx);
+            return;
+        }
+        let (sid, account) = (session_id.to_string(), account_id.to_string());
+        self.carry_session_to_account(session_id, account_id, cx, move |app, carried, cx| {
+            app.land_thread_account(&sid, &account, carried, cx)
+        });
+    }
+
+    /// `move_thread_account` once the session's files are or are not on the
+    /// account.
+    fn land_thread_account(
+        &mut self,
+        session_id: &str,
+        account_id: &str,
+        carried: bool,
+        cx: &mut Context<Self>,
+    ) {
+        use crate::ui::composer::{cards::ComposerCard, handoff::HandoffCard};
+        // A turn started while the files were copied runs as the old account.
+        if self.is_agent_running_in(session_id) {
+            return;
+        }
+        let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id) else {
+            return;
+        };
+        session.provider_account_id = Some(account_id.to_string());
+        let card = (!carried && session.provider_session_id.is_some())
+            .then(|| HarnessKind::from_id(&session.harness))
+            .flatten()
+            .map(|kind| {
+                let request = session
+                    .blocks
+                    .iter()
+                    .rev()
+                    .find(|b| b.role == "user")
+                    .and_then(|b| b.text.as_deref())
+                    .unwrap_or("");
+                HandoffCard::new(kind, kind, &session.blocks, request)
+            });
+        if !carried {
+            session.provider_session_id = None;
+            session.context_used = None;
+            session.context_window = None;
+        }
+        self.persist_session(session_id);
+        if let Some(card) = card {
+            let thread = self.thread_mut(session_id);
+            // A card the person put there already goes with the message.
+            if thread.composer_card.is_none() {
+                thread.composer_card = Some(ComposerCard::Handoff(card));
+                self.sync_prompt_placeholder(cx);
+            }
+        }
         cx.notify();
     }
 

@@ -6,6 +6,11 @@ tagging (`docs/releasing.md`).
 
 ## Unreleased
 
+- Picking another account in the usage popover moves the current thread
+  to it in place instead of opening a new thread. A Claude session
+  resumes there; otherwise the composer holds a Handoff card, so the next
+  message brings the conversation along. A running turn still opens a
+  new thread.
 - The terminal hands the wheel to programs that track the mouse (vim,
   htop, tmux) instead of scrolling past them.
 
