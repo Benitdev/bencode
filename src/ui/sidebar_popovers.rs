@@ -165,6 +165,7 @@ impl BenCodeApp {
                 Some(crate::app::WorktreeFocus {
                     path: tree.path.clone(),
                     branch: tree.branch.clone(),
+                    narrows: true,
                 }),
             ));
         }

@@ -6,6 +6,10 @@ tagging (`docs/releasing.md`).
 
 ## [0.1.35] - Unreleased
 
+- Opening a thread that runs in a worktree no longer narrows the thread
+  list and the title bar's tabs to that worktree; only picking one in the
+  thread list's switcher does. Git, the Explorer and the composer still
+  follow the thread's worktree.
 - Lists follow the keyboard: the highlighted row stays in view as ↑/↓
   move through Go to File (⌘P), the model picker and a question's
   options, and the thread list scrolls to the thread ⇧⌘↑/↓ opens.

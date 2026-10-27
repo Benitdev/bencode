@@ -138,6 +138,10 @@ pub enum InspectorMode {
 pub struct WorktreeFocus {
     pub path: String,
     pub branch: Option<String>,
+    /// Picked in the thread list's switcher, so the list and the title
+    /// bar's tabs narrow to it. A focus that followed a thread opened there
+    /// (or the composer's workspace menu) leaves them whole.
+    pub narrows: bool,
 }
 
 pub struct BenCodeApp {

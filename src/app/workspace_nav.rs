@@ -29,6 +29,14 @@ impl BenCodeApp {
         self.worktree_focuses.get(&self.current_cwd)
     }
 
+    /// The worktree the user narrowed the thread list and the title bar to
+    /// (`WorktreeFocus::narrows`), if any.
+    pub fn narrowed_workspace(&self) -> Option<&str> {
+        self.worktree_focus()
+            .filter(|focus| focus.narrows)
+            .map(|focus| focus.path.as_str())
+    }
+
     /// The focused workspace of the current project: its worktree, else the
     /// project folder.
     pub fn workspace_path(&self) -> &str {
@@ -141,6 +149,7 @@ impl BenCodeApp {
         let focus = (!same_project_path(work_dir, &project)).then(|| WorktreeFocus {
             path: work_dir.to_string(),
             branch: session.branch.clone(),
+            narrows: false,
         });
         self.set_worktree_focus(&project, focus);
     }

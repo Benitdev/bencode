@@ -168,11 +168,13 @@ impl BenCodeApp {
         }
     }
 
-    /// Closes a tab and moves to the nearest tab of the same project and
-    /// workspace. The last such tab stays open, so closing never jumps to
-    /// another project (MonoCode `planWorkspaceTabClose`).
+    /// Closes a tab and moves to the nearest tab of the same project (and
+    /// workspace, while narrowed to one). The last such tab stays open, so
+    /// closing never jumps to another project (MonoCode
+    /// `planWorkspaceTabClose`).
     pub fn close_tab(&mut self, tab_id: &str, cx: &mut Context<Self>) {
-        match plan_tab_close(self.tabs.tabs(), &self.sessions, tab_id) {
+        let by_workspace = self.narrowed_workspace().is_some();
+        match plan_tab_close(self.tabs.tabs(), &self.sessions, tab_id, by_workspace) {
             TabClosePlan::Close { next_active } => {
                 if self.tabs.close_tab(tab_id) {
                     self.tabs.activate(&next_active);
@@ -230,7 +232,7 @@ impl BenCodeApp {
             self.tabs.active_id(),
             &self.sessions,
             &self.current_cwd,
-            self.workspace_path(),
+            self.narrowed_workspace(),
         )
     }
 
@@ -531,7 +533,8 @@ impl BenCodeApp {
             self.tabs.remove_session(id);
             return;
         };
-        match plan_tab_close(self.tabs.tabs(), &self.sessions, &tab_id) {
+        let by_workspace = self.narrowed_workspace().is_some();
+        match plan_tab_close(self.tabs.tabs(), &self.sessions, &tab_id, by_workspace) {
             TabClosePlan::Close { next_active } => {
                 self.tabs.close_tab(&tab_id);
                 self.tabs.activate(&next_active);

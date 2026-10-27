@@ -207,7 +207,7 @@ impl BenCodeApp {
             .flat_map(|f| f.session_ids.iter().map(String::as_str))
             .collect();
         let cwd = &self.current_cwd;
-        let focus = self.worktree_focus();
+        let narrowed = self.narrowed_workspace();
         self.sessions
             .iter()
             .filter(|s| crate::app::same_project_path(&s.cwd, cwd))
@@ -216,7 +216,7 @@ impl BenCodeApp {
             .filter(|s| !s.sidebar_hidden && !self.is_habit_run(&s.id))
             .filter(|s| s.has_user_message() || in_folder.contains(s.id.as_str()))
             .filter(|s| {
-                focus.is_none_or(|focus| crate::app::same_project_path(s.work_dir(), &focus.path))
+                narrowed.is_none_or(|path| crate::app::same_project_path(s.work_dir(), path))
             })
             .collect()
     }

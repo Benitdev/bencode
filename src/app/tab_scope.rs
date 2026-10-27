@@ -57,14 +57,15 @@ pub fn scoped_tabs<'a>(
         .collect()
 }
 
-/// The tabs the title bar shows: the current project's tabs in the focused
-/// workspace, plus the active tab. A projectless active tab stands alone.
+/// The tabs the title bar shows: the current project's tabs, only those in
+/// `workspace` while the user narrows to one, plus the active tab. A
+/// projectless active tab stands alone.
 pub fn deck_tabs<'a>(
     tabs: &'a [WorkspaceTab],
     active_id: Option<&str>,
     sessions: &[SessionRow],
     project: &str,
-    workspace: &str,
+    workspace: Option<&str>,
 ) -> Vec<&'a WorkspaceTab> {
     let active = tabs.iter().find(|t| Some(t.id.as_str()) == active_id);
     if let Some(active) = active
@@ -75,7 +76,8 @@ pub fn deck_tabs<'a>(
     tabs.iter()
         .filter(|t| {
             Some(t.id.as_str()) == active_id
-                || (in_project(t, sessions, project) && in_workspace(t, sessions, workspace))
+                || (in_project(t, sessions, project)
+                    && workspace.is_none_or(|workspace| in_workspace(t, sessions, workspace)))
         })
         .collect()
 }
@@ -90,12 +92,14 @@ pub enum TabClosePlan {
 }
 
 /// Where focus lands when `closing_id` closes: the nearest tab (left first)
-/// in the same project and workspace. MonoCode's `planWorkspaceTabClose` with
+/// in the same project, and the same workspace while the title bar is
+/// narrowed to one (`by_workspace`). MonoCode's `planWorkspaceTabClose` with
 /// the `project` scope.
 pub fn plan_tab_close(
     tabs: &[WorkspaceTab],
     sessions: &[SessionRow],
     closing_id: &str,
+    by_workspace: bool,
 ) -> TabClosePlan {
     let Some(ix) = tabs.iter().position(|t| t.id == closing_id) else {
         return TabClosePlan::Keep;
@@ -110,7 +114,7 @@ pub fn plan_tab_close(
             next_active: tabs[neighbour].id.clone(),
         };
     };
-    let workspace = tab_workspace(closing, sessions);
+    let workspace = tab_workspace(closing, sessions).filter(|_| by_workspace);
     let same_scope = |tab: &WorkspaceTab| {
         in_project(tab, sessions, project)
             && workspace.is_none_or(|path| in_workspace(tab, sessions, path))
@@ -239,17 +243,24 @@ mod tests {
     #[test]
     fn deck_shows_only_the_current_project_and_workspace() {
         let (tabs, sessions) = fixture();
-        let deck = deck_tabs(&tabs, Some("t1"), &sessions, "/a", "/a");
+        let deck = deck_tabs(&tabs, Some("t1"), &sessions, "/a", Some("/a"));
         assert_eq!(ids(deck), ["t1", "t4"]);
 
-        let deck = deck_tabs(&tabs, Some("t3"), &sessions, "/a", "/a-worktrees/x");
+        let deck = deck_tabs(&tabs, Some("t3"), &sessions, "/a", Some("/a-worktrees/x"));
         assert_eq!(ids(deck), ["t3"]);
+    }
+
+    #[test]
+    fn deck_shows_every_workspace_unless_narrowed() {
+        let (tabs, sessions) = fixture();
+        let deck = deck_tabs(&tabs, Some("t3"), &sessions, "/a", None);
+        assert_eq!(ids(deck), ["t1", "t3", "t4"]);
     }
 
     #[test]
     fn deck_always_keeps_the_active_tab() {
         let (tabs, sessions) = fixture();
-        let deck = deck_tabs(&tabs, Some("t2"), &sessions, "/a", "/a");
+        let deck = deck_tabs(&tabs, Some("t2"), &sessions, "/a", Some("/a"));
         assert_eq!(ids(deck), ["t1", "t2", "t4"]);
     }
 
@@ -267,18 +278,42 @@ mod tests {
     fn closing_moves_to_a_tab_of_the_same_project_and_workspace() {
         let (tabs, sessions) = fixture();
         assert_eq!(
-            plan_tab_close(&tabs, &sessions, "t4"),
+            plan_tab_close(&tabs, &sessions, "t4", true),
             TabClosePlan::Close {
                 next_active: "t1".into()
             },
             "skips t3 (other worktree) and t2 (other project)"
         );
         assert_eq!(
-            plan_tab_close(&tabs, &sessions, "t2"),
+            plan_tab_close(&tabs, &sessions, "t2", true),
             TabClosePlan::Keep,
             "last tab of /b never jumps to /a"
         );
-        assert_eq!(plan_tab_close(&tabs, &sessions, "t3"), TabClosePlan::Keep);
+        assert_eq!(
+            plan_tab_close(&tabs, &sessions, "t3", true),
+            TabClosePlan::Keep
+        );
+    }
+
+    #[test]
+    fn closing_crosses_workspaces_unless_narrowed() {
+        let (tabs, sessions) = fixture();
+        assert_eq!(
+            plan_tab_close(&tabs, &sessions, "t4", false),
+            TabClosePlan::Close {
+                next_active: "t3".into()
+            }
+        );
+        assert_eq!(
+            plan_tab_close(&tabs, &sessions, "t3", false),
+            TabClosePlan::Close {
+                next_active: "t1".into()
+            }
+        );
+        assert_eq!(
+            plan_tab_close(&tabs, &sessions, "t2", false),
+            TabClosePlan::Keep
+        );
     }
 
     #[test]

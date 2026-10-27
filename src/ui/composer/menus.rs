@@ -274,6 +274,7 @@ impl BenCodeApp {
                     .map(|tree| crate::app::WorktreeFocus {
                         path: tree.path.clone(),
                         branch: tree.branch.clone(),
+                        narrows: false,
                     });
                 self.select_workspace(focus, cx);
             }
