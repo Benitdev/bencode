@@ -18,7 +18,7 @@ use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 
-use super::diffs::{FileDiff, patch};
+use super::diffs::{Blob, FileDiff, MAX_BLOB_BYTES, patch};
 use super::{GitFileChange, GitFileStatus, MAX_UNTRACKED_READ_BYTES, run_git};
 
 /// MonoCode `MAX_SNAPSHOT_FILES`.
@@ -328,33 +328,7 @@ impl CheckpointStore {
         relative: &str,
     ) -> Result<FileDiff, String> {
         self.exclusive(session_id, |store| {
-            let Some(manifest) = store.load_matching(session_id, cwd)? else {
-                return Err("Session changes are no longer available".into());
-            };
-            let root = project_root(cwd)?;
-            let relative = resolve_repo_path(&root, relative)?;
-            if !manifest.touched.contains(&relative) || !manifest.prepared.contains(&relative) {
-                return Err("This file was not changed by the session".into());
-            }
-            if manifest.diverged.contains(&relative) {
-                return Err(
-                    "Exact lines are unavailable because the file changed between this session's edits"
-                        .into(),
-                );
-            }
-            let dir = store.session_dir(session_id);
-            let before = manifest
-                .files
-                .get(&relative)
-                .copied()
-                .ok_or_else(|| "Session baseline is unavailable".to_string())?;
-            let after = manifest
-                .after
-                .get(&relative)
-                .copied()
-                .ok_or_else(|| "Session result is unavailable".to_string())?;
-            let original = read_snapshot(&dir, &relative, before);
-            let current = read_after_snapshot(&dir, &relative, after);
+            let (dir, relative, original, current) = store.snapshots(session_id, cwd, relative)?;
             if matches!(original, FileState::Skipped) || matches!(current, FileState::Skipped) {
                 return Ok(FileDiff {
                     too_large: true,
@@ -373,6 +347,64 @@ impl CheckpointStore {
                 .ok_or_else(|| "Could not diff the session's snapshots".to_string())?;
             Ok(patch(&text))
         })
+    }
+
+    /// The session's before and after of one file as bytes, for a binary
+    /// file's two versions (a picture).
+    pub fn file_blobs(
+        &self,
+        session_id: &str,
+        cwd: &str,
+        relative: &str,
+    ) -> Result<(Blob, Blob), String> {
+        self.exclusive(session_id, |store| {
+            let (_, _, original, current) = store.snapshots(session_id, cwd, relative)?;
+            let blob = |state: FileState| match state {
+                FileState::Contents(bytes) if bytes.len() as u64 > MAX_BLOB_BYTES => Blob::TooLarge,
+                FileState::Contents(bytes) => Blob::Bytes(bytes),
+                FileState::Missing => Blob::Absent,
+                FileState::Skipped => Blob::TooLarge,
+            };
+            Ok((blob(original), blob(current)))
+        })
+    }
+
+    /// The session's folder, the file's checked path, and what it held
+    /// before and after the session.
+    fn snapshots(
+        &self,
+        session_id: &str,
+        cwd: &str,
+        relative: &str,
+    ) -> Result<(PathBuf, String, FileState, FileState), String> {
+        let Some(manifest) = self.load_matching(session_id, cwd)? else {
+            return Err("Session changes are no longer available".into());
+        };
+        let root = project_root(cwd)?;
+        let relative = resolve_repo_path(&root, relative)?;
+        if !manifest.touched.contains(&relative) || !manifest.prepared.contains(&relative) {
+            return Err("This file was not changed by the session".into());
+        }
+        if manifest.diverged.contains(&relative) {
+            return Err(
+                "Exact lines are unavailable because the file changed between this session's edits"
+                    .into(),
+            );
+        }
+        let dir = self.session_dir(session_id);
+        let before = manifest
+            .files
+            .get(&relative)
+            .copied()
+            .ok_or_else(|| "Session baseline is unavailable".to_string())?;
+        let after = manifest
+            .after
+            .get(&relative)
+            .copied()
+            .ok_or_else(|| "Session result is unavailable".to_string())?;
+        let original = read_snapshot(&dir, &relative, before);
+        let current = read_after_snapshot(&dir, &relative, after);
+        Ok((dir, relative, original, current))
     }
 
     /// Restores one file, or every file, to what it held before the session.

@@ -142,6 +142,7 @@ bencode/
 | `browser_pane.rs` | A browser tab: toolbar, address bar, the page's box |
 | `monos.rs`, `mono_settings.rs`, `mono_overview/`, `rail/monos.rs`, `mono_float/`, `mono_background.rs`, `launched_session.rs` | A Mono in the main area (chat, greeting, its confirmations); its settings dialog (General, Soul, Memory); its Overview beside the chat (Board, Documents, Habits, Changes, Activity); the rail's Monos section; the floating chat, a window and view of its own (`MonoFloat`); its Background image dialog; the card of a session it started |
 | `editor_pane/` | Code editor: open files, saves, disk sync; a markdown file's Preview / Source (`preview.rs`); the toolbar's line blame and its card (`blame.rs`) |
+| `image_view.rs` | A picture's file pane tab (fitted, its size; a click opens the lightbox), and what diffs share to show a changed picture |
 | `file_history.rs` | A File History tab: the commits that changed a file |
 | `diff_viewer.rs`, `diff_model.rs` | Review of working-tree changes and commits |
 | `diff_selection.rs` | Selecting a review's lines (one lane side by side) and copying them |
@@ -155,7 +156,7 @@ bencode/
 | `quick_open.rs`, `lightbox.rs`, `link_dialog.rs`, `reminder_notices.rs`, `harness_update_notice.rs`, `whats_new.rs`, `resume_interrupted.rs` | Overlays |
 | `tokens.rs`, `rows.rs`, `buttons.rs` | The design tokens (ink, fills, type sizes, the status palette, the link colour), `ListRow`, the list row with a tile, two lines and buttons on hover, and `with_tooltip` for a labelled bencode-ui `Button` |
 | `theme.rs`, `appearance.rs`, `scale.rs`, `background_effects.rs`, `icons.rs`, `provider_icon.rs`, `mascot.rs`, `motion.rs`, `spinner.rs` | Look and shared drawing: palettes, tint / accent / diff colours, interface scale, chat background effects; the mascots and their motion by status (`moving_sprite`) |
-| `app_callback.rs`, `virtual_rows.rs`, `explorer_menu.rs`, `drag_drop.rs`, `thumbnail.rs`, `emoji_picker.rs` | Shared helpers; `emoji_picker.rs` is the emoji picker (its groups and the popover, for any view); `thumbnail.rs` draws a file image scaled down to its size (use it, not `img(path)`, for anything drawn smaller than the file) |
+| `app_callback.rs`, `virtual_rows.rs`, `explorer_menu.rs`, `drag_drop.rs`, `thumbnail.rs`, `emoji_picker.rs` | Shared helpers; `emoji_picker.rs` is the emoji picker (its groups and the popover, for any view); `thumbnail.rs` draws a file image (or bytes held in memory, `thumbnail_bytes`) scaled down to its size (use it, not `img(path)`, for anything drawn smaller than the file) |
 | `frost.rs` | Frosted glass for popovers (`frost`) and dialog cards (`dialog_frost`): the vendored renderer blurs what is drawn behind it in the dark theme on macOS; elsewhere the opaque popover fill |
 
 ---

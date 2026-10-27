@@ -28,6 +28,7 @@ pub mod git_menus;
 pub mod glass;
 pub mod harness_update_notice;
 pub mod icons;
+pub mod image_view;
 pub mod inbox_view;
 pub mod inspector;
 pub mod launched_session;

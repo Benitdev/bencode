@@ -10,6 +10,12 @@ tagging (`docs/releasing.md`).
   tooltip sets its title above the model and branch. Frosted cards no
   longer turn dark in the middle: a drop shadow is drawn only outside its
   element, as in CSS, instead of under the glass.
+- A picture (PNG, JPEG, GIF, WebP) opens in the file pane as a tab that
+  shows it, with its size, instead of "Binary files cannot be edited"; a
+  click shows it full-window.
+- A review of changes, a commit or a thread's changes shows a changed
+  picture's old and new versions side by side instead of "Binary file
+  changed".
 
 ## [0.1.34] - 2026-10-26
 

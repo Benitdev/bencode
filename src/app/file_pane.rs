@@ -10,6 +10,8 @@ use crate::ui::git_changes_panel::Side;
 pub enum PaneTab {
     /// A file in the code editor, workspace-relative or absolute.
     File { path: String },
+    /// A picture, shown rather than edited, by its full path.
+    Image { path: String },
     /// One file's working-tree diff, from a Changes row.
     Review {
         cwd: String,
@@ -52,6 +54,7 @@ impl PaneTab {
     pub fn key(&self) -> String {
         match self {
             Self::File { path } => format!("file:{path}"),
+            Self::Image { path } => format!("image:{path}"),
             Self::Review { cwd, path, .. } => format!("review:{cwd}:{path}"),
             Self::Changes { cwd, .. } => format!("changes:{cwd}"),
             Self::SessionChanges {
@@ -74,14 +77,17 @@ impl PaneTab {
     pub fn is_diff(&self) -> bool {
         !matches!(
             self,
-            Self::File { .. } | Self::Browser { .. } | Self::FileHistory { .. }
+            Self::File { .. }
+                | Self::Image { .. }
+                | Self::Browser { .. }
+                | Self::FileHistory { .. }
         )
     }
 
     /// The working tree or repository a diff tab reads.
     pub fn cwd(&self) -> Option<&str> {
         match self {
-            Self::File { .. } | Self::Browser { .. } => None,
+            Self::File { .. } | Self::Image { .. } | Self::Browser { .. } => None,
             Self::Review { cwd, .. }
             | Self::Changes { cwd, .. }
             | Self::SessionChanges { cwd, .. }
@@ -102,7 +108,9 @@ impl PaneTab {
     /// MonoCode `surfaceTabPresentation`: the tab's label and tooltip.
     pub fn label(&self) -> (String, String) {
         match self {
-            Self::File { path } => (basename(path).to_string(), path.clone()),
+            Self::File { path } | Self::Image { path } => {
+                (basename(path).to_string(), path.clone())
+            }
             Self::Review { path, .. } => (
                 format!("{} (Working Tree)", basename(path)),
                 format!("{path} (Working Tree)"),

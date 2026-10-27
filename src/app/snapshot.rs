@@ -34,6 +34,8 @@ const SETTLE_STEP: Duration = Duration::from_millis(40);
 const SETTLE_DRAWS: usize = 25;
 /// A file every checkout has.
 const FILE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/src/app.rs");
+/// A picture every checkout has.
+const PICTURE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/packaging/macos/icon-1024.png");
 
 pub fn enabled() -> bool {
     static ENABLED: OnceLock<bool> = OnceLock::new();
@@ -86,6 +88,9 @@ const SCENES: &[(&str, SetUp)] = &[
         app.open_file_in_editor(FILE, window, cx)
     }),
     ("file-alone", |app, _, cx| app.set_inspector_open(false, cx)),
+    ("picture", |app, window, cx| {
+        app.open_file_in_editor(PICTURE, window, cx)
+    }),
     ("split", |app, _, cx| {
         app.split_active_pane(SplitDir::Right, cx)
     }),

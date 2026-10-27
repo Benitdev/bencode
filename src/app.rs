@@ -294,6 +294,8 @@ pub struct BenCodeApp {
     pub question_focus: gpui::FocusHandle,
     /// Where the prompt's `@`s are, for the file icons drawn over them.
     pub mention_marks: Vec<crate::ui::composer::MentionMark>,
+    /// Pictures open as file pane tabs, by full path.
+    pub image_tabs: HashMap<String, crate::ui::image_view::ImageTab>,
     /// The image shown full-window (MonoCode `ImageLightbox`).
     pub lightbox: Option<std::path::PathBuf>,
     /// The preview's right-click menu, while open.
@@ -1439,6 +1441,7 @@ impl BenCodeApp {
             window_background: None,
             native_glass: None,
             native_glass_failed: false,
+            image_tabs: HashMap::new(),
             lightbox: None,
             lightbox_menu: None,
             mention_marks: Vec::new(),

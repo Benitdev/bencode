@@ -288,6 +288,11 @@ impl BenCodeApp {
             self.sync_selection(cx);
         }
         let abs_path = resolve_path(&self.workspace(cx).cwd, path);
+        if crate::ui::image_view::is_image_path(path) {
+            self.editor.reveal = None;
+            self.open_image_tab(abs_path, cx);
+            return;
+        }
         // A tab of another project's file with the same relative path is
         // not this one: open it by its own absolute path, never reuse it.
         let elsewhere =

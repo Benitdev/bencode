@@ -7,8 +7,8 @@ use std::path::Path;
 use anyhow::{Result, bail};
 
 use super::{
-    DiffLineKind, GitFileChange, GitFileStatus, MAX_UNTRACKED_READ_BYTES, is_in_index,
-    parse_numstat_z, parse_unified_diff, run_git, run_git_string,
+    DiffLineKind, GitFileChange, GitFileStatus, MAX_UNTRACKED_READ_BYTES, git_succeeds,
+    is_in_index, parse_numstat_z, parse_unified_diff, run_git, run_git_string,
 };
 
 /// Which change a diff describes.
@@ -127,6 +127,80 @@ pub fn file_diff(cwd: &str, path: &str, source: &DiffSource) -> Result<FileDiff>
             let head = ["show", "--format=", "-M"];
             let args = [&head[..], &FLAGS, &[sha.as_str(), "--", path]].concat();
             Ok(patch(&run_git_string(cwd, &args)?))
+        }
+    }
+}
+
+/// A picture larger than this is not shown beside its other version.
+pub const MAX_BLOB_BYTES: u64 = 32 * 1024 * 1024;
+
+/// One side of a change to a binary file, as bytes.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Blob {
+    /// The file does not exist on this side (added, deleted).
+    Absent,
+    TooLarge,
+    Bytes(Vec<u8>),
+}
+
+/// The object `spec` (`HEAD:path`, `:path`), or `Absent` when there is none.
+fn object_blob(cwd: &str, spec: &str) -> Result<Blob> {
+    if !git_succeeds(cwd, &["cat-file", "-e", spec]) {
+        return Ok(Blob::Absent);
+    }
+    let size = run_git_string(cwd, &["cat-file", "-s", spec])?;
+    if size.trim().parse::<u64>().is_ok_and(|n| n > MAX_BLOB_BYTES) {
+        return Ok(Blob::TooLarge);
+    }
+    Ok(Blob::Bytes(run_git(cwd, &["cat-file", "blob", spec])?))
+}
+
+/// The file as it is in the working tree.
+fn worktree_blob(cwd: &str, path: &str) -> Result<Blob> {
+    let full = Path::new(cwd).join(path);
+    let read = match full.to_str().filter(|p| crate::remote::is_remote(p)) {
+        Some(remote) => crate::remote::files::read(remote, MAX_BLOB_BYTES + 1).map(|file| {
+            if file.truncated {
+                Blob::TooLarge
+            } else {
+                Blob::Bytes(file.bytes.0)
+            }
+        }),
+        None => std::fs::metadata(&full).and_then(|meta| {
+            if meta.len() > MAX_BLOB_BYTES {
+                Ok(Blob::TooLarge)
+            } else {
+                std::fs::read(&full).map(Blob::Bytes)
+            }
+        }),
+    };
+    match read {
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(Blob::Absent),
+        read => Ok(read?),
+    }
+}
+
+/// `path` before and after the change `source` describes, for showing a
+/// binary file's two versions (a picture). A renamed file's old side is
+/// read under its new name, so it shows as added.
+pub fn file_blobs(cwd: &str, path: &str, source: &DiffSource) -> Result<(Blob, Blob)> {
+    // A path from git status or a commit, relative to the repository; one
+    // starting with a dash is still read as a path after the colon.
+    match source {
+        DiffSource::Staged => Ok((
+            object_blob(cwd, &format!("HEAD:{path}"))?,
+            object_blob(cwd, &format!(":{path}"))?,
+        )),
+        DiffSource::Unstaged => Ok((
+            object_blob(cwd, &format!(":{path}"))?,
+            worktree_blob(cwd, path)?,
+        )),
+        DiffSource::Commit(sha) => {
+            validate_sha(sha)?;
+            Ok((
+                object_blob(cwd, &format!("{sha}^:{path}"))?,
+                object_blob(cwd, &format!("{sha}:{path}"))?,
+            ))
         }
     }
 }

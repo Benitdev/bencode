@@ -72,6 +72,7 @@ impl BenCodeApp {
             PaneTab::Review { cwd, path, .. } | PaneTab::FileHistory { cwd, path } => {
                 Some(resolve_path(cwd, path))
             }
+            PaneTab::Image { path } => Some(PathBuf::from(path)),
             _ => None,
         }
     }

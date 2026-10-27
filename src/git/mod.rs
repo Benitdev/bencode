@@ -15,7 +15,9 @@ pub mod text;
 pub use branches::{
     Branch, SwitchError, create_branch, list_branches, stash_changes, switch_branch,
 };
-pub use diffs::{DiffSource, commit_files, file_diff, split_patch};
+pub use diffs::{
+    Blob, DiffSource, MAX_BLOB_BYTES, commit_files, file_blobs, file_diff, split_patch,
+};
 pub use rows::number_rows;
 
 pub mod worktrees;
@@ -954,6 +956,42 @@ mod tests {
                 DiffLineKind::Context("same".into()),
                 DiffLineKind::Addition("more".into())
             ]
+        );
+    }
+
+    #[test]
+    fn file_blobs_read_each_side_of_a_change() {
+        let bytes = |text: &str| Blob::Bytes(text.as_bytes().to_vec());
+        let repo = TempRepo::new();
+        repo.write("pic.png", "v1");
+        repo.git(&["add", "pic.png"]);
+        // No HEAD yet: the staged file is new.
+        assert_eq!(
+            file_blobs(repo.cwd(), "pic.png", &DiffSource::Staged).unwrap(),
+            (Blob::Absent, bytes("v1"))
+        );
+        repo.commit_all("init");
+        let first = repo.git(&["rev-parse", "HEAD"]).trim().to_string();
+        repo.write("pic.png", "v2");
+        assert_eq!(
+            file_blobs(repo.cwd(), "pic.png", &DiffSource::Unstaged).unwrap(),
+            (bytes("v1"), bytes("v2"))
+        );
+        repo.commit_all("second");
+        let second = repo.git(&["rev-parse", "HEAD"]).trim().to_string();
+        assert_eq!(
+            file_blobs(repo.cwd(), "pic.png", &DiffSource::Commit(second)).unwrap(),
+            (bytes("v1"), bytes("v2"))
+        );
+        // A root commit has no parent to read.
+        assert_eq!(
+            file_blobs(repo.cwd(), "pic.png", &DiffSource::Commit(first)).unwrap(),
+            (Blob::Absent, bytes("v1"))
+        );
+        std::fs::remove_file(repo.root.join("pic.png")).unwrap();
+        assert_eq!(
+            file_blobs(repo.cwd(), "pic.png", &DiffSource::Unstaged).unwrap(),
+            (bytes("v2"), Blob::Absent)
         );
     }
 

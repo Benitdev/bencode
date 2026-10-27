@@ -441,6 +441,7 @@ impl BenCodeApp {
                     };
                     is_path_in_project(&file, path)
                 }
+                PaneTab::Image { path: file } => is_path_in_project(file, path),
                 PaneTab::Review { cwd, .. }
                 | PaneTab::Changes { cwd, .. }
                 | PaneTab::SessionChanges { cwd, .. }

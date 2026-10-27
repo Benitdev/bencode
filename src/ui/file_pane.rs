@@ -62,10 +62,14 @@ impl BenCodeApp {
     /// tabs go, and the editor follows the active file.
     fn settle_file_pane(&mut self, cx: &mut Context<Self>) {
         // The Inbox's pull request review is not a tab.
-        self.diff_docs.retain(|key, _| {
-            key.starts_with(crate::ui::diff_viewer::PR_DOC_PREFIX)
-                || self.file_pane.get(key).is_some()
-        });
+        let closed = (self.diff_docs.keys())
+            .filter(|key| {
+                !key.starts_with(crate::ui::diff_viewer::PR_DOC_PREFIX)
+                    && self.file_pane.get(key).is_none()
+            })
+            .cloned()
+            .collect();
+        self.forget_diff_docs(closed, cx);
         // A file whose tab went (a preview opened over it) goes with it,
         // unless it holds unsaved edits.
         let orphans: Vec<String> = (self.editor.files.iter())
@@ -82,6 +86,7 @@ impl BenCodeApp {
         for path in orphans {
             self.forget_editor_file(&path);
         }
+        self.settle_image_tabs(cx);
         if let Some(PaneTab::File { path }) = self.file_pane.active() {
             self.editor.requested = Some(path.clone());
             self.editor.files.activate(path);
@@ -192,6 +197,7 @@ impl BenCodeApp {
             Some(PaneTab::Browser { id }) => self.render_browser_tab(*id, cx),
             Some(tab) if tab.is_diff() => self.render_diff_doc(&tab.key(), cx),
             Some(tab @ PaneTab::FileHistory { .. }) => self.render_file_history(tab, cx),
+            Some(PaneTab::Image { path }) => self.render_image_tab(path, cx),
             _ => self.render_editor_file(cx).into_any_element(),
         };
         div()
@@ -237,6 +243,7 @@ impl BenCodeApp {
             }
             let (icon, dirty) = match &entry.tab {
                 PaneTab::File { path } => (IconName::FileCode, self.editor.files.is_dirty(path)),
+                PaneTab::Image { .. } => (IconName::FileImage, false),
                 PaneTab::Commit { .. } => (IconName::GitCommitHorizontal, false),
                 PaneTab::FileHistory { .. } => (IconName::History, false),
                 PaneTab::Browser { .. } => (IconName::Globe, false),

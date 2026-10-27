@@ -30,6 +30,7 @@ use crate::ui::diff_model::{
 use crate::ui::diff_selection::{Lane, LineText};
 use crate::ui::git_changes_panel::{Busy, Side};
 use crate::ui::icons::ExtraIcon;
+use crate::ui::image_view::{Picture, is_image_path};
 use crate::ui::scale::{self, px};
 use crate::ui::scrollbar::{self, ScrollBar};
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
@@ -46,10 +47,18 @@ const SPLIT_MIN_WIDTH: f32 = 520.0;
 const HIGHLIGHT_MAX_LEN: usize = 2000;
 /// MonoCode `DIFF_LOAD_CONCURRENCY`.
 const LOAD_THREADS: usize = 4;
+/// A changed picture's box, each side, and the edge its copy is scaled to.
+const PICTURE_HEIGHT: f32 = 280.0;
+const PICTURE_EDGE: f32 = 640.0;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum FileBody {
     Binary,
+    /// A picture before and after; `None` where the file does not exist.
+    Image {
+        old: Option<Picture>,
+        new: Option<Picture>,
+    },
     TooLarge,
     Failed(String),
     /// Nothing textual changed; the message says so.
@@ -109,6 +118,8 @@ enum DocRow {
         hidden: usize,
     },
     Message(usize, SharedString),
+    /// A changed picture's two versions.
+    Image(usize),
     /// Lines a patch left out, under the next hunk's header.
     Gap(usize, SharedString),
 }
@@ -116,7 +127,11 @@ enum DocRow {
 impl DocRow {
     fn file(&self) -> usize {
         match self {
-            Self::Header(f) | Self::Line(f, _) | Self::Message(f, _) | Self::Gap(f, _) => *f,
+            Self::Header(f)
+            | Self::Line(f, _)
+            | Self::Message(f, _)
+            | Self::Image(f)
+            | Self::Gap(f, _) => *f,
             Self::Fold { file, .. } | Self::Pair { file, .. } => *file,
         }
     }
@@ -253,6 +268,7 @@ impl DiffDoc {
         let message = |text: String| DocRow::Message(ix, text.into());
         match &file.body {
             FileBody::Binary => rows.push(message("Binary file changed".into())),
+            FileBody::Image { .. } => rows.push(DocRow::Image(ix)),
             FileBody::TooLarge => rows.push(message("Diff is too large to display".into())),
             FileBody::Failed(err) => rows.push(message(format!("Couldn’t load diff: {err}"))),
             FileBody::Empty(text) => rows.push(message((*text).into())),
@@ -477,9 +493,10 @@ fn working_tree_entries(cwd: &str, scope: Option<Side>) -> Vec<Entry> {
 
 fn entries_for(tab: &PaneTab, store: &CheckpointStore) -> Result<(String, Vec<Entry>), String> {
     match tab {
-        PaneTab::File { .. } | PaneTab::Browser { .. } | PaneTab::FileHistory { .. } => {
-            Ok((String::new(), Vec::new()))
-        }
+        PaneTab::File { .. }
+        | PaneTab::Image { .. }
+        | PaneTab::Browser { .. }
+        | PaneTab::FileHistory { .. } => Ok((String::new(), Vec::new())),
         PaneTab::Review { cwd, path, side } => Ok((
             cwd.clone(),
             vec![Entry {
@@ -541,6 +558,7 @@ fn load_file(cwd: &str, entry: Entry, store: &CheckpointStore) -> DocFile {
             log::warn!("could not diff {}: {err}", entry.path);
             FileBody::Failed(err)
         }
+        Ok(diff) if diff.binary && is_image_path(&entry.path) => image_body(cwd, &entry, store),
         Ok(diff) if diff.binary => FileBody::Binary,
         Ok(diff) if diff.too_large => FileBody::TooLarge,
         Ok(diff) => {
@@ -565,6 +583,57 @@ fn load_file(cwd: &str, entry: Entry, store: &CheckpointStore) -> DocFile {
         additions,
         deletions,
         body,
+    }
+}
+
+/// A changed picture's two versions; a side too large or no picture this
+/// build decodes leaves the file as "Binary file changed".
+fn image_body(cwd: &str, entry: &Entry, store: &CheckpointStore) -> FileBody {
+    let read = match &entry.source {
+        EntrySource::Git(source) => {
+            git::file_blobs(cwd, &entry.path, source).map_err(|err| format!("{err:#}"))
+        }
+        EntrySource::Session(session_id) => store.file_blobs(session_id, cwd, &entry.path),
+    };
+    let (old, new) = match read {
+        Ok(sides) => sides,
+        Err(err) => {
+            log::warn!("could not read {}'s versions: {err}", entry.path);
+            return FileBody::Binary;
+        }
+    };
+    let side = |blob: git::Blob| match blob {
+        git::Blob::Absent => Ok(None),
+        git::Blob::TooLarge => Err(()),
+        git::Blob::Bytes(bytes) => Picture::new(bytes).map(Some).ok_or(()),
+    };
+    match (side(old), side(new)) {
+        (Ok(None), Ok(None)) | (Err(()), _) | (_, Err(())) => FileBody::Binary,
+        (Ok(old), Ok(new)) => FileBody::Image { old, new },
+    }
+}
+
+/// The pictures `files` show, to let go of once no review shows them.
+pub(crate) fn doc_pictures(files: &[DocFile]) -> impl Iterator<Item = &Picture> {
+    files
+        .iter()
+        .flat_map(|file| match &file.body {
+            FileBody::Image { old, new } => [old.as_ref(), new.as_ref()],
+            _ => [None, None],
+        })
+        .flatten()
+}
+
+/// Lets go of the copies of `gone`'s pictures that `kept` does not show.
+pub(crate) fn release_pictures<'a>(
+    gone: impl Iterator<Item = &'a Picture>,
+    kept: &[&Picture],
+    cx: &mut gpui::App,
+) {
+    for picture in gone {
+        if !kept.iter().any(|k| k.bytes == picture.bytes) {
+            crate::ui::thumbnail::release_bytes(&picture.bytes, PICTURE_EDGE, cx);
+        }
     }
 }
 
@@ -714,6 +783,8 @@ impl BenCodeApp {
                 // A reload that changed nothing keeps the selection.
                 let rows_changed = match result {
                     Ok(files) => {
+                        let kept: Vec<&Picture> = doc_pictures(&files).collect();
+                        release_pictures(doc_pictures(&doc.files), &kept, cx);
                         let rows_changed = match changed_files(&doc.files, &files) {
                             None => {
                                 // MonoCode `initialExpansion = "all"`.
@@ -775,8 +846,11 @@ impl BenCodeApp {
         cx: &mut Context<Self>,
     ) {
         let key = pr_doc_key(item);
-        self.diff_docs
-            .retain(|k, _| !k.starts_with(PR_DOC_PREFIX) || *k == key);
+        let stale = (self.diff_docs.keys())
+            .filter(|k| k.starts_with(PR_DOC_PREFIX) && **k != key)
+            .cloned()
+            .collect();
+        self.forget_diff_docs(stale, cx);
         if self.diff_docs.contains_key(&key) {
             return;
         }
@@ -789,6 +863,15 @@ impl BenCodeApp {
             Ok(pr_doc_files(&text))
         });
         self.land_diff_doc(&key, 1, task, cx);
+    }
+
+    /// Drops reviews no longer shown, and the pictures only they held.
+    pub(crate) fn forget_diff_docs(&mut self, keys: Vec<String>, cx: &mut gpui::App) {
+        for key in keys {
+            if let Some(doc) = self.diff_docs.remove(&key) {
+                release_pictures(doc_pictures(&doc.files), &[], cx);
+            }
+        }
     }
 
     /// The working tree moved: reviews of it read the new state.
@@ -1224,6 +1307,7 @@ impl BenCodeApp {
                     )
                     .into_any_element()
             }
+            DocRow::Image(f) => render_picture_pair(&doc.files[*f], cx),
             DocRow::Message(_, text) => div()
                 .px_3()
                 .py_3()
@@ -1647,6 +1731,63 @@ fn line_row(
                     Some(text) => el.child(text),
                 }),
         )
+}
+
+/// A changed picture's old and new versions side by side, each fitted to
+/// its box, with its size under it.
+fn render_picture_pair(file: &DocFile, cx: &gpui::App) -> AnyElement {
+    let FileBody::Image { old, new } = &file.body else {
+        return div().into_any_element();
+    };
+    let colors = &cx.theme().colors;
+    let fg = colors.fg;
+    let side = |label: &'static str, picture: Option<&Picture>| {
+        let frame = div()
+            .flex()
+            .items_center()
+            .justify_center()
+            .h(px(PICTURE_HEIGHT))
+            .p_2()
+            .rounded_md()
+            .border_1()
+            .border_color(colors.border)
+            .bg(fg.fill(Fill::Faint));
+        let frame = match picture {
+            Some(picture) => frame.child(
+                crate::ui::thumbnail::thumbnail_bytes(&picture.bytes, PICTURE_EDGE)
+                    .max_w_full()
+                    .max_h_full()
+                    .object_fit(gpui::ObjectFit::Contain),
+            ),
+            None => frame
+                .text_size(Text::Base.px())
+                .text_color(fg.ink(Ink::Muted))
+                .child(if label == "Before" {
+                    "Added"
+                } else {
+                    "Deleted"
+                }),
+        };
+        div().flex_1().min_w_0().child(frame).child(
+            div()
+                .mt_1p5()
+                .truncate()
+                .text_size(Text::Sm.px())
+                .text_color(fg.ink(Ink::Muted))
+                .child(match picture {
+                    Some(picture) => format!("{label} · {}", picture.describe()),
+                    None => label.to_string(),
+                }),
+        )
+    };
+    div()
+        .flex()
+        .w_full()
+        .gap_3()
+        .p_3()
+        .child(side("Before", old.as_ref()))
+        .child(side("After", new.as_ref()))
+        .into_any_element()
 }
 
 #[cfg(test)]
