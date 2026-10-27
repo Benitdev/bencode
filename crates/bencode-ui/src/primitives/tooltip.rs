@@ -2,29 +2,38 @@ use std::rc::Rc;
 
 use gpui::{
     Animation, AnimationExt, AnyElement, AnyView, App, AppContext, Context, IntoElement,
-    ParentElement, Render, SharedString, Styled, Window, div,
+    ParentElement, Render, SharedString, Styled, Window, div, px, relative,
 };
 
 use crate::{
     motion,
+    primitives::frost,
     theme::{ActiveTheme, Elevation, Radius, TextSize},
 };
 
 type Content = Rc<dyn Fn(&mut Window, &mut App) -> AnyElement>;
 
-fn surface(content: AnyElement, cx: &App) -> impl IntoElement + use<> {
+/// A tooltip's card: frosted glass like the other popups
+/// (`primitives::frost`), the tooltip fill where there is no blur.
+fn surface(content: AnyElement, window: &Window, cx: &App) -> impl IntoElement + use<> {
     let theme = cx.theme();
+    let colors = &theme.colors;
+    let radius = theme.radius(Radius::Md).to_pixels(window.rem_size());
     let rise = motion::NUDGE;
     let body = div()
+        .relative()
         .max_w(theme.tooltip_max_width())
-        .px_2()
-        .py_1()
-        .rounded(theme.radius(Radius::Md))
-        .bg(theme.colors.tooltip_bg)
-        .text_color(theme.colors.tooltip_fg)
+        .px_2p5()
+        .py_1p5()
+        .rounded(radius)
+        .border_1()
+        .border_color(colors.border)
+        .text_color(colors.tooltip_fg)
         .text_size(theme.text_size(TextSize::Sm))
+        .line_height(relative(1.45))
         .shadow(theme.elevation(Elevation::Floating))
-        .child(content);
+        .child(frost::popover(radius - px(1.0), colors.tooltip_bg, cx))
+        .child(div().relative().child(content));
     body.with_animation(
         "tooltip-in",
         Animation::new(motion::duration(motion::FAST, cx)).with_easing(motion::ease_out_cubic),
@@ -59,6 +68,6 @@ impl Render for Tooltip {
         let content = (self.content)(window, cx);
         div()
             .pt(cx.theme().cursor_offset())
-            .child(surface(content, cx))
+            .child(surface(content, window, cx))
     }
 }

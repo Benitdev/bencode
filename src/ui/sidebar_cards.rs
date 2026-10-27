@@ -204,11 +204,7 @@ impl BenCodeApp {
 
         let model = catalog::display_label(&session.harness, &session.model);
         let (branch, branch_tip) = self.session_branch(session, cx);
-        let tooltip = [title.clone(), model, branch_tip.clone()]
-            .into_iter()
-            .filter(|line| !line.is_empty())
-            .collect::<Vec<_>>()
-            .join("\n");
+        let tooltip = card_tooltip(title.clone().into(), model, branch_tip.clone());
         let in_worktree = !session.worktree_removed
             && session
                 .worktree_cwd
@@ -373,7 +369,7 @@ impl BenCodeApp {
                     el.hover(move |s| s.bg(fg.fill(Fill::Hover)))
                 }
             })
-            .tooltip(Tooltip::text(tooltip))
+            .tooltip(tooltip)
             .on_click(cx.listener(move |this, event: &ClickEvent, window, cx| {
                 this.on_session_card_click(&open_id, event, window, cx)
             }))
@@ -519,4 +515,30 @@ impl BenCodeApp {
         self.sessions_ui.selection.clear();
         self.open_session(id.to_string(), cx);
     }
+}
+
+/// A card's tooltip: its title, then the model and branch a step quieter.
+fn card_tooltip(
+    title: SharedString,
+    model: String,
+    branch: String,
+) -> impl Fn(&mut gpui::Window, &mut gpui::App) -> gpui::AnyView + 'static {
+    let details = [model, branch]
+        .into_iter()
+        .filter(|line| !line.is_empty())
+        .map(SharedString::from)
+        .collect::<Vec<_>>();
+    Tooltip::rich(move |_, cx| {
+        let fg = cx.theme().colors.fg;
+        div()
+            .child(div().text_color(fg.ink(Ink::Strong)).child(title.clone()))
+            .children(details.iter().map(|line| {
+                div()
+                    .mt(px(2.0))
+                    .text_size(Text::Sm.px())
+                    .text_color(fg.ink(Ink::Muted))
+                    .child(line.clone())
+            }))
+            .into_any_element()
+    })
 }

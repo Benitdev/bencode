@@ -4,6 +4,13 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
+## [0.1.35] - Unreleased
+
+- Tooltips are frosted glass like the other popups, and a thread's
+  tooltip sets its title above the model and branch. Frosted cards no
+  longer turn dark in the middle: a drop shadow is drawn only outside its
+  element, as in CSS, instead of under the glass.
+
 ## [0.1.34] - 2026-10-26
 
 - In the dark theme on macOS, popovers and menus are frosted glass, as in

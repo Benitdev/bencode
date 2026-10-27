@@ -1,4 +1,5 @@
-// Modified for BenCode: backdrop blur (see ../NOTICE).
+// Modified for BenCode: backdrop blur, drop shadows kept outside their
+// element (see ../NOTICE).
 #include <metal_stdlib>
 #include <simd/simd.h>
 
@@ -550,6 +551,13 @@ fragment float4 shadow_fragment(ShadowFragmentInput input [[stage_in]],
     float element_distance = quad_sdf(input.position.xy, shadow.element_bounds,
                                       shadow.element_corner_radii);
     alpha *= saturate(0.5 - element_distance);
+  } else {
+    // BenCode: like CSS `box-shadow`, a drop shadow is not drawn under its
+    // element. Under an opaque fill this changes nothing; under frosted
+    // glass the backdrop blur would otherwise spread it dark across the card.
+    float element_distance = quad_sdf(input.position.xy, shadow.element_bounds,
+                                      shadow.element_corner_radii);
+    alpha *= saturate(0.5 + element_distance);
   }
 
   return input.color * float4(1., 1., 1., alpha);

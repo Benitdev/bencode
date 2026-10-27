@@ -11,5 +11,9 @@ Modified for BenCode with MonoCode's backdrop blur (MonoCode's
   (`framebuffer_only = false`) in every build so the drawable can be copied.
 - src/shaders.metal: `backdrop_composite_vertex` / `_fragment`.
 
+And so the glass shows: `shadow_fragment` in src/shaders.metal leaves a
+drop shadow out of its element's bounds, as CSS `box-shadow` does, instead
+of filling it underneath (which the blur spread dark across a frosted card).
+
 Everything else is the crates.io source unchanged. To move to a new
-gpui-pre, copy its `gpui-pre-apple` here and carry those two changes over.
+gpui-pre, copy its `gpui-pre-apple` here and carry those changes over.
