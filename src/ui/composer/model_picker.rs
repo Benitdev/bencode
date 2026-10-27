@@ -383,6 +383,7 @@ impl BenCodeApp {
                 .model_picker_index
                 .saturating_add_signed(delta)
                 .min(len - 1);
+            self.picker_scroll.scroll_to_item(self.model_picker_index);
             cx.notify();
         }
     }
@@ -1051,6 +1052,7 @@ impl BenCodeApp {
             .id("model-flyout-list")
             .flex_1()
             .min_h_0()
+            .track_scroll(&self.picker_scroll)
             .overflow_y_scroll()
             .p_1()
             .children(rows)

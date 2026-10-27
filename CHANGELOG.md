@@ -6,6 +6,9 @@ tagging (`docs/releasing.md`).
 
 ## [0.1.35] - Unreleased
 
+- Lists follow the keyboard: the highlighted row stays in view as ↑/↓
+  move through Go to File (⌘P), the model picker and a question's
+  options, and the thread list scrolls to the thread ⇧⌘↑/↓ opens.
 - Tooltips are frosted glass like the other popups. Frosted cards no
   longer turn dark in the middle: a drop shadow is drawn only outside its
   element, as in CSS, instead of under the glass.

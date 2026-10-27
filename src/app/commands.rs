@@ -414,6 +414,7 @@ impl BenCodeApp {
         let Some(next) = next.filter(|next| *next != current) else {
             return;
         };
+        self.sessions_ui.reveal = Some(next.clone());
         if in_tab && self.tabs.replace_pane(&current, &next) {
             self.sync_selection(cx);
         } else {

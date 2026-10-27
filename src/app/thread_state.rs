@@ -29,6 +29,8 @@ pub struct ThreadState {
     pub composer_card: Option<ComposerCard>,
     /// The form state of the agent's pending question.
     pub question_ui: Option<QuestionUi>,
+    /// Its options' scroll, so the highlighted one stays in view.
+    pub question_scroll: gpui::ScrollHandle,
     /// The thread was stopped by its provider's usage limit.
     pub usage_limit: Option<UsageLimit>,
     /// The provider is rewinding for an edited resend.

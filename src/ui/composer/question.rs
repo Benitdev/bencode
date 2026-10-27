@@ -437,13 +437,19 @@ impl BenCodeApp {
         };
         let options = shown_options(question);
         let len = options.len().max(1);
+        let reveal = |this: &mut Self, active: usize| {
+            this.update_question(&session_id, |ui, _| ui.active = active);
+            this.thread_mut(&session_id)
+                .question_scroll
+                .scroll_to_item(active);
+        };
         match key {
             "down" | "up" => {
                 let step = if key == "down" { 1 } else { len - 1 };
-                self.update_question(&session_id, |ui, _| ui.active = (ui.active + step) % len);
+                reveal(self, (ui.active + step) % len);
             }
-            "home" => self.update_question(&session_id, |ui, _| ui.active = 0),
-            "end" => self.update_question(&session_id, |ui, _| ui.active = len - 1),
+            "home" => reveal(self, 0),
+            "end" => reveal(self, len - 1),
             // Enter picks the highlighted option (MonoCode); on the option
             // already picked it continues.
             "enter"
@@ -654,6 +660,9 @@ impl BenCodeApp {
                             div()
                                 .id("question-options")
                                 .max_h(px(208.0))
+                                .when_some(self.thread(session_id), |el, thread| {
+                                    el.track_scroll(&thread.question_scroll)
+                                })
                                 .overflow_y_scroll()
                                 .flex()
                                 .flex_col()

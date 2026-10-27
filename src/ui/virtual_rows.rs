@@ -81,6 +81,40 @@ pub fn visible_window(heights: &[Option<f32>], scroll_top: f32, viewport: f32) -
     }
 }
 
+/// Scrolls `scroll` the least that brings row `ix` into view, so a row
+/// the keyboard moves to is built; `lead` as in [`for_scroll`]. Nothing
+/// moves while a height is unknown (every row is built then).
+pub fn reveal(heights: &[Option<f32>], ix: usize, scroll: &ScrollHandle, lead: f32) {
+    let Some(heights) = heights.iter().copied().collect::<Option<Vec<f32>>>() else {
+        return;
+    };
+    let Some(height) = heights.get(ix) else {
+        return;
+    };
+    let top = lead + heights[..ix].iter().sum::<f32>();
+    let viewport = crate::ui::scale::logical(scroll.bounds().size.height);
+    let scroll_top = crate::ui::scale::logical(-scroll.offset().y);
+    if let Some(to) = reveal_top((top, top + height), scroll_top, viewport) {
+        let offset = scroll.offset();
+        scroll.set_offset(gpui::point(offset.x, -crate::ui::scale::px(to)));
+    }
+}
+
+/// The scroll top that shows `item` (its top and bottom in the content)
+/// in a viewport of `viewport` scrolled to `scroll_top`, moving the least:
+/// `None` when it already shows. An item taller than the viewport shows
+/// its top.
+pub fn reveal_top(item: (f32, f32), scroll_top: f32, viewport: f32) -> Option<f32> {
+    let (top, bottom) = item;
+    if top < scroll_top || bottom - top > viewport {
+        (top != scroll_top).then_some(top)
+    } else if bottom > scroll_top + viewport {
+        Some(bottom - viewport)
+    } else {
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -124,5 +158,18 @@ mod tests {
     #[test]
     fn empty_list() {
         assert_eq!(visible_window(&[], 0.0, 600.0), Window::all(0));
+    }
+
+    #[test]
+    fn reveal_moves_the_least() {
+        // Already in view: nothing moves.
+        assert_eq!(reveal_top((100.0, 130.0), 50.0, 200.0), None);
+        // Below: its bottom meets the viewport's.
+        assert_eq!(reveal_top((300.0, 330.0), 50.0, 200.0), Some(130.0));
+        // Above: its top meets the viewport's.
+        assert_eq!(reveal_top((20.0, 50.0), 50.0, 200.0), Some(20.0));
+        // Taller than the viewport: its top.
+        assert_eq!(reveal_top((300.0, 600.0), 50.0, 200.0), Some(300.0));
+        assert_eq!(reveal_top((300.0, 600.0), 300.0, 200.0), None);
     }
 }

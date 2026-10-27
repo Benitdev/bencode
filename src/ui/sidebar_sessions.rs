@@ -74,6 +74,9 @@ pub struct SessionsUi {
     pub filters: SessionFilters,
     /// The thread list's scroll, for its scroll bar.
     pub scroll: gpui::ScrollHandle,
+    /// A thread the keyboard moved to, scrolled into view once its card
+    /// is drawn.
+    pub reveal: Option<String>,
     pub selection: Selection,
     /// The card or folder showing an inline rename field.
     pub renaming_session: Option<String>,
@@ -117,6 +120,16 @@ fn entry_key(entry: &ListEntry<'_>) -> String {
         ListEntry::Folder { folder, .. } => format!("f:{}", folder.id),
         ListEntry::Pinned { .. } => "pinned".into(),
         ListEntry::Reminders { .. } => "reminders".into(),
+    }
+}
+
+/// Whether `entry` shows the card of thread `id`.
+fn entry_holds(entry: &ListEntry<'_>, id: &str) -> bool {
+    match entry {
+        ListEntry::Session(session) => session.id == id,
+        ListEntry::Folder { sessions, .. }
+        | ListEntry::Pinned { sessions, .. }
+        | ListEntry::Reminders { sessions, .. } => sessions.iter().any(|s| s.id == id),
     }
 }
 
@@ -259,6 +272,7 @@ impl BenCodeApp {
         let entries = build_list(&visible, folders, groups);
         let order = navigation_ids(&entries, searching);
         let now = crate::app::now_ms();
+        let mut reveal_lost = false;
         let body = if visible.is_empty() {
             if narrowed {
                 quiet_line(
@@ -285,7 +299,21 @@ impl BenCodeApp {
                 .iter()
                 .map(|row| row.map(|row| row.height))
                 .collect();
-            let window = virtual_rows::for_scroll(&heights, &self.sessions_ui.scroll, LIST_PAD);
+            let mut window = virtual_rows::for_scroll(&heights, &self.sessions_ui.scroll, LIST_PAD);
+            // A thread the keyboard moved to: its row is built first, then
+            // its card scrolls itself into view (`reveal_card`).
+            if let Some(id) = self.sessions_ui.reveal.clone() {
+                match entries.iter().position(|entry| entry_holds(entry, &id)) {
+                    Some(ix) if !window.range.contains(&ix) => {
+                        virtual_rows::reveal(&heights, ix, &self.sessions_ui.scroll, LIST_PAD);
+                        window =
+                            virtual_rows::for_scroll(&heights, &self.sessions_ui.scroll, LIST_PAD);
+                    }
+                    Some(_) => {}
+                    // Not listed (filtered out, or the list changed).
+                    None => reveal_lost = true,
+                }
+            }
             let app = cx.entity().downgrade();
             let rows: Vec<AnyElement> = window
                 .range
@@ -377,6 +405,9 @@ impl BenCodeApp {
             })
             .collect();
         self.note_card_motion(&shown, cx);
+        if reveal_lost {
+            self.sessions_ui.reveal = None;
+        }
         let mut selection_changed = false;
         if self.sessions_ui.order != order {
             let before = self.sessions_ui.selection.clone();

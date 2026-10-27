@@ -8,7 +8,7 @@ use bencode_ui::primitives::{Icon, IconName, Tooltip};
 use bencode_ui::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnimationExt, AnyElement, ClickEvent, Context, InteractiveElement, IntoElement, MouseButton,
-    MouseDownEvent, ParentElement, SharedString, Styled, div, prelude::*,
+    MouseDownEvent, ParentElement, SharedString, Styled, canvas, div, prelude::*,
 };
 
 use crate::app::BenCodeApp;
@@ -19,10 +19,11 @@ use crate::ui::drag_drop::DraggedSession;
 use crate::ui::provider_icon::HarnessIcon;
 use crate::ui::rail::widgets::{ROW_HEIGHT, UNSELECTED_OPACITY, nav_label, selection_strong};
 use crate::ui::region::Region;
-use crate::ui::scale::px;
+use crate::ui::scale::{self, px};
 use crate::ui::sidebar_sessions::ListDrop;
 use crate::ui::spinner::terminal_spinner;
 use crate::ui::tokens::{Fill, Ink, Status, Text, Tone as _};
+use crate::ui::virtual_rows;
 
 /// The slide-in opens to this height (a usual card's); the cap comes off
 /// when it finishes.
@@ -421,6 +422,10 @@ impl BenCodeApp {
                         .bg(bar),
                 )
             })
+            .when(
+                self.sessions_ui.reveal.as_deref() == Some(id.as_str()),
+                |el| el.child(self.reveal_card(cx)),
+            )
             .child(row)
             .children(agents);
         if !self.card_is_fresh(session) {
@@ -518,5 +523,43 @@ impl BenCodeApp {
         }
         self.sessions_ui.selection.clear();
         self.open_session(id.to_string(), cx);
+    }
+}
+
+impl BenCodeApp {
+    /// Laid over the card the keyboard moved to: once placed, scrolls the
+    /// thread list the least that shows the whole card, then lets go.
+    fn reveal_card(&self, cx: &Context<Self>) -> impl IntoElement {
+        let scroll = self.sessions_ui.scroll.clone();
+        let app = cx.entity().downgrade();
+        canvas(
+            move |bounds, _, cx| {
+                let view = scroll.bounds();
+                let scroll_top = scale::logical(-scroll.offset().y);
+                let top = scale::logical(bounds.top() - view.top()) + scroll_top;
+                let item = (top, top + scale::logical(bounds.size.height));
+                let to =
+                    virtual_rows::reveal_top(item, scroll_top, scale::logical(view.size.height));
+                if let Some(to) = to {
+                    let offset = scroll.offset();
+                    scroll.set_offset(gpui::point(offset.x, -px(to)));
+                }
+                let app = app.clone();
+                cx.defer(move |cx| {
+                    if let Err(err) = app.update(cx, |this, cx| {
+                        this.sessions_ui.reveal = None;
+                        // The list was laid out at the old offset.
+                        if to.is_some() {
+                            this.redraw_regions(&[Region::Rail], cx);
+                        }
+                    }) {
+                        log::debug!("card revealed after app drop: {err:#}");
+                    }
+                });
+            },
+            |_, _, _, _| {},
+        )
+        .absolute()
+        .size_full()
     }
 }

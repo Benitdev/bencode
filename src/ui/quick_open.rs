@@ -292,6 +292,8 @@ fn match_text(text: &str, positions: &[usize], cx: &gpui::App) -> StyledText {
 pub struct QuickOpen {
     pub open: bool,
     pub active: usize,
+    /// The list's scroll, so the highlighted row stays in view.
+    scroll: gpui::ScrollHandle,
     /// Files picked here, newest first (MonoCode `rememberOpenedFile`).
     recents: Vec<String>,
     /// A file picked from the keyboard, opened on the next frame (opening
@@ -381,6 +383,7 @@ impl BenCodeApp {
 
     pub fn on_quick_open_query_changed(&mut self, cx: &mut Context<Self>) {
         self.quick_open.active = 0;
+        self.quick_open.scroll.set_offset(gpui::Point::default());
         cx.notify();
     }
 
@@ -388,9 +391,12 @@ impl BenCodeApp {
     pub fn quick_open_key(&mut self, key: &str, cx: &mut Context<Self>) -> bool {
         let count = self.quick_open_results(cx).len();
         match key {
-            "down" if count > 0 => self.quick_open.active = (self.quick_open.active + 1) % count,
-            "up" if count > 0 => {
-                self.quick_open.active = (self.quick_open.active + count - 1) % count
+            "down" | "up" if count > 0 => {
+                let step = if key == "down" { 1 } else { count - 1 };
+                self.quick_open.active = (self.quick_open.active + step) % count;
+                self.quick_open
+                    .scroll
+                    .scroll_to_item(self.quick_open.active);
             }
             "enter" => self.quick_open_pick(self.quick_open.active, cx),
             "escape" => {
@@ -641,6 +647,7 @@ impl BenCodeApp {
                                     "quick-open-files"
                                 })
                                 .max_h(px(LIST_MAX_HEIGHT))
+                                .track_scroll(&self.quick_open.scroll)
                                 .overflow_y_scroll()
                                 .px_1p5()
                                 .pb_1p5()
