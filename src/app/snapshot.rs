@@ -257,7 +257,9 @@ async fn run(this: WeakEntity<BenCodeApp>, cx: &mut AsyncWindowContext) -> Resul
         }
         this.update_in(cx, set_up)?;
         if let Some(at) = pointer() {
-            // The pointer rests there, as a hover would leave it.
+            // The pointer rests there, as a hover would leave it, once the
+            // scene is drawn: a tooltip shows what was drawn under it.
+            settle(cx).await?;
             cx.update(|window, cx| {
                 let event = gpui::MouseMoveEvent {
                     position: gpui::point(px(at.0), px(at.1)),

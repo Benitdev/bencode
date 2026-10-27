@@ -28,7 +28,8 @@ pub struct TitleTab {
 /// MonoCode `sessionMeta`.
 /// MonoCode `tabCopy` for thread-only tabs: the headline and the tooltip,
 /// which names the project and every thread of the tab (MonoCode's meta
-/// line under the headline; BenCode's tabs keep one line).
+/// line under the headline; BenCode's tabs keep one line): the headline
+/// over a line each for the project, the other threads and the state.
 pub fn tab_copy(tab: &TitleTab) -> (String, String) {
     let project = Some(tab.project.trim())
         .filter(|p| !p.is_empty())
@@ -39,15 +40,12 @@ pub fn tab_copy(tab: &TitleTab) -> (String, String) {
     } else {
         conversation
     };
-    let mut tooltip = vec![project.to_string()];
-    if !conversation.is_empty() {
-        tooltip.push(conversation.to_string());
-    }
+    let mut tooltip = vec![headline.to_string(), project.to_string()];
     tooltip.extend(tab.more.iter().cloned());
     if !tab.done.is_empty() {
         tooltip.push("Response complete".into());
     }
-    (headline.to_string(), tooltip.join(" · "))
+    (headline.to_string(), tooltip.join("\n"))
 }
 
 /// MonoCode `titleTabClosable`: the last tab closes only if it holds work.
@@ -150,9 +148,9 @@ mod tests {
         t.session_count = 2;
         let (headline, tooltip) = tab_copy(&t);
         assert_eq!(headline, "Fix login");
-        assert_eq!(tooltip, "bencode · Fix login · Write tests");
+        assert_eq!(tooltip, "Fix login\nbencode\nWrite tests");
         t.done = vec!["claude".into()];
-        assert!(tab_copy(&t).1.ends_with("· Response complete"));
+        assert!(tab_copy(&t).1.ends_with("\nResponse complete"));
     }
 
     #[test]

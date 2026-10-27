@@ -4,7 +4,7 @@
 //! icon rail the provider over the bar), and the details popover it opens
 //! (one card per window; the account pages are in `account_views`).
 
-use bencode_ui::primitives::{Icon, IconName, Tooltip};
+use bencode_ui::primitives::{Icon, IconName, TipRow, Tooltip};
 use bencode_ui::theme::{ActiveTheme, IconSize, Palette};
 use gpui::{
     AnyElement, Context, FontWeight, Hsla, IntoElement, ParentElement, Styled, anchored, deferred,
@@ -18,8 +18,7 @@ use crate::harness::accounts::{ProviderAccount, supports_accounts};
 use crate::rate_limits::{
     AccountTone, ProviderRateLimits, RateLimitProvider, RateLimitStatus, RateLimitWindow,
     WindowKind, account_status, antigravity, best_alternative, chip_label, clamp_used_percent,
-    format_reset_countdown, format_usage_percent, format_window_label, needs_provider_login,
-    updated_label, window_tooltip,
+    format_usage_percent, needs_provider_login, updated_label, window_note,
 };
 use crate::ui::HarnessIcon;
 use crate::ui::git_changes_panel::spinning_icon;
@@ -76,21 +75,24 @@ fn empty_usage_label(limits: &ProviderRateLimits) -> &'static str {
 }
 
 /// The chip's tooltip: every window, else why there is none.
-fn chip_tooltip(limits: &ProviderRateLimits, now: i64) -> String {
+fn chip_tooltip(limits: &ProviderRateLimits, now: i64) -> Result<Vec<TipRow>, String> {
     let windows = limits.windows();
     if !windows.is_empty() {
-        return windows
+        return Ok(windows
             .iter()
-            .map(|(_, window)| window_tooltip(window, now))
-            .collect::<Vec<_>>()
-            .join(" · ");
+            .map(|(kind, window)| TipRow {
+                label: kind.title().into(),
+                value: format!("{} used", format_usage_percent(window.used_percent)).into(),
+                note: Some(window_note(window, now).into()),
+            })
+            .collect());
     }
-    match (&limits.error, limits.status) {
+    Err(match (&limits.error, limits.status) {
         (Some(error), _) => error.clone(),
         (None, RateLimitStatus::Unavailable) => "Not connected".into(),
         (None, _) if limits.is_loading() => "Loading usage…".into(),
         (None, _) => "Usage details".into(),
-    }
+    })
 }
 
 /// MonoCode `UsageChipVariant`: where the chip is drawn. MonoCode's footer
@@ -203,12 +205,10 @@ impl BenCodeApp {
                 .filter(|_| accounts.len() > 1)
                 .map(|active| active.label.clone())
         };
-        let tooltip = match (&account, variant) {
-            (Some(account), UsageChipVariant::Navigator | UsageChipVariant::Icon) => {
-                format!("{account}\n{}", chip_tooltip(limits, now))
-            }
-            _ => chip_tooltip(limits, now),
-        };
+        let heading = account
+            .clone()
+            .filter(|_| variant != UsageChipVariant::Composer);
+        let tooltip = chip_tooltip(limits, now);
         let faint = |text: &'static str| div().text_color(fg.ink(Ink::Faint)).child(text);
         let chip = div()
             .id(match variant {
@@ -219,7 +219,13 @@ impl BenCodeApp {
             .cursor_pointer()
             .on_hover(cx.listener(|this, hovered: &bool, _, _| this.usage.chip_hovered = *hovered))
             .on_click(cx.listener(move |this, _, _, cx| this.toggle_usage_popover(provider, cx)))
-            .tooltip(Tooltip::text(tooltip));
+            .map(|el| match (tooltip, heading) {
+                (Ok(rows), heading) => el.tooltip(Tooltip::details(heading.map(Into::into), rows)),
+                (Err(message), Some(heading)) => {
+                    el.tooltip(Tooltip::text(format!("{heading}\n{message}")))
+                }
+                (Err(message), None) => el.tooltip(Tooltip::text(message)),
+            });
         let chip = match variant {
             // The provider over the tightest window, in the icon rail's
             // `size-8` button.
@@ -655,10 +661,7 @@ fn usage_window_card(
                 .line_height(px(16.0))
                 .text_color(fg.ink(Ink::Muted))
                 .child(format!("{} remaining", format_usage_percent(100.0 - used)))
-                .child(div().truncate().child(match window.resets_at {
-                    Some(resets_at) => format_reset_countdown(resets_at - now),
-                    None => format!("{} window", format_window_label(window.window_minutes)),
-                })),
+                .child(div().truncate().child(window_note(window, now))),
         )
 }
 
@@ -671,12 +674,15 @@ mod tests {
     #[test]
     fn chip_copy_follows_the_snapshot() {
         let mut limits = ProviderRateLimits::default();
-        assert_eq!(chip_tooltip(&limits, NOW), "Loading usage…");
+        assert_eq!(chip_tooltip(&limits, NOW), Err("Loading usage…".into()));
         assert_eq!(empty_usage_label(&limits), "—");
 
         limits = ProviderRateLimits::error("Claude sign-in expired", None, NOW);
         assert_eq!(empty_usage_label(&limits), "expired");
-        assert_eq!(chip_tooltip(&limits, NOW), "Claude sign-in expired");
+        assert_eq!(
+            chip_tooltip(&limits, NOW),
+            Err("Claude sign-in expired".into())
+        );
 
         limits = ProviderRateLimits::error("Claude usage request failed (500)", None, NOW);
         assert_eq!(empty_usage_label(&limits), "—");
@@ -695,9 +701,17 @@ mod tests {
             }),
             ..Default::default()
         };
+        let row = |label: &str, value: &str, note: &str| TipRow {
+            label: label.to_string().into(),
+            value: value.to_string().into(),
+            note: Some(note.to_string().into()),
+        };
         assert_eq!(
             chip_tooltip(&limits, NOW),
-            "100% used · Resets in 15m · 11% used · wk window"
+            Ok(vec![
+                row("5-hour limit", "100% used", "Resets in 15m"),
+                row("Weekly limit", "11% used", "wk window"),
+            ])
         );
     }
 }

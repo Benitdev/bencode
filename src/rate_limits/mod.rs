@@ -294,15 +294,12 @@ pub fn chip_label(window: &RateLimitWindow, now: i64) -> String {
     }
 }
 
-/// MonoCode `rateLimitWindowTooltip`.
-pub fn window_tooltip(window: &RateLimitWindow, now: i64) -> String {
-    let usage = format!("{} used", format_usage_percent(window.used_percent));
+/// When a window resets, else how long it is (MonoCode
+/// `rateLimitWindowTooltip`'s second half).
+pub fn window_note(window: &RateLimitWindow, now: i64) -> String {
     match window.resets_at {
-        Some(resets_at) => format!("{usage} · {}", format_reset_countdown(resets_at - now)),
-        None => format!(
-            "{usage} · {} window",
-            format_window_label(window.window_minutes)
-        ),
+        Some(resets_at) => format_reset_countdown(resets_at - now),
+        None => format!("{} window", format_window_label(window.window_minutes)),
     }
 }
 
@@ -561,13 +558,10 @@ mod tests {
         assert_eq!(format_usage_percent(250.0), "100%");
         assert_eq!(format_usage_percent(f64::NAN), "0%");
         assert_eq!(
-            window_tooltip(&window(100.0, Some(15 * 60_000)), NOW),
-            "100% used · Resets in 15m"
+            window_note(&window(100.0, Some(15 * 60_000)), NOW),
+            "Resets in 15m"
         );
-        assert_eq!(
-            window_tooltip(&window(11.0, None), NOW),
-            "11% used · 5h window"
-        );
+        assert_eq!(window_note(&window(11.0, None), NOW), "5h window");
     }
 
     #[test]

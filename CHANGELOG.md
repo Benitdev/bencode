@@ -6,10 +6,13 @@ tagging (`docs/releasing.md`).
 
 ## [0.1.35] - Unreleased
 
-- Tooltips are frosted glass like the other popups, and a thread's
-  tooltip sets its title above the model and branch. Frosted cards no
+- Tooltips are frosted glass like the other popups. Frosted cards no
   longer turn dark in the middle: a drop shadow is drawn only outside its
   element, as in CSS, instead of under the glass.
+- A tooltip that says several things sets its first line above the rest,
+  a step quieter (a thread's title over its model and branch, a tab's
+  thread over its project). The usage chip's tooltip lines each limit up
+  in columns: "5-hour limit · 71% used · Resets in 4h 18m".
 - A picture (PNG, JPEG, GIF, WebP) opens in the file pane as a tab that
   shows it, with its size, instead of "Binary files cannot be edited"; a
   click shows it full-window.

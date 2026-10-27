@@ -28,4 +28,4 @@ pub use icon::{Icon, IconName};
 pub use image::Image;
 pub use layer::{Raised, raise};
 pub use severity::Severity;
-pub use tooltip::Tooltip;
+pub use tooltip::{TipRow, Tooltip};
