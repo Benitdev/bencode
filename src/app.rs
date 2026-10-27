@@ -59,6 +59,7 @@ pub mod task_list;
 pub mod thread_state;
 pub mod updater;
 pub mod usage;
+mod work_item_link;
 mod workspace_nav;
 pub mod workspace_sync;
 pub mod worktree_lifecycle;

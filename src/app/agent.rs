@@ -873,6 +873,7 @@ impl BenCodeApp {
             purpose: RunPurpose::Turn,
         };
         self.start_run(session_id, request, pinned, cx);
+        self.link_first_work_item(session_id, &input.text, cx);
     }
 
     /// MonoCode `onCompactContext`: the agent summarises the older context

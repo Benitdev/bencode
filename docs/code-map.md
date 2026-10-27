@@ -90,6 +90,7 @@ bencode/
 | `projects.rs`, `project_stats.rs`, `project_files.rs` | The project rail, per-project diff stats, the file index |
 | `session_list.rs`, `session_folders.rs` | Sidebar session filters and folders |
 | `session_review.rs` | Session review: the ordered checkpoint queue, a thread's changed files, Keep / Undo |
+| `work_item_link.rs` | A first message's GitHub issue or PR, linked to its thread |
 | `task_list.rs` | The agent's task list: one `tasks` block per turn that each snapshot replaces, its text and progress label |
 | `subagents.rs` | A subagent's run, kept on its Agent block as `agentRun` (MonoCode's shape): steps merged by id, its model, name and status line |
 | `thread_state.rs` | `ThreadState`: each thread's composer and queue state (draft, attachments, modes, card, question form, usage limit), dropped with the thread |

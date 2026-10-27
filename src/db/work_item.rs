@@ -36,7 +36,8 @@ fn repo_ok(repo: &str) -> bool {
 }
 
 impl LinkedWorkItem {
-    fn new(kind: WorkItemKind, repo: &str, number: i64) -> Option<Self> {
+    /// A checked `owner/name` and number, its URL built from them.
+    pub fn new(kind: WorkItemKind, repo: &str, number: i64) -> Option<Self> {
         let repo = repo.trim();
         if !repo_ok(repo) || number <= 0 {
             return None;

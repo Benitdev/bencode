@@ -11,6 +11,10 @@ tagging (`docs/releasing.md`).
   resumes there; otherwise the composer holds a Handoff card, so the next
   message brings the conversation along. A running turn still opens a
   new thread.
+- A thread's first message links it to the GitHub issue or pull request
+  it names: a pasted URL, "PR #12" or "issue 7" in the project's
+  repository, or "this PR" for the branch's pull request. A link already
+  there is kept.
 - The terminal hands the wheel to programs that track the mouse (vim,
   htop, tmux) instead of scrolling past them.
 
