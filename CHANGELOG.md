@@ -4,7 +4,7 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
-## [0.1.35] - Unreleased
+## [0.1.35] - 2026-10-27
 
 - Opening a thread that runs in a worktree no longer narrows the thread
   list and the title bar's tabs to that worktree; only picking one in the
