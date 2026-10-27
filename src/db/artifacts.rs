@@ -224,13 +224,16 @@ impl AppDb {
             "DELETE FROM notes WHERE id = ?1 AND content_kind = 'artifact'",
             [id],
         )?;
+        // `json(..)` around the cards' subquery: the bundled SQLite (3.54.1)
+        // loses the JSON subtype of its result, and `json_set` would store
+        // the array as a string.
         tx.execute(
             "UPDATE sessions SET blocks_json = (
                SELECT json_group_array(json(CASE WHEN json_type(block.value, '$.artifactCards') = 'array'
                  THEN json_set(block.value, '$.artifactCards',
-                   (SELECT json_group_array(json(card.value))
+                   json((SELECT json_group_array(json(card.value))
                     FROM json_each(block.value, '$.artifactCards') AS card
-                    WHERE json_extract(card.value, '$.id') != ?1))
+                    WHERE json_extract(card.value, '$.id') != ?1)))
                  ELSE block.value END))
                FROM json_each(blocks_json) AS block)
              WHERE instr(blocks_json, '\"artifactCards\"') > 0

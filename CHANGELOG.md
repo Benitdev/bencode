@@ -4,6 +4,18 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
+## Unreleased
+
+- GPUI, which draws BenCode, is updated to 0.3.10, its Metal renderer
+  vendored again with the frosted glass carried over. Fonts are resolved
+  once and kept, sprites are drawn in fewer batches, and layout follows
+  CSS more closely: the ⌘K search dialog opens at its full height instead
+  of cutting off its sixth row, and a new thread's greeting sits in the
+  middle of its pane.
+- The bundled SQLite is 3.54 (rusqlite 0.41), and math reads `\slashed`
+  and `\centernot` (RaTeX 0.1.15). BenCode no longer builds the
+  deprecated `cocoa` crate.
+
 ## [0.1.36] - 2026-10-27
 
 - A git pill under a settled thread whose own edits are still uncommitted

@@ -1,5 +1,7 @@
 use gpui::{App, Context, InteractiveElement, KeyBinding, Window, actions};
 
+use crate::key_binding;
+
 use super::{buffer::Buffer, cursor::Motion, state::CodeEditor};
 
 actions!(
@@ -69,10 +71,10 @@ pub(crate) fn bind_keys(cx: &mut App) {
         KeyBinding::new("shift-right", SelectRight, context),
         KeyBinding::new("shift-up", SelectUp, context),
         KeyBinding::new("shift-down", SelectDown, context),
-        KeyBinding::new(&format!("{word}-left"), WordLeft, context),
-        KeyBinding::new(&format!("{word}-right"), WordRight, context),
-        KeyBinding::new(&format!("{word}-shift-left"), SelectWordLeft, context),
-        KeyBinding::new(&format!("{word}-shift-right"), SelectWordRight, context),
+        key_binding(&format!("{word}-left"), WordLeft, context, cx),
+        key_binding(&format!("{word}-right"), WordRight, context, cx),
+        key_binding(&format!("{word}-shift-left"), SelectWordLeft, context, cx),
+        key_binding(&format!("{word}-shift-right"), SelectWordRight, context, cx),
         KeyBinding::new("home", LineStart, context),
         KeyBinding::new("end", LineEnd, context),
         KeyBinding::new("shift-home", SelectLineStart, context),
@@ -82,24 +84,24 @@ pub(crate) fn bind_keys(cx: &mut App) {
         KeyBinding::new("backspace", Backspace, context),
         KeyBinding::new("shift-backspace", Backspace, context),
         KeyBinding::new("delete", Delete, context),
-        KeyBinding::new(&format!("{word}-backspace"), DeleteWordLeft, context),
+        key_binding(&format!("{word}-backspace"), DeleteWordLeft, context, cx),
         KeyBinding::new("enter", Newline, context),
         KeyBinding::new("tab", Indent, context),
         KeyBinding::new("shift-tab", Outdent, context),
-        KeyBinding::new("secondary-z", Undo, context),
-        KeyBinding::new("secondary-shift-z", Redo, context),
-        KeyBinding::new("secondary-a", SelectAll, context),
-        KeyBinding::new("secondary-c", Copy, context),
-        KeyBinding::new("secondary-x", Cut, context),
-        KeyBinding::new("secondary-d", SelectNext, context),
+        key_binding("secondary-z", Undo, context, cx),
+        key_binding("secondary-shift-z", Redo, context, cx),
+        key_binding("secondary-a", SelectAll, context, cx),
+        key_binding("secondary-c", Copy, context, cx),
+        key_binding("secondary-x", Cut, context, cx),
+        key_binding("secondary-d", SelectNext, context, cx),
         KeyBinding::new("escape", SingleCursor, context),
-        KeyBinding::new("secondary-/", ToggleComment, context),
-        KeyBinding::new("secondary-alt-[", Fold, context),
-        KeyBinding::new("secondary-alt-]", Unfold, context),
+        key_binding("secondary-/", ToggleComment, context, cx),
+        key_binding("secondary-alt-[", Fold, context, cx),
+        key_binding("secondary-alt-]", Unfold, context, cx),
     ];
     // The browser's paste event reaches the input handler.
     if !cfg!(target_family = "wasm") {
-        bindings.push(KeyBinding::new("secondary-v", Paste, context));
+        bindings.push(key_binding("secondary-v", Paste, context, cx));
     }
     if cfg!(target_os = "macos") {
         bindings.extend([

@@ -15,7 +15,7 @@ use bencode_ui::primitives::{Icon, IconName, Tooltip};
 use bencode_ui::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, Context, HighlightStyle, Hsla, InteractiveElement, IntoElement, ListAlignment,
-    ListOffset, ListState, ParentElement, Pixels, ScrollWheelEvent, SharedString,
+    ListOffset, ListState, ParentElement, Pixels, ScrollEvent, SharedString,
     StatefulInteractiveElement, Styled, StyledText, Window, canvas, div, list, prelude::*,
 };
 
@@ -1262,7 +1262,7 @@ impl BenCodeApp {
                     cx,
                 )
                 .w_full()
-                .on_scroll_wheel(self.side_scroll_listener(key, *f, cx))
+                .on_scroll(self.side_scroll_listener(key, *f, cx))
                 .into_any_element(),
             // Both lanes scroll sideways together, so a pair stays aligned.
             DocRow::Pair { file, old, new } => {
@@ -1281,7 +1281,7 @@ impl BenCodeApp {
                             .border_color(cx.theme().colors.border),
                     )
                     .child(lane(new, new.as_ref().and_then(|line| line.new), Lane::New))
-                    .on_scroll_wheel(self.side_scroll_listener(key, *file, cx))
+                    .on_scroll(self.side_scroll_listener(key, *file, cx))
                     .into_any_element()
             }
             DocRow::Fold { file, id, hidden } => self.render_fold(key, *file, *id, *hidden, cx),
@@ -1324,9 +1324,9 @@ impl BenCodeApp {
         key: &str,
         ix: usize,
         cx: &Context<Self>,
-    ) -> impl Fn(&ScrollWheelEvent, &mut Window, &mut gpui::App) + 'static {
+    ) -> impl Fn(&ScrollEvent, &mut Window, &mut gpui::App) + 'static {
         let key = key.to_string();
-        cx.listener(move |this, event: &ScrollWheelEvent, window, cx| {
+        cx.listener(move |this, event: &ScrollEvent, window, cx| {
             let delta = event.delta.pixel_delta(window.line_height());
             // An up-and-down gesture is the list's.
             if delta.x.abs() > delta.y.abs() {

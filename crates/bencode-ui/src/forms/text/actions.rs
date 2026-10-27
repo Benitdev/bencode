@@ -4,6 +4,8 @@ use gpui::{
     StatefulInteractiveElement, Styled, Window, actions, div, prelude::*,
 };
 
+use crate::key_binding;
+
 use super::{
     InputEvent, TextInput,
     edit::{self, next_grapheme, prev_grapheme},
@@ -58,7 +60,12 @@ pub(crate) fn bind_keys(cx: &mut App) {
     let mut bindings = vec![
         KeyBinding::new("backspace", Backspace, Some(CONTEXT)),
         KeyBinding::new("delete", Delete, Some(CONTEXT)),
-        KeyBinding::new(&format!("{word}-backspace"), DeleteWordLeft, Some(CONTEXT)),
+        key_binding(
+            &format!("{word}-backspace"),
+            DeleteWordLeft,
+            Some(CONTEXT),
+            cx,
+        ),
         KeyBinding::new("left", Left, Some(CONTEXT)),
         KeyBinding::new("right", Right, Some(CONTEXT)),
         KeyBinding::new("up", Up, Some(CONTEXT)),
@@ -67,31 +74,37 @@ pub(crate) fn bind_keys(cx: &mut App) {
         KeyBinding::new("shift-right", SelectRight, Some(CONTEXT)),
         KeyBinding::new("shift-up", SelectUp, Some(CONTEXT)),
         KeyBinding::new("shift-down", SelectDown, Some(CONTEXT)),
-        KeyBinding::new(&format!("{word}-left"), WordLeft, Some(CONTEXT)),
-        KeyBinding::new(&format!("{word}-right"), WordRight, Some(CONTEXT)),
-        KeyBinding::new(&format!("{word}-shift-left"), SelectWordLeft, Some(CONTEXT)),
-        KeyBinding::new(
+        key_binding(&format!("{word}-left"), WordLeft, Some(CONTEXT), cx),
+        key_binding(&format!("{word}-right"), WordRight, Some(CONTEXT), cx),
+        key_binding(
+            &format!("{word}-shift-left"),
+            SelectWordLeft,
+            Some(CONTEXT),
+            cx,
+        ),
+        key_binding(
             &format!("{word}-shift-right"),
             SelectWordRight,
             Some(CONTEXT),
+            cx,
         ),
         KeyBinding::new("home", Home, Some(CONTEXT)),
         KeyBinding::new("end", End, Some(CONTEXT)),
         KeyBinding::new("shift-home", SelectHome, Some(CONTEXT)),
         KeyBinding::new("shift-end", SelectEnd, Some(CONTEXT)),
-        KeyBinding::new("secondary-a", SelectAll, Some(CONTEXT)),
-        KeyBinding::new("secondary-c", Copy, Some(CONTEXT)),
-        KeyBinding::new("secondary-x", Cut, Some(CONTEXT)),
-        KeyBinding::new("secondary-z", Undo, Some(CONTEXT)),
-        KeyBinding::new("secondary-shift-z", Redo, Some(CONTEXT)),
+        key_binding("secondary-a", SelectAll, Some(CONTEXT), cx),
+        key_binding("secondary-c", Copy, Some(CONTEXT), cx),
+        key_binding("secondary-x", Cut, Some(CONTEXT), cx),
+        key_binding("secondary-z", Undo, Some(CONTEXT), cx),
+        key_binding("secondary-shift-z", Redo, Some(CONTEXT), cx),
         KeyBinding::new("enter", Enter, Some(CONTEXT)),
         KeyBinding::new("shift-enter", Newline, Some(CONTEXT)),
-        KeyBinding::new("secondary-enter", Submit, Some(CONTEXT)),
-        KeyBinding::new("secondary-enter", Submit, Some(FORM_CONTEXT)),
+        key_binding("secondary-enter", Submit, Some(CONTEXT), cx),
+        key_binding("secondary-enter", Submit, Some(FORM_CONTEXT), cx),
     ];
     // The browser's paste event reaches the input handler.
     if !cfg!(target_family = "wasm") {
-        bindings.push(KeyBinding::new("secondary-v", Paste, Some(CONTEXT)));
+        bindings.push(key_binding("secondary-v", Paste, Some(CONTEXT), cx));
     }
     if cfg!(target_os = "macos") {
         bindings.extend([

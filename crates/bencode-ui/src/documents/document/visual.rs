@@ -1,5 +1,7 @@
 use gpui::{App, KeyBinding, actions};
 
+use crate::key_binding;
+
 actions!(markdown_document, [Undo, Redo, Indent, Outdent, Paste]);
 
 const CONTEXT: &str = "MarkdownDocument";
@@ -9,9 +11,9 @@ pub(crate) fn bind_keys(cx: &mut App) {
     let context = Some(CONTEXT);
     let block = Some("MarkdownDocument > ElyInput");
     let mut bindings = vec![
-        KeyBinding::new("secondary-z", Undo, context),
-        KeyBinding::new("secondary-shift-z", Redo, context),
-        KeyBinding::new("secondary-v", Paste, context),
+        key_binding("secondary-z", Undo, context, cx),
+        key_binding("secondary-shift-z", Redo, context, cx),
+        key_binding("secondary-v", Paste, context, cx),
         KeyBinding::new("tab", Indent, block),
         KeyBinding::new("shift-tab", Outdent, block),
     ];

@@ -25,21 +25,22 @@ bencode-core = { path = "crates/bencode-core" }
 
 # BenCode's components (crates/bencode-ui).
 bencode-ui = { path = "crates/bencode-ui" }
-gpui = { package = "gpui-pre", version = "=0.3.8" }
-gpui_platform = { package = "gpui-pre-platform", version = "=0.3.8", features = ["font-kit"] }
+gpui = { package = "gpui-pre", version = "=0.3.10" }
+gpui_platform = { package = "gpui-pre-platform", version = "=0.3.10", features = ["font-kit"] }
 
 # Async runtime & Utilities
 tokio = { version = "1", features = ["io-util", "macros", "process", "rt-multi-thread", "sync", "time"] }
 anyhow = "1"
+# The version alacritty_terminal and usvg build; 0.23 would be a second copy.
 base64 = "0.22"
 log = "0.4"
 env_logger = "0.11"
 serde = { version = "1", features = ["derive", "rc"] }
 serde_json = "1"
-sha2 = "0.10"
+sha2 = "0.11"
 
 # SQLite reader for MonoCode's database
-rusqlite = { version = "0.33", features = ["bundled"] }
+rusqlite = { version = "0.41", features = ["bundled"] }
 jiff = "0.2"
 
 # The transcript's markdown
@@ -58,17 +59,16 @@ wry = { version = "0.57", default-features = false, features = ["devtools"] }
 
 # Checks an update's signature against the release key (updater.rs); what
 # tauri-plugin-updater uses for MonoCode, with no dependencies of its own.
-minisign-verify = "0.2"
+minisign-verify = "0.3"
 
 # The terminal host's copy of each shell's screen (pty_host/screen.rs): the
 # emulator bencode-ui's terminal is built on, at the version it builds.
 alacritty_terminal = { version = "0.26", default-features = false }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-cocoa = "0.26"
 objc = "0.2"
 # Completion handlers for UNUserNotificationCenter (notifications.rs); the
-# version cocoa already builds.
+# version GPUI's Metal bindings already build.
 block = "0.1"
 # The window's NSView, for the Liquid Glass under it (ui/native_glass.rs);
 # the version GPUI already builds.
@@ -90,6 +90,6 @@ opt-level = 1
 opt-level = 3
 
 # GPUI's Metal renderer with MonoCode's backdrop blur (`backdrop_blur_marker`):
-# 0.3.8 plus that one patch, see vendor/gpui-pre-apple/NOTICE.
+# 0.3.10 plus that one patch, see vendor/gpui-pre-apple/NOTICE.
 [patch.crates-io]
 gpui-pre-apple = { path = "vendor/gpui-pre-apple" }

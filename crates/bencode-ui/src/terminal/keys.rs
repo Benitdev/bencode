@@ -110,7 +110,7 @@ mod tests {
         assert_eq!(wheel(false, 500, 500, false)[4..], [255, 255]);
     }
 
-    fn sent(keys: &str, app_cursor: bool) -> Option<Vec<u8>> {
+    fn sent(keys: &'static str, app_cursor: bool) -> Option<Vec<u8>> {
         bytes(&Keystroke::parse(keys).expect("a keystroke"), app_cursor)
     }
 

@@ -22,7 +22,7 @@ impl CodeEditor {
             .w_full()
             .h(self.frame.line)
             .flex()
-            .on_scroll_wheel(cx.listener(|editor, event, _, cx| editor.wheel(event, cx)));
+            .on_scroll(cx.listener(|editor, event, _, cx| editor.wheel(event, cx)));
         let caret = self.buffer.line_of(self.primary().head);
         let base = match self.frame.rows[ix] {
             Row::Line(line) => base.debug_selector(move || format!("editor-line-{line}")),

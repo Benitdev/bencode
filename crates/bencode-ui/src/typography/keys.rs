@@ -4,16 +4,7 @@ use crate::theme::Platform;
 
 /// One keystroke in gpui key syntax, `secondary` read for `platform`: Command on the Mac, Control elsewhere.
 pub fn keystroke(source: &str, platform: Platform) -> Keystroke {
-    let secondary = if platform == Platform::Mac {
-        "cmd"
-    } else {
-        "ctrl"
-    };
-    let spelled: Vec<&str> = source
-        .split('-')
-        .map(|part| if part == "secondary" { secondary } else { part })
-        .collect();
-    Keystroke::parse(&spelled.join("-"))
+    Keystroke::parse_with_os(source, platform.os())
         .unwrap_or_else(|error| panic!("bad keystroke {source:?}: {error}"))
 }
 
@@ -72,7 +63,7 @@ pub fn key_label(key: &str, platform: Platform) -> String {
 mod tests {
     use super::*;
 
-    fn parse(source: &str) -> Keystroke {
+    fn parse(source: &'static str) -> Keystroke {
         Keystroke::parse(source).expect("valid keystroke")
     }
 

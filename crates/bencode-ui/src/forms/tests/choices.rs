@@ -6,7 +6,7 @@ use gpui::{
 use super::setup;
 use crate::forms::{Checkbox, Choice, Select, Slider};
 
-fn release(key: &str, cx: &mut VisualTestContext) {
+fn release(key: &'static str, cx: &mut VisualTestContext) {
     cx.simulate_event(KeyUpEvent {
         keystroke: Keystroke::parse(key).unwrap(),
     });

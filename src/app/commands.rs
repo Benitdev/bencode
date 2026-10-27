@@ -218,10 +218,15 @@ pub(crate) fn keymap() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-a", InboxSelectAll, Some("InboxText")),
         KeyBinding::new("escape", InboxClearSelection, Some("InboxText")),
     ];
+    // Spelled out: `KeyBinding::new` takes only static keystrokes.
+    let slots = [
+        "cmd-1", "cmd-2", "cmd-3", "cmd-4", "cmd-5", "cmd-6", "cmd-7", "cmd-8",
+    ];
     keys.extend(
-        (0..8).map(|slot| {
-            KeyBinding::new(&format!("cmd-{}", slot + 1), ActivateTab(Some(slot)), None)
-        }),
+        slots
+            .into_iter()
+            .enumerate()
+            .map(|(slot, chord)| KeyBinding::new(chord, ActivateTab(Some(slot)), None)),
     );
     keys.push(KeyBinding::new("cmd-9", ActivateTab(None), None));
     keys
@@ -241,7 +246,8 @@ pub(crate) fn chord_for(
                 && binding.predicate().map(|p| p.to_string()).as_deref() == context
         })
         .map(|binding| {
-            let strokes: Vec<String> = binding.keystrokes().iter().map(|k| k.unparse()).collect();
+            let os = bencode_ui::theme::Platform::current().os();
+            let strokes: Vec<String> = binding.keystrokes().iter().map(|k| k.unparse(os)).collect();
             strokes.join(" ")
         })
 }
@@ -765,8 +771,9 @@ mod tests {
         // No chord is bound twice in one context: the later one would win
         // silently.
         let mut seen = std::collections::HashSet::new();
+        let os = bencode_ui::theme::Platform::current().os();
         for binding in &keys {
-            let chord: Vec<String> = binding.keystrokes().iter().map(|k| k.to_string()).collect();
+            let chord: Vec<String> = binding.keystrokes().iter().map(|k| k.unparse(os)).collect();
             let context = binding.predicate().map(|p| format!("{p:?}"));
             assert!(
                 seen.insert((chord.clone(), context)),

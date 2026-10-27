@@ -236,7 +236,7 @@ impl BenCodeApp {
         .wrap(body, cx);
         let session = session_id.to_string();
         // MonoCode closes the menu on any scroll; the selection stays.
-        body.on_scroll_wheel(cx.listener(move |this, _, _, cx| {
+        body.on_scroll(cx.listener(move |this, _, _, cx| {
             this.transcript_selection.update(cx, |selection, cx| {
                 if selection.session() == Some(session.as_str()) && selection.dismiss_menu() {
                     cx.notify();

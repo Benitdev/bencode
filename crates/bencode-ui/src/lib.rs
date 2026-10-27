@@ -22,7 +22,9 @@ pub mod typography;
 
 pub use assets::Assets;
 
-use gpui::{App, KeyBinding};
+use std::rc::Rc;
+
+use gpui::{Action, App, KeyBinding, KeyBindingContextPredicate};
 
 use crate::primitives::{FOCUS_CONTEXT, FocusNext, FocusPrev};
 
@@ -61,6 +63,22 @@ fn setup(cx: &mut App) {
     #[cfg(not(target_family = "wasm"))]
     terminal::bind_keys(cx);
     documents::bind_keys(cx);
+}
+
+/// A key binding spelled at run time or with `secondary-` (Command on the
+/// Mac, Control elsewhere): GPUI's `KeyBinding::new` takes only static
+/// keystrokes with explicit modifiers, and panics on `secondary-`.
+pub(crate) fn key_binding<A: Action>(
+    keystrokes: &str,
+    action: A,
+    context: Option<&str>,
+    cx: &App,
+) -> KeyBinding {
+    let context = context.map(|context| {
+        Rc::new(KeyBindingContextPredicate::parse(context).expect("a valid key context"))
+    });
+    KeyBinding::load(keystrokes, Box::new(action), context, false, None, cx)
+        .unwrap_or_else(|error| panic!("bad key binding {keystrokes:?}: {error}"))
 }
 
 #[cfg(test)]

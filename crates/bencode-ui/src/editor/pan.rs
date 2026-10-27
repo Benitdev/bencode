@@ -1,6 +1,6 @@
 //! Sideways scroll: code wider than the view pans under a still gutter.
 
-use gpui::{Context, Pixels, ScrollWheelEvent, Window};
+use gpui::{Context, Pixels, ScrollEvent, Window};
 
 use super::state::CodeEditor;
 
@@ -29,7 +29,7 @@ fn columns(line: &str, tab: usize) -> usize {
 
 impl CodeEditor {
     /// A sideways wheel over a row pans the code; an upright one is the list's.
-    pub(crate) fn wheel(&mut self, event: &ScrollWheelEvent, cx: &mut Context<Self>) {
+    pub(crate) fn wheel(&mut self, event: &ScrollEvent, cx: &mut Context<Self>) {
         let delta = event.delta.pixel_delta(self.frame.line);
         if delta.x.abs() <= delta.y.abs() {
             return;

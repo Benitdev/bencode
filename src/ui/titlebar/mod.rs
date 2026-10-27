@@ -20,8 +20,8 @@ use bencode_ui::primitives::{Icon, IconName, Tooltip};
 use bencode_ui::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
     Animation, AnimationExt, AnyElement, Context, FontWeight, InteractiveElement, IntoElement,
-    MouseButton, ParentElement, Render, ScrollHandle, ScrollWheelEvent, SharedString, Styled,
-    Window, div, ease_out_quint, point, prelude::*,
+    MouseButton, ParentElement, Render, ScrollEvent, ScrollHandle, SharedString, Styled, Window,
+    div, ease_out_quint, point, prelude::*,
 };
 
 use crate::app::{BenCodeApp, InspectorMode, NEW_SESSION_TITLE};
@@ -983,7 +983,7 @@ impl BenCodeApp {
                 this.finish_tab_reorder(cx);
             }))
             // A vertical wheel scrolls the strip sideways.
-            .on_scroll_wheel(cx.listener(|this, event: &ScrollWheelEvent, _, cx| {
+            .on_scroll(cx.listener(|this, event: &ScrollEvent, _, cx| {
                 let delta = event.delta.pixel_delta(px(16.0));
                 let scroll = &this.title_strip.scroll;
                 let max = crate::ui::scale::logical(scroll.max_offset().x);

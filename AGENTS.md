@@ -12,7 +12,7 @@ A native, GPU-drawn control plane for coding-agent CLIs (Claude Code,
 Antigravity, Codex, Grok Build, OpenCode): it starts them, streams them
 into transcripts, and keeps files, git, terminal, browser, notes,
 automations and inbox in one window. Rust, [GPUI](https://www.gpui.rs/)
-(crates.io's `gpui-pre` 0.3.8, its Metal renderer vendored) and
+(crates.io's `gpui-pre` 0.3.10, its Metal renderer vendored) and
 `bencode-ui`, BenCode's own components, adapted from
 [Ely GPUI Components](https://git.zacharyzhang.com/ZacharyZhang-NY/Ely-GPUI-Components).
 It began as a port of MonoCode (Tauri + React); MonoCode is now a

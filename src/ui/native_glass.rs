@@ -36,7 +36,6 @@ impl NativeGlass {
 #[cfg(target_os = "macos")]
 #[allow(unexpected_cfgs)]
 mod macos {
-    use cocoa::appkit::{NSView, NSViewHeightSizable, NSViewWidthSizable};
     use objc::runtime::{BOOL, Class, NO, Object};
     use objc::{class, msg_send, sel, sel_impl};
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};
@@ -45,6 +44,19 @@ mod macos {
 
     type Id = *mut Object;
 
+    /// A `CGRect` as AppKit passes it: an origin, then a size (cocoa's own
+    /// type is deprecated).
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    struct Rect {
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
+    }
+
+    /// `NSViewWidthSizable | NSViewHeightSizable`.
+    const FILL: usize = 2 | 16;
     const CLASS: &str = "NSGlassEffectView";
     /// `NSGlassEffectViewStyleRegular`; `Clear` (1) blurs too little to
     /// read text over.
@@ -74,16 +86,17 @@ mod macos {
             // give a +1 view this struct releases on drop, and the content
             // view retains it again as a subview.
             unsafe {
-                let content = gpui_view.superview();
+                let content: Id = msg_send![gpui_view, superview];
                 if content.is_null() {
                     return None;
                 }
+                let bounds: Rect = msg_send![content, bounds];
                 let view: Id = msg_send![class, alloc];
-                let view = view.initWithFrame_(content.bounds());
+                let view: Id = msg_send![view, initWithFrame: bounds];
                 if view.is_null() {
                     return None;
                 }
-                view.setAutoresizingMask_(NSViewWidthSizable | NSViewHeightSizable);
+                let _: () = msg_send![view, setAutoresizingMask: FILL];
                 let _: () = msg_send![view, setStyle: STYLE_REGULAR];
                 // The glass is on only in BenCode's dark theme, which need
                 // not be the system's.
@@ -93,7 +106,7 @@ mod macos {
                 ];
                 let dark: Id = msg_send![class!(NSAppearance), appearanceNamed: name];
                 if !dark.is_null() {
-                    view.setAppearance(dark);
+                    let _: () = msg_send![view, setAppearance: dark];
                 }
                 let _: () = msg_send![
                     content,
@@ -151,7 +164,7 @@ mod macos {
         fn drop(&mut self) {
             // SAFETY: main thread; the view is ours (+1 from `install`).
             unsafe {
-                self.view.removeFromSuperview();
+                let _: () = msg_send![self.view, removeFromSuperview];
                 let _: () = msg_send![self.view, release];
             }
         }

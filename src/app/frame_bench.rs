@@ -448,14 +448,15 @@ async fn fling(
         last = Some(top);
         let started = Instant::now();
         cx.update(|window, cx| {
-            let event = gpui::ScrollWheelEvent {
+            let event = gpui::ScrollEvent {
                 position: center,
                 // A positive delta scrolls the content down: toward the start.
                 delta: gpui::ScrollDelta::Pixels(gpui::point(px(0.0), px(-step))),
                 modifiers: Default::default(),
                 touch_phase: gpui::TouchPhase::Moved,
+                source: gpui::ScrollSource::Pointer,
             };
-            window.dispatch_event(gpui::PlatformInput::ScrollWheel(event), cx);
+            window.dispatch_event(gpui::PlatformInput::Scroll(event), cx);
         })?;
         draw(cx)?;
         took.push(started.elapsed());
