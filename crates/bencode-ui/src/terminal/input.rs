@@ -221,7 +221,18 @@ impl Terminal {
         }
         self.rest -= self.cell.height * lines as f32;
         let mode = *self.term.lock().mode();
-        if mode.contains(TermMode::ALT_SCREEN) && mode.contains(TermMode::ALTERNATE_SCROLL) {
+        if mode.intersects(TermMode::MOUSE_MODE) {
+            // A program tracking the mouse (vim, htop, tmux) takes the wheel
+            // at the pointer's cell rather than the history scrolling.
+            let (row, cell, _) = self.cell_at(event.position);
+            let notch = keys::wheel(
+                lines > 0,
+                row,
+                cell.column.0,
+                mode.contains(TermMode::SGR_MOUSE),
+            );
+            self.write(notch.repeat(lines.unsigned_abs() as usize));
+        } else if mode.contains(TermMode::ALT_SCREEN) && mode.contains(TermMode::ALTERNATE_SCROLL) {
             let arrow: &[u8] = match (lines > 0, mode.contains(TermMode::APP_CURSOR)) {
                 (true, true) => b"\x1bOA",
                 (true, false) => b"\x1b[A",

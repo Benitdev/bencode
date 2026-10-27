@@ -4,6 +4,11 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
+## Unreleased
+
+- The terminal hands the wheel to programs that track the mouse (vim,
+  htop, tmux) instead of scrolling past them.
+
 ## [0.1.35] - 2026-10-27
 
 - Opening a thread that runs in a worktree no longer narrows the thread

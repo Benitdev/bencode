@@ -85,9 +85,30 @@ pub(crate) fn paste(text: &str, bracketed: bool) -> Vec<u8> {
     }
 }
 
+/// One wheel notch as a mouse report at a zero-based viewport cell: SGR when
+/// the program asked for it, else xterm's legacy encoding, which cannot
+/// address past column or line 223.
+pub(crate) fn wheel(up: bool, line: usize, column: usize, sgr: bool) -> Vec<u8> {
+    let button: u8 = if up { 64 } else { 65 };
+    if sgr {
+        format!("\x1b[<{button};{};{}M", column + 1, line + 1).into_bytes()
+    } else {
+        let cell = |n: usize| (n.min(222) + 33) as u8;
+        vec![0x1b, b'[', b'M', button + 32, cell(column), cell(line)]
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn wheel_reports_take_the_asked_encoding() {
+        assert_eq!(wheel(true, 4, 9, true), b"\x1b[<64;10;5M".to_vec());
+        assert_eq!(wheel(false, 0, 0, true), b"\x1b[<65;1;1M".to_vec());
+        assert_eq!(wheel(true, 4, 9, false), vec![0x1b, b'[', b'M', 96, 42, 37]);
+        assert_eq!(wheel(false, 500, 500, false)[4..], [255, 255]);
+    }
 
     fn sent(keys: &str, app_cursor: bool) -> Option<Vec<u8>> {
         bytes(&Keystroke::parse(keys).expect("a keystroke"), app_cursor)
