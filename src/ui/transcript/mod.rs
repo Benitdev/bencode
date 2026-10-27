@@ -7,6 +7,7 @@ pub(crate) mod activity;
 pub mod blocks;
 mod edit_patch;
 pub mod find;
+pub mod git_actions;
 pub mod markdown;
 pub mod mono;
 mod mono_activity;
@@ -444,8 +445,10 @@ impl BenCodeApp {
         // A habit's run asks in its Mono's chat too.
         let relays = self.habit_runs_asking(session_id);
         let waiting = self.pending_permission_for(session_id).is_some() || !relays.is_empty();
-        // The review card takes the trailer row once the turn has settled.
+        // The review card takes the trailer row once the turn has settled,
+        // and the git pill under it.
         let review = !waiting && self.session_review_shown(session_id);
+        let git_pill = !waiting && self.git_pill_shown(session_id);
         let review_stamp = self
             .checkpoints
             .reviews
@@ -460,12 +463,17 @@ impl BenCodeApp {
                 } else {
                     hasher.finish()
                 }
-            };
+            }
+            ^ self
+                .git_offers(session_id)
+                .first()
+                .filter(|_| git_pill)
+                .map_or(0, |action| 1u64 << (40 + *action as u8));
         let mono = self.is_mono_session(session_id);
         let session = self.sessions.iter().find(|s| s.id == session_id);
         let open = &self.transcript_ui.open_folds;
         let reflow = self.transcript_ui.reflow;
-        let trailer = waiting || review;
+        let trailer = waiting || review || git_pill;
         let key = session.map(|s| turns::LayoutKey::new(&s.blocks, running, trailer, open, mono));
         let view = self.transcripts.entry(session_id.to_string()).or_default();
         let fresh = view.session_id.as_deref() != Some(session_id);
@@ -659,10 +667,13 @@ impl BenCodeApp {
             return prompt;
         }
         // A question is answered in the composer's form.
-        if self.session_review_shown(&session.id) {
-            return self.render_session_review(&session.id, cx);
-        }
-        div().into_any_element()
+        let review = self
+            .session_review_shown(&session.id)
+            .then(|| self.render_session_review(&session.id, cx));
+        div()
+            .children(review)
+            .children(self.render_git_pill(&session.id, cx))
+            .into_any_element()
     }
 
     /// MonoCode's relayed approval: what a habit's hidden run asks for, in

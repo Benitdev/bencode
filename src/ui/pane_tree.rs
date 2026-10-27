@@ -147,6 +147,10 @@ impl BenCodeApp {
         if !self.checkpoints.reviews.contains_key(session_id) && !self.is_mono_session(session_id) {
             self.load_session_review(session_id, cx);
         }
+        // The git pill's first read, once the thread is idle.
+        if self.thread(session_id).is_none_or(|t| t.git.unread()) {
+            self.refresh_git_actions(session_id, cx);
+        }
         self.sync_transcript_list_for(session_id);
         let (find_block, find_count) = self.find_hits(session_id, cx);
         let view = self.transcript_view_for(session_id);

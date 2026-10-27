@@ -317,6 +317,7 @@ impl BenCodeApp {
                 app.follow_agent_checkout(&cwd, cx);
                 app.reload_working_tree_docs(&cwd, cx);
                 app.reload_session_reviews(&cwd, cx);
+                app.refresh_git_actions_in(&cwd, cx);
                 app.refresh_file_tree(cx);
                 app.recheck_open_files_on_disk(cx);
                 // No app notify: `apply_snapshot` notified the snapshot's

@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 use gpui::{Context, Focusable};
 use serde_json::{Value, json};
 
+use crate::app::git_actions::GitAction;
 use crate::app::session_review::edit_paths;
 use crate::app::thread_state::ThreadState;
 use crate::app::{BenCodeApp, PermissionMode};
@@ -528,6 +529,29 @@ impl BenCodeApp {
                 self.prompt_input
                     .update(cx, |input, cx| input.set_text("", cx));
                 self.open_mcp_picker(Some(0), cx);
+                return;
+            }
+            // MonoCode `git_action_command`: the git pill's ask, also while
+            // it is hidden; a skill of that name is sent as one instead. As
+            // `/compact`, the text stays while the agent cannot be asked.
+            Some(command @ (mode_commands::Command::Stage | mode_commands::Command::Commit))
+                if !self
+                    .integrations
+                    .skills
+                    .iter()
+                    .any(|skill| skill.name == command.name()) =>
+            {
+                if let Some(id) = self.selected_session_id.clone()
+                    && self.git_actions_ready(&id)
+                {
+                    self.prompt_input
+                        .update(cx, |input, cx| input.set_text("", cx));
+                    let action = match command {
+                        mode_commands::Command::Stage => GitAction::Stage,
+                        _ => GitAction::Commit,
+                    };
+                    self.git_action_command(action, cx);
+                }
                 return;
             }
             _ => {}
@@ -1240,6 +1264,7 @@ impl BenCodeApp {
         self.workspace_mut(cx, |cache| cache.turn_ended.insert(session_id.to_string()));
         self.refresh_workspace(cx);
         self.load_session_review(session_id, cx);
+        self.refresh_git_actions(session_id, cx);
         self.send_next_queued(session_id, cx);
         cx.notify();
     }
@@ -1723,20 +1748,35 @@ fn tool_block_mut<'a>(session: &'a mut SessionRow, call_id: &str) -> Option<&'a 
 
 fn start_tool(session: &mut SessionRow, call_id: &str, name: &str, input: &Value, now: i64) {
     let title = summarize_tool_input(name, input);
+    let kind = tool_kind(name);
+    // BenCode's own field, MonoCode ignores it: the files an edit touches,
+    // which the git pill checks for the thread's own changes.
+    let paths = if kind == "edit" {
+        edit_paths(input)
+    } else {
+        Vec::new()
+    };
     if let Some(existing) = tool_block_mut(session, call_id) {
         if let Some(tool) = existing.tool.as_mut().and_then(Value::as_object_mut) {
             tool.insert("title".into(), json!(title));
+            if !paths.is_empty() {
+                tool.insert("paths".into(), json!(paths));
+            }
         }
         return;
     }
     let mut block = Block::new(format!("tool-{call_id}"), "tool", "");
     block.started_at = Some(now);
-    block.tool = Some(json!({
+    let mut tool = json!({
         "callId": call_id,
-        "kind": tool_kind(name),
+        "kind": kind,
         "title": title,
         "status": "in_progress",
-    }));
+    });
+    if !paths.is_empty() {
+        tool["paths"] = json!(paths);
+    }
+    block.tool = Some(tool);
     session.blocks.push(block.into());
 }
 

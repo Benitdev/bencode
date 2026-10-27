@@ -10,6 +10,7 @@ use bencode_ui::forms as input;
 
 use crate::app::BenCodeApp;
 use crate::app::file_pane::PaneTab;
+use crate::app::git_actions::GitAction;
 use crate::ui::layout::{FocusDir, SplitDir};
 
 actions!(
@@ -83,6 +84,10 @@ actions!(
         CloseOtherTabs,
         CloseAllTabs,
         ArchiveSession,
+        StageSessionChanges,
+        CommitSessionChanges,
+        CommitAndPushSessionChanges,
+        PushSessionCommits,
         PreviousSession,
         NextSession,
         PreviousSessionInTab,
@@ -293,6 +298,16 @@ fn menus() -> Vec<Menu> {
             MenuItem::action("Close All Tabs", CloseAllTabs),
             MenuItem::separator(),
             MenuItem::action("Archive Session", ArchiveSession),
+            MenuItem::separator(),
+            // MonoCode's git pill: the thread's agent stages, commits or
+            // pushes only what it changed.
+            MenuItem::action("Stage Session Changes", StageSessionChanges),
+            MenuItem::action("Commit Session Changes", CommitSessionChanges),
+            MenuItem::action(
+                "Commit and Push Session Changes",
+                CommitAndPushSessionChanges,
+            ),
+            MenuItem::action("Push Session Commits", PushSessionCommits),
         ]),
         edit_menu(),
         Menu::new("View").items([
@@ -668,6 +683,18 @@ impl BenCodeApp {
         .on_action(cx.listener(|this, tab: &ActivateTab, _, cx| this.activate_tab_slot(tab.0, cx)))
         .on_action(cx.listener(|this, _: &ArchiveSession, window, cx| {
             this.archive_focused_session(window, cx)
+        }))
+        .on_action(cx.listener(|this, _: &StageSessionChanges, _, cx| {
+            this.git_action_command(GitAction::Stage, cx)
+        }))
+        .on_action(cx.listener(|this, _: &CommitSessionChanges, _, cx| {
+            this.git_action_command(GitAction::Commit, cx)
+        }))
+        .on_action(cx.listener(|this, _: &CommitAndPushSessionChanges, _, cx| {
+            this.git_action_command(GitAction::CommitPush, cx)
+        }))
+        .on_action(cx.listener(|this, _: &PushSessionCommits, _, cx| {
+            this.git_action_command(GitAction::Push, cx)
         }))
         .on_action(cx.listener(|this, _: &PreviousSession, window, cx| {
             this.step_session(-1, false, window, cx)

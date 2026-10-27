@@ -15,6 +15,7 @@ pub mod commands;
 mod composer_input;
 pub mod file_pane;
 pub mod frame_bench;
+pub mod git_actions;
 pub mod github_accounts;
 pub mod go_to_definition;
 pub mod habits;
@@ -359,6 +360,8 @@ pub struct BenCodeApp {
     pub question_focus_wanted: bool,
     /// The queued message being edited in place, and its field.
     pub queue_editing: Option<(String, usize)>,
+    /// The git pill's action, the last one picked (MonoCode `LastGitAction`).
+    pub last_git_action: git_actions::GitAction,
     pub queue_edit_input: Entity<TextInput>,
     /// Go to File (⌘P).
     pub quick_open: crate::ui::quick_open::QuickOpen,
@@ -1453,6 +1456,7 @@ impl BenCodeApp {
             dock_measure: Default::default(),
             dock_launch: None,
             queue_editing: None,
+            last_git_action: Default::default(),
             queue_edit_input,
             project_files: crate::app::project_files::ProjectFiles::new(mention_index),
             quick_open_input,

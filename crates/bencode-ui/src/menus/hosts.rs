@@ -13,6 +13,7 @@ use crate::{
     buttons::{Button, ButtonGroup, ButtonVariant, IconButton},
     forms::TextInput,
     primitives::IconName,
+    theme::ControlSize,
 };
 
 pub(crate) type Click = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
@@ -139,6 +140,8 @@ impl RenderOnce for OverflowMenu {
 pub struct SplitButton {
     id: ElementId,
     label: SharedString,
+    icon: Option<IconName>,
+    size: ControlSize,
     variant: ButtonVariant,
     menu: Menu,
     on_click: Option<Click>,
@@ -149,6 +152,8 @@ impl SplitButton {
         Self {
             id: id.into(),
             label: label.into(),
+            icon: None,
+            size: ControlSize::Md,
             variant: ButtonVariant::Secondary,
             menu,
             on_click: None,
@@ -157,6 +162,17 @@ impl SplitButton {
 
     pub fn variant(mut self, variant: ButtonVariant) -> Self {
         self.variant = variant;
+        self
+    }
+
+    /// The main action's icon, ahead of its label.
+    pub fn icon(mut self, icon: IconName) -> Self {
+        self.icon = Some(icon);
+        self
+    }
+
+    pub fn size(mut self, size: ControlSize) -> Self {
+        self.size = size;
         self
     }
 
@@ -177,6 +193,8 @@ impl RenderOnce for SplitButton {
         let (shut, run) = (state.clone(), self.on_click);
         let main = Button::new((self.id.clone(), "main"), self.label)
             .variant(self.variant)
+            .size(self.size)
+            .when_some(self.icon, |button, icon| button.icon(icon))
             .on_click(move |event, window, cx| {
                 if shut.read(cx).is_open() {
                     Open::close(&shut, window, cx);
@@ -187,6 +205,7 @@ impl RenderOnce for SplitButton {
             });
         let more = Button::new((self.id.clone(), "more"), "")
             .variant(self.variant)
+            .size(self.size)
             .icon(IconName::ChevronDown)
             .on_click(move |event, window, cx| click(event, window, cx));
         host(

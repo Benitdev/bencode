@@ -90,6 +90,7 @@ bencode/
 | `projects.rs`, `project_stats.rs`, `project_files.rs` | The project rail, per-project diff stats, the file index |
 | `session_list.rs`, `session_folders.rs` | Sidebar session filters and folders |
 | `session_review.rs` | Session review: the ordered checkpoint queue, a thread's changed files, Keep / Undo |
+| `git_actions.rs` | The git pill: a thread's own edits, the Stage / Commit / Push asks, the commits an ask's turn made |
 | `work_item_link.rs` | A first message's GitHub issue or PR, linked to its thread |
 | `task_list.rs` | The agent's task list: one `tasks` block per turn that each snapshot replaces, its text and progress label |
 | `subagents.rs` | A subagent's run, kept on its Agent block as `agentRun` (MonoCode's shape): steps merged by id, its model, name and status line |
@@ -175,6 +176,7 @@ bencode/
 | `features/source-control/ui/GitChangesPanel.tsx`, `GitHistoryGraph` | `ui/git_changes_panel/`, `app/source_control.rs`, `git/` | Staged / unstaged, commit, sync, PR, graph. BenCode's own: a commit's menu in the graph (Undo Last Commit, Revert Commit, Copy Commit ID / Message) |
 | `features/source-control/ui/UnifiedDiffView.tsx`, `model/unifiedDiff.ts` | `ui/diff_viewer.rs`, `ui/diff_model.rs`, `git/diffs.rs` | Stacked files, sticky headers, folds, stage / discard, syntax colours (bencode-ui's one lexer for every language, a line at a time: no block comments). BenCode's own: the review side by side, where MonoCode has its `@codemirror/merge` editor diff |
 | `sessions/ui/SessionReview.tsx`, `sessions/model/checkpoint.ts`, `source-control/ui/SessionChangesDiff.tsx` | `ui/transcript/review_card.rs`, `app/session_review.rs`, `git/checkpoint.rs` | "Changed N files" card with Undo / Keep / Review |
+| native `conversation/git_actions.rs`, `transcript/git_turns.rs` | `app/git_actions.rs`, `git/session_git.rs`, `ui/transcript/git_actions.rs` | Git pill and git turns. The commits come from git, not from the agent's reply, so every harness gets them |
 | `features/terminal/` | `ui/terminal_pane/`, `pty_host/` | bencode-ui's terminal, one dock per project. BenCode's own: terminals side by side (a tab dragged onto a terminal's edge), and shells that outlive an update's restart or a crash (the terminal host; ⌘Q ends them) |
 | `features/notes/` | `ui/notes/`, `app/notes.rs`, `db/mod.rs` | Cards, tags, project, Preview / Source, dropped images, autosave, Add to chat. Source has no line numbers |
 | `features/automations/` | `ui/automations/`, `app/automations.rs`, `app/automation_runs.rs`, `schedule.rs`, `db/schedule.rs` | Templates, time triggers, session settings, run history, 30s scheduler. No event triggers |

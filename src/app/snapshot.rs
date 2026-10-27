@@ -78,6 +78,7 @@ const SCENES: &[(&str, SetUp)] = &[
         stage_usage(app, cx);
         cx.notify();
     }),
+    ("git", |app, _, cx| stage_git(app, cx)),
     ("changes", |app, _, cx| {
         app.show_inspector(InspectorMode::Changes, cx)
     }),
@@ -149,6 +150,46 @@ fn stage_agents(app: &mut BenCodeApp) {
     if let Some(id) = ours.next() {
         app.title_strip.unseen_finished.insert(id);
     }
+}
+
+/// The focused thread as the git pill reads one: its own edits not yet
+/// staged, after a commit its last git action made. Nothing is saved.
+fn stage_git(app: &mut BenCodeApp, cx: &mut Context<BenCodeApp>) {
+    use crate::app::git_actions::GitTurn;
+    use crate::git::session_git::{SessionChanges, SessionCommit};
+    let Some(id) = app.selected_session_id.clone() else {
+        return;
+    };
+    let turn = GitTurn {
+        commits: vec![SessionCommit {
+            sha: "3f2c9a1d7be04c55a1e2d9b8c7f6e5d4c3b2a190".into(),
+            subject: "Keep the review card under a settled turn".into(),
+            files: vec!["src/ui/transcript/mod.rs".into(), "src/app/agent.rs".into()],
+        }],
+        pushed: Some("origin/main".into()),
+        web: Some("https://github.com/acme/app".into()),
+    };
+    if let Some(session) = app.sessions.iter_mut().find(|s| s.id == id) {
+        let mut block =
+            crate::db::Block::new("usr-snapshot-git", "user", "Commit and push your changes");
+        block
+            .extra
+            .insert("gitAction".into(), serde_json::json!("commit-push"));
+        match serde_json::to_value(&turn) {
+            Ok(value) => {
+                block.extra.insert("gitTurn".into(), value);
+            }
+            Err(err) => log::warn!("snapshot: {err}"),
+        }
+        session.blocks.push(block.into());
+    }
+    let git = &mut app.thread_mut(&id).git;
+    git.changes = SessionChanges {
+        staged: false,
+        unstaged: true,
+    };
+    git.loaded = true;
+    cx.notify();
 }
 
 /// The focused thread's account as the usage chip reads one: a 5-hour

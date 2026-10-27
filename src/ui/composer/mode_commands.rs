@@ -37,16 +37,20 @@ pub enum Command {
     Draft,
     Compact,
     Clear,
+    Stage,
+    Commit,
 }
 
 impl Command {
-    pub const ALL: [Command; 6] = [
+    pub const ALL: [Command; 8] = [
         Command::AddToFolder,
         Command::Mcp,
         Command::Plan,
         Command::Draft,
         Command::Compact,
         Command::Clear,
+        Command::Stage,
+        Command::Commit,
     ];
 
     pub fn name(self) -> &'static str {
@@ -57,6 +61,8 @@ impl Command {
             Self::Draft => ModeCommand::Draft.name(),
             Self::Compact => "compact",
             Self::Clear => "clear",
+            Self::Stage => "stage",
+            Self::Commit => "commit",
         }
     }
 
@@ -68,7 +74,15 @@ impl Command {
             Self::Draft => ModeCommand::Draft.description(),
             Self::Compact => "Summarize older conversation context to free space.",
             Self::Clear => "Start a fresh thread here; this one stays in history.",
+            Self::Stage => "Ask the agent to stage only the changes it made here.",
+            Self::Commit => "Ask the agent to commit only the changes it made here.",
         }
+    }
+
+    /// A project's or the user's own command of the same name wins
+    /// (MonoCode `has_user_command`): `/commit` is a common skill.
+    pub fn yields_to_skills(self) -> bool {
+        matches!(self, Self::Stage | Self::Commit)
     }
 }
 
@@ -83,6 +97,8 @@ pub struct CommandContext {
     pub thread: bool,
     /// The thread is idle and can be swapped for a fresh one.
     pub clear: bool,
+    /// The thread's agent can be asked to stage or commit its changes.
+    pub git: bool,
 }
 
 impl CommandContext {
@@ -93,12 +109,13 @@ impl CommandContext {
             Command::Draft => self.idle,
             Command::Compact => self.compact,
             Command::Clear => self.clear,
+            Command::Stage | Command::Commit => self.git,
         }
     }
 }
 
 /// The prompt is exactly one command that runs on its own (`/compact`,
-/// `/clear`, `/mcp`).
+/// `/clear`, `/mcp`, `/stage`, `/commit`).
 pub fn standalone_command(text: &str) -> Option<Command> {
     let name = text.trim().strip_prefix('/')?;
     [
@@ -106,6 +123,8 @@ pub fn standalone_command(text: &str) -> Option<Command> {
         Command::Clear,
         Command::Mcp,
         Command::AddToFolder,
+        Command::Stage,
+        Command::Commit,
     ]
     .into_iter()
     .find(|c| c.name().eq_ignore_ascii_case(name))
@@ -182,8 +201,11 @@ mod tests {
             compact: false,
             thread: false,
             clear: false,
+            git: false,
         };
         assert!(!idle.offers(Command::AddToFolder));
+        assert!(!idle.offers(Command::Commit));
+        assert!(CommandContext { git: true, ..idle }.offers(Command::Stage));
         assert!(!idle.offers(Command::Clear));
         assert!(idle.offers(Command::Draft));
         assert!(!idle.offers(Command::Compact));
@@ -192,6 +214,8 @@ mod tests {
         assert_eq!(standalone_command("/clear"), Some(Command::Clear));
         assert_eq!(standalone_command("/plan"), None);
         assert_eq!(standalone_command(" /MCP"), Some(Command::Mcp));
+        assert_eq!(standalone_command("/Commit "), Some(Command::Commit));
+        assert_eq!(standalone_command("/commit now"), None);
     }
 
     #[test]

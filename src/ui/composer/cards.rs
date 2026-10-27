@@ -76,6 +76,9 @@ pub fn turn_cards(block: &Block, cx: &Context<BenCodeApp>) -> Option<AnyElement>
     if let Some(meta) = super::note_card::NoteCardMeta::from_block(&block.extra) {
         return Some(note_mini_card(&meta, true, None, cx));
     }
+    if let Some(card) = crate::ui::transcript::git_actions::git_turn_card(block, cx) {
+        return Some(card);
+    }
     HandoffMeta::from_block(block).map(|meta| handoff_mini_card(&meta, None, cx))
 }
 

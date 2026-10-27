@@ -6,6 +6,13 @@ tagging (`docs/releasing.md`).
 
 ## Unreleased
 
+- A git pill under a settled thread whose own edits are still uncommitted
+  asks its agent to Stage, Commit, or Commit & push only the files it
+  changed, leaving other threads' and your work alone; once committed it
+  offers Push. The action's message shows the commits the turn made, with
+  their files, a link to each on GitHub, and where they were pushed.
+  `/stage` and `/commit` (unless a skill has that name) and the File
+  menu ask the same while the pill is hidden.
 - Picking another account in the usage popover moves the current thread
   to it in place instead of opening a new thread. A Claude session
   resumes there; otherwise the composer holds a Handoff card, so the next

@@ -44,6 +44,8 @@ pub struct ThreadState {
     /// MonoCode `queueStatus: "paused"`: stopped with messages waiting;
     /// nothing is sent from the queue until Resume.
     pub queue_paused: bool,
+    /// Where the thread's own changes stand, for the git pill.
+    pub git: crate::app::git_actions::SessionGit,
 }
 
 impl ThreadState {

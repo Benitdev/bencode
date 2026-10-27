@@ -9,6 +9,7 @@ mod branches;
 mod diffs;
 pub mod graph;
 mod rows;
+pub mod session_git;
 mod status_pass;
 pub mod sync;
 pub mod text;

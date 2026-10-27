@@ -64,15 +64,18 @@ pub fn skill_suggestions(
     skills: &[Skill],
     context: CommandContext,
 ) -> Vec<Suggestion> {
+    let shadowed = |c: Command| c.yields_to_skills() && skills.iter().any(|s| s.name == c.name());
     let built_ins = Command::ALL
         .into_iter()
-        .filter(|c| context.offers(*c))
+        .filter(|c| context.offers(*c) && !shadowed(*c))
         .map(|c| (c.name().to_string(), c.description().to_string(), "bencode"));
     // MonoCode `scopeLabel`.
     let skills = skills
         .iter()
         .filter(|s| {
-            !Command::ALL.iter().any(|c| c.name() == s.name)
+            !Command::ALL
+                .iter()
+                .any(|c| c.name() == s.name && !c.yields_to_skills())
                 && !matches!(s.name.as_str(), "mono" | "monocode" | "bencode")
         })
         .map(|s| {
@@ -243,6 +246,7 @@ impl BenCodeApp {
             clear: session.is_some_and(|s| {
                 !self.is_agent_running_in(&s.id) && self.mono_for_session(&s.id).is_none()
             }),
+            git: session.is_some_and(|s| self.git_actions_ready(&s.id)),
         }
     }
 
@@ -561,12 +565,14 @@ mod tests {
         compact: false,
         thread: false,
         clear: false,
+        git: false,
     };
     const BUSY: CommandContext = CommandContext {
         idle: false,
         compact: false,
         thread: false,
         clear: false,
+        git: false,
     };
 
     #[test]
@@ -602,6 +608,33 @@ mod tests {
             [1, 2, 3]
         );
         assert!(skill_suggestions("zzz-no-match", &skills, IDLE).is_empty());
+    }
+
+    #[test]
+    fn a_skill_named_commit_takes_the_built_ins_place() {
+        let git = CommandContext { git: true, ..IDLE };
+        let names = |skills: &[Skill]| -> Vec<(String, Option<&'static str>)> {
+            skill_suggestions("commit", skills, git)
+                .into_iter()
+                .filter(|s| s.insert == "/commit")
+                .map(|s| (s.insert, s.tag))
+                .collect()
+        };
+        assert_eq!(names(&[]), [("/commit".to_string(), Some("bencode"))]);
+        let skill = Skill {
+            name: "commit".into(),
+            description: "Our commit style".into(),
+            path: String::new(),
+            scope: "project",
+            source: "agents",
+        };
+        assert_eq!(names(&[skill]), [("/commit".to_string(), Some("project"))]);
+        assert!(
+            skill_suggestions("stage", &[], IDLE)
+                .iter()
+                .all(|s| s.insert != "/stage"),
+            "only while the agent can be asked"
+        );
     }
 
     #[test]
