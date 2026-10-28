@@ -159,6 +159,10 @@ impl BenCodeApp {
             input.set_text("", cx);
             input.set_placeholder(placeholder, cx);
         });
+        // Opens on the checked-out (or chosen base) branch, scrolled to it.
+        let selected = self.picker_rows(kind, cx).iter().position(|row| row.selected);
+        self.branch_picker.active = selected.unwrap_or(0);
+        self.picker_scroll.scroll_to_item(self.branch_picker.active);
         focus_later(
             gpui::Focusable::focus_handle(self.branch_search_input.read(cx), cx),
             cx,
@@ -169,6 +173,7 @@ impl BenCodeApp {
     /// The search changed: back to the top, the error cleared.
     pub fn on_branch_query_changed(&mut self, cx: &mut Context<Self>) {
         self.branch_picker.active = 0;
+        self.picker_scroll.scroll_to_item(0);
         self.branch_picker.error = None;
         self.redraw_composer(cx);
     }
