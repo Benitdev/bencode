@@ -34,7 +34,7 @@ use crate::app::BenCodeApp;
 use crate::app::file_pane::PaneTab;
 use crate::git::graph::{self as git_graph, Cmd, Node};
 use crate::git::sync::{BranchPr, HistoryCommit};
-use crate::git::{GitFileChange, GitFileStatus, discard_all, discard_file};
+use crate::git::{GitFileChange, GitFileStatus, discard_all, discard_file, discard_folder};
 use crate::ui::app_callback::app_callback;
 use crate::ui::appearance::DiffColors;
 use crate::ui::caret_follow::CaretFollow;
@@ -1188,16 +1188,16 @@ impl BenCodeApp {
         let busy = self.changes_ui.busy.is_some();
         let icon = crate::ui::file_tree::resolve_entry_icon(&dir.name, true, open);
         let group = SharedString::from(format!("git-dir-{key}"));
-        let folder = dir.path.clone();
+        let (folder, discard_folder) = (dir.path.clone(), dir.path.clone());
         let (verb, action_icon) = match side {
             Side::Staged => ("Unstage", IconName::Minus),
             Side::Unstaged => ("Stage", IconName::Plus),
         };
-        let action_hover = fg.fill(Fill::Strong);
-        let action_group = SharedString::from(format!("{group}-stage"));
         // `hidden group-hover:flex`: no room is kept while hidden.
         let hovered = self.changes_ui.hovered_row.as_ref() == Some(&group);
-        let folder_action = div().flex_none().child(
+        let action = |key: &str, icon: IconName, tip: String| {
+            let action_hover = fg.fill(Fill::Strong);
+            let action_group = SharedString::from(format!("{group}-{key}"));
             div()
                 .id(action_group.clone())
                 .group(action_group.clone())
@@ -1207,22 +1207,43 @@ impl BenCodeApp {
                 .justify_center()
                 .rounded(px(4.0))
                 .when(busy, |el| el.opacity(0.4))
+                .when(!busy, |el| {
+                    el.cursor_pointer().hover(move |s| s.bg(action_hover))
+                })
                 // The row folds the folder; a press here is not for it.
                 .on_click(|_, _, cx| cx.stop_propagation())
-                .when(!busy, |el| {
-                    el.cursor_pointer()
-                        .hover(move |s| s.bg(action_hover))
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            this.folder_action(folder.clone(), side, cx)
-                        }))
-                })
-                .tooltip(Tooltip::text(format!("{verb} Changes in {}", dir.path)))
+                .tooltip(Tooltip::text(tip))
                 .child(
-                    Icon::new(action_icon)
+                    Icon::new(icon)
                         .size(IconSize::Sm)
                         .color(fg.ink(Ink::Secondary))
                         .group_hover_color(action_group, fg),
-                ),
+                )
+        };
+        let mut folder_actions = div().flex().flex_none().items_center();
+        if side == Side::Unstaged {
+            folder_actions = folder_actions.child(
+                action(
+                    "discard",
+                    IconName::Undo2,
+                    format!("Discard Changes in {}", dir.path),
+                )
+                .when(!busy, |el| {
+                    el.on_click(cx.listener(move |this, _, _, cx| {
+                        this.discard_folder_action(discard_folder.clone(), cx)
+                    }))
+                }),
+            );
+        }
+        folder_actions = folder_actions.child(
+            action("stage", action_icon, format!("{verb} Changes in {}", dir.path)).when(
+                !busy,
+                |el| {
+                    el.on_click(cx.listener(move |this, _, _, cx| {
+                        this.folder_action(folder.clone(), side, cx)
+                    }))
+                },
+            ),
         );
         let dot = dir.status.as_ref().map_or(fg.ink(Ink::Muted), |status| {
             status_color(status, crate::ui::appearance::diff_colors(cx))
@@ -1290,7 +1311,7 @@ impl BenCodeApp {
                             .child(SharedString::from(dir.name.clone())),
                     ),
             )
-            .when(hovered, |el| el.child(folder_action))
+            .when(hovered, |el| el.child(folder_actions))
             // `w-3.5` with a `size-1.5` dot in the shared status colour.
             .child(
                 div()

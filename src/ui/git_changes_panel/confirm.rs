@@ -11,6 +11,11 @@ pub enum GitConfirm {
         untracked: bool,
     },
     DiscardAll,
+    /// Every unstaged change under a folder of the tree view.
+    DiscardFolder {
+        path: String,
+        files: usize,
+    },
     /// Push (or open a PR) from the default branch.
     PushDefault(PendingCommit),
     /// Amend a commit that is already on a remote.
@@ -66,6 +71,15 @@ impl BenCodeApp {
                     ),
                 }
             }
+            GitConfirm::DiscardFolder { path, files } => (
+                "Discard folder changes?",
+                format!(
+                    "Discard all unstaged changes in {files} {} under {path}? This cannot be undone.",
+                    if *files == 1 { "file" } else { "files" }
+                ),
+                "Discard",
+                true,
+            ),
             GitConfirm::PushDefault(p) => (
                 "Push to the default branch?",
                 format!(
@@ -126,6 +140,16 @@ impl BenCodeApp {
                     |_, _, _| {},
                     cx,
                 ),
+                GitConfirm::DiscardFolder { path, .. } => {
+                    let path = path.clone();
+                    this.run_changes_action(
+                        Busy::Folder(path.clone()),
+                        None,
+                        move |cwd| discard_folder(cwd, &path).map_err(|e| format!("{e:#}")),
+                        |_, _, _| {},
+                        cx,
+                    );
+                }
                 GitConfirm::PushDefault(p) => this.commit_from_panel(*p, true, false, cx),
                 GitConfirm::AmendPushed(p) => this.commit_from_panel(*p, true, true, cx),
                 GitConfirm::CreatePrDefault => this.create_pr(true, cx),

@@ -376,6 +376,19 @@ impl BenCodeApp {
         );
     }
 
+    /// Asks before discarding every unstaged change under a folder.
+    pub(crate) fn discard_folder_action(&mut self, dir: String, cx: &mut Context<Self>) {
+        let prefix = format!("{}/", dir.trim_end_matches('/'));
+        let files = self
+            .git_status
+            .unstaged
+            .iter()
+            .filter(|f| f.path.starts_with(&prefix))
+            .count();
+        self.git_confirm = Some(GitConfirm::DiscardFolder { path: dir, files });
+        cx.notify();
+    }
+
     pub(crate) fn all_action(&mut self, stage: bool, cx: &mut Context<Self>) {
         self.run_changes_action(
             Busy::All,

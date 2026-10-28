@@ -570,11 +570,19 @@ pub fn unstage_all(cwd: &str) -> Result<()> {
 /// Discards all unstaged changes under `cwd`: restores tracked files from the index and
 /// removes untracked (non-ignored) files. Staged changes are preserved.
 pub fn discard_all(cwd: &str) -> Result<()> {
-    let tracked = run_git(cwd, &["ls-files", "-z", "--", "."])?;
+    discard_folder(cwd, ".")
+}
+
+/// Discards the unstaged changes under folder `dir`: tracked files go back
+/// to the index, untracked ones are deleted. A repository inside it (a
+/// worktree) is left alone, as `git clean` without `-ff` does.
+pub fn discard_folder(cwd: &str, dir: &str) -> Result<()> {
+    validate_relative_path(dir)?;
+    let tracked = run_git(cwd, &["ls-files", "-z", "--", dir])?;
     if !tracked.is_empty() {
-        run_git(cwd, &["restore", "--worktree", "--", "."])?;
+        run_git(cwd, &["restore", "--worktree", "--", dir])?;
     }
-    run_git(cwd, &["clean", "-f", "-d", "-q", "--", "."]).map(|_| ())
+    run_git(cwd, &["clean", "-f", "-d", "-q", "--", dir]).map(|_| ())
 }
 
 #[cfg(test)]
@@ -803,6 +811,44 @@ mod tests {
 
         assert_eq!(repo.read("staged.txt").as_deref(), Some("staged\n"));
         assert!(!repo.exists("untracked.txt"));
+    }
+
+    // --- discard_folder -----------------------------------------------------
+
+    #[test]
+    fn discard_folder_touches_only_that_folder() {
+        let repo = TempRepo::new();
+        repo.write("dir/a.txt", "a\n");
+        repo.write("dir/staged.txt", "v1\n");
+        repo.write("other.txt", "o\n");
+        repo.commit_all("init");
+        repo.write("dir/a.txt", "changed\n");
+        repo.write("dir/staged.txt", "v2\n");
+        repo.git(&["add", "dir/staged.txt"]);
+        repo.write("dir/staged.txt", "v3\n");
+        repo.write("dir/new/n.txt", "n\n");
+        repo.write("other.txt", "changed\n");
+
+        discard_folder(repo.cwd(), "dir").expect("discard folder");
+
+        assert_eq!(repo.read("dir/a.txt").as_deref(), Some("a\n"));
+        assert_eq!(repo.read("dir/staged.txt").as_deref(), Some("v2\n"));
+        assert!(!repo.exists("dir/new"));
+        assert_eq!(repo.read("other.txt").as_deref(), Some("changed\n"));
+    }
+
+    #[test]
+    fn discard_folder_of_untracked_files_only_and_refuses_escapes() {
+        let repo = TempRepo::new();
+        repo.write("keep.txt", "k\n");
+        repo.commit_all("init");
+        repo.write("scratch/x.txt", "x\n");
+
+        discard_folder(repo.cwd(), "scratch").expect("discard untracked folder");
+
+        assert!(!repo.exists("scratch"));
+        assert!(discard_folder(repo.cwd(), "../outside").is_err());
+        assert!(discard_folder(repo.cwd(), "").is_err());
     }
 
     // --- status -------------------------------------------------------------
