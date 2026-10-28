@@ -4,7 +4,7 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
-## Unreleased
+## [0.1.37] - 2026-10-28
 
 - GPUI, which draws BenCode, is updated to 0.3.10, its Metal renderer
   vendored again with the frosted glass carried over. Fonts are resolved
@@ -22,6 +22,15 @@ tagging (`docs/releasing.md`).
   pressing a button or a floating control over text (Jump to latest)
   starts no selection. A selection still outlives its text scrolling out
   of view, and ⌘A / ⌘C take the whole thread.
+- A folder in Changes can be discarded whole (↶ beside its Stage button,
+  after a confirmation): its tracked files go back to what is staged and
+  its untracked files are deleted. A worktree or other repository inside
+  it is left alone.
+- The branch chip under the composer shows a long branch name whole in
+  its tooltip, and the branch picker opens scrolled to the current
+  branch, highlighted, so ↑/↓ start from there.
+- Dialogs in the dark theme show their frosted glass: the scrim behind
+  them is lighter and the card's tint thinner.
 
 ## [0.1.36] - 2026-10-27
 
