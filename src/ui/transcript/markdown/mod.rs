@@ -33,9 +33,10 @@ use unicode_segmentation::UnicodeSegmentation;
 
 pub use parse::{Block, Drawing, Fence, Inline, Span, inline_file, link_file, parse};
 
-use super::selection::{Joint, SegCtx, restyle};
+use super::selection::{SegCtx, restyle};
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 use crate::ui::transcript::selection::OwnsPress;
+use bencode_ui::selection::Joint;
 
 /// Opens a file a reply names: its path as written and the line, if any.
 pub type OnOpenFile = Rc<dyn Fn(&str, Option<u64>, &mut Window, &mut App)>;
@@ -597,8 +598,6 @@ struct Run {
     /// How strongly the live edge fades (0 when settled).
     fade: f32,
     joint: Joint,
-    /// A table cell, side by side with others.
-    cell: bool,
 }
 
 impl Run {
@@ -608,7 +607,6 @@ impl Run {
             italic: false,
             fade: 0.0,
             joint,
-            cell: false,
         }
     }
 
@@ -618,10 +616,6 @@ impl Run {
 
     fn fade(self, fade: f32) -> Self {
         Self { fade, ..self }
-    }
-
-    fn cell(self) -> Self {
-        Self { cell: true, ..self }
     }
 }
 
@@ -667,7 +661,7 @@ impl Draw<'_> {
         }
         let (element, layout) = match self.select {
             Some(ctx) => {
-                let selectable = ctx.text(seq, run.joint, run.cell, text, runs, cx);
+                let selectable = ctx.text(seq, run.joint, text, runs);
                 (selectable.element, selectable.layout)
             }
             None => {
@@ -681,7 +675,7 @@ impl Draw<'_> {
         };
         let targets = Rc::new(targets);
         let open = self.open.clone();
-        let selection = self.select.map(|ctx| ctx.selection.clone());
+        let selection = self.select.map(|ctx| ctx.selection().clone());
         let (move_layout, move_targets) = (layout.clone(), targets.clone());
         let hover_state = hovered.clone();
         // The click is the wrapping element's, not `InteractiveText`'s: that
@@ -1070,7 +1064,7 @@ impl Draw<'_> {
         };
         let code_text: AnyElement = match self.select {
             Some(ctx) => ctx
-                .text(self.next_seq(), joint, false, shown.to_string(), runs, cx)
+                .text(self.next_seq(), joint, shown.to_string(), runs)
                 .element
                 .into_any_element(),
             None => StyledText::new(shown).with_runs(runs).into_any_element(),
@@ -1171,7 +1165,7 @@ impl Draw<'_> {
                     // next column.
                     .child(div().min_w_0().child(self.text(
                         &inline,
-                        Run::new(cell_ink, joint).cell(),
+                        Run::new(cell_ink, joint),
                         window,
                         cx,
                     )))

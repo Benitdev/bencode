@@ -15,6 +15,13 @@ tagging (`docs/releasing.md`).
 - The bundled SQLite is 3.54 (rusqlite 0.41), and math reads `\slashed`
   and `\centernot` (RaTeX 0.1.15). BenCode no longer builds the
   deprecated `cocoa` crate.
+- Selecting text works as on a web page across the transcript, reviews
+  and the Inbox (gpui-kit's window selection, adapted): a selection paints
+  as whole rows, a drag between paragraphs follows to the one above
+  instead of stalling, a drag held at the list's edge keeps scrolling, and
+  pressing a button or a floating control over text (Jump to latest)
+  starts no selection. A selection still outlives its text scrolling out
+  of view, and ⌘A / ⌘C take the whole thread.
 
 ## [0.1.36] - 2026-10-27
 

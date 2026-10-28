@@ -4,6 +4,7 @@
 
 use std::rc::Rc;
 
+use bencode_ui::selection::{Document, TextSelection};
 use bencode_ui::theme::{ActiveTheme, IconSize};
 use gpui::prelude::*;
 use gpui::{AnyElement, Context, Div, SharedString, Stateful, canvas, deferred, div, point};
@@ -97,20 +98,38 @@ pub fn note_title(text: &str) -> String {
 }
 
 impl BenCodeApp {
-    /// Where block `block` of `session_id` draws its text. `response`: a
+    /// Where block `block` of `session_id` draws its text. `quotable`: a
     /// settled answer or a prompt, whose selections get the menu.
-    pub fn seg_ctx(&self, session_id: &str, block: usize, response: bool) -> SegCtx {
-        SegCtx {
-            selection: self.transcript_selection.clone(),
-            focus: self.transcript_focus.clone(),
-            list: self
-                .transcripts
-                .get(session_id)
-                .map(|view| view.list.clone()),
-            session: SharedString::from(session_id.to_string()),
-            block,
-            response,
+    pub fn seg_ctx(
+        &self,
+        session_id: &str,
+        block: usize,
+        quotable: bool,
+        cx: &Context<Self>,
+    ) -> SegCtx {
+        let app = cx.weak_entity();
+        let sid = session_id.to_string();
+        let mut doc = Document::new(sid.clone(), &self.text_selection)
+            .focus(self.transcript_focus.clone())
+            .on_change(move |cx| {
+                if let Err(err) = app.update(cx, |this, cx| this.redraw_thread(&sid, cx)) {
+                    log::debug!("transcript selection after app drop: {err:#}");
+                }
+            });
+        if let Some(view) = self.transcripts.get(session_id) {
+            doc = doc.list(view.list.clone());
         }
+        SegCtx {
+            doc,
+            block,
+            quotable,
+        }
+    }
+
+    /// The thread the selection is in, if it is in one.
+    fn selection_thread(&self, cx: &Context<Self>) -> Option<String> {
+        let doc = self.text_selection.read(cx).doc()?;
+        (self.sessions.iter().any(|s| s.id == doc.as_ref())).then(|| doc.to_string())
     }
 
     /// The text of each block the list shows as text, for a copy that
@@ -143,27 +162,26 @@ impl BenCodeApp {
 
     /// ⌘C: the selected text as shown.
     pub fn copy_transcript_selection(&mut self, cx: &mut Context<Self>) {
-        let Some(session) = (self.transcript_selection.read(cx).session()).map(str::to_string)
-        else {
+        let Some(session) = self.selection_thread(cx) else {
             return;
         };
         let shown = self.shown_block_texts(&session);
-        selection_area::copy(&self.transcript_selection, &shown, cx);
+        selection_area::copy(&self.text_selection, &shown, cx);
     }
 
     /// ⌘A: the whole thread the transcript focus is in.
     pub fn select_all_transcript(&mut self, cx: &mut Context<Self>) {
-        let session = (self.transcript_selection.read(cx).session())
-            .map(str::to_string)
+        let session = self
+            .selection_thread(cx)
             .or_else(|| self.selected_session_id.clone());
         if let Some(session) = session {
-            selection_area::select_all(&self.transcript_selection, &session.into(), cx);
+            TextSelection::select_all(&self.text_selection, &session, cx);
         }
     }
 
     /// Esc: drops the selection; `false` when there was none.
     pub fn clear_transcript_selection(&mut self, cx: &mut Context<Self>) -> bool {
-        selection_area::clear(&self.transcript_selection, cx)
+        TextSelection::clear(&self.text_selection, cx)
     }
 
     /// MonoCode `saveSelectionNote`: a note titled from the text, linked to
@@ -185,27 +203,26 @@ impl BenCodeApp {
             source_session_id: Some(session_id.to_string()),
             source_cwd: cwd,
         };
+        let (sid, quoted) = (session_id.to_string(), text.to_string());
         self.db_then(
             cx,
             move |db| db.upsert_note(&upsert),
-            |this, saved, cx| match saved {
+            move |this, saved, cx| match saved {
                 Ok(note) => {
                     this.notes.items.insert(0, note);
+                    this.selection_note_error = None;
                     this.clear_transcript_selection(cx);
                 }
                 Err(err) => {
                     log::error!("failed to save selection as note: {err:#}");
-                    this.transcript_selection.update(cx, |selection, cx| {
-                        selection.set_note_error(Some(format!("{err:#}")));
-                        cx.notify();
-                    });
+                    this.selection_note_error = Some((quoted, format!("{err:#}")));
+                    this.redraw_thread(&sid, cx);
                 }
             },
         );
     }
 
-    /// Gives the pane of `session_id` the transcript's focus and keys, and
-    /// keeps a drag selecting past the list's edges by scrolling it. A
+    /// Gives the pane of `session_id` the transcript's focus and keys. A
     /// press beside the text (margins, gaps between messages) starts at the
     /// nearest character, as in MonoCode's WebKit transcript.
     pub(crate) fn with_transcript_selection(
@@ -215,33 +232,29 @@ impl BenCodeApp {
         focused: bool,
         cx: &Context<Self>,
     ) -> Stateful<Div> {
-        let app = cx.entity().downgrade();
-        let (sid, owned) = (session_id.to_string(), session_id.to_string());
+        let owned = session_id.to_string();
         let body = SelectionArea {
-            selection: self.transcript_selection.clone(),
+            selection: self.text_selection.clone(),
             focus: self.transcript_focus.clone(),
             key_context: "Transcript",
-            list: (self.transcripts.get(session_id)).map(|view| view.list.clone()),
             // The pane the selection was made in owns the focus; with none,
             // the focused pane does.
-            owns: Rc::new(move |place| place == owned),
+            owns: Rc::new(move |doc| doc == owned),
             beside: Some(SharedString::from(session_id.to_string())),
             idle_owner: focused,
-            redraw: Rc::new(move |cx| {
-                if let Err(err) = app.update(cx, |this, cx| this.redraw_thread(&sid, cx)) {
-                    log::debug!("selection scroll after app drop: {err:#}");
-                }
-            }),
         }
         .wrap(body, cx);
         let session = session_id.to_string();
         // MonoCode closes the menu on any scroll; the selection stays.
         body.on_scroll(cx.listener(move |this, _, _, cx| {
-            this.transcript_selection.update(cx, |selection, cx| {
-                if selection.session() == Some(session.as_str()) && selection.dismiss_menu() {
-                    cx.notify();
-                }
-            });
+            let here = this
+                .text_selection
+                .read(cx)
+                .doc()
+                .is_some_and(|d| d == session.as_str());
+            if here {
+                TextSelection::dismiss(&this.text_selection, cx);
+            }
         }))
     }
 
@@ -251,10 +264,11 @@ impl BenCodeApp {
         session_id: &str,
         cx: &Context<Self>,
     ) -> Option<AnyElement> {
-        let selection = self.transcript_selection.read(cx);
-        let (text, line) = selection.menu(session_id)?;
-        let error = selection.note_error().map(str::to_string);
-        let painted = selection.menu_bounds();
+        let (text, line) = self.text_selection.read(cx).quote(session_id)?;
+        let error = (self.selection_note_error.as_ref())
+            .filter(|(quoted, _)| *quoted == text)
+            .map(|(_, error)| error.clone());
+        let selection = self.text_selection.clone();
         let fg = cx.theme().colors.fg;
         let action = |id: &'static str, icon: ExtraIcon, label: &'static str| {
             div()
@@ -316,8 +330,9 @@ impl BenCodeApp {
                     .child(format!("Could not save note. {error}"))
             }))
             .child(
+                // A press on the menu keeps the selection.
                 canvas(
-                    move |bounds, _, _| painted.set(Some(bounds)),
+                    move |bounds, _, cx| selection.read(cx).keep_presses_within(bounds),
                     |_, _, _, _| {},
                 )
                 .absolute()

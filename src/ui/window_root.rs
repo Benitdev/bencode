@@ -12,6 +12,7 @@ use crate::ui::composer::runner_view::RunnerLayer;
 
 pub struct WindowRoot {
     app: Entity<BenCodeApp>,
+    selection: Entity<bencode_ui::selection::TextSelection>,
     runner: Entity<RunnerLayer>,
     /// For the startup trace: the first render is marked.
     drawn: bool,
@@ -22,8 +23,10 @@ impl WindowRoot {
         let app = cx.new(|cx| BenCodeApp::new(window, launch, cx));
         let weak = app.downgrade();
         let runner = cx.new(|_| RunnerLayer::new(weak));
+        let selection = app.read(cx).text_selection.clone();
         Self {
             app,
+            selection,
             runner,
             drawn: false,
         }
@@ -43,13 +46,16 @@ impl Render for WindowRoot {
                 );
             });
         }
-        // The runner layer goes first: it reads the composer geometry the
-        // app measured last frame before the app lays out again.
+        // The selection's layer goes first, so that its listeners run
+        // after every element's; the runner layer reads the composer
+        // geometry the app measured last frame before the app lays out
+        // again.
         div()
             .size_full()
             .relative()
             .flex()
             .flex_col()
+            .child(bencode_ui::selection::SelectionLayer::new(&self.selection))
             .child(self.runner.clone())
             // Not cached: the app's own render is the shell (layout,
             // overlays, dialogs), and its parts are cached regions

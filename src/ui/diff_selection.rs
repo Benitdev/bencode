@@ -1,18 +1,19 @@
 //! Selecting a review's lines (`diff_viewer`) with the pointer, as
 //! MonoCode's WebKit review allows: a drag, a double or triple click, ⌘C,
-//! ⌘A, Esc. It is the transcript's selection (`transcript::selection`)
-//! with a line per block: each row of a lane is one segment, and a side by
-//! side review selects within one lane, so a copy is that side's code.
+//! ⌘A, Esc. It is the window's selection with a line per block: each lane
+//! is a document, each of its rows one segment, so a side by side review
+//! selects within one lane and a copy is that side's code.
 
 use std::ops::Range;
 use std::rc::Rc;
 
+use bencode_ui::selection::{Document, Joint, TextSelection};
 use gpui::prelude::*;
-use gpui::{App, Context, Div, HighlightStyle, SharedString, TextRun};
+use gpui::{Context, Div, HighlightStyle, SharedString, TextRun};
 
 use crate::app::BenCodeApp;
 use crate::ui::selection_area::{self, SelectionArea};
-use crate::ui::transcript::selection::{Joint, SegCtx};
+use crate::ui::transcript::selection::SegCtx;
 
 /// Which lane of a review a row's text is in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -75,7 +76,7 @@ impl LineText {
 }
 
 impl RenderOnce for LineText {
-    fn render(self, window: &mut gpui::Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut gpui::Window, _: &mut gpui::App) -> impl IntoElement {
         let style = window.text_style();
         let base = TextRun {
             len: 0,
@@ -117,9 +118,7 @@ impl RenderOnce for LineText {
                 ..base
             });
         }
-        self.ctx
-            .text(0, Joint::Line, false, self.text, runs, cx)
-            .element
+        self.ctx.text(0, Joint::Line, self.text, runs).element
     }
 }
 
@@ -131,43 +130,37 @@ impl BenCodeApp {
         lane: Lane,
         row: usize,
         list: &gpui::ListState,
+        cx: &Context<Self>,
     ) -> SegCtx {
+        let (app, redrawn) = (cx.weak_entity(), key.to_string());
+        let doc = Document::new(lane_place(key, lane), &self.text_selection)
+            .lines()
+            .list(list.clone())
+            .focus(self.diff_focus.clone())
+            .on_change(move |cx| {
+                if let Err(err) = app.update(cx, |this, cx| this.redraw_diff_doc(&redrawn, cx)) {
+                    log::debug!("diff selection after app drop: {err:#}");
+                }
+            });
         SegCtx {
-            selection: self.diff_selection.clone(),
-            focus: self.diff_focus.clone(),
-            list: Some(list.clone()),
-            session: lane_place(key, lane),
+            doc,
             block: row,
-            response: false,
+            quotable: false,
         }
     }
 
-    /// Gives review `key` the keys of its selection while it holds one, and
-    /// keeps a drag selecting past the list's edges by scrolling it.
-    pub(crate) fn with_diff_selection(
-        &self,
-        body: Div,
-        key: &str,
-        list: &gpui::ListState,
-        cx: &Context<Self>,
-    ) -> Div {
-        let app = cx.entity().downgrade();
-        let (owned, redrawn) = (key.to_string(), key.to_string());
+    /// Gives review `key` the keys of its selection while it holds one.
+    pub(crate) fn with_diff_selection(&self, body: Div, key: &str, cx: &Context<Self>) -> Div {
+        let owned = key.to_string();
         SelectionArea {
-            selection: self.diff_selection.clone(),
+            selection: self.text_selection.clone(),
             focus: self.diff_focus.clone(),
             key_context: "DiffText",
-            list: Some(list.clone()),
-            owns: Rc::new(move |place| parse_place(place).is_some_and(|(k, _)| k == owned)),
-            // Its lanes are places of their own; a press beside the code
+            owns: Rc::new(move |doc| parse_place(doc).is_some_and(|(k, _)| k == owned)),
+            // Its lanes are documents of their own; a press beside the code
             // would not know which it meant.
             beside: None,
             idle_owner: false,
-            redraw: Rc::new(move |cx| {
-                if let Err(err) = app.update(cx, |this, cx| this.redraw_diff_doc(&redrawn, cx)) {
-                    log::debug!("diff selection scroll after app drop: {err:#}");
-                }
-            }),
         }
         .wrap(body, cx)
     }
@@ -175,35 +168,35 @@ impl BenCodeApp {
     /// ⌘C: the selected lines as written, rows the list never drew
     /// included.
     pub fn copy_diff_selection(&mut self, cx: &mut Context<Self>) {
-        let Some((key, lane)) = (self.diff_selection.read(cx).session()).and_then(parse_place)
-        else {
+        let doc = self.text_selection.read(cx).doc();
+        let Some((key, lane)) = doc.as_deref().and_then(parse_place) else {
             return;
         };
         let rows = (self.diff_docs.get(key))
             .map(|doc| doc.lane_texts(lane))
             .unwrap_or_default();
-        selection_area::copy(&self.diff_selection, &rows, cx);
+        selection_area::copy(&self.text_selection, &rows, cx);
     }
 
     /// ⌘A: every line of the lane the selection is in.
     pub fn select_all_diff(&mut self, cx: &mut Context<Self>) {
-        let place = (self.diff_selection.read(cx).session()).map(SharedString::new);
-        if let Some(place) = place {
-            selection_area::select_all(&self.diff_selection, &place, cx);
+        let doc = self.text_selection.read(cx).doc();
+        if let Some(doc) = doc.filter(|doc| parse_place(doc).is_some()) {
+            TextSelection::select_all(&self.text_selection, &doc, cx);
         }
     }
 
     /// Esc: drops the selection; `false` when there was none.
     pub fn clear_diff_selection(&mut self, cx: &mut Context<Self>) -> bool {
-        selection_area::clear(&self.diff_selection, cx)
+        TextSelection::clear(&self.text_selection, cx)
     }
 
     /// Review `key`'s rows changed (a load, a fold, a layout): what was
     /// selected by row no longer names the same lines. `None`: every review.
     pub(crate) fn forget_diff_selection(&mut self, key: Option<&str>, cx: &mut Context<Self>) {
         let gone =
-            |place: &str| parse_place(place).is_some_and(|(k, _)| key.is_none_or(|key| k == key));
-        selection_area::forget(&self.diff_selection, gone, cx);
+            |doc: &str| parse_place(doc).is_some_and(|(k, _)| key.is_none_or(|key| k == key));
+        TextSelection::forget(&self.text_selection, gone, cx);
     }
 }
 

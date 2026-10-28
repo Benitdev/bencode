@@ -1112,7 +1112,7 @@ impl BenCodeApp {
             .min_h_0()
             .child(self.render_doc_bar(key, doc, cx))
             .child(
-                self.with_diff_selection(div().relative().flex_1().min_h_0(), key, &doc.list, cx)
+                self.with_diff_selection(div().relative().flex_1().min_h_0(), key, cx)
                     .child(probe)
                     // A `list` lays its rows out across its whole width,
                     // padding or not: the box keeps them, like the pinned
@@ -1258,7 +1258,7 @@ impl BenCodeApp {
                     *f,
                     Some(line),
                     line.number(),
-                    self.diff_seg_ctx(key, Lane::Unified, ix, &doc.list),
+                    self.diff_seg_ctx(key, Lane::Unified, ix, &doc.list, cx),
                     cx,
                 )
                 .w_full()
@@ -1267,7 +1267,7 @@ impl BenCodeApp {
             // Both lanes scroll sideways together, so a pair stays aligned.
             DocRow::Pair { file, old, new } => {
                 let lane = |line: &Option<Line>, number: Option<u32>, lane: Lane| {
-                    let seg = self.diff_seg_ctx(key, lane, ix, &doc.list);
+                    let seg = self.diff_seg_ctx(key, lane, ix, &doc.list, cx);
                     doc.lane(*file, line.as_ref(), number, seg, cx)
                         .flex_1()
                         .min_w_0()

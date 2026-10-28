@@ -1,15 +1,17 @@
 //! Selecting an item's text in the Inbox (MonoCode's detail is a web page,
 //! `user-select: text`): a drag across the description and comments, a
-//! double or triple click, ⌘C, ⌘A, Esc. It is the transcript's selection
-//! (`transcript::selection`, wired through `ui::selection_area`) with the
-//! item as its place: each description block, comment and reply is one
+//! double or triple click, ⌘C, ⌘A, Esc. It is the window's selection
+//! (`bencode_ui::selection`, wired through `ui::selection_area`) with the
+//! item as its document: each description block, comment and reply is one
 //! block, in reading order.
 
 use std::rc::Rc;
 
+use bencode_ui::selection::{Document, TextSelection};
 use gpui::{Context, Div, SharedString};
 
 use crate::app::BenCodeApp;
+use crate::ui::region::Region;
 use crate::ui::selection_area::{self, SelectionArea};
 use crate::ui::transcript::selection::SegCtx;
 
@@ -37,38 +39,35 @@ pub(super) fn comment_block(comment: usize, reply: Option<usize>) -> usize {
 impl BenCodeApp {
     /// Where block `block` of item `key` draws its text.
     pub(super) fn inbox_seg_ctx(&self, key: &str, block: usize, cx: &Context<Self>) -> SegCtx {
+        let app = cx.weak_entity();
+        let doc = Document::new(place(key), &self.text_selection)
+            .list(self.inbox(cx).detail_list.clone())
+            .focus(self.inbox_text_focus.clone())
+            .on_change(move |cx| {
+                let redrawn =
+                    app.update(cx, |this, cx| this.redraw_regions(&[Region::Surface], cx));
+                if let Err(err) = redrawn {
+                    log::debug!("inbox selection after app drop: {err:#}");
+                }
+            });
         SegCtx {
-            selection: self.inbox_selection.clone(),
-            focus: self.inbox_text_focus.clone(),
-            list: Some(self.inbox(cx).detail_list.clone()),
-            session: place(key),
+            doc,
             block,
-            response: false,
+            quotable: false,
         }
     }
 
     /// Gives item `key`'s detail the keys of its selection while it holds
-    /// one; a press beside the text starts at the nearest character, and a
-    /// drag past the list's edges scrolls it.
+    /// one; a press beside the text starts at the nearest character.
     pub(super) fn with_inbox_selection(&self, body: Div, key: &str, cx: &Context<Self>) -> Div {
-        let app = cx.entity().downgrade();
         let owned = key.to_string();
         SelectionArea {
-            selection: self.inbox_selection.clone(),
+            selection: self.text_selection.clone(),
             focus: self.inbox_text_focus.clone(),
             key_context: "InboxText",
-            list: Some(self.inbox(cx).detail_list.clone()),
-            owns: Rc::new(move |place| parse_place(place) == Some(owned.as_str())),
+            owns: Rc::new(move |doc| parse_place(doc) == Some(owned.as_str())),
             beside: Some(place(key)),
             idle_owner: false,
-            redraw: Rc::new(move |cx| {
-                let redrawn = app.update(cx, |this, cx| {
-                    this.redraw_regions(&[crate::ui::region::Region::Surface], cx)
-                });
-                if let Err(err) = redrawn {
-                    log::debug!("inbox selection scroll after app drop: {err:#}");
-                }
-            }),
         }
         .wrap(body, cx)
     }
@@ -105,33 +104,31 @@ impl BenCodeApp {
 
     /// ⌘C: the selected text as shown.
     pub fn copy_inbox_selection(&mut self, cx: &mut Context<Self>) {
-        let Some(key) = (self.inbox_selection.read(cx).session())
-            .and_then(parse_place)
-            .map(str::to_string)
-        else {
+        let doc = self.text_selection.read(cx).doc();
+        let Some(key) = doc.as_deref().and_then(parse_place).map(str::to_string) else {
             return;
         };
         let shown = self.inbox_block_texts(&key, cx);
-        selection_area::copy(&self.inbox_selection, &shown, cx);
+        selection_area::copy(&self.text_selection, &shown, cx);
     }
 
     /// ⌘A: the whole item shown.
     pub fn select_all_inbox(&mut self, cx: &mut Context<Self>) {
         if let Some(key) = self.inbox(cx).selected.clone() {
-            selection_area::select_all(&self.inbox_selection, &place(&key), cx);
+            TextSelection::select_all(&self.text_selection, &place(&key), cx);
         }
     }
 
     /// Esc: drops the selection; `false` when there was none.
     pub fn clear_inbox_selection(&mut self, cx: &mut Context<Self>) -> bool {
-        selection_area::clear(&self.inbox_selection, cx)
+        TextSelection::clear(&self.text_selection, cx)
     }
 
     /// Item `key`'s description or comments loaded again: what was selected
     /// by block no longer names the same text.
     pub(super) fn forget_inbox_selection(&mut self, key: &str, cx: &mut Context<Self>) {
-        let gone = |place: &str| parse_place(place) == Some(key);
-        selection_area::forget(&self.inbox_selection, gone, cx);
+        let gone = |doc: &str| parse_place(doc) == Some(key);
+        TextSelection::forget(&self.text_selection, gone, cx);
     }
 }
 

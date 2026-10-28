@@ -15,6 +15,7 @@ pub mod motion;
 pub mod navigation;
 pub mod overlays;
 pub mod primitives;
+pub mod selection;
 pub mod settings;
 pub mod terminal;
 pub mod theme;

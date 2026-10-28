@@ -254,6 +254,7 @@ impl BenCodeApp {
                                     trail.session_id,
                                     step_trail.select_as.unwrap_or(ix),
                                     false,
+                                    cx,
                                 ),
                                 cx,
                             )

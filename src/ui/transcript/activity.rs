@@ -373,7 +373,7 @@ impl BenCodeApp {
                         &text,
                         None,
                         Tone::Fold,
-                        self.seg_ctx(&session.id, *ix, false),
+                        self.seg_ctx(&session.id, *ix, false, cx),
                         cx,
                     ))
                     .into_any_element()
@@ -598,7 +598,7 @@ impl BenCodeApp {
                     &body,
                     None,
                     Tone::Reasoning,
-                    self.seg_ctx(trail.session_id, trail.select(ix), false),
+                    self.seg_ctx(trail.session_id, trail.select(ix), false, cx),
                     cx,
                 )))
             })

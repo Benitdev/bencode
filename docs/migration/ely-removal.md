@@ -123,6 +123,10 @@ lines BenCode wrote since the copy, renames included; what it removed
 | `files` | `FileIcon`, `FileItem` | 110 | 1 | none |
 | `assets.rs`, `lib.rs` | the icons, `init` | | 21 | icons only, no fonts |
 
+`selection` (`TextSelection`, `SelectionLayer`, `SelectableText`,
+`Document`; the transcript, reviews and the Inbox) is not Ely's: it is
+gpui-kit's window text selection, adapted (NOTICE).
+
 So the editor and the terminal, the largest parts, are Ely's logic
 untouched: a bug Ely had there BenCode has, and fixing it is BenCode's
 work now.

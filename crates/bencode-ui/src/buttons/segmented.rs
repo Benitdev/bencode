@@ -176,7 +176,10 @@ impl RenderOnce for SegmentedControl {
                     .cursor_pointer()
                     .track_focus(&focus)
                     .focus_ring(cx)
-                    .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
+                    .on_mouse_down(MouseButton::Left, |_, window, cx| {
+                        window.prevent_default();
+                        crate::selection::claim_press(cx);
+                    })
                     .on_click(move |_, window, cx| {
                         if on {
                             return;

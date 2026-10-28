@@ -103,7 +103,10 @@ impl RenderOnce for IconButton {
                     .hover(|style| style.bg(tone.hover))
                     .active(|style| style.bg(tone.pressed))
                     .focus_ring(cx)
-                    .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
+                    .on_mouse_down(MouseButton::Left, |_, window, cx| {
+                        window.prevent_default();
+                        crate::selection::claim_press(cx);
+                    })
                     .when_some(self.on_click, |el, handler| el.on_click(handler))
             })
     }

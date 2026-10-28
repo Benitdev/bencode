@@ -231,13 +231,17 @@ impl BenCodeApp {
         }
         match block.role.as_str() {
             "user" => self.render_user_message(session, ix, cx),
-            "system" => notice(turns::text(block), self.seg_ctx(&session.id, ix, false), cx),
+            "system" => notice(
+                turns::text(block),
+                self.seg_ctx(&session.id, ix, false, cx),
+                cx,
+            ),
             _ => prose(
                 session,
                 ix,
                 live,
                 under_work,
-                self.seg_ctx(&session.id, ix, !live),
+                self.seg_ctx(&session.id, ix, !live, cx),
                 cx,
             ),
         }
@@ -330,11 +334,14 @@ impl BenCodeApp {
                             .overflow_hidden()
                     })
                     .child(
-                        PlainText::new(self.seg_ctx(&session.id, ix, true), text.clone()).marks(
-                            query
-                                .map(|query| super::find::match_marks(&text, &query, current, cx))
-                                .unwrap_or_default(),
-                        ),
+                        PlainText::new(self.seg_ctx(&session.id, ix, true, cx), text.clone())
+                            .marks(
+                                query
+                                    .map(|query| {
+                                        super::find::match_marks(&text, &query, current, cx)
+                                    })
+                                    .unwrap_or_default(),
+                            ),
                     ),
             )
             .when(clamps, |el| {

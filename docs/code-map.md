@@ -15,7 +15,7 @@ bencode/
 ├── Cargo.toml                the workspace (one version for all four crates), dependencies, build profiles
 ├── crates/bencode-core/      what the app and its host share: `harness/`, the file index, search, Go to Definition's search and ranking (`definitions.rs`), the Explorer's disk ops (`tree/`), `remote/` (paths, protocol)
 ├── crates/bencode-host/      BenCode Host, the daemon on a remote machine (`bencode-host connect | daemon | status | stop`)
-├── crates/bencode-ui/        the components, theme and Lucide icons, adapted from Ely GPUI Components and kept to what the app reaches (NOTICE)
+├── crates/bencode-ui/        the components, theme and Lucide icons, adapted from Ely GPUI Components and kept to what the app reaches; text selection from gpui-kit (NOTICE)
 ├── vendor/gpui-pre-apple/    GPUI's Metal renderer with the backdrop blur (NOTICE)
 ├── assets/
 │   ├── icons/                Lucide SVGs bencode-ui does not ship (ui/icons.rs)
@@ -148,6 +148,7 @@ bencode/
 | `file_history.rs` | A File History tab: the commits that changed a file |
 | `diff_viewer.rs`, `diff_model.rs` | Review of working-tree changes and commits |
 | `diff_selection.rs` | Selecting a review's lines (one lane side by side) and copying them |
+| `selection_area.rs` | What the transcript, a review and an Inbox item share about selecting text with `bencode_ui::selection`: the keys while they hold the selection, a press beside the text, ⌘C |
 | `terminal_pane/` | Terminal dock: tabs, splits (`split.rs`), menus, running jobs, host sessions (`sessions.rs`) |
 | `status/` | The window's status items: the provider usage chip with its details popover and account pages (at the navigator's foot, or on the icon rail), the browser and terminal toggles and the running jobs' chip (in the title bar) |
 | `inbox_view*`, `notes/`, `automations/`, `settings_modal.rs` | The four surfaces; `search_view/` is the ⌘K dialog |

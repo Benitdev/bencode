@@ -373,15 +373,17 @@ pub struct BenCodeApp {
     pub composer_menus: crate::ui::composer::MenuState,
     pub expanded_reasoning: std::collections::HashSet<String>,
     pub transcript_ui: crate::ui::transcript::TranscriptUiState,
-    /// The text selected in a transcript, and the focus that takes ⌘C.
-    pub transcript_selection: Entity<crate::ui::transcript::selection::TranscriptSelection>,
+    /// The text the pointer selected in the window (a transcript, a
+    /// review's lines, an Inbox item); `WindowRoot` mounts its layer.
+    pub text_selection: Entity<bencode_ui::selection::TextSelection>,
+    /// Why Add to notes failed for the text it was given, shown in the
+    /// selection's menu while that text is selected (MonoCode).
+    pub selection_note_error: Option<(String, String)>,
+    /// The focus that takes a transcript selection's ⌘C.
     pub transcript_focus: gpui::FocusHandle,
-    /// The text selected in a review's lines, and the focus that takes ⌘C.
-    pub diff_selection: Entity<crate::ui::transcript::selection::TranscriptSelection>,
+    /// The focus that takes a review selection's ⌘C.
     pub diff_focus: gpui::FocusHandle,
-    /// The Inbox item's text the pointer selected, and the focus its keys
-    /// work in.
-    pub inbox_selection: Entity<crate::ui::transcript::selection::TranscriptSelection>,
+    /// The focus an Inbox item's selection keys work in.
     pub inbox_text_focus: gpui::FocusHandle,
     /// Each project's terminals (MonoCode project terminal docks).
     /// The terminal docks, a model the regions showing them follow; read
@@ -667,12 +669,9 @@ impl BenCodeApp {
         let inbox_state = cx.new(|_| crate::ui::inbox_view::InboxState::default());
         let terminals_state = cx.new(|_| crate::ui::terminal_pane::TerminalDocks::default());
         let workspace_state = cx.new(|_| WorkspaceCache::default());
-        let transcript_selection =
-            cx.new(|_| crate::ui::transcript::selection::TranscriptSelection::default());
-        let diff_selection =
-            cx.new(|_| crate::ui::transcript::selection::TranscriptSelection::of_lines());
-        let inbox_selection =
-            cx.new(|_| crate::ui::transcript::selection::TranscriptSelection::default());
+        // Not followed: each document redraws what shows it
+        // (`Document::on_change`).
+        let text_selection = cx.new(|_| bencode_ui::selection::TextSelection::default());
         let mut regions = crate::ui::region::Regions::default();
         regions.follow(
             &usage_data,
@@ -706,10 +705,6 @@ impl BenCodeApp {
                 Region::Mono,
             ],
         );
-        regions.follow(&transcript_selection, &[Region::Chat, Region::Mono]);
-        // Reviews show in the file pane and in the inbox's pull requests.
-        regions.follow(&diff_selection, &[Region::FilePane, Region::Surface]);
-        regions.follow(&inbox_selection, &[Region::Surface]);
         let mut subscriptions = vec![
             cx.subscribe(
                 &prompt_input,
@@ -1462,11 +1457,10 @@ impl BenCodeApp {
             quick_open_input,
             expanded_reasoning: std::collections::HashSet::new(),
             transcript_ui: Default::default(),
-            transcript_selection,
+            text_selection,
+            selection_note_error: None,
             transcript_focus: cx.focus_handle(),
-            diff_selection,
             diff_focus: cx.focus_handle(),
-            inbox_selection,
             inbox_text_focus: cx.focus_handle(),
             terminals_state,
             settings_tab: SettingsTab::Providers,

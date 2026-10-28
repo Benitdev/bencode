@@ -293,9 +293,7 @@ impl RenderOnce for Button {
                     None => el.tab_index(0),
                 };
                 if self.loading {
-                    return el
-                        .focus_ring(cx)
-                        .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default());
+                    return el.focus_ring(cx).on_mouse_down(MouseButton::Left, claim);
                 }
                 el.cursor_pointer()
                     .hover(|style| {
@@ -304,8 +302,14 @@ impl RenderOnce for Button {
                     })
                     .active(|style| style.bg(tone.pressed))
                     .focus_ring(cx)
-                    .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
+                    .on_mouse_down(MouseButton::Left, claim)
                     .when_some(self.on_click, |el, handler| el.on_click(handler))
             })
     }
+}
+
+/// A button answers its own press: no focus moves, no text selection starts.
+fn claim(_: &gpui::MouseDownEvent, window: &mut gpui::Window, cx: &mut gpui::App) {
+    window.prevent_default();
+    crate::selection::claim_press(cx);
 }

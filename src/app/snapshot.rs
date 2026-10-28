@@ -73,7 +73,10 @@ const SCENES: &[(&str, SetUp)] = &[
         app.set_terminal_open(false, cx);
         app.set_inspector_open(false, cx);
     }),
+    // ⌘A in the thread shown: how a selection paints.
+    ("selection", |app, _, cx| app.select_all_transcript(cx)),
     ("agents", |app, _, cx| {
+        app.clear_transcript_selection(cx);
         stage_agents(app);
         stage_usage(app, cx);
         cx.notify();
