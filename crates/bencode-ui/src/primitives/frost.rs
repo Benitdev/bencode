@@ -29,14 +29,14 @@ pub fn popover(radius: Pixels, opaque: Hsla, cx: &App) -> impl IntoElement {
     )
 }
 
-/// A dialog card's frost: the base background at 55% over the blur, so the
+/// A dialog card's frost: the base background at 30% over the blur, so the
 /// window behind shows through instead of the card standing dark on the
 /// scrim; `opaque` where there is no blur.
 pub fn dialog(radius: Pixels, opaque: Hsla, cx: &App) -> impl IntoElement {
     let theme = cx.theme();
     surface(
         radius,
-        theme.is_dark().then(|| theme.colors.bg.opacity(0.55)),
+        theme.is_dark().then(|| theme.colors.bg.opacity(0.3)),
         opaque,
     )
 }

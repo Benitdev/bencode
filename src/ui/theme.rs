@@ -83,7 +83,7 @@ fn monocode_dark(tint: &ThemeTint) -> Palette {
     // 7.5% of the pixel and the window reads as opaque. A lighter scrim
     // keeps the glass showing around the dialog.
     if crate::ui::glass::SUPPORTED {
-        p.backdrop = gpui::black().opacity(0.25);
+        p.backdrop = gpui::black().opacity(0.15);
     }
     p.tooltip_bg = p.active;
     p.tooltip_fg = fg;
