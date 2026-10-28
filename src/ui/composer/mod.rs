@@ -1658,11 +1658,13 @@ impl BenCodeApp {
         let chip = git_trigger(
             "composer-branch",
             IconName::GitBranch,
-            current,
+            current.clone(),
             enabled,
             open,
             cx,
         )
+        // The chip truncates a long name; the tooltip shows it whole.
+        .tooltip(Tooltip::text(current))
         .when(enabled, |el| {
             el.on_click(cx.listener(|this, _, _, cx| {
                 this.toggle_branch_picker(branch_picker::BranchPickerKind::Branch, cx)
