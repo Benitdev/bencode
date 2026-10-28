@@ -40,10 +40,16 @@ impl BenCodeApp {
         }
     }
 
+    /// A thread with a turn in flight is not archived: it would leave the
+    /// list while still working.
     pub fn toggle_archive_session(&mut self, id: &str, cx: &mut Context<Self>) {
+        let running = self.runs.contains_key(id);
         let Some(session) = self.sessions.iter_mut().find(|s| s.id == id) else {
             return;
         };
+        if running && !session.archived {
+            return;
+        }
         let was_archived = session.archived;
         session.archived = !was_archived;
         let id = id.to_string();

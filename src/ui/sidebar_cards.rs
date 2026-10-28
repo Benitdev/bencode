@@ -185,13 +185,15 @@ impl BenCodeApp {
         let drop_target = self.sessions_ui.drop == Some(ListDrop::Session(id.clone()));
         let title = session_list::display_title(&session.title, &session.harness);
         let group = SharedString::from(format!("session-card-{id}"));
+        // A working thread cannot be archived: it keeps its spinner on hover.
+        let busy = states.busy.contains(&id);
         // MonoCode: the linked-update dot leads the status.
         let status = div()
             .flex()
             .flex_none()
             .items_center()
             .gap_1p5()
-            .group_hover(group.clone(), |s| s.invisible())
+            .when(!busy, |el| el.group_hover(group.clone(), |s| s.invisible()))
             .children(self.linked_update_dot(session, cx))
             .child(self.session_status(session, draft, states, now, cx));
         // MonoCode `orchestrationExpanded`: an orchestrator lists its agents
@@ -271,7 +273,7 @@ impl BenCodeApp {
                         .color(fg.ink(Ink::Muted)),
                 )
             })
-            .child(self.render_card_title(&id, &title, states.busy.contains(&id), cx))
+            .child(self.render_card_title(&id, &title, busy, cx))
             .when(in_worktree, |el| {
                 el.child(
                     div()
@@ -310,7 +312,7 @@ impl BenCodeApp {
                     .items_center()
                     .justify_end()
                     .child(status)
-                    .child(archive),
+                    .when(!busy, |el| el.child(archive)),
             );
 
         let agents = if expanded {

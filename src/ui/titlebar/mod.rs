@@ -410,11 +410,26 @@ impl BenCodeApp {
         ];
         if tab.session_count > 0 {
             let many = tab.session_count > 1;
+            // A thread at work stays out of the archive (`toggle_archive_session`).
+            let running = self
+                .tabs
+                .tabs()
+                .iter()
+                .find(|t| t.id == tab_id)
+                .is_some_and(|t| t.leaf_ids().iter().any(|id| self.runs.contains_key(id)));
             entries.extend([
                 MenuEntry::Separator,
-                MenuEntry::Item(MenuAction::new("archive", "Archive").description(
-                    many.then(|| format!("All {} conversations in this tab", tab.session_count)),
-                )),
+                MenuEntry::Item(
+                    MenuAction::new("archive", "Archive")
+                        .description(if running {
+                            Some("Stop the running turn first".into())
+                        } else {
+                            many.then(|| {
+                                format!("All {} conversations in this tab", tab.session_count)
+                            })
+                        })
+                        .disabled(running),
+                ),
                 MenuEntry::Item(
                     MenuAction::new("delete", "Delete")
                         .description(many.then(|| {
