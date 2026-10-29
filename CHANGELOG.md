@@ -4,7 +4,7 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
-## [Unreleased]
+## [0.1.39] - 2026-10-29
 
 - Monos are Bots now, BenCode's own: the rail, Settings, menus, the menu
   bar and what a bot is told say bot, and a new bot goes by a name of its
