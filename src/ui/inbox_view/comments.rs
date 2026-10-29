@@ -15,7 +15,7 @@ use gpui::{
 
 use crate::ui::scale::px;
 
-use super::relative_time;
+use super::{DetailView, relative_time};
 use crate::app::BenCodeApp;
 use crate::github::{self, Comment, Kind, WorkItem};
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
@@ -229,6 +229,7 @@ impl BenCodeApp {
         &self,
         item: &WorkItem,
         ix: usize,
+        view: DetailView,
         cx: &Context<Self>,
     ) -> Option<AnyElement> {
         let Some(Ok(thread)) = self.inbox(cx).threads.get(&item.key()) else {
@@ -237,8 +238,9 @@ impl BenCodeApp {
         let comment = thread.comments.get(ix)?;
         let now = crate::app::now_ms();
         let key = item.key();
-        let select = self.inbox_seg_ctx(&key, comment_block(ix, None), cx);
-        let pr = item.kind == Kind::Pr;
+        let select = self.inbox_seg_ctx(&key, comment_block(ix, None), view, cx);
+        // A reply goes through the Inbox's comment box, which a tab lacks.
+        let pr = item.kind == Kind::Pr && view == DetailView::Inbox;
         Some(self.render_comment(&key, ix, comment, select, false, pr, now, cx))
     }
 

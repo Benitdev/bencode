@@ -22,13 +22,10 @@ impl BenCodeApp {
         let dialog = self.session_dialog.clone()?;
         let (id, title, message, ids) = match dialog {
             SessionDialog::Delete(id) => {
-                let title = self
-                    .sessions
-                    .iter()
-                    .find(|s| s.id == id)
-                    .map_or("this session".into(), |s| {
-                        crate::app::session_list::display_title(&s.title, &s.harness)
-                    });
+                let title = self.sessions.iter().find(|s| s.id == id).map_or(
+                    "this session".into(),
+                    crate::app::session_list::session_title,
+                );
                 (
                     "delete-thread",
                     "Delete session?".to_string(),

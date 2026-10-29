@@ -5,6 +5,8 @@
 
 use serde::Deserialize;
 
+pub mod attention;
+pub mod tickets;
 pub mod translate;
 
 /// Where an item lives.
@@ -68,9 +70,15 @@ pub struct WorkItem {
     pub created_at: String,
     pub updated_at: String,
     pub labels: Vec<Label>,
+    /// A Backlog issue's type (Task, Bug, …), coloured; also the first of
+    /// `labels`, which lists it with the categories and milestones.
+    pub issue_type: Option<Label>,
     pub assignees: Vec<String>,
     pub draft: bool,
     pub priority: String,
+    /// The tracker's highest priority, whatever its name in the user's
+    /// language.
+    pub high_priority: bool,
     /// `YYYY-MM-DD`, or empty.
     pub due_date: String,
     /// GitHub: `owner/name`. Backlog: the project key.
@@ -80,6 +88,88 @@ pub struct WorkItem {
     /// The project folder it was listed for; empty when the tracker is
     /// not tied to one.
     pub project: String,
+    /// A pull request's head branch, as listed: it may name its ticket
+    /// (`tickets.rs`).
+    pub head_ref: String,
+    /// A pull request's checks and review, as listed: read once when the
+    /// list lands, so rows draw it without parsing.
+    pub pr_status: PrStatus,
+}
+
+/// A pull request's review decision (`reviewDecision`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Review {
+    #[default]
+    None,
+    Required,
+    Approved,
+    ChangesRequested,
+}
+
+impl Review {
+    pub fn from_decision(decision: &str) -> Self {
+        match decision.trim().to_ascii_uppercase().as_str() {
+            "APPROVED" => Self::Approved,
+            "CHANGES_REQUESTED" => Self::ChangesRequested,
+            "REVIEW_REQUIRED" => Self::Required,
+            _ => Self::None,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::None => "",
+            Self::Required => "Review required",
+            Self::Approved => "Approved",
+            Self::ChangesRequested => "Changes requested",
+        }
+    }
+}
+
+/// The one mark a pull request's checks show: a failure outweighs a run
+/// still going, which outweighs passes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ChecksMark {
+    Passed,
+    Failed,
+    Running,
+}
+
+/// A pull request's checks counted (`statusCheckRollup`) and its review.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PrStatus {
+    pub passed: u16,
+    pub failed: u16,
+    pub running: u16,
+    pub review: Review,
+}
+
+impl PrStatus {
+    pub fn checks_mark(&self) -> Option<ChecksMark> {
+        if self.failed > 0 {
+            Some(ChecksMark::Failed)
+        } else if self.running > 0 {
+            Some(ChecksMark::Running)
+        } else if self.passed > 0 {
+            Some(ChecksMark::Passed)
+        } else {
+            None
+        }
+    }
+
+    /// The counts, as a tooltip or a line reads them: "1 failed, 2 passed".
+    pub fn checks_summary(&self) -> String {
+        [
+            (self.failed, "failed"),
+            (self.running, "running"),
+            (self.passed, "passed"),
+        ]
+        .into_iter()
+        .filter(|(n, _)| *n > 0)
+        .map(|(n, what)| format!("{n} {what}"))
+        .collect::<Vec<_>>()
+        .join(", ")
+    }
 }
 
 impl WorkItem {
@@ -92,7 +182,7 @@ impl WorkItem {
                 self.kind.arg(),
                 self.number
             ),
-            Provider::Backlog => format!("backlog:{}", self.identifier.to_lowercase()),
+            Provider::Backlog => tickets::ticket_item_key(&self.identifier),
         }
     }
 }
@@ -166,5 +256,29 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(backlog.key(), "backlog:proj-7");
+    }
+
+    #[test]
+    fn a_failure_outweighs_runs_and_passes() {
+        let status = |passed, failed, running| PrStatus {
+            passed,
+            failed,
+            running,
+            ..Default::default()
+        };
+        assert_eq!(status(0, 0, 0).checks_mark(), None);
+        assert_eq!(status(3, 0, 0).checks_mark(), Some(ChecksMark::Passed));
+        assert_eq!(status(3, 0, 1).checks_mark(), Some(ChecksMark::Running));
+        assert_eq!(status(3, 1, 1).checks_mark(), Some(ChecksMark::Failed));
+        assert_eq!(
+            status(2, 1, 1).checks_summary(),
+            "1 failed, 1 running, 2 passed"
+        );
+        assert_eq!(
+            Review::from_decision("changes_requested"),
+            Review::ChangesRequested
+        );
+        assert_eq!(Review::from_decision("REVIEW_REQUIRED"), Review::Required);
+        assert_eq!(Review::from_decision(""), Review::None);
     }
 }

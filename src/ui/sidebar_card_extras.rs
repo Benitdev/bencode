@@ -1,5 +1,5 @@
-//! The extras on a MonoCode session card: the linked GitHub item's badge
-//! and "updated" dot, and an orchestrator's subagents (the Share icon's
+//! The extras on a MonoCode session card: the linked GitHub item's (or
+//! Backlog issue's) badge and "updated" dot, and an orchestrator's subagents (the Share icon's
 //! hover card, and the inline list while the card is open or busy).
 
 use bencode_ui::primitives::{Icon, IconName, Tooltip};
@@ -146,13 +146,7 @@ impl BenCodeApp {
         cx: &Context<Self>,
     ) -> Option<AnyElement> {
         let item = session.linked_work_item.as_ref()?;
-        let key = format!(
-            "{}:{}:{}",
-            item.repo.to_lowercase(),
-            if item.noun() == "PR" { "pr" } else { "issue" },
-            item.number
-        );
-        let listed = self.inbox(cx).item(&key)?;
+        let listed = self.inbox(cx).item(&item.item_key())?;
         if crate::ui::inbox_view::updated_ms(listed) <= session.updated_at {
             return None;
         }
@@ -171,8 +165,9 @@ impl BenCodeApp {
         )
     }
 
-    /// MonoCode's work item badge: opens the item here, ⌘-click or a
-    /// middle click opens GitHub.
+    /// MonoCode's work item badge: `#42`, or a Backlog issue's key as the
+    /// Inbox's rows shorten it (`C-289`). Opens the item in the Inbox;
+    /// ⌘-click or a middle click opens its tracker.
     pub(crate) fn work_item_badge(
         &self,
         session: &SessionRow,
@@ -185,13 +180,28 @@ impl BenCodeApp {
         } else {
             IconName::CircleDot
         };
-        let tip = format!(
-            "Open {} #{} beside this session (⌘-click for GitHub)",
-            item.noun(),
-            item.number
-        );
+        let inbox = self.inbox(cx);
+        let identifier = item.identifier();
+        let (label, full, tracker) = if item.is_backlog() {
+            let short = crate::ui::inbox_view::short_key(&identifier, &inbox.key_prefix);
+            (short.to_string(), identifier.clone(), "Backlog")
+        } else {
+            (
+                identifier.clone(),
+                format!("{}{identifier}", item.repo),
+                "GitHub",
+            )
+        };
+        let key = item.item_key();
+        let title = (inbox.translations.list_title(&key).map(|t| t.to_string()))
+            .or_else(|| inbox.item(&key).map(|listed| listed.title.clone()));
+        let tip = match title {
+            Some(title) => {
+                format!("{full} {title}\nOpen beside this thread (⌘-click for {tracker})")
+            }
+            None => format!("{full}\nOpen beside this thread (⌘-click for {tracker})"),
+        };
         let (url, middle_url, sid) = (item.url.clone(), item.url.clone(), session.id.clone());
-        let number = item.number;
         Some(
             div()
                 .id(SharedString::from(format!("work-item-{}", session.id)))
@@ -221,7 +231,7 @@ impl BenCodeApp {
                     }
                 }))
                 .child(Icon::new(icon).size(IconSize::Xs).color(accent))
-                .child(format!("#{number}"))
+                .child(label)
                 .into_any_element(),
         )
     }

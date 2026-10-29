@@ -200,6 +200,7 @@ impl RenderOnce for DateTimePicker {
                 placeholder: self.placeholder,
                 size: self.size,
                 disabled: false,
+                quiet: false,
             },
             move |close, anchor, window, cx| {
                 let day = value.map_or_else(

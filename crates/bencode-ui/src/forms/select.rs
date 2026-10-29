@@ -3,7 +3,7 @@ use std::rc::Rc;
 use gpui::{
     App, Bounds, Div, ElementId, Entity, FocusHandle, InteractiveElement, IntoElement,
     KeyDownEvent, MouseButton, ParentElement, Pixels, RenderOnce, Role, ScrollHandle, SharedString,
-    Stateful, Styled, Window, canvas, div, prelude::*,
+    Stateful, Styled, Window, canvas, div, prelude::*, transparent_black,
 };
 
 use super::{
@@ -77,20 +77,24 @@ pub(crate) fn moved(event: &KeyDownEvent, rows: &[Choice], at: usize) -> Option<
     }
 }
 
+/// The group a field's frame names, for what shows only while it is hovered.
+pub(crate) const FIELD_GROUP: &str = "field";
+
 /// The bordered box of a field that opens something: a select, a picker.
+/// A quiet one shows its frame only while hovered or focused.
 pub(crate) fn field_button(
     id: impl Into<ElementId>,
     focus: &FocusHandle,
     size: ControlSize,
-    disabled: bool,
+    (disabled, quiet): (bool, bool),
     window: &Window,
     cx: &App,
 ) -> Stateful<Div> {
     let theme = cx.theme();
-    let colors = &theme.colors;
     div()
         .debug_selector(|| "field-root".into())
         .id(id)
+        .group(FIELD_GROUP)
         .track_focus(focus)
         .relative()
         .flex()
@@ -99,19 +103,50 @@ pub(crate) fn field_button(
         .h(theme.control_height(size))
         .px(theme.control_padding(size))
         .rounded(theme.radius(Radius::Md))
-        .border_1()
-        .border_color(if focus.is_focused(window) {
-            colors.focus
-        } else {
-            colors.border_strong
-        })
-        .bg(if disabled {
-            colors.sunken
-        } else {
-            colors.surface
-        })
+        .map(|field| field_frame(field, focus.is_focused(window), disabled, quiet, cx))
         .text_size(theme.text_size(text_size(size)))
         .when(!disabled, |field| field.cursor_pointer())
+}
+
+/// A field's border and fill; a quiet field's frame shows on hover and
+/// focus only, so a column of them reads as values rather than boxes.
+pub(crate) fn field_frame(
+    field: Stateful<Div>,
+    focused: bool,
+    disabled: bool,
+    quiet: bool,
+    cx: &App,
+) -> Stateful<Div> {
+    let colors = &cx.theme().colors;
+    let (strong, surface) = (colors.border_strong, colors.surface);
+    let field = field.border_1();
+    if !quiet {
+        return field
+            .border_color(if focused { colors.focus } else { strong })
+            .bg(if disabled { colors.sunken } else { surface });
+    }
+    if focused {
+        return field.border_color(colors.focus).bg(surface);
+    }
+    field
+        .border_color(transparent_black())
+        .when(!disabled, |field| {
+            field.hover(move |s| s.border_color(strong).bg(surface))
+        })
+}
+
+/// A field's chevron; a quiet field's shows only while it is hovered.
+pub(crate) fn field_chevron(quiet: bool, cx: &App) -> Div {
+    div()
+        .flex_none()
+        .when(quiet, |el| {
+            el.invisible().group_hover(FIELD_GROUP, |s| s.visible())
+        })
+        .child(
+            Icon::new(IconName::ChevronsUpDown)
+                .size(IconSize::Xs)
+                .color(cx.theme().colors.fg_subtle),
+        )
 }
 
 /// A field's value, or its placeholder in a quieter tone; long text ends in an ellipsis.
@@ -255,6 +290,7 @@ pub struct Select {
     label: Option<SharedString>,
     size: ControlSize,
     disabled: bool,
+    quiet: bool,
     on_change: Option<OnValue>,
 }
 
@@ -268,8 +304,15 @@ impl Select {
             label: None,
             size: ControlSize::default(),
             disabled: false,
+            quiet: false,
             on_change: None,
         }
+    }
+
+    /// No frame until hovered or focused (`field_frame`).
+    pub fn quiet(mut self) -> Self {
+        self.quiet = true;
+        self
     }
 
     /// The name assistive technology reads; nothing is drawn.
@@ -333,7 +376,7 @@ impl RenderOnce for Select {
             self.id.clone(),
             &focus,
             self.size,
-            self.disabled,
+            (self.disabled, self.quiet),
             window,
             cx,
         )
@@ -367,11 +410,7 @@ impl RenderOnce for Select {
             self.disabled,
             cx,
         ))
-        .child(
-            Icon::new(IconName::ChevronsUpDown)
-                .size(IconSize::Xs)
-                .color(colors.fg_subtle),
-        );
+        .child(field_chevron(self.quiet, cx));
         if self.disabled {
             return trigger;
         }

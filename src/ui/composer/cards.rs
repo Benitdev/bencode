@@ -159,14 +159,14 @@ pub fn card_kind(icon: CardIcon, kind: String, cx: &Context<BenCodeApp>) -> Div 
 
 impl BenCodeApp {
     /// A new thread in `cwd`, set up by `configure`, opened in a tab with
-    /// `card` in its composer.
+    /// `card` in its composer; its id.
     pub fn open_thread_with_card(
         &mut self,
         cwd: &str,
         configure: impl FnOnce(&mut SessionRow),
         card: ComposerCard,
         cx: &mut Context<Self>,
-    ) {
+    ) -> String {
         let id = self.create_session_row(cwd, cx);
         if let Some(session) = self.sessions.iter_mut().find(|s| s.id == id) {
             configure(session);
@@ -179,6 +179,7 @@ impl BenCodeApp {
         self.sync_prompt_placeholder(cx);
         self.refocus_prompt(cx);
         cx.notify();
+        id
     }
 
     fn remove_composer_card(&mut self, session_id: &str, cx: &mut Context<Self>) {

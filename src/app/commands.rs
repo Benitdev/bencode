@@ -75,6 +75,21 @@ actions!(
         GoForward,
         InboxNext,
         InboxPrevious,
+        InboxSendToAgent,
+        InboxOpenInTracker,
+        InboxOpenBeside,
+        InboxFocusFilter,
+        InboxFocusList,
+        InboxRefresh,
+        InboxToggleRead,
+        InboxAssignToMe,
+        InboxFocusComment,
+        InboxToggleTranslation,
+        InboxCopyTicket,
+        InboxToggleMine,
+        InboxToggleUnread,
+        InboxTogglePick,
+        InboxClearPicks,
         OutlineNext,
         OutlinePrevious,
         OutlineJump,
@@ -145,6 +160,25 @@ pub(crate) fn keymap() -> Vec<KeyBinding> {
         KeyBinding::new("up", InboxPrevious, Some("InboxList")),
         KeyBinding::new("j", InboxNext, Some("InboxList")),
         KeyBinding::new("k", InboxPrevious, Some("InboxList")),
+        KeyBinding::new("cmd-enter", InboxSendToAgent, Some("InboxList")),
+        KeyBinding::new("o", InboxOpenInTracker, Some("InboxList")),
+        KeyBinding::new("b", InboxOpenBeside, Some("InboxList")),
+        KeyBinding::new("/", InboxFocusFilter, Some("InboxList")),
+        KeyBinding::new("r", InboxRefresh, Some("InboxList")),
+        KeyBinding::new("u", InboxToggleRead, Some("InboxList")),
+        KeyBinding::new("a", InboxAssignToMe, Some("InboxList")),
+        KeyBinding::new("c", InboxFocusComment, Some("InboxList")),
+        KeyBinding::new("t", InboxToggleTranslation, Some("InboxList")),
+        KeyBinding::new("y", InboxCopyTicket, Some("InboxList")),
+        KeyBinding::new("m", InboxToggleMine, Some("InboxList")),
+        KeyBinding::new("shift-u", InboxToggleUnread, Some("InboxList")),
+        // Picks for a batch send; Esc lets them go before it closes the
+        // Inbox.
+        KeyBinding::new("x", InboxTogglePick, Some("InboxList")),
+        KeyBinding::new("escape", InboxClearPicks, Some("InboxList")),
+        // Deeper than the global Esc: the filter field hands the keyboard
+        // back to the list instead of closing the Inbox.
+        KeyBinding::new("escape", InboxFocusList, Some("InboxFilter")),
         KeyBinding::new("cmd-b", ToggleSidebar, None),
         KeyBinding::new("cmd-shift-b", ToggleInspector, None),
         KeyBinding::new("cmd-shift-e", ShowExplorer, None),
@@ -629,6 +663,51 @@ impl BenCodeApp {
             cx.listener(|this, _: &OutlineJump, window, cx| this.open_outline_cursor(window, cx)),
         )
         .on_action(cx.listener(|this, _: &InboxPrevious, _, cx| this.step_inbox_selection(-1, cx)))
+        .on_action(
+            cx.listener(|this, _: &InboxSendToAgent, _, cx| this.send_selected_inbox_item(cx)),
+        )
+        .on_action(
+            cx.listener(|this, _: &InboxOpenInTracker, _, cx| this.open_selected_inbox_item(cx)),
+        )
+        .on_action(
+            cx.listener(|this, _: &InboxOpenBeside, _, cx| {
+                this.open_selected_inbox_item_beside(cx)
+            }),
+        )
+        .on_action(
+            cx.listener(|this, _: &InboxFocusFilter, window, cx| {
+                this.focus_inbox_filter(window, cx)
+            }),
+        )
+        .on_action(
+            cx.listener(|this, _: &InboxFocusList, window, cx| {
+                this.return_to_inbox_list(window, cx)
+            }),
+        )
+        .on_action(cx.listener(|this, _: &InboxRefresh, _, cx| this.refresh_inbox(cx)))
+        .on_action(
+            cx.listener(|this, _: &InboxToggleRead, _, cx| this.toggle_selected_inbox_read(cx)),
+        )
+        .on_action(
+            cx.listener(|this, _: &InboxAssignToMe, _, cx| this.assign_selected_inbox_item(cx)),
+        )
+        .on_action(cx.listener(|this, _: &InboxFocusComment, window, cx| {
+            this.focus_inbox_comment(window, cx)
+        }))
+        .on_action(cx.listener(|this, _: &InboxToggleTranslation, _, cx| {
+            this.toggle_selected_inbox_translation(cx)
+        }))
+        .on_action(
+            cx.listener(|this, _: &InboxCopyTicket, _, cx| this.copy_selected_inbox_ticket(cx)),
+        )
+        .on_action(cx.listener(|this, _: &InboxToggleMine, _, cx| this.toggle_inbox_mine(cx)))
+        .on_action(cx.listener(|this, _: &InboxToggleUnread, _, cx| this.toggle_inbox_unread(cx)))
+        .on_action(cx.listener(|this, _: &InboxTogglePick, _, cx| this.toggle_open_inbox_pick(cx)))
+        .on_action(cx.listener(|this, _: &InboxClearPicks, _, cx| {
+            if !this.clear_inbox_picks(cx) {
+                cx.propagate();
+            }
+        }))
         .on_action(cx.listener(|this, _: &CloseView, window, cx| {
             if this.search.open {
                 this.close_search_modal(cx);

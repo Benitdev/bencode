@@ -155,13 +155,7 @@ impl BenCodeApp {
                         app.inbox_state.as_mut(cx).pr.notice = (action.is_merge()
                             && !next.state.eq_ignore_ascii_case("merged"))
                         .then(|| "Merge queued or auto-merge enabled.".to_string());
-                        if let Some(slot) = app
-                            .inbox_state
-                            .as_mut(cx)
-                            .items
-                            .iter_mut()
-                            .find(|i| i.key() == key)
-                        {
+                        if let Some(slot) = app.inbox_state.as_mut(cx).item_mut(&key) {
                             *slot = next;
                         }
                         app.inbox_state.as_mut(cx).details.value.remove(&key);

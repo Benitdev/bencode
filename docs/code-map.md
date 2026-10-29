@@ -47,6 +47,11 @@ bencode/
     ├── backlog/fields.rs     an issue's editable fields, their choices, and changing one
     ├── browser/              the in-app browser: the WKWebView (wry), its scripts, the agents' MCP server (`--browser-mcp`) and its socket
     ├── work_items.rs         the Inbox's items, whichever tracker they come from
+    ├── work_items/attention.rs  "Needs you": the trackers' notifications to the user, by item key, and the rule
+    ├── work_items/tickets.rs  the Backlog tickets a pull request is named after, both ways
+    ├── work_items/translate.rs  an item or comment in another language, one model turn
+    ├── work_items/translate/cache.rs   translations kept on disk by key, language and source hash
+    ├── work_items/translate/script.rs  whether a text is already in a language ("Always translate")
     ├── mcp/                  MCP server discovery
     ├── project_search.rs     search in files: core's, here or on the project's machine
     ├── rate_limits/          provider usage windows (the usage chip): parsers and fetchers
@@ -91,7 +96,9 @@ bencode/
 | `session_list.rs`, `session_folders.rs` | Sidebar session filters and folders |
 | `session_review.rs` | Session review: the ordered checkpoint queue, a thread's changed files, Keep / Undo |
 | `git_actions.rs` | The git pill: a thread's own edits, the Stage / Commit / Push asks, the commits an ask's turn made |
-| `work_item_link.rs` | A first message's GitHub issue or PR, linked to its thread |
+| `work_item_link.rs` | A first message's GitHub issue or PR (or Backlog issue), linked to its thread; old threads' Backlog links filled in as they load |
+| `item_threads.rs` | The threads linked to each Inbox item, indexed by its key, and what each is doing |
+| `inbox_attention.rs` | Asking GitHub and Backlog for the user's notifications ("Needs you"), each at most once a minute |
 | `task_list.rs` | The agent's task list: one `tasks` block per turn that each snapshot replaces, its text and progress label |
 | `subagents.rs` | A subagent's run, kept on its Agent block as `agentRun` (MonoCode's shape): steps merged by id, its model, name and status line |
 | `thread_state.rs` | `ThreadState`: each thread's composer and queue state (draft, attachments, modes, card, question form, usage limit), dropped with the thread |
@@ -181,7 +188,7 @@ bencode/
 | `features/terminal/` | `ui/terminal_pane/`, `pty_host/` | bencode-ui's terminal, one dock per project. BenCode's own: terminals side by side (a tab dragged onto a terminal's edge), and shells that outlive an update's restart or a crash (the terminal host; ⌘Q ends them) |
 | `features/notes/` | `ui/notes/`, `app/notes.rs`, `db/mod.rs` | Cards, tags, project, Preview / Source, dropped images, autosave, Add to chat. Source has no line numbers |
 | `features/automations/` | `ui/automations/`, `app/automations.rs`, `app/automation_runs.rs`, `schedule.rs`, `db/schedule.rs` | Templates, time triggers, session settings, run history, 30s scheduler. No event triggers |
-| `features/inbox/` | `ui/inbox_view*`, `github.rs`, `work_items.rs` | GitHub issues and PRs, checks, CI repair, comments; a PR's Files changed (`gh pr diff` in `ui/diff_viewer.rs`'s review, hunks only: no Full file mode) |
+| `features/inbox/` | `ui/inbox_view*`, `github.rs`, `work_items.rs` | GitHub issues and PRs, checks, CI repair, comments; the list's rows (`inbox_view/row.rs`: short keys, due and priority marks) and keys (`inbox_view/keyboard.rs`); the virtual list with group headers (`inbox_view/list.rs`), its grouping and sort (`inbox_view/grouping.rs`) and its toolbar, menus and filter chips (`inbox_view/toolbar.rs`); BenCode's own "Needs you" (`work_items/attention.rs`, asked by `app/inbox_attention.rs`); the detail's properties column or rows (`inbox_view/properties.rs`, Backlog's in `backlog_fields.rs`); the threads linked to each item (`app/item_threads.rs`: the index and their state; `inbox_view/threads.rs`: the rows' mark and the Threads section) and Backlog links (`db/work_item.rs`, `app/work_item_link.rs`); translations kept on disk (`work_items/translate/cache.rs`) and "Always translate" (`inbox_view/translate.rs`); a PR's Files changed (`gh pr diff` in `ui/diff_viewer.rs`'s review, hunks only: no Full file mode); BenCode's own: pull requests linked to the tickets they are named after (`work_items/tickets.rs`), and an item in a tab beside the chat (`inbox_view/tab.rs`, `PaneTab::WorkItem`) drawing the same detail per view (`inbox_view/detail.rs`'s `DetailView`); a pull request's checks and review on its row (`PrStatus` in `work_items.rs`, read with the list) and Review with agent (`composer/inbox_card.rs`'s `CardTask`); items picked in the list (`inbox_view/picks.rs`) and sent to agents together after a confirmation (`inbox_view/batch.rs`) |
 | none (MonoCode runs `gh` as its active account) | `github_accounts.rs`, `app/github_accounts.rs`, `ui/settings_integrations.rs` | A `gh` account per project. BenCode's own: Automatic falls back to another signed-in account when the active one cannot see the repository |
 | `features/inbox/model/jira.ts`, `src-tauri/src/jira.rs` (as the pattern) | `backlog.rs`, `app/backlog.rs`, `ui/settings_integrations.rs` | Nulab Backlog issues in the Inbox: comments, status change, Send to agent. BenCode's own; MonoCode has Jira, Linear, GitLab and Azure DevOps instead |
 | `features/search/` | `ui/search_view/`, `ui/quick_open.rs` | Universal search; Go to File (⌘P) |

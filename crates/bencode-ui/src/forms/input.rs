@@ -4,6 +4,7 @@ use gpui::{
 };
 
 use super::TextInput;
+use super::select::field_frame;
 use crate::i18n;
 use crate::{
     buttons::IconButton,
@@ -20,6 +21,7 @@ pub struct Input {
     suffix: Option<AnyElement>,
     clearable: bool,
     invalid: bool,
+    quiet: bool,
     least: Option<SharedString>,
 }
 
@@ -32,6 +34,7 @@ impl Input {
             suffix: None,
             clearable: false,
             invalid: false,
+            quiet: false,
             least: None,
         }
     }
@@ -60,6 +63,13 @@ impl Input {
     /// Draws the frame in the danger tone.
     pub fn invalid(mut self, invalid: bool) -> Self {
         self.invalid = invalid;
+        self
+    }
+
+    /// No frame until hovered or focused (`field_frame`); an invalid one
+    /// still shows.
+    pub fn quiet(mut self) -> Self {
+        self.quiet = true;
         self
     }
 }
@@ -91,9 +101,11 @@ impl RenderOnce for Input {
         } else {
             colors.border_strong
         };
+        let quiet = self.quiet && !self.invalid;
         let (state, clear_id) = (self.state.clone(), self.state.entity_id());
         div()
             .debug_selector(|| "input-root".into())
+            .id(("input-frame", clear_id))
             .flex()
             .gap_2()
             .px(theme.control_padding(self.size))
@@ -105,12 +117,16 @@ impl RenderOnce for Input {
                 }
             })
             .rounded(theme.radius(Radius::Md))
-            .border_1()
-            .border_color(border)
-            .bg(if disabled {
-                colors.sunken
-            } else {
-                colors.surface
+            .map(|frame| {
+                if quiet {
+                    field_frame(frame, focused, disabled, true, cx)
+                } else {
+                    frame.border_1().border_color(border).bg(if disabled {
+                        colors.sunken
+                    } else {
+                        colors.surface
+                    })
+                }
             })
             .text_size(theme.text_size(text_size(self.size)))
             .text_color(if disabled {

@@ -1,7 +1,8 @@
 //! Inbox: MonoCode's review queue. Open issues and pull requests of the
 //! rail's projects come from the `gh` CLI, and a connected Backlog space's
 //! open issues from its REST API (`backlog.rs`); the list sits
-//! left (resizable, with read state), the selected item right
+//! left (resizable, with read state, "Needs you" pinned and grouped:
+//! `toolbar`, `list`, `grouping`), the selected item right
 //! (`detail`): its body, pull request checks and CI repair (`checks`),
 //! merge and state actions (`pr_actions`), the conversation and a comment
 //! box (`comments`). "Send to agent" starts a thread in the chosen project
@@ -9,42 +10,84 @@
 //! `App.tsx` `onStartInboxItem`).
 
 mod backlog_fields;
+mod batch;
 mod blocks;
 mod checks;
 pub mod ci_repair;
 mod comments;
 mod detail;
+mod grouping;
+mod keyboard;
+mod list;
+mod picks;
 mod pr_actions;
+mod properties;
+mod row;
 mod selection;
+mod tab;
+mod threads;
+mod toolbar;
 mod translate;
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::time::{Duration, Instant};
 
-use bencode_ui::buttons::{ButtonVariant, IconButton, SegmentedControl};
-use bencode_ui::primitives::{Icon, IconName, Tooltip};
+use bencode_ui::primitives::{IconName, Tooltip};
 use bencode_ui::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
-    AnyElement, Context, FontWeight, InteractiveElement, IntoElement, MouseButton, ParentElement,
-    SharedString, Styled, div, prelude::*, uniform_list,
+    AnyElement, Context, InteractiveElement, IntoElement, MouseButton, ParentElement, SharedString,
+    Styled, div, prelude::*,
 };
 
+use crate::app::item_threads::{PrimaryAction, primary_action};
+use crate::app::session_list::Selection;
 use crate::app::{BenCodeApp, Surface};
 use crate::backlog;
 use crate::github::{self, Kind, Status, WorkItem};
 use crate::ui::composer::cards::ComposerCard;
-use crate::ui::composer::inbox_card::{InboxCard, label_chip};
-use crate::ui::icons::ExtraIcon;
+use crate::ui::composer::inbox_card::{CardTask, InboxCard};
 use crate::ui::scale::px;
-use crate::ui::sidebar_popovers::popover_frame;
 use crate::work_items::Provider;
 
-use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
+use crate::ui::tokens::{Fill, Ink, Tone as _};
+use crate::work_items::attention::{self, Attention};
+use crate::work_items::tickets::TicketLinks;
 use blocks::Described;
 pub use checks::{Repair, RepairForm};
 pub use comments::ReplyTarget;
+pub(crate) use detail::{DetailList, DetailView};
+#[cfg(any(test, feature = "snapshot"))]
+pub use grouping::GroupBy;
+pub use grouping::ListPrefs;
+#[cfg(test)]
+pub use grouping::SortBy;
 pub use pr_actions::PrActionUi;
+pub(crate) use row::short_key;
 pub use translate::Translations;
+
+/// How "Send to agent" starts a thread: in a new worktree (the composer's
+/// ⌘⇧G mode), in Plan mode, asking what (a pull request is reviewed or
+/// its review addressed).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct StartWith {
+    pub worktree: bool,
+    pub plan: bool,
+    pub task: CardTask,
+}
+
+impl StartWith {
+    /// The main button's start: an issue worked on, a pull request
+    /// reviewed.
+    pub fn main(kind: Kind) -> Self {
+        Self {
+            task: match kind {
+                Kind::Issue => CardTask::Work,
+                Kind::Pr => CardTask::Review,
+            },
+            ..Self::default()
+        }
+    }
+}
 
 /// MonoCode keeps a fetched list this long before refetching on open.
 const FRESH_FOR: Duration = Duration::from_secs(60);
@@ -55,9 +98,6 @@ const POLL_DELAY: Duration = Duration::from_secs(5);
 pub const DEFAULT_LIST_WIDTH: f32 = 340.0;
 const MIN_LIST_WIDTH: f32 = 260.0;
 const MAX_LIST_WIDTH: f32 = 560.0;
-/// MonoCode `INBOX_FILTER_MENU_WIDTH`.
-const FILTER_MENU_WIDTH: f32 = 228.0;
-const ROW_HEIGHT: f32 = 76.0;
 
 /// MonoCode's pull request sections: the description, checks and
 /// conversation, or the code it changes.
@@ -81,7 +121,7 @@ impl KindFilter {
     const ALL: [(Self, &'static str, &'static str); 3] = [
         (Self::All, "all", "All"),
         (Self::Issues, "issues", "Issues"),
-        (Self::PullRequests, "prs", "Pull requests"),
+        (Self::PullRequests, "prs", "PRs"),
     ];
 
     fn key(self) -> &'static str {
@@ -153,23 +193,48 @@ pub struct InboxState {
     /// The last fetch found a Backlog connection.
     pub backlog_connected: bool,
     pub items: Vec<WorkItem>,
+    /// Items fetched by key for a tab beside the chat, the list holding
+    /// them or not (`work_item_tab.rs`); `item` finds them too.
+    pub known: Loaded<WorkItem>,
+    /// Which listed pull requests are named after which tickets, taken
+    /// when the list lands.
+    pub tickets: TicketLinks,
+    /// The connected Backlog space's project keys, as the last fetch found
+    /// them: tickets of these are looked for in pull requests.
+    ticket_projects: Vec<String>,
+    /// What the listed Backlog keys share, left out of the rows
+    /// (`row::backlog_key_prefix`).
+    pub key_prefix: String,
     pub errors: Vec<String>,
     pub loading: bool,
     /// A fetch (shown or the poll's) is running.
     pub fetching: bool,
     pub fetched_at: Option<Instant>,
     pub selected: Option<String>,
+    /// Items picked for a batch send (⌘-click, ⇧-click, `x`), apart from
+    /// the one open (`picks.rs`).
+    pub picks: Selection,
+    /// The batch send's confirmation, while open (`batch.rs`).
+    pub batch: Option<batch::BatchSend>,
     pub kind: KindFilter,
     /// The one tracker shown; `None` is all of them.
     pub source: Option<Provider>,
     /// The statuses shown, by name; empty is all of them.
     pub statuses: Vec<String>,
     pub assigned_to_me: bool,
-    /// Where the filter menu opened, while it is open.
-    filter_menu: Option<gpui::Point<gpui::Pixels>>,
-    /// The filter button took this press: the menu's press-outside must
+    /// Only unread items (and the one open).
+    pub unread_only: bool,
+    /// Grouping, sort and folded groups (`grouping.rs`).
+    pub list_prefs: ListPrefs,
+    /// What the trackers notified the user of: "Needs you".
+    pub attention: Attention,
+    /// The item open, kept in "Needs you" though opening it read it.
+    kept_pinned: Option<String>,
+    /// The toolbar menu open, and where.
+    menu: Option<(toolbar::Menu, gpui::Point<gpui::Pixels>)>,
+    /// A menu's button took this press: the menu's press-outside must
     /// not close what the button just toggled.
-    filter_button_hit: bool,
+    menu_button_hit: bool,
     pub details: Loaded<Described>,
     pub threads: Loaded<github::Thread>,
     pub checks: Loaded<github::Checks>,
@@ -204,12 +269,13 @@ pub struct InboxState {
     /// Bumped by every fetch: only the latest list lands.
     list_generation: u64,
     /// The list's scroll, kept on the item ↑/↓ selects.
-    pub scroll: gpui::UniformListScrollHandle,
+    pub scroll: gpui::ScrollHandle,
     /// The selected item's rows (`detail`), virtual: a long description
     /// scrolls by drawing only what shows.
-    detail_list: gpui::ListState,
-    /// The item and rows `detail_list` was last told of.
-    detail_rows: std::cell::RefCell<(String, Vec<detail::DetailRow>)>,
+    detail: DetailList,
+    /// The rows of the item in the file pane's tab, apart: each view keeps
+    /// its own scroll and measured rows.
+    tab_detail: DetailList,
 }
 
 impl Default for InboxState {
@@ -218,17 +284,27 @@ impl Default for InboxState {
             status: None,
             backlog_connected: false,
             items: Vec::new(),
+            known: Loaded::default(),
+            tickets: TicketLinks::default(),
+            ticket_projects: Vec::new(),
+            key_prefix: String::new(),
             errors: Vec::new(),
             loading: false,
             fetching: false,
             fetched_at: None,
             selected: None,
+            picks: Selection::default(),
+            batch: None,
             kind: KindFilter::All,
             source: None,
             statuses: Vec::new(),
             assigned_to_me: false,
-            filter_menu: None,
-            filter_button_hit: false,
+            unread_only: false,
+            list_prefs: ListPrefs::default(),
+            attention: Attention::default(),
+            kept_pinned: None,
+            menu: None,
+            menu_button_hit: false,
             details: Loaded::default(),
             threads: Loaded::default(),
             checks: Loaded::default(),
@@ -250,10 +326,89 @@ impl Default for InboxState {
             resizing: None,
             generation: 0,
             list_generation: 0,
-            scroll: gpui::UniformListScrollHandle::new(),
-            detail_list: gpui::ListState::new(0, gpui::ListAlignment::Top, px(600.0)),
-            detail_rows: Default::default(),
+            scroll: gpui::ScrollHandle::new(),
+            detail: DetailList::default(),
+            tab_detail: DetailList::default(),
         }
+    }
+}
+
+/// The snapshots' Inbox (`app/snapshot.rs`), staged with no fetch.
+#[cfg(feature = "snapshot")]
+impl InboxState {
+    /// A landed list with Backlog connected, read but for `unseen` (keys).
+    pub(crate) fn stage_list(&mut self, items: Vec<WorkItem>, unseen: &[String]) {
+        self.status = Some(Status::Ready);
+        self.backlog_connected = true;
+        self.loading = false;
+        self.fetching = false;
+        self.fetched_at = Some(Instant::now());
+        self.errors.clear();
+        self.list_prefs = ListPrefs::default();
+        self.source = None;
+        self.statuses.clear();
+        self.unread_only = false;
+        self.set_items(items);
+        self.seen.clear();
+        self.seen_seeded = true;
+        for item in self.items.clone() {
+            if unseen.contains(&item.key()) {
+                self.mark_unseen(&item);
+            } else {
+                self.mark_seen(&item);
+            }
+        }
+    }
+
+    /// What the trackers notified the user of, and who the user is on
+    /// each, as an ask would land it.
+    pub(crate) fn stage_attention(
+        &mut self,
+        provider: Provider,
+        notified: Vec<attention::Notified>,
+        me: HashMap<String, String>,
+    ) {
+        let found = attention::Found {
+            notified,
+            me,
+            ..Default::default()
+        };
+        self.attention.land(provider, Some(found), Instant::now());
+    }
+
+    /// Items `keys` picked, as ⌘-clicks leave them; with `confirm`, Send
+    /// to agents asked for them too (its dialog open).
+    pub(crate) fn stage_picks(&mut self, keys: &[String], confirm: bool) {
+        self.picks.clear();
+        for key in keys {
+            self.picks.toggle(key);
+        }
+        self.batch = confirm.then(|| batch::BatchSend {
+            keys: keys.to_vec(),
+            start: StartWith::default(),
+            include_linked: false,
+            starting: false,
+        });
+    }
+
+    /// Scrolls the open item's detail to its `row`th row: the head out of
+    /// view, so the compact bar shows.
+    pub(crate) fn stage_detail_scroll(&mut self, row: usize) {
+        self.detail.list.scroll_to(gpui::ListOffset {
+            item_ix: row,
+            offset_in_item: gpui::px(0.0),
+        });
+    }
+
+    /// What opening item `key` loads: its details and conversation.
+    pub(crate) fn stage_item(
+        &mut self,
+        key: &str,
+        details: github::Details,
+        thread: github::Thread,
+    ) {
+        (self.details.value).insert(key.to_string(), Ok(Described::from(details)));
+        self.threads.value.insert(key.to_string(), Ok(thread));
     }
 }
 
@@ -279,8 +434,25 @@ impl InboxState {
         }
     }
 
+    /// Item `key`, listed or fetched for a tab.
     pub fn item(&self, key: &str) -> Option<&WorkItem> {
-        self.items.iter().find(|i| i.key() == key)
+        (self.items.iter().find(|i| i.key() == key))
+            .or_else(|| self.known.get(key).and_then(|found| found.as_ref().ok()))
+    }
+
+    /// Item `key` to change in place, listed or fetched for a tab.
+    pub(crate) fn item_mut(&mut self, key: &str) -> Option<&mut WorkItem> {
+        match self.items.iter().position(|i| i.key() == key) {
+            Some(ix) => self.items.get_mut(ix),
+            None => (self.known.value.get_mut(key)).and_then(|found| found.as_mut().ok()),
+        }
+    }
+
+    /// The listed pull requests named after ticket `key`.
+    pub(crate) fn ticket_prs(&self, key: &str) -> Vec<&WorkItem> {
+        (self.tickets.prs(key).iter())
+            .filter_map(|pr| self.item(pr))
+            .collect()
     }
 
     /// MonoCode `isInboxEntryUnseen`: newer than when it was last read
@@ -293,13 +465,66 @@ impl InboxState {
                 .is_none_or(|was| updated_ms(item) > *was)
     }
 
-    /// MonoCode `mergeSeen`.
+    /// Item `item` needs the user (`work_items/attention.rs`); nothing
+    /// does before the first list was taken as read.
+    pub fn needs_you(&self, item: &WorkItem) -> bool {
+        let key = item.key();
+        self.seen_seeded
+            && attention::needs_you(
+                self.attention.notified_at(&key),
+                self.attention.assigned_to_me(item),
+                self.seen.get(&key).copied(),
+                self.is_unseen(item),
+            )
+    }
+
+    /// MonoCode `mergeSeen`. A notification about it is read too, though
+    /// it may be stamped a moment after the item's update.
     fn mark_seen(&mut self, item: &WorkItem) -> bool {
-        let at = updated_ms(item);
+        let at = updated_ms(item).max(self.attention.notified_at(&item.key()).unwrap_or(0));
         let entry = self.seen.entry(item.key()).or_insert(0);
         let changed = *entry < at;
         *entry = (*entry).max(at);
         changed
+    }
+
+    /// Counts `item` as unread again: its last read is forgotten.
+    fn mark_unseen(&mut self, item: &WorkItem) -> bool {
+        self.seen.remove(&item.key()).is_some()
+    }
+
+    /// Read becomes unread and unread read.
+    fn toggle_seen(&mut self, item: &WorkItem) -> bool {
+        if self.is_unseen(item) {
+            self.mark_seen(item)
+        } else {
+            self.mark_unseen(item)
+        }
+    }
+
+    /// The list as it lands: the items, what their rows leave out, and
+    /// the translations their titles still match.
+    fn set_items(&mut self, items: Vec<WorkItem>) {
+        self.key_prefix = row::backlog_key_prefix(&items);
+        self.tickets = TicketLinks::build(&items, &self.ticket_projects);
+        self.items = items;
+        // Picks of items the list no longer has go.
+        let keys: Vec<String> = self.items.iter().map(WorkItem::key).collect();
+        self.picks.prune(&keys);
+        self.refresh_translated_titles();
+        if let Some(key) = self.selected.clone() {
+            self.sync_translations(&key);
+        }
+    }
+
+    /// An explicit refresh: what was loaded for items is loaded again.
+    /// Translations stay, shown while their source text is unchanged.
+    fn forget_item_loads(&mut self) {
+        self.details.clear();
+        self.translations.forget_errors();
+        self.threads.clear();
+        self.checks.clear();
+        self.jobs.clear();
     }
 
     /// MonoCode `seedInboxSeenIfNeeded`: the first list counts as read.
@@ -435,7 +660,17 @@ impl BenCodeApp {
     }
 
     pub fn open_inbox_modal(&mut self, cx: &mut Context<Self>) {
+        self.open_inbox(true, cx);
+    }
+
+    /// Shows the Inbox with its list taking the keyboard; with `pick`, an
+    /// Inbox with nothing open opens its first item to read.
+    pub(crate) fn open_inbox(&mut self, pick: bool, cx: &mut Context<Self>) {
         self.show_surface(Surface::Inbox, cx);
+        self.focus_inbox_list(cx);
+        if pick && self.inbox(cx).selected.is_none() {
+            self.select_first_inbox_item(cx);
+        }
         let stale = self
             .inbox(cx)
             .fetched_at
@@ -513,6 +748,13 @@ impl BenCodeApp {
         inbox.items.iter().any(|item| inbox.is_unseen(item))
     }
 
+    /// Any listed item needs the user: the rail's mark. Activity alone
+    /// does not: teammates update tickets all day.
+    pub fn inbox_needs_you(&self, cx: &gpui::App) -> bool {
+        let inbox = self.inbox(cx);
+        inbox.items.iter().any(|item| inbox.needs_you(item))
+    }
+
     /// Fetches the list. A `quiet` fetch (the poll) shows no spinner and
     /// keeps what was loaded for items; an explicit one reloads it all.
     fn fetch_inbox(&mut self, quiet: bool, cx: &mut Context<Self>) {
@@ -548,6 +790,9 @@ impl BenCodeApp {
             };
             let backlog = backlog::inbox(&hidden, assigned);
             let statuses = backlog.as_ref().map(|found| found.statuses.clone());
+            let ticket_projects = (backlog.as_ref())
+                .map(|found| found.projects.clone())
+                .unwrap_or_default();
             if let Some(found) = backlog {
                 list.items.extend(found.items);
                 list.errors.extend(found.errors);
@@ -557,10 +802,10 @@ impl BenCodeApp {
             item_projects.sort();
             item_projects.dedup();
             missing.extend(item_projects.into_iter().filter(|p| !is_dir(p)).cloned());
-            (status, list, statuses, missing)
+            (status, list, statuses, ticket_projects, missing)
         });
         cx.spawn(async move |this, cx| {
-            let (status, list, backlog_statuses, missing) = task.await;
+            let (status, list, backlog_statuses, ticket_projects, missing) = task.await;
             let updated = this.update(cx, |app, cx| {
                 if app.inbox(cx).list_generation != list_generation {
                     return;
@@ -569,7 +814,8 @@ impl BenCodeApp {
                 let seed_backlog =
                     std::mem::take(&mut app.backlog.seed_seen) && backlog_statuses.is_some();
                 app.backlog.statuses = backlog_statuses.clone().unwrap_or_default();
-                let (failed, seeded) = app.inbox_state.update(cx, |inbox, cx| {
+                let (failed, seeded, first) = app.inbox_state.update(cx, |inbox, cx| {
+                    let first = inbox.fetched_at.is_none();
                     inbox.missing_dirs = missing.into_iter().collect();
                     let status_same = inbox.status == Some(status);
                     inbox.status = Some(status);
@@ -587,17 +833,17 @@ impl BenCodeApp {
                     items.extend(kept);
                     // The poll's usual answer: nothing new, nothing to redraw.
                     let same = status_same && inbox.items == items && inbox.errors == list.errors;
-                    inbox.items = items;
+                    // Kept while Backlog answers with no catalog.
+                    if !ticket_projects.is_empty() {
+                        inbox.ticket_projects = ticket_projects;
+                    }
+                    inbox.set_items(items);
                     inbox.errors = list.errors;
                     inbox.loading = false;
                     inbox.fetching = false;
                     inbox.fetched_at = Some(Instant::now());
                     if !quiet {
-                        inbox.details.clear();
-                        inbox.translations.clear();
-                        inbox.threads.clear();
-                        inbox.checks.clear();
-                        inbox.jobs.clear();
+                        inbox.forget_item_loads();
                     }
                     let mut seeded = inbox.seed_seen();
                     if seed_backlog {
@@ -618,7 +864,7 @@ impl BenCodeApp {
                     if !(quiet && same && !seeded) {
                         cx.notify();
                     }
-                    (failed, seeded)
+                    (failed, seeded, first)
                 });
                 if seeded {
                     app.save_settings(cx);
@@ -626,6 +872,17 @@ impl BenCodeApp {
                 app.announce_inbox_changes(failed, cx);
                 if let Some(key) = app.inbox(cx).selected.clone().filter(|_| !quiet) {
                     app.load_inbox_item(&key, cx);
+                }
+                // What the trackers notified the user of, at their pace.
+                app.fetch_inbox_attention(!quiet, cx);
+                // What the refresh dropped, the tab beside the chat loads again.
+                if !quiet {
+                    app.load_work_item_tab(cx);
+                }
+                // The Inbox opened before it had a list: the first item to
+                // read opens now (the list already has the keyboard).
+                if first && app.surface_open(Surface::Inbox) && app.inbox(cx).selected.is_none() {
+                    app.select_first_inbox_item(cx);
                 }
             });
             if let Err(err) = updated {
@@ -636,8 +893,9 @@ impl BenCodeApp {
         cx.notify();
     }
 
-    /// The list after the kind filter and the search field.
-    fn shown_inbox_items(&self, cx: &gpui::App) -> Vec<usize> {
+    /// The list after every filter but the kind's: the source, statuses,
+    /// Unread and the search field ("Mine" is the fetch's).
+    fn inbox_matches(&self, cx: &gpui::App) -> Vec<usize> {
         let query = self
             .inbox_search_input
             .read(cx)
@@ -651,15 +909,16 @@ impl BenCodeApp {
             .items
             .iter()
             .enumerate()
-            .filter(|(_, item)| inbox.kind.admits(item.kind))
             .filter(|(_, item)| source.is_none_or(|only| item.provider == only))
             .filter(|(_, item)| {
-                self.inbox(cx).statuses.is_empty()
-                    || self
-                        .inbox(cx)
-                        .statuses
-                        .iter()
-                        .any(|s| s == status_name(item))
+                inbox.statuses.is_empty() || inbox.statuses.iter().any(|s| s == status_name(item))
+            })
+            // The item open stays while it is read.
+            .filter(|(_, item)| {
+                !inbox.unread_only
+                    || inbox.is_unseen(item)
+                    || inbox.needs_you(item)
+                    || inbox.selected.as_deref() == Some(item.key().as_str())
             })
             .filter(|(_, item)| {
                 query.is_empty()
@@ -676,6 +935,56 @@ impl BenCodeApp {
             .collect()
     }
 
+    /// The list after every filter.
+    fn shown_inbox_items(&self, cx: &gpui::App) -> Vec<usize> {
+        let inbox = self.inbox(cx);
+        let mut shown = self.inbox_matches(cx);
+        shown.retain(|ix| inbox.kind.admits(inbox.items[*ix].kind));
+        shown
+    }
+
+    /// Backlog's statuses of `items`' projects, each in its workflow's
+    /// order, the projects' merged.
+    fn inbox_workflow<'a>(&self, items: impl IntoIterator<Item = &'a WorkItem>) -> Vec<String> {
+        let mut ordered: Vec<String> = Vec::new();
+        let mut projects: Vec<&str> = Vec::new();
+        for item in items {
+            if item.provider != Provider::Backlog || projects.contains(&item.container_id.as_str())
+            {
+                continue;
+            }
+            projects.push(&item.container_id);
+            for status in self
+                .backlog
+                .statuses
+                .get(&item.container_id)
+                .into_iter()
+                .flatten()
+            {
+                if !ordered.contains(&status.name) {
+                    ordered.push(status.name.clone());
+                }
+            }
+        }
+        ordered
+    }
+
+    /// The list's lines as drawn: shown items, pinned, grouped and sorted.
+    fn inbox_entries(&self, cx: &gpui::App) -> Vec<grouping::Entry> {
+        let shown = self.shown_inbox_items(cx);
+        let inbox = self.inbox(cx);
+        let workflow = self.inbox_workflow(shown.iter().map(|ix| &inbox.items[*ix]));
+        let how = grouping::Arrange {
+            prefs: &inbox.list_prefs,
+            workflow: &workflow,
+            today: jiff::Zoned::now().date(),
+        };
+        let pinned = |item: &WorkItem| {
+            inbox.needs_you(item) || inbox.kept_pinned.as_deref() == Some(item.key().as_str())
+        };
+        grouping::arrange(&inbox.items, &shown, pinned, &how)
+    }
+
     /// Opens Inbox item `key` (a linked thread's badge).
     pub fn select_inbox_key(&mut self, key: String, cx: &mut Context<Self>) {
         self.select_inbox_item(key, cx);
@@ -689,6 +998,9 @@ impl BenCodeApp {
             self.inbox_state.as_mut(cx).pr = PrActionUi::default();
             self.inbox_state.as_mut(cx).repair = None;
             self.backlog.issue_error = None;
+            // Read, it would leave "Needs you" while it is being read.
+            let pinned = (self.inbox(cx).item(&key)).is_some_and(|i| self.inbox(cx).needs_you(i));
+            self.inbox_state.as_mut(cx).kept_pinned = pinned.then(|| key.clone());
         }
         self.inbox_state.as_mut(cx).selected = Some(key.clone());
         if let Some(item) = self.inbox(cx).item(&key).cloned()
@@ -697,6 +1009,7 @@ impl BenCodeApp {
             self.save_settings(cx);
         }
         self.load_inbox_item(&key, cx);
+        self.apply_inbox_translations(&key, cx);
         cx.notify();
     }
 
@@ -709,27 +1022,23 @@ impl BenCodeApp {
         }
     }
 
-    /// ↑/↓ (and j/k) in the focused list: the next item opens and the list
-    /// scrolls to keep it in view.
+    /// ↑/↓ (and j/k) in the focused list: the next item opens, headers
+    /// skipped, and the list scrolls to keep it (and its group's header)
+    /// in view.
     pub fn step_inbox_selection(&mut self, delta: isize, cx: &mut Context<Self>) {
-        let shown = self.shown_inbox_items(cx);
-        if shown.is_empty() {
+        let entries = self.inbox_entries(cx);
+        let inbox = self.inbox(cx);
+        let current = (inbox.selected.as_deref())
+            .and_then(|key| inbox.items.iter().position(|item| item.key() == key))
+            .and_then(|ix| grouping::line_of(&entries, ix));
+        let Some(line) = grouping::step(&entries, current, delta) else {
             return;
-        }
-        let current = self.inbox(cx).selected.as_deref().and_then(|key| {
-            shown
-                .iter()
-                .position(|ix| self.inbox(cx).items[*ix].key() == key)
-        });
-        let row = match current {
-            Some(row) => row.saturating_add_signed(delta).min(shown.len() - 1),
-            None if delta < 0 => shown.len() - 1,
-            None => 0,
         };
-        let key = self.inbox(cx).items[shown[row]].key();
-        self.inbox(cx)
-            .scroll
-            .scroll_to_item(row, gpui::ScrollStrategy::Top);
+        let grouping::Entry::Item(ix) = entries[line] else {
+            return;
+        };
+        let key = inbox.items[ix].key();
+        list::reveal_line(&entries, line, &inbox.scroll);
         self.select_inbox_item(key, cx);
     }
 
@@ -829,35 +1138,116 @@ impl BenCodeApp {
         );
     }
 
-    /// MonoCode `onStartInboxItem`: a thread in the chosen project titled
-    /// "#42 Title", its composer holding the issue card. A Backlog issue's
-    /// card carries the description too: the agent cannot open its URL.
-    fn start_inbox_item(&mut self, key: &str, cx: &mut Context<Self>) {
+    /// MonoCode `onStartInboxItem`: a thread in the chosen project, its
+    /// composer holding the issue card, linked to the item from the start.
+    /// It is titled with the item's title as shown (its translation while
+    /// that shows), not its key: the navigator's badge names the item. A
+    /// Backlog issue's card carries the description too: the agent cannot
+    /// open its URL. A pull request's card asks for a review, or for its
+    /// review to be addressed (`start.task`), and its title says which.
+    /// `start` presets a new worktree or Plan mode. The item opens beside
+    /// the thread, to read while composing.
+    pub(crate) fn start_inbox_item(&mut self, key: &str, start: StartWith, cx: &mut Context<Self>) {
         let Some(item) = self.inbox(cx).item(key).cloned() else {
             return;
         };
-        let title = format!("{} {}", item.identifier, item.title.trim());
-        let body = (item.provider == Provider::Backlog)
-            .then(|| {
-                self.inbox(cx)
-                    .details
-                    .get(key)?
-                    .as_ref()
-                    .ok()
-                    .map(|d| d.details.body.clone())
-            })
-            .flatten();
+        let Some(card) = self.inbox_start_card(&item, start.task, cx) else {
+            log::warn!("inbox: {key} cannot be started as {:?}", start.task);
+            return;
+        };
+        let title = self.inbox_thread_title(&item, card.task, cx);
+        let link = crate::app::work_item_link::link_for(&item);
+        let linked = link.clone();
         let cwd = self.inbox_start_project(&item, cx);
+        // Read before the switch: the git status shown is this project's.
+        let base = start.worktree.then(|| self.new_thread_worktree_base(&cwd));
         if !crate::app::same_project_path(&cwd, &self.current_cwd) {
             self.switch_project(cwd.clone(), cx);
         }
         self.close_surface(cx);
-        self.open_thread_with_card(
+        let id = self.open_thread_with_card(
             &cwd,
-            move |session| session.title = title,
-            ComposerCard::Inbox(InboxCard::from_item_with_body(&item, body.as_deref())),
+            move |session| {
+                session.title = title;
+                session.linked_work_item = linked;
+            },
+            ComposerCard::Inbox(card),
             cx,
         );
+        // Shown at once; saved apart, as a session save never writes it.
+        self.links_changed();
+        if link.is_some() {
+            self.set_session_link(&id, link, cx);
+        }
+        if let Some(base) = base {
+            self.new_worktrees.insert(id.clone(), base);
+        }
+        if start.plan {
+            self.thread_mut(&id).plan_mode = true;
+        }
+        self.show_item_beside_thread(key, cx);
+    }
+
+    /// The card a thread for `item` starts with: an issue's (a Backlog
+    /// one's with its description, when loaded), or a pull request's for
+    /// `task`; `None` when the item cannot be started so.
+    pub(super) fn inbox_start_card(
+        &self,
+        item: &WorkItem,
+        task: CardTask,
+        cx: &gpui::App,
+    ) -> Option<InboxCard> {
+        match (item.kind, task) {
+            (Kind::Issue, CardTask::Work) => {
+                let body = (item.provider == Provider::Backlog)
+                    .then(|| {
+                        let described = self.inbox(cx).details.get(&item.key())?;
+                        described.as_ref().ok().map(|d| d.details.body.clone())
+                    })
+                    .flatten();
+                Some(InboxCard::from_item_with_body(item, body.as_deref()))
+            }
+            (Kind::Pr, CardTask::Review | CardTask::AddressReview) => {
+                InboxCard::for_pull_request(item, task)
+            }
+            _ => None,
+        }
+    }
+
+    /// A thread's title for `item`: its title as shown; a pull request's
+    /// says what the thread does with it ("Review #483: …").
+    pub(super) fn inbox_thread_title(
+        &self,
+        item: &WorkItem,
+        task: CardTask,
+        cx: &gpui::App,
+    ) -> String {
+        let title = match self.inbox(cx).translations.shown(&item.key()) {
+            Some(t) => t.title.to_string(),
+            None => item.title.clone(),
+        };
+        let title = title.trim();
+        match task {
+            CardTask::Work => title.to_string(),
+            task => format!("{} #{}: {title}", task.label(), item.number),
+        }
+    }
+
+    /// The item's main action: its newest thread when it has one, else
+    /// Send to agent, or a review for a pull request
+    /// (`item_threads::primary_action`); the item opens beside the thread
+    /// either way.
+    pub(crate) fn open_or_start_inbox_item(&mut self, key: &str, cx: &mut Context<Self>) {
+        let Some(kind) = self.inbox(cx).item(key).map(|item| item.kind) else {
+            return;
+        };
+        match primary_action(&self.item_threads(key)) {
+            PrimaryAction::Open(id) => {
+                self.select_live_agent(&id, cx);
+                self.show_item_beside_thread(key, cx);
+            }
+            PrimaryAction::Send => self.start_inbox_item(key, StartWith::main(kind), cx),
+        }
     }
 
     /// The project "Send to agent" (and CI repair) starts in.
@@ -894,8 +1284,13 @@ impl BenCodeApp {
             .unwrap_or_else(|| self.current_cwd.clone())
     }
 
-    pub(crate) fn render_inbox_body(&mut self, cx: &mut Context<Self>) -> AnyElement {
+    pub(crate) fn render_inbox_body(
+        &mut self,
+        window: &gpui::Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         self.sync_backlog_hours(cx);
+        let detail_width = self.inbox_detail_width(window, cx);
         let colors = &cx.theme().colors;
         let width = self.inbox(cx).list_width;
         let resizing = self.inbox(cx).resizing.is_some();
@@ -938,6 +1333,7 @@ impl BenCodeApp {
                     .border_color(colors.border)
                     .child(self.render_inbox_toolbar(cx))
                     .child(div().flex_1().min_h_0().child(self.render_inbox_list(cx)))
+                    .children(self.render_inbox_pick_bar(cx))
                     .child(
                         div()
                             .id("inbox-resize")
@@ -972,9 +1368,26 @@ impl BenCodeApp {
                     .flex_1()
                     .min_w_0()
                     .h_full()
-                    .child(self.render_inbox_detail(cx)),
+                    .child(self.render_inbox_detail(detail_width, cx)),
             )
             .into_any_element()
+    }
+
+    /// The detail's width (at 100%) from the window's layout: the window
+    /// less the navigator and the list. Known before anything is laid
+    /// out, so the detail picks its columns in the frame it is drawn, and
+    /// the region is drawn again whenever the window's size changes.
+    fn inbox_detail_width(&self, window: &gpui::Window, cx: &gpui::App) -> f32 {
+        let navigator = if self.is_rail_open {
+            self.rail_width()
+        } else if self.compact_rail_active() {
+            crate::ui::rail::COMPACT_RAIL_WIDTH
+        } else {
+            0.0
+        };
+        crate::ui::scale::logical(window.viewport_size().width)
+            - navigator
+            - self.inbox(cx).list_width
     }
 
     fn end_inbox_resize(&mut self, cx: &mut Context<Self>) {
@@ -982,548 +1395,6 @@ impl BenCodeApp {
             self.save_settings(cx);
             cx.notify();
         }
-    }
-
-    /// The kind filter and "Mine", then the search, Mark all as read and
-    /// Refresh.
-    fn render_inbox_toolbar(&self, cx: &Context<Self>) -> impl IntoElement {
-        let colors = &cx.theme().colors;
-        let kinds = KindFilter::ALL.iter().fold(
-            SegmentedControl::new("inbox-kind", self.inbox(cx).kind.key()).size(ControlSize::Sm),
-            |control, (_, key, label)| control.segment(*key, *label, None),
-        );
-        let mine = self.inbox(cx).assigned_to_me;
-        let fg = colors.fg;
-        let any_unseen = self
-            .shown_inbox_items(cx)
-            .into_iter()
-            .any(|ix| self.inbox(cx).is_unseen(&self.inbox(cx).items[ix]));
-        div()
-            .flex_none()
-            .flex()
-            .flex_col()
-            .border_b_1()
-            .border_color(colors.border)
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_1()
-                    .h(px(36.0))
-                    .px_2()
-                    .child(
-                        kinds.on_change(cx.listener(|this, key: &SharedString, _, cx| {
-                            this.inbox_state.as_mut(cx).kind = KindFilter::from_key(key);
-                            cx.notify();
-                        })),
-                    )
-                    .child(div().flex_1())
-                    .child(
-                        div()
-                            .id("inbox-assigned")
-                            .px_2()
-                            .h(px(24.0))
-                            .flex()
-                            .items_center()
-                            .rounded(px(6.0))
-                            .text_size(Text::Base.px())
-                            .cursor_pointer()
-                            .text_color(if mine { fg } else { fg.ink(Ink::Secondary) })
-                            .when(mine, |el| el.bg(fg.fill(Fill::Strong)))
-                            .hover(move |s| s.bg(fg.fill(Fill::Selected)))
-                            .tooltip(Tooltip::text("Only items assigned to you"))
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.inbox_state.as_mut(cx).assigned_to_me =
-                                    !this.inbox(cx).assigned_to_me;
-                                this.refresh_inbox(cx);
-                            }))
-                            .child("Mine"),
-                    ),
-            )
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_1()
-                    .h(px(36.0))
-                    .px_2()
-                    .border_t_1()
-                    .border_color(colors.border)
-                    .child(
-                        Icon::new(IconName::Search)
-                            .size(IconSize::Xs)
-                            .color(fg.ink(Ink::Secondary)),
-                    )
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .text_size(Text::Base.px())
-                            .child(self.inbox_search_input.clone()),
-                    )
-                    .child(self.render_inbox_filter_button(cx))
-                    .children(self.render_inbox_filter_menu(cx))
-                    .child(
-                        IconButton::new("inbox-mark-read", IconName::CheckCheck)
-                            .variant(ButtonVariant::Ghost)
-                            .size(ControlSize::Sm)
-                            .tooltip("Mark all as read")
-                            .disabled(!any_unseen)
-                            .on_click(cx.listener(|this, _, _, cx| this.mark_inbox_read(cx))),
-                    )
-                    .child(if self.inbox(cx).loading {
-                        refreshing("inbox-refreshing", cx)
-                    } else {
-                        IconButton::new("inbox-refresh", IconName::RefreshCw)
-                            .variant(ButtonVariant::Ghost)
-                            .size(ControlSize::Sm)
-                            .tooltip("Refresh")
-                            .on_click(cx.listener(|this, _, _, cx| this.refresh_inbox(cx)))
-                            .into_any_element()
-                    }),
-            )
-    }
-
-    /// The statuses the filter lists: those of the items the other
-    /// filters leave, Backlog's in their workflow's order.
-    fn inbox_status_choices(&self, cx: &gpui::App) -> Vec<String> {
-        let source = self.inbox(cx).source_filter();
-        let items: Vec<&WorkItem> = self
-            .inbox(cx)
-            .items
-            .iter()
-            .filter(|item| self.inbox(cx).kind.admits(item.kind))
-            .filter(|item| source.is_none_or(|only| item.provider == only))
-            .collect();
-        let mut ordered: Vec<String> = Vec::new();
-        for item in &items {
-            for status in self
-                .backlog
-                .statuses
-                .get(&item.container_id)
-                .into_iter()
-                .flatten()
-            {
-                if !ordered.contains(&status.name) {
-                    ordered.push(status.name.clone());
-                }
-            }
-        }
-        let mut choices = status_choices(&items, &ordered);
-        // A picked status stays listed, so it can be unpicked.
-        for picked in &self.inbox(cx).statuses {
-            if !choices.contains(picked) {
-                choices.push(picked.clone());
-            }
-        }
-        choices
-    }
-
-    /// MonoCode's filter button (`ListFilter`, `size-6 rounded-md`): the
-    /// glyph at half strength until hovered, opened or filtering.
-    fn render_inbox_filter_button(&self, cx: &Context<Self>) -> impl IntoElement + use<> {
-        let colors = &cx.theme().colors;
-        let fg = colors.fg;
-        let active = self.inbox(cx).filter_menu.is_some()
-            || self.inbox(cx).source_filter().is_some()
-            || !self.inbox(cx).statuses.is_empty();
-        let group = SharedString::from("inbox-filters");
-        let glyph =
-            |color: gpui::Hsla| ExtraIcon::ListFilter.icon().size(IconSize::Xs).color(color);
-        div()
-            .id("inbox-filters")
-            .group(group.clone())
-            .relative()
-            .size(px(24.0))
-            .flex()
-            .flex_none()
-            .items_center()
-            .justify_center()
-            .rounded(px(6.0))
-            .cursor_pointer()
-            .when(active, |el| el.bg(colors.active))
-            .when(!active, |el| el.hover(move |s| s.bg(fg.fill(Fill::Strong))))
-            .tooltip(Tooltip::text("Filter inbox"))
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(|this, event: &gpui::MouseDownEvent, _, cx| {
-                    this.inbox_mut(cx, |inbox| inbox.filter_button_hit = true);
-                    this.inbox_state.as_mut(cx).filter_menu = match this.inbox(cx).filter_menu {
-                        Some(_) => None,
-                        None => Some(gpui::point(
-                            event.position.x - px(FILTER_MENU_WIDTH - 12.0),
-                            event.position.y + px(14.0),
-                        )),
-                    };
-                    cx.notify();
-                }),
-            )
-            .map(|el| {
-                if active {
-                    el.child(glyph(fg))
-                } else {
-                    el.child(
-                        div()
-                            .group_hover(group.clone(), |s| s.invisible())
-                            .child(glyph(fg.ink(Ink::Secondary))),
-                    )
-                    .child(
-                        div()
-                            .absolute()
-                            .invisible()
-                            .group_hover(group.clone(), |s| s.visible())
-                            .child(glyph(fg)),
-                    )
-                }
-            })
-    }
-
-    /// MonoCode `InboxFiltersMenu`: the source (once there is more than
-    /// GitHub), the statuses to show, and Clear filters once anything is
-    /// set.
-    fn render_inbox_filter_menu(&self, cx: &Context<Self>) -> Option<AnyElement> {
-        let position = self.inbox(cx).filter_menu?;
-        let fg = cx.theme().colors.fg;
-        let section = |label: &'static str| {
-            div()
-                .px_2()
-                .pt_2()
-                .pb(px(2.0))
-                .text_size(Text::Xs.px())
-                .font_weight(FontWeight::SEMIBOLD)
-                .text_color(fg.ink(Ink::Muted))
-                .child(label.to_uppercase())
-        };
-        let row = |id: SharedString, label: SharedString, checked: bool| {
-            div()
-                .id(id)
-                .flex()
-                .items_center()
-                .gap_2()
-                .h(px(28.0))
-                .px_2()
-                .rounded(px(8.0))
-                .text_size(Text::Md.px())
-                .line_height(gpui::relative(1.0))
-                .text_color(fg)
-                .cursor_pointer()
-                .hover(move |s| s.bg(fg.fill(Fill::Hover)))
-                .child(div().flex_1().min_w_0().truncate().child(label))
-                .when(checked, |el| {
-                    el.child(Icon::new(IconName::Check).size(IconSize::Sm).color(fg))
-                })
-        };
-        let source = self.inbox(cx).source_filter();
-        let mut body = div();
-        if self.inbox(cx).backlog_connected {
-            body = body.child(section("Source"));
-            let choices = [
-                (None, "All sources"),
-                (Some(Provider::GitHub), Provider::GitHub.label()),
-                (Some(Provider::Backlog), Provider::Backlog.label()),
-            ];
-            for (choice, label) in choices {
-                body = body.child(
-                    row(
-                        SharedString::from(format!("inbox-filter-source-{label}")),
-                        label.into(),
-                        source == choice,
-                    )
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.inbox_state.as_mut(cx).source = choice;
-                        cx.notify();
-                    })),
-                );
-            }
-        }
-        body = body.child(section("Status"));
-        let statuses = self.inbox_status_choices(cx);
-        if statuses.is_empty() {
-            body = body.child(
-                div()
-                    .px_2()
-                    .h(px(28.0))
-                    .flex()
-                    .items_center()
-                    .text_size(Text::Md.px())
-                    .text_color(fg.ink(Ink::Muted))
-                    .child("No statuses yet"),
-            );
-        }
-        for status in statuses {
-            let on = self.inbox(cx).statuses.contains(&status);
-            body = body.child(
-                row(
-                    SharedString::from(format!("inbox-filter-status-{status}")),
-                    status.clone().into(),
-                    on,
-                )
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    this.inbox_mut(cx, |inbox| {
-                        let statuses = &mut inbox.statuses;
-                        match statuses.iter().position(|s| *s == status) {
-                            Some(ix) => {
-                                statuses.remove(ix);
-                            }
-                            None => statuses.push(status.clone()),
-                        }
-                    });
-                    cx.notify();
-                })),
-            );
-        }
-        if source.is_some() || !self.inbox(cx).statuses.is_empty() {
-            body = body
-                .child(div().my_1().h(px(1.0)).bg(fg.fill(Fill::Strong)))
-                .child(
-                    div()
-                        .id("inbox-filter-clear")
-                        .flex()
-                        .items_center()
-                        .h(px(28.0))
-                        .px_2()
-                        .rounded(px(8.0))
-                        .text_size(Text::Md.px())
-                        .line_height(gpui::relative(1.0))
-                        .text_color(fg.ink(Ink::Body))
-                        .cursor_pointer()
-                        .hover(move |s| s.bg(fg.fill(Fill::Hover)).text_color(fg))
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.inbox_state.as_mut(cx).source = None;
-                            this.inbox_state.as_mut(cx).statuses.clear();
-                            cx.notify();
-                        }))
-                        .child("Clear filters"),
-                );
-        }
-        let menu = popover_frame(cx)
-            .id("inbox-filters-menu")
-            .occlude()
-            .w(px(FILTER_MENU_WIDTH))
-            .max_h(px(480.0))
-            .overflow_y_scroll()
-            .p_1()
-            // A press on the filter button toggles the menu itself; only
-            // once every handler ran is it known whether it was outside.
-            .on_mouse_down_out(cx.listener(|_, _, window, cx| {
-                cx.defer_in(window, |this, _, cx| {
-                    let hit =
-                        this.inbox_mut(cx, |inbox| std::mem::take(&mut inbox.filter_button_hit));
-                    if !hit {
-                        this.inbox_state.as_mut(cx).filter_menu = None;
-                        cx.notify();
-                    }
-                });
-            }))
-            .child(body);
-        Some(
-            gpui::deferred(
-                gpui::anchored()
-                    .position(position)
-                    .snap_to_window()
-                    .child(menu),
-            )
-            .with_priority(3)
-            .into_any_element(),
-        )
-    }
-
-    fn render_inbox_list(&self, cx: &Context<Self>) -> AnyElement {
-        let fg = cx.theme().colors.fg;
-        let message = |text: String| {
-            div()
-                .px_3()
-                .py_3()
-                .text_size(Text::Base.px())
-                .text_color(fg.ink(Ink::Secondary))
-                .child(text)
-                .into_any_element()
-        };
-        // Backlog alone fills the list too; GitHub's setup hint shows
-        // only while nothing is connected.
-        match self.inbox(cx).status {
-            None => return message("Loading…".into()),
-            Some(Status::NotInstalled) if !self.inbox(cx).backlog_connected => {
-                return message(
-                    "Install the GitHub CLI (`brew install gh`) to fill the Inbox, or connect Backlog in Settings › Integrations.".into(),
-                );
-            }
-            Some(Status::SignedOut) if !self.inbox(cx).backlog_connected => {
-                return message(
-                    "Run `gh auth login` in a terminal to connect GitHub, or connect Backlog in Settings › Integrations.".into(),
-                );
-            }
-            Some(_) => {}
-        }
-        let shown = self.shown_inbox_items(cx);
-        if shown.is_empty() {
-            let narrowed = !self.inbox_search_input.read(cx).text().trim().is_empty()
-                || self.inbox(cx).kind != KindFilter::All
-                || self.inbox(cx).source_filter().is_some()
-                || !self.inbox(cx).statuses.is_empty()
-                || self.inbox(cx).assigned_to_me;
-            let text = if self.inbox(cx).loading {
-                "Loading…".to_string()
-            } else if let Some(error) = self.inbox(cx).errors.first() {
-                error.clone()
-            } else if self.inbox_projects_shown(cx).is_empty() && !self.inbox(cx).backlog_connected
-            {
-                "Open a project to fill the inbox".to_string()
-            } else if narrowed {
-                "No issues or pull requests match these filters".to_string()
-            } else {
-                "No matching issues or pull requests".to_string()
-            };
-            return message(text);
-        }
-        let now = crate::app::now_ms();
-        let len = shown.len();
-        let rows = cx.processor(move |this, range: std::ops::Range<usize>, _, cx| {
-            range
-                .filter_map(|row| shown.get(row).copied())
-                .map(|ix| this.render_inbox_row(ix, now, cx))
-                .collect::<Vec<_>>()
-        });
-        div()
-            .id("inbox-list-focus")
-            .key_context("InboxList")
-            .track_focus(&self.inbox_focus)
-            .size_full()
-            .flex()
-            .flex_col()
-            .child(crate::ui::scrollbar::framed(
-                "inbox-list-scrollbar",
-                &self.inbox(cx).scroll,
-                uniform_list("inbox-list", len, rows)
-                    .track_scroll(&self.inbox(cx).scroll)
-                    .size_full()
-                    .p(px(6.0))
-                    .pr(px(6.0) + crate::ui::scrollbar::gutter(&self.inbox(cx).scroll)),
-            ))
-            .into_any_element()
-    }
-
-    /// MonoCode `InboxCard`: kind · #n, the time and the unread dot, the
-    /// title, the repo and up to two labels.
-    fn render_inbox_row(&self, ix: usize, now: i64, cx: &Context<Self>) -> AnyElement {
-        let item = &self.inbox(cx).items[ix];
-        let colors = &cx.theme().colors;
-        let fg = colors.fg;
-        let key = item.key();
-        let active = self.inbox(cx).selected.as_deref() == Some(key.as_str());
-        let unseen = self.inbox(cx).is_unseen(item);
-        let (icon, tint, _) = status_mark(item, cx);
-        let selection = fg.opacity(if cx.theme().is_dark() { 0.10 } else { 0.06 });
-        let hover = fg.fill(Fill::Hover);
-        let repairs = self
-            .inbox(cx)
-            .repairs
-            .iter()
-            .filter(|r| r.item_key == key)
-            .count();
-        div()
-            .id(SharedString::from(format!("inbox-row-{key}")))
-            .h(px(ROW_HEIGHT))
-            .pb_0p5()
-            .child(
-                div()
-                    // Its own id: GPUI redraws on hover only for an
-                    // element that keeps state.
-                    .id(SharedString::from(format!("inbox-row-card-{key}")))
-                    .size_full()
-                    .flex()
-                    .flex_col()
-                    .justify_center()
-                    .px(px(10.0))
-                    .rounded(px(6.0))
-                    .cursor_pointer()
-                    .when(active, |el| el.bg(selection))
-                    .when(!active, |el| el.hover(move |s| s.bg(hover)))
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap_1p5()
-                            .child(Icon::new(icon).size(IconSize::Xs).color(tint))
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .min_w_0()
-                                    .truncate()
-                                    .text_size(Text::Sm.px())
-                                    .text_color(fg.ink(Ink::Secondary))
-                                    .child(format!(
-                                        "{} · {}",
-                                        kind_label(item.kind),
-                                        item.identifier
-                                    )),
-                            )
-                            .when(repairs > 0, |el| {
-                                el.child(
-                                    div()
-                                        .flex()
-                                        .items_center()
-                                        .gap_0p5()
-                                        .text_size(Text::Sm.px())
-                                        .text_color(colors.accent)
-                                        .child(
-                                            Icon::new(IconName::MessageSquare)
-                                                .size(IconSize::Xs)
-                                                .color(colors.accent),
-                                        )
-                                        .child(repairs.to_string()),
-                                )
-                            })
-                            .child(
-                                div()
-                                    .flex_none()
-                                    .text_size(Text::Sm.px())
-                                    .text_color(fg.ink(Ink::Muted))
-                                    .child(relative_time(&item.updated_at, now)),
-                            )
-                            .when(unseen, |el| {
-                                el.child(
-                                    div()
-                                        .size(px(6.0))
-                                        .flex_none()
-                                        .rounded_full()
-                                        .bg(colors.accent),
-                                )
-                            }),
-                    )
-                    .child(
-                        div()
-                            .mt_1()
-                            .truncate()
-                            .text_size(Text::Md.px())
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(fg)
-                            .child(SharedString::from(item.title.clone())),
-                    )
-                    .child(
-                        div()
-                            .mt_1()
-                            .flex()
-                            .items_center()
-                            .gap_2()
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .min_w_0()
-                                    .truncate()
-                                    .text_size(Text::Sm.px())
-                                    .text_color(fg.ink(Ink::Muted))
-                                    .child(SharedString::from(source_label(item))),
-                            )
-                            .children(item.labels.iter().take(2).map(|l| label_chip(l, cx))),
-                    ),
-            )
-            .on_click(cx.listener(move |this, _, window, cx| {
-                // The list takes the keyboard, so ↑/↓ go on from here.
-                window.focus(&this.inbox_focus, cx);
-                this.select_inbox_item(key.clone(), cx)
-            }))
-            .into_any_element()
     }
 }
 
@@ -1593,6 +1464,7 @@ fn load<T: Send + 'static>(
             });
             if text == Shown::Text {
                 app.forget_inbox_selection(&key, cx);
+                app.apply_inbox_translations(&key, cx);
             }
         });
         if let Err(err) = updated {
@@ -1698,5 +1570,18 @@ mod tests {
         assert!(inbox.mark_seen(&updated));
         assert!(!inbox.is_unseen(&updated));
         assert!(!inbox.mark_seen(&old), "an older read never rewinds");
+    }
+
+    #[test]
+    fn read_items_can_be_unread_again() {
+        let mut inbox = InboxState::default();
+        let it = item("2026-01-01T00:00:00Z");
+        inbox.items = vec![it.clone()];
+        inbox.seed_seen();
+        assert!(inbox.toggle_seen(&it));
+        assert!(inbox.is_unseen(&it), "marked unread");
+        assert!(!inbox.mark_unseen(&it), "already unread");
+        assert!(inbox.toggle_seen(&it));
+        assert!(!inbox.is_unseen(&it), "read again");
     }
 }

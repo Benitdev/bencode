@@ -110,7 +110,7 @@ const BODY_MAX: usize = 240;
 
 /// MonoCode `notificationText`.
 pub fn notification_text(session: &SessionRow, event: &Event) -> Text {
-    let subtitle = crate::app::session_list::display_title(&session.title, &session.harness);
+    let subtitle = crate::app::session_list::session_title(session);
     let harness = HarnessKind::from_id(&session.harness).map_or("The agent", |k| k.label());
     let body = match event {
         Event::Input(request) if request.tool == crate::app::QUESTION_TOOL => {

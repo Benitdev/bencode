@@ -28,7 +28,7 @@ fn display_title(session: &SessionRow) -> &str {
     if session.title.trim().is_empty() {
         UNTITLED
     } else {
-        session.title.as_str()
+        crate::app::session_list::linked_title(session)
     }
 }
 

@@ -68,6 +68,8 @@ pub(crate) struct Face {
     pub placeholder: SharedString,
     pub size: ControlSize,
     pub disabled: bool,
+    /// No frame until hovered or focused, and no icon (`field_frame`).
+    pub quiet: bool,
 }
 
 /// The trigger of a date or time picker: an icon, the value, and the popup when open.
@@ -84,6 +86,7 @@ pub(crate) fn picker_field(
         placeholder,
         size,
         disabled,
+        quiet,
     } = face;
     let trigger = tab_stop((id.clone(), "focus").into(), !disabled, window, cx);
     let state = dropdown(&id, window, cx);
@@ -106,7 +109,7 @@ pub(crate) fn picker_field(
     let popup = open.then(|| popup(close, anchor, window, cx));
     let subtle = cx.theme().colors.fg_subtle;
     let (click, keys, measure, focus) = (state.clone(), state.clone(), state, trigger.clone());
-    field_button(id, &trigger, size, disabled, window, cx)
+    field_button(id, &trigger, size, (disabled, quiet), window, cx)
         .when(!disabled, |field| {
             let focus_keys = focus.clone();
             field
@@ -121,7 +124,9 @@ pub(crate) fn picker_field(
                     }
                 })
         })
-        .child(Icon::new(icon).size(IconSize::Sm).color(subtle))
+        .when(!quiet, |field| {
+            field.child(Icon::new(icon).size(IconSize::Sm).color(subtle))
+        })
         .child(field_text(shown, placeholder, disabled, cx))
         .child(
             canvas(
@@ -150,6 +155,7 @@ pub struct DatePicker {
     today: Option<Date>,
     size: ControlSize,
     disabled: bool,
+    quiet: bool,
     on_change: Option<OnDate>,
 }
 
@@ -163,6 +169,7 @@ impl DatePicker {
             today: None,
             size: ControlSize::default(),
             disabled: false,
+            quiet: false,
             on_change: None,
         }
     }
@@ -184,6 +191,12 @@ impl DatePicker {
 
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
+        self
+    }
+
+    /// No frame until hovered or focused, and no calendar icon.
+    pub fn quiet(mut self) -> Self {
+        self.quiet = true;
         self
     }
 
@@ -230,6 +243,7 @@ impl RenderOnce for DatePicker {
                 placeholder: self.placeholder,
                 size: self.size,
                 disabled: self.disabled,
+                quiet: self.quiet,
             },
             move |close, anchor, window, cx| {
                 let mut calendar = popped(&id, &state, limits, cx);

@@ -1,6 +1,7 @@
 //! MonoCode `LinkSessionWorkItemDialog`: link a thread to a GitHub issue or
-//! pull request by URL (or edit / remove the link), and open the linked
-//! item from the card's badge.
+//! pull request, or a Backlog issue (BenCode's own), by URL (or edit /
+//! remove the link), and open the linked item beside its thread from the
+//! card's badge.
 
 use bencode_ui::buttons::{Button, ButtonVariant};
 use bencode_ui::overlays::Dialog;
@@ -11,7 +12,7 @@ use gpui::{
 };
 
 use crate::app::BenCodeApp;
-use crate::db::{LinkedWorkItem, WorkItemKind};
+use crate::db::LinkedWorkItem;
 use crate::ui::app_callback::app_callback;
 use crate::ui::scale::px;
 use crate::ui::tokens::RED_400;
@@ -60,13 +61,16 @@ impl BenCodeApp {
             return;
         };
         let text = self.link_input.read(cx).text().trim().to_string();
-        match LinkedWorkItem::parse_url(&text) {
+        match LinkedWorkItem::parse_any_url(&text, None) {
             Some(item) => {
                 let id = dialog.session_id.clone();
                 self.set_session_link(&id, Some(item), cx);
             }
             None => {
-                dialog.error = Some("Enter a valid GitHub issue or pull request URL.".into());
+                dialog.error = Some(
+                    "Enter a valid GitHub issue or pull request URL, or a Backlog issue URL."
+                        .into(),
+                );
                 cx.notify();
             }
         }
@@ -91,7 +95,7 @@ impl BenCodeApp {
                     .as_ref()
                     .is_some_and(|d| d.session_id == id);
                 if let Err(err) = written {
-                    log::error!("could not save the GitHub link of {id}: {err:#}");
+                    log::error!("could not save the work item link of {id}: {err:#}");
                     if let Some(dialog) = this.link_dialog.as_mut().filter(|_| dialog_open) {
                         dialog.error = Some(err.to_string());
                     }
@@ -101,6 +105,7 @@ impl BenCodeApp {
                 if let Some(session) = this.sessions.iter_mut().find(|s| s.id == id) {
                     session.linked_work_item = item;
                 }
+                this.links_changed();
                 if dialog_open {
                     this.close_link_dialog(cx);
                 }
@@ -115,7 +120,7 @@ impl BenCodeApp {
         let linked = session.linked_work_item.is_some();
         let theme = cx.theme();
         let colors = &theme.colors;
-        let title = crate::app::session_list::display_title(&session.title, &session.harness);
+        let title = crate::app::session_list::session_title(session);
         let close = app_callback(cx, |this, cx| this.close_link_dialog(cx));
         let fg = colors.fg;
         let red_400: Hsla = rgb(RED_400).into();
@@ -165,7 +170,7 @@ impl BenCodeApp {
                 None => div()
                     .text_size(Text::Sm.px())
                     .text_color(fg.ink(Ink::Muted))
-                    .child("Paste the full github.com URL. The linked item will appear on the session card."),
+                    .child("Paste a github.com issue or pull request URL, or a Backlog issue URL. The linked item will appear on the session card."),
             });
         let remove = app_callback(cx, |this, cx| {
             if let Some(id) = this.link_dialog.as_ref().map(|d| d.session_id.clone()) {
@@ -176,9 +181,9 @@ impl BenCodeApp {
         let mut built = Dialog::new(
             "link-work-item",
             if linked {
-                "Edit GitHub link"
+                "Edit link"
             } else {
-                "Link GitHub issue or PR"
+                "Link an issue or PR"
             },
             close,
         )
@@ -217,69 +222,15 @@ impl BenCodeApp {
         Some(dialog.into_any_element())
     }
 
-    /// The card badge's click: the item in the Inbox, fetched first when
-    /// the Inbox has not listed it.
+    /// The card badge's click: the thread, with its item in a tab beside
+    /// it, fetched first when the Inbox has not got it.
     pub fn open_linked_work_item(
         &mut self,
         session_id: &str,
         item: &LinkedWorkItem,
         cx: &mut Context<Self>,
     ) {
-        let kind = match item.kind {
-            WorkItemKind::Pr => crate::github::Kind::Pr,
-            WorkItemKind::Issue => crate::github::Kind::Issue,
-        };
-        let key = format!(
-            "{}:{}:{}",
-            item.repo.to_lowercase(),
-            if kind == crate::github::Kind::Pr {
-                "pr"
-            } else {
-                "issue"
-            },
-            item.number
-        );
-        self.open_inbox_modal(cx);
-        if self.inbox(cx).item(&key).is_some() {
-            self.select_inbox_key(key, cx);
-            return;
-        }
-        let cwd = self
-            .sessions
-            .iter()
-            .find(|s| s.id == session_id)
-            .map(|s| s.work_dir().to_string())
-            .unwrap_or_else(|| self.current_cwd.clone());
-        let (repo, number) = (item.repo.clone(), item.number);
-        let task = cx.background_executor().spawn(async move {
-            crate::github::work_item(std::path::Path::new(&cwd), &repo, kind, number).map(
-                |mut found| {
-                    found.project = cwd;
-                    found
-                },
-            )
-        });
-        let url = item.url.clone();
-        cx.spawn(async move |this, cx| {
-            let fetched = task.await;
-            let updated = this.update(cx, |this, cx| match fetched {
-                Ok(found) => {
-                    let key = found.key();
-                    if this.inbox(cx).item(&key).is_none() {
-                        this.inbox_state.as_mut(cx).items.push(found);
-                    }
-                    this.select_inbox_key(key, cx);
-                }
-                Err(err) => {
-                    // Without `gh`, the browser still shows it.
-                    log::warn!("could not load {url}: {err}");
-                    cx.open_url(&url);
-                }
-            });
-            if let Err(err) = updated {
-                log::debug!("linked item loaded after app drop: {err:#}");
-            }
-        })
-        .detach();
+        self.select_live_agent(session_id, cx);
+        self.open_work_item_tab(&item.item_key(), Some(item), false, cx);
     }
 }

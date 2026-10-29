@@ -53,6 +53,17 @@ impl BenCodeApp {
             .unwrap_or_else(|| "HEAD".to_string())
     }
 
+    /// The base a thread started in `cwd` in "New worktree" mode branches
+    /// from: the current branch when `cwd` is the project shown, else its
+    /// `HEAD`, which is the same branch, unnamed.
+    pub fn new_thread_worktree_base(&self, cwd: &str) -> String {
+        if crate::app::same_project_path(cwd, &self.current_cwd) {
+            self.default_worktree_base()
+        } else {
+            "HEAD".to_string()
+        }
+    }
+
     /// The focused thread has not started, so its workspace can change.
     pub fn is_draft_workspace(&self, cx: &gpui::App) -> bool {
         let session = self.selected_session();

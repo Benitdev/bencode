@@ -9,12 +9,12 @@ use super::{
     Choice,
     listbox::chosen,
     options::{OnValues, Pick, Popup, step},
-    select::{Picker, measure_anchor, moved},
+    select::{FIELD_GROUP, Picker, field_chevron, field_frame, measure_anchor, moved},
 };
 use crate::{
     data_display::Tag,
-    primitives::{Icon, IconName, tab_stop},
-    theme::{ActiveTheme, ControlSize, IconSize, Radius, TextSize},
+    primitives::tab_stop,
+    theme::{ActiveTheme, ControlSize, Radius, TextSize},
 };
 
 /// A select for several values. Chosen ones sit in the field as chips.
@@ -25,6 +25,7 @@ pub struct MultiSelect {
     selected: Vec<SharedString>,
     placeholder: SharedString,
     size: ControlSize,
+    quiet: bool,
     on_change: Option<OnValues>,
 }
 
@@ -36,6 +37,7 @@ impl MultiSelect {
             selected: Vec::new(),
             placeholder: SharedString::from("Choose…"),
             size: ControlSize::default(),
+            quiet: false,
             on_change: None,
         }
     }
@@ -52,6 +54,12 @@ impl MultiSelect {
 
     pub fn size(mut self, size: ControlSize) -> Self {
         self.size = size;
+        self
+    }
+
+    /// No frame until hovered or focused (`field_frame`).
+    pub fn quiet(mut self) -> Self {
+        self.quiet = true;
         self
     }
 
@@ -157,13 +165,8 @@ impl RenderOnce for MultiSelect {
             .pr(theme.control_padding(self.size))
             .py_0p5()
             .rounded(theme.radius(Radius::Md))
-            .border_1()
-            .border_color(if focused {
-                colors.focus
-            } else {
-                colors.border_strong
-            })
-            .bg(colors.surface)
+            .group(FIELD_GROUP)
+            .map(|field| field_frame(field, focused, false, self.quiet, cx))
             .text_size(theme.text_size(TextSize::Base))
             .cursor_pointer()
             .on_click(move |event, _, cx| {
@@ -213,13 +216,7 @@ impl RenderOnce for MultiSelect {
                         )
                     }),
             )
-            .child(
-                div().flex_none().child(
-                    Icon::new(IconName::ChevronsUpDown)
-                        .size(IconSize::Xs)
-                        .color(colors.fg_subtle),
-                ),
-            )
+            .child(field_chevron(self.quiet, cx))
             .child(measure_anchor(picker))
             .when(open, |field| {
                 field.child(

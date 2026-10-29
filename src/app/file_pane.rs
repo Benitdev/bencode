@@ -2,7 +2,8 @@
 //! `openChangesTab`, `openCommitTab`): one strip of tabs holding open files,
 //! per-file reviews, a working tree's Changes and past commits. Browsing
 //! lists opens preview tabs that the next pick replaces; closing the last
-//! tab gives the chat its full width back.
+//! tab gives the chat its full width back. An Inbox item opens here too,
+//! so a ticket stays readable beside the thread working on it.
 
 use crate::ui::git_changes_panel::Side;
 
@@ -43,6 +44,20 @@ pub enum PaneTab {
     FileHistory { cwd: String, path: String },
     /// A page in the in-app browser (`app/browser.rs` keeps its view).
     Browser { id: u64 },
+    /// An Inbox item, by its key (`WorkItem::key`); the Inbox's state
+    /// holds what it shows (`ui/inbox_view/tab.rs`).
+    WorkItem { key: String },
+}
+
+/// How an Inbox key names its item before the item is known: `PROJ-12`,
+/// `#42`.
+fn work_item_name(key: &str) -> String {
+    match key.strip_prefix("backlog:") {
+        Some(issue) => issue.to_ascii_uppercase(),
+        None => key
+            .rsplit_once(':')
+            .map_or_else(|| key.to_string(), |(_, number)| format!("#{number}")),
+    }
 }
 
 fn basename(path: &str) -> &str {
@@ -65,13 +80,17 @@ impl PaneTab {
             Self::Commit { cwd, sha, .. } => format!("commit:{cwd}:{sha}"),
             Self::FileHistory { cwd, path } => format!("file-history:{cwd}/{path}"),
             Self::Browser { id } => format!("browser:{id}"),
+            Self::WorkItem { key } => format!("work-item:{key}"),
         }
     }
 
     /// MonoCode `isPreviewableTab`. Files stay put here: replacing one would
     /// drop its unsaved edits.
     fn previewable(&self) -> bool {
-        matches!(self, Self::Review { .. } | Self::Commit { .. })
+        matches!(
+            self,
+            Self::Review { .. } | Self::Commit { .. } | Self::WorkItem { .. }
+        )
     }
 
     pub fn is_diff(&self) -> bool {
@@ -81,13 +100,17 @@ impl PaneTab {
                 | Self::Image { .. }
                 | Self::Browser { .. }
                 | Self::FileHistory { .. }
+                | Self::WorkItem { .. }
         )
     }
 
     /// The working tree or repository a diff tab reads.
     pub fn cwd(&self) -> Option<&str> {
         match self {
-            Self::File { .. } | Self::Image { .. } | Self::Browser { .. } => None,
+            Self::File { .. }
+            | Self::Image { .. }
+            | Self::Browser { .. }
+            | Self::WorkItem { .. } => None,
             Self::Review { cwd, .. }
             | Self::Changes { cwd, .. }
             | Self::SessionChanges { cwd, .. }
@@ -136,6 +159,8 @@ impl PaneTab {
             ),
             // The page's title replaces it once loaded (`render_pane_tabs`).
             Self::Browser { .. } => ("Browser".into(), "Browser".into()),
+            // The item's key and title replace it once known.
+            Self::WorkItem { key } => (work_item_name(key), key.clone()),
         }
     }
 }
@@ -172,6 +197,12 @@ impl FilePane {
 
     pub fn active_key(&self) -> Option<&str> {
         self.active.as_deref()
+    }
+
+    /// An Inbox item has a tab: the pane draws from the Inbox's state (its
+    /// detail, or the tab's label) and follows it.
+    pub fn shows_work_item(&self) -> bool {
+        (self.entries.iter()).any(|e| matches!(e.tab, PaneTab::WorkItem { .. }))
     }
 
     pub fn active(&self) -> Option<&PaneTab> {
@@ -386,6 +417,28 @@ mod tests {
             false,
         );
         assert_eq!(keys(&pane), ["file:x.rs", "changes:/repo"]);
+    }
+
+    #[test]
+    fn inbox_items_are_previews_keyed_by_their_item() {
+        let ticket = PaneTab::WorkItem {
+            key: "backlog:proj_d-1147".into(),
+        };
+        assert_eq!(ticket.key(), "work-item:backlog:proj_d-1147");
+        assert_eq!(ticket.label().0, "PROJ_D-1147");
+        assert!(!ticket.is_diff() && ticket.cwd().is_none());
+        let pr = PaneTab::WorkItem {
+            key: "owner/repo:pr:182".into(),
+        };
+        assert_eq!(pr.label().0, "#182");
+        // Reading one item after another keeps one tab.
+        let mut pane = FilePane::default();
+        pane.open(file("a.rs"), false);
+        pane.open(ticket, false);
+        pane.open(pr.clone(), false);
+        assert_eq!(keys(&pane), ["file:a.rs", "work-item:owner/repo:pr:182"]);
+        pane.open(pr, true);
+        assert!(!pane.entries()[1].preview);
     }
 
     #[test]

@@ -55,6 +55,7 @@ impl BenCodeApp {
                 if app.backlog.generation == generation {
                     app.backlog.account = account;
                     app.backlog.loaded = true;
+                    app.backfill_backlog_links(cx);
                     cx.notify();
                 }
             });
@@ -120,6 +121,7 @@ impl BenCodeApp {
                             .update(cx, |input, cx| input.set_text("", cx));
                         app.load_backlog_projects(cx);
                         app.refresh_inbox(cx);
+                        app.backfill_backlog_links(cx);
                     }
                     Err(err) => {
                         log::warn!("could not connect Backlog: {err}");
@@ -302,7 +304,7 @@ impl BenCodeApp {
                 match result {
                     Ok((next, fields)) => {
                         app.inbox_state.update(cx, |inbox, _| {
-                            if let Some(slot) = inbox.items.iter_mut().find(|i| i.key() == key) {
+                            if let Some(slot) = inbox.item_mut(&key) {
                                 *slot = next;
                             }
                             if let Some(Ok(shown)) = inbox.details.value.get_mut(&key) {

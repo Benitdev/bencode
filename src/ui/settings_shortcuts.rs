@@ -197,6 +197,58 @@ fn groups() -> Vec<Group<Entry>> {
             ],
         },
         Group {
+            title: "Inbox",
+            description: Some("While the Inbox's list has focus, on the selected item."),
+            rows: vec![
+                entry("Next Item", I::ArrowDown, cmd::InboxNext)
+                    .within("InboxList")
+                    .note("J works too."),
+                entry("Previous Item", I::ArrowUp, cmd::InboxPrevious)
+                    .within("InboxList")
+                    .note("K works too."),
+                entry(
+                    "Open Thread or Send to Agent",
+                    I::Sparkles,
+                    cmd::InboxSendToAgent,
+                )
+                .within("InboxList")
+                .note(
+                    "Opens the item's newest thread; else sends an issue to an agent, or a pull request for review. With items selected, sends them all.",
+                ),
+                entry("Open in Tracker", I::ExternalLink, cmd::InboxOpenInTracker)
+                    .within("InboxList"),
+                entry("Open Beside the Chat", I::Columns2, cmd::InboxOpenBeside)
+                    .within("InboxList")
+                    .note("Leaves the Inbox; the item stays in a tab beside the thread."),
+                entry("Filter", I::Search, cmd::InboxFocusFilter)
+                    .within("InboxList")
+                    .note("Esc in the filter field goes back to the list."),
+                entry("Refresh", I::RefreshCw, cmd::InboxRefresh).within("InboxList"),
+                entry("Mark Read or Unread", I::CheckCheck, cmd::InboxToggleRead)
+                    .within("InboxList"),
+                entry("Assign to Me", I::User, cmd::InboxAssignToMe)
+                    .within("InboxList")
+                    .note("Backlog issues."),
+                entry("Comment", I::MessageSquare, cmd::InboxFocusComment).within("InboxList"),
+                entry("Translate", I::Languages, cmd::InboxToggleTranslation)
+                    .within("InboxList")
+                    .note("Into the language last picked; again for the original."),
+                entry("Copy Key and Title", I::Copy, cmd::InboxCopyTicket).within("InboxList"),
+                entry("Only Mine", I::User, cmd::InboxToggleMine)
+                    .within("InboxList")
+                    .note("Items assigned to you; again for all."),
+                entry("Only Unread", I::Eye, cmd::InboxToggleUnread)
+                    .within("InboxList")
+                    .note("Unread items and those that need you; again for all."),
+                entry("Select or Deselect", I::SquareCheck, cmd::InboxTogglePick)
+                    .within("InboxList")
+                    .note("The open item, to send with others; ⌘-click and ⇧-click in the list."),
+                entry("Clear Selection", I::X, cmd::InboxClearPicks)
+                    .within("InboxList")
+                    .note("Then Esc closes the Inbox."),
+            ],
+        },
+        Group {
             title: "Explorer",
             description: Some("While the file tree has focus, on the selected entry."),
             rows: vec![

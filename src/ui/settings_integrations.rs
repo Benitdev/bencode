@@ -47,16 +47,37 @@ impl BenCodeApp {
         page.group(self.render_inbox_translation(cx))
     }
 
-    /// The model Translate runs on, from any installed harness.
+    /// The model Translate runs on, from any installed harness, and
+    /// whether opening an item translates it.
     fn render_inbox_translation(&self, cx: &Context<Self>) -> SettingsGroup {
-        SettingsGroup::new("Inbox").row(
-            SettingsRow::new("Translation model")
-                .description(
-                    "The model an item's or a comment's Translate runs on, one turn on your own \
-                     sign-in. A small model answers in seconds.",
-                )
-                .control(self.render_translate_model(cx)),
-        )
+        let translations = &self.inbox(cx).translations;
+        let language = translations.language.label();
+        let always = Switch::new("inbox-translate-always", translations.always).on_change(
+            app_callback_with(cx, |this, on, cx| {
+                this.set_inbox_translate_always(on, cx);
+                this.play_cue(crate::sounds::Cue::Switch);
+            }),
+        );
+        SettingsGroup::new("Inbox")
+            .row(
+                SettingsRow::new("Translation model")
+                    .description(
+                        "The model an item's or a comment's Translate runs on, one turn on your \
+                         own sign-in. A small model answers in seconds. Translations are kept, \
+                         and shown again while the text is unchanged.",
+                    )
+                    .control(self.render_translate_model(cx)),
+            )
+            .row(
+                SettingsRow::new(format!("Always translate into {language}"))
+                    .description(format!(
+                        "Opening an item whose title or description is not in {language} \
+                         translates it: one turn on the model above for each item opened, unless \
+                         a kept translation still matches. Comments stay on their own Translate. \
+                         The item's Translate menu picks the language."
+                    ))
+                    .control(always),
+            )
     }
 
     /// The accounts `gh` is signed in with.

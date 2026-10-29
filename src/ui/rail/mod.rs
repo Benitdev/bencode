@@ -277,13 +277,13 @@ impl BenCodeApp {
                 rail_icon_button(
                     "rail-inbox",
                     IconName::Inbox,
-                    if self.inbox_has_unseen(cx) {
-                        "Inbox, new items"
+                    if self.inbox_needs_you(cx) {
+                        "Inbox, items need you"
                     } else {
                         "Inbox"
                     },
                     self.surface_open(Surface::Inbox),
-                    self.inbox_has_unseen(cx),
+                    self.inbox_needs_you(cx),
                     cx,
                     |this, _, _, cx| this.open_inbox_modal(cx),
                 )

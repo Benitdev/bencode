@@ -1,6 +1,6 @@
 //! The pane beside the chat, right of it unless swapped (MonoCode's editor
-//! pane and its `SurfaceTabs`): open files, reviews and commits behind one
-//! tab strip.
+//! pane and its `SurfaceTabs`): open files, reviews, commits and Inbox
+//! items behind one tab strip.
 //! The chat stays beside it and takes the full width once it is empty.
 
 use bencode_ui::layout::SplitPane;
@@ -59,7 +59,8 @@ impl BenCodeApp {
     }
 
     /// After tabs opened, closed or changed: reviews and pages of closed
-    /// tabs go, and the editor follows the active file.
+    /// tabs go, the editor follows the active file, and an Inbox item's
+    /// tab loads what it shows.
     fn settle_file_pane(&mut self, cx: &mut Context<Self>) {
         // The Inbox's pull request review is not a tab.
         let closed = (self.diff_docs.keys())
@@ -95,6 +96,7 @@ impl BenCodeApp {
             self.file_pane_focused = false;
         }
         self.settle_browser_tabs(cx);
+        self.load_work_item_tab(cx);
     }
 
     fn select_pane_tab(&mut self, key: &str, cx: &mut Context<Self>) {
@@ -198,6 +200,7 @@ impl BenCodeApp {
             Some(tab) if tab.is_diff() => self.render_diff_doc(&tab.key(), cx),
             Some(tab @ PaneTab::FileHistory { .. }) => self.render_file_history(tab, cx),
             Some(PaneTab::Image { path }) => self.render_image_tab(path, cx),
+            Some(PaneTab::WorkItem { key }) => self.render_work_item_tab(key, cx),
             _ => self.render_editor_file(cx).into_any_element(),
         };
         div()
@@ -242,6 +245,11 @@ impl BenCodeApp {
                 label = tab.label();
             }
             let (icon, dirty) = match &entry.tab {
+                PaneTab::WorkItem { key } => {
+                    let (name, icon) = self.work_item_tab_label(key, cx);
+                    label = name;
+                    (icon, false)
+                }
                 PaneTab::File { path } => (IconName::FileCode, self.editor.files.is_dirty(path)),
                 PaneTab::Image { .. } => (IconName::FileImage, false),
                 PaneTab::Commit { .. } => (IconName::GitCommitHorizontal, false),

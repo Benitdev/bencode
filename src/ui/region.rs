@@ -154,6 +154,27 @@ impl Regions {
         self.follows.push((regions.to_vec(), follow));
     }
 
+    /// `regions` redraw when `model` notifies while `shows(app)` holds:
+    /// for a region that shows the model only at times. Asked at each
+    /// notify, so what starts showing it later follows it from then on;
+    /// starting to show it redraws the region itself.
+    pub fn follow_while<T: 'static>(
+        &mut self,
+        model: &Entity<T>,
+        regions: &[Region],
+        shows: fn(&BenCodeApp) -> bool,
+    ) {
+        let model = model.clone();
+        let follow: Follow = Rc::new(move |cx| {
+            cx.observe(&model, move |view: &mut RegionView, _, cx| {
+                if view.app.upgrade().is_some_and(|app| shows(app.read(cx))) {
+                    cx.notify();
+                }
+            })
+        });
+        self.follows.push((regions.to_vec(), follow));
+    }
+
     /// `region`'s view, laid out at `style`: a cached view is laid out from
     /// its style, never measured from its content, so the style gives it a
     /// definite size.
@@ -329,7 +350,7 @@ impl BenCodeApp {
             }
             Region::Terminal => self.render_terminal_region(cx),
             Region::Surface => self
-                .render_surface(cx)
+                .render_surface(window, cx)
                 .unwrap_or_else(|| div().into_any_element()),
             Region::Mono => {
                 // Its chat, or the session it shows, may be the focused

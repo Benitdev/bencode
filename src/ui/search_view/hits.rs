@@ -11,6 +11,7 @@ use std::ops::Range;
 
 use gpui::SharedString;
 
+use crate::app::session_list::linked_title;
 use crate::db::SessionRow;
 use crate::ui::quick_open::{fuzzy_match, rank_files};
 
@@ -175,7 +176,7 @@ fn thread_hits(tokens: &[String], all: bool, src: &Sources) -> Vec<SearchHit> {
         return recent
             .into_iter()
             .take(cap)
-            .map(|s| thread_hit(s, Marked::plain(s.title.clone()), place(s)))
+            .map(|s| thread_hit(s, Marked::plain(linked_title(s).to_string()), place(s)))
             .collect();
     }
     let mut ranked: Vec<(u8, i64, SearchHit)> = src
@@ -193,15 +194,17 @@ fn thread_hits(tokens: &[String], all: bool, src: &Sources) -> Vec<SearchHit> {
 /// A thread's rank (lower is better) and its hit, if every token is in
 /// its title, its place, its model or what was said.
 fn match_thread(tokens: &[String], s: &SessionRow) -> Option<(u8, SearchHit)> {
-    if let Some(marks) = find_all(&s.title, tokens) {
+    // As shown: a linked item's key is found in what was said instead.
+    let shown = linked_title(s);
+    if let Some(marks) = find_all(shown, tokens) {
         let tier = if marks[0].start == 0 {
             0
-        } else if marks.iter().all(|m| word_start(&s.title, m.start)) {
+        } else if marks.iter().all(|m| word_start(shown, m.start)) {
             1
         } else {
             2
         };
-        let hit = thread_hit(s, Marked::new(s.title.clone(), marks), place(s));
+        let hit = thread_hit(s, Marked::new(shown.to_string(), marks), place(s));
         return Some((tier, hit));
     }
     let said = || {
@@ -215,7 +218,7 @@ fn match_thread(tokens: &[String], s: &SessionRow) -> Option<(u8, SearchHit)> {
     // The first token found only in what was said: the excerpt shows it.
     let mut unsaid: Option<&str> = None;
     for token in tokens {
-        if let Some(at) = find_folded(&s.title, token) {
+        if let Some(at) = find_folded(shown, token) {
             title_marks.push(at);
         } else if let Some(at) = find_folded(&where_.text, token) {
             place_marks.push(at);
@@ -226,7 +229,7 @@ fn match_thread(tokens: &[String], s: &SessionRow) -> Option<(u8, SearchHit)> {
             return None;
         }
     }
-    let title = Marked::new(s.title.clone(), title_marks);
+    let title = Marked::new(shown.to_string(), title_marks);
     let Some(token) = unsaid else {
         let where_ = Marked::new(where_.text, place_marks);
         return Some((3, thread_hit(s, title, where_)));

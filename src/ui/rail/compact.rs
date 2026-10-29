@@ -78,7 +78,7 @@ impl BenCodeApp {
                 compact_action(id, icon, label, self.surface_open(surface), dot, cx)
                     .on_click(cx.listener(move |this, _, _, cx| this.toggle_surface(surface, cx)))
             };
-        let unseen = self.inbox_has_unseen(cx);
+        let needs_you = self.inbox_needs_you(cx);
         div()
             .id("compact-project-rail")
             .flex()
@@ -144,9 +144,13 @@ impl BenCodeApp {
                         surface_action(
                             "compact-rail-inbox",
                             IconName::Inbox,
-                            if unseen { "Inbox, new items" } else { "Inbox" },
+                            if needs_you {
+                                "Inbox, items need you"
+                            } else {
+                                "Inbox"
+                            },
                             Surface::Inbox,
-                            unseen,
+                            needs_you,
                         )
                         // MonoCode `onOpenContextMenu`: the notification menu.
                         .on_mouse_down(

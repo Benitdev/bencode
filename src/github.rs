@@ -11,12 +11,16 @@ use serde::Deserialize;
 
 use crate::work_items::Provider;
 pub use crate::work_items::{Comment, Commit, Details, Kind, Label, Thread, WorkItem};
+use crate::work_items::{PrStatus, Review};
 
 /// The `gh --json` fields listed for each kind.
 fn list_fields(kind: Kind) -> &'static str {
     match kind {
         Kind::Issue => "number,title,url,state,stateReason,createdAt,updatedAt,labels,assignees",
-        Kind::Pr => "number,title,url,state,createdAt,updatedAt,labels,assignees,isDraft",
+        // The checks and review, so rows show them without a load each.
+        Kind::Pr => {
+            "number,title,url,state,createdAt,updatedAt,labels,assignees,isDraft,headRefName,statusCheckRollup,reviewDecision"
+        }
     }
 }
 
@@ -196,6 +200,48 @@ struct ItemRow {
     assignees: Vec<Login>,
     #[serde(default)]
     is_draft: bool,
+    #[serde(default)]
+    head_ref_name: String,
+    #[serde(default)]
+    status_check_rollup: Option<Vec<RollupRow>>,
+    #[serde(default)]
+    review_decision: Option<String>,
+}
+
+/// A check of `statusCheckRollup`: a check run (`status`, `conclusion`)
+/// or a commit status (`state`).
+#[derive(Deserialize, Default)]
+#[serde(default, rename_all = "camelCase")]
+struct RollupRow {
+    #[serde(rename = "__typename")]
+    typename: String,
+    status: String,
+    conclusion: Option<String>,
+    state: String,
+}
+
+/// The listed checks counted, and the review decision.
+fn pr_status(rollup: &[RollupRow], decision: Option<&str>) -> PrStatus {
+    let mut status = PrStatus {
+        review: Review::from_decision(decision.unwrap_or("")),
+        ..Default::default()
+    };
+    for row in rollup {
+        let state = if row.typename.eq_ignore_ascii_case("StatusContext") {
+            CheckState::from_conclusion(&row.state)
+        } else {
+            CheckState::from_run(&row.status, row.conclusion.as_deref().unwrap_or(""))
+        };
+        let count = match state {
+            CheckState::Pass => &mut status.passed,
+            // GitHub's rollup counts a cancelled run as failing.
+            CheckState::Fail | CheckState::Cancel => &mut status.failed,
+            CheckState::Pending => &mut status.running,
+            CheckState::Skipping | CheckState::Unknown => continue,
+        };
+        *count = count.saturating_add(1);
+    }
+    status
 }
 
 #[derive(Deserialize)]
@@ -217,6 +263,13 @@ fn parse_work_items(
     Ok(rows
         .into_iter()
         .map(|row| WorkItem {
+            pr_status: match kind {
+                Kind::Pr => pr_status(
+                    row.status_check_rollup.as_deref().unwrap_or_default(),
+                    row.review_decision.as_deref(),
+                ),
+                Kind::Issue => PrStatus::default(),
+            },
             provider: Provider::GitHub,
             kind,
             identifier: format!("#{}", row.number),
@@ -231,6 +284,7 @@ fn parse_work_items(
             labels: row.labels,
             assignees: row.assignees.into_iter().map(|a| a.login).collect(),
             draft: row.is_draft,
+            head_ref: row.head_ref_name,
             repo: repo.to_string(),
             project: project.to_string(),
             ..Default::default()
@@ -349,6 +403,44 @@ pub fn inbox(projects: &[String], assigned_to_me: bool) -> InboxList {
     list
 }
 
+/// The login `gh` runs as in project `cwd`, asked once per project per
+/// run: the Inbox's "assigned to you" and one notifications ask per
+/// account.
+pub fn viewer_login(cwd: &Path) -> Result<String, String> {
+    static CACHE: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::HashMap<PathBuf, String>>,
+    > = std::sync::OnceLock::new();
+    let cache = CACHE.get_or_init(Default::default);
+    let cached = (cache.lock().map_err(|err| err.to_string())?)
+        .get(cwd)
+        .cloned();
+    if let Some(login) = cached {
+        return Ok(login);
+    }
+    let login = gh(cwd, &["api", "user", "--jq", ".login"])?;
+    if login.is_empty() {
+        return Err("gh named no user".into());
+    }
+    (cache.lock().map_err(|err| err.to_string())?).insert(cwd.to_path_buf(), login.clone());
+    Ok(login)
+}
+
+/// The latest page of the threads the account of project `cwd`
+/// participates in, read or not, with the response's headers (GitHub's
+/// `X-Poll-Interval`). Reads only: nothing is marked read.
+pub fn notifications(cwd: &Path) -> Result<(String, String), String> {
+    let out = gh(
+        cwd,
+        &[
+            "api",
+            "-i",
+            "notifications?participating=true&all=true&per_page=50",
+        ],
+    )?;
+    let (headers, body) = crate::work_items::attention::split_response(&out);
+    Ok((headers.to_string(), body.to_string()))
+}
+
 // ---------------------------------------------------------------------------
 // One item's conversation (MonoCode `git_github_work_item_thread`).
 // ---------------------------------------------------------------------------
@@ -409,6 +501,11 @@ mutation InboxReviewReply($threadId: ID!, $body: String!) {
   }
 }
 "#;
+
+/// Whether `repo` is an `owner/name` safe to put on argv or in a prompt.
+pub(crate) fn valid_repo(repo: &str) -> bool {
+    split_repo(repo).is_ok()
+}
 
 fn split_repo(repo: &str) -> Result<(&str, &str), String> {
     let (owner, name) = repo
@@ -1217,19 +1314,42 @@ mod tests {
         let json = r#"[{"number":7,"title":"Fix login","url":"https://github.com/o/r/pull/7",
             "state":"OPEN","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-02T00:00:00Z",
             "labels":[{"name":"bug","color":"d73a4a","id":"x"}],
-            "assignees":[{"login":"ben"}],"isDraft":true}]"#;
+            "assignees":[{"login":"ben"}],"isDraft":true,"headRefName":"feature/proj-7"}]"#;
         let items = parse_work_items(json, Kind::Pr, "o/r", "/p").unwrap();
         assert_eq!(items.len(), 1);
         let item = &items[0];
         assert_eq!((item.number, item.draft, item.kind), (7, true, Kind::Pr));
         assert_eq!(item.labels[0].name, "bug");
         assert_eq!(item.assignees, ["ben"]);
+        assert_eq!(item.head_ref, "feature/proj-7");
         assert_eq!(item.key(), "o/r:pr:7");
         assert!(
             parse_work_items("", Kind::Issue, "o/r", "/p")
                 .unwrap()
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn listed_pull_requests_carry_their_checks_and_review() {
+        let json = r#"[{"number":9,"state":"OPEN","reviewDecision":"CHANGES_REQUESTED",
+            "statusCheckRollup":[
+              {"__typename":"CheckRun","name":"test","status":"COMPLETED","conclusion":"FAILURE"},
+              {"__typename":"CheckRun","name":"lint","status":"COMPLETED","conclusion":"SUCCESS"},
+              {"__typename":"CheckRun","name":"e2e","status":"IN_PROGRESS","conclusion":""},
+              {"__typename":"CheckRun","name":"docs","status":"COMPLETED","conclusion":"SKIPPED"},
+              {"__typename":"StatusContext","context":"ci/circle","state":"SUCCESS"},
+              {"__typename":"StatusContext","context":"deploy","state":"PENDING"}]}]"#;
+        let item = &parse_work_items(json, Kind::Pr, "o/r", "/p").unwrap()[0];
+        let status = item.pr_status;
+        assert_eq!((status.passed, status.failed, status.running), (2, 1, 2));
+        assert_eq!(status.review, Review::ChangesRequested);
+
+        // No checks and no decision (null, as `gh` gives them): nothing.
+        let json = r#"[{"number":3,"state":"OPEN","statusCheckRollup":null,"reviewDecision":""}]"#;
+        let item = &parse_work_items(json, Kind::Pr, "o/r", "/p").unwrap()[0];
+        assert_eq!(item.pr_status, PrStatus::default());
+        assert_eq!(item.pr_status.checks_mark(), None);
     }
 
     #[test]

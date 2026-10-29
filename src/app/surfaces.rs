@@ -63,6 +63,9 @@ impl BenCodeApp {
                 _ => {}
             }
         }
+        if surface == Surface::Inbox {
+            self.read_inbox_translations(cx);
+        }
         self.surface = Some(surface);
         cx.notify();
     }
@@ -77,6 +80,9 @@ impl BenCodeApp {
             Some(Surface::Automations) => self.automations.pending_delete = None,
             Some(Surface::Settings) => {
                 self.surface = self.settings_return.take();
+                if self.surface == Some(Surface::Inbox) {
+                    self.focus_inbox_list(cx);
+                }
                 cx.notify();
                 return;
             }
@@ -87,10 +93,14 @@ impl BenCodeApp {
     }
 
     /// The open view with its 40px header, or `None` for the workspace.
-    pub(crate) fn render_surface(&mut self, cx: &mut Context<Self>) -> Option<AnyElement> {
+    pub(crate) fn render_surface(
+        &mut self,
+        window: &gpui::Window,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
         let surface = self.surface?;
         let body = match surface {
-            Surface::Inbox => self.render_inbox_body(cx),
+            Surface::Inbox => self.render_inbox_body(window, cx),
             Surface::Notes => self.render_notes_body(cx),
             Surface::Automations => self.render_automations_body(cx),
             Surface::Settings => self.render_settings_body(cx),

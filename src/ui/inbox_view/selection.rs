@@ -10,8 +10,8 @@ use std::rc::Rc;
 use bencode_ui::selection::{Document, TextSelection};
 use gpui::{Context, Div, SharedString};
 
+use super::DetailView;
 use crate::app::BenCodeApp;
-use crate::ui::region::Region;
 use crate::ui::selection_area::{self, SelectionArea};
 use crate::ui::transcript::selection::SegCtx;
 
@@ -37,15 +37,21 @@ pub(super) fn comment_block(comment: usize, reply: Option<usize>) -> usize {
 }
 
 impl BenCodeApp {
-    /// Where block `block` of item `key` draws its text.
-    pub(super) fn inbox_seg_ctx(&self, key: &str, block: usize, cx: &Context<Self>) -> SegCtx {
+    /// Where block `block` of item `key` draws its text in `view`.
+    pub(super) fn inbox_seg_ctx(
+        &self,
+        key: &str,
+        block: usize,
+        view: DetailView,
+        cx: &Context<Self>,
+    ) -> SegCtx {
         let app = cx.weak_entity();
+        let region = view.region();
         let doc = Document::new(place(key), &self.text_selection)
-            .list(self.inbox(cx).detail_list.clone())
+            .list(self.inbox(cx).detail_list(view).list.clone())
             .focus(self.inbox_text_focus.clone())
             .on_change(move |cx| {
-                let redrawn =
-                    app.update(cx, |this, cx| this.redraw_regions(&[Region::Surface], cx));
+                let redrawn = app.update(cx, |this, cx| this.redraw_regions(&[region], cx));
                 if let Err(err) = redrawn {
                     log::debug!("inbox selection after app drop: {err:#}");
                 }

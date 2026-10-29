@@ -4,6 +4,127 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
+## [0.1.38] - Unreleased
+
+- The Inbox's rows read at a glance: a line of status, a short key
+  (`C-289` where every Backlog project starts `ACME_SHOP_`, the
+  whole key in its tooltip), the issue's type, a due mark when it is
+  overdue or due within five days, an arrow for high priority and a short
+  age, over a title of up to two lines. A pull request or issue from
+  GitHub reads `#483 · repo` with one label. Only unread titles are bold.
+- The Inbox works from the keyboard: opening it hands its list the
+  keyboard and opens the first unread item, then J/K or ↑/↓ move, ⌘↩
+  sends an issue to an agent, O opens it in its tracker, / filters (Esc
+  goes back to the list), R refreshes, U marks it read or unread, A
+  assigns a Backlog issue to you, C writes a comment, T translates into
+  the language last picked (again for the original) and Y copies its key
+  and title. Settings › Shortcuts lists them.
+- Inbox translations are kept: refreshing, switching "Mine" or quitting
+  no longer throws them away, so the same ticket or comment never costs a
+  second turn. A translation shows again while the text it was made from
+  is unchanged; when a description or comment is edited, its old
+  translation steps aside and Translate offers a new one. The list shows
+  translated titles, the original in their tooltip. The newest 2,000,
+  none older than 90 days, are kept in the data folder.
+- "Always translate into …", off by default, in Settings › Integrations
+  and the item's Translate menu: opening an item whose title or
+  description is not already in that language translates it, one turn on
+  the picked model for each item opened (none when a kept translation
+  still matches). Nothing is translated from the list or the background
+  refresh, and comments stay on their own Translate.
+- An Inbox item reads in two columns when there is room: the title,
+  actions and description on the left, its properties on the right
+  (a Backlog issue's assignee, priority, milestone, resolution, dates,
+  hours, type and category; a GitHub item's assignees, labels, review
+  and branches), so the description starts near the top. Properties are
+  plain name and value rows that show their frame on hover, an empty one
+  a quiet "—", and the due date says how far it is ("in 5d", "today",
+  "2d overdue" in red). In a narrower window they wrap under the actions.
+- A Backlog issue's status pill at the top is its status picker; the
+  second status menu among the actions is gone.
+- Translate sits in the description's header: "Translated from Japanese
+  · Show original" and the language menu while a translation shows, a
+  small Translate menu otherwise. The header no longer repeats the
+  author.
+- Scrolling down an Inbox item keeps a slim bar at the top with its
+  status, key, title, Send to agent and Open in its tracker.
+- A thread started from a Backlog issue is linked to it, as one from a
+  GitHub issue is: "Send to agent" links the new thread at once, a first
+  message holding an issue URL of the connected space links it, and the
+  Link dialog takes Backlog URLs. Threads started from an issue before
+  this are linked as they load, from the URL their first message holds.
+- Send to agent titles the thread with the issue's title (its
+  translation while that shows), without its key. Wherever a thread's
+  title shows (the navigator, tabs, the Agents section, search,
+  notifications), a key it starts with is left out when the thread is
+  linked to that item; the badge beside it names the item instead, a
+  Backlog issue by its short key (`C-289`). Its tooltip gives the whole
+  key and the title; a click opens the item beside the thread, ⌘-click
+  in its tracker.
+- Inbox rows show their threads: a spinner while one works, an amber
+  mark while one waits on an approval or a question, a check when one
+  finished unseen, a quiet agent mark otherwise, with a count past one.
+  Its tooltip names them, and a click opens the thread.
+- An issue with a thread offers "Open thread" (its newest) where it
+  offered "Send to agent", and ⌘↩ follows. The button's menu starts a new
+  thread, one in a new worktree, or one in Plan mode, and holds the
+  project threads start in, which no longer takes a dropdown of its own.
+  The item's properties list its threads, with their state, harness,
+  model and age; a click opens one.
+- A pull request named after a Backlog ticket, in its title or its
+  branch (`ACME_SHOP_D-1147 docs: …`,
+  `feature/acme_shop_d-1147-sync`), is linked to it. The ticket's
+  row shows the pull request's number, tinted as open, draft or merged,
+  its tooltip listing them all; its properties hold a Pull requests
+  section. The pull request's properties name its Ticket,
+  with the ticket's status and title. A click on either opens the other.
+- The Inbox pins what needs you on top: an item a tracker notified you
+  about (Backlog's notifications to you; GitHub's review requests,
+  mentions, assignments and replies on threads you take part in) since
+  you last opened it, or one assigned to you that you have not read.
+  The navigator's Inbox mark now means that, not "anything updated",
+  since teammates update tickets all day; the unread dot on rows stays.
+  BenCode only reads the notifications, never marks them read, and asks
+  each tracker at most once a minute (GitHub's own pace when slower).
+- The Inbox list groups by project, status (Backlog's workflow, then
+  GitHub's Open, Draft, Merged, Closed) or due date (Overdue, Due this
+  week, Later, No due date), and sorts by update, due date, priority or
+  creation, from the menu beside the kinds. A group's header shows its
+  count and folds it with a click. The choice and the folded groups are
+  kept.
+- The Inbox's kinds show their counts ("All 142 · Issues 120 · PRs 22")
+  under the other filters. Under the search, Mine and a new Unread sit as
+  toggles, M and ⇧U from the list, and each filter in force (the source,
+  each status) shows as a chip that removes it.
+- An Inbox item opens in a tab beside the chat, so the ticket stays in
+  view while its thread works: from the item's "Open beside the chat"
+  button (or B in the list), from a thread's badge, and with Send to
+  agent or Open thread, which leave the ticket open beside the new
+  thread as a preview tab. The tab shows the item as the Inbox does, in
+  one column: its properties, description and conversation, translated
+  as there. Comments are written in the Inbox, a click away. An item the
+  Inbox has not listed is fetched for the tab.
+- Pull request rows show their checks as one mark, green when they
+  passed, red when one failed, a spinner while some run (the counts in
+  its tooltip), and the review once settled: Approved or Changes. A
+  ticket's Pull requests section reads the same for each.
+- A pull request offers "Review with agent" (or "Open thread" once it
+  has one), and ⌘↩ follows: a thread in its project, linked to it, asks
+  the agent to read it with `gh pr view` and `gh pr diff`, review its
+  correctness, risks and tests, and draft comments for you, posting
+  nothing unasked. Once reviewers asked for changes, the menu's "Address
+  review comments" starts a thread in a new worktree that checks the
+  branch out, reads the review threads, fixes them and runs the tests,
+  pushing only if you ask.
+- Several issues go to agents at once: ⌘-click picks items in the Inbox
+  list, ⇧-click picks a range, X picks the open one and Esc lets them go.
+  With two or more picked, a bar under the list (or ⌘↩) sends them, in
+  new worktrees or in Plan mode from its menu, after a confirmation that
+  lists them and says how many turns start on which model. Each issue
+  gets its own linked thread, started at once, so the agents run side by
+  side under Agents. Issues that have a thread are skipped unless you
+  tick them in; pull requests are left out.
+
 ## [0.1.37] - 2026-10-28
 
 - GPUI, which draws BenCode, is updated to 0.3.10, its Metal renderer

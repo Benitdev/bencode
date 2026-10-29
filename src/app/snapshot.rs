@@ -104,10 +104,45 @@ const SCENES: &[(&str, SetUp)] = &[
         app.is_rail_open = false;
         cx.notify();
     }),
+    // A staged Inbox (`stage_inbox`): Backlog issues and GitHub items,
+    // a Backlog issue open with its fields, comments and a translation,
+    // and threads linked to three of them (`stage_item_threads`).
     ("inbox", |app, _, cx| {
         app.is_rail_open = true;
+        stage_inbox(app, cx);
+        stage_item_threads(app);
         app.show_surface(Surface::Inbox, cx);
     }),
+    // The issue's description scrolled: the compact bar over it.
+    ("inbox-scrolled", |app, _, cx| {
+        app.inbox_state.update(cx, |inbox, cx| {
+            inbox.stage_detail_scroll(3);
+            cx.notify();
+        });
+        cx.notify();
+    }),
+    // A ticket open, with the pull request named after it.
+    ("inbox-ticket", |app, _, cx| select_staged_ticket(app, cx)),
+    // A pull request open instead, with the ticket it is named after, its
+    // checks running and Review with agent.
+    ("inbox-pr", |app, _, cx| select_staged_pr(app, cx)),
+    // Three issues picked, the open one among them: the bar under the list.
+    ("inbox-picked", |app, _, cx| {
+        pick_staged_issues(app, false, cx)
+    }),
+    // Send to agents asked for them: the confirmation, one skipped.
+    ("inbox-batch", |app, _, cx| {
+        pick_staged_issues(app, true, cx)
+    }),
+    // The ticket in a tab beside the thread working on it; the picks and
+    // the batch dialog from the scenes before let go.
+    ("work-item-tab", |app, _, cx| {
+        app.inbox_state
+            .update(cx, |inbox, _| inbox.stage_picks(&[], false));
+        open_staged_ticket_tab(app, cx)
+    }),
+    // The Inbox grouped by status, Resolved folded, Backlog alone.
+    ("inbox-grouped", |app, _, cx| group_staged_inbox(app, cx)),
     ("notes", |app, _, cx| app.show_surface(Surface::Notes, cx)),
     ("automations", |app, _, cx| {
         app.show_surface(Surface::Automations, cx)
@@ -153,6 +188,62 @@ fn stage_agents(app: &mut BenCodeApp) {
     if let Some(id) = ours.next() {
         app.title_strip.unseen_finished.insert(id);
     }
+}
+
+/// Threads linked to staged Backlog issues, in memory only, as "Send to
+/// agent" leaves them (titled with the key, as it once did, which the
+/// navigator leaves out): two idle on the open issue, one at work on
+/// D-1147, one waiting on a command on D-1162. This project's threads
+/// first, so the navigator shows their badges.
+fn stage_item_threads(app: &mut BenCodeApp) {
+    let here = app.current_cwd.clone();
+    let mut ids: Vec<String> = (app.sessions.iter())
+        .filter(|s| s.has_user_message() && !s.archived)
+        .filter(|s| crate::app::same_project_path(&s.cwd, &here))
+        .chain(
+            (app.sessions.iter())
+                .filter(|s| s.has_user_message() && !s.archived)
+                .filter(|s| !crate::app::same_project_path(&s.cwd, &here)),
+        )
+        .map(|s| s.id.clone())
+        .collect();
+    ids.truncate(4);
+    let waiting = PermissionRequest {
+        request_id: "snapshot-inbox".into(),
+        tool: "Bash".into(),
+        description: "pnpm test -- coupon-code".into(),
+        input: serde_json::Value::Null,
+    };
+    let picks = [
+        (INBOX_ISSUE, "Chuẩn hóa ký tự toàn góc khi tìm kiếm", None),
+        (
+            INBOX_ISSUE,
+            "Kiểm tra kết quả tìm kiếm trên dữ liệu thật",
+            None,
+        ),
+        ("ACME_SHOP_D-1147", "Giữ số 0 ở đầu mã giảm giá", Some(None)),
+        (
+            "ACME_SHOP_D-1162",
+            "Chặn XSS ở ô đánh giá sản phẩm",
+            Some(Some(waiting)),
+        ),
+    ];
+    for (n, (id, (key, title, run))) in ids.into_iter().zip(picks).enumerate() {
+        if let Some(session) = app.sessions.iter_mut().find(|s| s.id == id) {
+            session.linked_work_item = crate::db::LinkedWorkItem::backlog(key, "acme.backlog.jp");
+            session.title = format!("{key} {title}");
+        }
+        app.title_strip.unseen_finished.remove(&id);
+        match run {
+            Some(pending) => {
+                app.runs.insert(id, staged_run(10 + n as u64, pending));
+            }
+            None => {
+                app.runs.remove(&id);
+            }
+        }
+    }
+    app.links_changed();
 }
 
 /// The focused thread as the git pill reads one: its own edits not yet
@@ -221,6 +312,715 @@ fn stage_usage(app: &mut BenCodeApp, cx: &mut Context<BenCodeApp>) {
         cx.notify();
     });
 }
+
+/// The Backlog projects of the staged Inbox, by key and project id.
+const INBOX_PROJECTS: [(&str, &str); 2] = [("ACME_SHOP_C", "410021"), ("ACME_SHOP_D", "410022")];
+/// The staged issue the `inbox` scene opens, the ticket `inbox-ticket`
+/// opens (pull request #182 is named after it), and the pull request
+/// `inbox-pr` opens (named after D-1163).
+const INBOX_ISSUE: &str = "ACME_SHOP_C-289";
+const INBOX_TICKET: &str = "ACME_SHOP_D-1147";
+const INBOX_PR: &str = "acme/shop-backend:pr:483";
+
+/// The Inbox as a fetch would leave it, with no fetch: ten Backlog issues
+/// of two projects (Japanese titles, types, statuses with colours,
+/// categories, milestones, priorities, one overdue and two due soon), three
+/// GitHub items (one a draft pull request), some unread; the first issue
+/// open with its description, fields, comments and a Vietnamese
+/// translation, and the pull request's loads staged for `inbox-pr`.
+fn stage_inbox(app: &mut BenCodeApp, cx: &mut Context<BenCodeApp>) {
+    use crate::backlog::{FieldChoice, FieldOptions, IssueFields, StatusOption};
+    use crate::github::{
+        Check, CheckState, Checks, Comment, Details, Kind, Label, Thread, WorkItem,
+    };
+    use crate::work_items::Provider;
+    use crate::work_items::attention::Notified;
+    use crate::work_items::translate::Language;
+    use crate::work_items::{PrStatus, Review};
+    use std::collections::HashMap;
+
+    let now = crate::app::now_ms();
+    let ago = |minutes: i64| {
+        jiff::Timestamp::from_millisecond(now - minutes * 60_000)
+            .map(|t| t.to_string())
+            .unwrap_or_default()
+    };
+    let today = jiff::Zoned::now().date();
+    let day = |offset: i64| {
+        today
+            .checked_add(jiff::Span::new().days(offset))
+            .map(|d| d.to_string())
+            .unwrap_or_default()
+    };
+    let label = |name: &str, color: &str| Label {
+        name: name.into(),
+        color: color.into(),
+    };
+    let statuses = [
+        ("Open", "#ed8077"),
+        ("In Progress", "#4488c5"),
+        ("Resolved", "#5eb5a6"),
+    ];
+    let types = [
+        ("Task", "#814fbc"),
+        ("Bug", "#990000"),
+        ("QA", "#e30000"),
+        ("Request", "#ff9200"),
+    ];
+    // Key, title, status, type, category, milestone, high priority,
+    // assignee, due (days from today), updated (minutes ago).
+    #[allow(clippy::type_complexity)]
+    let issues: [(
+        &str,
+        &str,
+        usize,
+        usize,
+        &str,
+        &str,
+        bool,
+        &str,
+        Option<i64>,
+        i64,
+    ); 11] = [
+        (
+            INBOX_ISSUE,
+            "M2 商品検索の共通化・表記ゆれ対応：全角の英数字を含む商品名を検索した場合の結果",
+            0,
+            2,
+            "検索",
+            "M2｜検索改善",
+            false,
+            "Aiko Tanaka",
+            Some(5),
+            4,
+        ),
+        (
+            "ACME_SHOP_D-1147",
+            "クーポンコードを0始まりで入力できるようにする（購入手続き画面）",
+            1,
+            0,
+            "購入手続き",
+            "Sprint 12",
+            false,
+            "Minh Tran",
+            None,
+            5,
+        ),
+        (
+            "ACME_SHOP_D-1163",
+            "[Security] 脆弱性のある依存パッケージを更新する",
+            1,
+            1,
+            "セキュリティ",
+            "Sprint 12",
+            true,
+            "Minh Tran",
+            Some(3),
+            1,
+        ),
+        (
+            "ACME_SHOP_D-1162",
+            "[Security] 商品レビュー欄経由の格納型XSS",
+            0,
+            1,
+            "セキュリティ",
+            "Sprint 12",
+            true,
+            "Minh Tran",
+            Some(-2),
+            7,
+        ),
+        (
+            "ACME_SHOP_D-1149",
+            "会員登録／編集：保存時のメッセージを旧画面と同じ表示にする",
+            1,
+            0,
+            "会員登録",
+            "Sprint 12",
+            false,
+            "Minh Tran",
+            Some(2),
+            7,
+        ),
+        (
+            "ACME_SHOP_C-270",
+            "M1〜M2 受け入れテストのご指摘一覧：A.商品一覧／検索",
+            0,
+            3,
+            "受け入れテスト",
+            "M1｜受け入れテスト",
+            false,
+            "Aiko Tanaka",
+            None,
+            13,
+        ),
+        (
+            "ACME_SHOP_C-288",
+            "M1 商品検索：入力候補の表示制御",
+            2,
+            2,
+            "検索",
+            "M1｜受け入れテスト",
+            false,
+            "Aiko Tanaka",
+            None,
+            14,
+        ),
+        (
+            "ACME_SHOP_C-287",
+            "M1 カート画面：画面項目の見え方",
+            0,
+            3,
+            "カート",
+            "M1｜受け入れテスト",
+            false,
+            "",
+            Some(12),
+            14,
+        ),
+        (
+            "ACME_SHOP_C-286",
+            "M1 注文履歴画面：返品可欄のヘッダクリック時の挙動",
+            1,
+            3,
+            "注文履歴",
+            "M1｜受け入れテスト",
+            false,
+            "Minh Tran",
+            None,
+            95,
+        ),
+        (
+            "ACME_SHOP_C-283",
+            "M1 カート画面：配送方法プルダウンの状態制御",
+            0,
+            1,
+            "カート",
+            "M1｜受け入れテスト",
+            true,
+            "Minh Tran",
+            None,
+            180,
+        ),
+        (
+            "ACME_SHOP_C-282",
+            "M1 ログイン画面：メールアドレス・パスワードが未入力のときのメッセージ",
+            2,
+            3,
+            "ログイン",
+            "M1｜受け入れテスト",
+            false,
+            "",
+            None,
+            26 * 60,
+        ),
+    ];
+    let mut items: Vec<WorkItem> = issues
+        .into_iter()
+        .map(
+            |(key, title, status, kind, category, milestone, high, assignee, due, updated)| {
+                let (project, number) = key.rsplit_once('-').unwrap_or((key, "0"));
+                let container = INBOX_PROJECTS
+                    .iter()
+                    .find(|(p, _)| *p == project)
+                    .map_or("", |(_, id)| id);
+                let kind = label(types[kind].0, types[kind].1);
+                WorkItem {
+                    provider: Provider::Backlog,
+                    identifier: key.into(),
+                    number: number.parse().unwrap_or_default(),
+                    title: title.into(),
+                    url: format!("https://acme.backlog.jp/view/{key}"),
+                    state: statuses[status].0.into(),
+                    state_color: statuses[status].1.into(),
+                    created_at: ago(updated + 6 * 60),
+                    updated_at: ago(updated),
+                    labels: vec![kind.clone(), label(category, ""), label(milestone, "")],
+                    issue_type: Some(kind),
+                    assignees: (!assignee.is_empty())
+                        .then(|| assignee.to_string())
+                        .into_iter()
+                        .collect(),
+                    priority: if high { "High" } else { "Normal" }.into(),
+                    high_priority: high,
+                    due_date: due.map(day).unwrap_or_default(),
+                    repo: project.into(),
+                    container_id: container.into(),
+                    ..Default::default()
+                }
+            },
+        )
+        .collect();
+    let github = |kind, number: i64, title: &str, repo: &str, draft, labels, updated| WorkItem {
+        provider: Provider::GitHub,
+        kind,
+        identifier: format!("#{number}"),
+        number,
+        title: title.into(),
+        url: match kind {
+            Kind::Pr => format!("https://github.com/{repo}/pull/{number}"),
+            Kind::Issue => format!("https://github.com/{repo}/issues/{number}"),
+        },
+        state: "OPEN".into(),
+        created_at: ago(updated + 120),
+        updated_at: ago(updated),
+        labels,
+        draft,
+        repo: repo.into(),
+        project: app.current_cwd.clone(),
+        ..Default::default()
+    };
+    // Checks counted and reviews as the list gives them: #483's running
+    // (as its staged checks), #182's failing with changes requested,
+    // #476's passed and approved.
+    let checks = |passed, failed, running, review| PrStatus {
+        passed,
+        failed,
+        running,
+        review,
+    };
+    items.extend([
+        WorkItem {
+            pr_status: checks(2, 0, 1, Review::Required),
+            ..github(
+                Kind::Pr,
+                483,
+                "ACME_SHOP_D-1163 fix(deps): upgrade vulnerable packages",
+                "acme/shop-backend",
+                false,
+                vec![label("dependencies", "0366d6")],
+                0,
+            )
+        },
+        WorkItem {
+            pr_status: checks(4, 0, 0, Review::Approved),
+            ..github(
+                Kind::Pr,
+                476,
+                "ACME_SHOP_D-1149 fix(account): save message as the old screen shows it",
+                "acme/shop-frontend",
+                false,
+                Vec::new(),
+                30,
+            )
+        },
+        WorkItem {
+            pr_status: checks(3, 1, 0, Review::ChangesRequested),
+            head_ref: "feature/acme_shop_d-1147-coupon-code".into(),
+            ..github(
+                Kind::Pr,
+                182,
+                "ACME_SHOP_D-1147 docs(checkout): sync the coupon code rules",
+                "acme/shop-workspace",
+                true,
+                Vec::new(),
+                5,
+            )
+        },
+        github(
+            Kind::Issue,
+            57,
+            "Order list: pagination resets after saving an order",
+            "acme/shop-frontend",
+            false,
+            vec![label("bug", "d73a4a"), label("frontend", "1d76db")],
+            50,
+        ),
+    ]);
+    items.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    let unseen: Vec<String> = items
+        .iter()
+        .filter(|item| {
+            matches!(
+                item.identifier.as_str(),
+                "#483" | "ACME_SHOP_D-1162" | "ACME_SHOP_D-1149"
+            ) || item.identifier == INBOX_ISSUE
+        })
+        .map(|item| item.key())
+        .collect();
+    let issue_key = items
+        .iter()
+        .find(|item| item.identifier == INBOX_ISSUE)
+        .map(|item| item.key())
+        .unwrap_or_default();
+
+    let comment = |id: &str, author: &str, minutes: i64, body: &str| Comment {
+        id: id.into(),
+        kind: "comment".into(),
+        author: author.into(),
+        body: body.into(),
+        created_at: ago(minutes),
+        ..Default::default()
+    };
+    let app_cwd = app.current_cwd.clone();
+    let named = |id: i64, name: &str| FieldChoice {
+        id,
+        name: name.into(),
+    };
+    app.inbox_state.update(cx, |inbox, cx| {
+        inbox.stage_list(items, &unseen);
+        inbox.stage_item(
+            &issue_key,
+            Details {
+                body: INBOX_ISSUE_BODY.into(),
+                author: "Aiko Tanaka".into(),
+                backlog: Some(IssueFields {
+                    assignee: Some(named(11, "Aiko Tanaka")),
+                    priority: Some(named(3, "Normal")),
+                    milestones: vec![named(31, "M2｜検索改善")],
+                    resolution: None,
+                    start_date: Some(day(0)),
+                    due_date: Some(day(5)),
+                    estimated_hours: Some(6.0),
+                    actual_hours: None,
+                }),
+                ..Default::default()
+            },
+            Thread {
+                comments: vec![
+                    comment("1", "Minh Tran", 300, "確認しました。全角の英数字は検索時に半角へ揃える想定で問題ないでしょうか？"),
+                    comment("2", "Aiko Tanaka", 4, "はい、英数字は半角に揃えてください。カタカナの表記ゆれは次のスプリントで対応します。"),
+                ],
+                ..Default::default()
+            },
+        );
+        let title_of = |inbox: &crate::ui::inbox_view::InboxState, identifier: &str| {
+            let item = inbox.items.iter().find(|item| item.identifier == identifier);
+            item.map(|item| (item.key(), item.title.clone())).unwrap_or_default()
+        };
+        let (_, issue_title) = title_of(inbox, INBOX_ISSUE);
+        inbox.stage_translation(
+            &issue_key,
+            Language::Vietnamese,
+            (&issue_title, INBOX_ISSUE_BODY),
+            (
+                "M2 Chuẩn hóa tìm kiếm sản phẩm và xử lý biến thể cách viết: Kết quả khi tìm tên sản phẩm có chữ số và chữ cái toàn góc",
+                INBOX_ISSUE_BODY_VI,
+            ),
+        );
+        // Kept from an earlier session: the list shows these titles
+        // translated, their descriptions not loaded.
+        for (identifier, translated) in INBOX_LIST_VI {
+            let (key, source) = title_of(inbox, identifier);
+            inbox.stage_translation(&key, Language::Vietnamese, (&source, ""), (translated, ""));
+        }
+        // The ticket `inbox-ticket` and `work-item-tab` open, read in
+        // Vietnamese.
+        let (ticket_key, ticket_title) = title_of(inbox, INBOX_TICKET);
+        inbox.stage_item(
+            &ticket_key,
+            Details {
+                body: INBOX_TICKET_BODY.into(),
+                author: "Aiko Tanaka".into(),
+                backlog: Some(IssueFields {
+                    assignee: Some(named(12, "Minh Tran")),
+                    priority: Some(named(3, "Normal")),
+                    milestones: vec![named(32, "Sprint 12")],
+                    resolution: None,
+                    start_date: Some(day(-1)),
+                    due_date: None,
+                    estimated_hours: Some(3.0),
+                    actual_hours: Some(1.5),
+                }),
+                ..Default::default()
+            },
+            Thread {
+                comments: vec![comment(
+                    "4",
+                    "Aiko Tanaka",
+                    40,
+                    "0始まりのコードは既存データにもあります。一覧での並び順も確認してください。",
+                )],
+                ..Default::default()
+            },
+        );
+        inbox.stage_translation(
+            &ticket_key,
+            Language::Vietnamese,
+            (&ticket_title, INBOX_TICKET_BODY),
+            (
+                "Cho phép nhập mã giảm giá bắt đầu bằng 0 (màn hình thanh toán)",
+                INBOX_TICKET_BODY_VI,
+            ),
+        );
+        inbox.stage_item(
+            INBOX_PR,
+            Details {
+                body: "Upgrades the packages `npm audit` flags.\n\n- `axios` 1.7.9 → 1.12.2\n- `jsonwebtoken` 9.0.0 → 9.0.2\n".into(),
+                author: "renovate[bot]".into(),
+                base_ref: "develop".into(),
+                head_ref: "renovate/vulnerable-packages".into(),
+                review_decision: "REVIEW_REQUIRED".into(),
+                backlog: None,
+            },
+            Thread {
+                comments: vec![comment("3", "minhtran", 2, "Lockfile regenerated; the e2e suite passes locally.")],
+                ..Default::default()
+            },
+        );
+        let check = |name: &str, state| Check {
+            name: name.into(),
+            workflow: "CI".into(),
+            state,
+            url: None,
+            started_at: Some(ago(3)),
+            completed_at: Some(ago(1)),
+        };
+        inbox.checks.value.insert(
+            INBOX_PR.into(),
+            Ok(Checks {
+                head_oid: "9f2c1a7".into(),
+                checks: vec![
+                    check("lint", CheckState::Pass),
+                    check("test", CheckState::Pass),
+                    check("e2e", CheckState::Pending),
+                ],
+            }),
+        );
+        // "Needs you": a comment on the open issue and a review asked of
+        // the user on #483; D-1162 and D-1149 are the user's and unread.
+        let backlog_me = HashMap::from([(String::new(), "Minh Tran".to_string())]);
+        inbox.stage_attention(
+            Provider::Backlog,
+            vec![Notified {
+                key: issue_key.clone(),
+                at_ms: now - 4 * 60_000,
+            }],
+            backlog_me,
+        );
+        let github_me = HashMap::from([(app_cwd.clone(), "minhtran".to_string())]);
+        inbox.stage_attention(
+            Provider::GitHub,
+            vec![Notified {
+                key: INBOX_PR.into(),
+                at_ms: now,
+            }],
+            github_me,
+        );
+        inbox.selected = Some(issue_key);
+        cx.notify();
+    });
+
+    for (_, project) in INBOX_PROJECTS {
+        app.backlog.statuses.insert(
+            project.into(),
+            statuses
+                .iter()
+                .zip(1..)
+                .map(|((name, color), id)| StatusOption {
+                    id,
+                    name: (*name).into(),
+                    color: (*color).into(),
+                })
+                .collect(),
+        );
+        app.backlog.field_options.insert(
+            project.into(),
+            Ok(FieldOptions {
+                users: vec![named(11, "Aiko Tanaka"), named(12, "Minh Tran")],
+                milestones: vec![named(31, "M2｜検索改善"), named(32, "Sprint 12")],
+                priorities: vec![named(2, "High"), named(3, "Normal"), named(4, "Low")],
+                resolutions: vec![named(0, "Fixed"), named(1, "Won't Fix")],
+                me: 12,
+            }),
+        );
+    }
+    cx.notify();
+}
+
+/// `inbox-ticket`: the staged ticket open.
+fn select_staged_ticket(app: &mut BenCodeApp, cx: &mut Context<BenCodeApp>) {
+    let key = crate::work_items::tickets::ticket_item_key(INBOX_TICKET);
+    app.inbox_state.update(cx, |inbox, cx| {
+        inbox.selected = Some(key);
+        cx.notify();
+    });
+    cx.notify();
+}
+
+/// `work-item-tab`: the staged Inbox and its linked threads, then the
+/// thread working on the ticket, with the ticket in a tab beside it.
+fn open_staged_ticket_tab(app: &mut BenCodeApp, cx: &mut Context<BenCodeApp>) {
+    app.is_rail_open = true;
+    stage_inbox(app, cx);
+    stage_item_threads(app);
+    let key = crate::work_items::tickets::ticket_item_key(INBOX_TICKET);
+    let thread = (app.sessions.iter())
+        .find(|s| (s.linked_work_item.as_ref()).is_some_and(|item| item.item_key() == key))
+        .map(|s| s.id.clone());
+    match thread {
+        Some(id) => app.select_live_agent(&id, cx),
+        None => app.close_surface(cx),
+    }
+    app.open_work_item_tab(&key, None, true, cx);
+}
+
+/// `inbox-grouped`: the staged Inbox grouped by status, its Resolved
+/// group folded, filtered to Backlog (the chip under the search).
+fn group_staged_inbox(app: &mut BenCodeApp, cx: &mut Context<BenCodeApp>) {
+    use crate::ui::inbox_view::{GroupBy, ListPrefs};
+    use crate::work_items::Provider;
+    app.show_surface(Surface::Inbox, cx);
+    let key = crate::work_items::tickets::ticket_item_key(INBOX_ISSUE);
+    app.inbox_state.update(cx, |inbox, cx| {
+        inbox.list_prefs = ListPrefs {
+            group: GroupBy::Status,
+            collapsed: vec!["status:Resolved".into()],
+            ..Default::default()
+        };
+        inbox.source = Some(Provider::Backlog);
+        inbox.selected = Some(key);
+        cx.notify();
+    });
+    cx.notify();
+}
+
+/// `inbox-pr`: the staged pull request open.
+fn select_staged_pr(app: &mut BenCodeApp, cx: &mut Context<BenCodeApp>) {
+    app.inbox_state.update(cx, |inbox, cx| {
+        inbox.selected = Some(INBOX_PR.into());
+        cx.notify();
+    });
+    cx.notify();
+}
+
+/// `inbox-picked`, `inbox-batch`: the staged issue open and picked with
+/// two more (it has threads: the batch skips it), and with `confirm` the
+/// batch's confirmation open.
+fn pick_staged_issues(app: &mut BenCodeApp, confirm: bool, cx: &mut Context<BenCodeApp>) {
+    use crate::work_items::tickets::ticket_item_key;
+    let keys: Vec<String> = [INBOX_ISSUE, "ACME_SHOP_D-1149", "ACME_SHOP_C-287"]
+        .map(ticket_item_key)
+        .to_vec();
+    app.inbox_state.update(cx, |inbox, cx| {
+        inbox.selected = keys.first().cloned();
+        inbox.stage_picks(&keys, confirm);
+        cx.notify();
+    });
+    cx.notify();
+}
+
+/// List titles kept in Vietnamese from an earlier session, by issue key.
+const INBOX_LIST_VI: [(&str, &str); 3] = [
+    (
+        "ACME_SHOP_D-1147",
+        "Cho phép nhập mã giảm giá bắt đầu bằng 0 (màn hình thanh toán)",
+    ),
+    (
+        "ACME_SHOP_D-1162",
+        "[Security] XSS lưu trữ qua ô đánh giá sản phẩm",
+    ),
+    (
+        "ACME_SHOP_C-270",
+        "M1〜M2 Danh sách góp ý khi kiểm thử nghiệm thu: A. Danh sách sản phẩm / Tìm kiếm",
+    ),
+];
+
+const INBOX_TICKET_BODY: &str = "\
+## 概要
+
+購入手続き画面で、クーポンコードを0始まり（例：`0123`）で入力できるようにします。
+
+## 現状
+
+- 先頭の0が適用時に削除され、`123`として扱われます。
+- 旧システムでは0始まりのコードを入力できます。
+
+## 対応
+
+1. クーポンコードを文字列として保存する。
+2. 重複チェックは先頭の0を含めて比較する。
+3. `checkout`の仕様書を更新する。
+";
+
+const INBOX_TICKET_BODY_VI: &str = "\
+## Tổng quan
+
+Cho phép nhập mã giảm giá bắt đầu bằng 0 (ví dụ: `0123`) ở màn hình thanh toán.
+
+## Hiện trạng
+
+- Số 0 ở đầu bị xóa khi áp dụng, và được xử lý thành `123`.
+- Hệ thống cũ cho phép nhập mã bắt đầu bằng 0.
+
+## Xử lý
+
+1. Lưu mã giảm giá dưới dạng chuỗi.
+2. Kiểm tra trùng so sánh cả số 0 ở đầu.
+3. Cập nhật tài liệu đặc tả `checkout`.
+";
+
+const INBOX_ISSUE_BODY: &str = "\
+## 概要
+
+- 新システムでは、PC・スマホ・アプリが共通の検索インデックス（`product_search_index`）を直接参照します。
+- 商品登録時に検索用の正規化済み名称を自動生成して保存します。
+- 全角の英数字を含む商品名を検索した場合の扱いをご判断ください。
+
+## 背景：検索インデックスの共通化
+
+| 項目 | 現行システム | 新システム |
+|---|---|---|
+| 検索データ | PC・スマホ・アプリがそれぞれ保持 | 3チャネルが`product_search_index`を直接参照 |
+| 管理画面からの連携 | 夜間バッチ | 即時反映 |
+| 正規化名称 | 手動登録時のみ保存 | 商品登録時に自動生成 |
+
+## 現行システムでの表記ゆれの実態
+
+- 公開中の商品 48,200件のうち、120件で商品名に全角の英数字が含まれています。
+- 120件はすべて輸入雑貨の商品で、メーカーの表記どおりです。
+- 検索時に正規化しないと、半角で入力したお客様に結果が表示されません。
+
+## 確認したいこと
+
+1. 全角の英数字は、検索時に半角へ揃えてよいでしょうか。
+2. 揃える場合、商品名の表示も変更が必要でしょうか。
+3. 自動生成の対象は、新規に登録した商品のみでよいでしょうか。
+
+## 対応案
+
+| 案 | 内容 | 影響 |
+|---|---|---|
+| A | 検索時に半角へ揃える | 表示は変わらず、インデックス再作成が必要 |
+| B | 商品名を半角に書き換える | メーカーの表記と一致しなくなる |
+| C | 検索時に候補を提示する | 画面の操作が増える |
+";
+
+const INBOX_ISSUE_BODY_VI: &str = "\
+## Tổng quan
+
+- Trong hệ thống mới, PC, điện thoại và ứng dụng cùng tham chiếu trực tiếp đến chỉ mục tìm kiếm chung (`product_search_index`).
+- Tên đã chuẩn hóa để tìm kiếm được tự động tạo và lưu khi đăng ký sản phẩm.
+- Nhờ quý vị quyết định cách xử lý khi tìm tên sản phẩm có chữ số và chữ cái toàn góc.
+
+## Bối cảnh: Chuẩn hóa chỉ mục tìm kiếm
+
+| Hạng mục | Hệ thống hiện tại | Hệ thống mới |
+|---|---|---|
+| Dữ liệu tìm kiếm | PC, điện thoại và ứng dụng mỗi bên giữ riêng | 3 kênh cùng tham chiếu `product_search_index` |
+| Cập nhật từ màn hình quản trị | Batch ban đêm | Phản ánh ngay |
+| Tên chuẩn hóa | Chỉ lưu khi đăng ký thủ công | Tự động tạo khi đăng ký sản phẩm |
+
+## Thực tế biến thể cách viết trên hệ thống hiện tại
+
+- Trong 48.200 sản phẩm đang bán, 120 sản phẩm có chữ số hoặc chữ cái toàn góc trong tên.
+- Cả 120 sản phẩm đều là hàng tạp hóa nhập khẩu, viết đúng theo cách ghi của nhà sản xuất.
+- Nếu không chuẩn hóa khi tìm kiếm, khách nhập ký tự bán góc sẽ không thấy kết quả.
+
+## Điều cần xác nhận
+
+1. Có thể chuyển chữ số và chữ cái toàn góc về bán góc khi tìm kiếm không?
+2. Nếu chuyển, có cần đổi cả cách hiển thị tên sản phẩm không?
+3. Chỉ tự động tạo cho sản phẩm mới đăng ký là đủ chưa?
+
+## Phương án xử lý
+
+| Phương án | Nội dung | Ảnh hưởng |
+|---|---|---|
+| A | Chuyển về bán góc khi tìm kiếm | Hiển thị giữ nguyên, cần tạo lại chỉ mục |
+| B | Sửa tên sản phẩm thành bán góc | Không khớp với cách ghi của nhà sản xuất |
+| C | Gợi ý từ khóa khi tìm kiếm | Tăng thao tác trên màn hình |
+";
 
 fn staged_run(id: u64, pending: Option<PermissionRequest>) -> AgentRun {
     let (stdin_tx, _) = tokio::sync::mpsc::unbounded_channel();

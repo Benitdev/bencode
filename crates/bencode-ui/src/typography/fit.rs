@@ -20,6 +20,9 @@ fn width_of(text: &str, window: &mut Window) -> Pixels {
 
 /// Longest front that fits `width` with an ellipsis after it.
 fn fit_end(text: &str, width: Pixels, window: &mut Window) -> String {
+    // GPUI snaps a box's edges to device pixels, so a box sized to its
+    // text can end up to one device pixel narrower than the text.
+    let width = width + Pixels::from(1.0 / window.scale_factor());
     if width_of(text, window) <= width {
         return text.to_string();
     }

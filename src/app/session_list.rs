@@ -156,6 +156,60 @@ pub fn display_title(title: &str, harness: &str) -> String {
     title.to_string()
 }
 
+/// `title` without the linked item's `key` it starts with, and the
+/// separator after it: "PROJ-42 Fix the rail", "#42: Fix the rail" and
+/// "[PROJ-42] Fix the rail" read "Fix the rail". Whole when it does not
+/// start with the key, or when nothing would be left.
+pub fn without_item_key<'a>(title: &'a str, key: &str) -> &'a str {
+    let trimmed = title.trim_start();
+    let (open, rest) = match trimmed.strip_prefix('[') {
+        Some(rest) => (true, rest),
+        None => (false, trimmed),
+    };
+    let Some(head) = rest.get(..key.len()) else {
+        return title;
+    };
+    if key.is_empty() || !head.eq_ignore_ascii_case(key) {
+        return title;
+    }
+    let mut rest = &rest[key.len()..];
+    if open {
+        let Some(after) = rest.strip_prefix(']') else {
+            return title;
+        };
+        rest = after;
+    }
+    // The key must end there: "PROJ-421" is not "PROJ-42".
+    if rest
+        .chars()
+        .next()
+        .is_some_and(|c| c.is_alphanumeric() || c == '_')
+    {
+        return title;
+    }
+    let rest = rest.trim_start_matches(|c: char| c.is_whitespace() || ":-–—|·".contains(c));
+    if rest.trim().is_empty() { title } else { rest }
+}
+
+/// A thread's title as shown (`display_title`), without its linked item's
+/// key: the item's badge names it. The stored title keeps it.
+pub fn session_title(session: &SessionRow) -> String {
+    let title = display_title(&session.title, &session.harness);
+    match &session.linked_work_item {
+        Some(item) => without_item_key(&title, &item.identifier()).to_string(),
+        None => title,
+    }
+}
+
+/// The stored title without its linked item's key, for what shows the
+/// title as stored (the tabs, search).
+pub fn linked_title(session: &SessionRow) -> &str {
+    match &session.linked_work_item {
+        Some(item) => without_item_key(&session.title, &item.identifier()),
+        None => &session.title,
+    }
+}
+
 /// MonoCode `formatGitLabel`: `repo/branch`, else whichever is known.
 pub fn git_label(repo: Option<&str>, branch: Option<&str>) -> String {
     let repo = repo.filter(|r| !r.is_empty());
@@ -459,6 +513,48 @@ pub fn harnesses_in(sessions: &[&SessionRow]) -> Vec<HarnessKind> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn titles_lose_the_key_they_start_with() {
+        let key = "ACME_SHOP_D-1147";
+        for title in [
+            "ACME_SHOP_D-1147 Cho phép mã giảm giá",
+            "ACME_SHOP_D-1147: Cho phép mã giảm giá",
+            "[ACME_SHOP_D-1147] Cho phép mã giảm giá",
+            "acme_shop_d-1147 — Cho phép mã giảm giá",
+        ] {
+            assert_eq!(
+                without_item_key(title, key),
+                "Cho phép mã giảm giá",
+                "{title}"
+            );
+        }
+        for title in [
+            "ACME_SHOP_D-11470 Other",
+            "Fix ACME_SHOP_D-1147",
+            "ACME_SHOP_D-1147",
+            "ACME_SHOP_D-1147 : ",
+            "[ACME_SHOP_D-1147 Open bracket",
+        ] {
+            assert_eq!(without_item_key(title, key), title, "{title}");
+        }
+        assert_eq!(without_item_key("#42 Fix the rail", "#42"), "Fix the rail");
+        assert_eq!(without_item_key("#421 Fix", "#42"), "#421 Fix");
+        assert_eq!(without_item_key("anything", ""), "anything");
+    }
+
+    #[test]
+    fn a_linked_threads_title_reads_without_its_key() {
+        let mut session = SessionRow {
+            title: "claude · WEB-42 Fix the rail".into(),
+            harness: "claude".into(),
+            ..Default::default()
+        };
+        assert_eq!(session_title(&session), "WEB-42 Fix the rail");
+        session.linked_work_item = crate::db::LinkedWorkItem::backlog("WEB-42", "acme.backlog.com");
+        assert_eq!(session_title(&session), "Fix the rail");
+        assert_eq!(session.title, "claude · WEB-42 Fix the rail");
+    }
 
     fn row(id: &str, updated_at: i64, pinned: bool) -> SessionRow {
         SessionRow {

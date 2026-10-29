@@ -1,8 +1,8 @@
 use std::rc::Rc;
 
 use gpui::{
-    App, ClickEvent, Div, ElementId, Entity, InteractiveElement, IntoElement, ParentElement,
-    RenderOnce, SharedString, Stateful, Styled, Window, div, prelude::*,
+    AnyElement, App, ClickEvent, Div, ElementId, Entity, InteractiveElement, IntoElement,
+    ParentElement, RenderOnce, SharedString, Stateful, Styled, Window, div, prelude::*,
 };
 
 use super::{
@@ -53,13 +53,15 @@ fn host(
         .children(hang(&id, menu, state, field, window, cx))
 }
 
-/// A button that opens a menu under it.
+/// A button that opens a menu under it, or another trigger in its place.
 #[derive(IntoElement)]
 pub struct DropdownMenu {
     id: ElementId,
     label: SharedString,
     icon: Option<IconName>,
     variant: ButtonVariant,
+    size: ControlSize,
+    trigger: Option<AnyElement>,
     menu: Menu,
 }
 
@@ -70,6 +72,8 @@ impl DropdownMenu {
             label: label.into(),
             icon: None,
             variant: ButtonVariant::Secondary,
+            size: ControlSize::default(),
+            trigger: None,
             menu,
         }
     }
@@ -83,18 +87,41 @@ impl DropdownMenu {
         self.variant = variant;
         self
     }
+
+    pub fn size(mut self, size: ControlSize) -> Self {
+        self.size = size;
+        self
+    }
+
+    /// Drawn in place of the button (a status pill, a chip): a press on
+    /// it opens the menu, so it takes no click of its own. The label
+    /// stays the menu's name.
+    pub fn trigger(mut self, trigger: impl IntoElement) -> Self {
+        self.trigger = Some(trigger.into_any_element());
+        self
+    }
 }
 
 impl RenderOnce for DropdownMenu {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let state = state(&self.id, window, cx);
         let click = toggle(&state, &self.menu, cx);
-        let button = Button::new((self.id.clone(), "button"), self.label)
-            .variant(self.variant)
-            .trailing_icon(IconName::ChevronDown)
-            .when_some(self.icon, |button, icon| button.icon(icon))
-            .on_click(move |event, window, cx| click(event, window, cx));
-        host(self.id, button, &self.menu, &state, None, window, cx)
+        let trigger = match self.trigger {
+            Some(trigger) => div()
+                .id((self.id.clone(), "trigger"))
+                .cursor_pointer()
+                .on_click(move |event, window, cx| click(event, window, cx))
+                .child(trigger)
+                .into_any_element(),
+            None => Button::new((self.id.clone(), "button"), self.label)
+                .variant(self.variant)
+                .size(self.size)
+                .trailing_icon(IconName::ChevronDown)
+                .when_some(self.icon, |button, icon| button.icon(icon))
+                .on_click(move |event, window, cx| click(event, window, cx))
+                .into_any_element(),
+        };
+        host(self.id, trigger, &self.menu, &state, None, window, cx)
     }
 }
 

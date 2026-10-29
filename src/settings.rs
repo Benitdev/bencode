@@ -71,6 +71,8 @@ pub struct AppSettings {
     pub inbox_seen_seeded: bool,
     /// The Inbox list column's width; `None` is the default.
     pub inbox_list_width: Option<f32>,
+    /// The Inbox list's grouping, sort and folded groups.
+    pub inbox_list: crate::ui::inbox_view::ListPrefs,
     /// CI repairs sent from the Inbox, oldest first.
     pub inbox_repairs: Vec<crate::ui::inbox_view::Repair>,
     /// The language an Inbox comment's Translate uses (the last picked)
@@ -78,6 +80,9 @@ pub struct AppSettings {
     pub inbox_translate_language: crate::work_items::translate::Language,
     /// `harness:model`; `None` is `translate::DEFAULT_MODEL`.
     pub inbox_translate_model: Option<String>,
+    /// Opening an Inbox item translates it into that language (a turn
+    /// each). Off until the user opts in.
+    pub inbox_translate_always: bool,
     /// Backlog project ids left out of the Inbox.
     pub backlog_hidden_projects: Vec<String>,
     /// The folder "Send to agent" starts in, by Backlog project key.
@@ -267,8 +272,14 @@ mod tests {
             inbox_seen: std::collections::BTreeMap::from([("o/r:issue:1".to_string(), 5)]),
             inbox_seen_seeded: true,
             inbox_list_width: Some(400.0),
+            inbox_list: crate::ui::inbox_view::ListPrefs {
+                group: crate::ui::inbox_view::GroupBy::Due,
+                sort: crate::ui::inbox_view::SortBy::Priority,
+                collapsed: vec!["needs-you".into(), "due:later".into()],
+            },
             inbox_translate_language: crate::work_items::translate::Language::Japanese,
             inbox_translate_model: Some("codex:gpt-5.5".into()),
+            inbox_translate_always: true,
             backlog_hidden_projects: vec!["12".to_string()],
             backlog_project_folders: std::collections::BTreeMap::from([(
                 "WEB".to_string(),

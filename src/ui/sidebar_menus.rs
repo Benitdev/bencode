@@ -219,9 +219,9 @@ impl BenCodeApp {
                     .first()
                     .is_some_and(|s| s.linked_work_item.is_some())
                 {
-                    "Edit GitHub issue or PR link…"
+                    "Edit issue or PR link…"
                 } else {
-                    "Link GitHub issue or PR…"
+                    "Link issue or PR…"
                 },
             ));
         }

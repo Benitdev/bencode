@@ -1,8 +1,10 @@
-//! A Backlog issue's fields under its actions, each editable where it is
-//! shown (Backlog's issue page: assignee, priority, milestones,
-//! resolution, start and due dates, estimated and actual hours). Each
-//! change is one `PATCH` (`app/backlog.rs`); the fields wait while one is
-//! on its way.
+//! A Backlog issue's fields among its properties (`properties.rs`), each
+//! editable where it is shown (Backlog's issue page: assignee, priority,
+//! milestones, resolution, start and due dates, estimated and actual
+//! hours) in a quiet control. Each change is one `PATCH`
+//! (`app/backlog.rs`); the fields wait while one is on its way. The hours
+//! inputs serve the Inbox's selected issue: a tab beside the chat shows
+//! its issue's hours as text.
 
 use bencode_ui::buttons::{ButtonVariant, IconButton};
 use bencode_ui::forms::{Choice, DatePicker, Input, MultiSelect, Select, TextInput};
@@ -13,17 +15,23 @@ use gpui::{
 };
 use jiff::civil::Date;
 
+use super::DetailView;
+use super::properties::{due_note, plain, property, property_with};
 use crate::app::BenCodeApp;
 use crate::backlog::{Change, FieldChoice, IssueFields};
 use crate::github::WorkItem;
-use crate::ui::app_callback::{app_callback, app_callback_with, on_value};
+use crate::ui::app_callback::{app_callback_with, on_value};
 use crate::ui::scale::px;
 use crate::ui::tokens::{Ink, Text, Tone as _};
 
-/// A field's width: two or three to a row in the detail's column.
-const FIELD_WIDTH: f32 = 208.0;
+/// The controls' size: their text is the properties' body size.
+const SIZE: ControlSize = ControlSize::Md;
+/// An hours input's width: "12.5" and its inset.
+const HOURS_WIDTH: f32 = 56.0;
 /// The `Select` value that clears a field.
 const NONE: &str = "none";
+/// An empty field's placeholder.
+const EMPTY: &str = "—";
 
 fn choices<'a>(named: impl IntoIterator<Item = &'a FieldChoice>) -> Vec<Choice> {
     named
@@ -56,12 +64,14 @@ fn day(date: &Option<String>) -> Option<Date> {
 }
 
 impl BenCodeApp {
-    /// The fields, once the issue and its project's choices are loaded.
+    /// The fields' rows, once the issue is loaded; its project's choices
+    /// may still be on their way, and the fields wait for them.
     pub(super) fn render_backlog_fields(
         &self,
         item: &WorkItem,
+        view: DetailView,
         cx: &Context<Self>,
-    ) -> Option<AnyElement> {
+    ) -> Option<Vec<AnyElement>> {
         let key = item.key();
         let fields = (self.inbox(cx).details.get(&key))?
             .as_ref()
@@ -82,23 +92,25 @@ impl BenCodeApp {
             resolution,
             start_date,
             due_date,
-            ..
+            estimated_hours,
+            actual_hours,
         } = fields;
         let me = options.me;
         let mine = assignee.as_ref().is_some_and(|a| a.id == me);
         let assign_key = item.key();
-        let assignee_field = field(
+        // Backlog's "Assign to myself", as an icon after the field's name.
+        let assign_me = (!mine && !busy && me != 0).then(|| {
+            IconButton::new("backlog-assign-me", IconName::User)
+                .variant(ButtonVariant::Ghost)
+                .size(ControlSize::Sm)
+                .tooltip("Assign to me")
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.update_backlog_issue(&assign_key, Change::Assignee(Some(me)), cx)
+                }))
+        });
+        let assignee_field = property_with(
             "Assignee",
-            (!mine && !busy && me != 0).then(|| {
-                action(
-                    "backlog-assign-me",
-                    "Assign to me",
-                    app_callback(cx, move |this, cx| {
-                        this.update_backlog_issue(&assign_key, Change::Assignee(Some(me)), cx)
-                    }),
-                    cx,
-                )
-            }),
+            assign_me.map(IntoElement::into_any_element),
             Select::new(
                 "backlog-assignee",
                 std::iter::once(Choice::new(NONE, "Unassigned")).chain(options.users.iter().map(
@@ -108,22 +120,28 @@ impl BenCodeApp {
                     },
                 )),
             )
-            .size(ControlSize::Sm)
+            .quiet()
+            .size(SIZE)
             .disabled(busy)
-            .selected(assignee.map_or(NONE.to_string(), |a| a.id.to_string()))
+            .placeholder(match &assignee {
+                // Shown by name while the choices load.
+                Some(a) if busy => a.name.clone(),
+                _ => EMPTY.into(),
+            })
+            .when_some(assignee, |el, a| el.selected(a.id.to_string()))
             .on_change(change(&key, cx, |value| {
                 Some(Change::Assignee(id_of(value)))
             })),
             cx,
         );
 
-        let priority_field = field(
+        let priority_field = property(
             "Priority",
-            None,
             Select::new("backlog-priority", choices(&options.priorities))
-                .size(ControlSize::Sm)
+                .quiet()
+                .size(SIZE)
                 .disabled(busy)
-                .placeholder(priority.as_ref().map_or("—".into(), |p| p.name.clone()))
+                .placeholder(priority.as_ref().map_or(EMPTY.into(), |p| p.name.clone()))
                 .when_some(priority, |el, p| el.selected(p.id.to_string()))
                 .on_change(change(&key, cx, |value| id_of(value).map(Change::Priority))),
             cx,
@@ -141,21 +159,23 @@ impl BenCodeApp {
         // load, or in a project without milestones, the issue's own show
         // in a closed `Select`.
         let shown = match milestones.as_slice() {
-            [] => "No milestone".to_string(),
+            [] => EMPTY.to_string(),
             some => (some.iter().map(|m| m.name.as_str()))
                 .collect::<Vec<_>>()
                 .join(", "),
         };
         let milestone_picker = if options.milestones.is_empty() {
             Select::new("backlog-milestones", Vec::<Choice>::new())
-                .size(ControlSize::Sm)
+                .quiet()
+                .size(SIZE)
                 .disabled(true)
                 .placeholder(shown)
                 .into_any_element()
         } else {
             MultiSelect::new("backlog-milestones", choices(&options.milestones))
-                .size(ControlSize::Sm)
-                .placeholder("No milestone")
+                .quiet()
+                .size(SIZE)
+                .placeholder(EMPTY)
                 .selected(milestones.iter().map(|m| m.id.to_string()))
                 .on_change(move |values, _, cx| {
                     if busy {
@@ -173,37 +193,56 @@ impl BenCodeApp {
                 })
                 .into_any_element()
         };
-        let milestone_field = field(
-            "Milestone",
-            None,
-            div().w_full().child(milestone_picker),
-            cx,
-        );
+        let milestone_field = property("Milestone", milestone_picker, cx);
 
-        let resolution_field = field(
+        let resolution_field = property(
             "Resolution",
-            None,
             Select::new(
                 "backlog-resolution",
                 std::iter::once(Choice::new(NONE, "No resolution"))
                     .chain(choices(&options.resolutions)),
             )
-            .size(ControlSize::Sm)
+            .quiet()
+            .size(SIZE)
             .disabled(busy)
-            .selected(resolution.map_or(NONE.to_string(), |r| r.id.to_string()))
+            .placeholder(match &resolution {
+                Some(r) if busy => r.name.clone(),
+                _ => EMPTY.into(),
+            })
+            .when_some(resolution, |el, r| el.selected(r.id.to_string()))
             .on_change(change(&key, cx, |value| {
                 Some(Change::Resolution(id_of(value)))
             })),
             cx,
         );
 
-        let start_field =
-            self.date_field(item, "Start date", start_date, busy, Change::StartDate, cx);
-        let due_field = self.date_field(item, "Due date", due_date, busy, Change::DueDate, cx);
+        let start_field = self.date_field(item, "Start", start_date, busy, Change::StartDate, cx);
+        let due_field = self.date_field(item, "Due", due_date, busy, Change::DueDate, cx);
 
-        let hours_field = field(
-            "Estimate / Actual (h)",
-            None,
+        let hours_field = match view {
+            DetailView::Tab => {
+                let shown = |hours: Option<f64>| hours.map_or_else(|| EMPTY.into(), format_hours);
+                let text = format!("{} / {} h", shown(estimated_hours), shown(actual_hours));
+                property("Est. / Act.", plain(cx).child(text), cx)
+            }
+            DetailView::Inbox => self.hours_inputs(cx),
+        };
+
+        Some(vec![
+            assignee_field,
+            priority_field,
+            milestone_field,
+            resolution_field,
+            start_field,
+            due_field,
+            hours_field,
+        ])
+    }
+
+    /// The selected issue's hours, each in an input.
+    fn hours_inputs(&self, cx: &Context<Self>) -> AnyElement {
+        property(
+            "Est. / Act.",
             div()
                 .flex()
                 .items_center()
@@ -211,33 +250,25 @@ impl BenCodeApp {
                 .child(self.hours(&self.backlog_estimate_input))
                 .child(
                     div()
+                        .flex_none()
                         .text_size(Text::Sm.px())
                         .text_color(cx.theme().colors.fg.ink(Ink::Faint))
                         .child("/"),
                 )
-                .child(self.hours(&self.backlog_actual_input)),
+                .child(self.hours(&self.backlog_actual_input))
+                .child(
+                    div()
+                        .flex_none()
+                        .text_size(Text::Sm.px())
+                        .text_color(cx.theme().colors.fg.ink(Ink::Muted))
+                        .child("h"),
+                ),
             cx,
-        );
-
-        Some(
-            div()
-                .flex()
-                .flex_wrap()
-                .gap_x_4()
-                .gap_y_3()
-                .pt_1()
-                .child(assignee_field)
-                .child(priority_field)
-                .child(milestone_field)
-                .child(resolution_field)
-                .child(start_field)
-                .child(due_field)
-                .child(hours_field)
-                .into_any_element(),
         )
     }
 
-    /// A day picker, with a clear button once a day is set.
+    /// A day picker, with how far the day is for a due date, and a clear
+    /// button that shows while the row is hovered.
     fn date_field(
         &self,
         item: &WorkItem,
@@ -246,35 +277,46 @@ impl BenCodeApp {
         busy: bool,
         make: fn(Option<String>) -> Change,
         cx: &Context<Self>,
-    ) -> impl IntoElement {
-        let id = SharedString::from(format!(
-            "backlog-{}",
-            label.to_lowercase().replace(' ', "-")
-        ));
+    ) -> AnyElement {
+        let id = SharedString::from(format!("backlog-{}", label.to_lowercase()));
         let set = day(&value);
         let (pick_key, clear_key) = (item.key(), item.key());
+        let today = jiff::Zoned::now().date();
+        let note = (matches!(make(None), Change::DueDate(_)) && !item.closed)
+            .then(|| value.as_deref().and_then(|due| due_note(due, today, cx)))
+            .flatten();
+        let group = SharedString::from(format!("{id}-row"));
         let clear = set.filter(|_| !busy).map(|_| {
-            IconButton::new(SharedString::from(format!("{id}-clear")), IconName::X)
-                .size(ControlSize::Sm)
-                .variant(ButtonVariant::Ghost)
-                .tooltip(format!("Clear the {}", label.to_lowercase()))
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    this.update_backlog_issue(&clear_key, make(None), cx)
-                }))
-        });
-        field(
-            label,
-            None,
             div()
+                .flex_none()
+                .invisible()
+                .group_hover(group.clone(), |s| s.visible())
+                .child(
+                    IconButton::new(SharedString::from(format!("{id}-clear")), IconName::X)
+                        .size(ControlSize::Sm)
+                        .variant(ButtonVariant::Ghost)
+                        .tooltip(format!("Clear the {} date", label.to_lowercase()))
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.update_backlog_issue(&clear_key, make(None), cx)
+                        })),
+                )
+        });
+        property(
+            label,
+            div()
+                .id(group.clone())
+                .group(group)
                 .flex()
                 .items_center()
                 .gap_1()
                 .child(
-                    div().flex_1().min_w_0().child(
+                    // Its own width, so how far the day is follows it.
+                    div().flex_none().max_w_full().child(
                         DatePicker::new(id.clone(), set)
-                            .size(ControlSize::Sm)
-                            .placeholder("Not set")
-                            .today(jiff::Zoned::now().date())
+                            .quiet()
+                            .size(SIZE)
+                            .placeholder(EMPTY)
+                            .today(today)
                             .disabled(busy)
                             .on_change(app_callback_with(cx, move |this, date: Date, cx| {
                                 let day = date.strftime("%Y-%m-%d").to_string();
@@ -282,6 +324,8 @@ impl BenCodeApp {
                             })),
                     ),
                 )
+                .children(note)
+                .child(div().flex_1())
                 .children(clear),
             cx,
         )
@@ -291,9 +335,9 @@ impl BenCodeApp {
     /// changed (`commit_backlog_hours`), never per keystroke or step.
     fn hours(&self, input: &Entity<TextInput>) -> impl IntoElement {
         div()
-            .flex_1()
-            .min_w_0()
-            .child(Input::new(input).size(ControlSize::Sm))
+            .w(px(HOURS_WIDTH))
+            .flex_none()
+            .child(Input::new(input).quiet().size(SIZE))
     }
 
     /// The selected issue's hours, and the inputs' text for them.
@@ -371,54 +415,6 @@ fn parse_hours(text: &str) -> Option<Option<f64>> {
 /// `1`, `1.5`, `0.25`: no trailing zeros.
 fn format_hours(hours: f64) -> String {
     format!("{hours}")
-}
-
-/// A field: its name (and a shortcut) over its control.
-fn field(
-    label: &'static str,
-    shortcut: Option<AnyElement>,
-    control: impl IntoElement,
-    cx: &Context<BenCodeApp>,
-) -> impl IntoElement {
-    let fg = cx.theme().colors.fg;
-    div()
-        .w(px(FIELD_WIDTH))
-        .flex()
-        .flex_col()
-        .gap_1()
-        .child(
-            div()
-                .flex()
-                .items_center()
-                .justify_between()
-                .gap_2()
-                .h(px(18.0))
-                .text_size(Text::Sm.px())
-                .text_color(fg.ink(Ink::Muted))
-                .child(label)
-                .children(shortcut),
-        )
-        .child(control)
-}
-
-/// A link-like shortcut beside a field's name, as Backlog's "Assign to
-/// myself".
-fn action(
-    id: &'static str,
-    label: &'static str,
-    on_click: impl Fn(&mut gpui::Window, &mut gpui::App) + 'static,
-    cx: &Context<BenCodeApp>,
-) -> AnyElement {
-    let colors = &cx.theme().colors;
-    let (link, fg) = (colors.link, colors.fg);
-    div()
-        .id(id)
-        .cursor_pointer()
-        .text_color(link)
-        .hover(move |s| s.text_color(fg))
-        .on_click(move |_, window, cx| on_click(window, cx))
-        .child(label)
-        .into_any_element()
 }
 
 #[cfg(test)]

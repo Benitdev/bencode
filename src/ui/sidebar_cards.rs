@@ -183,7 +183,7 @@ impl BenCodeApp {
         let needs_approval = states.approval.contains(&id);
         let draft = session.is_draft();
         let drop_target = self.sessions_ui.drop == Some(ListDrop::Session(id.clone()));
-        let title = session_list::display_title(&session.title, &session.harness);
+        let title = session_list::session_title(session);
         let group = SharedString::from(format!("session-card-{id}"));
         // A working thread cannot be archived: it keeps its spinner on hover.
         let busy = states.busy.contains(&id);

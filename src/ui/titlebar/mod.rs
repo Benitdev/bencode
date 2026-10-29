@@ -125,7 +125,7 @@ fn project_name(cwd: &str) -> String {
 impl BenCodeApp {
     fn conversation_title(&self, id: &str) -> Option<String> {
         let session = self.sessions.iter().find(|s| s.id == id)?;
-        let title = session.title.trim();
+        let title = crate::app::session_list::linked_title(session).trim();
         Some(if title == NEW_SESSION_TITLE {
             String::new()
         } else {

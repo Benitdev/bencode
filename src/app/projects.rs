@@ -281,6 +281,7 @@ impl BenCodeApp {
             self.remove_sessions_from_folders(&gone, cx);
         }
         if changed {
+            self.backfill_backlog_links(cx);
             cx.notify();
         }
     }

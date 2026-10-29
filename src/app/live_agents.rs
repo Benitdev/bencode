@@ -6,7 +6,7 @@
 use gpui::Context;
 use std::sync::Arc;
 
-use crate::app::session_list::display_title;
+use crate::app::session_list::session_title;
 use crate::app::{BenCodeApp, Surface};
 use crate::db::{Block, SessionRow};
 use crate::ui::transcript::activity::tool_label;
@@ -51,7 +51,7 @@ pub fn live_agent(session: &SessionRow, flags: RunFlags) -> Option<LiveAgent> {
     Some(LiveAgent {
         id: session.id.clone(),
         cwd: session.cwd.clone(),
-        title: display_title(&session.title, &session.harness),
+        title: session_title(session),
         harness: session.harness.clone(),
         activity: if done {
             "Done".to_string()
@@ -144,17 +144,7 @@ impl BenCodeApp {
             .iter()
             // MonoCode `excludedIds`: a Mono's chat lives on its own rail row.
             .filter(|session| !self.is_mono_session(&session.id) && !self.is_habit_run(&session.id))
-            .filter_map(|session| {
-                let run = self.runs.get(&session.id);
-                live_agent(
-                    session,
-                    RunFlags {
-                        busy: run.is_some(),
-                        needs_approval: run.is_some_and(|run| run.pending_permission.is_some()),
-                        unseen_finished: unseen.contains(&session.id),
-                    },
-                )
-            })
+            .filter_map(|session| live_agent(session, self.run_flags(&session.id)))
             .collect();
         sort_live_agents(&mut agents);
         agents

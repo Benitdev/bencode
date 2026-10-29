@@ -400,7 +400,7 @@ impl BenCodeApp {
         let shown: Vec<(String, String, i64)> = visible
             .iter()
             .map(|s| {
-                let title = crate::app::session_list::display_title(&s.title, &s.harness);
+                let title = crate::app::session_list::session_title(s);
                 (s.id.clone(), title, s.created_at)
             })
             .collect();

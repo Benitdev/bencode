@@ -31,6 +31,8 @@ const TIMEOUT: Duration = Duration::from_secs(20);
 const PAGE: usize = 100;
 /// Backlog's built-in "Closed" status; a project cannot replace it.
 const CLOSED_STATUS: i64 = 4;
+/// Backlog's built-in "High" priority; the names follow the user's language.
+const HIGH_PRIORITY: i64 = 2;
 /// How long the space's projects and statuses are trusted.
 const CATALOG_FRESH_FOR: Duration = Duration::from_secs(600);
 
@@ -83,6 +85,9 @@ pub struct Listing {
     pub items: Vec<WorkItem>,
     pub errors: Vec<String>,
     pub statuses: Statuses,
+    /// The space's project keys, listed or hidden: a pull request may name
+    /// any of their issues (`work_items/tickets.rs`).
+    pub projects: Vec<String>,
 }
 
 /// The space's projects and statuses, kept between Inbox polls.
@@ -482,13 +487,13 @@ fn work_item(row: &IssueRow, space: &str) -> WorkItem {
         name: named.name.clone(),
         color: String::new(),
     };
-    let labels = row
-        .issue_type
-        .iter()
+    let issue_type = (row.issue_type.as_ref())
+        .filter(|kind| !kind.name.trim().is_empty())
         .map(|kind| Label {
             name: kind.name.clone(),
             color: kind.color.clone().unwrap_or_default(),
-        })
+        });
+    let labels = (issue_type.iter().cloned())
         .chain(row.category.iter().map(plain))
         .chain(row.milestone.iter().map(plain))
         .filter(|label| !label.name.trim().is_empty())
@@ -506,6 +511,7 @@ fn work_item(row: &IssueRow, space: &str) -> WorkItem {
         created_at: row.created.clone().unwrap_or_default(),
         updated_at: row.updated.clone().unwrap_or_default(),
         labels,
+        issue_type,
         assignees: row
             .assignee
             .iter()
@@ -517,6 +523,7 @@ fn work_item(row: &IssueRow, space: &str) -> WorkItem {
             .as_ref()
             .map(|p| p.name.clone())
             .unwrap_or_default(),
+        high_priority: row.priority.as_ref().is_some_and(|p| p.id == HIGH_PRIORITY),
         // `2024-05-31T00:00:00Z`: the day is all Backlog means.
         due_date: row
             .due_date
@@ -597,6 +604,9 @@ pub fn inbox(hidden: &[String], assigned_to_me: bool) -> Option<Listing> {
         }
     };
     listing.statuses = catalog.statuses.clone();
+    listing.projects = (catalog.projects.iter())
+        .map(|project| project.key.clone())
+        .collect();
     let Some(query) = issue_query(&catalog, hidden, assigned_to_me.then_some(config.user_id))
     else {
         return Some(listing);
@@ -611,6 +621,26 @@ pub fn inbox(hidden: &[String], assigned_to_me: bool) -> Option<Listing> {
         }
     }
     Some(listing)
+}
+
+/// The user's latest notifications (assigned, commented, mentioned, pull
+/// requests…) as item keys, and the user's name; `None` while Backlog is
+/// not connected. Reads only: nothing is marked read.
+pub fn notifications() -> Option<Result<crate::work_items::attention::Found, String>> {
+    let config = match read_config() {
+        Ok(config) => config?,
+        Err(err) => return Some(Err(err)),
+    };
+    let query = [("count", PAGE.to_string()), ("order", "desc".to_string())];
+    Some(
+        call(&config, None, "/notifications", &query, &[]).map(|data| {
+            crate::work_items::attention::Found {
+                notified: crate::work_items::attention::parse_backlog(&data),
+                me: HashMap::from([(String::new(), config.user_name.clone())]),
+                ..Default::default()
+            }
+        }),
+    )
 }
 
 /// The issue's description, who opened it and its fields; the pictures
@@ -630,6 +660,20 @@ pub fn details(key: &str) -> Result<Details, String> {
         backlog: Some(fields::fields(&row)),
         ..Default::default()
     })
+}
+
+/// One issue as the Inbox lists it, for a thread's link to an issue the
+/// list does not hold; only on the connected space (`host`).
+pub fn issue(key: &str, host: &str) -> Result<WorkItem, String> {
+    let config = require_config()?;
+    if !config.space.eq_ignore_ascii_case(host) {
+        return Err(format!("{host} is not the connected Backlog space"));
+    }
+    let key = require_issue_key(key)?;
+    let data = call(&config, None, &format!("/issues/{key}"), &[], &[])?;
+    let row: IssueRow =
+        serde_json::from_value(data).map_err(|_| "Backlog sent an unreadable issue".to_string())?;
+    Ok(work_item(&row, &config.space))
 }
 
 // ---------------------------------------------------------------------------
@@ -876,6 +920,12 @@ mod tests {
         assert_eq!(item.assignees, ["Me"]);
         let labels: Vec<&str> = item.labels.iter().map(|l| l.name.as_str()).collect();
         assert_eq!(labels, ["Bug", "Auth"]);
+        let kind = item.issue_type.as_ref().unwrap();
+        assert_eq!(
+            (kind.name.as_str(), kind.color.as_str()),
+            ("Bug", "#990000")
+        );
+        assert!(item.high_priority);
         assert_eq!(item.key(), "backlog:web-42");
     }
 

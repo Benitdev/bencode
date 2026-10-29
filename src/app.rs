@@ -22,7 +22,9 @@ pub mod habits;
 pub mod harness_updates;
 pub mod ids;
 pub mod in_flight;
+mod inbox_attention;
 mod integrations;
+pub mod item_threads;
 pub mod live_agents;
 mod model_catalog;
 pub mod mono_background;
@@ -60,7 +62,7 @@ pub mod task_list;
 pub mod thread_state;
 pub mod updater;
 pub mod usage;
-mod work_item_link;
+pub mod work_item_link;
 mod workspace_nav;
 pub mod workspace_sync;
 pub mod worktree_lifecycle;
@@ -201,6 +203,8 @@ pub struct BenCodeApp {
     /// MonoCode `LinkSessionWorkItemDialog`, while open.
     pub link_dialog: Option<crate::ui::link_dialog::LinkDialog>,
     pub link_input: Entity<TextInput>,
+    /// The threads linked to each Inbox item (`app/item_threads.rs`).
+    pub item_threads: item_threads::ItemThreads,
     /// Where the inspector's sash was pressed (window x).
     pub inspector_drag_x: f32,
     /// The card, folder or filter menu open over the navigator's threads.
@@ -691,6 +695,10 @@ impl BenCodeApp {
                 Region::Titlebar,
             ],
         );
+        // An Inbox item's tab beside the chat, only while one is open.
+        regions.follow_while(&inbox_state, &[Region::FilePane], |app| {
+            app.file_pane.shows_work_item()
+        });
         regions.follow(&terminals_state, &[Region::Terminal, Region::Titlebar]);
         regions.follow(
             &workspace_state,
@@ -1361,6 +1369,7 @@ impl BenCodeApp {
             reminder_failure: None,
             link_dialog: None,
             link_input,
+            item_threads: Default::default(),
             inspector_drag_x: 0.0,
             session_list_focus: cx.focus_handle(),
             permission_mode: PermissionMode::default(),
@@ -1781,6 +1790,7 @@ impl Render for BenCodeApp {
             any_elements(self.render_branch_switch_confirm(cx)),
             any_elements(self.render_branch_create_dialog(cx)),
             any_elements(self.render_pr_action_confirm(cx)),
+            any_elements(self.render_inbox_batch(cx)),
             any_elements(self.render_file_tree_dialog(cx)),
             any_elements(self.render_terminal_close_confirm(cx)),
             any_elements(self.render_whats_new(cx)),

@@ -16,8 +16,11 @@ use crate::git::text::{limit, parse_object, parse_pr_content, run_claude_on};
 use crate::harness::events::{AgentEvent, DoneStatus};
 use crate::harness::{self, EventRx, HarnessKind, PermissionPolicy, SpawnRequest, catalog};
 
+pub mod cache;
+pub mod script;
+
 /// The languages the Inbox offers.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Language {
     #[default]
@@ -38,8 +41,8 @@ impl Language {
         }
     }
 
-    /// The name the prompt gives.
-    fn name(self) -> &'static str {
+    /// The name in English, as the prompt and "Translated from" give it.
+    pub fn name(self) -> &'static str {
         match self {
             Self::Vietnamese => "Vietnamese",
             Self::English => "English",

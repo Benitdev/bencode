@@ -496,7 +496,8 @@ fn entries_for(tab: &PaneTab, store: &CheckpointStore) -> Result<(String, Vec<En
         PaneTab::File { .. }
         | PaneTab::Image { .. }
         | PaneTab::Browser { .. }
-        | PaneTab::FileHistory { .. } => Ok((String::new(), Vec::new())),
+        | PaneTab::FileHistory { .. }
+        | PaneTab::WorkItem { .. } => Ok((String::new(), Vec::new())),
         PaneTab::Review { cwd, path, side } => Ok((
             cwd.clone(),
             vec![Entry {

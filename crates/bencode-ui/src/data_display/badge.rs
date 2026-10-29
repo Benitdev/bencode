@@ -114,16 +114,18 @@ impl RenderOnce for Badge {
     }
 }
 
-type OnRemove = Rc<dyn Fn(&mut Window, &mut App)>;
+type Handler = Rc<dyn Fn(&mut Window, &mut App)>;
 
-/// A short label for a kind, a topic or a filter: an optional icon, the label, and an x when it can be removed. It is never wider than its container; a long label ends in an ellipsis.
+/// A short label for a kind, a topic or a filter: an optional icon, the label, and an x when it can be removed. It is never wider than its container; a long label ends in an ellipsis. With `on_click` it is a filter's toggle: outlined while off, tinted while `selected`.
 #[derive(IntoElement)]
 pub struct Tag {
     id: ElementId,
     label: SharedString,
     icon: Option<IconName>,
     tone: Tone,
-    on_remove: Option<OnRemove>,
+    on_remove: Option<Handler>,
+    on_click: Option<Handler>,
+    selected: bool,
 }
 
 impl Tag {
@@ -134,7 +136,21 @@ impl Tag {
             icon: None,
             tone: Tone::Neutral,
             on_remove: None,
+            on_click: None,
+            selected: false,
         }
+    }
+
+    /// Makes the tag a toggle that runs `handler` when pressed.
+    pub fn on_click(mut self, handler: impl Fn(&mut Window, &mut App) + 'static) -> Self {
+        self.on_click = Some(Rc::new(handler));
+        self
+    }
+
+    /// Drawn as on: a filter in force.
+    pub fn selected(mut self, selected: bool) -> Self {
+        self.selected = selected;
+        self
     }
 
     /// Adds an x that runs `handler`; the press stays out of focus.
@@ -148,12 +164,18 @@ impl RenderOnce for Tag {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
         let colors = &theme.colors;
+        let toggle = self.on_click.is_some();
         let (fill, text) = match self.tone {
+            Tone::Neutral if self.selected => (colors.selection, colors.fg),
+            // An off toggle is outlined, quieter than a tag that is on.
+            Tone::Neutral if toggle => (gpui::transparent_black(), colors.fg_muted),
             Tone::Neutral => (colors.hover, colors.fg),
             other => other.colors(colors),
         };
         let (remove, named) = (self.id.clone(), self.id.clone());
+        let hover = colors.hover;
         div()
+            .id((self.id.clone(), "tag"))
             .debug_selector(move || format!("tag {named}"))
             .flex()
             .flex_none()
@@ -166,6 +188,16 @@ impl RenderOnce for Tag {
             .h(theme.control_height(ControlSize::Sm))
             .rounded(theme.radius(Radius::Sm))
             .bg(fill)
+            .when(toggle && !self.selected, |tag| {
+                tag.border_1()
+                    .border_color(colors.border)
+                    .hover(move |style| style.bg(hover))
+            })
+            .when_some(self.on_click, |tag, click| {
+                tag.cursor_pointer()
+                    .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
+                    .on_click(move |_, window, cx| click(window, cx))
+            })
             .text_size(theme.text_size(TextSize::Sm))
             .text_color(text)
             .when_some(self.icon, |tag, icon| {
