@@ -27,6 +27,10 @@ tagging (`docs/releasing.md`).
   while you were away, in either window: Allow or Deny a command in place,
   Answer a question, or open the thread; × sets them aside until
   something new comes.
+- The icon rail shows each agent at work as its project's mascot, with a
+  dot while it waits on you or finished unseen; a click opens its thread.
+  The project icon's popover lists the project's latest threads, with
+  their state, New thread and Show all, above the projects.
 
 ## [0.1.38] - 2026-10-29
 

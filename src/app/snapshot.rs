@@ -104,6 +104,12 @@ const SCENES: &[(&str, SetUp)] = &[
         app.is_rail_open = false;
         cx.notify();
     }),
+    // The icon rail's project popover: the project's threads, then the
+    // projects.
+    ("navigator-closed-projects", |app, _, cx| {
+        let at = gpui::point(crate::ui::scale::px(54.0), crate::ui::scale::px(90.0));
+        app.open_sidebar_menu(crate::ui::sidebar_menus::SidebarMenuKind::CompactProjects, at, cx);
+    }),
     // A staged Inbox (`stage_inbox`): Backlog issues and GitHub items,
     // a Backlog issue open with its fields, comments and a translation,
     // and threads linked to three of them (`stage_item_threads`).

@@ -1,7 +1,9 @@
 //! MonoCode `CompactProjectRail` and `CompactRailAction` (`Sidebar.tsx`):
 //! the column of icons the navigator leaves behind when collapsed with
 //! Appearance › "Collapsed navigator" on "Icon rail". It expands the
-//! navigator, switches project and opens the views.
+//! navigator, opens the views, lists the agents at work (one icon each,
+//! so a waiting one is a click away) and, from the project's icon, the
+//! project's threads and the other projects.
 
 use std::rc::Rc;
 
@@ -12,19 +14,26 @@ use gpui::{
     Pixels, Point, SharedString, Stateful, Styled, anchored, canvas, deferred, div, prelude::*,
 };
 
-use super::widgets::project_mascot_icon;
+use super::live_agents::live_agent_elapsed;
+use super::widgets::{mascot_icon, project_mascot_icon};
 use super::{TITLEBAR_HEIGHT, path_key};
+use crate::app::live_agents::LiveAgent;
+use crate::app::session_list::{compare_sessions, format_age, session_title};
 use crate::app::{BenCodeApp, Surface, same_project_path};
 use crate::ui::appearance::CollapsedRailMode;
 use crate::ui::scale::px;
 use crate::ui::sidebar_menus::SidebarMenuKind;
 use crate::ui::thumbnail::{LOGO, thumbnail};
-use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
+use crate::ui::tokens::{Fill, Ink, Status, Text, Tone as _};
 
 /// MonoCode `w-12`.
 pub const COMPACT_RAIL_WIDTH: f32 = 48.0;
-/// The project popover: `Popover width={230}`, like "Open project".
-const PROJECTS_WIDTH: f32 = 230.0;
+/// The project popover: wider than MonoCode's 230, for threads' titles.
+const PROJECTS_WIDTH: f32 = 280.0;
+/// The project's threads the popover lists before "Show all".
+const POPOVER_THREADS: usize = 10;
+/// The agents the rail shows before "+N".
+const RAIL_AGENTS: usize = 6;
 const POPOVER_GAP: f32 = 6.0;
 
 impl BenCodeApp {
@@ -128,7 +137,6 @@ impl BenCodeApp {
                     )
                     .children(self.render_compact_bots(cx))
                     .child(self.render_compact_project_button(cx))
-                    .children(self.render_agents_badge(true, cx))
                     .child(
                         compact_action(
                             "compact-rail-search",
@@ -176,6 +184,9 @@ impl BenCodeApp {
                         false,
                     )),
             )
+            // Under the views, so their icons hold still as agents come
+            // and go.
+            .children(self.render_compact_agents(cx))
             // `min-h-2 flex-1`
             .child(div().flex_1().min_h_2())
             .child(
@@ -202,6 +213,135 @@ impl BenCodeApp {
                         ),
                     ),
             )
+    }
+
+    /// The Agents section as icons: each agent's project mascot, moving
+    /// while it works, an amber dot while it waits on the user and a green
+    /// one when it finished unseen; a click opens its thread. Past
+    /// `RAIL_AGENTS`, "+N" brings the navigator back with the rest.
+    fn render_compact_agents(&self, cx: &Context<Self>) -> Option<AnyElement> {
+        let agents = self.live_agents();
+        if agents.is_empty() {
+            return None;
+        }
+        let fg = cx.theme().colors.fg;
+        let now = crate::app::now_ms();
+        let extra = agents.len().saturating_sub(RAIL_AGENTS);
+        let buttons = agents[..agents.len() - extra]
+            .iter()
+            .map(|agent| self.render_compact_agent(agent, now, cx));
+        let more = (extra > 0).then(|| {
+            div()
+                .id("compact-agents-more")
+                .flex()
+                .flex_none()
+                .size(px(32.0))
+                .items_center()
+                .justify_center()
+                .rounded(px(6.0))
+                .cursor_pointer()
+                .text_size(Text::Sm.px())
+                .text_color(fg.ink(Ink::Secondary))
+                .hover(move |s| s.bg(fg.fill(Fill::Strong)).text_color(fg))
+                .tooltip(Tooltip::text(format!("{extra} more agents")))
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.is_rail_open = true;
+                    cx.notify();
+                }))
+                .child(format!("+{extra}"))
+        });
+        Some(
+            div()
+                .id("compact-agents")
+                .flex()
+                .flex_col()
+                .flex_initial()
+                .min_h_0()
+                .items_center()
+                .w_full()
+                .gap_1p5()
+                .pb_1p5()
+                .overflow_hidden()
+                .child(
+                    div()
+                        .w(px(20.0))
+                        .h(px(1.0))
+                        .mb_1()
+                        .bg(fg.fill(Fill::Strong)),
+                )
+                .children(buttons)
+                .children(more)
+                .into_any_element(),
+        )
+    }
+
+    fn render_compact_agent(&self, agent: &LiveAgent, now: i64, cx: &Context<Self>) -> AnyElement {
+        let theme = cx.theme();
+        let fg = theme.colors.fg;
+        let selection = fg.opacity(if theme.is_dark() { 0.10 } else { 0.06 });
+        let amber = Status::Attention.color(fg);
+        let selected = self.selected_session_id.as_deref() == Some(agent.id.as_str());
+        let live = !agent.needs_approval && !agent.done;
+        let activity = self.live_agent_activity(agent);
+        let project = self.rail_project_label(&agent.cwd);
+        let tip = [
+            Some(agent.title.as_str()),
+            Some(project.as_str()),
+            Some(activity.as_str()),
+            live_agent_elapsed(agent, now).as_deref(),
+        ]
+        .into_iter()
+        .flatten()
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
+        let dot = if agent.needs_approval {
+            Some(amber)
+        } else if agent.done {
+            Some(Status::Done.color(fg))
+        } else {
+            None
+        };
+        let id = agent.id.clone();
+        div()
+            .id(SharedString::from(format!("compact-agent-{}", agent.id)))
+            .relative()
+            .flex()
+            .flex_none()
+            .size(px(32.0))
+            .items_center()
+            .justify_center()
+            .rounded(px(6.0))
+            .cursor_pointer()
+            .map(|el| {
+                if selected {
+                    el.bg(selection)
+                } else if agent.needs_approval {
+                    el.bg(amber.opacity(0.10))
+                        .hover(move |s| s.bg(amber.opacity(0.18)))
+                } else {
+                    el.hover(move |s| s.bg(fg.fill(Fill::Strong)))
+                }
+            })
+            .tooltip(Tooltip::text(tip))
+            .on_click(cx.listener(move |this, _, _, cx| this.select_live_agent(&id, cx)))
+            .child(mascot_icon(
+                self.project_mascot(&agent.cwd),
+                self.project_color(&agent.cwd),
+                live,
+                14.0,
+                cx,
+            ))
+            .children(dot.map(|color| {
+                div()
+                    .absolute()
+                    .top(px(5.0))
+                    .right(px(5.0))
+                    .size(px(6.0))
+                    .rounded_full()
+                    .bg(color)
+            }))
+            .into_any_element()
     }
 
     /// MonoCode `railMonosPinned`: each Bot at the top of the icon rail,
@@ -357,11 +497,11 @@ impl BenCodeApp {
         self.open_sidebar_menu(SidebarMenuKind::CompactProjects, at, cx);
     }
 
-    /// The icon rail's project list: the rail's projects in its order, the
-    /// current one marked, then "Open folder…" and "Open folder on a
-    /// machine…". MonoCode's picker also
-    /// searches and carries each project's menu; those stay on the full
-    /// rail here.
+    /// The icon rail's popover: the current project's latest threads (a
+    /// new one, "Show all" past `POPOVER_THREADS`), the rail's projects in
+    /// its order, the current one marked, then "Open folder…" and "Open
+    /// folder on a machine…". MonoCode's picker also searches and carries
+    /// each project's menu; those stay on the full rail here.
     pub(crate) fn render_compact_projects_menu(
         &self,
         position: Point<Pixels>,
@@ -436,6 +576,7 @@ impl BenCodeApp {
                 this.close_sidebar_menu(cx);
                 this.open_remote_folder_dialog(cx);
             }));
+        let threads = self.render_compact_threads(cx);
         let list = div()
             .id("compact-projects-list")
             .flex()
@@ -457,6 +598,7 @@ impl BenCodeApp {
                     }
                 });
             }))
+            .children(threads)
             .child(list)
             .child(div().my_1().h(px(1.0)).bg(fg.fill(Fill::Strong)))
             .child(open_folder)
@@ -464,6 +606,189 @@ impl BenCodeApp {
         deferred(anchored().position(position).snap_to_window().child(menu))
             .with_priority(3)
             .into_any_element()
+    }
+
+    /// The popover's threads: the current project's as the navigator
+    /// lists them, latest first, each with its run's state (still: the
+    /// popover is the shell's, which the busy clock does not redraw), and a
+    /// divider under them. None without a project.
+    fn render_compact_threads(&self, cx: &Context<Self>) -> Option<AnyElement> {
+        if matches!(self.current_cwd.trim(), "" | "~") {
+            return None;
+        }
+        let theme = cx.theme();
+        let fg = theme.colors.fg;
+        let accent = theme.colors.accent;
+        let states = self.session_live_states();
+        let mut threads = self.listed_sessions();
+        threads.retain(|s| !s.archived);
+        threads.sort_by(|a, b| compare_sessions(a, b));
+        let extra = threads.len().saturating_sub(POPOVER_THREADS);
+        threads.truncate(POPOVER_THREADS);
+        let now = crate::app::now_ms();
+        let empty = threads.is_empty();
+
+        let new_thread = div()
+            .id("compact-threads-new")
+            .flex()
+            .flex_none()
+            .size(px(22.0))
+            .items_center()
+            .justify_center()
+            .rounded(px(5.0))
+            .cursor_pointer()
+            .hover(move |s| s.bg(fg.fill(Fill::Selected)))
+            .tooltip(Tooltip::text("New thread (⌘T)"))
+            .on_click(cx.listener(|this, _, _, cx| {
+                this.close_sidebar_menu(cx);
+                if this.surface.is_some() {
+                    this.close_surface(cx);
+                }
+                this.create_new_session(cx);
+            }))
+            .child(
+                Icon::new(IconName::Plus)
+                    .size(IconSize::Sm)
+                    .color(fg.ink(Ink::Secondary)),
+            );
+        let header = div()
+            .flex()
+            .items_center()
+            .gap_1()
+            .pl(px(10.0))
+            .pr(px(4.0))
+            .pt(px(4.0))
+            .pb(px(2.0))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .truncate()
+                    .text_size(Text::Sm.px())
+                    .text_color(fg.ink(Ink::Muted))
+                    .child(self.rail_project_label(&self.current_cwd)),
+            )
+            .child(new_thread);
+
+        let rows = threads.into_iter().map(|session| {
+            let selected = self.selected_session_id.as_deref() == Some(session.id.as_str());
+            let status = if states.approval.contains(&session.id) {
+                Some(
+                    Icon::new(IconName::CircleAlert)
+                        .size(IconSize::Xs)
+                        .color(Status::Attention.color(fg))
+                        .into_any_element(),
+                )
+            } else if states.busy.contains(&session.id) {
+                Some(
+                    div()
+                        .size(px(6.0))
+                        .rounded_full()
+                        .bg(accent)
+                        .into_any_element(),
+                )
+            } else if states.done.contains(&session.id) {
+                Some(
+                    Icon::new(IconName::Check)
+                        .size(IconSize::Xs)
+                        .color(Status::Done.color(fg))
+                        .into_any_element(),
+                )
+            } else {
+                None
+            };
+            let id = session.id.clone();
+            div()
+                .id(SharedString::from(format!("compact-thread-{}", session.id)))
+                .flex()
+                .w_full()
+                .items_center()
+                .gap(px(8.0))
+                .rounded(px(8.0))
+                .px(px(10.0))
+                .py(px(5.0))
+                .text_size(Text::Md.px())
+                .text_color(fg.ink(Ink::Strong))
+                .cursor_pointer()
+                .when(selected, |el| el.bg(fg.fill(Fill::Selected)).text_color(fg))
+                .hover(move |s| s.bg(fg.fill(Fill::Selected)).text_color(fg))
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.close_sidebar_menu(cx);
+                    this.select_live_agent(&id, cx);
+                }))
+                .child(
+                    div()
+                        .flex()
+                        .flex_none()
+                        .size_4()
+                        .items_center()
+                        .justify_center()
+                        .children(status),
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .truncate()
+                        .child(session_title(session)),
+                )
+                .child(
+                    div()
+                        .flex_none()
+                        .text_size(Text::Sm.px())
+                        .text_color(fg.ink(Ink::Muted))
+                        .child(format_age(session.updated_at, now)),
+                )
+        });
+        let show_all = (extra > 0).then(|| {
+            div()
+                .id("compact-threads-all")
+                .flex()
+                .w_full()
+                .items_center()
+                .rounded(px(8.0))
+                .px(px(10.0))
+                .py(px(5.0))
+                .pl(px(34.0))
+                .text_size(Text::Sm.px())
+                .text_color(fg.ink(Ink::Secondary))
+                .cursor_pointer()
+                .hover(move |s| s.bg(fg.fill(Fill::Selected)).text_color(fg))
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.close_sidebar_menu(cx);
+                    this.is_rail_open = true;
+                    cx.notify();
+                }))
+                .child(format!("Show all ({extra} more)"))
+        });
+        Some(
+            div()
+                .flex()
+                .flex_col()
+                .child(header)
+                .when(empty, |el| {
+                    el.child(
+                        div()
+                            .px(px(10.0))
+                            .py(px(5.0))
+                            .text_size(Text::Sm.px())
+                            .text_color(fg.ink(Ink::Muted))
+                            .child("No threads yet"),
+                    )
+                })
+                .child(
+                    div()
+                        .id("compact-threads-list")
+                        .flex()
+                        .flex_col()
+                        .max_h(px(300.0))
+                        .overflow_y_scroll()
+                        .children(rows),
+                )
+                .children(show_all)
+                .child(div().my_1().h(px(1.0)).bg(fg.fill(Fill::Strong)))
+                .into_any_element(),
+        )
     }
 }
 

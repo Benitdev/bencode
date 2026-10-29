@@ -179,11 +179,11 @@ impl BenCodeApp {
         )
     }
 
-    /// While the navigator is collapsed: how many agents are live, amber
-    /// with how many wait on the user; a click brings the navigator back
-    /// with its Agents section. `icon` is the icon rail's square button,
-    /// else the title bar's pill.
-    pub(crate) fn render_agents_badge(&self, icon: bool, cx: &Context<Self>) -> Option<AnyElement> {
+    /// While the navigator is collapsed to nothing: the title bar's pill,
+    /// how many agents are live, amber with how many wait on the user; a
+    /// click brings the navigator back with its Agents section. The icon
+    /// rail lists the agents themselves (`render_compact_agents`).
+    pub(crate) fn render_agents_badge(&self, cx: &Context<Self>) -> Option<AnyElement> {
         let agents = self.live_agents();
         if agents.is_empty() {
             return None;
@@ -200,46 +200,7 @@ impl BenCodeApp {
             0 => format!("{} agents at work", agents.len()),
             _ => format!("{} agents, {waiting} waiting for you", agents.len()),
         };
-        let open = cx.listener(|this, _, _, cx| {
-            this.is_rail_open = true;
-            cx.notify();
-        });
-        let badge = if icon {
-            div()
-                .id("agents-badge-icon")
-                .relative()
-                .flex()
-                .flex_none()
-                .size(px(32.0))
-                .items_center()
-                .justify_center()
-                .rounded(px(6.0))
-                .cursor_pointer()
-                .hover(move |s| s.bg(fg.fill(Fill::Strong)))
-                .child(Icon::new(IconName::Bot).size(IconSize::Md).color(tint))
-                .child(
-                    div()
-                        .absolute()
-                        .top(px(2.0))
-                        .right(px(1.0))
-                        .min_w(px(14.0))
-                        .h(px(14.0))
-                        .px(px(3.0))
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .rounded_full()
-                        .bg(tint)
-                        .text_size(Text::Xs.px())
-                        .text_color(colors.bg)
-                        // Those waiting, else those at work.
-                        .child(
-                            if waiting > 0 { waiting } else { agents.len() }
-                                .min(9)
-                                .to_string(),
-                        ),
-                )
-        } else {
+        Some(
             div()
                 .id("agents-badge-pill")
                 .flex()
@@ -259,13 +220,33 @@ impl BenCodeApp {
                     0 => format!("{} at work", agents.len()),
                     _ => format!("{waiting} waiting"),
                 })
-        };
-        Some(
-            badge
                 .tooltip(Tooltip::text(tip))
-                .on_click(open)
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.is_rail_open = true;
+                    cx.notify();
+                }))
                 .into_any_element(),
         )
+    }
+
+    /// What an agent does or asks, as its row's second line says it.
+    pub(crate) fn live_agent_activity(&self, agent: &LiveAgent) -> String {
+        let request = agent
+            .needs_approval
+            .then(|| self.pending_permission_for(&agent.id))
+            .flatten();
+        match request {
+            Some(request) if request.tool == crate::app::QUESTION_TOOL => {
+                "Has a question".to_string()
+            }
+            Some(request) if request.description.is_empty() => {
+                format!("Allow {}?", request.tool)
+            }
+            Some(request) => format!("{}: {}", request.tool, request.description),
+            None if agent.needs_approval => "Needs approval".to_string(),
+            None if agent.done => "Done".to_string(),
+            None => agent.activity.clone(),
+        }
     }
 
     /// One agent: its project's mascot, the title and elapsed time, then
@@ -277,28 +258,13 @@ impl BenCodeApp {
         let selection = fg.opacity(if theme.is_dark() { 0.10 } else { 0.06 });
         let seed = project_name(&agent.cwd);
         let project = self.settings.rail.label(&agent.cwd, seed).to_string();
-        let elapsed = if agent.done {
-            agent.duration_ms.map(format_live_elapsed)
-        } else {
-            agent
-                .started_at
-                .map(|started| format_live_elapsed(now - started))
-        };
+        let elapsed = live_agent_elapsed(agent, now);
         let request = agent
             .needs_approval
             .then(|| self.pending_permission_for(&agent.id))
             .flatten();
         let question = request.is_some_and(|r| r.tool == crate::app::QUESTION_TOOL);
-        let activity = match request {
-            Some(_) if question => "Has a question".to_string(),
-            Some(request) if request.description.is_empty() => {
-                format!("Allow {}?", request.tool)
-            }
-            Some(request) => format!("{}: {}", request.tool, request.description),
-            None if agent.needs_approval => "Needs approval".to_string(),
-            None if agent.done => "Done".to_string(),
-            None => agent.activity.clone(),
-        };
+        let activity = self.live_agent_activity(agent);
         let live = !agent.needs_approval && !agent.done;
         let selected = self.selected_session_id.as_deref() == Some(agent.id.as_str());
         let tip = [
@@ -455,5 +421,16 @@ impl BenCodeApp {
             )
             .children(actions)
             .into_any_element()
+    }
+}
+
+/// How long the turn has run, or took once done.
+pub(crate) fn live_agent_elapsed(agent: &LiveAgent, now: i64) -> Option<String> {
+    if agent.done {
+        agent.duration_ms.map(format_live_elapsed)
+    } else {
+        agent
+            .started_at
+            .map(|started| format_live_elapsed(now - started))
     }
 }

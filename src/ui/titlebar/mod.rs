@@ -1102,7 +1102,7 @@ impl BenCodeApp {
                         .tooltip("New thread (⌘T)")
                         .on_click(cx.listener(|this, _, _, cx| this.create_new_session(cx))),
                 )
-                .children(self.render_agents_badge(false, cx))
+                .children(self.render_agents_badge(cx))
             })
     }
 
