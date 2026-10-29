@@ -124,6 +124,16 @@ tagging (`docs/releasing.md`).
   gets its own linked thread, started at once, so the agents run side by
   side under Agents. Issues that have a thread are skipped unless you
   tick them in; pull requests are left out.
+- A browser page's console, as agents read it, names the script,
+  stylesheet or image that failed to load. A dev server's page left
+  blank because one of its modules did not load now says so instead of
+  logging nothing.
+- The browser reloads a page ignoring its cache: ⌘⇧R (View › Reload
+  Page Ignoring Cache), ⇧-click on Reload, or `hard_reload` for agents.
+  A plain reload keeps the files a server marked as never changing, and
+  a dev server may rebuild them under the same address (Vite's
+  pre-bundled dependencies): the page then loaded the old ones and came
+  up blank.
 
 ## [0.1.37] - 2026-10-28
 

@@ -52,6 +52,16 @@ pub const PRELUDE: &str = r#"(() => {
   }
   window.addEventListener('error', (e) =>
     keep('error', e.message + (e.filename ? ` (${e.filename}:${e.lineno})` : '')));
+  // A script, stylesheet or image that fails to load says so on its
+  // element, which the listener above never hears: a module that fails
+  // (or one it imports) leaves the page blank with nothing else logged.
+  window.addEventListener('error', (e) => {
+    const el = e.target;
+    if (!(el instanceof Element)) return;
+    const url = el.currentSrc || el.src || el.href;
+    const what = el.type === 'module' ? 'module script (or one of its imports)' : el.localName;
+    keep('error', `Failed to load ${what}` + (typeof url === 'string' && url ? `: ${url}` : ''));
+  }, true);
   window.addEventListener('unhandledrejection', (e) =>
     keep('error', 'Unhandled rejection: ' + fmt(e.reason)));
   // Only that it moved: the app asks the view where, not the page.

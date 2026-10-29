@@ -120,10 +120,10 @@ fn tools() -> Value {
         },
         {
             "name": "browser_history",
-            "description": "Go back, forward, or reload the page.",
+            "description": "Go back, forward, or reload the page. hard_reload fetches every file again, skipping the cache: for a dev server's page left blank or stale after it rebuilt its files.",
             "inputSchema": {
                 "type": "object",
-                "properties": { "action": { "type": "string", "enum": ["back", "forward", "reload"] } },
+                "properties": { "action": { "type": "string", "enum": ["back", "forward", "reload", "hard_reload"] } },
                 "required": ["action"],
             },
         },

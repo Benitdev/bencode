@@ -178,6 +178,11 @@ fn groups() -> Vec<Group<Entry>> {
                 entry("New Terminal", I::Terminal, cmd::NewTerminal),
                 entry("Open Browser", I::Globe, cmd::OpenBrowser),
                 entry(
+                    "Reload Page Ignoring Cache",
+                    I::RotateCw,
+                    cmd::ReloadIgnoringCache,
+                ),
+                entry(
                     "Swap Chat and File Pane",
                     I::Columns2,
                     cmd::SwapFilePaneSide,

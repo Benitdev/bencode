@@ -512,7 +512,10 @@ impl BenCodeApp {
         }
     }
 
-    pub(crate) fn browser_reload(&mut self, id: u64, cx: &mut Context<Self>) {
+    /// Reloads tab `id`. `from_origin` (⌘⇧R, ⇧-click) asks the server for
+    /// every file again: a dev server's page a plain reload keeps broken,
+    /// on files it rebuilt under the same address.
+    pub(crate) fn browser_reload(&mut self, id: u64, from_origin: bool, cx: &mut Context<Self>) {
         let Some(tab) = self.browser.tabs.get_mut(&id) else {
             return;
         };
@@ -523,7 +526,11 @@ impl BenCodeApp {
         }
         if let Some(page) = &tab.page {
             tab.loading = true;
-            page.reload();
+            if from_origin {
+                page.reload_from_origin();
+            } else {
+                page.reload();
+            }
             self.watch_load(id, true, cx);
             cx.notify();
         }
@@ -1033,15 +1040,20 @@ impl BenCodeApp {
             }
             "browser_history" => {
                 let action = text("action");
-                if !matches!(action.as_deref(), Some("back" | "forward" | "reload")) {
-                    return call
-                        .answer(ToolReply::error("action must be back, forward or reload."));
+                if !matches!(
+                    action.as_deref(),
+                    Some("back" | "forward" | "reload" | "hard_reload")
+                ) {
+                    return call.answer(ToolReply::error(
+                        "action must be back, forward, reload or hard_reload.",
+                    ));
                 }
                 let loaded = self.wait_for_load(id);
                 match action.as_deref() {
                     Some("back") => self.browser_back(id, cx),
                     Some("forward") => self.browser_forward(id, cx),
-                    _ => self.browser_reload(id, cx),
+                    Some("hard_reload") => self.browser_reload(id, true, cx),
+                    _ => self.browser_reload(id, false, cx),
                 }
                 cx.spawn(async move |_, cx| {
                     // A step inside the page (a hash, `pushState`) loads

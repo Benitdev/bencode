@@ -130,6 +130,15 @@ impl Page {
         }
     }
 
+    /// A reload that asks the server for every file again, the ones the
+    /// cache may keep without asking too.
+    pub fn reload_from_origin(&self) {
+        #[cfg(target_os = "macos")]
+        return super::snapshot::reload_from_origin(&self.view);
+        #[cfg(not(target_os = "macos"))]
+        self.reload()
+    }
+
     /// Where the view is, as WebKit has it.
     pub fn url(&self) -> Option<String> {
         self.view.url().ok()

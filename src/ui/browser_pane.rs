@@ -8,8 +8,8 @@ use bencode_ui::feedback::EmptyState;
 use bencode_ui::primitives::IconName;
 use bencode_ui::theme::{ActiveTheme, ControlSize, TextSize};
 use gpui::{
-    AnyElement, Context, DispatchPhase, IntoElement, MouseDownEvent, ParentElement, Styled, canvas,
-    div, prelude::*,
+    AnyElement, ClickEvent, Context, DispatchPhase, IntoElement, MouseDownEvent, ParentElement,
+    Styled, canvas, div, prelude::*,
 };
 
 use crate::app::BenCodeApp;
@@ -142,10 +142,16 @@ impl BenCodeApp {
                 button(
                     "browser-reload",
                     IconName::RotateCw,
-                    if loading { "Loading…" } else { "Reload" },
+                    if loading {
+                        "Loading…"
+                    } else {
+                        "Reload (⌘⇧R or ⇧-click skips the cache)"
+                    },
                 )
                 .disabled(!has_page)
-                .on_click(cx.listener(move |this, _, _, cx| this.browser_reload(id, cx))),
+                .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
+                    this.browser_reload(id, event.modifiers().shift, cx)
+                })),
             )
             .child(
                 div()

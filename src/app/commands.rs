@@ -28,6 +28,7 @@ actions!(
         SwapFilePaneSide,
         NewTerminal,
         OpenBrowser,
+        ReloadIgnoringCache,
         SplitRight,
         SplitDown,
         FocusLeft,
@@ -194,6 +195,9 @@ pub(crate) fn keymap() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-j", ToggleTerminal, None),
         KeyBinding::new("cmd-i", ToggleMono, None),
         KeyBinding::new("cmd-shift-o", OpenBrowser, None),
+        // Chrome's hard reload. A menu item, so it also reaches a page that
+        // has the keyboard.
+        KeyBinding::new("cmd-shift-r", ReloadIgnoringCache, None),
         KeyBinding::new("cmd-`", NewTerminal, None),
         // MonoCode "Terminal: New Tab"; every BenCode terminal is a dock tab.
         KeyBinding::new("cmd-shift-`", NewTerminal, None),
@@ -362,6 +366,7 @@ fn menus() -> Vec<Menu> {
             MenuItem::action("Toggle Mono", ToggleMono),
             MenuItem::action("New Terminal", NewTerminal),
             MenuItem::action("Open Browser", OpenBrowser),
+            MenuItem::action("Reload Page Ignoring Cache", ReloadIgnoringCache),
             MenuItem::separator(),
             MenuItem::action("Split Pane Right", SplitRight),
             MenuItem::action("Split Pane Down", SplitDown),
@@ -737,6 +742,11 @@ impl BenCodeApp {
         }))
         .on_action(cx.listener(|this, action: &OpenInBrowser, window, cx| {
             this.open_url_in_browser(&action.0, window, cx);
+        }))
+        .on_action(cx.listener(|this, _: &ReloadIgnoringCache, _, cx| {
+            if let Some(id) = this.active_browser_id() {
+                this.browser_reload(id, true, cx);
+            }
         }))
         .on_action(cx.listener(|this, _: &ToggleMono, _, cx| this.toggle_mono(cx)))
         .on_action(cx.listener(|this, _: &SwapFilePaneSide, _, cx| this.swap_file_pane_side(cx)))

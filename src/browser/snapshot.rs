@@ -1,7 +1,8 @@
 //! What wry does not pass on from a WKWebView. A PNG of what it shows
 //! (`takeSnapshotWithConfiguration:`): the page draws in WebKit's own
 //! process, so the view cannot be drawn into a bitmap from here. And
-//! whether it is loading, and whether it has the keyboard.
+//! whether it is loading, whether it has the keyboard, and a reload that
+//! skips the cache.
 
 #![allow(unexpected_cfgs)]
 
@@ -30,6 +31,17 @@ pub fn is_loading(view: &wry::WebView) -> bool {
     let webview: Id = &*webview as *const _ as Id;
     let loading: BOOL = unsafe { msg_send![webview, isLoading] };
     loading != NO
+}
+
+/// `WKWebView.reloadFromOrigin`: every file asked of the server again. A
+/// plain reload keeps what was served `immutable` without asking, and a
+/// dev server may rebuild such a file under the same address (Vite's
+/// pre-bundled dependencies keep their `?v=`).
+pub fn reload_from_origin(view: &wry::WebView) {
+    let webview = view.webview();
+    let webview: Id = &*webview as *const _ as Id;
+    // The navigation it returns is followed like any load's.
+    let _navigation: Id = unsafe { msg_send![webview, reloadFromOrigin] };
 }
 
 /// Whether the view, or a view inside it, is its window's first responder.
