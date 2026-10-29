@@ -39,8 +39,8 @@ pub enum SettingsTab {
     Worktrees,
     /// Trackers the Inbox reads (`ui/settings_integrations.rs`).
     Integrations,
-    /// MonoCode Settings › Monos (`ui/settings_monos.rs`).
-    Monos,
+    /// MonoCode Settings › Bots (`ui/settings_bots.rs`).
+    Bots,
 }
 
 const SECTIONS: [(SettingsTab, &str, &str, IconName); 12] = [
@@ -69,7 +69,7 @@ const SECTIONS: [(SettingsTab, &str, &str, IconName); 12] = [
         IconName::SlidersHorizontal,
     ),
     (SettingsTab::Skills, "skills", "Skills", IconName::Sparkles),
-    (SettingsTab::Monos, "monos", "Monos", IconName::Bot),
+    (SettingsTab::Bots, "bots", "Bots", IconName::Bot),
     (
         SettingsTab::Appearance,
         "appearance",
@@ -123,7 +123,7 @@ pub(crate) const SETTINGS_GROUPS: [(&str, &[SettingsTab]); 3] = [
             SettingsTab::Providers,
             SettingsTab::Mcp,
             SettingsTab::Skills,
-            SettingsTab::Monos,
+            SettingsTab::Bots,
         ],
     ),
     (
@@ -174,7 +174,7 @@ impl SettingsTab {
             Self::Skills => {
                 "File skills from project and personal folders. Type / in the composer to use one."
             }
-            Self::Monos => "The resident agent beside your tabs, and which projects have one.",
+            Self::Bots => "The resident agent beside your tabs, and which projects have one.",
             Self::Archive => "Projects you have archived from the navigator.",
             Self::Worktrees => "Manage additional worktrees for each project.",
             Self::Integrations => {
@@ -257,7 +257,7 @@ impl BenCodeApp {
             SettingsTab::Archive => self.render_settings_archive(cx).into_any_element(),
             SettingsTab::Worktrees => self.render_settings_worktrees(cx).into_any_element(),
             SettingsTab::Integrations => self.render_settings_integrations(cx).into_any_element(),
-            SettingsTab::Monos => self.render_settings_monos(cx).into_any_element(),
+            SettingsTab::Bots => self.render_settings_bots(cx).into_any_element(),
         }
     }
 

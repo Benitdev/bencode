@@ -146,7 +146,7 @@ impl BenCodeApp {
                     this.redraw_regions(
                         &[
                             crate::ui::region::Region::Chat,
-                            crate::ui::region::Region::Mono,
+                            crate::ui::region::Region::Bot,
                         ],
                         cx,
                     );

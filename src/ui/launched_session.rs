@@ -1,4 +1,4 @@
-//! MonoCode `LaunchedSessionCard`: a session a Mono started, as a line
+//! MonoCode `LaunchedSessionCard`: a session a Bot started, as a line
 //! under its reply like an artifact's card: its state (a spinner while it
 //! works, a check once done), its title and the project it runs in. A
 //! click opens it.
@@ -11,7 +11,7 @@ use gpui::{
 };
 
 use crate::app::BenCodeApp;
-use crate::app::mono_sessions::{LaunchedState, SpawnedSession};
+use crate::app::bot_sessions::{LaunchedState, SpawnedSession};
 use crate::ui::provider_icon::HarnessIcon;
 use crate::ui::scale::px;
 use crate::ui::tokens::Status;
@@ -119,13 +119,13 @@ impl BenCodeApp {
         crate::app::session_list::display_title(title, &launch.harness)
     }
 
-    /// Its session in the project's tabs, leaving the Mono's view (the
+    /// Its session in the project's tabs, leaving the Bot's view (the
     /// shown session's Open in workspace).
     pub fn open_launched_session(&mut self, id: &str, cx: &mut Context<Self>) {
         if !self.sessions.iter().any(|s| s.id == id) {
             return;
         }
-        self.leave_mono_view(cx);
+        self.leave_bot_view(cx);
         self.open_session(id.to_string(), cx);
     }
 }

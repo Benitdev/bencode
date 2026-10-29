@@ -193,7 +193,7 @@ pub(crate) fn selection_strong(cx: &App) -> Hsla {
         .opacity(if theme.is_dark() { 0.14 } else { 0.08 })
 }
 
-/// The navigator's rows, one look for its projects, Monos and threads
+/// The navigator's rows, one look for its projects, Bots and threads
 /// (MonoCode `ProjectCard`): `h-8 rounded-md px-2`, the selection's strong
 /// fill, else the row at 65% with a `content/5` fill on hover.
 pub(crate) fn nav_row(row: Stateful<Div>, selected: bool, cx: &App) -> Stateful<Div> {

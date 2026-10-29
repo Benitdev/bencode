@@ -100,7 +100,7 @@ pub fn git_turn_card(block: &Block, cx: &Context<BenCodeApp>) -> Option<AnyEleme
     let action = GitAction::of_block(block)?;
     let turn = GitTurn::of_block(block);
     let fg = cx.theme().colors.fg;
-    let mono = cx.theme().mono_family.clone();
+    let mono_font = cx.theme().mono_family.clone();
     let web = turn.as_ref().and_then(|turn| turn.web.clone());
     let commits = turn.iter().flat_map(|turn| &turn.commits).map(|commit| {
         let short: String = commit.sha.chars().take(SHORT_SHA).collect();
@@ -134,7 +134,7 @@ pub fn git_turn_card(block: &Block, cx: &Context<BenCodeApp>) -> Option<AnyEleme
             .child(
                 div()
                     .flex_none()
-                    .font_family(mono.clone())
+                    .font_family(mono_font.clone())
                     .text_color(fg.ink(Ink::Muted))
                     .child(short),
             )

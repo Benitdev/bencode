@@ -142,7 +142,7 @@ impl BenCodeApp {
 
     /// MonoCode `USAGE_REFRESH_CLASSES`: Refresh beside the usage chips,
     /// `size-4.5 rounded` at the navigator's foot, `size-6.5 rounded-md`
-    /// under a Mono's composer; turning while it reads.
+    /// under a Bot's composer; turning while it reads.
     pub(crate) fn render_usage_refresh(
         &self,
         variant: UsageChipVariant,

@@ -9,7 +9,7 @@
 //! Middle-click closes, tabs drag to reorder, and opening or closing a tab
 //! sweeps its width.
 
-mod mono;
+mod bot;
 pub mod tabs;
 
 use std::collections::{HashMap, HashSet};

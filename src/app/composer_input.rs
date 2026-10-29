@@ -50,7 +50,7 @@ impl BenCodeApp {
         if self
             .selected_session_id
             .as_deref()
-            .is_some_and(|id| self.is_mono_session(id))
+            .is_some_and(|id| self.is_bot_session(id))
         {
             self.token_picker = None;
             return;

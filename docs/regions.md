@@ -29,7 +29,7 @@ parent, and each must have a definite size from its style.
 
 `ui/region.rs`. The app's render is the shell; the regions (`Titlebar`,
 `Rail` (the navigator), `CompactRail`, `Inspector`, `FilePane`,
-`Terminal`, `Surface`, `Mono`, and one per chat pane) are cached views
+`Terminal`, `Surface`, `Bot`, and one per chat pane) are cached views
 that render through `render_region`. A region's content is laid out as a
 root, so it sits in a box that fills the region (a root with no size of
 its own would shrink to its content). Every region observes the app, so
@@ -54,7 +54,7 @@ where it overlaps the transcript each time it grows.
 
 `ui/marks.rs`. A busy mark is built from a function of the clock
 (`marks::mark`): `spinner::ring`, `shimmer`, `terminal_spinner`,
-`pulse_dot`, the mascots, the Mono dots. Inside a region it lays out as
+`pulse_dot`, the mascots, the Bot dots. Inside a region it lays out as
 usual, then records its box, clip and text style instead of painting;
 `MarkLayer`, drawn uncached in the shell between the regions and the menus
 and dialogs, builds every recorded mark again each frame. The clock's
@@ -66,7 +66,7 @@ the shell or the floating chat paints itself.
 
 | Path | Redraws now |
 | :--- | :--- |
-| Agent text, thinking, tool rows, steps, status | its pane or the Mono, or none off screen |
+| Agent text, thinking, tool rows, steps, status | its pane or the Bot, or none off screen |
 | Agent usage reports | its pane, and the title bar (its usage chip) |
 | A keystroke in the prompt, its pickers | the focused composer's pane |
 | The prompt's `@` marks moving | the composer regions, next frame |
@@ -93,7 +93,7 @@ it (`Regions::follow(model, regions)`, set in `BenCodeApp::new`):
 
 | Model | Read through | Followed by |
 | :--- | :--- | :--- |
-| `UsageSnapshots` (`app/usage.rs`) | `usage_data.read(cx)` | `Titlebar`, `Mono`, `Surface` |
+| `UsageSnapshots` (`app/usage.rs`) | `usage_data.read(cx)` | `Titlebar`, `Bot`, `Surface` |
 | `InboxState` (`ui/inbox_view.rs`) | `inbox(cx)`, `inbox_mut` | `Surface`, rails, `Titlebar` |
 | `TerminalDocks` (`ui/terminal_pane/`) | `terminals(cx)`, `terminals_mut` | `Terminal`, `Titlebar` |
 | `WorkspaceCache` (`app/workspace_sync.rs`) | `workspace(cx)`, `workspace_mut` | every region but `Terminal` |

@@ -160,7 +160,10 @@ impl BenCodeApp {
             input.set_placeholder(placeholder, cx);
         });
         // Opens on the checked-out (or chosen base) branch, scrolled to it.
-        let selected = self.picker_rows(kind, cx).iter().position(|row| row.selected);
+        let selected = self
+            .picker_rows(kind, cx)
+            .iter()
+            .position(|row| row.selected);
         self.branch_picker.active = selected.unwrap_or(0);
         self.picker_scroll.scroll_to_item(self.branch_picker.active);
         focus_later(

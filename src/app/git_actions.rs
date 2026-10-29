@@ -285,7 +285,7 @@ fn read_git(
 
 impl BenCodeApp {
     /// The pill and the commands can ask the agent now: the thread is idle,
-    /// nothing waits to be sent, and it runs here (a machine's or a Mono's
+    /// nothing waits to be sent, and it runs here (a machine's or a Bot's
     /// thread has no pill).
     pub fn git_actions_ready(&self, session_id: &str) -> bool {
         let Some(session) = self.sessions.iter().find(|s| s.id == session_id) else {
@@ -293,7 +293,7 @@ impl BenCodeApp {
         };
         let thread = self.thread(session_id);
         !self.is_agent_running_in(session_id)
-            && !self.is_mono_session(session_id)
+            && !self.is_bot_session(session_id)
             && !crate::remote::is_remote(session.work_dir())
             && !self.worktree_removed(session_id)
             && thread

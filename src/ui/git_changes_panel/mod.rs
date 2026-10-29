@@ -1236,14 +1236,16 @@ impl BenCodeApp {
             );
         }
         folder_actions = folder_actions.child(
-            action("stage", action_icon, format!("{verb} Changes in {}", dir.path)).when(
-                !busy,
-                |el| {
-                    el.on_click(cx.listener(move |this, _, _, cx| {
-                        this.folder_action(folder.clone(), side, cx)
-                    }))
-                },
-            ),
+            action(
+                "stage",
+                action_icon,
+                format!("{verb} Changes in {}", dir.path),
+            )
+            .when(!busy, |el| {
+                el.on_click(
+                    cx.listener(move |this, _, _, cx| this.folder_action(folder.clone(), side, cx)),
+                )
+            }),
         );
         let dot = dir.status.as_ref().map_or(fg.ink(Ink::Muted), |status| {
             status_color(status, crate::ui::appearance::diff_colors(cx))

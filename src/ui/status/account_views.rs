@@ -301,8 +301,8 @@ impl BenCodeApp {
             ))
             .child(page_hint(
                 if chip.locked {
-                    "Switch accounts once the Mono's turn finishes."
-                } else if chip.mono {
+                    "Switch accounts once the bot's turn finishes."
+                } else if chip.bot {
                     "The next message starts a new session on the account you pick, briefed on the recent conversation."
                 } else {
                     "Choosing an account moves the current conversation to it."

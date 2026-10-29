@@ -130,7 +130,7 @@ impl BenCodeApp {
             // composer is drawn in, not of the app (`ui/region.rs`).
             let views = self.regions.views(&[
                 crate::ui::region::Region::Chat,
-                crate::ui::region::Region::Mono,
+                crate::ui::region::Region::Bot,
             ]);
             window.on_next_frame(move |_, cx| {
                 for view in views {

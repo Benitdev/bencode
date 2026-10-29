@@ -137,8 +137,8 @@ pub fn notification_text(session: &SessionRow, event: &Event) -> Text {
             .rev()
             .filter(|b| b.role == "assistant")
             .find_map(|b| b.text.as_deref().filter(|t| !t.trim().is_empty()))
-            // MonoCode `monoReplyText`: a Mono's reaction is not its tag.
-            .map_or_else(|| format!("{harness} finished"), crate::monos::reply_text),
+            // MonoCode `monoReplyText`: a Bot's reaction is not its tag.
+            .map_or_else(|| format!("{harness} finished"), crate::bots::reply_text),
     };
     Text {
         title: "BenCode".into(),
@@ -351,9 +351,9 @@ impl BenCodeApp {
         request: &PermissionRequest,
         cx: &mut Context<Self>,
     ) {
-        // A habit's hidden run asks in its Mono's chat.
+        // A habit's hidden run asks in its Bot's chat.
         let session_id = match self.habits.runs.get(session_id) {
-            Some(run) => run.mono_session.clone(),
+            Some(run) => run.bot_session.clone(),
             None => session_id.to_string(),
         };
         self.notify_session(&session_id, Event::Input(request), Category::AgentInput, cx)

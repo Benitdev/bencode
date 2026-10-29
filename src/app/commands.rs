@@ -24,7 +24,8 @@ actions!(
         Save,
         ToggleSidebar,
         ToggleTerminal,
-        ToggleMono,
+        ToggleBot,
+        AskBot,
         SwapFilePaneSide,
         NewTerminal,
         OpenBrowser,
@@ -193,7 +194,8 @@ pub(crate) fn keymap() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-shift-=", ZoomIn, None),
         KeyBinding::new("cmd-0", ZoomReset, None),
         KeyBinding::new("cmd-j", ToggleTerminal, None),
-        KeyBinding::new("cmd-i", ToggleMono, None),
+        KeyBinding::new("cmd-i", ToggleBot, None),
+        KeyBinding::new("cmd-shift-i", AskBot, None),
         KeyBinding::new("cmd-shift-o", OpenBrowser, None),
         // Chrome's hard reload. A menu item, so it also reaches a page that
         // has the keyboard.
@@ -363,7 +365,8 @@ fn menus() -> Vec<Menu> {
             MenuItem::action("Find in Conversation", FindInConversation),
             MenuItem::action("Find in Files…", FindInProject),
             MenuItem::action("Toggle Terminal", ToggleTerminal),
-            MenuItem::action("Toggle Mono", ToggleMono),
+            MenuItem::action("Toggle Bot", ToggleBot),
+            MenuItem::action("Ask Bot About This Thread", AskBot),
             MenuItem::action("New Terminal", NewTerminal),
             MenuItem::action("Open Browser", OpenBrowser),
             MenuItem::action("Reload Page Ignoring Cache", ReloadIgnoringCache),
@@ -527,7 +530,7 @@ impl BenCodeApp {
             self.close_surface(cx);
             return;
         }
-        if self.close_mono_view(cx) {
+        if self.close_bot_view(cx) {
             return;
         }
         if self.file_pane_focused && self.close_active_pane_tab(cx) {
@@ -724,7 +727,7 @@ impl BenCodeApp {
                 && !this.close_folder_picker(true, cx)
                 && !this.close_handoff_menu(cx)
                 && !this.close_composer_popovers(cx)
-                && !this.close_mono_settings_layer(cx)
+                && !this.close_bot_settings_layer(cx)
                 && !this.close_usage_popover(cx)
                 && !this.close_find(cx)
                 && !this.close_project_search(cx)
@@ -748,7 +751,8 @@ impl BenCodeApp {
                 this.browser_reload(id, true, cx);
             }
         }))
-        .on_action(cx.listener(|this, _: &ToggleMono, _, cx| this.toggle_mono(cx)))
+        .on_action(cx.listener(|this, _: &ToggleBot, _, cx| this.toggle_bot(cx)))
+        .on_action(cx.listener(|this, _: &AskBot, _, cx| this.ask_bot_about_focused(cx)))
         .on_action(cx.listener(|this, _: &SwapFilePaneSide, _, cx| this.swap_file_pane_side(cx)))
         .on_action(cx.listener(|this, _: &ToggleTerminal, _, cx| {
             this.set_terminal_open(!this.is_terminal_open(cx), cx)

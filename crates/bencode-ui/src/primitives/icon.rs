@@ -151,6 +151,7 @@ icons! {
     Settings => "settings",
     Share2 => "share-2",
     Shield => "shield",
+    Shuffle => "shuffle",
     SlidersHorizontal => "sliders-horizontal",
     SmilePlus => "smile-plus",
     Sparkles => "sparkles",

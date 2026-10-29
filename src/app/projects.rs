@@ -45,7 +45,7 @@ pub(super) fn home_dir() -> Option<String> {
     std::env::var_os("HOME").map(|home| home.to_string_lossy().into_owned())
 }
 
-/// The home folder is no project: Monos' conversations run there, and
+/// The home folder is no project: Bots' conversations run there, and
 /// every other project is inside it.
 fn is_home(path: &str, home: Option<&str>) -> bool {
     trim_path(path) == "~" || home.is_some_and(|home| same_project_path(path, home))
@@ -99,8 +99,8 @@ impl BenCodeApp {
         }
         self.close_overlay_views();
         // The plan below starts from the focused thread: the tabs' one, not
-        // the Mono's, whose blank chat would otherwise move into `cwd`.
-        if self.leave_mono_view(cx) {
+        // the Bot's, whose blank chat would otherwise move into `cwd`.
+        if self.leave_bot_view(cx) {
             self.sync_selection(cx);
         }
         if same_project_path(&self.current_cwd, &cwd) {

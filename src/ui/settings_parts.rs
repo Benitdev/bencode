@@ -263,7 +263,7 @@ impl RenderOnce for SettingsRow {
         } else {
             fg.ink(Ink::Muted)
         };
-        let mono = cx.theme().mono_family.clone();
+        let mono_font = cx.theme().mono_family.clone();
         // `flex gap-6 px-4 py-3.5`; label `text-[13px] font-medium`; control
         // `flex min-w-0 max-w-[60%] shrink-0 flex-wrap items-center
         // justify-end gap-2`.
@@ -302,7 +302,7 @@ impl RenderOnce for SettingsRow {
                                     .children(self.aside.map(|aside| {
                                         div()
                                             .flex_none()
-                                            .font_family(mono)
+                                            .font_family(mono_font)
                                             .text_size(Text::Base.px())
                                             .text_color(fg.ink(Ink::Muted))
                                             .child(aside)

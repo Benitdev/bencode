@@ -261,11 +261,12 @@ impl BenCodeApp {
         // A thread at work stays out of the archive (`toggle_archive_session`).
         let running = ids.iter().any(|id| self.runs.contains_key(id));
         entries.push(MenuEntry::Item(
-            MenuAction::new("archive", if all_archived { "Unarchive" } else { "Archive" })
-                .disabled(!all_archived && running)
-                .description(
-                    (!all_archived && running).then(|| "Stop the running turn first".into()),
-                ),
+            MenuAction::new(
+                "archive",
+                if all_archived { "Unarchive" } else { "Archive" },
+            )
+            .disabled(!all_archived && running)
+            .description((!all_archived && running).then(|| "Stop the running turn first".into())),
         ));
         entries.push(MenuEntry::Item(
             MenuAction::new("delete", "Delete").shortcut("⌫").danger(),

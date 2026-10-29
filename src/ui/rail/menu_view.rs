@@ -161,15 +161,15 @@ impl BenCodeApp {
                         None,
                     )
                 }
-                MenuTarget::Mono(id) => {
-                    let mono = self.mono(id)?;
+                MenuTarget::Bot(id) => {
+                    let bot = self.bot(id)?;
                     (
-                        Self::mono_extra_items(),
-                        Some(mono.color_index),
-                        mono.custom_color.as_deref().and_then(parse_hex),
-                        self.mono_color(mono),
-                        mono.id.clone(),
-                        Some(mono.mascot.clone()),
+                        Self::bot_extra_items(),
+                        Some(bot.color_index),
+                        bot.custom_color.as_deref().and_then(parse_hex),
+                        self.bot_color(bot),
+                        bot.id.clone(),
+                        Some(bot.mascot.clone()),
                         None,
                     )
                 }
@@ -187,7 +187,7 @@ impl BenCodeApp {
                     ExtraIcon::BellOff,
                 )
             }),
-            MenuTarget::Group(_) | MenuTarget::Mono(_) => None,
+            MenuTarget::Group(_) | MenuTarget::Bot(_) => None,
         };
         let target = menu.target.clone();
         let separator = || div().my_1().h(px(1.0)).bg(fg.fill(Fill::Strong));
@@ -239,7 +239,12 @@ impl BenCodeApp {
                     ),
                 )
             })
-            .child(self.render_mascot_row(&target, &mascot_seed, mascot_name.as_deref(), cx))
+            .child(match &target {
+                MenuTarget::Bot(id) => self.render_figure_row(id, cx).into_any_element(),
+                _ => self
+                    .render_mascot_row(&target, &mascot_seed, mascot_name.as_deref(), cx)
+                    .into_any_element(),
+            })
             .child(separator())
             .children(extra.into_iter().map(|item| {
                 let sep = item.sep_before;
@@ -532,6 +537,92 @@ impl BenCodeApp {
                     )
                 }),
         )
+    }
+
+    /// A bot's "Look" row, laid out as the "Mascot" row: a swatch per body
+    /// its figure could take (the eyes and gear its own), then Shuffle. The
+    /// rest of its look is in its settings.
+    fn render_figure_row(&self, id: &str, cx: &Context<Self>) -> impl IntoElement {
+        use crate::bots::figure::{Body, Figure};
+        let theme = cx.theme();
+        let fg = theme.colors.fg;
+        let selected_bg = fg.opacity(if theme.is_dark() { 0.14 } else { 0.08 });
+        let current = self.bot(id).map(crate::bots::Bot::figure);
+        let swatch = |key: SharedString, tip: &'static str, selected: bool| {
+            div()
+                .id(key)
+                .flex()
+                .flex_none()
+                .size_5()
+                .items_center()
+                .justify_center()
+                .rounded(px(6.0))
+                .cursor_pointer()
+                .map(|el| {
+                    if selected {
+                        el.bg(selected_bg)
+                            .border_1()
+                            .border_color(fg.ink(Ink::Secondary))
+                    } else {
+                        el.hover(move |s| s.bg(fg.fill(Fill::Selected)))
+                    }
+                })
+                .tooltip(bencode_ui::primitives::Tooltip::text(tip))
+        };
+        let bodies = current.into_iter().flat_map(|current| {
+            Body::ALL
+                .iter()
+                .map(move |&body| (body, Figure { body, ..current }))
+        });
+        let shuffle_id = id.to_string();
+        div()
+            .mb_2()
+            .px(px(2.0))
+            .child(
+                div()
+                    .mb_1()
+                    .text_size(Text::Sm.px())
+                    .text_color(fg.ink(Ink::Secondary))
+                    .child("Look"),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_1()
+                    .children(bodies.map(|(body, figure)| {
+                        let bot = id.to_string();
+                        swatch(
+                            SharedString::from(format!("rail-figure-{}", body.code())),
+                            body.label(),
+                            current == Some(figure),
+                        )
+                        .on_click(
+                            cx.listener(move |this, _, _, cx| {
+                                this.set_bot_figure(&bot, figure, cx)
+                            }),
+                        )
+                        .child(crate::ui::figure::figure_still(
+                            figure,
+                            12.0,
+                            fg.opacity(0.75),
+                        ))
+                    }))
+                    .child(div().flex_1())
+                    .child(
+                        swatch("rail-figure-shuffle".into(), "Shuffle", false)
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                let seed = format!("{shuffle_id}-{}", crate::app::now_ms());
+                                let figure = crate::bots::figure::Figure::seeded(&seed);
+                                this.set_bot_figure(&shuffle_id, figure, cx)
+                            }))
+                            .child(
+                                Icon::new(IconName::Shuffle)
+                                    .size(IconSize::Xs)
+                                    .color(fg.ink(Ink::Secondary)),
+                            ),
+                    ),
+            )
     }
 
     /// MonoCode's "Mascot" row: `mb-1 text-[11px] text-content/50`, then a

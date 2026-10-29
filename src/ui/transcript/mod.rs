@@ -5,12 +5,12 @@
 
 pub(crate) mod activity;
 pub mod blocks;
+pub mod bot;
+mod bot_activity;
 mod edit_patch;
 pub mod find;
 pub mod git_actions;
 pub mod markdown;
-pub mod mono;
-mod mono_activity;
 mod outline;
 pub mod outline_model;
 mod review_card;
@@ -359,16 +359,19 @@ impl BenCodeApp {
                         false
                     };
                     let running = app.is_agent_running();
-                    // A Mono's mascots bob, blink and flicker their bulb at
-                    // rest (MonoCode `PixelMascot`), at their own steps.
+                    // The menu bar's dot, for a bot that needs you.
+                    app.sync_bot_menu_bar_alert();
+                    // Bots' figures move at rest (one that needs you, a
+                    // finished turn's sparks, the greeting's breath), at
+                    // their own steps.
                     let idle = (!running && !crate::ui::spinner::still(cx))
-                        .then(|| app.idle_mascot_wake())
+                        .then(|| app.idle_figure_wake())
                         .flatten();
                     if countdown {
                         cx.notify();
                     } else if running || idle.is_some() {
                         // The marks move on the layer (`ui/marks.rs`); the
-                        // shell's own (a Mono's settings dialog) are drawn
+                        // shell's own (a Bot's settings dialog) are drawn
                         // with it.
                         app.step_marks(cx);
                         // What the regions show of a run's time ("Working
@@ -390,7 +393,7 @@ impl BenCodeApp {
                     // The floating chat follows the app's notifies; a step
                     // that did not notify the app reaches it here.
                     let float = (!countdown && (running || idle.is_some()))
-                        .then(|| app.mono_float_window())
+                        .then(|| app.bot_float_window())
                         .flatten();
                     (next, float)
                 });
@@ -416,15 +419,15 @@ impl BenCodeApp {
     }
 
     /// Whether a thread the workspace shows (a pane of the active tab, or
-    /// the Mono in view) has its agent at work.
+    /// the Bot in view) has its agent at work.
     fn running_thread_in_view(&self) -> bool {
         if self.surface.is_some() {
             return false;
         }
-        if let Some(id) = self.mono_view_session() {
+        if let Some(id) = self.bot_view_session() {
             return self.is_agent_running_in(id)
                 || self
-                    .mono_shown_session()
+                    .bot_shown_session()
                     .is_some_and(|shown| self.is_agent_running_in(shown));
         }
         self.tabs
@@ -442,7 +445,7 @@ impl BenCodeApp {
     /// re-measured while the agent streams.
     pub fn sync_transcript_list_for(&mut self, session_id: &str) {
         let running = self.is_agent_running_in(session_id);
-        // A habit's run asks in its Mono's chat too.
+        // A habit's run asks in its Bot's chat too.
         let relays = self.habit_runs_asking(session_id);
         let waiting = self.pending_permission_for(session_id).is_some() || !relays.is_empty();
         // The review card takes the trailer row once the turn has settled,
@@ -469,19 +472,19 @@ impl BenCodeApp {
                 .first()
                 .filter(|_| git_pill)
                 .map_or(0, |action| 1u64 << (40 + *action as u8));
-        let mono = self.is_mono_session(session_id);
+        let bot = self.is_bot_session(session_id);
         let session = self.sessions.iter().find(|s| s.id == session_id);
         let open = &self.transcript_ui.open_folds;
         let reflow = self.transcript_ui.reflow;
         let trailer = waiting || review || git_pill;
-        let key = session.map(|s| turns::LayoutKey::new(&s.blocks, running, trailer, open, mono));
+        let key = session.map(|s| turns::LayoutKey::new(&s.blocks, running, trailer, open, bot));
         let view = self.transcripts.entry(session_id.to_string()).or_default();
         let fresh = view.session_id.as_deref() != Some(session_id);
         let relayout = fresh || key.is_none() || view.layout_key != key;
         let (turns, mut rows) = if relayout {
             match session {
                 Some(s) => {
-                    let turns = turns::layout_turns(&s.blocks, running, mono);
+                    let turns = turns::layout_turns(&s.blocks, running, bot);
                     let rows = turns::build_rows(&s.blocks, &turns, open, trailer);
                     (turns, rows)
                 }
@@ -593,7 +596,7 @@ impl BenCodeApp {
         });
         let content = match row {
             Row::Day { turn } => match turn_of(*turn).stamp {
-                Some(at) => mono::day_separator(("transcript-day", ix), at, cx).into_any_element(),
+                Some(at) => bot::day_separator(("transcript-day", ix), at, cx).into_any_element(),
                 None => div().into_any_element(),
             },
             Row::Item { turn, item } => self.render_turn_item(session, turn_of(*turn), *item, cx),
@@ -677,7 +680,7 @@ impl BenCodeApp {
     }
 
     /// MonoCode's relayed approval: what a habit's hidden run asks for, in
-    /// its Mono's chat, under the habit's name.
+    /// its Bot's chat, under the habit's name.
     pub fn render_habit_approval(
         &self,
         run: &str,

@@ -174,7 +174,7 @@ impl BenCodeApp {
                         .find(|s| s.id == id)
                         .is_some_and(|s| s.linked_work_item.is_none());
                     let editing = app.link_dialog.as_ref().is_some_and(|d| d.session_id == id);
-                    if unlinked && !editing && !app.is_mono_session(&id) {
+                    if unlinked && !editing && !app.is_bot_session(&id) {
                         app.set_session_link(&id, Some(item), cx);
                     }
                 }
@@ -198,7 +198,7 @@ impl BenCodeApp {
             return;
         };
         let first = session.blocks.iter().filter(|b| b.role == "user").count() == 1;
-        if !first || session.linked_work_item.is_some() || self.is_mono_session(session_id) {
+        if !first || session.linked_work_item.is_some() || self.is_bot_session(session_id) {
             return;
         }
         let host = self.backlog_host();

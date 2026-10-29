@@ -150,6 +150,34 @@ const SCENES: &[(&str, SetUp)] = &[
     ("settings", |app, _, cx| {
         app.show_surface(Surface::Settings, cx)
     }),
+    // The first bot's view: its figure and status in the title bar, its
+    // digest of the staged threads over the composer.
+    ("bot", |app, _, cx| {
+        if app.runs.is_empty() {
+            stage_agents(app);
+        }
+        if let Some(id) = app.settings.bots.first().map(|bot| bot.id.clone()) {
+            app.open_bot(&id, cx);
+        }
+    }),
+    // Its settings, the look popover open on its figure's parts.
+    ("bot-look", |app, _, cx| {
+        app.open_bot_settings(crate::app::bots::SettingsSection::General, cx);
+        app.bots.look_open = true;
+        cx.notify();
+    }),
+    // A thread it is asked about, as the card in its composer.
+    ("bot-ask", |app, _, cx| {
+        app.close_bot_settings(cx);
+        let thread = app
+            .sessions
+            .iter()
+            .find(|s| s.has_user_message() && !app.is_bot_session(&s.id))
+            .map(|s| s.id.clone());
+        if let Some(id) = thread {
+            app.ask_bot_about(&id, Some("the rail redraws on every keystroke".into()), cx);
+        }
+    }),
 ];
 
 /// Turns as the Agents section shows them, without an agent: a thread of

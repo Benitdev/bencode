@@ -4,6 +4,7 @@
 
 pub mod add_to_chat;
 pub mod attachments;
+pub mod bot;
 pub mod branch_picker;
 pub mod cards;
 mod context_ring;
@@ -17,7 +18,6 @@ pub mod mentions;
 pub(crate) mod menus;
 pub mod mode_commands;
 mod model_picker;
-pub mod mono;
 pub mod new_skill;
 pub mod new_worktree;
 pub mod note_card;
@@ -28,6 +28,7 @@ pub mod runner;
 pub mod runner_view;
 mod search_popover;
 mod suggestions;
+pub mod thread_card;
 pub mod tokens;
 pub mod usage_limit;
 
@@ -675,8 +676,8 @@ impl BenCodeApp {
         let empty = session.is_none_or(|s| !s.blocks.iter().any(|b| b.role == "user"));
         let projectless = session.is_none_or(|s| matches!(s.cwd.trim(), "" | "~"));
         let busy = session.is_some_and(|s| self.is_agent_running_in(&s.id));
-        // A Mono's chat has no project, checkout or branch of its own.
-        let mono = session.is_some_and(|s| self.is_mono_session(&s.id));
+        // A Bot's chat has no project, checkout or branch of its own.
+        let bot = session.is_some_and(|s| self.is_bot_session(&s.id));
         div()
             .flex()
             .min_w_0()
@@ -685,7 +686,7 @@ impl BenCodeApp {
             .overflow_hidden()
             .px_3()
             .pt_2p5()
-            .when(empty && projectless && !mono, |el| {
+            .when(empty && projectless && !bot, |el| {
                 let project = std::path::Path::new(&self.current_cwd)
                     .file_name()
                     .map_or_else(
@@ -695,7 +696,7 @@ impl BenCodeApp {
                 el.child(self.project_picker(&project, cx))
             })
             .map(|el| match session.filter(|s| s.worktree_removed) {
-                _ if mono => el,
+                _ if bot => el,
                 Some(session) => el.child(self.removed_worktree_picker(session, cx)),
                 None => el
                     .child(self.workspace_identity(session, empty && !busy, cx))
@@ -1034,13 +1035,13 @@ impl BenCodeApp {
             || self.composer_menus.workspace_menu.is_some()
             || self.composer_menus.context_pinned
             || self.composer_menus.pill_menu.is_some()
-            || self.monos.emoji.is_open();
+            || self.bots.emoji.is_open();
         if open {
             self.composer_menus.context_pinned = false;
             self.composer_menus.pill_menu = None;
             self.composer_menus.models_only = None;
             self.composer_menus.access_automation = false;
-            self.monos.emoji.close();
+            self.bots.emoji.close();
             self.composer_menus.workspace_menu = None;
             self.composer_menus.recent_open = false;
             self.composer_menus.model_submenu = None;

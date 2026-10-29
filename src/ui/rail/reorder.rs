@@ -25,6 +25,14 @@ pub(super) const REORDER_MOTION: Duration = Duration::from_millis(160);
 /// A row's pitch: `h-8` plus the list's `gap-px`.
 pub(super) const ROW_PITCH: f32 = 33.0;
 
+/// What a dragged row shows at its start: a project's mascot or a bot's
+/// figure.
+#[derive(Clone, Copy)]
+pub enum RailMark {
+    Mascot(&'static Mascot),
+    Figure(crate::bots::figure::Figure),
+}
+
 /// Drag payload of a project row; it draws the row under the pointer.
 #[derive(Clone)]
 pub struct DraggedRailProject {
@@ -32,7 +40,7 @@ pub struct DraggedRailProject {
     pub path: String,
     pub label: String,
     pub color: Hsla,
-    pub mascot: &'static Mascot,
+    pub mark: RailMark,
     pub width: f32,
 }
 
@@ -63,7 +71,14 @@ impl Render for DraggedRailProject {
                     .size_4()
                     .items_center()
                     .justify_center()
-                    .child(pixel_sprite(&self.mascot.rest, px(12.0), self.color, false)),
+                    .child(match self.mark {
+                        RailMark::Mascot(mascot) => {
+                            pixel_sprite(&mascot.rest, px(12.0), self.color, false)
+                        }
+                        RailMark::Figure(figure) => {
+                            crate::ui::figure::figure_still(figure, 12.0, self.color)
+                        }
+                    }),
             )
             .child(
                 div()
@@ -236,13 +251,13 @@ impl BenCodeApp {
     /// order takes its members' slots in the saved rail order.
     fn commit_rail_reorder(&mut self, reorder: &RailReorder, cx: &mut Context<Self>) {
         // MonoCode `reorderMonos`: the roster's own order.
-        if reorder.list == super::monos::MONO_LIST {
+        if reorder.list == super::bots::BOT_LIST {
             let (path, to) = (reorder.path.clone(), reorder.to);
-            self.update_monos(
+            self.update_bots(
                 move |roster| {
                     if let Some(from) = roster.iter().position(|m| m.id == path) {
-                        let mono = roster.remove(from);
-                        roster.insert(to.min(roster.len()), mono);
+                        let bot = roster.remove(from);
+                        roster.insert(to.min(roster.len()), bot);
                     }
                 },
                 cx,

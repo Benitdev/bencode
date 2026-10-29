@@ -135,6 +135,12 @@ impl BenCodeApp {
         if self.live_agents_off {
             return Vec::new();
         }
+        self.agents_in_flight()
+    }
+
+    /// The threads in flight or finished unseen, whether or not the Agents
+    /// section is on: what a bot's digest reads too.
+    pub fn agents_in_flight(&self) -> Vec<LiveAgent> {
         let unseen = &self.title_strip.unseen_finished;
         if self.runs.is_empty() && unseen.is_empty() {
             return Vec::new();
@@ -142,8 +148,8 @@ impl BenCodeApp {
         let mut agents: Vec<LiveAgent> = self
             .sessions
             .iter()
-            // MonoCode `excludedIds`: a Mono's chat lives on its own rail row.
-            .filter(|session| !self.is_mono_session(&session.id) && !self.is_habit_run(&session.id))
+            // MonoCode `excludedIds`: a Bot's chat lives on its own rail row.
+            .filter(|session| !self.is_bot_session(&session.id) && !self.is_habit_run(&session.id))
             .filter_map(|session| live_agent(session, self.run_flags(&session.id)))
             .collect();
         sort_live_agents(&mut agents);

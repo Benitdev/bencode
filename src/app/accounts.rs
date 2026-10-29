@@ -326,10 +326,10 @@ impl BenCodeApp {
         if current == account_id && active.provider_account_id.is_some() {
             return;
         }
-        if self.is_mono_session(&active_id) {
-            // A Mono has one conversation: it moves to the account.
+        if self.is_bot_session(&active_id) {
+            // A Bot has one conversation: it moves to the account.
             if current != account_id || active.provider_account_id.is_none() {
-                self.switch_mono_account(&active_id, account_id, cx);
+                self.switch_bot_account(&active_id, account_id, cx);
             }
             return;
         }

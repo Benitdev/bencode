@@ -194,22 +194,22 @@ pub enum Item {
 }
 
 /// Blocks split at each user message (MonoCode `groupTurns`), as index ranges.
-/// As a Mono's chat when `mono` (MonoCode `groupMonoTurns`): a habit's
+/// As a Bot's chat when `bot` (MonoCode `groupMonoTurns`): a habit's
 /// post is a turn of its own.
-fn group_turns_as(blocks: &[Arc<Block>], mono: bool) -> Vec<Range<usize>> {
+fn group_turns_as(blocks: &[Arc<Block>], bot: bool) -> Vec<Range<usize>> {
     let mut turns: Vec<Range<usize>> = Vec::new();
     let mut start = 0;
     for (ix, block) in blocks.iter().enumerate() {
-        let habit = mono && super::mono::habit_post(block).is_some();
-        // MonoCode `groupMonoChatTurns`: the Mono's own follow-up, once the
+        let habit = bot && super::bot::habit_post(block).is_some();
+        // MonoCode `groupMonoChatTurns`: the Bot's own follow-up, once the
         // sessions it started report back, continues the message above it,
         // unless it opens a new stretch of the conversation.
-        let follow_up = mono
-            && super::mono::is_completion_prompt(block)
+        let follow_up = bot
+            && super::bot::is_completion_prompt(block)
             && ix > start
-            && super::mono::habit_post(&blocks[start]).is_none()
+            && super::bot::habit_post(&blocks[start]).is_none()
             && block.started_at.is_none_or(|at| {
-                !super::mono::opens_new_stretch(at, latest_start(&blocks[start..ix]))
+                !super::bot::opens_new_stretch(at, latest_start(&blocks[start..ix]))
             });
         if (block.role == "user" || habit) && ix > start && !follow_up {
             turns.push(start..ix);
@@ -233,7 +233,7 @@ fn latest_start(turn: &[Arc<Block>]) -> Option<i64> {
         .filter_map(|block| block.started_at)
         .chain(
             turn.first()
-                .and_then(|b| super::mono::habit_post(b))
+                .and_then(|b| super::bot::habit_post(b))
                 .map(|(_, _, at)| at),
         )
         .max()
@@ -244,7 +244,7 @@ fn latest_start(turn: &[Arc<Block>]) -> Option<i64> {
 /// subagents keep rows of their own: that is where the reader watches, and
 /// the work around them folds and re-folds meanwhile. Once it settles they
 /// are work like any other call, except one that failed.
-/// Only the blocks `shown` keeps are grouped (a Mono's chat leaves out the
+/// Only the blocks `shown` keeps are grouped (a Bot's chat leaves out the
 /// replies that became reactions, and the work before them).
 pub fn group_items(
     blocks: &[Arc<Block>],
@@ -620,7 +620,7 @@ pub fn turn_copy_text(blocks: &[Arc<Block>], range: Range<usize>) -> String {
 /// One row of the virtualized transcript list.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Row {
-    /// MonoCode `DaySeparator`: "Today 19:39" over a Mono's turn that opens
+    /// MonoCode `DaySeparator`: "Today 19:39" over a Bot's turn that opens
     /// a new stretch of the conversation.
     Day { turn: usize },
     /// An item of turn `turn` outside any fold.
@@ -633,7 +633,7 @@ pub enum Row {
         item: usize,
         last: bool,
     },
-    /// MonoCode `data-artifact-results`: the cards of what a Mono's
+    /// MonoCode `data-artifact-results`: the cards of what a Bot's
     /// settled turn wrote.
     Artifacts { turn: usize },
     /// What a settled turn leaves under its answer.
@@ -655,12 +655,12 @@ pub struct TurnLayout {
     pub live: bool,
     /// The turn's user message block.
     pub user: Option<usize>,
-    /// Laid out as a Mono's chat: the line where its work starts, and no
-    /// line or footer for a turn the Mono answered with a reaction.
-    pub mono: bool,
-    /// The emoji a Mono answered the message with (MonoCode `monoReaction`).
+    /// Laid out as a Bot's chat: the line where its work starts, and no
+    /// line or footer for a turn the Bot answered with a reaction.
+    pub bot: bool,
+    /// The emoji a Bot answered the message with (MonoCode `monoReaction`).
     pub reaction: Option<String>,
-    /// When the message was sent, on a Mono's turn that opens a new stretch
+    /// When the message was sent, on a Bot's turn that opens a new stretch
     /// of the conversation (ms): the day pill over it.
     pub stamp: Option<i64>,
     /// A habit's post, standing as its own turn (MonoCode `monoHabit`).
@@ -673,10 +673,10 @@ impl TurnLayout {
         &blocks[self.range.start].id
     }
 
-    /// How long the turn worked: a Mono's merged turn adds up its runs
+    /// How long the turn worked: a Bot's merged turn adds up its runs
     /// (MonoCode `sumDurations`).
     pub fn duration_ms(&self, blocks: &[Arc<Block>]) -> Option<i64> {
-        if !self.mono {
+        if !self.bot {
             return self.user.and_then(|ix| blocks[ix].duration_ms);
         }
         self.range
@@ -688,11 +688,8 @@ impl TurnLayout {
 
     /// The sessions the turn started (MonoCode `monoSpawnedSessions`), on
     /// its messages or a habit's post.
-    pub fn launches(
-        &self,
-        blocks: &[Arc<Block>],
-    ) -> Vec<crate::app::mono_sessions::SpawnedSession> {
-        crate::app::mono_sessions::chat_launches(&blocks[self.range.clone()])
+    pub fn launches(&self, blocks: &[Arc<Block>]) -> Vec<crate::app::bot_sessions::SpawnedSession> {
+        crate::app::bot_sessions::chat_launches(&blocks[self.range.clone()])
     }
 
     /// When the turn's last run finished.
@@ -715,7 +712,7 @@ impl TurnLayout {
 
     /// When a habit's post was posted.
     pub fn habit_at(&self, blocks: &[Arc<Block>]) -> Option<i64> {
-        super::mono::habit_post(&blocks[self.habit?]).map(|(_, _, at)| at)
+        super::bot::habit_post(&blocks[self.habit?]).map(|(_, _, at)| at)
     }
 
     /// The block a turn's artifact cards are kept on: its message, or the
@@ -755,7 +752,7 @@ impl TurnLayout {
             && !self.reacted_only(blocks)
     }
 
-    /// MonoCode `reactedOnly`: a Mono's reaction answered the message, and
+    /// MonoCode `reactedOnly`: a Bot's reaction answered the message, and
     /// nothing else is left to show.
     pub fn reacted_only(&self, blocks: &[Arc<Block>]) -> bool {
         self.reaction.is_some()
@@ -797,32 +794,30 @@ pub struct LayoutKey {
 }
 
 impl LayoutKey {
-    /// `mono`: the thread is laid out as a Mono's chat, whose reactions and
+    /// `bot`: the thread is laid out as a Bot's chat, whose reactions and
     /// day pills change the rows too.
     pub fn new(
         blocks: &[Arc<Block>],
         running: bool,
         trailer: bool,
         open: &HashSet<String>,
-        mono: bool,
+        bot: bool,
     ) -> Self {
         use std::hash::{Hash, Hasher};
         let mut hasher = std::hash::DefaultHasher::new();
-        mono.hash(&mut hasher);
+        bot.hash(&mut hasher);
         for (ix, block) in blocks.iter().enumerate() {
-            if mono {
+            if bot {
                 if block.role == "assistant" {
                     let said = text(block);
-                    crate::monos::mono_reaction(said)
-                        .is_some()
-                        .hash(&mut hasher);
+                    crate::bots::bot_reaction(said).is_some().hash(&mut hasher);
                     if running && ix + 1 == blocks.len() {
-                        crate::monos::partial_reaction(said).hash(&mut hasher);
+                        crate::bots::partial_reaction(said).hash(&mut hasher);
                     }
                 } else if block.role == "user" {
                     block.started_at.hash(&mut hasher);
                     crate::app_cli::artifacts::has_cards(block).hash(&mut hasher);
-                    crate::app::mono_sessions::spawned_sessions(block)
+                    crate::app::bot_sessions::spawned_sessions(block)
                         .len()
                         .hash(&mut hasher);
                     (block.extra.get("draft").and_then(Value::as_bool) == Some(true))
@@ -830,8 +825,8 @@ impl LayoutKey {
                 }
             }
             block.role.hash(&mut hasher);
-            if mono {
-                super::mono::habit_post(block).hash(&mut hasher);
+            if bot {
+                super::bot::habit_post(block).hash(&mut hasher);
                 crate::app_cli::artifacts::has_cards(block).hash(&mut hasher);
             }
             text(block).trim().is_empty().hash(&mut hasher);
@@ -860,13 +855,13 @@ impl LayoutKey {
 /// A block property that changes the rows (not just how one draws) must
 /// also go into `LayoutKey::new`, or the list keeps stale rows.
 ///
-/// As a Mono's chat when `mono` (MonoCode `AgentTranscript`
+/// As a Bot's chat when `bot` (MonoCode `AgentTranscript`
 /// with `daySeparators` and `monoReactionBlocks`): a reply that is only a
 /// reaction moves onto the message it answers, taking the work before it
 /// (but its notices) out of the turn, and a message that opens a new
 /// stretch of the conversation is stamped with its day.
-pub fn layout_turns(blocks: &[Arc<Block>], running: bool, mono: bool) -> Vec<TurnLayout> {
-    let reactions = mono.then(|| super::mono::mono_reactions(blocks, running));
+pub fn layout_turns(blocks: &[Arc<Block>], running: bool, bot: bool) -> Vec<TurnLayout> {
+    let reactions = bot.then(|| super::bot::bot_reactions(blocks, running));
     let shown: Option<Vec<bool>> = reactions.as_ref().map(|reactions| {
         let mut shown = vec![false; blocks.len()];
         for &ix in &reactions.kept {
@@ -874,7 +869,7 @@ pub fn layout_turns(blocks: &[Arc<Block>], running: bool, mono: bool) -> Vec<Tur
         }
         shown
     });
-    let turns = group_turns_as(blocks, mono);
+    let turns = group_turns_as(blocks, bot);
     let count = turns.len();
     let mut previous_at = None;
     let mut layouts = Vec::with_capacity(count);
@@ -886,7 +881,7 @@ pub fn layout_turns(blocks: &[Arc<Block>], running: bool, mono: bool) -> Vec<Tur
         let fold = foldable_work(blocks, &items);
         let user = range.clone().find(|i| blocks[*i].role == "user");
         let habit =
-            Some(range.start).filter(|&ix| mono && super::mono::habit_post(&blocks[ix]).is_some());
+            Some(range.start).filter(|&ix| bot && super::bot::habit_post(&blocks[ix]).is_some());
         let reaction = reactions
             .as_ref()
             .zip(user)
@@ -894,18 +889,18 @@ pub fn layout_turns(blocks: &[Arc<Block>], running: bool, mono: bool) -> Vec<Tur
             .map(str::to_string);
         let mut stamp = None;
         let posted = habit
-            .and_then(|ix| super::mono::habit_post(&blocks[ix]))
+            .and_then(|ix| super::bot::habit_post(&blocks[ix]))
             .map(|(_, _, at)| at);
         if let Some(at) = user
-            .filter(|_| mono)
+            .filter(|_| bot)
             .map(|user| &blocks[user])
             .filter(|block| {
-                super::mono::is_message(block) || super::mono::is_completion_prompt(block)
+                super::bot::is_message(block) || super::bot::is_completion_prompt(block)
             })
             .and_then(|block| block.started_at)
             .or(posted)
         {
-            if super::mono::opens_new_stretch(at, previous_at) {
+            if super::bot::opens_new_stretch(at, previous_at) {
                 stamp = Some(at);
             }
             previous_at = Some(at);
@@ -916,7 +911,7 @@ pub fn layout_turns(blocks: &[Arc<Block>], running: bool, mono: bool) -> Vec<Tur
             items,
             fold,
             user,
-            mono,
+            bot,
             reaction,
             stamp,
             habit,
@@ -941,9 +936,9 @@ fn turn_rows(blocks: &[Arc<Block>], t: usize, turn: &TurnLayout, open: bool, row
         .or_else(|| first_foldable(blocks, &turn.items))
         .unwrap_or(turn.items.len())
         .min(first_run.unwrap_or(usize::MAX))
-        // A Mono signs its turn before anything it says (MonoCode
+        // A Bot signs its turn before anything it says (MonoCode
         // `MonoTurnHeader`, from the first token on).
-        .min(if turn.mono {
+        .min(if turn.bot {
             turn.items
                 .iter()
                 .position(|item| !matches!(item, Item::Block(ix) if blocks[*ix].role == "user"))
@@ -971,7 +966,7 @@ fn turn_rows(blocks: &[Arc<Block>], t: usize, turn: &TurnLayout, open: bool, row
     if line_at >= turn.items.len() && show_line {
         rows.push(Row::FoldLine { turn: t });
     }
-    if turn.mono
+    if turn.bot
         && !turn.live
         && (turn
             .cards_block()
@@ -1282,7 +1277,7 @@ mod tests {
     }
 
     #[test]
-    fn a_monos_reaction_moves_onto_the_message_it_answers() {
+    fn a_bots_reaction_moves_onto_the_message_it_answers() {
         let mut thanks = finished_user("thanks");
         Arc::make_mut(&mut thanks).started_at = None;
         let blocks = vec![
@@ -1303,7 +1298,7 @@ mod tests {
     }
 
     #[test]
-    fn a_monos_turn_is_signed_before_its_reply() {
+    fn a_bots_turn_is_signed_before_its_reply() {
         let blocks = vec![finished_user("hi"), block("assistant", "Hello")];
         let turns = layout_turns(&blocks, false, true);
         let rows = build_rows(&blocks, &turns, &HashSet::new(), false);
@@ -1328,7 +1323,7 @@ mod tests {
     }
 
     #[test]
-    fn a_mono_stamps_only_the_turns_that_open_a_stretch() {
+    fn a_bot_stamps_only_the_turns_that_open_a_stretch() {
         let at = |text: &str, ms: i64| {
             let mut user = finished_user(text);
             Arc::make_mut(&mut user).started_at = Some(ms);
@@ -1340,7 +1335,7 @@ mod tests {
             block("assistant", "A"),
             at("b", noon + 60_000),
             block("assistant", "B"),
-            at("c", noon + 2 * super::super::mono::STRETCH_GAP_MS),
+            at("c", noon + 2 * super::super::bot::STRETCH_GAP_MS),
         ];
         let stamps: Vec<Option<i64>> = layout_turns(&blocks, false, true)
             .iter()
@@ -1351,7 +1346,7 @@ mod tests {
             [
                 Some(noon),
                 None,
-                Some(noon + 2 * super::super::mono::STRETCH_GAP_MS)
+                Some(noon + 2 * super::super::bot::STRETCH_GAP_MS)
             ]
         );
         assert!(
@@ -1362,7 +1357,7 @@ mod tests {
     }
 
     #[test]
-    fn a_reaction_landing_changes_a_monos_layout_key() {
+    fn a_reaction_landing_changes_a_bots_layout_key() {
         let mut blocks = vec![finished_user("thanks"), block("assistant", "<reaction>👍")];
         let none = HashSet::new();
         let was = LayoutKey::new(&blocks, false, false, &none, true);

@@ -282,9 +282,9 @@ impl BenCodeApp {
     /// Opens a workspace-relative or absolute file, reading it off the UI thread.
     pub fn open_file_in_editor(&mut self, path: &str, window: &mut Window, cx: &mut Context<Self>) {
         self.surface_shown_session(None, cx);
-        // The file pane is under the Mono's view: a file its chat names
+        // The file pane is under the Bot's view: a file its chat names
         // opens in the workspace.
-        if self.leave_mono_view(cx) {
+        if self.leave_bot_view(cx) {
             self.sync_selection(cx);
         }
         let abs_path = resolve_path(&self.workspace(cx).cwd, path);

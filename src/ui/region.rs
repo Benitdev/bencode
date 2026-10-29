@@ -42,20 +42,20 @@ pub enum Region {
     Terminal,
     /// Inbox, Notes, Automations or Settings.
     Surface,
-    /// A Mono in the main area, its Overview beside it.
-    Mono,
+    /// A Bot in the main area, its Overview beside it.
+    Bot,
 }
 
 impl Region {
     /// Where the busy marks the app's clock steps are drawn
     /// (`ui/spinner.rs`): the navigator's mascots and thread cards, the
-    /// title bar's tabs, the transcript's fold line, a Mono's mascot.
+    /// title bar's tabs, the transcript's fold line, a Bot's figure.
     pub const BUSY_MARKS: [Region; 5] = [
         Region::Titlebar,
         Region::Rail,
         Region::CompactRail,
         Region::Chat,
-        Region::Mono,
+        Region::Bot,
     ];
 }
 
@@ -270,7 +270,7 @@ impl BenCodeApp {
     }
 
     /// Redraws what draws thread `session_id`'s transcript now: its pane,
-    /// or the Mono in view. Its card, tab and mascot follow on the clock.
+    /// or the Bot in view. Its card, tab and mascot follow on the clock.
     /// What shows a run's time ("Working for 12s") once a second: the
     /// regions outside the chat, and the panes of the threads that run.
     /// Every chat pane would re-render its rows for nothing.
@@ -285,27 +285,27 @@ impl BenCodeApp {
     }
 
     pub(crate) fn redraw_thread(&self, session_id: &str, cx: &mut App) {
-        // The session a Mono started is drawn inside the Mono's region
+        // The session a Bot started is drawn inside the Bot's region
         // while its Overview shows it.
-        let in_mono = self.mono_view_session() == Some(session_id)
-            || self.mono_shown_session() == Some(session_id);
-        if self.mono_covers() && in_mono {
-            self.redraw_regions(&[Region::Mono], cx);
+        let in_bot = self.bot_view_session() == Some(session_id)
+            || self.bot_shown_session() == Some(session_id);
+        if self.bot_covers() && in_bot {
+            self.redraw_regions(&[Region::Bot], cx);
         } else {
             self.regions.redraw_pane(session_id, cx);
         }
     }
 
     /// Redraws the focused composer (a keystroke, its pickers): the
-    /// selected thread's pane, or the Mono in view.
+    /// selected thread's pane, or the Bot in view.
     pub(crate) fn redraw_composer(&self, cx: &mut App) {
         match self.selected_session_id.as_deref() {
-            // Over a Mono the prompt is its chat's or the shown session's,
+            // Over a Bot the prompt is its chat's or the shown session's,
             // both in its region.
-            Some(id) if !self.is_mono_session(id) && !self.mono_covers() => {
+            Some(id) if !self.is_bot_session(id) && !self.bot_covers() => {
                 self.regions.redraw_pane(id, cx)
             }
-            _ => self.redraw_regions(&[Region::Mono], cx),
+            _ => self.redraw_regions(&[Region::Bot], cx),
         }
     }
 
@@ -352,28 +352,28 @@ impl BenCodeApp {
             Region::Surface => self
                 .render_surface(window, cx)
                 .unwrap_or_else(|| div().into_any_element()),
-            Region::Mono => {
+            Region::Bot => {
                 // Its chat, or the session it shows, may be the focused
                 // composer the runner runs on.
-                if self.mono_holds_selected() {
+                if self.bot_holds_selected() {
                     self.runner_geometry.clear();
                 }
                 self.artifacts.page_drawn.set(false);
-                let mono = self
-                    .render_mono_view(cx)
+                let bot = self
+                    .render_bot_view(cx)
                     .unwrap_or_else(|| div().into_any_element());
                 self.artifacts.hide_undrawn();
-                mono
+                bot
             }
         }
     }
 
-    /// Whether the selected thread is drawn in the Mono's region: its
+    /// Whether the selected thread is drawn in the Bot's region: its
     /// chat, or the session it shows over the Overview.
-    fn mono_holds_selected(&self) -> bool {
+    fn bot_holds_selected(&self) -> bool {
         let selected = self.selected_session_id.as_deref();
         selected.is_some()
-            && (selected == self.mono_view_session() || selected == self.mono_shown_session())
+            && (selected == self.bot_view_session() || selected == self.bot_shown_session())
     }
 
     /// Resets what the regions not drawn this frame measured or placed:
@@ -384,7 +384,7 @@ impl BenCodeApp {
             .selected_session_id
             .as_ref()
             .is_some_and(|id| self.regions.panes_drawn.contains(id))
-            || (drawn.contains(&Region::Mono) && self.mono_holds_selected());
+            || (drawn.contains(&Region::Bot) && self.bot_holds_selected());
         if !focused_drawn {
             self.runner_geometry.clear();
         }
@@ -392,7 +392,7 @@ impl BenCodeApp {
             self.browser.drawn.set(None);
             self.browser.hide_undrawn();
         }
-        if !drawn.contains(&Region::Mono) {
+        if !drawn.contains(&Region::Bot) {
             self.artifacts.page_drawn.set(false);
             self.artifacts.hide_undrawn();
         }

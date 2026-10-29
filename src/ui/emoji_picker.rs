@@ -5,7 +5,7 @@
 //!
 //! [`EmojiPicker`] is the popover itself (`EmojiPickerPopover`), for any
 //! view: the bar of group faces, then the group's emoji eight to a row.
-//! The Mono composer in BenCode's window (`ui/composer/mono.rs`, MonoCode
+//! The Bot composer in BenCode's window (`ui/composer/bot.rs`, MonoCode
 //! `MonoComposer` with `controls`) shows it; the floating chat's composer
 //! has none, as MonoCode's has none.
 

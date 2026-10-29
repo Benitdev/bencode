@@ -114,7 +114,7 @@ pub fn listing(
     json!({ "total": matching.len(), "offset": offset, "artifacts": page })
 }
 
-/// Saves what `write` asks, for the Mono whose conversation is
+/// Saves what `write` asks, for the Bot whose conversation is
 /// `session_id`. A new artifact's id comes from the request's, so a retry
 /// with the same request ID saves nothing twice.
 pub fn save(db: &AppDb, session_id: &str, request_id: &str, write: &Write) -> Result<Artifact> {
@@ -154,7 +154,7 @@ pub fn save(db: &AppDb, session_id: &str, request_id: &str, write: &Write) -> Re
         }
         return Ok(existing);
     }
-    // A Mono works from the home folder, no one project.
+    // A Bot works from the home folder, no one project.
     db.upsert_artifact(&ArtifactUpsert {
         id,
         kind: write.kind,

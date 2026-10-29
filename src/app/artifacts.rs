@@ -1,4 +1,4 @@
-//! A Mono's artifacts on the app (MonoCode `App.tsx`'s agent-app host:
+//! A Bot's artifacts on the app (MonoCode `App.tsx`'s agent-app host:
 //! `saveArtifact`, `postArtifact`, `openArtifact`; `ArtifactReader`'s
 //! state): the `artifacts.*` calls (`app_cli/artifacts.rs`, dispatched by
 //! `app_calls.rs`), the card a write leaves on its turn, and the artifact
@@ -12,7 +12,7 @@ use serde_json::json;
 use tokio::sync::mpsc;
 
 use crate::app::BenCodeApp;
-use crate::app::mono_overview::OverviewTab;
+use crate::app::bot_overview::OverviewTab;
 use crate::app_cli::artifacts::{self as calls, ArtifactCard, Call};
 use crate::app_cli::server::AppCall;
 use crate::browser::artifact::{ArtifactEvent, ArtifactPage};
@@ -89,7 +89,7 @@ impl ArtifactsState {
 }
 
 impl BenCodeApp {
-    /// One `artifacts.*` call from `session`'s turn (a Mono's own
+    /// One `artifacts.*` call from `session`'s turn (a Bot's own
     /// conversation, checked by `handle_app_call`).
     pub(crate) fn artifact_call(&mut self, session: String, call: AppCall, cx: &mut Context<Self>) {
         let parsed = calls::parse(&call.request.action, &call.request.input);
@@ -191,10 +191,10 @@ impl BenCodeApp {
     /// MonoCode `onOpenMonoArtifact`: the artifact over the Overview's
     /// Documents list, the Overview opening if it was hidden.
     pub fn open_artifact(&mut self, id: &str, cx: &mut Context<Self>) {
-        self.hide_mono_launch(cx);
-        self.monos.overview_open = true;
-        self.monos.overview.select(OverviewTab::Documents);
-        self.monos.overview.document = Some(id.to_string());
+        self.hide_bot_launch(cx);
+        self.bots.overview_open = true;
+        self.bots.overview.select(OverviewTab::Documents);
+        self.bots.overview.document = Some(id.to_string());
         self.load_artifact(id, cx);
         cx.notify();
     }
@@ -238,7 +238,7 @@ impl BenCodeApp {
 
     /// Back from the reader to the Documents list.
     pub fn close_artifact(&mut self, cx: &mut Context<Self>) {
-        self.monos.overview.document = None;
+        self.bots.overview.document = None;
         self.artifacts.reader = None;
         cx.notify();
     }
@@ -297,7 +297,7 @@ impl BenCodeApp {
             move |this, deleted, cx| {
                 match deleted {
                     Ok(()) => {
-                        if this.monos.overview.document.as_deref() == Some(id.as_str()) {
+                        if this.bots.overview.document.as_deref() == Some(id.as_str()) {
                             this.close_artifact(cx);
                         }
                     }

@@ -18,13 +18,12 @@ use crate::ui::scale::px;
 use crate::ui::spinner;
 
 use super::blocks::markdown;
+use super::bot;
 use super::markdown::Tone;
-use super::mono;
 use super::turns::{self, Item, Phase, ToolState, TurnLayout, WorkKind};
 use crate::app::{BenCodeApp, now_ms};
 use crate::db::{Block, SessionRow};
 use crate::ui::HarnessIcon;
-use crate::ui::mascot::pixel_sprite;
 use crate::ui::tokens::Text;
 use crate::ui::transcript::selection::OwnsPress;
 
@@ -166,10 +165,10 @@ impl BenCodeApp {
         let expandable = turn.fold.is_some();
         let open = expandable && self.transcript_ui.open_folds.contains(&turn_id);
         let group = format!("fold-{turn_id}");
-        if turn.mono
-            && let Some(mono) = self.mono_for_session(&session.id)
+        if turn.bot
+            && let Some(bot) = self.bot_for_session(&session.id)
         {
-            return self.render_mono_fold_line(session, turn, mono, open, cx);
+            return self.render_bot_fold_line(session, turn, bot, open, cx);
         }
         let label = if turn.live {
             shimmer_label(self.live_status(session, turn), cx)
@@ -205,7 +204,7 @@ impl BenCodeApp {
                 this.redraw_regions(
                     &[
                         crate::ui::region::Region::Chat,
-                        crate::ui::region::Region::Mono,
+                        crate::ui::region::Region::Bot,
                     ],
                     cx,
                 );
@@ -213,16 +212,16 @@ impl BenCodeApp {
             .into_any_element()
     }
 
-    /// MonoCode `MonoTurnHeader`: a Mono signs its turn with its pill (the
+    /// MonoCode `MonoTurnHeader`: a Bot signs its turn with its pill (the
     /// still mascot and its name), and while it works the status of the
     /// latest step runs beside it. The pill shows the turn's work on the
     /// Overview's Activity tab (MonoCode `onShowActivity`), and is marked
     /// while it does.
-    fn render_mono_fold_line(
+    fn render_bot_fold_line(
         &self,
         session: &SessionRow,
         turn: &TurnLayout,
-        mono: &crate::monos::Mono,
+        bot: &crate::bots::Bot,
         open: bool,
         cx: &Context<Self>,
     ) -> AnyElement {
@@ -231,27 +230,22 @@ impl BenCodeApp {
         let expandable = turn.fold.is_some() || turn.live;
         let group = format!("fold-{turn_id}");
         let fg = cx.theme().colors.fg;
-        let shown = self.mono_activity_shown(&session.id) == Some(turn_id.as_str());
-        let mark = pixel_sprite(
-            &self.mono_mascot(mono).rest,
-            px(ICON_BOX),
-            self.mono_color(mono),
-            false,
-        );
-        let pill = mono::signature_pill(
+        let shown = self.bot_activity_shown(&session.id) == Some(turn_id.as_str());
+        let mark = crate::ui::figure::figure_still(bot.figure(), ICON_BOX, self.bot_color(bot));
+        let pill = bot::signature_pill(
             icon_slot(mark, open || shown, expandable, &group, cx),
-            mono::signature_name(mono.display_name(), cx),
+            bot::signature_name(bot.display_name(), cx),
             cx,
         );
         let ticker = turn.live.then(|| {
             let request = self.pending_permission_for(&session.id);
-            let live = mono::Live {
+            let live = bot::Live {
                 approval: request.is_some_and(|r| r.tool != crate::app::QUESTION_TOOL),
                 question: request.is_some_and(|r| r.tool == crate::app::QUESTION_TOOL),
                 background: self.background_tasks_for(&session.id).len(),
             };
             let steps: Vec<&Block> = turn.range.clone().map(|ix| &*blocks[ix]).collect();
-            mono::work_status(&steps, live)
+            bot::work_status(&steps, live)
         });
         let row = div()
             .id(SharedString::from(group.clone()))
@@ -285,7 +279,7 @@ impl BenCodeApp {
             }))
             .on_click(
                 cx.listener(move |this, _, _, cx| {
-                    this.show_mono_activity(&session_id, &turn_id, cx)
+                    this.show_bot_activity(&session_id, &turn_id, cx)
                 }),
             )
             .into_any_element()
@@ -485,7 +479,7 @@ impl BenCodeApp {
                 this.redraw_regions(
                     &[
                         crate::ui::region::Region::Chat,
-                        crate::ui::region::Region::Mono,
+                        crate::ui::region::Region::Bot,
                     ],
                     cx,
                 );
@@ -583,7 +577,7 @@ impl BenCodeApp {
                 this.redraw_regions(
                     &[
                         crate::ui::region::Region::Chat,
-                        crate::ui::region::Region::Mono,
+                        crate::ui::region::Region::Bot,
                     ],
                     cx,
                 );
@@ -632,7 +626,7 @@ impl BenCodeApp {
         } else {
             muted(colors.fg, 0.7)
         };
-        let mono = cx.theme().mono_family.clone();
+        let mono_font = cx.theme().mono_family.clone();
         let row = div()
             .id(SharedString::from(format!("tool-row-{key}")))
             .flex()
@@ -653,7 +647,7 @@ impl BenCodeApp {
                         this.redraw_regions(
                             &[
                                 crate::ui::region::Region::Chat,
-                                crate::ui::region::Region::Mono,
+                                crate::ui::region::Region::Bot,
                             ],
                             cx,
                         );
@@ -677,7 +671,7 @@ impl BenCodeApp {
                     .flex()
                     .flex_1()
                     .min_w_0()
-                    .font_family(mono.clone())
+                    .font_family(mono_font.clone())
                     .text_size(Text::Md.px())
                     .text_color(target_color)
                     .child(self.tool_target_el(&key, target, file, cx)),
@@ -690,7 +684,7 @@ impl BenCodeApp {
                 el.child(
                     div()
                         .py_1()
-                        .font_family(mono)
+                        .font_family(mono_font)
                         .text_size(Text::Base.px())
                         .line_height(px(20.0))
                         .text_color(colors.danger.opacity(0.8))

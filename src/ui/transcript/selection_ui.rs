@@ -1,9 +1,11 @@
 //! The transcript selection's app side: which text joins it, ⌘C / ⌘A /
 //! Esc on it, and MonoCode's `TranscriptSelectionMenu` (Add to chat, Add
-//! to notes) over a selection inside one answer or prompt.
+//! to notes; BenCode adds Ask, to a bot) over a selection inside one
+//! answer or prompt.
 
 use std::rc::Rc;
 
+use bencode_ui::primitives::{Icon, IconName};
 use bencode_ui::selection::{Document, TextSelection};
 use bencode_ui::theme::{ActiveTheme, IconSize};
 use gpui::prelude::*;
@@ -270,7 +272,7 @@ impl BenCodeApp {
             .map(|(_, error)| error.clone());
         let selection = self.text_selection.clone();
         let fg = cx.theme().colors.fg;
-        let action = |id: &'static str, icon: ExtraIcon, label: &'static str| {
+        let action = |id: &'static str, icon: Icon, label: SharedString| {
             div()
                 .id(id)
                 .flex()
@@ -285,9 +287,18 @@ impl BenCodeApp {
                 .line_height(px(13.0))
                 .text_color(fg)
                 .hover(move |s| s.bg(fg.fill(Fill::Hover)))
-                .child(icon.icon().size(IconSize::Sm).color(fg))
+                .child(icon.size(IconSize::Sm).color(fg))
                 .child(label)
         };
+        // A bot's own chat is not a thread to ask a bot about.
+        let ask = self
+            .sessions
+            .iter()
+            .find(|s| s.id == session_id)
+            .filter(|_| self.bots_enabled() && !self.is_bot_session(session_id))
+            .and_then(|session| self.bot_for_project(&session.cwd))
+            .map(|bot| bot.display_name());
+        let (ask_text, ask_sid) = (text.clone(), session_id.to_string());
         let (chat_text, note_text, sid) = (text.clone(), text, session_id.to_string());
         let menu = popover_frame(cx)
             .id("transcript-selection-menu")
@@ -302,8 +313,8 @@ impl BenCodeApp {
             .child(
                 action(
                     "selection-add-to-chat",
-                    ExtraIcon::CommentAdd,
-                    "Add to chat",
+                    ExtraIcon::CommentAdd.icon(),
+                    "Add to chat".into(),
                 )
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.add_quote_to_chat(&chat_text, cx);
@@ -313,13 +324,24 @@ impl BenCodeApp {
             .child(
                 action(
                     "selection-add-to-notes",
-                    ExtraIcon::FilePlusCorner,
-                    "Add to notes",
+                    ExtraIcon::FilePlusCorner.icon(),
+                    "Add to notes".into(),
                 )
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.save_selection_note(&note_text, &sid, cx);
                 })),
             )
+            .children(ask.map(|name| {
+                action(
+                    "selection-ask-bot",
+                    Icon::new(IconName::Bot),
+                    format!("Ask {name}").into(),
+                )
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.ask_bot_about(&ask_sid, Some(ask_text.clone()), cx);
+                    this.clear_transcript_selection(cx);
+                }))
+            }))
             .children(error.map(|error| {
                 div()
                     .max_w(px(320.0))

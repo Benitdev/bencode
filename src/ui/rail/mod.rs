@@ -8,11 +8,11 @@
 mod cards;
 mod compact;
 pub use compact::COMPACT_RAIL_WIDTH;
+mod bots;
 mod live_agents;
 mod menu;
 mod menu_view;
 pub mod model;
-mod monos;
 mod notify;
 mod remove;
 mod reorder;
@@ -121,7 +121,7 @@ impl BenCodeApp {
         mascot_for(project_name(path), pick.map(String::as_str))
     }
 
-    /// The navigator, top to bottom: Search and the views, the Monos, the
+    /// The navigator, top to bottom: Search and the views, the Bots, the
     /// projects, the project's threads, the agents at work, and the
     /// focused thread's usage beside Settings. While Settings is open its
     /// sections take the body.
@@ -170,10 +170,10 @@ impl BenCodeApp {
                 None => el.child(self.render_settings_nav(cx)),
                 Some(threads) => el
                     .child(self.render_rail_actions(cx))
-                    // MonoCode: the Monos section above the projects, out of
+                    // MonoCode: the Bots section above the projects, out of
                     // their scroll so neither crowds the other.
-                    .when(self.monos_enabled(), |el| {
-                        el.child(self.render_rail_monos(cx))
+                    .when(self.bots_enabled(), |el| {
+                        el.child(self.render_rail_bots(cx))
                     })
                     .child(self.render_rail_projects(cx))
                     .child(self.render_threads_header(cx))
@@ -546,7 +546,7 @@ impl BenCodeApp {
                 state(
                     self.tab_history.can_go_back()
                         || self.surface.is_some()
-                        || self.monos.view.is_some(),
+                        || self.bots.view.is_some(),
                 ),
                 cx,
                 |this, _, _, cx| this.go_back(cx),

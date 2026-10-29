@@ -42,7 +42,7 @@ impl BenCodeApp {
         cfg!(target_os = "macos")
             && self.compact_rail_active()
             && self.surface.is_none()
-            && self.monos.view.is_none()
+            && self.bots.view.is_none()
     }
 
     /// MonoCode `action(active, open)`: a view's icon opens it, or leaves
@@ -126,7 +126,7 @@ impl BenCodeApp {
                             cx.notify();
                         })),
                     )
-                    .children(self.render_compact_monos(cx))
+                    .children(self.render_compact_bots(cx))
                     .child(self.render_compact_project_button(cx))
                     .children(self.render_agents_badge(true, cx))
                     .child(
@@ -204,26 +204,23 @@ impl BenCodeApp {
             )
     }
 
-    /// MonoCode `railMonosPinned`: each Mono at the top of the icon rail,
-    /// above a divider (`CompactMonoButton`), its mascot moving with its
-    /// status. Unpinned, the icon rail shows none (MonoCode lists them in
+    /// MonoCode `railMonosPinned`: each Bot at the top of the icon rail,
+    /// above a divider (`CompactMonoButton`), its figure moving with its
+    /// mood. Unpinned, the icon rail shows none (MonoCode lists them in
     /// its project picker, which BenCode's compact picker does not).
-    fn render_compact_monos(&self, cx: &Context<Self>) -> Option<AnyElement> {
-        if !self.monos_enabled()
-            || !self.settings.rail_monos_pinned
-            || self.settings.monos.is_empty()
+    fn render_compact_bots(&self, cx: &Context<Self>) -> Option<AnyElement> {
+        if !self.bots_enabled() || !self.settings.rail_bots_pinned || self.settings.bots.is_empty()
         {
             return None;
         }
         let theme = cx.theme();
         let fg = theme.colors.fg;
         let selection = fg.opacity(if theme.is_dark() { 0.10 } else { 0.06 });
-        let buttons = self.settings.monos.iter().map(|mono| {
-            let state = self.mono_state(mono);
-            let selected = self.surface.is_none() && self.monos.view.as_deref() == Some(&mono.id);
-            let id = mono.id.clone();
+        let buttons = self.settings.bots.iter().map(|bot| {
+            let selected = self.surface.is_none() && self.bots.view.as_deref() == Some(&bot.id);
+            let id = bot.id.clone();
             div()
-                .id(SharedString::from(format!("compact-mono-{}", mono.id)))
+                .id(SharedString::from(format!("compact-bot-{}", bot.id)))
                 .flex()
                 .flex_none()
                 .size(px(32.0))
@@ -238,13 +235,13 @@ impl BenCodeApp {
                         el.hover(move |s| s.bg(fg.fill(Fill::Strong)))
                     }
                 })
-                .tooltip(Tooltip::text(mono.display_name()))
-                .on_click(cx.listener(move |this, _, _, cx| this.open_mono(&id, cx)))
-                .child(crate::ui::mascot::pixel_mascot(
-                    self.mono_mascot(mono),
+                .tooltip(Tooltip::text(bot.display_name()))
+                .on_click(cx.listener(move |this, _, _, cx| this.open_bot(&id, cx)))
+                .child(crate::ui::figure::figure_view(
+                    bot.figure(),
                     16.0,
-                    self.mono_color(mono),
-                    crate::ui::mascot::MascotLook::for_status(state.status, &mono.mascot),
+                    self.bot_color(bot),
+                    self.bot_look(bot),
                     cx,
                 ))
         });

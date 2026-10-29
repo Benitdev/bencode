@@ -1,4 +1,4 @@
-//! MonoCode's artifact views (`artifacts/ui/`): the card under a Mono's
+//! MonoCode's artifact views (`artifacts/ui/`): the card under a Bot's
 //! reply (`ArtifactCard`), the reader over the Overview's Documents list
 //! (`ArtifactReader`, `ArtifactContent`), Delete's confirmation, and the
 //! theme an `html` page gets as CSS variables (`HtmlArtifactFrame`'s
@@ -135,7 +135,7 @@ pub fn theme_css(cx: &App) -> String {
         "\"{}\",-apple-system,system-ui,sans-serif",
         theme.font_family
     );
-    let mono = format!("\"{}\",ui-monospace,Menlo,monospace", theme.mono_family);
+    let mono_font = format!("\"{}\",ui-monospace,Menlo,monospace", theme.mono_family);
     let mut rule = format!(
         ":root{{color-scheme:{};",
         if theme.is_dark() { "dark" } else { "light" }
@@ -146,7 +146,7 @@ pub fn theme_css(cx: &App) -> String {
     rule.push_str(&format!(
         "--font-sans:{};--font-mono:{};--radius:10px;}}",
         sans.replace(['<', '>', ';', '{', '}'], ""),
-        mono.replace(['<', '>', ';', '{', '}'], "")
+        mono_font.replace(['<', '>', ';', '{', '}'], "")
     ));
     rule
 }
@@ -175,7 +175,7 @@ pub fn theme_key(cx: &App) -> u64 {
 }
 
 impl BenCodeApp {
-    /// MonoCode `data-artifact-results`: under a Mono's settled turn, a card
+    /// MonoCode `data-artifact-results`: under a Bot's settled turn, a card
     /// for each artifact it wrote (`flex flex-col gap-2 px-4 pt-1 pb-3`);
     /// one opens over the Overview.
     pub(crate) fn render_turn_artifacts(
@@ -216,7 +216,7 @@ impl BenCodeApp {
                     state,
                     cx,
                 )
-                .on_click(cx.listener(move |this, _, _, cx| this.show_mono_launch(&id, cx)))
+                .on_click(cx.listener(move |this, _, _, cx| this.show_bot_launch(&id, cx)))
             }))
             .into_any_element()
     }
@@ -291,7 +291,7 @@ impl BenCodeApp {
                     .size(ControlSize::Sm)
                     .variant(ButtonVariant::Ghost)
                     .tooltip("Hide overview")
-                    .on_click(cx.listener(|this, _, _, cx| this.toggle_mono_overview(cx))),
+                    .on_click(cx.listener(|this, _, _, cx| this.toggle_bot_overview(cx))),
             );
         let status = |text: String, tone: f32| {
             div()

@@ -1,5 +1,5 @@
 //! The list row views share: a tile, a title and a second line, the whole
-//! row lit under the pointer, and buttons that show only then. A Mono's
+//! row lit under the pointer, and buttons that show only then. A Bot's
 //! Overview draws its board, documents, sessions and habits with it.
 //!
 //! The row owns its hover: callers pass what a click does and the buttons,
@@ -28,6 +28,7 @@ pub struct ListRow {
     tooltip: Option<SharedString>,
     on_click: Option<OnClick>,
     actions: Vec<AnyElement>,
+    trailing: Option<AnyElement>,
 }
 
 impl ListRow {
@@ -42,6 +43,7 @@ impl ListRow {
             tooltip: None,
             on_click: None,
             actions: Vec::new(),
+            trailing: None,
         }
     }
 
@@ -80,6 +82,13 @@ impl ListRow {
     /// A button shown while the pointer is on the row.
     pub fn action(mut self, button: impl IntoElement) -> Self {
         self.actions.push(button.into_any_element());
+        self
+    }
+
+    /// What stays at its right whether or not the pointer is on it: a
+    /// status, or buttons that need no hover to be found.
+    pub fn trailing(mut self, element: impl IntoElement) -> Self {
+        self.trailing = Some(element.into_any_element());
         self
     }
 }
@@ -164,5 +173,14 @@ impl RenderOnce for ListRow {
                         .children(self.actions),
                 )
             })
+            .children(self.trailing.map(|trailing| {
+                div()
+                    .flex()
+                    .flex_none()
+                    .items_center()
+                    .gap_1()
+                    .pr_2()
+                    .child(trailing)
+            }))
     }
 }

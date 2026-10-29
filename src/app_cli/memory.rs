@@ -1,7 +1,7 @@
 //! The `soul.*` and `memory.*` actions (MonoCode `agentApp.ts`
 //! `handleSoul`, `handleMemory`, `editAgentFile`, `keepMemoryInBudget`):
-//! a Mono reads and changes its own files through these, never by editing
-//! them. Every write names the version it was made over (`monos/files.rs`),
+//! a Bot reads and changes its own files through these, never by editing
+//! them. Every write names the version it was made over (`bots/files.rs`),
 //! so the user's edits in the settings dialog are never overwritten; a
 //! memory edit is reapplied to the latest file when one lands in between.
 //! Blocking file work, for the background executor.
@@ -11,8 +11,8 @@ use std::path::Path;
 use serde_json::{Map, Value, json};
 
 use super::input::{optional, required};
-use crate::monos::files::{self, MEMORY_FILE, SOUL_FILE, SaveError};
-use crate::monos::memory;
+use crate::bots::files::{self, MEMORY_FILE, SOUL_FILE, SaveError};
+use crate::bots::memory;
 
 /// MonoCode `memoryPath`: `MEMORY.md`, or one topic file.
 fn memory_path(topic: Option<&Value>) -> Result<String, String> {
@@ -25,7 +25,7 @@ fn memory_path(topic: Option<&Value>) -> Result<String, String> {
     }
 }
 
-/// `soul.read` / `soul.update`, for the Mono whose files are in `dir`.
+/// `soul.read` / `soul.update`, for the Bot whose files are in `dir`.
 pub fn soul(dir: &Path, action: &str, input: &Map<String, Value>) -> Result<Value, String> {
     if action == "soul.read" {
         let files = files::load(dir).map_err(|err| format!("{err:#}"))?;
@@ -113,7 +113,7 @@ fn search_files(dir: &Path) -> Result<Vec<(String, String)>, String> {
     Ok(out)
 }
 
-/// `memory.*`, for the Mono whose files are in `dir`; `today` dates the
+/// `memory.*`, for the Bot whose files are in `dir`; `today` dates the
 /// entries.
 pub fn memory(
     dir: &Path,

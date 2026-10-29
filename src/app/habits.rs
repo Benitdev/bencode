@@ -1,9 +1,9 @@
-//! A Mono's habits on the app (MonoCode `useMonoHabits.ts` and
+//! A Bot's habits on the app (MonoCode `useMonoHabits.ts` and
 //! `App.tsx`'s habit host, `agentApp.ts` `handleHabits`): the `habits.*`
 //! calls, the scheduler that runs them while BenCode is open, each run in
 //! a hidden thread of its own with full access, an approval it still asks
-//! for put to the user in the Mono's chat, and what it decides to say
-//! posted there. One run at a time across all Monos, so waking the laptop
+//! for put to the user in the Bot's chat, and what it decides to say
+//! posted there. One run at a time across all Bots, so waking the laptop
 //! never starts several agents at once.
 //!
 //! A run's thread is never saved, listed or opened (`is_habit_run`): it
@@ -22,8 +22,8 @@ use crate::app::app_calls::Caller;
 use crate::app_cli::artifacts::ArtifactCard;
 use crate::app_cli::input::required;
 use crate::app_cli::server::AppCall;
+use crate::bots::habits::{self, Habit, HabitOutcome, RunResult};
 use crate::db::Block;
-use crate::monos::habits::{self, Habit, HabitOutcome, RunResult};
 
 /// MonoCode `TICK_MS`.
 const TICK: Duration = Duration::from_secs(60);
@@ -32,8 +32,8 @@ const POLL: Duration = Duration::from_secs(2);
 
 /// A habit's run in flight.
 pub struct HabitRunState {
-    pub mono: String,
-    pub mono_session: String,
+    pub bot: String,
+    pub bot_session: String,
     pub habit: Habit,
     pub started_at: i64,
     working_ms: i64,
@@ -50,12 +50,24 @@ pub struct HabitsState {
     running: HashMap<String, i64>,
     /// Runs in flight, by their hidden thread.
     pub runs: HashMap<String, HabitRunState>,
-    /// Due habits waiting their turn: (Mono, habit id).
+    /// Due habits waiting their turn: (Bot, habit id).
     queue: VecDeque<(String, String)>,
     /// A check or a run is under way.
     busy: bool,
     /// A check asked for meanwhile happens as soon as it ends.
     check_again: bool,
+    /// Each bot's next habit run, as the last check found it: when, and
+    /// the habit's name. Its figure sleeps until then (BenCode's own).
+    next_runs: HashMap<String, (i64, String)>,
+}
+
+impl HabitsState {
+    /// When `bot`'s next habit runs, and which.
+    pub fn next_run(&self, bot: &str) -> Option<(i64, &str)> {
+        self.next_runs
+            .get(bot)
+            .map(|(at, name)| (*at, name.as_str()))
+    }
 }
 
 impl BenCodeApp {
@@ -78,9 +90,9 @@ impl BenCodeApp {
         self.habits.runs.contains_key(session_id)
     }
 
-    /// MonoCode `habitRunMono`: the Mono a run works for.
-    pub(crate) fn habit_run_mono(&self, session_id: &str) -> Option<String> {
-        self.habits.runs.get(session_id).map(|run| run.mono.clone())
+    /// MonoCode `habitRunMono`: the Bot a run works for.
+    pub(crate) fn habit_run_bot(&self, session_id: &str) -> Option<String> {
+        self.habits.runs.get(session_id).map(|run| run.bot.clone())
     }
 
     /// MonoCode `habitRunningSince`.
@@ -88,15 +100,15 @@ impl BenCodeApp {
         self.habits.running.get(habit_id).copied()
     }
 
-    /// The runs of `mono` waiting on an approval, for its chat: (run
+    /// The runs of `bot` waiting on an approval, for its chat: (run
     /// thread, habit name).
-    pub fn habit_runs_asking(&self, mono_session: &str) -> Vec<(String, String)> {
+    pub fn habit_runs_asking(&self, bot_session: &str) -> Vec<(String, String)> {
         let mut asking: Vec<(String, String)> = self
             .habits
             .runs
             .iter()
             .filter(|(id, run)| {
-                run.mono_session == mono_session && self.pending_permission_for(id).is_some()
+                run.bot_session == bot_session && self.pending_permission_for(id).is_some()
             })
             .map(|(id, run)| (id.clone(), run.habit.name.clone()))
             .collect();
@@ -111,20 +123,21 @@ impl BenCodeApp {
             self.habits.check_again = true;
             return;
         }
-        if self.settings.monos_off {
+        if self.settings.bots_off {
             return;
         }
-        // Habits are set up in its chat, so a Mono never opened has none.
-        let monos: Vec<(String, std::path::PathBuf)> = self
+        // Habits are set up in its chat, so a Bot never opened has none.
+        let bots: Vec<(String, std::path::PathBuf)> = self
             .settings
-            .monos
+            .bots
             .iter()
-            .filter(|mono| mono.session_id.is_some())
-            .filter_map(|mono| {
-                crate::app::mono_files::mono_files_dir(&mono.id).map(|dir| (mono.id.clone(), dir))
+            .filter(|bot| bot.session_id.is_some())
+            .filter_map(|bot| {
+                crate::app::bot_files::bot_files_dir(&bot.id).map(|dir| (bot.id.clone(), dir))
             })
             .collect();
-        if monos.is_empty() {
+        if bots.is_empty() {
+            self.habits.next_runs.clear();
             return;
         }
         self.habits.busy = true;
@@ -133,14 +146,18 @@ impl BenCodeApp {
         let task = cx.background_executor().spawn(async move {
             let now = crate::app::now_ms();
             let mut due = Vec::new();
-            for (mono, dir) in monos {
+            let mut next_runs = HashMap::new();
+            for (bot, dir) in bots {
                 let habits = match habits::load_habits(&dir) {
                     Ok(habits) => habits,
                     Err(err) => {
-                        log::warn!("could not read a Mono's habits: {err}");
+                        log::warn!("could not read a bot's habits: {err}");
                         continue;
                     }
                 };
+                if let Some(next) = habits::next_habit(&habits, now) {
+                    next_runs.insert(bot.clone(), (next.next_run_at, next.name.clone()));
+                }
                 let (run, skipped) = habits::due_habits(&habits, now, &running);
                 if !skipped.is_empty() {
                     let moved = habits::update_habits(&dir, |list| {
@@ -166,16 +183,18 @@ impl BenCodeApp {
                         log::warn!("could not move missed habits on: {err}");
                     }
                 }
-                due.extend(
-                    run.into_iter()
-                        .map(|habit| (mono.clone(), habit.id.clone())),
-                );
+                due.extend(run.into_iter().map(|habit| (bot.clone(), habit.id.clone())));
             }
-            due
+            (due, next_runs)
         });
         cx.spawn(async move |this, cx| {
-            let due = task.await;
+            let (due, next_runs) = task.await;
             let landed = this.update(cx, |this, cx| {
+                // A bot falling asleep or waking redraws where it is shown.
+                if this.habits.next_runs != next_runs {
+                    this.habits.next_runs = next_runs;
+                    cx.notify();
+                }
                 this.habits.queue.extend(due);
                 this.start_next_habit(cx);
             });
@@ -189,32 +208,32 @@ impl BenCodeApp {
     /// The next queued habit, claimed from the latest file; when the queue
     /// is empty the scheduler is free again.
     fn start_next_habit(&mut self, cx: &mut Context<Self>) {
-        let Some((mono, habit_id)) = self.habits.queue.pop_front() else {
+        let Some((bot, habit_id)) = self.habits.queue.pop_front() else {
             self.habits.busy = false;
             if self.habits.check_again {
                 self.check_habits(cx);
             }
             return;
         };
-        let Some(mono_session) = self.mono(&mono).and_then(|m| m.session_id.clone()) else {
+        let Some(bot_session) = self.bot(&bot).and_then(|m| m.session_id.clone()) else {
             self.start_next_habit(cx);
             return;
         };
         // Its conversation is where the run reports: in memory first.
-        if !self.sessions.iter().any(|s| s.id == mono_session) {
-            self.prepare_mono_session(&mono, cx);
-            self.habits.queue.push_front((mono, habit_id));
+        if !self.sessions.iter().any(|s| s.id == bot_session) {
+            self.prepare_bot_session(&bot, cx);
+            self.habits.queue.push_front((bot, habit_id));
             cx.spawn(async move |this, cx| {
                 cx.background_executor().timer(Duration::from_secs(1)).await;
                 let landed = this.update(cx, |this, cx| {
-                    let loaded = this.habits.queue.front().is_some_and(|(mono, _)| {
-                        this.mono(mono)
+                    let loaded = this.habits.queue.front().is_some_and(|(bot, _)| {
+                        this.bot(bot)
                             .and_then(|m| m.session_id.as_deref())
                             .is_some_and(|id| this.sessions.iter().any(|s| s.id == id))
                     });
                     if !loaded {
                         // Give it up for this tick; the next one tries again.
-                        log::warn!("a Mono's conversation did not load; its habit waits");
+                        log::warn!("a bot's conversation did not load; its habit waits");
                         this.habits.queue.pop_front();
                     }
                     this.start_next_habit(cx);
@@ -226,7 +245,7 @@ impl BenCodeApp {
             .detach();
             return;
         }
-        let Some(dir) = crate::app::mono_files::mono_files_dir(&mono) else {
+        let Some(dir) = crate::app::bot_files::bot_files_dir(&bot) else {
             self.start_next_habit(cx);
             return;
         };
@@ -234,7 +253,7 @@ impl BenCodeApp {
         // MonoCode `claimHabit`: from the latest definition, as it may
         // have been removed, paused or rescheduled since.
         let task = cx.background_executor().spawn(async move {
-            let files = crate::monos::files::load(&dir).map_err(|err| format!("{err:#}"))?;
+            let files = crate::bots::files::load(&dir).map_err(|err| format!("{err:#}"))?;
             let now = crate::app::now_ms();
             let claimed = habits::update_habits(&dir, |list| {
                 let only: Vec<Habit> = list.iter().filter(|h| h.id == habit_id).cloned().collect();
@@ -259,7 +278,7 @@ impl BenCodeApp {
             let claimed = task.await;
             let landed = this.update(cx, |this, cx| match claimed {
                 Ok((files, Some(habit), now)) => {
-                    this.launch_habit_run(&mono, &mono_session, &files, habit, now, cx)
+                    this.launch_habit_run(&bot, &bot_session, &files, habit, now, cx)
                 }
                 Ok((_, None, _)) => this.start_next_habit(cx),
                 Err(err) => {
@@ -274,29 +293,29 @@ impl BenCodeApp {
         .detach();
     }
 
-    /// MonoCode `runHabit`: the hidden thread, with the Mono's model and
+    /// MonoCode `runHabit`: the hidden thread, with the Bot's model and
     /// full access, sent its whole context and the habit.
     fn launch_habit_run(
         &mut self,
-        mono_id: &str,
-        mono_session: &str,
-        files: &crate::monos::files::MonoFiles,
+        bot_id: &str,
+        bot_session: &str,
+        files: &crate::bots::files::BotFiles,
         habit: Habit,
         now: i64,
         cx: &mut Context<Self>,
     ) {
-        let Some(mono) = self.mono(mono_id).cloned() else {
+        let Some(bot) = self.bot(bot_id).cloned() else {
             self.start_next_habit(cx);
             return;
         };
-        let Some(source) = self.sessions.iter().find(|s| s.id == mono_session).cloned() else {
+        let Some(source) = self.sessions.iter().find(|s| s.id == bot_session).cloned() else {
             self.start_next_habit(cx);
             return;
         };
         let run_id = format!("habit-run-{}", crate::app::ids::unique_id(&habit.id));
         let mut row = crate::db::SessionRow {
             id: run_id.clone(),
-            title: format!("{} · {}", mono.display_name(), habit.name),
+            title: format!("{} · {}", bot.display_name(), habit.name),
             cwd: source.cwd.clone(),
             harness: source.harness.clone(),
             model: source.model.clone(),
@@ -313,8 +332,8 @@ impl BenCodeApp {
         self.habits.runs.insert(
             run_id.clone(),
             HabitRunState {
-                mono: mono_id.to_string(),
-                mono_session: mono_session.to_string(),
+                bot: bot_id.to_string(),
+                bot_session: bot_session.to_string(),
                 habit: habit.clone(),
                 started_at: now,
                 working_ms: 0,
@@ -325,8 +344,7 @@ impl BenCodeApp {
         );
         self.habits.running.insert(habit.id.clone(), now);
         self.sessions.push(row);
-        let (soul, memory) =
-            self.mono_context_parts(&mono, files, self.app_access.socket.is_some());
+        let (soul, memory) = self.bot_context_parts(&bot, files, self.app_access.socket.is_some());
         let prompt = format!(
             "{soul}\n\n{memory}\n\n{}",
             habits::habit_run_brief(&habit, now)
@@ -348,11 +366,11 @@ impl BenCodeApp {
             return;
         }
         self.watch_habit_run(run_id, cx);
-        self.refresh_mono_overview(mono_id, cx);
+        self.refresh_bot_overview(bot_id, cx);
         cx.notify();
     }
 
-    /// MonoCode `watchRun`: relays an approval to the Mono's chat, and
+    /// MonoCode `watchRun`: relays an approval to the Bot's chat, and
     /// stops a run that worked an hour or waited half a day on the user.
     fn watch_habit_run(&mut self, run_id: String, cx: &mut Context<Self>) {
         cx.spawn(async move |this, cx| {
@@ -420,7 +438,7 @@ impl BenCodeApp {
             .then(|| habits::habit_report(&final_reply(&blocks)))
             .flatten();
         let cards = crate::app_cli::artifacts::chat_cards(&blocks);
-        // Sessions it started are listed only in the Mono's chat, so a run
+        // Sessions it started are listed only in the Bot's chat, so a run
         // that started one posts even with nothing else to say.
         let text = report.clone().or_else(|| match run.launches.len() {
             0 => None,
@@ -447,9 +465,9 @@ impl BenCodeApp {
             report,
             started_at: run.started_at,
         };
-        if let Some(dir) = crate::app::mono_files::mono_files_dir(&run.mono) {
+        if let Some(dir) = crate::app::bot_files::bot_files_dir(&run.bot) {
             let habit_id = run.habit.id.clone();
-            let mono = run.mono.clone();
+            let bot = run.bot.clone();
             let task = cx.background_executor().spawn(async move {
                 habits::update_habits(&dir, |list| {
                     let now = crate::app::now_ms();
@@ -470,7 +488,7 @@ impl BenCodeApp {
                 if let Err(err) = task.await {
                     log::warn!("could not record a habit's run: {err}");
                 }
-                let landed = this.update(cx, |this, cx| this.refresh_mono_overview(&mono, cx));
+                let landed = this.update(cx, |this, cx| this.refresh_bot_overview(&bot, cx));
                 if let Err(err) = landed {
                     log::debug!("habit recorded after app drop: {err:#}");
                 }
@@ -481,7 +499,7 @@ impl BenCodeApp {
         cx.notify();
     }
 
-    /// MonoCode's habit `post`: a message in the Mono's chat, outside any
+    /// MonoCode's habit `post`: a message in the Bot's chat, outside any
     /// turn, with the cards and sessions the run made; the user hears of it.
     fn post_habit_message(
         &mut self,
@@ -492,7 +510,7 @@ impl BenCodeApp {
     ) {
         let launches = &run.launches;
         let now = crate::app::now_ms();
-        let Some(session) = self.sessions.iter_mut().find(|s| s.id == run.mono_session) else {
+        let Some(session) = self.sessions.iter_mut().find(|s| s.id == run.bot_session) else {
             return;
         };
         let mut block = Block::new(crate::app::ids::unique_id("habit-post"), "assistant", text);
@@ -513,21 +531,21 @@ impl BenCodeApp {
         }
         session.blocks.push(block.into());
         session.updated_at = now;
-        let id = run.mono_session.clone();
+        let id = run.bot_session.clone();
         self.persist_session(&id);
-        self.note_mono_reply(&id, cx);
+        self.note_bot_reply(&id, cx);
         self.announce_turn_finished(&id, cx);
         cx.notify();
     }
 
-    /// The Overview's habits and board read again, for the Mono in view.
-    pub(crate) fn refresh_mono_overview(&mut self, mono: &str, cx: &mut Context<Self>) {
-        if self.monos.view.as_deref() == Some(mono) {
-            self.load_mono_overview(mono, cx);
+    /// The Overview's habits and board read again, for the Bot in view.
+    pub(crate) fn refresh_bot_overview(&mut self, bot: &str, cx: &mut Context<Self>) {
+        if self.bots.view.as_deref() == Some(bot) {
+            self.load_bot_overview(bot, cx);
         }
     }
 
-    /// `habits.*` from a Mono's own conversation.
+    /// `habits.*` from a Bot's own conversation.
     pub(crate) fn habits_call(
         &mut self,
         caller: Caller,
@@ -536,8 +554,8 @@ impl BenCodeApp {
         call: AppCall,
         cx: &mut Context<Self>,
     ) {
-        let Some(dir) = crate::app::mono_files::mono_files_dir(&caller.mono) else {
-            call.fail("This Mono's folder is unavailable", true);
+        let Some(dir) = crate::app::bot_files::bot_files_dir(&caller.bot) else {
+            call.fail("This bot's folder is unavailable", true);
             return;
         };
         let running: HashMap<String, i64> = self.habits.running.clone();
@@ -545,7 +563,7 @@ impl BenCodeApp {
         let task = cx.background_executor().spawn(async move {
             habits_action(&dir, &action, &input, &running, crate::app::now_ms())
         });
-        let mono = caller.mono;
+        let bot = caller.bot;
         cx.spawn(async move |this, cx| {
             let result = task.await;
             let landed = this.update(cx, |this, cx| {
@@ -558,7 +576,7 @@ impl BenCodeApp {
                     }
                     Err(error) => call.fail(error, true),
                 }
-                this.refresh_mono_overview(&mono, cx);
+                this.refresh_bot_overview(&bot, cx);
             });
             if let Err(err) = landed {
                 log::debug!("habit call after app drop: {err:#}");
@@ -570,14 +588,14 @@ impl BenCodeApp {
     /// The Habits panel's actions on the user's side (MonoCode
     /// `MonoHabits`, `HabitPage`, `NewHabitPage`): add, change, pause,
     /// run now, remove, all through `habits.json`.
-    pub(crate) fn edit_mono_habits(
+    pub(crate) fn edit_bot_habits(
         &mut self,
-        mono: &str,
+        bot: &str,
         change: impl Fn(Vec<Habit>, i64) -> Result<Vec<Habit>, String> + Send + 'static,
         run_now: bool,
         cx: &mut Context<Self>,
     ) {
-        let Some(dir) = crate::app::mono_files::mono_files_dir(mono) else {
+        let Some(dir) = crate::app::bot_files::bot_files_dir(bot) else {
             return;
         };
         let task = cx.background_executor().spawn(async move {
@@ -586,20 +604,20 @@ impl BenCodeApp {
                 Ok((next, ()))
             })
         });
-        let mono = mono.to_string();
+        let bot = bot.to_string();
         cx.spawn(async move |this, cx| {
             let result = task.await;
             let landed = this.update(cx, |this, cx| {
                 if let Err(err) = &result {
-                    log::warn!("could not change the Mono's habits: {err}");
-                    this.monos.overview.habit_error = Some(err.clone());
+                    log::warn!("could not change the bot's habits: {err}");
+                    this.bots.overview.habit_error = Some(err.clone());
                 } else {
-                    this.monos.overview.habit_error = None;
+                    this.bots.overview.habit_error = None;
                 }
                 if run_now && result.is_ok() {
                     this.check_habits(cx);
                 }
-                this.refresh_mono_overview(&mono, cx);
+                this.refresh_bot_overview(&bot, cx);
                 cx.notify();
             });
             if let Err(err) = landed {
@@ -624,7 +642,7 @@ fn final_reply(blocks: &[Arc<Block>]) -> String {
     String::new()
 }
 
-/// MonoCode `handleHabits`, on the Mono's folder: the answer, and whether
+/// MonoCode `handleHabits`, on the Bot's folder: the answer, and whether
 /// the scheduler should look now (`habits.run`).
 pub fn habits_action(
     dir: &std::path::Path,
@@ -656,7 +674,7 @@ pub fn habits_action(
             let habit = habits::update_habits(dir, |mut list| {
                 if list.len() >= habits::HABITS_MAX {
                     return Err(format!(
-                        "A Mono can have at most {} habits",
+                        "A bot can have at most {} habits",
                         habits::HABITS_MAX
                     ));
                 }
@@ -774,7 +792,7 @@ mod tests {
             "bencode-habit-calls-{}",
             crate::app_cli::random_hex(6)
         ));
-        crate::monos::files::load(&dir).unwrap();
+        crate::bots::files::load(&dir).unwrap();
         let none = HashMap::new();
         let now = 1_760_000_000_000;
         let (added, _) = habits_action(

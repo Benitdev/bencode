@@ -244,7 +244,7 @@ impl BenCodeApp {
             compact: session.is_some_and(|s| crate::app::can_compact(&s.harness)),
             thread: session.is_some(),
             clear: session.is_some_and(|s| {
-                !self.is_agent_running_in(&s.id) && self.mono_for_session(&s.id).is_none()
+                !self.is_agent_running_in(&s.id) && self.bot_for_session(&s.id).is_none()
             }),
             git: session.is_some_and(|s| self.git_actions_ready(&s.id)),
         }

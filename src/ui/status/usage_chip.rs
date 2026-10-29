@@ -1,6 +1,6 @@
 //! MonoCode `app/shell/UsageProviderChip.tsx`: the usage chip (at the
 //! navigator's foot the tightest window's bar and each window's percent,
-//! under a Mono's composer with the account and each "11% 6d 14h"; on the
+//! under a Bot's composer with the account and each "11% 6d 14h"; on the
 //! icon rail the provider over the bar), and the details popover it opens
 //! (one card per window; the account pages are in `account_views`).
 
@@ -105,7 +105,7 @@ pub enum UsageChipVariant {
     /// On the icon rail while the navigator is collapsed: the provider's
     /// icon over the tightest window's bar.
     Icon,
-    /// The quiet tool buttons under a Mono's composer, which name no
+    /// The quiet tool buttons under a Bot's composer, which name no
     /// account and switch none (MonoCode `accountPicker={false}`).
     Composer,
 }
@@ -115,9 +115,9 @@ pub(super) struct ChipAccounts<'a> {
     pub provider: RateLimitProvider,
     /// The popover may switch accounts (MonoCode `accountPicker`).
     pub picker: bool,
-    /// A Mono's composer chip: a pick moves its one conversation.
-    pub mono: bool,
-    /// A Mono's turn is running: the pick waits for it to finish.
+    /// A Bot's composer chip: a pick moves its one conversation.
+    pub bot: bool,
+    /// A Bot's turn is running: the pick waits for it to finish.
     pub locked: bool,
     /// Empty for a provider without account profiles.
     pub accounts: &'a [ProviderAccount],
@@ -170,11 +170,11 @@ impl BenCodeApp {
             Vec::new()
         };
         // MonoCode's composer chip has no picker (`accountPicker={false}`);
-        // BenCode's switches the Mono's account (`switch_mono_account`).
+        // BenCode's switches the Bot's account (`switch_bot_account`).
         let chip_accounts = ChipAccounts {
             provider,
             picker: true,
-            mono: composer,
+            bot: composer,
             locked: composer
                 && self
                     .selected_session_id

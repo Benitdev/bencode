@@ -38,12 +38,12 @@ const RECENT_MODELS_SHOWN: usize = 6;
 /// Which trigger opened the models on their own (MonoCode `hideSettings`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ModelsAnchor {
-    /// The Mono composer's model picker.
-    MonoComposer,
-    /// "Choose another model" on a Mono's usage-limit notice.
+    /// The Bot composer's model picker.
+    BotComposer,
+    /// "Choose another model" on a Bot's usage-limit notice.
     UsageLimit,
-    /// The Model row of a Mono's settings dialog; it opens below.
-    MonoSettings,
+    /// The Model row of a Bot's settings dialog; it opens below.
+    BotSettings,
     /// The model of the automation being edited; it opens below.
     Automation,
     /// The model Inbox translations run on, in Settings; it opens below.
@@ -53,10 +53,7 @@ pub enum ModelsAnchor {
 impl ModelsAnchor {
     /// Hung below its trigger rather than above.
     fn opens_below(self) -> bool {
-        matches!(
-            self,
-            Self::MonoSettings | Self::Automation | Self::Translate
-        )
+        matches!(self, Self::BotSettings | Self::Automation | Self::Translate)
     }
 }
 
@@ -359,7 +356,7 @@ impl BenCodeApp {
             self.close_model_picker(cx);
             return;
         }
-        // MonoCode `recoverLimit`: another model, picked from a Mono's
+        // MonoCode `recoverLimit`: another model, picked from a Bot's
         // usage-limit card, carries on where the limit stopped it.
         let recover = (self.composer_menus.models_only == Some(ModelsAnchor::UsageLimit))
             .then(|| {

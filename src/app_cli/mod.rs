@@ -1,11 +1,11 @@
-//! `bencode app ACTION`: the app access a Mono's agent has, ported from
+//! `bencode app ACTION`: the app access a Bot's agent has, ported from
 //! MonoCode's `app` CLI (`src-tauri/src/control_cli.rs` `run_app`,
 //! `control.rs`, `features/agent-app/model/agentApp.ts`). The agent runs
 //! this binary; it sends the call over a Unix socket (`server.rs`) to the
 //! app, which answers it on the UI thread (`app/artifacts.rs`).
 //!
 //! Every action MonoCode's answers: sessions, worktrees and folders
-//! (`app/mono_sessions.rs`), notes (`notes.rs`), artifacts
+//! (`app/bot_sessions/`), notes (`notes.rs`), artifacts
 //! (`artifacts.rs`), the soul and memory (`memory.rs`), habits
 //! (`app/habits.rs`) and chat cards; `input.rs` checks what each takes.
 //!

@@ -41,11 +41,11 @@ impl BenCodeApp {
     /// Makes `selected_session_id` (and the model picker) follow the active
     /// tab's focused pane.
     pub(crate) fn sync_selection(&mut self, cx: &mut Context<Self>) {
-        // An open Mono's conversation is the one in view, over the tabs; or
+        // An open Bot's conversation is the one in view, over the tabs; or
         // the session it started, shown beside it, while that has focus.
-        let mono = self.mono_focus_session().map(str::to_string);
-        let in_mono = mono.is_some();
-        let focused = mono.or_else(|| self.tabs.focused_session().map(str::to_string));
+        let bot = self.bot_focus_session().map(str::to_string);
+        let in_bot = bot.is_some();
+        let focused = bot.or_else(|| self.tabs.focused_session().map(str::to_string));
         if focused != self.selected_session_id {
             // MonoCode leaves edit mode when the thread changes.
             if self.editing_last_turn.is_some() {
@@ -101,7 +101,7 @@ impl BenCodeApp {
         }
         self.selected_session_id = focused;
         self.sync_prompt_placeholder(cx);
-        if in_mono {
+        if in_bot {
             // It belongs to no project, tab or dock: those stay as they were.
             cx.notify();
             return;
@@ -135,7 +135,7 @@ impl BenCodeApp {
             self.close_surface(cx);
             return;
         }
-        if self.close_mono_view(cx) {
+        if self.close_bot_view(cx) {
             return;
         }
         if let Some(id) = self.tab_history.back() {
@@ -162,8 +162,8 @@ impl BenCodeApp {
     }
 
     pub fn switch_tab(&mut self, tab_id: &str, cx: &mut Context<Self>) {
-        let left_mono = self.leave_mono_view(cx);
-        if self.tabs.activate(tab_id) || left_mono {
+        let left_bot = self.leave_bot_view(cx);
+        if self.tabs.activate(tab_id) || left_bot {
             self.sync_selection(cx);
         }
     }
@@ -243,7 +243,7 @@ impl BenCodeApp {
 
     /// Focuses an open pane, switching to its tab if needed.
     pub fn focus_pane(&mut self, pane_id: String, cx: &mut Context<Self>) {
-        if self.focus_mono_pane(&pane_id, cx) {
+        if self.focus_bot_pane(&pane_id, cx) {
             return;
         }
         if self.tabs.focus(&pane_id) {
@@ -555,12 +555,12 @@ impl BenCodeApp {
     /// open, else shows it in place of an empty pane of the active tab, else
     /// in a new tab. MonoCode `onSelectHistorySession`.
     pub fn open_session(&mut self, id: String, cx: &mut Context<Self>) {
-        // A Mono's conversation opens as the Mono, never as a tab.
-        if let Some(mono) = self.mono_for_session(&id).map(|mono| mono.id.clone()) {
-            self.open_mono(&mono, cx);
+        // A Bot's conversation opens as the Bot, never as a tab.
+        if let Some(bot) = self.bot_for_session(&id).map(|bot| bot.id.clone()) {
+            self.open_bot(&bot, cx);
             return;
         }
-        self.leave_mono_view(cx);
+        self.leave_bot_view(cx);
         let mut discarded = None;
         if !self.tabs.focus(&id) {
             match self.blank_pane_in_active_tab().filter(|blank| *blank != id) {
@@ -665,7 +665,7 @@ impl BenCodeApp {
     /// a new provider session. The old thread stays in history; one with no
     /// message yet is kept as it is.
     pub fn clear_session(&mut self, id: &str, cx: &mut Context<Self>) {
-        if self.is_agent_running_in(id) || self.mono_for_session(id).is_some() {
+        if self.is_agent_running_in(id) || self.bot_for_session(id).is_some() {
             return;
         }
         let Some(old) = self.sessions.iter().find(|s| s.id == id).cloned() else {
@@ -693,7 +693,7 @@ impl BenCodeApp {
 
     /// `create_new_session`, returning the new thread's id.
     pub fn create_new_session_id(&mut self, cx: &mut Context<Self>) -> String {
-        self.leave_mono_view(cx);
+        self.leave_bot_view(cx);
         let cwd = self.current_cwd.clone();
         let id = self.create_session_row(&cwd, cx);
         self.tabs.open(&id);

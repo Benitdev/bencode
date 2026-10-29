@@ -8,6 +8,16 @@ mod automation_runs;
 pub mod automations;
 pub mod backlog;
 pub mod blame;
+pub mod bot_ask;
+pub mod bot_background;
+pub mod bot_board;
+pub mod bot_changes;
+pub mod bot_digest;
+pub mod bot_files;
+pub mod bot_menu_bar;
+pub mod bot_overview;
+pub mod bot_sessions;
+pub mod bots;
 pub mod browser;
 pub mod chat_background;
 pub mod cli_import;
@@ -27,14 +37,6 @@ mod integrations;
 pub mod item_threads;
 pub mod live_agents;
 mod model_catalog;
-pub mod mono_background;
-pub mod mono_board;
-pub mod mono_changes;
-pub mod mono_files;
-pub mod mono_menu_bar;
-pub mod mono_overview;
-pub mod mono_sessions;
-pub mod monos;
 pub mod note_images;
 pub mod notes;
 mod panes;
@@ -55,6 +57,7 @@ pub mod session_review;
 pub mod snapshot;
 mod source_control;
 pub mod subagents;
+pub mod summon;
 mod surfaces;
 mod tab_history;
 mod tab_scope;
@@ -177,15 +180,16 @@ pub struct BenCodeApp {
     pub browser: browser::BrowserState,
     /// `bencode app`: its socket and the credentials turns carry.
     pub app_access: app_calls::AppAccessState,
-    /// Monos' habits: the runs in flight and the scheduler's queue.
+    /// Bots' habits: the runs in flight and the scheduler's queue.
     pub habits: habits::HabitsState,
-    /// Sessions Monos watch, until their results go back to them.
-    pub mono_sessions: mono_sessions::MonoSessionsState,
-    /// Monos' own chat backgrounds, as drawn.
-    pub mono_backgrounds: mono_background::MonoBackgrounds,
-    /// The Monos icon in the macOS menu bar.
-    pub mono_menu_bar: mono_menu_bar::MonoMenuBar,
-    /// A Mono's artifacts: the reader and its page.
+    /// Sessions Bots watch, until their results go back to them.
+    pub bot_sessions: bot_sessions::BotSessionsState,
+    /// Bots' own chat backgrounds, as drawn.
+    pub bot_backgrounds: bot_background::BotBackgrounds,
+    /// The Bots icon in the macOS menu bar.
+    pub bot_menu_bar: bot_menu_bar::BotMenuBar,
+    pub summon: summon::SummonState,
+    /// A Bot's artifacts: the reader and its page.
     pub artifacts: artifacts::ArtifactsState,
     /// The navigator's threads: filters, picks, inline renames.
     pub sessions_ui: crate::ui::sidebar_sessions::SessionsUi,
@@ -500,8 +504,8 @@ pub struct BenCodeApp {
     pub is_rail_open: bool,
     /// The project rail's menus, dialogs and drags.
     pub rail_ui: crate::ui::rail::RailUi,
-    /// The Mono in view, its details panel and its soul.
-    pub monos: monos::MonosState,
+    /// The Bot in view, its details panel and its soul.
+    pub bots: bots::BotsState,
     /// Settings › Connections, the folder dialog and the machines' catalogs.
     pub remote: remote::RemoteUi,
     /// The turns machines run for this BenCode (`remote-runs.json`).
@@ -567,19 +571,19 @@ impl BenCodeApp {
                 .ok()
         });
 
-        // A Mono's conversation is no project's: it opens from the rail,
+        // A Bot's conversation is no project's: it opens from the rail,
         // never as a tab.
-        let is_mono_session = |id: &str| {
+        let is_bot_session = |id: &str| {
             saved
-                .monos
+                .bots
                 .iter()
-                .any(|mono| mono.session_id.as_deref() == Some(id))
+                .any(|bot| bot.session_id.as_deref() == Some(id))
         };
         let tabs = crate::ui::layout::TabSet::with_sessions(
             sessions
                 .iter()
-                // Nor is one left in the home folder (a Mono's that was).
-                .filter(|s| !is_mono_session(&s.id) && !is_home_path(&s.cwd))
+                // Nor is one left in the home folder (a Bot's that was).
+                .filter(|s| !is_bot_session(&s.id) && !is_home_path(&s.cwd))
                 .take(INITIAL_OPEN_TABS)
                 .map(|s| s.id.as_str()),
         );
@@ -682,7 +686,7 @@ impl BenCodeApp {
             &[
                 Region::Rail,
                 Region::CompactRail,
-                Region::Mono,
+                Region::Bot,
                 Region::Surface,
             ],
         );
@@ -710,7 +714,7 @@ impl BenCodeApp {
                 Region::Chat,
                 Region::FilePane,
                 Region::Surface,
-                Region::Mono,
+                Region::Bot,
             ],
         );
         let mut subscriptions = vec![
@@ -1307,7 +1311,7 @@ impl BenCodeApp {
             .unwrap_or_else(|| ".".to_string());
         let recent_projects = projects::recent_projects(
             &current_cwd,
-            sessions.iter().filter(|s| !is_mono_session(&s.id)),
+            sessions.iter().filter(|s| !is_bot_session(&s.id)),
             projects::home_dir().as_deref(),
         );
 
@@ -1355,9 +1359,10 @@ impl BenCodeApp {
             browser,
             app_access,
             habits: Default::default(),
-            mono_sessions: Default::default(),
-            mono_backgrounds: Default::default(),
-            mono_menu_bar: Default::default(),
+            bot_sessions: Default::default(),
+            bot_backgrounds: Default::default(),
+            bot_menu_bar: Default::default(),
+            summon: Default::default(),
             artifacts,
             sessions_ui: Default::default(),
             sidebar_menu: None,
@@ -1533,7 +1538,7 @@ impl BenCodeApp {
             inspector_open: false,
             is_rail_open: true,
             rail_ui,
-            monos: monos::MonosState::new(window, cx),
+            bots: bots::BotsState::new(window, cx),
             remote: remote::RemoteUi::new(window, cx),
             remote_runs: Vec::new(),
             theme_preference: Default::default(),
@@ -1583,11 +1588,12 @@ impl BenCodeApp {
         app.refresh_installed_catalogs(cx);
         app.start_harness_update_check(cx);
         app.listen_for_notification_clicks(cx);
-        app.listen_for_mono_menu_bar(window.window_handle(), cx);
+        app.listen_for_bot_menu_bar(window.window_handle(), cx);
+        app.listen_for_summon(window.window_handle(), cx);
         app.load_backlog_account(cx);
         app.start_inbox_poll(cx);
         app.start_update_probe(cx);
-        app.reopen_saved_mono(cx);
+        app.reopen_saved_bot(cx);
         trace("launch jobs started");
         app
     }
@@ -1739,7 +1745,7 @@ impl Render for BenCodeApp {
         }
         self.apply_ui_scale(window);
         self.sync_chat_background(!cx.theme().is_dark(), cx);
-        self.sync_mono_background(!cx.theme().is_dark(), cx);
+        self.sync_bot_background(!cx.theme().is_dark(), cx);
         if std::mem::take(&mut self.question_focus_wanted) {
             window.focus(&self.question_focus, cx);
         }
@@ -1762,9 +1768,9 @@ impl Render for BenCodeApp {
         // Inbox, Notes, Automations and Settings replace everything right
         // of the navigator (MonoCode in-shell views).
         let surface_open = self.surface.is_some();
-        // A Mono's conversation does too (MonoCode `monoCovers`).
-        let mono_open = self.mono_covers() && self.mono_in_view().is_some();
-        let workspace_visible = !surface_open && !mono_open;
+        // A Bot's conversation does too (MonoCode `monoCovers`).
+        let bot_open = self.bot_covers() && self.bot_in_view().is_some();
+        let workspace_visible = !surface_open && !bot_open;
         let compact_rail = self.compact_rail_active();
         let title_bar_above = self.compact_title_bar();
         // A browser page is a native view above everything GPUI draws: it
@@ -1796,9 +1802,9 @@ impl Render for BenCodeApp {
             any_elements(self.render_whats_new(cx)),
             any_elements(self.render_resume_interrupted(cx)),
             any_elements(self.render_quit_confirm(cx)),
-            any_elements(self.render_mono_settings(cx)),
-            any_elements(self.render_mono_dialogs(cx)),
-            any_elements(self.render_mono_background_dialog(cx)),
+            any_elements(self.render_bot_settings(cx)),
+            any_elements(self.render_bot_dialogs(cx)),
+            any_elements(self.render_bot_background_dialog(cx)),
             any_elements(self.render_artifact_delete(cx)),
         ]
         .into_iter()
@@ -1872,7 +1878,7 @@ impl Render for BenCodeApp {
         });
         let column = || StyleRefinement::default().flex_1().min_w_0().h_full();
         let surface = surface_open.then(|| region(self, Region::Surface, column(), cx));
-        let mono_view = mono_open.then(|| region(self, Region::Mono, column(), cx));
+        let bot_view = bot_open.then(|| region(self, Region::Bot, column(), cx));
         if workspace_visible {
             drawn.push(Region::Chat);
             if !self.file_pane.is_empty() {
@@ -1949,7 +1955,7 @@ impl Render for BenCodeApp {
                             // the terminal dock and the inspector
                             .children(main)
                             .children(surface)
-                            .children(mono_view),
+                            .children(bot_view),
                     )
                     // Over the regions, under the menus and dialogs.
                     .child(mark_layer)

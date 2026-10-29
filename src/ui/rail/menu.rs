@@ -63,16 +63,16 @@ impl BenCodeApp {
     }
 
     /// MonoCode `MonoMenu`: its name, mascot and colour, then Delete.
-    pub(crate) fn open_rail_mono_menu(
+    pub(crate) fn open_rail_bot_menu(
         &mut self,
         id: &str,
         at: Point<Pixels>,
         cx: &mut Context<Self>,
     ) {
-        let Some(name) = self.mono(id).map(|mono| mono.display_name()) else {
+        let Some(name) = self.bot(id).map(|bot| bot.display_name()) else {
             return;
         };
-        self.open_rail_menu(MenuTarget::Mono(id.to_string()), name, at, cx);
+        self.open_rail_menu(MenuTarget::Bot(id.to_string()), name, at, cx);
     }
 
     fn open_rail_menu(
@@ -176,13 +176,10 @@ impl BenCodeApp {
                     );
                 }
             }
-            // A blank name goes back to the mascot's own.
-            MenuTarget::Mono(id) => {
-                if self
-                    .mono(&id)
-                    .is_some_and(|mono| mono.display_name() != text)
-                {
-                    self.set_mono_name(&id, &text, cx);
+            // A blank name goes back to the one it goes by.
+            MenuTarget::Bot(id) => {
+                if self.bot(&id).is_some_and(|bot| bot.display_name() != text) {
+                    self.set_bot_name(&id, &text, cx);
                 }
             }
         }
@@ -314,18 +311,18 @@ impl BenCodeApp {
     }
 
     /// MonoCode `MonoMenu`'s actions.
-    pub(super) fn mono_extra_items() -> Vec<ExtraItem> {
+    pub(super) fn bot_extra_items() -> Vec<ExtraItem> {
         vec![
-            ExtraItem::new("mono-background", "Background image", ExtraIcon::ImagePlus),
+            ExtraItem::new("bot-background", "Background image", ExtraIcon::ImagePlus),
             ExtraItem::new(
-                "float-mono",
+                "float-bot",
                 "Open floating chat",
                 IconName::PictureInPicture2,
             ),
             ExtraItem {
                 danger: true,
                 sep_before: true,
-                ..ExtraItem::new("delete-mono", "Delete mono…", IconName::Trash2)
+                ..ExtraItem::new("delete-bot", "Delete bot…", IconName::Trash2)
             },
         ]
     }
@@ -506,11 +503,11 @@ impl BenCodeApp {
                 self.close_rail_menu(cx);
             }
             (MenuTarget::Project(path), _) => self.pick_project_extra(&path, id, anchor, cx),
-            (MenuTarget::Mono(mono), "mono-background") => self.open_mono_background(&mono, cx),
-            (MenuTarget::Mono(mono), "float-mono") => self.open_mono_float(&mono, window, cx),
-            (MenuTarget::Mono(mono), "delete-mono") => {
+            (MenuTarget::Bot(bot), "bot-background") => self.open_bot_background(&bot, cx),
+            (MenuTarget::Bot(bot), "float-bot") => self.open_bot_float(&bot, window, cx),
+            (MenuTarget::Bot(bot), "delete-bot") => {
                 self.close_rail_menu(cx);
-                self.monos.pending_delete = Some(mono);
+                self.bots.pending_delete = Some(bot);
                 cx.notify();
             }
             _ => {}
@@ -641,11 +638,11 @@ impl BenCodeApp {
                 },
                 cx,
             ),
-            MenuTarget::Mono(id) => self.update_monos(
+            MenuTarget::Bot(id) => self.update_bots(
                 |roster| {
-                    if let Some(mono) = roster.iter_mut().find(|mono| &mono.id == id) {
-                        mono.color_index = index.unwrap_or(0);
-                        mono.custom_color = None;
+                    if let Some(bot) = roster.iter_mut().find(|bot| &bot.id == id) {
+                        bot.color_index = index.unwrap_or(0);
+                        bot.custom_color = None;
                     }
                 },
                 cx,
@@ -673,10 +670,10 @@ impl BenCodeApp {
                 },
                 cx,
             ),
-            MenuTarget::Mono(id) => self.update_monos(
+            MenuTarget::Bot(id) => self.update_bots(
                 |roster| {
-                    if let Some(mono) = roster.iter_mut().find(|mono| &mono.id == id) {
-                        mono.custom_color = Some(hex.to_lowercase());
+                    if let Some(bot) = roster.iter_mut().find(|bot| &bot.id == id) {
+                        bot.custom_color = Some(hex.to_lowercase());
                     }
                 },
                 cx,
@@ -703,27 +700,8 @@ impl BenCodeApp {
                 },
                 cx,
             ),
-            MenuTarget::Mono(id) => {
-                // An unnamed Mono goes by its mascot: the field follows it.
-                let follows = self.mono(id).is_some_and(|mono| {
-                    mono.display_name() == self.rail_ui.name_input.read(cx).text().trim()
-                        && mono.name.is_none()
-                });
-                self.update_monos(
-                    |roster| {
-                        if let Some(mono) = roster.iter_mut().find(|mono| &mono.id == id) {
-                            mono.mascot = name.to_string();
-                        }
-                    },
-                    cx,
-                );
-                if follows {
-                    let default = crate::monos::default_name(name);
-                    self.rail_ui
-                        .name_input
-                        .update(cx, |input, cx| input.set_text(default, cx));
-                }
-            }
+            // A bot wears a figure, picked in its own row.
+            MenuTarget::Bot(_) => {}
         }
     }
 }

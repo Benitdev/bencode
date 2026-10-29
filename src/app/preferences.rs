@@ -164,13 +164,13 @@ impl BenCodeApp {
         if let Some(width) = saved.inbox_list_width {
             self.inbox_mut(cx, |inbox| inbox.list_width = width);
         }
-        self.monos.overview.width =
+        self.bots.overview.width =
             saved
-                .mono_overview_width
-                .map_or(crate::app::mono_overview::DEFAULT_WIDTH, |w| {
+                .bot_overview_width
+                .map_or(crate::app::bot_overview::DEFAULT_WIDTH, |w| {
                     w.clamp(
-                        crate::app::mono_overview::MIN_WIDTH,
-                        crate::app::mono_overview::MAX_WIDTH,
+                        crate::app::bot_overview::MIN_WIDTH,
+                        crate::app::bot_overview::MAX_WIDTH,
                     )
                 });
         self.favorite_models = saved.favorite_models.clone();
@@ -253,15 +253,16 @@ impl BenCodeApp {
             delete_cli_sessions: self.settings.delete_cli_sessions,
             provider_accounts: self.settings.provider_accounts.clone(),
             provider_account_selections: self.settings.provider_account_selections.clone(),
-            monos: self.settings.monos.clone(),
-            mono_float_size: self.settings.mono_float_size,
-            monos_off: self.settings.monos_off,
-            rail_monos_pinned: self.settings.rail_monos_pinned,
-            navigator_monos_expanded: self.settings.navigator_monos_expanded,
-            mono_menu_bar_off: self.settings.mono_menu_bar_off,
-            open_mono: self.settings.open_mono.clone(),
-            mono_overview_width: Some(self.monos.overview.width)
-                .filter(|w| *w != crate::app::mono_overview::DEFAULT_WIDTH),
+            bots: self.settings.bots.clone(),
+            bot_float_size: self.settings.bot_float_size,
+            bots_off: self.settings.bots_off,
+            rail_bots_pinned: self.settings.rail_bots_pinned,
+            navigator_bots_expanded: self.settings.navigator_bots_expanded,
+            bot_menu_bar_off: self.settings.bot_menu_bar_off,
+            open_bot: self.settings.open_bot.clone(),
+            summon_key: self.settings.summon_key.clone(),
+            bot_overview_width: Some(self.bots.overview.width)
+                .filter(|w| *w != crate::app::bot_overview::DEFAULT_WIDTH),
             remote_machines: self.settings.remote_machines.clone(),
             rail: self.settings.rail.clone(),
             extra: self.settings.extra.clone(),
@@ -320,84 +321,99 @@ impl BenCodeApp {
         cx.notify();
     }
 
-    /// Saves a change to the Mono roster.
-    pub fn update_monos(
+    /// Saves a change to the Bot roster.
+    pub fn update_bots(
         &mut self,
-        update: impl FnOnce(&mut Vec<crate::monos::Mono>),
+        update: impl FnOnce(&mut Vec<crate::bots::Bot>),
         cx: &mut Context<Self>,
     ) {
         let mut next = self.current_settings(cx);
-        update(&mut next.monos);
+        update(&mut next.bots);
         if next == self.settings {
             return;
         }
         self.write_settings(next, cx);
-        self.sync_mono_menu_bar(cx);
+        self.sync_bot_menu_bar(cx);
         cx.notify();
     }
 
-    /// MonoCode `saveOpenMono`: the Mono in view, opened again at launch.
-    pub(crate) fn save_open_mono(&mut self, cx: &mut Context<Self>) {
-        let open = self.monos.view.clone();
-        if self.settings.open_mono == open {
+    /// MonoCode `saveOpenMono`: the Bot in view, opened again at launch.
+    pub(crate) fn save_open_bot(&mut self, cx: &mut Context<Self>) {
+        let open = self.bots.view.clone();
+        if self.settings.open_bot == open {
             return;
         }
         let mut next = self.current_settings(cx);
-        next.open_mono = open;
+        next.open_bot = open;
         self.write_settings(next, cx);
     }
 
-    /// MonoCode `saveMonosEnabled`: Monos shown on the rail, or hidden
+    /// MonoCode `saveMonosEnabled`: Bots shown on the rail, or hidden
     /// (closing the one in view).
-    pub fn set_monos_enabled(&mut self, on: bool, cx: &mut Context<Self>) {
+    pub fn set_bots_enabled(&mut self, on: bool, cx: &mut Context<Self>) {
         if !on {
-            self.close_mono_view(cx);
+            self.close_bot_view(cx);
         }
         let mut next = self.current_settings(cx);
-        next.monos_off = !on;
+        next.bots_off = !on;
         if next != self.settings {
             self.write_settings(next, cx);
         }
-        self.sync_mono_menu_bar(cx);
+        self.sync_bot_menu_bar(cx);
+        // No bots, no shortcut summoning one.
+        self.register_summon_key();
         cx.notify();
     }
 
-    /// The navigator's Monos as rows, or as faces in their header.
-    pub fn toggle_navigator_monos(&mut self, cx: &mut Context<Self>) {
+    /// The navigator's Bots as rows, or as faces in their header.
+    pub fn toggle_navigator_bots(&mut self, cx: &mut Context<Self>) {
         let mut next = self.current_settings(cx);
-        next.navigator_monos_expanded = !next.navigator_monos_expanded;
+        next.navigator_bots_expanded = !next.navigator_bots_expanded;
         self.write_settings(next, cx);
         cx.notify();
     }
 
     /// MonoCode `saveRailMonosPinned`.
-    pub fn set_rail_monos_pinned(&mut self, on: bool, cx: &mut Context<Self>) {
+    pub fn set_rail_bots_pinned(&mut self, on: bool, cx: &mut Context<Self>) {
         let mut next = self.current_settings(cx);
-        next.rail_monos_pinned = on;
+        next.rail_bots_pinned = on;
         if next != self.settings {
             self.write_settings(next, cx);
         }
         cx.notify();
     }
 
-    /// Settings › Monos › Menu bar icon.
-    pub fn set_mono_menu_bar(&mut self, on: bool, cx: &mut Context<Self>) {
+    /// Settings › Bots › Menu bar icon.
+    pub fn set_bot_menu_bar(&mut self, on: bool, cx: &mut Context<Self>) {
         let mut next = self.current_settings(cx);
-        next.mono_menu_bar_off = !on;
+        next.bot_menu_bar_off = !on;
         if next != self.settings {
             self.write_settings(next, cx);
         }
-        self.sync_mono_menu_bar(cx);
+        self.sync_bot_menu_bar(cx);
         cx.notify();
     }
 
-    /// Saves the size the floating Mono chat was left at.
-    pub fn set_mono_float_size(&mut self, size: [f32; 2], cx: &mut Context<Self>) {
-        if self.settings.mono_float_size == Some(size) {
+    /// Settings › Bots' summon shortcut: a shortcut's id
+    /// (`app/summon.rs`), or `SUMMON_OFF`.
+    pub fn set_summon_key(&mut self, id: &str, cx: &mut Context<Self>) {
+        let mut next = self.current_settings(cx);
+        let default = crate::app::summon::SUMMON_KEYS[0].id;
+        next.summon_key = (id != default).then(|| id.to_string());
+        if next != self.settings {
+            self.write_settings(next, cx);
+        }
+        self.register_summon_key();
+        cx.notify();
+    }
+
+    /// Saves the size the floating Bot chat was left at.
+    pub fn set_bot_float_size(&mut self, size: [f32; 2], cx: &mut Context<Self>) {
+        if self.settings.bot_float_size == Some(size) {
             return;
         }
         let mut next = self.current_settings(cx);
-        next.mono_float_size = Some(size);
+        next.bot_float_size = Some(size);
         self.write_settings(next, cx);
     }
 

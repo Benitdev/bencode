@@ -1,0 +1,614 @@
+//! The floating chat's rows, from the Bot's blocks: MonoCode's messaging
+//! transcript (`AgentTranscript` with `inlineWork`, `groupMonoTurnItems`,
+//! `monoWorkStatus.ts`, `monoReaction.ts`, `DaySeparator`). Pure, so it is
+//! tested without GPUI.
+//!
+//! A turn is the user's message and what the Bot did for it. Its work is
+//! never drawn in the chat: the turn's identity line carries it, as a live
+//! ticker ("Reading file…") while the turn runs, and the full trail is one
+//! click away in BenCode. While it runs even its prose stays in the work;
+//! once it settles the reply after the last step shows, with Copy and the
+//! time it finished. An approval it waits on is answered in the turn
+//! (MonoCode `MonoWorkApprovals`).
+//!
+//! A reply that is only a reaction moves onto the message before it, and
+//! the work between them goes, notices aside (`monoReactionBlocks`).
+
+use std::hash::{DefaultHasher, Hash, Hasher};
+use std::sync::Arc;
+
+use crate::db::Block;
+use crate::ui::attachment_chip::ChipFile;
+pub use crate::ui::transcript::bot::{Live, habit_post, is_message, starts_turn};
+use crate::ui::transcript::bot::{Reactions, bot_reactions, opens_new_stretch, work_status};
+use crate::ui::transcript::turns::{
+    is_notice, is_prose, is_thinking, is_tool, text, tool_kind_name,
+};
+
+/// MonoCode `MONO_PAGE_TURNS`: the turns shown at first, and how many
+/// more each scroll to the top brings in.
+pub const PAGE_TURNS: usize = 10;
+
+/// Where a message the user sent stands (MonoCode `MessageDelivery`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Delivery {
+    Sent,
+    /// Waiting behind the running turn, drawn as sent.
+    Pending,
+    /// Held since the agent was stopped: "Not sent". MonoCode's floating
+    /// chat offers no Resume (it passes no `onRetryMessage`).
+    Paused,
+    /// It could not be sent: "Not sent · why", with Retry.
+    Failed(String),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum FloatItem {
+    /// Earlier turns are left out; reaching this row brings them in.
+    Earlier,
+    /// MonoCode `DaySeparator`: "Today 11:33" over a turn that opens a new
+    /// stretch of the conversation (ms).
+    Day(i64),
+    /// What the user sent: its text, its files, and the emoji the Bot
+    /// answered it with when its whole reply was a reaction.
+    User {
+        text: String,
+        files: Vec<ChipFile>,
+        reaction: Option<String>,
+        delivery: Delivery,
+        /// When it was sent (ms), shown beside its Copy on hover.
+        at: Option<i64>,
+    },
+    /// MonoCode `MonoTurnHeader`: the Bot's pill, and while the turn runs
+    /// the ticker beside it.
+    Header {
+        ticker: Option<String>,
+    },
+    /// What the Bot said.
+    Reply(String),
+    Notice(String),
+    /// MonoCode `ArtifactCard`: what the settled turn wrote.
+    Artifact(crate::app_cli::artifacts::ArtifactCard),
+    /// MonoCode `LaunchedSessionCard`: a session the turn started.
+    Launch(crate::app::bot_sessions::SpawnedSession),
+    /// MonoCode `TurnDuration`: Copy and when the turn finished (ms), shown
+    /// while the turn is hovered.
+    Footer {
+        copy: String,
+        at: Option<i64>,
+    },
+    /// MonoCode `MonoWorkApprovals`: the approval the running turn waits
+    /// on, by its request id, answered in place.
+    Approval(String),
+    /// What one of its habits' hidden runs asks for (MonoCode
+    /// `askApproval`): the run's thread and the habit's name.
+    HabitApproval {
+        run: String,
+        habit: String,
+    },
+}
+
+/// A row and the turn it belongs to (the index of its first block), which
+/// hovering it reveals.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FloatRow {
+    pub turn: usize,
+    pub item: FloatItem,
+}
+
+/// Where the newest `turns` turns start; 0 when there are no more.
+pub fn window_start(blocks: &[Arc<Block>], turns: usize) -> usize {
+    let mut seen = 0;
+    for (ix, block) in blocks.iter().enumerate().rev() {
+        if starts_turn(block) {
+            seen += 1;
+            if seen == turns {
+                // Nothing before it but what no message heads: all of it.
+                return if blocks[..ix].iter().any(|b| starts_turn(b)) {
+                    ix
+                } else {
+                    0
+                };
+            }
+        }
+    }
+    0
+}
+
+/// What the rows read from `blocks[start..]`, folded into a number: while
+/// it holds, so do the rows. A block changes in place only by its text
+/// growing or a tool call's kind being filled in; anything else adds,
+/// removes or replaces blocks, which moves the count or the ids at the
+/// ends. No allocation: it runs on each of the app's redraws.
+pub fn rows_key(blocks: &[Arc<Block>], start: usize) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    let shown = &blocks[start..];
+    (start, shown.len()).hash(&mut hasher);
+    shown.first().map(|block| &block.id).hash(&mut hasher);
+    shown.last().map(|block| &block.id).hash(&mut hasher);
+    for block in shown {
+        hasher.write_usize(block.text.as_deref().map_or(0, str::len));
+        block.duration_ms.hash(&mut hasher);
+        if crate::app_cli::artifacts::has_cards(block) {
+            crate::app_cli::artifacts::block_cards(block).hash(&mut hasher);
+        }
+        crate::app::bot_sessions::spawned_sessions(block)
+            .len()
+            .hash(&mut hasher);
+        if is_tool(block) {
+            tool_kind_name(block).hash(&mut hasher);
+        }
+    }
+    hasher.finish()
+}
+
+/// The rows for `blocks[start..]`; `live` while its last turn runs.
+pub fn float_rows(blocks: &[Arc<Block>], start: usize, live: Option<Live>) -> Vec<FloatRow> {
+    let mut rows = Vec::new();
+    if start > 0 {
+        rows.push(FloatRow {
+            turn: usize::MAX,
+            item: FloatItem::Earlier,
+        });
+    }
+    let reactions = bot_reactions(blocks, live.is_some());
+    let shown: Vec<usize> = reactions
+        .kept
+        .iter()
+        .copied()
+        .filter(|&ix| ix >= start)
+        .collect();
+    // Each turn starts at a message; what comes before the first is a turn
+    // with none (a reply the Bot sent on its own).
+    let mut heads: Vec<usize> = shown
+        .iter()
+        .enumerate()
+        .filter(|(_, ix)| starts_turn(&blocks[**ix]))
+        .map(|(at, _)| at)
+        .collect();
+    if heads.first() != Some(&0) {
+        heads.insert(0, 0);
+    }
+    let mut previous_at = blocks[..start]
+        .iter()
+        .rev()
+        .find(|block| starts_turn(block))
+        .and_then(|block| {
+            block
+                .started_at
+                .or_else(|| habit_post(block).map(|(_, _, at)| at))
+        });
+    let count = heads.len();
+    for (turn, &head) in heads.iter().enumerate() {
+        let end = heads.get(turn + 1).copied().unwrap_or(shown.len());
+        let range = &shown[head..end];
+        let (user, rest) = match range.split_first() {
+            Some((&first, rest)) if is_message(&blocks[first]) => (Some(first), rest),
+            _ => (None, range),
+        };
+        if user.is_none() && rest.is_empty() {
+            continue;
+        }
+        let live = live.filter(|_| turn + 1 == count);
+        // Named by where it starts in the whole conversation, so bringing
+        // in earlier turns leaves the rows after them as they were.
+        let habit = range
+            .first()
+            .copied()
+            .filter(|&ix| user.is_none() && habit_post(&blocks[ix]).is_some());
+        let turn = Turn {
+            blocks,
+            user,
+            habit,
+            rest: rest
+                .iter()
+                .copied()
+                .filter(|&ix| blocks[ix].role != "user")
+                .collect(),
+            reactions: &reactions,
+            live,
+        };
+        turn.push(&mut rows, range[0], &mut previous_at);
+    }
+    rows
+}
+
+/// A message and what the Bot did for it, by block index.
+struct Turn<'a> {
+    blocks: &'a [Arc<Block>],
+    user: Option<usize>,
+    /// A habit's post, standing as its own turn.
+    habit: Option<usize>,
+    rest: Vec<usize>,
+    reactions: &'a Reactions,
+    live: Option<Live>,
+}
+
+impl Turn<'_> {
+    fn push(&self, rows: &mut Vec<FloatRow>, turn: usize, previous_at: &mut Option<i64>) {
+        let push = |rows: &mut Vec<FloatRow>, item| rows.push(FloatRow { turn, item });
+        let blocks = self.blocks;
+        let live = self.live;
+        let rest: Vec<(usize, &Block)> = self.rest.iter().map(|&ix| (ix, &*blocks[ix])).collect();
+        // MonoCode `groupMonoTurnItems`: the work runs to the last step (any
+        // prose, while the turn is live); the prose after it is the reply.
+        let work_end = rest.iter().rposition(|(_, block)| {
+            is_tool(block) || is_thinking(block) || (live.is_some() && is_prose(block))
+        });
+        let shows = |at: usize| live.is_none() && work_end.is_none_or(|end| at > end);
+        // What the Bot said, a reaction with no message standing as its emoji.
+        let said = |(ix, block): (usize, &Block)| -> String {
+            match self.reactions.alone(ix) {
+                Some(emoji) => emoji.to_string(),
+                None => text(block).trim().to_string(),
+            }
+        };
+        let replies: Vec<String> = rest
+            .iter()
+            .enumerate()
+            .filter(|(at, (_, block))| is_prose(block) && shows(*at))
+            .map(|(_, &step)| said(step))
+            .collect();
+        let reaction = self
+            .user
+            .and_then(|user| self.reactions.on(user))
+            .map(str::to_string);
+        if let Some(user) = self.user.map(|ix| &blocks[ix]) {
+            if let Some(at) = user.started_at {
+                if opens_new_stretch(at, *previous_at) {
+                    push(rows, FloatItem::Day(at));
+                }
+                *previous_at = Some(at);
+            }
+            let files = user
+                .extra
+                .get("attachments")
+                .and_then(|files| files.as_array())
+                .map(|files| files.iter().filter_map(ChipFile::from_block_json).collect())
+                .unwrap_or_default();
+            push(
+                rows,
+                FloatItem::User {
+                    text: text(user).trim().to_string(),
+                    files,
+                    reaction: reaction.clone(),
+                    delivery: Delivery::Sent,
+                    at: user.started_at,
+                },
+            );
+        }
+        let posted = self
+            .habit
+            .and_then(|ix| habit_post(&blocks[ix]))
+            .map(|(_, _, at)| at);
+        if let Some(at) = posted {
+            if opens_new_stretch(at, *previous_at) {
+                push(rows, FloatItem::Day(at));
+            }
+            *previous_at = Some(at);
+        }
+        // MonoCode `reactedOnly`: the reaction answered it; its notices stay.
+        if reaction.is_some() && rest.iter().all(|(_, block)| is_notice(block)) {
+            for (_, block) in &rest {
+                push(rows, FloatItem::Notice(text(block).trim().to_string()));
+            }
+            return;
+        }
+        // MonoCode `showFoldLine`: the line is there from the first token on.
+        let worked = rest.iter().any(|(_, block)| {
+            !matches!(block.role.as_str(), "assistant" | "reasoning")
+                || !text(block).trim().is_empty()
+        });
+        if live.is_none() && !worked {
+            return;
+        }
+        let steps: Vec<&Block> = rest.iter().map(|(_, block)| *block).collect();
+        push(
+            rows,
+            FloatItem::Header {
+                ticker: live.map(|live| work_status(&steps, live)),
+            },
+        );
+        for (at, &(ix, block)) in rest.iter().enumerate() {
+            if is_notice(block) {
+                push(rows, FloatItem::Notice(text(block).trim().to_string()));
+            } else if is_prose(block) && shows(at) {
+                let said = said((ix, block));
+                match rows.last_mut() {
+                    // A reply streams as one block, but a provider may split it.
+                    Some(FloatRow {
+                        item: FloatItem::Reply(reply),
+                        ..
+                    }) => {
+                        reply.push_str("\n\n");
+                        reply.push_str(&said);
+                    }
+                    _ => push(rows, FloatItem::Reply(said)),
+                }
+            }
+        }
+        if live.is_none()
+            && let Some(user) = self.user.or(self.habit).map(|ix| &blocks[ix])
+        {
+            for card in crate::app_cli::artifacts::block_cards(user) {
+                push(rows, FloatItem::Artifact(card));
+            }
+        }
+        if live.is_none() {
+            let mut turn_blocks: Vec<Arc<Block>> = self
+                .user
+                .or(self.habit)
+                .map(|ix| blocks[ix].clone())
+                .into_iter()
+                .collect();
+            turn_blocks.extend(self.rest.iter().map(|&ix| blocks[ix].clone()));
+            for launch in crate::app::bot_sessions::chat_launches(&turn_blocks) {
+                push(rows, FloatItem::Launch(launch));
+            }
+        }
+        if live.is_none() && reaction.is_none() {
+            // MonoCode `turnCopyText` over what the turn shows.
+            let at = self
+                .user
+                .map(|ix| &blocks[ix])
+                .and_then(|user| Some(user.started_at? + user.duration_ms.unwrap_or(0)))
+                .or(posted);
+            push(
+                rows,
+                FloatItem::Footer {
+                    copy: replies.join("\n\n"),
+                    at,
+                },
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::shared;
+    use crate::ui::transcript::bot::STRETCH_GAP_MS;
+
+    fn tool(kind: &str) -> Block {
+        let mut block = Block::new(format!("t-{kind}"), "tool", "");
+        block.tool = Some(serde_json::json!({"kind": kind, "title": "/repo/a.rs"}));
+        block
+    }
+
+    fn notice(text: &str) -> Block {
+        let mut block = Block::new("n", "system", text);
+        block
+            .extra
+            .insert("notice".into(), serde_json::json!("error"));
+        block
+    }
+
+    fn items(blocks: &[Block], live: Option<Live>) -> Vec<FloatItem> {
+        float_rows(&shared(blocks), 0, live)
+            .into_iter()
+            .map(|row| row.item)
+            .collect()
+    }
+
+    fn user(text: &str) -> FloatItem {
+        FloatItem::User {
+            text: text.into(),
+            files: Vec::new(),
+            reaction: None,
+            delivery: Delivery::Sent,
+            at: None,
+        }
+    }
+
+    #[test]
+    fn a_settled_turn_shows_its_reply_after_the_work() {
+        let blocks = [
+            Block::new("u", "user", " fix it "),
+            Block::new("a0", "assistant", "Let me look."),
+            Block::new("r", "reasoning", "hmm"),
+            tool("read"),
+            Block::new("a1", "assistant", "Fixed."),
+            Block::new("a2", "assistant", "Anything else?"),
+        ];
+        assert_eq!(
+            items(&blocks, None),
+            [
+                user("fix it"),
+                FloatItem::Header { ticker: None },
+                FloatItem::Reply("Fixed.\n\nAnything else?".into()),
+                FloatItem::Footer {
+                    copy: "Fixed.\n\nAnything else?".into(),
+                    at: None
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn a_live_turn_keeps_its_prose_in_the_ticker() {
+        let blocks = [
+            Block::new("u", "user", "fix it"),
+            tool("read"),
+            Block::new("a", "assistant", "Found it, now"),
+        ];
+        let live = Live::default();
+        assert_eq!(
+            items(&blocks, Some(live)),
+            [
+                user("fix it"),
+                FloatItem::Header {
+                    ticker: Some("Thinking…".into())
+                },
+            ]
+        );
+        // Only the last turn is live.
+        let two = [
+            Block::new("u1", "user", "hi"),
+            Block::new("a1", "assistant", "Hello"),
+            Block::new("u2", "user", "fix it"),
+        ];
+        let rows = items(&two, Some(live));
+        assert!(rows.contains(&FloatItem::Reply("Hello".into())));
+        assert_eq!(
+            rows.last(),
+            Some(&FloatItem::Header {
+                ticker: Some("Thinking…".into())
+            })
+        );
+    }
+
+    #[test]
+    fn a_reaction_lands_on_the_message_it_answers() {
+        let blocks = [
+            Block::new("u1", "user", "fix it"),
+            Block::new("a1", "assistant", "Fixed."),
+            Block::new("u2", "user", "thanks!"),
+            tool("read"),
+            notice("Stopped."),
+            Block::new("a2", "assistant", "<reaction>👍</reaction>"),
+        ];
+        let rows = items(&blocks, None);
+        let at = rows.iter().position(|item| {
+            *item
+                == FloatItem::User {
+                    text: "thanks!".into(),
+                    files: Vec::new(),
+                    reaction: Some("👍".into()),
+                    delivery: Delivery::Sent,
+                    at: None,
+                }
+        });
+        // No pill or footer: the notice alone stays.
+        assert_eq!(
+            rows[at.expect("the message") + 1..],
+            [FloatItem::Notice("Stopped.".into())]
+        );
+        // With no message to sit on, the emoji stands as the reply.
+        let alone = [Block::new("a", "assistant", "<reaction>🎉</reaction>")];
+        assert!(items(&alone, None).contains(&FloatItem::Reply("🎉".into())));
+    }
+
+    #[test]
+    fn status_lines_and_internal_prompts_stay_out_of_the_chat() {
+        let mut internal = Block::new("i", "user", "report");
+        internal
+            .extra
+            .insert("internal".into(), serde_json::json!(true));
+        let blocks = [
+            Block::new("u", "user", "hi"),
+            internal,
+            Block::new("st", "system", "Compacting…"),
+            Block::new("a", "assistant", "Hi"),
+        ];
+        let rows = items(&blocks, None);
+        assert_eq!(rows.len(), 4);
+        assert_eq!(rows[2], FloatItem::Reply("Hi".into()));
+    }
+
+    #[test]
+    fn the_footer_says_when_the_turn_finished() {
+        let mut asked = Block::new("u", "user", "hi");
+        asked.started_at = Some(1_000);
+        asked.duration_ms = Some(500);
+        let blocks = [asked, Block::new("a", "assistant", "Hi")];
+        assert_eq!(
+            items(&blocks, None).last(),
+            Some(&FloatItem::Footer {
+                copy: "Hi".into(),
+                at: Some(1_500)
+            })
+        );
+    }
+
+    #[test]
+    fn a_message_after_a_break_opens_a_new_stretch() {
+        let at = |id: &str, ms: i64| {
+            let mut block = Block::new(id, "user", id);
+            block.started_at = Some(ms);
+            block
+        };
+        // Noon UTC, so the two first stay on one day in most time zones.
+        let noon = 1_760_443_200_000;
+        let blocks = [
+            at("a", noon),
+            at("b", noon + 10 * 60 * 1000),
+            at("c", noon + 2 * STRETCH_GAP_MS),
+        ];
+        let days = items(&blocks, None)
+            .iter()
+            .filter(|item| matches!(item, FloatItem::Day(_)))
+            .count();
+        assert_eq!(days, 2);
+        // A page that starts mid-conversation knows the message before it.
+        let later = float_rows(&shared(&blocks), 1, None);
+        assert_eq!(later[0].item, FloatItem::Earlier);
+        // Its rows are the same ones the whole conversation has.
+        let all = float_rows(&shared(&blocks), 0, None);
+        assert_eq!(later[1..], all[all.len() - (later.len() - 1)..]);
+        assert!(
+            !later
+                .iter()
+                .any(|row| row.item == FloatItem::Day(noon + 10 * 60 * 1000))
+        );
+    }
+
+    #[test]
+    fn pages_count_turns_from_the_newest() {
+        let blocks: Vec<Block> = (0..5)
+            .flat_map(|ix| {
+                [
+                    Block::new(format!("u{ix}"), "user", "q"),
+                    Block::new(format!("a{ix}"), "assistant", "a"),
+                ]
+            })
+            .collect();
+        assert_eq!(window_start(&shared(&blocks), 2), 6);
+        assert_eq!(window_start(&shared(&blocks), 5), 0);
+        assert_eq!(window_start(&shared(&blocks), 10), 0);
+        let turns = float_rows(&shared(&blocks), 6, None)
+            .iter()
+            .filter(|row| matches!(row.item, FloatItem::User { .. }))
+            .count();
+        assert_eq!(turns, 2);
+    }
+
+    #[test]
+    fn a_message_keeps_its_files() {
+        let mut block = Block::new("u", "user", "");
+        block.extra.insert(
+            "attachments".into(),
+            serde_json::json!([{"id": "f1", "name": "a.png", "path": "/tmp/a.png", "kind": "image"}]),
+        );
+        let rows = items(&[block], None);
+        let [FloatItem::User { text, files, .. }] = rows.as_slice() else {
+            panic!("one message expected, got {rows:?}");
+        };
+        assert!(text.is_empty());
+        assert_eq!(files[0].name, "a.png");
+        assert!(files[0].image);
+    }
+
+    #[test]
+    fn the_rows_key_follows_what_the_rows_show() {
+        let blocks = vec![
+            Block::new("u", "user", "hello"),
+            tool("read"),
+            Block::new("a", "assistant", "Hi"),
+        ];
+        let key = rows_key(&shared(&blocks), 0);
+        assert_eq!(rows_key(&shared(&blocks.clone()), 0), key);
+        let mut streamed = blocks.clone();
+        streamed[2].text = Some("Hi there".into());
+        assert_ne!(rows_key(&shared(&streamed), 0), key);
+        let mut rekinded = blocks.clone();
+        if let Some(tool) = rekinded[1].tool.as_mut().and_then(|t| t.as_object_mut()) {
+            tool.insert("kind".into(), serde_json::json!("edit"));
+        }
+        assert_ne!(rows_key(&shared(&rekinded), 0), key);
+        let mut finished = blocks.clone();
+        finished[0].duration_ms = Some(10);
+        assert_ne!(rows_key(&shared(&finished), 0), key);
+        assert_ne!(rows_key(&shared(&blocks), 1), key);
+    }
+}

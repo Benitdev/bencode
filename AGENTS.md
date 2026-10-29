@@ -61,7 +61,7 @@ schema, transcript block roles, the checkpoint manifest format, and
   (its `NOTICE` says what changed).
 - `src/app.rs`: `BenCodeApp`, the app's state; `src/app/`: its logic by
   concern, no rendering. `src/ui/`: every view. The rest of `src/` is
-  subsystems (git, db, remote, browser, pty host, monos, …).
+  subsystems (git, db, remote, browser, pty host, bots, …).
 - `docs/code-map.md` has the file-by-file tables.
 
 ## 4. Architecture
@@ -78,7 +78,7 @@ uncached under `WindowRoot`, beside `RunnerLayer`.
 
 The window's parts are **regions**, each a cached view of its own:
 `Titlebar`, `Rail` (the navigator), `CompactRail`, `Inspector`,
-`FilePane`, `Terminal`, `Surface`, `Mono`, and one per chat pane, keyed
+`FilePane`, `Terminal`, `Surface`, `Bot`, and one per chat pane, keyed
 by its thread (`Regions::pane_element`; `Region::Chat` names them all). A
 region renders through the app's functions (`render_region`,
 `render_session_pane`) with the app's context, so listeners and state
@@ -108,11 +108,11 @@ work as before. What GPUI does, and why regions are shaped so
 observes the app): use it for anything that may show in more than one
 place. A change only some regions show redraws those and does not notify
 the app: `redraw_regions(&[Region::…])`, `redraw_thread(id)` (its pane or
-the Mono; nothing off screen), `redraw_composer()`, or a model's own
+the Bot; nothing off screen), `redraw_composer()`, or a model's own
 notify. A view a region draws (an input, an editor, a terminal, a
-scrollbar) redraws only that region. The floating Mono chat follows the
+scrollbar) redraws only that region. The floating Bot chat follows the
 app's notifies, so a path that skips the app pokes it
-(`mono_float_window`).
+(`bot_float_window`).
 
 **Busy marks** (`ui/marks.rs`): spinners, shimmers, pulses and mascots are
 built by `marks::mark(build, cx)`. In a region they lay out as usual and
@@ -150,7 +150,7 @@ stay in view while it shows. The focused thread's usage sits at the
 navigator's foot beside Settings (on the icon rail while it is
 collapsed); the title bar carries the browser and terminal toggles and
 the inspector's. A `Surface` (Inbox, Notes, Automations, Settings) or
-a Mono in view replaces everything right of the navigator. The chat is
+a Bot in view replaces everything right of the navigator. The chat is
 always shown; files, reviews, Changes and commits open as tabs beside it
 through `open_pane_tab(PaneTab, pin, cx)` or `open_file_in_editor` (a
 click opens a preview tab, a double click keeps it). A finished turn that
@@ -225,8 +225,8 @@ BenCode's code, changed like the app's.
   view they are in every frame; a one-shot transition is fine. Anything
   that loops while agents run is a busy mark (`ui/spinner.rs`,
   `ui/marks.rs`), stepped by the app's clock (`start_clock`) on the mark
-  layer. Idle Mono mascots wake the clock only while drawn
-  (`idle_mascot_wake`).
+  layer. Bots' figures that move at rest wake the clock only while drawn
+  (`idle_figure_wake`).
 - **Never block the UI thread** (disk, git, SQLite) and **never do IO in
   render**. SQLite goes through `db_then(cx, job, land)` / `db_write`.
   Blocking work goes on `cx.background_executor().spawn(..)` and lands
@@ -258,20 +258,32 @@ BenCode's code, changed like the app's.
   (Keychain copies, switched by writing one back; tokens to `security -i`
   on stdin, never argv); its usage token is never refreshed by BenCode.
 
-**Monos** (`src/monos.rs`, `src/monos/`, `src/app/monos.rs`)
-- A Mono's conversation is a session row but never a tab or a project;
-  anything that opens a tab calls `leave_mono_view` first. It runs in the
+**Bots** (`src/bots.rs`, `src/bots/`, `src/app/bots.rs`): MonoCode's
+Monos under BenCode's own name, look and words
+- What was saved as a Mono keeps its names on disk: the roster's keys in
+  `settings.json` (`monos`, `openMono`, … through `#[serde(rename)]`), the
+  data folder (`monos/<id>/`), block extras (`monoHabit`,
+  `monoSessionCompletion`, `monoSpawnedSessions`) and `mono-completion-`
+  block ids. Code and words say bot; stored names never change.
+- A bot's conversation is a session row but never a tab or a project;
+  anything that opens a tab calls `leave_bot_view` first. It runs in the
   home folder: no checkpoints, no review card.
-- Its chat is laid out by `layout_turns(.., mono)`; a property those pure
+- Its chat is laid out by `layout_turns(.., bot)`; a property those pure
   functions read goes into `LayoutKey::new`.
 - Its soul and `<memory>` block go ahead of a message only when the
   provider session lacks that version (`plan_context`), recorded when the
   turn ends. Its files live in the data folder (`monos/<id>/`); every save
   names the hash it was made over; memory edits go through
-  `monos/memory.rs`.
+  `bots/memory.rs`.
+- Its look is a figure (`bots/figure.rs`, pure; drawn by `ui/figure.rs`),
+  never a project mascot; its mood (working, needs you, done, failed,
+  asleep) comes from `bot_look`. A figure that moves is a busy mark.
 - Its settings dialog is a `bencode-ui` layer: what opens inside is raised, never
-  `deferred`. The floating chat is a second window (`ui/mono_float/`) that
-  owns no conversation state and binds the commands it answers.
+  `deferred`. The floating chat is a second window (`ui/bot_float/`) that
+  owns no conversation state and binds the commands it answers. The
+  summon shortcut (`app/summon.rs`, `hotkey.rs`) is Carbon's and needs no
+  Accessibility grant; nothing global is registered in a bench or
+  snapshot run.
 
 **Machines** (`src/remote/`, `crates/bencode-host`)
 - A path on a machine is `remote://<machine>/<path>`; anything taking a

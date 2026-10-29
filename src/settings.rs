@@ -170,30 +170,44 @@ pub struct AppSettings {
     pub provider_accounts: crate::harness::accounts::StoredAccounts,
     /// MonoCode `monocode.providerAccountSelections.v1`.
     pub provider_account_selections: crate::harness::accounts::StoredSelections,
-    /// MonoCode `monocode:mono-roster`: the Monos, in rail order.
-    pub monos: Vec<crate::monos::Mono>,
-    /// The floating Mono chat's width and height as last left, before the
+    /// MonoCode `monocode:mono-roster`: the Bots, in rail order. Bots were
+    /// Bots until BenCode named them its own, so their keys keep the old
+    /// name and the settings written before still read.
+    #[serde(rename = "monos")]
+    pub bots: Vec<crate::bots::Bot>,
+    /// The floating Bot chat's width and height as last left, before the
     /// interface scale; `None` is the default. BenCode's own.
-    pub mono_float_size: Option<[f32; 2]>,
-    /// MonoCode `monocode.monosEnabled` switched off: no Monos on the rail.
+    #[serde(rename = "monoFloatSize")]
+    pub bot_float_size: Option<[f32; 2]>,
+    /// MonoCode `monocode.monosEnabled` switched off: no Bots on the rail.
     /// On by default.
-    pub monos_off: bool,
-    /// MonoCode `monocode.railMonosPinned`: each Mono at the top of the
+    #[serde(rename = "monosOff")]
+    pub bots_off: bool,
+    /// MonoCode `monocode.railMonosPinned`: each Bot at the top of the
     /// icon rail, above a divider. Off by default.
-    pub rail_monos_pinned: bool,
-    /// The navigator lists the Monos as rows; folded (the default) they
+    #[serde(rename = "railMonosPinned")]
+    pub rail_bots_pinned: bool,
+    /// The navigator lists the Bots as rows; folded (the default) they
     /// are faces in their section's header. BenCode's own.
-    pub navigator_monos_expanded: bool,
-    /// MonoCode `monocode.monoMenuBarIcon` switched off: no Monos icon in
+    #[serde(rename = "navigatorMonosExpanded")]
+    pub navigator_bots_expanded: bool,
+    /// MonoCode `monocode.monoMenuBarIcon` switched off: no Bots icon in
     /// the macOS menu bar. On by default.
-    pub mono_menu_bar_off: bool,
-    /// MonoCode `saveOpenMono`: the Mono in view when BenCode last closed,
+    #[serde(rename = "monoMenuBarOff")]
+    pub bot_menu_bar_off: bool,
+    /// MonoCode `saveOpenMono`: the Bot in view when BenCode last closed,
     /// opened again at launch.
-    pub open_mono: Option<String>,
+    #[serde(rename = "openMono")]
+    pub open_bot: Option<String>,
     /// MonoCode `MonoSidebar`'s `rememberedWidth`: the Overview's width
     /// before the interface scale; `None` is the default. MonoCode keeps it
     /// for the launch only.
-    pub mono_overview_width: Option<f32>,
+    #[serde(rename = "monoOverviewWidth")]
+    pub bot_overview_width: Option<f32>,
+    /// The shortcut that summons a bot from any app (`app/summon.rs`):
+    /// `None` is ⌥Space, `"off"` none. BenCode's own.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summon_key: Option<String>,
     /// Settings › Connections: the machines agents run on (MonoCode keeps
     /// them in `remote-machines.json`, with a device token BenCode has no
     /// need of: SSH signs in).
@@ -377,27 +391,28 @@ mod tests {
                 [("claude".to_string(), "account-1".to_string())].into(),
             )]
             .into(),
-            monos: vec![crate::monos::Mono {
+            bots: vec![crate::bots::Bot {
                 id: "mono-1".into(),
                 session_id: Some("s9".into()),
                 name: Some("Ada".into()),
                 mascot: "crab".into(),
                 color_index: 3,
                 projects: vec!["/repo".into()],
-                handed: Some(crate::monos::Handed {
+                handed: Some(crate::bots::Handed {
                     provider: Some("p1".into()),
                     context_hash: "abc".into(),
                     memory_hash: "def".into(),
                 }),
                 ..Default::default()
             }],
-            mono_float_size: Some([480.0, 620.0]),
-            monos_off: true,
-            rail_monos_pinned: true,
-            navigator_monos_expanded: true,
-            mono_menu_bar_off: true,
-            open_mono: Some("mono-1".into()),
-            mono_overview_width: Some(520.0),
+            bot_float_size: Some([480.0, 620.0]),
+            bots_off: true,
+            rail_bots_pinned: true,
+            navigator_bots_expanded: true,
+            bot_menu_bar_off: true,
+            open_bot: Some("mono-1".into()),
+            bot_overview_width: Some(520.0),
+            summon_key: Some("ctrl-alt-space".into()),
             remote_machines: vec![crate::remote::Machine {
                 id: "3f2a91bc-0d1e-77aa".into(),
                 name: "Mac mini".into(),
@@ -416,6 +431,31 @@ mod tests {
         };
         save_to(&dir, &settings).unwrap();
         assert_eq!(load_from(&dir), settings);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn bots_keep_the_keys_monos_were_saved_under() {
+        let dir = temp_dir("bots");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join(FILE_NAME),
+            r#"{"monos":[{"id":"mono-1","mascot":"crab","colorIndex":2,"projects":[]}],
+                "openMono":"mono-1","monosOff":true,"monoMenuBarOff":true}"#,
+        )
+        .unwrap();
+        let loaded = load_from(&dir);
+        assert_eq!(loaded.bots[0].id, "mono-1");
+        assert_eq!(loaded.open_bot.as_deref(), Some("mono-1"));
+        assert!(loaded.bots_off && loaded.bot_menu_bar_off);
+        assert!(loaded.extra.is_empty(), "{:?}", loaded.extra);
+        save_to(&dir, &loaded).unwrap();
+        let text = std::fs::read_to_string(dir.join(FILE_NAME)).unwrap();
+        assert!(
+            text.contains("\"monos\"") && text.contains("\"openMono\""),
+            "{text}"
+        );
+        assert!(!text.contains("\"bots\""), "{text}");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

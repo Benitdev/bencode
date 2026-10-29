@@ -82,8 +82,8 @@ impl BenCodeApp {
 
     /// Whether `session_id`'s last message can be edited and resent now.
     pub fn can_edit_last_turn(&self, session_id: &str) -> bool {
-        // MonoCode `SessionPane`: in a Mono's chat what was said stays said.
-        if self.is_mono_session(session_id) {
+        // MonoCode `SessionPane`: in a Bot's chat what was said stays said.
+        if self.is_bot_session(session_id) {
             return false;
         }
         self.sessions

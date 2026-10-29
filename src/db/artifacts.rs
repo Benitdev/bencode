@@ -1,4 +1,4 @@
-//! A Mono's artifacts, ported from MonoCode's `src-tauri/src/artifacts.rs`:
+//! A Bot's artifacts, ported from MonoCode's `src-tauri/src/artifacts.rs`:
 //! documents (Markdown) and visuals (a self-contained HTML page) kept in the
 //! `notes` table as `content_kind = 'artifact'`, apart from the user's notes.
 //! A chat refers to one by a card on the turn that wrote it

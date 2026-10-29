@@ -12,13 +12,13 @@ use serde_json::{Value, json};
 
 use super::server::MAX_REQUEST;
 
-const USAGE: &str = r#"BenCode app access — for a Mono's own conversation and its habits' runs.
+const USAGE: &str = r#"BenCode app access — for a bot's own conversation and its habits' runs.
 
 Usage: {cli} ACTION [--json JSON | --input FILE|-] [--request-id ID]
 
-A Mono works on several projects: add "project":"<path or name>" to the
+A bot works on several projects: add "project":"<path or name>" to the
 sessions.*, worktrees.* and folders.* actions to choose which one. It may be
-left out when the Mono has a single project.
+left out when the bot has a single project.
 
 Actions:
   models.list    {}  Available providers, models, settings and permission modes.
@@ -32,7 +32,7 @@ Actions:
                   Submit a follow-up to an idle session in this project.
                   A busy session is rejected. Reuse --request-id on retries.
                   Optional notifyOnComplete:true asks for a completion report
-                  in the calling Mono's chat. It waits until that Mono is idle.
+                  in the calling bot's chat. It waits until that bot is idle.
   sessions.draft {"sessionId":"...","prompt":"..."}
                   Save an unsent draft in an idle project session. Existing
                   drafts are preserved; send or remove one in BenCode first.
@@ -43,16 +43,16 @@ Actions:
                   Start a session in the background with the prompt. Set
                   draft:true to save the prompt unsent; no agent turn runs.
                   Otherwise the turn is submitted.
-                  Submitted sessions notify the calling Mono by default when
-                  this turn completes, fails or is cancelled. The Mono reviews
+                  Submitted sessions notify the calling bot by default when
+                  this turn completes, fails or is cancelled. The bot reviews
                   it and reports back once idle. Set notifyOnComplete:false
                   when the user asks not to receive a report. Drafts do not
                   notify; notifyOnComplete:true cannot be combined with draft:true.
-                  Sessions monitored during the same Mono turn form one group:
+                  Sessions monitored during the same bot turn form one group:
                   their results arrive together after every session stops.
-                  The Mono reviews the whole group and gives one combined report.
+                  The bot reviews the whole group and gives one combined report.
                   Rejected launches or follow-ups return a CLI error without
-                  a later completion report. When a Mono successfully stops,
+                  a later completion report. When a bot successfully stops,
                   archives or deletes a monitored session, its pending report
                   for that session is dismissed; acknowledge the action in
                   the current reply. Other sessions' reports are kept.
@@ -79,7 +79,7 @@ Actions:
                   saved conversation. Worktrees are kept.
                   Reuse --request-id on retries.
                   stop, archive and delete cannot target the calling session,
-                  Mono chats, habit runs or orchestration workers. Sessions
+                  bot chats, habit runs or orchestration workers. Sessions
                   must belong to the chosen project.
   worktrees.list {}  Working copies in this project, with paths and branches.
   worktrees.create {"branch":"feature/name","base":"HEAD","existing":false}
@@ -98,7 +98,7 @@ Actions:
                   to edit an existing note; title and tags are also optional.
                   Omitted fields stay unchanged. Reuse --request-id on retries.
   artifacts.list {"kind":"document","limit":30,"offset":0}
-                  Mono or habit only. Saved artifact titles, newest first.
+                  Bot or habit only. Saved artifact titles, newest first.
   artifacts.read {"id":"..."}  Full content of one artifact.
   artifacts.write {"kind":"document","title":"PR review",
                    "summary":"Merge queue and blockers",
@@ -110,13 +110,13 @@ Actions:
                   repeat the body in chat. Returns metadata only. To revise,
                   pass {"id":"...","kind":"...","body":"<updated content>"};
                   an omitted title stays unchanged. Reuse --request-id on retries.
-  soul.read      {}  Mono's own conversation only. Current SOUL.md text and hash.
+  soul.read      {}  The bot's own conversation only. Current SOUL.md text and hash.
   soul.update    {"text":"<complete Markdown>","expectedHash":"<hash from soul.read>"}
                   Update your standing instructions only when the user asks.
                   Preserve the other instructions. If the file changed since
                   soul.read, read it again and reapply the requested changes.
-                  Habit runs and other sessions cannot change a Mono's soul.
-  memory.read    {"topic":"releases"}  Mono only. Without topic:
+                  Habit runs and other sessions cannot change a bot's soul.
+  memory.read    {"topic":"releases"}  Bot only. Without topic:
                   MEMORY.md, how much of it loads, and the topic names.
   memory.search  {"query":"release tags","since":"7d"}
                   Entries across MEMORY.md, topic notes and the archive that
@@ -130,7 +130,7 @@ Actions:
                   Strike the one entry containing find through and add fact.
   memory.remove  {"find":"text of the entry","topic":"..."}
                   Delete the one entry containing find, for a wrong entry.
-  habits.list    {}  Mono only. Your habits: what each does, when it runs
+  habits.list    {}  Bot only. Your habits: what each does, when it runs
                   next, and how its last run went.
   habits.add     {"name":"Morning CI check","instructions":"...",
                   "schedule":{"kind":"weekdays","time":"09:00"}}
@@ -143,7 +143,7 @@ Actions:
                   "schedule":{...},"enabled":false}  Change or pause one.
   habits.run     {"id":"..."}  Run one within a minute, to try it out.
   habits.remove  {"id":"..."}
-  board.list     {}  Mono only. Your board: each task's id, title, project,
+  board.list     {}  Bot only. Your board: each task's id, title, project,
                   column (todo, running, review, done) and session.
   board.add      {"title":"Fix the login redirect","prompt":"...",
                   "project":"..."}
@@ -161,7 +161,7 @@ Actions:
                   done:false to reopen it. title changes it; prompt only
                   before the task has started.
   board.remove   {"id":"..."}
-  chat.card      Mono or habit only. Post a card to the Mono's chat:
+  chat.card      Bot or habit only. Post a card to the bot's chat:
                   {"type":"pr","repo":"owner/repo","number":123,"note":"..."}
                   {"type":"session","sessionId":"...","note":"..."}
                   {"type":"choices","options":["First choice","Second choice"]}
@@ -202,7 +202,7 @@ pub fn run(args: Vec<String>) -> i32 {
     else {
         println!(
             "{}",
-            json!({ "ok": false, "error": "No BenCode app connection. Run this from a Mono's turn in BenCode." })
+            json!({ "ok": false, "error": "No BenCode app connection. Run this from a bot's turn in BenCode." })
         );
         return 1;
     };

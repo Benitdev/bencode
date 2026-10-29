@@ -48,9 +48,9 @@ pub fn markdown(
     select: SegCtx,
     cx: &Context<BenCodeApp>,
 ) -> AnyElement {
-    // A Mono's reply that is only a reaction (MonoCode `monoReaction`)
+    // A Bot's reply that is only a reaction (MonoCode `monoReaction`)
     // reads as its emoji, not as the tag that carries it.
-    if let Some(emoji) = crate::monos::mono_reaction(text) {
+    if let Some(emoji) = crate::bots::bot_reaction(text) {
         return div()
             .text_size(px(24.0))
             .line_height(px(32.0))
@@ -168,7 +168,7 @@ fn copy_button(
                     this.redraw_regions(
                         &[
                             crate::ui::region::Region::Chat,
-                            crate::ui::region::Region::Mono,
+                            crate::ui::region::Region::Bot,
                         ],
                         cx,
                     );
@@ -181,7 +181,7 @@ fn copy_button(
             this.redraw_regions(
                 &[
                     crate::ui::region::Region::Chat,
-                    crate::ui::region::Region::Mono,
+                    crate::ui::region::Region::Bot,
                 ],
                 cx,
             );
@@ -277,18 +277,18 @@ impl BenCodeApp {
             chips.is_none() && !text.contains('\n') && text.chars().count() <= CHARS_PER_LINE;
         let group = SharedString::from(format!("user-msg-{key}"));
         let accent = crate::ui::appearance::user_accent(cx);
-        // A Mono's reaction sits on the message it answers (MonoCode
+        // A Bot's reaction sits on the message it answers (MonoCode
         // `MonoReactionBadge`).
         let turn = self
             .transcripts
             .get(&session.id)
             .and_then(|view| view.turns.iter().find(|turn| turn.user == Some(ix)));
-        let mono_chat = turn.is_some_and(|turn| turn.mono);
+        let bot_chat = turn.is_some_and(|turn| turn.bot);
         let reaction = turn.and_then(|turn| turn.reaction.clone());
-        let badge = reaction.map(|emoji| super::mono::reaction_badge(&emoji, cx));
-        // In a Mono's chat a few emoji stand alone, like a reaction: no
+        let badge = reaction.map(|emoji| super::bot::reaction_badge(&emoji, cx));
+        // In a Bot's chat a few emoji stand alone, like a reaction: no
         // bubble, time or actions.
-        if mono_chat && chips.is_none() && note.is_none() && crate::monos::is_emoji_only(&text) {
+        if bot_chat && chips.is_none() && note.is_none() && crate::bots::is_emoji_only(&text) {
             return div()
                 .w_full()
                 .flex()
@@ -465,7 +465,7 @@ impl BenCodeApp {
                 this.redraw_regions(
                     &[
                         crate::ui::region::Region::Chat,
-                        crate::ui::region::Region::Mono,
+                        crate::ui::region::Region::Bot,
                     ],
                     cx,
                 );
@@ -684,9 +684,9 @@ impl BenCodeApp {
                                 ))
                         }
                     })
-                    // A Mono's turn keeps copy, save as note and the time
+                    // A Bot's turn keeps copy, save as note and the time
                     // (MonoCode `hideTurnMetrics`, and no handoff).
-                    .when(!turn.mono, |el| {
+                    .when(!turn.bot, |el| {
                         el.children(self.handoff_button(session, turn, cx))
                             .children(self.turn_metrics_badge(session, turn, cx))
                     }),

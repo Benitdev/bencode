@@ -36,7 +36,7 @@ impl BenCodeApp {
         cx: &mut Context<Self>,
     ) {
         self.surface_shown_session(None, cx);
-        if self.leave_mono_view(cx) {
+        if self.leave_bot_view(cx) {
             self.sync_selection(cx);
         }
         if self.surface.is_some_and(|s| s != Surface::Settings) {

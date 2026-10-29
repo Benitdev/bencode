@@ -93,7 +93,7 @@ fn meter_text(used: i64, window: i64) -> (f32, String, String) {
 
 impl BenCodeApp {
     /// The ring, its hover card, and the pinned card with "Compact now".
-    /// Without `compact` (a Mono's chat, which rotates its threads itself)
+    /// Without `compact` (a Bot's chat, which rotates its threads itself)
     /// there is nothing to pin.
     pub(super) fn context_meter(
         &self,

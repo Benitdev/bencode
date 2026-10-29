@@ -22,7 +22,7 @@ use crate::ui::scale::px;
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// MonoCode's `/monocode.png` beside "Updated to" (and in the floating
-/// chat when its Mono is gone): BenCode's own icon.
+/// chat when its Bot is gone): BenCode's own icon.
 pub(crate) static APP_ICON: LazyLock<Arc<Image>> = LazyLock::new(|| {
     Arc::new(Image::from_bytes(
         ImageFormat::Png,

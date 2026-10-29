@@ -17,8 +17,8 @@ use crate::ui::scale::px;
 use super::handoff::{HandoffCard, HandoffMeta, handoff_mini_card};
 use super::note_card::{NoteCard, note_mini_card};
 use crate::app::BenCodeApp;
+use crate::bots::Bot;
 use crate::db::{Block, SessionRow};
-use crate::monos::Mono;
 use crate::ui::attachment_chip::OnRemove;
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
@@ -27,6 +27,8 @@ pub enum ComposerCard {
     Note(NoteCard),
     Handoff(HandoffCard),
     Inbox(super::inbox_card::InboxCard),
+    /// A thread a bot is asked about (BenCode's own).
+    Thread(super::thread_card::ThreadCard),
 }
 
 impl ComposerCard {
@@ -36,6 +38,7 @@ impl ComposerCard {
             Self::Note(card) => super::note_card::compose_note_message(Some(card), text),
             Self::Handoff(card) => card.agent_prompt(text),
             Self::Inbox(card) => super::inbox_card::compose_inbox_message(card, text),
+            Self::Thread(card) => card.agent_prompt(text),
         }
     }
 
@@ -45,6 +48,7 @@ impl ComposerCard {
             Self::Note(_) => "Add a message, or send…",
             Self::Handoff(_) => "Add context, or send to continue…",
             Self::Inbox(_) => "Add a note, or send to start…",
+            Self::Thread(_) => "Ask about this thread…",
         }
     }
 
@@ -57,6 +61,9 @@ impl ComposerCard {
             Self::Handoff(card) => block.second_opinion = Some(card.turn_meta()),
             // MonoCode sends the issue in the message itself.
             Self::Inbox(_) => {}
+            Self::Thread(card) => {
+                block.extra.insert("threadCard".into(), card.meta());
+            }
         }
     }
 
@@ -67,6 +74,7 @@ impl ComposerCard {
                 handoff_mini_card(&HandoffMeta::from(card), Some(on_dismiss), cx)
             }
             Self::Inbox(card) => super::inbox_card::inbox_mini_card(card, Some(on_dismiss), cx),
+            Self::Thread(card) => super::thread_card::thread_mini_card(card, Some(on_dismiss), cx),
         }
     }
 }
@@ -77,6 +85,9 @@ pub fn turn_cards(block: &Block, cx: &Context<BenCodeApp>) -> Option<AnyElement>
         return Some(note_mini_card(&meta, true, None, cx));
     }
     if let Some(card) = crate::ui::transcript::git_actions::git_turn_card(block, cx) {
+        return Some(card);
+    }
+    if let Some(card) = super::thread_card::turn_card(block, cx) {
         return Some(card);
     }
     HandoffMeta::from_block(block).map(|meta| handoff_mini_card(&meta, None, cx))
@@ -172,7 +183,7 @@ impl BenCodeApp {
             configure(session);
         }
         self.persist_session(&id);
-        self.leave_mono_view(cx);
+        self.leave_bot_view(cx);
         self.tabs.open(&id);
         self.sync_selection(cx);
         self.thread_mut(&id).composer_card = Some(card);
@@ -199,17 +210,24 @@ impl BenCodeApp {
 
     /// The placeholder follows the focused thread's card.
     pub fn sync_prompt_placeholder(&mut self, cx: &mut Context<Self>) {
-        let mono = self
+        let bot = self
             .selected_session_id
             .as_deref()
-            .and_then(|id| self.mono_for_session(id));
+            .and_then(|id| self.bot_for_session(id));
         let placeholder: SharedString = match self.selected_session_id.as_deref() {
-            // MonoCode `MonoComposer`: "Message {name}".
-            _ if mono.is_some() => format!(
-                "Message {}",
-                mono.map(Mono::display_name).unwrap_or_default()
-            )
-            .into(),
+            // MonoCode `MonoComposer`: "Message {name}"; with a thread to
+            // ask about, the question.
+            Some(id) if bot.is_some() => {
+                let name = bot.map(Bot::display_name).unwrap_or_default();
+                let asking = self
+                    .thread(id)
+                    .is_some_and(|t| matches!(t.composer_card, Some(ComposerCard::Thread(_))));
+                if asking {
+                    format!("Ask {name} about this thread…").into()
+                } else {
+                    format!("Message {name}").into()
+                }
+            }
             Some(id) if self.worktree_removed(id) => {
                 super::removed_worktree::REMOVED_PLACEHOLDER.into()
             }
@@ -226,7 +244,7 @@ impl BenCodeApp {
     }
 
     /// The focused thread's card above the prompt.
-    pub(super) fn render_composer_card(
+    pub(crate) fn render_composer_card(
         &self,
         session_id: &str,
         cx: &Context<Self>,

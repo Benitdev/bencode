@@ -1,12 +1,12 @@
 //! `bencode app` on the app (MonoCode `App.tsx`'s agent-app host and
 //! `handleAgentApp`): the socket the CLI reaches, the credential each
-//! Mono's turn carries, and every call, checked for who sent it and then
+//! Bot's turn carries, and every call, checked for who sent it and then
 //! handed to its domain: `artifacts.rs`, `app_cli/memory.rs` (soul and
-//! memory), `app_cli/notes.rs`, `habits.rs`, `mono_board.rs`,
-//! `mono_sessions.rs` (sessions, worktrees, folders) and `mono_cards.rs`.
+//! memory), `app_cli/notes.rs`, `habits.rs`, `bot_board.rs` and
+//! `bot_sessions/` (sessions, worktrees, folders); chat cards here.
 //!
 //! A token belongs to one conversation and works only while a turn of it
-//! runs (MonoCode `APP_TURN_INACTIVE`): a Mono's own chat, or a run of one
+//! runs (MonoCode `APP_TURN_INACTIVE`): a Bot's own chat, or a run of one
 //! of its habits.
 
 use std::collections::HashMap;
@@ -21,7 +21,7 @@ use crate::app_cli::server::{self, AppCall};
 use bencode_core::harness::{AppAccess, HarnessKind, catalog};
 
 /// MonoCode `APP_TURN_INACTIVE`.
-const TURN_INACTIVE: &str = "BenCode app access is inactive: it works only during a Mono's \
+const TURN_INACTIVE: &str = "BenCode app access is inactive: it works only during a bot's \
     running turn. Retrying this request now will not enable access.";
 
 pub struct AppAccessState {
@@ -69,17 +69,17 @@ impl AppAccessState {
     }
 }
 
-/// Who a call comes from: the Mono it works for, and whether it is that
-/// Mono's own conversation (else a habit's run).
+/// Who a call comes from: the Bot it works for, and whether it is that
+/// Bot's own conversation (else a habit's run).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Caller {
     pub session: String,
-    pub mono: String,
+    pub bot: String,
     pub own: bool,
 }
 
 impl BenCodeApp {
-    /// What a turn of `session_id` carries for `bencode app`: a Mono's own
+    /// What a turn of `session_id` carries for `bencode app`: a Bot's own
     /// conversation or a habit's run (MonoCode: "App access is always
     /// enabled in this thread"), on this computer.
     pub(crate) fn app_access_for(&mut self, session_id: &str, cwd: &str) -> Option<AppAccess> {
@@ -107,19 +107,19 @@ impl BenCodeApp {
         self.app_access.socket.is_some() && self.app_caller(session_id).is_some()
     }
 
-    /// MonoCode `monoOf`: the Mono a session works for.
+    /// MonoCode `monoOf`: the Bot a session works for.
     pub(crate) fn app_caller(&self, session_id: &str) -> Option<Caller> {
-        if let Some(mono) = self.mono_for_session(session_id) {
+        if let Some(bot) = self.bot_for_session(session_id) {
             return Some(Caller {
                 session: session_id.to_string(),
-                mono: mono.id.clone(),
+                bot: bot.id.clone(),
                 own: true,
             });
         }
-        let mono = self.habit_run_mono(session_id)?;
+        let bot = self.habit_run_bot(session_id)?;
         Some(Caller {
             session: session_id.to_string(),
-            mono,
+            bot,
             own: false,
         })
     }
@@ -156,30 +156,30 @@ impl BenCodeApp {
         match domain {
             "artifacts" => self.artifact_call(caller.session, call, cx),
             "soul" if !caller.own => {
-                call.fail("Only a Mono's own conversation can manage its soul", true)
+                call.fail("Only a bot's own conversation can manage its soul", true)
             }
-            "soul" | "memory" => self.mono_file_call(caller, &action, input, call, cx),
+            "soul" | "memory" => self.bot_file_call(caller, &action, input, call, cx),
             "notes" => self.notes_call(caller, &action, &input, call, cx),
             "models" => call.answer(models_listing(&self.harnesses)),
             "habits" if !caller.own => {
-                call.fail("Only a Mono's own conversation can manage its habits", true)
+                call.fail("Only a bot's own conversation can manage its habits", true)
             }
             "habits" => self.habits_call(caller, &action, input, call, cx),
             "board" if !caller.own => {
-                call.fail("Only a Mono's own conversation can manage its board", true)
+                call.fail("Only a bot's own conversation can manage its board", true)
             }
             "board" => self.board_call(caller, &action, input, call, cx),
             "sessions" | "worktrees" | "folders" => {
-                self.mono_sessions_call(caller, &action, input, call, cx)
+                self.bot_sessions_call(caller, &action, input, call, cx)
             }
             "chat" => self.chat_card_call(caller, input, call, cx),
             _ => call.fail(format!("Unknown app action: {action}"), true),
         }
     }
 
-    /// `soul.*` and `memory.*`: the Mono's files, off the UI thread; the
+    /// `soul.*` and `memory.*`: the Bot's files, off the UI thread; the
     /// views reload them after a change.
-    fn mono_file_call(
+    fn bot_file_call(
         &mut self,
         caller: Caller,
         action: &str,
@@ -187,8 +187,8 @@ impl BenCodeApp {
         call: AppCall,
         cx: &mut Context<Self>,
     ) {
-        let Some(dir) = crate::app::mono_files::mono_files_dir(&caller.mono) else {
-            call.fail("This Mono's folder is unavailable", true);
+        let Some(dir) = crate::app::bot_files::bot_files_dir(&caller.bot) else {
+            call.fail("This bot's folder is unavailable", true);
             return;
         };
         let action = action.to_string();
@@ -203,7 +203,7 @@ impl BenCodeApp {
                 crate::app_cli::memory::memory(&dir, &action, &input, jiff::Zoned::now())
             }
         });
-        let mono = caller.mono;
+        let bot = caller.bot;
         cx.spawn(async move |this, cx| {
             let result = task.await;
             let ok = result.is_ok();
@@ -214,9 +214,9 @@ impl BenCodeApp {
             if !(ok && writes) {
                 return;
             }
-            let landed = this.update(cx, |this, cx| this.mono_files_changed(&mono, cx));
+            let landed = this.update(cx, |this, cx| this.bot_files_changed(&bot, cx));
             if let Err(err) = landed {
-                log::debug!("Mono files changed after app drop: {err:#}");
+                log::debug!("bot files changed after app drop: {err:#}");
             }
         })
         .detach();
@@ -239,14 +239,14 @@ impl BenCodeApp {
             }
         };
         let writes = matches!(parsed, crate::app_cli::notes::Call::Write(_));
-        // A Mono works from the home folder, no one project.
+        // A Bot works from the home folder, no one project.
         let cwd = self
             .sessions
             .iter()
             .find(|s| s.id == caller.session)
             .map(|s| s.work_dir().to_string())
             .filter(|cwd| {
-                !self.is_mono_session(&caller.session) && crate::app::notes::is_project_folder(cwd)
+                !self.is_bot_session(&caller.session) && crate::app::notes::is_project_folder(cwd)
             });
         let request_id = call.request.request_id.clone();
         self.db_then(
@@ -325,6 +325,6 @@ impl BenCodeApp {
         call: AppCall,
         _cx: &mut Context<Self>,
     ) {
-        call.fail("Only a Mono can put cards in its chat", true);
+        call.fail("Only a bot can put cards in its chat", true);
     }
 }

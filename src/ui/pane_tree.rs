@@ -143,8 +143,8 @@ impl BenCodeApp {
             .into_any_element();
         }
         // A thread's card is read the first time its pane is drawn (a
-        // Mono's turns keep no checkpoints).
-        if !self.checkpoints.reviews.contains_key(session_id) && !self.is_mono_session(session_id) {
+        // Bot's turns keep no checkpoints).
+        if !self.checkpoints.reviews.contains_key(session_id) && !self.is_bot_session(session_id) {
             self.load_session_review(session_id, cx);
         }
         // The git pill's first read, once the thread is idle.
@@ -157,11 +157,11 @@ impl BenCodeApp {
         view.find_block = find_block;
         view.find_count = find_count;
         let list_state = view.list.clone();
-        let mono = self.mono_for_session(session_id).cloned();
+        let bot = self.bot_for_session(session_id).cloned();
         // Needs fewer than two prompts to be absent, so an empty thread has
-        // none; a Mono's endless chat has none either (MonoCode: one mark
+        // none; a Bot's endless chat has none either (MonoCode: one mark
         // per message would crowd it).
-        let outline = match mono {
+        let outline = match bot {
             Some(_) => None,
             None => self.render_prompt_outline(session_id, cx),
         };
@@ -176,8 +176,8 @@ impl BenCodeApp {
             .as_ref()
             .filter(|target| target.over_id == session_id)
             .map(|target| target.edge);
-        let composer = if mono.is_some() {
-            self.render_mono_composer(session, cx)
+        let composer = if bot.is_some() {
+            self.render_bot_composer(session, cx)
         } else if is_focused {
             self.render_composer(Some(session), cx).into_any_element()
         } else {
@@ -200,15 +200,15 @@ impl BenCodeApp {
             .when(in_split, |el| {
                 el.child(self.render_pane_header(session, is_focused, cx))
             });
-        let frame = if let Some(mono) = mono.as_ref().filter(|_| empty) {
-            // MonoCode: a Mono's input always sits at the bottom, like a
+        let frame = if let Some(bot) = bot.as_ref().filter(|_| empty) {
+            // MonoCode: a Bot's input always sits at the bottom, like a
             // chat, under its greeting.
             frame
                 .child(
                     div()
                         .flex_1()
                         .min_h_0()
-                        .child(self.render_mono_greeting(mono, cx)),
+                        .child(self.render_bot_greeting(bot, cx)),
                 )
                 .child(composer)
         } else if empty {
@@ -231,8 +231,8 @@ impl BenCodeApp {
     /// the part under it (`--chat-background-left` / `-top` / `-width` /
     /// `-height`).
     fn render_chat_background(&self, session_id: &str, session_empty: bool) -> Option<AnyElement> {
-        // A Mono's own image covers its chat (MonoCode `monoChatBackground`).
-        let own = self.mono_background_for(session_id);
+        // A Bot's own image covers its chat (MonoCode `monoChatBackground`).
+        let own = self.bot_background_for(session_id);
         let (image, opacity) = own
             .clone()
             .or_else(|| self.chat_background_for(session_empty))?;

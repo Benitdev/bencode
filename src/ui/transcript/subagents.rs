@@ -201,7 +201,7 @@ impl BenCodeApp {
                         this.redraw_regions(
                             &[
                                 crate::ui::region::Region::Chat,
-                                crate::ui::region::Region::Mono,
+                                crate::ui::region::Region::Bot,
                             ],
                             cx,
                         );
@@ -223,7 +223,7 @@ impl BenCodeApp {
             ..trail
         };
         let all: Vec<usize> = (0..step_blocks.len()).collect();
-        let mono = cx.theme().mono_family.clone();
+        let mono_font = cx.theme().mono_family.clone();
         let danger = colors.danger;
         div()
             .min_w_0()
@@ -238,7 +238,7 @@ impl BenCodeApp {
                     .when_some(report, |el, report| {
                         let body = if failed {
                             div()
-                                .font_family(mono)
+                                .font_family(mono_font)
                                 .text_size(Text::Base.px())
                                 .line_height(px(20.0))
                                 .text_color(danger.opacity(0.8))

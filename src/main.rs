@@ -1,18 +1,19 @@
 mod app;
 mod app_cli;
 mod backlog;
+mod bot_menu_bar;
+mod bots;
 mod browser;
 mod db;
 pub mod external_editor;
 mod git;
 mod github;
 mod github_accounts;
+mod hotkey;
 mod launch;
 mod logging;
 pub mod mcp;
-mod mono_menu_bar;
 mod monocode_import;
-mod monos;
 mod notifications;
 mod project_search;
 mod pty_host;
@@ -46,7 +47,7 @@ fn main() {
     if let Some(code) = browser::run_from_args() {
         std::process::exit(code);
     }
-    // And `bencode app`, which a Mono's agent runs to reach the app.
+    // And `bencode app`, which a Bot's agent runs to reach the app.
     if let Some(code) = app_cli::run_from_args() {
         std::process::exit(code);
     }

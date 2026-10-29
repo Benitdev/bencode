@@ -649,7 +649,7 @@ async fn run(this: WeakEntity<BenCodeApp>, cx: &mut AsyncWindowContext) -> Resul
         let long = long.as_deref();
         app.sessions
             .iter()
-            .filter(|s| Some(s.id.as_str()) != long && !app.is_mono_session(&s.id))
+            .filter(|s| Some(s.id.as_str()) != long && !app.is_bot_session(&s.id))
             .max_by_key(|s| s.blocks.len())
             .map(|s| s.id.clone())
     })?;

@@ -507,11 +507,11 @@ impl BenCodeApp {
                 return;
             }
             // As `/compact`, the text stays while the thread cannot clear
-            // (a turn runs; a Mono's chat rotates its threads itself).
+            // (a turn runs; a Bot's chat rotates its threads itself).
             Some(mode_commands::Command::Clear) => {
                 if let Some(id) = self.selected_session_id.clone()
                     && !self.is_agent_running_in(&id)
-                    && self.mono_for_session(&id).is_none()
+                    && self.bot_for_session(&id).is_none()
                 {
                     self.prompt_input
                         .update(cx, |input, cx| input.set_text("", cx));
@@ -887,8 +887,8 @@ impl BenCodeApp {
         };
         // MonoCode `applyNotesToTurn`: `@note/slug` brings the note along.
         let agent_prompt = super::notes::apply_notes_to_turn(&agent_prompt, &self.notes.items);
-        // MonoCode `monoTurn`: a Mono reads who it is ahead of the message.
-        let agent_prompt = self.apply_mono_context(session_id, agent_prompt, cx);
+        // MonoCode `monoTurn`: a Bot reads who it is ahead of the message.
+        let agent_prompt = self.apply_bot_context(session_id, agent_prompt, cx);
         self.persist_session(session_id);
         let request = RunRequest {
             prompt: agent_prompt,
@@ -944,7 +944,7 @@ impl BenCodeApp {
         cx: &mut Context<Self>,
     ) {
         let mode = self.session_permission_mode(self.sessions.iter().find(|s| s.id == session_id));
-        // A Mono's turn reaches the app through `bencode app`.
+        // A Bot's turn reaches the app through `bencode app`.
         let app = self
             .sessions
             .iter()
@@ -975,7 +975,7 @@ impl BenCodeApp {
         // machine's checkout is not snapshotted here (MonoCode's remote
         // sessions have no review either).
         if request.purpose == RunPurpose::Turn
-            && !self.is_mono_session(session_id)
+            && !self.is_bot_session(session_id)
             && !self.is_habit_run(session_id)
             && !remote
         {
@@ -1021,7 +1021,8 @@ impl BenCodeApp {
             }
             Err(message) => {
                 log::error!("{message}");
-                self.drop_mono_context(session_id);
+                self.drop_bot_context(session_id);
+                self.note_bot_turn_end(session_id, Some(DoneStatus::Failed));
                 if let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id) {
                     let now = now_ms();
                     push_notice(session, &message, now);
@@ -1099,8 +1100,8 @@ impl BenCodeApp {
                         );
                     }
                     // The floating chat follows the app's notifies.
-                    app.is_mono_session(&session_id)
-                        .then(|| app.mono_float_window())
+                    app.is_bot_session(&session_id)
+                        .then(|| app.bot_float_window())
                         .flatten()
                 });
                 match applied {
@@ -1139,12 +1140,12 @@ impl BenCodeApp {
         event: AgentEvent,
     ) -> Option<PermissionRequest> {
         let focused = self.selected_session_id.as_deref() == Some(session_id);
-        // A Mono works from the home folder, across projects: there is no
+        // A Bot works from the home folder, across projects: there is no
         // one checkout to snapshot, so its turns have no review card. Nor
         // does a turn on a machine.
-        let mono = self.is_mono_session(session_id);
+        let bot = self.is_bot_session(session_id);
         let run = self.current_run(session_id, run_id)?;
-        let tracked = !mono && run.remote.is_none();
+        let tracked = !bot && run.remote.is_none();
         let save = save_due(&event, run.last_saved.elapsed());
         run.answered |= matches!(
             event,
@@ -1248,15 +1249,16 @@ impl BenCodeApp {
             // A turn that ended badly after the provider answered it still
             // reached the provider, context and all.
             let accepted = run.outcome == Some(DoneStatus::Completed) || run.answered;
-            self.record_mono_context(session_id, accepted, cx);
+            self.record_bot_context(session_id, accepted, cx);
             // The provider compacted on its own, mid-turn.
             compacted |= run.compacted.is_some();
         }
         if compacted {
-            self.forget_mono_context(session_id, cx);
+            self.forget_bot_context(session_id, cx);
         }
         if run.purpose == RunPurpose::Turn {
-            self.note_mono_reply(session_id, cx);
+            self.note_bot_reply(session_id, cx);
+            self.note_bot_turn_end(session_id, run.outcome);
             self.announce_turn_finished(session_id, cx);
             self.session_turn_settled(session_id, run.outcome, cx);
         }
@@ -1316,7 +1318,8 @@ impl BenCodeApp {
             self.habit_run_settled(session_id, false, cx);
             return;
         }
-        self.drop_mono_context(session_id);
+        self.drop_bot_context(session_id);
+        self.note_bot_turn_end(session_id, None);
         self.close_automation_run(&run, RunStatus::Cancelled);
         self.session_turn_stopped(session_id, cx);
         if let Some(thread) = self.threads.get_mut(session_id)

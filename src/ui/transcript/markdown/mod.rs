@@ -278,7 +278,7 @@ struct Look {
     shell_bg: Hsla,
     shell_border: Hsla,
     font: Font,
-    mono: Font,
+    mono_font: Font,
 }
 
 impl Look {
@@ -287,7 +287,7 @@ impl Look {
         let fg = theme.colors.fg;
         let (body, strong) = tone.inks();
         let font = window.text_style().font();
-        let mono = Font {
+        let mono_font = Font {
             family: theme.mono_family.clone(),
             ..font.clone()
         };
@@ -305,7 +305,7 @@ impl Look {
             shell_bg: fg.opacity(if fold { 0.04 } else { 0.06 }),
             shell_border: fg.opacity(if fold { 0.08 } else { 0.10 }),
             font,
-            mono,
+            mono_font,
         }
     }
 }
@@ -357,7 +357,7 @@ fn lay_out(inline: &Inline, base: Hsla, italic: bool, fade: f32, look: &Look) ->
             return;
         }
         let mut font = if mix.code {
-            look.mono.clone()
+            look.mono_font.clone()
         } else {
             look.font.clone()
         };
@@ -1008,7 +1008,7 @@ impl Draw<'_> {
                     .min_w_0()
                     .truncate()
                     .when(fence.path.is_some(), |el| {
-                        el.font_family(look.mono.family.clone())
+                        el.font_family(look.mono_font.family.clone())
                     })
                     .when_some(path_link, |el, (path, open)| {
                         let line = fence.start_line;
@@ -1029,7 +1029,7 @@ impl Draw<'_> {
         let ink = syntax.variable;
         let base = TextRun {
             len: 0,
-            font: look.mono.clone(),
+            font: look.mono_font.clone(),
             color: ink,
             background_color: None,
             underline: None,
@@ -1099,7 +1099,7 @@ impl Draw<'_> {
             .pr(px(8.0))
             .when(!fence.line_numbers, |el| el.pl(px(12.0)))
             .overflow_x_scroll()
-            .font_family(look.mono.family.clone())
+            .font_family(look.mono_font.family.clone())
             .text_size(px(CODE_SIZE))
             .line_height(px(CODE_LEADING))
             .text_color(ink)
@@ -1430,7 +1430,7 @@ mod layout_tests {
             chip: gpui::white().opacity(0.08),
             shell_bg: gpui::white().opacity(0.06),
             shell_border: gpui::white().opacity(0.1),
-            mono: Font {
+            mono_font: Font {
                 family: "Mono".into(),
                 ..font.clone()
             },

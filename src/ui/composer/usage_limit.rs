@@ -2,7 +2,7 @@
 //! `usageLimit.ts`): an amber tab on the composer — "Usage limit reached",
 //! when it resets, and Resume (once reset) or Resume at reset, which sends
 //! "Continue from where you left off." on its own once the limit lifts.
-//! A Mono's chat has its own card instead (`MonoUsageLimitNotice`): the
+//! A Bot's chat has its own card instead (`MonoUsageLimitNotice`): the
 //! model and account to keep going on, and the same resume. BenCode's
 //! own: a thread's tab offers another account too, resuming the same
 //! Claude session there or else a new one given a Handoff recap
@@ -218,11 +218,11 @@ impl BenCodeApp {
     }
 
     /// MonoCode `MonoUsageLimitNotice` (`UsageLimitNotice variant="mono"`):
-    /// a card over a Mono's composer, `mx-1.5 mb-2 rounded-lg border
+    /// a card over a Bot's composer, `mx-1.5 mb-2 rounded-lg border
     /// border-amber-400/20 bg-amber-400/6 px-3 py-2.5 text-[12px]`, saying
     /// the conversation is kept, when the limit lifts, and offering another
     /// model, another account and the resume.
-    pub(super) fn render_mono_usage_limit(
+    pub(super) fn render_bot_usage_limit(
         &self,
         session: &SessionRow,
         cx: &Context<Self>,
@@ -246,7 +246,7 @@ impl BenCodeApp {
         // MonoCode `ModelPicker triggerLabel="Choose another model"`.
         let open = self.composer_menus.models_only == Some(ModelsAnchor::UsageLimit);
         let model = super::composer_chip(
-            "mono-limit-model",
+            "bot-limit-model",
             HarnessIcon::new(&session.harness)
                 .size(px(16.0))
                 .into_any_element(),
@@ -377,8 +377,8 @@ impl BenCodeApp {
         account_id: &str,
         cx: &mut Context<Self>,
     ) {
-        if self.is_mono_session(session_id) {
-            self.switch_mono_usage_limit_account(session_id, account_id, cx);
+        if self.is_bot_session(session_id) {
+            self.switch_bot_usage_limit_account(session_id, account_id, cx);
             return;
         }
         let limited = self

@@ -95,7 +95,7 @@ fn blame_card(
     let theme = cx.theme();
     let colors = &theme.colors;
     let fg = colors.fg;
-    let mono = theme.mono_family.clone();
+    let mono_font = theme.mono_family.clone();
     let commit = &blame.commit;
     let uncommitted = commit.is_uncommitted();
     let detail = match &blame.detail {
@@ -218,7 +218,7 @@ fn blame_card(
                 .pt_2()
                 .border_t_1()
                 .border_color(colors.border)
-                .font_family(mono.clone())
+                .font_family(mono_font.clone())
                 .text_size(Text::Sm.px())
                 .children(rows)
                 .when(cut, |el| {

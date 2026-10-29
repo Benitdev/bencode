@@ -106,7 +106,7 @@ fn save_background(dir: &Path, source: &Path) -> Result<PathBuf> {
     save_background_named(dir, source, FILE_STEM)
 }
 
-/// `save_background` under `stem` (a Mono's own, `mono-<id>`).
+/// `save_background` under `stem` (a Bot's own, `mono-<id>`).
 pub(crate) fn save_background_named(dir: &Path, source: &Path, stem: &str) -> Result<PathBuf> {
     let meta = std::fs::metadata(source).with_context(|| source.display().to_string())?;
     if !meta.is_file() {

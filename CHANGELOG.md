@@ -4,6 +4,30 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
+## [Unreleased]
+
+- Monos are Bots now, BenCode's own: the rail, Settings, menus, the menu
+  bar and what a bot is told say bot, and a new bot goes by a name of its
+  own (Pip, Juno, Rook…) until you name it. Your bots, their chats,
+  souls, memories, habits and boards are all kept as they were.
+- Bots wear figures of their own instead of MonoCode's mascots: a body,
+  eyes and gear you pick (or shuffle) in a bot's settings, in its colour,
+  with cheeks that glow. A figure shows its bot's mood: it hops while it
+  works, raises a "!" when it needs you, sparkles for a moment when a turn
+  finishes, smokes after one fails, and sleeps with a "z" until its next
+  habit, the title bar saying when. The menu bar icon is BenCode's `›_`,
+  with a dot while a bot needs you.
+- ⌥Space opens a bot's floating chat over any app, ready to type, and
+  hides it again; pick another shortcut or none in Settings › Bots.
+- Ask Bot About This Thread (⇧⌘I, or Ask in the menu over selected text)
+  opens the bot that works on the thread's project with the thread as a
+  card in its composer: it reads which thread, its latest exchange and
+  what you picked, then your question.
+- A bot's chat lists its projects' threads that wait on you or finished
+  while you were away, in either window: Allow or Deny a command in place,
+  Answer a question, or open the thread; × sets them aside until
+  something new comes.
+
 ## [0.1.38] - 2026-10-29
 
 - The Inbox's rows read at a glance: a line of status, a short key

@@ -46,7 +46,7 @@ struct ProjectCard {
 
 impl BenCodeApp {
     fn rail_card(&self, path: &str, list: &str, draggable: bool, cx: &gpui::App) -> ProjectCard {
-        // No project is highlighted while a view or a Mono is open.
+        // No project is highlighted while a view or a Bot is open.
         let current = same_project_path(path, &self.current_cwd);
         let busy = self
             .runs
@@ -57,7 +57,7 @@ impl BenCodeApp {
             path: path.to_string(),
             list: list.to_string(),
             draggable,
-            selected: self.surface.is_none() && self.monos.view.is_none() && current,
+            selected: self.surface.is_none() && self.bots.view.is_none() && current,
             busy,
             pinned: self
                 .settings
@@ -430,7 +430,7 @@ impl BenCodeApp {
             path: card.path.clone(),
             label: name.clone(),
             color,
-            mascot,
+            mark: super::reorder::RailMark::Mascot(mascot),
             width: self.rail_width() - LIST_INSET,
         };
         let (select_path, menu_path, options_path, pin_path) = (

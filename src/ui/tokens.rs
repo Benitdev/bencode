@@ -2,7 +2,7 @@
 //! changed in one place. Ink is text and icons over the theme's `fg`, Fill
 //! the washes behind rows and tiles, `Text` the type sizes, and `Status` the
 //! one set of colours a session's or task's state is shown in, wherever it
-//! is shown (the sidebar's cards, the rail, a Mono's board and launches).
+//! is shown (the sidebar's cards, the rail, a Bot's board and launches).
 //!
 //! `fg.ink(Ink::Muted)` reads as "muted text"; `fg.opacity(0.45)` does not,
 //! and drifts. Pixel sizes still go through `scale::px`.
@@ -177,9 +177,9 @@ impl Status {
     }
 }
 
-impl From<crate::app::mono_sessions::LaunchedState> for Status {
-    fn from(state: crate::app::mono_sessions::LaunchedState) -> Self {
-        use crate::app::mono_sessions::LaunchedState;
+impl From<crate::app::bot_sessions::LaunchedState> for Status {
+    fn from(state: crate::app::bot_sessions::LaunchedState) -> Self {
+        use crate::app::bot_sessions::LaunchedState;
         match state {
             LaunchedState::Working => Self::Working,
             LaunchedState::Input => Self::Attention,
@@ -219,7 +219,7 @@ mod tests {
 
     #[test]
     fn a_state_has_one_colour_everywhere() {
-        use crate::app::mono_sessions::LaunchedState;
+        use crate::app::bot_sessions::LaunchedState;
         let fg: Hsla = gpui::white();
         assert_eq!(
             Status::from(LaunchedState::Input).color(fg),

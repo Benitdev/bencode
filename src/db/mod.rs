@@ -235,7 +235,7 @@ pub struct SessionRow {
     /// MonoCode's saved orchestration summary when this thread led one.
     #[serde(skip)]
     pub orchestration: Option<OrchestrationSummary>,
-    /// MonoCode `sidebarHidden`: a session a Mono started, kept out of the
+    /// MonoCode `sidebarHidden`: a session a Bot started, kept out of the
     /// project's list. Written only through `set_session_sidebar_hidden`.
     #[serde(skip)]
     pub sidebar_hidden: bool,

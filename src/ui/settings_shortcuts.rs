@@ -174,7 +174,9 @@ fn groups() -> Vec<Group<Entry>> {
                 entry("Explorer", I::Folder, cmd::ShowExplorer),
                 entry("Changes", I::GitBranch, cmd::ShowChanges),
                 entry("Toggle Terminal", I::PanelBottom, cmd::ToggleTerminal),
-                entry("Toggle Mono", I::Bot, cmd::ToggleMono),
+                entry("Toggle Bot", I::Bot, cmd::ToggleBot),
+                entry("Ask Bot About This Thread", I::Bot, cmd::AskBot)
+                    .note("With what is selected in it."),
                 entry("New Terminal", I::Terminal, cmd::NewTerminal),
                 entry("Open Browser", I::Globe, cmd::OpenBrowser),
                 entry(
