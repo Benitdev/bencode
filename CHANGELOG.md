@@ -4,7 +4,7 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
-## [0.1.38] - Unreleased
+## [0.1.38] - 2026-10-29
 
 - The Inbox's rows read at a glance: a line of status, a short key
   (`C-289` where every Backlog project starts `ACME_SHOP_`, the
@@ -124,6 +124,9 @@ tagging (`docs/releasing.md`).
   gets its own linked thread, started at once, so the agents run side by
   side under Agents. Issues that have a thread are skipped unless you
   tick them in; pull requests are left out.
+- A thread with a turn in flight cannot be archived: its card keeps
+  the spinner on hover instead of an Archive button drawn over it, and
+  the thread and tab menus say to stop the turn first.
 - A browser page's console, as agents read it, names the script,
   stylesheet or image that failed to load. A dev server's page left
   blank because one of its modules did not load now says so instead of
