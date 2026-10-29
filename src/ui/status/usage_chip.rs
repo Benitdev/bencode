@@ -1,7 +1,7 @@
 //! MonoCode `app/shell/UsageProviderChip.tsx`: the usage chip (at the
 //! navigator's foot the tightest window's bar and each window's percent,
-//! under a Bot's composer with the account and each "11% 6d 14h"; on the
-//! icon rail the provider over the bar), and the details popover it opens
+//! on the icon rail the provider over the bar; a Bot in view shows its
+//! own there, not under its composer), and the details popover it opens
 //! (one card per window; the account pages are in `account_views`).
 
 use bencode_ui::primitives::{Icon, IconName, TipRow, Tooltip};
@@ -17,7 +17,7 @@ use crate::app::{BenCodeApp, now_ms};
 use crate::harness::accounts::{ProviderAccount, supports_accounts};
 use crate::rate_limits::{
     AccountTone, ProviderRateLimits, RateLimitProvider, RateLimitStatus, RateLimitWindow,
-    WindowKind, account_status, antigravity, best_alternative, chip_label, clamp_used_percent,
+    WindowKind, account_status, antigravity, best_alternative, clamp_used_percent,
     format_usage_percent, needs_provider_login, updated_label, window_note,
 };
 use crate::ui::HarnessIcon;
@@ -105,9 +105,6 @@ pub enum UsageChipVariant {
     /// On the icon rail while the navigator is collapsed: the provider's
     /// icon over the tightest window's bar.
     Icon,
-    /// The quiet tool buttons under a Bot's composer, which name no
-    /// account and switch none (MonoCode `accountPicker={false}`).
-    Composer,
 }
 
 /// What the popover needs to know about the chip's account.
@@ -115,7 +112,7 @@ pub(super) struct ChipAccounts<'a> {
     pub provider: RateLimitProvider,
     /// The popover may switch accounts (MonoCode `accountPicker`).
     pub picker: bool,
-    /// A Bot's composer chip: a pick moves its one conversation.
+    /// The focused thread is a Bot's: a pick moves its one conversation.
     pub bot: bool,
     /// A Bot's turn is running: the pick waits for it to finish.
     pub locked: bool,
@@ -150,7 +147,6 @@ impl BenCodeApp {
         variant: UsageChipVariant,
         cx: &Context<Self>,
     ) -> impl IntoElement {
-        let composer = variant == UsageChipVariant::Composer;
         let colors = &cx.theme().colors;
         let fg = colors.fg;
         let now = now_ms();
@@ -169,17 +165,17 @@ impl BenCodeApp {
         } else {
             Vec::new()
         };
-        // MonoCode's composer chip has no picker (`accountPicker={false}`);
-        // BenCode's switches the Bot's account (`switch_bot_account`).
+        // With a Bot in view the chip is its usage, and a pick moves the
+        // Bot to that account (`switch_bot_account`) once its turn is done.
+        let bot = self
+            .selected_session_id
+            .as_deref()
+            .filter(|id| self.is_bot_session(id));
         let chip_accounts = ChipAccounts {
             provider,
             picker: true,
-            bot: composer,
-            locked: composer
-                && self
-                    .selected_session_id
-                    .as_deref()
-                    .is_some_and(|id| self.is_agent_running_in(id)),
+            bot: bot.is_some(),
+            locked: bot.is_some_and(|id| self.is_agent_running_in(id)),
             accounts: &accounts,
             active_id: &target.account_id,
             limits,
@@ -190,14 +186,9 @@ impl BenCodeApp {
             .iter()
             .map(|(_, window)| window.used_percent)
             .fold(0.0, f64::max);
-        // The account is only named once there is more than one;
+        // The tooltip names the account only once there is more than one;
         // Antigravity's is the one `agy` is signed in as.
-        let account_width = if provider == RateLimitProvider::Antigravity {
-            160.0
-        } else {
-            96.0
-        };
-        let account = if provider == RateLimitProvider::Antigravity {
+        let heading = if provider == RateLimitProvider::Antigravity {
             self.agy_live_label()
         } else {
             chip_accounts
@@ -205,16 +196,12 @@ impl BenCodeApp {
                 .filter(|_| accounts.len() > 1)
                 .map(|active| active.label.clone())
         };
-        let heading = account
-            .clone()
-            .filter(|_| variant != UsageChipVariant::Composer);
         let tooltip = chip_tooltip(limits, now);
         let faint = |text: &'static str| div().text_color(fg.ink(Ink::Faint)).child(text);
         let chip = div()
             .id(match variant {
                 UsageChipVariant::Navigator => "usage-chip",
                 UsageChipVariant::Icon => "usage-chip-icon",
-                UsageChipVariant::Composer => "usage-chip-composer",
             })
             .cursor_pointer()
             .on_hover(cx.listener(|this, hovered: &bool, _, _| this.usage.chip_hovered = *hovered))
@@ -243,77 +230,45 @@ impl BenCodeApp {
                 .child(usage_bar(tightest, 3.0, colors).w(px(18.0)).flex_none()),
             // MonoCode `USAGE_CHIP_CLASSES`: `h-5 rounded px-1
             // hover:bg-content/10` in the footer, here `h-6 rounded-md`
-            // with the percents alone; `h-6.5 rounded-md px-1.5
-            // hover:bg-content/8` under the composer, with the resets.
-            UsageChipVariant::Navigator | UsageChipVariant::Composer => {
-                let composer = variant == UsageChipVariant::Composer;
-                chip.flex()
-                    .min_w_0()
-                    .items_center()
-                    .gap(px(6.0))
-                    .h(px(if composer { 26.0 } else { 24.0 }))
-                    .map(|el| {
-                        if composer {
-                            el.px_1p5()
-                        } else {
-                            el.px(px(6.0))
-                        }
-                    })
-                    .rounded(px(6.0))
-                    .text_color(fg.ink(Ink::Secondary))
-                    .whitespace_nowrap()
-                    .hover(move |s| {
-                        s.bg(fg.opacity(if composer { 0.08 } else { 0.10 }))
-                            .text_color(fg)
-                    })
-                    .child(HarnessIcon::new(provider.id()).size(px(12.0)))
-                    .map(|el| {
-                        if limits.is_loading() {
-                            el.child(faint("···"))
-                        } else if limits.status == RateLimitStatus::Unavailable {
-                            el.child(faint("not connected"))
-                        } else if windows.is_empty() {
-                            el.child(faint(empty_usage_label(limits)))
-                        } else {
-                            el.when_some(account.filter(|_| composer), |el, label| {
-                                el.child(
+            // with the percents alone.
+            UsageChipVariant::Navigator => chip
+                .flex()
+                .min_w_0()
+                .items_center()
+                .gap(px(6.0))
+                .h(px(24.0))
+                .px(px(6.0))
+                .rounded(px(6.0))
+                .text_color(fg.ink(Ink::Secondary))
+                .whitespace_nowrap()
+                .hover(move |s| s.bg(fg.opacity(0.10)).text_color(fg))
+                .child(HarnessIcon::new(provider.id()).size(px(12.0)))
+                .map(|el| {
+                    if limits.is_loading() {
+                        el.child(faint("···"))
+                    } else if limits.status == RateLimitStatus::Unavailable {
+                        el.child(faint("not connected"))
+                    } else if windows.is_empty() {
+                        el.child(faint(empty_usage_label(limits)))
+                    } else {
+                        el.child(usage_bar(tightest, 4.0, colors).w(px(20.0)).flex_none())
+                            .child(div().flex().min_w_0().items_center().gap_1().children(
+                                windows.iter().enumerate().map(|(ix, (_, window))| {
                                     div()
-                                        .max_w(px(account_width))
-                                        .truncate()
-                                        .text_color(fg.ink(Ink::Muted))
-                                        .child(label),
-                                )
-                            })
-                            .child(
-                                usage_bar(tightest, 4.0, colors)
-                                    .w(px(if composer { 32.0 } else { 20.0 }))
-                                    .flex_none(),
-                            )
-                            .child(
-                                div().flex().min_w_0().items_center().gap_1().children(
-                                    windows.iter().enumerate().map(|(ix, (_, window))| {
-                                        let percent = format_usage_percent(window.used_percent);
-                                        div()
-                                            .flex()
-                                            .flex_none()
-                                            .items_center()
-                                            .gap_1()
-                                            .when(ix > 0, |el| {
-                                                el.child(
-                                                    div().text_color(fg.ink(Ink::Faint)).child("·"),
-                                                )
-                                            })
-                                            .child(if composer {
-                                                format!("{percent} {}", chip_label(window, now))
-                                            } else {
-                                                percent
-                                            })
-                                    }),
-                                ),
-                            )
-                        }
-                    })
-            }
+                                        .flex()
+                                        .flex_none()
+                                        .items_center()
+                                        .gap_1()
+                                        .when(ix > 0, |el| {
+                                            el.child(
+                                                div().text_color(fg.ink(Ink::Faint)).child("·"),
+                                            )
+                                        })
+                                        .child(format_usage_percent(window.used_percent))
+                                }),
+                            ))
+                    }
+                }),
         };
 
         div()

@@ -285,15 +285,6 @@ pub fn format_reset_countdown(ms: i64) -> String {
     }
 }
 
-/// Status-bar chip label. Prefer remaining time when `resets_at` is known;
-/// fall back to the fixed window size otherwise.
-pub fn chip_label(window: &RateLimitWindow, now: i64) -> String {
-    match window.resets_at {
-        Some(resets_at) => format_reset_duration(resets_at - now),
-        None => format_window_label(window.window_minutes),
-    }
-}
-
 /// When a window resets, else how long it is (MonoCode
 /// `rateLimitWindowTooltip`'s second half).
 pub fn window_note(window: &RateLimitWindow, now: i64) -> String {
@@ -552,8 +543,6 @@ mod tests {
 
     #[test]
     fn chip_prefers_the_countdown_over_the_window_size() {
-        assert_eq!(chip_label(&window(100.0, Some(15 * 60_000)), NOW), "15m");
-        assert_eq!(chip_label(&window(11.0, None), NOW), "5h");
         assert_eq!(format_usage_percent(10.5), "11%");
         assert_eq!(format_usage_percent(250.0), "100%");
         assert_eq!(format_usage_percent(f64::NAN), "0%");

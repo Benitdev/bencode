@@ -35,20 +35,6 @@ impl BenCodeApp {
         }
         let bot = self.bot_in_view()?.clone();
         let state = self.bot_state(&bot);
-        // The plan's usage shows under its composer: read once, as the
-        // navigator's chip does.
-        let harness = self
-            .bot_view_session()
-            .and_then(|id| self.sessions.iter().find(|s| s.id == id))
-            .map(|s| s.harness.clone());
-        if let Some(target) = self.usage_target().filter(|target| {
-            target.available
-                && harness
-                    .as_deref()
-                    .is_some_and(crate::ui::composer::bot::shows_usage)
-        }) {
-            self.load_rate_limits(target.provider, &target.account_id, false, cx);
-        }
         let glass = self.glass(cx);
         let bg = cx.theme().colors.bg;
         let chat = match self.bot_view_session().map(str::to_string) {

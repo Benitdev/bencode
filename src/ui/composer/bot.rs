@@ -1,11 +1,12 @@
 //! A Bot's composer in BenCode's window (MonoCode `MonoComposer` with
 //! `tools` and `controls`, as `SessionPane`'s Bot branch passes them): a
 //! messaging app's input, "Message {name}" with Send inside the field at
-//! its right, and under it one row: attach and emoji, the plan's usage
-//! (`UsageChips variant="composer"`), then the model (`ModelPicker
-//! variant="text"` with `hideSettings`), its settings as text pills
-//! (`ModelControlPills variant="text"`) and how full the thread is
-//! (`ContextMeter`, with nothing to compact: a Bot rotates its threads).
+//! its right, and under it one row: attach and emoji, then the model
+//! (`ModelPicker variant="text"` with `hideSettings`), its settings as
+//! text pills (`ModelControlPills variant="text"`) and how full the thread
+//! is (`ContextMeter`, with nothing to compact: a Bot rotates its threads).
+//! MonoCode's plan usage in that row (`UsageChips variant="composer"`) is
+//! left out: the navigator's foot shows it and switches the Bot's account.
 //!
 //! Above it, as MonoCode stacks them: the messages waiting to be sent, the
 //! question form and the usage-limit card (`MonoUsageLimitNotice`). There
@@ -25,11 +26,9 @@ use super::model_picker::ModelsAnchor;
 use crate::app::BenCodeApp;
 use crate::db::SessionRow;
 use crate::harness::catalog::{self, ModelSetting, SettingKind};
-use crate::rate_limits::RateLimitProvider;
 use crate::ui::HarnessIcon;
 use crate::ui::frost::{POPOVER_RADIUS, frost};
 use crate::ui::scale::px;
-use crate::ui::status::UsageChipVariant;
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// MonoCode `MAX_HEIGHT`: the field grows to this before it scrolls.
@@ -37,12 +36,6 @@ const MAX_FIELD_HEIGHT: f32 = 160.0;
 /// MonoCode `SETTING_MENU_WIDTH`.
 const PILL_MENU_WIDTH: f32 = 210.0;
 const OPTION_HEIGHT: f32 = 32.0;
-
-/// MonoCode `monoUsageProviders`: the plans whose usage a Bot shows by its
-/// composer.
-pub fn shows_usage(harness: &str) -> bool {
-    matches!(harness, "claude" | "codex" | "opencode")
-}
 
 /// MonoCode `ModelControlPills`: the model's settings as pills; with an
 /// effort select, Fast and the service tier join its menu instead of
@@ -312,9 +305,8 @@ impl BenCodeApp {
     }
 
     /// The row under the field (`flex min-w-0 items-center gap-0.5 pt-1
-    /// pl-1 pr-1.5`): attach, emoji and the usage on the left, the model,
-    /// its settings and the context on the right, the last lined up under
-    /// Send.
+    /// pl-1 pr-1.5`): attach and emoji on the left, the model, its
+    /// settings and the context on the right, the last lined up under Send.
     fn render_bot_composer_tools(&self, session: &SessionRow, cx: &Context<Self>) -> AnyElement {
         let fg = cx.theme().colors.fg;
         let emoji_open = self.bots.emoji.is_open();
@@ -351,7 +343,6 @@ impl BenCodeApp {
             .child(div().relative().flex_none().child(emoji).children(
                 picker.map(|picker| over_composer(picker.absolute().bottom(px(32.0)).left_0())),
             ))
-            .children(self.render_bot_usage(session, cx))
             .child(
                 div()
                     .ml_auto()
@@ -375,36 +366,6 @@ impl BenCodeApp {
                     ),
             )
             .into_any_element()
-    }
-
-    /// MonoCode `UsageChips variant="composer"` (`text-[11px]
-    /// text-content/55`): the plan's chip and Refresh, for the plans
-    /// `shows_usage` names.
-    fn render_bot_usage(&self, session: &SessionRow, cx: &Context<Self>) -> Option<AnyElement> {
-        if !shows_usage(&session.harness) {
-            return None;
-        }
-        let target = self.usage_target().filter(|target| {
-            target.provider != RateLimitProvider::OpenCode
-                || self
-                    .usage_data
-                    .read(cx)
-                    .limits(target.provider, &target.account_id)
-                    .status
-                    != crate::rate_limits::RateLimitStatus::Unavailable
-        })?;
-        Some(
-            div()
-                .flex()
-                .flex_none()
-                .items_center()
-                .gap_0p5()
-                .text_size(Text::Sm.px())
-                .text_color(cx.theme().colors.fg.ink(Ink::Secondary))
-                .child(self.render_usage_chip(&target, UsageChipVariant::Composer, cx))
-                .child(self.render_usage_refresh(UsageChipVariant::Composer, cx))
-                .into_any_element(),
-        )
     }
 
     /// MonoCode `ModelPicker variant="text" hideSettings`: the provider's
@@ -703,16 +664,6 @@ impl BenCodeApp {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn only_the_plans_monocode_reads_show_by_the_composer() {
-        for harness in ["claude", "codex", "opencode"] {
-            assert!(shows_usage(harness), "{harness}");
-        }
-        for harness in ["antigravity", "grok", ""] {
-            assert!(!shows_usage(harness), "{harness}");
-        }
-    }
 
     #[test]
     fn fast_and_the_service_tier_join_the_effort_menu() {

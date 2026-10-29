@@ -74,11 +74,7 @@ impl BenCodeApp {
                     .text_size(Text::Sm.px())
                     .text_color(fg.ink(Ink::Secondary))
                     .child(self.render_usage_chip(target, variant, cx))
-                    .child(
-                        div()
-                            .flex_none()
-                            .child(self.render_usage_refresh(variant, cx)),
-                    )
+                    .child(div().flex_none().child(self.render_usage_refresh(cx)))
                     .into_any_element(),
             ),
             // MonoCode `SessionChip`: a harness whose usage cannot be read.
@@ -140,28 +136,18 @@ impl BenCodeApp {
             .into_any_element()
     }
 
-    /// MonoCode `USAGE_REFRESH_CLASSES`: Refresh beside the usage chips,
-    /// `size-4.5 rounded` at the navigator's foot, `size-6.5 rounded-md`
-    /// under a Bot's composer; turning while it reads.
-    pub(crate) fn render_usage_refresh(
-        &self,
-        variant: UsageChipVariant,
-        cx: &Context<Self>,
-    ) -> impl IntoElement {
+    /// MonoCode `USAGE_REFRESH_CLASSES`: Refresh beside the usage chip,
+    /// `size-4.5 rounded` at the navigator's foot; turning while it reads.
+    fn render_usage_refresh(&self, cx: &Context<Self>) -> impl IntoElement {
         let fg = cx.theme().colors.fg;
-        let composer = variant == UsageChipVariant::Composer;
         div()
-            .id(if composer {
-                "usage-refresh-composer"
-            } else {
-                "usage-refresh"
-            })
+            .id("usage-refresh")
             .flex()
             .flex_none()
             .items_center()
             .justify_center()
-            .size(px(if composer { 26.0 } else { 18.0 }))
-            .rounded(px(if composer { 6.0 } else { 4.0 }))
+            .size(px(18.0))
+            .rounded(px(4.0))
             .map(|el| {
                 if self.usage_data.read(cx).refreshing() {
                     el.opacity(0.5).child(spinning_icon(
@@ -172,7 +158,7 @@ impl BenCodeApp {
                     ))
                 } else {
                     el.cursor_pointer()
-                        .hover(move |s| s.bg(fg.opacity(if composer { 0.08 } else { 0.10 })))
+                        .hover(move |s| s.bg(fg.opacity(0.10)))
                         .on_click(cx.listener(|this, _, _, cx| this.refresh_usage(cx)))
                         .child(
                             Icon::new(IconName::RefreshCw)
