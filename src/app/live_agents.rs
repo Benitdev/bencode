@@ -6,8 +6,8 @@
 use gpui::Context;
 use std::sync::Arc;
 
+use crate::app::BenCodeApp;
 use crate::app::session_list::session_title;
-use crate::app::{BenCodeApp, Surface};
 use crate::db::{Block, SessionRow};
 use crate::ui::transcript::activity::tool_label;
 use crate::ui::transcript::turns::is_tool;
@@ -159,12 +159,6 @@ impl BenCodeApp {
     /// MonoCode `onSelectLiveAgent`: leaves the open surface and shows the
     /// thread, in whichever project it belongs to.
     pub fn select_live_agent(&mut self, id: &str, cx: &mut Context<Self>) {
-        if self
-            .surface
-            .is_some_and(|surface| surface != Surface::Settings)
-        {
-            self.close_surface(cx);
-        }
         self.open_session(id.to_string(), cx);
     }
 

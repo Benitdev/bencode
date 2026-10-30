@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use gpui::Context;
 
 use super::tab_scope::{TabClosePlan, deck_tabs, is_blank_session, plan_tab_close};
-use super::{BenCodeApp, NEW_SESSION_TITLE, now_ms};
+use super::{BenCodeApp, NEW_SESSION_TITLE, Surface, now_ms};
 use crate::db::SessionRow;
 use crate::harness::{HarnessKind, catalog, session_purge};
 use crate::ui::drag_drop::PaneDropTarget;
@@ -553,8 +553,17 @@ impl BenCodeApp {
 
     /// Opens a thread from history (sidebar, search): focuses it where it is
     /// open, else shows it in place of an empty pane of the active tab, else
-    /// in a new tab. MonoCode `onSelectHistorySession`.
+    /// in a new tab. MonoCode `onSelectHistorySession`. A thread picked
+    /// while Inbox, Notes or Automations is in view replaces it, so the
+    /// click shows what it opened; Settings stays, its sections holding
+    /// the navigator.
     pub fn open_session(&mut self, id: String, cx: &mut Context<Self>) {
+        if self
+            .surface
+            .is_some_and(|surface| surface != Surface::Settings)
+        {
+            self.close_surface(cx);
+        }
         // A Bot's conversation opens as the Bot, never as a tab.
         if let Some(bot) = self.bot_for_session(&id).map(|bot| bot.id.clone()) {
             self.open_bot(&bot, cx);

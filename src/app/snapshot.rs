@@ -391,6 +391,17 @@ const SCENES: &[(&str, SetUp)] = &[
             app.open_session(id, cx);
         }
     }),
+    // A thread picked on the navigator while the Inbox is in view: the
+    // thread takes its place.
+    ("inbox-then-thread", |app, _, cx| {
+        app.show_surface(Surface::Inbox, cx);
+        let thread = (app.sessions.iter())
+            .find(|s| s.has_user_message() && !app.is_bot_session(&s.id))
+            .map(|s| s.id.clone());
+        if let Some(id) = thread {
+            app.open_session(id, cx);
+        }
+    }),
 ];
 
 /// Turns as the Agents section shows them, without an agent: a thread of

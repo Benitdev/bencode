@@ -14,6 +14,9 @@ tagging (`docs/releasing.md`).
   MonoCode's pixel mascots: on the navigator, the Agents section, notes,
   automations and the composer's runner. Their menu's "Look" row picks
   the body or shuffles; a mascot picked before becomes its figure.
+- A thread picked on the navigator, in the Agents section or from a
+  notification while Inbox, Notes or Automations is open now shows that
+  thread, instead of opening it behind the view.
 
 ## [0.1.40] - 2026-10-30
 
