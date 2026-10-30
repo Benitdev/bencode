@@ -30,6 +30,11 @@ pub const HABIT_RUN_TIMEOUT_MS: i64 = 60 * 60 * 1000;
 pub const HABIT_APPROVAL_WAIT_MS: i64 = 12 * 60 * 60 * 1000;
 pub const HABITS_MAX: usize = 20;
 
+/// A habit's schedule kind: MonoCode's four, not BenCode's monthly.
+fn habit_kind(id: &str) -> Option<ScheduleKind> {
+    ScheduleKind::parse(id).filter(|kind| kind.is_monocode())
+}
+
 /// MonoCode `HabitSchedule`: times are local.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -47,30 +52,25 @@ impl HabitSchedule {
     /// MonoCode `habitScheduleLabel` (`automationScheduleLabel`): "Weekdays
     /// at 09:00", "Friday at 16:30".
     pub fn label(&self) -> String {
-        crate::schedule::trigger_label(&crate::schedule::TimeTrigger {
-            kind: ScheduleKind::parse(&self.schedule_kind),
-            minute: i64::from(self.minute),
-            time: self.time.clone(),
-            day_of_week: i64::from(self.day_of_week),
-        })
+        crate::schedule::trigger_label(&self.trigger())
     }
 
     /// MonoCode `nextHabitRunAt`: the next time strictly after `after`.
     pub fn next_run_at(&self, after: i64) -> i64 {
         let tz = jiff::tz::TimeZone::system();
-        ScheduleKind::parse(&self.schedule_kind)
-            .and_then(|kind| {
-                crate::schedule::next_run_at(
-                    kind,
-                    i64::from(self.minute),
-                    &self.time,
-                    i64::from(self.day_of_week),
-                    after,
-                    &tz,
-                )
-            })
+        self.trigger()
+            .next_run(after, &tz)
             // A kind this version cannot schedule waits a year.
             .unwrap_or(after + 365 * 24 * 60 * 60 * 1000)
+    }
+
+    fn trigger(&self) -> crate::schedule::TimeTrigger {
+        crate::schedule::TimeTrigger::new(
+            habit_kind(&self.schedule_kind),
+            i64::from(self.minute),
+            &self.time,
+            i64::from(self.day_of_week),
+        )
     }
 }
 
@@ -191,7 +191,7 @@ pub fn parse_habits(text: &str) -> Vec<Habit> {
         .filter_map(|raw| {
             let schedule = raw.get("schedule")?;
             let kind = string(schedule, "scheduleKind")?;
-            ScheduleKind::parse(&kind)?;
+            habit_kind(&kind)?;
             let extra: Map<String, Value> = raw
                 .as_object()?
                 .iter()
@@ -245,7 +245,7 @@ pub fn habit_schedule(value: Option<&Value>) -> Result<HabitSchedule, String> {
     let kind = input
         .get("kind")
         .and_then(Value::as_str)
-        .and_then(ScheduleKind::parse)
+        .and_then(habit_kind)
         .ok_or_else(|| "schedule.kind must be hourly, daily, weekdays or weekly".to_string())?;
     let time = match input.get("time") {
         None => "09:00".to_string(),

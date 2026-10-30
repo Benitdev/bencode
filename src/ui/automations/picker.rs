@@ -1,6 +1,8 @@
 //! MonoCode `AutomationPicker`: the New automation page, with Start from
-//! scratch and the example automations by category.
+//! scratch and the example automations by category; above them, a new
+//! automation left with unsaved edits, to continue or discard.
 
+use bencode_ui::buttons::{Button, ButtonVariant};
 use bencode_ui::primitives::{Icon, IconName};
 use bencode_ui::theme::{ActiveTheme, IconSize};
 use gpui::{
@@ -10,6 +12,7 @@ use gpui::{
 use super::PAGE_WIDTH;
 use super::templates::{AutomationTemplate, TemplateCategory, templates_for};
 use crate::app::BenCodeApp;
+use crate::app::automation_drafts::NEW_DRAFT;
 use crate::ui::region::Region;
 use crate::ui::scale::px;
 use crate::ui::scrollbar::Scrolled;
@@ -133,6 +136,7 @@ impl BenCodeApp {
                     .px_8()
                     .pt_5()
                     .pb_10()
+                    .children(self.render_unsaved_new(cx))
                     .child(
                         div()
                             .text_size(Text::Title.px())
@@ -161,7 +165,56 @@ impl BenCodeApp {
         Scrolled::new("automation-picker-scrollbar", page).into_any_element()
     }
 
-    fn render_template_card(
+    /// "Continue editing <name>" and "Discard", while a new automation
+    /// waits unsaved.
+    fn render_unsaved_new(&self, cx: &Context<Self>) -> Option<impl IntoElement> {
+        let draft = self.automations.stashed.get(NEW_DRAFT)?;
+        let fg = cx.theme().colors.fg;
+        let name = match draft.name.trim() {
+            "" => "Untitled",
+            name => name,
+        };
+        Some(
+            div()
+                .flex()
+                .items_center()
+                .gap_3()
+                .mb_5()
+                .px_4()
+                .py_3()
+                .rounded(px(12.0))
+                .border_1()
+                .border_color(fg.fill(Fill::Strong))
+                .bg(fg.fill(Fill::Faint))
+                .child(super::editor::unsaved_dot(cx))
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .truncate()
+                        .text_size(Text::Md.px())
+                        .text_color(fg.ink(Ink::Body))
+                        .child("A new automation is not created yet"),
+                )
+                .child(
+                    Button::new("automation-new-discard", "Discard")
+                        .variant(ButtonVariant::Ghost)
+                        .size(bencode_ui::theme::ControlSize::Sm)
+                        .on_click(cx.listener(|this, _, _, cx| this.discard_stashed_new(cx))),
+                )
+                .child(
+                    Button::new(
+                        "automation-new-continue",
+                        format!("Continue editing {name}"),
+                    )
+                    .primary()
+                    .size(bencode_ui::theme::ControlSize::Sm)
+                    .on_click(cx.listener(|this, _, _, cx| this.resume_new_automation(cx))),
+                ),
+        )
+    }
+
+    pub(super) fn render_template_card(
         &self,
         ix: usize,
         template: &'static AutomationTemplate,

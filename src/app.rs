@@ -4,6 +4,9 @@ pub mod agy_accounts;
 pub mod alerts;
 pub mod app_calls;
 pub mod artifacts;
+pub mod automation_drafts;
+pub mod automation_overview;
+pub mod automation_pauses;
 mod automation_runs;
 pub mod automations;
 pub mod backlog;
@@ -83,7 +86,9 @@ use gpui::{
     StyleRefinement, Styled, Subscription, Window, div, prelude::*,
 };
 
-pub use agent::{AgentRun, NEW_SESSION_TITLE, QUESTION_TOOL, TurnInput, can_compact, now_ms};
+pub use agent::{
+    AgentRun, AutomationLink, NEW_SESSION_TITLE, QUESTION_TOOL, TurnInput, can_compact, now_ms,
+};
 pub use ids::unique_id;
 pub use preferences::{appearance_prefs, is_dark_appearance, theme_mode};
 pub use projects::{is_home_path, is_path_in_project, normalize_project_path, same_project_path};

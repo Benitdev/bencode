@@ -266,6 +266,7 @@ mod tests {
             status: RunStatus::Pending,
             session_id: None,
             error: None,
+            dismissed_at: None,
         }
     }
 

@@ -305,15 +305,18 @@ impl BenCodeApp {
                 cx,
                 |this, _, _, cx| this.open_notes(cx),
             ))
-            .child(rail_icon_button(
-                "rail-automations",
-                IconName::Zap,
-                "Automations",
-                self.surface_open(Surface::Automations),
-                false,
-                cx,
-                |this, _, _, cx| this.open_automations(cx),
-            ))
+            .child({
+                let badge = self.automation_badge();
+                rail_icon_button(
+                    "rail-automations",
+                    IconName::Zap,
+                    badge.map_or("Automations", |why| why.rail_tip()),
+                    self.surface_open(Surface::Automations),
+                    badge.is_some(),
+                    cx,
+                    |this, _, _, cx| this.open_automations(cx),
+                )
+            })
     }
 
     /// The rail's projects in saved order (MonoCode `collectRailProjects`

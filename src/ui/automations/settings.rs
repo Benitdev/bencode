@@ -2,8 +2,8 @@
 //! with model and access, session, advanced. Event triggers are shown but
 //! cannot be added: BenCode runs time triggers only.
 
-use bencode_ui::buttons::{ButtonVariant, IconButton};
-use bencode_ui::forms::{Choice, Select};
+use bencode_ui::buttons::{ButtonVariant, IconButton, Toggles};
+use bencode_ui::forms::{Choice, Select, TimePicker};
 use bencode_ui::menus::{DropdownMenu, Menu, MenuItem};
 use bencode_ui::primitives::{Icon, IconName};
 use bencode_ui::theme::{ActiveTheme, ControlSize, IconSize};
@@ -14,11 +14,12 @@ use jiff::tz::TimeZone;
 use serde_json::Value;
 
 use super::format::{gmt_offset_at, next_run_preview};
+use crate::app::automation_pauses::active_skip;
 use crate::app::automations::{MAX_TRIGGERS, WorkingCopy, access_mode, grace_minutes};
 use crate::app::{BenCodeApp, now_ms};
 use crate::db::{AutomationRow, DEFAULT_GRACE_MINUTES};
-use crate::schedule::{self, ScheduleKind, TimeTrigger, Trigger, WEEKDAYS};
-use crate::ui::app_callback::{app_callback, on_value};
+use crate::schedule::{self, ScheduleKind, TimeTrigger, Trigger};
+use crate::ui::app_callback::{app_callback, app_callback_with, on_value};
 use crate::ui::region::Region;
 use crate::ui::scale::px;
 use crate::ui::settings_parts::{SettingsRow, panel, rule, section_title};
@@ -48,8 +49,12 @@ fn schedule_prefix(kind: Option<ScheduleKind>) -> &'static str {
         Some(ScheduleKind::Daily) => "Every day at",
         Some(ScheduleKind::Weekdays) => "Every weekday at",
         Some(ScheduleKind::Weekly) | None => "Every week on",
+        Some(ScheduleKind::Monthly) => "Every month on the",
     }
 }
+
+/// The day toggles of a weekly trigger, Monday first.
+const WEEK_ORDER: [i64; 7] = [1, 2, 3, 4, 5, 6, 0];
 
 /// "GitHub · pull request opened" for a trigger BenCode cannot run.
 fn event_trigger_label(trigger: &Trigger) -> String {
@@ -212,8 +217,8 @@ impl BenCodeApp {
             .into_any_element()
     }
 
-    /// MonoCode `TimeTriggerSentence`: "Every week on [Monday] at [09:00]
-    /// GMT+7  Next run …".
+    /// MonoCode `TimeTriggerSentence`: "Every week on [Mon … Sun] at
+    /// [09:00] GMT+7  Next run …"; "Every month on the [15th] at [09:00]".
     fn render_time_sentence(
         &self,
         sentence: Div,
@@ -224,61 +229,90 @@ impl BenCodeApp {
         let fg = cx.theme().colors.fg;
         let tz = TimeZone::system();
         let now = now_ms();
-        let next = time.next_run(now, &tz);
-        let pill = |width: f32, select: Select| div().flex_none().w(px(width)).child(select);
+        // As the header reads it: past a skip and Pause all; none while
+        // the automation is off.
+        let skipped = self
+            .edited_automation()
+            .and_then(|auto| active_skip(auto, now));
+        let enabled = self.automations.draft.as_ref().is_some_and(|d| d.enabled);
+        let next = enabled
+            .then(|| {
+                schedule::trigger_next_run(time, now, skipped, self.automations_paused_until(), &tz)
+            })
+            .flatten();
         let weekly = matches!(time.kind, Some(ScheduleKind::Weekly) | None);
+        let monthly = time.kind == Some(ScheduleKind::Monthly);
         let hourly = time.kind == Some(ScheduleKind::Hourly);
+        let at = schedule::parse_time(&time.time)
+            .and_then(|(hour, minute)| jiff::civil::Time::new(hour, minute, 0, 0).ok())
+            .unwrap_or_else(|| jiff::civil::time(9, 0, 0, 0));
         sentence
             .child(schedule_prefix(time.kind))
             .when(weekly, |el| {
-                let days = WEEKDAYS
-                    .into_iter()
-                    .enumerate()
-                    .map(|(day, label)| Choice::new(day.to_string(), label));
-                el.child(pill(
-                    128.0,
-                    Select::new(("automation-trigger-day", ix), days)
-                        .label("Day")
-                        .size(ControlSize::Sm)
-                        .selected(time.day_of_week.clamp(0, 6).to_string())
-                        .on_change(on_value(cx, move |this, day, cx| {
-                            let day = day.parse::<i64>().unwrap_or(1);
-                            this.set_automation_trigger(ix, "dayOfWeek", Value::from(day), cx)
-                        })),
-                ))
+                let days = time.days_of_week.clone();
+                let toggles = WEEK_ORDER.into_iter().fold(
+                    Toggles::new(("automation-trigger-days", ix)).size(ControlSize::Sm),
+                    |toggles, day| {
+                        let on = days.contains(&day);
+                        toggles.option(day.to_string(), schedule::short_weekday(day), on)
+                    },
+                );
+                let toggle = on_value(cx, move |this, day, cx| {
+                    let day = day.parse::<i64>().unwrap_or(1);
+                    this.toggle_automation_weekday(ix, day, cx);
+                });
+                el.child(toggles.on_toggle(move |day, _, window, cx| toggle(day, window, cx)))
+                    .child("at")
+            })
+            .when(monthly, |el| {
+                let days = (1..=31).map(|day| Choice::new(day.to_string(), schedule::ordinal(day)));
+                el.child(
+                    div().flex_none().w(px(84.0)).child(
+                        Select::new(("automation-trigger-month-day", ix), days)
+                            .label("Day of the month")
+                            .size(ControlSize::Sm)
+                            .selected(time.day_of_month.to_string())
+                            .on_change(on_value(cx, move |this, day, cx| {
+                                let day = day.parse::<i64>().unwrap_or(1).clamp(1, 31);
+                                this.set_automation_trigger(ix, "dayOfMonth", Value::from(day), cx)
+                            })),
+                    ),
+                )
                 .child("at")
             })
             .map(|el| {
                 if hourly {
-                    let minutes = [0, 15, 30, 45]
-                        .into_iter()
-                        .chain(Some(time.minute).filter(|minute| minute % 15 != 0))
-                        .map(|minute| Choice::new(minute.to_string(), format!(":{minute:02}")));
-                    el.child(pill(
-                        84.0,
-                        Select::new(("automation-trigger-minute", ix), minutes)
-                            .label("Minute")
+                    let minute = jiff::civil::Time::new(0, time.minute.clamp(0, 59) as i8, 0, 0)
+                        .unwrap_or_default();
+                    el.child(
+                        TimePicker::new(("automation-trigger-minute", ix), minute)
                             .size(ControlSize::Sm)
-                            .selected(time.minute.to_string())
-                            .on_change(on_value(cx, move |this, minute, cx| {
-                                let minute = minute.parse::<i64>().unwrap_or(0);
-                                this.set_automation_trigger(ix, "minute", Value::from(minute), cx)
-                            })),
-                    ))
+                            .minutes_only()
+                            .on_change(app_callback_with(
+                                cx,
+                                move |this, at: jiff::civil::Time, cx| {
+                                    let minute = i64::from(at.minute());
+                                    this.set_automation_trigger(
+                                        ix,
+                                        "minute",
+                                        Value::from(minute),
+                                        cx,
+                                    )
+                                },
+                            )),
+                    )
                 } else {
-                    let times = schedule::time_options(&time.time)
-                        .into_iter()
-                        .map(|option| Choice::new(option.clone(), option));
-                    el.child(pill(
-                        92.0,
-                        Select::new(("automation-trigger-time", ix), times)
-                            .label("Time")
+                    el.child(
+                        TimePicker::new(("automation-trigger-time", ix), at)
                             .size(ControlSize::Sm)
-                            .selected(time.time.clone())
-                            .on_change(on_value(cx, move |this, time, cx| {
-                                this.set_automation_trigger(ix, "time", Value::from(time), cx)
-                            })),
-                    ))
+                            .on_change(app_callback_with(
+                                cx,
+                                move |this, at: jiff::civil::Time, cx| {
+                                    let text = at.strftime("%H:%M").to_string();
+                                    this.set_automation_trigger(ix, "time", Value::from(text), cx)
+                                },
+                            )),
+                    )
                 }
             })
             .child(
@@ -574,18 +608,6 @@ impl BenCodeApp {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn times_offer_every_half_hour_and_an_odd_current_one() {
-        let options = schedule::time_options("09:00");
-        assert_eq!(options.len(), 48);
-        assert_eq!(
-            (options[0].as_str(), options[47].as_str()),
-            ("00:00", "23:30")
-        );
-        assert_eq!(schedule::time_options("09:15")[0], "09:15");
-        assert_eq!(schedule::time_options("09:15").len(), 49);
-    }
 
     #[test]
     fn event_triggers_read_as_source_and_event() {

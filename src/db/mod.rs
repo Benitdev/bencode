@@ -25,7 +25,7 @@ pub use work_item::{LinkedWorkItem, WorkItemKind};
 pub use worktree_removals::SessionBeforeRemoval;
 pub use writer::DbWriter;
 
-pub use schedule::DEFAULT_GRACE_MINUTES;
+pub use schedule::{ALL_PAUSED, DEFAULT_GRACE_MINUTES, INTERRUPTED, MISSED, NOT_STARTED};
 
 use anyhow::{Result, anyhow, bail};
 use rusqlite::{Connection, OptionalExtension, Row, params};
@@ -40,6 +40,8 @@ pub const DEFAULT_SESSION_RUNTIME_MODE: &str = "supervised";
 
 /// Maximum automation runs returned by `list_automation_runs`.
 const AUTOMATION_RUN_HISTORY_LIMIT: i64 = 50;
+/// Most runs `list_recent_automation_runs` returns, however many match.
+const RECENT_RUNS_LIMIT: i64 = 500;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Note {
@@ -119,6 +121,10 @@ pub struct AutomationRow {
     /// The thread of the last run, for `reuse_session`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_session_id: Option<String>,
+    /// The occurrence the user skipped ("Skip next run"); `next_run_at` is
+    /// the one after it. BenCode's own: it lapses once that time passes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skipped_run_at: Option<i64>,
     /// Every MonoCode field BenCode does not model (modelSettings, ...).
     #[serde(flatten, default)]
     pub extra: Map<String, Value>,
@@ -180,6 +186,9 @@ pub struct AutomationRunRow {
     pub session_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// When the user dismissed this run from Needs you (BenCode's own).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dismissed_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -878,8 +887,18 @@ impl AppDb {
     }
 
     /// Updates the `enabled` column and the `enabled` field inside
-    /// `definition_json` (MonoCode reads the latter).
-    pub fn toggle_automation(&self, id: &str, enabled: bool) -> Result<()> {
+    /// `definition_json` (MonoCode reads the latter). Enabling also moves
+    /// `next_run_at` to the next occurrence after `now` (keeping a skip
+    /// that still applies), so a run missed while paused does not start,
+    /// or count as skipped, the moment it is back on.
+    pub fn toggle_automation(
+        &self,
+        id: &str,
+        enabled: bool,
+        now: i64,
+        tz: &jiff::tz::TimeZone,
+    ) -> Result<()> {
+        let tx = self.conn.unchecked_transaction()?;
         let enabled_json = if enabled { "true" } else { "false" };
         self.conn.execute(
             "UPDATE automations
@@ -889,8 +908,93 @@ impl AppDb {
                      THEN json_set(definition_json, '$.enabled', json(?3), '$.updatedAt', ?2)
                      ELSE definition_json END
              WHERE id = ?4",
-            params![i64::from(enabled), now_millis(), enabled_json, id],
+            params![i64::from(enabled), now, enabled_json, id],
         )?;
+        if enabled && let Some(auto) = self.automation(id)? {
+            match crate::schedule::next_run_skipping(&auto, auto.skipped_run_at, now, tz) {
+                Some((next, skip)) => self.set_next_run(id, next, skip)?,
+                None => log::warn!("automation {id} has an unreadable schedule"),
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Automation `id`, if it is stored and readable.
+    fn automation(&self, id: &str) -> Result<Option<AutomationRow>> {
+        let raw: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT definition_json FROM automations WHERE id = ?1",
+                [id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        Ok(raw.and_then(|raw| match serde_json::from_str(&raw) {
+            Ok(auto) => Some(auto),
+            Err(err) => {
+                log::warn!("automation {id}: unreadable definition_json: {err}");
+                None
+            }
+        }))
+    }
+
+    /// Sets `next_run_at`, mirrored in `definition_json` as
+    /// `claim_due_automation` does, and the skip in force (`None` clears it).
+    fn set_next_run(&self, id: &str, next: i64, skipped: Option<i64>) -> Result<()> {
+        self.conn.execute(
+            "UPDATE automations
+             SET next_run_at = ?1,
+                 definition_json = CASE WHEN NOT json_valid(definition_json) THEN definition_json
+                     WHEN ?2 IS NULL
+                     THEN json_remove(json_set(definition_json, '$.nextRunAt', ?1), '$.skippedRunAt')
+                     ELSE json_set(definition_json, '$.nextRunAt', ?1, '$.skippedRunAt', ?2) END
+             WHERE id = ?3",
+            params![next, skipped, id],
+        )?;
+        Ok(())
+    }
+
+    /// "Skip next run": passes over the next occurrence after `now`
+    /// without pausing. Fails when the automation is paused or that run
+    /// has already been claimed.
+    pub fn skip_next_automation_run(
+        &self,
+        id: &str,
+        now: i64,
+        tz: &jiff::tz::TimeZone,
+    ) -> Result<()> {
+        let tx = self.conn.unchecked_transaction()?;
+        let Some(auto) = self.automation(id)?.filter(|auto| auto.enabled) else {
+            bail!("the automation is paused or gone");
+        };
+        // The occurrence the scheduler would claim next; one already due
+        // belongs to it, not to the skip.
+        let skipped = auto.next_run_at;
+        if skipped <= now {
+            bail!("the next run is already starting");
+        }
+        let Some(next) = crate::schedule::next_automation_run_at(&auto, skipped, tz) else {
+            bail!("the automation has an unreadable schedule");
+        };
+        self.set_next_run(id, next, Some(skipped))?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Undoes "Skip next run" while the skipped occurrence is still ahead.
+    pub fn unskip_automation_run(&self, id: &str, now: i64) -> Result<()> {
+        let tx = self.conn.unchecked_transaction()?;
+        let Some(auto) = self.automation(id)? else {
+            bail!("the automation is gone");
+        };
+        match auto.skipped_run_at {
+            Some(skipped) if skipped > now && skipped < auto.next_run_at => {
+                self.set_next_run(id, skipped, None)?
+            }
+            _ => self.set_next_run(id, auto.next_run_at, None)?,
+        }
+        tx.commit()?;
         Ok(())
     }
 
@@ -913,6 +1017,46 @@ impl AppDb {
             }
         }
         Ok(runs)
+    }
+
+    /// The runs the Automations overview and cards read: the latest
+    /// `per_automation` of each automation, and every run created since
+    /// `since`, newest first.
+    pub fn list_recent_automation_runs(
+        &self,
+        per_automation: i64,
+        since: i64,
+    ) -> Result<Vec<AutomationRunRow>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, run_json FROM (
+                 SELECT id, run_json, created_at,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY automation_id ORDER BY created_at DESC
+                        ) AS rank
+                 FROM automation_runs
+             )
+             WHERE rank <= ?1 OR created_at >= ?2
+             ORDER BY created_at DESC LIMIT ?3",
+        )?;
+        let rows = stmt.query_map(params![per_automation, since, RECENT_RUNS_LIMIT], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        let mut runs = Vec::new();
+        for row in rows {
+            let (id, raw) = row?;
+            match serde_json::from_str::<AutomationRunRow>(&raw) {
+                Ok(run) => runs.push(run),
+                Err(err) => log::warn!("Skipping automation run {id}: unreadable run_json: {err}"),
+            }
+        }
+        Ok(runs)
+    }
+
+    /// Needs you › Dismiss: the run stops asking for attention.
+    pub fn dismiss_automation_run(&self, run_id: &str, at: i64) -> Result<()> {
+        self.patch_run(run_id, |fields| {
+            fields.insert("dismissedAt".into(), Value::from(at));
+        })
     }
 
     pub fn create_automation_run(&self, run: &AutomationRunRow) -> Result<()> {
@@ -1234,6 +1378,11 @@ fn patch_existing_definition(raw: &str, auto: &AutomationRow) -> Result<Map<Stri
             .or_insert_with(|| value.clone());
     }
     let mut known = known_automation_fields(auto)?;
+    // A save decides the skip (`schedule::next_run_skipping`); a lapsed one
+    // is not left behind.
+    if auto.skipped_run_at.is_none() {
+        definition.remove("skippedRunAt");
+    }
     // createdAt never changes once stored.
     if definition.contains_key("createdAt") {
         known.remove("createdAt");
@@ -1491,6 +1640,105 @@ mod tests {
         assert!(saved.get("lastRunAt").is_none());
     }
 
+    /// A stored daily automation at 09:00 UTC, due at `next`.
+    fn daily_automation(db: &AppDb, enabled: bool, next: i64) -> AutomationRow {
+        let mut auto = AutomationRow {
+            id: "daily".into(),
+            name: "Morning standup".into(),
+            enabled,
+            next_run_at: next,
+            ..Default::default()
+        };
+        let trigger =
+            crate::schedule::new_time_trigger("t".into(), crate::schedule::ScheduleKind::Daily);
+        crate::schedule::apply_triggers(&mut auto, vec![trigger]);
+        db.save_automation(&auto).unwrap();
+        auto
+    }
+
+    fn stored_automation(db: &AppDb, id: &str) -> (AutomationRow, i64) {
+        let column: i64 = db
+            .conn
+            .query_row(
+                "SELECT next_run_at FROM automations WHERE id = ?1",
+                [id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        (db.automation(id).unwrap().unwrap(), column)
+    }
+
+    fn utc_ms(text: &str) -> i64 {
+        text.parse::<jiff::Timestamp>().unwrap().as_millisecond()
+    }
+
+    #[test]
+    fn enabling_moves_a_missed_run_to_the_next_occurrence() {
+        let db = monocode_db();
+        let tz = jiff::tz::TimeZone::UTC;
+        // Paused since before Monday's run; turned back on on Wednesday.
+        daily_automation(&db, false, utc_ms("2026-10-26T09:00:00Z"));
+        let now = utc_ms("2026-10-28T12:00:00Z");
+        db.toggle_automation("daily", true, now, &tz).unwrap();
+        let (auto, column) = stored_automation(&db, "daily");
+        let thursday = utc_ms("2026-10-29T09:00:00Z");
+        assert!(auto.enabled);
+        assert_eq!((auto.next_run_at, column), (thursday, thursday));
+        // Pausing leaves the schedule as it is.
+        db.toggle_automation("daily", false, now + 1, &tz).unwrap();
+        let (auto, column) = stored_automation(&db, "daily");
+        assert!(!auto.enabled);
+        assert_eq!(column, thursday);
+    }
+
+    #[test]
+    fn a_skipped_run_moves_on_and_can_be_undone() {
+        let db = monocode_db();
+        let tz = jiff::tz::TimeZone::UTC;
+        let thursday = utc_ms("2026-10-29T09:00:00Z");
+        let friday = utc_ms("2026-10-30T09:00:00Z");
+        daily_automation(&db, true, thursday);
+        let now = utc_ms("2026-10-28T12:00:00Z");
+        db.skip_next_automation_run("daily", now, &tz).unwrap();
+        let (auto, column) = stored_automation(&db, "daily");
+        assert_eq!((auto.skipped_run_at, column), (Some(thursday), friday));
+        assert_eq!(auto.next_run_at, friday);
+        // Paused and resumed before Thursday: the skip still holds.
+        db.toggle_automation("daily", false, now, &tz).unwrap();
+        db.toggle_automation("daily", true, now, &tz).unwrap();
+        let (auto, column) = stored_automation(&db, "daily");
+        assert_eq!((auto.skipped_run_at, column), (Some(thursday), friday));
+        db.unskip_automation_run("daily", now).unwrap();
+        let (auto, column) = stored_automation(&db, "daily");
+        assert_eq!((auto.skipped_run_at, column), (None, thursday));
+        // A paused automation, or a run already due, cannot be skipped.
+        assert!(
+            db.skip_next_automation_run("daily", thursday + 1, &tz)
+                .is_err()
+        );
+        db.toggle_automation("daily", false, now, &tz).unwrap();
+        assert!(db.skip_next_automation_run("daily", now, &tz).is_err());
+    }
+
+    #[test]
+    fn a_save_without_a_skip_clears_the_stored_one() {
+        let db = monocode_db();
+        let thursday = utc_ms("2026-10-29T09:00:00Z");
+        let mut auto = daily_automation(&db, true, thursday);
+        auto.skipped_run_at = Some(thursday);
+        db.save_automation(&auto).unwrap();
+        assert_eq!(
+            db.automation("daily").unwrap().unwrap().skipped_run_at,
+            Some(thursday)
+        );
+        auto.skipped_run_at = None;
+        db.save_automation(&auto).unwrap();
+        assert_eq!(
+            db.automation("daily").unwrap().unwrap().skipped_run_at,
+            None
+        );
+    }
+
     #[test]
     fn save_automation_refuses_to_overwrite_unparseable_definition() {
         let db = monocode_db();
@@ -1517,7 +1765,8 @@ mod tests {
                 [monocode_automation_json().to_string()],
             )
             .unwrap();
-        db.toggle_automation("a1", false).unwrap();
+        db.toggle_automation("a1", false, 1, &jiff::tz::TimeZone::UTC)
+            .unwrap();
         let auto = &db.list_automations().unwrap()[0];
         assert!(!auto.enabled);
         assert_eq!(auto.last_session_id.as_deref(), Some("s9"));
@@ -1543,6 +1792,7 @@ mod tests {
             status: RunStatus::Pending,
             session_id: None,
             error: None,
+            dismissed_at: None,
         };
         db.create_automation_run(&run).unwrap();
         db.conn
@@ -1561,6 +1811,88 @@ mod tests {
         let runs = db.list_automation_runs("a1").unwrap();
         assert_eq!(runs.len(), 1);
         assert_eq!(runs[0].id, "r1");
+    }
+
+    #[test]
+    fn recent_runs_take_each_automations_latest_and_the_week() {
+        let db = monocode_db();
+        let run = |id: &str, auto: &str, created: i64| AutomationRunRow {
+            id: id.into(),
+            automation_id: auto.into(),
+            trigger: RunTrigger::Scheduled,
+            scheduled_for: created,
+            created_at: created,
+            started_at: None,
+            completed_at: None,
+            status: RunStatus::Succeeded,
+            session_id: None,
+            error: None,
+            dismissed_at: None,
+        };
+        for id in ["a", "b"] {
+            db.conn
+                .execute(
+                    "INSERT INTO automations VALUES (?1, ?2, 1, 100, 2)",
+                    [id.to_string(), monocode_automation_json().to_string()],
+                )
+                .unwrap();
+        }
+        for (id, auto, created) in [
+            ("a1", "a", 1),
+            ("a2", "a", 2),
+            ("a3", "a", 3),
+            ("b1", "b", 4),
+            ("a4", "a", 100),
+            ("a5", "a", 101),
+        ] {
+            db.create_automation_run(&run(id, auto, created)).unwrap();
+        }
+        // The last two of each, and everything since 100.
+        let ids: Vec<String> = db
+            .list_recent_automation_runs(2, 100)
+            .unwrap()
+            .into_iter()
+            .map(|r| r.id)
+            .collect();
+        assert_eq!(ids, ["a5", "a4", "b1"]);
+        let ids: Vec<String> = db
+            .list_recent_automation_runs(1, 3)
+            .unwrap()
+            .into_iter()
+            .map(|r| r.id)
+            .collect();
+        assert_eq!(ids, ["a5", "a4", "b1", "a3"]);
+    }
+
+    #[test]
+    fn dismissing_a_run_keeps_its_other_fields() {
+        let db = monocode_db();
+        db.conn
+            .execute(
+                "INSERT INTO automations VALUES ('a1', ?1, 1, 100, 2)",
+                [monocode_automation_json().to_string()],
+            )
+            .unwrap();
+        db.conn
+            .execute(
+                "INSERT INTO automation_runs VALUES ('r1', 'a1', 1, ?1)",
+                [r#"{"id":"r1","automationId":"a1","trigger":"scheduled","scheduledFor":1,"createdAt":1,"status":"failed","futureField":7}"#],
+            )
+            .unwrap();
+        db.dismiss_automation_run("r1", 42).unwrap();
+        let raw: String = db
+            .conn
+            .query_row(
+                "SELECT run_json FROM automation_runs WHERE id = 'r1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let stored: Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(stored["dismissedAt"], 42);
+        assert_eq!(stored["futureField"], 7);
+        let run = &db.list_automation_runs("a1").unwrap()[0];
+        assert_eq!(run.dismissed_at, Some(42));
     }
 
     // ---- 3. Sessions: NOT NULL columns and no clobbering ----

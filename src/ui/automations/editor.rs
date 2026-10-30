@@ -7,7 +7,7 @@ use bencode_ui::buttons::{Button, ButtonVariant};
 use bencode_ui::forms::{Choice, Switch};
 use bencode_ui::menus::{Menu, MenuItem, OverflowMenu};
 use bencode_ui::navigation::Tabs;
-use bencode_ui::primitives::{Icon, IconName};
+use bencode_ui::primitives::{Icon, IconName, Tooltip};
 use bencode_ui::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
     AnyElement, Context, Div, FontWeight, Hsla, IntoElement, ParentElement, Styled, div, prelude::*,
@@ -15,7 +15,8 @@ use gpui::{
 use jiff::tz::TimeZone;
 
 use super::PAGE_WIDTH;
-use super::format::next_run_preview;
+use super::format::{day_and_time, next_run_preview};
+use crate::app::automation_pauses::active_skip;
 use crate::app::automations::{EditorTab, draft_is_valid};
 use crate::app::{BenCodeApp, now_ms};
 use crate::db::AutomationRow;
@@ -26,7 +27,7 @@ use crate::ui::mascot::pixel_sprite;
 use crate::ui::provider_icon::HarnessIcon;
 use crate::ui::scale::px;
 use crate::ui::scrollbar::Scrolled;
-use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
+use crate::ui::tokens::{Fill, Ink, Status, Text, Tone as _};
 
 /// The automation's mark beside its name, as the New automation cards'.
 const ICON_TILE: f32 = 40.0;
@@ -90,43 +91,8 @@ impl BenCodeApp {
         let colors = &cx.theme().colors;
         let (fg, muted) = (colors.fg, colors.fg_muted);
         let dirty = self.automation_dirty(cx);
-        let actions = div()
-            .flex()
-            .flex_none()
-            .items_center()
-            .gap_2()
-            .when(dirty, |el| {
-                el.child(
-                    Button::new(
-                        "automation-discard",
-                        if stored { "Reset" } else { "Cancel" },
-                    )
-                    .variant(ButtonVariant::Outline)
-                    .size(ControlSize::Sm)
-                    .on_click(cx.listener(|this, _, _, cx| this.discard_automation_edits(cx))),
-                )
-            })
-            .when(stored, |el| {
-                el.child(
-                    Button::new("automation-run", "Run now")
-                        .variant(ButtonVariant::Outline)
-                        .size(ControlSize::Sm)
-                        .icon(IconName::Play)
-                        .on_click(cx.listener(|this, _, _, cx| this.run_automation_now(cx))),
-                )
-            })
-            .child(
-                Button::new("automation-save", if stored { "Save" } else { "Create" })
-                    .primary()
-                    .size(ControlSize::Sm)
-                    .disabled(!draft_is_valid(draft) || !dirty)
-                    .loading(self.automations.saving)
-                    .on_click(cx.listener(|this, _, _, cx| this.save_automation_draft(cx))),
-            );
-        let enable = cx.listener(|this, on: &bool, _, cx| {
-            let on = *on;
-            this.edit_automation(cx, |draft| draft.enabled = on);
-        });
+        let valid = draft_is_valid(draft);
+        let enable = cx.listener(|this, on: &bool, _, cx| this.set_editor_enabled(*on, cx));
         let summary = div()
             .flex()
             .flex_wrap()
@@ -150,19 +116,11 @@ impl BenCodeApp {
             )
             .child(divider(fg))
             .child(self.render_automation_summary(draft, cx));
-        let actions = actions.when(stored, |el| {
-            let id = draft.id.clone();
-            let delete = app_callback(cx, move |this, cx| {
-                this.automations.pending_delete = Some(id.clone());
-                cx.notify();
-            });
-            let menu = Menu::new().item(
-                MenuItem::new("Delete automation")
-                    .icon(IconName::Trash2)
-                    .on_click(delete),
-            );
-            el.child(OverflowMenu::new("automation-actions", menu).tooltip("Automation actions"))
-        });
+        let actions = if stored {
+            self.render_stored_actions(draft, dirty, valid, cx)
+        } else {
+            self.render_new_actions(valid, cx)
+        };
         let tabs = stored.then(|| {
             Tabs::new(
                 "automation-tabs",
@@ -238,6 +196,163 @@ impl BenCodeApp {
             )
     }
 
+    /// A stored automation's actions: "Unsaved changes", Reset and Save
+    /// while there are edits (their room kept while there are none, so
+    /// nothing moves), Run now or Test changes, and the menu.
+    fn render_stored_actions(
+        &self,
+        draft: &AutomationRow,
+        dirty: bool,
+        valid: bool,
+        cx: &Context<Self>,
+    ) -> Div {
+        let fg = cx.theme().colors.fg;
+        let edits = div()
+            .flex()
+            .items_center()
+            .gap_2()
+            .when(!dirty, |el| el.invisible())
+            .child(
+                div()
+                    .id("automation-unsaved")
+                    .flex()
+                    .items_center()
+                    .gap(px(6.0))
+                    .text_size(Text::Sm.px())
+                    .text_color(fg.ink(Ink::Muted))
+                    .child(unsaved_dot(cx))
+                    .child("Unsaved changes"),
+            )
+            .child(
+                Button::new("automation-discard", "Reset")
+                    .variant(ButtonVariant::Ghost)
+                    .size(ControlSize::Sm)
+                    .disabled(!dirty)
+                    .when(dirty, |button| {
+                        button.on_click(
+                            cx.listener(|this, _, _, cx| this.discard_automation_edits(cx)),
+                        )
+                    }),
+            )
+            .child(
+                Button::new("automation-save", "Save")
+                    .variant(if dirty && valid {
+                        ButtonVariant::Primary
+                    } else {
+                        ButtonVariant::Outline
+                    })
+                    .size(ControlSize::Sm)
+                    .disabled(!dirty || !valid)
+                    .loading(self.automations.saving)
+                    .when(dirty && valid, |button| {
+                        button
+                            .on_click(cx.listener(|this, _, _, cx| this.save_automation_draft(cx)))
+                    }),
+            );
+        // With edits, Run now tries them unsaved.
+        let test = dirty && valid;
+        let run = div()
+            .id("automation-run-tip")
+            .tooltip(Tooltip::text(if test {
+                "Runs what is on screen without saving it"
+            } else {
+                "Runs the saved automation now"
+            }))
+            .child(
+                Button::new(
+                    "automation-run",
+                    if test { "Test changes" } else { "Run now" },
+                )
+                .variant(ButtonVariant::Outline)
+                .size(ControlSize::Sm)
+                .icon(IconName::Play)
+                .on_click(cx.listener(|this, _, _, cx| this.run_automation_now(cx))),
+            );
+        div()
+            .flex()
+            .flex_none()
+            .items_center()
+            .gap_2()
+            .child(edits)
+            .child(run)
+            .child(self.render_automation_menu(draft, cx))
+    }
+
+    /// A new automation's actions: Cancel and Create.
+    fn render_new_actions(&self, valid: bool, cx: &Context<Self>) -> Div {
+        div()
+            .flex()
+            .flex_none()
+            .items_center()
+            .gap_2()
+            .child(
+                Button::new("automation-discard", "Cancel")
+                    .variant(ButtonVariant::Outline)
+                    .size(ControlSize::Sm)
+                    .on_click(cx.listener(|this, _, _, cx| this.discard_automation_edits(cx))),
+            )
+            .child(
+                Button::new("automation-save", "Create")
+                    .variant(if valid {
+                        ButtonVariant::Primary
+                    } else {
+                        ButtonVariant::Outline
+                    })
+                    .size(ControlSize::Sm)
+                    .disabled(!valid)
+                    .loading(self.automations.saving)
+                    .on_click(cx.listener(|this, _, _, cx| this.save_automation_draft(cx))),
+            )
+    }
+
+    /// Skip next run, Duplicate and Delete.
+    fn render_automation_menu(&self, draft: &AutomationRow, cx: &Context<Self>) -> OverflowMenu {
+        let id = draft.id.clone();
+        let stored = self.edited_automation();
+        let now = now_ms();
+        let skipped = stored.and_then(|auto| active_skip(auto, now)).is_some();
+        let skippable = stored.is_some_and(|auto| {
+            auto.enabled && auto.next_run_at > now && !schedule::time_triggers(auto).is_empty()
+        });
+        let skip = {
+            let id = id.clone();
+            app_callback(cx, move |this, cx| {
+                this.skip_automation_run(&id, skipped, cx)
+            })
+        };
+        let delete = app_callback(cx, move |this, cx| {
+            this.automations.pending_delete = Some(id.clone());
+            cx.notify();
+        });
+        let menu = Menu::new()
+            .item(
+                MenuItem::new(if skipped {
+                    "Undo skip"
+                } else {
+                    "Skip next run"
+                })
+                .icon(if skipped {
+                    IconName::Undo2
+                } else {
+                    IconName::Ban
+                })
+                .disabled(!skipped && !skippable)
+                .on_click(skip),
+            )
+            .item(
+                MenuItem::new("Duplicate")
+                    .icon(IconName::Copy)
+                    .on_click(app_callback(cx, |this, cx| this.duplicate_automation(cx))),
+            )
+            .separator()
+            .item(
+                MenuItem::new("Delete automation")
+                    .icon(IconName::Trash2)
+                    .on_click(delete),
+            );
+        OverflowMenu::new("automation-actions", menu).tooltip("Automation actions")
+    }
+
     /// What the automation is set to, read at a glance: its project, its
     /// model and when it runs next.
     fn render_automation_summary(&self, draft: &AutomationRow, cx: &Context<Self>) -> Div {
@@ -281,15 +396,7 @@ impl BenCodeApp {
                 catalog::display_label(&draft.harness, &draft.model),
             )
         };
-        let tz = TimeZone::system();
-        let next = if !draft.enabled {
-            "No runs while paused".to_string()
-        } else if schedule::time_triggers(draft).is_empty() {
-            "No schedule".to_string()
-        } else {
-            schedule::next_automation_run_at(draft, now_ms(), &tz)
-                .map_or_else(|| "No schedule".to_string(), |at| next_run_preview(at, &tz))
-        };
+        let next = self.render_next_run(draft, cx);
         div()
             .flex()
             .flex_wrap()
@@ -299,6 +406,84 @@ impl BenCodeApp {
             .min_w_0()
             .child(project)
             .child(model)
-            .child(item(icon(IconName::Clock), next))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(6.0))
+                    .min_w_0()
+                    .child(icon(IconName::Clock))
+                    .child(next),
+            )
     }
+
+    /// When it runs next, and what holds it back: the automation paused,
+    /// Pause all, or a skipped run with its Undo.
+    fn render_next_run(&self, draft: &AutomationRow, cx: &Context<Self>) -> Div {
+        let fg = cx.theme().colors.fg;
+        let (tz, now) = (TimeZone::system(), now_ms());
+        let text = |text: String| div().min_w_0().truncate().child(text);
+        let line = div().flex().items_center().gap(px(6.0)).min_w_0();
+        if !draft.enabled {
+            return line.child(text("No runs while paused".to_string()));
+        }
+        if schedule::time_triggers(draft).is_empty() {
+            return line.child(text("No schedule".to_string()));
+        }
+        let next_after = |after: i64| {
+            schedule::next_automation_run_at(draft, after, &tz)
+                .map_or_else(|| "No schedule".to_string(), |at| next_run_preview(at, &tz))
+        };
+        if let Some(until) = self.automations_paused_until() {
+            // What falls in the pause is skipped; a run at its end goes
+            // ahead, unless it is the one the user skipped.
+            let skipped = self
+                .edited_automation()
+                .and_then(|auto| active_skip(auto, now));
+            let next = schedule::next_run_skipping(draft, skipped, until - 1, &tz).map_or_else(
+                || "No schedule".to_string(),
+                |(at, _)| next_run_preview(at, &tz),
+            );
+            return line
+                .child(
+                    div()
+                        .flex_none()
+                        .text_color(Status::Attention.color(fg))
+                        .child(format!("All paused until {}", day_and_time(until, &tz))),
+                )
+                .child("·")
+                .child(text(next));
+        }
+        let stored = self.edited_automation();
+        let Some((stored, skipped)) = stored.and_then(|auto| Some((auto, active_skip(auto, now)?)))
+        else {
+            return line.child(text(next_after(now)));
+        };
+        let id = stored.id.clone();
+        line.child(
+            div()
+                .flex_none()
+                .text_color(Status::Attention.color(fg))
+                .child(format!("Next run skipped ({})", day_and_time(skipped, &tz))),
+        )
+        .child(
+            Button::new("automation-skip-undo", "Undo")
+                .variant(ButtonVariant::Link)
+                .size(ControlSize::Sm)
+                .on_click(
+                    cx.listener(move |this, _, _, cx| this.skip_automation_run(&id, true, cx)),
+                ),
+        )
+        .child("·")
+        .child(text(next_run_preview(stored.next_run_at, &tz)))
+    }
+}
+
+/// The small mark of unsaved edits, on a list card and in the header.
+pub(super) fn unsaved_dot(cx: &gpui::App) -> Div {
+    div()
+        .flex_none()
+        .size(px(6.0))
+        .rounded_full()
+        .bg(cx.theme().colors.accent)
 }

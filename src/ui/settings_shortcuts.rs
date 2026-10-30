@@ -273,7 +273,8 @@ fn groups() -> Vec<Group<Entry>> {
             description: None,
             rows: vec![
                 entry("Open Project", I::FolderOpen, cmd::OpenProject),
-                entry("Save", I::Save, cmd::Save),
+                entry("Save", I::Save, cmd::Save)
+                    .note("The open file, or the automation in the editor."),
                 entry("Quit BenCode", I::Power, cmd::Quit),
             ],
         },

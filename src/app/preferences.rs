@@ -264,6 +264,8 @@ impl BenCodeApp {
             bot_overview_width: Some(self.bots.overview.width)
                 .filter(|w| *w != crate::app::bot_overview::DEFAULT_WIDTH),
             remote_machines: self.settings.remote_machines.clone(),
+            automations_paused_until: self.settings.automations_paused_until,
+            automations_seen_at: self.settings.automations_seen_at,
             rail: self.settings.rail.clone(),
             extra: self.settings.extra.clone(),
         }
@@ -405,6 +407,26 @@ impl BenCodeApp {
         }
         self.register_summon_key();
         cx.notify();
+    }
+
+    /// Automations › Pause all: every due run is skipped until `until`
+    /// (epoch ms); `None` resumes them.
+    pub fn set_automations_paused_until(&mut self, until: Option<i64>, cx: &mut Context<Self>) {
+        let mut next = self.current_settings(cx);
+        next.automations_paused_until = until;
+        if next != self.settings {
+            self.write_settings(next, cx);
+        }
+        cx.notify();
+    }
+
+    /// The Automations overview was looked at, at `at` (epoch ms).
+    pub fn set_automations_seen_at(&mut self, at: i64, cx: &mut Context<Self>) {
+        let mut next = self.current_settings(cx);
+        next.automations_seen_at = Some(at);
+        if next != self.settings {
+            self.write_settings(next, cx);
+        }
     }
 
     /// Saves the size the floating Bot chat was left at.

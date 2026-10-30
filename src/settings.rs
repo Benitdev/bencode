@@ -212,6 +212,12 @@ pub struct AppSettings {
     /// them in `remote-machines.json`, with a device token BenCode has no
     /// need of: SSH signs in).
     pub remote_machines: Vec<crate::remote::Machine>,
+    /// Automations › Pause all: until when (epoch ms) every due run is
+    /// skipped instead of started. BenCode's own.
+    pub automations_paused_until: Option<i64>,
+    /// When (epoch ms) the Automations overview was last looked at: what
+    /// finished or failed since is new. BenCode's own.
+    pub automations_seen_at: Option<i64>,
     /// The project rail's order, width, archive, groups, appearance and
     /// notification mutes, under MonoCode's names (see `ui::rail::model`).
     /// Declared before `extra` so its keys are not also kept as unknown.
@@ -419,6 +425,8 @@ mod tests {
                 target: "me@mini".into(),
                 port: Some(2222),
             }],
+            automations_paused_until: Some(1_793_000_000_000),
+            automations_seen_at: Some(1_792_000_000_000),
             rail: crate::ui::rail::model::RailPrefs {
                 project_rail_order: vec!["/repo".into()],
                 project_rail_width: Some(240.0),

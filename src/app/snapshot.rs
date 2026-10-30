@@ -153,6 +153,82 @@ const SCENES: &[(&str, SetUp)] = &[
     ("automations", |app, _, cx| {
         app.show_surface(Surface::Automations, cx)
     }),
+    // Staged automations (`stage_automations`): edits left on Morning
+    // standup (its card's dot), Nightly test sweep open with its own.
+    ("automations-unsaved", |app, _, cx| {
+        stage_automations(app, cx);
+        app.select_automation(AUTO_STANDUP, cx);
+        app.automations.name_input.update(cx, |input, cx| {
+            input.set_text("Morning standup (team)", cx)
+        });
+        app.select_automation(AUTO_NIGHTLY, cx);
+        app.automations.prompt_input.update(cx, |input, cx| {
+            input.set_text("Run the full test suite and summarize any failures.", cx)
+        });
+        cx.notify();
+    }),
+    // A weekly trigger on Mon, Wed and Fri beside a monthly one, and the
+    // run on Friday skipped.
+    ("automations-schedules", |app, _, cx| {
+        app.select_automation(AUTO_AUDIT, cx)
+    }),
+    // A new automation begun and left: the New automation page offers it.
+    ("automations-new-unsaved", |app, _, cx| {
+        app.begin_blank_automation(cx);
+        app.automations.name_input.update(cx, |input, cx| {
+            input.set_text("Release notes draft", cx)
+        });
+        app.show_automation_picker(cx);
+    }),
+    // Pause all for three days: the list's bar and the editor's next run.
+    ("automations-paused", |app, _, cx| {
+        app.settings.automations_paused_until = Some(crate::app::now_ms() + 3 * 24 * 3_600_000);
+        app.select_automation(AUTO_AUDIT, cx);
+        cx.notify();
+    }),
+    // The overview with every section (`stage_automation_runs`): two runs
+    // going, one waiting on a command; a failed and a missed run; the
+    // week's results, the last three hours' marked new; the next day. The
+    // cards: running, failed last, missed, skipping, paused, unsaved.
+    ("automations-overview", |app, _, cx| {
+        app.settings.automations_paused_until = None;
+        if app.automations_unstaged() {
+            stage_automations(app, cx);
+        }
+        stage_automation_runs(app, cx);
+        app.show_surface(Surface::Automations, cx);
+        app.show_automation_overview(cx);
+        app.automations.seen_before = Some(crate::app::now_ms() - 3 * 3_600_000);
+        cx.notify();
+    }),
+    // The same under Pause all: its banner, and Upcoming paused.
+    ("automations-overview-paused", |app, _, cx| {
+        app.settings.automations_paused_until = Some(crate::app::now_ms() + 3 * 24 * 3_600_000);
+        cx.notify();
+    }),
+    // Back in a thread: the navigator's Automations icon carries the dot,
+    // its tooltip saying why.
+    ("automations-badge", |app, _, cx| {
+        app.settings.automations_paused_until = None;
+        app.close_surface(cx);
+        app.is_rail_open = true;
+        cx.notify();
+    }),
+    // The icon rail's Automations icon, with the dot.
+    ("automations-badge-compact", |app, _, cx| {
+        app.appearance.collapsed_rail = crate::ui::appearance::CollapsedRailMode::Compact;
+        app.is_rail_open = false;
+        cx.notify();
+    }),
+    // No automations at all: a short start and the popular templates.
+    ("automations-empty", |app, _, cx| {
+        app.is_rail_open = true;
+        app.runs.retain(|_, run| run.automation.is_none());
+        app.stage_automation_runs(Vec::new(), cx);
+        app.stage_automations(Vec::new(), cx);
+        app.show_surface(Surface::Automations, cx);
+        app.show_automation_overview(cx);
+    }),
     ("settings", |app, _, cx| {
         app.show_surface(Surface::Settings, cx)
     }),
@@ -345,6 +421,188 @@ fn stage_usage(app: &mut BenCodeApp, cx: &mut Context<BenCodeApp>) {
         data.stage(target.provider, &target.account_id, limits);
         cx.notify();
     });
+}
+
+const AUTO_STANDUP: &str = "auto-snapshot-standup";
+const AUTO_NIGHTLY: &str = "auto-snapshot-nightly";
+const AUTO_AUDIT: &str = "auto-snapshot-audit";
+
+/// Invented automations of an invented project: a weekday standup, a
+/// nightly test sweep, a dependency audit on Mon, Wed and Fri plus the
+/// 15th of each month with its next run skipped, an hourly test triage,
+/// and paused weekly release notes.
+fn stage_automations(app: &mut BenCodeApp, cx: &mut Context<BenCodeApp>) {
+    use crate::schedule::{self, ScheduleKind};
+    use jiff::tz::TimeZone;
+
+    let now = crate::app::now_ms();
+    let tz = TimeZone::system();
+    let model = app.selected_model.clone();
+    let harness = model.split_once(':').map_or("claude", |(h, _)| h).to_string();
+    let row = |id: &str, name: &str, prompt: &str, triggers: Vec<schedule::Trigger>| {
+        let mut auto = crate::db::AutomationRow {
+            id: id.into(),
+            name: name.into(),
+            prompt: prompt.into(),
+            harness: harness.clone(),
+            model: model.clone(),
+            cwd: "/Users/aiko/src/acme-shop".into(),
+            enabled: true,
+            workspace_mode: Some("worktree".into()),
+            last_run_at: Some(now - 9 * 3_600_000),
+            created_at: now - 30 * 86_400_000,
+            updated_at: now,
+            ..Default::default()
+        };
+        schedule::apply_triggers(&mut auto, triggers);
+        auto.next_run_at = schedule::next_automation_run_at(&auto, now, &tz).unwrap_or(0);
+        auto
+    };
+    let trigger = |id: &str, kind, time: &str| {
+        let mut trigger = schedule::new_time_trigger(id.into(), kind);
+        trigger.insert("time".into(), serde_json::Value::from(time));
+        trigger
+    };
+    let mut weekly = trigger("t-audit-w", ScheduleKind::Weekly, "08:00");
+    schedule::set_weekdays(&mut weekly, &[1, 3, 5]);
+    let mut monthly = trigger("t-audit-m", ScheduleKind::Monthly, "09:30");
+    monthly.insert("dayOfMonth".into(), serde_json::Value::from(15));
+    let mut audit = row(
+        AUTO_AUDIT,
+        "Weekly dependency audit",
+        "Check the lockfiles for outdated or vulnerable packages and open a summary.",
+        vec![weekly, monthly],
+    );
+    // Its next run skipped, as Skip next run leaves it.
+    let skipped = audit.next_run_at;
+    audit.skipped_run_at = Some(skipped);
+    audit.next_run_at = schedule::next_automation_run_at(&audit, skipped, &tz).unwrap_or(0);
+    let mut hourly = trigger("t-triage", ScheduleKind::Hourly, "09:00");
+    hourly.insert("minute".into(), serde_json::Value::from(15));
+    let mut release = row(
+        AUTO_RELEASE,
+        "Weekly release notes",
+        "Draft release notes from the pull requests merged this week.",
+        vec![trigger("t-release", ScheduleKind::Weekly, "16:00")],
+    );
+    release.enabled = false;
+    release.last_run_at = None;
+    let items = vec![
+        row(
+            AUTO_TRIAGE,
+            "Flaky test triage",
+            "Rerun the tests that failed on main and label the flaky ones.",
+            vec![hourly],
+        ),
+        release,
+        row(
+            AUTO_STANDUP,
+            "Morning standup",
+            "Summarize yesterday's commits and open pull requests for the standup.",
+            vec![trigger("t-standup", ScheduleKind::Weekdays, "09:05")],
+        ),
+        row(
+            AUTO_NIGHTLY,
+            "Nightly test sweep",
+            "Run the test suite and report failures.",
+            vec![trigger("t-nightly", ScheduleKind::Daily, "23:40")],
+        ),
+        audit,
+    ];
+    app.stage_automations(items, cx);
+}
+
+const AUTO_TRIAGE: &str = "auto-snapshot-triage";
+const AUTO_RELEASE: &str = "auto-snapshot-release";
+
+impl BenCodeApp {
+    /// The staged automations are not loaded (a scene picked alone).
+    fn automations_unstaged(&self) -> bool {
+        !self.automations.items.iter().any(|a| a.id == AUTO_STANDUP)
+    }
+}
+
+/// Invented runs of the staged automations: a week of Morning standup
+/// ending in a failure and a run going now; Nightly test sweep's last run
+/// missed; the audit's runs with one cancelled and a test run; Flaky test
+/// triage every hour, its run now waiting on a command; the release
+/// notes' one run cut off by a quit. Two threads with no turn of their
+/// own carry the runs going.
+fn stage_automation_runs(app: &mut BenCodeApp, cx: &mut Context<BenCodeApp>) {
+    use crate::db::{AutomationRunRow, INTERRUPTED, MISSED, RunStatus, RunTrigger};
+
+    const HOUR: i64 = 3_600_000;
+    let now = crate::app::now_ms();
+    let run = |n: usize, auto: &str, ago: i64, status: RunStatus, error: Option<&str>| {
+        let created = now - ago;
+        AutomationRunRow {
+            id: format!("run-snapshot-{auto}-{n}"),
+            automation_id: auto.into(),
+            trigger: RunTrigger::Scheduled,
+            scheduled_for: created,
+            created_at: created,
+            started_at: (status != RunStatus::Skipped).then_some(created),
+            completed_at: (!status.is_live()).then_some(created + 4 * 60_000 + n as i64 * 47_000),
+            status,
+            session_id: (status != RunStatus::Skipped).then(|| format!("snapshot-thread-{n}")),
+            error: error.map(str::to_string),
+            dismissed_at: None,
+        }
+    };
+    const DAY: i64 = 24 * HOUR;
+    let (ok, failed) = (RunStatus::Succeeded, Some("The agent turn failed."));
+    let mut runs = Vec::new();
+    for day in 2..8 {
+        let n = day as usize;
+        runs.push(run(n, AUTO_STANDUP, day * DAY, ok, None));
+        runs.push(run(n, AUTO_NIGHTLY, day * DAY - 14 * HOUR, ok, None));
+    }
+    runs.push(run(1, AUTO_STANDUP, 26 * HOUR, RunStatus::Failed, failed));
+    runs.push(run(0, AUTO_STANDUP, 4 * 60_000, RunStatus::Running, None));
+    let missed = run(1, AUTO_NIGHTLY, 12 * HOUR, RunStatus::Skipped, Some(MISSED));
+    runs.push(missed);
+    for (n, (ago, status)) in [(5, ok), (3, RunStatus::Cancelled), (2, ok)]
+        .into_iter()
+        .enumerate()
+    {
+        runs.push(run(n, AUTO_AUDIT, ago * DAY, status, None));
+    }
+    let mut test = run(9, AUTO_AUDIT, 2 * HOUR, ok, None);
+    test.trigger = RunTrigger::Manual;
+    runs.push(test);
+    for hour in 1..6 {
+        runs.push(run(hour as usize, AUTO_TRIAGE, hour * HOUR, ok, None));
+    }
+    runs.push(run(0, AUTO_TRIAGE, 6 * 60_000, RunStatus::Running, None));
+    // Cut off by a quit before it was paused.
+    let cut = Some(INTERRUPTED);
+    runs.push(run(1, AUTO_RELEASE, 2 * DAY, RunStatus::Cancelled, cut));
+    runs.sort_by_key(|run| std::cmp::Reverse(run.created_at));
+    // The runs going, in threads that have no turn of their own.
+    let free: Vec<String> = app
+        .sessions
+        .iter()
+        .filter(|s| s.has_user_message() && !app.runs.contains_key(&s.id))
+        .map(|s| s.id.clone())
+        .take(2)
+        .collect();
+    let waiting = PermissionRequest {
+        request_id: "snapshot-automation".into(),
+        tool: "Bash".into(),
+        description: "pnpm vitest run --reporter=dot".into(),
+        input: serde_json::Value::Null,
+    };
+    let going = [(AUTO_STANDUP, 4, None), (AUTO_TRIAGE, 6, Some(waiting))];
+    for (n, (session, (auto, minutes, pending))) in free.into_iter().zip(going).enumerate() {
+        let mut staged = staged_run(10 + n as u64, pending);
+        staged.automation = Some(crate::app::AutomationLink {
+            run_id: format!("run-snapshot-{auto}-0"),
+            automation_id: auto.to_string(),
+            started_at: now - minutes * 60_000,
+        });
+        app.runs.insert(session, staged);
+    }
+    app.stage_automation_runs(runs, cx);
 }
 
 /// The Backlog projects of the staged Inbox, by key and project id.
@@ -1064,7 +1322,7 @@ fn staged_run(id: u64, pending: Option<PermissionRequest>) -> AgentRun {
         handle: HarnessProcessHandle::new(stdin_tx, cancel_tx, None, None),
         pending_permission: pending,
         outcome: None,
-        automation_run_id: None,
+        automation: None,
         auto_approve: false,
         can_steer: false,
         purpose: Default::default(),

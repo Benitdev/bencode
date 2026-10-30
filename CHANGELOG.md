@@ -4,6 +4,50 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
+## [0.1.40] - Unreleased
+
+- Automation edits are never lost: leaving an automation with unsaved
+  changes keeps them, name and instructions included, and they come back
+  when you open it again. A dot on its card says so. A new automation
+  left half-written waits on the New automation page with Continue
+  editing and Discard. Reset, Cancel and Discard ask first, and so does
+  quitting while edits are unsaved. ⌘S saves the open automation.
+- The editor's header shows Save only when there is something to save,
+  with a quiet "Unsaved changes" beside it; nothing moves as you type.
+- The Active switch in the editor is stored at once, as the card's is,
+  without saving other edits. Turning an automation back on now waits for
+  its next time instead of running, or counting as skipped, the run it
+  missed while paused.
+- Run now with unsaved edits becomes Test changes: it runs what is on
+  screen without saving it.
+- A trigger runs at any minute: the time and the minute are picked from
+  columns or typed (0930), Up and Down stepping a minute, with Shift an
+  hour.
+- A weekly trigger can run on several days ("Mon, Wed, Fri at 09:00"),
+  chosen with day toggles. New Monthly triggers run on a day of the
+  month, or on its last day when the month is shorter.
+- Skip next run passes over one run of an automation, for a holiday,
+  without pausing it; the header names the skipped run with an Undo.
+- Pause all, at the top of the list, holds every automation for a day,
+  three days, a week or until a date you pick. Runs due meanwhile are
+  recorded as skipped rather than piling up; Run now still works.
+- Duplicate copies an automation as a new, paused one.
+- Automations open on an overview of what they did and what needs you:
+  runs going now, with Stop; a run that failed or was missed, or waits on
+  your approval, with Open thread, Run now and Dismiss; the last week's
+  results by day, those finished since you last looked marked New; and
+  the runs due in the next day, a skipped one with its Undo. With no
+  automations yet, it offers the popular templates.
+- Each automation's card says at a glance how it is doing: running and
+  for how long, paused, or when it runs next ("next in 18h"), with its
+  last seven runs as coloured marks, when it last ran, and its project in
+  full. A paused automation's card is quieter.
+- The Automations icon on the navigator and the icon rail shows a dot
+  when a run failed or was missed since you last looked, or a run waits
+  on your approval.
+- A trigger's own "Next run" now leaves out a skipped run and the runs
+  Pause all holds, as the header does.
+
 ## [0.1.39] - 2026-10-29
 
 - Monos are Bots now, BenCode's own: the rail, Settings, menus, the menu

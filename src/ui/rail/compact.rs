@@ -88,6 +88,7 @@ impl BenCodeApp {
                     .on_click(cx.listener(move |this, _, _, cx| this.toggle_surface(surface, cx)))
             };
         let needs_you = self.inbox_needs_you(cx);
+        let automation_badge = self.automation_badge();
         div()
             .id("compact-project-rail")
             .flex()
@@ -179,9 +180,9 @@ impl BenCodeApp {
                     .child(surface_action(
                         "compact-rail-automations",
                         IconName::Zap,
-                        "Automations",
+                        automation_badge.map_or("Automations", |why| why.rail_tip()),
                         Surface::Automations,
-                        false,
+                        automation_badge.is_some(),
                     )),
             )
             // Under the views, so their icons hold still as agents come

@@ -1,14 +1,21 @@
 //! Automations: the surface's state, the editor's draft, and loading and
 //! saving rows without blocking the UI thread. MonoCode
 //! `AutomationsContent` (`features/automations/ui/AutomationsView.tsx`) and
-//! `features/automations/model/automations.ts`. Runs are started in
-//! `automation_runs.rs`; the views are in `ui/automations/`.
+//! `features/automations/model/automations.ts`. Drafts kept across
+//! automations are in `automation_drafts.rs`, skips and Pause all in
+//! `automation_pauses.rs`, runs in `automation_runs.rs`, what the overview
+//! reads in `automation_overview.rs`; the views are in `ui/automations/`.
+
+use std::collections::HashMap;
 
 use bencode_ui::forms::{InputEvent, TextInput};
 use gpui::{Context, Entity, Window};
 use jiff::tz::TimeZone;
 use serde_json::Value;
 
+use super::automation_drafts::Discard;
+use super::automation_overview::NeedsYou;
+use super::automation_pauses::PausePick;
 use super::{BenCodeApp, PermissionMode, Surface, multiline_input, now_ms, text_input, unique_id};
 use crate::db::{AutomationRow, AutomationRunRow, DEFAULT_GRACE_MINUTES};
 use crate::schedule::{self, ScheduleKind, Trigger};
@@ -16,6 +23,18 @@ use crate::ui::automations::templates::{AutomationTemplate, TemplateCategory};
 
 /// MonoCode allows this many triggers per automation.
 pub const MAX_TRIGGERS: usize = 20;
+
+/// What the surface shows beside the list.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum AutomationPage {
+    /// What ran, what needs the user, what runs next: the landing.
+    #[default]
+    Overview,
+    /// The New automation page (templates).
+    New,
+    /// One automation's editor (`draft`).
+    Editor,
+}
 
 /// The two pages of an automation's editor.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -67,14 +86,33 @@ pub struct AutomationsState {
     pub selected_id: Option<String>,
     /// The run history of the automation in the editor.
     pub runs: Vec<AutomationRunRow>,
+    /// Every automation's latest runs and the last week's, newest first:
+    /// the overview, the cards' strips and the rail's badge.
+    pub recent: Vec<AutomationRunRow>,
+    /// Needs you's failed and missed runs, from `items` and `recent`.
+    pub needs: Vec<NeedsYou>,
+    /// The last look before the overview was shown: what finished since
+    /// is marked new.
+    pub seen_before: Option<i64>,
     pub filter_input: Entity<TextInput>,
     pub name_input: Entity<TextInput>,
     pub prompt_input: Entity<TextInput>,
     /// What the editor shows: a stored automation being edited, or a new
     /// one (empty `id`). Its name and prompt are in the fields above.
     pub draft: Option<AutomationRow>,
-    /// The New automation page is shown instead of the editor.
-    pub picker_open: bool,
+    /// Drafts with unsaved edits left for another automation or the New
+    /// automation page, name and prompt included, by id (`NEW_DRAFT` for
+    /// the new one).
+    pub stashed: HashMap<String, AutomationRow>,
+    /// The new automation as it was begun (blank, a template, a copy): it
+    /// has unsaved edits once it differs from this.
+    pub new_origin: Option<AutomationRow>,
+    /// Edits waiting on "Discard changes?".
+    pub pending_discard: Option<Discard>,
+    /// Pause all › Until…: the date and time being picked.
+    pub pause_pick: Option<PausePick>,
+    /// The page beside the list.
+    pub page: AutomationPage,
     pub category: TemplateCategory,
     pub tab: EditorTab,
     pub advanced_open: bool,
@@ -90,6 +128,8 @@ pub struct AutomationsState {
     listed: u64,
     /// Counts run-history loads; only the newest one is shown.
     run_requests: u64,
+    /// Counts loads of `recent`; only the newest one is shown.
+    pub(super) recent_requests: u64,
 }
 
 impl AutomationsState {
@@ -99,11 +139,18 @@ impl AutomationsState {
             items: Vec::new(),
             selected_id: None,
             runs: Vec::new(),
+            recent: Vec::new(),
+            needs: Vec::new(),
+            seen_before: None,
             filter_input: text_input(window, cx, "Filter automations"),
             name_input: text_input(window, cx, "Untitled"),
             prompt_input: multiline_input(window, cx, "What should the agent do?", (6, 18)),
             draft: None,
-            picker_open: true,
+            stashed: HashMap::new(),
+            new_origin: None,
+            pending_discard: None,
+            pause_pick: None,
+            page: AutomationPage::default(),
             category: TemplateCategory::default(),
             tab: EditorTab::default(),
             advanced_open: false,
@@ -113,6 +160,7 @@ impl AutomationsState {
             list_requests: 0,
             listed: 0,
             run_requests: 0,
+            recent_requests: 0,
         }
     }
 }
@@ -157,7 +205,7 @@ fn draft_from_template(cwd: String, model: &str, template: &AutomationTemplate) 
 
 /// MonoCode `draftFromAutomation`: `auto` with its triggers spelled out
 /// and the settings older rows lack filled in.
-fn editable(auto: &AutomationRow) -> AutomationRow {
+pub(super) fn editable(auto: &AutomationRow) -> AutomationRow {
     let mut draft = auto.clone();
     schedule::apply_triggers(&mut draft, schedule::triggers_of(auto));
     draft.workspace_mode = Some(WorkingCopy::of(auto).id().to_string());
@@ -183,9 +231,9 @@ pub fn grace_minutes(auto: &AutomationRow) -> i64 {
 
 /// Whether the editor's `draft` differs from the stored `auto` in anything
 /// the editor can change.
-fn settings_differ(draft: &AutomationRow, auto: &AutomationRow) -> bool {
+pub(super) fn settings_differ(draft: &AutomationRow, auto: &AutomationRow) -> bool {
     let auto = editable(auto);
-    draft.name != auto.name
+    draft.name.trim() != auto.name.trim()
         || draft.prompt != auto.prompt
         || draft.model != auto.model
         || draft.cwd != auto.cwd
@@ -216,18 +264,20 @@ pub fn automation_matches(auto: &AutomationRow, project: &str, query: &str) -> b
 }
 
 impl BenCodeApp {
+    /// The rail's icon and the menu: the overview, unless the editor shows
+    /// unsaved edits, which stay in view.
     pub fn open_automations(&mut self, cx: &mut Context<Self>) {
         self.show_surface(Surface::Automations, cx);
-        // MonoCode opens on the New automation page; unsaved edits stay.
         if !self.automation_dirty(cx) {
-            self.show_automation_picker(cx);
+            self.show_automation_overview(cx);
         }
         self.refresh_automations(cx);
         cx.notify();
     }
 
-    /// Reloads the list, and the open run history with it.
+    /// Reloads the list and the recent runs, and the open run history.
     pub(crate) fn refresh_automations(&mut self, cx: &mut Context<Self>) {
+        self.load_recent_automation_runs(cx);
         let request = self.next_automation_list();
         self.db_then(
             cx,
@@ -244,13 +294,13 @@ impl BenCodeApp {
         }
     }
 
-    fn next_automation_list(&mut self) -> u64 {
+    pub(super) fn next_automation_list(&mut self) -> u64 {
         self.automations.list_requests += 1;
         self.automations.list_requests
     }
 
     /// Shows the list `request` loaded, unless a later load is already shown.
-    fn show_automations(
+    pub(super) fn show_automations(
         &mut self,
         request: u64,
         items: Vec<AutomationRow>,
@@ -264,17 +314,18 @@ impl BenCodeApp {
         if self.selected_automation().is_none() {
             self.automations.selected_id = self.automations.items.first().map(|a| a.id.clone());
         }
-        // The automation in the editor was deleted elsewhere.
-        let editing = self.automations.draft.as_ref().map(|d| d.id.clone());
-        if let Some(id) = editing.filter(|id| !id.is_empty())
-            && !self.automations.items.iter().any(|a| a.id == id)
-        {
-            self.show_automation_picker(cx);
-        }
+        // Deleted here or elsewhere: its edits go with it.
+        self.drop_vanished_drafts(cx);
+        self.update_automation_needs();
         cx.notify();
     }
 
-    fn automation_failed(&mut self, what: &str, err: &anyhow::Error, cx: &mut Context<Self>) {
+    pub(super) fn automation_failed(
+        &mut self,
+        what: &str,
+        err: &anyhow::Error,
+        cx: &mut Context<Self>,
+    ) {
         log::error!("could not {what}: {err:#}");
         self.automations.error = Some(format!("Could not {what}: {err}"));
         cx.notify();
@@ -305,23 +356,14 @@ impl BenCodeApp {
         Some(draft)
     }
 
-    /// A new automation, or a stored one with unsaved edits.
+    /// The editor's automation has unsaved edits: a stored one changed, or
+    /// a new one changed from what it began as.
     pub(crate) fn automation_dirty(&self, cx: &gpui::App) -> bool {
-        match (self.editor_draft(cx), self.edited_automation()) {
-            (Some(draft), Some(stored)) => settings_differ(&draft, stored),
-            (Some(_), None) => true,
-            (None, _) => false,
-        }
+        self.editor_draft(cx)
+            .is_some_and(|draft| self.draft_changed(&draft))
     }
 
-    /// MonoCode `beginCreate`: back to the New automation page.
-    pub(crate) fn show_automation_picker(&mut self, cx: &mut Context<Self>) {
-        self.automations.picker_open = true;
-        self.automations.draft = None;
-        cx.notify();
-    }
-
-    fn open_automation_editor(&mut self, draft: AutomationRow, cx: &mut Context<Self>) {
+    pub(super) fn open_automation_editor(&mut self, draft: AutomationRow, cx: &mut Context<Self>) {
         let (name, prompt) = (draft.name.clone(), draft.prompt.clone());
         self.automations
             .name_input
@@ -330,22 +372,10 @@ impl BenCodeApp {
             .prompt_input
             .update(cx, |input, cx| input.set_text(prompt, cx));
         self.automations.draft = Some(draft);
-        self.automations.picker_open = false;
+        self.automations.page = AutomationPage::Editor;
         self.automations.tab = EditorTab::Settings;
         self.automations.advanced_open = false;
         cx.notify();
-    }
-
-    pub(crate) fn select_automation(&mut self, id: &str, cx: &mut Context<Self>) {
-        let Some(auto) = self.automations.items.iter().find(|a| a.id == id) else {
-            return;
-        };
-        let draft = editable(auto);
-        self.automations.selected_id = Some(id.to_string());
-        self.automations.error = None;
-        self.automations.runs.clear();
-        self.load_automation_runs(id, cx);
-        self.open_automation_editor(draft, cx);
     }
 
     /// Loads the run history of automation `id`; a later call wins.
@@ -385,7 +415,7 @@ impl BenCodeApp {
 
     pub(crate) fn begin_blank_automation(&mut self, cx: &mut Context<Self>) {
         let (cwd, model) = self.new_automation_target();
-        self.open_automation_editor(new_draft(cwd, &model), cx);
+        self.begin_new_automation(new_draft(cwd, &model), cx);
     }
 
     pub(crate) fn begin_automation_from(
@@ -394,15 +424,7 @@ impl BenCodeApp {
         cx: &mut Context<Self>,
     ) {
         let (cwd, model) = self.new_automation_target();
-        self.open_automation_editor(draft_from_template(cwd, &model, template), cx);
-    }
-
-    /// Reset (a stored automation) or Cancel (a new one).
-    pub(crate) fn discard_automation_edits(&mut self, cx: &mut Context<Self>) {
-        match self.edited_automation().map(|a| a.id.clone()) {
-            Some(id) => self.select_automation(&id, cx),
-            None => self.show_automation_picker(cx),
-        }
+        self.begin_new_automation(draft_from_template(cwd, &model, template), cx);
     }
 
     /// Changes the editor's automation; nothing is stored until Save.
@@ -460,7 +482,23 @@ impl BenCodeApp {
         });
     }
 
-    /// Save or Create: stores the editor's automation and reopens it.
+    /// A weekly trigger's day toggle: on or off, never the last one off.
+    pub(crate) fn toggle_automation_weekday(
+        &mut self,
+        index: usize,
+        day: i64,
+        cx: &mut Context<Self>,
+    ) {
+        self.edit_automation_triggers(cx, |triggers| {
+            if let Some(trigger) = triggers.get_mut(index) {
+                let days = schedule::toggle_weekday(&schedule::days_of_week(trigger), day);
+                schedule::set_weekdays(trigger, &days);
+            }
+        });
+    }
+
+    /// Save or Create (also ⌘S): stores the editor's automation and
+    /// reopens it. A stored one with nothing changed is left alone.
     pub(crate) fn save_automation_draft(&mut self, cx: &mut Context<Self>) {
         if self.automations.saving {
             return;
@@ -468,8 +506,15 @@ impl BenCodeApp {
         let Some(draft) = self.editor_draft(cx).filter(draft_is_valid) else {
             return;
         };
+        let stored = self.edited_automation();
+        if stored.is_some() && !self.automation_dirty(cx) {
+            return;
+        }
         let now = now_ms();
-        let Some(next_run_at) = schedule::next_automation_run_at(&draft, now, &TimeZone::system())
+        // A skip holds while the occurrence it skipped is still the next one.
+        let skipped = stored.and_then(|s| s.skipped_run_at);
+        let Some((next_run_at, skipped_run_at)) =
+            schedule::next_run_skipping(&draft, skipped, now, &TimeZone::system())
         else {
             self.automations.error = Some("One of the triggers has no valid time.".to_string());
             cx.notify();
@@ -480,6 +525,9 @@ impl BenCodeApp {
         let saved = match self.edited_automation() {
             Some(stored) => AutomationRow {
                 next_run_at,
+                skipped_run_at,
+                // Stored at once by its switch, which may have failed.
+                enabled: stored.enabled,
                 updated_at: now,
                 created_at: stored.created_at,
                 last_run_at: stored.last_run_at,
@@ -490,12 +538,14 @@ impl BenCodeApp {
             None => AutomationRow {
                 id: unique_id("auto"),
                 next_run_at,
+                skipped_run_at: None,
                 created_at: now,
                 updated_at: now,
                 ..draft
             },
         };
         self.automations.saving = true;
+        let was_new = self.edited_automation().is_none();
         let (request, id) = (self.next_automation_list(), saved.id.clone());
         self.db_then(
             cx,
@@ -508,7 +558,7 @@ impl BenCodeApp {
                 match listed {
                     Ok(items) => {
                         this.show_automations(request, items, cx);
-                        this.select_automation(&id, cx);
+                        this.automation_saved(&id, was_new, cx);
                     }
                     Err(err) => this.automation_failed("save the automation", &err, cx),
                 }
@@ -519,6 +569,7 @@ impl BenCodeApp {
 
     pub(crate) fn delete_automation(&mut self, id: &str, cx: &mut Context<Self>) {
         self.automations.pending_delete = None;
+        self.automations.stashed.remove(id);
         let (request, id) = (self.next_automation_list(), id.to_string());
         self.db_then(
             cx,
@@ -542,7 +593,8 @@ impl BenCodeApp {
         cx.notify();
     }
 
-    /// The switch on a list card: stored at once, unlike the editor's.
+    /// The switch on a list card, and the editor's for a stored
+    /// automation: stored at once, leaving other edits unsaved.
     pub(crate) fn set_automation_enabled(
         &mut self,
         id: &str,
@@ -550,24 +602,27 @@ impl BenCodeApp {
         cx: &mut Context<Self>,
     ) {
         // Shown at once; the reload below confirms or undoes it.
-        if let Some(auto) = self.automations.items.iter_mut().find(|a| a.id == id) {
-            auto.enabled = enabled;
-        }
-        if let Some(draft) = self.automations.draft.as_mut().filter(|d| d.id == id) {
-            draft.enabled = enabled;
-        }
+        self.show_automation_enabled(id, enabled);
         let (request, id) = (self.next_automation_list(), id.to_string());
         self.db_then(
             cx,
-            move |db| {
-                let toggled = db.toggle_automation(&id, enabled);
-                // The list either way: after a failure it shows what is stored.
-                db.list_automations().map(|items| (items, toggled))
+            {
+                let id = id.clone();
+                move |db| {
+                    let toggled = db.toggle_automation(&id, enabled, now_ms(), &TimeZone::system());
+                    // The list either way: after a failure it shows what is stored.
+                    db.list_automations().map(|items| (items, toggled))
+                }
             },
             move |this, listed, cx| match listed {
                 Ok((items, toggled)) => {
                     this.show_automations(request, items, cx);
                     if let Err(err) = toggled {
+                        // The drafts follow what is stored, so none turns dirty.
+                        let stored = this.automations.items.iter().find(|a| a.id == id);
+                        if let Some(enabled) = stored.map(|a| a.enabled) {
+                            this.show_automation_enabled(&id, enabled);
+                        }
                         this.automation_failed("update the automation", &err, cx);
                     }
                 }
@@ -575,6 +630,29 @@ impl BenCodeApp {
             },
         );
         cx.notify();
+    }
+
+    /// Automation `id` reads as `enabled` in the list and in its drafts.
+    fn show_automation_enabled(&mut self, id: &str, enabled: bool) {
+        let automations = &mut self.automations;
+        let rows = automations
+            .items
+            .iter_mut()
+            .filter(|a| a.id == id)
+            .chain(automations.draft.as_mut().filter(|d| d.id == id))
+            .chain(automations.stashed.get_mut(id));
+        for row in rows {
+            row.enabled = enabled;
+        }
+    }
+
+    /// The editor's Active switch: stored at once for a stored automation,
+    /// a setting of the draft for a new one.
+    pub(crate) fn set_editor_enabled(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        match self.edited_automation().map(|a| a.id.clone()) {
+            Some(id) => self.set_automation_enabled(&id, enabled, cx),
+            None => self.edit_automation(cx, |draft| draft.enabled = enabled),
+        }
     }
 
     pub(crate) fn show_automation_tab(&mut self, tab: EditorTab, cx: &mut Context<Self>) {
@@ -585,6 +663,15 @@ impl BenCodeApp {
             self.load_automation_runs(&id, cx);
         }
         self.redraw_regions(&[crate::ui::region::Region::Surface], cx);
+    }
+
+    /// A Recent results row of several runs: automation `id`'s editor on
+    /// its Run history.
+    pub(crate) fn open_automation_history(&mut self, id: &str, cx: &mut Context<Self>) {
+        self.select_automation(id, cx);
+        if self.editing_automation(id) {
+            self.show_automation_tab(EditorTab::History, cx);
+        }
     }
 
     /// A run history row: shows the thread the run happened in.
@@ -608,6 +695,26 @@ impl BenCodeApp {
         if matches!(event, InputEvent::Changed) {
             self.redraw_regions(&[crate::ui::region::Region::Surface], cx);
         }
+    }
+}
+
+#[cfg(feature = "snapshot")]
+impl BenCodeApp {
+    /// Shows `items` as if loaded; a load already on its way lands older,
+    /// so it cannot replace them (`app/snapshot.rs`).
+    pub(crate) fn stage_automations(&mut self, items: Vec<AutomationRow>, cx: &mut Context<Self>) {
+        let request = self.next_automation_list();
+        self.show_automations(request, items, cx);
+    }
+
+    /// Shows `runs` as if loaded, as `stage_automations` does the list.
+    pub(crate) fn stage_automation_runs(
+        &mut self,
+        runs: Vec<AutomationRunRow>,
+        cx: &mut Context<Self>,
+    ) {
+        self.automations.recent_requests += 1;
+        self.show_recent_runs(runs, cx);
     }
 }
 

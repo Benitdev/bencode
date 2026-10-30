@@ -427,7 +427,7 @@ impl BenCodeApp {
         if self.updater.ready.is_none() {
             return;
         }
-        if self.runs.is_empty() {
+        if self.runs.is_empty() && !self.automation_edits_unsaved(cx) {
             self.relaunch_now(cx);
         } else {
             self.updater.restart_on_quit = true;

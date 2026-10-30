@@ -12,9 +12,9 @@ use std::time::Duration;
 use gpui::Context;
 use jiff::tz::TimeZone;
 
-use super::automations::{WorkingCopy, grace_minutes};
+use super::automations::{WorkingCopy, draft_is_valid, grace_minutes};
 use super::session_folders::{FolderTarget, place_session};
-use super::{BenCodeApp, PermissionMode, now_ms, unique_id};
+use super::{AutomationLink, BenCodeApp, PermissionMode, now_ms, unique_id};
 use crate::db::{AppDb, AutomationRow, AutomationRunRow, RunStatus, RunTrigger};
 use crate::git::worktrees::{Worktree, create_worktree};
 use crate::harness::catalog;
@@ -25,8 +25,13 @@ use crate::ui::composer::new_worktree::temporary_branch_name;
 const POLL_INTERVAL: Duration = Duration::from_secs(30);
 
 /// MonoCode `claimDueAutomations`: claims every due occurrence and returns
-/// what to start. Runs on the database thread.
-fn claim_due(db: &AppDb, now: i64) -> anyhow::Result<Vec<(AutomationRow, AutomationRunRow)>> {
+/// what to start; while `paused` (Pause all) each is claimed as skipped.
+/// Runs on the database thread.
+fn claim_due(
+    db: &AppDb,
+    now: i64,
+    paused: bool,
+) -> anyhow::Result<Vec<(AutomationRow, AutomationRunRow)>> {
     let tz = TimeZone::system();
     let mut claimed = Vec::new();
     // Read the table each time: MonoCode may have edited it.
@@ -39,7 +44,7 @@ fn claim_due(db: &AppDb, now: i64) -> anyhow::Result<Vec<(AutomationRow, Automat
             continue;
         };
         let grace = grace_minutes(&auto);
-        match db.claim_due_automation(&auto.id, auto.next_run_at, next, now, grace) {
+        match db.claim_due_automation(&auto.id, (auto.next_run_at, next), now, grace, paused) {
             Ok(Some(run)) => claimed.push((auto, run)),
             Ok(None) => {}
             Err(err) => log::error!("could not claim automation {}: {err:#}", auto.id),
@@ -57,8 +62,9 @@ fn run_branch(run_id: &str, now: i64) -> String {
 }
 
 impl BenCodeApp {
-    /// Closes stale runs, then checks for due automations now and every
-    /// `POLL_INTERVAL`.
+    /// Closes stale runs, loads the recent runs (the rail's badge reads
+    /// them before the surface is opened), then checks for due automations
+    /// now and every `POLL_INTERVAL`.
     pub fn start_automation_scheduler(&mut self, cx: &mut Context<Self>) {
         let now = now_ms();
         // Queued ahead of the first claim, so it still runs first.
@@ -69,6 +75,8 @@ impl BenCodeApp {
             }
             Ok(())
         });
+        // On the database thread, behind the recovery it should show.
+        self.load_recent_automation_runs(cx);
         self.run_due_automations(cx);
         cx.spawn(async move |this, cx| {
             loop {
@@ -88,9 +96,10 @@ impl BenCodeApp {
     /// that was not skipped.
     fn run_due_automations(&mut self, cx: &mut Context<Self>) {
         let now = now_ms();
+        let paused = self.automations_paused_until().is_some();
         self.db_then(
             cx,
-            move |db| claim_due(db, now),
+            move |db| claim_due(db, now, paused),
             |app, claimed, cx| {
                 let claimed = match claimed {
                     Ok(claimed) => claimed,
@@ -113,11 +122,32 @@ impl BenCodeApp {
     }
 
     /// MonoCode `createManualAutomationRun` and its launch: the stored
-    /// automation runs in the background and the view stays open.
+    /// automation runs in the background and the view stays open. With
+    /// unsaved edits ("Test changes") the editor's draft runs as it stands,
+    /// unsaved, under the stored automation's id. Pause all does not stop it.
     pub(crate) fn run_automation_now(&mut self, cx: &mut Context<Self>) {
-        let Some(auto) = self.edited_automation().cloned() else {
+        let Some(stored) = self.edited_automation().cloned() else {
             return;
         };
+        let auto = match self.editor_draft(cx) {
+            Some(draft) if self.automation_dirty(cx) && draft_is_valid(&draft) => AutomationRow {
+                id: stored.id,
+                last_session_id: stored.last_session_id,
+                ..draft
+            },
+            _ => stored,
+        };
+        self.start_manual_run(auto, cx);
+    }
+
+    /// Run now from the overview: stored automation `id` as saved.
+    pub(crate) fn run_stored_automation(&mut self, id: &str, cx: &mut Context<Self>) {
+        if let Some(auto) = self.automations.items.iter().find(|a| a.id == id).cloned() {
+            self.start_manual_run(auto, cx);
+        }
+    }
+
+    fn start_manual_run(&mut self, auto: AutomationRow, cx: &mut Context<Self>) {
         let now = now_ms();
         let run = AutomationRunRow {
             id: unique_id("run"),
@@ -130,6 +160,7 @@ impl BenCodeApp {
             status: RunStatus::Pending,
             session_id: None,
             error: None,
+            dismissed_at: None,
         };
         self.db_then(
             cx,
@@ -138,7 +169,7 @@ impl BenCodeApp {
                 Ok(run_id) => {
                     app.launch_automation_run(&auto, &run_id, cx);
                     // Queued behind the run's own writes, so it shows them.
-                    app.load_automation_runs(&auto.id, cx);
+                    app.refresh_automations(cx);
                 }
                 Err(err) => {
                     log::error!("create_automation_run failed: {err:#}");
@@ -273,13 +304,20 @@ impl BenCodeApp {
                     Some("The agent could not start."),
                 )
             });
+            self.refresh_automations(cx);
             return;
         }
         let now = now_ms();
         self.db_write("start automation run", move |db| {
             db.start_automation_run(&run, &thread, now)
         });
-        self.attach_automation_run(session_id, run_id.to_string());
+        let link = AutomationLink {
+            run_id: run_id.to_string(),
+            automation_id: auto.id.clone(),
+            started_at: now,
+        };
+        self.attach_automation_run(session_id, link);
+        self.refresh_automations(cx);
     }
 }
 

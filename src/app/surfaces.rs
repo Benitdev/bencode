@@ -77,7 +77,11 @@ impl BenCodeApp {
                 self.save_note_if_dirty(cx);
                 self.notes.pending_delete = None;
             }
-            Some(Surface::Automations) => self.automations.pending_delete = None,
+            Some(Surface::Automations) => {
+                self.automations.pending_delete = None;
+                self.automations.pending_discard = None;
+                self.automations.pause_pick = None;
+            }
             Some(Surface::Settings) => {
                 self.surface = self.settings_return.take();
                 if self.surface == Some(Surface::Inbox) {

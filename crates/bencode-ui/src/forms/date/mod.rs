@@ -10,7 +10,7 @@ use crate::typography::format::system_zone;
 
 pub use calendar::Calendar;
 pub use picker::DatePicker;
-pub use time::DateTimePicker;
+pub use time::{DateTimePicker, TimePicker};
 /// The system's clock in its own zone, UTC when that zone is unknown.
 pub(crate) fn zoned_now() -> Zoned {
     Timestamp::now().to_zoned(system_zone("date pickers"))

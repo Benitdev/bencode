@@ -19,7 +19,7 @@ pub use check::{CheckState, Checkbox};
 pub(crate) use code::{Kind, lex};
 pub use code::{code_highlights, json_highlights};
 pub use color::{ColorPicker, ColorSwatch, EyeDropper};
-pub use date::{Calendar, DatePicker, DateTimePicker};
+pub use date::{Calendar, DatePicker, DateTimePicker, TimePicker};
 pub use input::{Input, PasswordInput};
 pub use multi::MultiSelect;
 pub use number::{NumberInput, ScrubInput};

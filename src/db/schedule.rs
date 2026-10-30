@@ -12,21 +12,28 @@ use super::{AppDb, AutomationRunRow, RunStatus, RunTrigger};
 
 /// MonoCode's default `missedRunGraceMinutes`.
 pub const DEFAULT_GRACE_MINUTES: i64 = 720;
-const INTERRUPTED: &str = "Interrupted when BenCode last stopped.";
-const NOT_STARTED: &str = "Not started before BenCode last stopped.";
-const MISSED: &str = "Missed the scheduled run beyond its grace period.";
+/// Why a run left running by a previous BenCode is cancelled.
+pub const INTERRUPTED: &str = "Interrupted when BenCode last stopped.";
+/// Why a run left pending by a previous BenCode is skipped.
+pub const NOT_STARTED: &str = "Not started before BenCode last stopped.";
+/// Why an occurrence claimed later than its grace period is skipped.
+pub const MISSED: &str = "Missed the scheduled run beyond its grace period.";
+/// Why an occurrence due while "Pause all" holds is skipped.
+pub const ALL_PAUSED: &str = "All automations were paused.";
 
 impl AppDb {
     /// Advances automation `id` from `expected_next` to `next` and records a
     /// `scheduled` run, if the occurrence is still unclaimed and due at
-    /// `now`. A run later than `grace_minutes` is recorded as `skipped`.
+    /// `now`. A run later than `grace_minutes` is recorded as `skipped`, and
+    /// so is every run while `paused` ("Pause all"): none piles up for the
+    /// resume.
     pub fn claim_due_automation(
         &self,
         id: &str,
-        expected_next: i64,
-        next: i64,
+        (expected_next, next): (i64, i64),
         now: i64,
         grace_minutes: i64,
+        paused: bool,
     ) -> Result<Option<AutomationRunRow>> {
         if next <= expected_next {
             anyhow::bail!("the next occurrence must advance the schedule");
@@ -44,7 +51,13 @@ impl AppDb {
         if claimed == 0 {
             return Ok(None);
         }
-        let missed = now.saturating_sub(expected_next) > grace_minutes.saturating_mul(60_000);
+        let late = now.saturating_sub(expected_next) > grace_minutes.saturating_mul(60_000);
+        let skipped = match (paused, late) {
+            (true, _) => Some(ALL_PAUSED),
+            (false, true) => Some(MISSED),
+            (false, false) => None,
+        };
+        let missed = skipped.is_some();
         let run = AutomationRunRow {
             id: format!("run-{now}-{id}"),
             automation_id: id.to_string(),
@@ -59,7 +72,8 @@ impl AppDb {
                 RunStatus::Pending
             },
             session_id: None,
-            error: missed.then(|| MISSED.to_string()),
+            error: skipped.map(str::to_string),
+            dismissed_at: None,
         };
         tx.execute(
             "INSERT INTO automation_runs (id, automation_id, created_at, run_json)
@@ -122,7 +136,7 @@ impl AppDb {
     }
 
     /// Edits `run_json` in place so fields BenCode does not model survive.
-    fn patch_run(
+    pub(super) fn patch_run(
         &self,
         run_id: &str,
         edit: impl FnOnce(&mut serde_json::Map<String, Value>),
@@ -164,11 +178,11 @@ mod tests {
     fn an_occurrence_is_claimed_once() {
         let db = monocode_db();
         insert_automation(&db, "a", 1_000);
-        let run = db.claim_due_automation("a", 1_000, 2_000, 1_500, 720);
+        let run = db.claim_due_automation("a", (1_000, 2_000), 1_500, 720, false);
         assert_eq!(run.unwrap().unwrap().status, RunStatus::Pending);
-        let again = db.claim_due_automation("a", 1_000, 2_000, 1_600, 720);
+        let again = db.claim_due_automation("a", (1_000, 2_000), 1_600, 720, false);
         assert!(again.unwrap().is_none());
-        let early = db.claim_due_automation("a", 2_000, 3_000, 1_700, 720);
+        let early = db.claim_due_automation("a", (2_000, 3_000), 1_700, 720, false);
         assert!(early.unwrap().is_none(), "not due yet");
     }
 
@@ -177,10 +191,25 @@ mod tests {
         let db = monocode_db();
         insert_automation(&db, "a", 1);
         let run = db
-            .claim_due_automation("a", 1, 100_000_000, 31 * 60_000, 30)
+            .claim_due_automation("a", (1, 100_000_000), 31 * 60_000, 30, false)
             .unwrap()
             .unwrap();
         assert_eq!(run.status, RunStatus::Skipped);
+    }
+
+    #[test]
+    fn runs_due_while_all_are_paused_are_skipped() {
+        let db = monocode_db();
+        insert_automation(&db, "a", 1_000);
+        let run = db
+            .claim_due_automation("a", (1_000, 2_000), 1_500, 720, true)
+            .unwrap()
+            .unwrap();
+        assert_eq!(run.status, RunStatus::Skipped);
+        assert_eq!(run.error.as_deref(), Some(ALL_PAUSED));
+        // The schedule moved on: nothing is left to run on resume.
+        let again = db.claim_due_automation("a", (1_000, 2_000), 1_600, 720, false);
+        assert!(again.unwrap().is_none());
     }
 
     #[test]
@@ -188,7 +217,7 @@ mod tests {
         let db = monocode_db();
         insert_automation(&db, "a", 1_000);
         let run = db
-            .claim_due_automation("a", 1_000, 2_000, 1_500, 720)
+            .claim_due_automation("a", (1_000, 2_000), 1_500, 720, false)
             .unwrap()
             .unwrap();
         db.start_automation_run(&run.id, "s1", 1_500).unwrap();

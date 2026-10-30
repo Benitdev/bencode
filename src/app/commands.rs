@@ -574,7 +574,12 @@ impl BenCodeApp {
         .on_action(cx.listener(|this, _: &NewThread, _, cx| this.create_new_session(cx)))
         .on_action(cx.listener(|this, _: &CloseActive, _, cx| this.close_active(cx)))
         .on_action(cx.listener(|this, _: &Save, _, cx| {
-            if matches!(this.file_pane.active(), Some(PaneTab::File { .. })) {
+            // The Automations surface covers the panes: its editor saves.
+            if this.surface_open(crate::app::surfaces::Surface::Automations) {
+                if this.automations.page == crate::app::automations::AutomationPage::Editor {
+                    this.save_automation_draft(cx);
+                }
+            } else if matches!(this.file_pane.active(), Some(PaneTab::File { .. })) {
                 this.save_current_editor_file(cx);
             }
         }))

@@ -27,11 +27,12 @@ struct Columns {
     shown: Option<Time>,
 }
 
-/// Hours and minutes as two scrolling columns. A click sets that part.
+/// Hours and minutes as two scrolling columns (minutes alone when `hours`
+/// is off). A click sets that part.
 fn time_columns(
     id: &ElementId,
     time: Time,
-    step: u8,
+    (step, hours): (u8, bool),
     on_pick: OnTime,
     window: &mut Window,
     cx: &mut App,
@@ -49,6 +50,7 @@ fn time_columns(
             columns.shown = Some(time);
         });
     }
+    let show_hours = hours;
     let (hours, minutes) = {
         let columns = columns.read(cx);
         (columns.hours.clone(), columns.minutes.clone())
@@ -125,11 +127,12 @@ fn time_columns(
     div()
         .flex()
         .text_size(theme.text_size(TextSize::Sm))
-        .child(column("hours", &hours).children(hour_cells))
+        .when(show_hours, |el| {
+            el.child(column("hours", &hours).children(hour_cells))
+        })
         .child(
             column("minutes", &minutes)
-                .border_l_1()
-                .border_color(colors.border)
+                .when(show_hours, |el| el.border_l_1().border_color(colors.border))
                 .children(minute_cells),
         )
 }
@@ -216,7 +219,7 @@ impl RenderOnce for DateTimePicker {
                 let columns = time_columns(
                     &id,
                     time,
-                    step,
+                    (step, true),
                     Rc::new(move |time, window, cx| on_time(day.to_datetime(time), window, cx)),
                     window,
                     cx,
@@ -245,5 +248,177 @@ impl RenderOnce for DateTimePicker {
             window,
             cx,
         )
+    }
+}
+
+/// Digits typed into an open time picker, read as they come: "9" is
+/// 09:00, "930" 09:30, "0930" 09:30; with minutes alone, "5" is :05.
+fn typed_time(digits: &str, hours: bool, time: Time) -> Option<Time> {
+    let number = |text: &str| text.parse::<i8>().ok();
+    let (hour, minute) = match (hours, digits.len()) {
+        (false, 1 | 2) => (time.hour(), number(digits)?),
+        (true, 1 | 2) => (number(digits)?, 0),
+        (true, 3) => (number(&digits[..1])?, number(&digits[1..])?),
+        (true, 4) => (number(&digits[..2])?, number(&digits[2..])?),
+        _ => return None,
+    };
+    Time::new(hour, minute, 0, 0).ok()
+}
+
+/// What an open time picker's keys have typed so far.
+#[derive(Default)]
+struct Typed(String);
+
+/// A time of day: hour and minute columns to click, and keys for the
+/// keyboard. Up and Down step a minute (with Shift, an hour); digits type
+/// the time ("0930"); Enter or Escape closes.
+#[derive(IntoElement)]
+pub struct TimePicker {
+    id: ElementId,
+    value: Time,
+    hours: bool,
+    size: ControlSize,
+    on_change: Option<OnTime>,
+}
+
+impl TimePicker {
+    pub fn new(id: impl Into<ElementId>, value: Time) -> Self {
+        Self {
+            id: id.into(),
+            value,
+            hours: true,
+            size: ControlSize::default(),
+            on_change: None,
+        }
+    }
+
+    /// Minutes past the hour only (":05"), for something hourly.
+    pub fn minutes_only(mut self) -> Self {
+        self.hours = false;
+        self
+    }
+
+    pub fn size(mut self, size: ControlSize) -> Self {
+        self.size = size;
+        self
+    }
+
+    pub fn on_change(mut self, handler: impl Fn(Time, &mut Window, &mut App) + 'static) -> Self {
+        self.on_change = Some(Rc::new(handler));
+        self
+    }
+}
+
+impl RenderOnce for TimePicker {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let (id, value, hours) = (self.id.clone(), self.value, self.hours);
+        let state = dropdown(&id, window, cx);
+        let typed = window.use_keyed_state((id.clone(), "typed"), cx, |_, _| Typed::default());
+        if !state.read(cx).open && !typed.read(cx).0.is_empty() {
+            typed.update(cx, |typed, _| typed.0.clear());
+        }
+        let shown = match typed.read(cx).0.as_str() {
+            "" if hours => show_time(value),
+            "" => format!(":{:02}", value.minute()),
+            digits if hours => format!("{digits}…"),
+            digits => format!(":{digits}…"),
+        };
+        let commit: OnTime = {
+            let (id, on_change) = (id.clone(), self.on_change);
+            Rc::new(move |time, window, cx| {
+                log::info!("time picker {id:?}: {time}");
+                if let Some(on_change) = &on_change {
+                    on_change(time, window, cx);
+                }
+            })
+        };
+        picker_field(
+            self.id,
+            Face {
+                icon: IconName::Clock,
+                shown: Some(shown.into()),
+                placeholder: SharedString::default(),
+                size: self.size,
+                disabled: false,
+                quiet: false,
+            },
+            move |close, anchor, window, cx| {
+                let inner = state.read(cx).inner.clone();
+                let columns = time_columns(&id, value, (1, hours), commit.clone(), window, cx);
+                let (out, keys) = (close.clone(), close);
+                float(
+                    id.clone(),
+                    anchor,
+                    CALENDAR_ROWS,
+                    surface((id.clone(), "popup"), window, cx)
+                        .track_focus(&inner)
+                        .on_mouse_down_out(move |_, window, cx| out(window, cx))
+                        .on_key_down(move |event, window, cx| {
+                            let key = event.keystroke.key.as_str();
+                            let shift = event.keystroke.modifiers.shift;
+                            let step = |minutes: i64| {
+                                value.wrapping_add(jiff::SignedDuration::from_mins(minutes))
+                            };
+                            match key {
+                                "up" | "down" => {
+                                    let by = if shift && hours { 60 } else { 1 };
+                                    let by = if key == "up" { by } else { -by };
+                                    commit(step(by), window, cx);
+                                }
+                                "enter" | "escape" => keys(window, cx),
+                                "backspace" => typed.update(cx, |typed, cx| {
+                                    typed.0.pop();
+                                    cx.notify();
+                                }),
+                                digit
+                                    if digit.len() == 1
+                                        && digit.chars().all(|c| c.is_ascii_digit()) =>
+                                {
+                                    let mut digits = typed.read(cx).0.clone();
+                                    digits.push_str(digit);
+                                    if let Some(time) = typed_time(&digits, hours, value) {
+                                        commit(time, window, cx);
+                                    }
+                                    // Complete: the next digit starts over.
+                                    if digits.len() >= if hours { 4 } else { 2 } {
+                                        digits.clear();
+                                    }
+                                    typed.update(cx, |typed, cx| {
+                                        typed.0 = digits;
+                                        cx.notify();
+                                    });
+                                }
+                                _ => return,
+                            }
+                            cx.stop_propagation();
+                        })
+                        .child(columns),
+                    window,
+                    cx,
+                )
+            },
+            window,
+            cx,
+        )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use jiff::civil::time;
+
+    use super::typed_time;
+
+    #[test]
+    fn typed_digits_read_as_a_time() {
+        let now = time(14, 20, 0, 0);
+        assert_eq!(typed_time("9", true, now), Some(time(9, 0, 0, 0)));
+        assert_eq!(typed_time("17", true, now), Some(time(17, 0, 0, 0)));
+        assert_eq!(typed_time("930", true, now), Some(time(9, 30, 0, 0)));
+        assert_eq!(typed_time("0905", true, now), Some(time(9, 5, 0, 0)));
+        assert_eq!(typed_time("2575", true, now), None);
+        assert_eq!(typed_time("7", false, now), Some(time(14, 7, 0, 0)));
+        assert_eq!(typed_time("45", false, now), Some(time(14, 45, 0, 0)));
+        assert_eq!(typed_time("75", false, now), None);
     }
 }

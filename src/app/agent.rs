@@ -66,8 +66,8 @@ pub struct AgentRun {
     pub pending_permission: Option<PermissionRequest>,
     /// How the turn ended, once the harness reports `Done`.
     pub outcome: Option<DoneStatus>,
-    /// Automation run row to close when this turn ends.
-    pub automation_run_id: Option<String>,
+    /// The automation run this turn carries out, closed when it ends.
+    pub automation: Option<AutomationLink>,
     /// Full access: every tool is allowed at once, questions still ask.
     pub auto_approve: bool,
     /// Whether the harness takes a follow-up in the middle of this turn.
@@ -88,6 +88,16 @@ pub struct AgentRun {
     /// A turn a machine runs (`remote::spawn`): quitting leaves it running
     /// there, and the next launch follows it again (`app/remote_runs.rs`).
     pub remote: Option<crate::app::remote_runs::RemoteRunRef>,
+}
+
+/// The automation run a turn carries out: the row to close when it ends,
+/// and what the Automations surface shows while it runs.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AutomationLink {
+    pub run_id: String,
+    pub automation_id: String,
+    /// When the run started, epoch ms.
+    pub started_at: i64,
 }
 
 /// What a run is for.
@@ -1051,7 +1061,7 @@ impl BenCodeApp {
                 handle,
                 pending_permission: None,
                 outcome: None,
-                automation_run_id: None,
+                automation: None,
                 auto_approve,
                 can_steer: false,
                 purpose: RunPurpose::Turn,
@@ -1244,7 +1254,7 @@ impl BenCodeApp {
             }
         }
         self.persist_session(session_id);
-        self.close_automation_run(&run, automation_status(run.outcome));
+        self.close_automation_run(&run, automation_status(run.outcome), cx);
         if run.purpose == RunPurpose::Turn {
             // A turn that ended badly after the provider answered it still
             // reached the provider, context and all.
@@ -1320,7 +1330,7 @@ impl BenCodeApp {
         }
         self.drop_bot_context(session_id);
         self.note_bot_turn_end(session_id, None);
-        self.close_automation_run(&run, RunStatus::Cancelled);
+        self.close_automation_run(&run, RunStatus::Cancelled, cx);
         self.session_turn_stopped(session_id, cx);
         if let Some(thread) = self.threads.get_mut(session_id)
             && !thread.queue.is_empty()
@@ -1339,15 +1349,16 @@ impl BenCodeApp {
     }
 
     /// Links the running turn of `session_id` to an automation run row.
-    pub fn attach_automation_run(&mut self, session_id: &str, run_id: String) {
+    pub fn attach_automation_run(&mut self, session_id: &str, link: AutomationLink) {
         if let Some(run) = self.runs.get_mut(session_id) {
-            run.automation_run_id = Some(run_id);
+            run.automation = Some(link);
         }
     }
 
-    /// ⌘Q: quits at once unless agents are running (MonoCode asks then).
+    /// ⌘Q: quits at once unless agents are running (MonoCode asks then)
+    /// or automation edits are unsaved.
     pub fn request_quit(&mut self, cx: &mut Context<Self>) {
-        if self.runs.is_empty() {
+        if self.runs.is_empty() && !self.automation_edits_unsaved(cx) {
             cx.quit();
             return;
         }
@@ -1369,7 +1380,7 @@ impl BenCodeApp {
                 continue;
             }
             run.handle.cancel();
-            self.close_automation_run(run, RunStatus::Cancelled);
+            self.write_automation_run_end(run, RunStatus::Cancelled);
             if let Some(session) = self.sessions.iter_mut().find(|s| &s.id == session_id) {
                 mark_turn_interrupted(session, now_ms());
             }
@@ -1383,15 +1394,26 @@ impl BenCodeApp {
         }
     }
 
-    fn close_automation_run(&self, run: &AgentRun, status: RunStatus) {
-        let Some(run_id) = &run.automation_run_id else {
-            return;
+    /// Closes the automation run `run` carried out, then reloads the
+    /// Automations list, its cards and badge, once that has landed.
+    fn close_automation_run(&mut self, run: &AgentRun, status: RunStatus, cx: &mut Context<Self>) {
+        if self.write_automation_run_end(run, status) {
+            // Queued behind the write, so it reads it.
+            self.refresh_automations(cx);
+        }
+    }
+
+    /// Queues the end of the automation run `run` carried out, if any.
+    fn write_automation_run_end(&self, run: &AgentRun, status: RunStatus) -> bool {
+        let Some(link) = &run.automation else {
+            return false;
         };
         let error = (status == RunStatus::Failed).then_some("The agent turn failed.");
-        let run_id = run_id.clone();
+        let run_id = link.run_id.clone();
         self.db_write("close automation run", move |db| {
             db.finish_automation_run(&run_id, status, error)
         });
+        true
     }
 
     /// Answers the permission prompt of `session_id`'s run.
