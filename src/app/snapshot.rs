@@ -391,6 +391,14 @@ const SCENES: &[(&str, SetUp)] = &[
             app.open_session(id, cx);
         }
     }),
+    // Tickets on the thread list before the Inbox's list has landed, as
+    // at launch: short keys all the same.
+    ("tickets-before-inbox", |app, _, cx| {
+        app.close_surface(cx);
+        stage_item_threads(app);
+        app.inbox_state.as_mut(cx).key_prefix.clear();
+        cx.notify();
+    }),
     // A thread picked on the navigator while the Inbox is in view: the
     // thread takes its place.
     ("inbox-then-thread", |app, _, cx| {

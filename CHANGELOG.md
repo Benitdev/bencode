@@ -4,6 +4,12 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
+## [0.1.42] - Unreleased
+
+- The thread list shows a ticket's short key (`D-1147`) from launch. It
+  showed the whole key until the Inbox's list landed, pushing the
+  thread's name out of its row.
+
 ## [0.1.41] - 2026-10-30
 
 - Hiding the floating Bot chat, summoning a bot, or clicking a

@@ -62,7 +62,7 @@ pub use grouping::ListPrefs;
 #[cfg(test)]
 pub use grouping::SortBy;
 pub use pr_actions::PrActionUi;
-pub(crate) use row::short_key;
+pub(crate) use row::{key_tail, short_key};
 pub use translate::Translations;
 
 /// How "Send to agent" starts a thread: in a new worktree (the composer's

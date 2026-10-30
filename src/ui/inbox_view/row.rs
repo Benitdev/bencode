@@ -81,6 +81,17 @@ pub(crate) fn short_key<'a>(identifier: &'a str, prefix: &str) -> &'a str {
     }
 }
 
+/// Issue key `identifier` from its project key's last part on
+/// (`DOCLASSE_RENEWAL_D-1147` is `D-1147`): what the thread list shows,
+/// narrow as it is, from its first frame. It needs no list, where
+/// [`short_key`] has nothing to go on until the Inbox's lands and the
+/// thread's ticket may not be in it.
+pub(crate) fn key_tail(identifier: &str) -> &str {
+    identifier
+        .rfind('_')
+        .map_or(identifier, |at| &identifier[at + 1..])
+}
+
 /// A due date worth showing on a row.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Due {
@@ -490,6 +501,13 @@ mod tests {
         keys.iter()
             .map(|k| short_key(k, &prefix).to_string())
             .collect()
+    }
+
+    #[test]
+    fn a_key_tail_needs_no_list() {
+        assert_eq!(key_tail("DOCLASSE_RENEWAL_D-1147"), "D-1147");
+        assert_eq!(key_tail("ACME_X-1"), "X-1");
+        assert_eq!(key_tail("WEB-42"), "WEB-42");
     }
 
     #[test]

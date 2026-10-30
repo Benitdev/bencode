@@ -165,8 +165,9 @@ impl BenCodeApp {
         )
     }
 
-    /// MonoCode's work item badge: `#42`, or a Backlog issue's key as the
-    /// Inbox's rows shorten it (`C-289`). Opens the item in the Inbox;
+    /// MonoCode's work item badge: `#42`, or a Backlog issue's key cut to
+    /// its last part (`C-289`), the whole of it in the tooltip. Opens the
+    /// item in the Inbox;
     /// ⌘-click or a middle click opens its tracker.
     pub(crate) fn work_item_badge(
         &self,
@@ -183,7 +184,7 @@ impl BenCodeApp {
         let inbox = self.inbox(cx);
         let identifier = item.identifier();
         let (label, full, tracker) = if item.is_backlog() {
-            let short = crate::ui::inbox_view::short_key(&identifier, &inbox.key_prefix);
+            let short = crate::ui::inbox_view::key_tail(&identifier);
             (short.to_string(), identifier.clone(), "Backlog")
         } else {
             (
