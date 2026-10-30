@@ -141,7 +141,7 @@ impl BenCodeApp {
                     self.project_figure(&item.cwd),
                     self.project_color(&item.cwd),
                     false,
-                    16.0,
+                    24.0,
                     cx,
                 ))
                 .line(line)

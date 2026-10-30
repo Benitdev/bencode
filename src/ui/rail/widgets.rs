@@ -104,7 +104,7 @@ pub(crate) fn figure_icon(
     cx: &App,
 ) -> AnyElement {
     let mood = if busy { Mood::Working } else { Mood::Idle };
-    figure_view(figure, size, color, Look::new(mood, &figure.code()), cx)
+    figure_view(figure, size, color, Look::new(mood, figure.body.code()), cx)
 }
 
 /// A card control shown only while the card is hovered: `hidden

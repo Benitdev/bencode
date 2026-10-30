@@ -742,7 +742,7 @@ impl BenCodeApp {
                             .bg(fg.fill(Fill::Hover))
                             .child(crate::ui::figure::figure_still(
                                 self.project_figure(&path),
-                                16.0,
+                                24.0,
                                 self.project_color(&path),
                             )),
                     )

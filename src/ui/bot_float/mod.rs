@@ -147,7 +147,7 @@ struct Shown {
     /// What the running turn waits on.
     live: Option<Live>,
     /// The clock's frame while a busy mark moves (the ticker's shimmer, a
-    /// working mascot, a pulsing dot).
+    /// working figure, a pulsing dot).
     tick: u64,
     /// The question form's state, and whether its "Other" field shows.
     question: Option<(QuestionUi, bool)>,
@@ -975,7 +975,7 @@ impl BotFloat {
     }
 
     /// MonoCode `MonoRail`: `w-14`, a `size-8` button per Bot with its
-    /// mascot at `size-7`, a bar at the edge for the one shown (and a short
+    /// figure at `size-7`, a bar at the edge for the one shown (and a short
     /// one on hover for the others), its status dot, then +.
     fn render_rail(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let colors = &cx.theme().colors;
@@ -992,7 +992,7 @@ impl BotFloat {
             .w(px(RAIL_WIDTH))
             .h_full()
             .overflow_y_scroll()
-            // `pt-[17px]`: the first mascot level with the header's.
+            // `pt-[17px]`: the first figure level with the header's.
             .pt(px(17.0))
             .pb_3();
         for bot in &self.shown.bots {

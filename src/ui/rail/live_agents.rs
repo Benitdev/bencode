@@ -32,7 +32,7 @@ const LIVE_AGENT_CAP: usize = 4;
 const SECTION_SHARE: f32 = 0.35;
 const EXPANDED_SHARE: f32 = 0.5;
 /// The second line and the buttons start under the title, past the figure.
-const DETAIL_INSET: f32 = 18.0;
+const DETAIL_INSET: f32 = 20.0;
 
 /// What the section keeps between frames.
 #[derive(Default)]

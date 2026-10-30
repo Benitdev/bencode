@@ -330,7 +330,7 @@ impl BenCodeApp {
                 self.project_figure(&agent.cwd),
                 self.project_color(&agent.cwd),
                 live,
-                14.0,
+                12.0,
                 cx,
             ))
             .children(dot.map(|color| {

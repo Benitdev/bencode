@@ -54,7 +54,7 @@ where it overlaps the transcript each time it grows.
 
 `ui/marks.rs`. A busy mark is built from a function of the clock
 (`marks::mark`): `spinner::ring`, `shimmer`, `terminal_spinner`,
-`pulse_dot`, the mascots, the Bot dots. Inside a region it lays out as
+`pulse_dot`, the figures, the Bot dots. Inside a region it lays out as
 usual, then records its box, clip and text style instead of painting;
 `MarkLayer`, drawn uncached in the shell between the regions and the menus
 and dialogs, builds every recorded mark again each frame. The clock's

@@ -71,6 +71,8 @@ pub struct ProjectGroup {
     pub color_index: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub custom_color: Option<String>,
+    /// Its figure's code (or the MonoCode mascot it was before,
+    /// `Figure::from_pick`); the key keeps MonoCode's name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mascot: Option<String>,
 }

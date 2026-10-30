@@ -23,7 +23,6 @@ use super::widgets::{
     project_diff_stat, project_figure_icon, rail_label, section_button,
 };
 use crate::app::{BenCodeApp, same_project_path};
-use crate::bots::figure::Figure;
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// The rows' `px-2` on each side, for the held row's width.
@@ -255,7 +254,7 @@ impl BenCodeApp {
         let (toggle_id, menu_id, options_id) =
             (group.id.clone(), group.id.clone(), group.id.clone());
         let color = group_color(group);
-        let figure = Figure::from_pick(group.mascot.as_deref(), &group.id);
+        let figure = Self::group_figure(group);
         let chevron = |icon: IconName| Icon::new(icon).size(IconSize::Sm).color(fg);
         let glyph = if group.collapsed {
             div()

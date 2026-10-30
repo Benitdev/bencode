@@ -26,6 +26,8 @@ use crate::app::BenCodeApp;
 use crate::bots::figure::{self, Figure, Mood};
 use crate::ui::figure::figure_frame;
 
+/// How wide the figure is drawn: two points a cell.
+const FIGURE_SIZE: f32 = 24.0;
 /// The figure's mouth opens and shuts each half of this.
 const TALK_HALF_BEAT_MS: u128 = 230;
 /// Coins and stars spin at MonoCode's 320ms.
@@ -445,21 +447,25 @@ impl RunnerLayer {
             figure::Frame::still(Mood::Failed, false)
         } else {
             figure::Frame {
+                up: frame.talking,
                 talk: frame.talking,
                 glow: if frame.talking { 3 } else { 2 },
                 ..figure::Frame::still(Mood::Working, false)
             }
         };
-        let visible = (RUNNER_SIZE - clip).max(0.0);
-        let sprite = at(left, top).child(
+        // Drawn larger than the box the run moves, its feet on the box's
+        // floor, so a cell is two points (12 cells at 16 would blur).
+        let rise = FIGURE_SIZE - RUNNER_SIZE;
+        let visible = (FIGURE_SIZE - clip).max(0.0);
+        let sprite = at(left - rise / 2.0, top - rise).child(
             div()
-                .w(px(RUNNER_SIZE))
+                .w(px(FIGURE_SIZE))
                 .h(px(visible))
                 .overflow_hidden()
                 .child(figure_frame(
                     runner.figure,
                     pose,
-                    RUNNER_SIZE,
+                    FIGURE_SIZE,
                     runner.color,
                     frame.facing == Facing::Left,
                 )),
@@ -504,6 +510,25 @@ const STAR_EDGE: Rows = [
     "........", "...##...", "...##...", "..####..", "..####..", "...##...", "...##...", "........",
 ];
 
+/// The filled runs of each row, as (row, column, length).
+fn runs(rows: &Rows) -> Vec<(usize, usize, usize)> {
+    let mut out = Vec::new();
+    for (y, row) in rows.iter().enumerate() {
+        let mut start = None;
+        for (x, filled) in row.chars().map(|c| c == '#').chain([false]).enumerate() {
+            match (filled, start) {
+                (true, None) => start = Some(x),
+                (false, Some(from)) => {
+                    out.push((y, from, x - from));
+                    start = None;
+                }
+                _ => {}
+            }
+        }
+    }
+    out
+}
+
 /// `rows` `size` wide, one square per filled run of a row.
 fn pixels(rows: &Rows, size: Pixels, color: Hsla) -> AnyElement {
     let unit = size / 8.0;
@@ -511,28 +536,14 @@ fn pixels(rows: &Rows, size: Pixels, color: Hsla) -> AnyElement {
         .relative()
         .size(size)
         .flex_none()
-        .children(rows.iter().enumerate().flat_map(|(y, row)| {
-            let mut runs = Vec::new();
-            let mut start = None;
-            for (x, filled) in row.chars().map(|c| c == '#').chain([false]).enumerate() {
-                match (filled, start) {
-                    (true, None) => start = Some(x),
-                    (false, Some(from)) => {
-                        runs.push((from, x - from));
-                        start = None;
-                    }
-                    _ => {}
-                }
-            }
-            runs.into_iter().map(move |(x, len)| {
-                div()
-                    .absolute()
-                    .left(unit * x as f32)
-                    .top(unit * y as f32)
-                    .w(unit * len as f32)
-                    .h(unit)
-                    .bg(color)
-            })
+        .children(runs(rows).into_iter().map(|(y, x, len)| {
+            div()
+                .absolute()
+                .left(unit * x as f32)
+                .top(unit * y as f32)
+                .w(unit * len as f32)
+                .h(unit)
+                .bg(color)
         }))
         .into_any_element()
 }
@@ -541,5 +552,26 @@ impl Render for RunnerLayer {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.step(window, cx);
         div().absolute().children(self.render_runner())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rows_become_runs() {
+        let rows: Rows = [
+            "##..#..#", "........", "........", "........", "........", "........", "........",
+            "........",
+        ];
+        assert_eq!(runs(&rows), [(0, 0, 2), (0, 4, 1), (0, 7, 1)]);
+    }
+
+    #[test]
+    fn every_frame_is_eight_by_eight() {
+        for rows in [COIN_FACE, COIN_EDGE, STAR_FACE, STAR_EDGE] {
+            assert!(rows.iter().all(|row| row.len() == 8));
+        }
     }
 }

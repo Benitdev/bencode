@@ -80,7 +80,7 @@ impl BenCodeApp {
     }
 
     /// MonoCode `MonoTitle`: `flex min-w-0 flex-1 items-center gap-2 px-4`,
-    /// the mascot at `size-4`, the name in `text-[13px] font-medium`, the
+    /// the figure at `size-4`, the name in `text-[13px] font-medium`, the
     /// status label in `text-[12px]`.
     fn render_bot_title(
         &self,

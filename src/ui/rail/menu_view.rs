@@ -154,7 +154,7 @@ impl BenCodeApp {
                     group.color_index,
                     group.custom_color.as_deref().and_then(parse_hex),
                     group_color(group),
-                    Figure::from_pick(group.mascot.as_deref(), &group.id),
+                    Self::group_figure(group),
                     None,
                 )
             }

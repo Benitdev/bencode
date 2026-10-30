@@ -121,6 +121,11 @@ impl BenCodeApp {
         Figure::from_pick(pick.map(String::as_str), project_name(path))
     }
 
+    /// A group's figure: its saved pick, else one from its id.
+    pub(crate) fn group_figure(group: &ProjectGroup) -> Figure {
+        Figure::from_pick(group.mascot.as_deref(), &group.id)
+    }
+
     /// The navigator, top to bottom: Search and the views, the Bots, the
     /// projects, the project's threads, the agents at work, and the
     /// focused thread's usage beside Settings. While Settings is open its

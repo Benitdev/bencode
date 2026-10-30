@@ -1,5 +1,5 @@
 //! MonoCode `MonoChangesView` and `MonoProjectCommit`: a row of project
-//! tabs (each with its mascot, name and how many files changed), then the
+//! tabs (each with its figure, name and how many files changed), then the
 //! open project's commit box, its Staged Changes and Changes. Stage and
 //! unstage go through the git index (`app/bot_changes.rs`), as the
 //! project's own Changes panel does; a file opens its review in the

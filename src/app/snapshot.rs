@@ -364,6 +364,33 @@ const SCENES: &[(&str, SetUp)] = &[
             app.ask_bot_about(&id, Some("the rail redraws on every keystroke".into()), cx);
         }
     }),
+    // A project's menu: its name, colour and the figure's "Look" row.
+    ("project-menu", |app, _, cx| {
+        app.leave_bot_view(cx);
+        app.is_rail_open = true;
+        if let Some(path) = app.rail_order().first().cloned() {
+            let at = gpui::point(crate::ui::scale::px(40.0), crate::ui::scale::px(150.0));
+            app.open_rail_project_menu(&path, at, cx);
+        }
+    }),
+    // A thread of this project at work (`stage_agents`): its project's
+    // figure runs along the composer.
+    ("runner", |app, _, cx| {
+        app.close_rail_menu(cx);
+        if app.runs.is_empty() {
+            stage_agents(app);
+        }
+        let here = app.current_cwd.clone();
+        let busy = (app.runs.keys())
+            .find(|id| {
+                (app.sessions.iter())
+                    .any(|s| &s.id == *id && crate::app::same_project_path(&s.cwd, &here))
+            })
+            .cloned();
+        if let Some(id) = busy {
+            app.open_session(id, cx);
+        }
+    }),
 ];
 
 /// Turns as the Agents section shows them, without an agent: a thread of

@@ -183,7 +183,7 @@ impl BenCodeApp {
                     this.open_rail_bot_menu(&menu_id, event.position, cx);
                 }),
             )
-            .child(self.render_bot_rail_mascot(bot, &state, cx))
+            .child(self.render_bot_rail_figure(bot, &state, cx))
             .children(unread)
             .into_any_element()
     }
@@ -396,7 +396,7 @@ impl BenCodeApp {
                 .gap_2()
                 .group_hover(group.clone(), |s| s.pr(px(24.0)))
                 .tooltip(Tooltip::text(self.bot_card_title(bot, &state)))
-                .child(self.render_bot_rail_mascot(bot, &state, cx))
+                .child(self.render_bot_rail_figure(bot, &state, cx))
                 .child(nav_label().flex_1().child(label))
                 .children(self.render_bot_unread(bot, &group, cx)),
         )
@@ -484,7 +484,7 @@ impl BenCodeApp {
     /// MonoCode `MonoRailMascot`: its figure in `size-4` (its face and
     /// motion follow its mood) with its status circle at the top right
     /// (`size-1.5`, ringed with the background).
-    fn render_bot_rail_mascot(
+    fn render_bot_rail_figure(
         &self,
         bot: &Bot,
         state: &BotState,

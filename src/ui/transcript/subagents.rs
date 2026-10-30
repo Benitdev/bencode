@@ -1,5 +1,5 @@
 //! MonoCode `SubagentStack`, `SubagentRow`, `SubagentPanel` and
-//! `SubagentMascot` (`AgentTranscript.tsx`): a delegated run as a mascot,
+//! `SubagentMascot` (`AgentTranscript.tsx`): a delegated run as a figure,
 //! its name and how far it got; opened, the trail it left, drawn with the
 //! same rows as the main agent's work, then what it reported.
 
@@ -98,7 +98,7 @@ impl BenCodeApp {
         };
         // The slot keeps the rows' 14px icon width; the sprite sits a size
         // smaller so it weighs the same as the line icons around it.
-        let mascot = div()
+        let figure = div()
             .flex()
             .flex_none()
             .size(px(14.0))
@@ -167,13 +167,13 @@ impl BenCodeApp {
             .py_1()
             .rounded(px(6.0))
             .when(open, |el| el.bg(hover_bg))
-            .child(mascot)
+            .child(figure)
             .child(
                 div()
                     .flex()
                     .flex_1()
                     .min_w_0()
-                    // Centred like the mascot and chevron: on the name's
+                    // Centred like the figure and chevron: on the name's
                     // baseline the smaller line sat low beside them.
                     .items_center()
                     .gap_2()
