@@ -264,6 +264,26 @@ pub fn set_weekdays(trigger: &mut Trigger, days: &[i64]) {
     trigger.insert("daysOfWeek".into(), Value::from(days.to_vec()));
 }
 
+/// Whether two trigger lists schedule the same: a weekly trigger's days
+/// compare as days, however they are stored (`dayOfWeek` alone, or with
+/// `daysOfWeek`), so turning a day on and off again changes nothing.
+pub fn same_triggers(a: Option<&[Trigger]>, b: Option<&[Trigger]>) -> bool {
+    let canonical = |trigger: &Trigger| {
+        let mut trigger = trigger.clone();
+        if time_trigger(&trigger).is_some() {
+            let days = days_of_week(&trigger);
+            set_weekdays(&mut trigger, &days);
+        }
+        trigger
+    };
+    match (a, b) {
+        (Some(a), Some(b)) => {
+            a.len() == b.len() && a.iter().zip(b).all(|(a, b)| canonical(a) == canonical(b))
+        }
+        (a, b) => a.is_none() && b.is_none(),
+    }
+}
+
 /// Time triggers of `auto`: its `triggers` list, else the legacy fields
 /// (MonoCode `hydrate_triggers`).
 pub fn time_triggers(auto: &AutomationRow) -> Vec<TimeTrigger> {
@@ -670,6 +690,25 @@ mod tests {
         assert_eq!(toggle_weekday(&[1, 5], 3), vec![1, 3, 5]);
         assert_eq!(toggle_weekday(&[1, 5], 5), vec![1]);
         assert_eq!(toggle_weekday(&[1], 1), vec![1], "one day stays on");
+    }
+
+    #[test]
+    fn a_day_turned_on_and_off_again_leaves_the_triggers_the_same() {
+        let stored = trigger("time", "weekly", "09:00");
+        let mut edited = stored.clone();
+        let toggle = |trigger: &mut Trigger| {
+            let days = toggle_weekday(&days_of_week(trigger), 3);
+            set_weekdays(trigger, &days);
+        };
+        toggle(&mut edited);
+        let toggled = edited.clone();
+        toggle(&mut edited);
+        let same = |a: &Trigger, b: &Trigger| {
+            same_triggers(Some(std::slice::from_ref(a)), Some(std::slice::from_ref(b)))
+        };
+        assert!(same(&stored, &edited));
+        assert!(!same(&stored, &toggled));
+        assert!(!same_triggers(None, Some(&[stored])));
     }
 
     #[test]

@@ -40,8 +40,10 @@ pub const DEFAULT_SESSION_RUNTIME_MODE: &str = "supervised";
 
 /// Maximum automation runs returned by `list_automation_runs`.
 const AUTOMATION_RUN_HISTORY_LIMIT: i64 = 50;
-/// Most runs `list_recent_automation_runs` returns, however many match.
-const RECENT_RUNS_LIMIT: i64 = 500;
+/// Most of one automation's runs since `since` that
+/// `list_recent_automation_runs` returns: capped per automation, so one that
+/// runs every few minutes never pushes out another's latest runs.
+const RECENT_RUNS_PER_AUTOMATION_LIMIT: i64 = 200;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Note {
@@ -1020,8 +1022,8 @@ impl AppDb {
     }
 
     /// The runs the Automations overview and cards read: the latest
-    /// `per_automation` of each automation, and every run created since
-    /// `since`, newest first.
+    /// `per_automation` of each automation, and its runs created since
+    /// `since` (up to `RECENT_RUNS_PER_AUTOMATION_LIMIT`), newest first.
     pub fn list_recent_automation_runs(
         &self,
         per_automation: i64,
@@ -1035,10 +1037,10 @@ impl AppDb {
                         ) AS rank
                  FROM automation_runs
              )
-             WHERE rank <= ?1 OR created_at >= ?2
-             ORDER BY created_at DESC LIMIT ?3",
+             WHERE rank <= ?1 OR (created_at >= ?2 AND rank <= ?3)
+             ORDER BY created_at DESC",
         )?;
-        let rows = stmt.query_map(params![per_automation, since, RECENT_RUNS_LIMIT], |row| {
+        let rows = stmt.query_map(params![per_automation, since, RECENT_RUNS_PER_AUTOMATION_LIMIT], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })?;
         let mut runs = Vec::new();

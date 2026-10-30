@@ -16,7 +16,7 @@ use jiff::tz::TimeZone;
 
 use super::editor::unsaved_dot;
 use super::format::{ago_text, clock, day_and_time, elapsed, next_text, short_day};
-use crate::app::automation_overview::{CardStatus, card_status, run_strip, strip_summary};
+use crate::app::automation_overview::{CardStatus, card_status, strip_summary};
 use crate::app::automation_pauses::{PAUSE_LENGTHS, local_datetime};
 use crate::app::automations::{AutomationPage, automation_matches};
 use crate::app::{BenCodeApp, now_ms};
@@ -410,7 +410,7 @@ impl BenCodeApp {
                     )
                     .child(name)
                     .child(status)
-                    .child(self.render_card_meta(ix, auto, now, muted, cx)),
+                    .child(self.render_card_meta(ix, auto, now, &tz, muted, cx)),
             )
             .child(
                 // Above the card, so a press on the switch does not open it.
@@ -434,11 +434,12 @@ impl BenCodeApp {
         ix: usize,
         auto: &AutomationRow,
         now: i64,
+        tz: &TimeZone,
         muted: Hsla,
         cx: &Context<Self>,
     ) -> impl IntoElement {
         let fg = cx.theme().colors.fg;
-        let strip = run_strip(&self.automations.recent, &auto.id);
+        let strip = self.automation_run_strip(&auto.id, now, tz);
         let ran = div()
             .flex()
             .flex_none()

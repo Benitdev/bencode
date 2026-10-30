@@ -5,6 +5,8 @@
 //! tested; the views are in `ui/automations/overview.rs` and `list.rs`.
 //! BenCode's own: MonoCode lands on the New automation page.
 
+use std::collections::HashMap;
+
 use gpui::Context;
 use jiff::tz::TimeZone;
 
@@ -274,15 +276,25 @@ pub fn by_day<'a>(
     days
 }
 
-/// The statuses of `automation_id`'s last `STRIP_RUNS` runs, oldest first.
-pub fn run_strip(recent: &[AutomationRunRow], automation_id: &str) -> Vec<RunStatus> {
-    let mut runs: Vec<&AutomationRunRow> = recent
-        .iter()
-        .filter(|run| run.automation_id == automation_id)
-        .collect();
-    runs.sort_by_key(|run| std::cmp::Reverse(run.created_at));
-    runs.truncate(STRIP_RUNS);
-    runs.iter().rev().map(|run| run.status).collect()
+/// The statuses of each automation's last `STRIP_RUNS` runs, oldest
+/// first, by automation id.
+pub fn run_strips(recent: &[AutomationRunRow]) -> HashMap<String, Vec<RunStatus>> {
+    let mut by_automation: HashMap<&str, Vec<&AutomationRunRow>> = HashMap::new();
+    for run in recent {
+        by_automation
+            .entry(run.automation_id.as_str())
+            .or_default()
+            .push(run);
+    }
+    by_automation
+        .into_iter()
+        .map(|(id, mut runs)| {
+            runs.sort_by_key(|run| std::cmp::Reverse(run.created_at));
+            runs.truncate(STRIP_RUNS);
+            let strip = runs.iter().rev().map(|run| run.status).collect();
+            (id.to_string(), strip)
+        })
+        .collect()
 }
 
 /// "Last 7 runs: 6 succeeded, 1 failed".
@@ -501,6 +513,7 @@ impl BenCodeApp {
 
     pub(super) fn show_recent_runs(&mut self, runs: Vec<AutomationRunRow>, cx: &mut Context<Self>) {
         self.automations.recent = runs;
+        self.automations.view_cache.invalidate();
         self.update_automation_needs();
         // The first load after the update: what came before is not new.
         if self.settings.automations_seen_at.is_none() {
@@ -533,16 +546,6 @@ impl BenCodeApp {
             db.dismiss_automation_run(&id, now)
         });
         cx.notify();
-    }
-
-    /// Upcoming, as `upcoming` reads the list now.
-    pub(crate) fn upcoming_automation_runs(&self, now: i64, tz: &TimeZone) -> Vec<Upcoming> {
-        upcoming(
-            &self.automations.items,
-            now,
-            self.automations_paused_until(),
-            tz,
-        )
     }
 }
 
@@ -797,16 +800,17 @@ mod tests {
         recent.push(run("other", "b", NOW, RunStatus::Failed));
         // Newest first, as loaded.
         recent.reverse();
-        let strip = run_strip(&recent, "a");
+        let strips = run_strips(&recent);
+        let strip = &strips["a"];
         assert_eq!(strip.len(), STRIP_RUNS);
         assert_eq!(strip[0], RunStatus::Succeeded);
         assert_eq!(&strip[5..], [RunStatus::Failed, RunStatus::Running]);
         assert_eq!(
-            strip_summary(&strip),
+            strip_summary(strip),
             "Last 7 runs: 5 succeeded, 1 failed, 1 running"
         );
         assert_eq!(strip_summary(&[RunStatus::Skipped]), "Last run: 1 skipped");
-        assert!(run_strip(&recent, "none").is_empty());
+        assert!(!strips.contains_key("none"));
     }
 
     fn scheduled(

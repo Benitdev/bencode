@@ -15,7 +15,7 @@ use crate::app::git_actions::GitAction;
 use crate::app::session_review::edit_paths;
 use crate::app::thread_state::ThreadState;
 use crate::app::{BenCodeApp, PermissionMode};
-use crate::db::{Block, RunStatus, SessionRow, TurnModel};
+use crate::db::{Block, INTERRUPTED, RunStatus, SessionRow, TurnModel};
 use crate::harness::Attachment;
 use crate::harness::accounts::AccountProfile;
 use crate::harness::events::TurnMetrics;
@@ -1380,7 +1380,9 @@ impl BenCodeApp {
                 continue;
             }
             run.handle.cancel();
-            self.write_automation_run_end(run, RunStatus::Cancelled);
+            // Recorded as the next launch's recovery would, so it shows as
+            // interrupted, not as stopped by the user.
+            self.write_automation_run_end(run, RunStatus::Cancelled, Some(INTERRUPTED));
             if let Some(session) = self.sessions.iter_mut().find(|s| &s.id == session_id) {
                 mark_turn_interrupted(session, now_ms());
             }
@@ -1397,18 +1399,23 @@ impl BenCodeApp {
     /// Closes the automation run `run` carried out, then reloads the
     /// Automations list, its cards and badge, once that has landed.
     fn close_automation_run(&mut self, run: &AgentRun, status: RunStatus, cx: &mut Context<Self>) {
-        if self.write_automation_run_end(run, status) {
+        let error = (status == RunStatus::Failed).then_some("The agent turn failed.");
+        if self.write_automation_run_end(run, status, error) {
             // Queued behind the write, so it reads it.
             self.refresh_automations(cx);
         }
     }
 
     /// Queues the end of the automation run `run` carried out, if any.
-    fn write_automation_run_end(&self, run: &AgentRun, status: RunStatus) -> bool {
+    fn write_automation_run_end(
+        &self,
+        run: &AgentRun,
+        status: RunStatus,
+        error: Option<&'static str>,
+    ) -> bool {
         let Some(link) = &run.automation else {
             return false;
         };
-        let error = (status == RunStatus::Failed).then_some("The agent turn failed.");
         let run_id = link.run_id.clone();
         self.db_write("close automation run", move |db| {
             db.finish_automation_run(&run_id, status, error)

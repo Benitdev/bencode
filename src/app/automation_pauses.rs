@@ -66,7 +66,6 @@ impl BenCodeApp {
     pub(crate) fn pause_automations_until(&mut self, until: Option<i64>, cx: &mut Context<Self>) {
         self.automations.pause_pick = None;
         self.set_automations_paused_until(until, cx);
-        self.redraw_regions(&[Region::Surface], cx);
     }
 
     /// Pause all › Until…: starts at the pause in force, else a day from

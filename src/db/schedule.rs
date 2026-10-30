@@ -25,15 +25,16 @@ impl AppDb {
     /// Advances automation `id` from `expected_next` to `next` and records a
     /// `scheduled` run, if the occurrence is still unclaimed and due at
     /// `now`. A run later than `grace_minutes` is recorded as `skipped`, and
-    /// so is every run while `paused` ("Pause all"): none piles up for the
-    /// resume.
+    /// so is every occurrence due before `paused_until` ("Pause all"), even
+    /// one claimed after the pause ended (BenCode was closed or the Mac
+    /// slept): none piles up for the resume.
     pub fn claim_due_automation(
         &self,
         id: &str,
         (expected_next, next): (i64, i64),
         now: i64,
         grace_minutes: i64,
-        paused: bool,
+        paused_until: Option<i64>,
     ) -> Result<Option<AutomationRunRow>> {
         if next <= expected_next {
             anyhow::bail!("the next occurrence must advance the schedule");
@@ -51,6 +52,7 @@ impl AppDb {
         if claimed == 0 {
             return Ok(None);
         }
+        let paused = paused_until.is_some_and(|until| expected_next < until);
         let late = now.saturating_sub(expected_next) > grace_minutes.saturating_mul(60_000);
         let skipped = match (paused, late) {
             (true, _) => Some(ALL_PAUSED),
@@ -178,11 +180,11 @@ mod tests {
     fn an_occurrence_is_claimed_once() {
         let db = monocode_db();
         insert_automation(&db, "a", 1_000);
-        let run = db.claim_due_automation("a", (1_000, 2_000), 1_500, 720, false);
+        let run = db.claim_due_automation("a", (1_000, 2_000), 1_500, 720, None);
         assert_eq!(run.unwrap().unwrap().status, RunStatus::Pending);
-        let again = db.claim_due_automation("a", (1_000, 2_000), 1_600, 720, false);
+        let again = db.claim_due_automation("a", (1_000, 2_000), 1_600, 720, None);
         assert!(again.unwrap().is_none());
-        let early = db.claim_due_automation("a", (2_000, 3_000), 1_700, 720, false);
+        let early = db.claim_due_automation("a", (2_000, 3_000), 1_700, 720, None);
         assert!(early.unwrap().is_none(), "not due yet");
     }
 
@@ -191,7 +193,7 @@ mod tests {
         let db = monocode_db();
         insert_automation(&db, "a", 1);
         let run = db
-            .claim_due_automation("a", (1, 100_000_000), 31 * 60_000, 30, false)
+            .claim_due_automation("a", (1, 100_000_000), 31 * 60_000, 30, None)
             .unwrap()
             .unwrap();
         assert_eq!(run.status, RunStatus::Skipped);
@@ -202,14 +204,31 @@ mod tests {
         let db = monocode_db();
         insert_automation(&db, "a", 1_000);
         let run = db
-            .claim_due_automation("a", (1_000, 2_000), 1_500, 720, true)
+            .claim_due_automation("a", (1_000, 2_000), 1_500, 720, Some(1_200))
             .unwrap()
             .unwrap();
         assert_eq!(run.status, RunStatus::Skipped);
         assert_eq!(run.error.as_deref(), Some(ALL_PAUSED));
         // The schedule moved on: nothing is left to run on resume.
-        let again = db.claim_due_automation("a", (1_000, 2_000), 1_600, 720, false);
+        let again = db.claim_due_automation("a", (1_000, 2_000), 1_600, 720, None);
         assert!(again.unwrap().is_none());
+    }
+
+    #[test]
+    fn a_run_due_in_a_pause_is_skipped_when_claimed_after_it() {
+        let db = monocode_db();
+        insert_automation(&db, "a", 1_000);
+        let run = db
+            .claim_due_automation("a", (1_000, 2_000), 1_800, 720, Some(1_500))
+            .unwrap()
+            .unwrap();
+        assert_eq!(run.error.as_deref(), Some(ALL_PAUSED));
+        // Due once the pause is over: it runs.
+        let next = db
+            .claim_due_automation("a", (2_000, 3_000), 2_100, 720, Some(1_500))
+            .unwrap()
+            .unwrap();
+        assert_eq!(next.status, RunStatus::Pending);
     }
 
     #[test]
@@ -217,7 +236,7 @@ mod tests {
         let db = monocode_db();
         insert_automation(&db, "a", 1_000);
         let run = db
-            .claim_due_automation("a", (1_000, 2_000), 1_500, 720, false)
+            .claim_due_automation("a", (1_000, 2_000), 1_500, 720, None)
             .unwrap()
             .unwrap();
         db.start_automation_run(&run.id, "s1", 1_500).unwrap();

@@ -17,11 +17,9 @@ use super::PAGE_WIDTH;
 use super::format::{clock, day_and_time, elapsed, in_text, run_duration, when_text};
 use super::list::run_tone;
 use super::templates::{TemplateCategory, templates_for};
-use crate::app::automation_overview::{
-    Attention, NeedsYou, ResultGroup, Upcoming, finished_at, group_results, recent_results,
-};
+use crate::app::automation_overview::{Attention, NeedsYou, ResultGroup, Upcoming, finished_at};
 use crate::app::{BenCodeApp, now_ms};
-use crate::db::{AutomationRow, AutomationRunRow, RunStatus, RunTrigger};
+use crate::db::{AutomationRow, RunStatus, RunTrigger};
 use crate::schedule;
 use crate::ui::rows::ListRow;
 use crate::ui::scale::px;
@@ -111,14 +109,17 @@ impl BenCodeApp {
         if active < items.len() {
             summary.push(format!("{} paused", items.len() - active));
         }
-        // What falls in Pause all is skipped: the next run is after it.
+        // What falls in Pause all is skipped, as is the run the user chose to
+        // skip: the next run is after both.
         let paused = self.automations_paused_until();
         let next = items
             .iter()
             .filter(|a| a.enabled && !schedule::time_triggers(a).is_empty())
             .filter_map(|a| {
                 let at = match paused {
-                    Some(until) => schedule::next_automation_run_at(a, until - 1, tz)?,
+                    Some(until) => {
+                        schedule::next_run_skipping(a, a.skipped_run_at, until - 1, tz)?.0
+                    }
                     None => a.next_run_at,
                 };
                 (at > now).then_some((at, a.name.as_str()))
@@ -337,37 +338,32 @@ impl BenCodeApp {
     /// last look is marked New.
     fn render_recent_results(&self, now: i64, tz: &TimeZone, cx: &Context<Self>) -> Option<Div> {
         let fg = cx.theme().colors.fg;
-        let runs: Vec<&AutomationRunRow> = recent_results(&self.automations.recent, now)
-            .into_iter()
-            .filter(|run| self.automation_named(&run.automation_id).is_some())
-            .collect();
-        if runs.is_empty() {
+        let days = self.automation_result_days(now, tz);
+        if days.is_empty() {
             return None;
         }
         // Not looked at yet: nothing is new.
         let seen = self.automations.seen_before.unwrap_or(i64::MAX);
         let mut ix = 0;
-        let days = group_results(&runs, now, tz)
-            .into_iter()
-            .map(|(day, groups)| {
-                let rows: Vec<AnyElement> = groups
-                    .iter()
-                    .map(|group| {
-                        ix += 1;
-                        self.render_result(ix, group, group.new_since(seen), now, tz, cx)
-                    })
-                    .collect();
-                div()
-                    .mt_3()
-                    .child(
-                        div()
-                            .px_1()
-                            .text_size(Text::Sm.px())
-                            .text_color(fg.ink(Ink::Faint))
-                            .child(day),
-                    )
-                    .child(panel(fg).mt(px(6.0)).p(px(4.0)).children(rows))
-            });
+        let days = days.into_iter().map(|(day, groups)| {
+            let rows: Vec<AnyElement> = groups
+                .iter()
+                .map(|group| {
+                    ix += 1;
+                    self.render_result(ix, group, group.new_since(seen), now, tz, cx)
+                })
+                .collect();
+            div()
+                .mt_3()
+                .child(
+                    div()
+                        .px_1()
+                        .text_size(Text::Sm.px())
+                        .text_color(fg.ink(Ink::Faint))
+                        .child(day),
+                )
+                .child(panel(fg).mt(px(6.0)).p(px(4.0)).children(rows))
+        });
         Some(
             div()
                 .mt_8()

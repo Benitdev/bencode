@@ -7,7 +7,7 @@
 use gpui::Context;
 use serde_json::Value;
 
-use super::automations::{AutomationPage, EditorTab, editable, settings_differ};
+use super::automations::{AutomationPage, editable, settings_differ};
 use super::{BenCodeApp, unique_id};
 use crate::db::AutomationRow;
 use crate::schedule;
@@ -287,18 +287,23 @@ impl BenCodeApp {
 
     /// A save of automation `id` (`was_new`: created from the new draft)
     /// landed: its edits are stored, and the editor shows it if it still
-    /// shows that automation.
+    /// shows that automation. Edits made while the save was on its way
+    /// stay, in the editor or in the stash.
     pub(super) fn automation_saved(&mut self, id: &str, was_new: bool, cx: &mut Context<Self>) {
         let shown = self.editing_automation(if was_new { NEW_DRAFT } else { id });
         if was_new {
             self.forget_new_automation();
         }
+        let stored = self.automations.items.iter().find(|a| a.id == id);
+        let matches = |draft: &AutomationRow| stored.is_some_and(|s| !settings_differ(draft, s));
         if shown {
-            self.reopen_automation(id, cx);
-        } else {
+            let edited_since = self.editor_draft(cx).is_some_and(|draft| !matches(&draft));
+            if was_new || !edited_since {
+                self.reopen_automation(id, cx);
+            }
+        } else if self.automations.stashed.get(id).is_some_and(matches) {
             self.automations.stashed.remove(id);
         }
-        self.automations.tab = EditorTab::Settings;
     }
 }
 

@@ -30,7 +30,7 @@ const POLL_INTERVAL: Duration = Duration::from_secs(30);
 fn claim_due(
     db: &AppDb,
     now: i64,
-    paused: bool,
+    paused_until: Option<i64>,
 ) -> anyhow::Result<Vec<(AutomationRow, AutomationRunRow)>> {
     let tz = TimeZone::system();
     let mut claimed = Vec::new();
@@ -44,7 +44,8 @@ fn claim_due(
             continue;
         };
         let grace = grace_minutes(&auto);
-        match db.claim_due_automation(&auto.id, (auto.next_run_at, next), now, grace, paused) {
+        match db.claim_due_automation(&auto.id, (auto.next_run_at, next), now, grace, paused_until)
+        {
             Ok(Some(run)) => claimed.push((auto, run)),
             Ok(None) => {}
             Err(err) => log::error!("could not claim automation {}: {err:#}", auto.id),
@@ -96,10 +97,12 @@ impl BenCodeApp {
     /// that was not skipped.
     fn run_due_automations(&mut self, cx: &mut Context<Self>) {
         let now = now_ms();
-        let paused = self.automations_paused_until().is_some();
+        // The setting as kept, not only while it holds: an occurrence due
+        // in a pause that has since ended is still skipped.
+        let paused_until = self.settings.automations_paused_until;
         self.db_then(
             cx,
-            move |db| claim_due(db, now, paused),
+            move |db| claim_due(db, now, paused_until),
             |app, claimed, cx| {
                 let claimed = match claimed {
                     Ok(claimed) => claimed,

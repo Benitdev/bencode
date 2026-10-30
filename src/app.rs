@@ -8,6 +8,7 @@ pub mod automation_drafts;
 pub mod automation_overview;
 pub mod automation_pauses;
 mod automation_runs;
+mod automation_view_cache;
 pub mod automations;
 pub mod backlog;
 pub mod blame;

@@ -16,6 +16,7 @@ use serde_json::Value;
 use super::automation_drafts::Discard;
 use super::automation_overview::NeedsYou;
 use super::automation_pauses::PausePick;
+use super::automation_view_cache::AutomationViewCache;
 use super::{BenCodeApp, PermissionMode, Surface, multiline_input, now_ms, text_input, unique_id};
 use crate::db::{AutomationRow, AutomationRunRow, DEFAULT_GRACE_MINUTES};
 use crate::schedule::{self, ScheduleKind, Trigger};
@@ -91,6 +92,9 @@ pub struct AutomationsState {
     pub recent: Vec<AutomationRunRow>,
     /// Needs you's failed and missed runs, from `items` and `recent`.
     pub needs: Vec<NeedsYou>,
+    /// Upcoming, the cards' strips and Recent results, from `items` and
+    /// `recent`: invalidated whenever either is replaced.
+    pub view_cache: AutomationViewCache,
     /// The last look before the overview was shown: what finished since
     /// is marked new.
     pub seen_before: Option<i64>,
@@ -141,6 +145,7 @@ impl AutomationsState {
             runs: Vec::new(),
             recent: Vec::new(),
             needs: Vec::new(),
+            view_cache: AutomationViewCache::default(),
             seen_before: None,
             filter_input: text_input(window, cx, "Filter automations"),
             name_input: text_input(window, cx, "Untitled"),
@@ -238,7 +243,7 @@ pub(super) fn settings_differ(draft: &AutomationRow, auto: &AutomationRow) -> bo
         || draft.model != auto.model
         || draft.cwd != auto.cwd
         || draft.enabled != auto.enabled
-        || draft.triggers != auto.triggers
+        || !schedule::same_triggers(draft.triggers.as_deref(), auto.triggers.as_deref())
         || draft.workspace_mode != auto.workspace_mode
         || draft.reuse_session != auto.reuse_session
         || draft.session_folder_id != auto.session_folder_id
@@ -311,6 +316,7 @@ impl BenCodeApp {
         }
         self.automations.listed = request;
         self.automations.items = items;
+        self.automations.view_cache.invalidate();
         if self.selected_automation().is_none() {
             self.automations.selected_id = self.automations.items.first().map(|a| a.id.clone());
         }

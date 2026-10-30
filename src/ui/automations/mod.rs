@@ -78,11 +78,11 @@ impl BenCodeApp {
                 .filter(|name| !name.is_empty())
                 .unwrap_or_else(|| "Untitled".to_string())
         };
-        let new = self.automations.stashed.get(NEW_DRAFT).or(self
-            .automations
-            .draft
+        // As typed while the editor shows it, else as stashed.
+        let editing_new = self.editor_draft(cx).filter(|d| d.id == NEW_DRAFT);
+        let new = editing_new
             .as_ref()
-            .filter(|d| d.id == NEW_DRAFT));
+            .or(self.automations.stashed.get(NEW_DRAFT));
         let (title, message, confirm) = match discard {
             Discard::Editor if self.edited_automation().is_some() => (
                 "Discard changes?",
