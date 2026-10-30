@@ -32,7 +32,7 @@ impl BenCodeApp {
                     Pick::Bot(id) => this.open_bot_float_over(&id, main, cx),
                     Pick::Quit => {
                         // Its confirmation shows in BenCode's window.
-                        cx.activate(true);
+                        crate::ui::native_window::activate_app(cx);
                         this.request_quit(cx);
                     }
                 });

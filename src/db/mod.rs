@@ -1040,9 +1040,10 @@ impl AppDb {
              WHERE rank <= ?1 OR (created_at >= ?2 AND rank <= ?3)
              ORDER BY created_at DESC",
         )?;
-        let rows = stmt.query_map(params![per_automation, since, RECENT_RUNS_PER_AUTOMATION_LIMIT], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-        })?;
+        let rows = stmt.query_map(
+            params![per_automation, since, RECENT_RUNS_PER_AUTOMATION_LIMIT],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+        )?;
         let mut runs = Vec::new();
         for row in rows {
             let (id, raw) = row?;

@@ -4,6 +4,13 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
+## [0.1.41] - Unreleased
+
+- Hiding the floating Bot chat, summoning a bot, or clicking a
+  notification while BenCode is in the background no longer drops the
+  frame of the window coming forward ("RefCell already borrowed" in the
+  log), which could leave it stale.
+
 ## [0.1.40] - 2026-10-30
 
 - Automation edits are never lost: leaving an automation with unsaved

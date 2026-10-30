@@ -142,7 +142,7 @@ impl BenCodeApp {
                 Some(id) => app.update(cx, |this, cx| this.open_bot_float_over(&id, main, cx)),
                 // No bot yet: BenCode, where the rail invites making one.
                 None => {
-                    cx.activate(true);
+                    crate::ui::native_window::activate_app(cx);
                     if let Err(err) = main.update(cx, |_, window, _| window.activate_window()) {
                         log::debug!("summoned with BenCode's window gone: {err:#}");
                     }

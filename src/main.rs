@@ -67,7 +67,7 @@ fn main() {
     // The Dock icon with no window on screen (hidden or minimized): bring
     // BenCode's window back.
     application.on_reopen(|cx| {
-        cx.activate(true);
+        ui::native_window::activate_app(cx);
         for window in cx.windows() {
             if let Err(err) = window.update(cx, |_, window, _| window.activate_window()) {
                 log::warn!("could not show the window: {err:#}");
@@ -159,7 +159,7 @@ fn main() {
             let hide_on_close = window.update(cx, |_, window, cx| {
                 window.on_window_should_close(cx, |window, cx| {
                     if cx.windows().len() > 1 {
-                        ui::native_window::order_out(window);
+                        ui::native_window::order_out(window, cx);
                     } else {
                         cx.hide();
                     }
@@ -189,7 +189,7 @@ fn main() {
             }
 
             if shown {
-                cx.activate(true);
+                ui::native_window::activate_app(cx);
             }
         });
 }

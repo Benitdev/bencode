@@ -495,7 +495,7 @@ impl BenCodeApp {
                     continue;
                 };
                 let opened = this.update(cx, |this, cx| {
-                    cx.activate(true);
+                    crate::ui::native_window::activate_app(cx);
                     match click {
                         Click::Session(id) => this.select_live_agent(&id, cx),
                         Click::Reminder { session_id, due_at } => {

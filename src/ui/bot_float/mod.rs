@@ -500,7 +500,7 @@ impl BotFloat {
     /// a window, has already put the content view's class back. Removed while
     /// it is key, AppKit finds its watch gone and aborts BenCode.
     fn close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        crate::ui::native_window::order_out(window);
+        crate::ui::native_window::order_out(window, cx);
         self.close_generation += 1;
         let generation = self.close_generation;
         let timer = cx.background_executor().timer(CLOSE_DELAY);
@@ -878,7 +878,7 @@ impl BotFloat {
             if let Err(err) = app.update(cx, |app, cx| app.select_live_agent(thread, cx)) {
                 log::debug!("digest thread opened after app drop: {err:#}");
             }
-            cx.activate(true);
+            crate::ui::native_window::activate_app(cx);
             if let Err(err) = main.update(cx, |_, window, _| window.activate_window()) {
                 log::debug!("BenCode's window is gone: {err:#}");
             }
@@ -891,7 +891,7 @@ impl BotFloat {
     }
 
     fn activate_main(&self, cx: &mut App) {
-        cx.activate(true);
+        crate::ui::native_window::activate_app(cx);
         if let Err(err) = self
             .main
             .update(cx, |_, window, _| window.activate_window())

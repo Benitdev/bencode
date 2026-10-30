@@ -3,12 +3,25 @@
 //! window rather than the app (MonoCode `window.hide()`), its shadow kept
 //! to its rounded shape (MonoCode `invalidateShadow`), and the screen under
 //! the pointer (MonoCode `monitor_from_point(cursor_position())`).
+//!
+//! What can move the keyboard to another window (taking one off screen,
+//! bringing the app forward) waits until the update asking for it has
+//! returned, as GPUI's `activate_window` does: AppKit tells the window
+//! that becomes key at once, and GPUI draws it then, which it cannot do
+//! while the app is borrowed (the frame is lost, "RefCell already
+//! borrowed").
 
 #[cfg(not(target_os = "macos"))]
 pub fn make_floating_panel(_: &gpui::Window) {}
 
 #[cfg(not(target_os = "macos"))]
-pub fn order_out(_: &gpui::Window) {}
+pub fn order_out(_: &gpui::Window, _: &gpui::App) {}
+
+/// Brings BenCode forward, over the other apps.
+#[cfg(not(target_os = "macos"))]
+pub fn activate_app(cx: &gpui::App) {
+    cx.activate(true);
+}
 
 #[cfg(not(target_os = "macos"))]
 pub fn invalidate_shadow(_: &gpui::Window) {}
@@ -19,7 +32,9 @@ pub fn display_under_pointer() -> Option<u64> {
 }
 
 #[cfg(target_os = "macos")]
-pub use macos::{display_under_pointer, invalidate_shadow, make_floating_panel, order_out};
+pub use macos::{
+    activate_app, display_under_pointer, invalidate_shadow, make_floating_panel, order_out,
+};
 
 // objc 0.2's `msg_send!` expands to a `cargo-clippy` feature check.
 #[cfg(target_os = "macos")]
@@ -145,15 +160,42 @@ mod macos {
 
     /// Takes the window off screen without hiding the app, so BenCode's
     /// other windows stay. The Dock icon brings it back (`on_reopen`): a
-    /// floating panel does not count as a visible window there.
-    pub fn order_out(window: &gpui::Window) {
+    /// floating panel does not count as a visible window there. Once the
+    /// update asking for it has returned (the module's doc comment).
+    pub fn order_out(window: &gpui::Window, cx: &gpui::App) {
         let Some(native) = ns_window(window) else {
             log::warn!("no native window to take off screen");
             return;
         };
-        // SAFETY: as in `ns_window`.
+        // SAFETY: as in `ns_window`. Retained until the task has used it,
+        // so a window closed meanwhile is still a valid object.
         unsafe {
-            let _: () = msg_send![native, orderOut: std::ptr::null_mut::<Object>()];
+            let _: Id = msg_send![native, retain];
         }
+        cx.foreground_executor()
+            .spawn(async move {
+                // SAFETY: retained above; on the main thread, where GPUI's
+                // foreground tasks run.
+                unsafe {
+                    let _: () = msg_send![native, orderOut: std::ptr::null_mut::<Object>()];
+                    let _: () = msg_send![native, release];
+                }
+            })
+            .detach();
+    }
+
+    /// Brings BenCode forward, over the other apps (`App::activate(true)`),
+    /// once the update asking for it has returned.
+    pub fn activate_app(cx: &gpui::App) {
+        use objc::class;
+        cx.foreground_executor()
+            .spawn(async {
+                // SAFETY: the shared application, on the main thread.
+                unsafe {
+                    let app: Id = msg_send![class!(NSApplication), sharedApplication];
+                    let _: () = msg_send![app, activateIgnoringOtherApps: YES];
+                }
+            })
+            .detach();
     }
 }
