@@ -15,7 +15,7 @@ use gpui::{
 };
 
 use super::live_agents::live_agent_elapsed;
-use super::widgets::{mascot_icon, project_mascot_icon};
+use super::widgets::{figure_icon, project_figure_icon};
 use super::{TITLEBAR_HEIGHT, path_key};
 use crate::app::live_agents::LiveAgent;
 use crate::app::session_list::{compare_sessions, format_age, session_title};
@@ -216,7 +216,7 @@ impl BenCodeApp {
             )
     }
 
-    /// The Agents section as icons: each agent's project mascot, moving
+    /// The Agents section as icons: each agent's project figure, moving
     /// while it works, an amber dot while it waits on the user and a green
     /// one when it finished unseen; a click opens its thread. Past
     /// `RAIL_AGENTS`, "+N" brings the navigator back with the rest.
@@ -326,8 +326,8 @@ impl BenCodeApp {
             })
             .tooltip(Tooltip::text(tip))
             .on_click(cx.listener(move |this, _, _, cx| this.select_live_agent(&id, cx)))
-            .child(mascot_icon(
-                self.project_mascot(&agent.cwd),
+            .child(figure_icon(
+                self.project_figure(&agent.cwd),
                 self.project_color(&agent.cwd),
                 live,
                 14.0,
@@ -398,7 +398,7 @@ impl BenCodeApp {
         )
     }
 
-    /// The current project's logo or mascot (MonoCode's `compact` project
+    /// The current project's logo or figure (MonoCode's `compact` project
     /// picker); a press lists the rail's projects to switch to.
     fn render_compact_project_button(&self, cx: &Context<Self>) -> impl IntoElement {
         let fg = cx.theme().colors.fg;
@@ -448,7 +448,7 @@ impl BenCodeApp {
             )
     }
 
-    /// A project's logo, else its mascot; a folder with no project.
+    /// A project's logo, else its figure; a folder with no project.
     pub(crate) fn project_glyph(&self, path: &str, cx: &Context<Self>) -> AnyElement {
         if path.trim().is_empty() {
             let fg = cx.theme().colors.fg;
@@ -474,8 +474,8 @@ impl BenCodeApp {
                 .size_4()
                 .rounded(px(4.0))
                 .into_any_element(),
-            None => project_mascot_icon(
-                self.project_mascot(path),
+            None => project_figure_icon(
+                self.project_figure(path),
                 self.project_color(path),
                 busy,
                 cx,

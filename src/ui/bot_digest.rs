@@ -137,8 +137,8 @@ impl BenCodeApp {
             };
             let (open, opened) = (open.clone(), id.clone());
             ListRow::new(format!("bot-digest-{id}"), item.title.clone())
-                .tile(crate::ui::rail::widgets::mascot_icon(
-                    self.project_mascot(&item.cwd),
+                .tile(crate::ui::rail::widgets::figure_icon(
+                    self.project_figure(&item.cwd),
                     self.project_color(&item.cwd),
                     false,
                     16.0,

@@ -511,7 +511,7 @@ impl BenCodeApp {
             .px(px(6.0))
             .pb(px(6.0))
             // MonoCode stacks the question form, then the queue, on the box;
-            // the mascot runs on top of that stack when there is one.
+            // the runner runs on top of that stack when there is one.
             .child(
                 div()
                     .relative()

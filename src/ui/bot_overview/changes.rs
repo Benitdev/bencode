@@ -79,11 +79,10 @@ impl BenCodeApp {
                     .on_click(cx.listener(move |this, _, _, cx| {
                         this.select_bot_changes_project(&target, cx)
                     }))
-                    .child(crate::ui::mascot::pixel_sprite(
-                        &self.project_mascot(path).rest,
-                        px(12.0),
+                    .child(crate::ui::figure::figure_still(
+                        self.project_figure(path),
+                        12.0,
                         self.project_color(path),
-                        false,
                     ))
                     .child(
                         div()

@@ -1,5 +1,5 @@
 //! The rail's saved state: order, width, archive, project groups, each
-//! project's label / colour / mascot / logo, and notification mutes.
+//! project's label / colour / figure / logo, and notification mutes.
 //! MonoCode keeps these in webview `localStorage`; BenCode keeps them in
 //! `settings.json` under the same names (`monocode.projectRailOrder` is
 //! `projectRailOrder`, `monocode:tab-group:labels` is `tabGroupLabels`, …)
@@ -42,7 +42,8 @@ pub struct RailPrefs {
     pub tab_group_colors: BTreeMap<String, usize>,
     /// `monocode:tab-group:custom-colors`: project path → `#rrggbb`.
     pub tab_group_custom_colors: BTreeMap<String, String>,
-    /// `monocode:tab-group:mascots`: project path → mascot name.
+    /// `monocode:tab-group:mascots`: project path → figure code (or the
+    /// MonoCode mascot it was before, `Figure::from_pick`).
     pub tab_group_mascots: BTreeMap<String, String>,
     /// `monocode:tab-group:logos`: project path → image file.
     pub tab_group_logos: BTreeMap<String, String>,
@@ -418,9 +419,9 @@ impl RailPrefs {
         }
     }
 
-    pub fn with_mascot(&self, path: &str, name: Option<&str>) -> Self {
+    pub fn with_figure(&self, path: &str, code: Option<&str>) -> Self {
         Self {
-            tab_group_mascots: with_entry(&self.tab_group_mascots, &path_key(path), name),
+            tab_group_mascots: with_entry(&self.tab_group_mascots, &path_key(path), code),
             ..self.clone()
         }
     }

@@ -1,5 +1,5 @@
 //! MonoCode `ComposerRunner`: while the focused thread's turn runs, its
-//! project mascot runs along the composer's top edge (or the card stacked on
+//! project's figure runs along the composer's top edge (or the card stacked on
 //! it), grabs coins and bonks then hops "Jump to latest"; when the turn ends
 //! it leaps off and sinks behind the rim. `RunnerLayer` steps it once per
 //! frame and draws it in window coordinates above everything else.
@@ -23,12 +23,11 @@ use super::runner::{
     scale_track_x, sprite_clip_bottom, step_along, stun_shake, stun_stars,
 };
 use crate::app::BenCodeApp;
-use crate::ui::mascot::{
-    COIN_EDGE, COIN_FACE, Mascot, STAR_EDGE, STAR_FACE, pixel_sprite, project_mascot,
-};
+use crate::bots::figure::{self, Figure, Mood};
+use crate::ui::figure::figure_frame;
 
-/// MonoCode `--mascot-beat`: rest and talk frames alternate each half.
-const MASCOT_HALF_BEAT_MS: u128 = 230;
+/// The figure's mouth opens and shuts each half of this.
+const TALK_HALF_BEAT_MS: u128 = 230;
 /// Coins and stars spin at MonoCode's 320ms.
 const SPIN_HALF_MS: u128 = 160;
 /// Frames longer than this (a stall, an inactive window) count as this.
@@ -86,10 +85,10 @@ struct Exit {
     facing: Facing,
 }
 
-/// One run, from a turn's start until the mascot has left.
+/// One run, from a turn's start until the figure has left.
 pub struct Runner {
     session_id: String,
-    mascot: &'static Mascot,
+    figure: Figure,
     color: Hsla,
     started: Instant,
     last: Instant,
@@ -110,16 +109,17 @@ struct Frame {
     sprite: (f32, f32, f32),
     facing: Facing,
     talking: bool,
+    stunned: bool,
     coins: Vec<(f32, f32, f32)>,
     stars: Vec<(f32, f32, f32)>,
 }
 
 impl Runner {
-    fn new(session_id: String, mascot: &'static Mascot, color: Hsla, now: Instant) -> Self {
+    fn new(session_id: String, figure: Figure, color: Hsla, now: Instant) -> Self {
         let seed = RandomState::new().hash_one(now) | 1;
         let mut runner = Self {
             session_id,
-            mascot,
+            figure,
             color,
             started: now,
             last: now,
@@ -269,7 +269,7 @@ impl Runner {
     fn frame(&self, now: Instant, track: Rect, obstacle: Option<Obstacle>) -> Frame {
         let width = track.width();
         let elapsed = now.duration_since(self.started).as_millis();
-        let talking = self.stun.is_none() && (elapsed / MASCOT_HALF_BEAT_MS) % 2 == 1;
+        let talking = self.stun.is_none() && (elapsed / TALK_HALF_BEAT_MS) % 2 == 1;
         let (x, y, facing) = match &self.exit {
             Some(exit) => {
                 let t = (since(exit.at, now) / EXIT_MS).min(1.0);
@@ -323,6 +323,7 @@ impl Runner {
             sprite: (left, top, sprite_clip_bottom(y)),
             facing,
             talking,
+            stunned: self.stun.is_some(),
             coins,
             stars,
         }
@@ -409,11 +410,8 @@ impl RunnerLayer {
             let Some((id, cwd)) = busy_id.clone() else {
                 return;
             };
-            let project = std::path::Path::new(&cwd)
-                .file_name()
-                .map_or_else(|| cwd.clone(), |n| n.to_string_lossy().into_owned());
-            let color = app.project_color(&cwd);
-            self.runner = Some(Runner::new(id, project_mascot(&project), color, now));
+            let (figure, color) = (app.project_figure(&cwd), app.project_color(&cwd));
+            self.runner = Some(Runner::new(id, figure, color, now));
         }
         let Some((track, obstacle)) = self.frame else {
             window.request_animation_frame();
@@ -442,42 +440,44 @@ impl RunnerLayer {
         let face = (elapsed / SPIN_HALF_MS).is_multiple_of(2);
         let at = |x: f32, y: f32| anchored().position(point(px(x), px(y)));
         let (left, top, clip) = frame.sprite;
-        let rows = if frame.talking {
-            &runner.mascot.talk
+        // Working as it runs, its mouth going; a bonk makes it wince.
+        let pose = if frame.stunned {
+            figure::Frame::still(Mood::Failed, false)
         } else {
-            &runner.mascot.rest
+            figure::Frame {
+                talk: frame.talking,
+                glow: if frame.talking { 3 } else { 2 },
+                ..figure::Frame::still(Mood::Working, false)
+            }
         };
-        // The talk frame hops a pixel (MonoCode `mascot-hop`).
-        let hop = if frame.talking { 1.0 } else { 0.0 };
         let visible = (RUNNER_SIZE - clip).max(0.0);
-        let sprite = at(left, top - hop).child(
+        let sprite = at(left, top).child(
             div()
                 .w(px(RUNNER_SIZE))
                 .h(px(visible))
                 .overflow_hidden()
-                .child(pixel_sprite(
-                    rows,
-                    px(RUNNER_SIZE),
+                .child(figure_frame(
+                    runner.figure,
+                    pose,
+                    RUNNER_SIZE,
                     runner.color,
                     frame.facing == Facing::Left,
                 )),
         );
         let coin_rows = if face { &COIN_FACE } else { &COIN_EDGE };
         let coins = frame.coins.into_iter().map(|(x, y, opacity)| {
-            at(x, y).child(div().opacity(opacity).child(pixel_sprite(
+            at(x, y).child(div().opacity(opacity).child(pixels(
                 coin_rows,
                 px(COIN_SIZE),
                 gpui::rgb(COIN_GOLD).into(),
-                false,
             )))
         });
         let star_rows = if face { &STAR_FACE } else { &STAR_EDGE };
         let stars = frame.stars.into_iter().map(|(x, y, opacity)| {
-            at(x, y).child(div().opacity(opacity).child(pixel_sprite(
+            at(x, y).child(div().opacity(opacity).child(pixels(
                 star_rows,
                 px(STAR_SIZE),
                 gpui::rgb(STAR_GOLD).into(),
-                false,
             )))
         });
         Some(
@@ -486,6 +486,55 @@ impl RunnerLayer {
                 .into_any_element(),
         )
     }
+}
+
+/// An 8×8 frame, top row first: `#` painted, `.` clear.
+type Rows = [&'static str; 8];
+
+const COIN_FACE: Rows = [
+    "........", "..####..", ".######.", "########", "########", ".######.", "..####..", "........",
+];
+const COIN_EDGE: Rows = [
+    "........", "...##...", "...##...", "...##...", "...##...", "...##...", "...##...", "........",
+];
+const STAR_FACE: Rows = [
+    "...##...", "...##...", "..####..", "########", "########", "..####..", "...##...", "...##...",
+];
+const STAR_EDGE: Rows = [
+    "........", "...##...", "...##...", "..####..", "..####..", "...##...", "...##...", "........",
+];
+
+/// `rows` `size` wide, one square per filled run of a row.
+fn pixels(rows: &Rows, size: Pixels, color: Hsla) -> AnyElement {
+    let unit = size / 8.0;
+    div()
+        .relative()
+        .size(size)
+        .flex_none()
+        .children(rows.iter().enumerate().flat_map(|(y, row)| {
+            let mut runs = Vec::new();
+            let mut start = None;
+            for (x, filled) in row.chars().map(|c| c == '#').chain([false]).enumerate() {
+                match (filled, start) {
+                    (true, None) => start = Some(x),
+                    (false, Some(from)) => {
+                        runs.push((from, x - from));
+                        start = None;
+                    }
+                    _ => {}
+                }
+            }
+            runs.into_iter().map(move |(x, len)| {
+                div()
+                    .absolute()
+                    .left(unit * x as f32)
+                    .top(unit * y as f32)
+                    .w(unit * len as f32)
+                    .h(unit)
+                    .bg(color)
+            })
+        }))
+        .into_any_element()
 }
 
 impl Render for RunnerLayer {

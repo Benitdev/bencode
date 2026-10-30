@@ -114,7 +114,7 @@ scrollbar) redraws only that region. The floating Bot chat follows the
 app's notifies, so a path that skips the app pokes it
 (`bot_float_window`).
 
-**Busy marks** (`ui/marks.rs`): spinners, shimmers, pulses and mascots are
+**Busy marks** (`ui/marks.rs`): spinners, shimmers, pulses and figures are
 built by `marks::mark(build, cx)`. In a region they lay out as usual and
 leave the painting to `MarkLayer`, drawn in the shell between the regions
 and the menus; the clock's steps notify only the layer (`step_marks`).
@@ -276,7 +276,8 @@ Monos under BenCode's own name, look and words
   names the hash it was made over; memory edits go through
   `bots/memory.rs`.
 - Its look is a figure (`bots/figure.rs`, pure; drawn by `ui/figure.rs`),
-  never a project mascot; its mood (working, needs you, done, failed,
+  as a project's is (`project_figure`; MonoCode's 8×8 mascots are gone,
+  a saved mascot name reads as a figure through `Figure::from_pick`); its mood (working, needs you, done, failed,
   asleep) comes from `bot_look`. A figure that moves is a busy mark.
 - Its settings dialog is a `bencode-ui` layer: what opens inside is raised, never
   `deferred`. The floating chat is a second window (`ui/bot_float/`) that

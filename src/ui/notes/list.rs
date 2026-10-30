@@ -9,7 +9,6 @@ use gpui::{AnyElement, Context, FontWeight, IntoElement, ParentElement, Styled, 
 use crate::app::notes::{note_matches, note_preview, note_project};
 use crate::app::{BenCodeApp, now_ms};
 use crate::db::Note;
-use crate::ui::mascot::pixel_sprite;
 use crate::ui::relative_time;
 use crate::ui::scale::px;
 use crate::ui::scrollbar::Scrolled;
@@ -127,11 +126,10 @@ impl BenCodeApp {
                     .items_center()
                     .gap(px(6.0))
                     .min_w_0()
-                    .child(pixel_sprite(
-                        &self.project_mascot(cwd).rest,
-                        px(12.0),
+                    .child(crate::ui::figure::figure_still(
+                        self.project_figure(cwd),
+                        12.0,
                         self.project_color(cwd),
-                        false,
                     ))
                     .child(div().min_w_0().truncate().child(project.to_string()))
             });

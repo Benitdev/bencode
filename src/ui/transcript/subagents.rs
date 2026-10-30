@@ -18,10 +18,10 @@ use super::markdown::Tone;
 use super::turns::{self, ToolState};
 use crate::app::BenCodeApp;
 use crate::app::subagents;
+use crate::bots::figure::Figure;
 use crate::db::Block;
 use crate::harness::StepKind;
-use crate::ui::mascot::project_mascot;
-use crate::ui::rail::widgets::mascot_icon;
+use crate::ui::rail::widgets::figure_icon;
 use crate::ui::scale::px;
 use crate::ui::spinner;
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
@@ -104,7 +104,7 @@ impl BenCodeApp {
             .size(px(14.0))
             .items_center()
             .justify_center()
-            .child(mascot_icon(project_mascot(&name), ink, active, 12.0, cx));
+            .child(figure_icon(Figure::seeded(&name), ink, active, 12.0, cx));
         let group = SharedString::from(format!("subagent-{key}"));
         let title = if active {
             div()

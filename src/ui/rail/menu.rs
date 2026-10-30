@@ -1,5 +1,5 @@
 //! MonoCode `useProjectMenu`: opening a project's (or a project group's)
-//! menu, its name, colour and mascot edits, its actions and the submenus
+//! menu, its name, colour and figure edits, its actions and the submenus
 //! they open. Drawing it is in `menu_view`, removal in `remove`.
 
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -12,6 +12,7 @@ use super::model::{ProjectGroup, mute_actions, mute_deadline, notification_id};
 use super::project_name;
 use super::state::{MenuTarget, RailMenu, RailSubmenu, SubmenuKind};
 use crate::app::BenCodeApp;
+use crate::bots::figure::Figure;
 use crate::ui::explorer_menu::{self, MenuAction, MenuEntry};
 use crate::ui::icons::ExtraIcon;
 
@@ -62,7 +63,7 @@ impl BenCodeApp {
         self.open_rail_menu(MenuTarget::Group(id.to_string()), name, at, cx);
     }
 
-    /// MonoCode `MonoMenu`: its name, mascot and colour, then Delete.
+    /// MonoCode `MonoMenu`: its name, figure and colour, then Delete.
     pub(crate) fn open_rail_bot_menu(
         &mut self,
         id: &str,
@@ -681,27 +682,27 @@ impl BenCodeApp {
         }
     }
 
-    pub(super) fn set_rail_mascot(
+    pub(super) fn set_rail_figure(
         &mut self,
         target: &MenuTarget,
-        name: &str,
+        figure: Figure,
         cx: &mut Context<Self>,
     ) {
+        let code = figure.code();
         match target {
             MenuTarget::Project(path) => {
-                self.update_rail_prefs(|p| p.with_mascot(path, Some(name)), cx)
+                self.update_rail_prefs(|p| p.with_figure(path, Some(&code)), cx)
             }
             MenuTarget::Group(id) => self.update_rail_prefs(
                 |p| {
                     p.with_group(id, |g| ProjectGroup {
-                        mascot: Some(name.to_string()),
+                        mascot: Some(code.clone()),
                         ..g.clone()
                     })
                 },
                 cx,
             ),
-            // A bot wears a figure, picked in its own row.
-            MenuTarget::Bot(_) => {}
+            MenuTarget::Bot(id) => self.set_bot_figure(id, figure, cx),
         }
     }
 }

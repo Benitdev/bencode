@@ -359,7 +359,7 @@ impl BenCodeApp {
             path: bot.id.clone(),
             label: name.clone(),
             color: self.bot_color(bot),
-            mark: super::reorder::RailMark::Figure(bot.figure()),
+            mark: bot.figure(),
             width: self.rail_width() - 16.0,
         };
         nav_row(

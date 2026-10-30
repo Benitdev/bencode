@@ -148,6 +148,19 @@ impl Figure {
         Self::new(body, eyes, gear)
     }
 
+    /// A project's or group's look: its saved pick (a code, or the name of
+    /// the MonoCode mascot picked before projects had figures), else one
+    /// from `seed`.
+    pub fn from_pick(pick: Option<&str>, seed: &str) -> Self {
+        match pick {
+            Some(pick) if pick.contains('.') => {
+                Self::parse(pick).unwrap_or_else(|| Self::seeded(seed))
+            }
+            Some(name) => Self::from_mascot(name, seed),
+            None => Self::seeded(seed),
+        }
+    }
+
     /// A look picked from `seed`, stable for it.
     pub fn seeded(seed: &str) -> Self {
         let hash = seed.bytes().fold(0x811c_9dc5_u32, |hash, byte| {
@@ -1156,6 +1169,17 @@ mod tests {
             Figure::new(Body::Block, Eyes::Visor, Gear::Antenna)
         );
         assert_eq!(Figure::from_mascot("", "x"), Figure::seeded("x"));
+    }
+
+    #[test]
+    fn a_project_pick_reads_codes_and_old_mascots() {
+        let figure = Figure::new(Body::Bean, Eyes::Tall, Gear::Scarf);
+        assert_eq!(Figure::from_pick(Some(&figure.code()), "x"), figure);
+        assert_eq!(
+            Figure::from_pick(Some("robot"), "x"),
+            Figure::from_mascot("robot", "x")
+        );
+        assert_eq!(Figure::from_pick(None, "x"), Figure::seeded("x"));
     }
 
     #[test]

@@ -16,7 +16,7 @@ use gpui::{
 };
 
 use super::project_name;
-use super::widgets::mascot_icon;
+use super::widgets::figure_icon;
 use crate::app::live_agents::{LiveAgent, format_live_elapsed};
 use crate::app::{BenCodeApp, same_project_path};
 use crate::ui::region::Region;
@@ -31,7 +31,7 @@ const LIVE_AGENT_CAP: usize = 4;
 /// above keep theirs; expanded (MonoCode `max-h-[45vh]`) it takes more.
 const SECTION_SHARE: f32 = 0.35;
 const EXPANDED_SHARE: f32 = 0.5;
-/// The second line and the buttons start under the title, past the mascot.
+/// The second line and the buttons start under the title, past the figure.
 const DETAIL_INSET: f32 = 18.0;
 
 /// What the section keeps between frames.
@@ -249,7 +249,7 @@ impl BenCodeApp {
         }
     }
 
-    /// One agent: its project's mascot, the title and elapsed time, then
+    /// One agent: its project's figure, the title and elapsed time, then
     /// what it does (or asks) and its project; Allow / Deny under a
     /// request to run something, Answer under a question.
     fn render_live_agent(&self, agent: &LiveAgent, now: i64, cx: &Context<Self>) -> AnyElement {
@@ -371,11 +371,11 @@ impl BenCodeApp {
                     .min_w_0()
                     .items_center()
                     .gap_2()
-                    .child(mascot_icon(
-                        self.project_mascot(&agent.cwd),
+                    .child(figure_icon(
+                        self.project_figure(&agent.cwd),
                         self.project_color(&agent.cwd),
                         live,
-                        8.0,
+                        12.0,
                         cx,
                     ))
                     .child(

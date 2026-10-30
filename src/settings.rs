@@ -43,7 +43,7 @@ pub struct AppSettings {
     /// MonoCode "Claude Code hooks" switched off: Claude runs with
     /// `disableAllHooks`. Hooks are on by default.
     pub claude_hooks_disabled: bool,
-    /// MonoCode `monocode.composerRunner` switched off: no mascot runs on
+    /// MonoCode `monocode.composerRunner` switched off: no figure runs on
     /// the composer during a turn. On by default.
     pub composer_mascot_off: bool,
     /// MonoCode `monocode.liveAgentsEnabled` switched off: no Working

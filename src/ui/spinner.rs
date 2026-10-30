@@ -1,13 +1,13 @@
 //! The busy marks that show while agents run, stepped by the app's clock
 //! (`start_clock`) rather than by per-frame animation: `with_animation`
 //! asks for every frame and notifies the view it is drawn in, which for
-//! these is the whole app, so one busy mascot on the rail kept BenCode
+//! these is the whole app, so one busy figure on the rail kept BenCode
 //! redrawing at the display's rate for as long as an agent ran anywhere.
 //! Each mark reads where it is from one epoch, so they move in step and the
 //! clock's tick is the only redraw they need.
 //!
 //! MonoCode `TerminalSpinner` (a braille spinner, one frame every 80ms),
-//! and in place of their frame-driven forms: the rail's mascot beat
+//! and in place of their frame-driven forms: the rail's figure beat
 //! (`--mascot-beat`) and pulse (`animate-pulse`, [`pulse`]), bencode-ui's `ShimmerText` and
 //! the ring of bencode-ui's `Spinner`.
 

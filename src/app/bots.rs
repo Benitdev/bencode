@@ -774,7 +774,7 @@ impl BenCodeApp {
     }
 
     /// The Bot's greeting fills its chat: it has no message yet. Its
-    /// mascot bobs, so the clock wakes for it (`start_clock`).
+    /// figure bobs, so the clock wakes for it (`start_clock`).
     pub fn bot_greeting_shown(&self) -> bool {
         self.bot_covers()
             && self

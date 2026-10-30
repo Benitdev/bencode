@@ -740,11 +740,10 @@ impl BenCodeApp {
                             .justify_center()
                             .rounded(px(8.0))
                             .bg(fg.fill(Fill::Hover))
-                            .child(crate::ui::mascot::pixel_sprite(
-                                &self.project_mascot(&path).rest,
-                                px(16.0),
+                            .child(crate::ui::figure::figure_still(
+                                self.project_figure(&path),
+                                16.0,
                                 self.project_color(&path),
-                                false,
                             )),
                     )
                     .child(

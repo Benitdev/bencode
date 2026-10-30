@@ -1,5 +1,5 @@
 //! Drawing MonoCode `TabGroupMenu`: the name field, logo, colours and
-//! mascot above the action rows, and the `ExplorerMenu` a row opens
+//! figure above the action rows, and the `ExplorerMenu` a row opens
 //! beside it.
 
 use std::cell::Cell;
@@ -16,15 +16,15 @@ use gpui::{
 use crate::ui::scale::px;
 use crate::ui::thumbnail::{LOGO, thumbnail};
 
+use super::group_color;
 use super::model::{self, mute_status, notification_id};
 use super::state::{MenuTarget, SubmenuKind};
-use super::{group_color, project_name};
 use crate::app::BenCodeApp;
 use crate::app::session_folders::{FOLDER_COLORS, palette_color, parse_hex, to_hex};
+use crate::bots::figure::{Body, Figure};
 use crate::ui::app_callback::app_callback_with;
 use crate::ui::explorer_menu::{self, MenuEntry, MenuPlace, MenuView};
 use crate::ui::icons::ExtraIcon;
-use crate::ui::mascot::{MASCOT_NAMES, mascot_for, mascot_name_for, pixel_sprite};
 use crate::ui::tokens::RED_400;
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
@@ -132,48 +132,44 @@ impl BenCodeApp {
         let theme = cx.theme();
         let fg = theme.colors.fg;
         let prefs = &self.settings.rail;
-        let (extra, color_index, custom, current, mascot_seed, mascot_name, logo_path) =
-            match &menu.target {
-                MenuTarget::Project(path) => {
-                    let key = model::path_key(path);
-                    (
-                        self.project_extra_items(path),
-                        prefs.tab_group_colors.get(&key).copied(),
-                        prefs
-                            .tab_group_custom_colors
-                            .get(&key)
-                            .and_then(|h| parse_hex(h)),
-                        self.project_color(path),
-                        project_name(path).to_string(),
-                        prefs.tab_group_mascots.get(&key).cloned(),
-                        Some(prefs.tab_group_logos.get(&key).cloned()),
-                    )
-                }
-                MenuTarget::Group(id) => {
-                    let group = prefs.project_groups.iter().find(|g| &g.id == id)?;
-                    (
-                        Self::group_extra_items(),
-                        group.color_index,
-                        group.custom_color.as_deref().and_then(parse_hex),
-                        group_color(group),
-                        group.id.clone(),
-                        group.mascot.clone(),
-                        None,
-                    )
-                }
-                MenuTarget::Bot(id) => {
-                    let bot = self.bot(id)?;
-                    (
-                        Self::bot_extra_items(),
-                        Some(bot.color_index),
-                        bot.custom_color.as_deref().and_then(parse_hex),
-                        self.bot_color(bot),
-                        bot.id.clone(),
-                        Some(bot.mascot.clone()),
-                        None,
-                    )
-                }
-            };
+        let (extra, color_index, custom, current, figure, logo_path) = match &menu.target {
+            MenuTarget::Project(path) => {
+                let key = model::path_key(path);
+                (
+                    self.project_extra_items(path),
+                    prefs.tab_group_colors.get(&key).copied(),
+                    prefs
+                        .tab_group_custom_colors
+                        .get(&key)
+                        .and_then(|h| parse_hex(h)),
+                    self.project_color(path),
+                    self.project_figure(path),
+                    Some(prefs.tab_group_logos.get(&key).cloned()),
+                )
+            }
+            MenuTarget::Group(id) => {
+                let group = prefs.project_groups.iter().find(|g| &g.id == id)?;
+                (
+                    Self::group_extra_items(),
+                    group.color_index,
+                    group.custom_color.as_deref().and_then(parse_hex),
+                    group_color(group),
+                    Figure::from_pick(group.mascot.as_deref(), &group.id),
+                    None,
+                )
+            }
+            MenuTarget::Bot(id) => {
+                let bot = self.bot(id)?;
+                (
+                    Self::bot_extra_items(),
+                    Some(bot.color_index),
+                    bot.custom_color.as_deref().and_then(parse_hex),
+                    self.bot_color(bot),
+                    bot.figure(),
+                    None,
+                )
+            }
+        };
         let leading = match &menu.target {
             MenuTarget::Project(path) => mute_status(
                 prefs.project_notifications.get(&notification_id(path)),
@@ -239,12 +235,7 @@ impl BenCodeApp {
                     ),
                 )
             })
-            .child(match &target {
-                MenuTarget::Bot(id) => self.render_figure_row(id, cx).into_any_element(),
-                _ => self
-                    .render_mascot_row(&target, &mascot_seed, mascot_name.as_deref(), cx)
-                    .into_any_element(),
-            })
+            .child(self.render_figure_row(&target, figure, cx))
             .child(separator())
             .children(extra.into_iter().map(|item| {
                 let sep = item.sep_before;
@@ -539,15 +530,18 @@ impl BenCodeApp {
         )
     }
 
-    /// A bot's "Look" row, laid out as the "Mascot" row: a swatch per body
-    /// its figure could take (the eyes and gear its own), then Shuffle. The
-    /// rest of its look is in its settings.
-    fn render_figure_row(&self, id: &str, cx: &Context<Self>) -> impl IntoElement {
-        use crate::bots::figure::{Body, Figure};
+    /// The "Look" row: a swatch per body the figure could take (the eyes
+    /// and gear its own), then Shuffle. A bot's other parts are in its
+    /// settings.
+    fn render_figure_row(
+        &self,
+        target: &MenuTarget,
+        current: Figure,
+        cx: &Context<Self>,
+    ) -> impl IntoElement {
         let theme = cx.theme();
         let fg = theme.colors.fg;
         let selected_bg = fg.opacity(if theme.is_dark() { 0.14 } else { 0.08 });
-        let current = self.bot(id).map(crate::bots::Bot::figure);
         let swatch = |key: SharedString, tip: &'static str, selected: bool| {
             div()
                 .id(key)
@@ -569,12 +563,7 @@ impl BenCodeApp {
                 })
                 .tooltip(bencode_ui::primitives::Tooltip::text(tip))
         };
-        let bodies = current.into_iter().flat_map(|current| {
-            Body::ALL
-                .iter()
-                .map(move |&body| (body, Figure { body, ..current }))
-        });
-        let shuffle_id = id.to_string();
+        let shuffle_target = target.clone();
         div()
             .mb_2()
             .px(px(2.0))
@@ -590,18 +579,17 @@ impl BenCodeApp {
                     .flex()
                     .items_center()
                     .gap_1()
-                    .children(bodies.map(|(body, figure)| {
-                        let bot = id.to_string();
+                    .children(Body::ALL.iter().map(|&body| {
+                        let figure = Figure { body, ..current };
+                        let target = target.clone();
                         swatch(
                             SharedString::from(format!("rail-figure-{}", body.code())),
                             body.label(),
-                            current == Some(figure),
+                            current == figure,
                         )
-                        .on_click(
-                            cx.listener(move |this, _, _, cx| {
-                                this.set_bot_figure(&bot, figure, cx)
-                            }),
-                        )
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.set_rail_figure(&target, figure, cx)
+                        }))
                         .child(crate::ui::figure::figure_still(
                             figure,
                             12.0,
@@ -612,9 +600,8 @@ impl BenCodeApp {
                     .child(
                         swatch("rail-figure-shuffle".into(), "Shuffle", false)
                             .on_click(cx.listener(move |this, _, _, cx| {
-                                let seed = format!("{shuffle_id}-{}", crate::app::now_ms());
-                                let figure = crate::bots::figure::Figure::seeded(&seed);
-                                this.set_bot_figure(&shuffle_id, figure, cx)
+                                let seed = format!("{:?}-{}", shuffle_target, crate::app::now_ms());
+                                this.set_rail_figure(&shuffle_target, Figure::seeded(&seed), cx)
                             }))
                             .child(
                                 Icon::new(IconName::Shuffle)
@@ -622,72 +609,6 @@ impl BenCodeApp {
                                     .color(fg.ink(Ink::Secondary)),
                             ),
                     ),
-            )
-    }
-
-    /// MonoCode's "Mascot" row: `mb-1 text-[11px] text-content/50`, then a
-    /// `size-5 rounded-md` swatch per mascot.
-    fn render_mascot_row(
-        &self,
-        target: &MenuTarget,
-        seed: &str,
-        name: Option<&str>,
-        cx: &Context<Self>,
-    ) -> impl IntoElement {
-        let theme = cx.theme();
-        let fg = theme.colors.fg;
-        let shown = mascot_name_for(seed, name);
-        // `bg-selection-hover ring-1 ring-content/50`
-        let selected_bg = fg.opacity(if theme.is_dark() { 0.14 } else { 0.08 });
-        div()
-            .mb_2()
-            .px(px(2.0))
-            .child(
-                div()
-                    .mb_1()
-                    .text_size(Text::Sm.px())
-                    .text_color(fg.ink(Ink::Secondary))
-                    .child("Mascot"),
-            )
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .gap_1()
-                    .children(MASCOT_NAMES.iter().map(|mascot| {
-                        let selected = *mascot == shown;
-                        let target = target.clone();
-                        let sprite = mascot_for(seed, Some(mascot));
-                        div()
-                            .id(SharedString::from(format!("rail-mascot-{mascot}")))
-                            .flex()
-                            .flex_none()
-                            .size_5()
-                            .items_center()
-                            .justify_center()
-                            .rounded(px(6.0))
-                            .cursor_pointer()
-                            .map(|el| {
-                                if selected {
-                                    el.bg(selected_bg)
-                                        .border_1()
-                                        .border_color(fg.ink(Ink::Secondary))
-                                } else {
-                                    el.hover(move |s| s.bg(fg.fill(Fill::Selected)))
-                                }
-                            })
-                            .tooltip(bencode_ui::primitives::Tooltip::text(*mascot))
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.set_rail_mascot(&target, mascot, cx)
-                            }))
-                            .child(pixel_sprite(
-                                &sprite.rest,
-                                px(12.0),
-                                fg.opacity(0.75),
-                                false,
-                            ))
-                    })),
             )
     }
 

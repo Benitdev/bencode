@@ -1,5 +1,5 @@
 //! MonoCode's composer runner physics (`composerRunner.ts`): the project
-//! mascot patrols the composer's top edge while a turn runs, hops coins
+//! figure patrols the composer's top edge while a turn runs, hops coins
 //! that appear above it, bonks the "Jump to latest" chevron the first time
 //! (recoil, shake, orbiting stars) and hops it after, then leaps off and
 //! sinks behind the rim when the turn ends. All pure; times are in ms,
@@ -64,7 +64,7 @@ pub struct Obstacle {
 pub struct Coin {
     /// Centre along the track.
     pub x: f32,
-    /// How high the mascot must jump to grab it.
+    /// How high the figure must jump to grab it.
     pub height: f32,
 }
 

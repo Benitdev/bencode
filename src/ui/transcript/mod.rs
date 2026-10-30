@@ -387,7 +387,7 @@ impl BenCodeApp {
                     } else if app.alerts.window_active && app.running_thread_in_view() {
                         crate::ui::spinner::WATCHED_FRAME
                     } else {
-                        // The rail's busy mascots show over the views too.
+                        // The rail's busy figures show over the views too.
                         crate::ui::spinner::FRAME
                     };
                     // The floating chat follows the app's notifies; a step

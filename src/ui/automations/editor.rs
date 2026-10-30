@@ -23,7 +23,6 @@ use crate::db::AutomationRow;
 use crate::harness::catalog;
 use crate::schedule;
 use crate::ui::app_callback::{app_callback, on_value};
-use crate::ui::mascot::pixel_sprite;
 use crate::ui::provider_icon::HarnessIcon;
 use crate::ui::scale::px;
 use crate::ui::scrollbar::Scrolled;
@@ -382,11 +381,10 @@ impl BenCodeApp {
             item(icon(IconName::Folder), "No project".to_string())
         } else {
             item(
-                pixel_sprite(
-                    &self.project_mascot(&draft.cwd).rest,
-                    px(12.0),
+                crate::ui::figure::figure_still(
+                    self.project_figure(&draft.cwd),
+                    12.0,
                     self.project_color(&draft.cwd),
-                    false,
                 )
                 .into_any_element(),
                 self.rail_project_label(&draft.cwd),

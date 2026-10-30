@@ -10,6 +10,10 @@ tagging (`docs/releasing.md`).
   notification while BenCode is in the background no longer drops the
   frame of the window coming forward ("RefCell already borrowed" in the
   log), which could leave it stale.
+- Projects and groups wear BenCode's figures, as bots do, in place of
+  MonoCode's pixel mascots: on the navigator, the Agents section, notes,
+  automations and the composer's runner. Their menu's "Look" row picks
+  the body or shuffles; a mascot picked before becomes its figure.
 
 ## [0.1.40] - 2026-10-30
 

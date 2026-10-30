@@ -1,8 +1,6 @@
 //! The navigator's small pieces: MonoCode `RailAction` / `RailSearch`, the
 //! views' icons, the title-bar `IconButton`, a card's hover controls, its
-//! diff stat and mascot.
-
-use std::time::Duration;
+//! diff stat and figure.
 
 use crate::ui::appearance::DiffColors;
 use bencode_ui::primitives::{Icon, IconName, Tooltip};
@@ -13,14 +11,12 @@ use gpui::{
 };
 
 use crate::app::BenCodeApp;
-use crate::ui::mascot::{Mascot, pixel_sprite};
+use crate::bots::figure::{Figure, Mood};
+use crate::ui::figure::{Look, figure_view};
 use crate::ui::scale::px;
-use crate::ui::spinner;
 
 /// MonoCode `h-8`: every rail row.
 pub(crate) const ROW_HEIGHT: f32 = 32.0;
-/// MonoCode `--mascot-beat`.
-const MASCOT_BEAT: Duration = Duration::from_millis(460);
 pub(super) use crate::ui::tokens::{AMBER_400, EMERALD_400};
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
@@ -93,54 +89,22 @@ pub(super) fn project_diff_stat(
         })
 }
 
-/// MonoCode `ProjectMascot className="size-3"`: the rest frame, or while
-/// busy (`mascot-active`) rest and talk swapped each beat with a 1px hop.
-pub(super) fn project_mascot_icon(
-    mascot: &'static Mascot,
-    color: Hsla,
-    busy: bool,
-    cx: &App,
-) -> AnyElement {
-    mascot_icon(mascot, color, busy, 12.0, cx)
+/// A project's figure at the rail's `size-3`, working while `busy`.
+pub(super) fn project_figure_icon(figure: Figure, color: Hsla, busy: bool, cx: &App) -> AnyElement {
+    figure_icon(figure, color, busy, 12.0, cx)
 }
 
-/// The mascot at `size` (the Agents section draws it at `size-2`).
-/// Its beat is stepped by the app's clock (`ui/spinner.rs`).
-pub(crate) fn mascot_icon(
-    mascot: &'static Mascot,
+/// A project's figure at `size`: idle, or working (a busy mark stepped by
+/// the app's clock) while `busy`.
+pub(crate) fn figure_icon(
+    figure: Figure,
     color: Hsla,
     busy: bool,
     size: f32,
     cx: &App,
 ) -> AnyElement {
-    let size = px(size);
-    if !busy {
-        return pixel_sprite(&mascot.rest, size, color, false);
-    }
-    // A busy mark (`ui/marks.rs`): the sprite talks inside a box that
-    // holds still.
-    crate::ui::marks::mark(
-        move |cx| {
-            let talking = !spinner::still(cx) && spinner::cycle(MASCOT_BEAT) >= 0.5;
-            div()
-                .flex_none()
-                .size(size)
-                .child(
-                    div()
-                        .relative()
-                        .size(size)
-                        .top(px(if talking { -1.0 } else { 0.0 }))
-                        .child(pixel_sprite(
-                            if talking { &mascot.talk } else { &mascot.rest },
-                            size,
-                            color,
-                            false,
-                        )),
-                )
-                .into_any_element()
-        },
-        cx,
-    )
+    let mood = if busy { Mood::Working } else { Mood::Idle };
+    figure_view(figure, size, color, Look::new(mood, &figure.code()), cx)
 }
 
 /// A card control shown only while the card is hovered: `hidden

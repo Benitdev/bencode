@@ -213,7 +213,7 @@ impl BenCodeApp {
     }
 
     /// MonoCode `MonoTurnHeader`: a Bot signs its turn with its pill (the
-    /// still mascot and its name), and while it works the status of the
+    /// still figure and its name), and while it works the status of the
     /// latest step runs beside it. The pill shows the turn's work on the
     /// Overview's Activity tab (MonoCode `onShowActivity`), and is marked
     /// while it does.
@@ -423,7 +423,7 @@ impl BenCodeApp {
         let fg = cx.theme().colors.fg;
         if phase.headline.is_none() && phase.steps.len() == 1 {
             // A lone call the agent never introduced is not a group. A run
-            // brings its own mascot.
+            // brings its own figure.
             let icon = phase_icon(phase.kind)
                 .filter(|_| !turns::is_subagent(&trail.blocks[phase.steps[0]]));
             return div()

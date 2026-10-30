@@ -329,7 +329,7 @@ pub struct BenCodeApp {
     /// MonoCode "New worktree": the base chosen per not-yet-started thread
     /// (`""` before the thread exists).
     pub new_worktrees: HashMap<String, String>,
-    /// MonoCode `ComposerRunner`: the composer geometry the mascot runs on
+    /// MonoCode `ComposerRunner`: the composer geometry the figure runs on
     /// (measured by layout, read by `RunnerLayer`), and the setting.
     pub runner_geometry: crate::ui::composer::runner_view::RunnerGeometry,
     /// The window's parts as cached views (`ui/region.rs`).

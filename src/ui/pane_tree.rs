@@ -410,7 +410,7 @@ impl BenCodeApp {
             })
     }
 
-    /// The chevron of the focused pane is the composer mascot's hurdle.
+    /// The chevron of the focused pane is the composer figure's hurdle.
     fn render_jump_to_latest(
         &self,
         session_id: &str,

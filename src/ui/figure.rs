@@ -1,4 +1,4 @@
-//! A bot's figure on screen (`bots/figure.rs` composes it): one canvas, a
+//! A bot's or a project's figure on screen (`bots/figure.rs` composes it): one canvas, a
 //! quad for each run of a tone, its edges on whole device pixels. A figure
 //! that moves is a busy mark (`ui/marks.rs`), stepped by the app's clock;
 //! one that holds still is drawn once.
@@ -131,7 +131,24 @@ impl Look {
 
 /// `figure` in `frame`, `size` wide: its marks reach outside that box.
 fn painted(figure: Figure, frame: Frame, size: f32, color: Hsla) -> AnyElement {
-    let runs = figure::runs(&figure::compose(figure, frame));
+    figure_frame(figure, frame, size, color, false)
+}
+
+/// `figure` in a frame its caller steps (the composer's runner), `size`
+/// wide, facing left when `mirrored`.
+pub fn figure_frame(
+    figure: Figure,
+    frame: Frame,
+    size: f32,
+    color: Hsla,
+    mirrored: bool,
+) -> AnyElement {
+    let mut runs = figure::runs(&figure::compose(figure, frame));
+    if mirrored {
+        for (_, x, len, _) in &mut runs {
+            *x = GRID - *x - *len;
+        }
+    }
     canvas(
         |_, _, _| (),
         move |bounds, (), window, _| {

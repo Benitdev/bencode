@@ -20,10 +20,10 @@ use super::model::{ProjectGroup, mute_status, notification_id, path_key};
 use super::reorder::{DraggedRailProject, preview_order};
 use super::widgets::{
     AMBER_400, EMERALD_400, ROW_HEIGHT, hover_control, nav_label, nav_row, project_card_title,
-    project_diff_stat, project_mascot_icon, rail_label, section_button,
+    project_diff_stat, project_figure_icon, rail_label, section_button,
 };
 use crate::app::{BenCodeApp, same_project_path};
-use crate::ui::mascot::mascot_for;
+use crate::bots::figure::Figure;
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// The rows' `px-2` on each side, for the held row's width.
@@ -255,7 +255,7 @@ impl BenCodeApp {
         let (toggle_id, menu_id, options_id) =
             (group.id.clone(), group.id.clone(), group.id.clone());
         let color = group_color(group);
-        let mascot = mascot_for(&group.id, group.mascot.as_deref());
+        let figure = Figure::from_pick(group.mascot.as_deref(), &group.id);
         let chevron = |icon: IconName| Icon::new(icon).size(IconSize::Sm).color(fg);
         let glyph = if group.collapsed {
             div()
@@ -270,7 +270,7 @@ impl BenCodeApp {
                         .items_center()
                         .justify_center()
                         .group_hover(header_group.clone(), |s| s.invisible())
-                        .child(project_mascot_icon(mascot, color, false, cx)),
+                        .child(project_figure_icon(figure, color, false, cx)),
                 )
                 .child(
                     div()
@@ -389,7 +389,7 @@ impl BenCodeApp {
         let group = SharedString::from(id.clone());
         let name = self.rail_project_label(&card.path);
         let color = self.project_color(&card.path);
-        let mascot = self.project_mascot(&card.path);
+        let figure = self.project_figure(&card.path);
         let logo = self
             .settings
             .rail
@@ -430,7 +430,7 @@ impl BenCodeApp {
             path: card.path.clone(),
             label: name.clone(),
             color,
-            mark: super::reorder::RailMark::Mascot(mascot),
+            mark: figure,
             width: self.rail_width() - LIST_INSET,
         };
         let (select_path, menu_path, options_path, pin_path) = (
@@ -450,7 +450,7 @@ impl BenCodeApp {
                 .size_4()
                 .rounded(px(4.0))
                 .into_any_element(),
-            None => project_mascot_icon(mascot, color, card.busy, cx),
+            None => project_figure_icon(figure, color, card.busy, cx),
         };
         nav_row(
             div()

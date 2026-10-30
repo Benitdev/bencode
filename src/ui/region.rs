@@ -48,7 +48,7 @@ pub enum Region {
 
 impl Region {
     /// Where the busy marks the app's clock steps are drawn
-    /// (`ui/spinner.rs`): the navigator's mascots and thread cards, the
+    /// (`ui/spinner.rs`): the navigator's figures and thread cards, the
     /// title bar's tabs, the transcript's fold line, a Bot's figure.
     pub const BUSY_MARKS: [Region; 5] = [
         Region::Titlebar,
@@ -270,7 +270,7 @@ impl BenCodeApp {
     }
 
     /// Redraws what draws thread `session_id`'s transcript now: its pane,
-    /// or the Bot in view. Its card, tab and mascot follow on the clock.
+    /// or the Bot in view. Its card, tab and figure follow on the clock.
     /// What shows a run's time ("Working for 12s") once a second: the
     /// regions outside the chat, and the panes of the threads that run.
     /// Every chat pane would re-render its rows for nothing.

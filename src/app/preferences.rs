@@ -591,7 +591,7 @@ impl BenCodeApp {
         }
     }
 
-    /// MonoCode Appearance › "Composer mascot"; a running mascot leaves.
+    /// MonoCode Appearance › "Composer mascot"; a running figure leaves.
     pub fn set_composer_mascot(&mut self, enabled: bool, cx: &mut Context<Self>) {
         self.composer_mascot_off = !enabled;
         self.save_settings(cx);

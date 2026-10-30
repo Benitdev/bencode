@@ -41,7 +41,7 @@ pub use state::RailUi;
 
 use crate::app::session_folders::{palette_color, parse_hex};
 use crate::app::{BenCodeApp, Surface, same_project_path};
-use crate::ui::mascot::{Mascot, mascot_for};
+use crate::bots::figure::Figure;
 use crate::ui::sidebar::TITLEBAR_HEIGHT;
 use crate::ui::sidebar_menus::SidebarMenuKind;
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
@@ -115,10 +115,10 @@ impl BenCodeApp {
             .unwrap_or_else(|| tab_group_color(project_name(cwd)))
     }
 
-    /// A project's mascot: its saved pick, else hashed from its name.
-    pub(crate) fn project_mascot(&self, path: &str) -> &'static Mascot {
+    /// A project's figure: its saved pick, else one from its name.
+    pub(crate) fn project_figure(&self, path: &str) -> Figure {
         let pick = self.settings.rail.tab_group_mascots.get(&path_key(path));
-        mascot_for(project_name(path), pick.map(String::as_str))
+        Figure::from_pick(pick.map(String::as_str), project_name(path))
     }
 
     /// The navigator, top to bottom: Search and the views, the Bots, the

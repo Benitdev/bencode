@@ -24,7 +24,6 @@ use crate::db::{AutomationRow, RunStatus};
 use crate::harness::catalog;
 use crate::schedule::schedule_label;
 use crate::ui::app_callback::{app_callback, app_callback_with};
-use crate::ui::mascot::pixel_sprite;
 use crate::ui::provider_icon::HarnessIcon;
 use crate::ui::scale::px;
 use crate::ui::scrollbar::Scrolled;
@@ -481,11 +480,10 @@ impl BenCodeApp {
             .text_color(muted)
             .child(ran)
             .child(div().flex_none().child("·"))
-            .child(pixel_sprite(
-                &self.project_mascot(&auto.cwd).rest,
-                px(12.0),
+            .child(crate::ui::figure::figure_still(
+                self.project_figure(&auto.cwd),
+                12.0,
                 self.project_color(&auto.cwd),
-                false,
             ))
             .child(
                 div()

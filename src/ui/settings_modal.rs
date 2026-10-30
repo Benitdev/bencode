@@ -304,9 +304,9 @@ impl BenCodeApp {
             })
             .row({
                 let entity = cx.entity().downgrade();
-                SettingsRow::new("Composer mascot")
+                SettingsRow::new("Composer runner")
                     .description(
-                        "When a turn is running, the project mascot runs along the composer, \
+                        "When a turn is running, the project's figure runs along the composer, \
                          bonks the scroll-to-latest button the first time, then jumps it, and \
                          sometimes grabs a coin.",
                     )
@@ -317,7 +317,7 @@ impl BenCodeApp {
                                     this.set_composer_mascot(on, cx);
                                     this.play_cue(crate::sounds::Cue::Switch);
                                 }) {
-                                    log::debug!("mascot toggle after app drop: {err:#}");
+                                    log::debug!("runner toggle after app drop: {err:#}");
                                 }
                             },
                         ),

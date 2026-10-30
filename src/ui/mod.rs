@@ -44,7 +44,6 @@ pub mod lightbox;
 pub mod link_dialog;
 pub mod login_prompt;
 pub mod marks;
-pub mod mascot;
 pub mod motion;
 pub mod native_glass;
 pub mod native_window;

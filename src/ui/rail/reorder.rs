@@ -16,7 +16,6 @@ use crate::ui::scale::px;
 use super::model::{self, move_item, reorder_subset, resized_rail_width};
 use super::state::RailReorder;
 use crate::app::BenCodeApp;
-use crate::ui::mascot::{Mascot, pixel_sprite};
 use crate::ui::motion::cubic_bezier;
 use crate::ui::tokens::{Fill, Text, Tone as _};
 
@@ -25,14 +24,6 @@ pub(super) const REORDER_MOTION: Duration = Duration::from_millis(160);
 /// A row's pitch: `h-8` plus the list's `gap-px`.
 pub(super) const ROW_PITCH: f32 = 33.0;
 
-/// What a dragged row shows at its start: a project's mascot or a bot's
-/// figure.
-#[derive(Clone, Copy)]
-pub enum RailMark {
-    Mascot(&'static Mascot),
-    Figure(crate::bots::figure::Figure),
-}
-
 /// Drag payload of a project row; it draws the row under the pointer.
 #[derive(Clone)]
 pub struct DraggedRailProject {
@@ -40,7 +31,8 @@ pub struct DraggedRailProject {
     pub path: String,
     pub label: String,
     pub color: Hsla,
-    pub mark: RailMark,
+    /// The project's or bot's figure at its start.
+    pub mark: crate::bots::figure::Figure,
     pub width: f32,
 }
 
@@ -71,14 +63,7 @@ impl Render for DraggedRailProject {
                     .size_4()
                     .items_center()
                     .justify_center()
-                    .child(match self.mark {
-                        RailMark::Mascot(mascot) => {
-                            pixel_sprite(&mascot.rest, px(12.0), self.color, false)
-                        }
-                        RailMark::Figure(figure) => {
-                            crate::ui::figure::figure_still(figure, 12.0, self.color)
-                        }
-                    }),
+                    .child(crate::ui::figure::figure_still(self.mark, 12.0, self.color)),
             )
             .child(
                 div()
