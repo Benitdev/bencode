@@ -25,7 +25,7 @@ bencode/
 ├── docs/releasing.md         cutting a release; signing and notarization
 ├── docs/remote-access.md     machines: connecting, what runs where, the loopback SSH test
 ├── docs/readme/              README translations (README.vi.md)
-├── docs/assets/readme/       README screenshots and GIF, taken from a demo project
+├── docs/assets/readme/       README screenshots, taken from a demo project with `--features snapshot`
 ├── packaging/macos/          app icon, Info.plist, entitlements, bundle.sh (.app / .dmg)
 ├── scripts/                  startup-bench.py (launch timings, see Verifying)
 ├── packaging/host/           package.sh: the host's release archives for macOS and Linux
