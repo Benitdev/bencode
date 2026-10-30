@@ -291,7 +291,7 @@ impl BenCodeApp {
         let ui = &self.branch_picker;
         let rows = self.picker_rows(kind, cx);
         let query = self.branch_search_input.read(cx).text().to_string();
-        let selection = fg.opacity(if cx.theme().is_dark() { 0.10 } else { 0.06 });
+        let selection = fg.fill(Fill::Selected);
         let search = div()
             .flex()
             .flex_none()

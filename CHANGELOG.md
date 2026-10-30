@@ -17,6 +17,10 @@ tagging (`docs/releasing.md`).
 - A thread picked on the navigator, in the Agents section or from a
   notification while Inbox, Notes or Automations is open now shows that
   thread, instead of opening it behind the view.
+- What is selected has one quieter fill everywhere: the navigator, the
+  title bar's tabs, the terminal's tabs, the Inbox, Notes and Automations
+  lists, Changes, the commit graph and the Explorer. A selected terminal
+  tab no longer changes colour under the pointer.
 
 ## [0.1.40] - 2026-10-30
 

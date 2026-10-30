@@ -275,9 +275,9 @@ impl BenCodeApp {
             .cursor_pointer()
             .map(|el| {
                 if active {
-                    el.bg(colors.active)
+                    el.bg(colors.fg.fill(Fill::Selected))
                 } else {
-                    el.hover(|style| style.bg(colors.hover))
+                    el.hover(|style| style.bg(colors.fg.fill(Fill::Hover)))
                 }
             })
             .on_click(cx.listener(|this, _, _, cx| this.show_automation_overview(cx)))
@@ -390,9 +390,9 @@ impl BenCodeApp {
             .rounded(px(6.0))
             .map(|el| {
                 if active {
-                    el.bg(colors.active)
+                    el.bg(colors.fg.fill(Fill::Selected))
                 } else {
-                    el.hover(|style| style.bg(colors.hover))
+                    el.hover(|style| style.bg(colors.fg.fill(Fill::Hover)))
                 }
             })
             .child(

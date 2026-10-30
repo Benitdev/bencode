@@ -17,7 +17,7 @@ use crate::db::SessionRow;
 use crate::harness::catalog;
 use crate::ui::drag_drop::DraggedSession;
 use crate::ui::provider_icon::HarnessIcon;
-use crate::ui::rail::widgets::{ROW_HEIGHT, UNSELECTED_OPACITY, nav_label, selection_strong};
+use crate::ui::rail::widgets::{ROW_HEIGHT, UNSELECTED_OPACITY, nav_label};
 use crate::ui::region::Region;
 use crate::ui::scale::{self, px};
 use crate::ui::sidebar_sessions::ListDrop;
@@ -321,7 +321,7 @@ impl BenCodeApp {
             None
         };
         let accent = colors.accent;
-        let selection_bg = selection_strong(cx);
+        let selection_bg = colors.fg.fill(Fill::Selected);
         let dashed = fg.opacity(if needs_approval || picked || active {
             0.30
         } else {
@@ -476,7 +476,9 @@ impl BenCodeApp {
             .px_1()
             .rounded(px(6.0))
             .when(needs_approval, |el| el.bg(amber.opacity(0.10)))
-            .when(!needs_approval && active, |el| el.bg(selection_strong(cx)))
+            .when(!needs_approval && active, |el| {
+                el.bg(colors.fg.fill(Fill::Selected))
+            })
             // MonoCode's input: `rounded bg-content/10 px-2 py-1` with a
             // `ring-1 ring-accent/40`; the 1px border takes the ring's
             // place, so the padding gives up that pixel.

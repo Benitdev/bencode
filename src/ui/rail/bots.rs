@@ -137,7 +137,7 @@ impl BenCodeApp {
         let fg = theme.colors.fg;
         let state = self.bot_state(bot);
         let selected = self.surface.is_none() && self.bots.view.as_deref() == Some(&bot.id);
-        let strong = fg.opacity(if theme.is_dark() { 0.12 } else { 0.07 });
+        let strong = fg.fill(Fill::Selected);
         let hover = fg.fill(Fill::Hover);
         let (open_id, menu_id) = (bot.id.clone(), bot.id.clone());
         let unread = self.bot_unread(bot).map(|count| {

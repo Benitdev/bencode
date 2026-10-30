@@ -1351,8 +1351,7 @@ impl BenCodeApp {
         let busy = self.changes_ui.busy.is_some();
         let icon = crate::ui::file_tree::resolve_entry_icon(&name, false, false);
         let group = SharedString::from(format!("git-row-{side:?}-{}", file.path));
-        // MonoCode `bg-selection`.
-        let selection = colors.active;
+        let selection = fg.fill(Fill::Selected);
         let hover = fg.fill(Fill::Hover);
         let action = |key: &str, icon: IconName, tip: &'static str| {
             let action_hover = fg.fill(Fill::Strong);

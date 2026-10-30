@@ -438,7 +438,7 @@ impl BenCodeApp {
             });
             div()
                 .rounded(px(6.0))
-                .when(open, |el| el.bg(colors.active))
+                .when(open, |el| el.bg(colors.fg.fill(Fill::Selected)))
                 .child(row)
                 .children(detail)
         });

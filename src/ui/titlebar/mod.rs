@@ -696,7 +696,7 @@ impl BenCodeApp {
             .rounded(px(6.0))
             .map(|el| {
                 if active {
-                    el.bg(colors.active).text_color(fg)
+                    el.bg(fg.fill(Fill::Selected)).text_color(fg)
                 } else {
                     el.text_color(fg.ink(Ink::Secondary))
                         .hover(move |s| s.bg(hover_bg).text_color(fg))
@@ -1159,7 +1159,7 @@ impl BenCodeApp {
                 .text_size(Text::Sm.px())
                 .map(|el| {
                     if active {
-                        el.bg(colors.active).text_color(fg)
+                        el.bg(fg.fill(Fill::Selected)).text_color(fg)
                     } else {
                         el.text_color(fg.ink(Ink::Secondary))
                             .hover(move |s| s.bg(fg.fill(Fill::Strong)).text_color(fg))

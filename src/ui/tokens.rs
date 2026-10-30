@@ -57,7 +57,7 @@ impl Fill {
             Self::Faint => 0.03,
             Self::Hover => 0.05,
             Self::Line => 0.07,
-            Self::Selected => 0.08,
+            Self::Selected => 0.09,
             Self::Strong => 0.1,
             Self::Bold => 0.15,
         }

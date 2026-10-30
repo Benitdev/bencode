@@ -180,8 +180,7 @@ impl BenCodeApp {
             .find(|r| r.color.is_some())
             .or(row.refs.first())
             .cloned();
-        // MonoCode `bg-selection`.
-        let selection = colors.active;
+        let selection = fg.fill(Fill::Selected);
         let hover = fg.fill(Fill::Hover);
         let hovered = self.changes_ui.hovered_commit.as_deref() == Some(commit.sha.as_str());
         let node = node_look(bg, fg, hovered, active);

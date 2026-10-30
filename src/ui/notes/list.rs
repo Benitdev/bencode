@@ -174,7 +174,7 @@ impl BenCodeApp {
             .cursor_pointer()
             .map(|el| {
                 if active {
-                    el.bg(colors.active)
+                    el.bg(fg.fill(Fill::Selected))
                 } else {
                     el.hover(|style| style.bg(fg.fill(Fill::Hover)))
                 }

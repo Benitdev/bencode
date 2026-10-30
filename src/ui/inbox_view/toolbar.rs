@@ -260,7 +260,7 @@ impl BenCodeApp {
             .justify_center()
             .rounded(px(6.0))
             .cursor_pointer()
-            .when(active, |el| el.bg(colors.active))
+            .when(active, |el| el.bg(fg.fill(Fill::Selected)))
             .when(!active, |el| el.hover(move |s| s.bg(fg.fill(Fill::Strong))))
             .tooltip(Tooltip::text(tip))
             .on_mouse_down(

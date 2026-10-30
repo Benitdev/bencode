@@ -152,7 +152,7 @@ impl BenCodeApp {
         let unseen = inbox.is_unseen(item);
         let (icon, tint, status) = status_mark(item, cx);
         let dark = cx.theme().is_dark();
-        let selection = fg.opacity(if dark { 0.10 } else { 0.06 });
+        let selection = fg.fill(Fill::Selected);
         // Picked rows take the accent; the open one among them more of it
         // and a bar at its edge, so it still reads as the one open.
         let picked_fill = colors.accent.opacity(match (active, dark) {

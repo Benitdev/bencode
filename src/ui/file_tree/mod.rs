@@ -671,7 +671,7 @@ impl BenCodeApp {
                 .color(&rel, is_dir, crate::ui::appearance::diff_colors(cx))
                 .unwrap_or(fg)
         };
-        let selection = colors.active;
+        let selection = fg.fill(Fill::Selected);
         let (click_rel, menu_rel, hover_rel, drop_rel) =
             (rel.clone(), rel.clone(), rel.clone(), rel.clone());
         let mut row = div()

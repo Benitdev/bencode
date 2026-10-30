@@ -580,7 +580,7 @@ impl BenCodeApp {
         let fg = theme.colors.fg;
         let color = self.bot_color(bot);
         let current = bot.figure();
-        let selected_bg = fg.opacity(if theme.is_dark() { 0.1 } else { 0.06 });
+        let selected_bg = fg.fill(Fill::Selected);
         let tile = |key: String, label: &'static str, figure: Figure| {
             let selected = figure == current;
             let id = bot.id.clone();

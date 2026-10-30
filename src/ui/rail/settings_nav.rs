@@ -114,7 +114,7 @@ fn nav_row(
 ) -> gpui::Stateful<gpui::Div> {
     let theme = cx.theme();
     let fg = theme.colors.fg;
-    let selection = fg.opacity(if theme.is_dark() { 0.10 } else { 0.06 });
+    let selection = fg.fill(Fill::Selected);
     let id: SharedString = id.into();
     let ink = if active { fg } else { fg.ink(Ink::Secondary) };
     div()

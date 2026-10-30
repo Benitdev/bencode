@@ -147,25 +147,15 @@ pub(super) fn hover_control(
 /// `opacity-65`): the whole row, its icon and counts too.
 pub(crate) const UNSELECTED_OPACITY: f32 = 0.65;
 
-/// The selected navigator row's fill: content 14%, 8% in light (MonoCode
-/// `bg-selection-strong` is 12% and 7%, too close to the hover's 5%).
-pub(crate) fn selection_strong(cx: &App) -> Hsla {
-    let theme = cx.theme();
-    theme
-        .colors
-        .fg
-        .opacity(if theme.is_dark() { 0.14 } else { 0.08 })
-}
-
 /// The navigator's rows, one look for its projects, Bots and threads
-/// (MonoCode `ProjectCard`): `h-8 rounded-md px-2`, the selection's strong
-/// fill, else the row at 65% with a `content/5` fill on hover.
+/// (MonoCode `ProjectCard`): `h-8 rounded-md px-2`, `Fill::Selected`,
+/// else the row at 65% with a `content/5` fill on hover.
 pub(crate) fn nav_row(row: Stateful<Div>, selected: bool, cx: &App) -> Stateful<Div> {
-    let hover = cx.theme().colors.fg.fill(Fill::Hover);
-    let strong = selection_strong(cx);
+    let fg = cx.theme().colors.fg;
+    let (selected_fill, hover) = (fg.fill(Fill::Selected), fg.fill(Fill::Hover));
     row.h(px(ROW_HEIGHT)).px_2().rounded(px(6.0)).map(|el| {
         if selected {
-            el.bg(strong)
+            el.bg(selected_fill)
         } else {
             el.opacity(UNSELECTED_OPACITY).hover(move |s| s.bg(hover))
         }
@@ -202,7 +192,7 @@ pub(super) fn rail_icon_button(
 ) -> Stateful<Div> {
     let theme = cx.theme();
     let (fg, accent) = (theme.colors.fg, theme.colors.accent);
-    let selection = fg.opacity(if theme.is_dark() { 0.10 } else { 0.06 });
+    let selection = fg.fill(Fill::Selected);
     div()
         .id(id)
         .group(id)
@@ -241,7 +231,7 @@ pub(super) fn rail_icon_button(
 pub(super) fn rail_search(active: bool, cx: &Context<BenCodeApp>) -> impl IntoElement {
     let theme = cx.theme();
     let fg = theme.colors.fg;
-    let selection = fg.opacity(if theme.is_dark() { 0.10 } else { 0.06 });
+    let selection = fg.fill(Fill::Selected);
     let id = "rail-search";
     rail_row(id, active, selection, fg)
         .px(px(6.0))

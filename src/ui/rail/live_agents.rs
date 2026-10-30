@@ -255,7 +255,7 @@ impl BenCodeApp {
     fn render_live_agent(&self, agent: &LiveAgent, now: i64, cx: &Context<Self>) -> AnyElement {
         let theme = cx.theme();
         let fg = theme.colors.fg;
-        let selection = fg.opacity(if theme.is_dark() { 0.10 } else { 0.06 });
+        let selection = fg.fill(Fill::Selected);
         let seed = project_name(&agent.cwd);
         let project = self.settings.rail.label(&agent.cwd, seed).to_string();
         let elapsed = live_agent_elapsed(agent, now);

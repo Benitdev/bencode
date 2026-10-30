@@ -1066,8 +1066,10 @@ impl BenCodeApp {
             } else {
                 colors.fg_muted
             })
-            .when(active, |el| el.bg(colors.active))
-            .hover(|s| s.bg(colors.hover))
+            .when(active, |el| el.bg(colors.fg.fill(Fill::Selected)))
+            .when(!active, |el| {
+                el.hover(|s| s.bg(colors.fg.fill(Fill::Hover)))
+            })
             .on_click(cx.listener(move |this, _, _, cx| this.select_terminal(id, cx)))
             .on_mouse_down(
                 gpui::MouseButton::Right,

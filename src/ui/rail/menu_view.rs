@@ -541,7 +541,7 @@ impl BenCodeApp {
     ) -> impl IntoElement {
         let theme = cx.theme();
         let fg = theme.colors.fg;
-        let selected_bg = fg.opacity(if theme.is_dark() { 0.14 } else { 0.08 });
+        let selected_bg = fg.fill(Fill::Selected);
         let swatch = |key: SharedString, tip: &'static str, selected: bool| {
             div()
                 .id(key)

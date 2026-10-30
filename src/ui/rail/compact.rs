@@ -279,7 +279,7 @@ impl BenCodeApp {
     fn render_compact_agent(&self, agent: &LiveAgent, now: i64, cx: &Context<Self>) -> AnyElement {
         let theme = cx.theme();
         let fg = theme.colors.fg;
-        let selection = fg.opacity(if theme.is_dark() { 0.10 } else { 0.06 });
+        let selection = fg.fill(Fill::Selected);
         let amber = Status::Attention.color(fg);
         let selected = self.selected_session_id.as_deref() == Some(agent.id.as_str());
         let live = !agent.needs_approval && !agent.done;
@@ -356,7 +356,7 @@ impl BenCodeApp {
         }
         let theme = cx.theme();
         let fg = theme.colors.fg;
-        let selection = fg.opacity(if theme.is_dark() { 0.10 } else { 0.06 });
+        let selection = fg.fill(Fill::Selected);
         let buttons = self.settings.bots.iter().map(|bot| {
             let selected = self.surface.is_none() && self.bots.view.as_deref() == Some(&bot.id);
             let id = bot.id.clone();
@@ -807,7 +807,7 @@ fn compact_action(
 ) -> Stateful<Div> {
     let theme = cx.theme();
     let (fg, accent) = (theme.colors.fg, theme.colors.accent);
-    let selection = fg.opacity(if theme.is_dark() { 0.10 } else { 0.06 });
+    let selection = fg.fill(Fill::Selected);
     div()
         .id(id)
         .group(id)

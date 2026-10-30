@@ -40,8 +40,8 @@ impl Render for DraggedRailProject {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
         let fg = theme.colors.fg;
-        // The held row: `bg-selection-strong` on the rail's glass.
-        let strong = fg.opacity(if theme.is_dark() { 0.12 } else { 0.07 });
+        // The held row: the selection's fill on the rail's glass.
+        let strong = fg.fill(Fill::Selected);
         div()
             .flex()
             .items_center()
