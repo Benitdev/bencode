@@ -6,9 +6,12 @@
 //!
 //! `BENCODE_SNAPSHOT_SCENES=home,changes` picks scenes (all by default);
 //! `BENCODE_SNAPSHOT_SIZE=1440x900` the window's size in points;
-//! `BENCODE_SNAPSHOT_POINTER=120,560` where the pointer rests. Like the
-//! frame bench it runs on a copy of the data folder (a scratch `HOME`, see
-//! AGENTS.md) and starts no agent, fetch or sign-in.
+//! `BENCODE_SNAPSHOT_POINTER=120,560` where the pointer rests;
+//! `BENCODE_SNAPSHOT_CLICK=1225,258` clicks there first (`;` between
+//! several), to open a menu or a popup; `BENCODE_SNAPSHOT_SCROLL=1240,330,-120`
+//! then scrolls the wheel there by that many points (negative goes down).
+//! Like the frame bench it runs on a copy of the data folder (a scratch
+//! `HOME`, see AGENTS.md) and starts no agent, fetch or sign-in.
 
 use std::path::PathBuf;
 use std::sync::OnceLock;
@@ -27,6 +30,8 @@ const SCENES_ENV: &str = "BENCODE_SNAPSHOT_SCENES";
 const SIZE_ENV: &str = "BENCODE_SNAPSHOT_SIZE";
 const BACKDROP_ENV: &str = "BENCODE_SNAPSHOT_BACKDROP";
 const POINTER_ENV: &str = "BENCODE_SNAPSHOT_POINTER";
+const CLICK_ENV: &str = "BENCODE_SNAPSHOT_CLICK";
+const SCROLL_ENV: &str = "BENCODE_SNAPSHOT_SCROLL";
 const DEFAULT_SIZE: (f32, f32) = (1440.0, 900.0);
 /// The launch's loads (sessions, the git snapshot) land in this time.
 const SETTLE: Duration = Duration::from_secs(3);
@@ -62,6 +67,65 @@ fn pointer() -> Option<(f32, f32)> {
     let value = std::env::var(POINTER_ENV).ok()?;
     let (x, y) = value.split_once(',')?;
     Some((x.trim().parse().ok()?, y.trim().parse().ok()?))
+}
+
+/// `var` as groups of `n` numbers: commas within a group, `;` between
+/// groups. A malformed group is left out.
+fn number_groups(var: &str, n: usize) -> Vec<Vec<f32>> {
+    let Ok(value) = std::env::var(var) else {
+        return Vec::new();
+    };
+    value
+        .split(';')
+        .filter_map(|group| {
+            let numbers: Option<Vec<f32>> =
+                group.split(',').map(|v| v.trim().parse().ok()).collect();
+            numbers.filter(|numbers| numbers.len() == n)
+        })
+        .collect()
+}
+
+/// A left click at `at`, the pointer moving there first as a hand would.
+fn click(window: &mut Window, cx: &mut gpui::App, at: gpui::Point<gpui::Pixels>) {
+    move_pointer(window, cx, at);
+    let (button, modifiers) = (gpui::MouseButton::Left, Default::default());
+    let down = gpui::MouseDownEvent {
+        button,
+        position: at,
+        modifiers,
+        click_count: 1,
+        first_mouse: false,
+    };
+    window.dispatch_event(gpui::PlatformInput::MouseDown(down), cx);
+    let up = gpui::MouseUpEvent {
+        button,
+        position: at,
+        modifiers,
+        click_count: 1,
+    };
+    window.dispatch_event(gpui::PlatformInput::MouseUp(up), cx);
+}
+
+fn move_pointer(window: &mut Window, cx: &mut gpui::App, at: gpui::Point<gpui::Pixels>) {
+    let event = gpui::MouseMoveEvent {
+        position: at,
+        pressed_button: None,
+        modifiers: Default::default(),
+    };
+    window.dispatch_event(gpui::PlatformInput::MouseMove(event), cx);
+}
+
+/// A wheel scroll of `dy` points at `at`, the pointer resting there.
+fn scroll(window: &mut Window, cx: &mut gpui::App, at: gpui::Point<gpui::Pixels>, dy: f32) {
+    move_pointer(window, cx, at);
+    let event = gpui::ScrollEvent {
+        position: at,
+        delta: gpui::ScrollDelta::Pixels(gpui::point(px(0.0), px(dy))),
+        modifiers: Default::default(),
+        touch_phase: gpui::TouchPhase::Moved,
+        source: gpui::ScrollSource::Pointer,
+    };
+    window.dispatch_event(gpui::PlatformInput::Scroll(event), cx);
 }
 
 type SetUp = fn(&mut BenCodeApp, &mut Window, &mut Context<BenCodeApp>);
@@ -170,6 +234,10 @@ const SCENES: &[(&str, SetUp)] = &[
     // A weekly trigger on Mon, Wed and Fri beside a monthly one, and the
     // run on Friday skipped.
     ("automations-schedules", |app, _, cx| {
+        if app.automations_unstaged() {
+            stage_automations(app, cx);
+        }
+        app.show_surface(Surface::Automations, cx);
         app.select_automation(AUTO_AUDIT, cx)
     }),
     // A new automation begun and left: the New automation page offers it.
@@ -219,6 +287,22 @@ const SCENES: &[(&str, SetUp)] = &[
         app.appearance.collapsed_rail = crate::ui::appearance::CollapsedRailMode::Compact;
         app.is_rail_open = false;
         cx.notify();
+    }),
+    // Long instructions open at their top, and a wheel over them
+    // (`BENCODE_SNAPSHOT_SCROLL`) scrolls them, not the page.
+    ("automations-long-instructions", |app, _, cx| {
+        app.is_rail_open = true;
+        if app.automations_unstaged() {
+            stage_automations(app, cx);
+        }
+        app.show_surface(Surface::Automations, cx);
+        app.select_automation(AUTO_AUDIT, cx);
+        let steps: Vec<String> = (1..=30)
+            .map(|n| format!("{n}. Read the next lockfile and note what changed since last week."))
+            .collect();
+        app.automations
+            .prompt_input
+            .update(cx, |input, cx| input.set_text(steps.join("\n"), cx));
     }),
     // No automations at all: a short start and the popular templates.
     ("automations-empty", |app, _, cx| {
@@ -1392,18 +1476,21 @@ async fn run(this: WeakEntity<BenCodeApp>, cx: &mut AsyncWindowContext) -> Resul
             continue;
         }
         this.update_in(cx, set_up)?;
+        // Each input lands on the scene as drawn, as a hand's would.
+        for at in number_groups(CLICK_ENV, 2) {
+            settle(cx).await?;
+            cx.update(|window, cx| click(window, cx, gpui::point(px(at[0]), px(at[1]))))?;
+        }
         if let Some(at) = pointer() {
             // The pointer rests there, as a hover would leave it, once the
             // scene is drawn: a tooltip shows what was drawn under it.
             settle(cx).await?;
-            cx.update(|window, cx| {
-                let event = gpui::MouseMoveEvent {
-                    position: gpui::point(px(at.0), px(at.1)),
-                    pressed_button: None,
-                    modifiers: Default::default(),
-                };
-                window.dispatch_event(gpui::PlatformInput::MouseMove(event), cx);
-            })?;
+            cx.update(|window, cx| move_pointer(window, cx, gpui::point(px(at.0), px(at.1))))?;
+        }
+        for at in number_groups(SCROLL_ENV, 3) {
+            settle(cx).await?;
+            let position = gpui::point(px(at[0]), px(at[1]));
+            cx.update(|window, cx| scroll(window, cx, position, at[2]))?;
         }
         settle(cx).await?;
         let mut image = cx.update(|window, _| window.render_to_image())??;

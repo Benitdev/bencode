@@ -1,6 +1,7 @@
 mod choices;
 mod dates;
 mod popup;
+mod text_scroll;
 use gpui::{Context, IntoElement, Render, TestAppContext, Window};
 
 use super::{NumberInput, bind_keys};

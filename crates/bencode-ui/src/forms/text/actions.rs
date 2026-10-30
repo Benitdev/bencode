@@ -9,7 +9,7 @@ use crate::key_binding;
 use super::{
     InputEvent, TextInput,
     edit::{self, next_grapheme, prev_grapheme},
-    element::TextElement,
+    element::{TextElement, scroll_room},
 };
 use crate::forms::structure::FORM_CONTEXT;
 
@@ -385,6 +385,22 @@ impl TextInput {
     fn mouse_up(&mut self, _: &gpui::MouseUpEvent, _: &mut Window, _: &mut Context<Self>) {
         self.selecting = false;
     }
+
+    /// Several lines scroll under the wheel. The page around them takes
+    /// the wheel only once they reach an end.
+    fn scroll_wheel(&mut self, event: &gpui::ScrollEvent, _: &mut Window, cx: &mut Context<Self>) {
+        let Some(layout) = self.layout.as_ref().filter(|_| self.is_multi_line()) else {
+            return;
+        };
+        let room = scroll_room(&layout.lines, layout.bounds, layout.line_height);
+        let delta = event.delta.pixel_delta(layout.line_height).y;
+        let next = (self.scroll.y - delta).clamp(gpui::Pixels::ZERO, room);
+        if next != self.scroll.y {
+            self.scroll.y = next;
+            cx.stop_propagation();
+            cx.notify();
+        }
+    }
 }
 
 impl Render for TextInput {
@@ -441,6 +457,7 @@ impl Render for TextInput {
             .on_mouse_move(cx.listener(Self::mouse_move))
             .on_mouse_up(MouseButton::Left, cx.listener(Self::mouse_up))
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::mouse_up))
+            .on_scroll(cx.listener(Self::scroll_wheel))
             .child(TextElement::new(cx.entity()))
     }
 }

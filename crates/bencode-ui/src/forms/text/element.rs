@@ -250,6 +250,17 @@ impl Element for TextElement {
         let scroll = match caret_at {
             // Unfocused, a line shows its start, as AppKit's fields do.
             Some(_) if !focused && !input.is_multi_line() => Point::default(),
+            // Several lines stay where they were (the top, or where a wheel
+            // left them) unless the caret moved while editing.
+            Some(at) if input.is_multi_line() && (!focused || input.caret_seen == Some(at)) => {
+                point(
+                    Pixels::ZERO,
+                    input
+                        .scroll
+                        .y
+                        .clamp(Pixels::ZERO, scroll_room(&lines, bounds, line_height)),
+                )
+            }
             Some(at) => keep_in_view(input, &lines, at, caret_width, bounds, line_height),
             None => input.scroll,
         };
@@ -272,7 +283,10 @@ impl Element for TextElement {
                 let at = bounds.origin + at - scroll;
                 caret_bar(at, caret_width, line_height, window.scale_factor())
             });
-        self.input.update(cx, |input, _| input.scroll = scroll);
+        self.input.update(cx, |input, _| {
+            input.scroll = scroll;
+            input.caret_seen = caret_at;
+        });
         Prepaint {
             lines,
             selections,
@@ -352,9 +366,7 @@ fn keep_in_view(
 ) -> Point<Pixels> {
     let mut scroll = input.scroll;
     if input.is_multi_line() {
-        let content = lines.iter().fold(Pixels::ZERO, |sum, (_, line)| {
-            sum + line.size(line_height).height
-        });
+        let content = content_height(lines, line_height);
         let view = bounds.size.height;
         if caret.y < scroll.y {
             scroll.y = caret.y;
@@ -379,6 +391,22 @@ fn keep_in_view(
         scroll.y = Pixels::ZERO;
     }
     scroll
+}
+
+/// The height of `lines` laid out, wrapped lines counted whole.
+pub(super) fn content_height(lines: &[(usize, WrappedLine)], line_height: Pixels) -> Pixels {
+    lines.iter().fold(Pixels::ZERO, |sum, (_, line)| {
+        sum + line.size(line_height).height
+    })
+}
+
+/// How far several lines can scroll down in `bounds`.
+pub(super) fn scroll_room(
+    lines: &[(usize, WrappedLine)],
+    bounds: Bounds<Pixels>,
+    line_height: Pixels,
+) -> Pixels {
+    (content_height(lines, line_height) - bounds.size.height).max(Pixels::ZERO)
 }
 
 /// Boxes covering display offsets `start..end`, relative to the text origin.

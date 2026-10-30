@@ -71,6 +71,9 @@ pub struct TextInput {
     edits: u64,
     pub(crate) layout: Option<Layout>,
     pub(crate) scroll: Point<Pixels>,
+    /// Where the caret sat at the last layout. A multi-line input follows
+    /// the caret only when it moves, so a wheel's scroll stays put.
+    pub(crate) caret_seen: Option<Point<Pixels>>,
     selecting: bool,
     caret_on: bool,
     /// Blink runs only while focused, or unseen carets redraw forever.
@@ -126,6 +129,7 @@ impl TextInput {
             edits: 0,
             layout: None,
             scroll: Point::default(),
+            caret_seen: None,
             selecting: false,
             caret_on: true,
             focused: false,
@@ -260,6 +264,8 @@ impl TextInput {
         self.text = text;
         self.marked = None;
         self.composing = None;
+        // New text reads from its top until the caret is followed.
+        self.scroll = Point::default();
         cx.emit(InputEvent::Changed);
         cx.notify();
     }

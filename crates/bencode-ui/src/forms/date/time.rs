@@ -82,6 +82,7 @@ fn time_columns(
     let column = |key: &'static str, handle: &ScrollHandle| {
         div()
             .id((id.clone(), key))
+            .debug_selector(move || format!("time-{key}"))
             .track_scroll(handle)
             .overflow_y_scroll()
             .max_h(theme.list_max_height())
@@ -230,6 +231,8 @@ impl RenderOnce for DateTimePicker {
                     anchor,
                     CALENDAR_ROWS,
                     surface((id.clone(), "popup"), window, cx)
+                        // Wheels and hovers here are the popup's, not the page's.
+                        .occlude()
                         .flex()
                         .on_mouse_down_out(move |_, window, cx| out(window, cx))
                         .child(calendar.on_escape(close).on_pick(move |date, window, cx| {
@@ -351,6 +354,8 @@ impl RenderOnce for TimePicker {
                     anchor,
                     CALENDAR_ROWS,
                     surface((id.clone(), "popup"), window, cx)
+                        // Wheels and hovers here are the popup's, not the page's.
+                        .occlude()
                         .track_focus(&inner)
                         .on_mouse_down_out(move |_, window, cx| out(window, cx))
                         .on_key_down(move |event, window, cx| {

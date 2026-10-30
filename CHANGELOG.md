@@ -47,6 +47,11 @@ tagging (`docs/releasing.md`).
   on your approval.
 - A trigger's own "Next run" now leaves out a skipped run and the runs
   Pause all holds, as the header does.
+- A wheel over an open date or time picker scrolls its columns, not the
+  page under it.
+- Text boxes of several lines, such as an automation's instructions,
+  scroll under the wheel, and the page around them only once they reach
+  an end. A long text opens at its top rather than its last line.
 
 ## [0.1.39] - 2026-10-29
 
