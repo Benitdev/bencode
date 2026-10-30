@@ -254,6 +254,26 @@ const SCENES: &[(&str, SetUp)] = &[
         app.select_automation(AUTO_AUDIT, cx);
         cx.notify();
     }),
+    // Skip next run on Morning standup: the editor's header names the
+    // skipped run, with its Undo, beside the one that goes ahead.
+    ("automations-skipped", |app, _, cx| {
+        app.settings.automations_paused_until = None;
+        if app.automations_unstaged() {
+            stage_automations(app, cx);
+        }
+        let tz = jiff::tz::TimeZone::system();
+        let mut items = app.automations.items.clone();
+        if let Some(auto) = items.iter_mut().find(|a| a.id == AUTO_STANDUP) {
+            let skipped = auto.next_run_at;
+            auto.skipped_run_at = Some(skipped);
+            if let Some(next) = crate::schedule::next_automation_run_at(auto, skipped, &tz) {
+                auto.next_run_at = next;
+            }
+        }
+        app.stage_automations(items, cx);
+        app.show_surface(Surface::Automations, cx);
+        app.select_automation(AUTO_STANDUP, cx);
+    }),
     // The overview with every section (`stage_automation_runs`): two runs
     // going, one waiting on a command; a failed and a missed run; the
     // week's results, the last three hours' marked new; the next day. The

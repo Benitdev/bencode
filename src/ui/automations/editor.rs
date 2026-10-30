@@ -15,7 +15,7 @@ use gpui::{
 use jiff::tz::TimeZone;
 
 use super::PAGE_WIDTH;
-use super::format::{day_and_time, next_run_preview};
+use super::format::{in_text, when_text};
 use crate::app::automation_pauses::active_skip;
 use crate::app::automations::{EditorTab, draft_is_valid};
 use crate::app::{BenCodeApp, now_ms};
@@ -31,13 +31,11 @@ use crate::ui::tokens::{Fill, Ink, Status, Text, Tone as _};
 
 /// The automation's mark beside its name, as the New automation cards'.
 const ICON_TILE: f32 = 40.0;
+const DAY_MS: i64 = 24 * 60 * 60 * 1000;
 
-fn divider(fg: Hsla) -> Div {
-    div()
-        .flex_none()
-        .w(px(1.0))
-        .h(px(12.0))
-        .bg(fg.fill(Fill::Bold))
+/// The quiet dot between a header line's parts.
+fn separator(fg: Hsla) -> Div {
+    div().flex_none().text_color(fg.ink(Ink::Faint)).child("·")
 }
 
 impl BenCodeApp {
@@ -93,29 +91,37 @@ impl BenCodeApp {
         let dirty = self.automation_dirty(cx);
         let valid = draft_is_valid(draft);
         let enable = cx.listener(|this, on: &bool, _, cx| this.set_editor_enabled(*on, cx));
+        // One line each, never wrapped: the switch with the project and
+        // model, then when it runs.
         let summary = div()
             .flex()
-            .flex_wrap()
-            .items_center()
-            .gap_x_3()
-            .gap_y_1()
+            .flex_col()
+            .gap(px(6.0))
             .min_w_0()
             .text_size(Text::Base.px())
             .text_color(muted)
             .child(
                 div()
                     .flex()
-                    .flex_none()
                     .items_center()
                     .gap_2()
+                    .min_w_0()
                     .child(
-                        Switch::new("automation-enabled", draft.enabled)
-                            .on_change(move |on, window, cx| enable(&on, window, cx)),
+                        div()
+                            .flex()
+                            .flex_none()
+                            .items_center()
+                            .gap_2()
+                            .child(
+                                Switch::new("automation-enabled", draft.enabled)
+                                    .on_change(move |on, window, cx| enable(&on, window, cx)),
+                            )
+                            .child(if draft.enabled { "Active" } else { "Paused" }),
                     )
-                    .child(if draft.enabled { "Active" } else { "Paused" }),
+                    .child(separator(fg))
+                    .children(self.render_automation_summary(draft, cx)),
             )
-            .child(divider(fg))
-            .child(self.render_automation_summary(draft, cx));
+            .child(self.render_next_run(draft, cx));
         let actions = if stored {
             self.render_stored_actions(draft, dirty, valid, cx)
         } else {
@@ -353,9 +359,9 @@ impl BenCodeApp {
         OverflowMenu::new("automation-actions", menu).tooltip("Automation actions")
     }
 
-    /// What the automation is set to, read at a glance: its project, its
-    /// model and when it runs next.
-    fn render_automation_summary(&self, draft: &AutomationRow, cx: &Context<Self>) -> Div {
+    /// What the automation is set to, read at a glance: its project, then
+    /// its model, a dot between them.
+    fn render_automation_summary(&self, draft: &AutomationRow, cx: &Context<Self>) -> [Div; 3] {
         let fg = cx.theme().colors.fg;
         let item = |icon: AnyElement, text: String| {
             div()
@@ -395,87 +401,88 @@ impl BenCodeApp {
                     .into_any_element(),
                 catalog::display_label(&draft.harness, &draft.model),
             )
+            .flex_none()
         };
-        let next = self.render_next_run(draft, cx);
-        div()
-            .flex()
-            .flex_wrap()
-            .items_center()
-            .gap_x_3()
-            .gap_y_1()
-            .min_w_0()
-            .child(project)
-            .child(model)
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(6.0))
-                    .min_w_0()
-                    .child(icon(IconName::Clock))
-                    .child(next),
-            )
+        [project, separator(fg), model]
     }
 
     /// When it runs next, and what holds it back: the automation paused,
-    /// Pause all, or a skipped run with its Undo.
+    /// Pause all, or a skipped run with its Undo. Times read as on the
+    /// cards ("tomorrow 08:00"); the trigger rows give the full date.
     fn render_next_run(&self, draft: &AutomationRow, cx: &Context<Self>) -> Div {
         let fg = cx.theme().colors.fg;
         let (tz, now) = (TimeZone::system(), now_ms());
+        let amber = Status::Attention.color(fg);
+        let line = div().flex().items_center().gap_2().min_w_0().child(
+            Icon::new(IconName::Clock)
+                .size(IconSize::Xs)
+                .color(fg.ink(Ink::Muted)),
+        );
         let text = |text: String| div().min_w_0().truncate().child(text);
-        let line = div().flex().items_center().gap(px(6.0)).min_w_0();
+        let next = |at: Option<i64>| {
+            at.map_or_else(
+                || "No schedule".to_string(),
+                |at| {
+                    let when = when_text(at, now, &tz);
+                    // "in 3h" only while it says more than the day does.
+                    if at - now < DAY_MS {
+                        format!("Next run {when} · {}", in_text(at, now))
+                    } else {
+                        format!("Next run {when}")
+                    }
+                },
+            )
+        };
         if !draft.enabled {
             return line.child(text("No runs while paused".to_string()));
         }
         if schedule::time_triggers(draft).is_empty() {
             return line.child(text("No schedule".to_string()));
         }
-        let next_after = |after: i64| {
-            schedule::next_automation_run_at(draft, after, &tz)
-                .map_or_else(|| "No schedule".to_string(), |at| next_run_preview(at, &tz))
-        };
+        let skipped = self
+            .edited_automation()
+            .and_then(|auto| active_skip(auto, now));
         if let Some(until) = self.automations_paused_until() {
             // What falls in the pause is skipped; a run at its end goes
             // ahead, unless it is the one the user skipped.
-            let skipped = self
-                .edited_automation()
-                .and_then(|auto| active_skip(auto, now));
-            let next = schedule::next_run_skipping(draft, skipped, until - 1, &tz).map_or_else(
-                || "No schedule".to_string(),
-                |(at, _)| next_run_preview(at, &tz),
+            let at = schedule::next_run_skipping(draft, skipped, until - 1, &tz).map(|(at, _)| at);
+            return line.child(text(next(at))).child(separator(fg)).child(
+                div()
+                    .flex()
+                    .flex_none()
+                    .items_center()
+                    .gap(px(6.0))
+                    .text_color(amber)
+                    .child(Icon::new(IconName::Pause).size(IconSize::Xs).color(amber))
+                    .child(format!("All paused until {}", when_text(until, now, &tz))),
             );
-            return line
-                .child(
-                    div()
-                        .flex_none()
-                        .text_color(Status::Attention.color(fg))
-                        .child(format!("All paused until {}", day_and_time(until, &tz))),
-                )
-                .child("·")
-                .child(text(next));
         }
-        let stored = self.edited_automation();
-        let Some((stored, skipped)) = stored.and_then(|auto| Some((auto, active_skip(auto, now)?)))
-        else {
-            return line.child(text(next_after(now)));
+        let Some((stored, skipped)) = self.edited_automation().zip(skipped) else {
+            return line.child(text(next(schedule::next_automation_run_at(
+                draft, now, &tz,
+            ))));
         };
         let id = stored.id.clone();
-        line.child(
-            div()
-                .flex_none()
-                .text_color(Status::Attention.color(fg))
-                .child(format!("Next run skipped ({})", day_and_time(skipped, &tz))),
-        )
-        .child(
-            Button::new("automation-skip-undo", "Undo")
-                .variant(ButtonVariant::Link)
-                .size(ControlSize::Sm)
-                .on_click(
-                    cx.listener(move |this, _, _, cx| this.skip_automation_run(&id, true, cx)),
-                ),
-        )
-        .child("·")
-        .child(text(next_run_preview(stored.next_run_at, &tz)))
+        line.child(text(next(Some(stored.next_run_at))))
+            .child(separator(fg))
+            .child(
+                div()
+                    .flex()
+                    .flex_none()
+                    .items_center()
+                    .gap(px(6.0))
+                    .text_color(amber)
+                    .child(Icon::new(IconName::Ban).size(IconSize::Xs).color(amber))
+                    .child(format!("{} skipped", when_text(skipped, now, &tz))),
+            )
+            .child(
+                Button::new("automation-skip-undo", "Undo")
+                    .variant(ButtonVariant::Link)
+                    .size(ControlSize::Sm)
+                    .on_click(
+                        cx.listener(move |this, _, _, cx| this.skip_automation_run(&id, true, cx)),
+                    ),
+            )
     }
 }
 
