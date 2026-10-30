@@ -9,6 +9,8 @@ tagging (`docs/releasing.md`).
 - The thread list shows a ticket's short key (`D-1147`) from launch. It
   showed the whole key until the Inbox's list landed, pushing the
   thread's name out of its row.
+- The icon rail's divider no longer runs through the traffic lights in a
+  bot's chat, Inbox, Notes or Automations. It starts under the title bar.
 
 ## [0.1.41] - 2026-10-30
 

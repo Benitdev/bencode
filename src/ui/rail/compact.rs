@@ -97,9 +97,20 @@ impl BenCodeApp {
             .items_center()
             .w(px(COMPACT_RAIL_WIDTH))
             .h_full()
+            .relative()
             .bg(glass)
-            .border_r_1()
-            .border_color(fg.fill(Fill::Line))
+            // MonoCode `data-compact-rail-divider`: the hairline down its
+            // right edge starts under the title bar's height, so the
+            // traffic lights that overhang the rail sit clear of it.
+            .child(
+                div()
+                    .absolute()
+                    .right_0()
+                    .bottom_0()
+                    .top(px(if title_bar_above { 0.0 } else { TITLEBAR_HEIGHT }))
+                    .w(gpui::px(1.0))
+                    .bg(fg.fill(Fill::Line)),
+            )
             // Without the title bar above, its height is held (and drags
             // the window): `h-10 w-full shrink-0 border-b border-stroke`.
             .when(!title_bar_above, |el| {
