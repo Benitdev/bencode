@@ -1324,8 +1324,9 @@ impl BenCodeApp {
         let harnesses = HarnessResolver::discover();
         let selected_model = catalog::default_model(&harnesses).key;
 
+        // No note is open yet: its fields are filled when Notes first shows,
+        // and a selected note with empty fields would save over the stored one.
         notes.items = saved_notes;
-        notes.selected_id = notes.items.first().map(|n| n.id.clone());
         automations.items = saved_automations;
         automations.selected_id = automations.items.first().map(|a| a.id.clone());
 

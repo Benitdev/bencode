@@ -66,6 +66,12 @@ impl BenCodeApp {
         if surface == Surface::Inbox {
             self.read_inbox_translations(cx);
         }
+        if surface == Surface::Notes
+            && self.notes.selected_id.is_none()
+            && let Some(id) = self.notes.items.first().map(|note| note.id.clone())
+        {
+            self.select_note(id, cx);
+        }
         self.surface = Some(surface);
         cx.notify();
     }

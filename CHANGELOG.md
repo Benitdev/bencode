@@ -11,6 +11,9 @@ tagging (`docs/releasing.md`).
   thread's name out of its row.
 - The icon rail's divider no longer runs through the traffic lights in a
   bot's chat, Inbox, Notes or Automations. It starts under the title bar.
+- Opening Notes after launch shows the newest note's text. It showed the
+  note empty, and leaving Notes without picking a note then saved over
+  it, losing its title, text and tags.
 
 ## [0.1.41] - 2026-10-30
 
