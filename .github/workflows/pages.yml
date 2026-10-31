@@ -10,6 +10,8 @@ on:
       - 'site/**'
       - 'packaging/macos/icon.svg'
       - 'packaging/macos/icon-1024.png'
+      - 'docs/assets/readme/**'
+      - 'assets/providers/**'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
@@ -30,7 +32,7 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-      # site/icon.* are symlinks to the app icon; copy what they point at.
+      # site/icon.*, shots and providers are symlinks; copy what they point at.
       - name: Assemble
         run: cp -RL site _site
       - uses: actions/configure-pages@v5
