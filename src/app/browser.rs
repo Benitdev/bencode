@@ -774,13 +774,25 @@ impl BenCodeApp {
             };
             let stamp = super::now_ms();
             let (picked, context) = pick.unzip();
+            let dir = match this.update(cx, |this, _| this.selected_session_id.clone()) {
+                Ok(Some(id)) => crate::thread_files::attachments_dir(&id),
+                Ok(None) => crate::ui::composer::attachments::paste_temp_dir(),
+                Err(err) => {
+                    log::debug!("browser snapshot after app drop: {err:#}");
+                    return;
+                }
+            };
             let saved = executor
                 .spawn(async move {
                     let png = match &picked {
                         Some(picked) => cropped_to_pick(png, picked),
                         None => png,
                     };
-                    crate::ui::composer::attachments::write_pasted_images(vec![(png, "png")], stamp)
+                    crate::ui::composer::attachments::write_pasted_images(
+                        vec![(png, "png")],
+                        stamp,
+                        &dir,
+                    )
                 })
                 .await;
             let landed = this.update(cx, |this, cx| {

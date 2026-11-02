@@ -451,6 +451,7 @@ impl BenCodeApp {
             cx,
             move |db| {
                 db.delete_session(&row)?;
+                crate::thread_files::remove(&row);
                 // Only some threads are loaded: a thread left in the
                 // database may resume the same CLI session.
                 match purge {
@@ -612,7 +613,11 @@ impl BenCodeApp {
         self.transcripts.remove(id);
         // Behind the thread's queued saves, which would bring it back.
         let row = id.to_string();
-        self.db_write("drop empty session", move |db| db.delete_session(&row));
+        self.db_write("drop empty session", move |db| {
+            db.delete_session(&row)?;
+            crate::thread_files::remove(&row);
+            Ok(())
+        });
     }
 
     /// Creates and persists a new session row with the welcome block.

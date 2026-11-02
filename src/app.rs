@@ -1588,6 +1588,10 @@ impl BenCodeApp {
         app.start_project_stats_poll(cx);
         app.start_session_age_tick(cx);
         app.start_reminder_poll(cx);
+        // Not while `db` is the in-memory fallback: it knows no thread.
+        if app.db_writer.is_some() {
+            app.db_write("sweep thread files", crate::thread_files::sweep);
+        }
         app.load_folder_members(cx);
         app.start_clock(cx);
         app.start_usage_clock(cx);

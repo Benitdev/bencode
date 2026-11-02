@@ -26,6 +26,7 @@ mod sounds;
 mod startup_trace;
 mod storage;
 mod terminal_process;
+mod thread_files;
 mod ui;
 mod updater;
 mod work_items;

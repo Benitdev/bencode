@@ -674,6 +674,13 @@ impl AppDb {
         Ok(())
     }
 
+    pub fn session_exists(&self, session_id: &str) -> Result<bool> {
+        let mut stmt = self
+            .conn
+            .prepare_cached("SELECT 1 FROM sessions WHERE id = ?1 LIMIT 1")?;
+        Ok(stmt.exists(params![session_id])?)
+    }
+
     /// Whether a thread other than `session_id` resumes CLI session
     /// `provider_session_id`, loaded in the app or not.
     pub fn provider_session_shared(

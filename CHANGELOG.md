@@ -21,6 +21,8 @@ tagging (`docs/releasing.md`).
 - A window whose display link stops no longer freezes with input still
   working until a resize: BenCode notices the silence and restarts it, after
   MonoCode's fix. Resizing a window also no longer fights its own redraws.
+- Images pasted into a thread, and browser snapshots, are kept with the thread
+  instead of in a temporary folder the system clears, and are deleted with it.
 ## [0.1.41] - 2026-10-30
 
 - Hiding the floating Bot chat, summoning a bot, or clicking a

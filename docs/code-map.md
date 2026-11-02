@@ -60,6 +60,7 @@ bencode/
     ├── schedule.rs           automation schedules (next run time)
     ├── settings.rs           BenCode's settings.json
     ├── storage.rs            where BenCode keeps its data (database, checkpoints, account profiles, logs)
+    ├── thread_files.rs       a thread's own files (pasted images), deleted with it
     ├── launch.rs             what a launch reads from the data folder (import, settings, database, recent threads), on its own thread from the start of `main`
     ├── startup_trace.rs      launch timings for perf work (`BENCODE_STARTUP_TRACE`, see Verifying)
     ├── logging.rs            log to the terminal, else to ~/Library/Logs/BenCode; the panic hook

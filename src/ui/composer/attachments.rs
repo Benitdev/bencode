@@ -73,14 +73,21 @@ pub(crate) fn pasted_files(item: &gpui::ClipboardItem) -> Option<PastedFiles> {
     (!files.paths.is_empty() || !files.images.is_empty()).then_some(files)
 }
 
-/// Writes images copied as data to temporary files (`stamp` keeps pastes
-/// apart). Blocking: for the background executor.
+/// Where images pass through on their way somewhere else (a note's own copy).
+pub(crate) fn paste_temp_dir() -> std::path::PathBuf {
+    std::env::temp_dir().join("bencode-paste")
+}
+
+/// Writes images copied as data to files in `dir` (`stamp` keeps pastes
+/// apart). A thread's go in its own folder (`thread_files`): the system
+/// clears temporary files, and its transcript and its agent keep the path.
+/// Blocking: for the background executor.
 pub(crate) fn write_pasted_images(
     images: Vec<(Vec<u8>, &'static str)>,
     stamp: i64,
+    dir: &std::path::Path,
 ) -> Vec<std::path::PathBuf> {
-    let dir = std::env::temp_dir().join("bencode-paste");
-    if let Err(err) = std::fs::create_dir_all(&dir) {
+    if let Err(err) = std::fs::create_dir_all(dir) {
         log::error!("could not save pasted image: {err}");
         return Vec::new();
     }
@@ -234,8 +241,9 @@ impl BenCodeApp {
         };
         let stamp = now_ms();
         self.thread_mut(&session_id).attaching += 1;
+        let dir = crate::thread_files::attachments_dir(&session_id);
         let task = cx.background_executor().spawn(async move {
-            paths.extend(write_pasted_images(images, stamp));
+            paths.extend(write_pasted_images(images, stamp, &dir));
             paths
         });
         cx.spawn(async move |this, cx| {
