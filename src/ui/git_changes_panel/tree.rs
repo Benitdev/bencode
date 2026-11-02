@@ -11,6 +11,12 @@ pub(super) fn dirname(path: &str) -> &str {
     path.rsplit_once('/').map_or("", |(dir, _)| dir)
 }
 
+/// Whether a row with this status (a folder's, when its files share one)
+/// is on disk to drag out: a deleted file has nothing left to attach.
+pub(super) fn on_disk(status: Option<&GitFileStatus>) -> bool {
+    status != Some(&GitFileStatus::Deleted)
+}
+
 /// MonoCode `ChangeDir`: changed files nested under their folders, each
 /// folder with the status its files share (or none when they differ).
 #[derive(Debug, Default)]

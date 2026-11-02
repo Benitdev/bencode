@@ -6,6 +6,10 @@ tagging (`docs/releasing.md`).
 
 ## [0.1.42] - Unreleased
 
+- Files and folders drag from the Explorer and from Changes into a thread's
+  composer, as from the Finder. In a project on a machine they go in as an
+  `@` mention, since the file is not on this computer to attach. A deleted
+  file in Changes has nothing to attach and does not drag.
 - The thread list shows a ticket's short key (`D-1147`) from launch. It
   showed the whole key until the Inbox's list landed, pushing the
   thread's name out of its row.

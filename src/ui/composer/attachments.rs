@@ -1,7 +1,7 @@
 //! Files attached in the composer and its mode pills (MonoCode `Composer`
 //! attachment chips, `ModeCommandPill`): Upload file opens a picker, files
-//! dropped from the Finder attach too, Plan mode and Draft show as removable
-//! pills beside "+".
+//! dropped from the Finder, the Explorer or Changes attach too, Plan mode and
+//! Draft show as removable pills beside "+".
 
 use bencode_ui::primitives::{Icon, IconName, Tooltip};
 use bencode_ui::theme::{ActiveTheme, IconSize};
@@ -178,6 +178,36 @@ impl BenCodeApp {
             });
             if let Err(err) = added {
                 log::debug!("attachments loaded after app drop: {err:#}");
+            }
+        })
+        .detach();
+    }
+
+    /// Attaches `path`, one of git's: relative to the top of `cwd`'s checkout,
+    /// which `cwd` may sit below. A send waits for this as for the read.
+    pub(crate) fn attach_checkout_path(
+        &mut self,
+        session_id: String,
+        cwd: String,
+        path: String,
+        cx: &mut Context<Self>,
+    ) {
+        self.thread_mut(&session_id).attaching += 1;
+        let task = cx.background_executor().spawn(async move {
+            let root = crate::git::sync::checkout_root(&cwd).unwrap_or(cwd);
+            std::path::Path::new(&root).join(path)
+        });
+        cx.spawn(async move |this, cx| {
+            let path = task.await;
+            let attached = this.update(cx, |app, cx| {
+                // The root is known; the read below counts instead.
+                if app.finish_attaching(&session_id) {
+                    app.thread_mut(&session_id).send_after_attach = true;
+                }
+                app.attach_paths_to(session_id, vec![path], cx)
+            });
+            if let Err(err) = attached {
+                log::debug!("dragged change after app drop: {err:#}");
             }
         })
         .detach();

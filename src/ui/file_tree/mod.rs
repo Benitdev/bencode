@@ -674,7 +674,7 @@ impl BenCodeApp {
         let selection = fg.fill(Fill::Selected);
         let (click_rel, menu_rel, hover_rel, drop_rel) =
             (rel.clone(), rel.clone(), rel.clone(), rel.clone());
-        let mut row = div()
+        let row = div()
             .id(SharedString::from(format!("tree-item-{rel}")))
             .flex()
             .flex_none()
@@ -772,16 +772,17 @@ impl BenCodeApp {
                     .when(entry.ignored, |el| el.italic())
                     .child(entry.name.clone()),
             );
-        if !is_dir {
-            row = row.on_drag(
-                crate::ui::drag_drop::DraggedFile {
-                    path: rel,
-                    name: entry.name.clone(),
-                },
-                |dragged, _, _, cx| cx.new(|_| dragged.clone()),
-            );
-        }
-        row.into_any_element()
+        row.on_drag(
+            crate::ui::drag_drop::DraggedFile {
+                cwd: self.file_tree.root.clone(),
+                base: crate::ui::drag_drop::DragBase::Folder,
+                path: rel,
+                name: entry.name.clone(),
+                dir: is_dir,
+            },
+            |dragged, _, _, cx| cx.new(|_| dragged.clone()),
+        )
+        .into_any_element()
     }
 
     /// MonoCode `NameRow` + `NameIssueView`: the field with the leaf's live

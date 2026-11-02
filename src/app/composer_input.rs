@@ -7,6 +7,7 @@ use gpui::Context;
 use crate::app::BenCodeApp;
 use crate::ui::composer::TokenPicker;
 use crate::ui::composer::mcp_tags::McpTag;
+use crate::ui::drag_drop::{DragBase, DraggedFile};
 
 impl BenCodeApp {
     pub fn on_prompt_changed(&mut self, cx: &mut Context<Self>) {
@@ -226,16 +227,38 @@ impl BenCodeApp {
         caret
     }
 
-    /// A file dragged from the explorer attaches like one from the Finder
-    /// (MonoCode `onExplorerFilePointerDrag`).
-    pub fn attach_file_to_composer(
+    /// A file or folder dragged from the Explorer or Changes attaches like
+    /// one from the Finder (MonoCode `onExplorerFilePointerDrag`). One on a
+    /// machine is not on this computer to read, so its `@` mention goes in
+    /// the prompt instead, and the turn reads it there.
+    pub fn attach_dragged_file(
         &mut self,
         session_id: &str,
-        rel_path: &str,
+        file: &DraggedFile,
         cx: &mut Context<Self>,
     ) {
-        let path = std::path::Path::new(&self.workspace_cwd()).join(rel_path);
-        self.attach_external_paths_to_composer(session_id, &[path], cx);
+        // The label is the project's the row was listed for: read it before
+        // the focus can move to another's.
+        let mention = crate::remote::is_remote(&file.cwd).then(|| {
+            let index = self.project_files.mentions.borrow();
+            format!("@{}", index.label_for(&file.path))
+        });
+        self.active_file_drop_target = None;
+        self.focus_pane(session_id.to_string(), cx);
+        let session_id = session_id.to_string();
+        match (mention, file.base) {
+            (Some(mention), _) => {
+                self.append_to_prompt(&mention, cx);
+                cx.notify();
+            }
+            (None, DragBase::Folder) => {
+                let path = std::path::Path::new(&file.cwd).join(&file.path);
+                self.attach_paths_to(session_id, vec![path], cx);
+            }
+            (None, DragBase::Checkout) => {
+                self.attach_checkout_path(session_id, file.cwd.clone(), file.path.clone(), cx);
+            }
+        }
     }
 
     /// Files dropped from the Finder attach to the composer (MonoCode).

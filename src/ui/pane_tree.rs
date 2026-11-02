@@ -350,7 +350,7 @@ impl BenCodeApp {
                 },
             ))
             .on_drop(cx.listener(move |this, file: &DraggedFile, _, cx| {
-                this.attach_file_to_composer(&attach_id, &file.path, cx);
+                this.attach_dragged_file(&attach_id, file, cx);
             }))
             .on_drop(
                 cx.listener(move |this, paths: &gpui::ExternalPaths, _, cx| {

@@ -81,7 +81,12 @@ pub fn mime_for(path: &Path) -> &'static str {
 /// Blocking: call on the background executor.
 pub fn load(path: &Path, id: String) -> std::io::Result<Attachment> {
     let meta = std::fs::metadata(path)?;
-    let mime = mime_for(path);
+    // By what it is, not its name: a folder called `v1.json` is a folder.
+    let mime = if meta.is_dir() {
+        "inode/directory"
+    } else {
+        mime_for(path)
+    };
     let vision = matches!(
         mime,
         "image/png" | "image/jpeg" | "image/gif" | "image/webp"
@@ -184,6 +189,18 @@ mod tests {
             size: 3,
             data: data.map(Into::into),
         }
+    }
+
+    #[test]
+    fn a_folder_loads_as_a_folder_whatever_its_name() {
+        let dir = std::env::temp_dir().join(format!("bencode-attach-{}", std::process::id()));
+        let named_like_an_image = dir.join("shots.png");
+        std::fs::create_dir_all(&named_like_an_image).unwrap();
+        let file = load(&named_like_an_image, "a".into()).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(file.mime_type, "inode/directory");
+        assert!(file.data.is_none());
+        assert!(path_text(&file).starts_with("Attached folder"));
     }
 
     #[test]
