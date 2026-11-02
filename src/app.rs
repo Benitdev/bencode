@@ -727,7 +727,8 @@ impl BenCodeApp {
             cx.subscribe(
                 &prompt_input,
                 |this: &mut Self, _, event: &InputEvent, cx| match event {
-                    InputEvent::Submit => this.submit_prompt(cx),
+                    // Only ⌘↩ gets here: Enter is `handle_composer_key`'s.
+                    InputEvent::Submit => this.submit_prompt_queued(cx),
                     InputEvent::Changed => this.on_prompt_changed(cx),
                     InputEvent::Focus | InputEvent::Blur => {
                         this.prompt_focused = *event == InputEvent::Focus;

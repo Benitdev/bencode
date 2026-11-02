@@ -496,9 +496,19 @@ impl BenCodeApp {
     }
 
     /// Sends the composer text to the focused thread. While that thread's
-    /// agent is busy the message is queued, as MonoCode's Queue follow-up
-    /// behaviour does.
+    /// agent is busy the message steers its turn, or waits in the queue
+    /// where it cannot.
     pub fn submit_prompt(&mut self, cx: &mut Context<Self>) {
+        self.submit_prompt_as(false, cx);
+    }
+
+    /// ⌘↩: the other way (MonoCode `enqueue_follow_up_inverted`). While the
+    /// agent is busy the message waits for its own turn rather than steering.
+    pub fn submit_prompt_queued(&mut self, cx: &mut Context<Self>) {
+        self.submit_prompt_as(true, cx);
+    }
+
+    pub(crate) fn submit_prompt_as(&mut self, queued: bool, cx: &mut Context<Self>) {
         let typed = self.prompt_input.read(cx).text().trim().to_string();
         // MonoCode runs a lone `/compact` and opens the `/mcp` picker
         // instead of sending them; a lone `/clear` starts a fresh thread.
@@ -599,6 +609,7 @@ impl BenCodeApp {
             return;
         };
         if self.defer_send_for_attachments(&session_id) {
+            self.thread_mut(&session_id).queue_after_attach = queued;
             return;
         }
         // An edited resend or a new worktree is still being prepared, or the
@@ -701,7 +712,12 @@ impl BenCodeApp {
         if self.is_agent_running_in(&session_id) {
             // MonoCode's default follow-up: steer into the running turn
             // (Plan waits for its own turn); harnesses that cannot, queue.
-            if let Err(input) = self.steer(&session_id, input, cx) {
+            let sent = if queued {
+                Err(Box::new(input))
+            } else {
+                self.steer(&session_id, input, cx)
+            };
+            if let Err(input) = sent {
                 self.thread_mut(&session_id).queue.push(*input);
             }
             cx.notify();

@@ -179,7 +179,9 @@ impl BenCodeApp {
                 // MonoCode `pasteError`.
                 app.composer_error = attach_error(asked, loaded, wanted, fitted);
                 if send_now && app.selected_session_id.as_deref() == Some(session_id.as_str()) {
-                    app.submit_prompt(cx);
+                    let queued =
+                        std::mem::take(&mut app.thread_mut(&session_id).queue_after_attach);
+                    app.submit_prompt_as(queued, cx);
                 }
                 cx.notify();
             });

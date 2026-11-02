@@ -1096,13 +1096,32 @@ impl BenCodeApp {
             .is_some_and(|id| self.thread(id).is_some_and(|t| t.draft_mode))
             || mode_commands::leading_mode(self.prompt_input.read(cx).text())
                 .is_some_and(|(m, _)| m == mode_commands::ModeCommand::Draft);
-        // MonoCode `ComposerAction` labels.
-        let tooltip = if stop {
-            "Stop"
+        let steers = running_here
+            && self
+                .selected_session_id
+                .as_deref()
+                .is_some_and(|id| self.can_steer(id))
+            && !self
+                .selected_session_id
+                .as_deref()
+                .is_some_and(|id| self.thread(id).is_some_and(|t| t.plan_mode))
+            && mode_commands::leading_mode(self.prompt_input.read(cx).text())
+                .is_none_or(|(m, _)| m != mode_commands::ModeCommand::Plan);
+        // MonoCode `ComposerAction` labels; mid-turn it says which way the
+        // message goes (MonoCode `follow_up_action`).
+        let (tooltip, icon) = if stop {
+            ("Stop", IconName::ArrowUp)
         } else if drafting {
-            "Save draft"
+            ("Save draft", IconName::ArrowUp)
+        } else if steers {
+            (
+                "Steer the running turn (⌘↩ queues it)",
+                IconName::CornerDownRight,
+            )
+        } else if running_here {
+            ("Queue for after this turn", IconName::ListOrdered)
         } else {
-            "Send"
+            ("Send", IconName::ArrowUp)
         };
         div()
             .id("composer-send-btn")
@@ -1126,7 +1145,7 @@ impl BenCodeApp {
                     .bg(ink)
                     .into_any_element()
             } else {
-                Icon::new(IconName::ArrowUp)
+                Icon::new(icon)
                     .size(IconSize::Xs)
                     .color(ink)
                     .into_any_element()

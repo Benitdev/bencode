@@ -29,6 +29,10 @@ tagging (`docs/releasing.md`).
 - Right click in a text box, the code editor or the terminal opens an editing
   menu: Cut, Copy, Paste and Select All; Undo and Redo in the editor; Copy,
   Paste and Clear in the terminal.
+- While an agent works, Enter still steers its turn and ⌘↩ now queues the
+  message for after it. The send button's icon and tooltip say which one
+  Enter will do.
+
 ## [0.1.41] - 2026-10-30
 
 - Hiding the floating Bot chat, summoning a bot, or clicking a
