@@ -645,6 +645,83 @@ pub enum Row {
     Spacer,
 }
 
+/// What a row shows, so the reader's row can be found again after the rows
+/// change: its turn, where in the turn, and whether it is that very content.
+/// MonoCode's `anchor_turn`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RowSource {
+    turn: usize,
+    /// The row's order within its turn: the first block it draws.
+    at: usize,
+    kind: RowKind,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RowKind {
+    Day,
+    /// An item, folded open or not: the same content on the fold's rail.
+    Content,
+    Line,
+    /// Comes after every block.
+    Close(u8),
+}
+
+fn first_block(item: &Item) -> usize {
+    match item {
+        Item::Block(ix) => *ix,
+        Item::Activity(blocks) | Item::Subagents(blocks) => blocks.first().copied().unwrap_or(0),
+    }
+}
+
+/// The source of `row`; `None` for the rows at the end of the list, which
+/// hold no content of a turn.
+pub fn row_source(row: &Row, turns: &[TurnLayout]) -> Option<RowSource> {
+    let (turn, at, kind) = match *row {
+        Row::Day { turn } => (turn, 0, RowKind::Day),
+        Row::Item { turn, item } | Row::FoldItem { turn, item, .. } => (
+            turn,
+            first_block(turns.get(turn)?.items.get(item)?),
+            RowKind::Content,
+        ),
+        // The line stands where its fold starts.
+        Row::FoldLine { turn } => {
+            let layout = turns.get(turn)?;
+            let start = layout.fold.map_or(layout.items.len(), |(start, _)| start);
+            let at = layout
+                .items
+                .get(start)
+                .map_or(layout.range.end, first_block);
+            (turn, at, RowKind::Line)
+        }
+        Row::Artifacts { turn } => (turn, usize::MAX, RowKind::Close(0)),
+        Row::Footer { turn } => (turn, usize::MAX, RowKind::Close(1)),
+        Row::Trailer | Row::Spacer => return None,
+    };
+    Some(RowSource { turn, at, kind })
+}
+
+/// Where the reader on `source` belongs in the new `rows`, and whether it is
+/// the same content (the offset within it still means something). When their
+/// row folded away, as tool calls do into the work line once the answer
+/// arrives, they stay in that turn: the nearest row at or above it, else the
+/// first below. `None` when the turn is gone.
+pub fn reader_row(source: &RowSource, rows: &[Row], turns: &[TurnLayout]) -> Option<(usize, bool)> {
+    let sources: Vec<(usize, RowSource)> = rows
+        .iter()
+        .enumerate()
+        .filter_map(|(ix, row)| Some((ix, row_source(row, turns)?)))
+        .filter(|(_, row)| row.turn == source.turn)
+        .collect();
+    if let Some((ix, _)) = sources.iter().find(|(_, row)| row == source) {
+        return Some((*ix, true));
+    }
+    sources
+        .iter()
+        .rfind(|(_, row)| row.at <= source.at)
+        .or_else(|| sources.first())
+        .map(|(ix, _)| (*ix, false))
+}
+
 /// The layout of one turn.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TurnLayout {
@@ -1194,6 +1271,75 @@ mod tests {
 
     fn key(blocks: &[Arc<Block>]) -> LayoutKey {
         LayoutKey::new(blocks, false, false, &HashSet::new(), false)
+    }
+
+    #[test]
+    fn the_reader_stays_in_their_turn_when_their_row_folds_away() {
+        // Live: the turn's commentary and tool calls are rows of their own.
+        let live = vec![
+            finished_user("first"),
+            block("assistant", "First answer."),
+            block("user", "second"),
+            block("assistant", "Let me look."),
+            tool("execute", "ls", "completed"),
+        ];
+        let open = HashSet::new();
+        let live_turns = layout_turns(&live, true, false);
+        let live_rows = build_rows(&live, &live_turns, &open, false);
+        let reading = live_rows
+            .iter()
+            .position(|row| {
+                row_source(row, &live_turns)
+                    .is_some_and(|s| s.turn == 1 && s.kind == RowKind::Content && s.at == 3)
+            })
+            .expect("the commentary has a row while the turn runs");
+        let source = row_source(&live_rows[reading], &live_turns).unwrap();
+
+        // Settled: both fold into the work line above the answer.
+        let mut settled = live.clone();
+        Arc::make_mut(&mut settled[2]).duration_ms = Some(5);
+        settled.push(block("assistant", "Second answer."));
+        let turns = layout_turns(&settled, false, false);
+        let rows = build_rows(&settled, &turns, &open, false);
+        let (ix, kept) = reader_row(&source, &rows, &turns).expect("the turn is still there");
+        assert!(!kept);
+        let landed = row_source(&rows[ix], &turns).unwrap();
+        assert_eq!(landed.turn, 1, "not the previous turn's reply");
+        assert!(
+            landed.at <= 3,
+            "on what stands at or above the row, not the answer: {landed:?}"
+        );
+    }
+
+    #[test]
+    fn the_reader_keeps_a_row_still_there() {
+        let blocks = vec![
+            finished_user("a"),
+            block("assistant", "One."),
+            finished_user("b"),
+            block("assistant", "Two."),
+        ];
+        let open = HashSet::new();
+        let (turns, rows) = layout(&blocks, &open);
+        let source = row_source(rows.last().unwrap(), &turns).unwrap();
+        assert_eq!(
+            reader_row(&source, &rows, &turns),
+            Some((rows.len() - 1, true))
+        );
+    }
+
+    #[test]
+    fn a_gone_turn_leaves_the_reader_to_the_list() {
+        let blocks = vec![finished_user("a"), block("assistant", "One.")];
+        let open = HashSet::new();
+        let (turns, rows) = layout(&blocks, &open);
+        let source = RowSource {
+            turn: 9,
+            at: 0,
+            kind: RowKind::Content,
+        };
+        assert_eq!(reader_row(&source, &rows, &turns), None);
+        assert_eq!(row_source(&Row::Spacer, &turns), None);
     }
 
     #[test]

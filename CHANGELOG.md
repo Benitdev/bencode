@@ -23,6 +23,9 @@ tagging (`docs/releasing.md`).
   MonoCode's fix. Resizing a window also no longer fights its own redraws.
 - Images pasted into a thread, and browser snapshots, are kept with the thread
   instead of in a temporary folder the system clears, and are deleted with it.
+- Reading further up while a turn runs no longer drops you elsewhere when the
+  answer arrives and the tool calls you were reading fold away. You stay in
+  that turn.
 ## [0.1.41] - 2026-10-30
 
 - Hiding the floating Bot chat, summoning a bot, or clicking a
