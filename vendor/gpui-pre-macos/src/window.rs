@@ -26,7 +26,6 @@ use core_foundation_sys::number::{CFBooleanGetValue, CFBooleanRef};
 use core_graphics::display::CGDirectDisplayID;
 use ctor::ctor;
 use futures::channel::oneshot;
-use gpui_util::ResultExt;
 use objc2::{
     AnyThread, MainThreadMarker, class, msg_send,
     rc::{Retained, autoreleasepool},
@@ -66,10 +65,10 @@ use std::{
     ptr::{self, NonNull},
     rc::Rc,
     sync::{
-        Arc, Once, Weak,
-        atomic::{AtomicBool, Ordering},
+        Arc, Once, OnceLock, Weak,
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 const WINDOW_STATE_IVAR: &CStr = c"windowState";
@@ -637,6 +636,42 @@ unsafe fn apply_simple_fullscreen_plan(
     }
 }
 
+/// BenCode: a display link delivers a frame request every vsync while the
+/// window is subscribed, so a longer silence means the link stopped.
+const FRAME_STALL: Duration = Duration::from_millis(500);
+const MAX_FRAME_RETRY: Duration = Duration::from_secs(2);
+/// BenCode: during a live resize AppKit redraws the layer itself through
+/// `displayLayer:`. Display link frames that land in between compete with it
+/// for the layer's drawables, blocking the main thread in `nextDrawable` so
+/// the window edge stops following the pointer. Yield to the resize redraws
+/// while they keep coming; resume vsync frames once the pointer rests.
+const LIVE_RESIZE_YIELD: Duration = Duration::from_millis(50);
+
+/// When the window's display link last delivered a frame request.
+#[derive(Clone)]
+struct FrameTicks(Arc<AtomicU64>);
+
+impl FrameTicks {
+    fn new() -> Self {
+        let ticks = Self(Arc::new(AtomicU64::new(0)));
+        ticks.tick();
+        ticks
+    }
+
+    fn now() -> u64 {
+        static EPOCH: OnceLock<Instant> = OnceLock::new();
+        EPOCH.get_or_init(Instant::now).elapsed().as_millis() as u64
+    }
+
+    fn tick(&self) {
+        self.0.store(Self::now(), Ordering::Relaxed);
+    }
+
+    fn stalled(&self) -> bool {
+        Self::now().saturating_sub(self.0.load(Ordering::Relaxed)) > FRAME_STALL.as_millis() as u64
+    }
+}
+
 struct MacWindowState {
     handle: AnyWindowHandle,
     foreground_executor: ForegroundExecutor,
@@ -648,6 +683,14 @@ struct MacWindowState {
     cursor_style: CursorStyle,
     cursor_visible: Arc<AtomicBool>,
     frame_source: Option<WindowFrameSource>,
+    frame_ticks: FrameTicks,
+    /// Set while a task is watching for, or restarting, stalled frames.
+    frame_recovery: Arc<AtomicBool>,
+    /// Counts frame demands from GPUI, so a watcher can tell whether new
+    /// demand arrived while it was waiting.
+    frame_demands: Arc<AtomicU64>,
+    /// When AppKit last drew the layer through `displayLayer:`.
+    last_native_draw: Option<Instant>,
     renderer: renderer::Renderer,
     request_frame_callback: Option<Box<dyn FnMut(RequestFrameOptions)>>,
     event_callback: Option<Box<dyn FnMut(PlatformInput) -> gpui::DispatchEventResult>>,
@@ -814,31 +857,79 @@ impl MacWindowState {
         }
     }
 
+    // BenCode: only the occlusion handler stops frames for a hidden window.
+    // Starting used to stop first and then bail out when AppKit briefly
+    // reported the window hidden or screenless (MonoCode saw it while a
+    // screenshot thumbnail was dropped onto the window), leaving it without
+    // frames until something resized it. A window already subscribed on its
+    // screen is left alone instead of churning the shared display link.
     fn start_display_link(&mut self) {
-        self.stop_display_link();
-        if !self
-            .native_window()
-            .occlusionState()
-            .contains(NSWindowOcclusionState::Visible)
-        {
+        if !self.is_occlusion_visible() {
             return;
         }
+        self.subscribe_frames();
+    }
+
+    /// Subscribes the window to its screen's display link. Returns whether it
+    /// is subscribed afterwards.
+    fn subscribe_frames(&mut self) -> bool {
         let screen: *mut AnyObject = unsafe { msg_send![self.native_window, screen] };
         let Some(display_id) = display_id_for_screen(screen) else {
             // AppKit can temporarily report no screen while displays are being reconfigured.
-            return;
+            log::warn!("window has no screen; keeping its current frame source");
+            return self
+                .frame_source
+                .as_ref()
+                .is_some_and(|source| source.display_id().is_some());
         };
         let data = self.native_view.as_ptr() as *mut c_void;
-        self.frame_source
-            .get_or_insert_with(|| WindowFrameSource::new(data, step))
-            .start(display_id)
-            .log_err();
+        let frame_source = self
+            .frame_source
+            .get_or_insert_with(|| WindowFrameSource::new(data, step));
+        if frame_source.display_id() == Some(display_id) {
+            return true;
+        }
+        match frame_source.start(display_id) {
+            Ok(()) => {
+                // Give the new subscription a full stall period to deliver.
+                self.frame_ticks.tick();
+                true
+            }
+            Err(error) => {
+                log::error!("could not start frames for display {display_id}: {error:#}");
+                false
+            }
+        }
     }
 
     fn stop_display_link(&mut self) {
         if let Some(frame_source) = self.frame_source.as_mut() {
             frame_source.stop();
         }
+    }
+
+    fn is_occlusion_visible(&self) -> bool {
+        self.native_window()
+            .occlusionState()
+            .contains(NSWindowOcclusionState::Visible)
+    }
+
+    /// Resubscribes a window whose frames stopped arriving. Returns false
+    /// when the window should not be drawing at all.
+    fn restart_stalled_frames(&mut self) -> bool {
+        // The key window of the active app is on screen whatever the occlusion
+        // state says, and is exactly the window the user is waiting on.
+        let frontmost = unsafe {
+            let app: *mut AnyObject = msg_send![class!(NSApplication), sharedApplication];
+            let active: Bool = msg_send![app, isActive];
+            let key: Bool = msg_send![self.native_window, isKeyWindow];
+            active.as_bool() && key.as_bool()
+        };
+        if !frontmost && !self.is_occlusion_visible() {
+            return false;
+        }
+        self.stop_display_link();
+        self.subscribe_frames()
     }
 
     fn is_maximized(&self) -> bool {
@@ -1072,6 +1163,10 @@ impl MacWindow {
                 cursor_style: CursorStyle::Arrow,
                 cursor_visible,
                 frame_source: None,
+                frame_ticks: FrameTicks::new(),
+                frame_recovery: Arc::new(AtomicBool::new(false)),
+                frame_demands: Arc::new(AtomicU64::new(0)),
+                last_native_draw: None,
                 renderer: renderer::new_renderer(
                     renderer_context,
                     native_window as *mut _,
@@ -1366,6 +1461,9 @@ impl Drop for MacWindow {
         // renderer's command queue are actually released with the window.
         drop(this.accesskit_adapter.take());
         this.renderer.destroy();
+        // BenCode: stop stalled-frame recovery and other deferred work from
+        // reviving the window between this drop and the deferred `close`.
+        this.closed.store(true, Ordering::Release);
         let window = this.native_window;
         let sheet_parent = this.sheet_parent.take();
         this.frame_source.take();
@@ -1387,6 +1485,70 @@ impl Drop for MacWindow {
                 }
             })
             .detach();
+    }
+}
+
+/// Restarts a window's display link until frames arrive again, backing off
+/// while the display stays unavailable. Stops once the window is hidden,
+/// closed, or drawing again.
+async fn recover_stalled_frames(window: Weak<Mutex<MacWindowState>>) {
+    // Waiting at least one stall period lets a restarted link prove itself.
+    let mut retry = FRAME_STALL;
+    for attempt in 0.. {
+        let executor = {
+            let Some(state) = window.upgrade() else {
+                return;
+            };
+            let mut lock = state.lock();
+            if lock.closed.load(Ordering::Acquire) {
+                return;
+            }
+            if attempt > 0 && !lock.frame_ticks.stalled() {
+                log::warn!("window frames resumed after {attempt} restart(s)");
+                return;
+            }
+            if attempt == 0 {
+                log::warn!("window frames stalled; restarting its display link");
+            }
+            if !lock.restart_stalled_frames() {
+                return;
+            }
+            lock.background_executor.clone()
+        };
+        executor.timer(retry).await;
+        retry = (retry * 2).min(MAX_FRAME_RETRY);
+    }
+}
+
+/// Watches a window that GPUI wants a frame for, restarting its display link
+/// if no vsync tick arrives within a stall period. Keeps watching while new
+/// frame demands arrive, because GPUI only wakes the platform when a window
+/// turns dirty: a link that dies while the window is already dirty, or just
+/// before it turns dirty, gets no further wakeup.
+async fn watch_frames(
+    window: Weak<Mutex<MacWindowState>>,
+    ticks: FrameTicks,
+    demands: Arc<AtomicU64>,
+    watching: Arc<AtomicBool>,
+    executor: BackgroundExecutor,
+) {
+    loop {
+        let seen = demands.load(Ordering::Acquire);
+        if !ticks.stalled() {
+            executor.timer(FRAME_STALL).await;
+        }
+        if ticks.stalled() {
+            recover_stalled_frames(window.clone()).await;
+        }
+        if demands.load(Ordering::Acquire) != seen {
+            continue;
+        }
+        watching.store(false, Ordering::Release);
+        // A demand that landed after the check above saw `watching` still
+        // set and left; take the watch back for it unless another task has.
+        if demands.load(Ordering::Acquire) == seen || watching.swap(true, Ordering::AcqRel) {
+            return;
+        }
     }
 }
 
@@ -1995,6 +2157,38 @@ impl PlatformWindow for MacWindow {
 
     fn on_request_frame(&self, callback: Box<dyn FnMut(RequestFrameOptions)>) {
         self.0.as_ref().lock().request_frame_callback = Some(callback);
+    }
+
+    // BenCode: GPUI calls this when the window turns dirty or still needs
+    // frames after drawing one. If the display link has gone quiet, nothing
+    // else would restart it until the window resizes, so the window keeps
+    // handling input while never repainting.
+    fn frame_waker(&self) -> Option<Rc<dyn Fn()>> {
+        let state = self.0.lock();
+        let ticks = state.frame_ticks.clone();
+        let watching = state.frame_recovery.clone();
+        let demands = state.frame_demands.clone();
+        let executor = state.foreground_executor.clone();
+        let background = state.background_executor.clone();
+        let window = Arc::downgrade(&self.0);
+        drop(state);
+        Some(Rc::new(move || {
+            demands.fetch_add(1, Ordering::AcqRel);
+            if watching.swap(true, Ordering::AcqRel) {
+                return;
+            }
+            // Invalidation can happen inside an AppKit callback that holds
+            // the window state, so watch from a fresh main-thread task.
+            executor
+                .spawn(watch_frames(
+                    window.clone(),
+                    ticks.clone(),
+                    demands.clone(),
+                    watching.clone(),
+                    background.clone(),
+                ))
+                .detach();
+        }))
     }
 
     fn on_input(&self, callback: Box<dyn FnMut(PlatformInput) -> gpui::DispatchEventResult>) {
@@ -3200,8 +3394,10 @@ extern "C" fn window_did_change_key_status(this: &AnyObject, selector: Sel, _: *
 
         if lock.activated_least_once {
             if let Some(mut callback) = lock.request_frame_callback.take() {
+                // BenCode: the synchronous frame runs on the main thread, so
+                // the display link cannot interleave with it; keep it running
+                // rather than risk losing it on the restart below.
                 lock.renderer.set_presents_with_transaction(true);
-                lock.stop_display_link();
                 drop(lock);
                 callback(RequestFrameOptions {
                     signal_at,
@@ -3326,8 +3522,8 @@ extern "C" fn display_layer(this: &AnyObject, _: Sel, _: *mut AnyObject) {
     let window_state = unsafe { get_window_state(this) };
     let mut lock = window_state.lock();
     if let Some(mut callback) = lock.request_frame_callback.take() {
+        // BenCode: keep the display link running; see `windowDidBecomeKey:`.
         lock.renderer.set_presents_with_transaction(true);
-        lock.stop_display_link();
         drop(lock);
         callback(RequestFrameOptions {
             signal_at,
@@ -3338,6 +3534,7 @@ extern "C" fn display_layer(this: &AnyObject, _: Sel, _: *mut AnyObject) {
         let mut lock = window_state.lock();
         lock.request_frame_callback = Some(callback);
         lock.renderer.set_presents_with_transaction(false);
+        lock.last_native_draw = Some(Instant::now());
         lock.start_display_link();
     }
 }
@@ -3346,6 +3543,16 @@ extern "C" fn step(view: *mut c_void) {
     let view = view as *mut AnyObject;
     let window_state = unsafe { get_window_state(&*view) };
     let mut lock = window_state.lock();
+    lock.frame_ticks.tick();
+
+    let in_live_resize: Bool = unsafe { msg_send![view, inLiveResize] };
+    if in_live_resize.as_bool()
+        && lock
+            .last_native_draw
+            .is_some_and(|drawn| drawn.elapsed() < LIVE_RESIZE_YIELD)
+    {
+        return;
+    }
 
     if let Some(mut callback) = lock.request_frame_callback.take() {
         let (signal_at, signal_source) = lock

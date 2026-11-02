@@ -59,6 +59,8 @@ schema, transcript block roles, the checkpoint manifest format, and
   Ely, keeping only what the app reaches. Knows nothing of the app.
 - `vendor/gpui-pre-apple`: GPUI's Metal renderer with the backdrop blur
   (its `NOTICE` says what changed).
+- `vendor/gpui-pre-macos`: GPUI's macOS windows, restarting a stalled display
+  link (its `NOTICE`).
 - `src/app.rs`: `BenCodeApp`, the app's state; `src/app/`: its logic by
   concern, no rendering. `src/ui/`: every view. The rest of `src/` is
   subsystems (git, db, remote, browser, pty host, bots, …).

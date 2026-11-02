@@ -324,6 +324,7 @@ bencode/
 ├── site/                landing page (GitHub Pages)
 ├── tests/fixtures/      recorded CLI output for parser tests
 ├── vendor/gpui-pre-apple/  GPUI's Metal renderer with the backdrop blur
+├── vendor/gpui-pre-macos/  GPUI's macOS windows, restarting a stalled display link
 └── src/
     ├── main.rs          window, theme, keymap
     ├── app.rs           BenCodeApp: the app's state

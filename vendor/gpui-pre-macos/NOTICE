@@ -1,0 +1,17 @@
+gpui-pre-macos 0.3.10 (Zed's `gpui_macos`, gpui-pre snapshot of zed@08cbb88),
+Copyright 2022 - 2025 Zed Industries, Inc., Apache-2.0 (LICENSE-APACHE).
+
+Modified for BenCode with MonoCode's recovery for a stalled display link
+(MonoCode's `vendor/gpui-pre-macos`, commits 189d64a0, c341daf6, be06a810):
+
+- src/display_link.rs: a shared link CoreVideo stopped behind the registry's
+  back is started again (`CVDisplayLinkIsRunning`); a start is a failure only
+  when the link really is stopped.
+- src/window.rs: starting frames is idempotent and no longer stops them first;
+  synchronous redraws (`windowDidBecomeKey:`, `displayLayer:`) keep the link
+  running; `frame_waker` watches a window GPUI wants a frame for and restarts
+  its link after 500ms without a tick (`watch_frames`); vsync frames yield to
+  AppKit's redraws during a live resize; a dropped window counts as closed.
+
+Everything else is the crates.io source unchanged. To move to a new
+gpui-pre, copy its `gpui-pre-macos` here and carry those changes over.

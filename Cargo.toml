@@ -11,7 +11,7 @@ description = "A native, GPU-drawn control plane for coding-agent CLIs, in Rust 
 version = "0.1.41"
 
 [workspace]
-exclude = ["vendor/gpui-pre-apple"]
+exclude = ["vendor/gpui-pre-apple", "vendor/gpui-pre-macos"]
 members = [".", "crates/bencode-core", "crates/bencode-host", "crates/bencode-ui"]
 default-members = [".", "crates/bencode-core", "crates/bencode-host", "crates/bencode-ui"]
 
@@ -90,6 +90,9 @@ opt-level = 1
 opt-level = 3
 
 # GPUI's Metal renderer with MonoCode's backdrop blur (`backdrop_blur_marker`):
-# 0.3.10 plus that one patch, see vendor/gpui-pre-apple/NOTICE.
+# 0.3.10 plus that one patch, see vendor/gpui-pre-apple/NOTICE. Its window code
+# with MonoCode's recovery for a stalled display link, see
+# vendor/gpui-pre-macos/NOTICE.
 [patch.crates-io]
 gpui-pre-apple = { path = "vendor/gpui-pre-apple" }
+gpui-pre-macos = { path = "vendor/gpui-pre-macos" }

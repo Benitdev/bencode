@@ -18,7 +18,9 @@ tagging (`docs/releasing.md`).
 - Opening Notes after launch shows the newest note's text. It showed the
   note empty, and leaving Notes without picking a note then saved over
   it, losing its title, text and tags.
-
+- A window whose display link stops no longer freezes with input still
+  working until a resize: BenCode notices the silence and restarts it, after
+  MonoCode's fix. Resizing a window also no longer fights its own redraws.
 ## [0.1.41] - 2026-10-30
 
 - Hiding the floating Bot chat, summoning a bot, or clicking a

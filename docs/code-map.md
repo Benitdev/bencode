@@ -17,6 +17,7 @@ bencode/
 ├── crates/bencode-host/      BenCode Host, the daemon on a remote machine (`bencode-host connect | daemon | status | stop`)
 ├── crates/bencode-ui/        the components, theme and Lucide icons, adapted from Ely GPUI Components and kept to what the app reaches; text selection from gpui-kit (NOTICE)
 ├── vendor/gpui-pre-apple/    GPUI's Metal renderer with the backdrop blur (NOTICE)
+├── vendor/gpui-pre-macos/    GPUI's macOS windows, restarting a stalled display link (NOTICE)
 ├── assets/
 │   ├── icons/                Lucide SVGs bencode-ui does not ship (ui/icons.rs)
 │   ├── file-icons/           Material Icon Theme SVGs and lookup tables (ui/file_tree/icons.rs)
