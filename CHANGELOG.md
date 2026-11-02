@@ -4,7 +4,7 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
-## [0.1.42] - Unreleased
+## [0.1.42] - 2026-11-02
 
 - Files and folders drag from the Explorer and from Changes into a thread's
   composer, as from the Finder. In a project on a machine they go in as an
