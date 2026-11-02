@@ -4,7 +4,10 @@ use gpui::{
     StatefulInteractiveElement, Styled, Window, actions, div, prelude::*,
 };
 
-use crate::key_binding;
+use crate::{
+    key_binding,
+    menus::{Menu, MenuItem, PointMenu, beside, editing_keys, run_on},
+};
 
 use super::{
     InputEvent, TextInput,
@@ -373,6 +376,31 @@ impl TextInput {
         if !held {
             self.move_to(at, cx);
         }
+        if let Some(open) = self.menu.take() {
+            open.close(window, cx);
+        }
+        let menu = self.editing_menu(cx.read_from_clipboard().is_some());
+        self.menu = Some(PointMenu::open(menu, event.position, cx));
+        cx.stop_propagation();
+    }
+
+    /// Cut, Copy, Paste and Select All, as far as this field allows.
+    pub(crate) fn editing_menu(&self, clipboard: bool) -> Menu {
+        let row = |label: &'static str, key: &str, enabled: bool| {
+            MenuItem::new(label)
+                .keys(editing_keys(key))
+                .disabled(!enabled)
+        };
+        let selected = !self.masked && !self.selection.is_empty();
+        Menu::new()
+            .item(row("Cut", "x", selected).on_click(run_on(&self.focus, Cut)))
+            .item(row("Copy", "c", selected).on_click(run_on(&self.focus, Copy)))
+            .item(row("Paste", "v", clipboard).on_click(run_on(&self.focus, Paste)))
+            .separator()
+            .item(
+                row("Select All", "a", !self.text.is_empty())
+                    .on_click(run_on(&self.focus, SelectAll)),
+            )
     }
 
     fn mouse_move(&mut self, event: &MouseMoveEvent, _: &mut Window, cx: &mut Context<Self>) {
@@ -404,8 +432,12 @@ impl TextInput {
 }
 
 impl Render for TextInput {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        div()
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if self.menu.as_ref().is_some_and(|menu| !menu.is_open(cx)) {
+            self.menu = None;
+        }
+        let menu = self.menu.as_ref().and_then(|menu| menu.element(window, cx));
+        let root = div()
             .id("text-input")
             .role(Role::TextInput)
             .when_some(
@@ -458,6 +490,7 @@ impl Render for TextInput {
             .on_mouse_up(MouseButton::Left, cx.listener(Self::mouse_up))
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::mouse_up))
             .on_scroll(cx.listener(Self::scroll_wheel))
-            .child(TextElement::new(cx.entity()))
+            .child(TextElement::new(cx.entity()));
+        beside(root, menu)
     }
 }

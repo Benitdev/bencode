@@ -12,6 +12,8 @@ use gpui::{
     Point, ScrollEvent, UTF16Selection, Window, actions,
 };
 
+use crate::menus::{Menu, MenuItem, PointMenu, run_on};
+
 use super::{
     keys,
     links::{Target, links},
@@ -34,10 +36,9 @@ actions!(
 
 pub(crate) const CONTEXT: &str = "ElyTerminal";
 
-/// Tab and Shift-Tab go to the program here, ahead of focus moves; the rest are the app's own.
-pub(crate) fn bind_keys(cx: &mut App) {
-    let context = Some(CONTEXT);
-    let (copy, paste, clear, find) = if cfg!(target_os = "macos") {
+/// Copy, Paste, Clear and Find: a shell keeps Ctrl's plain letters.
+fn chords() -> (&'static str, &'static str, &'static str, &'static str) {
+    if cfg!(target_os = "macos") {
         ("cmd-c", "cmd-v", "cmd-k", "cmd-f")
     } else {
         (
@@ -46,7 +47,13 @@ pub(crate) fn bind_keys(cx: &mut App) {
             "ctrl-shift-k",
             "ctrl-shift-f",
         )
-    };
+    }
+}
+
+/// Tab and Shift-Tab go to the program here, ahead of focus moves; the rest are the app's own.
+pub(crate) fn bind_keys(cx: &mut App) {
+    let context = Some(CONTEXT);
+    let (copy, paste, clear, find) = chords();
     cx.bind_keys([
         KeyBinding::new("tab", SendTab, context),
         KeyBinding::new("shift-tab", SendBackTab, context),
@@ -74,6 +81,7 @@ pub(crate) fn listen<E: InteractiveElement>(root: E, cx: &mut Context<Terminal>)
         .on_action(cx.listener(|_, _: &Find, _, cx| cx.emit(TerminalEvent::Find)))
         .on_key_down(cx.listener(Terminal::key_down))
         .on_mouse_down(MouseButton::Left, cx.listener(Terminal::press))
+        .on_mouse_down(MouseButton::Right, cx.listener(Terminal::secondary_press))
         .on_mouse_move(cx.listener(Terminal::moved))
         .on_mouse_up(
             MouseButton::Left,
@@ -107,6 +115,35 @@ impl Terminal {
             self.input(bytes, cx);
             cx.stop_propagation();
         }
+    }
+
+    /// Copy, Paste and Clear (MonoCode `terminal/context_menu.rs`). What is
+    /// selected stays selected, for Copy.
+    fn secondary_press(
+        &mut self,
+        event: &MouseDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        window.focus(&self.focus, cx);
+        if let Some(open) = self.menu.take() {
+            open.close(window, cx);
+        }
+        let row = |label: &'static str, keys: &'static str, enabled: bool| {
+            MenuItem::new(label).keys(keys).disabled(!enabled)
+        };
+        let (copy, paste, clear, _) = chords();
+        let selected = self.term.lock().selection_to_string().is_some();
+        let clipboard = cx
+            .read_from_clipboard()
+            .is_some_and(|item| item.text().is_some());
+        let menu = Menu::new()
+            .item(row("Copy", copy, selected).on_click(run_on(&self.focus, Copy)))
+            .item(row("Paste", paste, clipboard).on_click(run_on(&self.focus, Paste)))
+            .separator()
+            .item(row("Clear", clear, true).on_click(run_on(&self.focus, Clear)));
+        self.menu = Some(PointMenu::open(menu, event.position, cx));
+        cx.stop_propagation();
     }
 
     fn copy(&mut self, cx: &mut Context<Self>) {

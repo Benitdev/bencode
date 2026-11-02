@@ -9,11 +9,15 @@ use gpui::{
 use super::{
     cursor::Selection,
     gutter::Cell,
+    keys::{Copy, Cut, Paste, Redo, SelectAll, Undo},
     layout::{Shown, stack},
     measure::Measured,
     state::{CodeEditor, CursorShape},
 };
-use crate::theme::{ActiveTheme, Radius};
+use crate::{
+    menus::{Menu, MenuItem, PointMenu, editing_keys, run_on},
+    theme::{ActiveTheme, Radius},
+};
 
 impl CodeEditor {
     /// A line's own styles: syntax colors, rainbow brackets, problems, washes, matches and the matched pair.
@@ -450,6 +454,33 @@ impl CodeEditor {
         if !held {
             self.set_selections(vec![Selection::caret(at)], cx);
         }
+        if let Some(open) = self.menu.take() {
+            open.close(window, cx);
+        }
+        let menu = self.editing_menu(cx.read_from_clipboard().is_some());
+        self.menu = Some(PointMenu::open(menu, event.position, cx));
+        cx.stop_propagation();
+    }
+
+    /// Undo and Redo, Cut, Copy, Paste and Select All, as far as this editor
+    /// allows.
+    pub(crate) fn editing_menu(&self, clipboard: bool) -> Menu {
+        let row = |label: &'static str, key: &str, enabled: bool| {
+            MenuItem::new(label)
+                .keys(editing_keys(key))
+                .disabled(!enabled)
+        };
+        let selected = self.selections.iter().any(|s| !s.range().is_empty());
+        let editable = !self.options.read_only;
+        Menu::new()
+            .item(row("Undo", "z", editable).on_click(run_on(&self.focus, Undo)))
+            .item(row("Redo", "shift-z", editable).on_click(run_on(&self.focus, Redo)))
+            .separator()
+            .item(row("Cut", "x", editable && selected).on_click(run_on(&self.focus, Cut)))
+            .item(row("Copy", "c", selected).on_click(run_on(&self.focus, Copy)))
+            .item(row("Paste", "v", editable && clipboard).on_click(run_on(&self.focus, Paste)))
+            .separator()
+            .item(row("Select All", "a", true).on_click(run_on(&self.focus, SelectAll)))
     }
 
     /// A drag over a line stretches the primary selection to where the pointer is.

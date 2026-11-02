@@ -26,6 +26,9 @@ tagging (`docs/releasing.md`).
 - Reading further up while a turn runs no longer drops you elsewhere when the
   answer arrives and the tool calls you were reading fold away. You stay in
   that turn.
+- Right click in a text box, the code editor or the terminal opens an editing
+  menu: Cut, Copy, Paste and Select All; Undo and Redo in the editor; Copy,
+  Paste and Clear in the terminal.
 ## [0.1.41] - 2026-10-30
 
 - Hiding the floating Bot chat, summoning a bot, or clicking a

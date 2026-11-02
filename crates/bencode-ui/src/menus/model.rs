@@ -101,6 +101,16 @@ impl Menu {
     }
 
     /// Row `ix`, when it is an item.
+    /// The rows a press would run, for tests.
+    #[cfg(test)]
+    pub(crate) fn enabled_labels(&self) -> Vec<SharedString> {
+        (0..self.entries.len())
+            .filter_map(|ix| self.item_at(ix))
+            .filter(|item| !item.disabled)
+            .map(|item| item.label.clone())
+            .collect()
+    }
+
     pub(super) fn item_at(&self, ix: usize) -> Option<&MenuItem> {
         match self.entries.get(ix) {
             Some(Entry::Item(item)) => Some(item),

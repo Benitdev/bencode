@@ -118,6 +118,8 @@ pub struct CodeEditor {
     /// Undo keeps at most this many bytes of text.
     pub(crate) history_bytes: usize,
     pub(crate) focus: FocusHandle,
+    /// Its right click's editing menu, while open.
+    pub(crate) menu: Option<crate::menus::PointMenu>,
     pub(crate) scroll: UniformListScrollHandle,
     pub(crate) folded: BTreeSet<usize>,
     pub(crate) options: Options,
@@ -194,6 +196,7 @@ impl CodeEditor {
             history: History::default(),
             history_bytes: super::prose::HISTORY_BYTES,
             focus,
+            menu: None,
             scroll: UniformListScrollHandle::new(),
             folded: BTreeSet::new(),
             options: Options {

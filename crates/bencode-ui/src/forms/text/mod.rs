@@ -65,6 +65,8 @@ pub struct TextInput {
     highlighter: Option<Highlighter>,
     disabled: bool,
     history: History<Snapshot>,
+    /// Its right click's Cut, Copy and Paste, while open.
+    pub(crate) menu: Option<crate::menus::PointMenu>,
     /// The selection the last edit replaced.
     edited_from: Range<usize>,
     /// Edits applied, text changed or not.
@@ -114,6 +116,7 @@ impl TextInput {
             placeholder: SharedString::default(),
             label: SharedString::default(),
             selection: 0..0,
+            menu: None,
             reversed: false,
             marked: None,
             composing: None,
