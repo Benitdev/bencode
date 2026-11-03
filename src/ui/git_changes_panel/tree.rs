@@ -3,12 +3,22 @@
 
 use crate::git::{GitFileChange, GitFileStatus};
 
-pub(super) fn basename(path: &str) -> &str {
+/// Git lists a repository nested in the checkout (a worktree, a clone) as
+/// one untracked entry with a trailing `/`: its name is the folder's.
+pub(crate) fn basename(path: &str) -> &str {
+    let path = path.trim_end_matches('/');
     path.rsplit('/').next().unwrap_or(path)
 }
 
-pub(super) fn dirname(path: &str) -> &str {
-    path.rsplit_once('/').map_or("", |(dir, _)| dir)
+pub(crate) fn dirname(path: &str) -> &str {
+    path.trim_end_matches('/')
+        .rsplit_once('/')
+        .map_or("", |(dir, _)| dir)
+}
+
+/// Whether the entry is a nested repository's folder rather than a file.
+pub(crate) fn is_folder(path: &str) -> bool {
+    path.ends_with('/')
 }
 
 /// Whether a row with this status (a folder's, when its files share one)
@@ -77,7 +87,7 @@ pub fn build_tree(files: &[GitFileChange]) -> ChangeDir {
     }
     let mut root = ChangeDir::default();
     for file in files {
-        let segments: Vec<&str> = file.path.split('/').collect();
+        let segments: Vec<&str> = file.path.trim_end_matches('/').split('/').collect();
         insert(&mut root, &segments, file);
     }
     sort(&mut root);
@@ -117,5 +127,14 @@ mod tests {
         );
         assert_eq!(app.files[0].path, "src/app/a.rs");
         assert_eq!(src.dirs[1].status, Some(GitFileStatus::Untracked));
+    }
+
+    #[test]
+    fn a_nested_repository_is_named_for_its_folder() {
+        assert_eq!(basename(".worktrees/D-1153/"), "D-1153");
+        assert_eq!(dirname(".worktrees/D-1153/"), ".worktrees");
+        let root = build_tree(&[change(".worktrees/D-1153/", GitFileStatus::Untracked)]);
+        assert_eq!(root.dirs[0].files[0].path, ".worktrees/D-1153/");
+        assert!(root.dirs[0].dirs.is_empty(), "no empty-named folder below");
     }
 }

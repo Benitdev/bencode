@@ -10,8 +10,8 @@ use bencode_ui::buttons::{Button, ButtonVariant};
 use bencode_ui::primitives::{Icon, IconName, Tooltip};
 use bencode_ui::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
-    AnyElement, Context, FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement,
-    SharedString, StatefulInteractiveElement, Styled, div, prelude::*,
+    AnyElement, Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString,
+    StatefulInteractiveElement, Styled, div, prelude::*, relative,
 };
 
 use super::{OverviewTab, STROKE, empty_state};
@@ -19,7 +19,7 @@ use crate::app::BenCodeApp;
 use crate::app::bot_changes::{can_publish, can_push, can_sync};
 use crate::bots::Bot;
 use crate::git::GitFileChange;
-use crate::ui::git_changes_panel::{status_color, status_letter};
+use crate::ui::git_changes_panel::{basename, dirname, is_folder, status_color, status_letter};
 use crate::ui::scale::px;
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
@@ -223,13 +223,13 @@ impl BenCodeApp {
             )
             .child(
                 div()
-                    .rounded(px(8.0))
-                    .border_1()
-                    .border_color(fg.fill(Fill::Strong))
-                    .bg(fg.fill(Fill::Faint))
+                    .rounded(px(6.0))
+                    .bg(fg.fill(Fill::Strong))
                     .px_2()
-                    .py_1p5()
-                    .text_size(Text::Base.px())
+                    .py_1()
+                    .text_size(Text::Md.px())
+                    .line_height(px(20.0))
+                    .text_color(fg)
                     .child(changes.message.clone()),
             )
             .child(actions);
@@ -337,19 +337,23 @@ impl BenCodeApp {
             .child(header)
             .children(files.iter().enumerate().map(|(ix, file)| {
                 let row = SharedString::from(format!("{section}-{ix}"));
-                let (name, folder) = match file.path.rsplit_once('/') {
-                    Some((folder, name)) => (name.to_string(), folder.to_string()),
-                    None => (file.path.clone(), String::new()),
-                };
+                let name = basename(&file.path).to_string();
+                let folder = dirname(&file.path).to_string();
+                let icon =
+                    crate::ui::file_tree::resolve_entry_icon(&name, is_folder(&file.path), false);
                 let (open_path, stage_path) = (file.path.clone(), file.path.clone());
+                // The project's Changes row (`render_change_row`), list view.
                 div()
                     .id(row.clone())
                     .group(row.clone())
                     .flex()
                     .items_center()
-                    .gap_2()
-                    .h(px(26.0))
-                    .px_3()
+                    .gap_1()
+                    .h(px(28.0))
+                    .pl_2()
+                    .pr_2()
+                    .line_height(relative(1.0))
+                    .text_color(fg)
                     .cursor_pointer()
                     .hover(move |s| s.bg(fg.fill(Fill::Hover)))
                     .tooltip(Tooltip::text(file.path.clone()))
@@ -358,25 +362,35 @@ impl BenCodeApp {
                     }))
                     .child(
                         div()
+                            .flex()
                             .flex_1()
                             .min_w_0()
-                            .flex()
-                            .items_baseline()
+                            .items_center()
                             .gap_1p5()
+                            .child(icon.size(IconSize::Md))
                             .child(
-                                div()
-                                    .flex_none()
-                                    .text_size(Text::Base.px())
-                                    .text_color(fg.ink(Ink::Strong))
-                                    .child(name),
-                            )
-                            .child(
-                                div()
-                                    .min_w_0()
-                                    .truncate()
-                                    .text_size(Text::Sm.px())
-                                    .text_color(fg.ink(Ink::Muted))
-                                    .child(folder),
+                                div().flex_1().min_w_0().truncate().child(
+                                    div()
+                                        .flex()
+                                        .items_baseline()
+                                        .gap_1p5()
+                                        .child(
+                                            div()
+                                                .text_size(Text::Md.px())
+                                                .font_weight(FontWeight::MEDIUM)
+                                                .child(name),
+                                        )
+                                        .when(!folder.is_empty(), |el| {
+                                            el.child(
+                                                div()
+                                                    .min_w_0()
+                                                    .truncate()
+                                                    .text_size(Text::Sm.px())
+                                                    .text_color(fg.ink(Ink::Muted))
+                                                    .child(folder),
+                                            )
+                                        }),
+                                ),
                             ),
                     )
                     .child(
@@ -406,18 +420,16 @@ impl BenCodeApp {
                     )
                     .child(
                         div()
+                            .w(px(14.0))
                             .flex_none()
-                            .w(px(12.0))
+                            .text_right()
+                            .font_family(cx.theme().mono_family.clone())
                             .text_size(Text::Sm.px())
-                            .font_weight(FontWeight::MEDIUM)
-                            .text_color(status_letter_color(file, diff))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(status_color(&file.status, diff))
                             .child(status_letter(&file.status)),
                     )
             }))
             .into_any_element()
     }
-}
-
-fn status_letter_color(file: &GitFileChange, diff: crate::ui::appearance::DiffColors) -> Hsla {
-    status_color(&file.status, diff)
 }

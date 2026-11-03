@@ -398,6 +398,48 @@ const SCENES: &[(&str, SetUp)] = &[
             app.open_bot(&id, cx);
         }
     }),
+    // Its Changes tab over a staged checkout: files, a folder, and a
+    // repository nested in it (git's `dir/`).
+    ("bot-changes", |app, _, cx| {
+        use crate::git::{GitFileChange, GitFileStatus};
+        let Some(root) = app.bot_changes_root() else {
+            return;
+        };
+        let change = |path: &str, status: GitFileStatus| GitFileChange {
+            path: path.into(),
+            status,
+            additions: 0,
+            deletions: 0,
+        };
+        let project = crate::app::bot_changes::ProjectChanges {
+            repo: true,
+            status: crate::git::GitDetailedStatus {
+                branch: "main".into(),
+                staged: vec![change("src/app/bots.rs", GitFileStatus::Modified)],
+                unstaged: vec![
+                    change("README.md", GitFileStatus::Modified),
+                    change("docs/sprints/qa/README-ja.md", GitFileStatus::Modified),
+                    change("src/ui/old_view.rs", GitFileStatus::Deleted),
+                    change("src/ui/new_view.rs", GitFileStatus::Untracked),
+                    change(".worktrees/D-1153/", GitFileStatus::Untracked),
+                    change(".worktrees/fe-style-suggest/", GitFileStatus::Untracked),
+                ],
+            },
+            sync: crate::git::sync::SyncInfo {
+                branch: Some("main".into()),
+                upstream: Some("origin/main".into()),
+                ahead: 2,
+                behind: 5,
+                ..Default::default()
+            },
+        };
+        app.bots.overview_open = true;
+        app.bots
+            .overview
+            .select(crate::app::bot_overview::OverviewTab::Changes);
+        app.bots.changes.projects.insert(root, project);
+        cx.notify();
+    }),
     // Its settings, the look popover open on its figure's parts.
     ("bot-look", |app, _, cx| {
         app.open_bot_settings(crate::app::bots::SettingsSection::General, cx);

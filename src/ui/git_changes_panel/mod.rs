@@ -11,8 +11,9 @@ mod tree;
 
 pub use confirm::GitConfirm;
 pub use error::{GitError, GitFailure};
+use tree::on_disk;
 pub use tree::{ChangeDir, build_tree};
-use tree::{basename, dirname, on_disk};
+pub(crate) use tree::{basename, dirname, is_folder};
 
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
@@ -1372,7 +1373,7 @@ impl BenCodeApp {
                 if *cwd == self.workspace(cx).cwd && *path == file.path && *open == side
         );
         let busy = self.changes_ui.busy.is_some();
-        let icon = crate::ui::file_tree::resolve_entry_icon(&name, false, false);
+        let icon = crate::ui::file_tree::resolve_entry_icon(&name, is_folder(&file.path), false);
         let group = SharedString::from(format!("git-row-{side:?}-{}", file.path));
         let selection = fg.fill(Fill::Selected);
         let hover = fg.fill(Fill::Hover);

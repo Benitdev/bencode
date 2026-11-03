@@ -107,7 +107,11 @@ impl BenCodeApp {
                     .absolute()
                     .right_0()
                     .bottom_0()
-                    .top(px(if title_bar_above { 0.0 } else { TITLEBAR_HEIGHT }))
+                    .top(px(if title_bar_above {
+                        0.0
+                    } else {
+                        TITLEBAR_HEIGHT
+                    }))
                     .w(gpui::px(1.0))
                     .bg(fg.fill(Fill::Line)),
             )
