@@ -4,6 +4,15 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
+## [0.1.43] - 2026-11-04
+
+- Typing with an input method (Vietnamese Telex, for one) no longer quits
+  BenCode now and then. A click or arrow key right after a text box's text
+  got shorter could leave the caret past its end, and the input method
+  asking where the caret was then crashed the app.
+- A bot's Changes tab lists its files as the project's Changes does: the file's
+  icon, its name, its folder beside it and its status letter.
+
 ## [0.1.42] - 2026-11-02
 
 - Files and folders drag from the Explorer and from Changes into a thread's
