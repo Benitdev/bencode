@@ -871,10 +871,35 @@ impl BenCodeApp {
         // Before the prompt lands: a thread with a user block and no account
         // reads as one from before accounts, and would run as the default.
         let pinned = self.pin_session_account(session_id);
+        // Another agent picked mid-thread starts with the recap
+        // (`transfer.rs`); a Bot briefs its own, a card or a prompt of its
+        // own says what the agent reads.
+        let transfer = (input.card.is_none()
+            && input.agent_prompt.is_none()
+            && !self.is_bot_session(session_id))
+        .then(|| self.sessions.iter().find(|s| s.id == session_id))
+        .flatten()
+        .and_then(|session| {
+            let transfer = super::transfer::pending_transfer(session)?;
+            let to = crate::harness::HarnessKind::from_id(&session.harness)?;
+            let card = crate::ui::composer::handoff::HandoffCard::new(
+                transfer.from,
+                to,
+                &session.blocks,
+                &input.text,
+            );
+            Some((transfer, card.agent_prompt(&input.text)))
+        });
         let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id) else {
             return;
         };
         start_turn(session, &input.text, now_ms(), &input.attachments);
+        if let (Some((transfer, _)), Some(block)) = (&transfer, session.blocks.last_mut()) {
+            log::info!("thread {session_id}: {}", transfer.label());
+            Arc::make_mut(block)
+                .extra
+                .insert(super::transfer::TRANSFER_FROM.into(), transfer.to_extra());
+        }
         if let (Some(card), Some(block)) = (&input.card, session.blocks.last_mut()) {
             card.stamp(Arc::make_mut(block));
         }
@@ -895,10 +920,11 @@ impl BenCodeApp {
         self.dismiss_due_reminder(session_id, cx);
         // Skill bodies are small SKILL.md files; read them as MonoCode does
         // right before the turn starts.
-        let typed = match (&input.agent_prompt, &input.card) {
-            (Some(prompt), _) => prompt.clone(),
-            (None, Some(card)) => card.agent_prompt(&input.text),
-            (None, None) => input.text.clone(),
+        let typed = match (&input.agent_prompt, &input.card, transfer) {
+            (Some(prompt), _, _) => prompt.clone(),
+            (None, Some(card), _) => card.agent_prompt(&input.text),
+            (None, None, Some((_, prompt))) => prompt,
+            (None, None, None) => input.text.clone(),
         };
         let agent_prompt = self.apply_skills(&typed);
         let Some(session) = self.sessions.iter().find(|s| s.id == session_id) else {

@@ -412,8 +412,8 @@ impl BenCodeApp {
             .on_click(cx.listener(move |this, _, _, cx| this.apply_suggestion(kind, &insert, cx)))
     }
 
-    /// MonoCode `SkillPicker` row: `/name` and its scope over the
-    /// description, two lines at most.
+    /// MonoCode `SkillPicker` row: the command's icon beside `/name` and
+    /// its scope over the description, two lines at most.
     fn render_command_row(
         &self,
         ix: usize,
@@ -422,43 +422,63 @@ impl BenCodeApp {
     ) -> impl IntoElement {
         let colors = &cx.theme().colors;
         let highlighted = ix == self.picker_index;
+        let (icon, tint) = command_look(&item, colors);
         self.suggestion_row(ix, &item, cx)
             .flex()
-            .flex_col()
-            .gap_0p5()
+            .items_start()
+            .gap_2()
             .px_2()
             .py_1p5()
             .when(highlighted, |el| el.bg(colors.fg.fill(Fill::Strong)))
             .child(
                 div()
+                    .flex_none()
+                    .pt_0p5()
+                    .child(icon.size(IconSize::Sm).color(tint)),
+            )
+            .child(
+                div()
                     .flex()
-                    .items_center()
-                    .gap_2()
+                    .flex_col()
+                    .flex_1()
                     .min_w_0()
+                    .gap_0p5()
                     .child(
                         div()
+                            .flex()
+                            .items_center()
+                            .gap_2()
                             .min_w_0()
-                            .truncate()
-                            .text_size(Text::Md.px())
-                            .text_color(colors.fg)
-                            .child(paint_matches(&item.label, &item.matched, colors.fg, cx)),
+                            .child(
+                                div()
+                                    .min_w_0()
+                                    .truncate()
+                                    .text_size(Text::Md.px())
+                                    .text_color(colors.fg)
+                                    .child(paint_matches(
+                                        &item.label,
+                                        &item.matched,
+                                        colors.fg,
+                                        cx,
+                                    )),
+                            )
+                            .children(item.tag.map(|tag| {
+                                div()
+                                    .flex_none()
+                                    .text_size(Text::Xs.px())
+                                    .text_color(colors.fg.ink(Ink::Muted))
+                                    .child(tag.to_uppercase())
+                            })),
                     )
-                    .children(item.tag.map(|tag| {
+                    .children(item.detail.map(|detail| {
                         div()
-                            .flex_none()
-                            .text_size(Text::Xs.px())
-                            .text_color(colors.fg.ink(Ink::Muted))
-                            .child(tag.to_uppercase())
+                            .text_size(Text::Sm.px())
+                            .line_height(px(15.0))
+                            .text_color(colors.fg.ink(Ink::Secondary))
+                            .line_clamp(2)
+                            .child(detail)
                     })),
             )
-            .children(item.detail.map(|detail| {
-                div()
-                    .text_size(Text::Sm.px())
-                    .line_height(px(15.0))
-                    .text_color(colors.fg.ink(Ink::Secondary))
-                    .line_clamp(2)
-                    .child(detail)
-            }))
     }
 
     /// MonoCode `FileMentionPicker` row: icon, the name (in the mention
@@ -520,6 +540,42 @@ impl BenCodeApp {
 }
 
 /// MonoCode `MatchText`: the matched characters bold in the accent.
+/// MonoCode `Choice::icon`: each built-in its own icon in a hue of the
+/// theme's chart (so it holds on light and dark), a skill the sparkles in
+/// the accent.
+fn command_look(item: &Suggestion, colors: &bencode_ui::theme::Palette) -> (Icon, gpui::Hsla) {
+    // The chart's hues, by `HUE_NAMES`.
+    const TEAL: usize = 1;
+    const VIOLET: usize = 4;
+    const RUST: usize = 6;
+    let built_in = (item.tag == Some("bencode"))
+        .then(|| item.label.strip_prefix('/'))
+        .flatten()
+        .and_then(|name| Command::ALL.into_iter().find(|c| c.name() == name));
+    let Some(command) = built_in else {
+        return (Icon::new(IconName::Sparkles), colors.accent);
+    };
+    match command {
+        Command::AddToFolder => (Icon::new(IconName::FolderPlus), colors.info),
+        Command::Mcp => (Icon::new(IconName::Wrench), colors.hue(TEAL, "/mcp")),
+        Command::Plan => (Icon::new(IconName::Lightbulb), colors.warning.opacity(0.9)),
+        Command::Draft => (Icon::new(IconName::CircleDashed), colors.fg.ink(Ink::Body)),
+        Command::Compact => (
+            crate::ui::icons::ExtraIcon::FoldVertical.icon(),
+            colors.hue(VIOLET, "/compact"),
+        ),
+        Command::Clear => (
+            Icon::new(IconName::RotateCcw),
+            colors.fg.ink(Ink::Secondary),
+        ),
+        Command::Stage => (Icon::new(IconName::Plus), colors.success),
+        Command::Commit => (
+            Icon::new(IconName::GitCommitHorizontal),
+            colors.hue(RUST, "/commit"),
+        ),
+    }
+}
+
 fn paint_matches(
     text: &str,
     matched: &[usize],

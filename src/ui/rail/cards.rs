@@ -443,14 +443,17 @@ impl BenCodeApp {
         } else {
             name.into_any_element()
         };
+        // Hovered, the figure fades for the pin; a busy mark would not.
+        let hovered = self.rail_ui.hovered_card.as_deref() == Some(id.as_str());
         let icon = match logo.filter(|_| !card.busy) {
             // `ProjectLogoIcon className="size-4 rounded-sm"`
             Some(file) => thumbnail(file, LOGO)
                 .size_4()
                 .rounded(px(4.0))
                 .into_any_element(),
-            None => project_figure_icon(figure, color, card.busy, cx),
+            None => project_figure_icon(figure, color, card.busy && !hovered, cx),
         };
+        let hover_id = id.clone();
         nav_row(
             div()
                 .id(SharedString::from(id.clone()))
@@ -463,6 +466,16 @@ impl BenCodeApp {
         )
         // The held row's slot stays open while it rides the pointer.
         .when(held, |el| el.opacity(0.0))
+        .on_hover(cx.listener(move |this, hovering: &bool, _, cx| {
+            let next = hovering.then(|| hover_id.clone());
+            let ui = &mut this.rail_ui;
+            if (*hovering || ui.hovered_card.as_deref() == Some(hover_id.as_str()))
+                && ui.hovered_card != next
+            {
+                ui.hovered_card = next;
+                this.redraw_regions(&[crate::ui::region::Region::Rail], cx);
+            }
+        }))
         .on_click(cx.listener(move |this, _, _, cx| {
             this.switch_project(select_path.clone(), cx);
         }))

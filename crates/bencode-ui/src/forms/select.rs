@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use gpui::{
-    App, Bounds, Div, ElementId, Entity, FocusHandle, InteractiveElement, IntoElement,
+    AnyElement, App, Bounds, Div, ElementId, Entity, FocusHandle, InteractiveElement, IntoElement,
     KeyDownEvent, MouseButton, ParentElement, Pixels, RenderOnce, Role, ScrollHandle, SharedString,
     Stateful, Styled, Window, canvas, div, prelude::*, transparent_black,
 };
@@ -27,11 +27,20 @@ pub(crate) struct Picker {
     pub anchor: Bounds<Pixels>,
     pub scroll: ScrollHandle,
     pub revealed: Option<usize>,
+    /// What a long list is filtered by, typed while it is open.
+    pub query: String,
 }
+
+/// Lists longer than this are filtered by typing while open (MonoCode
+/// `SEARCHABLE_SELECT`).
+pub(crate) const SEARCHABLE: usize = 8;
 
 impl Picker {
     pub fn show(state: &Entity<Picker>, open: bool, highlighted: usize, cx: &mut App) {
         state.update(cx, |picker, cx| {
+            if picker.open != open {
+                picker.query.clear();
+            }
             picker.open = open;
             picker.highlighted = highlighted;
             cx.notify();
@@ -67,7 +76,7 @@ pub(crate) fn measure_anchor(state: Entity<Picker>) -> impl IntoElement {
 
 /// Up, Down, Home and End over `rows` from `at`; `None` for other keys.
 pub(crate) fn moved(event: &KeyDownEvent, rows: &[Choice], at: usize) -> Option<usize> {
-    let last = rows.len() - 1;
+    let last = rows.len().checked_sub(1)?;
     match event.keystroke.key.as_str() {
         "down" => Some(step(rows, at, 1)),
         "up" => Some(step(rows, at, -1)),
@@ -169,6 +178,70 @@ pub(crate) fn field_text(
         .child(Ellipsis::new(text.unwrap_or(placeholder)))
 }
 
+/// The rows of `rows` whose label holds `query`, ignoring case, by index.
+pub(crate) fn matching(rows: &[Choice], query: &str) -> Vec<usize> {
+    let query = query.trim().to_lowercase();
+    (0..rows.len())
+        .filter(|&ix| query.is_empty() || rows[ix].label.to_lowercase().contains(&query))
+        .collect()
+}
+
+/// What a key typed into an open list's filter does to `query`: a printable
+/// character is added, Backspace takes the last one off. `None` when the key
+/// is not for the filter (a space only once something is typed: before,
+/// it picks).
+pub(crate) fn typed(event: &KeyDownEvent, query: &str) -> Option<String> {
+    let keystroke = &event.keystroke;
+    let modifiers = &keystroke.modifiers;
+    if modifiers.platform || modifiers.control || modifiers.function {
+        return None;
+    }
+    if keystroke.key == "backspace" {
+        let mut query = query.to_string();
+        return query.pop().map(|_| query);
+    }
+    let typed = keystroke.key_char.as_deref()?;
+    if typed.chars().any(char::is_control) || (typed == " " && query.is_empty()) {
+        return None;
+    }
+    Some(format!("{query}{typed}"))
+}
+
+/// The filter row atop a long list: the search icon and what was typed, or
+/// the hint that typing filters.
+fn filter_row(query: &str, cx: &App) -> AnyElement {
+    let theme = cx.theme();
+    let colors = &theme.colors;
+    let (text, color) = if query.is_empty() {
+        (i18n::text(cx, "select.filter", &[]), colors.fg_subtle)
+    } else {
+        (SharedString::from(query.to_string()), colors.fg)
+    };
+    div()
+        .flex()
+        .flex_none()
+        .items_center()
+        .gap_2()
+        .px_2()
+        .py_1()
+        .mb_1()
+        .border_b_1()
+        .border_color(colors.border)
+        .child(
+            Icon::new(IconName::Search)
+                .size(IconSize::Sm)
+                .color(colors.fg_subtle),
+        )
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .text_color(color)
+                .child(Ellipsis::new(text)),
+        )
+        .into_any_element()
+}
+
 /// The list a trigger opens: its rows, the one chosen, and whether the trigger holds focus.
 pub(crate) struct Listing<'a> {
     pub id: &'a ElementId,
@@ -194,10 +267,22 @@ pub(crate) fn listing(
     let picker = window.use_keyed_state((id.clone(), "picker"), cx, |_, _| Picker::default());
     if picker.read(cx).open && !focused {
         log::info!("list {id:?}: closed on blur");
-        picker.update(cx, |picker, _| picker.open = false);
+        picker.update(cx, |picker, _| {
+            picker.open = false;
+            picker.query.clear();
+        });
     }
+    // A long list shows only the rows its filter matches; `highlighted`
+    // and picks count those rows.
+    let all = rows;
+    let searchable = all.len() > SEARCHABLE;
+    let query = picker.read(cx).query.clone();
+    let shown = Rc::new(matching(&all, &query));
+    let rows: Rc<Vec<Choice>> = Rc::new(shown.iter().map(|&ix| all[ix].clone()).collect());
     let current = selected.and_then(|value| rows.iter().position(|row| row.value == *value));
-    let start = current.unwrap_or_else(|| step(&rows, rows.len() - 1, 1));
+    let start = current
+        .or_else(|| (!rows.is_empty()).then(|| step(&rows, rows.len() - 1, 1)))
+        .unwrap_or(0);
     if picker.read(cx).highlighted >= rows.len() {
         picker.update(cx, |picker, _| picker.highlighted = start);
     }
@@ -214,17 +299,14 @@ pub(crate) fn listing(
     let pick: Pick = {
         let (rows, picker) = (rows.clone(), picker.clone());
         Rc::new(move |ix, window, cx| {
-            if rows[ix].disabled {
+            if rows.get(ix).is_none_or(|row| row.disabled) {
                 return;
             }
             Picker::show(&picker, false, ix, cx);
             on_pick(&rows[ix].value, window, cx);
         })
     };
-    let chosen: Vec<SharedString> = current
-        .map(|ix| rows[ix].value.clone())
-        .into_iter()
-        .collect();
+    let chosen: Vec<SharedString> = selected.cloned().into_iter().collect();
     let (toggle, keys, close, keyed_rows, enter) = (
         picker.clone(),
         picker.clone(),
@@ -232,6 +314,7 @@ pub(crate) fn listing(
         rows.clone(),
         pick.clone(),
     );
+    let unfiltered = all.clone();
     trigger
         .aria_expanded(open)
         .on_mouse_down(MouseButton::Left, move |_, _, cx| {
@@ -247,7 +330,20 @@ pub(crate) fn listing(
                 }
                 return;
             }
-            if let Some(to) = moved(event, &keyed_rows, at) {
+            if searchable && let Some(query) = typed(event, &keys.read(cx).query) {
+                cx.stop_propagation();
+                // The first match that can be picked, counted among the matches.
+                let first = matching(&unfiltered, &query)
+                    .iter()
+                    .position(|&ix| !unfiltered[ix].disabled)
+                    .unwrap_or(0);
+                keys.update(cx, |picker, cx| {
+                    picker.query = query;
+                    picker.highlighted = first;
+                    picker.revealed = None;
+                    cx.notify();
+                });
+            } else if let Some(to) = moved(event, &keyed_rows, at) {
                 cx.stop_propagation();
                 Picker::show(&keys, true, to, cx);
             } else if matches!(key, "enter" | "space") {
@@ -274,6 +370,8 @@ pub(crate) fn listing(
                     })),
                     scroll: Some(&scroll),
                     reveal,
+                    header: searchable.then(|| filter_row(&query, cx)),
+                    empty: Some(i18n::text(cx, "select.no_matches", &[])),
                 }
                 .render(window, cx),
             )

@@ -28,6 +28,7 @@ actions!(
         AskBot,
         SwapFilePaneSide,
         NewTerminal,
+        MoveTerminalToTab,
         OpenBrowser,
         ReloadIgnoringCache,
         SplitRight,
@@ -111,6 +112,8 @@ actions!(
         NextSessionInTab,
         PreviousProject,
         NextProject,
+        MoveProjectUp,
+        MoveProjectDown,
         NextAgent,
         ShowLogs,
         CheckForUpdates,
@@ -204,6 +207,9 @@ pub(crate) fn keymap() -> Vec<KeyBinding> {
         // MonoCode "Terminal: New Tab"; every BenCode terminal is a dock tab.
         KeyBinding::new("cmd-shift-`", NewTerminal, None),
         KeyBinding::new("cmd-~", NewTerminal, None),
+        // MonoCode's terminal split is ⇧⌘J; BenCode's terminals split in
+        // the dock, and this moves the dock's one beside the chat.
+        KeyBinding::new("cmd-shift-j", MoveTerminalToTab, None),
         KeyBinding::new("cmd-d", SplitRight, None),
         KeyBinding::new("cmd-shift-d", SplitDown, None),
         KeyBinding::new("cmd-alt-left", FocusLeft, None),
@@ -229,6 +235,9 @@ pub(crate) fn keymap() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-down", NextSessionInTab, None),
         KeyBinding::new("cmd-shift-left", PreviousProject, None),
         KeyBinding::new("cmd-shift-right", NextProject, None),
+        // MonoCode `Project: Move Back/Forward`; the rail is a column.
+        KeyBinding::new("cmd-alt-shift-up", MoveProjectUp, None),
+        KeyBinding::new("cmd-alt-shift-down", MoveProjectDown, None),
         // The Agents section's threads, those waiting on you first.
         KeyBinding::new("cmd-alt-a", NextAgent, None),
         // MonoCode session cards: F2 renames, ⌫ deletes, Esc drops the picks.
@@ -368,6 +377,7 @@ fn menus() -> Vec<Menu> {
             MenuItem::action("Toggle Bot", ToggleBot),
             MenuItem::action("Ask Bot About This Thread", AskBot),
             MenuItem::action("New Terminal", NewTerminal),
+            MenuItem::action("Move Terminal to Tab", MoveTerminalToTab),
             MenuItem::action("Open Browser", OpenBrowser),
             MenuItem::action("Reload Page Ignoring Cache", ReloadIgnoringCache),
             MenuItem::separator(),
@@ -393,6 +403,8 @@ fn menus() -> Vec<Menu> {
             MenuItem::action("Next Session", NextSession),
             MenuItem::action("Previous Project", PreviousProject),
             MenuItem::action("Next Project", NextProject),
+            MenuItem::action("Move Project Up", MoveProjectUp),
+            MenuItem::action("Move Project Down", MoveProjectDown),
             MenuItem::action("Next Agent", NextAgent),
             MenuItem::separator(),
             MenuItem::action("Focus Pane Left", FocusLeft),
@@ -490,7 +502,8 @@ impl BenCodeApp {
         if self.surface.is_some() {
             return;
         }
-        let order = self.rail_order();
+        // MonoCode: in the order the rail draws them.
+        let order = self.rail_drawn_order();
         let current = order
             .iter()
             .find(|path| crate::app::same_project_path(path, &self.current_cwd));
@@ -537,6 +550,14 @@ impl BenCodeApp {
             return;
         }
         if let Some(id) = self.selected_session_id.clone() {
+            // MonoCode: ⌘W leaves a pinned tab, though it closes a pane of
+            // a pinned split.
+            let pinned_alone = (self.tabs.tab_of(&id))
+                .is_some_and(|tab| tab.pinned && tab.layout == crate::ui::layout::leaf(&id));
+            if pinned_alone {
+                log::info!("⌘W on a pinned tab: kept (Unpin Tab to close it)");
+                return;
+            }
             self.close_pane(&id, cx);
         }
     }
@@ -745,6 +766,9 @@ impl BenCodeApp {
         .on_action(cx.listener(|this, _: &GoBack, _, cx| this.go_back(cx)))
         .on_action(cx.listener(|this, _: &GoForward, _, cx| this.go_forward(cx)))
         .on_action(cx.listener(|this, _: &NewTerminal, _, cx| this.new_terminal(cx)))
+        .on_action(
+            cx.listener(|this, _: &MoveTerminalToTab, _, cx| this.move_active_terminal_to_tab(cx)),
+        )
         .on_action(cx.listener(|this, _: &OpenBrowser, window, cx| {
             this.open_browser(None, window, cx);
         }))
@@ -816,6 +840,12 @@ impl BenCodeApp {
         }))
         .on_action(cx.listener(|this, _: &PreviousProject, _, cx| this.step_project(-1, cx)))
         .on_action(cx.listener(|this, _: &NextProject, _, cx| this.step_project(1, cx)))
+        .on_action(cx.listener(|this, _: &MoveProjectUp, _, cx| {
+            this.move_current_project(crate::ui::rail::model::RailMove::Up, cx)
+        }))
+        .on_action(cx.listener(|this, _: &MoveProjectDown, _, cx| {
+            this.move_current_project(crate::ui::rail::model::RailMove::Down, cx)
+        }))
         .on_action(cx.listener(|this, _: &NextAgent, _, cx| this.select_next_live_agent(cx)))
         .on_action(cx.listener(|this, _: &NextTab, _, cx| this.cycle_tab(1, cx)))
         .on_action(cx.listener(|this, _: &PreviousTab, _, cx| this.cycle_tab(-1, cx)))

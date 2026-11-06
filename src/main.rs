@@ -9,6 +9,7 @@ pub mod external_editor;
 mod git;
 mod github;
 mod github_accounts;
+mod gpu_trim;
 mod hotkey;
 mod launch;
 mod logging;
@@ -152,6 +153,11 @@ fn main() {
                 cx.update(install_menus);
             })
             .detach();
+            // Nothing to give back in a bench or snapshot run, whose window
+            // is never shown (so never active).
+            if shown {
+                gpu_trim::start(cx);
+            }
             // BenCode's state, running agents included, lives in its one
             // window, and macOS keeps the app running when it closes. So the
             // close button hides the app, as ⌘H does, and the Dock icon brings

@@ -126,6 +126,12 @@ impl BenCodeApp {
                 entries.push(MenuEntry::Item(item("reveal", REVEAL_LABEL)));
             }
         }
+        if let PaneTab::Terminal { .. } = tab {
+            entries.extend([
+                MenuEntry::Separator,
+                MenuEntry::Item(item("to-dock", "Move to Terminal Panel")),
+            ]);
+        }
         if let PaneTab::Commit { .. } = tab {
             entries.extend([
                 MenuEntry::Separator,
@@ -137,8 +143,10 @@ impl BenCodeApp {
 
     /// Closes tabs by key. A file with unsaved edits stays open; unless
     /// `saved_only`, the first of them asks whether to discard its edits.
+    /// Terminals close together, with one question while jobs run in them.
     fn close_pane_tabs(&mut self, keys: &[String], saved_only: bool, cx: &mut Context<Self>) {
         let mut unsaved = None;
+        let mut terminals = Vec::new();
         for key in keys {
             if self.pane_tab_dirty(key) {
                 unsaved.get_or_insert(key);
@@ -146,10 +154,14 @@ impl BenCodeApp {
             }
             match self.file_pane.get(key).cloned() {
                 Some(PaneTab::File { path }) => self.close_editor_file(&path, cx),
+                // Close Saved means files: a shell is not "saved".
+                Some(PaneTab::Terminal { id }) if !saved_only => terminals.push(id),
+                Some(PaneTab::Terminal { .. }) => {}
                 Some(_) => self.drop_pane_tab(key, cx),
                 None => {}
             }
         }
+        self.request_close_terminal_ids(terminals, cx);
         if let Some(key) = unsaved.filter(|_| !saved_only) {
             self.request_close_pane_tab(key, cx);
         }
@@ -188,6 +200,11 @@ impl BenCodeApp {
                 self.close_pane_tabs(&keys, id == "saved", cx);
             }
             "keep" => self.file_pane.keep(&key),
+            "to-dock" => {
+                if let PaneTab::Terminal { id } = tab {
+                    self.move_terminal_to_dock(id, cx);
+                }
+            }
             "copy-path" => {
                 if let Some(file) = self.pane_tab_file(&tab, cx) {
                     copy(file.to_string_lossy().into_owned(), cx);

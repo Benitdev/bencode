@@ -233,6 +233,8 @@ impl RenderOnce for MultiSelect {
                         })),
                         scroll: Some(&scroll),
                         reveal,
+                        header: None,
+                        empty: None,
                     }
                     .render(window, cx),
                 )

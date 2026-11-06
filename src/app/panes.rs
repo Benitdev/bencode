@@ -107,6 +107,7 @@ impl BenCodeApp {
             return;
         }
         self.follow_focused_session_project();
+        self.follow_project_colors(cx);
         if self.is_terminal_open(cx) {
             // Each project has its own dock; a new one starts with a shell.
             self.ensure_project_terminal(cx);

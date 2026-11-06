@@ -37,6 +37,20 @@ pub fn set_palettes(tint: &ThemeTint, accent: Option<UserAccent>, cx: &mut App) 
     Theme::set_mode_now(mode, cx);
 }
 
+/// Rebuilds both palettes, cross-fading to the one shown (a project's
+/// colours as it opens).
+pub fn fade_palettes(tint: &ThemeTint, accent: Option<UserAccent>, cx: &mut App) {
+    let dark = with_user_accent(monocode_dark(tint), accent, true);
+    let light = with_user_accent(monocode_light(tint), accent, false);
+    // The shown mode's last, so its fade is the one that runs.
+    let (shown, hidden) = match cx.theme().mode() {
+        Mode::Dark => ((Mode::Dark, dark), (Mode::Light, light)),
+        Mode::Light => ((Mode::Light, light), (Mode::Dark, dark)),
+    };
+    Theme::set_palette(hidden.0, Some(hidden.1), cx);
+    Theme::set_palette(shown.0, Some(shown.1), cx);
+}
+
 /// MonoCode's dark theme: the background at `--theme-dark-lightness` (9%
 /// by default) and text at 92%, both in the tint's hue and saturation.
 /// Every fill is text laid over the background at a set strength

@@ -8,7 +8,7 @@ use bencode_ui::primitives::IconName;
 use gpui::{Bounds, Context, Pixels, Point};
 
 use super::menu_view::{ExtraItem, submenu_origin};
-use super::model::{ProjectGroup, mute_actions, mute_deadline, notification_id};
+use super::model::{ProjectGroup, RailMove, mute_actions, mute_deadline, notification_id};
 use super::project_name;
 use super::state::{MenuTarget, RailMenu, RailSubmenu, SubmenuKind};
 use crate::app::BenCodeApp;
@@ -276,10 +276,15 @@ impl BenCodeApp {
         let here = !crate::remote::is_remote(path);
         let mut items = vec![
             ExtraItem {
+                submenu: Some(SubmenuKind::Move),
+                ..ExtraItem::new("project-move", "Move", IconName::ChevronsUpDown)
+            },
+            ExtraItem {
                 submenu: Some(SubmenuKind::MoveToGroup),
                 ..ExtraItem::new("project-group", "Move to group", ExtraIcon::FolderTree)
             },
             pin,
+            ExtraItem::new("theme-colors", "Theme colors…", IconName::Palette),
         ];
         if here {
             items.push(ExtraItem::new("reveal", REVEAL_LABEL, IconName::FolderOpen));
@@ -340,6 +345,35 @@ impl BenCodeApp {
     /// `notificationMuteActions`).
     pub(super) fn rail_submenu_entries(&self, kind: SubmenuKind) -> Vec<MenuEntry> {
         match kind {
+            SubmenuKind::Move => {
+                let Some(MenuTarget::Project(path)) = self.rail_ui.menu.as_ref().map(|m| &m.target)
+                else {
+                    return Vec::new();
+                };
+                let order = self.rail_order();
+                let sections = self.rail_sections_for(&order);
+                let (from, len) = sections
+                    .list_of(path)
+                    .and_then(|(_, rows)| {
+                        let from = rows
+                            .iter()
+                            .position(|p| crate::app::same_project_path(p, path))?;
+                        Some((from, rows.len()))
+                    })
+                    .unwrap_or((0, 1));
+                let step = |id: &'static str, label: &'static str, how: RailMove| {
+                    MenuAction::new(id, label).disabled(how.target(from, len).is_none())
+                };
+                vec![
+                    MenuEntry::Item(step("move:up", "Move up", RailMove::Up).shortcut("⌥⇧⌘↑")),
+                    MenuEntry::Item(
+                        step("move:down", "Move down", RailMove::Down).shortcut("⌥⇧⌘↓"),
+                    ),
+                    MenuEntry::Separator,
+                    MenuEntry::Item(step("move:top", "Move to top", RailMove::Top)),
+                    MenuEntry::Item(step("move:bottom", "Move to bottom", RailMove::Bottom)),
+                ]
+            }
             SubmenuKind::MoveToGroup => {
                 let path = match self.rail_ui.menu.as_ref().map(|m| &m.target) {
                     Some(MenuTarget::Project(path)) => path.clone(),
@@ -436,6 +470,18 @@ impl BenCodeApp {
         else {
             return;
         };
+        let step = match action.id {
+            "move:up" => Some(RailMove::Up),
+            "move:down" => Some(RailMove::Down),
+            "move:top" => Some(RailMove::Top),
+            "move:bottom" => Some(RailMove::Bottom),
+            _ => None,
+        };
+        if let Some(step) = step {
+            self.move_rail_project(&path, step, cx);
+            self.close_rail_menu(cx);
+            return;
+        }
         match action.id {
             "project-group:new" => {
                 self.close_rail_menu(cx);
@@ -523,6 +569,7 @@ impl BenCodeApp {
         cx: &mut Context<Self>,
     ) {
         let submenu = match id {
+            "project-move" => Some(SubmenuKind::Move),
             "project-group" => Some(SubmenuKind::MoveToGroup),
             "external-editor" => Some(SubmenuKind::Editor),
             "notifications-mute" => Some(SubmenuKind::Mute),
@@ -541,6 +588,7 @@ impl BenCodeApp {
                 self.update_rail_prefs(|prefs| prefs.with_mute(&ids, None, now), cx);
             }
             "pin" | "unpin" => self.toggle_project_pin(path, cx),
+            "theme-colors" => self.rail_ui.theme_dialog = Some(path.to_string()),
             "reveal" => super::reveal_project(path, cx),
             "archive" => self.archive_rail_project(path, cx),
             "delete" => self.request_remove_project(path, cx),

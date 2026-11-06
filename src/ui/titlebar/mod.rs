@@ -164,6 +164,7 @@ impl BenCodeApp {
                 && sessions
                     .first()
                     .is_none_or(|s| !s.blocks.iter().any(|b| b.role == "user")),
+            pinned: tab.pinned,
             ..Default::default()
         };
         for session in &sessions {
@@ -192,6 +193,22 @@ impl BenCodeApp {
             .collect()
     }
 
+    /// The strip's own tabs: all but the pinned.
+    fn strip_title_tabs(&self) -> Vec<TitleTab> {
+        self.title_tabs()
+            .into_iter()
+            .filter(|t| !t.pinned)
+            .collect()
+    }
+
+    /// Pin Tab / Unpin Tab (MonoCode's tab menu).
+    fn set_tab_pinned(&mut self, id: &str, pinned: bool, cx: &mut Context<Self>) {
+        if self.tabs.set_pinned(id, pinned) {
+            self.save_settings(cx);
+            cx.notify();
+        }
+    }
+
     /// The width each tab gets in the strip as it stands.
     fn title_tab_width(&self, count: usize) -> f32 {
         let strip = crate::ui::scale::logical(self.title_strip.scroll.bounds().size.width);
@@ -204,7 +221,10 @@ impl BenCodeApp {
 
     /// Keeps per-frame strip state: unseen finishes, opening sweeps, the
     /// active tab scrolled into view, and the window title.
-    fn sync_title_strip(&mut self, tabs: &[TitleTab], window: &mut Window) {
+    fn sync_title_strip(&mut self, all: &[TitleTab], window: &mut Window) {
+        // The pinned cards neither slide nor scroll with the strip.
+        let strip_tabs: Vec<TitleTab> = all.iter().filter(|t| !t.pinned).cloned().collect();
+        let tabs = strip_tabs.as_slice();
         let busy: HashSet<String> = self
             .sessions
             .iter()
@@ -279,7 +299,7 @@ impl BenCodeApp {
 
         // MonoCode `systemTitle`: "project — BenCode".
         let title = active
-            .and_then(|id| tabs.iter().find(|t| t.id == id))
+            .and_then(|id| all.iter().find(|t| t.id == id))
             .map_or_else(
                 || "BenCode".to_string(),
                 |t| format!("{} — BenCode", t.project),
@@ -292,12 +312,17 @@ impl BenCodeApp {
 
     /// Closes a tab from the strip, leaving a ghost that sweeps shut.
     fn close_title_tab(&mut self, id: &str, cx: &mut Context<Self>) {
-        let tabs = self.title_tabs();
-        let Some(index) = tabs.iter().position(|t| t.id == id) else {
-            return;
-        };
+        let tabs = self.strip_title_tabs();
+        let pinned = self.tabs.tabs().iter().any(|t| t.id == id && t.pinned);
+        let index = tabs.iter().position(|t| t.id == id);
         let width = self.title_tab_width(tabs.len());
         self.close_tab(id, cx);
+        // A pin's card goes without a sweep; the saved pins lose it.
+        let Some(index) = index.filter(|_| !pinned) else {
+            self.save_settings(cx);
+            cx.notify();
+            return;
+        };
         if self.deck_tabs().iter().any(|t| t.id == id) {
             return;
         }
@@ -357,7 +382,10 @@ impl BenCodeApp {
             return;
         };
         self.close_other_tabs(cx);
-        self.close_tab(&active, cx);
+        // MonoCode keeps pinned tabs on the close-all shortcut.
+        if !self.tabs.tabs().iter().any(|t| t.id == active && t.pinned) {
+            self.close_tab(&active, cx);
+        }
     }
 
     /// MonoCode `onArchiveTitleTab`: archives the tab's threads and closes it.
@@ -390,7 +418,14 @@ impl BenCodeApp {
             return Vec::new();
         };
         let none = |action| close_ids(&tabs, tab_id, action).is_empty();
+        let pin = if tab.pinned {
+            MenuAction::new("unpin", "Unpin Tab")
+        } else {
+            MenuAction::new("pin", "Pin Tab")
+        };
         let mut entries = vec![
+            MenuEntry::Item(pin),
+            MenuEntry::Separator,
             MenuEntry::Item(
                 MenuAction::new("close", "Close Tab")
                     .shortcut("⌘W")
@@ -489,6 +524,8 @@ impl BenCodeApp {
         let tabs = self.title_tabs();
         let target = menu.tab_id;
         match id {
+            "pin" => self.set_tab_pinned(&target, true, cx),
+            "unpin" => self.set_tab_pinned(&target, false, cx),
             "close" => self.close_title_tab(&target, cx),
             "others" => {
                 self.close_title_tabs(&close_ids(&tabs, &target, CloseMany::Others), &target, cx)
@@ -778,7 +815,10 @@ impl BenCodeApp {
         let Some((id, to)) = self.title_strip.reorder.take() else {
             return;
         };
+        // `to` is a slot of the strip, whose tabs follow the pinned.
+        let pins = self.deck_tabs().iter().filter(|t| t.pinned).count();
         let from = self.deck_tabs().iter().position(|t| t.id == id);
+        let to = to + pins;
         if let Some(from) = from
             && from != to
         {
@@ -796,7 +836,7 @@ impl BenCodeApp {
         let id = event.drag(cx).id.clone();
         let inside = event.bounds.contains(&event.event.position);
         let next = inside.then(|| {
-            let count = self.deck_tabs().len();
+            let count = self.deck_tabs().iter().filter(|t| !t.pinned).count();
             let width = self.title_tab_width(count);
             let scroll = crate::ui::scale::logical(self.title_strip.scroll.offset().x);
             let x = crate::ui::scale::logical(event.event.position.x - event.bounds.origin.x)
@@ -960,6 +1000,64 @@ impl BenCodeApp {
             .into_any_element()
     }
 
+    /// MonoCode's pinned title tabs: a card each ahead of the strip, its
+    /// threads' marks alone (the headline in the tooltip); a click shows
+    /// it, a right click its menu (Unpin Tab). They do not drag, and a
+    /// middle click leaves them.
+    fn render_pinned_tabs(&self, pins: &[TitleTab], cx: &Context<Self>) -> AnyElement {
+        let colors = &cx.theme().colors;
+        let fg = colors.fg;
+        let hover_bg = fg.fill(Fill::Hover);
+        let cards = pins.iter().map(|tab| {
+            let active = self.tabs.active_id() == Some(tab.id.as_str());
+            let (headline, tooltip) = tab_copy(tab);
+            let (select_id, menu_id) = (tab.id.clone(), tab.id.clone());
+            let card = div()
+                .id(SharedString::from(format!("title-pin-{}", tab.id)))
+                .flex()
+                .flex_none()
+                .items_center()
+                .justify_center()
+                .h(px(28.0))
+                .min_w(px(32.0))
+                .px(px(8.0))
+                .rounded(px(6.0))
+                .border_1()
+                .map(|el| {
+                    if active {
+                        el.bg(fg.fill(Fill::Selected))
+                            .border_color(fg.fill(Fill::Bold))
+                    } else {
+                        el.border_color(fg.fill(Fill::Line))
+                            .hover(move |s| s.bg(hover_bg))
+                    }
+                })
+                .tooltip(Tooltip::text(format!("{tooltip}\nPinned")))
+                .on_click(cx.listener(move |this, _, _, cx| this.switch_tab(&select_id, cx)))
+                .on_mouse_down(
+                    MouseButton::Right,
+                    cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
+                        cx.stop_propagation();
+                        this.open_tab_menu(&menu_id, event.position, cx);
+                    }),
+                )
+                .child(self.tab_harnesses(tab, active, cx));
+            claim_press(card.aria_label(format!("{headline}, pinned"))).into_any_element()
+        });
+        div()
+            .flex()
+            .flex_none()
+            .items_center()
+            .gap(px(TAB_GAP))
+            .pl(px(6.0))
+            .pr(px(4.0))
+            .mr(px(2.0))
+            .border_r_1()
+            .border_color(fg.fill(Fill::Line))
+            .children(cards)
+            .into_any_element()
+    }
+
     /// The strip itself, scrolling sideways when the tabs do not fit.
     fn render_tab_strip(&self, tabs: &[TitleTab], cx: &Context<Self>) -> AnyElement {
         let width = self.title_tab_width(tabs.len() + self.title_strip.closing.len());
@@ -975,10 +1073,15 @@ impl BenCodeApp {
             slots.insert(at, self.closing_tab_slot(closing, cx));
         }
         let scroll = &self.title_strip.scroll;
-        let (left, right) = strip_overflow(
-            -crate::ui::scale::logical(scroll.offset().x),
-            crate::ui::scale::logical(scroll.max_offset().x),
-        );
+        // An empty strip (every tab pinned) keeps last frame's extent.
+        let (left, right) = if slots.is_empty() {
+            (false, false)
+        } else {
+            strip_overflow(
+                -crate::ui::scale::logical(scroll.offset().x),
+                crate::ui::scale::logical(scroll.max_offset().x),
+            )
+        };
         let drop_wash = cx.theme().colors.hover;
         div()
             .id("title-tab-drop")
@@ -1037,11 +1140,12 @@ impl BenCodeApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let tabs = self.title_tabs();
+        let all = self.title_tabs();
         if !cx.has_active_drag() {
             self.title_strip.reorder = None;
         }
-        self.sync_title_strip(&tabs, window);
+        self.sync_title_strip(&all, window);
+        let (pins, tabs): (Vec<TitleTab>, Vec<TitleTab>) = all.into_iter().partition(|t| t.pinned);
         // MonoCode's title bar takes no glass tint: the blur shows bare.
         let glass = self.glass(cx);
         let theme = cx.theme();
@@ -1056,6 +1160,7 @@ impl BenCodeApp {
             .border_color(colors.border)
             .bg(glass.fill(colors.bg))
             .child(self.render_titlebar_leading(cx))
+            .children((!pins.is_empty()).then(|| self.render_pinned_tabs(&pins, cx)))
             .child(self.render_tab_strip(&tabs, cx))
             .children(self.render_tab_menu(cx))
             .child(self.render_titlebar_trailing(cx))

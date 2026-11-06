@@ -16,6 +16,9 @@ pub struct WorkspaceTab {
     pub id: String,
     pub layout: LayoutNode,
     pub focused: String,
+    /// Pinned (MonoCode's pinned title tabs): ahead of the others, in every
+    /// project, and kept by Close Others, Close to the Right and ⌘W.
+    pub pinned: bool,
 }
 
 impl WorkspaceTab {
@@ -36,6 +39,22 @@ pub struct TabSet {
 }
 
 impl TabSet {
+    /// Pins or unpins a tab: a pin goes last among the pinned, an unpinned
+    /// tab first among the rest. `false` when nothing changed.
+    pub fn set_pinned(&mut self, tab_id: &str, pinned: bool) -> bool {
+        let Some(ix) = self
+            .index_of(tab_id)
+            .filter(|&ix| self.tabs[ix].pinned != pinned)
+        else {
+            return false;
+        };
+        let mut tab = self.tabs.remove(ix);
+        tab.pinned = pinned;
+        let pins = self.tabs.iter().take_while(|t| t.pinned).count();
+        self.tabs.insert(pins, tab);
+        true
+    }
+
     /// One tab per session, the first one active.
     pub fn with_sessions<'a>(session_ids: impl IntoIterator<Item = &'a str>) -> Self {
         let mut set = Self::default();
@@ -89,6 +108,7 @@ impl TabSet {
             id: id.clone(),
             layout: leaf(session_id),
             focused: session_id.to_string(),
+            pinned: false,
         });
         self.active = Some(id.clone());
         id
@@ -174,11 +194,12 @@ impl TabSet {
         let tab = &self.tabs[ix];
         match close_leaf(&tab.layout, &tab.focused, pane_id) {
             Some((layout, focused)) => {
-                let id = tab.id.clone();
+                let (id, pinned) = (tab.id.clone(), tab.pinned);
                 self.tabs[ix] = WorkspaceTab {
                     id,
                     layout,
                     focused,
+                    pinned,
                 };
             }
             None => self.drop_tab_at(ix),
@@ -270,9 +291,10 @@ impl TabSet {
         true
     }
 
+    /// Moves a tab within its group: the pinned stay ahead of the rest.
     pub fn reorder(&mut self, from: usize, to: usize) -> bool {
         let n = self.tabs.len();
-        if from >= n || to >= n || from == to {
+        if from >= n || to >= n || from == to || self.tabs[from].pinned != self.tabs[to].pinned {
             return false;
         }
         let tab = self.tabs.remove(from);

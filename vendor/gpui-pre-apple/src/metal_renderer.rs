@@ -43,7 +43,10 @@ use std::{
     mem::MaybeUninit,
     ops::Range,
     ptr, slice,
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
     time::{Duration, Instant},
 };
 
@@ -62,6 +65,22 @@ const INSTANCE_BUFFER_ALIGNMENT: usize = 256;
 const MAX_INSTANCE_BUFFER_SIZE: usize = 256 * 1024 * 1024;
 /// The backdrop's scratch textures go after this long without a frosted quad.
 const SCRATCH_IDLE: Duration = Duration::from_secs(2);
+/// The instance buffers' size before any frame outgrew it.
+const DEFAULT_INSTANCE_BUFFER_SIZE: usize = 2 * 1024 * 1024;
+
+/// Bumped by [`trim`]; each renderer gives back what it can on its next
+/// frame (BenCode, after MonoCode's `trim`).
+static TRIM_GENERATION: AtomicU64 = AtomicU64::new(0);
+
+/// Gives GPU memory back once the app is quiet: empties every window's
+/// sprite atlas now and has each renderer's next frame drop the instance
+/// buffers back to their first size. Call it between frames and refresh
+/// every window right after (`App::refresh_windows`), so each frame paints
+/// afresh and uploads only what it draws.
+pub fn trim() {
+    crate::metal_atlas::clear_all();
+    TRIM_GENERATION.fetch_add(1, Ordering::Relaxed);
+}
 
 pub type Context = Arc<Mutex<InstanceBufferPool>>;
 pub type Renderer = MetalRenderer;
@@ -85,7 +104,7 @@ pub struct InstanceBufferPool {
 impl Default for InstanceBufferPool {
     fn default() -> Self {
         Self {
-            buffer_size: 2 * 1024 * 1024,
+            buffer_size: DEFAULT_INSTANCE_BUFFER_SIZE,
             buffers: Vec::new(),
         }
     }
@@ -163,6 +182,11 @@ pub struct MetalRenderer {
     core_video_texture_cache: CFRetained<CVMetalTextureCache>,
     path_intermediate_texture: Option<metal::Texture>,
     path_intermediate_msaa_texture: Option<metal::Texture>,
+    /// The last frame that drew paths: their window-sized textures are made
+    /// by the first such frame and go once none has for a while (BenCode).
+    paths_used: Option<Instant>,
+    /// The [`trim`] this renderer last followed.
+    trim_generation: u64,
     path_sample_count: u32,
     /// Offscreen render target reused across `render_scene` calls when
     /// rendering headlessly without reading pixels back.
@@ -428,6 +452,7 @@ impl MetalRenderer {
         let command_queue = device.new_command_queue();
         let supports_shared_storage = cfg!(target_os = "ios") || is_apple_gpu;
         let sprite_atlas = Arc::new(MetalAtlas::new(device.clone(), supports_shared_storage));
+        crate::metal_atlas::register(&sprite_atlas);
         // metal and objc2-metal expose the same Objective-C device; the borrowed
         // protocol object remains valid while `device` owns it.
         let core_video_texture_cache = unsafe {
@@ -474,6 +499,8 @@ impl MetalRenderer {
             core_video_texture_cache,
             path_intermediate_texture: None,
             path_intermediate_msaa_texture: None,
+            paths_used: None,
+            trim_generation: TRIM_GENERATION.load(Ordering::Relaxed),
             path_sample_count: PATH_SAMPLE_COUNT,
             #[cfg(any(test, feature = "bench-support", feature = "test-support"))]
             headless_render_target: None,
@@ -506,7 +533,48 @@ impl MetalRenderer {
         if let Some(layer) = &self.layer {
             layer.set_drawable_size(CGSize::new(size.width.0 as f64, size.height.0 as f64));
         }
-        self.update_path_intermediate_textures(size);
+        // The next frame that draws paths makes them at the new size.
+        if !self.path_textures_fit(size) {
+            self.path_intermediate_texture = None;
+            self.path_intermediate_msaa_texture = None;
+        }
+    }
+
+    fn path_textures_fit(&self, size: Size<DevicePixels>) -> bool {
+        self.path_intermediate_texture.as_ref().is_some_and(|texture| {
+            texture.width() == size.width.0 as u64 && texture.height() == size.height.0 as u64
+        })
+    }
+
+    /// Makes the path textures for a frame of `size` that draws paths,
+    /// unless it has them.
+    fn ensure_path_textures(&mut self, size: Size<DevicePixels>) {
+        self.paths_used = Some(Instant::now());
+        if !self.path_textures_fit(size) {
+            self.update_path_intermediate_textures(size);
+        }
+    }
+
+    /// Drops the path textures once no recent frame drew a path, and after a
+    /// [`trim`] the instance buffers grown past their first size.
+    fn release_idle_memory(&mut self) {
+        if self
+            .paths_used
+            .is_none_or(|used| used.elapsed() >= SCRATCH_IDLE)
+        {
+            self.path_intermediate_texture = None;
+            self.path_intermediate_msaa_texture = None;
+            self.paths_used = None;
+        }
+        let generation = TRIM_GENERATION.load(Ordering::Relaxed);
+        if self.trim_generation != generation {
+            self.trim_generation = generation;
+            let mut pool = self.instance_buffer_pool.lock();
+            if pool.buffer_size != DEFAULT_INSTANCE_BUFFER_SIZE || !pool.buffers.is_empty() {
+                log::info!("trimmed the instance buffers back to {DEFAULT_INSTANCE_BUFFER_SIZE}");
+                pool.reset(DEFAULT_INSTANCE_BUFFER_SIZE);
+            }
+        }
     }
 
     fn update_path_intermediate_textures(&mut self, size: Size<DevicePixels>) {
@@ -624,6 +692,9 @@ impl MetalRenderer {
                 scene.surfaces.len(),
             )
         })?;
+        if !scene.paths.is_empty() {
+            self.ensure_path_textures(viewport_size);
+        }
         let command_buffer = self.draw_primitives_to_texture(
             scene,
             &instance_bindings,
@@ -632,6 +703,7 @@ impl MetalRenderer {
             viewport_size,
         )?;
         self.release_idle_backdrop();
+        self.release_idle_memory();
 
         let instance_buffer_pool = self.instance_buffer_pool.clone();
         let instance_buffer = Cell::new(Some(writer.finish()));

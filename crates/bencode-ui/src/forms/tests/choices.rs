@@ -126,3 +126,56 @@ fn a_long_choice_keeps_its_list_inside_the_window(cx: &mut TestAppContext) {
         "{list:?}"
     );
 }
+
+/// A select long enough to filter, recording what was picked.
+struct Fruits(Option<String>);
+
+const FRUITS: [&str; 12] = [
+    "Banana", "Cherry", "Date", "Elder", "Fig", "Grape", "Kiwi", "Lemon", "Mango", "Apricot",
+    "Melon", "Apple",
+];
+
+impl Render for Fruits {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let view = cx.entity();
+        Select::new("fruit", FRUITS.map(|name| Choice::new(name, name))).on_change(
+            move |value, _, cx| {
+                view.update(cx, |view, cx| {
+                    view.0 = Some(value.to_string());
+                    cx.notify();
+                })
+            },
+        )
+    }
+}
+
+#[gpui::test]
+fn typing_filters_a_long_select_and_enter_picks_the_match(cx: &mut TestAppContext) {
+    setup(cx);
+    let (view, cx) = cx.add_window_view(|_, _| Fruits(None));
+    cx.update(|window, cx| window.focus_next(cx));
+    // Opens, filters to Apricot, takes a letter off (Grape, Apricot and
+    // Apple match "ap") and steps down to the third match.
+    cx.simulate_keystrokes("down a p r backspace down down enter");
+    assert_eq!(
+        view.read_with(cx, |view, _| view.0.clone()),
+        Some("Apple".into())
+    );
+}
+
+#[test]
+fn a_filter_matches_labels_ignoring_case() {
+    let rows: Vec<Choice> = FRUITS
+        .iter()
+        .map(|name| Choice::new(*name, *name))
+        .collect();
+    let names = |query| {
+        crate::forms::select::matching(&rows, query)
+            .into_iter()
+            .map(|ix| FRUITS[ix])
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(names("ON"), ["Lemon", "Melon"]);
+    assert_eq!(names("  "), FRUITS.to_vec());
+    assert!(names("zz").is_empty());
+}

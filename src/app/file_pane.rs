@@ -47,6 +47,9 @@ pub enum PaneTab {
     /// An Inbox item, by its key (`WorkItem::key`); the Inbox's state
     /// holds what it shows (`ui/inbox_view/tab.rs`).
     WorkItem { key: String },
+    /// A dock terminal moved out to a tab (`ui/terminal_pane/moved.rs`),
+    /// by its id; its project's dock still holds it.
+    Terminal { id: u64 },
 }
 
 /// How an Inbox key names its item before the item is known: `PROJ-12`,
@@ -81,6 +84,7 @@ impl PaneTab {
             Self::FileHistory { cwd, path } => format!("file-history:{cwd}/{path}"),
             Self::Browser { id } => format!("browser:{id}"),
             Self::WorkItem { key } => format!("work-item:{key}"),
+            Self::Terminal { id } => format!("terminal:{id}"),
         }
     }
 
@@ -101,6 +105,7 @@ impl PaneTab {
                 | Self::Browser { .. }
                 | Self::FileHistory { .. }
                 | Self::WorkItem { .. }
+                | Self::Terminal { .. }
         )
     }
 
@@ -110,7 +115,8 @@ impl PaneTab {
             Self::File { .. }
             | Self::Image { .. }
             | Self::Browser { .. }
-            | Self::WorkItem { .. } => None,
+            | Self::WorkItem { .. }
+            | Self::Terminal { .. } => None,
             Self::Review { cwd, .. }
             | Self::Changes { cwd, .. }
             | Self::SessionChanges { cwd, .. }
@@ -161,6 +167,8 @@ impl PaneTab {
             Self::Browser { .. } => ("Browser".into(), "Browser".into()),
             // The item's key and title replace it once known.
             Self::WorkItem { key } => (work_item_name(key), key.clone()),
+            // The job or the folder replaces it (`render_pane_tabs`).
+            Self::Terminal { .. } => ("Terminal".into(), "Terminal".into()),
         }
     }
 }

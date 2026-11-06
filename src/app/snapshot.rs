@@ -504,7 +504,97 @@ const SCENES: &[(&str, SetUp)] = &[
             app.open_session(id, cx);
         }
     }),
+    // A thread moved to another agent: its message with a pull request's
+    // link (the chip) under the divider, "Transferred from …".
+    ("provider-switch", |app, _, cx| {
+        app.close_surface(cx);
+        stage_provider_switch(app);
+        cx.notify();
+    }),
+    // `/` in the composer: each built-in command's icon.
+    ("slash-commands", |app, _, cx| {
+        app.prompt_input
+            .update(cx, |input, cx| input.set_text("/", cx));
+        cx.notify();
+    }),
+    // Two tabs pinned: their cards ahead of the strip.
+    ("pinned-tabs", |app, _, cx| {
+        app.prompt_input
+            .update(cx, |input, cx| input.set_text("", cx));
+        let ids: Vec<String> = app
+            .deck_tabs()
+            .iter()
+            .take(2)
+            .map(|t| t.id.clone())
+            .collect();
+        for id in ids {
+            app.tabs.set_pinned(&id, true);
+        }
+        cx.notify();
+    }),
+    // The dock's terminal moved to a tab beside the chat.
+    ("terminal-tab", |app, _, cx| {
+        app.set_terminal_open(true, cx);
+        app.move_active_terminal_to_tab(cx);
+    }),
+    // The project's Theme colors, with colours of its own.
+    ("project-theme", |app, _, cx| {
+        let path = app.current_cwd.clone();
+        let theme = crate::ui::rail::model::ProjectTheme {
+            hue: 160.0,
+            saturation: 40.0,
+            dark_lightness: 11.0,
+            accent_color: Some("#10b981".into()),
+        };
+        app.set_project_theme(&path, Some(theme), cx);
+        app.rail_ui.theme_dialog = Some(path);
+        cx.notify();
+    }),
 ];
+
+/// The focused thread's tail as a model change leaves it, in memory only:
+/// a turn on its agent, then a message to another with a GitHub link.
+fn stage_provider_switch(app: &mut BenCodeApp) {
+    use std::sync::Arc;
+
+    use crate::db::{Block, TurnModel};
+    let Some(id) = app.selected_session_id.clone() else {
+        return;
+    };
+    let Some(session) = app.sessions.iter_mut().find(|s| s.id == id) else {
+        return;
+    };
+    let turn = |harness: &str, name: &str| TurnModel {
+        harness: Some(harness.into()),
+        id: Some(format!("{harness}:{name}")),
+        name: Some(name.into()),
+    };
+    let mut asked = Block::new("snap-switch-1", "user", "Tighten the sidebar spacing.");
+    asked.turn_model = Some(turn("claude", "Opus 4.6"));
+    let answer = Block::new(
+        "snap-switch-2",
+        "assistant",
+        "Done: the rows are 4px tighter.",
+    );
+    let mut moved = Block::new(
+        "snap-switch-3",
+        "user",
+        "Review https://github.com/acme/app/pull/1142 against it, please.",
+    );
+    moved.turn_model = Some(turn("codex", "GPT-5.5"));
+    let transfer = crate::app::transfer::Transfer {
+        from: crate::harness::HarnessKind::Claude,
+        model: "Opus 4.6".into(),
+    };
+    moved.extra.insert(
+        crate::app::transfer::TRANSFER_FROM.into(),
+        transfer.to_extra(),
+    );
+    session
+        .blocks
+        .extend([Arc::new(asked), Arc::new(answer), Arc::new(moved)]);
+    app.sync_transcript_list_for(&id);
+}
 
 /// Turns as the Agents section shows them, without an agent: a thread of
 /// another project waiting on a command, one of this project and one of

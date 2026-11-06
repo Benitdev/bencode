@@ -13,12 +13,14 @@ pub mod git_actions;
 pub mod markdown;
 mod outline;
 pub mod outline_model;
+mod provider_switch;
 mod review_card;
 pub mod selection;
 mod selection_ui;
 mod subagents;
 mod task_list;
 pub mod turns;
+mod user_link;
 
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};

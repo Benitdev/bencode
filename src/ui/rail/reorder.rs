@@ -13,7 +13,7 @@ use gpui::{
 
 use crate::ui::scale::px;
 
-use super::model::{self, move_item, reorder_subset, resized_rail_width};
+use super::model::{self, RailMove, move_item, reorder_subset, resized_rail_width};
 use super::state::RailReorder;
 use crate::app::BenCodeApp;
 use crate::ui::motion::cubic_bezier;
@@ -249,9 +249,16 @@ impl BenCodeApp {
             );
             return;
         }
+        self.reorder_rail_list(&reorder.list, &reorder.path, reorder.to, cx);
+    }
+
+    /// Puts `path` at `to` in rail list `list` (`pinned`, `projects`,
+    /// `group:<id>`): the list's new order takes its members' slots in the
+    /// saved rail order.
+    fn reorder_rail_list(&mut self, list: &str, path: &str, to: usize, cx: &mut Context<Self>) {
         let order = self.rail_order();
         let sections = self.rail_sections_for(&order);
-        let ids = match reorder.list.as_str() {
+        let ids = match list {
             "pinned" => sections.pinned,
             "projects" => sections.ungrouped,
             other => other
@@ -260,13 +267,13 @@ impl BenCodeApp {
                 .map(|(_, items)| items)
                 .unwrap_or_default(),
         };
-        let Some(from) = ids.iter().position(|id| *id == reorder.path) else {
+        let Some(from) = ids.iter().position(|id| id == path) else {
             return;
         };
-        if from == reorder.to {
+        if from == to {
             return;
         }
-        let next = reorder_subset(&order, &move_item(&ids, from, reorder.to));
+        let next = reorder_subset(&order, &move_item(&ids, from, to));
         self.update_rail_prefs(
             |prefs| model::RailPrefs {
                 project_rail_order: next.clone(),
@@ -274,6 +281,36 @@ impl BenCodeApp {
             },
             cx,
         );
+    }
+
+    /// MonoCode's project menu Move and `Project: Move Back/Forward`:
+    /// `path` steps within the list it is drawn in.
+    pub(crate) fn move_rail_project(&mut self, path: &str, step: RailMove, cx: &mut Context<Self>) {
+        let order = self.rail_order();
+        let sections = self.rail_sections_for(&order);
+        let Some((list, rows)) = sections.list_of(path) else {
+            return;
+        };
+        let Some(from) = rows
+            .iter()
+            .position(|p| crate::app::same_project_path(p, path))
+        else {
+            return;
+        };
+        if let Some(to) = step.target(from, rows.len()) {
+            let path = rows[from].clone();
+            self.reorder_rail_list(&list, &path, to, cx);
+            cx.notify();
+        }
+    }
+
+    /// Move Project Up / Down: the current project.
+    pub(crate) fn move_current_project(&mut self, step: RailMove, cx: &mut Context<Self>) {
+        if self.surface.is_some() || self.current_cwd.is_empty() {
+            return;
+        }
+        let path = self.current_cwd.clone();
+        self.move_rail_project(&path, step, cx);
     }
 
     /// A row in its slot; one passed by the held row slides from where it

@@ -15,5 +15,15 @@ And so the glass shows: `shadow_fragment` in src/shaders.metal leaves a
 drop shadow out of its element's bounds, as CSS `box-shadow` does, instead
 of filling it underneath (which the blur spread dark across a frosted card).
 
+And so a quiet app gives GPU memory back (after MonoCode's `trim`,
+BenCode's `src/gpu_trim.rs` calling it):
+
+- src/metal_atlas.rs: every atlas is registered; `clear_all` drops their
+  tiles and textures (gpui-pre has no `PlatformAtlas::clear` to do it).
+- src/metal_renderer.rs: `trim()` clears the atlases and has each
+  renderer's next frame reset the instance buffers to their first 2MB; the
+  path textures are made by the first frame that draws paths and dropped
+  once none has for 2s, instead of with every drawable resize.
+
 Everything else is the crates.io source unchanged. To move to a new
 gpui-pre, copy its `gpui-pre-apple` here and carry those changes over.

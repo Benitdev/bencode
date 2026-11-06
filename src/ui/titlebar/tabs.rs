@@ -23,6 +23,9 @@ pub struct TitleTab {
     pub multi_pane: bool,
     /// One fresh thread with nothing sent yet.
     pub blank: bool,
+    /// Shown as a card ahead of the strip, kept by Close Others and the
+    /// rest.
+    pub pinned: bool,
 }
 
 /// MonoCode `sessionMeta`.
@@ -60,18 +63,24 @@ pub enum CloseMany {
     Left,
 }
 
-/// MonoCode `titleTabContextCloseIds`.
+/// MonoCode `titleTabContextCloseIds`; pinned tabs stay.
 pub fn close_ids(tabs: &[TitleTab], target: &str, action: CloseMany) -> Vec<String> {
     let Some(ix) = tabs.iter().position(|t| t.id == target) else {
         return Vec::new();
     };
-    let pick = |range: &[TitleTab]| range.iter().map(|t| t.id.clone()).collect();
+    let pick = |range: &[TitleTab]| {
+        range
+            .iter()
+            .filter(|t| !t.pinned)
+            .map(|t| t.id.clone())
+            .collect()
+    };
     match action {
         CloseMany::Left => pick(&tabs[..ix]),
         CloseMany::Right => pick(&tabs[ix + 1..]),
         CloseMany::Others => tabs
             .iter()
-            .filter(|t| t.id != target)
+            .filter(|t| t.id != target && !t.pinned)
             .map(|t| t.id.clone())
             .collect(),
     }
@@ -170,6 +179,16 @@ mod tests {
         assert_eq!(close_ids(&tabs, "b", CloseMany::Right), ["c"]);
         assert_eq!(close_ids(&tabs, "b", CloseMany::Others), ["a", "c"]);
         assert!(close_ids(&tabs, "zz", CloseMany::Others).is_empty());
+    }
+
+    #[test]
+    fn pinned_tabs_survive_closing_the_others() {
+        let mut pin = tab("p");
+        pin.pinned = true;
+        let tabs = [pin, tab("a"), tab("b")];
+        assert_eq!(close_ids(&tabs, "b", CloseMany::Others), ["a"]);
+        assert_eq!(close_ids(&tabs, "b", CloseMany::Left), ["a"]);
+        assert_eq!(close_ids(&tabs, "p", CloseMany::Right), ["a", "b"]);
     }
 
     #[test]

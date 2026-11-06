@@ -1,6 +1,6 @@
 //! The pane beside the chat, right of it unless swapped (MonoCode's editor
-//! pane and its `SurfaceTabs`): open files, reviews, commits and Inbox
-//! items behind one tab strip.
+//! pane and its `SurfaceTabs`): open files, reviews, commits, Inbox items
+//! and terminals moved out of the dock behind one tab strip.
 //! The chat stays beside it and takes the full width once it is empty.
 
 use bencode_ui::layout::SplitPane;
@@ -96,6 +96,7 @@ impl BenCodeApp {
             self.file_pane_focused = false;
         }
         self.settle_browser_tabs(cx);
+        self.settle_terminal_tabs(cx);
         self.load_work_item_tab(cx);
     }
 
@@ -111,6 +112,8 @@ impl BenCodeApp {
     pub(crate) fn request_close_pane_tab(&mut self, key: &str, cx: &mut Context<Self>) {
         match self.file_pane.get(key).cloned() {
             Some(PaneTab::File { path }) => self.request_close_editor_file(&path, cx),
+            // Its shell ends, asked first while a job runs in it.
+            Some(PaneTab::Terminal { id }) => self.request_close_terminal_ids(vec![id], cx),
             Some(_) => self.drop_pane_tab(key, cx),
             None => {}
         }
@@ -197,6 +200,7 @@ impl BenCodeApp {
         let colors = &cx.theme().colors;
         let body = match self.file_pane.active() {
             Some(PaneTab::Browser { id }) => self.render_browser_tab(*id, cx),
+            Some(PaneTab::Terminal { id }) => self.render_terminal_tab_page(*id, cx),
             Some(tab) if tab.is_diff() => self.render_diff_doc(&tab.key(), cx),
             Some(tab @ PaneTab::FileHistory { .. }) => self.render_file_history(tab, cx),
             Some(PaneTab::Image { path }) => self.render_image_tab(path, cx),
@@ -244,6 +248,11 @@ impl BenCodeApp {
             {
                 label = tab.label();
             }
+            if let PaneTab::Terminal { id } = &entry.tab
+                && let Some(title) = self.terminal_tab_label(*id, cx)
+            {
+                label = title;
+            }
             let (icon, dirty) = match &entry.tab {
                 PaneTab::WorkItem { key } => {
                     let (name, icon) = self.work_item_tab_label(key, cx);
@@ -255,6 +264,7 @@ impl BenCodeApp {
                 PaneTab::Commit { .. } => (IconName::GitCommitHorizontal, false),
                 PaneTab::FileHistory { .. } => (IconName::History, false),
                 PaneTab::Browser { .. } => (IconName::Globe, false),
+                PaneTab::Terminal { .. } => (IconName::Terminal, false),
                 PaneTab::Review { .. }
                 | PaneTab::Changes { .. }
                 | PaneTab::SessionChanges { .. } => (IconName::GitBranch, false),
