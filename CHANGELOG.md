@@ -4,6 +4,41 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
+## [0.1.44] - 2026-11-06
+
+- A site in the browser that asks for a user name and password (a dev
+  server behind HTTP Basic Auth, say) opens a sign-in dialog instead of
+  showing a white page. The password is kept until BenCode quits, never
+  saved.
+- A thread moved to another agent with the model picker carries on: its
+  first turn there gets a recap of the conversation so far, and the
+  transcript marks the switch with a rule, the new agent's mark and
+  "Transferred from <model>". Before, the new agent started blind.
+- A message that links a GitHub issue or pull request shows it as a
+  "PR #12" or "Issue #7" chip; hovering it shows its state, title, a
+  summary, its author, branches and labels. A click opens it beside the
+  thread, ⌘-click on GitHub.
+- Title-bar tabs can be pinned (Pin Tab in a tab's menu): they show as
+  cards ahead of the strip in every project, come back pinned after a
+  restart, and stay when the others close; ⌘W leaves them open.
+- A dock terminal moves to a tab beside the chat: drag its tab onto the
+  workspace, or Move to Tab (⇧⌘J or its menu). Closing that tab asks first
+  while a job runs in it, as the dock does; Move to Terminal Panel takes it
+  back.
+- Projects move up and down their list on the navigator from their menu's
+  Move, or with ⌥⇧⌘↑ / ⌥⇧⌘↓. Previous and Next Project follow the
+  navigator's order, pinned first.
+- A project can have colors of its own (Theme colors… in its menu): hue,
+  saturation, dark-mode lightness and accent, shown while it is open and
+  faded into when switching to it.
+- A long list in a select (more than eight choices) filters as you type.
+- The `/` commands each have their own icon and color.
+- A terminal's right-click menu has Select All (⌘A), scrollback included.
+- BenCode gives GPU memory back once it is quiet: 10 seconds after its
+  windows go to the background, or two minutes without typing.
+- A project on the navigator shows its pin while the pointer is over it,
+  even while an agent works there.
+
 ## [0.1.43] - 2026-11-04
 
 - Typing with an input method (Vietnamese Telex, for one) no longer quits
